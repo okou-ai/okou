@@ -11,9 +11,9 @@ use crate::error::{LifecycleError, LifecycleResult};
 use runner_host::host_file::{self, DirMode};
 use runner_types::types::MAX_HELD_HOME_STATES;
 
-use super::HomeImageCache;
 use super::entry::is_cache_key_name;
 use super::metadata::HomeCacheScopeClassification;
+use super::{HomeImageCache, HomeImageCacheInner};
 
 const METADATA_FILE_NAME: &str = "metadata.json";
 const CURRENT_IMAGE_FILE_NAME: &str = "current.ext4";
@@ -53,16 +53,70 @@ const MAX_EVENT_READ_BATCHES_PER_CHANGE: usize = 16;
 pub struct HomeCacheChange {
     pub observed_at: tokio::time::Instant,
     pub committed_cache_keys: BTreeSet<String>,
+    /// Only unused local selections were released; validate/upsert these keys
+    /// without replacing the complete inventory. Mixed/overflow events scan.
+    pub selection_release_only: bool,
 }
 
 impl HomeCacheChange {
     pub fn merge(&mut self, other: Self) {
         self.observed_at = self.observed_at.min(other.observed_at);
+        self.selection_release_only &= other.selection_release_only;
         for cache_key in other.committed_cache_keys {
+            if self.committed_cache_keys.contains(&cache_key) {
+                continue;
+            }
             if self.committed_cache_keys.len() == MAX_HELD_HOME_STATES {
+                self.selection_release_only = false;
                 break;
             }
             self.committed_cache_keys.insert(cache_key);
+        }
+    }
+}
+
+#[derive(Default)]
+pub(super) struct SelectionReleases {
+    pending: std::sync::Mutex<Option<HomeCacheChange>>,
+    wake: tokio::sync::Notify,
+}
+
+impl HomeImageCacheInner {
+    pub(super) fn record_selection_release(&self, key: &str) {
+        let mut pending = self
+            .selection_releases
+            .pending
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let change = pending.get_or_insert_with(|| HomeCacheChange {
+            observed_at: tokio::time::Instant::now(),
+            committed_cache_keys: BTreeSet::new(),
+            selection_release_only: true,
+        });
+        if change.committed_cache_keys.len() < MAX_HELD_HOME_STATES {
+            change.committed_cache_keys.insert(key.to_owned());
+        } else if !change.committed_cache_keys.contains(key) {
+            change.selection_release_only = false;
+        }
+        drop(pending);
+        self.selection_releases.wake.notify_one();
+    }
+
+    async fn next_selection_release(&self) -> HomeCacheChange {
+        loop {
+            let wake = self.selection_releases.wake.notified();
+            tokio::pin!(wake);
+            wake.as_mut().enable();
+            let change = self
+                .selection_releases
+                .pending
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .take();
+            if let Some(change) = change {
+                return change;
+            }
+            wake.await;
         }
     }
 }
@@ -162,17 +216,20 @@ impl HomeCacheWatcher {
         Ok(requires_refresh.then_some(HomeCacheChange {
             observed_at,
             committed_cache_keys,
+            selection_release_only: false,
         }))
     }
 
     /// Waits for and coalesces all currently readable relevant mutations.
     pub async fn next_change(&mut self) -> LifecycleResult<HomeCacheChange> {
         loop {
-            let mut ready = self
-                .inotify
-                .readable()
-                .await
-                .map_err(|error| watcher_io_error("wait for events", error.kind()))?;
+            // Race only before draining kernel events. Cancelling asynchronous
+            // classification after draining would lose an ordinary mutation.
+            let mut ready = tokio::select! {
+                change = self.cache.inner.next_selection_release() => return Ok(change),
+                ready = self.inotify.readable() => ready
+                    .map_err(|error| watcher_io_error("wait for events", error.kind()))?,
+            };
 
             let observed_at = tokio::time::Instant::now();
             let mut pending_events = Vec::new();
@@ -280,6 +337,7 @@ impl HomeCacheWatcher {
                 return Ok(HomeCacheChange {
                     observed_at,
                     committed_cache_keys,
+                    selection_release_only: false,
                 });
             }
             if !drained_all_events {
@@ -895,5 +953,28 @@ mod tests {
 
         assert!(message.contains("home cache watcher prepare root"));
         assert!(!message.contains(&cache_root.display().to_string()));
+    }
+
+    #[tokio::test]
+    async fn unused_release_overflow_requests_full_reconciliation_with_bounded_hints() {
+        let temp = tempfile::tempdir().unwrap();
+        let cache = HomeImageCache::new(RunnerPaths::new(temp.path().join("runner")));
+        let mut watcher = HomeCacheWatcher::new(cache.clone()).await.unwrap();
+        for key in 0..=MAX_HELD_HOME_STATES {
+            cache.inner.record_selection_release(&format!("{key:064x}"));
+        }
+        let change = watcher.next_change().await.unwrap();
+        assert!(!change.selection_release_only);
+        assert_eq!(change.committed_cache_keys.len(), MAX_HELD_HOME_STATES);
+        // Hints never advertise nonexistent commits, even after saturation.
+        assert!(
+            cache
+                .held_home_states_for_released_selections(
+                    &BTreeMap::from([(TEST_PROFILE_NAME, 1024 * 1024)]),
+                    &change.committed_cache_keys,
+                )
+                .await
+                .is_empty()
+        );
     }
 }

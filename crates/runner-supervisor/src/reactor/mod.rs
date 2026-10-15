@@ -1498,6 +1498,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                         HomeCacheChange {
                             observed_at: tokio::time::Instant::now(),
                             committed_cache_keys: std::collections::BTreeSet::new(),
+                            selection_release_only: false,
                         },
                     )?;
                 }
@@ -1800,6 +1801,11 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         }
     }
     teardown.phase_complete("running_jobs_drain", phase);
+    if let Some(cache) = &exec_config.home_cache {
+        let phase = teardown.phase_start("home_checkout_handoffs_drain");
+        cache.drain_checkout_handoffs().await;
+        teardown.phase_complete("home_checkout_handoffs_drain", phase);
+    }
     if !orphaned_active_runs.is_empty() {
         let phase = teardown.phase_start("orphan_reap_shutdown_final");
         orphan_reap

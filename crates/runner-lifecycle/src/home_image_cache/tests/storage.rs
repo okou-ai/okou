@@ -82,7 +82,7 @@ async fn success_persists_current_home_partitions_and_failed_turn_unions_previou
     ] {
         let run_id = runner_types::ids::RunId::new_v4();
         let sandbox_id = sandbox::SandboxId::new_v4();
-        let lease = f
+        let mut lease = f
             .cache
             .prepare(HomeImagePrepareRequest {
                 identity: HomeImageLeaseIdentity {
@@ -98,10 +98,19 @@ async fn success_persists_current_home_partitions_and_failed_turn_unions_previou
             })
             .await;
         assert!(lease.is_cache_hit());
-        let source = lease.source_image.as_ref().unwrap();
+        let sandbox::HomeDriveSeedImage::Move(source) = lease
+            .home_drive_config()
+            .await
+            .unwrap()
+            .unwrap()
+            .seed_image
+            .unwrap()
+        else {
+            panic!("consume the selected generation before simulating guest writes");
+        };
         let active = f.paths.active_home_image(&sandbox_id);
         std::fs::create_dir_all(active.parent().unwrap()).unwrap();
-        std::fs::rename(source, &active).unwrap();
+        std::fs::rename(&source, &active).unwrap();
         let current = StorageFingerprints {
             storages: HashMap::from([(
                 "/home/user/current".into(),

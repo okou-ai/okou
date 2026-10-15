@@ -485,6 +485,25 @@ async fn refresh_home_cache_snapshot_after_change(
     profiles: &BTreeMap<String, HeartbeatProfile>,
     change: Option<&HomeCacheChange>,
 ) -> HomeCacheRefreshOutcome {
+    if let Some(change) = change
+        && change.selection_release_only
+        && snapshot.home_cache_loaded()
+        && let Some(cache) = home_cache
+    {
+        let before = snapshot.loaded_home_cache_snapshot();
+        for state in cache
+            .held_home_states_for_released_selections(
+                &profile_home_sizes(profiles),
+                &change.committed_cache_keys,
+            )
+            .await
+        {
+            snapshot.upsert_home_cache_state(state);
+        }
+        let mut after = snapshot.loaded_home_cache_snapshot();
+        after.changed = before.states != after.states;
+        return after;
+    }
     let refresh = snapshot.begin_home_cache_refresh();
     let states = home_cache_states(
         home_cache,
@@ -926,6 +945,7 @@ mod tests {
         HomeCacheChange {
             observed_at: tokio::time::Instant::now(),
             committed_cache_keys: BTreeSet::from([cache_key.to_owned()]),
+            selection_release_only: false,
         }
     }
 
@@ -1183,6 +1203,101 @@ mod tests {
             cached_states[0].home_caches,
             vec![home_cache("vm0/default")]
         );
+    }
+
+    #[tokio::test]
+    async fn unused_release_heartbeat_revalidates_one_key_and_preserves_independent_homes() {
+        for replace_source in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let paths = RunnerPaths::new(dir.path().join("runner"));
+            let cache = HomeImageCache::new(paths.clone());
+            seed_home_cache_state(&cache, &paths, "released", "2026-06-01T00:00:00.000Z").await;
+            seed_home_cache_state(&cache, &paths, "independent", "2026-06-01T00:01:00.000Z").await;
+            let mut watcher =
+                runner_lifecycle::home_image_cache::HomeCacheWatcher::new(cache.clone())
+                    .await
+                    .unwrap();
+            let lease = cache.prepare(HomeImagePrepareRequest { identity: HomeImageLeaseIdentity {
+                run_id: runner_types::ids::RunId::new_v4(), sandbox_id: SandboxId::new_v4(),
+                profile_name: "vm0/default", rootfs_hash: "current-rootfs", reuse_key: Some("released"),
+                working_dir: api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR,
+                image_size_bytes: 1024 * 1024,
+            }, home_drive_required: true }).await;
+            assert!(lease.is_cache_hit());
+            let profiles = test_profiles();
+            let snapshot = HomeCacheStateSnapshot::new();
+            refresh_initial_home_cache_snapshot(&snapshot, Some(&cache), &profiles).await;
+            assert_eq!(snapshot.loaded_home_cache_snapshot().states.len(), 1);
+            if replace_source {
+                let identity = lease.source_identity().unwrap();
+                let image = cache
+                    .entry_paths(identity.cache_key)
+                    .image(identity.image_generation)
+                    .unwrap();
+                tokio::fs::rename(&image, dir.path().join("original.ext4"))
+                    .await
+                    .unwrap();
+                tokio::fs::File::create(&image)
+                    .await
+                    .unwrap()
+                    .set_len(1024 * 1024)
+                    .await
+                    .unwrap();
+            }
+            drop(lease);
+            let change = tokio::time::timeout(Duration::from_secs(10), watcher.next_change())
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(change.selection_release_only);
+            cache.reset_held_state_root_scan_count();
+            let idle_pool = Arc::new(tokio::sync::Mutex::new(IdlePool::new(IdlePoolConfig {
+                max_idle: 0,
+            })));
+            let budget = Arc::new(ResourceBudget::new(8, 32768, 1.0, 4));
+            let active_runs = test_active_runs();
+            let provider = Arc::new(RecordingProvider::default());
+            let hb = HeartbeatContext::new(HeartbeatContextInit {
+                idle_pool: &idle_pool,
+                sandbox_op_reporter: None,
+                runner_identity: test_runner_identity(),
+                group: "vm0/test",
+                profiles: &profiles,
+                budget: &budget,
+                provider: provider.clone(),
+                home_cache: Some(cache.clone()),
+                active_runs: &active_runs,
+                home_cache_snapshot: snapshot,
+                wss_ingress_service_probe: Arc::new(|| Box::pin(async { false })),
+            });
+            send_heartbeat(
+                &hb,
+                RunnerMode::Running,
+                1,
+                HeartbeatRequest::home_cache(change),
+            )
+            .await;
+            if replace_source {
+                // Rejected advisory evidence changes nothing and need not
+                // trigger a send. The next ordinary heartbeat still excludes it.
+                assert!(provider.heartbeats.lock().unwrap().is_empty());
+                send_heartbeat(&hb, RunnerMode::Running, 2, HeartbeatRequest::ordinary()).await;
+            }
+            let sent = provider.heartbeats.lock().unwrap();
+            assert_eq!(sent.len(), 1);
+            let keys = sent[0]
+                .held_home_states
+                .iter()
+                .map(|state| state.reuse_key.as_str())
+                .collect::<BTreeSet<_>>();
+            let expected = if replace_source {
+                BTreeSet::from(["independent"])
+            } else {
+                BTreeSet::from(["independent", "released"])
+            };
+            assert_eq!(keys, expected);
+            assert_eq!(cache.held_state_root_scan_count(), 0);
+        }
     }
 
     #[tokio::test]

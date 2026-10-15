@@ -232,7 +232,14 @@ impl JobFixture {
             .await;
         assert!(checkout.is_cache_hit());
         let mut checkout = checkout;
-        let source = match checkout.home_drive_config().unwrap().seed_image.unwrap() {
+        let source = match checkout
+            .home_drive_config()
+            .await
+            .unwrap()
+            .unwrap()
+            .seed_image
+            .unwrap()
+        {
             sandbox::HomeDriveSeedImage::Copy(path) | sandbox::HomeDriveSeedImage::Move(path) => {
                 path
             }

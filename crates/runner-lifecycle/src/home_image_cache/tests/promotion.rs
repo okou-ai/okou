@@ -302,7 +302,7 @@ async fn transient_capacity_contention_publishes_an_intact_reusable_home() {
     let mut lease = f.lease("thread").await;
     assert_eq!(lease.result(), HomeCacheCheckoutResult::Hit);
     let Some(sandbox::HomeDriveSeedImage::Move(seed)) =
-        lease.home_drive_config().unwrap().seed_image
+        lease.home_drive_config().await.unwrap().unwrap().seed_image
     else {
         panic!("published home must be consumable through the move-seed contract");
     };
@@ -345,8 +345,12 @@ async fn capacity_wait_keeps_entry_owned_and_unrelated_checkout_available() {
     assert_eq!(same.result(), HomeCacheCheckoutResult::LockBusy);
     let mut unrelated = f.lease("other").await;
     assert_eq!(unrelated.result(), HomeCacheCheckoutResult::Hit);
-    let Some(sandbox::HomeDriveSeedImage::Move(seed)) =
-        unrelated.home_drive_config().unwrap().seed_image
+    let Some(sandbox::HomeDriveSeedImage::Move(seed)) = unrelated
+        .home_drive_config()
+        .await
+        .unwrap()
+        .unwrap()
+        .seed_image
     else {
         panic!("unrelated committed home must remain consumable");
     };
@@ -423,7 +427,7 @@ async fn cancelled_capacity_wait_preserves_original_context_for_retry() {
     let mut lease = f.lease("thread").await;
     assert_eq!(lease.result(), HomeCacheCheckoutResult::Hit);
     let Some(sandbox::HomeDriveSeedImage::Move(seed)) =
-        lease.home_drive_config().unwrap().seed_image
+        lease.home_drive_config().await.unwrap().unwrap().seed_image
     else {
         panic!("retried home must be consumable through the move-seed contract");
     };

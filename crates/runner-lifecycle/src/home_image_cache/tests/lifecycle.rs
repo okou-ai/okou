@@ -54,7 +54,7 @@ async fn rootfs_update_reuses_one_physical_entry_and_preserves_current_vm_public
     assert_eq!(lease.previous_storage(), Some(&fingerprints));
     assert_eq!(lease.history_proof_binding(), Some(&proof));
     let Some(sandbox::HomeDriveSeedImage::Move(source)) =
-        lease.home_drive_config().unwrap().seed_image
+        lease.home_drive_config().await.unwrap().unwrap().seed_image
     else {
         panic!("checkout must use its pinned immutable move seed");
     };
@@ -140,7 +140,8 @@ async fn checkout_selects_exact_committed_generation_and_pins_it() {
         lease.previous_storage(),
         Some(&StorageFingerprints::default())
     );
-    assert!(!f.cache.entry_paths(&f.key("thread-a")).metadata().exists());
+    assert!(f.cache.entry_paths(&f.key("thread-a")).metadata().exists());
+    assert!(!lease.consumed_cache_hit);
     assert!(f.cache.held_home_states().await.is_empty());
     assert!(lease.source_pin.is_some());
     let identity = lease.source_identity().expect("selected source is known");
@@ -175,9 +176,9 @@ async fn replaced_seed_is_rejected_at_consumption_and_all_image_evidence_is_disc
     let pinned_old = f.dir.path().join("pinned-original.ext4");
     std::fs::rename(&image, &pinned_old).unwrap();
     write_image(&image, b"replacement", SIZE);
-    let config = lease.home_drive_config().unwrap();
-    assert!(config.seed_image.is_none());
-    assert_eq!(config.space_reserve, HOME_IMAGE_SPACE_RESERVE);
+    assert!(lease.home_drive_config().await.is_err());
+    assert!(f.cache.entry_paths(&f.key("thread")).metadata().exists());
+    lease.discard_cached_image();
     assert!(!lease.is_cache_hit());
     assert!(lease.source_identity().is_none());
     assert!(lease.history_proof_binding().is_none());
@@ -214,7 +215,129 @@ async fn active_and_checkout_lock_owners_are_not_reusable_inventory() {
     drop(first);
     assert_eq!(
         f.lease("thread").await.result(),
-        HomeCacheCheckoutResult::Miss
+        HomeCacheCheckoutResult::Hit
+    );
+}
+
+#[tokio::test]
+async fn unused_selection_release_revalidates_same_generation_without_a_root_scan() {
+    let f = Fixture::new().await;
+    let committed = f.commit("thread", b"unused", "2026-10-09T09:00:00Z").await;
+    let metadata = f.cache.entry_paths(&f.key("thread")).metadata();
+    let original = tokio::fs::read(&metadata).await.unwrap();
+    let mut watcher = HomeCacheWatcher::new(f.cache.clone()).await.unwrap();
+    let lease = f.lease("thread").await;
+    assert!(lease.is_cache_hit());
+    assert_eq!(f.cache.gc(false).await.unwrap(), 0);
+    assert_eq!(
+        f.lease("thread").await.result(),
+        HomeCacheCheckoutResult::LockBusy
+    );
+    drop(lease);
+
+    let change = tokio::time::timeout(std::time::Duration::from_secs(10), watcher.next_change())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(change.selection_release_only);
+    assert_eq!(
+        change.committed_cache_keys,
+        std::collections::BTreeSet::from([f.key("thread")])
+    );
+    f.cache.reset_held_state_root_scan_count();
+    let states = f
+        .cache
+        .held_home_states_for_released_selections(
+            &std::collections::BTreeMap::from([(PROFILE, SIZE)]),
+            &change.committed_cache_keys,
+        )
+        .await;
+    assert_eq!(states.len(), 1);
+    assert_eq!(states[0].reuse_key, "thread");
+    assert_eq!(f.cache.held_state_root_scan_count(), 0);
+    assert_eq!(tokio::fs::read(metadata).await.unwrap(), original);
+    let next = f.lease("thread").await;
+    assert!(next.is_cache_hit());
+    assert_eq!(
+        next.source_identity().unwrap().image_generation,
+        committed.image_generation
+    );
+    assert_eq!(
+        &tokio::fs::read(next.source_image.as_ref().unwrap())
+            .await
+            .unwrap()[4096..4102],
+        b"unused"
+    );
+}
+
+#[tokio::test]
+async fn replacing_the_selecting_commit_rejects_handoff_without_deleting_its_replacement() {
+    let f = Fixture::new().await;
+    f.commit("thread", b"home", "2026-10-09T09:00:00Z").await;
+    let mut lease = f.lease("thread").await;
+    let metadata = f.cache.entry_paths(&f.key("thread")).metadata();
+    let bytes = tokio::fs::read(&metadata).await.unwrap();
+    tokio::fs::rename(&metadata, f.dir.path().join("original-metadata"))
+        .await
+        .unwrap();
+    tokio::fs::write(&metadata, &bytes).await.unwrap();
+    assert!(lease.home_drive_config().await.is_err());
+    assert!(
+        lease.home_drive_config().await.is_err(),
+        "a rejected handoff cannot silently become fresh"
+    );
+    assert!(
+        !lease
+            .invalidate(RunId::new_v4(), "handoff_rejected")
+            .await
+            .unwrap()
+    );
+    drop(lease);
+    assert_eq!(tokio::fs::read(metadata).await.unwrap(), bytes);
+    assert!(f.lease("thread").await.is_cache_hit());
+}
+
+#[tokio::test]
+async fn accepted_revocation_keeps_entry_and_pins_after_observer_loss_and_is_joined() {
+    use std::time::Duration;
+    let mut f = Fixture::new().await;
+    let original = f.commit("thread", b"home", "2026-10-09T09:00:00Z").await;
+    let gate = HomeImageHandoffTestGate::default();
+    let _release = gate.release_on_drop();
+    f.cache = f.cache.with_handoff_test_gate(gate.clone());
+    let mut lease = f.lease("thread").await;
+    let pending = tokio::spawn(async move { lease.home_drive_config().await });
+    gate.wait_entered(Duration::from_secs(10)).await;
+    pending.abort();
+    assert!(pending.await.unwrap_err().is_cancelled());
+    assert_eq!(
+        f.lease("thread").await.result(),
+        HomeCacheCheckoutResult::LockBusy
+    );
+    assert_eq!(f.cache.gc(false).await.unwrap(), 0);
+    assert!(f.cache.entry_paths(&f.key("thread")).metadata().exists());
+    assert!(f.image("thread", &original).exists());
+    let drain = f.cache.drain_checkout_handoffs();
+    tokio::pin!(drain);
+    assert!(futures_util::poll!(&mut drain).is_pending());
+    gate.release();
+    tokio::time::timeout(Duration::from_secs(10), drain)
+        .await
+        .unwrap();
+    assert!(!f.cache.entry_paths(&f.key("thread")).metadata().exists());
+    // Wait for the completed result's custody to retire, then publish a later
+    // generation. No accepted unlink may touch that new selecting commit.
+    let lock = runner_host::lock::acquire(f.cache.entry_lock_path(&f.key("thread")))
+        .await
+        .unwrap();
+    drop(lock);
+    let newer = f
+        .commit("thread", b"new-home", "2026-10-09T09:01:00Z")
+        .await;
+    assert_ne!(newer.image_generation, original.image_generation);
+    assert_eq!(
+        f.metadata("thread").await.image_generation,
+        newer.image_generation
     );
 }
 
@@ -340,7 +463,7 @@ async fn pressured_hit_ignores_busy_capacity_and_remains_owned_during_gc() {
         .await
         .unwrap();
     assert!(lease.is_cache_hit());
-    let config = lease.home_drive_config().unwrap();
+    let config = lease.home_drive_config().await.unwrap().unwrap();
     assert_eq!(config.space_reserve, HOME_IMAGE_SPACE_RESERVE);
     let Some(sandbox::HomeDriveSeedImage::Move(source)) = config.seed_image else {
         panic!("pressured hit must expose its owned Move seed");
@@ -383,7 +506,7 @@ async fn pressured_miss_does_not_wait_for_capacity_or_start_reclamation() {
         .await
         .unwrap();
     assert_eq!(lease.result(), HomeCacheCheckoutResult::DiskPressure);
-    let config = lease.home_drive_config().unwrap();
+    let config = lease.home_drive_config().await.unwrap().unwrap();
     assert!(config.seed_image.is_none());
     assert_eq!(config.space_reserve, HOME_IMAGE_SPACE_RESERVE);
     assert_eq!(f.cache.gc_root_scan_count(), 0);

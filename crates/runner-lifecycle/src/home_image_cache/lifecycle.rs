@@ -43,6 +43,8 @@ use super::{
 use guest_contracts::home_cache_history::HomeCacheHistoryProofBinding;
 use runner_host::home_observation::{HomeObservation, HomeObservationKind, HomeObservationOutcome};
 
+mod handoff;
+
 const HOME_IMAGE_PREPARE_LOCK_TIMEOUT: Duration = Duration::from_millis(50);
 // Stopped publishers retain their entry and applicable resource lease while
 // waiting. Give contention a short window without changing checkout's lock budget.
@@ -67,6 +69,7 @@ pub struct HomeImageLease {
     previous_storage: Option<StorageFingerprints>,
     history_proof: Option<HomeCacheHistoryProofBinding>,
     pub(super) source_pin: Option<super::fs::PinnedImage>,
+    selected_commit_pin: Option<super::fs::PinnedImage>,
     entry_lock: Option<HomeEntryLock>,
     lock_decision: Option<HomeCacheLockDecision>,
 }
@@ -165,6 +168,7 @@ struct HomeEntryLock {
     cache_key: String,
     identity: Arc<()>,
     lock: Option<Flock<std::fs::File>>,
+    unused_selection: bool,
 }
 
 impl HomeEntryLock {
@@ -197,6 +201,7 @@ impl HomeEntryLock {
             cache_key: cache_key.to_owned(),
             identity,
             lock: Some(lock),
+            unused_selection: false,
         }
     }
 
@@ -235,6 +240,9 @@ impl Drop for HomeEntryLock {
         }
         drop(owners);
         drop(self.lock.take());
+        if self.unused_selection {
+            self.inner.record_selection_release(&self.cache_key);
+        }
     }
 }
 
@@ -300,6 +308,7 @@ impl HomeImageLease {
             previous_storage: state.previous_storage,
             history_proof: state.history_proof,
             source_pin: None,
+            selected_commit_pin: None,
             entry_lock: state.entry_lock,
             lock_decision: state.lock_decision,
         }
@@ -562,14 +571,12 @@ impl HomeImageCache {
                           cache_key,
                           home_drive_enabled,
                           lock_decision| {
-            let consumed_cache_hit =
-                result == HomeCacheCheckoutResult::Hit && source_image.is_some();
             HomeImageLease::from_parts(
                 common.lease_base(self),
                 HomeImageLeaseState {
                     cache_key,
                     source_image,
-                    consumed_cache_hit,
+                    consumed_cache_hit: false,
                     previous_storage,
                     history_proof: None,
                     entry_lock,
@@ -715,6 +722,11 @@ impl HomeImageCache {
         }
 
         let metadata_path = self.home_image_cache_metadata(&cache_key);
+        // Pin before reading: a replacement between decode and pinning must
+        // never become authority to revoke a different selecting commit.
+        let commit_pin = std::fs::symlink_metadata(&metadata_path)
+            .ok()
+            .and_then(|metadata| super::fs::PinnedImage::open(&metadata_path, metadata.len()).ok());
         let hit = match self
             .read_valid_metadata(
                 &metadata_path,
@@ -727,38 +739,6 @@ impl HomeImageCache {
         {
             Ok(Some(metadata)) => {
                 let previous = metadata.storage_fingerprints.clone();
-                match fs::remove_file(&metadata_path).await {
-                    Ok(()) => {
-                        info!(
-                            run_id = %common.run_id,
-                            cache_key,
-                            "home image cache hit checked out with move seed"
-                        );
-                    }
-                    Err(e) => {
-                        warn!(
-                            run_id = %common.run_id,
-                            cache_key,
-                            error = %e,
-                            "failed to remove home image cache metadata before move checkout; using fresh home image"
-                        );
-                        self.observe_checkout(
-                            &common,
-                            &cache_key,
-                            "checkout_commit_remove_failed",
-                            Some(&metadata.image_generation),
-                        );
-                        return home_drive(
-                            HomeCacheCheckoutResult::Miss,
-                            None,
-                            None,
-                            Some(lock),
-                            Some(cache_key),
-                            true,
-                            None,
-                        );
-                    }
-                }
                 let source = self
                     .entry_paths(&cache_key)
                     .image(&metadata.image_generation)
@@ -876,6 +856,18 @@ impl HomeImageCache {
                 );
                 lease.history_proof = binding;
                 lease.source_pin = pin.ok();
+                // Pin the selecting commit too: handoff may revoke only this
+                // exact file, after all fallible executor preparation succeeds.
+                match commit_pin.filter(|pin| pin.validate_path(&metadata_path).is_ok()) {
+                    Some(pin) => lease.selected_commit_pin = Some(pin),
+                    None => {
+                        lease.discard_cached_image();
+                        return lease;
+                    }
+                }
+                if let Some(lock) = lease.entry_lock.as_mut() {
+                    lock.unused_selection = true;
+                }
                 lease
             }
             None => {
@@ -951,6 +943,33 @@ impl HomeImageCache {
         )
         .await
         .states
+    }
+
+    /// Revalidate released selections without walking unrelated entries. This
+    /// supplies positive upserts only; ordinary reconciliation owns removals.
+    pub async fn held_home_states_for_released_selections(
+        &self,
+        profiles: &BTreeMap<&str, u64>,
+        keys: &BTreeSet<String>,
+    ) -> Vec<HeldHomeState> {
+        let mut states = Vec::new();
+        for key in keys.iter().take(MAX_HELD_HOME_STATES) {
+            if !is_cache_key_name(key) {
+                continue;
+            }
+            let Ok(runner_host::lock::TryLock::Acquired(lock)) =
+                runner_host::lock::try_acquire_or_busy(self.entry_lock_path(key)).await
+            else {
+                continue;
+            };
+            if let Some(state) = self
+                .publishable_held_home_state(key, Some(profiles), &lock)
+                .await
+            {
+                states.push(state);
+            }
+        }
+        cap_held_home_states(states)
     }
 
     /// Inspect cache state without a running profile configuration in tests.
@@ -1685,6 +1704,7 @@ impl HomeImageLease {
     pub fn discard_cached_image(&mut self) {
         self.source_image = None;
         self.source_pin = None;
+        self.selected_commit_pin = None;
         self.history_proof = None;
         self.previous_storage = None;
         self.result = HomeCacheCheckoutResult::Miss;
@@ -1694,33 +1714,10 @@ impl HomeImageLease {
         self.previous_storage.as_ref()
     }
 
-    pub fn home_drive_config(&mut self) -> Option<sandbox::HomeDriveConfig> {
-        if self.source_image.as_ref().is_some_and(|source| {
-            self.source_pin
-                .as_ref()
-                .is_none_or(|pin| pin.validate_path(source).is_err())
-        }) {
-            self.observe_consumption(
-                None,
-                HomeObservationOutcome::Fallback,
-                "source_identity_changed",
-            );
-            self.discard_cached_image();
-        }
-        self.home_drive_enabled.then(|| sandbox::HomeDriveConfig {
-            size_mb: home_image_size_mb(self.image_size_bytes),
-            space_reserve: super::HOME_IMAGE_SPACE_RESERVE,
-            seed_image: self.source_image.as_ref().map(|source_image| {
-                if self.consumed_cache_hit {
-                    sandbox::HomeDriveSeedImage::Move(source_image.clone())
-                } else {
-                    sandbox::HomeDriveSeedImage::Copy(source_image.clone())
-                }
-            }),
-        })
-    }
-
     pub async fn invalidate(&self, run_id: RunId, reason: &str) -> LifecycleResult<bool> {
+        if !self.consumed_cache_hit {
+            return Ok(false);
+        }
         let Some(cache_key) = self.cache_key.as_deref() else {
             return Ok(false);
         };
@@ -1753,6 +1750,7 @@ impl HomeImageLease {
 
     fn promotion_target(&self) -> Option<HomeImagePromotionTarget> {
         if !self.home_drive_enabled
+            || (self.is_cache_hit() && !self.consumed_cache_hit)
             || !is_safe_guest_working_dir(&self.working_dir)
             || self.rootfs_hash.is_empty()
             || self.image_size_bytes == 0
