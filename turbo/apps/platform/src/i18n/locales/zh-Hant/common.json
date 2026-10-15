@@ -1914,6 +1914,7 @@
       "currentFolder": "目前資料夾",
       "empty": "此資料夾為空。",
       "enterFolder": "進入 {{name}}",
+      "goHome": "返回主目錄",
       "limit": "已達到面板載入上限，部分檔案未載入。請收合資料夾或重新整理後繼續。",
       "link": "連結",
       "loading": "正在載入…",

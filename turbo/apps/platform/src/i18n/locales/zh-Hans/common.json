@@ -1914,6 +1914,7 @@
       "currentFolder": "当前文件夹",
       "empty": "此文件夹为空。",
       "enterFolder": "进入 {{name}}",
+      "goHome": "返回主目录",
       "limit": "已达到面板加载上限，部分文件未加载。请折叠文件夹或刷新后继续。",
       "link": "链接",
       "loading": "正在加载…",
