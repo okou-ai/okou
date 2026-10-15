@@ -1186,19 +1186,36 @@ async function validateRetiredWriter(args: {
 
 const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "DATABASE_URL is required");
+const testSchema = `catalog_entry_columns_${randomUUID().replaceAll("-", "")}`;
+assert.match(testSchema, /^catalog_entry_columns_[0-9a-f]{32}$/u);
+const identifier = escapeIdentifier(testSchema);
 const client = new Client({ connectionString: databaseUrl });
 const errors: unknown[] = [];
 const observeError = (error: Error) => {
   errors.push(error);
 };
 client.on("error", observeError);
+const originalSettings: Partial<
+  Record<(typeof fixtureSettings)[number], string>
+> = {};
 let connected = false;
+let ownsSchema = false;
 let successMessage: string | undefined;
 try {
   await client.connect();
   connected = true;
+  for (const setting of fixtureSettings) {
+    originalSettings[setting] = shownSetting(
+      (await client.query(`SHOW ${setting}`)).rows,
+      setting,
+    );
+    assert.equal(client.getTransactionStatus(), "I");
+  }
+  const originalIdentity = nativeIdentitySchema.parse(
+    (await client.query(nativeIdentitySql)).rows,
+  )[0];
+  assert.equal(client.getTransactionStatus(), "I");
   const db = drizzle(client);
-  const testSchema = `catalog_entry_columns_${randomUUID().replaceAll("-", "")}`;
   const expansion = await readFile(
     new URL(
       "../src/migrations/1339_expand_connector_catalog_entry_columns.sql",
@@ -1460,12 +1477,50 @@ try {
     },
   );
 
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0378; new non-billing transactions are prohibited.
-  await client.query("BEGIN");
-  await client.query(`CREATE SCHEMA "${testSchema}"`);
-  await client.query(`SET LOCAL search_path TO "${testSchema}"`);
-  await client.query("SET LOCAL lock_timeout = '1s'");
-  await client.query("SET LOCAL statement_timeout = '10s'");
+  assert.deepEqual(
+    namespaceRowsSchema.parse(
+      (
+        await client.query(
+          "SELECT nspname FROM pg_namespace WHERE nspname = $1",
+          [testSchema],
+        )
+      ).rows,
+    ),
+    [],
+  );
+  assert.equal(client.getTransactionStatus(), "I");
+  await client.query("SET lock_timeout = '1s'");
+  assert.equal(client.getTransactionStatus(), "I");
+  assert.equal(
+    shownSetting(
+      (await client.query("SHOW lock_timeout")).rows,
+      "lock_timeout",
+    ),
+    "1s",
+  );
+  assert.equal(client.getTransactionStatus(), "I");
+  await client.query("SET statement_timeout = '10s'");
+  assert.equal(client.getTransactionStatus(), "I");
+  assert.equal(
+    shownSetting(
+      (await client.query("SHOW statement_timeout")).rows,
+      "statement_timeout",
+    ),
+    "10s",
+  );
+  assert.equal(client.getTransactionStatus(), "I");
+  const created = await client.query(`CREATE SCHEMA ${identifier}`);
+  // Only the exact acknowledged CREATE grants disposal rights in this job DB.
+  assert.equal(created.command, "CREATE");
+  ownsSchema = true;
+  assert.equal(client.getTransactionStatus(), "I");
+  await client.query(`SET search_path TO ${identifier}`);
+  assert.equal(client.getTransactionStatus(), "I");
+  assert.equal(
+    shownSetting((await client.query("SHOW search_path")).rows, "search_path"),
+    testSchema,
+  );
+  assert.equal(client.getTransactionStatus(), "I");
   await client.query(`CREATE TABLE connector_catalog_entries (
     hash text NOT NULL, slug text NOT NULL, payload jsonb NOT NULL,
     PRIMARY KEY (hash, slug)
@@ -1537,7 +1592,7 @@ try {
     0,
     "new writer already supplies the projection",
   );
-  // The parent frontier is uncommitted: copy ordinary complete values only.
+  // Copy ordinary complete values into the independent rejection owner.
   await validateRejectedPreparation({
     databaseUrl,
     expansion,
@@ -1598,6 +1653,7 @@ try {
   const parentIdentity = nativeIdentitySchema.parse(
     (await client.query(nativeIdentitySql)).rows,
   )[0];
+  assert.deepEqual(parentIdentity, originalIdentity);
   const parentSettings: Partial<
     Record<(typeof fixtureSettings)[number], string>
   > = {};
@@ -1631,7 +1687,7 @@ try {
         )[0].state,
         preparedState,
       );
-      assert.equal(client.getTransactionStatus(), "T");
+      assert.equal(client.getTransactionStatus(), "I");
     } catch (error: unknown) {
       contractionErrors.push(error);
     }
@@ -1748,17 +1804,63 @@ try {
     preparation,
     contraction,
   });
-  successMessage = `Catalog entry expansion/backfill/preparation/contraction: ${rows.length} retained rows, ${cases.length} summary boundaries, transactional DDL rollback, outgoing/new writers, unchanged identity/projections/pointer, post-DROP runtime reads`;
+  successMessage = `Catalog entry expansion/backfill/preparation/contraction: ${rows.length} retained rows, ${cases.length} summary boundaries, native failed-message DDL rollback, outgoing/new writers, unchanged identity/projections/pointer, post-DROP runtime reads`;
 } catch (error: unknown) {
   errors.push(error);
 } finally {
-  if (connected) {
+  if (ownsSchema) {
     try {
-      await client.query("ROLLBACK");
+      assert.equal(
+        (await client.query(`DROP SCHEMA ${identifier} CASCADE`)).command,
+        "DROP",
+      );
+      assert.equal(client.getTransactionStatus(), "I");
     } catch (error: unknown) {
       errors.push(error);
     }
   }
+  if (connected) {
+    // Observe even uncertain/unowned residue; never adopt or DROP a collision.
+    try {
+      assert.deepEqual(
+        namespaceRowsSchema.parse(
+          (
+            await client.query(
+              "SELECT nspname FROM pg_namespace WHERE nspname = $1",
+              [testSchema],
+            )
+          ).rows,
+        ),
+        [],
+      );
+      assert.equal(client.getTransactionStatus(), "I");
+    } catch (error: unknown) {
+      errors.push(error);
+    }
+    for (const setting of fixtureSettings) {
+      const value = originalSettings[setting];
+      if (value === undefined) continue;
+      try {
+        await client.query("SELECT set_config($1, $2, false)", [
+          setting,
+          value,
+        ]);
+        assert.equal(client.getTransactionStatus(), "I");
+      } catch (error: unknown) {
+        errors.push(error);
+      }
+      try {
+        assert.equal(
+          shownSetting((await client.query(`SHOW ${setting}`)).rows, setting),
+          value,
+        );
+        assert.equal(client.getTransactionStatus(), "I");
+      } catch (error: unknown) {
+        errors.push(error);
+      }
+    }
+  }
+  // All owned promises have settled; a failed fence remains failure, not cleanup proof.
   try {
     await client.end();
   } catch (error: unknown) {
@@ -1766,6 +1868,14 @@ try {
   }
   client.removeListener("error", observeError);
 }
-throwCollectedErrors(errors, "Catalog entry transition or disposal failed");
+if (errors.length === 1) throw errors[0];
+if (errors.length > 1)
+  throw new AggregateError(
+    errors,
+    "Catalog entry transition or disposal failed",
+    {
+      cause: errors[0],
+    },
+  );
 assert.ok(successMessage);
 console.log(successMessage);
