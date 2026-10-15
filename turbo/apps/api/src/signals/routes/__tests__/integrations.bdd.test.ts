@@ -1819,12 +1819,34 @@ describe("INT-01: Slack integration and Slack app routes", () => {
       isAdmin: false,
     });
 
+    await flushWaitUntilForTest();
+    context.mocks.slack.views.publish.mockClear();
     const uninstalled = await integrations.requestSlackDisconnect(
       admin,
       "uninstall",
       [200],
     );
     expect(uninstalled.body).toStrictEqual({ ok: true });
+    expect(context.mocks.slack.views.publish).toHaveBeenCalledOnce();
+    expect(context.mocks.slack.views.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: "UADMIN_BDD_SLACK",
+        view: expect.objectContaining({
+          type: "home",
+          blocks: expect.arrayContaining([
+            expect.objectContaining({
+              type: "actions",
+              elements: expect.arrayContaining([
+                expect.objectContaining({
+                  action_id: "home_open_settings",
+                  url: `${env("APP_URL")}/works`,
+                }),
+              ]),
+            }),
+          ]),
+        }),
+      }),
+    );
     const adminAfterUninstall =
       await integrations.requestSlackIntegrationStatus(admin, [200]);
     expect(adminAfterUninstall.body).toMatchObject({
