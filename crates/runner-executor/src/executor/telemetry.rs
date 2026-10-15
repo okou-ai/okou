@@ -12,7 +12,6 @@ use guest_contracts::epoch_milliseconds::{
 use tracing::warn;
 
 use crate::guest_timezone::GuestTimezoneAssumption;
-use crate::home_image_cache::{HomeCacheCheckoutResult, HomeImageLease};
 use crate::idle_pool::ExactIdleReservationMiss;
 use crate::resource_budget::ResourceBudget;
 use crate::telemetry::{
@@ -654,40 +653,6 @@ impl RunnerSpawnTiming {
         if let Some(pre_spawn_timing) = self.pre_spawn_timing.as_mut() {
             pre_spawn_timing.preserve_concurrency_attribution_after_spawn();
         }
-    }
-}
-
-pub(super) fn record_reuse_result(telemetry: &mut JobTelemetry, result: SandboxReuseResult) {
-    let action_type = match result {
-        SandboxReuseResult::Reused => "sandbox_reuse_hit",
-        SandboxReuseResult::NoReuseKey
-        | SandboxReuseResult::PoolMiss
-        | SandboxReuseResult::ProfileMismatch
-        | SandboxReuseResult::DeviceLimitMismatch
-        | SandboxReuseResult::UnparkFailed => "sandbox_reuse_miss",
-    };
-    telemetry.record(action_type, Duration::ZERO, true, None);
-}
-
-pub(super) fn record_home_cache_result(telemetry: &mut JobTelemetry, lease: &HomeImageLease) {
-    let result = lease.result();
-    let action_type = match result {
-        HomeCacheCheckoutResult::Hit => "home_image_cache_hit",
-        HomeCacheCheckoutResult::Miss => "home_image_cache_miss",
-        HomeCacheCheckoutResult::NoReuseKey => "home_image_cache_no_reuse_key",
-        HomeCacheCheckoutResult::InvalidWorkingDir => "home_image_cache_invalid_working_dir",
-        HomeCacheCheckoutResult::LockBusy => "home_image_cache_lock_busy",
-        HomeCacheCheckoutResult::InvalidMetadata => "home_image_cache_invalid_metadata",
-        HomeCacheCheckoutResult::DiskPressure => "home_image_cache_disk_pressure",
-    };
-    if result == HomeCacheCheckoutResult::LockBusy {
-        if let Some((outcome, reason)) = lease.lock_outcome_and_reason() {
-            telemetry.record_bounded_outcome(action_type, true, outcome, reason);
-        } else {
-            telemetry.record(action_type, Duration::ZERO, true, None);
-        }
-    } else {
-        telemetry.record(action_type, Duration::ZERO, true, None);
     }
 }
 
