@@ -1,7 +1,7 @@
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
 import { randomInt, randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
 
 import {
@@ -16,13 +16,23 @@ import {
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv, optionalEnv } from "../../../lib/env";
+import { mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { integrationsTelegramRoutes } from "../integrations-telegram";
 import { integrationsTelegramMessageRoutes } from "../integrations-telegram-message";
 import { integrationsTelegramUploadCompleteRoutes } from "../integrations-telegram-upload-complete";
 import { integrationsTelegramUploadInitRoutes } from "../integrations-telegram-upload-init";
 import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import {
+  createAuthDeviceApiActions,
+  mockCodexDeviceAuthProvider,
+} from "./helpers/api-bdd-auth-device";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { captureConnectorExternalState } from "./helpers/public-connector-actor";
+import { publicRunOwner } from "./helpers/public-run-owner";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createPublicTelegramActor } from "./helpers/public-telegram-actor";
 import { createRouteMocks } from "./helpers/route-test";
@@ -47,6 +57,177 @@ function officialSender() {
     ...createPublicTelegramActor(context),
     telegramUserId: uniqueBotId(),
   };
+}
+
+type FooterModel = "claude-fable-5-1" | "gpt-6.1-sol";
+
+async function connectFooterCodexSubscription(
+  actor: ApiTestUser,
+): Promise<void> {
+  mockCodexDeviceAuthProvider();
+  const device = createAuthDeviceApiActions(context);
+  const started = await device.requestCodexStart(actor, "personal", [200], {
+    mode: "add",
+  });
+  if (started.status !== 200) {
+    throw new Error("Expected the public Codex device session to start");
+  }
+  const completed = await device.requestCodexComplete(
+    actor,
+    started.body.sessionToken,
+    [200],
+  );
+  if (!("status" in completed.body) || completed.body.status !== "complete") {
+    throw new Error("Expected the public Codex device session to complete");
+  }
+}
+
+async function sendOfficialModelMessage(token: string) {
+  mockEnv("TELEGRAM_OFFICIAL_BOT_TOKEN", OFFICIAL_BOT_TOKEN);
+  mockEnv("TELEGRAM_OFFICIAL_BOT_USERNAME", "official_okou_bot");
+  context.mocks.clerk.authenticateRequest.mockResolvedValue({
+    isAuthenticated: false,
+  });
+  const chatId = String(randomInt(1, 2 ** 48));
+  let telegramBody: unknown;
+  const apiBase =
+    optionalEnv("TELEGRAM_API_URL") || "https://api.telegram.org/bot";
+  server.use(
+    http.post(
+      `${apiBase}${OFFICIAL_BOT_TOKEN}/sendMessage`,
+      async ({ request }) => {
+        const body = z
+          .object({
+            chat_id: z.string(),
+            text: z.string(),
+            parse_mode: z.literal("HTML"),
+          })
+          .strict()
+          .parse(await request.json());
+        telegramBody = body;
+        return HttpResponse.json({
+          ok: true,
+          result: {
+            message_id: 325,
+            chat: { id: Number(chatId) },
+            text: body.text,
+          },
+        });
+      },
+    ),
+  );
+  const client = setupApp({
+    context,
+    routes: integrationsTelegramMessageRoutes,
+  })(integrationsTelegramMessageContract);
+  const response = await accept(
+    client.sendMessage({
+      headers: { authorization: `Bearer ${token}` },
+      body: {
+        botId: OFFICIAL_TELEGRAM_BOT_ID,
+        chatId,
+        text: "Hello from this Run",
+      },
+    }),
+    [200],
+  );
+  return { chatId, telegramBody, responseBody: response.body };
+}
+
+function sendClaimedModelMessage(model: FooterModel) {
+  const restoreBaseline = captureConnectorExternalState(context);
+  onTestFinished(restoreBaseline);
+  let restoreAccepted = restoreBaseline;
+  const bdd = createBddApi(context);
+  const api = createRunsApi(context);
+  const chat = createChatFilesBddApi(context);
+  const misc = createMiscRoutesApi(context);
+  const actor = bdd.user({
+    userId: `user_${randomUUID()}`,
+    orgId: `org_${randomUUID()}`,
+  });
+  const owner = publicRunOwner(context, actor, {
+    restoreEnvironment: () => {
+      restoreAccepted();
+    },
+  });
+  return owner
+    .run(async () => {
+      bdd.acceptAgentStorageWrites();
+      api.acceptStorageDownloads();
+      api.acceptTelemetryIngest();
+      mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+      mockOptionalEnv("VAPID_PUBLIC_KEY", undefined);
+      mockOptionalEnv("VAPID_PRIVATE_KEY", undefined);
+      const runnerGroup = api.configureRunnerGroup();
+      await api.grantProEntitlement(actor);
+      await api.ensurePersonalSubscriptionModel(actor);
+      const fast = model === "gpt-6.1-sol";
+      if (fast) {
+        await connectFooterCodexSubscription(actor);
+        await api.updateUserModelPreference(actor, model);
+      }
+      const available = (await misc.listRunModels(actor)).models.find(
+        (entry) => {
+          return (
+            entry.model === model &&
+            entry.memberEffective.providerType ===
+              (fast ? "codex-oauth-token" : "claude-code-oauth-token")
+          );
+        },
+      );
+      expect(available?.memberEffective.availability).toBe("available");
+      expect(available?.memberEffective.credentialScope).toBe("member");
+      expect(available?.memberEffective.accountSelection).toBe(
+        "capture_required",
+      );
+      expect(available?.subscriptionOptions?.serviceTier).toBe(
+        fast ? "priority" : null,
+      );
+      const agent = await bdd.createAgent(actor, {
+        displayName: "Model footer sender",
+        visibility: "private",
+      });
+      expect(agent.displayName).toBe("Model footer sender");
+      const thread = await chat.createThread(actor, {
+        agentId: agent.agentId,
+        model,
+      });
+      await chat.updateThreadModelSelection(actor, thread.id, model, {
+        codexServiceTier: fast ? "fast" : null,
+      });
+      const run = await api.createThreadRun(actor, {
+        agentId: agent.agentId,
+        threadId: thread.id,
+        prompt: "Exercise footer",
+      });
+      await api.heartbeatRunner(runnerGroup);
+      const claim = await owner.claim(run.runId);
+      expect(claim.runId).toBe(run.runId);
+      if (fast) {
+        const config = claim.piModelConfig;
+        expect({
+          provider: config?.provider,
+          model: config?.model,
+          serviceTier:
+            config && "serviceTier" in config ? config.serviceTier : undefined,
+        }).toStrictEqual({
+          provider: "openai-codex",
+          model: "gpt-6.1-sol",
+          serviceTier: "fast",
+        });
+      } else {
+        expect(claim.environment?.ANTHROPIC_MODEL).toBe("claude-fable-5-1");
+      }
+      const token = claim.platformEnvironment.OKOU_TOKEN;
+      if (!token?.startsWith("vm0_sandbox_")) {
+        throw new Error("Expected the actual claim to issue an OKOU_TOKEN");
+      }
+      return await sendOfficialModelMessage(token);
+    })
+    .finally(() => {
+      restoreAccepted = captureConnectorExternalState(context);
+    });
 }
 
 describe("POST /api/integrations/telegram/message", () => {
@@ -151,6 +332,28 @@ describe("POST /api/integrations/telegram/message", () => {
     expect(response.body).toStrictEqual({
       error: { message: "Telegram bot not found", code: "NOT_FOUND" },
     });
+  });
+
+  it("appends the claimed Run's Standard model label to an official message", async () => {
+    const { chatId, telegramBody, responseBody } =
+      await sendClaimedModelMessage("claude-fable-5-1");
+    expect(telegramBody).toStrictEqual({
+      chat_id: chatId,
+      text: "Hello from this Run\n\n<i>Sent via Model footer sender · Claude Fable 5.1</i>",
+      parse_mode: "HTML",
+    });
+    expect(responseBody).toStrictEqual({ ok: true, messageId: 325, chatId });
+  });
+
+  it("appends the claimed Run's Fast model and tier label to an official message", async () => {
+    const { chatId, telegramBody, responseBody } =
+      await sendClaimedModelMessage("gpt-6.1-sol");
+    expect(telegramBody).toStrictEqual({
+      chat_id: chatId,
+      text: "Hello from this Run\n\n<i>Sent via Model footer sender · GPT 6.1 Sol Fast</i>",
+      parse_mode: "HTML",
+    });
+    expect(responseBody).toStrictEqual({ ok: true, messageId: 325, chatId });
   });
 
   it("appends the claimed Run's agent label to an official message", async () => {
