@@ -163,16 +163,16 @@ pub async fn checkout(
         .await
 }
 
-pub fn sandbox_config(id: SandboxId, home: &mut HomeImageLease) -> SandboxConfig {
-    SandboxConfig {
+pub async fn sandbox_config(id: SandboxId, home: &mut HomeImageLease) -> TestResult<SandboxConfig> {
+    Ok(SandboxConfig {
         id,
         resources: ResourceLimits {
             cpu_count: 2,
             memory_mb: 4096,
         },
         device_rate_limits: None,
-        home_drive: home.home_drive_config(),
-    }
+        home_drive: home.home_drive_config().await?,
+    })
 }
 
 fn runtime_dir(run_id: RunId) -> TestResult<String> {
