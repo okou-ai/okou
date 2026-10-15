@@ -1855,7 +1855,11 @@ describe("Official schedule expiry", () => {
       if (!defaultAgentId) {
         throw new Error("Expected the owner's public onboarding Agent");
       }
-      return { actor, defaultAgentId };
+      const stopped =
+        type === "user.deleted"
+          ? actor.userId === doomed.userId
+          : actor.orgId === doomed.orgId;
+      return { actor, defaultAgentId, stopped };
     });
     const occurrenceActors = occurrenceOwners.map(({ actor }) => {
       return actor;
@@ -1866,7 +1870,12 @@ describe("Official schedule expiry", () => {
       entitlement,
       peer,
       otherAuditor,
-      occurrenceOwners,
+      initialOwners: occurrenceOwners.filter(({ stopped }) => {
+        return bulk === "revoked" || stopped;
+      }),
+      deferredOwners: occurrenceOwners.filter(({ stopped }) => {
+        return bulk === "surviving" && !stopped;
+      }),
       members,
       existingOrgMembers,
       stoppedCount: bulk === "revoked" ? 2 : 1,
@@ -1874,25 +1883,65 @@ describe("Official schedule expiry", () => {
     };
   }
 
+  async function prepareBriefOccurrence({
+    actor,
+    defaultAgentId,
+    stopped,
+  }: {
+    readonly actor: ApiTestUser;
+    readonly defaultAgentId: string;
+    readonly stopped: boolean;
+  }) {
+    await bdd.updateUserTimezone(actor, "Asia/Shanghai");
+    await connectBriefSourceForAgent(actor, defaultAgentId);
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers: authHeaders(actor),
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    const [installation] = await listMorningBriefInstallations(actor);
+    if (!installation?.agentId) {
+      throw new Error("Expected the member's Morning Brief Agent");
+    }
+    const [automation] = await readMorningBriefAutomations(
+      actor,
+      installation.id,
+    );
+    if (!automation?.nextRunAt) {
+      throw new Error("Expected the Morning Brief anchor");
+    }
+    expect(automation).toMatchObject({
+      enabled: true,
+      official: { intendedEnabled: true },
+    });
+    return { actor, agentId: installation.agentId, automation, stopped };
+  }
+
   it.each([
     {
       type: "user.deleted",
       bulk: "revoked",
+      phase: "bulk cancellation and late callbacks",
     },
     {
       type: "user.deleted",
       bulk: "surviving",
+      phase: "bulk continuation after late callbacks",
     },
     {
       type: "organization.deleted",
       bulk: "revoked",
+      phase: "bulk cancellation and late callbacks",
     },
     {
       type: "organization.deleted",
       bulk: "surviving",
+      phase: "bulk continuation after late callbacks",
     },
   ] as const)(
-    "stops claimed Morning Brief occurrences only in the deleted scope after $type (multiple $bulk owners)",
+    "preserves Morning Brief $phase after $type",
     async ({ type, bulk }) => {
       await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
         // The authenticated catalog publisher and automation cron are explicitly
@@ -1905,7 +1954,8 @@ describe("Official schedule expiry", () => {
           entitlement,
           peer,
           otherAuditor,
-          occurrenceOwners,
+          initialOwners,
+          deferredOwners,
           members,
           existingOrgMembers,
           stoppedCount,
@@ -1915,40 +1965,13 @@ describe("Official schedule expiry", () => {
           bulk,
         });
         const occurrences = [];
-        // Both bulk revocation and bulk continuation retain mixed live owners;
-        // neither first-match-only nor overly broad cancellation may pass.
-        for (const { actor, defaultAgentId } of occurrenceOwners) {
-          await bdd.updateUserTimezone(actor, "Asia/Shanghai");
-          await connectBriefSourceForAgent(actor, defaultAgentId);
-          await accept(
-            morningBriefPreferenceClient().update({
-              headers: authHeaders(actor),
-              body: { enabled: true },
-            }),
-            [200],
-          );
-          const [installation] = await listMorningBriefInstallations(actor);
-          if (!installation?.agentId) {
-            throw new Error("Expected the member's Morning Brief Agent");
-          }
-          const [automation] = await readMorningBriefAutomations(
-            actor,
-            installation.id,
-          );
-          if (!automation?.nextRunAt) {
-            throw new Error("Expected the Morning Brief anchor");
-          }
-          expect(automation).toMatchObject({
-            enabled: true,
-            official: { intendedEnabled: true },
-          });
-          occurrences.push({
-            actor,
-            agentId: installation.agentId,
-            automation,
-          });
+        // Cancellation cases claim two revoked owners and one live owner.
+        // Continuation cases arm both survivors after the initial claim, so
+        // their first real dispatch follows deletion and the late callbacks.
+        for (const owner of initialOwners) {
+          occurrences.push(await prepareBriefOccurrence(owner));
         }
-        expect(occurrences).toHaveLength(3);
+        expect(occurrences).toHaveLength(initialOwners.length);
         function mockCurrentMembers(currentMembers: readonly ApiTestUser[]) {
           // BDD authentication helpers install a single-actor Clerk response.
           // Restore the complete provider directory before background work and
@@ -2031,11 +2054,6 @@ describe("Official schedule expiry", () => {
           occurrences.length,
         );
         await flushWaitUntilForTest();
-        const isStopped = (actor: ApiTestUser) => {
-          return type === "user.deleted"
-            ? actor.userId === doomed.userId
-            : actor.orgId === doomed.orgId;
-        };
         const claimed: ((typeof occurrences)[number] & {
           runId: string;
           claim: Awaited<ReturnType<typeof runs.claimRunnerJob>>;
@@ -2082,8 +2100,12 @@ describe("Official schedule expiry", () => {
             claim,
             complete,
             inFlight,
-            stopped: isStopped(occurrence.actor),
           });
+        }
+
+        const deferredOccurrences = [];
+        for (const owner of deferredOwners) {
+          deferredOccurrences.push(await prepareBriefOccurrence(owner));
         }
 
         if (type === "organization.deleted") {
@@ -2106,13 +2128,12 @@ describe("Official schedule expiry", () => {
           type,
           data: { id: type === "user.deleted" ? doomed.userId : doomed.orgId },
         });
-        mockCurrentMembers(
-          members.filter((actor) => {
-            return type === "user.deleted"
-              ? actor.userId !== doomed.userId
-              : actor.orgId !== doomed.orgId;
-          }),
-        );
+        const survivingMembers = members.filter((actor) => {
+          return type === "user.deleted"
+            ? actor.userId !== doomed.userId
+            : actor.orgId !== doomed.orgId;
+        });
+        mockCurrentMembers(survivingMembers);
         await webhooks.requestClerkWebhook("{}", {}, [200]);
         await flushWaitUntilForTest();
 
@@ -2164,7 +2185,9 @@ describe("Official schedule expiry", () => {
         const unaffected = claimed.filter((entry) => {
           return !entry.stopped;
         });
-        expect(unaffected).toHaveLength(survivingCount);
+        expect(unaffected.length + deferredOccurrences.length).toBe(
+          survivingCount,
+        );
         for (const occurrence of unaffected) {
           await expect(
             runs.readRunnerCancellation(
@@ -2175,6 +2198,7 @@ describe("Official schedule expiry", () => {
           ).resolves.toMatchObject({ state: "present", mode: null });
         }
 
+        mockCurrentMembers(survivingMembers);
         mockNow(now() + 60 * 60_000);
         // A late callback and its replay must not revive a revoked occurrence
         // or fall back to advancing the untracked legacy schedule.
@@ -2189,7 +2213,7 @@ describe("Official schedule expiry", () => {
         await assertStoppedOccurrences();
 
         const successors = [];
-        for (const occurrence of unaffected) {
+        for (const occurrence of [...unaffected, ...deferredOccurrences]) {
           const settled = await readAutomation(
             occurrence.actor,
             occurrence.automation.id,
@@ -2204,6 +2228,19 @@ describe("Official schedule expiry", () => {
           expect(Date.parse(settled.nextRunAt)).toBeGreaterThan(now());
           successors.push(settled.nextRunAt);
         }
+        // Pause the one surviving owner's settled schedule through its normal
+        // preference API. The next-day cron must then admit zero jobs, exposing
+        // revival of either revoked owner without creating an unrelated Run.
+        for (const occurrence of unaffected) {
+          await accept(
+            morningBriefPreferenceClient().update({
+              headers: authHeaders(occurrence.actor),
+              body: { enabled: false },
+            }),
+            [200],
+          );
+        }
+        mockCurrentMembers(survivingMembers);
         mockNow(
           Math.max(
             ...successors.map((anchor) => {
@@ -2217,19 +2254,17 @@ describe("Official schedule expiry", () => {
         // No private journal/queue reader is needed, including for a deleted
         // organization whose private configuration has no surviving caller.
         expect((await executeAutomationCron()).body.executed).toBe(
-          unaffected.length,
+          deferredOccurrences.length,
         );
         await flushWaitUntilForTest();
         const polledRunIds = [];
-        for (const occurrence of unaffected) {
+        for (const occurrence of deferredOccurrences) {
           const runIds = await listAgentRunLogIds(
             occurrence.actor,
             occurrence.agentId,
           );
-          expect(runIds).toHaveLength(2);
-          const nextRunId = runIds.find((id) => {
-            return id !== occurrence.runId;
-          });
+          expect(runIds).toHaveLength(1);
+          const nextRunId = runIds[0];
           if (!nextRunId) {
             throw new Error(
               "Expected the surviving owner's next Morning Brief",
