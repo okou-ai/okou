@@ -397,6 +397,7 @@ describe("okou vnc host configuration management", () => {
       connections: [
         {
           ...configuredHost,
+          security: { type: "x509_plain", trust: { mode: "custom_ca" } },
           transport: { type: "ssh", connectionId: host.id },
         },
       ],
@@ -404,6 +405,107 @@ describe("okou vnc host configuration management", () => {
     await manage("show", host.id, "--json");
     expect(text()).toContain('"generation":');
     expect(text()).not.toContain("CANARY");
+  });
+
+  it("reads native RFB and independent KDC protection without printing nested credentials or CA contents", async () => {
+    const route = {
+      type: "cloudflare_access",
+      configId: host.id,
+      originTls: {
+        serverName: "origin.example.com",
+        trust: { mode: "custom_ca", caBundle: "ORIGIN_CA_CANARY" },
+        ...secrets,
+      },
+      ...secrets,
+      clientSecret: "PROVIDER_CANARY",
+    };
+    const kdc = {
+      host: "kdc.tailnet",
+      port: 88,
+      transport: { type: "tailscale", configId: configuredHost.id, ...secrets },
+      ticketLifetimeSeconds: 1200,
+      renewableLifetimeSeconds: 7200,
+      ...secrets,
+    };
+    server.use(
+      http.get("http://localhost:3000/api/vnc/connections", () => {
+        return HttpResponse.json({
+          connections: [
+            {
+              ...configuredHost,
+              transport: route,
+              security: {
+                type: "qemu_x509_gssapi",
+                serverName: "rfb.example.com",
+                service: {
+                  realm: "EXAMPLE.COM",
+                  components: ["vnc", "desktop"],
+                  ...secrets,
+                },
+                trust: { mode: "custom_ca", caBundle: "INNER_CA_CANARY" },
+                kdc,
+                ...secrets,
+              },
+            },
+          ],
+        });
+      }),
+    );
+    await manage("show", host.id, "--json");
+    const result = JSON.parse(String(output.mock.calls[0]?.[0]));
+    expect(result.transport).toEqual({
+      type: "cloudflare_access",
+      configId: host.id,
+      originTls: {
+        serverName: "origin.example.com",
+        trust: { mode: "custom_ca" },
+      },
+    });
+    expect(result.security).toEqual({
+      type: "qemu_x509_gssapi",
+      serverName: "rfb.example.com",
+      service: { realm: "EXAMPLE.COM", components: ["vnc", "desktop"] },
+      trust: { mode: "custom_ca" },
+      kdc: {
+        host: kdc.host,
+        port: 88,
+        transport: { type: "tailscale", configId: configuredHost.id },
+        ticketLifetimeSeconds: 1200,
+        renewableLifetimeSeconds: 7200,
+      },
+    });
+    expect(text()).not.toContain("CANARY");
+    expect(text()).not.toContain("clientSecret");
+  });
+
+  it("preserves the independent RSA server pin on a native route while stripping provider credentials", async () => {
+    const serverKeySha256 = "ab".repeat(32);
+    server.use(
+      http.get("http://localhost:3000/api/vnc/connections", () => {
+        return HttpResponse.json({
+          connections: [
+            {
+              ...configuredHost,
+              rsaAesAuthentication: "rsa_aes_password",
+              security: { type: "rsa_aes_ra2", serverKeySha256, ...secrets },
+              transport: {
+                type: "tailscale",
+                configId: host.id,
+                ...secrets,
+                clientSecret: "PROVIDER_CANARY",
+              },
+            },
+          ],
+        });
+      }),
+    );
+    await manage("show", host.id, "--json");
+    expect(JSON.parse(String(output.mock.calls[0]?.[0])).security).toEqual({
+      type: "rsa_aes_ra2",
+      serverKeySha256,
+    });
+    expect(text()).not.toContain("CANARY");
+    expect(text()).not.toContain("clientSecret");
   });
 
   it("creates an SSH-backed host and rebinds saved credentials without echoing secrets", async () => {
@@ -465,7 +567,11 @@ describe("okou vnc host configuration management", () => {
     });
     expect(JSON.parse(String(output.mock.calls[0]?.[0]))).toStrictEqual({
       ...configuredHost,
-      security: { type: security.type },
+      security: {
+        type: security.type,
+        serverName: security.serverName,
+        trust: { mode: security.trust.mode },
+      },
       transport,
     });
     const update = {

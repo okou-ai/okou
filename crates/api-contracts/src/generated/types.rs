@@ -1422,7 +1422,7 @@ pub mod runners {
             pub heartbeat_generation: i64,
         }
 
-        /// Expected secret-free SSH authority snapshot.
+        /// Expected secret-free route authority snapshot.
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         #[serde(tag = "type", rename_all_fields = "camelCase")]
         pub enum CheckRequestExpectedTransport {
@@ -1434,7 +1434,23 @@ pub mod runners {
             Ssh {
                 /// Exact saved SSH connection UUID.
                 connection_id: String,
-                /// Expected saved SSH configuration generation.
+                /// Expected saved carrier configuration generation.
+                generation: i64,
+            },
+            /// Expect this exact Cloudflare configuration and generation.
+            #[serde(rename = "cloudflare_access")]
+            CloudflareAccess {
+                /// Exact saved native network configuration UUID.
+                config_id: String,
+                /// Expected saved carrier configuration generation.
+                generation: i64,
+            },
+            /// Expect this exact Tailscale configuration and generation.
+            #[serde(rename = "tailscale")]
+            Tailscale {
+                /// Exact saved native network configuration UUID.
+                config_id: String,
+                /// Expected saved carrier configuration generation.
                 generation: i64,
             },
         }
@@ -1451,7 +1467,23 @@ pub mod runners {
             Ssh {
                 /// Exact separately granted saved SSH UUID.
                 connection_id: String,
-                /// Current SSH generation, independently fenced from RFB.
+                /// Current carrier configuration generation, independent of RFB.
+                generation: i64,
+            },
+            /// Exact authorized Cloudflare Access TCP route.
+            #[serde(rename = "cloudflare_access")]
+            CloudflareAccess {
+                /// Exact separately authorized native network configuration UUID.
+                config_id: String,
+                /// Current carrier configuration generation, independent of RFB.
+                generation: i64,
+            },
+            /// Exact authorized Tailscale peer TCP route.
+            #[serde(rename = "tailscale")]
+            Tailscale {
+                /// Exact separately authorized native network configuration UUID.
+                config_id: String,
+                /// Current carrier configuration generation, independent of RFB.
                 generation: i64,
             },
         }
@@ -1524,7 +1556,23 @@ pub mod runners {
             Ssh {
                 /// Exact saved SSH UUID for the RFB route.
                 connection_id: String,
-                /// Resolved SSH configuration generation.
+                /// Resolved carrier configuration generation.
+                generation: i64,
+            },
+            /// Expected Cloudflare configuration and generation.
+            #[serde(rename = "cloudflare_access")]
+            CloudflareAccess {
+                /// Exact saved native network configuration UUID.
+                config_id: String,
+                /// Resolved carrier configuration generation.
+                generation: i64,
+            },
+            /// Expected Tailscale configuration and generation.
+            #[serde(rename = "tailscale")]
+            Tailscale {
+                /// Exact saved native network configuration UUID.
+                config_id: String,
+                /// Resolved carrier configuration generation.
                 generation: i64,
             },
         }
@@ -1541,7 +1589,23 @@ pub mod runners {
             Ssh {
                 /// Exact separately granted saved SSH UUID.
                 connection_id: String,
-                /// Current SSH generation, independently fenced from RFB.
+                /// Current carrier configuration generation, independent of RFB.
+                generation: i64,
+            },
+            /// Exact authorized Cloudflare Access TCP route.
+            #[serde(rename = "cloudflare_access")]
+            CloudflareAccess {
+                /// Exact separately authorized native network configuration UUID.
+                config_id: String,
+                /// Current carrier configuration generation, independent of RFB.
+                generation: i64,
+            },
+            /// Exact authorized Tailscale peer TCP route.
+            #[serde(rename = "tailscale")]
+            Tailscale {
+                /// Exact separately authorized native network configuration UUID.
+                config_id: String,
+                /// Current carrier configuration generation, independent of RFB.
                 generation: i64,
             },
         }
@@ -1582,6 +1646,21 @@ pub mod runners {
             /// Selected Kerberos renewal limit was reached.
             #[serde(rename = "kerberos_renewal_exhausted")]
             KerberosRenewalExhausted,
+            /// Cloudflare Access rejected the service token.
+            #[serde(rename = "access_rejected")]
+            AccessRejected,
+            /// Cloudflare gateway TLS verification failed.
+            #[serde(rename = "access_tls_failure")]
+            AccessTlsFailure,
+            /// Cloudflare carrier protocol failed.
+            #[serde(rename = "access_protocol_failure")]
+            AccessProtocolFailure,
+            /// Independent server-local origin TLS verification failed.
+            #[serde(rename = "origin_tls_failure")]
+            OriginTlsFailure,
+            /// The exact authorized Tailscale peer is unavailable.
+            #[serde(rename = "tailscale_unavailable")]
+            TailscaleUnavailable,
         }
 
         /// Bounded evidence from one authorized connection attempt; never raw errors.
@@ -1691,22 +1770,22 @@ pub mod runners {
             /// Pinned RSA-AES type 129; full-session AES-256 EAX.
             #[serde(rename = "rsa_aes_ra2_256")]
             RsaAesRa2256,
-            /// Pinned RSA-AES type 6; verified SSH-loopback only.
+            /// Pinned RSA-AES type 6; requires verified full-stream protection.
             #[serde(rename = "rsa_aes_ra2ne")]
             RsaAesRa2ne,
-            /// Pinned RSA-AES type 130; verified SSH-loopback only.
+            /// Pinned RSA-AES type 130; requires verified full-stream protection.
             #[serde(rename = "rsa_aes_ra2ne_256")]
             RsaAesRa2ne256,
-            /// Apple bare type 2, requiring SSH to Mac loopback.
+            /// Apple bare type 2, requiring verified protection to the selected Mac.
             #[serde(rename = "apple_vnc_password")]
             AppleVncPassword,
-            /// Apple DH type 30, requiring SSH to Mac loopback.
+            /// Apple DH type 30, requiring verified protection to the selected Mac.
             #[serde(rename = "apple_dh")]
             AppleDh,
-            /// Apple Direct SRP type 36, requiring SSH to Mac loopback.
+            /// Apple Direct SRP type 36, requiring verified protection to the selected Mac.
             #[serde(rename = "apple_srp")]
             AppleSrp,
-            /// Apple RSA/SRP type 33, requiring SSH to Mac loopback.
+            /// Apple RSA/SRP type 33, requiring verified protection to the selected Mac.
             #[serde(rename = "apple_rsa_srp")]
             AppleRsaSrp,
         }
@@ -1720,6 +1799,12 @@ pub mod runners {
             /// Connect through the verified Run-owned SSH transport.
             #[serde(rename = "ssh")]
             Ssh,
+            /// Native Cloudflare; raw profiles require verified origin TLS.
+            #[serde(rename = "cloudflare_access")]
+            CloudflareAccess,
+            /// Native verified Tailscale peer stream.
+            #[serde(rename = "tailscale")]
+            Tailscale,
         }
 
         /// KDC transport for this exact source/RFB/KDC tuple.
@@ -1734,6 +1819,12 @@ pub mod runners {
             /// Separate authorized SSH-loopback KDC route.
             #[serde(rename = "ssh")]
             Ssh,
+            /// Separate authorized Cloudflare KDC route.
+            #[serde(rename = "cloudflare_access")]
+            CloudflareAccess,
+            /// Separate authorized Tailscale KDC route.
+            #[serde(rename = "tailscale")]
+            Tailscale,
         }
 
         /// One supported authentication, security and transport tuple, never a cross-product.
@@ -1746,7 +1837,7 @@ pub mod runners {
             pub security_type: ResolveRequestSupportedProfileSecurityType,
             /// Supported transport for this exact tuple.
             pub transport_type: ResolveRequestSupportedProfileTransportType,
-            /// Absent for legacy, none for offline tickets, exact direct/ssh for online sources.
+            /// Absent for legacy, none for offline tickets, exact independently authorized route for online sources.
             #[serde(default, skip_serializing_if = "Option::is_none")]
             pub kdc_transport_type: Option<ResolveRequestSupportedProfileKdcTransportType>,
         }
@@ -1763,7 +1854,105 @@ pub mod runners {
             pub supported_profiles: Vec<ResolveRequestSupportedProfile>,
         }
 
-        /// Secret-free transport snapshot selected by an exact capability tuple.
+        /// Private bounded zeroizing provider credentials.
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        pub struct ResolveResponseResolvedTransportTransportCloudflareAccessCredentials {
+            /// Bounded zeroizing provider client ID.
+            pub client_id: crate::SecretText<4096>,
+            /// Bounded zeroizing provider client secret.
+            pub client_secret: crate::SecretText<4096>,
+        }
+
+        /// Independent certificate verification roots for the origin stream.
+        pub enum ResolveResponseResolvedTransportTransportCloudflareAccessOriginTlsTrust {
+            /// Verify the origin against system roots.
+            System,
+            /// Verify the origin against explicitly saved CA roots.
+            CustomCa {
+                /// Bounded PEM origin CA roots; never an insecure verification mode.
+                ca_bundle: String,
+            },
+        }
+
+        impl<'de> serde::Deserialize<'de>
+            for ResolveResponseResolvedTransportTransportCloudflareAccessOriginTlsTrust
+        {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                // Decode fields directly: serde's internally tagged Content buffer would copy secrets.
+                #[derive(serde::Deserialize)]
+                enum Kind {
+                    #[serde(rename = "system")]
+                    System,
+                    #[serde(rename = "custom_ca")]
+                    CustomCa,
+                }
+                #[derive(serde::Deserialize)]
+                #[serde(field_identifier)]
+                enum Field {
+                    #[serde(rename = "mode")]
+                    Outcome,
+                    #[serde(rename = "caBundle")]
+                    CaBundle,
+                }
+                struct Visitor;
+                impl<'de> serde::de::Visitor<'de> for Visitor {
+                    type Value =
+                        ResolveResponseResolvedTransportTransportCloudflareAccessOriginTlsTrust;
+                    fn expecting(
+                        &self,
+                        formatter: &mut std::fmt::Formatter<'_>,
+                    ) -> std::fmt::Result {
+                        formatter.write_str("a private authority response object")
+                    }
+                    fn visit_map<M: serde::de::MapAccess<'de>>(
+                        self,
+                        mut map: M,
+                    ) -> Result<Self::Value, M::Error> {
+                        let mut outcome = None::<Kind>;
+                        let mut ca_bundle = None::<String>;
+                        while let Some(field) = map.next_key::<Field>()? {
+                            match field {
+                                Field::Outcome => {
+                                    if outcome.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    outcome = Some(map.next_value()?);
+                                }
+                                Field::CaBundle => {
+                                    if ca_bundle.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    ca_bundle = Some(map.next_value()?);
+                                }
+                            }
+                        }
+                        match (outcome, ca_bundle) {
+                            (Some(Kind::System), None) => Ok(ResolveResponseResolvedTransportTransportCloudflareAccessOriginTlsTrust::System),
+                            (Some(Kind::CustomCa), Some(ca_bundle)) => Ok(ResolveResponseResolvedTransportTransportCloudflareAccessOriginTlsTrust::CustomCa { ca_bundle }),
+                            _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
+                        }
+                    }
+                }
+                deserializer.deserialize_map(Visitor)
+            }
+        }
+
+        /// Independent certificate-verified TLS ending on the selected VNC server.
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        pub struct ResolveResponseResolvedTransportTransportCloudflareAccessOriginTls {
+            /// Explicit origin identity, never the gateway identity by default.
+            pub server_name: String,
+            /// Independent origin TLS roots, not inner VNC trust.
+            pub trust: ResolveResponseResolvedTransportTransportCloudflareAccessOriginTlsTrust,
+        }
+
+        /// Private transport handoff selected by an exact capability tuple.
         pub enum ResolveResponseResolvedTransportTransport {
             /// Connect directly under the VNC public-network policy.
             Direct,
@@ -1771,8 +1960,31 @@ pub mod runners {
             Ssh {
                 /// Exact saved SSH connection UUID.
                 connection_id: String,
-                /// Current saved SSH configuration generation.
+                /// Current saved carrier configuration generation.
                 generation: i64,
+            },
+            /// Authorized Cloudflare WSS carrier with independent RFB trust.
+            CloudflareAccess {
+                /// Exact authorized native network configuration UUID.
+                config_id: String,
+                /// Current saved carrier configuration generation.
+                generation: i64,
+                /// Private bounded provider credentials; never guest-visible.
+                credentials: ResolveResponseResolvedTransportTransportCloudflareAccessCredentials,
+                /// Independent server-local origin protection for Cloudflare RFB.
+                origin_tls:
+                    Option<ResolveResponseResolvedTransportTransportCloudflareAccessOriginTls>,
+            },
+            /// Authorized exact Tailscale peer stream with independent RFB trust.
+            Tailscale {
+                /// Exact authorized native network configuration UUID.
+                config_id: String,
+                /// Current saved carrier configuration generation.
+                generation: i64,
+                /// Private bounded provider credentials; never guest-visible.
+                credentials: ResolveResponseResolvedTransportTransportCloudflareAccessCredentials,
+                /// Saved Tailscale node tags.
+                tags: Vec<String>,
             },
         }
 
@@ -1785,6 +1997,10 @@ pub mod runners {
                     Direct,
                     #[serde(rename = "ssh")]
                     Ssh,
+                    #[serde(rename = "cloudflare_access")]
+                    CloudflareAccess,
+                    #[serde(rename = "tailscale")]
+                    Tailscale,
                 }
                 #[derive(serde::Deserialize)]
                 #[serde(field_identifier)]
@@ -1795,6 +2011,14 @@ pub mod runners {
                     ConnectionId,
                     #[serde(rename = "generation")]
                     Generation,
+                    #[serde(rename = "configId")]
+                    ConfigId,
+                    #[serde(rename = "credentials")]
+                    Credentials,
+                    #[serde(rename = "originTls")]
+                    OriginTls,
+                    #[serde(rename = "tags")]
+                    Tags,
                 }
                 struct Visitor;
                 impl<'de> serde::de::Visitor<'de> for Visitor {
@@ -1812,6 +2036,16 @@ pub mod runners {
                         let mut outcome = None::<Kind>;
                         let mut connection_id = None::<String>;
                         let mut generation = None::<i64>;
+                        let mut config_id = None::<String>;
+                        let mut credentials = None::<
+                            ResolveResponseResolvedTransportTransportCloudflareAccessCredentials,
+                        >;
+                        let mut origin_tls = None::<
+                            Option<
+                                ResolveResponseResolvedTransportTransportCloudflareAccessOriginTls,
+                            >,
+                        >;
+                        let mut tags = None::<Vec<String>>;
                         while let Some(field) = map.next_key::<Field>()? {
                             match field {
                                 Field::Outcome => {
@@ -1838,18 +2072,94 @@ pub mod runners {
                                     }
                                     generation = Some(map.next_value()?);
                                 }
+                                Field::ConfigId => {
+                                    if config_id.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    config_id = Some(map.next_value()?);
+                                }
+                                Field::Credentials => {
+                                    if credentials.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    credentials = Some(map.next_value()?);
+                                }
+                                Field::OriginTls => {
+                                    if origin_tls.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    origin_tls = Some(map.next_value()?);
+                                }
+                                Field::Tags => {
+                                    if tags.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    tags = Some(map.next_value()?);
+                                }
                             }
                         }
-                        match (outcome, connection_id, generation) {
-                            (Some(Kind::Direct), None, None) => {
+                        match (
+                            outcome,
+                            connection_id,
+                            generation,
+                            config_id,
+                            credentials,
+                            origin_tls,
+                            tags,
+                        ) {
+                            (Some(Kind::Direct), None, None, None, None, None, None) => {
                                 Ok(ResolveResponseResolvedTransportTransport::Direct)
                             }
-                            (Some(Kind::Ssh), Some(connection_id), Some(generation)) => {
-                                Ok(ResolveResponseResolvedTransportTransport::Ssh {
-                                    connection_id,
+                            (
+                                Some(Kind::Ssh),
+                                Some(connection_id),
+                                Some(generation),
+                                None,
+                                None,
+                                None,
+                                None,
+                            ) => Ok(ResolveResponseResolvedTransportTransport::Ssh {
+                                connection_id,
+                                generation,
+                            }),
+                            (
+                                Some(Kind::CloudflareAccess),
+                                None,
+                                Some(generation),
+                                Some(config_id),
+                                Some(credentials),
+                                Some(origin_tls),
+                                None,
+                            ) => Ok(
+                                ResolveResponseResolvedTransportTransport::CloudflareAccess {
+                                    config_id,
                                     generation,
-                                })
-                            }
+                                    credentials,
+                                    origin_tls,
+                                },
+                            ),
+                            (
+                                Some(Kind::Tailscale),
+                                None,
+                                Some(generation),
+                                Some(config_id),
+                                Some(credentials),
+                                None,
+                                Some(tags),
+                            ) => Ok(ResolveResponseResolvedTransportTransport::Tailscale {
+                                config_id,
+                                generation,
+                                credentials,
+                                tags,
+                            }),
                             _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
                         }
                     }
@@ -2248,6 +2558,17 @@ pub mod runners {
             pub components: Vec<String>,
         }
 
+        /// Private bounded zeroizing provider credentials.
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        pub struct ResolveResponseResolvedTransportSecurityQemuX509GssapiKdcTransportCloudflareAccessCredentials
+        {
+            /// Bounded zeroizing provider client ID.
+            pub client_id: crate::SecretText<4096>,
+            /// Bounded zeroizing provider client secret.
+            pub client_secret: crate::SecretText<4096>,
+        }
+
         /// Independently authorized exact KDC transport snapshot.
         pub enum ResolveResponseResolvedTransportSecurityQemuX509GssapiKdcTransport {
             /// Exact saved public-network KDC route.
@@ -2256,8 +2577,28 @@ pub mod runners {
             Ssh {
                 /// Exact separately granted saved SSH UUID.
                 connection_id: String,
-                /// Current SSH generation, independently fenced from RFB.
+                /// Current carrier configuration generation, independent of RFB.
                 generation: i64,
+            },
+            /// Exact authorized Cloudflare Access TCP route.
+            CloudflareAccess {
+                /// Exact separately authorized native network configuration UUID.
+                config_id: String,
+                /// Current carrier configuration generation, independent of RFB.
+                generation: i64,
+                /// Private bounded provider credentials; never guest-visible.
+                credentials: ResolveResponseResolvedTransportSecurityQemuX509GssapiKdcTransportCloudflareAccessCredentials,
+            },
+            /// Exact authorized Tailscale peer TCP route.
+            Tailscale {
+                /// Exact separately authorized native network configuration UUID.
+                config_id: String,
+                /// Current carrier configuration generation, independent of RFB.
+                generation: i64,
+                /// Private bounded provider credentials; never guest-visible.
+                credentials: ResolveResponseResolvedTransportSecurityQemuX509GssapiKdcTransportCloudflareAccessCredentials,
+                /// Exact saved Tailscale node tags.
+                tags: Vec<String>,
             },
         }
 
@@ -2272,6 +2613,10 @@ pub mod runners {
                     Direct,
                     #[serde(rename = "ssh")]
                     Ssh,
+                    #[serde(rename = "cloudflare_access")]
+                    CloudflareAccess,
+                    #[serde(rename = "tailscale")]
+                    Tailscale,
                 }
                 #[derive(serde::Deserialize)]
                 #[serde(field_identifier)]
@@ -2282,6 +2627,12 @@ pub mod runners {
                     ConnectionId,
                     #[serde(rename = "generation")]
                     Generation,
+                    #[serde(rename = "configId")]
+                    ConfigId,
+                    #[serde(rename = "credentials")]
+                    Credentials,
+                    #[serde(rename = "tags")]
+                    Tags,
                 }
                 struct Visitor;
                 impl<'de> serde::de::Visitor<'de> for Visitor {
@@ -2299,6 +2650,9 @@ pub mod runners {
                         let mut outcome = None::<Kind>;
                         let mut connection_id = None::<String>;
                         let mut generation = None::<i64>;
+                        let mut config_id = None::<String>;
+                        let mut credentials = None::<ResolveResponseResolvedTransportSecurityQemuX509GssapiKdcTransportCloudflareAccessCredentials>;
+                        let mut tags = None::<Vec<String>>;
                         while let Some(field) = map.next_key::<Field>()? {
                             match field {
                                 Field::Outcome => {
@@ -2325,11 +2679,37 @@ pub mod runners {
                                     }
                                     generation = Some(map.next_value()?);
                                 }
+                                Field::ConfigId => {
+                                    if config_id.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    config_id = Some(map.next_value()?);
+                                }
+                                Field::Credentials => {
+                                    if credentials.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    credentials = Some(map.next_value()?);
+                                }
+                                Field::Tags => {
+                                    if tags.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    tags = Some(map.next_value()?);
+                                }
                             }
                         }
-                        match (outcome, connection_id, generation) {
-                            (Some(Kind::Direct), None, None) => Ok(ResolveResponseResolvedTransportSecurityQemuX509GssapiKdcTransport::Direct),
-                            (Some(Kind::Ssh), Some(connection_id), Some(generation)) => Ok(ResolveResponseResolvedTransportSecurityQemuX509GssapiKdcTransport::Ssh { connection_id, generation }),
+                        match (outcome, connection_id, generation, config_id, credentials, tags) {
+                            (Some(Kind::Direct), None, None, None, None, None) => Ok(ResolveResponseResolvedTransportSecurityQemuX509GssapiKdcTransport::Direct),
+                            (Some(Kind::Ssh), Some(connection_id), Some(generation), None, None, None) => Ok(ResolveResponseResolvedTransportSecurityQemuX509GssapiKdcTransport::Ssh { connection_id, generation }),
+                            (Some(Kind::CloudflareAccess), None, Some(generation), Some(config_id), Some(credentials), None) => Ok(ResolveResponseResolvedTransportSecurityQemuX509GssapiKdcTransport::CloudflareAccess { config_id, generation, credentials }),
+                            (Some(Kind::Tailscale), None, Some(generation), Some(config_id), Some(credentials), Some(tags)) => Ok(ResolveResponseResolvedTransportSecurityQemuX509GssapiKdcTransport::Tailscale { config_id, generation, credentials, tags }),
                             _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
                         }
                     }
@@ -2366,12 +2746,12 @@ pub mod runners {
                 /// Independent full RSA wire-key SHA256, never CA trust.
                 server_key_sha256: String,
             },
-            /// Pinned type 6; authentication-only over verified SSH-loopback.
+            /// Pinned type 6; authentication-only over verified protective transport.
             RsaAesRa2ne {
                 /// Independent full RSA wire-key SHA256, never CA trust.
                 server_key_sha256: String,
             },
-            /// Pinned type 130; authentication-only over verified SSH-loopback.
+            /// Pinned type 130; authentication-only over verified protective transport.
             RsaAesRa2ne256 {
                 /// Independent full RSA wire-key SHA256, never CA trust.
                 server_key_sha256: String,
@@ -2619,14 +2999,14 @@ pub mod runners {
                 generation: i64,
                 /// Certificate identity for X509 transport handoffs; absent for Apple DH.
                 server_name: String,
-                /// Explicit direct or generation-bound SSH transport snapshot.
+                /// Explicit generation-bound route with resolve-only provider credentials for native networks.
                 transport: ResolveResponseResolvedTransportTransport,
                 /// Exact saved method, with no credential for X509None.
                 authentication: ResolveResponseResolvedTransportAuthentication,
                 /// Explicit saved transport and trust policy; never downgrade.
                 security: ResolveResponseResolvedTransportSecurity,
             },
-            /// Apple classic VNC password with verified SSH-to-Mac-loopback transport only.
+            /// Apple classic VNC password requiring verified protective transport to the Mac.
             ResolvedAppleVncPassword {
                 /// Current private destination.
                 host: String,
@@ -2634,14 +3014,14 @@ pub mod runners {
                 port: u64,
                 /// Current saved configuration generation.
                 generation: i64,
-                /// Explicit direct or generation-bound SSH transport snapshot.
+                /// Explicit generation-bound route with resolve-only provider credentials for native networks.
                 transport: ResolveResponseResolvedTransportTransport,
                 /// Exact saved method, with no credential for X509None.
                 authentication: ResolveResponseResolvedTransportAuthentication,
                 /// Explicit saved transport and trust policy; never downgrade.
                 security: ResolveResponseResolvedTransportSecurity,
             },
-            /// Apple DH credential and verified SSH-to-Mac-loopback transport only.
+            /// Apple DH credential requiring verified protective transport to the Mac.
             ResolvedAppleDh {
                 /// Current private destination.
                 host: String,
@@ -2649,14 +3029,14 @@ pub mod runners {
                 port: u64,
                 /// Current saved configuration generation.
                 generation: i64,
-                /// Explicit direct or generation-bound SSH transport snapshot.
+                /// Explicit generation-bound route with resolve-only provider credentials for native networks.
                 transport: ResolveResponseResolvedTransportTransport,
                 /// Exact saved method, with no credential for X509None.
                 authentication: ResolveResponseResolvedTransportAuthentication,
                 /// Explicit saved transport and trust policy; never downgrade.
                 security: ResolveResponseResolvedTransportSecurity,
             },
-            /// Apple Direct SRP credential and verified SSH-to-Mac-loopback transport only.
+            /// Apple Direct SRP credential requiring verified protective transport to the Mac.
             ResolvedAppleSrp {
                 /// Current private destination.
                 host: String,
@@ -2664,14 +3044,14 @@ pub mod runners {
                 port: u64,
                 /// Current saved configuration generation.
                 generation: i64,
-                /// Explicit direct or generation-bound SSH transport snapshot.
+                /// Explicit generation-bound route with resolve-only provider credentials for native networks.
                 transport: ResolveResponseResolvedTransportTransport,
                 /// Exact saved method, with no credential for X509None.
                 authentication: ResolveResponseResolvedTransportAuthentication,
                 /// Explicit saved transport and trust policy; never downgrade.
                 security: ResolveResponseResolvedTransportSecurity,
             },
-            /// Apple RSA/SRP credential and verified SSH-to-Mac-loopback transport only.
+            /// Apple RSA/SRP credential requiring verified protective transport to the Mac.
             ResolvedAppleRsaSrp {
                 /// Current private destination.
                 host: String,
@@ -2679,7 +3059,7 @@ pub mod runners {
                 port: u64,
                 /// Current saved configuration generation.
                 generation: i64,
-                /// Explicit direct or generation-bound SSH transport snapshot.
+                /// Explicit generation-bound route with resolve-only provider credentials for native networks.
                 transport: ResolveResponseResolvedTransportTransport,
                 /// Exact saved method, with no credential for X509None.
                 authentication: ResolveResponseResolvedTransportAuthentication,
@@ -2694,7 +3074,7 @@ pub mod runners {
                 port: u64,
                 /// Current saved configuration generation.
                 generation: i64,
-                /// Explicit direct or generation-bound SSH transport snapshot.
+                /// Explicit generation-bound route with resolve-only provider credentials for native networks.
                 transport: ResolveResponseResolvedTransportTransport,
                 /// Exact saved method, with no credential for X509None.
                 authentication: ResolveResponseResolvedTransportAuthentication,
@@ -2713,7 +3093,7 @@ pub mod runners {
                 credential_revision: i64,
                 /// Certificate identity for X509 transport handoffs; absent for Apple DH.
                 server_name: String,
-                /// Explicit direct or generation-bound SSH transport snapshot.
+                /// Explicit generation-bound route with resolve-only provider credentials for native networks.
                 transport: ResolveResponseResolvedTransportTransport,
                 /// Exact saved method, with no credential for X509None.
                 authentication: ResolveResponseResolvedTransportAuthentication,

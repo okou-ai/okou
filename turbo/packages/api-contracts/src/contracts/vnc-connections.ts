@@ -4,6 +4,7 @@ import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import {
   kerberosKdcSchema,
+  kerberosKdcMetadataSchema,
   kerberosServicePrincipalSchema,
 } from "./vnc-kerberos";
 import {
@@ -17,9 +18,17 @@ import {
   VNC_RSA_PUBLIC_KEY_MAX_BYTES,
 } from "./vnc-rsa-aes";
 
-export const VNC_HOST_MAX_LENGTH = 253;
-export const VNC_CA_BUNDLE_MAX_LENGTH = 65_536;
-export const VNC_CA_CERTIFICATES_MAX_COUNT = 8;
+import {
+  VNC_HOST_MAX_LENGTH,
+  vncTrustSchema,
+  vncTransportMetadataSchema,
+} from "./vnc-transport";
+export {
+  VNC_HOST_MAX_LENGTH,
+  VNC_CA_BUNDLE_MAX_LENGTH,
+  VNC_CA_CERTIFICATES_MAX_COUNT,
+  vncTrustSchema,
+} from "./vnc-transport";
 
 const displayNameSchema = z
   .string()
@@ -36,16 +45,6 @@ const sshTransportSchema = z
 export const vncTransportSchema = z.discriminatedUnion("type", [
   directTransportSchema,
   sshTransportSchema,
-]);
-
-export const vncTrustSchema = z.discriminatedUnion("mode", [
-  z.object({ mode: z.literal("system") }).strict(),
-  z
-    .object({
-      mode: z.literal("custom_ca"),
-      caBundle: z.string().min(1).max(VNC_CA_BUNDLE_MAX_LENGTH),
-    })
-    .strict(),
 ]);
 
 const vncX509NoneSecurityVariantSchema = z
@@ -106,7 +105,9 @@ export const vncX509PlainSecuritySchema = z.discriminatedUnion("type", [
   vncX509PlainSecurityVariantSchema,
 ]);
 const vncCredentialSecuritySchema = z.discriminatedUnion("type", [
-  vncQemuGssapiSecuritySchema,
+  vncQemuGssapiSecuritySchema.extend({
+    kdc: kerberosKdcMetadataSchema.optional(),
+  }),
   ...vncRsaAesSecuritySchema.options,
   vncX509NoneSecurityVariantSchema,
   vncX509VncSecurityVariantSchema,
@@ -209,10 +210,12 @@ const vncCredentiallessMetadataSchema = vncConnectionMetadataSchema
     security: vncX509NoneSecurityVariantSchema,
   });
 export const vncConnectionResponseSchema = z.union([
-  vncConnectionMetadataSchema,
-  vncConnectionMetadataSchema.extend({ transport: sshTransportSchema }),
-  vncCredentiallessMetadataSchema,
-  vncCredentiallessMetadataSchema.extend({ transport: sshTransportSchema }),
+  vncConnectionMetadataSchema.extend({
+    transport: vncTransportMetadataSchema.optional(),
+  }),
+  vncCredentiallessMetadataSchema.extend({
+    transport: vncTransportMetadataSchema.optional(),
+  }),
 ]);
 
 export const vncConnectionsListResponseSchema = z

@@ -1,4 +1,6 @@
 import { useGet, useLoadable, useSet } from "ccstate-react";
+import { privateNetworkHostCount } from "../../lib/private-network-references.ts";
+import { PrivateNetworkHostReferences } from "./private-network-host-references.tsx";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Plus } from "lucide-react";
@@ -164,32 +166,7 @@ function TailscaleHostReferences({
 }: {
   readonly config: TailscaleConfig;
 }) {
-  const { t } = useTranslation();
-  return (
-    <div className="grid gap-1 text-sm text-muted-foreground">
-      <p>
-        {config.sshHosts.length
-          ? t(
-              ($) => {
-                return $.cloudflareAccess.usedBy;
-              },
-              {
-                count: config.sshHosts.length,
-              },
-            )
-          : t(($) => {
-              return $.cloudflareAccess.unused;
-            })}
-      </p>
-      {config.sshHosts.length > 0 && (
-        <ul className="list-inside list-disc">
-          {config.sshHosts.map((host) => {
-            return <li key={host.id}>{host.displayName}</li>;
-          })}
-        </ul>
-      )}
-    </div>
-  );
+  return <PrivateNetworkHostReferences config={config} />;
 }
 
 function TailscaleImpact({
@@ -217,7 +194,7 @@ function TailscaleImpact({
           }}
         />
         {t(($) => {
-          return $.cloudflareAccess.impactConfirm;
+          return $.vnc.native.impactConfirm;
         })}
       </label>
     </div>
@@ -405,12 +382,12 @@ function TailscaleOperationBody({
           </>
         )}
       {kind === "delete" &&
-        (config.sshHosts.length > 0 ||
+        (privateNetworkHostCount(config) > 0 ||
           (impact.state === "hasData" &&
             (impact.data?.ownHostCount ?? 0) > 0)) && (
           <p role="alert" className="text-sm">
             {t(($) => {
-              return $.tailscale.inUse;
+              return $.vnc.native.inUse;
             })}
           </p>
         )}
@@ -432,7 +409,7 @@ function useOperationBlocked(
     return acknowledged !== "promote";
   }
   if (kind === "delete" && config?.scope === "personal") {
-    return config.sshHosts.length > 0;
+    return privateNetworkHostCount(config) > 0;
   }
   if (
     config?.scope === "organization" &&
@@ -684,7 +661,7 @@ function TailscaleSection({
                 <Button
                   type="button"
                   variant="outline"
-                  disabled={config.sshHosts.length > 0}
+                  disabled={privateNetworkHostCount(config) > 0}
                   onClick={() => {
                     return detach(
                       open("delete", config, signal),
@@ -698,10 +675,10 @@ function TailscaleSection({
                 </Button>
               </div>
             )}
-            {canManage && config.sshHosts.length > 0 && (
+            {canManage && privateNetworkHostCount(config) > 0 && (
               <p className="text-sm text-muted-foreground">
                 {t(($) => {
-                  return $.tailscale.inUse;
+                  return $.vnc.native.inUse;
                 })}
               </p>
             )}

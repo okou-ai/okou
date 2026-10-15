@@ -11,6 +11,7 @@ import {
   vncAuthMethodForProfile,
   vncSshConnectionId,
   vncProfileForConnection,
+  hasNativeVncRoute,
   type VncAuthMethod,
   type VncProfile,
 } from "../../signals/vnc.ts";
@@ -30,18 +31,27 @@ import {
 import { VncLoadError } from "./vnc-load-error.tsx";
 import { VncAttention, VncHostWarning } from "./vnc-connection-status.tsx";
 import { RemoteHostDefaultToggle } from "./remote-access-controls.tsx";
+import { VncNativeRoute } from "./vnc-native-route.tsx";
 
 function isX509Security(
   security: VncConnectionResponse["security"],
 ): security is Extract<
   VncConnectionResponse["security"],
-  { type: "x509_none" | "x509_vnc" | "x509_plain" | "qemu_x509_sasl" }
+  {
+    type:
+      | "x509_none"
+      | "x509_vnc"
+      | "x509_plain"
+      | "qemu_x509_sasl"
+      | "qemu_x509_gssapi";
+  }
 > {
   return (
     security.type === "x509_none" ||
     security.type === "x509_vnc" ||
     security.type === "x509_plain" ||
-    security.type === "qemu_x509_sasl"
+    security.type === "qemu_x509_sasl" ||
+    security.type === "qemu_x509_gssapi"
   );
 }
 
@@ -276,7 +286,9 @@ export function VncHostProfileDetails({
           <p className="text-sm text-muted-foreground">
             {t(($) => {
               return isVncRsaAesAuthenticationOnly(connection.security.type)
-                ? $.vnc.rsaAes.neHelp
+                ? hasNativeVncRoute(connection)
+                  ? $.vnc.native.protectionHelp
+                  : $.vnc.rsaAes.neHelp
                 : $.vnc.rsaAes.fullHelp;
             })}
           </p>
@@ -302,6 +314,56 @@ export function VncHostProfileDetails({
           </>
         ) : null}
       </p>
+    </>
+  );
+}
+
+function VncHostRouteDetails({
+  connection,
+  sshConnection,
+}: {
+  readonly connection: VncConnectionResponse;
+  readonly sshConnection: SshConnectionResponse | null | undefined;
+}) {
+  const { t } = useTranslation();
+  const sshConnectionId = vncSshConnectionId(connection);
+  return (
+    <>
+      {connection.transport?.type === "cloudflare_access" ||
+      connection.transport?.type === "tailscale" ? (
+        <VncNativeRoute transport={connection.transport} />
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          {sshConnectionId
+            ? t(($) => {
+                return $.vnc.transport.ssh;
+              })
+            : t(($) => {
+                return $.vnc.transport.direct;
+              })}
+        </p>
+      )}
+      {sshConnectionId && (
+        <p className="break-all text-sm">
+          {t(($) => {
+            return $.vnc.transport.via;
+          })}{" "}
+          {sshConnection?.displayName ??
+            t(($) => {
+              return $.vnc.transport.selectionUnavailable;
+            })}
+        </p>
+      )}
+      {connection.security.type === "qemu_x509_gssapi" &&
+        connection.security.kdc && (
+          <p className="break-all text-sm text-muted-foreground">
+            {t(($) => {
+              return $.vnc.kerberos.kdcRoute;
+            })}
+            : {connection.security.kdc.host}:{connection.security.kdc.port}
+            <VncNativeRoute transport={connection.security.kdc.transport} />
+          </p>
+        )}
     </>
   );
 }
@@ -351,26 +413,10 @@ function VncHostCard({
       {needsSshRebind && (
         <VncRebindWarning tailscale={tailscale} sshConnection={sshConnection} />
       )}
-      <p className="text-sm text-muted-foreground">
-        {sshConnectionId
-          ? t(($) => {
-              return $.vnc.transport.ssh;
-            })
-          : t(($) => {
-              return $.vnc.transport.direct;
-            })}
-      </p>
-      {sshConnectionId && (
-        <p className="break-all text-sm">
-          {t(($) => {
-            return $.vnc.transport.via;
-          })}{" "}
-          {sshConnection?.displayName ??
-            t(($) => {
-              return $.vnc.transport.selectionUnavailable;
-            })}
-        </p>
-      )}
+      <VncHostRouteDetails
+        connection={connection}
+        sshConnection={sshConnection}
+      />
       <p className="break-all text-sm">
         {t(($) => {
           return $.vnc.transport.destination;
@@ -402,6 +448,7 @@ function VncHostCard({
       <div className="flex flex-wrap gap-2">
         <Button
           variant="outline"
+          disabled={hasNativeVncRoute(connection)}
           onClick={() => {
             detach(open("edit", connection, signal), Reason.DomCallback);
           }}
@@ -421,6 +468,13 @@ function VncHostCard({
           })}
         </Button>
       </div>
+      {hasNativeVncRoute(connection) && (
+        <p className="text-sm text-muted-foreground">
+          {t(($) => {
+            return $.vnc.native.editPending;
+          })}
+        </p>
+      )}
     </article>
   );
 }

@@ -54,7 +54,7 @@ const impact: TailscaleImpactPreview = Object.freeze({
   impactSnapshot: "a".repeat(64),
 });
 const acknowledgement =
-  "I understand these members' SSH hosts will remain saved but cannot connect until their owners rebind them or explicitly choose Direct.";
+  "I understand these members' hosts will remain saved but cannot connect until their owners rebind them.";
 
 beforeEach(() => {
   context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
@@ -78,6 +78,34 @@ async function page(role: "admin" | "member" = "member", enabled = true) {
 async function networkSection() {
   return await screen.findByRole("region", { name: "Tailscale" });
 }
+
+test("Prepared VNC-only references prevent personal Tailscale deletion", async () => {
+  context.mocks.api(tailscaleContract.list, ({ respond }) => {
+    return respond(200, {
+      configs: [
+        {
+          ...config,
+          vncHosts: [
+            {
+              id: config.id,
+              displayName: "VNC authentication",
+              roles: ["kdc"],
+            },
+          ],
+        },
+      ],
+    });
+  });
+  await page();
+  const section = await networkSection();
+  expect(
+    (await within(section).findByText("VNC authentication")).closest("li"),
+  ).toHaveTextContent("VNC authentication · VNC · Authentication server");
+  expect(
+    within(section).getByText("Used by 1 of your hosts:"),
+  ).toBeInTheDocument();
+  expect(getAction("button", "Delete Tailscale", section)).toBeDisabled();
+});
 
 async function createForm() {
   const section = await networkSection();
@@ -279,7 +307,7 @@ test("Own SSH references block personal network deletion", async () => {
   expect(getAction("button", "Delete Tailscale", section)).toBeDisabled();
   expect(
     within(section).getByText(
-      "Your SSH hosts still use this network. Rebind or delete those hosts first.",
+      "Your SSH or VNC hosts still use this network. Rebind or delete those hosts first.",
     ),
   ).toBeInTheDocument();
   expect(screen.queryByRole("dialog")).toBeNull();
@@ -515,7 +543,7 @@ test("An impact conflict refreshes the snapshot and requires explicit review and
   );
   expect(document.body.textContent).not.toContain("private-provider-detail");
   click(getAction("button", "Review latest impact", dialog));
-  await within(dialog).findByText(/Affected: 1 member and 3 SSH hosts\./u);
+  await within(dialog).findByText(/Affected: 1 member and 3 hosts\./u);
   expect(within(dialog).getByRole("checkbox")).not.toBeChecked();
   expect(getAction("button", "Make personal", dialog)).toBeDisabled();
   await userEvent.click(
