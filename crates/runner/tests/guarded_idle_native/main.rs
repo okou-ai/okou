@@ -10,6 +10,8 @@ mod fixture;
 mod optional;
 mod pressure;
 mod pressure_condition;
+mod recovery;
+mod recovery_source;
 mod refusal;
 mod tail;
 mod transitions;
@@ -96,6 +98,22 @@ fn native_optional_report_consumer_requires_complete_reads_and_joined_owners() {
     assert!(
         output.status.success(),
         "native optional report failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn native_recovery_report_requires_real_gaps_pacing_and_joined_reads() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/recovery_report_test.py"
+        ))
+        .output()
+        .expect("native recovery contract tests require Python 3");
+    assert!(
+        output.status.success(),
+        "native recovery report failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 }
@@ -227,6 +245,7 @@ enum NativeScope {
     Aged,
     OptionalOrdinary,
     OptionalAged,
+    Recovery,
     CallerOwned,
     SpeculativeGuestFailure,
     FinalizingParked,
@@ -293,6 +312,12 @@ async fn native_optional_records_ready_preparation_prefetch_and_required_saving(
         Corpus::Optional,
     )
     .await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD artifacts, real observation gaps, complete reads and exact-source P1 proof"]
+async fn native_recovery_records_stale_revocation_and_paced_snapshot_reads() -> TestResult<()> {
+    measured_corpus(&[NativeScope::Recovery]).await
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -524,7 +549,12 @@ async fn exercise_retirement(
     if rootfs_hash.is_empty() {
         return Err(io::Error::other("packaged rootfs hash must be supplied").into());
     }
-    let operations = inputs.operations()?;
+    let recovery_source =
+        matches!(scope, NativeScope::Recovery).then(|| Arc::new(recovery_source::Source::new()));
+    let operations = match &recovery_source {
+        Some(source) => inputs.operations_with_source(source.clone())?,
+        None => inputs.operations()?,
+    };
     let (vcpu, memory) = match scope {
         NativeScope::Pressure => (6, 12288),
         NativeScope::Replacement | NativeScope::Restore => (6, 12288),
@@ -705,7 +735,7 @@ async fn exercise_retirement(
         },
     });
     let tracker = IdleDestroyTracker::new(Arc::new(Notify::new()));
-    if corpus == Corpus::Optional
+    if (corpus == Corpus::Optional || matches!(scope, NativeScope::Recovery))
         && let Some(proof) = proof
     {
         proof.bind_original_lease(&lease)?;
@@ -787,6 +817,14 @@ async fn exercise_retirement(
     }
     let retirement: TestResult<_> = async {
         match scope {
+            NativeScope::Recovery => {
+                recovery::exercise(transitions::Context {
+                    factory: factory.clone(), pool: pool.clone(), status: status.clone(),
+                    operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
+                    rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
+                }, inputs, recovery_source.as_ref().ok_or_else(|| io::Error::other("native recovery source missing"))?, proof).await?;
+                Ok(None)
+            }
             NativeScope::OptionalOrdinary | NativeScope::OptionalAged => {
                 optional::exercise(transitions::Context {
                     factory: factory.clone(), pool: pool.clone(), status: status.clone(),
