@@ -1390,6 +1390,8 @@ jobs:
       TEST_NAME: host_cpu_fairness
       ARTIFACT_DIR: native-test-artifact
       PRODUCER_ATTEMPT: ${{ needs.host-cpu-fairness-build.outputs.producer-attempt }}
+      # Shared hosts run functional placement only; measurements need a reserved host.
+      HOST_CPU_TEST_MODE: placement
       METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
       HOST: ${{ needs.runner-test-prepare.outputs.host }}
       JOB_REF: ${{ needs.runner-test-prepare.outputs.job-ref }}
@@ -1421,7 +1423,7 @@ jobs:
           cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
 
-      - name: Verify weighted host CPU service with real Firecracker Guests
+      - name: Verify host CPU placement and cleanup with real Firecracker Guests
         run: crates/sandbox-firecracker/tests/native/runner-behavior-host-cpu-fairness.sh
 
   guest-rpc-firecracker-build:
