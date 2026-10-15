@@ -589,235 +589,215 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
     let mut used_home_fallback = false;
     let mut codex_model_catalog_prefetch = preparation == FreshPreparation::Initial;
     let mut dns_replacement: Option<DnsReadinessReplacement> = None;
-    let prepared = loop {
-        if controls.cancel.is_cancelled() {
-            cancel_prepared_storage(&mut controls, telemetry).await;
-            std::mem::take(&mut controls.session_history_restore_plan)
-                .cancel_and_drain(telemetry)
-                .await;
-            return Err(RunnerError::Cancelled);
-        }
-        let result = create_started_sandbox(
-            factory,
-            context,
-            sandbox_id,
-            config,
-            params,
-            telemetry,
-            StartSandboxOptions {
-                home_image: home_image.as_mut(),
-                sandbox_prepared,
-                reuse_result,
-                cancel: &controls.cancel,
-                codex_model_catalog_prefetch,
-            },
-        )
-        .await;
-
-        if let Some(replacement) = dns_replacement.take() {
-            let success = result.is_ok();
-            replacement.complete(context, sandbox_id, telemetry, success);
-        }
-
-        let failure = match result {
-            Ok(prepared) => break prepared,
-            Err(failure) => failure,
-        };
-
-        let cache_hit = home_image
-            .as_ref()
-            .is_some_and(HomeImageLease::is_cache_hit);
-        if let Some(image) = home_image.as_ref().filter(|image| image.is_cache_hit()) {
-            telemetry.observe_home(image.consumption_observation(
-                Some(context.run_id),
-                runner_host::home_observation::HomeObservationOutcome::Failed,
-                Some(
-                    if !used_retry
-                        && !failure.cleanup_completed
-                        && failure.retry == SandboxPrepareRetry::WithoutHomeImage
-                    {
-                        SANDBOX_PREPARE_RETRY_CLEANUP_UNCERTAIN
-                    } else {
-                        "sandbox_prepare_failed"
-                    },
-                ),
-            ));
-        }
-        if failure.invalidate_consumed_home_cache && cache_hit {
-            controls.session_history_restore_plan = discard_home_candidate_restore_plan(
-                std::mem::take(&mut controls.session_history_restore_plan),
+    let prepared = 'preparation: {
+        let error = loop {
+            if controls.cancel.is_cancelled() {
+                cancel_prepared_storage(&mut controls, telemetry).await;
+                std::mem::take(&mut controls.session_history_restore_plan)
+                    .cancel_and_drain(telemetry)
+                    .await;
+                return Err(RunnerError::Cancelled);
+            }
+            let result = create_started_sandbox(
+                factory,
+                context,
+                sandbox_id,
+                config,
+                params,
+                telemetry,
+                StartSandboxOptions {
+                    home_image: home_image.as_mut(),
+                    sandbox_prepared,
+                    reuse_result,
+                    cancel: &controls.cancel,
+                    codex_model_catalog_prefetch,
+                },
             )
             .await;
-            invalidate_home_cache_hit(
-                home_image.as_ref(),
-                context.run_id,
-                "sandbox_prepare_failed",
-            )
-            .await;
-        }
-        if used_retry {
-            let error = failure.error;
-            telemetry.record(
-                "runner_fresh_sandbox_prepare",
-                prepare_started.elapsed(),
-                false,
-                Some(&error.to_string()),
-            );
-            cancel_prepared_storage(&mut controls, telemetry).await;
-            std::mem::take(&mut controls.session_history_restore_plan)
-                .cancel_and_drain(telemetry)
+
+            if let Some(replacement) = dns_replacement.take() {
+                let success = result.is_ok();
+                replacement.complete(context, sandbox_id, telemetry, success);
+            }
+
+            let failure = match result {
+                Ok(prepared) => break 'preparation prepared,
+                Err(failure) => failure,
+            };
+
+            let cache_hit = home_image
+                .as_ref()
+                .is_some_and(HomeImageLease::is_cache_hit);
+            if let Some(image) = home_image.as_ref().filter(|image| image.is_cache_hit()) {
+                telemetry.observe_home(image.consumption_observation(
+                    Some(context.run_id),
+                    runner_host::home_observation::HomeObservationOutcome::Failed,
+                    Some(
+                        if !used_retry
+                            && !failure.cleanup_completed
+                            && failure.retry == SandboxPrepareRetry::WithoutHomeImage
+                        {
+                            SANDBOX_PREPARE_RETRY_CLEANUP_UNCERTAIN
+                        } else {
+                            "sandbox_prepare_failed"
+                        },
+                    ),
+                ));
+            }
+            if failure.invalidate_consumed_home_cache && cache_hit {
+                controls.session_history_restore_plan = discard_home_candidate_restore_plan(
+                    std::mem::take(&mut controls.session_history_restore_plan),
+                )
                 .await;
-            return Err(error);
-        }
-        let retry_guest_dns = failure.retry == SandboxPrepareRetry::GuestDnsReadiness;
-        let retry_without_home_image =
-            failure.retry == SandboxPrepareRetry::WithoutHomeImage && cache_hit;
-        let retry_without_codex_prefetch =
-            failure.retry == SandboxPrepareRetry::WithoutCodexModelCatalogPrefetch;
-        if !failure.cleanup_completed {
+                invalidate_home_cache_hit(
+                    home_image.as_ref(),
+                    context.run_id,
+                    "sandbox_prepare_failed",
+                )
+                .await;
+            }
+            if used_retry {
+                break failure.error;
+            }
+            let retry_guest_dns = failure.retry == SandboxPrepareRetry::GuestDnsReadiness;
+            let retry_without_home_image =
+                failure.retry == SandboxPrepareRetry::WithoutHomeImage && cache_hit;
+            let retry_without_codex_prefetch =
+                failure.retry == SandboxPrepareRetry::WithoutCodexModelCatalogPrefetch;
+            if !failure.cleanup_completed {
+                if retry_guest_dns {
+                    telemetry.record(
+                        RUNNER_FRESH_SANDBOX_DNS_READINESS_RETRY,
+                        Duration::ZERO,
+                        false,
+                        Some(SANDBOX_PREPARE_RETRY_CLEANUP_UNCERTAIN),
+                    );
+                    warn!(
+                        run_id = %context.run_id,
+                        sandbox_id = %sandbox_id,
+                        "guest DNS readiness replacement suppressed after uncertain cleanup"
+                    );
+                } else if retry_without_home_image {
+                    warn!(
+                        run_id = %context.run_id,
+                        sandbox_id = %sandbox_id,
+                        "home image fallback suppressed after uncertain cleanup"
+                    );
+                } else if retry_without_codex_prefetch {
+                    telemetry.record(
+                        RUNNER_FRESH_SANDBOX_RETRY_WITHOUT_CODEX_PREFETCH,
+                        Duration::ZERO,
+                        false,
+                        Some(SANDBOX_PREPARE_RETRY_CLEANUP_UNCERTAIN),
+                    );
+                    warn!(
+                        run_id = %context.run_id,
+                        sandbox_id = %sandbox_id,
+                        "Codex prefetch sandbox replacement suppressed after uncertain cleanup"
+                    );
+                }
+                break failure.error;
+            }
+            if !retry_guest_dns && !retry_without_home_image && !retry_without_codex_prefetch {
+                break failure.error;
+            }
+
             if retry_guest_dns {
-                telemetry.record(
-                    RUNNER_FRESH_SANDBOX_DNS_READINESS_RETRY,
-                    Duration::ZERO,
-                    false,
-                    Some(SANDBOX_PREPARE_RETRY_CLEANUP_UNCERTAIN),
-                );
                 warn!(
                     run_id = %context.run_id,
                     sandbox_id = %sandbox_id,
-                    "guest DNS readiness replacement suppressed after uncertain cleanup"
+                    error = %failure.error,
+                    "guest DNS readiness failed; retrying with a fresh sandbox attachment"
                 );
-            } else if retry_without_home_image {
-                warn!(
+                dns_replacement = Some(DnsReadinessReplacement::new(cache_hit));
+            }
+
+            if retry_without_codex_prefetch {
+                info!(
                     run_id = %context.run_id,
                     sandbox_id = %sandbox_id,
-                    "home image fallback suppressed after uncertain cleanup"
+                    error = %failure.error,
+                    "Codex prefetch start crossed the write boundary; retrying with prefetch disabled"
                 );
-            } else if retry_without_codex_prefetch {
                 telemetry.record(
                     RUNNER_FRESH_SANDBOX_RETRY_WITHOUT_CODEX_PREFETCH,
                     Duration::ZERO,
-                    false,
-                    Some(SANDBOX_PREPARE_RETRY_CLEANUP_UNCERTAIN),
+                    true,
+                    None,
                 );
+                codex_model_catalog_prefetch = false;
+            }
+
+            if cache_hit {
+                if let Some(image) = &home_image {
+                    telemetry.observe_home(image.consumption_observation(
+                        Some(context.run_id),
+                        runner_host::home_observation::HomeObservationOutcome::Fallback,
+                        Some(if retry_guest_dns {
+                            "guest_dns_replacement"
+                        } else if retry_without_codex_prefetch {
+                            "codex_prefetch_replacement"
+                        } else {
+                            "home_preparation_failed"
+                        }),
+                    ));
+                }
+                used_home_fallback = true;
+                controls.session_history_restore_plan =
+                    replace_home_candidate_restore_plan_for_home_retry(
+                        std::mem::take(&mut controls.session_history_restore_plan),
+                        context,
+                        config,
+                        controls.cancel.clone(),
+                        telemetry,
+                    )
+                    .await;
+                cancel_prepared_storage(&mut controls, telemetry).await;
+                invalidate_home_cache_hit(
+                    home_image.as_ref(),
+                    context.run_id,
+                    "sandbox_prepare_failed",
+                )
+                .await;
                 warn!(
                     run_id = %context.run_id,
                     sandbox_id = %sandbox_id,
-                    "Codex prefetch sandbox replacement suppressed after uncertain cleanup"
+                    error = %failure.error,
+                    "home image cache hit failed during sandbox preparation; retrying with fresh home image"
                 );
-            }
-            let error = failure.error;
-            telemetry.record(
-                "runner_fresh_sandbox_prepare",
-                prepare_started.elapsed(),
-                false,
-                Some(&error.to_string()),
-            );
-            cancel_prepared_storage(&mut controls, telemetry).await;
-            std::mem::take(&mut controls.session_history_restore_plan)
-                .cancel_and_drain(telemetry)
-                .await;
-            return Err(error);
-        }
-        if !retry_guest_dns && !retry_without_home_image && !retry_without_codex_prefetch {
-            let error = failure.error;
-            telemetry.record(
-                "runner_fresh_sandbox_prepare",
-                prepare_started.elapsed(),
-                false,
-                Some(&error.to_string()),
-            );
-            cancel_prepared_storage(&mut controls, telemetry).await;
-            std::mem::take(&mut controls.session_history_restore_plan)
-                .cancel_and_drain(telemetry)
-                .await;
-            return Err(error);
-        }
-
-        if retry_guest_dns {
-            warn!(
-                run_id = %context.run_id,
-                sandbox_id = %sandbox_id,
-                error = %failure.error,
-                "guest DNS readiness failed; retrying with a fresh sandbox attachment"
-            );
-            dns_replacement = Some(DnsReadinessReplacement::new(cache_hit));
-        }
-
-        if retry_without_codex_prefetch {
-            info!(
-                run_id = %context.run_id,
-                sandbox_id = %sandbox_id,
-                error = %failure.error,
-                "Codex prefetch start crossed the write boundary; retrying with prefetch disabled"
-            );
-            telemetry.record(
-                RUNNER_FRESH_SANDBOX_RETRY_WITHOUT_CODEX_PREFETCH,
-                Duration::ZERO,
-                true,
-                None,
-            );
-            codex_model_catalog_prefetch = false;
-        }
-
-        if cache_hit {
-            if let Some(image) = &home_image {
-                telemetry.observe_home(image.consumption_observation(
-                    Some(context.run_id),
-                    runner_host::home_observation::HomeObservationOutcome::Fallback,
-                    Some(if retry_guest_dns {
-                        "guest_dns_replacement"
-                    } else if retry_without_codex_prefetch {
-                        "codex_prefetch_replacement"
-                    } else {
-                        "home_preparation_failed"
-                    }),
-                ));
-            }
-            used_home_fallback = true;
-            controls.session_history_restore_plan =
-                replace_home_candidate_restore_plan_for_home_retry(
-                    std::mem::take(&mut controls.session_history_restore_plan),
-                    context,
-                    config,
-                    controls.cancel.clone(),
-                    telemetry,
-                )
-                .await;
-            cancel_prepared_storage(&mut controls, telemetry).await;
-            invalidate_home_cache_hit(
-                home_image.as_ref(),
-                context.run_id,
-                "sandbox_prepare_failed",
-            )
-            .await;
-            warn!(
-                run_id = %context.run_id,
-                sandbox_id = %sandbox_id,
-                error = %failure.error,
-                "home image cache hit failed during sandbox preparation; retrying with fresh home image"
-            );
-            home_image = None;
-            match prepare_storage(context, None, config, &controls.cancel, telemetry).await {
-                Ok(prepared_storage) => controls.prepared_storage = prepared_storage,
-                Err(error) => {
-                    if let Some(replacement) = dns_replacement.take() {
-                        replacement.complete(context, sandbox_id, telemetry, false);
+                home_image = None;
+                match prepare_storage(context, None, config, &controls.cancel, telemetry).await {
+                    Ok(prepared_storage) => controls.prepared_storage = prepared_storage,
+                    Err(error) => {
+                        if let Some(replacement) = dns_replacement.take() {
+                            replacement.complete(context, sandbox_id, telemetry, false);
+                        }
+                        telemetry.record(
+                            "runner_fresh_sandbox_prepare",
+                            prepare_started.elapsed(),
+                            false,
+                            Some(&error.to_string()),
+                        );
+                        std::mem::take(&mut controls.session_history_restore_plan)
+                            .cancel_and_drain(telemetry)
+                            .await;
+                        return Err(error);
                     }
-                    telemetry.record(
-                        "runner_fresh_sandbox_prepare",
-                        prepare_started.elapsed(),
-                        false,
-                        Some(&error.to_string()),
-                    );
-                    std::mem::take(&mut controls.session_history_restore_plan)
-                        .cancel_and_drain(telemetry)
-                        .await;
-                    return Err(error);
                 }
             }
-        }
-        used_retry = true;
+            used_retry = true;
+        };
+        telemetry.record(
+            "runner_fresh_sandbox_prepare",
+            prepare_started.elapsed(),
+            false,
+            Some(&error.to_string()),
+        );
+        cancel_prepared_storage(&mut controls, telemetry).await;
+        std::mem::take(&mut controls.session_history_restore_plan)
+            .cancel_and_drain(telemetry)
+            .await;
+        return Err(error);
     };
     telemetry.record(
         "runner_fresh_sandbox_prepare",
