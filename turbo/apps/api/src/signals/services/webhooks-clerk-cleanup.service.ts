@@ -1,3 +1,4 @@
+import { deleteWechatOwnerData$ } from "./wechat-owner-cleanup.service";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -420,6 +421,7 @@ async function cancelStripeSubscriptionsForDeletedOrg(
 export const cleanupClerkDeletedOrg$ = command(
   async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
     const owner = { kind: "organization", orgId } as const;
+    await set(deleteWechatOwnerData$, owner, signal);
     await set(stopClerkDeletedOwnerSchedules$, owner, signal);
     await set(stopClerkDeletedOwnerRuns$, owner, signal);
   },
@@ -436,6 +438,7 @@ export const cleanupClerkDeletedOrgBilling$ = command(
 export const cleanupClerkDeletedUser$ = command(
   async ({ set }, userId: string, signal: AbortSignal): Promise<void> => {
     const owner = { kind: "user", userId } as const;
+    await set(deleteWechatOwnerData$, owner, signal);
     await set(stopClerkDeletedOwnerSchedules$, owner, signal);
     await set(stopClerkDeletedOwnerRuns$, owner, signal);
   },

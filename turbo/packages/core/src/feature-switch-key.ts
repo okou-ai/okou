@@ -47,6 +47,7 @@ export enum FeatureSwitchKey {
   PwaNavigation = "pwaNavigation",
   FeishuIntegration = "_feishuIntegration",
   LarkIntegration = "larkIntegration",
+  WechatIntegration = "wechatIntegration",
   DiscordIntegration = "discordIntegration",
   VncAccess = "vncAccess",
   PiMemory = "piMemory",

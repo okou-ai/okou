@@ -1,3 +1,4 @@
+import { initWechat$ } from "../okou-page/wechat.ts";
 import { command } from "ccstate";
 import { createElement } from "react";
 import { toast } from "@okouai/ui/components/ui/sonner";
@@ -90,6 +91,7 @@ export const setupWorksPage$ = command(
       set(watchSlackConnection$, signal),
       set(watchTeamsConnection$, signal),
       set(watchDiscordConnection$, signal),
+      set(initWechat$, signal),
       set(watchGithubIntegration$, signal),
       set(watchTelegramConnection$, signal),
       set(watchAgentPhoneConnection$, signal),

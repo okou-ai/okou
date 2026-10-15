@@ -68,6 +68,7 @@ import {
 import { authorizeTelegramBot$ } from "../../signals/okou-page/telegram-authorization.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { openFreshOAuth } from "../../lib/oauth-window.ts";
+import { WechatCard } from "./wechat-card.tsx";
 import { AgentPhoneCard } from "./agentphone-card.tsx";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
@@ -1105,6 +1106,7 @@ export function WorksPage() {
           ) : null}
           <TelegramCard />
           <AgentPhoneCard />
+          {features[FeatureSwitchKey.WechatIntegration] ? <WechatCard /> : null}
         </div>
       </main>
     </div>

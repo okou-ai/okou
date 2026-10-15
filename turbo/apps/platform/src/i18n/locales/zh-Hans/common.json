@@ -335,7 +335,8 @@
       "telegram": "Telegram",
       "test": "测试",
       "web": "网页",
-      "webhook": "Webhook"
+      "webhook": "Webhook",
+      "wechat": "微信"
     },
     "statuses": {
       "cancelled": "已取消",
@@ -2005,7 +2006,8 @@
       "openTelegramMessage": "在 Telegram 中打开原消息",
       "slack": "Slack",
       "teams": "Microsoft Teams",
-      "telegram": "Telegram"
+      "telegram": "Telegram",
+      "wechat": "微信"
     },
     "permissions": {
       "actionDescription": "{{action}}{{permissionName}}",
@@ -6520,6 +6522,30 @@
     "telegram": {
       "description": "把 Telegram 消息转给智能体",
       "title": "Telegram"
+    },
+    "wechat": {
+      "code": "验证码",
+      "connect": "连接",
+      "connected": "已连接",
+      "creating": "正在生成二维码…",
+      "description": "在微信中与智能体对话。",
+      "disconnect": "断开连接",
+      "expired": "二维码已过期，请重新生成。",
+      "failed": "连接微信失败，请重试。",
+      "instructions": "使用微信扫描二维码，然后在手机上确认。",
+      "name": "微信",
+      "reconnect": "重新连接",
+      "reconnect_required": "请重新扫码连接。",
+      "restart_required": "该微信已绑定，请重新生成二维码以连接。",
+      "retry": "重新生成二维码",
+      "scanned": "已扫码，请在手机上确认。",
+      "scope": "只连接你与此智能体的单聊，目前支持文字消息。",
+      "title": "连接微信",
+      "unavailable": "连接服务尚未配置。",
+      "verification_blocked": "验证码尝试次数过多，请重新生成二维码。",
+      "verification_required": "输入微信中显示的验证码。",
+      "verify": "验证",
+      "waiting": "等待扫码…"
     }
   }
 }

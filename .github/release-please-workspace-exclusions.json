@@ -6,5 +6,6 @@
   "turbo/packages/eslint-rules": "Development-only lint rules",
   "turbo/packages/mermaid-lite": "Private vendored Flowchart-only build consumed by the platform",
   "turbo/packages/proxy": "Local development proxy",
-  "turbo/packages/typescript-config": "Development-only TypeScript configuration"
+  "turbo/packages/typescript-config": "Development-only TypeScript configuration",
+  "turbo/apps/wechat-gateway-worker": "Default-disabled receiver deployed only through the manual WeChat Gateway workflow"
 }

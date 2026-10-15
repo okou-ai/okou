@@ -1,3 +1,4 @@
+import { createWechatThreadPrompt } from "./wechat";
 import { computed, type Computed } from "ccstate";
 import type { AgentRunContextSignals } from "../agent-run-context.signals";
 import { createConnectorsContext } from "../connectors-context.service";
@@ -84,6 +85,7 @@ function createIntegrationPrompts(
       threadContext.agentPhoneContext$,
       featureSwitches$,
     ),
+    wechat: createWechatThreadPrompt(threadContext.wechatContext$),
     discord: createDiscordThreadPrompt(
       pickedEvent$,
       threadContext.discordContext$,

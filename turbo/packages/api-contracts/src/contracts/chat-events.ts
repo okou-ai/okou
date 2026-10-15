@@ -22,6 +22,7 @@ export const CHAT_EVENT_CONTEXT_TYPES = [
   "web",
   "slack",
   "discord",
+  "wechat",
   "feishu",
   "teams",
   "telegram",

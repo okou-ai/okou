@@ -335,7 +335,8 @@
       "telegram": "Telegram",
       "test": "Test",
       "web": "Web",
-      "webhook": "Webhook"
+      "webhook": "Webhook",
+      "wechat": "WeChat"
     },
     "statuses": {
       "cancelled": "Abgesagt",
@@ -2012,7 +2013,8 @@
       "openTelegramMessage": "Originalnachricht in Telegram öffnen",
       "slack": "Slack",
       "teams": "Microsoft Teams",
-      "telegram": "Telegram"
+      "telegram": "Telegram",
+      "wechat": "WeChat"
     },
     "permissions": {
       "actionDescription": "{{action}} {{permissionName}}",
@@ -6547,6 +6549,30 @@
     "telegram": {
       "description": "Leiten Sie Telegram-Nachrichten an Agenten weiter",
       "title": "Telegram"
+    },
+    "wechat": {
+      "code": "Bestätigungscode",
+      "connect": "Verbinden",
+      "connected": "Verbunden",
+      "creating": "QR-Code wird erstellt…",
+      "description": "Chatte mit deinem Agenten in WeChat.",
+      "disconnect": "Trennen",
+      "expired": "Dieser QR-Code ist abgelaufen. Erstelle einen neuen.",
+      "failed": "Die Verbindung zu WeChat ist fehlgeschlagen. Versuche es erneut.",
+      "instructions": "Scanne diesen QR-Code mit WeChat und bestätige auf deinem Smartphone.",
+      "name": "WeChat",
+      "reconnect": "Erneut verbinden",
+      "reconnect_required": "Scanne erneut, um die Verbindung wiederherzustellen.",
+      "restart_required": "Dieses WeChat-Konto ist bereits verbunden. Erstelle zum erneuten Verbinden einen neuen QR-Code.",
+      "retry": "Neuen QR-Code erstellen",
+      "scanned": "Gescannt. Bestätige auf deinem Smartphone.",
+      "scope": "Nur deine Direktnachrichten an diesen Agenten werden verbunden. Textnachrichten werden unterstützt.",
+      "title": "WeChat verbinden",
+      "unavailable": "Die Verbindung ist noch nicht eingerichtet.",
+      "verification_blocked": "Zu viele Versuche. Erstelle einen neuen QR-Code.",
+      "verification_required": "Gib den in WeChat angezeigten Bestätigungscode ein.",
+      "verify": "Bestätigen",
+      "waiting": "Warte auf den Scan…"
     }
   }
 }

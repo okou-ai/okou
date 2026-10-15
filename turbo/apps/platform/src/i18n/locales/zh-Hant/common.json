@@ -335,7 +335,8 @@
       "telegram": "Telegram",
       "test": "測試",
       "web": "網頁",
-      "webhook": "Webhook"
+      "webhook": "Webhook",
+      "wechat": "微信"
     },
     "statuses": {
       "cancelled": "已取消",
@@ -2005,7 +2006,8 @@
       "openTelegramMessage": "在 Telegram 中開啟原訊息",
       "slack": "Slack",
       "teams": "Microsoft Teams",
-      "telegram": "Telegram"
+      "telegram": "Telegram",
+      "wechat": "微信"
     },
     "permissions": {
       "actionDescription": "{{action}}{{permissionName}}",
@@ -6520,6 +6522,30 @@
     "telegram": {
       "description": "把 Telegram 訊息轉給智能體",
       "title": "Telegram"
+    },
+    "wechat": {
+      "code": "驗證碼",
+      "connect": "連接",
+      "connected": "已連接",
+      "creating": "正在產生 QR code…",
+      "description": "在微信中與智能體對話。",
+      "disconnect": "中斷連接",
+      "expired": "QR code 已過期，請重新產生。",
+      "failed": "連接微信失敗，請重試。",
+      "instructions": "使用微信掃描 QR code，然後在手機上確認。",
+      "name": "微信",
+      "reconnect": "重新連接",
+      "reconnect_required": "請重新掃碼連接。",
+      "restart_required": "此微信已綁定，請重新產生 QR code 以連接。",
+      "retry": "重新產生 QR code",
+      "scanned": "已掃碼，請在手機上確認。",
+      "scope": "只連接你與此智能體的單聊，目前支援文字訊息。",
+      "title": "連接微信",
+      "unavailable": "連接服務尚未配置。",
+      "verification_blocked": "驗證碼嘗試次數過多，請重新產生 QR code。",
+      "verification_required": "輸入微信中顯示的驗證碼。",
+      "verify": "驗證",
+      "waiting": "等待掃碼…"
     }
   }
 }

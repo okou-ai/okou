@@ -1042,6 +1042,43 @@ jobs:
           files: turbo/junit.xml
           report_type: test_results
 
+  test-wechat-gateway:
+    needs: [detect-turbo-ts-checks]
+    if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/toolchain-init
+      - name: Build WeChat Gateway relay for runtime tests
+        working-directory: turbo
+        run: pnpm --filter @okouai/wechat-gateway-worker run build
+      # Miniflare runs a real workerd process and SQLite Durable Object per file.
+      - name: Test WeChat Gateway worker
+        working-directory: turbo
+        run: pnpm vitest run --project=@okouai/wechat-gateway-worker --no-file-parallelism --coverage.enabled --coverage.reporter=json
+      - name: Upload coverage to Codecov
+        if: success() || failure()
+        continue-on-error: true
+        timeout-minutes: 1
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: wechat-gateway
+          files: turbo/coverage/coverage-final.json
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        timeout-minutes: 1
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: wechat-gateway
+          files: turbo/junit.xml
+          report_type: test_results
+
   test-other:
     needs: [detect-turbo-ts-checks]
     if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
@@ -2977,6 +3014,7 @@ jobs:
       - test-api
       - test-other
       - test-discord-gateway
+      - test-wechat-gateway
       - deploy-api
       - deploy-app
       - deploy-stripe-listener
@@ -3104,6 +3142,7 @@ jobs:
           check_result "test-api" "${{ needs.test-api.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-other" "${{ needs.test-other.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-discord-gateway" "${{ needs.test-discord-gateway.result }}" "$TS_CHECK_SKIP_ALLOWED"
+          check_result "test-wechat-gateway" "${{ needs.test-wechat-gateway.result }}" "$TS_CHECK_SKIP_ALLOWED"
           # Same skip conditions as the job: pure iOS change sets and staging.
           check_result "lint-runtime-api-compat" "${{ needs.lint-runtime-api-compat.result }}" "$RUNTIME_API_COMPAT_SKIP_ALLOWED"
 

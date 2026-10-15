@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oxc-project/oxlint/main/npm/oxlint/configuration_schema.json",
+  "extends": ["../../.oxlintrc.json"],
+  "ignorePatterns": ["dist/**", ".wrangler/**"],
+  "overrides": [
+    {
+      "files": ["eslint.config.mjs", "vitest.config.ts", "src/index.ts"],
+      "rules": {
+        "import/no-default-export": "off"
+      }
+    }
+  ]
+}

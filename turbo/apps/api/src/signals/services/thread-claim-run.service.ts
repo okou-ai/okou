@@ -211,6 +211,7 @@ import type {
 import { compactRecord } from "./connector-runtime-preparation.service";
 
 import { DiscordQueuedLaunchUnavailableError } from "./discord-queued-launch-context.service";
+import { WechatLaunchUnavailableError } from "./wechat-context.service";
 import { isMemberSubscriptionRoute } from "./effective-model-route.service";
 
 import { recordGetStartedWorkflowSql } from "./get-started-workflow.service";
@@ -549,6 +550,7 @@ function queuedPromptPreparationRejection(
 ): ChatQueueRunAssembly {
   if (
     !(error instanceof DiscordQueuedLaunchUnavailableError) &&
+    !(error instanceof WechatLaunchUnavailableError) &&
     !(error instanceof QueuedPromptLaunchUnavailableError) &&
     !(error instanceof QueuedPromptInputInvalidError) &&
     !(error instanceof PromptAndSkillVolumesError)
@@ -1036,6 +1038,7 @@ function claimRejectionContext(
       feishuDelivery: input.feishuDelivery,
       teamsDelivery: input.teamsDelivery,
       discordDelivery: input.discordDelivery,
+      wechatDelivery: input.wechatDelivery,
       telegramDelivery: input.telegramDelivery,
       agentphoneDelivery: input.agentphoneDelivery,
     },
@@ -1422,6 +1425,30 @@ export function createThreadClaimRunObjects(
       };
     },
   );
+  const wechatPromptMaterial$ = computed(
+    async (get): Promise<QueuedLaunchMaterial> => {
+      const context = await get(threadContext.wechatContext$);
+      if (!context) {
+        throw new WechatLaunchUnavailableError();
+      }
+      return {
+        triggerSource: "wechat",
+        delivery: { wechatDelivery: context.wechatDelivery },
+      };
+    },
+  );
+  const discordPromptMaterial$ = computed(
+    async (get): Promise<QueuedLaunchMaterial> => {
+      const context = await get(discordContext$);
+      if (!context) {
+        throw new DiscordQueuedLaunchUnavailableError();
+      }
+      return {
+        triggerSource: "discord",
+        delivery: { discordDelivery: context.target },
+      };
+    },
+  );
   const promptMaterialMaterial$ = computed(
     async (get): Promise<QueuedLaunchMaterial> => {
       const { queuedMessage } = await get(promptArgsArgs$);
@@ -1514,15 +1541,11 @@ export function createThreadClaimRunObjects(
             },
           };
         }
+        case "wechat": {
+          return await get(wechatPromptMaterial$);
+        }
         case "discord": {
-          const context = await get(discordContext$);
-          if (!context) {
-            throw new DiscordQueuedLaunchUnavailableError();
-          }
-          return {
-            triggerSource: "discord",
-            delivery: { discordDelivery: context.target },
-          };
+          return await get(discordPromptMaterial$);
         }
         case "automation": {
           throw new Error("Automation cannot enter the prompt assembler");

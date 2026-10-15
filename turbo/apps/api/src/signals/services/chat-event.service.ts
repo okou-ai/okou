@@ -1,3 +1,4 @@
+import { chatWechatContext } from "@okouai/db/schema/wechat";
 /** Typed append-only commands for the canonical ChatEvent stream. */
 import {
   chatInputModelSelectionSchema,
@@ -69,8 +70,25 @@ export type DiscordChatEventContext = Readonly<
   >
 >;
 
+export type WechatChatEventContext = Readonly<
+  Omit<
+    typeof chatWechatContext.$inferSelect,
+    "id" | "chatThreadId" | "createdAt"
+  >
+>;
+
 type ChatEventDisplayContext =
   | {
+      readonly wechatContext: WechatChatEventContext;
+      readonly discordContext?: never;
+      readonly slackContext?: never;
+      readonly feishuContext?: never;
+      readonly teamsContext?: never;
+      readonly telegramContext?: never;
+      readonly agentphoneContext?: never;
+    }
+  | {
+      readonly wechatContext?: never;
       readonly discordContext: DiscordChatEventContext;
       readonly slackContext?: never;
       readonly feishuContext?: never;
@@ -79,6 +97,7 @@ type ChatEventDisplayContext =
       readonly agentphoneContext?: never;
     }
   | {
+      readonly wechatContext?: never;
       readonly discordContext?: never;
       readonly slackContext: {
         readonly channelId: string;
@@ -101,6 +120,7 @@ type ChatEventDisplayContext =
       readonly agentphoneContext?: never;
     }
   | {
+      readonly wechatContext?: never;
       readonly discordContext?: never;
       readonly slackContext?: never;
       readonly feishuContext: {
@@ -122,6 +142,7 @@ type ChatEventDisplayContext =
       readonly agentphoneContext?: never;
     }
   | {
+      readonly wechatContext?: never;
       readonly discordContext?: never;
       readonly slackContext?: never;
       readonly feishuContext?: never;
@@ -149,6 +170,7 @@ type ChatEventDisplayContext =
       readonly agentphoneContext?: never;
     }
   | {
+      readonly wechatContext?: never;
       readonly discordContext?: never;
       readonly slackContext?: never;
       readonly feishuContext?: never;
@@ -172,6 +194,7 @@ type ChatEventDisplayContext =
       readonly agentphoneContext?: never;
     }
   | {
+      readonly wechatContext?: never;
       readonly discordContext?: never;
       readonly slackContext?: never;
       readonly feishuContext?: never;
@@ -194,6 +217,7 @@ type ChatEventDisplayContext =
       };
     }
   | {
+      readonly wechatContext?: never;
       readonly discordContext?: never;
       readonly slackContext?: never;
       readonly feishuContext?: never;
@@ -365,6 +389,12 @@ export interface LoadedChatEventReplacementTarget extends StoredChatEventContext
 
 type NewDisplayContext =
   | {
+      readonly type: "wechat";
+      readonly id: string;
+      readonly chatThreadId: string;
+      readonly snapshot: WechatChatEventContext;
+    }
+  | {
       readonly type: "discord";
       readonly id: string;
       readonly chatThreadId: string;
@@ -526,6 +556,17 @@ function newDisplayContext(
       id: agentRunContext.sourceRunId,
       sourceChatThreadId: agentRunContext.sourceChatThreadId,
       sourceAgentId: agentRunContext.sourceAgentId,
+    };
+  }
+
+  const wechatContext =
+    "wechatContext" in values ? values.wechatContext : undefined;
+  if (wechatContext !== undefined) {
+    return {
+      type: "wechat",
+      id: eventId,
+      chatThreadId: values.chatThreadId,
+      snapshot: wechatContext,
     };
   }
 
@@ -761,6 +802,14 @@ function insertDisplayContext(
 ): SQL {
   if (context.type === "agent_run") {
     return insertAgentRunDisplayContext(context, createdAt);
+  }
+  if (context.type === "wechat") {
+    return contextInsertSql(chatWechatContext, {
+      ...context.snapshot,
+      id: context.id,
+      chatThreadId: context.chatThreadId,
+      createdAt,
+    });
   }
   if (context.type === "discord") {
     return insertDiscordDisplayContext(context, createdAt);

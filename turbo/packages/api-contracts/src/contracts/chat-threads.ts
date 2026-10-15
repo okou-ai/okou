@@ -642,6 +642,7 @@ const userMessageExternalSourcePartSchema = z
     kind: z.enum([
       "slack",
       "discord",
+      "wechat",
       "feishu",
       "lark",
       "teams",

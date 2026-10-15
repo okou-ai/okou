@@ -335,7 +335,8 @@
       "telegram": "Telegram",
       "test": "Tes",
       "web": "Web",
-      "webhook": "Webhook"
+      "webhook": "Webhook",
+      "wechat": "WeChat"
     },
     "statuses": {
       "cancelled": "Dibatalkan",
@@ -2005,7 +2006,8 @@
       "openTelegramMessage": "Buka pesan asli di Telegram",
       "slack": "Slack",
       "teams": "Microsoft Teams",
-      "telegram": "Telegram"
+      "telegram": "Telegram",
+      "wechat": "WeChat"
     },
     "permissions": {
       "actionDescription": "{{action}} {{permissionName}}",
@@ -6520,6 +6522,30 @@
     "telegram": {
       "description": "Rutekan pesan Telegram ke agen",
       "title": "Telegram"
+    },
+    "wechat": {
+      "code": "Kode verifikasi",
+      "connect": "Hubungkan",
+      "connected": "Terhubung",
+      "creating": "Membuat kode QR…",
+      "description": "Mengobrol dengan agen Anda di WeChat.",
+      "disconnect": "Putuskan koneksi",
+      "expired": "Kode QR ini telah kedaluwarsa. Buat yang baru.",
+      "failed": "Tidak dapat terhubung ke WeChat. Coba lagi.",
+      "instructions": "Pindai kode QR ini dengan WeChat, lalu konfirmasi di ponsel Anda.",
+      "name": "WeChat",
+      "reconnect": "Hubungkan kembali",
+      "reconnect_required": "Pindai lagi untuk menghubungkan kembali.",
+      "restart_required": "Akun WeChat ini sudah ditautkan. Buat kode QR baru untuk menghubungkannya kembali.",
+      "retry": "Buat kode QR baru",
+      "scanned": "Berhasil dipindai. Konfirmasi di ponsel Anda.",
+      "scope": "Hanya pesan langsung Anda ke agen ini yang terhubung. Pesan teks didukung.",
+      "title": "Hubungkan WeChat",
+      "unavailable": "Koneksi belum dikonfigurasi.",
+      "verification_blocked": "Terlalu banyak percobaan. Buat kode QR baru.",
+      "verification_required": "Masukkan kode verifikasi yang ditampilkan di WeChat.",
+      "verify": "Verifikasi",
+      "waiting": "Menunggu pemindaian…"
     }
   }
 }

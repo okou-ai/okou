@@ -349,7 +349,8 @@
       "telegram": "Telegram",
       "test": "Test",
       "web": "Rete",
-      "webhook": "Webhook"
+      "webhook": "Webhook",
+      "wechat": "WeChat"
     },
     "statuses": {
       "cancelled": "Annullato",
@@ -2048,7 +2049,8 @@
       "openTelegramMessage": "Apri il messaggio originale in Telegram",
       "slack": "Slack",
       "teams": "Microsoft Teams",
-      "telegram": "Telegram"
+      "telegram": "Telegram",
+      "wechat": "WeChat"
     },
     "permissions": {
       "actionDescription": "{{action}} {{permissionName}}",
@@ -6630,6 +6632,30 @@
     "telegram": {
       "description": "Instrada i messaggi Telegram agli agenti",
       "title": "Telegram"
+    },
+    "wechat": {
+      "code": "Codice di verifica",
+      "connect": "Connetti",
+      "connected": "Connesso",
+      "creating": "Creazione del codice QR…",
+      "description": "Chatta con il tuo agente su WeChat.",
+      "disconnect": "Disconnetti",
+      "expired": "Questo codice QR è scaduto. Creane uno nuovo.",
+      "failed": "Impossibile connettersi a WeChat. Riprova.",
+      "instructions": "Scansiona questo codice QR con WeChat, poi conferma sul telefono.",
+      "name": "WeChat",
+      "reconnect": "Riconnetti",
+      "reconnect_required": "Scansiona di nuovo per riconnetterti.",
+      "restart_required": "Questo account WeChat è già collegato. Crea un nuovo codice QR per riconnetterlo.",
+      "retry": "Crea un nuovo codice QR",
+      "scanned": "Scansionato. Conferma sul telefono.",
+      "scope": "Vengono collegati solo i tuoi messaggi diretti a questo agente. Sono supportati i messaggi di testo.",
+      "title": "Connetti WeChat",
+      "unavailable": "La connessione non è ancora configurata.",
+      "verification_blocked": "Troppi tentativi. Crea un nuovo codice QR.",
+      "verification_required": "Inserisci il codice di verifica mostrato in WeChat.",
+      "verify": "Verifica",
+      "waiting": "In attesa della scansione…"
     }
   }
 }
