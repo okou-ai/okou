@@ -4,6 +4,8 @@ use super::super::super::signals::{
 use super::super::super::*;
 use std::collections::BTreeMap;
 
+use super::startup_api::StartupApi;
+
 use crate::executor;
 use crate::lifecycle::LifecycleController;
 use crate::provider_test_support::{MockJobProvider, MockProviderHandle};
@@ -72,9 +74,24 @@ pub(in super::super) struct MockRunEnv {
     pub(in super::super) cancel_tokens: RunCancellationRegistry,
     pub(in super::super) cancel: CancellationToken,
     pub(in super::super) _temp_dir: tempfile::TempDir,
+    startup_api: Option<StartupApi>,
 }
 
 impl MockRunEnv {
+    pub(in super::super) fn assert_startup_report_calls(&self, count: usize) {
+        let api = self
+            .startup_api
+            .as_ref()
+            .expect("ordinary fixture should own its startup API");
+        api.assert_report_calls(count);
+    }
+
+    pub(super) async fn shutdown_startup_api(&self) {
+        if let Some(api) = &self.startup_api {
+            api.shutdown().await;
+        }
+    }
+
     /// Simulate SIGUSR1 by driving the real `handle_drain_signal` so
     /// tests exercise the same state-guard path production does:
     /// Running enters Draining, Draining is idempotent, teardown modes ignore it.
@@ -142,7 +159,7 @@ fn build_mock_run_config(
         max_concurrent,
         make_provider,
         healthy_mock_sandbox_runtime(),
-        "http://localhost:0",
+        None,
     )
 }
 
@@ -160,7 +177,7 @@ pub(in super::super) fn mock_run_config_with_runtime(
         max_concurrent,
         MockJobProvider::new,
         runtime,
-        "http://localhost:0",
+        None,
     )
 }
 
@@ -180,7 +197,7 @@ pub(in super::super) fn mock_run_config_with_api_url(
         max_concurrent,
         MockJobProvider::new,
         healthy_mock_sandbox_runtime(),
-        api_url,
+        Some(api_url),
     )
 }
 
@@ -200,8 +217,15 @@ fn build_mock_run_config_with_runtime(
     max_concurrent: usize,
     make_provider: impl FnOnce(CancellationToken) -> (Arc<MockJobProvider>, MockProviderHandle),
     runtime: Box<dyn sandbox::SandboxRuntime>,
-    api_url: &str,
+    api_url: Option<&str>,
 ) -> (RunConfig, MockRunEnv) {
+    let (api_url, startup_api) = match api_url {
+        Some(url) => (url.to_owned(), None),
+        None => {
+            let api = StartupApi::start();
+            (api.url().to_owned(), Some(api))
+        }
+    };
     let temp_dir = tempfile::tempdir().unwrap();
     let cancel = CancellationToken::new();
     let (provider, handle) = make_provider(cancel.clone());
@@ -294,11 +318,11 @@ fn build_mock_run_config_with_runtime(
             mitm_crash_rx,
         },
         exec_config: Arc::new(executor::ExecutorConfig {
-            api_url: api_url.to_string(),
+            api_url: api_url.clone(),
             runner_hostname: None,
             registry,
             http: crate::http::HttpClient::new(crate::http::HttpClientConfig {
-                api_url: api_url.to_string(),
+                api_url,
                 vercel_bypass: None,
                 client_session_id: "runner-session-test".to_string(),
                 runner_version: env!("CARGO_PKG_VERSION"),
@@ -363,6 +387,7 @@ fn build_mock_run_config_with_runtime(
         cancel_tokens,
         cancel,
         _temp_dir: temp_dir,
+        startup_api,
     };
     (config, env)
 }
@@ -395,13 +420,13 @@ pub(in super::super) fn mock_run_config_with_overrides(
     max_concurrent: usize,
     overrides: Arc<sandbox_mock::MockSandboxOverrides>,
 ) -> (RunConfig, MockRunEnv) {
-    mock_run_config_with_overrides_and_api_url(
+    build_mock_run_config_with_overrides(
         profiles,
         budget_vcpu,
         budget_memory_mb,
         max_concurrent,
         overrides,
-        "http://localhost:0",
+        None,
     )
 }
 
@@ -412,6 +437,24 @@ pub(in super::super) fn mock_run_config_with_overrides_and_api_url(
     max_concurrent: usize,
     overrides: Arc<sandbox_mock::MockSandboxOverrides>,
     api_url: &str,
+) -> (RunConfig, MockRunEnv) {
+    build_mock_run_config_with_overrides(
+        profiles,
+        budget_vcpu,
+        budget_memory_mb,
+        max_concurrent,
+        overrides,
+        Some(api_url),
+    )
+}
+
+fn build_mock_run_config_with_overrides(
+    profiles: BTreeMap<String, RuntimeProfile>,
+    budget_vcpu: u32,
+    budget_memory_mb: u32,
+    max_concurrent: usize,
+    overrides: Arc<sandbox_mock::MockSandboxOverrides>,
+    api_url: Option<&str>,
 ) -> (RunConfig, MockRunEnv) {
     crate::idle_reuse_preparation::add_healthy_reuse_preparation_matcher(&overrides);
     runner_lifecycle::home_promotion::test_support::add_healthy_cache_preparation_matcher(
