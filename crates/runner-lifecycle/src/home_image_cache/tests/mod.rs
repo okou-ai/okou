@@ -7,6 +7,7 @@ mod metadata;
 mod observations;
 mod promotion;
 mod publication_admission;
+mod publication_budget;
 mod routine_gc;
 mod state;
 mod storage;
