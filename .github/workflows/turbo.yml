@@ -1340,6 +1340,7 @@ jobs:
     timeout-minutes: 15
     outputs:
       preview-url: ${{ steps.worker-deploy.outputs.url }}
+      artifact-sha: ${{ steps.artifact.outputs.sha }}
     concurrency:
       group: deploy-app-${{ github.sha }}
       cancel-in-progress: false
@@ -2479,6 +2480,7 @@ jobs:
         env:
           OKOU_API_BACKEND_URL: ${{ needs.deploy-api.outputs.preview-url }}
           OKOU_APP_URL: ${{ needs.deploy-app.outputs.preview-url }}
+          OKOU_EXPECTED_APP_BUILD_SHA: ${{ needs.deploy-app.outputs.artifact-sha }}
           CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           JOB_REF: ${{ needs.prepare.outputs.job-ref }}

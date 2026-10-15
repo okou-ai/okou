@@ -28,6 +28,21 @@ export interface DiscordGuildAccess {
   bot: DiscordMember;
 }
 
+/** Captured provider facts for one bounded operation, never a cross-request cache. */
+export interface DiscordProviderSnapshot {
+  readonly channel: DiscordChannel;
+  readonly permissionChannel: DiscordChannel;
+  readonly guild: DiscordGuildAccess | null;
+  readonly discordUserId: string;
+  readonly botUserId: string;
+}
+
+type ProviderAccess = {
+  readonly kind: "allowed";
+  readonly channel: DiscordChannel;
+  readonly snapshot: DiscordProviderSnapshot;
+};
+
 type AccessFailure = {
   kind: "denied";
   response: DiscordFailureResponse;
@@ -158,6 +173,21 @@ interface DiscordProviderAccessArgs {
   mode: DiscordAccessMode;
   attachFiles?: boolean;
   createPublicThread?: boolean;
+  /** Only reuse facts captured by this operation for these exact principals. */
+  snapshot?: DiscordProviderSnapshot;
+}
+
+function observedChannel(
+  snapshot: DiscordProviderSnapshot | undefined,
+  channelId: string,
+): DiscordChannel | undefined {
+  if (snapshot?.channel.id === channelId) {
+    return snapshot.channel;
+  }
+  if (snapshot?.permissionChannel.id === channelId) {
+    return snapshot.permissionChannel;
+  }
+  return undefined;
 }
 
 async function resolvePermissionChannel(
@@ -169,10 +199,13 @@ async function resolvePermissionChannel(
     if (!channel.parent_id || !channel.thread_metadata) {
       return unavailable();
     }
-    const parent = await discordClient.fetchDiscordChannel(
-      { botToken: args.botToken, channelId: channel.parent_id },
-      signal,
-    );
+    const observed = observedChannel(args.snapshot, channel.parent_id);
+    const parent = observed
+      ? { kind: "ok" as const, data: observed }
+      : await discordClient.fetchDiscordChannel(
+          { botToken: args.botToken, channelId: channel.parent_id },
+          signal,
+        );
     if (parent.kind !== "ok") {
       return { kind: "denied", response: discordApiFailure(parent) };
     }
@@ -222,7 +255,26 @@ async function resolveDiscordDmAccess(
 export async function resolveDiscordProviderAccess(
   args: DiscordProviderAccessArgs,
   signal?: AbortSignal,
-): Promise<{ kind: "allowed"; channel: DiscordChannel } | AccessFailure> {
+): Promise<ProviderAccess | AccessFailure> {
+  signal?.throwIfAborted();
+  const observed = args.snapshot;
+  if (
+    observed &&
+    (observed.discordUserId !== args.discordUserId ||
+      observed.botUserId !== args.botUserId ||
+      (args.guildId !== undefined && observed.guild?.guild.id !== args.guildId))
+  ) {
+    return unavailable();
+  }
+  if (observed?.channel.id === args.channelId) {
+    return authorizeDiscordSnapshot(observed, args);
+  }
+  if (observed?.permissionChannel.id === args.channelId) {
+    return authorizeDiscordSnapshot(
+      { ...observed, channel: observed.permissionChannel },
+      args,
+    );
+  }
   const result = await discordClient.fetchDiscordChannel(args, signal);
   if (result.kind !== "ok") {
     return { kind: "denied", response: discordApiFailure(result) };
@@ -237,8 +289,28 @@ export async function resolveDiscordProviderAccess(
     return unavailable();
   }
   if (channel.type === 1) {
-    return await resolveDiscordDmAccess(args, channel, signal);
+    const access = await resolveDiscordDmAccess(args, channel, signal);
+    return access.kind === "denied"
+      ? access
+      : {
+          ...access,
+          snapshot: {
+            channel,
+            permissionChannel: channel,
+            guild: null,
+            discordUserId: args.discordUserId,
+            botUserId: args.botUserId,
+          },
+        };
   }
+  return await resolveGuildChannelAccess(args, channel, signal);
+}
+
+async function resolveGuildChannelAccess(
+  args: DiscordProviderAccessArgs,
+  channel: DiscordChannel,
+  signal?: AbortSignal,
+): Promise<ProviderAccess | AccessFailure> {
   if (
     !channel.guild_id ||
     (args.guildId !== undefined && channel.guild_id !== args.guildId)
@@ -261,7 +333,10 @@ export async function resolveDiscordProviderAccess(
   if (permissionChannel.kind === "denied") {
     return permissionChannel;
   }
-  const guild = await loadDiscordGuildAccess(guildArgs, signal);
+  const guild =
+    args.snapshot?.guild?.guild.id === channel.guild_id
+      ? { kind: "allowed" as const, access: args.snapshot.guild }
+      : await loadDiscordGuildAccess(guildArgs, signal);
   if (guild.kind === "denied") {
     return guild;
   }
@@ -275,7 +350,58 @@ export async function resolveDiscordProviderAccess(
   if (!permissions) {
     return unavailable();
   }
-  return await requireThreadAccess(args, channel, permissions, signal);
+  const access = await requireThreadAccess(args, channel, permissions, signal);
+  return access.kind === "denied"
+    ? access
+    : {
+        ...access,
+        snapshot: {
+          channel,
+          permissionChannel: permissionChannel.channel,
+          guild: guild.access,
+          discordUserId: args.discordUserId,
+          botUserId: args.botUserId,
+        },
+      };
+}
+
+/** Re-evaluate a mode against the same operation's already verified facts. */
+export function authorizeDiscordSnapshot(
+  snapshot: DiscordProviderSnapshot,
+  requirements: {
+    readonly mode: DiscordAccessMode;
+    readonly attachFiles?: boolean;
+    readonly createPublicThread?: boolean;
+  },
+): ProviderAccess | AccessFailure {
+  const { channel, guild } = snapshot;
+  if (
+    requirements.createPublicThread &&
+    !(requirements.mode === "write" && [0, 5].includes(channel.type))
+  ) {
+    return unavailable();
+  }
+  if (!guild) {
+    return { kind: "allowed", channel, snapshot };
+  }
+  if (
+    !isDiscordMessageChannel(channel) &&
+    !(requirements.mode === "view" && [15, 16].includes(channel.type))
+  ) {
+    return unavailable();
+  }
+  const permissions = discordSharedChannelPermissions(
+    guild,
+    snapshot.permissionChannel,
+    requirements.mode,
+    isDiscordThread(channel),
+    requirements,
+  );
+  if (!permissions) {
+    return unavailable();
+  }
+  const access = threadWriteAccess(requirements.mode, channel, permissions);
+  return access.kind === "denied" ? access : { ...access, snapshot };
 }
 
 async function requireThreadAccess(
@@ -309,12 +435,20 @@ async function requireThreadAccess(
       }
     }
   }
+  return threadWriteAccess(args.mode, channel, permissions);
+}
+
+function threadWriteAccess(
+  mode: DiscordAccessMode,
+  channel: DiscordChannel,
+  permissions: { user: bigint; bot: bigint },
+): { kind: "allowed"; channel: DiscordChannel } | AccessFailure {
   // Sending into an archived thread unarchives it, so only a moderator lock
   // closes a thread for writes. Discord lets MANAGE_THREADS holders send into
   // and reopen a locked thread; the bot's authority cannot stand in for the
   // sender's, so both principals must hold it.
   if (
-    args.mode === "write" &&
+    mode === "write" &&
     isDiscordThread(channel) &&
     channel.thread_metadata?.locked &&
     !(

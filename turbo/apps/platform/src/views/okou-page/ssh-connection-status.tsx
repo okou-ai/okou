@@ -86,6 +86,7 @@ export function SshAttention({
 
 function failureDescription(
   reason: NonNullable<SshConnectionObservation["failureReason"]>,
+  tailscaleSsh: boolean,
 ): string {
   switch (reason) {
     case "access_rejected": {
@@ -139,6 +140,11 @@ function failureDescription(
       });
     }
     case "authentication_failed": {
+      if (tailscaleSsh) {
+        return i18n.t(($) => {
+          return $.ssh.tailscale.authenticationFailed;
+        });
+      }
       return i18n.t(($) => {
         return $.ssh.connectionStatus.authenticationFailed;
       });
@@ -160,10 +166,12 @@ export function SshHostWarning({
   connectionId,
   generation,
   createdAt,
+  tailscaleSsh,
 }: {
   readonly connectionId: string;
   readonly generation: number;
   readonly createdAt: string;
+  readonly tailscaleSsh: boolean;
 }) {
   const { t } = useTranslation();
   const status = useSshObservations();
@@ -187,7 +195,7 @@ export function SshHostWarning({
     >
       <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
       <div className="grid gap-1">
-        <p>{failureDescription(observation.failureReason)}</p>
+        <p>{failureDescription(observation.failureReason, tailscaleSsh)}</p>
         <time
           dateTime={observation.observedAt}
           className="text-xs text-muted-foreground"

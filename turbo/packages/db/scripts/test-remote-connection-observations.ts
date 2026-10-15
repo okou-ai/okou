@@ -84,8 +84,11 @@ try {
     [ssh],
   );
   const retainedInventory = await inventory();
-  await applyPendingMigrations(migrationSql);
+  await applyPendingMigrations(migrationSql, {
+    beforeMillis: migration.when + 1,
+  });
   assert.deepEqual(await inventory(), retainedInventory);
+  await applyPendingMigrations(migrationSql);
   assert.deepEqual(
     (
       await client.query(

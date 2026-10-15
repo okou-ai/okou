@@ -28,7 +28,7 @@ use super::{
     regional_fixture::{Relay, map},
 };
 use crate::{
-    ssh::cache::Cache,
+    tailscale::tests::fixture::Cache,
     tailscale::tests::{
         derp::fixture::{Server, WriteGate},
         fixture::bounded,

@@ -136,7 +136,7 @@ pub fn verify_file(path: &Path, expected: &str) -> TestResult<()> {
 }
 
 /// CLOCK_MONOTONIC matches P1's monotonic_ns; wall time is supplementary.
-fn clocks() -> io::Result<(u64, u128)> {
+pub(super) fn clocks() -> io::Result<(u64, u128)> {
     let mut time = libc::timespec {
         tv_sec: 0,
         tv_nsec: 0,
@@ -210,6 +210,10 @@ impl Case {
 
     pub fn optional_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
         self.write_event(OPTIONAL_PREFIX, phase, evidence)
+    }
+
+    pub fn recovery_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_RECOVERY_WITNESS ", phase, evidence)
     }
 
     pub fn snapshot_memory_hash(&self) -> io::Result<&str> {

@@ -97,6 +97,63 @@ afterEach(async () => {
 });
 
 describe("okou ssh management", () => {
+  it("creates and lists a Tailscale SSH host without a reusable SSH credential", async () => {
+    let received: unknown;
+    const identity = {
+      id,
+      displayName: "Identity host",
+      host: "peer",
+      port: 22,
+      username: "ubuntu",
+      generation: 1,
+      learnedHostKey: null,
+      ...dates,
+      transport: { type: "tailscale_ssh", configId },
+    };
+    server.use(
+      http.post(`${base}/api/ssh/connections`, async ({ request }) => {
+        received = await request.json();
+        return HttpResponse.json(
+          { ...identity, password: secrets.password },
+          { status: 201 },
+        );
+      }),
+      http.get(`${base}/api/ssh/connections`, () => {
+        return HttpResponse.json({ connections: [identity] });
+      }),
+    );
+    await invoke(
+      "host",
+      "create",
+      "--input",
+      await input({
+        id,
+        displayName: identity.displayName,
+        host: "peer",
+        username: "ubuntu",
+        transport: identity.transport,
+      }),
+      "--json",
+    );
+    expect(received).toStrictEqual({
+      id,
+      displayName: identity.displayName,
+      host: "peer",
+      username: "ubuntu",
+      port: 22,
+      transport: identity.transport,
+    });
+    expect(result()).toMatchObject({
+      transport: identity.transport,
+      username: "ubuntu",
+    });
+    expect(result()).not.toHaveProperty("credentialId");
+    expect(displayed()).not.toContain(secrets.password);
+    await invoke("host", "list", "--scope", "configured", "--json");
+    expect(result()).toMatchObject({
+      connections: [{ transport: identity.transport }],
+    });
+  });
   it("lists configured hosts with connector:read, projecting safe nested metadata", async () => {
     token(["connector:read"]);
     server.use(

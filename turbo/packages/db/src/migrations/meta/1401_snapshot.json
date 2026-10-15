@@ -1,6 +1,6 @@
 {
-  "id": "41025bd6-c114-47e0-8a6d-759bdb316c98",
-  "prevId": "223bb513-7f87-470a-90fd-77295fd104e3",
+  "id": "87d52190-d50d-4b8c-9716-f21fa437f039",
+  "prevId": "a85fa318-35fa-441e-942b-16144887071b",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -17405,12 +17405,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "oauth_requested_scopes": {
-          "name": "oauth_requested_scopes",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "encrypted_credentials": {
           "name": "encrypted_credentials",
           "type": "text",
@@ -17557,12 +17551,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'agent'"
-        },
-        "oauth_requested_scopes": {
-          "name": "oauth_requested_scopes",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "encrypted_verifier": {
           "name": "encrypted_verifier",
@@ -26911,7 +26899,7 @@
           "name": "credential_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "cloudflare_access_id": {
           "name": "cloudflare_access_id",
@@ -26970,6 +26958,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "tailscale_ssh_username": {
+          "name": "tailscale_ssh_username",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -27135,11 +27129,15 @@
       "checkConstraints": {
         "chk_ssh_connections_transport": {
           "name": "chk_ssh_connections_transport",
-          "value": "\"ssh_connections\".\"transport\" IN ('direct', 'cloudflare_access', 'tailscale')"
+          "value": "\"ssh_connections\".\"transport\" IN ('direct', 'cloudflare_access', 'tailscale', 'tailscale_ssh')"
         },
         "chk_ssh_connections_transport_binding": {
           "name": "chk_ssh_connections_transport_binding",
-          "value": "(\"ssh_connections\".\"transport\" = 'direct' AND \"ssh_connections\".\"cloudflare_access_id\" IS NULL AND \"ssh_connections\".\"tailscale_id\" IS NULL) OR (\"ssh_connections\".\"transport\" = 'cloudflare_access' AND \"ssh_connections\".\"tailscale_id\" IS NULL) OR (\"ssh_connections\".\"transport\" = 'tailscale' AND \"ssh_connections\".\"cloudflare_access_id\" IS NULL)"
+          "value": "(\"ssh_connections\".\"transport\" = 'direct' AND \"ssh_connections\".\"cloudflare_access_id\" IS NULL AND \"ssh_connections\".\"tailscale_id\" IS NULL) OR (\"ssh_connections\".\"transport\" = 'cloudflare_access' AND \"ssh_connections\".\"tailscale_id\" IS NULL) OR (\"ssh_connections\".\"transport\" IN ('tailscale', 'tailscale_ssh') AND \"ssh_connections\".\"cloudflare_access_id\" IS NULL)"
+        },
+        "chk_ssh_connections_login": {
+          "name": "chk_ssh_connections_login",
+          "value": "(\"ssh_connections\".\"transport\" = 'tailscale_ssh' AND \"ssh_connections\".\"credential_id\" IS NULL AND \"ssh_connections\".\"tailscale_ssh_username\" IS NOT NULL AND char_length(btrim(\"ssh_connections\".\"tailscale_ssh_username\")) BETWEEN 1 AND 255 AND \"ssh_connections\".\"port\" = 22) OR (\"ssh_connections\".\"transport\" <> 'tailscale_ssh' AND \"ssh_connections\".\"credential_id\" IS NOT NULL AND \"ssh_connections\".\"tailscale_ssh_username\" IS NULL)"
         },
         "chk_ssh_connections_cloudflare_access_destination": {
           "name": "chk_ssh_connections_cloudflare_access_destination",

@@ -58,6 +58,7 @@ const telegramLinkStatusResponseSchema = z.discriminatedUnion("linked", [
         botUsername: z.string(),
         loginBotId: z.string().optional(),
         domainConfigured: z.boolean().optional(),
+        authCallbackProtocol: z.literal(2).optional(),
       })
       .optional(),
   }),
@@ -134,6 +135,7 @@ export const integrationsTelegramContract = c.router({
       botId: z.string().optional(),
       origin: z.string().optional(),
       source: z.enum(["onboarding", "works", "connect_page"]).optional(),
+      callbackProtocol: z.literal("2").optional(),
     }),
     responses: {
       200: telegramLinkStatusResponseSchema,
@@ -166,7 +168,14 @@ export const integrationsTelegramContract = c.router({
   authCallback: {
     method: "GET",
     path: "/api/integrations/telegram/auth-callback",
-    query: z.object({ targetOrigin: z.string().optional() }),
+    query: z.object({
+      targetOrigin: z.string().optional(),
+      // Validate explicit versions in the HTML boundary so rejected callbacks
+      // can also scrub provider proof from browser history.
+      callbackProtocol: z.string().optional(),
+      operationId: z.string().optional(),
+      bot: z.string().optional(),
+    }),
     responses: {
       200: c.otherResponse({
         contentType: "text/html",
@@ -174,6 +183,11 @@ export const integrationsTelegramContract = c.router({
       }),
       400: c.otherResponse({
         contentType: "text/plain",
+        body: z.string(),
+      }),
+      // Explicit v2 context errors render guidance and scrub provider proof.
+      422: c.otherResponse({
+        contentType: "text/html",
         body: z.string(),
       }),
     },
@@ -236,3 +250,46 @@ export type TelegramListResponse = z.infer<typeof telegramListResponseSchema>;
 export type TelegramLinkStatusResponse = z.infer<
   typeof telegramLinkStatusResponseSchema
 >;
+
+// The authenticated initiating App owns binding. These messages carry no
+// redirect URL, session token or claim that provider consent itself linked.
+export const TELEGRAM_AUTH_CALLBACK_OUTCOMES = [
+  "linked",
+  "cancelled",
+  "failed",
+  "conflict",
+  "expired",
+  "interrupted",
+  "prerequisite",
+] as const;
+
+type TelegramAuthCallbackContext = {
+  readonly protocol: 2;
+  readonly operationId: string;
+  readonly bot: typeof OFFICIAL_TELEGRAM_BOT_ID;
+};
+
+export type TelegramAuthCallbackMessage = TelegramAuthCallbackContext &
+  (
+    | { readonly type: "telegram-auth-bridge-ready" | "telegram-auth-ready" }
+    | {
+        readonly type: "telegram-auth";
+        readonly data: Readonly<
+          Record<"id" | "auth_date" | "hash", string> &
+            Partial<
+              Record<
+                "first_name" | "last_name" | "username" | "photo_url",
+                string
+              >
+            >
+        >;
+      }
+    | {
+        readonly type: "telegram-auth-ack";
+        readonly stage: "identity" | "result";
+      }
+    | {
+        readonly type: "telegram-auth-result";
+        readonly status: (typeof TELEGRAM_AUTH_CALLBACK_OUTCOMES)[number];
+      }
+  );

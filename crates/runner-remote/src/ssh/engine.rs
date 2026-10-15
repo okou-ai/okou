@@ -82,7 +82,7 @@ impl Execution {
     ) -> Result<Connected, FailureReason> {
         let (stream, socket_guard) =
             SshSocket::new(stream, self.lease).map_err(|_| FailureReason::NetworkFailure)?;
-        let stream: Box<dyn super::access::SshStream> = match &self.credential.transport {
+        let stream: Box<dyn crate::cloudflare::ByteIo> = match &self.credential.transport {
             Transport::Direct | Transport::Tailscale(_) => Box::new(stream),
             Transport::CloudflareAccess(access) => {
                 observation.connecting = true;
@@ -138,6 +138,10 @@ impl Execution {
         };
         let session = &mut connected.session;
         let authentication = match &self.credential.auth {
+            PreparedAuth::Tailscale => scope
+                .wait(session.authenticate_none(self.credential.username.clone()))
+                .await?
+                .map_err(|_| FailureReason::AuthenticationFailed)?,
             PreparedAuth::Password(password) => scope
                 .wait(
                     session

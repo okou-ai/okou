@@ -189,12 +189,7 @@ impl TestRun {
     pub(super) fn with_id(runtime: &Arc<VncRuntime>, id: RunId) -> Self {
         let cancel = CancellationToken::new();
         let (incoming, receiver) = mpsc::channel(16);
-        let dispatcher = Runtime {
-            ssh: None,
-            vnc: Some(Arc::clone(runtime)),
-            usage: None,
-        }
-        .start(
+        let dispatcher = Runtime::new(None, Some(Arc::clone(runtime)), None).start(
             Arc::new(Acceptor(tokio::sync::Mutex::new(receiver))),
             "vnc-assigned-sandbox".into(),
             id,

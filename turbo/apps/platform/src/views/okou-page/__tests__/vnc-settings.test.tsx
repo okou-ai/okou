@@ -112,7 +112,7 @@ const qemuCredential = Object.freeze<QemuScramCredential>({
 });
 const caBundle =
   "-----BEGIN CERTIFICATE-----\nTEST-CA-CERTIFICATE\n-----END CERTIFICATE-----\n";
-const sshHost = Object.freeze<SshConnectionResponse>({
+const sshHost = Object.freeze({
   id: "a0000000-0000-4000-8000-000000000001",
   displayName: "Desktop gateway",
   host: "gateway.example.com",
@@ -124,7 +124,7 @@ const sshHost = Object.freeze<SshConnectionResponse>({
   learnedHostKey: null,
   createdAt: host.createdAt,
   updatedAt: host.updatedAt,
-});
+} satisfies SshConnectionResponse);
 const tunneledHost = Object.freeze<CredentialedVncConnection>({
   ...host,
   id: "b0000000-0000-4000-8000-000000000003",
@@ -1079,7 +1079,10 @@ test.each<{
 
     settings.sshConnections = [
       {
-        ...retained,
+        ...sshHost,
+        host: retained.host,
+        port: retained.port,
+        learnedHostKey: retained.learnedHostKey,
         generation: retained.generation + 1,
         transport:
           type === "tailscale"

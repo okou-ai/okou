@@ -236,8 +236,30 @@ byte events: zero observed data does not prove that the server sent nothing.
 These client-side observations can locate a stalled transfer or script but
 cannot alone distinguish a Worker stall from a remote edge/transport failure.
 Page-state capture has its own one-second deadline and can be unavailable.
+The preview-only Worker entry adds `x-okou-preview-build-sha` to eligible
+same-origin `/sign-in` HTML navigation responses. Its value comes from the
+unique canonical source-SHA meta declaration in the immutable bundled shell,
+not the expected artifact or request. Default and production entries omit it.
+The wrapper annotates the existing Response without consuming its body.
+
+Runner preparation carries the resolved artifact SHA as
+`OKOU_EXPECTED_APP_BUILD_SHA`; failure reports retain its valid/missing/invalid
+classification separately from each eligible CDP document hop's observation.
+`requestId` plus `redirectHop` identify the hop. Observations are
+valid/missing/invalid/unavailable; comparisons are match/mismatch/not-comparable
+with a reason. Duplicate, combined or malformed marker values are rejected
+without retaining raw values. CDP can normalize headers before observation, so
+this cannot prove the absence of duplicate fields on the wire. External and
+ineligible hops are not compared. Missing markers do not distinguish an older
+Worker from an omitted or invalid bundled declaration.
+
+This source SHA is not an asset-byte digest or unique upload identity. Even a
+match and `loadingFinished` do not prove DOMContentLoaded, native streaming
+behavior or the cause of a historical failure. Retain this bounded preview
+contract; changing or removing it requires review of its producer and observer.
+
 These reports exclude URL queries/fragments/userinfo, headers other than the
-validated cf-ray identifier, cookies, payloads,
+validated cf-ray and preview-build identifiers, cookies, payloads,
 raw console/error text, screenshots and raw traces. Successful sign-in writes
 no report; diagnostic failure preserves the original sign-in error and does not
 retry authentication or increase its deadlines. This evidence diagnoses future

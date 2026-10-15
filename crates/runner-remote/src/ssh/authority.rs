@@ -53,6 +53,7 @@ impl Transport {
 }
 
 pub(super) enum CredentialAuth {
+    Tailscale,
     PrivateKey {
         private_key: api_contracts::SecretText<65536>,
         passphrase: Option<api_contracts::SecretText<4096>>,
@@ -71,6 +72,7 @@ pub(super) struct PreparedCredential {
 }
 
 pub(super) enum PreparedAuth {
+    Tailscale,
     PrivateKey(SigningKey),
     Password(api_contracts::SecretText<4096>),
 }
@@ -211,6 +213,29 @@ impl Authority {
         let (host, port, username, generation, learned_host_key, auth, transport) = match response {
             ResolveResponse::Unavailable => {
                 return Err(FailureReason::Unavailable);
+            }
+            ResolveResponse::ResolvedTailscaleSsh {
+                host,
+                port,
+                username,
+                generation,
+                learned_host_key,
+                tailscale,
+            } => {
+                if port != 22 {
+                    return Err(FailureReason::AuthorityFailure);
+                }
+                let configuration = super::native::configuration(tailscale)
+                    .map_err(|_| FailureReason::AuthorityFailure)?;
+                (
+                    host,
+                    port,
+                    username,
+                    generation,
+                    learned_host_key,
+                    CredentialAuth::Tailscale,
+                    Transport::Tailscale(configuration),
+                )
             }
             ResolveResponse::ResolvedTailscale {
                 host,

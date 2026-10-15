@@ -55,6 +55,16 @@ test("Folder expansion and entry are distinct and every ancestor navigates the r
   await expect(
     within(panel).findByText("home.txt"),
   ).resolves.toBeInTheDocument();
+  click(filesButton("Root folder", panel));
+  await expect(
+    within(panel).findByText("root.txt"),
+  ).resolves.toBeInTheDocument();
+  filesButton("Go to home folder", panel).focus();
+  await userEvent.keyboard("{Enter}");
+  await expect(
+    within(panel).findByText("home.txt"),
+  ).resolves.toBeInTheDocument();
+  expect(currentFolder(panel)).toHaveTextContent("user");
   const requests = fixture.requests.filter((request) => {
     return request.operation === "list";
   });
@@ -77,7 +87,7 @@ test("Folder expansion and entry are distinct and every ancestor navigates the r
   );
 });
 
-test("The mobile folder entry works by direct touch-style click without a hover event", async () => {
+test("Mobile folder entry and return home work without a hover event", async () => {
   await setupFilesPage(context, { mobile: true, handler: navigationListing });
   const panel = await openFiles(true);
   const enter = await waitFor(() => {
@@ -89,6 +99,12 @@ test("The mobile folder entry works by direct touch-style click without a hover 
   ).resolves.toBeInTheDocument();
   expect(currentFolder(panel)).toHaveTextContent("workspace");
   expect(within(panel).queryByText("home.txt")).toBeNull();
+  click(filesButton("Go to home folder", panel));
+  await expect(
+    within(panel).findByText("home.txt"),
+  ).resolves.toBeInTheDocument();
+  expect(currentFolder(panel)).toHaveTextContent("user");
+  expect(within(panel).queryByText("workspace.txt")).toBeNull();
 });
 
 test("Failed navigation keeps the original path and rows and retries the target from the stable toolbar button", async () => {

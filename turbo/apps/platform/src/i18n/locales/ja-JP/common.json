@@ -1914,6 +1914,7 @@
       "currentFolder": "現在のフォルダー",
       "empty": "このフォルダーは空です。",
       "enterFolder": "{{name}} を開く",
+      "goHome": "ホームフォルダーに戻る",
       "limit": "パネルの上限に達したため、一部のファイルを読み込めませんでした。フォルダーを閉じるか更新してください。",
       "link": "リンク",
       "loading": "読み込み中…",
@@ -5432,8 +5433,14 @@
     "summary_one": "{{count}} 台のホストを設定済み",
     "summary_other": "{{count}} 台のホストを設定済み",
     "tailscale": {
+      "authenticationFailed": "Tailscale SSH の認証に失敗しました。システムユーザー名を確認し、タグ付きの接続先で Tailscale SSH を有効にして、tailnet の SSH accept ポリシーでこのログインを許可してください。",
+      "deleteHelp": "このホストを削除しますか？エージェントはリアルタイムのインベントリでこのホストを確認できなくなります。",
       "editUnavailable": "このホストは現在 Tailscale を使用しています。ここでは Tailscale の編集と再紐付けはまだ利用できません。保存された接続方式を維持するには、この編集をキャンセルしてください。",
-      "needsRebind": "このホストには新しい Tailscale 設定が必要です。Tailscale のセットアップと再紐付けは、ここではまだ利用できません。"
+      "needsRebind": "このホストには新しい Tailscale 設定が必要です。Tailscale のセットアップと再紐付けは、ここではまだ利用できません。",
+      "sshDocs": "Tailscale SSH の公式ドキュメント",
+      "sshHelp": "選択した Tailscale ネットワークのマシン ID で認証するため、SSH パスワードや秘密鍵は不要です。タグ付きの接続先で Tailscale SSH を有効にし、SSH の accept ポリシーでこのシステムユーザー名を許可してください。",
+      "sshTitle": "Tailscale SSH",
+      "username": "システムユーザー名"
     },
     "unavailable": "このアカウントでは SSH アクセスを利用できません。",
     "username": "SSH ユーザー名"

@@ -2659,7 +2659,6 @@ export function createThreadClaimRunObjects(
           ownerUserId: agent.owner,
           agentOrgId: agent.orgId,
         },
-        nativeFramework: session?.expected.framework,
         sessionSnapshot: session?.executionSnapshot,
         timing,
       },
@@ -3205,10 +3204,6 @@ export function createThreadClaimRunObjects(
         args.featureSwitchContext,
       ),
       runId: args.run.id,
-      resumeSession:
-        args.resolved.resumeSessionIdentity?.cliAgentType === "pi"
-          ? args.resolved.resumeSession
-          : undefined,
       storagePlan: Promise.resolve(storage.resolved),
       piSandbox: args.piSandbox,
       chatThreadId: args.chatThreadId,
@@ -3363,10 +3358,6 @@ export function createThreadClaimRunObjects(
               modelConfig: piSandbox,
               piLaunchConfig: args.piLaunchConfig,
               memoryRecall,
-              resumeSession:
-                args.chatThreadId === undefined
-                  ? undefined
-                  : args.resumeSession,
               sessionId: args.chatThreadId ?? args.runId,
             }),
           );
@@ -5558,7 +5549,6 @@ interface ResolveAgentExecutionOptions {
   readonly agentObservation?: RunAgentObservation;
   readonly preloadedAgentExecutionObservation?: AgentExecutionRequestObservation;
   readonly timing?: ApiDispatchTimingCollector;
-  readonly nativeFramework?: string | null;
   readonly sessionSnapshot?: ChatThreadExecutionSnapshot;
 }
 
@@ -5646,10 +5636,6 @@ function resolveProductAgentExecution(
     ...(snapshot
       ? {
           nativeContinuation: snapshot.nativeContinuation,
-          resumeSessionIdentity: {
-            selectedModel: snapshot.previousRun?.selectedModel ?? null,
-            cliAgentType: options.nativeFramework ?? null,
-          },
         }
       : {}),
   };
@@ -5926,7 +5912,6 @@ interface PreparePiLaunchResourcesArgs {
   readonly userId: string;
   readonly piMemoryEnabled: boolean;
   readonly runId: string;
-  readonly resumeSession: StoredExecutionContext["resumeSession"] | undefined;
   readonly storagePlan: Promise<ResolvedAgentRunStorage>;
   readonly piSandbox: PiModelConfig | undefined;
   readonly chatThreadId: string | undefined;
@@ -6127,7 +6112,6 @@ function storedExecutionContextWithPiResources(
   }
   return {
     ...finalizedContext,
-    resumeSession: resources.resumeSession ?? null,
     piSessionId: resources.sessionId,
     piLaunchConfig: resources.launchConfig,
     piModelConfig: resources.modelConfig,
@@ -6157,7 +6141,6 @@ interface PreparedPiLaunchResources {
   readonly modelConfig: PiModelConfig;
   readonly launchConfig: PiLaunchConfig;
   readonly memoryRecall?: PiMemoryRecallSelection;
-  readonly resumeSession: StoredExecutionContext["resumeSession"] | undefined;
   readonly sessionId: string;
 }
 
@@ -6165,10 +6148,9 @@ function assemblePiLaunchResources(args: {
   readonly modelConfig: PiModelConfig;
   readonly piLaunchConfig: PiLaunchConfigOverrides | undefined;
   readonly memoryRecall: PiMemoryRecallSelection | undefined;
-  readonly resumeSession: PreparedPiLaunchResources["resumeSession"];
   readonly sessionId: string;
 }): PreparedPiLaunchResources {
-  const { memoryRecall, resumeSession, sessionId } = args;
+  const { memoryRecall, sessionId } = args;
   return {
     modelConfig: args.modelConfig,
     launchConfig: {
@@ -6177,7 +6159,6 @@ function assemblePiLaunchResources(args: {
       ...args.piLaunchConfig,
     },
     ...(memoryRecall === undefined ? {} : { memoryRecall }),
-    resumeSession,
     sessionId,
   };
 }

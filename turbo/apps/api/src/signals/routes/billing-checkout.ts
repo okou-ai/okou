@@ -1,4 +1,4 @@
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import {
   billingCheckoutContract,
   billingUsagePackCatalogContract,
@@ -61,6 +61,7 @@ import {
   prepareUsagePackChangeConfirmation$,
   repairUsagePackConfigurationBeforeConfirmation$,
   getUsagePackManagement,
+  usagePackManagement,
   previewUsagePackAllocationChange$,
 } from "../services/usage-pack-allocation-change.service";
 import {
@@ -819,14 +820,18 @@ const usagePackManagementAccess$ = command(({ get }, signal: AbortSignal) => {
   return { allowed: true as const, auth };
 });
 
+const usagePackManagementOrgId$ = computed((get) => {
+  return get(organizationAuthContext$).orgId;
+});
+const usagePackManagement$ = usagePackManagement(usagePackManagementOrgId$);
+
 const usagePackManagementGetAuthed$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const access = await set(usagePackManagementAccess$, signal);
     if (!access.allowed) {
       return access.response;
     }
-    const db = get(db$);
-    const management = await getUsagePackManagement(db, access.auth.orgId);
+    const management = await get(usagePackManagement$);
     signal.throwIfAborted();
     if (!management) {
       return notFound("Usage pack subscription not found");

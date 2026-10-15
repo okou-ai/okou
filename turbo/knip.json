@@ -61,7 +61,7 @@
       "ignoreBinaries": ["eslint", "oxlint", "wrangler"]
     },
     "apps/app-worker": {
-      "entry": ["src/index.ts", "src/worker.js"],
+      "entry": ["src/index.ts", "src/preview.ts", "src/worker.js"],
       "project": ["src/**/*.{js,ts}", "tests/**/*.mjs", "*.config.mjs"],
       "ignoreDependencies": ["eslint", "oxlint", "wrangler"],
       "ignoreBinaries": ["eslint", "oxlint", "wrangler"]

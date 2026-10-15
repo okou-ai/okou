@@ -1,4 +1,4 @@
-//! Configuration ownership is subordinate to one exact production cache registration.
+//! Configuration ownership is subordinate to one exact Run assignment.
 
 use std::{
     collections::HashMap,
@@ -30,8 +30,10 @@ impl Node {
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub(super) async fn physical(&self) -> Result<(), Failure> {
-        self.completion.physical().await
+    pub(super) fn physical(&self) -> impl Future<Output = Result<(), Failure>> + use<> {
+        // Observing retirement must not itself retain the consumer's node lease.
+        let completion = Arc::clone(&self.completion);
+        async move { completion.physical().await }
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -242,14 +244,6 @@ impl Registry {
         let node = Arc::new(Node { completion });
         state.nodes.insert(key, Arc::downgrade(&node));
         Ok(node)
-    }
-
-    pub(crate) fn invalidate(&self) {
-        let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
-        for completion in &state.physical {
-            completion.cancel();
-        }
-        state.nodes.clear();
     }
 
     pub(crate) fn close(&self) {

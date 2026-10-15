@@ -12,13 +12,24 @@ import {
   type TeamsConnectStatus,
 } from "@okouai/api-contracts/contracts/teams-connect";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
+
+export async function chooseSshConnectionType(
+  dialog: HTMLElement,
+  name: string,
+) {
+  await userEvent.click(
+    within(dialog).getByRole("combobox", { name: "Connection" }),
+  );
+  await userEvent.click(await screen.findByRole("option", { name }));
+}
 
 export function queryAction(
   role: "button" | "link" | "radio" | "tab",

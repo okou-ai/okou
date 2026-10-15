@@ -38,7 +38,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import { command } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import {
   contextJsonProjection,
@@ -47,7 +47,7 @@ import {
 } from "./context-rowset";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import {
   getStripeClient,
   type StripeClient,
@@ -944,11 +944,9 @@ async function expireStaleUsagePackPreviews(
     );
 }
 
-export async function getUsagePackManagement(
-  db: Pick<Db, "select">,
-  orgId: string,
-): Promise<UsagePackManagementResponse | null> {
-  const context = await loadUsagePackChangeContextForOrg(db, orgId);
+function usagePackManagementResponse(
+  context: UsagePackChangeContext | null,
+): UsagePackManagementResponse | null {
   if (!context) {
     return null;
   }
@@ -1004,6 +1002,95 @@ export async function getUsagePackManagement(
       };
     }),
   };
+}
+
+export async function getUsagePackManagement(
+  db: Pick<Db, "select">,
+  orgId: string,
+): Promise<UsagePackManagementResponse | null> {
+  const context = await loadUsagePackChangeContextForOrg(db, orgId);
+  return usagePackManagementResponse(context);
+}
+
+export function usagePackManagement(orgId$: Computed<string>) {
+  return computed(async (get): Promise<UsagePackManagementResponse | null> => {
+    const db = get(db$);
+    const orgId = get(orgId$);
+    const context = await (async (): Promise<UsagePackChangeContext | null> => {
+      const [subscription] = await db
+        .select()
+        .from(usagePackSubscriptions)
+        .where(
+          and(
+            eq(usagePackSubscriptions.orgId, orgId),
+            isNotNull(usagePackSubscriptions.stripeSubscriptionId),
+            notInArray(usagePackSubscriptions.subscriptionStatus, [
+              ...TERMINAL_SUBSCRIPTION_STATUSES,
+            ]),
+          ),
+        )
+        .orderBy(desc(usagePackSubscriptions.updatedAt))
+        .limit(1);
+      if (!subscription) {
+        return null;
+      }
+      const usagePackSubscriptionId = subscription.id;
+      return await (async () => {
+        const allocationColumns = getTableColumns(usagePackAllocations);
+        const changeColumns = getTableColumns(usagePackAllocationChanges);
+        const allocationSchema = contextProjectionSchema(allocationColumns);
+        const changeSchema = contextProjectionSchema(changeColumns);
+        const allocations = db
+          .select({
+            payload: contextJsonProjection(allocationColumns)
+              .mapWith(zodDriverValueDecoder(allocationSchema))
+              .as("payload"),
+          })
+          .from(usagePackAllocations)
+          .where(
+            eq(
+              usagePackAllocations.usagePackSubscriptionId,
+              usagePackSubscriptionId,
+            ),
+          );
+        const changes = db
+          .select({
+            payload: contextJsonProjection(changeColumns)
+              .mapWith(zodDriverValueDecoder(changeSchema))
+              .as("payload"),
+          })
+          .from(usagePackAllocationChanges)
+          .where(
+            and(
+              eq(
+                usagePackAllocationChanges.usagePackSubscriptionId,
+                usagePackSubscriptionId,
+              ),
+              inArray(usagePackAllocationChanges.status, [
+                ...OPEN_CHANGE_STATUSES,
+              ]),
+            ),
+          );
+        // Allocation replacement and its change-status transition commit together.
+        // One statement prevents mixing child rows from either side of that commit.
+        const [context] = await db
+          .select({
+            subscription: usagePackSubscriptions,
+            allocations: contextJsonRows(allocations).mapWith(
+              zodDriverValueDecoder(allocationSchema.array()),
+            ),
+            changes: contextJsonRows(changes).mapWith(
+              zodDriverValueDecoder(changeSchema.array()),
+            ),
+          })
+          .from(usagePackSubscriptions)
+          .where(eq(usagePackSubscriptions.id, usagePackSubscriptionId))
+          .limit(1);
+        return context ?? null;
+      })();
+    })();
+    return usagePackManagementResponse(context);
+  });
 }
 
 function usagePackSubscriptionWillEnd(
@@ -4910,11 +4997,10 @@ export const prepareUsagePackChangeConfirmation$ = command(
   ): Promise<PreparedUsagePackChangeConfirmation> => {
     const db = set(writeDb$);
     const at = nowDate();
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0273; new non-billing transactions are prohibited.
-    const result = await db.transaction(async (tx) => {
+    const result = await (async () => {
       // The existing live standalone-operation uniqueness plus the real
       // preview -> applying transition admits this stored financial intent.
-      const [found] = await tx
+      const [found] = await db
         .select({ change: usagePackAllocationChanges })
         .from(usagePackAllocationChanges)
         .innerJoin(
@@ -4947,7 +5033,7 @@ export const prepareUsagePackChangeConfirmation$ = command(
       }
       if (
         (
-          await tx.execute(
+          await db.execute(
             conflictingUsagePackMutationSql({
               subscriptionId: change.usagePackSubscriptionId,
               allocationChangeId: change.id,
@@ -4966,7 +5052,7 @@ export const prepareUsagePackChangeConfirmation$ = command(
         fulfillmentChangeIdentity(change),
       );
       if (!change.previewExpiresAt || change.previewExpiresAt <= at) {
-        const [expired] = await tx
+        const [expired] = await db
           .update(usagePackAllocationChanges)
           .set({
             status: "failed",
@@ -4984,7 +5070,7 @@ export const prepareUsagePackChangeConfirmation$ = command(
         throw new Error(`Usage pack change ${change.id} has no source`);
       }
       // The source is revalidated again when the Stripe result is reflected.
-      const [source] = await tx
+      const [source] = await db
         .select()
         .from(usagePackAllocations)
         .where(eq(usagePackAllocations.id, change.sourceAllocationId))
@@ -4996,7 +5082,7 @@ export const prepareUsagePackChangeConfirmation$ = command(
         source.usagePackUsd !== change.sourceUsagePackUsd ||
         source.stripePriceId !== change.sourceStripePriceId
       ) {
-        await tx
+        await db
           .update(usagePackAllocationChanges)
           .set({
             status: "failed",
@@ -5007,7 +5093,7 @@ export const prepareUsagePackChangeConfirmation$ = command(
           .where(previewedChange);
         return { status: "conflict" as const };
       }
-      const [prepared] = await tx
+      const [prepared] = await db
         .update(usagePackAllocationChanges)
         .set({ status: "applying", updatedAt: at })
         .where(
@@ -5021,7 +5107,7 @@ export const prepareUsagePackChangeConfirmation$ = command(
       return prepared
         ? { status: "ready" as const, change: prepared }
         : { status: "conflict" as const };
-    });
+    })();
     signal.throwIfAborted();
     return result;
   },

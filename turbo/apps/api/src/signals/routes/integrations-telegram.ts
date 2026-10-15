@@ -6,6 +6,7 @@ import {
 import { integrationsTelegramContract } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { CLIENT_REQUEST_ID_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 
+import { telegramAuthCallbackV2Response } from "../../lib/telegram-auth-callback";
 import { allowedCorsOrigin } from "../../lib/cors";
 import { env } from "../../lib/env";
 import { inferMimetype } from "../../lib/mimetype";
@@ -163,6 +164,7 @@ const getIntegrationTelegramLinkStatusInner$ = computed(async (get) => {
       botId: query.botId,
       origin: query.origin,
       source: query.source,
+      callbackProtocol: query.callbackProtocol,
       clientRequestId: get(request$).header(CLIENT_REQUEST_ID_HEADER),
     }),
   );
@@ -399,6 +401,11 @@ async function loadTelegramAvatar(
 
 const getIntegrationTelegramAuthCallback$ = computed((get): Response => {
   const query = get(queryOf(integrationsTelegramContract.authCallback));
+  // Retained Apps and in-flight URLs require the original envelope and close.
+  // #40196 owns removal only after those callers are no longer reachable.
+  if (query.callbackProtocol !== undefined) {
+    return telegramAuthCallbackV2Response(new URL(get(request$).url));
+  }
   const fallbackTargetOrigin = new URL(env("APP_URL")).origin;
   const targetOrigin = query.targetOrigin
     ? allowedCorsOrigin(query.targetOrigin)

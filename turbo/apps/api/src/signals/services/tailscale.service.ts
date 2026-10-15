@@ -84,6 +84,13 @@ export async function prepareTailscaleConfig(
     ...(await encryptCredentials(body.credentials, context)),
   };
 }
+export function selectedSshTailscaleConnection(
+  transport: CreateSshConnectionRequest["transport"],
+) {
+  return transport?.type === "tailscale" || transport?.type === "tailscale_ssh"
+    ? transport
+    : undefined;
+}
 export function requestedTailscaleId(
   transport: CreateSshConnectionRequest["transport"],
   current: string | null = null,
@@ -91,7 +98,7 @@ export function requestedTailscaleId(
   if (transport === undefined) {
     return current;
   }
-  if (transport.type !== "tailscale") {
+  if (transport.type !== "tailscale" && transport.type !== "tailscale_ssh") {
     return null;
   }
   return "configId" in transport ? transport.configId : null;
@@ -100,7 +107,10 @@ export async function prepareInlineTailscaleConfig(
   transport: CreateSshConnectionRequest["transport"],
   context: FeatureSwitchContext,
 ) {
-  if (transport?.type !== "tailscale" || !("create" in transport)) {
+  if (
+    (transport?.type !== "tailscale" && transport?.type !== "tailscale_ssh") ||
+    !("create" in transport)
+  ) {
     return undefined;
   }
   return await prepareTailscaleConfig(transport.create, context);

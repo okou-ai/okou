@@ -14,7 +14,11 @@ import {
   type VncAuthMethod,
   type VncProfile,
 } from "../../signals/vnc.ts";
-import { openSshDialog$, sshConnections$ } from "../../signals/ssh.ts";
+import {
+  openSshDialog$,
+  sshConnections$,
+  usesTailscaleNetwork,
+} from "../../signals/ssh.ts";
 import { tailscaleEnabled$ } from "../../signals/tailscale.ts";
 import type { SshConnectionResponse } from "@okouai/api-contracts/contracts/ssh-connections";
 import { isRsaAesProfile } from "../../signals/vnc-rsa-aes.ts";
@@ -330,11 +334,7 @@ function VncHostCard({
     typeof sshTransport === "object" &&
     sshTransport !== null &&
     "needsRebind" in sshTransport;
-  const tailscale =
-    typeof sshTransport === "object" &&
-    sshTransport !== null &&
-    "type" in sshTransport &&
-    sshTransport.type === "tailscale";
+  const tailscale = usesTailscaleNetwork(sshConnection);
   const destination = `${connection.host.includes(":") ? `[${connection.host}]` : connection.host}:${connection.port}`;
   return (
     <article className={surfaceVariants({ className: "grid gap-3 p-5" })}>

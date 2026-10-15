@@ -19,7 +19,11 @@ import { chromium, errors } from "@playwright/test";
 
 import { signInRunnerWithDiagnostics } from "./runner-sign-in";
 
-async function fixture(context: TestContext, handler: RequestListener) {
+async function fixture(
+  context: TestContext,
+  handler: RequestListener,
+  expectedAppBuildSha?: string,
+) {
   const directory = await mkdtemp(join(tmpdir(), "runner-sign-in-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
   const server = createServer(handler);
@@ -48,7 +52,11 @@ async function fixture(context: TestContext, handler: RequestListener) {
       page,
       "email-secret+clerk_test@example.com",
       appUrl,
-      { activeOrganizationId: "org_fixture", diagnosticPath },
+      {
+        activeOrganizationId: "org_fixture",
+        diagnosticPath,
+        expectedAppBuildSha,
+      },
     );
   return { appUrl, page, directory, diagnosticPath, signIn };
 }
@@ -221,6 +229,14 @@ test("sign-in report separates a stalled deferred script from HTTP and network f
   assert.equal(redirected.outcome, "redirected");
   assert.equal(redirected.cfRay, "0123456789abcdef-SJC");
   assert.equal(document.requestId, redirected.requestId);
+  assert.equal(redirected.redirectHop, 0);
+  assert.equal(document.redirectHop, 1);
+  assert.equal(document.documentBuild, undefined);
+  assert.deepEqual(redirected.documentBuild, {
+    observed: { kind: "unavailable" },
+    comparison: "not-comparable",
+    reason: "ineligible-response",
+  });
   assert.equal(document.cfRay, "fedcba9876543210-LHR");
   assert.equal(document.outcome, "finished");
   assert.ok(typeof document.totalEncodedBytes === "number");
@@ -357,3 +373,107 @@ test("successful runner sign-in returns its token without a diagnostic artifact"
   assert.deepEqual(await readdir(join(directory, "sign-in")), []);
   await assert.rejects(() => stat(diagnosticPath), { code: "ENOENT" });
 });
+
+const expectedSha = "0123456789abcdef0123456789abcdef01234567";
+const differentSha = "abcdef0123456789abcdef0123456789abcdef01";
+for (const scenario of [
+  {
+    title: "matching",
+    header: expectedSha,
+    expected: expectedSha,
+    observed: { kind: "valid", sha: expectedSha },
+    comparison: "match",
+  },
+  {
+    title: "mismatching",
+    header: differentSha,
+    expected: expectedSha,
+    observed: { kind: "valid", sha: differentSha },
+    comparison: "mismatch",
+  },
+  {
+    title: "missing",
+    header: undefined,
+    expected: expectedSha,
+    observed: { kind: "missing" },
+    comparison: "not-comparable",
+    reason: "observed-missing",
+  },
+  {
+    title: "invalid",
+    header: "private-invalid-secret",
+    expected: expectedSha,
+    observed: { kind: "invalid" },
+    comparison: "not-comparable",
+    reason: "observed-invalid",
+  },
+  {
+    title: "combined",
+    header: `${expectedSha}, ${expectedSha}`,
+    expected: expectedSha,
+    observed: { kind: "invalid" },
+    comparison: "not-comparable",
+    reason: "observed-invalid",
+  },
+  {
+    title: "missing expectation",
+    header: expectedSha,
+    expected: undefined,
+    observed: { kind: "valid", sha: expectedSha },
+    comparison: "not-comparable",
+    reason: "expected-missing",
+  },
+  {
+    title: "invalid expectation",
+    header: expectedSha,
+    expected: "private-expected-secret",
+    observed: { kind: "valid", sha: expectedSha },
+    comparison: "not-comparable",
+    reason: "expected-invalid",
+  },
+]) {
+  test(`sign-in document reports ${scenario.title} build identity without consuming a stalled response`, async (context) => {
+    const { diagnosticPath, signIn } = await fixture(
+      context,
+      (_request, response) => {
+        response.writeHead(200, {
+          "content-type": "text/html",
+          ...(scenario.header === undefined
+            ? {}
+            : { "X-Okou-Preview-Build-Sha": scenario.header }),
+        });
+        response.flushHeaders();
+      },
+      scenario.expected,
+    );
+    await assert.rejects(signIn, errors.TimeoutError);
+    const report = await readFile(diagnosticPath, "utf8");
+    const document = networkRequests(report).find(
+      (request) => request.resourceType === "document",
+    );
+    assert.ok(document);
+    assert.equal(document.redirectHop, 0);
+    assert.equal(document.outcome, "pending");
+    assert.equal(document.dataEvents, 0);
+    assert.equal(document.totalEncodedBytes, undefined);
+    assert.deepEqual(document.documentBuild, {
+      observed: scenario.observed,
+      comparison: scenario.comparison,
+      ...(scenario.reason === undefined ? {} : { reason: scenario.reason }),
+    });
+    const parsed: unknown = JSON.parse(report);
+    assert.ok(isRecord(parsed));
+    assert.deepEqual(
+      parsed.expectedAppBuild,
+      scenario.expected === undefined
+        ? { kind: "missing" }
+        : scenario.expected === expectedSha
+          ? { kind: "valid", sha: expectedSha }
+          : { kind: "invalid" },
+    );
+    assert.doesNotMatch(
+      report,
+      /private-invalid-secret|private-expected-secret/u,
+    );
+  });
+}

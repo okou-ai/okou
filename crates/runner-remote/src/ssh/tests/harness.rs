@@ -78,6 +78,8 @@ impl Default for Reply {
 #[derive(Default)]
 pub(crate) struct Observed {
     pub(crate) auth: AtomicUsize,
+    pub(crate) none_auth: AtomicUsize,
+    pub(crate) allow_none_auth: AtomicBool,
     pub(crate) commands: Mutex<Vec<Vec<u8>>>,
     pub(super) attempts: Mutex<Vec<SocketAddr>>,
     pub(crate) queries: Mutex<Vec<(String, u16)>>,
@@ -180,6 +182,7 @@ impl tokio::io::AsyncWrite for ReservedStream {
 pub(crate) struct Harness {
     pub(crate) api: MockServer,
     pub(crate) runtime: Arc<SshRuntime>,
+    pub(super) rpc: RpcRuntime,
     pub(crate) network: Arc<TestNetwork>,
     pub(crate) observed: Arc<Observed>,
     pub(super) key: PrivateKey,
@@ -207,15 +210,10 @@ pub(super) struct AdditionalRun {
 }
 
 impl AdditionalRun {
-    pub(super) async fn new(runtime: &Arc<SshRuntime>, sandbox: &str) -> Self {
+    pub(super) async fn new(runtime: &RpcRuntime, sandbox: &str) -> Self {
         let (control, control_peer) = control_connection().await;
         let (incoming, receiver) = mpsc::channel(32);
-        let dispatcher = RpcRuntime {
-            ssh: Some(Arc::clone(runtime)),
-            vnc: None,
-            usage: None,
-        }
-        .start(
+        let dispatcher = runtime.start(
             Arc::new(Acceptor(tokio::sync::Mutex::new(receiver))),
             sandbox.into(),
             RunId::new_v4(),
@@ -318,12 +316,8 @@ impl Harness {
         let (incoming, receiver) = mpsc::channel(32);
         let cancel = CancellationToken::new();
         let lifecycle = CancellationToken::new();
-        let dispatcher = RpcRuntime {
-            ssh: Some(Arc::clone(&runtime)),
-            vnc: None,
-            usage: None,
-        }
-        .start(
+        let rpc = RpcRuntime::new(Some(Arc::clone(&runtime)), None, None);
+        let dispatcher = rpc.start(
             Arc::new(Acceptor(tokio::sync::Mutex::new(receiver))),
             "sandbox-authoritative".into(),
             run,
@@ -375,6 +369,7 @@ impl Harness {
         Self {
             api,
             runtime,
+            rpc,
             network,
             observed,
             key,
@@ -452,21 +447,15 @@ impl Harness {
 
     pub(super) async fn restart_with_vnc(&mut self, vnc: Arc<crate::vnc::VncRuntime>) {
         self.shutdown().await;
+        self.rpc.vnc = Some(vnc);
         let (incoming, receiver) = mpsc::channel(32);
         self.incoming = incoming;
-        self.dispatcher = Some(
-            RpcRuntime {
-                ssh: Some(Arc::clone(&self.runtime)),
-                vnc: Some(vnc),
-                usage: None,
-            }
-            .start(
-                Arc::new(Acceptor(tokio::sync::Mutex::new(receiver))),
-                "sandbox-authoritative".into(),
-                self.run,
-                &self.cancel,
-            ),
-        );
+        self.dispatcher = Some(self.rpc.start(
+            Arc::new(Acceptor(tokio::sync::Mutex::new(receiver))),
+            "sandbox-authoritative".into(),
+            self.run,
+            &self.cancel,
+        ));
     }
 
     pub(crate) async fn request(&self, params: Value) -> Vec<Value> {
@@ -522,19 +511,12 @@ impl Harness {
         self.run = run;
         let (incoming, receiver) = mpsc::channel(32);
         self.incoming = incoming;
-        self.dispatcher = Some(
-            RpcRuntime {
-                ssh: Some(Arc::clone(&self.runtime)),
-                vnc: None,
-                usage: None,
-            }
-            .start(
-                Arc::new(Acceptor(tokio::sync::Mutex::new(receiver))),
-                "sandbox-authoritative".into(),
-                run,
-                &self.cancel,
-            ),
-        );
+        self.dispatcher = Some(self.rpc.start(
+            Arc::new(Acceptor(tokio::sync::Mutex::new(receiver))),
+            "sandbox-authoritative".into(),
+            run,
+            &self.cancel,
+        ));
     }
 }
 
@@ -790,6 +772,20 @@ impl Peer {
 }
 impl server::Handler for Peer {
     type Error = russh::Error;
+    async fn auth_none(&mut self, user: &str) -> Result<server::Auth, Self::Error> {
+        self.observed.none_auth.fetch_add(1, Ordering::SeqCst);
+        self.observed.auth.fetch_add(1, Ordering::SeqCst);
+        Ok(
+            if self.observed.allow_none_auth.load(Ordering::SeqCst) && user == "test-user" {
+                server::Auth::Accept
+            } else {
+                server::Auth::Reject {
+                    proceed_with_methods: None,
+                    partial_success: false,
+                }
+            },
+        )
+    }
     async fn auth_password(
         &mut self,
         user: &str,

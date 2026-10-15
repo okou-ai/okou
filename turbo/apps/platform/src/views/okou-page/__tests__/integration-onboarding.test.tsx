@@ -166,7 +166,14 @@ test.each(["/settings/discord", "/settings/discord/install"])(
       screen.queryByLabelText("Onboarding prompt"),
     ).not.toBeInTheDocument();
     await expect(
-      screen.findByText(/restart the connection from the original tab/u),
+      screen.findByRole("heading", { name: "Connection failed" }),
     ).resolves.toBeInTheDocument();
+    expect(
+      screen.getByText(/restart the connection|Start again/u),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Back to settings").closest("a")).toHaveAttribute(
+      "href",
+      "/works",
+    );
   },
 );

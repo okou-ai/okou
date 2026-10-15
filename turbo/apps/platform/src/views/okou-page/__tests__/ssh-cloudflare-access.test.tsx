@@ -18,6 +18,7 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   getAction,
   queryAction,
+  chooseSshConnectionType,
 } from "./connector-integrations-test-helpers.ts";
 
 const context = testContext();
@@ -133,7 +134,7 @@ async function pasteTokenHeaders(
 test("The new Access host form shows input hints without prefilling tokens", async () => {
   await page(true);
   const dialog = await screen.findByRole("dialog", { name: "Add host" });
-  click(getAction("radio", "Cloudflare Access", dialog));
+  await chooseSshConnectionType(dialog, "Cloudflare Access");
   await within(dialog).findByLabelText("Name");
   const hints = {
     Name: "e.g. Production access",
@@ -168,7 +169,7 @@ test("Resource selectors initialize once for a single saved resource", async () 
   });
   await page(true);
   const dialog = await screen.findByRole("dialog");
-  click(getAction("radio", "Cloudflare Access", dialog));
+  await chooseSshConnectionType(dialog, "Cloudflare Access");
   await waitFor(() => {
     expect(within(dialog).getByLabelText("Credential")).toHaveTextContent(
       "Login 1 · deploy",
@@ -202,7 +203,7 @@ test("SSH keeps Cloudflare Access in the host form without a management tab", as
 
   click(getAction("button", "Add host"));
   const dialog = await screen.findByRole("dialog", { name: "Add host" });
-  click(getAction("radio", "Cloudflare Access", dialog));
+  await chooseSshConnectionType(dialog, "Cloudflare Access");
   await within(dialog).findByLabelText("Cloudflare Access");
   expect(within(dialog).getByLabelText("Name")).toBeInTheDocument();
 });
@@ -273,7 +274,7 @@ test("Direct recovery is an explicit choice and does not replace the saved crede
   click(getAction("button", "Edit host"));
   const dialog = await screen.findByRole("dialog");
   expect(getAction("button", "Save", dialog)).toBeDisabled();
-  click(getAction("radio", "Direct", dialog));
+  await chooseSshConnectionType(dialog, "Direct");
   await waitFor(() => {
     expect(getAction("button", "Save", dialog)).toBeEnabled();
   });
@@ -306,16 +307,16 @@ test("Direct and protected mode retain their port and configuration drafts but s
     "ssh.example.com",
   );
   await fill(within(dialog).getByLabelText("Port"), "2222");
-  click(getAction("radio", "Cloudflare Access", dialog));
+  await chooseSshConnectionType(dialog, "Cloudflare Access");
   await within(dialog).findByLabelText("Cloudflare Access");
   const publishedHost = within(dialog).getByLabelText("Published hostname");
   expect(publishedHost).toHaveAttribute("placeholder", "e.g. ssh.example.com");
   expect(publishedHost).toHaveValue("ssh.example.com");
   expect(within(dialog).getByLabelText("Port")).not.toBeVisible();
   await selectConfig(dialog);
-  click(getAction("radio", "Direct", dialog));
+  await chooseSshConnectionType(dialog, "Direct");
   expect(within(dialog).getByLabelText("Port")).toHaveValue(2222);
-  click(getAction("radio", "Cloudflare Access", dialog));
+  await chooseSshConnectionType(dialog, "Cloudflare Access");
   await expect(
     within(dialog).findByLabelText("Cloudflare Access"),
   ).resolves.toHaveTextContent(config.name);
@@ -376,7 +377,7 @@ test.each([
         within(dialog).getByLabelText("Public hostname or IP address"),
         host.host,
       );
-      click(getAction("radio", "Cloudflare Access", dialog));
+      await chooseSshConnectionType(dialog, "Cloudflare Access");
     }
     await within(dialog).findByLabelText("Cloudflare Access");
     if (newAccess) {
@@ -453,7 +454,7 @@ test("Pasted Access headers submit raw credentials with inline SSH creation", as
     within(dialog).getByLabelText("Public hostname or IP address"),
     host.host,
   );
-  click(getAction("radio", "Cloudflare Access", dialog));
+  await chooseSshConnectionType(dialog, "Cloudflare Access");
   await fill(await within(dialog).findByLabelText("Name"), config.name);
   await pasteTokenHeaders(
     dialog,
@@ -575,7 +576,7 @@ test("An eligible protected host can explicitly change to Direct", async () => {
   click(getAction("button", "Edit host"));
   const dialog = await screen.findByRole("dialog");
   await within(dialog).findByLabelText("Cloudflare Access");
-  click(getAction("radio", "Direct", dialog));
+  await chooseSshConnectionType(dialog, "Direct");
   expect(within(dialog).getByLabelText("Port")).toHaveValue(22);
   click(getAction("button", "Save", dialog));
   await waitFor(() => {
@@ -584,10 +585,9 @@ test("An eligible protected host can explicitly change to Direct", async () => {
   await screen.findByText("deploy@ssh.example.com:22");
   click(getAction("button", "Edit host"));
   const saved = await screen.findByRole("dialog");
-  expect(getAction("radio", "Direct", saved)).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
+  expect(
+    within(saved).getByRole("combobox", { name: "Connection" }),
+  ).toHaveTextContent("Direct");
 });
 
 test("Rebinding a host after a concurrent update requires review and preserves its draft", async () => {
@@ -678,7 +678,7 @@ test("Pending Access Save is cancelled and secrets cleared on owner loss", async
   await fill(within(dialog).getByLabelText("SSH username"), "deploy");
   await fill(within(dialog).getByLabelText("Private key"), "ssh-draft-canary");
   const privateKey = within(dialog).getByLabelText("Private key");
-  click(getAction("radio", "Cloudflare Access", dialog));
+  await chooseSshConnectionType(dialog, "Cloudflare Access");
   await within(dialog).findByLabelText("Name");
   await tokenFields(dialog);
   const secret = within(dialog).getByLabelText("Service Token Client Secret");

@@ -100,7 +100,8 @@ export function addSshHostManagementCommands(host: Command): Command {
           "after",
           `\nInput: {id?, displayName, host, port?, credential: {id} | {create: {name, username, authentication}}, transport?}.
 An omitted id is generated. authentication is {method: "password", password} or {method: "private_key", privateKey, passphrase?}.
-transport uses the API shape: {type: "direct"}, {type: "cloudflare_access", configId} or {type: "tailscale", configId}; API-supported inline create is also accepted. Access requires port 443.
+transport uses the API shape: {type: "direct"}, {type: "cloudflare_access", configId}, {type: "tailscale", configId} or {type: "tailscale_ssh", configId}; API-supported inline create is also accepted. Access requires port 443.
+Tailscale SSH uses {displayName, host, username, transport: {type: "tailscale_ssh", configId}} with port 22 and no credential. Both Tailscale modes reuse saved network configurations.
 Credentials are write-only: provide them via --input, never command-line password options.\n`,
         )
         .action(
@@ -122,7 +123,7 @@ Credentials are write-only: provide them via --input, never command-line passwor
         .option("--json", "Print safe metadata as JSON")
         .addHelpText(
           "after",
-          "\nInput: {expectedGeneration, displayName?, host?, port?, credential?, transport?}. Read the current generation with ssh host show. Credential and transport shapes match create; unknown fields are rejected.\n",
+          "\nInput: {expectedGeneration, displayName?, host?, port?, credential?, username?, transport?}. Read the current generation with ssh host show. Credential and transport shapes match create; unknown fields are rejected. Tailscale SSH requires port 22 and username without credential; switching to another mode requires a credential.\n",
         )
         .action(
           withErrorHandler(async (id: string, options: InputOptions) => {

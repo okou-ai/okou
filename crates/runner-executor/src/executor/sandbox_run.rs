@@ -30,7 +30,6 @@ use super::diagnostics::{
 };
 use super::env::PreparedRunPayload;
 use super::session_id::invalid_session_id_diagnostic_preview;
-use super::telemetry::record_home_cache_result;
 use super::{
     ExecuteOutcome, ExecutionFailure, ExecutorConfig, JobParams, NewSandboxDispatch,
     PROCESS_CANCEL_TIMEOUTS, RunnerError, RunnerResult, SandboxPreparedNotifier,
@@ -632,14 +631,16 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
             telemetry.observe_home(image.consumption_observation(
                 Some(context.run_id),
                 runner_host::home_observation::HomeObservationOutcome::Failed,
-                if !used_retry
-                    && !failure.cleanup_completed
-                    && failure.retry == SandboxPrepareRetry::WithoutHomeImage
-                {
-                    SANDBOX_PREPARE_RETRY_CLEANUP_UNCERTAIN
-                } else {
-                    "sandbox_prepare_failed"
-                },
+                Some(
+                    if !used_retry
+                        && !failure.cleanup_completed
+                        && failure.retry == SandboxPrepareRetry::WithoutHomeImage
+                    {
+                        SANDBOX_PREPARE_RETRY_CLEANUP_UNCERTAIN
+                    } else {
+                        "sandbox_prepare_failed"
+                    },
+                ),
             ));
         }
         if failure.invalidate_consumed_home_cache && cache_hit {
@@ -764,13 +765,13 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                 telemetry.observe_home(image.consumption_observation(
                     Some(context.run_id),
                     runner_host::home_observation::HomeObservationOutcome::Fallback,
-                    if retry_guest_dns {
+                    Some(if retry_guest_dns {
                         "guest_dns_replacement"
                     } else if retry_without_codex_prefetch {
                         "codex_prefetch_replacement"
                     } else {
                         "home_preparation_failed"
-                    },
+                    }),
                 ));
             }
             used_home_fallback = true;
@@ -828,6 +829,12 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
     let home_reuse_result = final_home_reuse_result(
         home_image.as_ref().map(HomeImageLease::result),
         used_home_fallback,
+    );
+    telemetry.set_home_startup_source(
+        home_image
+            .as_ref()
+            .filter(|_| home_reuse_result == HomeReuseResult::Reused)
+            .and_then(HomeImageLease::source_identity),
     );
 
     let mut outcome = execute_prepared_sandbox_run(
@@ -997,7 +1004,9 @@ pub(super) async fn prepare_home_image(
         prepare_error.is_none(),
         prepare_error,
     );
-    record_home_cache_result(telemetry, &lease);
+    if let Some(observation) = lease.checkout_observation() {
+        telemetry.observe_home(observation);
+    }
     Some(lease)
 }
 

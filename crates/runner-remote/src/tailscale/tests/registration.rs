@@ -1,9 +1,9 @@
-//! Public SDK models and bounded HTTP IO inside the actual production Cache root.
+//! Public SDK models and bounded HTTP IO inside the production assignment owner.
 //! These are registration boundaries; they do not claim TLS/Noise/OAuth acceptance.
 
 use super::fixture::{Http, bounded};
 use crate::{
-    ssh::cache::Cache,
+    tailscale::tests::fixture::Cache,
     tailscale::{Control, Failure, Key, Work, registration::Registration},
 };
 use runner_types::ids::RunId;

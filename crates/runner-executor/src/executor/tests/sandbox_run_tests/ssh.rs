@@ -221,7 +221,13 @@ impl Sandbox for RpcSandbox {
 #[tokio::test]
 async fn fresh_and_reused_runs_install_before_agent_work_and_cancel_before_cleanup() {
     for reused in [false, true] {
-        for (enabled, failed) in [(false, false), (true, false), (true, true)] {
+        for (enabled, failed, vnc_only) in [
+            (false, false, false),
+            (true, false, false),
+            (true, true, false),
+            (true, false, true),
+            (true, true, true),
+        ] {
             let dir = tempfile::Builder::new()
                 .permissions(std::fs::Permissions::from_mode(0o700))
                 .tempdir()
@@ -233,21 +239,27 @@ async fn fresh_and_reused_runs_install_before_agent_work_and_cancel_before_clean
                 1,
             )
             .unwrap();
-            config.guest_rpc = crate::ssh::SshRuntime::official(
-                config.http.clone(),
-                if enabled {
-                    "vm0_official_test"
-                } else {
-                    "pat-test"
-                },
-                identity,
-            )
-            .unwrap()
-            .map(|ssh| crate::guest_rpc::Runtime {
-                ssh: Some(ssh),
-                vnc: None,
-                usage: None,
-            });
+            config.guest_rpc = if vnc_only {
+                runner_remote::vnc::VncRuntime::official(
+                    config.http.clone(),
+                    "vm0_official_test",
+                    identity,
+                )
+                .unwrap()
+                .map(|vnc| crate::guest_rpc::Runtime::new(None, Some(vnc), None))
+            } else {
+                crate::ssh::SshRuntime::official(
+                    config.http.clone(),
+                    if enabled {
+                        "vm0_official_test"
+                    } else {
+                        "pat-test"
+                    },
+                    identity,
+                )
+                .unwrap()
+                .map(|ssh| crate::guest_rpc::Runtime::new(Some(ssh), None, None))
+            };
             assert_eq!(config.guest_rpc.is_some(), enabled);
             let ctx = minimal_context();
             let (pending, incoming) = tokio::sync::mpsc::channel(2);

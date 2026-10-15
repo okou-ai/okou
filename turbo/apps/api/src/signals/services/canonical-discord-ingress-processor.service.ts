@@ -23,7 +23,6 @@ import {
 } from "../../lib/discord-conversation-context";
 import {
   discordMessageCreateSchema,
-  isDiscordUserMessage,
   type DiscordMessageCreate,
 } from "../../lib/discord-gateway-event";
 import { DiscordIngressFailure } from "../../lib/discord-ingress-failure";
@@ -34,6 +33,7 @@ import { writeDb$, type Db } from "../external/db";
 import {
   discordClient,
   type DiscordApiResult,
+  type DiscordChannel,
   type DiscordMessage,
 } from "../external/discord-client";
 import {
@@ -79,18 +79,22 @@ import {
   type ChatQueuePick,
 } from "./chat-thread-queue-drain.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
-import { requireDiscordConversationAccess$ } from "./discord-access.service";
+import {
+  requireDiscordConversationAccess$,
+  type DiscordConversationAccess,
+} from "./discord-access.service";
 import { getDiscordAppConfig } from "./discord-config";
 import {
-  readDiscordContextMessage$,
-  readDiscordHistoryPage$,
+  readDiscordMessageWithAccess,
+  readDiscordHistoryWithAccess,
 } from "./discord-context.service";
 import type { DiscordFailureResponse } from "./discord-api-response";
+import type { DiscordVerifiedBinding } from "./discord-data.service";
 import {
-  discordIngressSenderBindings,
-  type DiscordVerifiedBinding,
-} from "./discord-data.service";
-import { prepareCanonicalDiscordIngressRoute$ } from "./discord-route-admission.service";
+  prepareCanonicalDiscordIngressRoute$,
+  type PreparedDiscordIngress,
+} from "./discord-route-admission.service";
+import { authorizeDiscordSnapshot } from "./discord-provider-access";
 import { scheduleDiscordAdmissionTyping } from "./discord-run-typing.service";
 import {
   sendDiscordChatReply$,
@@ -314,19 +318,6 @@ async function claimIngress(db: Db, ingressId: string) {
   return claimed ? { ...claimed, claimToken } : null;
 }
 
-const claimedIngressSelection = Object.freeze({
-  id: discordChatIngress.id,
-  connectionId: discordChatIngress.connectionId,
-  messageId: discordChatIngress.messageId,
-  payload: discordChatIngress.payload,
-  createdAt: discordChatIngress.createdAt,
-  routeId: discordChatThreadRoutes.id,
-  chatThreadId: discordChatThreadRoutes.chatThreadId,
-  userId: discordChatThreadRoutes.userId,
-  destinationChannelId: discordChatThreadRoutes.destinationChannelId,
-  sessionKey: discordChatThreadRoutes.sessionKey,
-});
-
 type ClaimedIngress = Pick<
   typeof discordChatIngress.$inferSelect,
   "id" | "connectionId" | "messageId" | "payload" | "createdAt"
@@ -337,40 +328,6 @@ type ClaimedIngress = Pick<
   > & {
     routeId: (typeof discordChatThreadRoutes.$inferSelect)["id"];
   };
-
-const requireIngressAccess$ = command(
-  async (
-    { set },
-    args: {
-      readonly connectionId: string;
-      readonly orgId: string;
-      readonly userId: string;
-      readonly guildId?: string;
-      readonly channelId: string;
-      readonly mode: "view" | "read" | "write";
-    },
-    signal: AbortSignal,
-  ) => {
-    const access = await set(requireDiscordConversationAccess$, args, signal);
-    if (access.kind === "denied") {
-      throw new DiscordIngressFailure(
-        `access:${access.response.status}`,
-        access.response.status === 429 || access.response.status >= 500,
-        (access.response.body.error.retryAfterSeconds ?? 0) * 1000,
-        "Discord conversation is not currently accessible",
-      );
-    }
-    if (access.binding.connectionId !== args.connectionId) {
-      throw new DiscordIngressFailure(
-        "binding:replaced",
-        false,
-        0,
-        "Discord connection changed before message processing",
-      );
-    }
-    return access;
-  },
-);
 
 /**
  * Enqueue the accepted input in one transaction with the claim's
@@ -448,18 +405,34 @@ type DiscordInputAsset = CanonicalInputAsset & {
   readonly discordAttachmentId: string;
 };
 
-function checkContextBinding(
-  binding: DiscordVerifiedBinding,
-  connectionId: string,
-) {
-  if (binding.connectionId !== connectionId) {
-    throw new DiscordIngressFailure(
-      "binding:replaced",
-      false,
-      0,
-      "Discord connection changed before reading conversation context",
+/** Source and parent permissions come from the same ingress-owned provider reads. */
+function ingressContextAccess(
+  source: PreparedDiscordIngress["source"],
+  channelId: string,
+  messageContentEnabled: boolean,
+): DiscordConversationAccess {
+  const snapshot = source.snapshot;
+  const selected =
+    snapshot.channel.id === channelId
+      ? snapshot
+      : snapshot.permissionChannel.id === channelId
+        ? { ...snapshot, channel: snapshot.permissionChannel }
+        : null;
+  if (!selected) {
+    throw new Error(
+      "Discord ingress context is outside its authorized source and parent",
     );
   }
+  const access = authorizeDiscordSnapshot(selected, { mode: "read" });
+  return access.kind === "denied"
+    ? access
+    : {
+        kind: "allowed",
+        binding: source.binding,
+        botToken: source.botToken,
+        channel: access.channel,
+        messageContentEnabled,
+      };
 }
 
 function throwTransientContextFailure(response: DiscordFailureResponse) {
@@ -471,6 +444,46 @@ function throwTransientContextFailure(response: DiscordFailureResponse) {
       "Discord conversation history is temporarily unavailable",
     );
   }
+}
+
+async function readIngressParentContext(
+  source: PreparedDiscordIngress["source"],
+  thread: DiscordChannel,
+  messageContentEnabled: boolean,
+  signal: AbortSignal,
+) {
+  if (!thread.parent_id) {
+    return null;
+  }
+  const access = ingressContextAccess(
+    source,
+    thread.parent_id,
+    messageContentEnabled,
+  );
+  if (access.kind === "denied") {
+    throwTransientContextFailure(access.response);
+    return null;
+  }
+  const history = await readDiscordHistoryWithAccess(
+    access,
+    { before: thread.id, limit: CHANNEL_CONTEXT_MESSAGE_LIMIT },
+    signal,
+  );
+  if (history.kind === "denied") {
+    throwTransientContextFailure(history.response);
+    return null;
+  }
+  // Message-created threads share the starter's ID. A standalone thread
+  // legitimately has no starter message in its parent channel.
+  const root = await readDiscordMessageWithAccess(access, thread.id, signal);
+  if (root.kind === "denied") {
+    throwTransientContextFailure(root.response);
+  }
+  return {
+    channelId: history.channel.id,
+    messages: history.messages,
+    root: root.kind === "ok" ? root.message : null,
+  };
 }
 
 function ingressContextReplyReference(
@@ -495,16 +508,15 @@ function ingressContextReplyReference(
 
 const readIngressConversationContext$ = command(
   async (
-    { set },
+    _context,
     args: {
-      readonly accessArgs: IngressAccess;
+      readonly source: PreparedDiscordIngress["source"];
       readonly message: DiscordMessageCreate;
       readonly messageContentEnabled: boolean;
-      readonly channelType: number;
     },
     signal: AbortSignal,
   ): Promise<string | null> => {
-    const { accessArgs, message, messageContentEnabled } = args;
+    const { source, message, messageContentEnabled } = args;
     if (!message.guild_id) {
       // Discord gives the bot one DM channel per user, shared by every org and
       // DM session that user starts. Like Slack DMs, read no channel history;
@@ -514,14 +526,20 @@ const readIngressConversationContext$ = command(
     if (!messageContentEnabled) {
       return "Ordinary guild history was not read because Discord MESSAGE_CONTENT is unavailable. Only the current message is included.";
     }
-    const isThread = [10, 11, 12].includes(args.channelType);
+    const isThread = source.isThread;
     // READ_MESSAGE_HISTORY is optional for the current mention. Final
     // source view and destination write checks still revalidate live access.
-    const history = await set(
-      readDiscordHistoryPage$,
+    const access = ingressContextAccess(
+      source,
+      message.channel_id,
+      messageContentEnabled,
+    );
+    if (access.kind === "denied") {
+      return "Prior messages are unavailable because READ_MESSAGE_HISTORY is not permitted. Only the current message is included.";
+    }
+    const history = await readDiscordHistoryWithAccess(
+      access,
       {
-        ...accessArgs,
-        channelId: message.channel_id,
         before: message.id,
         limit: isThread
           ? THREAD_CONTEXT_MESSAGE_LIMIT
@@ -533,47 +551,25 @@ const readIngressConversationContext$ = command(
       throwTransientContextFailure(history.response);
       return "Prior messages are unavailable because READ_MESSAGE_HISTORY is not permitted. Only the current message is included.";
     }
-    checkContextBinding(history.binding, accessArgs.connectionId);
     const contextMessages: DiscordMessage[] = [...history.messages];
     let parentMessages: DiscordMessage[] = [];
     const priorityMessageIds: string[] = [];
     let referencedMessageId: string | undefined;
     let parentChannelId: string | undefined;
     if (isThread && history.channel.parent_id) {
-      const parent = await set(
-        readDiscordHistoryPage$,
-        {
-          ...accessArgs,
-          channelId: history.channel.parent_id,
-          before: history.channel.id,
-          limit: CHANNEL_CONTEXT_MESSAGE_LIMIT,
-        },
+      const parent = await readIngressParentContext(
+        source,
+        history.channel,
+        messageContentEnabled,
         signal,
       );
-      if (parent.kind === "ok") {
-        checkContextBinding(parent.binding, accessArgs.connectionId);
-        parentChannelId = parent.channel.id;
+      if (parent) {
+        parentChannelId = parent.channelId;
         parentMessages = parent.messages;
-        // Message-created threads share the starter's ID. A standalone thread
-        // legitimately has no starter message in its parent channel.
-        const root = await set(
-          readDiscordContextMessage$,
-          {
-            ...accessArgs,
-            channelId: parentChannelId,
-            messageId: history.channel.id,
-          },
-          signal,
-        );
-        if (root.kind === "ok") {
-          checkContextBinding(root.binding, accessArgs.connectionId);
-          contextMessages.push(root.message);
-          priorityMessageIds.push(root.message.id);
-        } else {
-          throwTransientContextFailure(root.response);
+        if (parent.root) {
+          contextMessages.push(parent.root);
+          priorityMessageIds.push(parent.root.id);
         }
-      } else {
-        throwTransientContextFailure(parent.response);
       }
     }
     const reference = ingressContextReplyReference(message, parentChannelId);
@@ -591,18 +587,26 @@ const readIngressConversationContext$ = command(
       if (existing) {
         referencedMessageId = existing.id;
         priorityMessageIds.push(existing.id);
-      } else {
-        const quoted = await set(
-          readDiscordContextMessage$,
-          {
-            ...accessArgs,
-            channelId: reference.channelId,
-            messageId: reference.messageId,
-          },
-          signal,
+      } else if (
+        reference.channelId !== parentChannelId ||
+        reference.messageId !== history.channel.id
+      ) {
+        // The starter was already read above, including a legitimate 404 for
+        // a standalone thread. A reply reference must not fetch it twice.
+        const quoteAccess = ingressContextAccess(
+          source,
+          reference.channelId,
+          messageContentEnabled,
         );
+        const quoted =
+          quoteAccess.kind === "denied"
+            ? quoteAccess
+            : await readDiscordMessageWithAccess(
+                quoteAccess,
+                reference.messageId,
+                signal,
+              );
         if (quoted.kind === "ok") {
-          checkContextBinding(quoted.binding, accessArgs.connectionId);
           referenceMessages.push(quoted.message);
           referencedMessageId = quoted.message.id;
           priorityMessageIds.push(quoted.message.id);
@@ -735,19 +739,28 @@ const materializeIngressAttachments$ = command(
     args: {
       readonly accessArgs: IngressAccess;
       readonly message: DiscordMessageCreate;
-      readonly botToken: string;
+      readonly source: PreparedDiscordIngress["source"];
       readonly chatThreadId: string;
     },
     signal: AbortSignal,
   ): Promise<DiscordInputAsset[]> => {
-    const { accessArgs, message, botToken, chatThreadId } = args;
+    const { accessArgs, message, source, chatThreadId } = args;
+    const { botToken } = source;
     const assets: DiscordInputAsset[] = [];
     if (message.attachments.length > 0) {
-      await set(
-        requireIngressAccess$,
-        { ...accessArgs, channelId: message.channel_id, mode: "read" },
-        signal,
+      const readAccess = ingressContextAccess(
+        source,
+        message.channel_id,
+        false,
       );
+      if (readAccess.kind === "denied") {
+        throw new DiscordIngressFailure(
+          "access:403",
+          false,
+          0,
+          "Discord attachments are not currently accessible",
+        );
+      }
       // Refresh expiring CDN URLs from the authorized message, never from callers.
       const currentMessage = discordResult(
         await discordClient.fetchDiscordMessage(
@@ -841,49 +854,14 @@ function createIngressContext(args: {
   };
 }
 
-function claimedIngressMessage(ingress: ClaimedIngress): DiscordMessageCreate {
-  const envelope = discordGatewayEnvelopeSchema.parse(
-    JSON.parse(ingress.payload) as unknown,
-  );
-  const message = discordMessageCreateSchema.parse(envelope.payload);
-  if (
-    envelope.eventType !== "MESSAGE_CREATE" ||
-    message.id !== ingress.messageId ||
-    !isDiscordUserMessage(message)
-  ) {
-    throw new Error(
-      "Canonical Discord ingress message does not match its receipt",
-    );
-  }
-  return message;
-}
-
-/** The sender's still-verified binding for the connection that claimed it. */
-function requireClaimedIngressBinding(
-  bindings: readonly DiscordVerifiedBinding[],
-  ingress: ClaimedIngress,
-): DiscordVerifiedBinding {
-  const binding = bindings.find((candidate) => {
-    return (
-      candidate.connectionId === ingress.connectionId &&
-      candidate.userId === ingress.userId
-    );
-  });
-  if (!binding) {
-    throw new DiscordIngressFailure(
-      "binding:revoked",
-      false,
-      0,
-      "Discord connection is no longer available",
-    );
-  }
-  return binding;
-}
-
 const persistClaimedIngress$ = command(
   async (
-    { get, set },
-    args: { readonly ingressId: string; readonly claimToken: string },
+    { set },
+    args: {
+      readonly ingressId: string;
+      readonly claimToken: string;
+      readonly admittedBinding?: DiscordVerifiedBinding;
+    },
     signal: AbortSignal,
   ) => {
     const routed = await set(
@@ -894,62 +872,42 @@ const persistClaimedIngress$ = command(
     if (!routed) {
       return null;
     }
-    const db = set(writeDb$);
-    const ingressId = args.ingressId;
-    const claimToken = args.claimToken;
-    const [ingress] = await db
-      .select(claimedIngressSelection)
-      .from(discordChatIngress)
-      .innerJoin(
-        discordChatThreadRoutes,
-        and(
-          eq(discordChatIngress.routeId, discordChatThreadRoutes.id),
-          eq(
-            discordChatIngress.connectionId,
-            discordChatThreadRoutes.connectionId,
-          ),
-        ),
-      )
-      .where(
-        and(
-          eq(discordChatIngress.id, ingressId),
-          eq(discordChatIngress.status, "processing"),
-          eq(discordChatIngress.claimToken, claimToken),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (!ingress) {
-      return null;
-    }
-    // The native thread is only materialized by its first outgoing content.
-    const destinationChannelId =
-      ingress.destinationChannelId ?? ingress.sessionKey;
-    const message = claimedIngressMessage(ingress);
-    const bindings = await get(discordIngressSenderBindings(message.author.id));
-    signal.throwIfAborted();
-    const binding = requireClaimedIngressBinding(bindings, ingress);
+    const { message, source, route } = routed;
+    const { binding } = source;
+    const ingress: ClaimedIngress = {
+      ...routed.ingress,
+      routeId: route.id,
+      chatThreadId: route.chatThreadId,
+      userId: route.userId,
+      destinationChannelId: route.destinationChannelId,
+      sessionKey: route.sessionKey,
+    };
+    const destinationChannelId = route.destinationChannelId ?? route.sessionKey;
+    // Write access is established before history or attachment work begins.
+    scheduleDiscordAdmissionTyping({
+      botToken: source.botToken,
+      channelId: route.destinationChannelId ?? message.channel_id,
+    });
     const accessArgs = {
       connectionId: binding.connectionId,
       orgId: binding.orgId,
       userId: binding.userId,
       guildId: message.guild_id,
     };
-    // Route admission verified both channels; this one check binds the
-    // source channel's current access to this claim. The pick revalidates
-    // the route before it launches.
-    const source = await set(
-      requireIngressAccess$,
-      { ...accessArgs, channelId: message.channel_id, mode: "view" },
-      signal,
-    );
+    const messageContentEnabled = source.isDm
+      ? false
+      : discordResult(
+          await discordClient.fetchDiscordCurrentApplication(
+            { botToken: source.botToken, applicationId: source.applicationId },
+            signal,
+          ),
+        ).messageContentEnabled;
     const conversationContext = await set(
       readIngressConversationContext$,
       {
-        accessArgs,
+        source,
         message,
-        messageContentEnabled: source.messageContentEnabled,
-        channelType: source.channel.type,
+        messageContentEnabled,
       },
       signal,
     );
@@ -958,7 +916,7 @@ const persistClaimedIngress$ = command(
       {
         accessArgs,
         message,
-        botToken: source.botToken,
+        source,
         chatThreadId: ingress.chatThreadId,
       },
       signal,
@@ -988,12 +946,6 @@ const persistClaimedIngress$ = command(
       },
       signal,
     );
-    if (persisted) {
-      scheduleDiscordAdmissionTyping({
-        botToken: source.botToken,
-        channelId: ingress.destinationChannelId ?? message.channel_id,
-      });
-    }
     return persisted
       ? {
           orgId: binding.orgId,
@@ -1320,7 +1272,10 @@ const sendIngressQueueWaitNotice$ = command(
 export const processCanonicalDiscordIngress$ = command(
   async (
     { set },
-    args: { readonly ingressId: string },
+    args: {
+      readonly ingressId: string;
+      readonly admittedBinding?: DiscordVerifiedBinding;
+    },
     signal: AbortSignal,
   ): Promise<boolean> => {
     // Missing app configuration is an outage: leave ingress unclaimed.
@@ -1336,7 +1291,11 @@ export const processCanonicalDiscordIngress$ = command(
     const result = await settle(
       set(
         persistClaimedIngress$,
-        { ingressId: args.ingressId, claimToken: claim.claimToken },
+        {
+          ingressId: args.ingressId,
+          claimToken: claim.claimToken,
+          admittedBinding: args.admittedBinding,
+        },
         signal,
       ),
       signal,

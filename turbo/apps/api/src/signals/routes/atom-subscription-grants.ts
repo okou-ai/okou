@@ -216,13 +216,7 @@ const deliverAtomSubscription$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     set(setResHeader$, "Cache-Control", "no-store");
     const machineSecretKey = optionalEnv("OKOU_MACHINE_SECRET_KEY");
-    const allowedMachineIds = optionalEnv("ATOM_SUBSCRIPTION_GRANT_MACHINE_IDS")
-      ?.split(",")
-      .map((id) => {
-        return id.trim();
-      })
-      .filter(Boolean);
-    if (!machineSecretKey || !allowedMachineIds?.length) {
+    if (!machineSecretKey) {
       return providerUnavailable("Atom subscription grants are not configured");
     }
     const authentication = await settle(
@@ -240,17 +234,6 @@ const deliverAtomSubscription$ = command(
           error: {
             message: "Invalid Atom M2M token",
             code: "UNAUTHORIZED",
-          },
-        },
-      };
-    }
-    if (!allowedMachineIds.includes(authentication.value.machineId)) {
-      return {
-        status: 403 as const,
-        body: {
-          error: {
-            message: "Machine is not authorized to grant subscriptions",
-            code: "FORBIDDEN",
           },
         },
       };

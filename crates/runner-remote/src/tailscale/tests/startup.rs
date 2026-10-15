@@ -6,7 +6,7 @@ pub(crate) mod secure;
 use self::fixture::{ACCEPTED, DERIVED, NoiseService};
 use super::fixture::bounded;
 use crate::{
-    ssh::cache::Cache,
+    tailscale::tests::fixture::Cache,
     tailscale::{Failure, Key, Work, registration::Registration},
 };
 use runner_types::ids::RunId;
@@ -354,7 +354,7 @@ async fn actual_noise_registration_keeps_private_request_and_failure_body_out_of
     }))
     .unwrap();
     // The external service uses its own no-op subscriber. All production
-    // SDK descendants remain under the actual Cache-owned private dispatch.
+    // SDK descendants remain under the assignment-owned private dispatch.
     let service = NoiseService::new(body, false).await;
     let cache = Cache::new();
     let run = cache.register(RunId::new_v4());

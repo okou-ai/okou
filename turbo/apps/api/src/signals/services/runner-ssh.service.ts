@@ -19,7 +19,7 @@ import {
   sshConnections,
 } from "@okouai/db/runtime/ssh-connection";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
-import { and, eq, or } from "drizzle-orm";
+import { and, eq, or, sql, isNotNull } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import { db$ } from "../external/db";
@@ -47,7 +47,10 @@ const connectionFields = Object.freeze({
   userId: agentRuns.userId,
   host: sshConnections.host,
   port: sshConnections.port,
-  username: sshCredentials.username,
+  username:
+    sql`CASE WHEN ${sshConnections.connectionMode} = 'tailscale_ssh' THEN ${sshConnections.tailscaleSshUsername} ELSE ${sshCredentials.username} END`.mapWith(
+      sshCredentials.username,
+    ),
   authMethod: sshCredentials.authMethod,
   encryptedPassword: sshCredentials.encryptedPassword,
   generation: sshConnections.generation,
@@ -56,7 +59,7 @@ const connectionFields = Object.freeze({
   fingerprint: sshConnections.learnedHostKeyFingerprint,
   encryptedPrivateKey: sshCredentials.encryptedPrivateKey,
   encryptedPassphrase: sshCredentials.encryptedPassphrase,
-  transport: sshConnections.transport,
+  connectionMode: sshConnections.connectionMode,
   accessId: sshConnections.cloudflareAccessId,
   tailscaleId: sshConnections.tailscaleId,
   tailscale: {
@@ -142,10 +145,18 @@ export function createCurrentRunnerSshConnection(
 
       .innerJoin(agents, agentAuthority)
       .innerJoin(sshConnections, connectionAuthority(input))
-      .innerJoin(sshCredentials, credentialAuthority)
+      .leftJoin(sshCredentials, credentialAuthority)
       .leftJoin(cloudflareAccessConfigs, cloudflareAuthority)
       .leftJoin(tailscaleConfigs, tailscaleAuthority)
-      .where(runAuthority(input));
+      .where(
+        and(
+          runAuthority(input),
+          or(
+            eq(sshConnections.connectionMode, "tailscale_ssh"),
+            isNotNull(sshCredentials.id),
+          ),
+        ),
+      );
     return row ?? null;
   });
 }
@@ -160,13 +171,14 @@ function availableConnection(row: Connection | null | undefined) {
     return null;
   }
   if (
-    row.transport === "tailscale" &&
+    (row.connectionMode === "tailscale" ||
+      row.connectionMode === "tailscale_ssh") &&
     (row.tailscale === null || row.tailscaleId === null)
   ) {
     throw new Error("SSH Tailscale configuration is missing");
   }
   if (
-    row.transport === "cloudflare_access" &&
+    row.connectionMode === "cloudflare_access" &&
     (row.access === null || row.accessId === null)
   ) {
     throw new Error("SSH Cloudflare Access is missing");
@@ -184,6 +196,26 @@ function learnedHostKey(row: {
     algorithm: row.algorithm,
     fingerprint: row.fingerprint,
   });
+}
+
+async function decryptTailscaleAuthority(row: Connection) {
+  if (
+    row.connectionMode !== "tailscale" &&
+    row.connectionMode !== "tailscale_ssh"
+  ) {
+    return null;
+  }
+  const network = row.tailscale;
+  if (network === null) {
+    throw new Error("SSH Tailscale configuration is missing");
+  }
+  return {
+    configId: network.id,
+    generation: network.generation,
+    tags: network.tags,
+    clientId: await decryptStoredSecretValue(network.encryptedClientId),
+    clientSecret: await decryptStoredSecretValue(network.encryptedClientSecret),
+  };
 }
 
 // Decryption follows the request's cancellation, so this semantic handoff stays
@@ -207,21 +239,25 @@ export const resolveRunnerSsh$ = command(
       generation: row.generation,
       learnedHostKey: hostKey,
     };
-    const network = row.transport === "tailscale" ? row.tailscale : null;
-    const tailscaleCredentials =
-      network === null
-        ? null
-        : {
-            configId: network.id,
-            generation: network.generation,
-            tags: network.tags,
-            clientId: await decryptStoredSecretValue(network.encryptedClientId),
-            clientSecret: await decryptStoredSecretValue(
-              network.encryptedClientSecret,
-            ),
-          };
+    const tailscaleCredentials = await decryptTailscaleAuthority(row);
     signal.throwIfAborted();
-    const access = row.transport === "cloudflare_access" ? row.access : null;
+    if (row.connectionMode === "tailscale_ssh") {
+      if (
+        row.port !== 22 ||
+        tailscaleCredentials === null ||
+        row.authMethod !== null
+      ) {
+        throw new Error("Invalid Tailscale SSH identity");
+      }
+      return {
+        outcome: "resolved_tailscale_ssh",
+        ...common,
+        port: 22,
+        tailscale: tailscaleCredentials,
+      };
+    }
+    const access =
+      row.connectionMode === "cloudflare_access" ? row.access : null;
     const accessCredentials =
       access === null
         ? null

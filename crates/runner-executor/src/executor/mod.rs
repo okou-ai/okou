@@ -73,7 +73,7 @@ pub use telemetry::{
     FinalizingHandoffReason, RunnerPreSpawnConcurrency, RunnerPreSpawnOperationTiming,
     RunnerPreSpawnPhase, RunnerPreSpawnTiming,
 };
-use telemetry::{RunnerSpawnTiming, record_api_latency, record_reuse_result};
+use telemetry::{RunnerSpawnTiming, record_api_latency};
 
 use api_contracts::generated::constants::runners::{
     AGENT_EXECUTION_TIMEOUT_SECONDS, RUNNER_CANCELLATION_RECOVERY_GRACE_MS,
@@ -672,7 +672,6 @@ pub async fn execute_job_with_prepared_notifier(
     telemetry.set_first_run(context.is_first_run);
     spawn_timing.record_claim_to_executor_start(&mut telemetry);
 
-    record_reuse_result(&mut telemetry, dispatch.reuse_result);
     record_api_latency("api_to_sandbox_start", &context, &mut telemetry);
 
     let sandbox_id = dispatch.id.to_string();
@@ -793,11 +792,6 @@ pub async fn execute_job_reuse_with_hooks(
     telemetry.set_first_run(context.is_first_run);
     spawn_timing.record_claim_to_executor_start(&mut telemetry);
 
-    let idle_kind = idle_sandbox.kind();
-    record_reuse_result(&mut telemetry, reuse_result);
-    if idle_kind == IdleSandboxKind::Blank {
-        telemetry.record("sandbox_blank_pool_hit", Duration::ZERO, true, None);
-    }
     record_api_latency("api_to_sandbox_start", &context, &mut telemetry);
 
     let sandbox_id = idle_sandbox.sandbox_id();

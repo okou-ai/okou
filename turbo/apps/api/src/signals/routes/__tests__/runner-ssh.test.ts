@@ -1,5 +1,5 @@
 import { createClaimedSshRuntimeApi } from "./helpers/claimed-ssh-runtime";
-import { inlineSshKey } from "./helpers/ssh-credential";
+import { inlineSshKey, sshCredentialId } from "./helpers/ssh-credential";
 import { randomUUID } from "node:crypto";
 
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
@@ -154,7 +154,7 @@ async function ordinaryFixture(group?: string) {
     ...runtime,
     connectionId: connection.body.id,
     connectionCreatedAt: connection.body.createdAt,
-    credentialId: connection.body.credentialId,
+    credentialId: sshCredentialId(connection.body),
   };
 }
 
@@ -258,7 +258,7 @@ function useClaimedFixture() {
       sandboxToken,
       connectionId: connection.body.id,
       connectionCreatedAt: connection.body.createdAt,
-      credentialId: connection.body.credentialId,
+      credentialId: sshCredentialId(connection.body),
     };
   }
 
@@ -517,7 +517,7 @@ function createPublicHostApi() {
       ...claimed,
       connectionId: connection.body.id,
       connectionCreatedAt: connection.body.createdAt,
-      credentialId: connection.body.credentialId,
+      credentialId: sshCredentialId(connection.body),
     };
   }
 
@@ -683,7 +683,9 @@ describe("shared credential runtime authority", () => {
       });
       expect(host.generation).toBe(
         (previous?.generation ?? 0) +
-          (host.credentialId === f.credentialId ? 1 : 0),
+          ("credentialId" in host && host.credentialId === f.credentialId
+            ? 1
+            : 0),
       );
       expect(host.learnedHostKey).toStrictEqual(previous?.learnedHostKey);
     }
@@ -729,7 +731,7 @@ describe("shared credential runtime authority", () => {
         params: { connectionId: shared.body.id },
         body: {
           expectedGeneration: 2,
-          credential: { id: unrelated.body.credentialId },
+          credential: { id: sshCredentialId(unrelated.body) },
         },
       }),
       [200],
@@ -1391,7 +1393,7 @@ describe("official Runner SSH authority", () => {
       ...runtime,
       connectionId: connection.body.id,
       connectionCreatedAt: connection.body.createdAt,
-      credentialId: connection.body.credentialId,
+      credentialId: sshCredentialId(connection.body),
     };
     const kms = useSecretKmsProbe();
     authenticate(f);

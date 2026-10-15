@@ -1,10 +1,10 @@
-//! Real public DERP IO inside the production Cache-owned native runtime.
+//! Real public DERP IO inside the assignment-owned native runtime.
 //! These are component/physical-owner checks, not a qualified SSH carrier.
 pub(super) mod fixture;
 
 use super::fixture::bounded;
 use crate::{
-    ssh::cache::Cache,
+    tailscale::tests::fixture::Cache,
     tailscale::{Control, Failure, Key, Work, registration::Registration},
 };
 use fixture::{Server, WriteGate};
@@ -140,7 +140,7 @@ async fn oversized_derp_length_fails_without_waiting_for_unbounded_payload() {
 }
 
 #[tokio::test]
-async fn official_derp_handshake_and_bidirectional_bytes_remain_owned_until_invalidation() {
+async fn official_derp_handshake_and_bidirectional_bytes_remain_owned_until_assignment_close() {
     let server = Server::new().await;
     let gate = WriteGate::new();
     let retained = Arc::clone(&gate);
@@ -189,9 +189,9 @@ async fn official_derp_handshake_and_bidirectional_bytes_remain_owned_until_inva
         .await
         .unwrap();
     bounded(received).await.unwrap();
-    // This component fixture has no prepared common-SSH authority entry. Use
-    // delivered Run invalidation, which actually owns the complete native root.
-    cache.invalidate(run_id, None);
+    // The raw component work is owned by this assignment, independently of
+    // any SSH authority entry or other consumer sharing its native node.
+    run.close();
     bounded(node.physical()).await.unwrap();
     bounded(run.shutdown_native()).await.unwrap();
     bounded(gate.destroyed()).await;
