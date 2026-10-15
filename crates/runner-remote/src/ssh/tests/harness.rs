@@ -465,7 +465,7 @@ impl Harness {
         )
         .await
     }
-    pub(super) async fn raw(&self, json: String) -> Vec<Value> {
+    pub(crate) async fn raw(&self, json: String) -> Vec<Value> {
         request_frames(self.open().await, json).await
     }
     pub(super) async fn open(&self) -> DuplexStream {
@@ -519,7 +519,7 @@ impl Harness {
         ));
     }
 
-    pub(super) async fn enable_diagnostics(&mut self) {
+    pub(crate) async fn enable_diagnostics(&mut self) {
         self.shutdown().await;
         let (incoming, receiver) = mpsc::channel(32);
         self.incoming = incoming;

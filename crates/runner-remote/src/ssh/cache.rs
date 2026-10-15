@@ -221,12 +221,18 @@ impl Drop for Registration {
 
 impl Access {
     pub(crate) fn native_source(&self) -> Option<crate::diagnostics::NativeSource> {
+        if !self.registration.native.diagnostics.enabled() {
+            return None;
+        }
         let credential = self.entry.value.get()?;
         let super::authority::Transport::Tailscale(configuration) = &credential.transport else {
             return None;
         };
-        let node = self.entry.native.lock().unwrap_or_else(|p| p.into_inner());
-        Some(node.as_ref()?.diagnostic_source(configuration.key()))
+        // A failed retained node can reject adoption before this consumer owns it.
+        self.registration
+            .native
+            .registry
+            .diagnostic_source(configuration.key())
     }
 
     pub(crate) fn diagnostics(&self) -> crate::diagnostics::Handle {

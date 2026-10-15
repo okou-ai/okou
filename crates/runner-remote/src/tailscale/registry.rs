@@ -110,6 +110,17 @@ pub(crate) struct Registry {
 }
 
 impl Registry {
+    pub(crate) fn diagnostic_source(&self, key: Key) -> Option<crate::diagnostics::NativeSource> {
+        let node = self
+            .state
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .nodes
+            .get(&key)?
+            .upgrade()?;
+        Some(node.diagnostic_source(key))
+    }
+
     pub(crate) fn new(pool: Arc<Pool>) -> Self {
         Self::with_effects(pool, Arc::new(Effects::default()))
     }

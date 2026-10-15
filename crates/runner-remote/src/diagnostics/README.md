@@ -49,6 +49,11 @@ never provider error text, hostnames, credentials, auth URLs, command output,
 screenshots, input, maps or packets. Existing business result/effect/delivery
 contracts remain independent.
 
+A later SSH request for the same native configuration retains an available
+source receipt even when the terminal node rejects adoption before that host
+owns a node lease. The lookup copies only pure evidence from this Run's exact
+configuration/generation; it does not restart or retain the physical node.
+
 Native subscriptions hold weak references to pure consumer activity flags.
 Explicit retirement or authority invalidation disables later publication for
 that consumer without keeping its physical resource alive. Separate sessions
@@ -58,6 +63,9 @@ Rollout uses the default-off `remoteConnectionDiagnostics` key in the existing
 Run feature map. Enabling it does not grant SSH or VNC access. Report fields and
 finite vocabularies are a versioned contract; incompatible additions require a
 new negotiated version or method, leaving legacy business replies unchanged.
+The switch controls history publication and passive queries. Native first-cause
+lifecycle handling and the inventory identity projection are shared paths that
+also apply when diagnostics are disabled.
 
 SSH-routed Kerberos KDC failures retain their source cause and creation identity
 before Kerberos error conversion. The native RPC regression uses a real packaged
