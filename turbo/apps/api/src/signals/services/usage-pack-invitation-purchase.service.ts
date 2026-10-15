@@ -1449,9 +1449,10 @@ const refundPurchase$ = command(
     signal?: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0279; new non-billing transactions are prohibited.
-    const purchase = await db.transaction(async (tx) => {
-      const [identity] = await tx
+    // Keep the original read/claim phase under its existing abort checkpoint.
+    // This inline block is awaited here; no handle or executor leaves the command.
+    const purchase = await (async () => {
+      const [identity] = await db
         .select({
           orgId: usagePackInvitationPurchases.orgId,
           subscriptionId: usagePackInvitationPurchases.usagePackSubscriptionId,
@@ -1465,7 +1466,7 @@ const refundPurchase$ = command(
       const staleBefore = new Date(
         nowDate().getTime() - RECONCILIATION_DELAY_MS,
       );
-      const [claimed] = await tx
+      const [claimed] = await db
         .update(usagePackInvitationPurchases)
         .set({ status: "refunding", updatedAt: nowDate() })
         .where(
@@ -1493,7 +1494,7 @@ const refundPurchase$ = command(
         )
         .returning();
       return claimed ?? null;
-    });
+    })();
     signal?.throwIfAborted();
     if (!purchase) {
       return;
