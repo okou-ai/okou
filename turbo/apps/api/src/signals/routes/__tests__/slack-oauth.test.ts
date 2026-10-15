@@ -31,6 +31,8 @@ import { slackConnectRoutes } from "../slack-connect";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { slackOauthContract } from "@okouai/api-contracts/contracts/slack-oauth";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { mockClerkUsers } from "./helpers/clerk-users";
 
 const context = testContext();
 const store = createStore();
@@ -229,6 +231,246 @@ describe("Slack OAuth API routes", () => {
       slackUserId: uniqueSlackUserId(),
     };
   }
+
+  function ownCallbackInstallations() {
+    const installations: PublicSlackOrgFixture[] = [];
+    const owner = createFixtureOperationOwner(async () => {
+      for (const installation of installations) {
+        await slackOrgs.uninstallWorkspace(installation.slackWorkspaceId);
+      }
+    });
+    return {
+      run: owner.run,
+      install: () => {
+        return owner.run(async () => {
+          const installation = await slackOrgs.installOrg();
+          installations.push(installation);
+          await flushWaitUntilForTest();
+          applyOAuthTestEnv();
+          context.mocks.slack.oauth.v2.access.mockClear();
+          return installation;
+        });
+      },
+    };
+  }
+
+  function mockCallbackDirectory(actor: ApiTestUser) {
+    const emailId = `email_${actor.userId}`;
+    mockClerkUsers(context, [
+      {
+        id: actor.userId,
+        primaryEmailAddressId: emailId,
+        emailAddresses: [{ id: emailId, emailAddress: actor.email }],
+        firstName: "Callback",
+        lastName: "Member",
+      },
+    ]);
+    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+      data: actor.orgId
+        ? [{ organization: { id: actor.orgId }, role: actor.orgRole }]
+        : [],
+    });
+  }
+
+  function callbackClient() {
+    return setupApp({
+      context,
+      routes: slackOauthRoutes,
+      baseUrl: API_ORIGIN,
+    })(slackOauthContract);
+  }
+
+  async function startPublicCallback(installation: PublicSlackOrgFixture) {
+    const response = await accept(
+      callbackClient().connect({
+        query: { orgId: installation.orgId, userId: installation.userId },
+      }),
+      [307],
+    );
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    const location = response.headers.get("location");
+    if (!location) {
+      throw new Error("Expected the public Slack authorization URL");
+    }
+    const url = new URL(location);
+    expect(url.searchParams.get("team")).toBe(installation.slackWorkspaceId);
+    expect(url.searchParams.get("redirect_uri")).toBe(
+      `${API_ORIGIN}/api/integrations/slack/oauth/callback`,
+    );
+    const state = signedOAuthState(url);
+    expect(state.payload).toMatchObject({
+      flow: "connect",
+      orgId: installation.orgId,
+      userId: installation.userId,
+      redirectUri: `${API_ORIGIN}/api/integrations/slack/oauth/callback`,
+    });
+    return state.encoded;
+  }
+
+  async function readCallbackLink(
+    installation: PublicSlackOrgFixture,
+    slackUserId: string,
+  ) {
+    createRouteMocks(context).clerk.session(
+      installation.userId,
+      installation.orgId,
+      "org:admin",
+    );
+    return await accept(
+      setupApp({ context, routes: slackConnectRoutes })(
+        slackConnectContract,
+      ).getLinkStatus({
+        headers: { authorization: "Bearer clerk-session" },
+        query: { workspaceId: installation.slackWorkspaceId, slackUserId },
+      }),
+      [200],
+    );
+  }
+
+  describe("public connect callback membership", () => {
+    it("connects distinct public members in A/B/A request order", async () => {
+      const owned = ownCallbackInstallations();
+      const first = await owned.install();
+      const second = await owned.install();
+
+      for (const installation of [first, second, first]) {
+        await owned.run(async () => {
+          mockCallbackDirectory(installation.actor);
+          const state = await startPublicCallback(installation);
+          const code = `connect-${randomUUID()}`;
+          mockOAuthSuccess({
+            teamId: installation.slackWorkspaceId,
+            authedUserId: installation.slackUserId,
+          });
+          const response = await accept(
+            callbackClient().callback({ query: { code, state } }),
+            [307],
+          );
+          const location = response.headers.get("location");
+          expect(location).toBe(
+            `${APP_ORIGIN}/settings/slack?status=connected&workspace=${encodeURIComponent(installation.slackWorkspaceName)}`,
+          );
+          expect(context.mocks.slack.oauth.v2.access).toHaveBeenLastCalledWith({
+            client_id: "test-slack-client-id",
+            client_secret: "test-slack-client-secret",
+            code,
+            redirect_uri: `${API_ORIGIN}/api/integrations/slack/oauth/callback`,
+          });
+          const status = await readCallbackLink(
+            installation,
+            installation.slackUserId,
+          );
+          expect(status.body).toMatchObject({
+            isConnected: true,
+            workspaceName: installation.slackWorkspaceName,
+            linkStatus: { kind: "connected" },
+          });
+          await flushWaitUntilForTest();
+        });
+      }
+    });
+
+    it("keeps entry-accepted state valid when expiry passes during exchange", async () => {
+      const owned = ownCallbackInstallations();
+      const installation = await owned.install();
+      const startedAt = Date.parse("2026-10-13T13:00:00.000Z");
+
+      await owned.run(async () => {
+        await withMockNowForTest(startedAt, async () => {
+          mockCallbackDirectory(installation.actor);
+          const state = await startPublicCallback(installation);
+          context.mocks.slack.oauth.v2.access.mockImplementationOnce(() => {
+            mockNow(startedAt + 15 * 60 * 1000 + 1000);
+            return Promise.resolve({
+              ok: true,
+              team: { id: installation.slackWorkspaceId },
+              authed_user: { id: installation.slackUserId },
+            });
+          });
+          const response = await accept(
+            callbackClient().callback({
+              query: { code: `connect-${randomUUID()}`, state },
+            }),
+            [307],
+          );
+          expect(response.headers.get("location")).toBe(
+            `${APP_ORIGIN}/settings/slack?status=connected&workspace=${encodeURIComponent(installation.slackWorkspaceName)}`,
+          );
+          const status = await readCallbackLink(
+            installation,
+            installation.slackUserId,
+          );
+          expect(status.body).toMatchObject({
+            isConnected: true,
+            linkStatus: { kind: "connected" },
+          });
+          await flushWaitUntilForTest();
+          const exchangeCalls =
+            context.mocks.slack.oauth.v2.access.mock.calls.length;
+          const expired = await accept(
+            callbackClient().callback({
+              query: { code: `connect-${randomUUID()}`, state },
+            }),
+            [307],
+          );
+          const expiredLocation = expired.headers.get("location");
+          if (!expiredLocation) {
+            throw new Error("Expected the expired OAuth redirect");
+          }
+          expect(new URL(expiredLocation).pathname).toBe("/slack/failed");
+          expect(new URL(expiredLocation).searchParams.get("error")).toBe(
+            "Invalid OAuth state.",
+          );
+          expect(context.mocks.slack.oauth.v2.access).toHaveBeenCalledTimes(
+            exchangeCalls,
+          );
+        });
+      });
+    });
+
+    it("rejects a foreign member and leaves the Slack identity available", async () => {
+      const owned = ownCallbackInstallations();
+      const installation = await owned.install();
+      const foreignActor = createBddApi(context).user();
+      const slackUserId = uniqueSlackUserId();
+
+      await owned.run(async () => {
+        mockCallbackDirectory(installation.actor);
+        const before = await readCallbackLink(installation, slackUserId);
+        expect(before.body).toStrictEqual({
+          isConnected: false,
+          isAdmin: true,
+          linkStatus: { kind: "connect" },
+        });
+        mockCallbackDirectory(foreignActor);
+        const started = await accept(
+          callbackClient().connect({
+            query: { orgId: installation.orgId, userId: foreignActor.userId },
+          }),
+          [307],
+        );
+        const location = started.headers.get("location");
+        if (!location) {
+          throw new Error("Expected the public Slack authorization URL");
+        }
+        const state = signedOAuthState(new URL(location)).encoded;
+        mockOAuthSuccess({
+          teamId: installation.slackWorkspaceId,
+          authedUserId: slackUserId,
+        });
+        await expect(
+          callbackClient().callback({
+            query: { code: `connect-${randomUUID()}`, state },
+          }),
+        ).rejects.toThrow(
+          "Unknown response status 500 for GET /api/integrations/slack/oauth/callback",
+        );
+        mockCallbackDirectory(installation.actor);
+        const after = await readCallbackLink(installation, slackUserId);
+        expect(after.body).toStrictEqual(before.body);
+      });
+    });
+  });
 
   describe("GET /api/slack/oauth/install", () => {
     it("redirects to Slack OAuth with bot scopes and callback URI", async () => {
