@@ -1,9 +1,9 @@
-import { createHmac } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import { fileURLToPath, URL as NodeURL } from "node:url";
 import { convertV4MiniflareOptions, Miniflare, Response } from "miniflare";
 import { expect, it, onTestFinished } from "vitest";
-const control = "test-control-secret";
-const secret = "test-api-signing-secret";
+const control = randomBytes(32).toString("hex");
+const secret = randomBytes(32).toString("hex");
 const connectionId = "00000000-0000-4000-8000-000000000001";
 function fixture(enabled = true) {
   const received = Promise.withResolvers<{

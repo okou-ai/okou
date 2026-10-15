@@ -8,6 +8,7 @@ import { Input } from "@okouai/ui/components/ui/input";
 import {
   Dialog,
   DialogContent,
+  DialogTrigger,
   DialogDescription,
   DialogHeader,
   DialogTitle,
@@ -17,8 +18,7 @@ import {
   wechatFlow$,
   wechatCode$,
   setWechatCode$,
-  startWechatConnect$,
-  verifyWechat$,
+  connectWechat$,
   closeWechat$,
   disconnectWechat$,
 } from "../../signals/okou-page/wechat.ts";
@@ -29,16 +29,27 @@ export function WechatCard() {
   const { t } = useTranslation();
   const statusLoadable = useLastLoadable(wechatStatus$);
   const signal = useGet(pageSignal$);
-  const [connecting, start] = useLoadableSet(startWechatConnect$);
+  const flow = useGet(wechatFlow$);
+  const close = useSet(closeWechat$);
+  const [connecting, connect] = useLoadableSet(connectWechat$);
   const [disconnecting, disconnect] = useLoadableSet(disconnectWechat$);
   const status =
     statusLoadable.state === "hasData" ? statusLoadable.data : null;
   const connected = status?.status === "active";
   const startConnection = () => {
-    return detach(start(signal), Reason.DomCallback);
+    return detach(connect("start", signal), Reason.DomCallback);
   };
   return (
-    <>
+    <Dialog
+      open={flow.open}
+      onOpenChange={(open) => {
+        if (open) {
+          startConnection();
+        } else {
+          detach(close(signal), Reason.DomCallback);
+        }
+      }}
+    >
       <div
         data-slot="integration-card"
         className={surfaceVariants({ className: "flex flex-col" })}
@@ -73,11 +84,9 @@ export function WechatCard() {
               })}
             </span>
           ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!status?.configured || connecting.state === "loading"}
-              onClick={startConnection}
+            <DialogTrigger
+              render={<Button variant="outline" size="sm" />}
+              disabled={!status?.configured}
             >
               {status?.status === "reconnect_required"
                 ? t(($) => {
@@ -86,7 +95,7 @@ export function WechatCard() {
                 : t(($) => {
                     return $.works.wechat.connect;
                   })}
-            </Button>
+            </DialogTrigger>
           )}
           {status && status.status !== "disconnected" ? (
             <Button
@@ -104,99 +113,105 @@ export function WechatCard() {
           ) : null}
         </div>
       </div>
-      <WechatConnectDialog />
-    </>
-  );
-}
-
-function WechatConnectDialog() {
-  const { t } = useTranslation();
-  const flow = useGet(wechatFlow$);
-  const signal = useGet(pageSignal$);
-  const start = useSet(startWechatConnect$);
-  const close = useSet(closeWechat$);
-  const retry = [
-    "expired",
-    "verification_blocked",
-    "restart_required",
-    "failed",
-  ].includes(flow.status);
-  const startConnection = () => {
-    return detach(start(signal), Reason.DomCallback);
-  };
-  return (
-    <Dialog
-      open={flow.open}
-      onOpenChange={(open) => {
-        if (!open) {
-          detach(close(signal), Reason.DomCallback);
-        }
-      }}
-    >
-      <DialogContent smMaxWidth={440}>
-        <DialogHeader>
-          <DialogTitle>
-            {t(($) => {
-              return $.works.wechat.title;
-            })}
-          </DialogTitle>
-          <DialogDescription>
-            {t(($) => {
-              return $.works.wechat.instructions;
-            })}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="flex flex-col items-center gap-4 py-4">
-          {flow.status === "creating" ? (
-            <Loader2 className="size-6 animate-spin" aria-hidden="true" />
-          ) : null}
-          {flow.attempt && !retry ? (
-            <div className="rounded-xl bg-white p-3">
-              <QRCodeSVG
-                value={flow.attempt.qrContent}
-                size={180}
-                marginSize={2}
-                title={t(($) => {
-                  return $.works.wechat.title;
-                })}
-                data-testid="wechat-connect-qr"
-              />
-            </div>
-          ) : null}
-          <WechatFlowStatus retry={retry} />
-          {flow.status === "verification_required" ? (
-            <WechatVerificationForm />
-          ) : null}
-          {retry ? (
-            <Button variant="outline" onClick={startConnection}>
-              {t(($) => {
-                return $.works.wechat.retry;
-              })}
-            </Button>
-          ) : null}
-        </div>
-        <p className="text-xs text-muted-foreground">
-          {t(($) => {
-            return $.works.wechat.scope;
-          })}
-        </p>
-      </DialogContent>
+      <WechatConnectDialog
+        loading={connecting.state === "loading"}
+        failed={connecting.state === "hasError"}
+        onStart={startConnection}
+        onVerify={() => {
+          return detach(connect("verify", signal), Reason.DomCallback);
+        }}
+      />
     </Dialog>
   );
 }
 
-function WechatVerificationForm() {
+function WechatConnectDialog({
+  loading,
+  failed,
+  onStart,
+  onVerify,
+}: {
+  readonly loading: boolean;
+  readonly failed: boolean;
+  readonly onStart: () => void;
+  readonly onVerify: () => void;
+}) {
+  const { t } = useTranslation();
+  const flow = useGet(wechatFlow$);
+  const retry =
+    failed ||
+    ["expired", "verification_blocked", "restart_required"].includes(
+      flow.status,
+    );
+  return (
+    <DialogContent smMaxWidth={440}>
+      <DialogHeader>
+        <DialogTitle>
+          {t(($) => {
+            return $.works.wechat.title;
+          })}
+        </DialogTitle>
+        <DialogDescription>
+          {t(($) => {
+            return $.works.wechat.instructions;
+          })}
+        </DialogDescription>
+      </DialogHeader>
+      <div className="flex flex-col items-center gap-4 py-4">
+        {loading && !flow.attempt ? (
+          <Loader2 className="size-6 animate-spin" aria-hidden="true" />
+        ) : null}
+        {flow.attempt && !retry ? (
+          <div className="rounded-xl bg-white p-3">
+            <QRCodeSVG
+              value={flow.attempt.qrContent}
+              size={180}
+              marginSize={2}
+              title={t(($) => {
+                return $.works.wechat.title;
+              })}
+              data-testid="wechat-connect-qr"
+            />
+          </div>
+        ) : null}
+        <WechatFlowStatus retry={retry} failed={failed} />
+        {flow.status === "verification_required" && !failed ? (
+          <WechatVerificationForm loading={loading} onVerify={onVerify} />
+        ) : null}
+        {retry ? (
+          <Button variant="outline" onClick={onStart} disabled={loading}>
+            {t(($) => {
+              return $.works.wechat.retry;
+            })}
+          </Button>
+        ) : null}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {t(($) => {
+          return $.works.wechat.scope;
+        })}
+      </p>
+    </DialogContent>
+  );
+}
+
+function WechatVerificationForm({
+  loading,
+  onVerify,
+}: {
+  readonly loading: boolean;
+  readonly onVerify: () => void;
+}) {
   const { t } = useTranslation();
   const code = useGet(wechatCode$);
   const setCode = useSet(setWechatCode$);
-  const signal = useGet(pageSignal$);
-  const [verifying, verify] = useLoadableSet(verifyWechat$);
+
   return (
     <form
       className="flex w-full gap-2"
       onSubmit={(event) => {
         event.preventDefault();
-        detach(verify(signal), Reason.DomCallback);
+        onVerify();
       }}
     >
       <Input
@@ -214,10 +229,7 @@ function WechatVerificationForm() {
           return setCode(event.target.value);
         }}
       />
-      <Button
-        type="submit"
-        disabled={!/^\d{4,12}$/u.test(code) || verifying.state === "loading"}
-      >
+      <Button type="submit" disabled={!/^\d{4,12}$/u.test(code) || loading}>
         {t(($) => {
           return $.works.wechat.verify;
         })}
@@ -226,7 +238,13 @@ function WechatVerificationForm() {
   );
 }
 
-function WechatFlowStatus({ retry }: { readonly retry: boolean }) {
+function WechatFlowStatus({
+  retry,
+  failed,
+}: {
+  readonly retry: boolean;
+  readonly failed: boolean;
+}) {
   const { t } = useTranslation();
   const flow = useGet(wechatFlow$);
   const statusMessages = {
@@ -251,12 +269,6 @@ function WechatFlowStatus({ retry }: { readonly retry: boolean }) {
     restart_required: t(($) => {
       return $.works.wechat.restart_required;
     }),
-    creating: t(($) => {
-      return $.works.wechat.creating;
-    }),
-    failed: t(($) => {
-      return $.works.wechat.failed;
-    }),
   };
   if (flow.status === "connected") {
     return null;
@@ -266,7 +278,15 @@ function WechatFlowStatus({ retry }: { readonly retry: boolean }) {
       role={retry ? "alert" : "status"}
       className="text-center text-sm text-muted-foreground"
     >
-      {statusMessages[flow.status]}
+      {failed
+        ? t(($) => {
+            return $.works.wechat.failed;
+          })
+        : !flow.attempt
+          ? t(($) => {
+              return $.works.wechat.creating;
+            })
+          : statusMessages[flow.status]}
     </p>
   );
 }

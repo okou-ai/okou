@@ -10,13 +10,13 @@ import { apiClient$ } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { accept } from "../../lib/accept.ts";
-import { resetSignal, settle, waitLoopUntil } from "../utils.ts";
+import { resetSignal, waitLoopUntil } from "../utils.ts";
 const reload$ = state(0);
 const flow$ = state<{
   open: boolean;
   attempt: WechatAttempt | null;
-  status: WechatPollStatus | "creating" | "failed";
-}>({ open: false, attempt: null, status: "creating" });
+  status: WechatPollStatus;
+}>({ open: false, attempt: null, status: "waiting" });
 const code$ = state("");
 const resetFlow$ = resetSignal();
 export const wechatFlow$ = computed((get) => {
@@ -59,88 +59,80 @@ const poll$ = command(
       apiBase: "api",
     });
     let pendingCode = verifyCode;
-    const result = await settle(
-      waitLoopUntil(
-        async () => {
-          if (now() >= Date.parse(attempt.expiresAt)) {
-            set(flow$, { open: true, attempt, status: "expired" });
-            return true;
-          }
-          const response = await accept(
-            client.poll({
-              headers: {},
-              body: {
-                id: attempt.id,
-                ...(pendingCode ? { verifyCode: pendingCode } : {}),
-              },
-              fetchOptions: { signal },
-            }),
-            [200],
-            signal,
-          );
-          signal.throwIfAborted();
-          pendingCode = undefined;
-          const status = response.body.status;
-          set(flow$, { open: status !== "connected", attempt, status });
-          if (status === "connected") {
-            await set(refreshWechat$, signal);
-            return true;
-          }
-          return status !== "waiting" && status !== "scanned";
-        },
-        1000,
-        signal,
-      ),
+    await waitLoopUntil(
+      async () => {
+        if (now() >= Date.parse(attempt.expiresAt)) {
+          set(flow$, { open: true, attempt, status: "expired" });
+          return true;
+        }
+        const response = await accept(
+          client.poll({
+            headers: {},
+            body: {
+              id: attempt.id,
+              ...(pendingCode ? { verifyCode: pendingCode } : {}),
+            },
+            fetchOptions: { signal },
+          }),
+          [200],
+          signal,
+        );
+        signal.throwIfAborted();
+        pendingCode = undefined;
+        const status = response.body.status;
+        set(flow$, { open: status !== "connected", attempt, status });
+        if (status === "connected") {
+          await set(refreshWechat$, signal);
+          return true;
+        }
+        return status !== "waiting" && status !== "scanned";
+      },
+      1000,
+      signal,
     );
     signal.throwIfAborted();
-    if ("error" in result) {
-      set(flow$, { open: true, attempt, status: "failed" });
-    }
   },
 );
-export const startWechatConnect$ = command(
+const startWechatConnect$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const flowSignal = set(resetFlow$, signal);
     set(code$, "");
-    set(flow$, { open: true, attempt: null, status: "creating" });
+    set(flow$, { open: true, attempt: null, status: "waiting" });
     const client = get(apiClient$)(integrationsWechatContract, {
       apiBase: "api",
     });
-    const result = await settle(
-      accept(
-        client.connect({ headers: {}, fetchOptions: { signal: flowSignal } }),
-        [200],
-        flowSignal,
-      ),
+    const result = await accept(
+      client.connect({ headers: {}, fetchOptions: { signal: flowSignal } }),
+      [200],
+      flowSignal,
     );
     signal.throwIfAborted();
     flowSignal.throwIfAborted();
-    if ("error" in result) {
-      set(flow$, { open: true, attempt: null, status: "failed" });
-      return;
-    }
-    const attempt = result.value.body;
+    const attempt = result.body;
     set(flow$, { open: true, attempt, status: "waiting" });
     await set(poll$, attempt, undefined, flowSignal);
   },
 );
-export const verifyWechat$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const attempt = get(flow$).attempt;
-    if (!attempt) {
-      return;
-    }
-    const code = get(code$);
-    set(code$, "");
-    const flowSignal = set(resetFlow$, signal);
-    await set(poll$, attempt, code, flowSignal);
+const verifyWechat$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const attempt = get(flow$).attempt;
+  if (!attempt) {
+    return;
+  }
+  const code = get(code$);
+  set(code$, "");
+  const flowSignal = set(resetFlow$, signal);
+  await set(poll$, attempt, code, flowSignal);
+});
+export const connectWechat$ = command(
+  async ({ set }, action: "start" | "verify", signal: AbortSignal) => {
+    await set(action === "start" ? startWechatConnect$ : verifyWechat$, signal);
   },
 );
 export const closeWechat$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const attempt = get(flow$).attempt;
     set(resetFlow$, signal);
-    set(flow$, { open: false, attempt: null, status: "creating" });
+    set(flow$, { open: false, attempt: null, status: "waiting" });
     set(code$, "");
     if (attempt) {
       const client = get(apiClient$)(integrationsWechatContract, {
@@ -173,7 +165,7 @@ export const disconnectWechat$ = command(
   },
 );
 export const initWechat$ = command(async ({ set }, signal: AbortSignal) => {
-  set(flow$, { open: false, attempt: null, status: "creating" });
+  set(flow$, { open: false, attempt: null, status: "waiting" });
   set(code$, "");
   await set(refreshWechat$, signal);
 });

@@ -1,4 +1,4 @@
-import { createHmac, randomUUID } from "node:crypto";
+import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import { describe, expect, it, test, onTestFinished } from "vitest";
 import { http, HttpResponse } from "msw";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -24,12 +24,12 @@ import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
-import { clearAllDetached, createDeferredPromise } from "../../utils";
+import { createDeferredPromise } from "../../utils";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 const context = testContext();
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const origin = "https://ilinkai.weixin.qq.com";
-const secret = "wechat-test-gateway-secret-with-32-characters";
+const secret = randomBytes(32).toString("hex");
 const client = () => {
   return setupApp({ context, routes: integrationsWechatRoutes })(contract);
 };
@@ -376,6 +376,7 @@ test("receives an owner DM once, resumes its native session and delivers the can
   );
   const connectionId = z.uuid().parse(provider.starts[0]);
   const sends: unknown[] = [];
+  const delivered = createDeferredPromise<void>(context.signal);
   let messageId = "18446744073709551615";
   let messageText = "Remember that the project is called Orchid";
   let senderId = `scanner-${actor.userId}`;
@@ -416,6 +417,7 @@ test("receives an owner DM once, resumes its native session and delivers the can
         "Bearer test-private-bot-token",
       );
       sends.push(await request.json());
+      delivered.resolve();
       return HttpResponse.json({ ret: 0 });
     }),
   );
@@ -439,14 +441,19 @@ test("receives an owner DM once, resumes its native session and delivers the can
     );
   }
   async function claim() {
-    await flushWaitUntilForTest();
-    await runs.heartbeatRunner(runnerGroup);
-    const poll = await runs.pollRunner(runnerGroup);
-    const runId = poll.body.job?.runId;
-    if (!runId) {
-      throw new Error("Expected a dispatched WeChat run");
-    }
-    return await runs.claimRunnerJob(runId);
+    let runId: string | undefined;
+    await expect
+      .poll(
+        async () => {
+          await runs.heartbeatRunner(runnerGroup);
+          const poll = await runs.pollRunner(runnerGroup);
+          runId = poll.body.job?.runId;
+          return runId;
+        },
+        { timeout: 10_000 },
+      )
+      .toBeDefined();
+    return await runs.claimRunnerJob(z.uuid().parse(runId));
   }
   await receive();
 
@@ -536,7 +543,7 @@ test("receives an owner DM once, resumes its native session and delivers the can
     [200],
   );
 
-  await clearAllDetached();
+  await delivered.promise;
 
   expect(sends).toHaveLength(1);
   expect(sends[0]).toMatchObject({
@@ -593,7 +600,28 @@ test("receives an owner DM once, resumes its native session and delivers the can
     [200],
   );
 
-  await clearAllDetached();
+  await flushWaitUntilForTest();
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
+  await expect
+    .poll(
+      async () => {
+        const completedEvents = await readProjectedChatEvents(context, {
+          threadId,
+          headers,
+        });
+        return completedEvents.some((event) => {
+          return (
+            event.runId === second.runId && event.eventType === "run.completed"
+          );
+        });
+      },
+      { timeout: 10_000 },
+    )
+    .toBe(true);
 
   expect(sends).toHaveLength(1);
 });

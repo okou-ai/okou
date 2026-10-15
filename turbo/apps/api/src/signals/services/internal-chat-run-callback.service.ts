@@ -997,29 +997,18 @@ async function discordReplyRequest(args: {
   };
 }
 
-async function wechatReplyRequest(args: {
-  readonly db: ChatCallbackTransaction;
-  readonly runId: string;
+function wechatReplyRequest(args: {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly threadId: string;
   readonly target: WechatDeliveryTarget;
   readonly chatEventId: string;
-}): Promise<WechatReplyRequest> {
-  const [run] = await args.db
-    .select({
-      userId: agentRuns.userId,
-      orgId: agentRuns.orgId,
-      chatThreadId: agentRuns.chatThreadId,
-    })
-    .from(agentRuns)
-    .where(eq(agentRuns.id, args.runId))
-    .limit(1);
-  if (!run?.chatThreadId) {
-    throw new Error("Canonical Wechat delivery run is unavailable");
-  }
+}): WechatReplyRequest {
   return {
     chatEventId: args.chatEventId,
-    chatThreadId: run.chatThreadId,
-    userId: run.userId,
-    orgId: run.orgId,
+    chatThreadId: args.threadId,
+    userId: args.userId,
+    orgId: args.orgId,
     target: args.target,
   };
 }
@@ -1186,9 +1175,10 @@ async function insertAssistantErrorEventTransaction(
       : undefined;
   const wechatReply =
     input.wechatDelivery && insertedEvent
-      ? await wechatReplyRequest({
-          db: tx,
-          runId: input.runId,
+      ? wechatReplyRequest({
+          userId: input.userId,
+          orgId: input.orgId,
+          threadId: input.threadId,
           target: input.wechatDelivery,
           chatEventId: event.id,
         })
@@ -1469,9 +1459,10 @@ async function registerRunLifecycleDeliveryCallbacks(
       : undefined;
   const wechatReply =
     deliveryEvent && input.wechatDelivery && markerInserted
-      ? await wechatReplyRequest({
-          db: tx,
-          runId: input.runId,
+      ? wechatReplyRequest({
+          userId: input.userId,
+          orgId: input.orgId,
+          threadId: input.threadId,
           target: input.wechatDelivery,
           chatEventId: deliveryEvent.id,
         })

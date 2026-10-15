@@ -55,7 +55,7 @@ CREATE INDEX "wechat_chat_thread_routes_thread_idx" ON "wechat_chat_thread_route
 CREATE UNIQUE INDEX "wechat_connect_attempts_owner_idx" ON "wechat_connect_attempts" USING btree ("org_id","user_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "wechat_connections_owner_idx" ON "wechat_connections" USING btree ("org_id","user_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "wechat_connections_sender_idx" ON "wechat_connections" USING btree ("sender_id");--> statement-breakpoint
-ALTER TABLE "billing_run_attribution" ADD CONSTRAINT "billing_run_attribution_source_check" CHECK ("billing_run_attribution"."source" IN ('chat', 'automation', 'slack', 'discord', 'wechat', 'teams', 'telegram', 'email', 'agentphone', 'github', 'agent', 'other'));--> statement-breakpoint
+ALTER TABLE "billing_run_attribution" ADD CONSTRAINT "billing_run_attribution_source_check" CHECK ("billing_run_attribution"."source" IN ('chat', 'automation', 'slack', 'discord', 'wechat', 'teams', 'telegram', 'email', 'agentphone', 'github', 'agent', 'other')) NOT VALID;--> statement-breakpoint
 ALTER TABLE "chat_events" ADD CONSTRAINT "chat_events_context_type_check" CHECK ("chat_events"."context_type" IN (
           'web',
           'slack',
@@ -66,4 +66,4 @@ ALTER TABLE "chat_events" ADD CONSTRAINT "chat_events_context_type_check" CHECK 
           'agentphone',
           'automation',
           'agent_run'
-        ));
+        )) NOT VALID;

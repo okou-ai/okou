@@ -1,5 +1,5 @@
 // Adapted from @tencent-weixin/openclaw-weixin 2.4.10.
-// Copyright (c) 2026 Tencent. MIT; see docs/licenses/wechat-MIT.txt.
+// Copyright (c) 2026 Tencent. MIT; see ./wechat-MIT.txt.
 const LOSSLESS_ID_FIELDS = Object.freeze(["message_id", "msg_id", "svr_id"]);
 
 /**
