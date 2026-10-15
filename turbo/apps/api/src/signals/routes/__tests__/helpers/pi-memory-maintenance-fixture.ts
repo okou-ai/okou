@@ -68,10 +68,10 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
       throw new Error("Expected the Pi actor's organization");
     }
     const actor = { ...identity, orgId: identity.orgId };
-    if (!orgId) {
-      await runs.grantProEntitlement(actor);
-    }
-    const onboarding = await chat.bdd.readOnboardingStatus(actor);
+    // Paid bootstrap already observed this organization's default agent.
+    const onboarding = orgId
+      ? await chat.bdd.readOnboardingStatus(actor)
+      : await runs.grantProEntitlement(actor);
     if (!onboarding.defaultAgentId) {
       throw new Error("Expected paid onboarding to create a default agent");
     }

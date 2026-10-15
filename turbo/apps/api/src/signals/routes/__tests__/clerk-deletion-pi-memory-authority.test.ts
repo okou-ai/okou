@@ -27,6 +27,11 @@ describe("Clerk deletion revokes active Pi memory authority", () => {
       return { type, peerScope };
     });
   });
+  const survivorCases = activeCases.filter(({ type, peerScope }) => {
+    return type === "user.deleted"
+      ? peerScope !== "same-user-other-org"
+      : peerScope !== "same-org";
+  });
 
   async function activeOwners(peerScope: (typeof scopes)[number]) {
     const first = await prepareMaintenance({
@@ -94,6 +99,30 @@ describe("Clerk deletion revokes active Pi memory authority", () => {
     },
   );
 
+  it.each(survivorCases)(
+    "$type preserves active publication with $peerScope isolation",
+    async ({ type, peerScope }) => {
+      const { first, active, target } = await activeOwners(peerScope);
+      await deleteOwner(type, target);
+      const survivor = active.find((run) => {
+        return type === "user.deleted"
+          ? run.actor.userId !== target.userId
+          : run.actor.orgId !== target.orgId;
+      });
+      if (!survivor) {
+        throw new Error("Expected a genuinely surviving maintenance owner");
+      }
+      // A surviving user, not a resurrected deleted identity, observes HEAD.
+      const content = `Surviving ${survivor.runId}.\n`;
+      const output = await publish(survivor, content);
+      await completeMaintenance(survivor, output.versionId);
+      expect(
+        (await observeMemory({ ...first, ...survivor }, content)).memory
+          .versionId,
+      ).toBe(output.versionId);
+    },
+  );
+
   it.each(activeCases)(
     "$type consumes active selections with $peerScope isolation",
     async ({ type, peerScope }) => {
@@ -105,17 +134,11 @@ describe("Clerk deletion revokes active Pi memory authority", () => {
             ? run.actor.userId === target.userId
             : run.actor.orgId === target.orgId;
         if (!stopped) {
-          // A surviving user, not a resurrected deleted identity, observes HEAD.
-          const output = await publish(run, `Surviving ${run.runId}.\n`);
+          // A genuine no-diff completion releases every surviving claim before
+          // no-work is asserted. Changed-byte publication is covered above.
+          const output = await publish(run);
+          expect(output.versionId).toBe(run.memory.versionId);
           await completeMaintenance(run, output.versionId);
-          expect(
-            (
-              await observeMemory(
-                { ...first, ...run },
-                `Surviving ${run.runId}.\n`,
-              )
-            ).memory.versionId,
-          ).toBe(output.versionId);
         }
       }
       await extract(first, 0);
