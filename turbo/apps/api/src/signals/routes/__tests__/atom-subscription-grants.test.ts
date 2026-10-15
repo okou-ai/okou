@@ -95,10 +95,6 @@ function jwt(payload: Record<string, unknown>) {
 describe("Atom subscription grants", () => {
   beforeEach(() => {
     mockOptionalEnv("OKOU_MACHINE_SECRET_KEY", MACHINE_SECRET);
-    mockOptionalEnv(
-      "ATOM_SUBSCRIPTION_GRANT_MACHINE_IDS",
-      ` ${ATOM_MACHINE}, mch_other_allowed `,
-    );
     server.use(
       http.get("https://api.anthropic.com/api/oauth/profile", ({ request }) => {
         const accountId =
@@ -141,34 +137,43 @@ describe("Atom subscription grants", () => {
     expect(response.body).toMatchObject({ error: { code: "UNAUTHORIZED" } });
   });
 
-  it.each(["OKOU_MACHINE_SECRET_KEY", "ATOM_SUBSCRIPTION_GRANT_MACHINE_IDS"])(
-    "disables ingestion when %s is not configured",
-    async (key) => {
-      const body = fixture();
-      mockOptionalEnv(key, undefined);
-      await accept(
-        client()(atomSubscriptionGrantsContract).deliver({
-          headers: { authorization: `Bearer ${M2M_TOKEN}` },
-          body,
-        }),
-        [503],
-      );
-      expect(context.mocks.clerk.authenticateRequest).not.toHaveBeenCalled();
-    },
-  );
-
-  it("rejects a valid M2M token from a machine outside the allowlist", async () => {
+  it("disables ingestion when the existing M2M secret is not configured", async () => {
     const body = fixture();
+    mockOptionalEnv("OKOU_MACHINE_SECRET_KEY", undefined);
     await accept(
+      client()(atomSubscriptionGrantsContract).deliver({
+        headers: { authorization: `Bearer ${M2M_TOKEN}` },
+        body,
+      }),
+      [503],
+    );
+    expect(context.mocks.clerk.authenticateRequest).not.toHaveBeenCalled();
+  });
+
+  it("accepts another Clerk-authorized machine without a grant-specific allowlist", async () => {
+    const body = fixture();
+    const delivered = await accept(
       client()(atomSubscriptionGrantsContract).deliver({
         headers: { authorization: "Bearer mt_other_machine" },
         body,
       }),
-      [403],
+      [200],
     );
-    expect(
-      context.mocks.clerk.organizations.getOrganizationMembershipList,
-    ).not.toHaveBeenCalled();
+    expect(delivered.body).toStrictEqual({
+      grantId: body.grantId,
+      status: "delivered",
+    });
+    const listed = await accept(
+      client()(personalModelProvidersMainContract).list({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    expect(listed.body.modelProviders).toHaveLength(1);
+    expect(listed.body.modelProviders[0]).toMatchObject({
+      type: "claude-code-oauth-token",
+      isActive: true,
+    });
   });
 
   it("does not expose Clerk failures and allows retry after verification recovers", async () => {
