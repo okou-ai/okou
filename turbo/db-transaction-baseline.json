@@ -812,11 +812,6 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0380",
-      "file": "turbo/packages/db/scripts/test-connector-catalog-entry-columns.ts",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0393",
       "file": "turbo/packages/db/scripts/test-hosted-publication-runtime.ts",
       "owner": "<module>"
