@@ -825,11 +825,6 @@
       "id": "TX-0417",
       "file": "turbo/packages/db/scripts/test-pi-memory-stage1-cost.ts",
       "owner": "validatePiMemoryStage1Cost"
-    },
-    {
-      "id": "TX-0432",
-      "file": "turbo/packages/db/scripts/test-usage-pack-overdraft-transfer.ts",
-      "owner": "<module>"
     }
   ]
 }

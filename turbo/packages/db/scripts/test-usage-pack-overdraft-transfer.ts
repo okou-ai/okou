@@ -431,13 +431,16 @@ function historicalCatalog(catalog: Catalog) {
 }
 const sessionSql = `SELECT current_setting('TimeZone') AS timezone, current_setting('DateStyle') AS datestyle, current_setting('search_path') AS path`;
 const sessionTuple = z.tuple([z.string(), z.string(), z.string()]);
-const parentSessionSql = `SELECT current_setting('TimeZone') AS timezone, current_setting('DateStyle') AS datestyle, current_setting('search_path') AS path, now()::text AS cohort, txid_current()::text AS transaction`;
+const parentSessionSql = `SELECT current_setting('TimeZone') AS timezone, current_setting('DateStyle') AS datestyle, current_setting('search_path') AS path, now()::text AS cohort, txid_current()::text AS transaction, pg_backend_pid()::text AS backend`;
 const parentSessionTuple = z.tuple([
   z.string(),
   z.string(),
   z.string(),
-  z.string(),
+  timestampText,
   int8Text,
+  int8Text.refine((value) => {
+    return BigInt(value) > 0n;
+  }),
 ]);
 const absenceSql =
   "SELECT count(*)::text AS count FROM pg_catalog.pg_namespace WHERE nspname=$1";
@@ -687,13 +690,58 @@ const client = new Client({ connectionString: databaseUrl });
 const schema = `pack_transfer_${randomUUID().replaceAll("-", "")}`;
 const errors: unknown[] = [];
 let connected = false;
+let owned = false;
+let oldSettings: z.infer<typeof sessionTuple> | undefined;
 try {
   await client.connect();
   connected = true;
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0432; new non-billing transactions are prohibited.
-  await client.query("BEGIN");
-  await client.query(`CREATE SCHEMA "${schema}"`);
-  await client.query(`SET LOCAL search_path TO "${schema}"`);
+  assert.equal(client.getTransactionStatus(), "I");
+  oldSettings = z
+    .tuple([sessionTuple])
+    .parse(
+      textRows(await client.query({ text: sessionSql, rowMode: "array" }), [
+        "timezone",
+        "datestyle",
+        "path",
+      ]),
+    )[0];
+  assert.equal(client.getTransactionStatus(), "I");
+  assert.deepEqual(
+    textRows(
+      await client.query({
+        text: absenceSql,
+        values: [schema],
+        rowMode: "array",
+      }),
+      ["count"],
+    ),
+    [["0"]],
+  );
+  assert.equal(client.getTransactionStatus(), "I");
+  commandAck(await client.query(`CREATE SCHEMA "${schema}"`), "CREATE");
+  owned = true;
+  assert.equal(client.getTransactionStatus(), "I");
+  assert.deepEqual(
+    textRows(
+      await client.query({
+        text: "SELECT set_config($1,$2,false) AS setting",
+        values: ["search_path", `"${schema}"`],
+        rowMode: "array",
+      }),
+      ["setting"],
+    ),
+    [[`"${schema}"`]],
+  );
+  assert.equal(client.getTransactionStatus(), "I");
+  assert.deepEqual(
+    textRows(await client.query({ text: sessionSql, rowMode: "array" }), [
+      "timezone",
+      "datestyle",
+      "path",
+    ]),
+    [[oldSettings[0], oldSettings[1], `"${schema}"`]],
+  );
+  assert.equal(client.getTransactionStatus(), "I");
   await client.query(setup);
   const migration = await readFile(
     new URL(
@@ -795,15 +843,21 @@ try {
   const ddlEnd = setup.indexOf("    INSERT INTO org_metadata");
   const repairStart = migration.indexOf("DO $$");
   assert.ok(ddlEnd > 0 && repairStart > 0);
-  const parentSession = parentSessionTuple.parse(
-    textRows(await client.query({ text: parentSessionSql, rowMode: "array" }), [
-      "timezone",
-      "datestyle",
-      "path",
-      "cohort",
-      "transaction",
-    ])[0],
-  );
+  // Autocommit observations retain their real clocks and distinct transaction IDs.
+  const parentSession = z
+    .tuple([parentSessionTuple])
+    .parse(
+      textRows(
+        await client.query({ text: parentSessionSql, rowMode: "array" }),
+        ["timezone", "datestyle", "path", "cohort", "transaction", "backend"],
+      ),
+    )[0];
+  assert.equal(client.getTransactionStatus(), "I");
+  assert.deepEqual(parentSession.slice(0, 3), [
+    oldSettings[0],
+    oldSettings[1],
+    `"${schema}"`,
+  ]);
   const captureParent = async () => {
     const catalog: Catalog = {};
     for (const [group, source] of catalogSources) {
@@ -846,15 +900,19 @@ try {
     repair,
   });
   assert.deepEqual(await captureParent(), parentBefore);
-  assert.deepEqual(
-    parentSessionTuple.parse(
+  const parentAfterSession = z
+    .tuple([parentSessionTuple])
+    .parse(
       textRows(
         await client.query({ text: parentSessionSql, rowMode: "array" }),
-        ["timezone", "datestyle", "path", "cohort", "transaction"],
-      )[0],
-    ),
-    parentSession,
-  );
+        ["timezone", "datestyle", "path", "cohort", "transaction", "backend"],
+      ),
+    )[0];
+  assert.equal(client.getTransactionStatus(), "I");
+  assert.deepEqual(parentAfterSession.slice(0, 3), parentSession.slice(0, 3));
+  assert.equal(parentAfterSession[5], parentSession[5]);
+  assert.notEqual(parentAfterSession[4], parentSession[4]);
+  // Both genuine now() cohorts remain decoded above; no equality is required.
 
   // Exercise the current repair statement against retained outgoing-writer data.
   const runtimeRepair = (orgId: string, userId?: string) => {
@@ -955,11 +1013,73 @@ try {
 } catch (error) {
   errors.push(error);
 } finally {
-  if (connected) {
+  // A collision or unknown CREATE ACK is unowned: never adopt/drop/retry it.
+  // Committed fixtures can outlive connection/process/job death; use a disposable job.
+  if (owned) {
     try {
-      commandAck(await client.query("ROLLBACK"), "ROLLBACK");
+      commandAck(await client.query(`DROP SCHEMA "${schema}" CASCADE`), "DROP");
+      assert.equal(client.getTransactionStatus(), "I");
     } catch (error) {
       errors.push(error);
+    }
+  }
+  if (connected) {
+    try {
+      assert.deepEqual(
+        textRows(
+          await client.query({
+            text: absenceSql,
+            values: [schema],
+            rowMode: "array",
+          }),
+          ["count"],
+        ),
+        [["0"]],
+      );
+      assert.equal(client.getTransactionStatus(), "I");
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (oldSettings) {
+    try {
+      assert.deepEqual(
+        textRows(
+          await client.query({
+            text: "SELECT set_config($1,$2,false) AS setting",
+            values: ["search_path", oldSettings[2]],
+            rowMode: "array",
+          }),
+          ["setting"],
+        ),
+        [[oldSettings[2]]],
+      );
+      assert.equal(client.getTransactionStatus(), "I");
+    } catch (error) {
+      errors.push(error);
+    }
+    for (const setting of [
+      { name: "search_path", value: oldSettings[2] },
+      { name: "TimeZone", value: oldSettings[0] },
+      { name: "DateStyle", value: oldSettings[1] },
+    ]) {
+      try {
+        assert.deepEqual(
+          textRows(
+            await client.query({
+              text: `SHOW ${setting.name}`,
+              rowMode: "array",
+            }),
+            [setting.name],
+            undefined,
+            "SHOW",
+          ),
+          [[setting.value]],
+        );
+        assert.equal(client.getTransactionStatus(), "I");
+      } catch (error) {
+        errors.push(error);
+      }
     }
   }
   try {
