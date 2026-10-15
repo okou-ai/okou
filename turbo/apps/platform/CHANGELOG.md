@@ -12,6 +12,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1026.1](https://github.com/okou-ai/okou/compare/app-v0.1026.0...app-v0.1026.1) (2026-10-15)
+
+
+### Bug Fixes
+
+* loop suggestion card navigation ([#40170](https://github.com/okou-ai/okou/issues/40170)) ([6a9343b](https://github.com/okou-ai/okou/commit/6a9343b974a2f0f94ae8d95dc7f7e3d8ca8be1e9))
+
 ## [0.1026.0](https://github.com/okou-ai/okou/compare/app-v0.1025.0...app-v0.1026.0) (2026-10-15)
 
 

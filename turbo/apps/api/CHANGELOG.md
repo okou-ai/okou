@@ -9,6 +9,27 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.738.1](https://github.com/okou-ai/okou/compare/api-v1.738.0...api-v1.738.1) (2026-10-15)
+
+
+### Bug Fixes
+
+* **api:** retain safe snapshot download failure diagnostics ([#40169](https://github.com/okou-ai/okou/issues/40169)) ([2f36d58](https://github.com/okou-ai/okou/commit/2f36d58d23dc26c17283f1c22e746e755d526327))
+
+
+### Refactoring
+
+* **api:** own bundled connector skill registration ([#40168](https://github.com/okou-ai/okou/issues/40168)) ([803c583](https://github.com/okou-ai/okou/commit/803c583d71ca5b5aee6220bc26434b09542ab6e2))
+* **api:** own personal subscription usage refresh actions ([#40163](https://github.com/okou-ai/okou/issues/40163)) ([1247252](https://github.com/okou-ai/okou/commit/1247252e8ab7efcd22849bf180c9c80bad06aaa1))
+* **api:** replace clerk deletion erasure with scoped work stopping ([#40061](https://github.com/okou-ai/okou/issues/40061)) ([b559ee4](https://github.com/okou-ai/okou/commit/b559ee4c7134c903d035fa9f1d15ae75f74bef3d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 1.340.1
+
 ## [1.738.0](https://github.com/okou-ai/okou/compare/api-v1.737.0...api-v1.738.0) (2026-10-15)
 
 
