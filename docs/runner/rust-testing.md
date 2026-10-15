@@ -209,16 +209,6 @@ native prerequisites as unverified rather than a passing result.
 
 ## Coverage in CI
 
-Named dependency overrides in `crates/Cargo.toml` use test `opt-level = 1` for
-sampled dependency-owned CPU hot paths. Keep workspace code, debug assertions,
-overflow checks and release profiles unchanged. Check where generic code is
-actually instantiated before choosing an owner; level 1 retains cross-crate
-monomorphization sharing. Re-evaluate version-scoped entries when dependency
-series change. Named overrides also affect build dependencies, so include
-build-script and native-cache invalidation when comparing cache-miss compilation,
-warm execution and the complete coverage job. Faster cases alone do not establish
-lower CI cost.
-
 The Crates coverage job installs pinned `cargo-llvm-cov` and `cargo-nextest`
 versions and runs the full target/feature selection through nextest. It limits
 execution to eight concurrent tests on the eight-core runner, while retaining
