@@ -222,24 +222,33 @@ pub async fn exercise(
             }),
         )?;
     }
-    let mut final_inventory = context
-        .tracker
-        .start_pool_retirement_batch(
-            context.pool,
-            context.status,
-            context.operations,
-            IdlePoolBatchRetirementRequest {
-                scope: IdleRetirementBatchScope::All,
-                envelope: inputs.envelope(),
-                context: "native_optional_final_inventory",
-            },
-        )
-        .await?;
-    let report = final_inventory.join().await?;
-    if !report.is_complete() {
-        return Err(
-            io::Error::other(format!("native optional saving incomplete: {report:?}")).into(),
-        );
+    // Save the original exact home while the independent optional blank still
+    // exists, then retire that remaining inventory. Concurrent batch admissions
+    // can correctly invalidate each other's accounting observations; this Ready
+    // success corpus must not mistake their one-shot refusal for completed IO.
+    for scope in [
+        IdleRetirementBatchScope::Exact,
+        IdleRetirementBatchScope::All,
+    ] {
+        let mut final_inventory = context
+            .tracker
+            .start_pool_retirement_batch(
+                context.pool.clone(),
+                context.status.clone(),
+                context.operations.clone(),
+                IdlePoolBatchRetirementRequest {
+                    scope,
+                    envelope: inputs.envelope(),
+                    context: "native_optional_final_inventory",
+                },
+            )
+            .await?;
+        let report = final_inventory.join().await?;
+        if !report.is_complete() {
+            return Err(
+                io::Error::other(format!("native optional saving incomplete: {report:?}")).into(),
+            );
+        }
     }
     Ok(())
 }

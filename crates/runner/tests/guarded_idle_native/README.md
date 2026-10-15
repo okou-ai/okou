@@ -371,6 +371,10 @@ successful preparation/publication and complete original snapshot reads. The
 original home/backing/full logical lease and durable 64 MiB post-exit tail remain
 required even while independent optional inventory exists. All accepted readers,
 blank producers and pressure sampling join before inventory/factory teardown.
+Final saving first joins the exact-home batch while its optional blank remains,
+then joins the remaining inventory batch. Concurrent one-shot batch admissions
+may correctly refuse stale accounting; such a refusal is never accepted as
+completed saving or retried against replacement inventory by this corpus.
 
 Use the existing packaged artifact and supplied P2 policy inputs. The separate
 `OKOU_TEST_OPTIONAL_MEMORY_POLICY` JSON keeps the three fields `snapshot_path`,
