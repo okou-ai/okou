@@ -13,6 +13,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
 import { nowDate } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createDeferredPromise, joinAll } from "../../utils";
 import { vncConnectionsRoutes } from "../vnc-connections";
 import { webhooksClerkRoutes } from "../webhooks-clerk";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
@@ -241,6 +242,78 @@ test.each(["mixed", "unused credentials", "credential-free hosts", "empty"])(
         }),
       ).toStrictEqual([requireVncCredentialId(preserved.body)]);
     }
+  },
+);
+
+test.each(["during cleanup", "after cleanup"])(
+  "erases a departed owner's VNC data when an admitted rotation finishes %s",
+  async (timing) => {
+    useSecretKmsProbe();
+    const current = await owner();
+    const connection = await accept(createConnection(), [201]);
+    const credentialId = requireVncCredentialId(connection.body);
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    useSecretKmsProbe(async (request) => {
+      entered.resolve();
+      await release.promise;
+      return {
+        keyId: request.keyId,
+        plaintext: Buffer.from("0123456789abcdef0123456789abcdef"),
+        encryptedDataKey: Buffer.from("test-wrapped-key"),
+      };
+    });
+    const delayed = accept(
+      credentials().update({
+        headers,
+        params: { credentialId },
+        body: {
+          expectedRevision: 1,
+          authentication: { method: "vnc_password", password: "rotated" },
+        },
+      }),
+      [200, 404],
+    );
+    const [rotation] = await joinAll([
+      delayed,
+      (async () => {
+        await entered.promise;
+        await store.set(deleteOrgMembership$, current, context.signal);
+        const departure = webhook({
+          type: "organizationMembership.deleted",
+          data: {
+            id: current.membershipId,
+            organization_id: current.orgId,
+            user_id: current.userId,
+          },
+        });
+        if (timing === "during cleanup") {
+          release.resolve();
+        }
+        await departure;
+      })().finally(() => {
+        if (!release.settled()) {
+          release.resolve();
+        }
+      }),
+    ]);
+    if (timing === "after cleanup") {
+      expect(rotation.status).toBe(404);
+    }
+    if (rotation.status === 404) {
+      expect(rotation.body.error.code).toBe("VNC_CREDENTIAL_NOT_FOUND");
+    }
+    await store.set(
+      seedOrgMembership$,
+      { ...current, membershipId: `orgmem_${randomUUID()}` },
+      context.signal,
+    );
+    expect(
+      (await accept(connections().list({ headers }), [200])).body.connections,
+    ).toStrictEqual([]);
+    expect(
+      (await accept(credentials().list({ headers }), [200])).body.credentials,
+    ).toStrictEqual([]);
   },
 );
 

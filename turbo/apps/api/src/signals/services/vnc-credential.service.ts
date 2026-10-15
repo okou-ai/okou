@@ -15,7 +15,7 @@ import {
 import { canonicalizeVncKerberos } from "./vnc-kerberos.service";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
-import { and, asc, count, eq, gte, sql } from "drizzle-orm";
+import { and, asc, eq, exists, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { logger } from "../../lib/log";
 import { command } from "ccstate";
@@ -486,23 +486,17 @@ export const updateVncCredential$ = command(
       .from(vncCredentials)
       .where(ownedCredential(owner, args.credentialId));
     signal.throwIfAborted();
-    if (!initial) {
-      return vncFailure("credentialNotFound");
+    if (!initial || initial.revision !== args.body.expectedRevision) {
+      return vncFailure(initial ? "credentialConflict" : "credentialNotFound");
     }
-    if (initial.revision !== args.body.expectedRevision) {
-      return vncFailure("credentialConflict");
-    }
-    if (
-      args.body.authentication &&
-      !validVncClientAuthentication(args.body.authentication)
-    ) {
+    const authentication = args.body.authentication;
+    if (authentication && !validVncClientAuthentication(authentication)) {
       return vncFailure(
-        isVncKerberosMethod(args.body.authentication.method)
+        isVncKerberosMethod(authentication.method)
           ? "invalidKerberosCredential"
           : "invalidClientIdentity",
       );
     }
-    const authentication = args.body.authentication;
     if (!validKerberosRotation(initial, authentication)) {
       return vncFailure("profileMismatch");
     }
@@ -529,28 +523,14 @@ export const updateVncCredential$ = command(
       return vncFailure(rejected);
     }
     const encrypted =
-      args.body.authentication === undefined
+      authentication === undefined
         ? undefined
-        : await encryptAuthentication(
-            args.body.authentication,
-            args.featureContext,
-          );
+        : await encryptAuthentication(authentication, args.featureContext);
     signal.throwIfAborted();
     const invalidate = encrypted !== undefined && hosts.length > 0;
-    const rotatedHosts = db.$with("rotated_hosts").as(
-      db
-        .update(vncConnections)
-        .set({
-          generation: sql`${vncConnections.generation} + 1`,
-          updatedAt: nowDate(),
-        })
-        .where(referencingConnections(owner, args.credentialId))
-        .returning({ id: vncConnections.id }),
-    );
     // The profile FK pins each bound host to its credential's auth method.
-    const written = await settle(
+    const updatedCredential = db.$with("updated_credential").as(
       db
-        .with(...(invalidate ? [rotatedHosts] : []))
         .update(vncCredentials)
         .set({
           name: args.body.name,
@@ -561,14 +541,33 @@ export const updateVncCredential$ = command(
         .where(
           and(
             ownedCredential(owner, args.credentialId),
-            // Consume all host updates before publishing the credential, even
-            // when the initially observed hosts have disappeared or rebound.
-            invalidate
-              ? gte(db.select({ count: count() }).from(rotatedHosts), 0)
-              : undefined,
+            eq(vncCredentials.revision, args.body.expectedRevision),
           ),
         )
-        .returning(vncCredentialMetadata),
+        // Drizzle's CTE column proxy requires configurable selection fields.
+        .returning({ ...vncCredentialMetadata }),
+    );
+    const rotatedHosts = db.$with("rotated_hosts").as(
+      db
+        .update(vncConnections)
+        .set({
+          generation: sql`${vncConnections.generation} + 1`,
+          updatedAt: nowDate(),
+        })
+        .where(
+          and(
+            referencingConnections(owner, args.credentialId),
+            // A zero-row credential write must not authorize host mutations.
+            exists(db.select().from(updatedCredential)),
+          ),
+        )
+        .returning({ id: vncConnections.id }),
+    );
+    const written = await settle(
+      db
+        .with(updatedCredential, ...(invalidate ? [rotatedHosts] : []))
+        .select()
+        .from(updatedCredential),
       signal,
     );
     if (!written.ok) {
@@ -579,7 +578,15 @@ export const updateVncCredential$ = command(
     }
     const [updated] = written.value;
     if (!updated) {
-      return vncFailure("credentialNotFound");
+      const [remaining] = await db
+        .select({ id: vncCredentials.id })
+        .from(vncCredentials)
+        .where(ownedCredential(owner, args.credentialId))
+        .limit(1);
+      signal.throwIfAborted();
+      return vncFailure(
+        remaining ? "credentialConflict" : "credentialNotFound",
+      );
     }
     await set(notifyVncCredentialChange$, owner, args.credentialId, signal);
     return {

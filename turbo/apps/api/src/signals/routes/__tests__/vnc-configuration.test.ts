@@ -2321,6 +2321,55 @@ describe("VNC owner configuration", () => {
     ).toStrictEqual([saved.body]);
   });
 
+  it("accepts only one concurrent metadata update at the reviewed credential revision", async () => {
+    useSecretKmsProbe();
+    await owner();
+    const created = await accept(
+      credentials().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          name: "Original",
+          authentication: passwordAuthentication(" secret "),
+        },
+      }),
+      [201],
+    );
+    const results = await Promise.all(
+      ["First rename", "Second rename"].map((name) => {
+        return accept(
+          credentials().update({
+            headers,
+            params: { credentialId: created.body.id },
+            body: { expectedRevision: created.body.revision, name },
+          }),
+          [200, 409],
+        );
+      }),
+    );
+    expect(
+      results
+        .map((result) => {
+          return result.status;
+        })
+        .sort(),
+    ).toStrictEqual([200, 409]);
+    const winner = results.find((result) => {
+      return result.status === 200;
+    });
+    const loser = results.find((result) => {
+      return result.status === 409;
+    });
+    if (!winner) {
+      throw new Error("Expected one successful credential rename");
+    }
+    expect(winner.body.revision).toBe(2);
+    expect(loser?.body.error.code).toBe("VNC_CREDENTIAL_REVISION_CONFLICT");
+    expect(
+      (await accept(credentials().list({ headers }), [200])).body.credentials,
+    ).toStrictEqual([winner.body]);
+  });
+
   it("leaves concurrent password rotations recoverable, advances every shared host and rejects stale writes", async () => {
     useSecretKmsProbe();
     await owner();
@@ -2363,14 +2412,13 @@ describe("VNC owner configuration", () => {
         return result.status;
       })
       .sort();
-    expect([
-      [200, 200],
-      [200, 409],
-    ]).toContainEqual(statuses);
-    const applied = statuses.filter((status) => {
-      return status === 200;
-    }).length;
-    const revision = 1 + applied;
+    expect(statuses).toStrictEqual([200, 409]);
+    expect(
+      rotations.find((result) => {
+        return result.status === 409;
+      })?.body.error.code,
+    ).toBe("VNC_CREDENTIAL_REVISION_CONFLICT");
+    const revision = 2;
     expect(
       (await accept(credentials().list({ headers }), [200])).body.credentials,
     ).toStrictEqual(
@@ -2515,13 +2563,11 @@ describe("VNC owner configuration", () => {
     ).toStrictEqual(beforeHosts.body);
   });
 
-  it("publishes a delayed rotation after a public rename and rebind while returning the earlier host snapshot", async () => {
+  it("publishes a delayed rotation after a public host rename and rebind while returning the earlier host snapshot", async () => {
     useSecretKmsProbe();
     await owner();
-    const host = await accept(
-      connections().create({ headers, body: hostBody() }),
-      [201],
-    );
+    const body = hostBody();
+    const host = await accept(connections().create({ headers, body }), [201]);
     const replacement = await accept(
       credentials().create({
         headers,
@@ -2559,14 +2605,6 @@ describe("VNC owner configuration", () => {
     await (async () => {
       await entered.promise;
       await accept(
-        credentials().update({
-          headers,
-          params,
-          body: { expectedRevision: 1, name: "Concurrent rename" },
-        }),
-        [200],
-      );
-      await accept(
         connections().update({
           headers,
           params: { connectionId: host.body.id },
@@ -2584,8 +2622,8 @@ describe("VNC owner configuration", () => {
     const saved = await delayed;
     expect(saved.body).toMatchObject({
       id: params.credentialId,
-      name: "Concurrent rename",
-      revision: 3,
+      name: body.credential.create.name,
+      revision: 2,
       authMethod: "vnc_password",
       hosts: [{ id: host.body.id, displayName: host.body.displayName }],
     });
