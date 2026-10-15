@@ -655,11 +655,6 @@ async fn prepare_ranked_preference_candidate(
                 history_generation_run_id,
             );
         }
-        info!(
-            run_id = %candidate.run_id(),
-            reason = "no_publishable_predecessor",
-            "selected finalizing preference has no matching process-local proof"
-        );
         return defer_preference_candidate(
             candidate,
             preference,
@@ -819,9 +814,10 @@ async fn defer_preference_candidate(
         reuse_key_fingerprint = %diagnostic_reuse_key_fingerprint(reuse_key),
         reuse_key_kind = reuse_key_kind(reuse_key),
         preference_tier = ?preference.tier(),
+        reason,
         delay_ms = delay.as_millis(),
         retained = retain,
-        "runner preference has no qualifying local resource, deferring claim"
+        "runner preference admission deferred"
     );
     ctx.provider.defer_poll_until(preference.deadline()).await;
     if retain {
