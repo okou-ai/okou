@@ -1,11 +1,12 @@
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
+import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import type { DiscordAccountMessage } from "./discord-interaction-messages";
 import { env } from "./env";
 
 export function discordConnectMessage(
   guildId?: string | null,
 ): DiscordAccountMessage {
-  const url = new URL("/settings/discord", env("APP_URL"));
+  const url = new URL(INTEGRATION_SETTINGS_PATHS.discord, env("APP_URL"));
   if (guildId) {
     url.searchParams.set("guild_id", guildId);
   }

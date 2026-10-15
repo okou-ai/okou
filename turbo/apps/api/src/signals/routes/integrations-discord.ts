@@ -1,3 +1,4 @@
+import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { command, computed } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
@@ -133,7 +134,10 @@ const createDiscordInstallLink$ = command(
     // chooses their workspace and starts browser-owned OAuth after opening it.
     // A distinct route also prevents an older App from mistaking installation
     // intent for an already-completed account connection.
-    const url = new URL("/settings/discord/install", env("APP_URL"));
+    const url = new URL(
+      `${INTEGRATION_SETTINGS_PATHS.discord}/install`,
+      env("APP_URL"),
+    );
     url.searchParams.set("guild_id", guild.id);
     return {
       status: 200 as const,
