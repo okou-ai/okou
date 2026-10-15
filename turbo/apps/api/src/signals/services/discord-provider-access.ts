@@ -1,4 +1,5 @@
 import { now } from "../../lib/time";
+import { joinAll } from "../utils";
 import {
   discordClient,
   type DiscordChannel,
@@ -61,7 +62,7 @@ export async function loadDiscordGuildAccess(
   },
   signal?: AbortSignal,
 ): Promise<{ kind: "allowed"; access: DiscordGuildAccess } | AccessFailure> {
-  const [guild, roles, user, bot, self] = await Promise.all([
+  const [guild, roles, user, bot, self] = await joinAll([
     discordClient.fetchDiscordGuild(args, signal),
     discordClient.fetchDiscordGuildRoles(args, signal),
     discordClient.fetchDiscordGuildMember(
@@ -209,16 +210,25 @@ async function resolvePermissionChannel(
     if (parent.kind !== "ok") {
       return { kind: "denied", response: discordApiFailure(parent) };
     }
-    if (
-      parent.data.id !== channel.parent_id ||
-      parent.data.guild_id !== args.guildId ||
-      ![0, 5, 15, 16].includes(parent.data.type)
-    ) {
-      return unavailable();
-    }
-    return { kind: "allowed", channel: parent.data };
+    return validatePermissionChannel(channel, parent.data, args.guildId);
   }
   return { kind: "allowed", channel };
+}
+
+function validatePermissionChannel(
+  channel: DiscordChannel,
+  parent: DiscordChannel,
+  guildId: string | undefined,
+): { kind: "allowed"; channel: DiscordChannel } | AccessFailure {
+  if (
+    !channel.thread_metadata ||
+    parent.id !== channel.parent_id ||
+    parent.guild_id !== guildId ||
+    ![0, 5, 15, 16].includes(parent.type)
+  ) {
+    return unavailable();
+  }
+  return { kind: "allowed", channel: parent };
 }
 
 function canStartPublicThread(
@@ -303,12 +313,162 @@ export async function resolveDiscordProviderAccess(
           },
         };
   }
-  return await resolveGuildChannelAccess(args, channel, signal);
+  return await resolveGuildChannelAccess(args, channel, undefined, signal);
+}
+
+async function loadDiscordChannels(
+  botToken: string,
+  channelIds: readonly string[],
+  signal?: AbortSignal,
+): Promise<{ kind: "allowed"; channels: DiscordChannel[] } | AccessFailure> {
+  const results = await joinAll(
+    channelIds.map(async (channelId) => {
+      const result = await discordClient.fetchDiscordChannel(
+        { botToken, channelId },
+        signal,
+      );
+      if (result.kind !== "ok") {
+        return { kind: "denied" as const, response: discordApiFailure(result) };
+      }
+      return result.data.id === channelId
+        ? { kind: "allowed" as const, channel: result.data }
+        : unavailable();
+    }),
+  );
+  const channels: DiscordChannel[] = [];
+  for (const result of results) {
+    if (result.kind === "denied") {
+      return result;
+    }
+    channels.push(result.channel);
+  }
+  return { kind: "allowed", channels };
+}
+
+async function loadDiscordConversationChannels(
+  botToken: string,
+  guildId: string,
+  channelIds: readonly string[],
+  signal?: AbortSignal,
+) {
+  const channels = await loadDiscordChannels(botToken, channelIds, signal);
+  if (channels.kind === "denied") {
+    return channels;
+  }
+  if (
+    channels.channels.some((channel) => {
+      return channel.guild_id !== guildId;
+    })
+  ) {
+    return unavailable();
+  }
+  // Fetch parents as soon as channels arrive, concurrently with guild facts.
+  // A parent already read as the source/destination, or shared by two threads,
+  // needs no additional read. These facts live only for this operation.
+  const parentIds = [
+    ...new Set(
+      channels.channels.flatMap((channel) => {
+        return isDiscordThread(channel) &&
+          channel.parent_id &&
+          !channelIds.includes(channel.parent_id)
+          ? [channel.parent_id]
+          : [];
+      }),
+    ),
+  ];
+  const parents = await loadDiscordChannels(botToken, parentIds, signal);
+  return parents.kind === "denied"
+    ? parents
+    : { ...channels, parents: parents.channels };
+}
+
+/** One fresh read set for a prompt's source and destination, never ingress facts. */
+export async function resolveDiscordProviderConversationAccess(
+  args: Omit<DiscordProviderAccessArgs, "channelId" | "mode" | "snapshot"> & {
+    readonly sourceChannelId: string;
+    readonly destinationChannelId: string;
+  },
+  signal?: AbortSignal,
+): Promise<
+  | { kind: "allowed"; source: ProviderAccess; destination: ProviderAccess }
+  | AccessFailure
+> {
+  if (!args.guildId) {
+    // A DM has one exact recipient and cannot borrow a guild's authority.
+    if (args.sourceChannelId !== args.destinationChannelId) {
+      return unavailable();
+    }
+    const access = await resolveDiscordProviderAccess(
+      { ...args, channelId: args.sourceChannelId, mode: "write" },
+      signal,
+    );
+    if (access.kind === "denied") {
+      return access;
+    }
+    return access.channel.type === 1
+      ? { kind: "allowed", source: access, destination: access }
+      : unavailable();
+  }
+
+  const channelIds = [
+    ...new Set([args.sourceChannelId, args.destinationChannelId]),
+  ];
+  const [channels, guild] = await joinAll([
+    loadDiscordConversationChannels(
+      args.botToken,
+      args.guildId,
+      channelIds,
+      signal,
+    ),
+    loadDiscordGuildAccess({ ...args, guildId: args.guildId }, signal),
+  ]);
+  if (channels.kind === "denied") {
+    return channels;
+  }
+  if (guild.kind === "denied") {
+    return guild;
+  }
+  const observedChannels = [...channels.channels, ...channels.parents];
+  const accesses = await joinAll(
+    channels.channels.map(async (channel) => {
+      const permissionChannel = isDiscordThread(channel)
+        ? observedChannels.find((observed) => {
+            return observed.id === channel.parent_id;
+          })
+        : channel;
+      if (!permissionChannel) {
+        return unavailable();
+      }
+      return await resolveGuildChannelAccess(
+        {
+          ...args,
+          channelId: channel.id,
+          mode: channel.id === args.destinationChannelId ? "write" : "view",
+        },
+        channel,
+        { guild: guild.access, permissionChannel },
+        signal,
+      );
+    }),
+  );
+  const [source, destination = source] = accesses;
+  if (!source || !destination) {
+    throw new Error("Discord conversation is missing its requested channels");
+  }
+  if (source.kind === "denied") {
+    return source;
+  }
+  return destination.kind === "denied"
+    ? destination
+    : { kind: "allowed", source, destination };
 }
 
 async function resolveGuildChannelAccess(
   args: DiscordProviderAccessArgs,
   channel: DiscordChannel,
+  facts:
+    | { guild: DiscordGuildAccess; permissionChannel: DiscordChannel }
+    | undefined,
   signal?: AbortSignal,
 ): Promise<ProviderAccess | AccessFailure> {
   if (
@@ -325,16 +485,21 @@ async function resolveGuildChannelAccess(
   ) {
     return unavailable();
   }
-  const permissionChannel = await resolvePermissionChannel(
-    guildArgs,
-    channel,
-    signal,
-  );
+  const permissionChannel = facts
+    ? thread
+      ? validatePermissionChannel(
+          channel,
+          facts.permissionChannel,
+          channel.guild_id,
+        )
+      : { kind: "allowed" as const, channel }
+    : await resolvePermissionChannel(guildArgs, channel, signal);
   if (permissionChannel.kind === "denied") {
     return permissionChannel;
   }
-  const guild =
-    args.snapshot?.guild?.guild.id === channel.guild_id
+  const guild = facts
+    ? { kind: "allowed" as const, access: facts.guild }
+    : args.snapshot?.guild?.guild.id === channel.guild_id
       ? { kind: "allowed" as const, access: args.snapshot.guild }
       : await loadDiscordGuildAccess(guildArgs, signal);
   if (guild.kind === "denied") {
@@ -411,27 +576,43 @@ async function requireThreadAccess(
   signal?: AbortSignal,
 ): Promise<{ kind: "allowed"; channel: DiscordChannel } | AccessFailure> {
   if (channel.type === 12) {
-    for (const [userId, memberPermissions] of [
-      [args.discordUserId, permissions.user],
-      [args.botUserId, permissions.bot],
-    ] as const) {
-      if (
-        hasDiscordPermission(memberPermissions, DiscordPermission.ManageThreads)
-      ) {
-        continue;
-      }
-      const membership = await discordClient.fetchDiscordThreadMember(
-        { botToken: args.botToken, threadId: channel.id, userId },
-        signal,
-      );
-      if (membership.kind !== "ok") {
-        return { kind: "denied", response: discordApiFailure(membership) };
-      }
-      if (
-        membership.data.id !== channel.id ||
-        membership.data.user_id !== userId
-      ) {
-        return unavailable();
+    const memberships = await joinAll(
+      (
+        [
+          [args.discordUserId, permissions.user],
+          [args.botUserId, permissions.bot],
+        ] as const
+      ).map(async ([userId, memberPermissions]) => {
+        if (
+          hasDiscordPermission(
+            memberPermissions,
+            DiscordPermission.ManageThreads,
+          )
+        ) {
+          return { kind: "allowed" as const };
+        }
+        const membership = await discordClient.fetchDiscordThreadMember(
+          { botToken: args.botToken, threadId: channel.id, userId },
+          signal,
+        );
+        if (membership.kind !== "ok") {
+          return {
+            kind: "denied" as const,
+            response: discordApiFailure(membership),
+          };
+        }
+        if (
+          membership.data.id !== channel.id ||
+          membership.data.user_id !== userId
+        ) {
+          return unavailable();
+        }
+        return { kind: "allowed" as const };
+      }),
+    );
+    for (const membership of memberships) {
+      if (membership.kind === "denied") {
+        return membership;
       }
     }
   }

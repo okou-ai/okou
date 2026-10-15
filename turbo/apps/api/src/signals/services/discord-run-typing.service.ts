@@ -233,6 +233,12 @@ const currentTypingAccess$ = command(
     if (!route) {
       return null;
     }
+    const channelId = route.destinationChannelId ?? route.channelId;
+    // Before the first reply creates a native thread, the callback target is
+    // its future thread ID. Admission already typed in the actual source.
+    if (typingHeld(channelId)) {
+      return null;
+    }
     const current = await set(
       requireDiscordBinding$,
       {
@@ -252,7 +258,6 @@ const currentTypingAccess$ = command(
     ) {
       return null;
     }
-    const channelId = route.destinationChannelId ?? route.channelId;
     const accessKey = [
       current.binding.connectionId,
       current.binding.discordUserId,

@@ -118,7 +118,12 @@ export function createThreadContext(
   const teamsContext$ = createTeamsThreadContext(pickedEvent$, orgId);
   const telegramContext$ = createTelegramThreadContext(pickedEvent$, orgId);
   const agentPhoneContext$ = createAgentPhoneThreadContext(pickedEvent$, orgId);
-  const discordContext$ = createDiscordThreadContext(pickedEvent$, orgId);
+  const model = createThreadModelSignals(bootstrap, pickedEvent$);
+  const discordContext$ = createDiscordThreadContext(
+    pickedEvent$,
+    orgId,
+    model.dispatchTiming$,
+  );
   const automationContext$ = createThreadAutomationContext(pickedEvent$);
   const automationTarget$ = createAutomationTarget(automationContext$);
   const workflowContext = createThreadWorkflowContext(
@@ -133,7 +138,6 @@ export function createThreadContext(
     sourceFeatureSwitches$,
   );
   const computerUseHostGrant$ = createThreadHostGrant(bootstrap, thread$);
-  const model = createThreadModelSignals(bootstrap, pickedEvent$);
   const threadContinuation$ = createThreadContinuation(
     bootstrap,
     pickedEvent$,

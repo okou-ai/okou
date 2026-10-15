@@ -1,4 +1,5 @@
 import { command, computed, type Computed } from "ccstate";
+import { joinAll } from "../utils";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { getDiscordAppConfig } from "./discord-config";
@@ -7,7 +8,6 @@ import {
   type DiscordVerifiedBinding,
 } from "./discord-data.service";
 import { discordClient, type DiscordChannel } from "../external/discord-client";
-import { discordMessageContentCapability } from "./discord-application-capability.service";
 import {
   discordApiFailure,
   discordDmReadDenied,
@@ -15,9 +15,16 @@ import {
   type DiscordFailureResponse,
 } from "./discord-api-response";
 import {
+  authorizeDiscordSnapshot,
+  resolveDiscordProviderConversationAccess,
   resolveDiscordProviderAccess,
   type DiscordAccessMode,
 } from "./discord-provider-access";
+
+import {
+  measureApiDispatchTiming,
+  type ApiDispatchTimingCollector,
+} from "./api-dispatch-timing.service";
 
 import { createUserFeatureSwitchContext } from "./feature-switches.service";
 
@@ -132,64 +139,134 @@ export type DiscordConversationAccess =
     }
   | { kind: "denied"; response: DiscordFailureResponse };
 
-/** Each node is a fresh authority boundary, connected during graph construction. */
-export function discordConversationAccess(
-  input$: Computed<
-    Promise<
-      | (DiscordBindingIdentity & {
-          readonly channelId: string;
-          readonly mode: DiscordAccessMode;
-        })
-      | null
-    >
-  >,
-): Computed<Promise<DiscordConversationAccess | null>> {
+interface DiscordPromptAccessInput extends DiscordBindingIdentity {
+  readonly connectionId: string;
+  readonly discordUserId: string;
+  readonly sourceChannelId: string;
+  readonly destinationChannelId: string;
+  readonly hasConversationContext: boolean;
+}
+
+function checkedPromptAccess<T extends { kind: "allowed" }>(
+  access: T | { kind: "denied"; response: DiscordFailureResponse },
+): T | null {
+  if (access.kind === "allowed") {
+    return access;
+  }
+  if (access.response.status === 403 || access.response.status === 404) {
+    return null;
+  }
+  throw new Error(`Discord access check failed: ${access.response.status}`);
+}
+
+/** Shared by queued launch and active-input reads, once per authority boundary. */
+async function loadDiscordPromptAccess(
+  input: DiscordPromptAccessInput,
+  current: DiscordBindingAccess,
+  timing: ApiDispatchTimingCollector | undefined,
+  signal?: AbortSignal,
+) {
+  const binding = checkedPromptAccess(current);
+  if (
+    !binding ||
+    binding.binding.connectionId !== input.connectionId ||
+    binding.binding.discordUserId !== input.discordUserId
+  ) {
+    return null;
+  }
+  const [provider, application] = await joinAll([
+    measureApiDispatchTiming(
+      timing,
+      "api_dispatch_discord_prompt_provider",
+      "nested",
+      () => {
+        return resolveDiscordProviderConversationAccess(
+          {
+            ...binding.binding,
+            guildId: input.guildId,
+            botToken: binding.botToken,
+            sourceChannelId: input.sourceChannelId,
+            destinationChannelId: input.destinationChannelId,
+          },
+          signal,
+        );
+      },
+    ),
+    input.hasConversationContext && input.guildId
+      ? measureApiDispatchTiming(
+          timing,
+          "api_dispatch_discord_prompt_capability",
+          "nested",
+          () => {
+            return discordClient.fetchDiscordCurrentApplication(
+              binding,
+              signal,
+            );
+          },
+        )
+      : null,
+  ]);
+  const access = checkedPromptAccess(provider);
+  if (!access) {
+    return null;
+  }
+  if (application && application.kind !== "ok") {
+    checkedPromptAccess({
+      kind: "denied",
+      response: discordApiFailure(application),
+    });
+  }
+  const messageContentEnabled =
+    application?.kind === "ok" && application.data.messageContentEnabled;
+  // DM history is shared across orgs. Neither its content nor an absent guild
+  // context needs a MESSAGE_CONTENT lookup or a history permission check.
+  const conversationContextAllowed =
+    input.hasConversationContext &&
+    access.source.channel.type !== 1 &&
+    messageContentEnabled &&
+    authorizeDiscordSnapshot(access.source.snapshot, { mode: "read" }).kind ===
+      "allowed";
+  return {
+    ...binding,
+    channel: access.destination.channel,
+    messageContentEnabled,
+    conversationContextAllowed,
+  };
+}
+
+/** Computed memoization shares the in-flight read set within one launch only. */
+export function discordPromptAccess(
+  input$: Computed<Promise<DiscordPromptAccessInput | null>>,
+  timing$?: Computed<ApiDispatchTimingCollector>,
+) {
   const binding$ = createDiscordBindingAccess(input$);
-  const capability$ = discordMessageContentCapability();
-  return computed(async (get): Promise<DiscordConversationAccess | null> => {
+  return computed(async (get) => {
     const input = await get(input$);
     if (!input) {
       return null;
     }
-    const current = await get(binding$);
-    if (!current || current.kind === "denied") {
-      return current;
-    }
-    const access = await resolveDiscordProviderAccess({
-      ...current.binding,
-      guildId: input.guildId,
-      botToken: current.botToken,
-      channelId: input.channelId,
-      mode: input.mode,
-    });
-    if (access.kind === "denied") {
-      return access;
-    }
-    if (input.mode === "write" || access.channel.type === 1) {
-      return {
-        ...current,
-        binding: {
-          ...current.binding,
-          guildId: access.channel.guild_id ?? current.binding.guildId,
-        },
-        channel: access.channel,
-        messageContentEnabled: false,
-      };
-    }
-    const capability = await get(capability$);
-    return capability.kind === "denied"
-      ? capability
-      : {
-          ...current,
-          binding: {
-            ...current.binding,
-            guildId: access.channel.guild_id ?? current.binding.guildId,
-          },
-          channel: access.channel,
-          messageContentEnabled: capability.enabled,
-        };
+    const timing = timing$ ? get(timing$) : undefined;
+    const current = await measureApiDispatchTiming(
+      timing,
+      "api_dispatch_discord_prompt_binding",
+      "nested",
+      () => {
+        return get(binding$);
+      },
+    );
+    return current
+      ? await loadDiscordPromptAccess(input, current, timing)
+      : null;
   });
 }
+
+/** Each active-input delivery rechecks current membership and provider facts. */
+export const requireDiscordPromptAccess$ = command(
+  async ({ set }, input: DiscordPromptAccessInput, signal: AbortSignal) => {
+    const current = await set(requireDiscordBinding$, input, signal);
+    return await loadDiscordPromptAccess(input, current, undefined, signal);
+  },
+);
 
 /** Re-resolve this command at delivery time; never retain its earlier authority. */
 export const requireDiscordConversationAccess$ = command(
