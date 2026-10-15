@@ -30,7 +30,22 @@ export type LinkWalletSpendRequest =
       readonly id: string;
     };
 
+export type LinkWalletReadRequest =
+  | {
+      readonly operation: "transactions_read";
+      readonly query: {
+        readonly limit?: number;
+        readonly starting_after?: string;
+        readonly start_date?: string;
+        readonly end_date?: string;
+        readonly category?: string;
+      };
+    }
+  | { readonly operation: "payment_methods_read" | "user_info_read" }
+  | { readonly operation: "payment_method_read"; readonly id: string };
+
 export type LinkWalletSdkRequest =
+  | LinkWalletReadRequest
   | LinkWalletSpendRequest
   | {
       readonly operation: "spend_approval" | "spend_credentials";
@@ -65,6 +80,21 @@ export async function callLinkWalletSdk(
   const link = new Link({ accessToken, fetch: fetchImplementation });
   const result = await settleIncludingAbort(async () => {
     switch (request.operation) {
+      case "transactions_read": {
+        return await link.transactions.list({
+          ...request.query,
+          origin: "link",
+        });
+      }
+      case "payment_methods_read": {
+        return await link.paymentMethods.list();
+      }
+      case "payment_method_read": {
+        return await link.paymentMethods.retrieve(request.id);
+      }
+      case "user_info_read": {
+        return await link.userInfo.retrieve();
+      }
       case "spend_create": {
         return await link.spendRequests.create(request.body);
       }

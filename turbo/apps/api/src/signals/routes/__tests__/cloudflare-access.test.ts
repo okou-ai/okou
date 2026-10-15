@@ -1,3 +1,4 @@
+import { credentialBackedSshHost } from "./helpers/ssh-credential";
 import { createClaimedSshRuntimeApi } from "./helpers/claimed-ssh-runtime";
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -102,7 +103,7 @@ describe("inline SSH resource creation", () => {
             port: 443,
             credential: newCredential
               ? { create: login }
-              : { id: existingHost.credentialId },
+              : { id: credentialBackedSshHost(existingHost).credentialId },
             transport: newAccess
               ? { type: "cloudflare_access" as const, create: gateway }
               : {
@@ -166,7 +167,7 @@ describe("inline SSH resource creation", () => {
           expect(after.hosts).toContainEqual(result);
           expect(
             after.credentials.find((entry) => {
-              return entry.id === result.credentialId;
+              return entry.id === credentialBackedSshHost(result).credentialId;
             })?.hosts,
           ).toContainEqual({ id: result.id, displayName: result.displayName });
           if (!("transport" in parsed) || !("configId" in parsed.transport)) {
@@ -197,7 +198,10 @@ describe("inline SSH resource creation", () => {
       credential: { create: login },
       transport: { type: "cloudflare_access" as const, create: gateway },
     };
-    for (const credentialId of [randomUUID(), otherHost.credentialId]) {
+    for (const credentialId of [
+      randomUUID(),
+      credentialBackedSshHost(otherHost).credentialId,
+    ]) {
       await accept(
         connections().create({
           headers,
@@ -615,7 +619,7 @@ describe("organization Cloudflare Access", () => {
     expect(listed).toMatchObject({
       id: saved.id,
       host: saved.host,
-      credentialId: saved.credentialId,
+      credentialId: credentialBackedSshHost(saved).credentialId,
       learnedHostKey: hostKey,
       generation: retainedGeneration,
       transport: { type: "cloudflare_access", needsRebind: true },
@@ -655,7 +659,7 @@ describe("organization Cloudflare Access", () => {
     expect(rebound.body).toMatchObject({
       transport: { type: "cloudflare_access", configId: next.id },
       host: saved.host,
-      credentialId: saved.credentialId,
+      credentialId: credentialBackedSshHost(saved).credentialId,
       learnedHostKey: hostKey,
     });
     authenticate(admin, "org:admin");
@@ -695,7 +699,7 @@ describe("organization Cloudflare Access", () => {
     expect(direct.body).not.toHaveProperty("transport");
     expect(direct.body).toMatchObject({
       host: saved.host,
-      credentialId: saved.credentialId,
+      credentialId: credentialBackedSshHost(saved).credentialId,
       learnedHostKey: hostKey,
     });
   });
@@ -937,23 +941,38 @@ describe("organization Cloudflare Access", () => {
       ]),
     );
     authenticate(first);
-    expect(
-      (await accept(connections().list({ headers }), [200])).body.connections[0]
-        ?.generation,
-    ).toBe(firstHost.generation + 1);
+    const firstHosts = (await accept(connections().list({ headers }), [200]))
+      .body.connections;
+    const reviewedFirst = firstHosts.find((host) => {
+      return host.id === firstHost.id;
+    });
+    expect(reviewedFirst?.generation).toBe(firstHost.generation + 1);
+    if (!reviewedFirst) {
+      throw new Error("Expected the first owner's SSH host");
+    }
     await accept(
-      connections().delete({ headers, params: { connectionId: firstHost.id } }),
+      connections().delete({
+        headers,
+        params: { connectionId: firstHost.id },
+        body: { expectedGeneration: reviewedFirst.generation },
+      }),
       [204],
     );
     authenticate(second);
-    expect(
-      (await accept(connections().list({ headers }), [200])).body.connections[0]
-        ?.generation,
-    ).toBe(secondHost.generation + 1);
+    const secondHosts = (await accept(connections().list({ headers }), [200]))
+      .body.connections;
+    const reviewedSecond = secondHosts.find((host) => {
+      return host.id === secondHost.id;
+    });
+    expect(reviewedSecond?.generation).toBe(secondHost.generation + 1);
+    if (!reviewedSecond) {
+      throw new Error("Expected the second owner's SSH host");
+    }
     await accept(
       connections().delete({
         headers,
         params: { connectionId: secondHost.id },
+        body: { expectedGeneration: reviewedSecond.generation },
       }),
       [204],
     );
@@ -1186,6 +1205,7 @@ describe("Cloudflare Access owner configuration", () => {
         connections().delete({
           headers,
           params: { connectionId: connection.id },
+          body: { expectedGeneration: connection.generation },
         }),
         [204],
       );
@@ -1393,6 +1413,7 @@ describe("protected SSH authority", () => {
       connections().delete({
         headers,
         params: { connectionId: readyHost.id },
+        body: { expectedGeneration: readyHost.generation },
       }),
       [204],
     );

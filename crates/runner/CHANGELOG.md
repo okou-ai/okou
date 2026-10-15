@@ -1,5 +1,71 @@
 # Changelog
 
+## [0.233.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.233.4...runner-rs-v0.233.5) (2026-10-15)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.233.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.233.3...runner-rs-v0.233.4) (2026-10-15)
+
+
+### Refactoring
+
+* **pi:** always use the runner-bundled cli ([#40232](https://github.com/okou-ai/okou/issues/40232)) ([dfff160](https://github.com/okou-ai/okou/commit/dfff1605013103371cd90962ee5b54c80fc93140))
+
+
+### Performance Improvements
+
+* **python:** yield within x ndjson row inspection ([#40291](https://github.com/okou-ai/okou/issues/40291)) ([53c2f6f](https://github.com/okou-ai/okou/commit/53c2f6fe9bf5728a87a948a620bdf3f2ea4fd8d8))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.233.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.233.2...runner-rs-v0.233.3) (2026-10-15)
+
+
+### Refactoring
+
+* **remote:** share assignment-owned native network resources ([#40243](https://github.com/okou-ai/okou/issues/40243)) ([4cbbd49](https://github.com/okou-ai/okou/commit/4cbbd4991faf6a1771c2f4cab6e187cc3e544e17))
+
+
+### Performance Improvements
+
+* **runner:** bound auth.base response parser allocations ([#40288](https://github.com/okou-ai/okou/issues/40288)) ([9840723](https://github.com/okou-ai/okou/commit/984072379527b471856609fc3b79c88a3ec2fc78))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.233.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.233.1...runner-rs-v0.233.2) (2026-10-15)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.233.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.233.0...runner-rs-v0.233.1) (2026-10-15)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.233.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.232.0...runner-rs-v0.233.0) (2026-10-15)
+
+
+### Features
+
+* **runner:** record cache routing and inventory outcomes ([#40171](https://github.com/okou-ai/okou/issues/40171)) ([8d94f8f](https://github.com/okou-ai/okou/commit/8d94f8f0b601173b3fe6cb5431f48cb916959226))
+
+
+### Documentation
+
+* remove task history and relocate runner operations ([#40176](https://github.com/okou-ai/okou/issues/40176)) ([4e3f9b8](https://github.com/okou-ai/okou/commit/4e3f9b8b36b17963b44f0265a0b3cdd7d3271842))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.232.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.12...runner-rs-v0.232.0) (2026-10-15)
 
 

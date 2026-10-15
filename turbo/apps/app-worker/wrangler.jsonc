@@ -11,6 +11,7 @@
   // STATIC_ASSETS_BUCKET binding once a dedicated deploy token is provisioned.
   "env": {
     "preview": {
+      "main": "src/preview.ts",
       "name": "okou-app-preview",
       "workers_dev": true,
       "preview_urls": true,

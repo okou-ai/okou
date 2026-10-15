@@ -1,5 +1,46 @@
 # Guarded idle terminal fixture
 
+## Critical multiwave suppression
+
+`native_critical_records_bounded_waves_and_suppressed_snapshot_reads` runs fresh
+and matching snapshot factories with one original exact Guest and two newly
+prepared tenant-free blanks. All share the original P2 authority and full logical
+leases, with capacity for a fitting spare profile. Set the supplied policy's
+`pressure_max_wave_entries` to one and provide actual host headroom classified
+Critical by its explicit watermark; the fixture never changes host availability.
+Supply the optional JSON input described below with the original immutable
+4 GiB `memory.bin` and a positive overhead covering its retained read buffer.
+
+The real guarded runtime reader is armed under initial Unknown. Three distinct
+single-entry pressure waves must finish without refusal, skip or uncertainty,
+while the pending reader reports zero accepted operations or bytes throughout.
+Each wave must receive a new actual Critical read after its completion is
+observed; the controller's deliberate post-wave Unknown state cannot supply it.
+The independent sampler records actual `/proc` clocks and availability. Both
+additional original backing generations must positively exit; the original exact
+home retains its full lease through the required durable 64 MiB tail and restores
+every byte of its 64 KiB payload. Cancellation drains the pending reader, then
+joins the controller and sampler before P2/tracker/factory teardown. All failed
+case directories and raw evidence remain available for diagnosis.
+
+Use the exact-source binary, manifest, packaged inputs and bounded P1 invocation
+below, selecting this test by its exact name. Metadata additionally requires
+`native_critical_policy_json`, `native_critical_inputs_json` (the exact UTF-8 input
+files) and `native_critical_snapshot_bytes` (4294967296). Then validate:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/critical_report.py "$P1_OUTPUT_DIRECTORY"
+```
+
+Ordinary Cargo/default Crates CI runs the real-file/CLI refusal regressions through
+`native_critical_report_requires_bounded_waves_and_suppressed_reads`; the actual
+KVM/NBD entry remains explicitly ignored. The report proves supplied Critical
+classification and bounded cleanup, not numerical host shortage, physical RAM
+relief, cold-cache behavior or OOM protection. Startup/foreground/heartbeat and
+accepted provider/read cancellation or late-result composition remain separate
+acceptance; unknown template producer, complete residency and calibrated envelopes
+are still unverified.
+
 ## Ordinary verification
 
 ```sh
@@ -360,3 +401,116 @@ cases remain ignored/opt-in and require separate submitted-source/binary/artifac
 verification. Terminal12 and pressure4 contracts remain unchanged. The remaining
 optional/recovery/full failure/race, provenance/residency/conservative-envelope,
 parent aggregation and P4 activation gates remain #39997/#39998 and the parents.
+
+## Guarded Ready optional preparation and snapshot reads
+
+`native_optional_records_ready_preparation_prefetch_and_required_saving` selects
+ordinary and aged optional preparation, each with fresh and snapshot factories.
+It exercises the concrete blank/prefetch owners under one shared pressure and
+P2 authority, verifies actual fresh Ready/headroom observations, and requires
+successful preparation/publication and complete original snapshot reads. The
+original home/backing/full logical lease and durable 64 MiB post-exit tail remain
+required even while independent optional inventory exists. All accepted readers,
+blank producers and pressure sampling join before inventory/factory teardown.
+Final saving first joins the exact-home batch while its optional blank remains,
+then joins the remaining inventory batch. Concurrent one-shot batch admissions
+may correctly refuse stale accounting; such a refusal is never accepted as
+completed saving or retried against replacement inventory by this corpus.
+
+Use the existing packaged artifact and supplied P2 policy inputs. The separate
+`OKOU_TEST_OPTIONAL_MEMORY_POLICY` JSON keeps the three fields `snapshot_path`,
+`snapshot_memory_mb` and `prefetch_overhead_bytes`. Its snapshot must be the
+original `memory.bin` in `OKOU_TEST_RPC_SNAPSHOT_DIR`, with the manifest's complete
+SHA-256, positive complete byte length within the supplied memory shape, and
+overhead covering at least the 1 MiB read buffer. Verification hashes the original
+file; a positive partial read is insufficient. Preserve immutable inputs and
+their original creation paths throughout native execution.
+
+Select this exact ignored entry through bounded P1. Include these metadata fields:
+
+- `native_optional_policy_json`: exact raw supplied P2 policy file text.
+- `native_optional_inputs_json`: exact raw optional input file text.
+- `native_optional_snapshot_bytes`: original `memory.bin` byte length.
+- `native_terminal_artifacts`: the existing source/binary/kernel/Firecracker/
+  rootfs/snapshot/policy/profile/tail manifest.
+
+Validate the resulting files with:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/optional_report.py <p1-directory>
+```
+
+The strict four-case report requires ordered, original-generation input,
+preparation, publication and producer-join witnesses in addition to all shared
+terminal/P1 data, backing wait, tail and cleanup checks. Its eleven real-file/CLI
+regressions run through a non-ignored Rust wrapper in default Crates CI. Actual
+KVM/NBD execution remains opt-in and requires separate final-source proof.
+
+This report establishes the guarded Ready component success contract. Startup
+prefetch, fitting foreground/progress under contention, Critical/Unknown/stale
+suppression, paced recovery and cancellation/late-result integration remain
+#40173 under #39997. Full native failures and provenance/residency/envelopes remain
+#39998 and the parents/P4. No calibrated RAM relief, OOM protection or production
+composition-root activation follows from these supplied test-policy observations.
+
+## Native observation gaps and recovery
+
+For a bounded native run using the local profile, optimize the verification hash
+dependency while retaining complete artifact and snapshot byte checks:
+
+```sh
+OKOU_TEST_BUILD_SOURCE_SHA="$(git rev-parse HEAD)" \
+  cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \
+  --config 'profile.local.package."sha2@0.11.0".opt-level=3' \
+  -p runner --test guarded_idle_native --no-run --message-format=json
+```
+
+Record this package override and the returned compiler artifacts with the frozen
+binary. Unoptimized hashing of complete rootfs/COW/memory inputs can exhaust the
+P1 window before optional work starts. Keep the supplied P2 limits, full reads,
+test assertions and collector guards when preparing the verification build.
+
+`native_recovery_records_stale_revocation_and_paced_snapshot_reads` selects
+`Recovery-fresh` and `Recovery-snapshot`. It delays the external observation
+source before real `/proc/meminfo` reads, retaining the unchanged independent
+pressure owner and original shared P2 authority. It never fabricates memory
+availability or renews a cached observation's timestamp.
+
+The corpus requires initial Unknown, fresh sustained recovery, a shared cadence
+refusal after another real read, and an opportunity revoked across a real P2
+admission wait until stale. A single fresh burst must expire with no runtime
+read accepted; sustained recovery then permits two complete reads of separately
+named, hash-verified immutable copies of the original packaged snapshot. The
+source reopens before every shutdown, including failures, so accepted observation,
+admission and prefetch owners are joined before required original home saving.
+Original full-lease, positive backing wait and durable 64 MiB tail checks remain.
+Copies live inside the measured case directory: failures preserve them, and only
+full case success permits the outer owner to remove them with the other files.
+
+Use the same `OKOU_TEST_OPTIONAL_MEMORY_POLICY` JSON as the Ready corpus, and
+set a supplied optional interval longer than the actual stale admission wait plus
+sustained recovery. The native source records actual read-start/completion clocks and costs.
+Scheduling-offer cadence and observed physical acceptance clocks are distinct;
+IO latency is not an exact scheduling timestamp or a performance measurement.
+Input hashing and copying warm the file cache; this corpus does not establish
+cold-cache IO or snapshot residency.
+
+Include exact raw `native_recovery_policy_json`, `native_recovery_inputs_json`,
+`native_recovery_snapshot_bytes` and the original `native_terminal_artifacts`
+manifest in bounded P1 metadata. Validate with:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/recovery_report.py <p1-directory>
+```
+
+The report rejects missing/replayed/stale/short recovery, revived opportunities,
+premature/partial reads and incomplete physical joins. Its real-file/CLI
+regressions run through an ordinary Rust test in default CI. Actual KVM/NBD runs
+still require separately verified committed source, binary and matching Guests,
+rootfs and snapshot. Observation gaps do not establish numerical host shortage,
+physical RAM relief, calibrated envelopes or production protection.
+
+This is #40230 under #40173/#39997. #40231 retains Critical bounded-wave optional
+suppression, startup readers, independent foreground/heartbeat progress and
+Guest/provider/cancellation/late-result integration. #39998 and higher/P4 retain
+full provenance, residency, envelope and activation gates; no parent closes here.

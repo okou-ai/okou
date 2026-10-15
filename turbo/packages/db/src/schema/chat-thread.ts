@@ -1,12 +1,5 @@
 import { sql } from "drizzle-orm";
-import {
-  check,
-  index,
-  pgTable,
-  unique,
-  uniqueIndex,
-  uuid,
-} from "drizzle-orm/pg-core";
+import { check, index, pgTable, unique } from "drizzle-orm/pg-core";
 import { chatThreadColumns } from "../columns/chat-thread";
 
 /**
@@ -16,12 +9,7 @@ import { chatThreadColumns } from "../columns/chat-thread";
  */
 export const chatThreads = pgTable(
   "chat_threads",
-  {
-    ...chatThreadColumns(),
-    /** Physical compatibility storage, omitted from the runtime mapping. */
-    agentSessionId: uuid("agent_session_id"),
-    agentSessionRunId: uuid("agent_session_run_id"),
-  },
+  chatThreadColumns(),
   (table) => {
     return [
       unique("uq_chat_threads_id_user").on(table.id, table.userId),
@@ -37,7 +25,6 @@ export const chatThreads = pgTable(
         "chat_threads_explicit_model_settings_check",
         sql`jsonb_typeof(${table.modelSettings}) = 'object' AND NOT jsonb_path_exists(${table.modelSettings}, '$.keyvalue() ? (@.key == "auto" || @.key == "okou-1.0" || @.key == "okou-1.0-pro" || @.key == "okou-1.0-max" || @.key starts with "@preset/")')`,
       ),
-      uniqueIndex("chat_threads_agent_session_unique").on(table.agentSessionId),
       check(
         "chk_chat_threads_codex_service_tier",
         sql`${table.codexServiceTier} IS NULL OR ${table.codexServiceTier} = 'fast'`,

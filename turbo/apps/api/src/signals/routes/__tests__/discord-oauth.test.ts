@@ -392,10 +392,12 @@ async function callback(
   );
   const location = result.headers.get("location");
   if (!location) {
-    throw new Error("Expected fixed works redirect");
+    throw new Error("Expected fixed Discord settings redirect");
   }
   const url = new URL(location);
-  expect(url.origin + url.pathname).toBe("https://app.okou.ai/works");
+  expect(url.origin + url.pathname).toBe(
+    "https://app.okou.ai/settings/discord",
+  );
   expect(result.headers.get("cache-control")).toBe("no-store");
   expect(result.headers.get("referrer-policy")).toBe("no-referrer");
   expect(hasSecret(location, [started.completionToken])).toBeFalsy();
@@ -462,8 +464,9 @@ async function finish(
   options: Partial<Grant> = {},
 ) {
   const landing = await verified(f, started, options);
-  if (landing.searchParams.get("discord") !== "pending") {
+  if (landing.searchParams.get("status") !== "pending") {
     return {
+      stage: "callback" as const,
       status: "error" as const,
       error: landing.searchParams.get("discord_error"),
       httpStatus: 307,
@@ -472,6 +475,7 @@ async function finish(
   const approved = await approve(started, landing);
   if (approved.status !== 200) {
     return {
+      stage: "approval" as const,
       status: "error" as const,
       error: approved.body.error.code.toLowerCase(),
       httpStatus: approved.status,
@@ -479,8 +483,14 @@ async function finish(
   }
   const completed = await complete(started);
   return completed.status === 200
-    ? { status: completed.body.status, error: null, httpStatus: 200 }
+    ? {
+        stage: "completion" as const,
+        status: completed.body.status,
+        error: null,
+        httpStatus: 200,
+      }
     : {
+        stage: "completion" as const,
         status: "error" as const,
         error: completed.body.error.code.toLowerCase(),
         httpStatus: completed.status,
@@ -1106,7 +1116,40 @@ describe("Discord product OAuth", () => {
       ),
     );
     const results = await Promise.all([complete(first), complete(second)]);
-    expect(results).toMatchObject([
+    const knownErrors = new Set([
+      "cancelled",
+      "unavailable",
+      "forbidden",
+      "provider_error",
+      "invalid_authorization",
+      "guild_unverified",
+      "bot_missing",
+      "invalid_state",
+      "discord_oauth_invalid_attempt",
+      "discord_not_configured",
+      "discord_oauth_unavailable",
+      "conflict",
+      "discord_oauth_failed",
+      "discord_oauth_approval_required",
+      "bad_request",
+    ]);
+    expect(
+      results,
+      JSON.stringify({
+        orgId: owner.orgId,
+        userId: owner.userId,
+        attempts: results.map((result, index) => {
+          const error =
+            result.status === 200 ? null : result.body.error.code.toLowerCase();
+          return {
+            label: index === 0 ? "first" : "second",
+            stage: "completion",
+            httpStatus: result.status,
+            error: knownErrors.has(error ?? "") ? error : null,
+          };
+        }),
+      }),
+    ).toMatchObject([
       { status: 200, body: { status: "connected" } },
       { status: 200, body: { status: "connected" } },
     ]);
@@ -1253,9 +1296,38 @@ describe("Discord product OAuth", () => {
     const first = await start(actor, "install", f.guildId);
     const second = await start(actor, "install", f.guildId);
     const results = await Promise.all([finish(f, first), finish(f, second)]);
+    const knownErrors = new Set([
+      "cancelled",
+      "unavailable",
+      "forbidden",
+      "provider_error",
+      "invalid_authorization",
+      "guild_unverified",
+      "bot_missing",
+      "invalid_state",
+      "discord_oauth_invalid_attempt",
+      "discord_not_configured",
+      "discord_oauth_unavailable",
+      "conflict",
+      "discord_oauth_failed",
+      "discord_oauth_approval_required",
+      "bad_request",
+    ]);
     expect(
       results.map((result) => {
         return result.status;
+      }),
+      JSON.stringify({
+        orgId: actor.orgId,
+        userId: actor.userId,
+        attempts: results.map((result, index) => {
+          return {
+            label: index === 0 ? "first" : "second",
+            stage: result.stage,
+            httpStatus: result.httpStatus,
+            error: knownErrors.has(result.error ?? "") ? result.error : null,
+          };
+        }),
       }),
     ).toStrictEqual(["connected", "connected"]);
     expect((await status(actor)).isConnected).toBeTruthy();
@@ -1360,7 +1432,10 @@ describe("Discord product OAuth", () => {
     const started = await start(actor, "install", f.guildId);
     expect((await complete(started)).status).toBe(409);
     const landing = await verified(f, started);
-    expect(landing.searchParams.get("discord")).toBe("pending");
+    expect(Object.fromEntries(landing.searchParams)).toStrictEqual({
+      status: "pending",
+      guild_id: f.guildId,
+    });
     await expect(status(actor)).resolves.toMatchObject({
       isConnected: false,
     });
@@ -1673,7 +1748,7 @@ describe("Discord product OAuth", () => {
     });
     const started = await start(actor, "install", f.guildId);
     const landing = await verified(f, started);
-    expect(landing.searchParams.get("discord")).toBe("pending");
+    expect(landing.searchParams.get("status")).toBe("pending");
     const proof = approvalProof(started, landing);
     const codes = [...f.grants.keys()];
     expect((await approve(started, landing)).status).toBe(200);

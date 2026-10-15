@@ -5,8 +5,14 @@ import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-cred
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { vncCredentialsContract } from "@okouai/api-contracts/contracts/vnc-credentials";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  CLIENT_TYPE_APP,
+  CLIENT_TYPE_HEADER,
+  CLIENT_VERSION_HEADER,
+} from "@okouai/api-contracts/contracts/client-headers";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
+import webClientCompatibility from "../../../lib/web-client-compatibility.json";
 import { joinAll } from "../../utils";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { vncConnectionsRoutes } from "../vnc-connections";
@@ -425,16 +431,77 @@ describe.each(targets)("%s reviewed-version deletion", (target) => {
   );
 });
 
-describe("SSH deletion request preparation", () => {
-  it("keeps old session/App deletion usable until the supporting App is published", async () => {
+describe("SSH deletion request validation", () => {
+  it.each(["absent", "missing version", "unparseable version"] as const)(
+    "requires the reviewed generation with %s App headers",
+    async (client) => {
+      useSecretKmsProbe();
+      await owner();
+      const created = await accept(
+        sshHosts().create({ headers, body: sshHostBody() }),
+        [201],
+      );
+      const requestHeaders = new Headers(headers);
+      if (client !== "absent") {
+        requestHeaders.set(CLIENT_TYPE_HEADER, CLIENT_TYPE_APP);
+      }
+      if (client === "unparseable version") {
+        requestHeaders.set(CLIENT_VERSION_HEADER, "unparseable");
+      }
+      const request = setupRawAppRequest({
+        context,
+        routes: sshConnectionsRoutes,
+      });
+      const result = await request(`/api/ssh/connections/${created.body.id}`, {
+        method: "DELETE",
+        headers: requestHeaders,
+      });
+      expect(result.status).toBe(400);
+      expect(result.body).toMatchObject({
+        error: { code: "SSH_INVALID_INPUT" },
+      });
+      expect(
+        (await accept(sshHosts().list({ headers }), [200])).body.connections,
+      ).toStrictEqual([created.body]);
+    },
+  );
+
+  it("force-upgrades an unsupported App before deletion and accepts the supported App's reviewed generation", async () => {
     useSecretKmsProbe();
     await owner();
     const created = await accept(
       sshHosts().create({ headers, body: sshHostBody() }),
       [201],
     );
+    const request = setupRawAppRequest({
+      context,
+      routes: sshConnectionsRoutes,
+    });
+    const result = await request(`/api/ssh/connections/${created.body.id}`, {
+      method: "DELETE",
+      headers: {
+        ...headers,
+        [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
+        [CLIENT_VERSION_HEADER]: "0.1027.1",
+      },
+    });
+    expect(result.status).toBe(426);
+    expect(result.headers.get("cache-control")).toBe("no-store");
+    expect(result.body).toStrictEqual({ error: "Client update required" });
+    expect(
+      (await accept(sshHosts().list({ headers }), [200])).body.connections,
+    ).toStrictEqual([created.body]);
     await accept(
-      sshHosts().delete({ headers, params: { connectionId: created.body.id } }),
+      sshHosts().delete({
+        headers,
+        extraHeaders: {
+          [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
+          [CLIENT_VERSION_HEADER]:
+            webClientCompatibility.minimumSupportedVersion,
+        },
+        params: { connectionId: created.body.id },
+        body: { expectedGeneration: created.body.generation },
+      }),
       [204],
     );
     expect(
@@ -443,13 +510,14 @@ describe("SSH deletion request preparation", () => {
   });
 
   it.each([
+    "{}",
     '{"expectedGeneration":0}',
     '{"expectedGeneration":null}',
     '{"expectedGeneration":2147483648}',
     '{"expectedGeneration":1,"unknown":true}',
     '{"expectedGeneration":',
   ])(
-    "rejects an invalid provided body without treating it as an old session request: %s",
+    "rejects an invalid deletion body and preserves the host: %s",
     async (body) => {
       useSecretKmsProbe();
       await owner();

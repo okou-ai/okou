@@ -617,70 +617,42 @@ impl LocalQueue {
         Ok(())
     }
 
-    pub fn read_active_input_entries_from_sequence_sync(
+    /// Read only the expected canonical sequence; a gap never loads later inputs.
+    pub fn read_active_input_entry_sync(
         &self,
         run_id: RunId,
-        min_sequence: u64,
-    ) -> Vec<ActiveInputEntry> {
+        sequence: u64,
+    ) -> Option<ActiveInputEntry> {
+        if sequence == 0 {
+            return None;
+        }
         let run_dir = super::run_inputs_dir(&self.group_dir, run_id);
         match std::fs::symlink_metadata(&run_dir) {
             Ok(_) => {
                 if let Err(e) = super::validate_run_inputs_dir(&self.group_dir, run_id) {
                     warn!(run_id = %run_id, path = %run_dir.display(), error = %e, "local: invalid active-input directory");
-                    return Vec::new();
+                    return None;
                 }
             }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
             Err(e) => {
                 warn!(run_id = %run_id, path = %run_dir.display(), error = %e, "local: cannot stat active-input directory");
-                return Vec::new();
+                return None;
             }
         }
 
-        let entries = match std::fs::read_dir(&run_dir) {
-            Ok(entries) => entries,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
-            Err(e) => {
-                warn!(run_id = %run_id, path = %run_dir.display(), error = %e, "local: cannot read active-input directory");
-                return Vec::new();
-            }
-        };
-
-        let mut parsed = Vec::new();
-        for entry in entries.filter_map(Result::ok) {
-            let Ok(file_type) = entry.file_type() else {
-                continue;
-            };
-            if !file_type.is_file() {
-                continue;
-            }
-            let path = entry.path();
-            if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
-                continue;
-            }
-            let Some(sequence) = path
-                .file_stem()
-                .and_then(|stem| stem.to_str())
-                .and_then(|stem| stem.parse::<u64>().ok())
-            else {
-                continue;
-            };
-            if sequence < min_sequence {
-                continue;
-            }
-            let Ok(bytes) = super::read_private_file(&path, "local active-input file") else {
-                continue;
-            };
-            let Ok(input) = serde_json::from_slice::<ActiveInputEntry>(&bytes) else {
-                continue;
-            };
-            if input.run_id != run_id || input.sequence != sequence || input.text.is_empty() {
-                continue;
-            }
-            parsed.push(input);
+        let path = super::active_input_path(&self.group_dir, run_id, sequence);
+        let bytes = super::read_private_file_with_max(
+            &path,
+            "local active-input file",
+            super::LOCAL_ACTIVE_INPUT_MAX_BYTES,
+        )
+        .ok()?;
+        let input = serde_json::from_slice::<ActiveInputEntry>(&bytes).ok()?;
+        if input.run_id != run_id || input.sequence != sequence || input.text.is_empty() {
+            return None;
         }
-        parsed.sort_by_key(|entry| entry.sequence);
-        parsed
+        Some(input)
     }
 
     pub fn cleanup_active_inputs_sync(&self, run_id: RunId) {
@@ -1218,7 +1190,7 @@ mod tests {
     }
 
     #[test]
-    fn active_input_write_creates_private_files_and_reads_in_numeric_order() {
+    fn active_input_write_creates_private_files_and_reads_requested_sequence() {
         let dir = tempfile::tempdir().unwrap();
         let group_dir = dir.path();
         let queue = LocalQueue::new(group_dir.to_path_buf());
@@ -1247,9 +1219,10 @@ mod tests {
             mode(&super::super::active_input_path(group_dir, run_id, 2)),
             0o600
         );
+        assert_eq!(queue.read_active_input_entry_sync(run_id, 2), Some(entry_2));
         assert_eq!(
-            queue.read_active_input_entries_from_sequence_sync(run_id, 0),
-            vec![entry_2, entry_10]
+            queue.read_active_input_entry_sync(run_id, 10),
+            Some(entry_10)
         );
     }
 
@@ -1300,14 +1273,14 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(
-            queue.read_active_input_entries_from_sequence_sync(run_id, 0),
-            vec![valid]
-        );
+        assert_eq!(queue.read_active_input_entry_sync(run_id, 1), Some(valid));
+        for sequence in 2..=5 {
+            assert_eq!(queue.read_active_input_entry_sync(run_id, sequence), None);
+        }
     }
 
     #[test]
-    fn active_input_read_skips_entries_before_min_sequence() {
+    fn active_input_read_does_not_skip_missing_sequence() {
         let dir = tempfile::tempdir().unwrap();
         let group_dir = dir.path();
         let queue = LocalQueue::new(group_dir.to_path_buf());
@@ -1326,10 +1299,10 @@ mod tests {
         queue.write_active_input_sync(&entry_1).unwrap();
         queue.write_active_input_sync(&entry_3).unwrap();
 
-        assert_eq!(
-            queue.read_active_input_entries_from_sequence_sync(run_id, 2),
-            vec![entry_3]
-        );
+        assert_eq!(queue.read_active_input_entry_sync(run_id, 0), None);
+        assert_eq!(queue.read_active_input_entry_sync(run_id, 1), Some(entry_1));
+        assert_eq!(queue.read_active_input_entry_sync(run_id, 2), None);
+        assert_eq!(queue.read_active_input_entry_sync(run_id, 3), Some(entry_3));
     }
 
     #[test]
@@ -1355,8 +1328,8 @@ mod tests {
 
         assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists);
         assert_eq!(
-            queue.read_active_input_entries_from_sequence_sync(run_id, 0),
-            vec![original]
+            queue.read_active_input_entry_sync(run_id, 1),
+            Some(original)
         );
     }
 

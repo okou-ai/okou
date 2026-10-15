@@ -74,23 +74,28 @@ Evaluate all reachable combinations:
 
 ### Runner, Guest, and CLI Artifacts
 
-Runner and its bundled Guest binaries are one deployment artifact. Each sandbox
-belongs exclusively to the Runner that created it; another Runner does not adopt
-it, and stopping its owner destroys it. Files private to that sandbox lifetime
-need no cross-version reader solely because they cross the Runner/Guest boundary.
+Runner embeds its Guest binaries and the Okou CLI package in one deployment
+artifact. Rootfs builds install that CLI into the Guest. Each sandbox belongs
+exclusively to the Runner that created it; another Runner does not adopt it, and
+stopping its owner destroys it. Files private to that sandbox lifetime need no
+cross-version reader solely because they cross the Runner/Guest boundary.
 The embedded MITM addon and recreated Runner-private registry share that same
 artifact boundary. This exemption does not cover independently persisted or
 externally consumed data.
 
-CLI packages can be selected separately and captured by queued or active Run
-contexts. Keep the exact captured package available through queueing, execution,
-and finalization. Do not infer the CLI version from the current API or Runner
-version, or remove a protocol merely because a new package has been published.
+Pi executes the installed CLI for the whole session. API and Runner releases can
+differ, so launch payloads and model configurations must remain compatible with
+supported Runner builds. Deploy a new CLI reader in the Runner before activating
+an API writer that requires it; model-config generation capabilities gate claims.
+
+Run contexts can still capture CLI package URLs for explicit tool invocations,
+and draining Runners can use those URLs for Pi startup. Keep the exact captured
+package available through queueing, execution, and finalization until those
+consumers and rollback builds have drained. Package publication alone does not
+retire an API/Runner protocol.
 
 Never replace a captured package's bytes or redirect its historical URL to a
-newer package. Use the exact artifact and required runtime identity for
-compatibility decisions. Package semver is a sufficient floor only when the
-release process guarantees it advances for every relevant artifact change.
+newer package.
 
 A Runner drain acknowledgement means it stopped admitting new work; claimed
 work and finalization can still be running. A healthy replacement or promotion
@@ -135,7 +140,8 @@ Compatibility applies to:
 - queue and persisted job/Run/session payloads;
 - cross-Runner caches, metadata, and independently consumed host files;
 - browser-resident Workers and clients that can outlive a deployment;
-- captured CLI packages and contexts that retain their own execution lifetime.
+- captured Run contexts and their referenced CLI packages that can outlive an
+  API deployment.
 
 Compatibility is not required between package internals in one frontend build,
 API build, or Runner artifact, or for state private to one Runner-owned sandbox
@@ -213,11 +219,10 @@ Test each transform by copying
 Assert its output against an explicit JSON Schema of the old shape, taken from
 the route's `responses["<status>"].schema` in the production runtime API schema
 snapshot (`current.json` in the `runtime-api-schema-prod` release), and assert
-that the current body no longer satisfies it. The API runtime's selection and
-serialization path (2xx-only application, Desktop version gating,
-validate-before-transform, the server error on transform failure and size
-observation) has no API test: its synthetic-route fixture test was deleted as a
-framework self-test in #37440. Tests never edit the real registry.
+that the current body no longer satisfies it. These pure transform tests
+establish shape compatibility; they do not prove runtime version selection or
+response serialization. Tests must not register synthetic API routes or edit
+the real transform registry.
 
 ### Desktop Contract Gate
 
@@ -347,7 +352,8 @@ business triggers; follow the [trigger policy](api/database.md#database-triggers
 - **New App -> old API:** the old API is neither serving nor a supported rollback
   target.
 - **Runner or sandbox:** old owners finish draining, including bounded
-  finalization, not merely agent execution. Account for captured CLI contexts.
+  finalization, not merely agent execution. Account for captured CLI packages
+  still used by draining owners and explicit tool consumers.
 - **Database/API:** the migration succeeded, outgoing consumers drained, and
   retained rollback targets work with the contracted schema.
 - **Persisted formats and durable references:** account for retained data and

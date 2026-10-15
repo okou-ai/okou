@@ -686,49 +686,33 @@ on the code's limited-free restricted-model rule; it stores no model IDs, so
 The following patterns no longer have a surviving migration example, so keep
 the complete SQL here.
 
-### Run a batched backfill without blocking writers
+### Bound a transactional backfill by UUID
 
-Use the non-transactional marker so the procedure can commit each batch. Lock
-only the selected rows, skip rows held by concurrent writers, and never take a
-table lock. If the backfill temporarily relaxes a trigger function, restore its
-accepted body byte-for-byte before the migration completes.
+Mark a statement with `-- vm0:batch-by-uuid` to have the migration runner send
+one SQL query per batch inside the existing migration transaction. Each query
+gets the migration's statement timeout independently. The entire migration and
+journal still commit together; batching does not release transaction-held locks.
+A loop inside one `DO` or `CALL` statement does not reset `statement_timeout`.
+
+The runner binds `$1` to the previous UUID cursor, initially SQL `NULL`. Select a
+bounded, materialized batch before joining other tables. Return exactly one
+`next_cursor` UUID: the greatest selected ID, or SQL `NULL` when no targets
+remain. Advance by selected rows even when none qualify for an update, so a gap
+cannot skip later targets. Non-null cursors must strictly increase. This marker
+is supported only in transactional migrations.
 
 ```sql
--- vm0:non-transactional
-SET lock_timeout = '1s';
---> statement-breakpoint
-SET statement_timeout = '10s';
---> statement-breakpoint
-CREATE OR REPLACE PROCEDURE "backfill_example"()
-LANGUAGE plpgsql
-AS $$
-DECLARE
-  affected_rows integer;
-BEGIN
-  LOOP
-    WITH "batch" AS (
-      SELECT "id"
-      FROM "example_table"
-      WHERE "canonical_value" IS NULL
-      ORDER BY "id"
-      LIMIT 1000
-      FOR UPDATE SKIP LOCKED
-    )
-    UPDATE "example_table" AS "target"
-    SET "canonical_value" = "target"."legacy_value"
-    FROM "batch"
-    WHERE "target"."id" = "batch"."id";
-
-    GET DIAGNOSTICS affected_rows = ROW_COUNT;
-    COMMIT;
-    EXIT WHEN affected_rows = 0;
-  END LOOP;
-END;
-$$;
---> statement-breakpoint
-CALL "backfill_example"();
---> statement-breakpoint
-DROP PROCEDURE "backfill_example"();
+-- vm0:batch-by-uuid
+WITH batch AS MATERIALIZED (
+  SELECT id FROM example_table
+  WHERE ($1::uuid IS NULL OR id > $1::uuid) AND canonical_value IS NULL
+  ORDER BY id LIMIT 1000
+), updated AS (
+  UPDATE example_table target SET canonical_value = target.legacy_value
+  FROM batch WHERE target.id = batch.id AND target.canonical_value IS NULL
+  RETURNING target.id
+)
+SELECT (SELECT id FROM batch ORDER BY id DESC LIMIT 1) AS next_cursor;
 ```
 
 ### Add and validate a constraint online

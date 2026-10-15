@@ -1,5 +1,70 @@
 # Changelog
 
+## [1.9.43](https://github.com/okou-ai/okou/compare/app-worker-v1.9.42...app-worker-v1.9.43) (2026-10-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.566.2
+    * @okouai/core bumped to 8.759.3
+
+## [1.9.42](https://github.com/okou-ai/okou/compare/app-worker-v1.9.41...app-worker-v1.9.42) (2026-10-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.566.1
+    * @okouai/core bumped to 8.759.2
+
+## [1.9.41](https://github.com/okou-ai/okou/compare/app-worker-v1.9.40...app-worker-v1.9.41) (2026-10-15)
+
+
+### Refactoring
+
+* **api:** own management reads and diagnose preview build identity ([#39515](https://github.com/okou-ai/okou/issues/39515)) ([d66780f](https://github.com/okou-ai/okou/commit/d66780f2e6e74546791e45cb7177cbc1e3ac2e86))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.566.0
+    * @okouai/core bumped to 8.759.1
+
+## [1.9.40](https://github.com/okou-ai/okou/compare/app-worker-v1.9.39...app-worker-v1.9.40) (2026-10-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.565.0
+    * @okouai/core bumped to 8.759.0
+
+## [1.9.39](https://github.com/okou-ai/okou/compare/app-worker-v1.9.38...app-worker-v1.9.39) (2026-10-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.564.0
+    * @okouai/core bumped to 8.758.2
+
+## [1.9.38](https://github.com/okou-ai/okou/compare/app-worker-v1.9.37...app-worker-v1.9.38) (2026-10-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.563.0
+    * @okouai/core bumped to 8.758.1
+
 ## [1.9.37](https://github.com/okou-ai/okou/compare/app-worker-v1.9.36...app-worker-v1.9.37) (2026-10-15)
 
 

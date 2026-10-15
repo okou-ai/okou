@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.18.1](https://github.com/okou-ai/okou/compare/runner-remote-v0.18.0...runner-remote-v0.18.1) (2026-10-15)
+
+
+### Refactoring
+
+* **pi:** always use the runner-bundled cli ([#40232](https://github.com/okou-ai/okou/issues/40232)) ([dfff160](https://github.com/okou-ai/okou/commit/dfff1605013103371cd90962ee5b54c80fc93140))
+
+## [0.18.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.17.2...runner-remote-v0.18.0) (2026-10-15)
+
+
+### Features
+
+* **ssh:** support tailscale ssh with saved networks ([#40212](https://github.com/okou-ai/okou/issues/40212)) ([31db119](https://github.com/okou-ai/okou/commit/31db1195d86e33e52a576e0b50286312366d198e))
+
+
+### Refactoring
+
+* **remote:** share assignment-owned native network resources ([#40243](https://github.com/okou-ai/okou/issues/40243)) ([4cbbd49](https://github.com/okou-ai/okou/commit/4cbbd4991faf6a1771c2f4cab6e187cc3e544e17))
+
+## [0.17.2](https://github.com/okou-ai/okou/compare/runner-remote-v0.17.1...runner-remote-v0.17.2) (2026-10-15)
+
+## [0.17.1](https://github.com/okou-ai/okou/compare/runner-remote-v0.17.0...runner-remote-v0.17.1) (2026-10-15)
+
 ## [0.17.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.16.1...runner-remote-v0.17.0) (2026-10-15)
 
 

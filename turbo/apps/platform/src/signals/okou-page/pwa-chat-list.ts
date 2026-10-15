@@ -1,5 +1,6 @@
 import { command, computed, state } from "ccstate";
 import {
+  currentChatAgentId$,
   currentChatAgentScope$,
   currentChatThreadId$,
   currentChatThreadListSignals$,
@@ -7,6 +8,7 @@ import {
   type ChatThreadListSignals,
 } from "../agent-chat.ts";
 import { sortedAgents$ } from "../agent.ts";
+import { unreadAgentIds$ } from "../chat-page/chat-thread-indicators-from-worker.ts";
 import { chatThreadOnlyArchived$ } from "../chat-page/chat-thread-only-archived.ts";
 import { chatThreadOnlyMuted$ } from "../chat-page/chat-thread-only-muted.ts";
 import { chatThreadOnlyUnread$ } from "../chat-page/chat-thread-only-unread.ts";
@@ -87,6 +89,20 @@ export const setPwaAgentSwitcherOpen$ = command(({ set }, open: boolean) => {
 
 export const setPwaAgentQuery$ = command(({ set }, query: string) => {
   set(internalAgentQuery$, query);
+});
+
+export const pwaHasUnreadChats$ = computed(async (get) => {
+  return (await get(unreadAgentIds$)).size > 0;
+});
+
+// The list already shows the current agent's unread chats, so the switcher
+// only points at unread chats it hides.
+export const pwaOtherAgentsHaveUnreadChats$ = computed(async (get) => {
+  const unreadAgentIds = await get(unreadAgentIds$);
+  const currentAgentId = await get(currentChatAgentId$);
+  return [...unreadAgentIds].some((agentId) => {
+    return agentId !== currentAgentId;
+  });
 });
 
 export const pwaAgentOptions$ = computed(async (get) => {

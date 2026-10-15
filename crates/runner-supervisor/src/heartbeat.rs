@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::future::BoxFuture;
+use runner_host::home_observation::{HomeObservation, HomeObservationKind, HomeObservationOutcome};
 use tokio_util::task::AbortOnDropHandle;
 use tracing::{Instrument, info};
 
@@ -56,16 +57,23 @@ pub type HeartbeatResult<T> = Result<T, HeartbeatError>;
 /// Avoids passing 8+ arguments through `send_heartbeat`.
 #[derive(Clone)]
 pub struct HeartbeatContext {
+    base: BaseHeartbeatContext,
+    home_cache: Option<HomeImageCache>,
+    active_runs: ActiveRuns,
+    home_cache_snapshot: HomeCacheStateSnapshot,
+    wss_ingress_service_probe: WssIngressServiceProbe,
+    sandbox_op_reporter: Option<runner_storage::SandboxOpReporter>,
+}
+
+/// Original snapshot authority shared by ordinary and terminal publication.
+#[derive(Clone)]
+struct BaseHeartbeatContext {
     idle_pool: Arc<tokio::sync::Mutex<IdlePool>>,
     runner_identity: RunnerProcessIdentity,
     group: Arc<str>,
     profiles: Arc<BTreeMap<String, HeartbeatProfile>>,
     budget: Arc<ResourceBudget>,
     provider: Arc<dyn JobProvider>,
-    home_cache: Option<HomeImageCache>,
-    active_runs: ActiveRuns,
-    home_cache_snapshot: HomeCacheStateSnapshot,
-    wss_ingress_service_probe: WssIngressServiceProbe,
 }
 
 pub struct HeartbeatContextInit<'a> {
@@ -79,22 +87,45 @@ pub struct HeartbeatContextInit<'a> {
     pub active_runs: &'a ActiveRuns,
     pub home_cache_snapshot: HomeCacheStateSnapshot,
     pub wss_ingress_service_probe: WssIngressServiceProbe,
+    pub sandbox_op_reporter: Option<runner_storage::SandboxOpReporter>,
 }
 
 impl HeartbeatContext {
     pub fn new(init: HeartbeatContextInit<'_>) -> Self {
         Self {
-            idle_pool: Arc::clone(init.idle_pool),
-            runner_identity: init.runner_identity,
-            group: Arc::from(init.group),
-            profiles: Arc::new(init.profiles.clone()),
-            budget: Arc::clone(init.budget),
-            provider: init.provider,
+            base: BaseHeartbeatContext {
+                idle_pool: Arc::clone(init.idle_pool),
+                runner_identity: init.runner_identity,
+                group: Arc::from(init.group),
+                profiles: Arc::new(init.profiles.clone()),
+                budget: Arc::clone(init.budget),
+                provider: init.provider,
+            },
             home_cache: init.home_cache,
             active_runs: init.active_runs.clone(),
             home_cache_snapshot: init.home_cache_snapshot,
             wss_ingress_service_probe: init.wss_ingress_service_probe,
+            sandbox_op_reporter: init.sandbox_op_reporter,
         }
+    }
+}
+
+impl BaseHeartbeatContext {
+    async fn collect_state(&self, mode: RunnerMode, snapshot_sequence: u64) -> HeartbeatState {
+        let pool = self.idle_pool.lock().await;
+        let state = collect_heartbeat_state(
+            HeartbeatSnapshotMetadata {
+                runner_identity: self.runner_identity,
+                group: &self.group,
+                sequence: snapshot_sequence,
+            },
+            &self.profiles,
+            &self.budget,
+            &pool,
+            mode,
+        );
+        drop(pool);
+        state
     }
 }
 
@@ -109,6 +140,23 @@ pub struct HeartbeatController {
     in_flight: Option<AbortOnDropHandle<()>>,
     pending: Option<HeartbeatRequest>,
     next_snapshot_sequence: u64,
+}
+
+/// One final basic snapshot, retained after controller work has drained.
+pub(crate) struct TerminalHeartbeat {
+    context: BaseHeartbeatContext,
+    snapshot_sequence: u64,
+}
+
+impl TerminalHeartbeat {
+    /// Publish after provider shutdown, without ordinary cache or WSS enrichment.
+    pub(crate) async fn send(self) {
+        let state = self
+            .context
+            .collect_state(RunnerMode::Stopping, self.snapshot_sequence)
+            .await;
+        self.context.provider.heartbeat(&state).await;
+    }
 }
 
 struct HeartbeatRequest {
@@ -266,9 +314,14 @@ impl HeartbeatController {
         Ok(())
     }
 
-    pub fn into_next_snapshot_sequence(self) -> u64 {
+    /// Transfer the original base context and sequence after [`Self::drain`].
+    pub(crate) fn into_terminal_heartbeat(self) -> TerminalHeartbeat {
         debug_assert!(self.in_flight.is_none());
-        self.next_snapshot_sequence
+        debug_assert!(self.pending.is_none());
+        TerminalHeartbeat {
+            context: self.context.base,
+            snapshot_sequence: self.next_snapshot_sequence,
+        }
     }
 
     fn start(&mut self, mode: RunnerMode, request: HeartbeatRequest) -> HeartbeatResult<()> {
@@ -306,19 +359,7 @@ async fn send_heartbeat(
     // A producer can move into the idle pool while the heartbeat waits for
     // its lock. Include either side of that transfer in this advisory snapshot.
     let mut producers = hb.active_runs.active_reuse_producers();
-    let pool = hb.idle_pool.lock().await;
-    let mut state = collect_heartbeat_state(
-        HeartbeatSnapshotMetadata {
-            runner_identity: hb.runner_identity,
-            group: &hb.group,
-            sequence: snapshot_sequence,
-        },
-        &hb.profiles,
-        &hb.budget,
-        &pool,
-        mode,
-    );
-    drop(pool);
+    let mut state = hb.base.collect_state(mode, snapshot_sequence).await;
     let cache_change = request.home_cache_change.as_ref();
     let previous_home_states = cache_change.map(|_| {
         hb.home_cache_snapshot
@@ -328,15 +369,12 @@ async fn send_heartbeat(
         refresh_home_cache_snapshot_after_change(
             &hb.home_cache_snapshot,
             hb.home_cache.as_ref(),
-            &hb.profiles,
+            &hb.base.profiles,
             cache_change,
         )
         .await
     } else {
-        HomeCacheRefreshOutcome {
-            states: hb.home_cache_snapshot.loaded_home_cache_states(),
-            changed: false,
-        }
+        hb.home_cache_snapshot.loaded_home_cache_snapshot()
     };
     // Preserve the pre-transfer producer even if filtering observes its
     // resolved state; the next snapshot will advertise the parked sandbox.
@@ -347,9 +385,10 @@ async fn send_heartbeat(
     producers.dedup_by_key(|entry| entry.run_id);
     producers.truncate(MAX_ACTIVE_REUSE_PRODUCERS);
     state.active_reuse_producers = producers;
+    let inventory_observed_states = refresh.states.len();
     state.held_home_states = filter_home_states_for_profiles(
         filter_current_held_home_states(refresh.states, &hb.active_runs, None),
-        &hb.profiles,
+        &hb.base.profiles,
     );
     if let Some(change) = cache_change
         && !request.force_send
@@ -366,6 +405,28 @@ async fn send_heartbeat(
         return;
     }
     state.wss_ingress_service_active = (hb.wss_ingress_service_probe)().await;
+    if let Some(reporter) = &hb.sandbox_op_reporter {
+        let mut observation = HomeObservation::new(
+            HomeObservationKind::Inventory,
+            HomeObservationOutcome::Assembled,
+        );
+        observation.runner_id = Some(hb.base.runner_identity.runner_id().to_string());
+        observation.runner_heartbeat_generation =
+            Some(hb.base.runner_identity.heartbeat_generation());
+        observation.inventory_loaded = Some(refresh.loaded);
+        observation.inventory_observed_states = Some(inventory_observed_states);
+        observation.inventory_output_states = Some(state.held_home_states.len());
+        observation.inventory_omitted_states =
+            Some(inventory_observed_states - state.held_home_states.len());
+        let mut record = runner_storage::SandboxOpRecord::new(
+            "runner_home_inventory",
+            std::time::Duration::ZERO,
+            true,
+            None,
+        );
+        record.home = Some(observation);
+        reporter.record(record);
+    }
     info!(
         mode = ?mode,
         running = state.running_count,
@@ -374,7 +435,7 @@ async fn send_heartbeat(
         home_states = state.held_home_states.len(),
         "heartbeat"
     );
-    hb.provider.heartbeat(&state).await;
+    hb.base.provider.heartbeat(&state).await;
     if let Some(change) = cache_change {
         info!(
             changed = true,
@@ -682,6 +743,91 @@ mod tests {
         snapshot.finish_home_cache_refresh(refresh, states);
     }
 
+    #[tokio::test]
+    async fn home_inventory_operations_distinguish_unloaded_empty_and_omitted_states() {
+        let observations =
+            runner_storage::operation_test_support::RecordedHomeObservations::default();
+        let idle_pool = Arc::new(tokio::sync::Mutex::new(IdlePool::new(IdlePoolConfig {
+            max_idle: 0,
+        })));
+        let profiles = test_profiles();
+        let budget = Arc::new(ResourceBudget::new(8, 32768, 1.0, 4));
+        let active_runs = test_active_runs();
+        let provider = Arc::new(RecordingProvider::default());
+        let snapshot = HomeCacheStateSnapshot::new();
+        let hb = HeartbeatContext::new(HeartbeatContextInit {
+            idle_pool: &idle_pool,
+            runner_identity: test_runner_identity(),
+            group: "vm0/test",
+            profiles: &profiles,
+            budget: &budget,
+            provider: provider.clone(),
+            home_cache: None,
+            active_runs: &active_runs,
+            home_cache_snapshot: snapshot.clone(),
+            sandbox_op_reporter: Some(observations.handle()),
+            wss_ingress_service_probe: Arc::new(|| Box::pin(async { false })),
+        });
+        send_heartbeat(&hb, RunnerMode::Running, 1, HeartbeatRequest::ordinary()).await;
+        refresh_snapshot(&snapshot, Vec::new());
+        send_heartbeat(&hb, RunnerMode::Running, 2, HeartbeatRequest::ordinary()).await;
+        refresh_snapshot(
+            &snapshot,
+            vec![
+                held_home_state(
+                    "thread:available",
+                    "2026-06-01T00:00:00.000Z",
+                    &["vm0/default"],
+                ),
+                held_home_state(
+                    "thread:active",
+                    "2026-06-01T00:00:00.000Z",
+                    &["vm0/default"],
+                ),
+                held_home_state(
+                    "thread:other-profile",
+                    "2026-06-01T00:00:00.000Z",
+                    &["other"],
+                ),
+            ],
+        );
+        let _active = active_runs.register(
+            runner_types::ids::RunId::new_v4(),
+            Some("thread:active".into()),
+            "vm0/default".into(),
+        );
+        send_heartbeat(&hb, RunnerMode::Running, 3, HeartbeatRequest::ordinary()).await;
+        let events = observations.events();
+        assert_eq!(events.len(), 3);
+        assert_eq!(events[0].inventory_loaded, Some(false));
+        assert_eq!(events[0].inventory_output_states, Some(0));
+        assert_eq!(events[1].inventory_loaded, Some(true));
+        assert_eq!(events[1].inventory_output_states, Some(0));
+        let event = &events[2];
+        assert_eq!(event.kind, HomeObservationKind::Inventory);
+        assert_eq!(event.outcome, HomeObservationOutcome::Assembled);
+        assert_eq!(
+            event.runner_id.as_deref(),
+            Some(test_runner_identity().runner_id().to_string().as_str())
+        );
+        assert_eq!(event.runner_heartbeat_generation, Some(7));
+        assert_eq!(event.inventory_loaded, Some(true));
+        assert_eq!(event.inventory_observed_states, Some(3));
+        assert_eq!(event.inventory_output_states, Some(1));
+        assert_eq!(event.inventory_omitted_states, Some(2));
+        assert!(event.run_id.is_none());
+        assert!(event.is_first_run.is_none());
+        let sent = provider.heartbeats.lock().unwrap();
+        assert_eq!(
+            sent[2].held_home_states,
+            vec![held_home_state(
+                "thread:available",
+                "2026-06-01T00:00:00.000Z",
+                &["vm0/default"]
+            )]
+        );
+    }
+
     fn test_active_runs() -> ActiveRuns {
         ActiveRuns::new(Arc::new(tokio::sync::Notify::new()))
     }
@@ -940,6 +1086,7 @@ mod tests {
         let active_runs = test_active_runs();
         let hb = HeartbeatContext::new(HeartbeatContextInit {
             idle_pool: &idle_pool,
+            sandbox_op_reporter: None,
             runner_identity: test_runner_identity(),
             group: "vm0/test",
             profiles: &profiles,
@@ -985,6 +1132,7 @@ mod tests {
         refresh_initial_home_cache_snapshot(&home_cache_snapshot, Some(&cache), &profiles).await;
         let hb = HeartbeatContext::new(HeartbeatContextInit {
             idle_pool: &idle_pool,
+            sandbox_op_reporter: None,
             runner_identity: test_runner_identity(),
             group: "vm0/test",
             profiles: &profiles,
@@ -1073,6 +1221,7 @@ mod tests {
         tokio::fs::remove_file(metadata).await.unwrap();
         let hb = HeartbeatContext::new(HeartbeatContextInit {
             idle_pool: &idle_pool,
+            sandbox_op_reporter: None,
             runner_identity: test_runner_identity(),
             group: "vm0/test",
             profiles: &profiles,
@@ -1226,6 +1375,7 @@ mod tests {
         let budget = Arc::new(ResourceBudget::new(8, 32768, 1.0, 4));
         let hb = HeartbeatContext::new(HeartbeatContextInit {
             idle_pool: &idle_pool,
+            sandbox_op_reporter: None,
             runner_identity: test_runner_identity(),
             group: "vm0/test",
             profiles: &profiles,

@@ -4,6 +4,7 @@ import {
   walletContract,
   walletUserContract,
   type WalletCreateSpend,
+  type WalletConnect,
   walletSpendCredentialsSchema,
 } from "@okouai/api-contracts/contracts/wallet";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -111,7 +112,9 @@ async function carrier(
   };
 }
 
-function tokenHandler(options: { scope?: string; expiresIn?: number } = {}) {
+function tokenHandler(
+  options: { scope?: string; expiresIn?: number; actions?: string[] } = {},
+) {
   return http.post("https://login.link.com/auth/token", () => {
     return HttpResponse.json({
       access_token: "wallet-access-fixture",
@@ -119,14 +122,20 @@ function tokenHandler(options: { scope?: string; expiresIn?: number } = {}) {
       token_type: "Bearer",
       expires_in: options.expiresIn ?? 3600,
       scope: options.scope ?? "payment_methods.agentic",
+      authorization_details: options.actions
+        ? [{ type: "source", actions: options.actions }]
+        : undefined,
     });
   });
 }
 
-async function connect(fixture: Awaited<ReturnType<typeof carrier>>) {
+async function connect(
+  fixture: Awaited<ReturnType<typeof carrier>>,
+  body: WalletConnect = {},
+) {
   mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
   const request = await accept(
-    client().connect({ headers: fixture.headers, body: {} }),
+    client().connect({ headers: fixture.headers, body }),
     [200],
   );
   const url = new URL(request.body.url);
@@ -243,6 +252,16 @@ test("is unavailable with a flag-off token and rejects a previously issued token
     }),
     [403],
   );
+  await updateFeatureSwitchesForUser(
+    context,
+    { userId: off.actor.userId, orgId: off.actor.orgId },
+    { [FeatureSwitchKey.LinkWallet]: true },
+  );
+  const missingCapability = await accept(
+    client().transactions({ headers: off.headers, query: {} }),
+    [403],
+  );
+  expect(missingCapability.body.error.code).toBe("MISSING_CAPABILITY");
   const active = await carrier();
   expect(active.prompt).toContain("okou wallet guide");
   expect(active.prompt).toContain(
@@ -391,16 +410,16 @@ test("accepts hosted PKCE consent after 20 minutes, binds the callback to the se
     client().status({ headers: fixture.headers }),
     [200],
   );
-  expect(status.body).toStrictEqual({
+  expect(status.body).toMatchObject({
     connected: true,
     nextAction: "create_spend",
     checkoutAvailable: false,
   });
 });
 
-test("denies declined and expired OAuth requests and missing payment scopes", async () => {
+test("denies declined and expired OAuth requests and unrecognized scopes", async () => {
   const fixture = await carrier();
-  server.use(tokenHandler({ scope: "userinfo:read" }));
+  server.use(tokenHandler({ scope: "unrecognized:read" }));
   const started = await accept(
     client().connect({ headers: fixture.headers, body: {} }),
     [200],
@@ -1900,4 +1919,599 @@ test("retains a bounded plain-text provider rejection without exposing its ident
     "Account verification is required",
   );
   expect(rejected.body.error.message).not.toContain("customer@example.test");
+});
+
+test("reads Link transactions with explicit financial consent and keeps a read-only wallet unable to spend", async () => {
+  const fixture = await carrier();
+  server.use(
+    tokenHandler({
+      scope: "userinfo:read financial_insights.transactions.read",
+      actions: ["read_link_transactions"],
+    }),
+  );
+  const consent = await connect(fixture, { readOnly: true });
+  expect(consent.url.searchParams.get("scope")).toBe("userinfo:read");
+  expect(
+    JSON.parse(consent.url.searchParams.get("authorization_details") ?? "null"),
+  ).toStrictEqual([{ type: "source", actions: ["read_link_transactions"] }]);
+  expect(
+    (await accept(client().status({ headers: fixture.headers }), [200])).body,
+  ).toMatchObject({
+    connected: true,
+    // Captured CLI builds parse only connect/create_spend; reads are additive.
+    nextAction: "connect",
+    checkoutAvailable: false,
+    authorization: {
+      known: true,
+      sourceActions: ["read_link_transactions"],
+      capabilities: {
+        payments: false,
+        paymentMethods: false,
+        userInfo: true,
+        transactions: true,
+      },
+    },
+  });
+  expect(
+    (
+      await accept(
+        client().createSpend({ headers: fixture.headers, body: purchase() }),
+        [403],
+      )
+    ).body.error.code,
+  ).toBe("WALLET_SCOPE_REQUIRED");
+  await accept(client().paymentMethods({ headers: fixture.headers }), [403]);
+  let providerQuery: Record<string, string> = {};
+  server.use(
+    http.get("https://api.link.com/transactions", ({ request }) => {
+      providerQuery = Object.fromEntries(new URL(request.url).searchParams);
+      return HttpResponse.json({
+        data: [
+          {
+            id: "txn_first",
+            source_id: null,
+            amount: -3500,
+            currency: "usd",
+            created_date: "2026-10-14",
+            description: "Example Books",
+            origin: "link",
+            category: "shopping",
+            status: "posted",
+            card: { number: "private-pan" },
+            access_token: "private-token",
+          },
+        ],
+        has_more: true,
+      });
+    }),
+  );
+  const result = await accept(
+    client().transactions({
+      headers: fixture.headers,
+      query: {
+        startDate: "2026-10-01",
+        endDate: "2026-10-15",
+        limit: 1,
+        startingAfter: "txn_previous",
+        category: "shopping",
+      },
+    }),
+    [200],
+  );
+  expect(providerQuery).toStrictEqual({
+    origin: "link",
+    date_start: "2026-10-01",
+    date_end: "2026-10-15",
+    limit: "1",
+    starting_after: "txn_previous",
+    category: "shopping",
+  });
+  expect(result.body).toStrictEqual({
+    data: [
+      {
+        id: "txn_first",
+        sourceId: null,
+        amount: -3500,
+        currency: "usd",
+        date: "2026-10-14",
+        description: "Example Books",
+        origin: "link",
+        category: "shopping",
+        status: "posted",
+      },
+    ],
+    hasMore: true,
+    nextCursor: "txn_first",
+  });
+  expect(result.headers.get("cache-control")).toBe("no-store");
+  server.use(
+    http.get("https://api.link.com/transactions", () => {
+      return HttpResponse.json([]);
+    }),
+  );
+  expect(
+    (
+      await accept(
+        client().transactions({ headers: fixture.headers, query: {} }),
+        [200],
+      )
+    ).body,
+  ).toStrictEqual({ data: [], hasMore: null, nextCursor: null });
+  const raw = setupRawAppRequest({ context, routes: walletRoutes });
+  for (const query of [
+    "origin=external_connection",
+    "startDate=2026-10-15&endDate=2026-10-01",
+    "startDate=2026-02-30",
+    "limit=101",
+    "include=card",
+  ]) {
+    expect(
+      (
+        await raw(`/api/wallet/transactions?${query}`, {
+          method: "GET",
+          headers: fixture.headers,
+        })
+      ).status,
+    ).toBe(400);
+  }
+});
+
+test("does not infer financial actions from a scope or from a pending consent upgrade", async () => {
+  const fixture = await carrier();
+  server.use(
+    tokenHandler({
+      scope:
+        "payment_methods.agentic userinfo:read financial_insights.transactions.read",
+    }),
+  );
+  await connect(fixture);
+  await accept(
+    client().transactions({ headers: fixture.headers, query: {} }),
+    [403],
+  );
+  const upgrade = await accept(
+    client().connect({
+      headers: fixture.headers,
+      body: { transactions: true },
+    }),
+    [200],
+  );
+  expect(new URL(upgrade.body.url).searchParams.get("scope")).toContain(
+    "payment_methods.agentic",
+  );
+  await accept(
+    client().transactions({ headers: fixture.headers, query: {} }),
+    [403],
+  );
+  expect(
+    (await accept(client().status({ headers: fixture.headers }), [200])).body
+      .authorization?.capabilities.payments,
+  ).toBeTruthy();
+  const denied = await accept(
+    callbackClient().callback({
+      headers: sessionHeaders,
+      query: {
+        state: new URL(upgrade.body.url).searchParams.get("state") ?? "",
+        error: "access_denied",
+        responseMode: "json",
+      },
+    }),
+    [200],
+  );
+  expect(denied.body.status).toBe("error");
+  expect(
+    (await accept(client().status({ headers: fixture.headers }), [200])).body
+      .authorization?.capabilities.payments,
+  ).toBeTruthy();
+});
+
+test("rejects an unexpectedly payment-enabled grant for read-only consent", async () => {
+  const fixture = await carrier();
+  let revoked = false;
+  server.use(
+    tokenHandler(),
+    http.post("https://login.link.com/auth/revoke", () => {
+      revoked = true;
+      return new HttpResponse(null, { status: 200 });
+    }),
+  );
+  const consent = await accept(
+    client().connect({ headers: fixture.headers, body: { readOnly: true } }),
+    [200],
+  );
+  const state = new URL(consent.body.url).searchParams.get("state") ?? "";
+  await accept(
+    callbackClient().callback({
+      headers: sessionHeaders,
+      query: {
+        state: state.replace("read-only.", ""),
+        code: "wallet-code-fixture",
+        responseMode: "json",
+      },
+    }),
+    [400],
+  );
+  await accept(
+    callbackClient().callback({
+      headers: sessionHeaders,
+      query: {
+        state: new URL(consent.body.url).searchParams.get("state") ?? "",
+        code: "wallet-code-fixture",
+        responseMode: "json",
+      },
+    }),
+    [403],
+  );
+  expect(revoked).toBeTruthy();
+  expect(
+    (await accept(client().status({ headers: fixture.headers }), [200])).body
+      .connected,
+  ).toBeFalsy();
+});
+
+test("projects saved methods and user limits without exposing credential or address fields", async () => {
+  const fixture = await carrier();
+  server.use(tokenHandler({ scope: "payment_methods.agentic userinfo:read" }));
+  await connect(fixture);
+  const method = {
+    id: "pm_fixture",
+    type: "card",
+    name: "Visa",
+    is_default: true,
+    card_details: {
+      brand: "visa",
+      last4: "4242",
+      exp_month: 12,
+      exp_year: 2030,
+      number: "private-pan",
+      cvc: "private-cvc",
+    },
+    billing_address: { line1: "private-address" },
+    access_token: "private-token",
+    capabilities: {
+      agentic_payments: { eligible: true, ineligibility_reasons: [] },
+    },
+  };
+  const actionUrl =
+    "https://app.link.com/identity_verification?session=keep%2Fexact";
+  server.use(
+    http.get("https://api.link.com/payment-details", () => {
+      return HttpResponse.json({ payment_details: [method] });
+    }),
+    http.get("https://api.link.com/payment-details/pm_fixture", () => {
+      return HttpResponse.json(method);
+    }),
+    http.get("https://api.link.com/payment-details/pm_missing", () => {
+      return new HttpResponse(null, { status: 404 });
+    }),
+    http.get("https://api.link.com/userinfo", () => {
+      return HttpResponse.json({
+        id: "user_fixture",
+        name: "Wallet User",
+        email: "wallet@example.test",
+        address: { line1: "private-address" },
+        agent_wallet_spend_limits: {
+          per_transaction: { limit: 5000 },
+          daily: { limit: 10_000, used: 3500, remaining: 6500 },
+          thirty_day: { limit: null, used: 3500, remaining: null },
+        },
+        agent_wallet_step_up: {
+          status: "identity_verification",
+          action_url: actionUrl,
+        },
+      });
+    }),
+  );
+  const listed = await accept(
+    client().paymentMethods({ headers: fixture.headers }),
+    [200],
+  );
+  const retrieved = await accept(
+    client().paymentMethod({
+      headers: fixture.headers,
+      params: { id: "pm_fixture" },
+    }),
+    [200],
+  );
+  expect(listed.body.data).toStrictEqual([retrieved.body]);
+  expect(retrieved.body.card).toStrictEqual({
+    brand: "visa",
+    last4: "4242",
+    expMonth: 12,
+    expYear: 2030,
+  });
+  await accept(
+    client().paymentMethod({
+      headers: fixture.headers,
+      params: { id: "pm_missing" },
+    }),
+    [404],
+  );
+  const info = await accept(
+    client().userInfo({ headers: fixture.headers }),
+    [200],
+  );
+  expect(info.body.spendLimits?.daily).toStrictEqual({
+    limit: 10_000,
+    used: 3500,
+    remaining: 6500,
+  });
+  expect(info.body.verification?.actionUrl).toBe(actionUrl);
+  expect(JSON.stringify([listed.body, retrieved.body, info.body])).not.toMatch(
+    /private-pan|private-cvc|private-token|private-address/,
+  );
+});
+
+test("paginates owner-isolated recorded spend history and retains it after reauthorization", async () => {
+  const fixture = await carrier();
+  server.use(tokenHandler());
+  await connect(fixture);
+  const firstInput = purchase();
+  const provider = spendProvider(firstInput);
+  const first = await accept(
+    client().createSpend({ headers: fixture.headers, body: firstInput }),
+    [200],
+  );
+  provider.approve();
+  provider.payload({
+    payment_status_details: {
+      outcome: "success",
+      amount: 3000,
+      currency: "usd",
+      created: 1_791_936_000,
+      refund_details: {
+        amount: 500,
+        currency: "usd",
+        state: "succeeded",
+        created: 1_791_936_100,
+      },
+    },
+    payment_history: [
+      {
+        outcome: "failure",
+        amount: 3000,
+        currency: "usd",
+        code: "card_declined",
+        decline_code: "insufficient_funds",
+      },
+    ],
+    card: { number: "private-pan" },
+  });
+  const updated = await accept(
+    client().getSpend({
+      headers: fixture.headers,
+      params: { id: first.body.id },
+    }),
+    [200],
+  );
+  expect(updated.body.payment).toMatchObject({
+    amount: 3000,
+    outcome: "success",
+    refund: { amount: 500 },
+  });
+  expect(updated.body.paymentHistory?.[0]?.declineCode).toBe(
+    "insufficient_funds",
+  );
+  expect(updated.body.amount).toBe(3500);
+  const secondInput = { ...purchase(), test: false };
+  spendProvider(secondInput);
+  const second = await accept(
+    client().createSpend({ headers: fixture.headers, body: secondInput }),
+    [200],
+  );
+  const one = await accept(
+    client().listSpends({ headers: fixture.headers, query: { limit: 1 } }),
+    [200],
+  );
+  expect(one.body.hasMore).toBeTruthy();
+  const two = await accept(
+    client().listSpends({
+      headers: fixture.headers,
+      query: { limit: 1, startingAfter: one.body.nextCursor ?? "" },
+    }),
+    [200],
+  );
+  expect(two.body.hasMore).toBeFalsy();
+  expect(
+    new Set(
+      [...one.body.data, ...two.body.data].map((row) => {
+        return row.id;
+      }),
+    ),
+  ).toStrictEqual(new Set([first.body.id, second.body.id]));
+  expect(one.body.data[0]).toMatchObject({
+    statusSource: "recorded",
+    canRefresh: true,
+  });
+  expect(
+    (
+      await accept(
+        client().listSpends({
+          headers: fixture.headers,
+          query: { mode: "test", status: "approved" },
+        }),
+        [200],
+      )
+    ).body.data.map((row) => {
+      return row.id;
+    }),
+  ).toStrictEqual([first.body.id]);
+  const other = await carrier(true, fixture.actor);
+  await connect(other);
+  expect(
+    (
+      await accept(
+        client().listSpends({ headers: other.headers, query: {} }),
+        [200],
+      )
+    ).body.data,
+  ).toStrictEqual([]);
+  await accept(
+    client().listSpends({
+      headers: other.headers,
+      query: { startingAfter: first.body.id },
+    }),
+    [400],
+  );
+  server.use(
+    tokenHandler({
+      scope: "userinfo:read",
+      actions: ["read_link_transactions"],
+    }),
+  );
+  await connect(fixture, { readOnly: true });
+  const recorded = await accept(
+    client().listSpends({ headers: fixture.headers, query: {} }),
+    [200],
+  );
+  expect(recorded.body.data).toHaveLength(2);
+  expect(
+    recorded.body.data.every((row) => {
+      return !row.canRefresh;
+    }),
+  ).toBeTruthy();
+});
+
+test("withholds wallet data if consent is revoked while a read is in flight", async () => {
+  const fixture = await carrier();
+  server.use(tokenHandler({ scope: "userinfo:read" }));
+  await connect(fixture, { readOnly: true });
+  const started = createDeferredPromise<void>(context.signal);
+  const finish = createDeferredPromise<void>(context.signal);
+  onTestFinished(() => {
+    if (!finish.settled()) {
+      finish.resolve();
+    }
+  });
+  server.use(
+    http.get("https://api.link.com/userinfo", async () => {
+      started.resolve();
+      await finish.promise;
+      return HttpResponse.json({ name: "private-profile" });
+    }),
+    http.post("https://login.link.com/auth/revoke", () => {
+      return new HttpResponse(null, { status: 200 });
+    }),
+  );
+  const reading = client().userInfo({ headers: fixture.headers });
+  await started.promise;
+  await accept(
+    client().disconnect({ headers: fixture.headers, body: {} }),
+    [200],
+  );
+  finish.resolve();
+  const result = await accept(reading, [409]);
+  expect(result.body.error.code).toBe("WALLET_AUTHORIZATION_CHANGED");
+  expect(JSON.stringify(result.body)).not.toContain("private-profile");
+});
+
+test.each([
+  {
+    name: "retains financial reads",
+    scope: "userinfo:read financial_insights.transactions.read",
+    actions: ["read_link_transactions"],
+    status: 200 as const,
+  },
+  {
+    name: "removes ungranted financial actions",
+    scope: "userinfo:read",
+    actions: [],
+    status: 403 as const,
+  },
+  {
+    name: "refuses new payment authority",
+    scope: "userinfo:read payment_methods.agentic",
+    actions: ["read_link_transactions"],
+    status: 403 as const,
+  },
+])("refreshing a read-only grant $name", async ({ scope, actions, status }) => {
+  const fixture = await carrier();
+  server.use(
+    tokenHandler({
+      scope: "userinfo:read",
+      actions: ["read_link_transactions"],
+      expiresIn: 1,
+    }),
+  );
+  await connect(fixture, { readOnly: true });
+  let revoked = false;
+  let read = false;
+  server.use(
+    tokenHandler({ scope, actions }),
+    http.get("https://api.link.com/transactions", () => {
+      read = true;
+      return HttpResponse.json({ data: [], has_more: false });
+    }),
+    http.post("https://login.link.com/auth/revoke", () => {
+      revoked = true;
+      return new HttpResponse(null, { status: 200 });
+    }),
+  );
+  await accept(client().transactions({ headers: fixture.headers, query: {} }), [
+    status,
+  ]);
+  expect(read).toBe(status === 200);
+  expect(revoked).toBe(scope.includes("payment_methods.agentic"));
+  const state = await accept(
+    client().status({ headers: fixture.headers }),
+    [200],
+  );
+  expect(state.body.authorization?.capabilities.payments).toBeFalsy();
+  expect(state.body.authorization?.capabilities.transactions).toBe(
+    status === 200,
+  );
+});
+
+test("reading a recorded request never sends an approval request; retrying its original purchase can recover", async () => {
+  const fixture = await carrier();
+  server.use(tokenHandler());
+  await connect(fixture);
+  const input = purchase();
+  const provider = spendProvider(input);
+  provider.payload({ status: "created", approval_url: undefined });
+  const approvalPath =
+    "https://api.link.com/spend_requests/:id/request_approval";
+  server.use(
+    http.post(approvalPath, () => {
+      return HttpResponse.json(
+        { error: "temporarily_unavailable" },
+        { status: 503 },
+      );
+    }),
+  );
+  await accept(
+    client().createSpend({ headers: fixture.headers, body: input }),
+    [502],
+  );
+  const history = await accept(
+    client().listSpends({ headers: fixture.headers, query: {} }),
+    [200],
+  );
+  const requestId = history.body.data[0]?.id;
+  expect(requestId).toBeDefined();
+  let approvalRequests = 0;
+  const approvalUrl = "https://app.link.com/approve?request=fixture";
+  server.use(
+    http.post(approvalPath, () => {
+      approvalRequests += 1;
+      return HttpResponse.json({ id: provider.id, approval_link: approvalUrl });
+    }),
+  );
+  const read = await accept(
+    client().getSpend({
+      headers: fixture.headers,
+      params: { id: requestId ?? "" },
+    }),
+    [200],
+  );
+  expect(read.body.status).toBe("created");
+  expect(read.body.approvalUrl).toBeNull();
+  expect(approvalRequests).toBe(0);
+  const resumed = await accept(
+    client().createSpend({ headers: fixture.headers, body: input }),
+    [200],
+  );
+  expect(resumed.body.id).toBe(requestId);
+  expect(resumed.body.approvalUrl).toBe(approvalUrl);
+  expect(approvalRequests).toBe(1);
 });

@@ -1,4 +1,4 @@
-//! SDK IO at the actual production Cache registration and resource-domain boundary.
+//! SDK IO through the common assignment owner and real consumer authority.
 
 mod control_key;
 mod derp;
@@ -10,7 +10,8 @@ mod registration;
 pub(super) mod startup;
 
 use super::{Control, Failure, Key, Work};
-use crate::ssh::{FailureReason, cache::Cache};
+use crate::ssh::FailureReason;
+use crate::tailscale::tests::fixture::Cache;
 use fixture::{Blocking, Http, SocketClosure, bounded};
 use http_body_util::{BodyExt, Limited};
 use runner_types::ids::RunId;
@@ -273,9 +274,13 @@ async fn run_invalidation(reset_on_close: bool) {
     let stale = registration.lookup(connection).unwrap();
     let old = stale.native_node(native_key, work).unwrap();
     a.requested().await;
+    let retired = old.physical();
     cache.invalidate(run, None);
     assert_eq!(stale.check(), Err(FailureReason::ConfigurationChanged));
-    bounded(old.physical()).await.unwrap();
+    // A raw node is a consumer lease; invalidating SSH cannot cancel another
+    // consumer that still owns it. Release this retired consumer explicitly.
+    drop(old);
+    bounded(retired).await.unwrap();
     assert!(bounded(original).await.is_err());
     let fresh = registration.lookup(connection).unwrap();
     let b = Http::new(vec![4; 4096]).await.named("fresh snapshot");
@@ -288,7 +293,7 @@ async fn run_invalidation(reset_on_close: bool) {
     assert_eq!(fresh.check(), Ok(()));
     registration.close();
     bounded(registration.shutdown_native()).await.unwrap();
-    drop((old, node));
+    drop(node);
     // Physical retirement may close either socket with EOF or a TCP reset.
     let old_closure = a.finish_closed().await;
     let fresh_closure = b.finish_closed().await;
@@ -299,20 +304,77 @@ async fn run_invalidation(reset_on_close: bool) {
 }
 
 #[tokio::test]
+async fn broad_ssh_invalidation_preserves_an_independent_consumers_shared_node_io() {
+    let cache = Cache::new();
+    let run = RunId::new_v4();
+    let registration = cache.register(run);
+    let access = registration.lookup(uuid::Uuid::new_v4()).unwrap();
+    let configuration = super::Configuration::new(
+        uuid::Uuid::new_v4(),
+        1,
+        serde_json::from_value(serde_json::json!("synthetic-client")).unwrap(),
+        serde_json::from_value(serde_json::json!("synthetic-secret")).unwrap(),
+        vec!["tag:vnc".into()],
+    )
+    .unwrap();
+    let native_key = configuration.key();
+    let bytes = vec![0xa7; 65537];
+    let http = Http::new(bytes.clone()).await;
+    let (work, body) = http_work(http.address, None, Arc::new(Mutex::new(None)));
+    let ssh_node = access
+        .native_configured(configuration, |_, _| work)
+        .unwrap();
+    http.requested().await;
+    let (unused, _) = http_work(http.address, None, Arc::new(Mutex::new(None)));
+    let independent = registration
+        .native
+        .registry
+        .acquire(native_key, unused)
+        .unwrap();
+    independent.start();
+    cache.invalidate(run, None);
+    assert_eq!(access.check(), Err(FailureReason::ConfigurationChanged));
+    drop(ssh_node);
+    http.reply();
+    assert_eq!(bounded(body).await.unwrap(), bytes);
+    assert_eq!(bounded(independent.ready()).await, Ok(()));
+    drop(independent);
+    registration.close();
+    bounded(registration.shutdown_native()).await.unwrap();
+    http.finish().await;
+}
+
+#[tokio::test]
 async fn actual_guest_rpc_shutdown_reports_native_timeout_and_keeps_physical_ownership() {
-    actual_guest_rpc_shutdown(false).await;
+    actual_guest_rpc_shutdown(false, false, false).await;
 }
 
 #[tokio::test]
 async fn actual_guest_rpc_shutdown_retains_physical_ownership_when_sockets_reset() {
-    actual_guest_rpc_shutdown(true).await;
+    actual_guest_rpc_shutdown(true, false, false).await;
 }
 
-async fn actual_guest_rpc_shutdown(reset_on_close: bool) {
+#[tokio::test]
+async fn vnc_only_guest_rpc_reports_native_timeout_and_retains_physical_ownership() {
+    actual_guest_rpc_shutdown(false, true, false).await;
+}
+
+#[tokio::test]
+async fn vnc_only_guest_rpc_retains_cleanup_when_sockets_reset() {
+    actual_guest_rpc_shutdown(true, true, false).await;
+}
+
+#[tokio::test]
+async fn cancelled_vnc_only_shutdown_waiter_preserves_native_physical_cleanup() {
+    actual_guest_rpc_shutdown(false, true, true).await;
+}
+
+async fn actual_guest_rpc_shutdown(reset_on_close: bool, without_ssh: bool, cancel_waiter: bool) {
     use crate::{
         guest_rpc::{CleanupError, Runtime},
         ssh::SshRuntime,
         test_fixtures::http::{HttpClientConfig, http_client},
+        vnc::VncRuntime,
     };
     use runner_host::runner_process_identity::RunnerProcessIdentity;
     use tokio_util::sync::CancellationToken;
@@ -330,15 +392,19 @@ async fn actual_guest_rpc_shutdown(reset_on_close: bool) {
         vercel_bypass: None,
         client_session_id: "native-cleanup-qualification".into(),
     });
-    let runtime = Runtime {
-        ssh: SshRuntime::official(
-            http,
-            "vm0_official_test",
-            RunnerProcessIdentity::new(uuid::Uuid::new_v4(), 1).unwrap(),
+    let identity = RunnerProcessIdentity::new(uuid::Uuid::new_v4(), 1).unwrap();
+    let runtime = if without_ssh {
+        Runtime::new(
+            None,
+            VncRuntime::official(http, "vm0_official_test", identity).unwrap(),
+            None,
         )
-        .unwrap(),
-        vnc: None,
-        usage: None,
+    } else {
+        Runtime::new(
+            SshRuntime::official(http, "vm0_official_test", identity).unwrap(),
+            None,
+            None,
+        )
     };
     let dispatcher = runtime.start(
         Arc::new(PendingAcceptor),
@@ -346,8 +412,8 @@ async fn actual_guest_rpc_shutdown(reset_on_close: bool) {
         RunId::new_v4(),
         &CancellationToken::new(),
     );
-    let ssh = dispatcher.ssh().unwrap();
-    let registration = crate::ssh::tests::harness::native_registration(&ssh);
+    let native = dispatcher.native();
+    assert_eq!(dispatcher.ssh().is_none(), without_ssh);
     let http = Http::new(vec![1; 1024]).await;
     let mut gate = Blocking::new().await;
     let fd: Fd = Arc::new(Mutex::new(None));
@@ -357,16 +423,34 @@ async fn actual_guest_rpc_shutdown(reset_on_close: bool) {
         Arc::clone(&fd),
         reset_on_close,
     );
-    let node = registration
-        .lookup(uuid::Uuid::new_v4())
-        .unwrap()
-        .native_node(key(1), work)
-        .unwrap();
+    let node = if let Some(ssh) = dispatcher.ssh() {
+        crate::ssh::tests::harness::native_registration(&ssh)
+            .lookup(uuid::Uuid::new_v4())
+            .unwrap()
+            .native_node(key(1), work)
+            .unwrap()
+    } else {
+        // A proves that native physical ownership/cleanup needs no SSH consumer;
+        // E supplies VNC's admitted native configuration and transport.
+        let node = native.registry.acquire(key(1), work).unwrap();
+        node.start();
+        node
+    };
     gate.accepted().await;
     http.requested().await;
-    let started = std::time::Instant::now();
-    assert_eq!(dispatcher.shutdown().await, Err(CleanupError::Native));
-    assert!(started.elapsed() >= Duration::from_secs(5));
+    if cancel_waiter {
+        let mut shutdown = Box::pin(dispatcher.shutdown());
+        std::future::poll_fn(|cx| {
+            assert!(shutdown.as_mut().poll(cx).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+        drop(shutdown);
+    } else {
+        let started = std::time::Instant::now();
+        assert_eq!(dispatcher.shutdown().await, Err(CleanupError::Native));
+        assert!(started.elapsed() >= Duration::from_secs(5));
+    }
     let (number, inode) = fd.lock().unwrap().clone().unwrap();
     assert_eq!(
         std::fs::read_link(format!("/proc/self/fd/{number}")).unwrap(),
@@ -384,10 +468,12 @@ async fn actual_guest_rpc_shutdown(reset_on_close: bool) {
         std::fs::read_link(format!("/proc/self/fd/{number}")).ok(),
         Some(inode)
     );
-    assert_eq!(
-        registration.shutdown_native().await,
+    let expected = if cancel_waiter {
+        Ok(())
+    } else {
         Err(Failure::CleanupTimedOut)
-    );
+    };
+    assert_eq!(bounded(native.shutdown()).await, expected);
 }
 
 #[tokio::test]

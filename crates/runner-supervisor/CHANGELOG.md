@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.16.5](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.16.4...runner-supervisor-v0.16.5) (2026-10-15)
+
+
+### Refactoring
+
+* **runner-supervisor:** share proxy recovery event handling ([#40309](https://github.com/okou-ai/okou/issues/40309)) ([3cd182f](https://github.com/okou-ai/okou/commit/3cd182f6317f08f34c2aaa481670bf4597e8d7e8))
+
+## [0.16.4](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.16.3...runner-supervisor-v0.16.4) (2026-10-15)
+
+## [0.16.3](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.16.2...runner-supervisor-v0.16.3) (2026-10-15)
+
+
+### Refactoring
+
+* **runner:** consolidate home reuse observations ([#40207](https://github.com/okou-ai/okou/issues/40207)) ([2511826](https://github.com/okou-ai/okou/commit/25118260fc61ef6317a98dda0194b0fb9a11f5fa))
+
+## [0.16.2](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.16.1...runner-supervisor-v0.16.2) (2026-10-15)
+
+## [0.16.1](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.16.0...runner-supervisor-v0.16.1) (2026-10-15)
+
+
+### Refactoring
+
+* **runner-supervisor:** retain terminal heartbeat context ([#40199](https://github.com/okou-ai/okou/issues/40199)) ([14777d5](https://github.com/okou-ai/okou/commit/14777d5e9afee691183ca81cc6ea3dadee11e811))
+
+## [0.16.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.15.0...runner-supervisor-v0.16.0) (2026-10-15)
+
+
+### Features
+
+* **runner:** record cache routing and inventory outcomes ([#40171](https://github.com/okou-ai/okou/issues/40171)) ([8d94f8f](https://github.com/okou-ai/okou/commit/8d94f8f0b601173b3fe6cb5431f48cb916959226))
+
 ## [0.15.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.14.0...runner-supervisor-v0.15.0) (2026-10-15)
 
 

@@ -1,3 +1,4 @@
+import { credentialBackedSshHost } from "./helpers/ssh-credential";
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { tailscaleContract } from "@okouai/api-contracts/contracts/tailscale";
@@ -288,7 +289,9 @@ test("preserves trust through protected endpoint/carrier edits, resets only expl
       )
     ).body;
     expect(current.learnedHostKey).toStrictEqual(key);
-    expect(current.credentialId).toBe(direct.credentialId);
+    expect(credentialBackedSshHost(current).credentialId).toBe(
+      credentialBackedSshHost(direct).credentialId,
+    );
   }
   current = (
     await accept(
@@ -416,7 +419,7 @@ test("promotes Personal configuration and requires fresh admin impact review for
   const retained = await latest(h.id);
   expect(retained).toMatchObject({
     id: h.id,
-    credentialId: h.credentialId,
+    credentialId: credentialBackedSshHost(h).credentialId,
     learnedHostKey: key,
     host: h.host,
     port: h.port,
@@ -483,7 +486,7 @@ test("promotes Personal configuration and requires fresh admin impact review for
   ).body;
   expect(recovered).toMatchObject({
     learnedHostKey: key,
-    credentialId: h.credentialId,
+    credentialId: credentialBackedSshHost(h).credentialId,
     generation: retained.generation + 1,
     transport: { type: "tailscale", configId: replacement.id },
   });
@@ -573,7 +576,11 @@ test("refuses own-reference deletion and requires a current impact snapshot befo
     [409],
   );
   await accept(
-    hosts().delete({ headers, params: { connectionId: own.id } }),
+    hosts().delete({
+      headers,
+      params: { connectionId: own.id },
+      body: { expectedGeneration: own.generation },
+    }),
     [204],
   );
   const member = owner(admin.orgId);
@@ -638,7 +645,7 @@ test("refuses own-reference deletion and requires a current impact snapshot befo
     host: edited.host,
     port: 65_535,
     learnedHostKey: key,
-    credentialId: h.credentialId,
+    credentialId: credentialBackedSshHost(h).credentialId,
     generation: edited.generation + 1,
     transport: { type: "tailscale", needsRebind: true },
   });
@@ -676,7 +683,7 @@ test("refuses own-reference deletion and requires a current impact snapshot befo
   ).body;
   expect(recovered).toMatchObject({
     learnedHostKey: key,
-    credentialId: h.credentialId,
+    credentialId: credentialBackedSshHost(h).credentialId,
   });
   expect(recovered).not.toHaveProperty("transport");
 });
@@ -1066,16 +1073,16 @@ test("treats tag permutations as metadata-only while real tag additions and remo
     const offset = generation - shared.generation;
     await expect(latest(first.host.id)).resolves.toMatchObject({
       generation: first.host.generation + offset,
-      credentialId: first.host.credentialId,
-      credentialName: first.host.credentialName,
+      credentialId: credentialBackedSshHost(first.host).credentialId,
+      credentialName: credentialBackedSshHost(first.host).credentialName,
       username: first.host.username,
       learnedHostKey: key,
     });
     authenticate(member);
     await expect(latest(second.host.id)).resolves.toMatchObject({
       generation: second.host.generation + offset,
-      credentialId: second.host.credentialId,
-      credentialName: second.host.credentialName,
+      credentialId: credentialBackedSshHost(second.host).credentialId,
+      credentialName: credentialBackedSshHost(second.host).credentialName,
       username: second.host.username,
       learnedHostKey: key,
     });

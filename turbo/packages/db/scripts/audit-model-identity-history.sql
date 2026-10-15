@@ -35,13 +35,12 @@ GROUP BY selected_model, status ORDER BY selected_model, status;
 SELECT count(*) AS queued_jobs,
   count(*) FILTER (WHERE run.selected_model = 'okou-1.0') AS legacy_jobs
 FROM runner_job_queue AS job JOIN agent_runs AS run ON run.id = job.run_id;
-SELECT run.selected_model, conversation.cli_agent_type, count(*) AS retained_conversations,
-  count(*) FILTER (WHERE conversation.cli_agent_session_history_hash IS NOT NULL) AS blob_references,
-  count(*) FILTER (WHERE conversation.cli_agent_session_history IS NOT NULL) AS inline_histories,
-  count(*) FILTER (WHERE EXISTS (SELECT 1 FROM agent_sessions AS session WHERE session.conversation_id = conversation.id)) AS resumable_session_references
-FROM conversations AS conversation JOIN agent_runs AS run ON run.id = conversation.run_id
+SELECT run.selected_model, run.framework, count(*) AS retained_native_runs,
+  count(*) FILTER (WHERE run.legacy_conversation_history_hash IS NOT NULL) AS blob_references
+FROM agent_runs AS run
 WHERE run.selected_model IN ('auto', 'okou-1.0')
-GROUP BY run.selected_model, conversation.cli_agent_type;
+  AND run.framework IS NOT NULL
+GROUP BY run.selected_model, run.framework;
 SELECT count(*) AS thread_snapshot_heads,
   count(*) FILTER (WHERE object_key IS NULL) AS absent_objects
 FROM chat_thread_snapshots;

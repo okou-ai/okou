@@ -10,6 +10,7 @@ import { btree_gist } from "@electric-sql/pglite/contrib/btree_gist";
 import { drizzle, type PgliteDatabase } from "drizzle-orm/pglite";
 import { sql } from "drizzle-orm";
 import { Parser } from "tar";
+import { z } from "zod";
 import { API_DATABASE_SEED_FILES } from "./database-seeds";
 import { singleton } from "../lib/singleton";
 import { settleIncludingAbort } from "../signals/utils";
@@ -61,6 +62,22 @@ export async function createPgliteSnapshot(): Promise<Blob> {
     extensions: { pgcrypto, btree_gin, btree_gist },
     parsers: driverParsers,
   });
+  const replayUuidBatch = async (statement: string, name: string) => {
+    let cursor: string | null = null;
+    while (true) {
+      const result = await engine.query(statement, [cursor]);
+      const [{ next_cursor: nextCursor }] = z
+        .tuple([z.object({ next_cursor: z.guid().nullable() })])
+        .parse(result.rows);
+      if (nextCursor === null) {
+        break;
+      }
+      if (cursor !== null && nextCursor <= cursor) {
+        throw new Error(`Batch cursor did not advance in ${name}`);
+      }
+      cursor = nextCursor;
+    }
+  };
   return await releaseAfter(
     (async () => {
       const directory = new URL(
@@ -116,6 +133,14 @@ export async function createPgliteSnapshot(): Promise<Blob> {
             if (statement.trim()) {
               await engine.exec(statement);
             }
+          }
+        } else if (sql.includes("-- vm0:batch-by-uuid")) {
+          for (const statement of sql.split("--> statement-breakpoint")) {
+            if (!statement.includes("-- vm0:batch-by-uuid")) {
+              await engine.exec(statement);
+              continue;
+            }
+            await replayUuidBatch(statement, name);
           }
         } else {
           await engine.exec(sql);

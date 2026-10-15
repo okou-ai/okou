@@ -1,122 +1,99 @@
 import { command, computed, state, type Computed } from "ccstate";
 import {
-  CHAT_THREAD_USAGE_RUN_LIMIT,
   chatThreadUsageContract,
   type ChatEventUsagePayload,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { logger } from "../log.ts";
-import { detach, Reason, settle } from "../utils.ts";
-import { registerChatEventChangeHandler$ } from "./chat-event-change-registry.ts";
+import type { ChatEventGroup } from "./chat-event.ts";
 import type { ChatEvent } from "./chat-event-types.ts";
 
-const L = logger("ChatRunUsage");
+export const emptyChatRunUsage$ = computed(
+  (): Promise<ChatEventUsagePayload | undefined> => {
+    return Promise.resolve(undefined);
+  },
+);
 
-function usageReadObservation(events: readonly ChatEvent[]) {
-  const runIds = [
-    ...new Set(
-      events.flatMap((event) => {
-        return event.runId === undefined ? [] : [event.runId];
-      }),
-    ),
-  ].sort();
-  const hints = events
-    .filter((event) => {
-      return (
-        event.eventType === "usage.recorded" ||
-        isChatRunTerminalEventType(event.eventType)
-      );
-    })
-    .map((event) => {
-      return event.id;
-    });
-  return { runIds, key: JSON.stringify([runIds, hints]) };
+export interface ChatRunUsageSignals {
+  readonly runId: string;
+  readonly usage$: Computed<Promise<ChatEventUsagePayload | undefined>>;
 }
 
-/** Each mounted thread owns its ledger refresh and keeps hints out of amounts. */
+function createRunUsageSignals(
+  threadId: string,
+  runId: string,
+  events$: Computed<ChatEvent[]>,
+): ChatRunUsageSignals {
+  const lastUsageEventId$ = computed((get): string | undefined => {
+    const events = get(events$);
+    for (let index = events.length - 1; index >= 0; index--) {
+      const event = events[index]!;
+      if (event.runId === runId && event.eventType === "usage.recorded") {
+        return event.id;
+      }
+    }
+    return undefined;
+  });
+  const usage$ = computed(async (get) => {
+    if (get(lastUsageEventId$) === undefined) {
+      return undefined;
+    }
+    const client = get(apiClient$)(chatThreadUsageContract);
+    const result = await accept(
+      client.read({
+        params: { id: threadId },
+        body: { runIds: [runId] },
+      }),
+      [200],
+    );
+    return result.body.runs.find((run) => {
+      return run.runId === runId;
+    })?.usage;
+  });
+  return { runId, usage$ };
+}
+
+/** Only visible runs own usage graphs; responses stay in their async computeds. */
 export function createChatRunUsageSignals(
   threadId: string,
   events$: Computed<ChatEvent[]>,
 ) {
-  const values$ = state<ReadonlyMap<string, ChatEventUsagePayload>>(new Map());
-  const requestedKey$ = state<string | null>(null);
-  const requestNumber$ = state(0);
-  const usageByRunId$ = computed((get) => {
-    return get(values$);
+  // Preserve signal identity across transcript updates, not fetched values.
+  // Replacing the render window releases runs that are no longer represented.
+  const internalVisibleRuns$ = state<readonly ChatRunUsageSignals[]>([]);
+  const visibleRunUsageSignals$ = computed((get) => {
+    return get(internalVisibleRuns$);
   });
-  const read$ = command(
-    async (
-      { get, set },
-      force: boolean,
-      signal: AbortSignal,
-    ): Promise<void> => {
-      const observed = usageReadObservation(get(events$));
-      if (!force && get(requestedKey$) === observed.key) {
-        return;
-      }
-      set(requestedKey$, observed.key);
-      const requestNumber = get(requestNumber$) + 1;
-      set(requestNumber$, requestNumber);
-      const client = get(apiClient$)(chatThreadUsageContract);
-      const next = new Map<string, ChatEventUsagePayload>();
-      for (
-        let offset = 0;
-        offset < observed.runIds.length;
-        offset += CHAT_THREAD_USAGE_RUN_LIMIT
-      ) {
-        const attempted = await settle(
-          accept(
-            client.read({
-              params: { id: threadId },
-              body: {
-                runIds: observed.runIds.slice(
-                  offset,
-                  offset + CHAT_THREAD_USAGE_RUN_LIMIT,
-                ),
-              },
-              fetchOptions: { signal },
-            }),
-            [200],
-          ),
-          signal,
-        );
-        if (!attempted.ok) {
-          L.warn("Settled usage is temporarily unavailable", attempted.error);
-          return;
-        }
-        for (const run of attempted.value.body.runs) {
-          next.set(run.runId, run.usage);
-        }
-      }
-      signal.throwIfAborted();
-      if (get(requestNumber$) === requestNumber) {
-        set(values$, next);
-      }
-    },
-  );
-  const refresh$ = command(
-    ({ set }, force: boolean, signal: AbortSignal): void => {
-      signal.throwIfAborted();
-      detach(
-        set(read$, force, signal),
-        Reason.Daemon,
-        "Chat usage ledger refresh",
+  const syncVisibleRuns$ = command(
+    ({ get, set }, groups: readonly ChatEventGroup[]): void => {
+      const runIds = new Set(
+        groups
+          .filter((group) => {
+            return group.role === "assistant";
+          })
+          .flatMap((group) => {
+            return group.events.flatMap((event) => {
+              return event.runId === undefined ? [] : [event.runId];
+            });
+          }),
       );
+      const previous = get(internalVisibleRuns$);
+      const next = [...runIds].map((runId) => {
+        return (
+          previous.find((run) => {
+            return run.runId === runId;
+          }) ?? createRunUsageSignals(threadId, runId, events$)
+        );
+      });
+      if (
+        next.length !== previous.length ||
+        next.some((run, index) => {
+          return run !== previous[index];
+        })
+      ) {
+        set(internalVisibleRuns$, next);
+      }
     },
   );
-  const subscribe$ = command(({ set }, signal: AbortSignal): void => {
-    set(
-      registerChatEventChangeHandler$,
-      events$,
-      {
-        callback: () => {
-          set(refresh$, false, signal);
-        },
-      },
-      signal,
-    );
-  });
-  return { usageByRunId$, refresh$, subscribe$ };
+  return { visibleRunUsageSignals$, syncVisibleRuns$ };
 }

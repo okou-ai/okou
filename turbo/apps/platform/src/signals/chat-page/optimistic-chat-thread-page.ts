@@ -62,6 +62,7 @@ import { prepareUserMessageFromDraft$ } from "./resolve-draft-attachments.ts";
 export type NewChatThreadPane = "main" | "sidebar";
 
 const SIDEBAR_PARAM = "sidebar";
+const PWA_COMPOSE_PARAM = "compose";
 
 const L = logger("NewChatThread");
 
@@ -278,6 +279,9 @@ const routeMainChatThread$ = command(
     if (next.get(SIDEBAR_PARAM) === args.threadId) {
       next.delete(SIDEBAR_PARAM);
     }
+    // The mobile composer request belongs to the agent chat URL, not to the
+    // thread it starts.
+    next.delete(PWA_COMPOSE_PARAM);
     set(detachedNavigateTo$, "/chats/:threadId", {
       pathParams: { threadId: args.threadId },
       searchParams: next,

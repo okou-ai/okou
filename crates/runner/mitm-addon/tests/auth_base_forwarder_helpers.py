@@ -51,9 +51,9 @@ def http_response(
 class FakeResponseFile(io.BytesIO):
     """Readable response handle exposed through ``FakeSocket.response_file``.
 
-    Tests use this object to assert how the real forwarder read and closed the
-    upstream response. ``read_sizes`` and ``close_count`` are stable assertion
-    state.
+    Tests use this object to inject upstream read failures and observe cleanup.
+    Reads are not recorded, so tiny-chunk memory checks do not measure a
+    test-only history list.
     """
 
     def __init__(
@@ -66,16 +66,21 @@ class FakeResponseFile(io.BytesIO):
         super().__init__(payload)
         self._read_side_effect = read_side_effect
         self._on_action = on_action
-        self.read_sizes: list[int] = []
         self.close_count = 0
 
     def read(self, size: int = -1) -> bytes:
         if self._on_action is not None:
             self._on_action()
-        self.read_sizes.append(size)
         if self._read_side_effect is not None:
             raise self._read_side_effect
         return super().read(size)
+
+    def readinto(self, buffer) -> int:
+        if self._on_action is not None:
+            self._on_action()
+        if self._read_side_effect is not None:
+            raise self._read_side_effect
+        return super().readinto(buffer)
 
     def close(self) -> None:
         self.close_count += 1

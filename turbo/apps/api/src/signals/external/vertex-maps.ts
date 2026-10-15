@@ -111,10 +111,21 @@ type VertexMapsFailureReason =
   | "invalid_citation"
   | "invalid_usage";
 
+type VertexMapsCitationFailure =
+  | "missing_supports"
+  | "part_out_of_range"
+  | "nonvisible_part"
+  | "invalid_utf8_span"
+  | "answer_span_mismatch"
+  | "support_text_mismatch"
+  | "source_index_out_of_range"
+  | "missing_sources";
+
 export class VertexMapsError extends Error {
   constructor(
     readonly status: number,
     readonly reason: VertexMapsFailureReason,
+    readonly citationFailure?: VertexMapsCitationFailure,
   ) {
     super("Google Maps grounding request failed");
     this.name = "VertexMapsError";
@@ -295,34 +306,53 @@ function parseMapsCitations(
   sourceCount: number,
 ): MapsSearchCitation[] {
   if (sourceCount > 0 && !supports?.length) {
-    throw new VertexMapsError(502, "invalid_citation");
+    throw new VertexMapsError(502, "invalid_citation", "missing_supports");
   }
   return (supports ?? []).map((support) => {
     const partIndex = support.segment.partIndex ?? 0;
     const part = answer.parts[partIndex];
     const partStartByte = answer.visiblePartStartBytes[partIndex];
+    if (!part) {
+      throw new VertexMapsError(502, "invalid_citation", "part_out_of_range");
+    }
+    if (partStartByte === undefined) {
+      throw new VertexMapsError(502, "invalid_citation", "nonvisible_part");
+    }
     const localStartByte = support.segment.startIndex ?? 0;
-    const text =
-      part && partStartByte !== undefined
-        ? utf8Segment(part.text, localStartByte, support.segment.endIndex)
-        : undefined;
-    const startByte =
-      partStartByte === undefined ? undefined : partStartByte + localStartByte;
-    const endByte =
-      partStartByte === undefined
-        ? undefined
-        : partStartByte + support.segment.endIndex;
+    const text = utf8Segment(
+      part.text,
+      localStartByte,
+      support.segment.endIndex,
+    );
+    if (!text) {
+      throw new VertexMapsError(502, "invalid_citation", "invalid_utf8_span");
+    }
+    const startByte = partStartByte + localStartByte;
+    const endByte = partStartByte + support.segment.endIndex;
+    if (utf8Segment(answer.text, startByte, endByte) !== text) {
+      throw new VertexMapsError(
+        502,
+        "invalid_citation",
+        "answer_span_mismatch",
+      );
+    }
+    if (support.segment.text !== undefined && support.segment.text !== text) {
+      throw new VertexMapsError(
+        502,
+        "invalid_citation",
+        "support_text_mismatch",
+      );
+    }
     if (
-      !text ||
-      startByte === undefined ||
-      endByte === undefined ||
-      utf8Segment(answer.text, startByte, endByte) !== text ||
-      (support.segment.text !== undefined && support.segment.text !== text) ||
       support.groundingChunkIndices.some((index) => {
         return index >= sourceCount;
       })
     ) {
-      throw new VertexMapsError(502, "invalid_citation");
+      throw new VertexMapsError(
+        502,
+        "invalid_citation",
+        "source_index_out_of_range",
+      );
     }
     return {
       startByte,
@@ -412,7 +442,7 @@ function parseVertexMapsResponse(body: string): VertexMapsResult {
     sources.length > 0,
   );
   if (usage.mapsQueries > 0 && sources.length === 0) {
-    throw new VertexMapsError(502, "invalid_citation");
+    throw new VertexMapsError(502, "invalid_citation", "missing_sources");
   }
   return {
     answer: answer.text,
@@ -503,6 +533,9 @@ export async function generateVertexMapsSearch(
           location: LOCATION,
           status: error.status,
           reason: error.reason,
+          ...(error.citationFailure
+            ? { citationFailure: error.citationFailure }
+            : {}),
         });
       }
     },

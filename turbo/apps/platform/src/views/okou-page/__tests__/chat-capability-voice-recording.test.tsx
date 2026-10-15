@@ -1,5 +1,5 @@
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
-import { cleanup, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import { openDB, type DBSchema } from "idb";
 import { HttpResponse } from "msw";
 import { expect, test, vi } from "vitest";
@@ -39,7 +39,8 @@ function releasePageDom() {
 }
 
 function installVoiceBoundaries() {
-  installRunChat();
+  installRunChat({ selectedModel: null });
+  context.mocks.data.availableRunModels([]);
   context.mocks.api(voiceIoQuotaContract.get, ({ respond }) => {
     return respond(200, { allowed: true, count: 0, limit: 60 });
   });
@@ -73,6 +74,14 @@ async function uploadedAudio(request: Request): Promise<ArrayBuffer> {
   return await file.arrayBuffer();
 }
 
+function owningComposer(control: HTMLElement): HTMLElement {
+  const composer = control.closest("[data-chat-composer]");
+  if (!(composer instanceof HTMLElement)) {
+    throw new Error("Expected a voice control inside the chat composer");
+  }
+  return composer;
+}
+
 test("Recover committed PCM after a reload during recording", async () => {
   const resetFirstPage$ = resetSignal();
   const firstPageSignal = context.store.set(resetFirstPage$, context.signal);
@@ -103,7 +112,9 @@ test("Recover committed PCM after a reload during recording", async () => {
     context: { ...context, signal: firstPageSignal },
     path: RUN_PATH,
   });
-  click(await findEnabledButton("Voice input"));
+  const voiceInput = await findEnabledButton("Voice input");
+  const firstComposer = owningComposer(voiceInput);
+  click(voiceInput);
   const emit = await capture.promise;
   emit(new Float32Array(4096).fill(0.25));
   await waitFor(async () => {
@@ -112,7 +123,7 @@ test("Recover committed PCM after a reload during recording", async () => {
       chunkCount: 1,
     });
   });
-  await findEnabledButton("Stop recording");
+  await findEnabledButton("Stop recording", firstComposer);
 
   context.store.set(resetFirstPage$);
   releasePageDom();
@@ -123,12 +134,13 @@ test("Recover committed PCM after a reload during recording", async () => {
   });
 
   const retryButton = await findEnabledButton("Retry");
+  const restoredComposer = owningComposer(retryButton);
   expect(queryButton("Stop recording")).toBeNull();
   click(retryButton);
-  await findEnabledButton("Voice input");
-  expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
-    "Recovered audio.",
-  );
+  await findEnabledButton("Voice input", restoredComposer);
+  expect(
+    within(restoredComposer).getByRole("textbox", { name: "Message" }),
+  ).toHaveTextContent("Recovered audio.");
   expect(uploads).toHaveLength(1);
   const samples = decodeVoiceDraftPcmWav(uploads[0]!);
   expect(samples).toHaveLength(4096);

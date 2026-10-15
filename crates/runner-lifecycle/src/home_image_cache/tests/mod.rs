@@ -6,6 +6,7 @@ mod lifecycle;
 mod metadata;
 mod observations;
 mod promotion;
+mod publication_admission;
 mod routine_gc;
 mod state;
 mod storage;

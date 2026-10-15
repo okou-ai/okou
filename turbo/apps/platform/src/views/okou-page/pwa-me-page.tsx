@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import {
   Button,
   buttonVariants,
+  cn,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuTrigger,
@@ -35,6 +36,7 @@ import { assistantName$ } from "../../signals/branding.ts";
 import { isOrgAdmin$ } from "../../signals/org.ts";
 import { handleAccountAction$ } from "../../signals/okou-page/nav.ts";
 import { pwaMeSubscriptionUsageRows$ } from "../../signals/okou-page/pwa-me-page.ts";
+import { slackOrgScopeMismatch$ } from "../../signals/okou-page/slack.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import { UserAvatar } from "../components/avatar.tsx";
 import { Link } from "../router/link.tsx";
@@ -49,6 +51,7 @@ import {
 } from "./sidebar-account.tsx";
 import { useSubscriptionLinkingEntry } from "./subscription-linking.tsx";
 import { AccountMenuSubscriptionsPanel } from "./sidebar-subscriptions.tsx";
+import { SidebarUpgradeCard } from "./sidebar-upgrade.tsx";
 
 type AccountProfile = ReturnType<typeof useAccountProfile>;
 type AccountActions = ReturnType<typeof useAccountActions>;
@@ -84,25 +87,28 @@ function MeLink({
   children,
   pathname,
   target,
+  trailing,
 }: {
   readonly icon: LucideIcon;
   readonly children: ReactNode;
   readonly pathname: "/agents" | "/workflows" | "/works" | "/export";
   readonly target?: "_blank";
+  readonly trailing?: ReactNode;
 }) {
   return (
     <Link
       pathname={pathname}
       target={target}
-      className={buttonVariants({
-        variant: "quiet",
-        size: "lg",
-        iconSize: "md",
-        className: "w-full justify-start gap-3 px-3 text-foreground",
-      })}
+      // `cn` merges the overrides the way Button does; cva alone appends them,
+      // which left link rows at the size's padding and colour.
+      className={cn(
+        buttonVariants({ variant: "quiet", size: "lg", iconSize: "md" }),
+        "w-full justify-start gap-3 px-3 text-foreground",
+      )}
     >
       <Icon aria-hidden />
       <span className="min-w-0 flex-1 truncate text-left">{children}</span>
+      {trailing}
       <ChevronRight aria-hidden className="text-muted-foreground" />
     </Link>
   );
@@ -173,6 +179,7 @@ function MeNavigation({
   const { t } = useTranslation();
   const assistantName = useGet(assistantName$);
   const subscriptionEntry = useSubscriptionLinkingEntry();
+  const slackScopeMismatch = useLastResolved(slackOrgScopeMismatch$) ?? false;
   const defaultDisplayName =
     useLastResolved(defaultAgentName$) ?? assistantName;
 
@@ -198,7 +205,18 @@ function MeNavigation({
           return $.appShell.sidebar.navigation.workflows;
         })}
       </MeLink>
-      <MeLink icon={LayoutGrid} pathname={ROUTES.works}>
+      <MeLink
+        icon={LayoutGrid}
+        pathname={ROUTES.works}
+        trailing={
+          slackScopeMismatch && (
+            <span
+              data-testid="slack-scope-mismatch-indicator"
+              className="size-2 shrink-0 rounded-full bg-red-500"
+            />
+          )
+        }
+      >
         {t(
           ($) => {
             return $.appShell.sidebar.navigation.works;
@@ -331,6 +349,7 @@ export function PwaMePage() {
             </div>
           </section>
           <MeUsage profile={profile} actions={actions} reset={reset} />
+          <SidebarUpgradeCard placement="page" />
           <MeNavigation profile={profile} actions={actions} />
           <MeAccounts profile={profile} actions={actions} />
         </div>

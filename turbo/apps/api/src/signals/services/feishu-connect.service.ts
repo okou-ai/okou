@@ -12,16 +12,13 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { agents } from "@okouai/db/schema/agent";
 
 import { logger } from "../../lib/log";
-import { isUniqueViolation } from "../../lib/pg-errors";
-import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import {
   fetchFeishuBotInfo,
-  fetchFeishuTenantAccessToken,
   getFeishuTenantAccessToken,
 } from "../external/feishu-client";
-import { settle, tapError } from "../utils";
-import { encryptPersistentSecretValue } from "./crypto.utils";
+import { tapError } from "../utils";
 import {
   deleteFeishuInstallationAndCustomConnector$,
   disconnectFeishuCustomConnectorOAuthConnection,
@@ -32,142 +29,10 @@ import {
   publishCustomConnectorUserInvalidationAfterCommit,
   type CapturedConnectorClientInvalidationAbort,
 } from "./connector-client-invalidation.service";
-import {
-  feishuCallbackUrl,
-  feishuOAuthAppCallbackUrl,
-  loadFeishuInstallationConfig,
-  type FeishuInstallationConfig,
-} from "./feishu-config";
+import { feishuCallbackUrl, feishuOAuthAppCallbackUrl } from "./feishu-config";
 import { buildFeishuOAuthConnectUrl } from "./feishu-oauth-state";
 
 const L = logger("FeishuConnect");
-
-async function loadFeishuInstallations(
-  db: ReadonlyDb,
-  orgId: string,
-  platform: FeishuPlatform,
-) {
-  return await db
-    .select({
-      id: feishuOrgInstallations.id,
-      appId: feishuOrgInstallations.appId,
-      platform: feishuOrgInstallations.platform,
-      botName: feishuOrgInstallations.botName,
-      botAvatarUrl: feishuOrgInstallations.botAvatarUrl,
-      tenantKey: feishuOrgInstallations.feishuTenantKey,
-      tenantName: feishuOrgInstallations.feishuTenantName,
-      callbackVerifiedAt: feishuOrgInstallations.callbackVerifiedAt,
-      setupCompletedAt: feishuOrgInstallations.setupCompletedAt,
-      messageReceivedAt: feishuOrgInstallations.messageReceivedAt,
-      defaultAgentId: agents.id,
-      defaultAgentName: agents.name,
-      defaultAgentDisplayName: agents.displayName,
-    })
-    .from(feishuOrgInstallations)
-    .leftJoin(orgMetadata, eq(orgMetadata.orgId, feishuOrgInstallations.orgId))
-    .leftJoin(agents, eq(agents.id, orgMetadata.defaultAgentId))
-    .where(
-      and(
-        eq(feishuOrgInstallations.orgId, orgId),
-        eq(feishuOrgInstallations.platform, platform),
-      ),
-    )
-    .orderBy(asc(feishuOrgInstallations.createdAt));
-}
-
-type FeishuInstallationRow = Awaited<
-  ReturnType<typeof loadFeishuInstallations>
->[number];
-
-async function loadConnectedFeishuUsers(
-  db: ReadonlyDb,
-  installations: readonly FeishuInstallationRow[],
-  orgId: string,
-  userId: string,
-): Promise<Map<string, string | null>> {
-  if (installations.length === 0) {
-    return new Map();
-  }
-  const rows = await db
-    .select({
-      installationId: feishuOrgConnections.installationId,
-      userName: feishuOrgConnections.feishuUserName,
-      connectorId: feishuOrgConnections.connectorId,
-      feishuOpenId: feishuOrgConnections.feishuOpenId,
-    })
-    .from(feishuOrgConnections)
-    .where(
-      and(
-        inArray(
-          feishuOrgConnections.installationId,
-          installations.map((installation) => {
-            return installation.id;
-          }),
-        ),
-        eq(feishuOrgConnections.userId, userId),
-      ),
-    );
-  const connectedRows = await Promise.all(
-    rows.map(async (connection) => {
-      const connected = await hasFeishuCustomConnectorOAuthConnection(db, {
-        orgId,
-        userId,
-        installationId: connection.installationId,
-        memberConnectorId: connection.connectorId,
-        feishuOpenId: connection.feishuOpenId,
-      });
-      return connected ? connection : null;
-    }),
-  );
-  return new Map(
-    connectedRows.flatMap((connection) => {
-      return connection
-        ? [[connection.installationId, connection.userName] as const]
-        : [];
-    }),
-  );
-}
-
-function toFeishuInstallationStatus(
-  installation: FeishuInstallationRow,
-  connectedUserNameByInstallationId: ReadonlyMap<string, string | null>,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-  },
-): FeishuInstallationStatus {
-  return {
-    id: installation.id,
-    platform: installation.platform,
-    isConnected: connectedUserNameByInstallationId.has(installation.id),
-    connectedUserName:
-      connectedUserNameByInstallationId.get(installation.id) ?? null,
-    appId: installation.appId,
-    botName: installation.botName,
-    botAvatarUrl: installation.botAvatarUrl,
-    callbackUrl: feishuCallbackUrl(installation.id),
-    oauthRedirectUrl: feishuOAuthAppCallbackUrl(installation.platform),
-    oauthScopes: [...FEISHU_OAUTH_SCOPES],
-    connectUrl: installation.setupCompletedAt
-      ? buildFeishuOAuthConnectUrl({
-          installationId: installation.id,
-          platform: installation.platform,
-          orgId: args.orgId,
-          userId: args.userId,
-        })
-      : null,
-    callbackVerified: Boolean(installation.callbackVerifiedAt),
-    setupCompleted: Boolean(installation.setupCompletedAt),
-    messageReceived: Boolean(installation.messageReceivedAt),
-    tenantKey: installation.tenantKey,
-    tenantName: installation.tenantName,
-    defaultAgentId: installation.defaultAgentId,
-    defaultAgentName:
-      installation.defaultAgentDisplayName ??
-      installation.defaultAgentName ??
-      null,
-  };
-}
 
 function feishuStatusResponse(
   installations: readonly FeishuInstallationStatus[],
@@ -238,362 +103,118 @@ export const feishuConnectStatus = (args: {
 }) => {
   return computed(async (get) => {
     const db = get(db$);
-    const rows = await loadFeishuInstallations(
-      db,
-      args.orgId,
-      args.platform ?? "feishu",
-    );
-    const connectedUsers = await loadConnectedFeishuUsers(
-      db,
-      rows,
-      args.orgId,
-      args.userId,
-    );
-    const installations = rows.map((installation) => {
-      return toFeishuInstallationStatus(installation, connectedUsers, {
-        orgId: args.orgId,
-        userId: args.userId,
-      });
-    });
-    return feishuStatusResponse(installations, args);
-  });
-};
-
-interface ConfigureFeishuArgs {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly platform?: FeishuPlatform;
-  readonly appId: string;
-  readonly appSecret: string;
-  readonly verificationToken: string;
-  readonly encryptKey: string;
-  readonly installationId?: string;
-  readonly createNew?: boolean;
-}
-
-export type ConfigureFeishuResult =
-  | {
-      readonly kind: "ok";
-      readonly installationId: string;
-      readonly connectorConfigurationChanged: boolean;
-    }
-  | { readonly kind: "installation_not_found" }
-  | { readonly kind: "app_identity_mismatch" }
-  | { readonly kind: "app_in_use" }
-  | { readonly kind: "installation_exists" };
-
-type PreparedFeishuInstallation =
-  | { readonly kind: "unchanged" }
-  | {
-      readonly kind: "changed";
-      readonly connectorConfigurationChanged: boolean;
-      readonly callbackConfigurationChanged: boolean;
-      readonly encryptedAppSecret: string;
-      readonly encryptedVerificationToken: string;
-      readonly encryptedEncryptKey: string;
-      readonly encryptedTenantAccessToken: string;
-      readonly tokenExpiresAt: Date;
-    };
-
-function feishuInstallationCredentialsMatch(
-  input: ConfigureFeishuArgs,
-  existing: FeishuInstallationConfig,
-): boolean {
-  return (
-    input.appId === existing.appId &&
-    input.appSecret === existing.appSecret &&
-    input.verificationToken === existing.verificationToken &&
-    input.encryptKey === existing.encryptKey
-  );
-}
-
-async function prepareFeishuInstallation(
-  input: ConfigureFeishuArgs,
-  existing: FeishuInstallationConfig | null,
-  signal: AbortSignal,
-): Promise<PreparedFeishuInstallation> {
-  if (existing && feishuInstallationCredentialsMatch(input, existing)) {
-    return { kind: "unchanged" };
-  }
-  const tenantToken = await fetchFeishuTenantAccessToken(
-    {
-      appId: input.appId,
-      platform: input.platform ?? "feishu",
-      appSecret: input.appSecret,
-    },
-    signal,
-  );
-  const context = {
-    orgId: input.orgId,
-    userId: input.userId,
-  };
-  const [
-    encryptedAppSecret,
-    encryptedVerificationToken,
-    encryptedEncryptKey,
-    encryptedTenantAccessToken,
-  ] = await Promise.all([
-    existing && input.appSecret === existing.appSecret
-      ? Promise.resolve(existing.encryptedAppSecret)
-      : encryptPersistentSecretValue(input.appSecret, context),
-    encryptPersistentSecretValue(input.verificationToken, context),
-    encryptPersistentSecretValue(input.encryptKey, context),
-    encryptPersistentSecretValue(tenantToken.token, context),
-  ]);
-  signal.throwIfAborted();
-  return {
-    kind: "changed",
-    connectorConfigurationChanged:
-      !existing || input.appSecret !== existing.appSecret,
-    callbackConfigurationChanged:
-      !existing ||
-      input.verificationToken !== existing.verificationToken ||
-      input.encryptKey !== existing.encryptKey,
-    encryptedAppSecret,
-    encryptedVerificationToken,
-    encryptedEncryptKey,
-    encryptedTenantAccessToken,
-    tokenExpiresAt: new Date(
-      nowDate().getTime() + tenantToken.expiresInSeconds * 1000,
-    ),
-  };
-}
-
-async function persistFeishuInstallation(
-  args: {
-    readonly db: Pick<Db, "insert" | "update" | "select">;
-    readonly input: ConfigureFeishuArgs;
-    readonly prepared: PreparedFeishuInstallation;
-    readonly targetInstallationId: string | undefined;
-  },
-  signal: AbortSignal,
-): Promise<ConfigureFeishuResult> {
-  if (args.targetInstallationId) {
-    const [updated] = await args.db
-      .update(feishuOrgInstallations)
-      .set({
-        ...(args.prepared.kind === "changed"
-          ? {
-              encryptedAppSecret: args.prepared.encryptedAppSecret,
-              encryptedVerificationToken:
-                args.prepared.encryptedVerificationToken,
-              encryptedEncryptKey: args.prepared.encryptedEncryptKey,
-              encryptedTenantAccessToken:
-                args.prepared.encryptedTenantAccessToken,
-              tenantAccessTokenExpiresAt: args.prepared.tokenExpiresAt,
-              ...(args.prepared.callbackConfigurationChanged
-                ? { callbackVerifiedAt: null }
-                : {}),
-            }
-          : {}),
-        updatedAt: nowDate(),
-      })
-      .where(
-        and(
-          eq(feishuOrgInstallations.id, args.targetInstallationId),
-          eq(feishuOrgInstallations.orgId, args.input.orgId),
-          eq(feishuOrgInstallations.platform, args.input.platform ?? "feishu"),
-          eq(feishuOrgInstallations.appId, args.input.appId),
-        ),
-      )
-      .returning({ id: feishuOrgInstallations.id });
-    signal.throwIfAborted();
-    if (!updated) {
-      return { kind: "installation_not_found" };
-    }
-    return {
-      kind: "ok",
-      installationId: updated.id,
-      connectorConfigurationChanged:
-        args.prepared.kind === "changed" &&
-        args.prepared.connectorConfigurationChanged,
-    };
-  }
-  if (args.prepared.kind === "unchanged") {
-    throw new Error("A new Feishu installation requires credentials");
-  }
-  const inserted = await settle(
-    args.db
-      .insert(feishuOrgInstallations)
-      .values({
-        orgId: args.input.orgId,
-        ownerUserId: args.input.userId,
-        appId: args.input.appId,
-        platform: args.input.platform ?? "feishu",
-        encryptedAppSecret: args.prepared.encryptedAppSecret,
-        encryptedVerificationToken: args.prepared.encryptedVerificationToken,
-        encryptedEncryptKey: args.prepared.encryptedEncryptKey,
-        encryptedTenantAccessToken: args.prepared.encryptedTenantAccessToken,
-        tenantAccessTokenExpiresAt: args.prepared.tokenExpiresAt,
-      })
-      .returning({ id: feishuOrgInstallations.id }),
-    signal,
-  );
-  if (inserted.ok) {
-    const [created] = inserted.value;
-    if (!created) {
-      throw new Error("Expected a Feishu installation to be created");
-    }
-    return {
-      kind: "ok",
-      installationId: created.id,
-      connectorConfigurationChanged: true,
-    };
-  }
-  if (
-    !isUniqueViolation(inserted.error, "idx_feishu_org_installations_app") &&
-    !isUniqueViolation(
-      inserted.error,
-      "idx_feishu_org_installations_org_platform",
-    )
-  ) {
-    throw inserted.error;
-  }
-  const target = await resolveFeishuInstallationTarget(
-    args.db,
-    args.input,
-    signal,
-  );
-  if (target.kind !== "target") {
-    return target;
-  }
-  if (!target.installationId) {
-    return { kind: "installation_not_found" };
-  }
-  // Only an owned replay can reach this update. A new-bot request or an
-  // App ID owned elsewhere is rejected by the current target resolution.
-  return await persistFeishuInstallation(
-    { ...args, targetInstallationId: target.installationId },
-    signal,
-  );
-}
-
-type FeishuInstallationTargetResult =
-  | {
-      readonly kind: "target";
-      readonly installationId: string | undefined;
-    }
-  | { readonly kind: "installation_not_found" }
-  | { readonly kind: "app_identity_mismatch" }
-  | { readonly kind: "app_in_use" }
-  | { readonly kind: "installation_exists" };
-
-async function resolveFeishuInstallationTarget(
-  db: Pick<Db, "select">,
-  args: ConfigureFeishuArgs,
-  signal: AbortSignal,
-): Promise<FeishuInstallationTargetResult> {
-  const [appOwner] = await db
-    .select({
-      id: feishuOrgInstallations.id,
-      orgId: feishuOrgInstallations.orgId,
-      platform: feishuOrgInstallations.platform,
-    })
-    .from(feishuOrgInstallations)
-    .where(eq(feishuOrgInstallations.appId, args.appId))
-    .limit(1);
-  signal.throwIfAborted();
-  if (
-    appOwner &&
-    (appOwner.orgId !== args.orgId ||
-      appOwner.platform !== (args.platform ?? "feishu"))
-  ) {
-    return { kind: "app_in_use" };
-  }
-  if (args.installationId && appOwner && appOwner.id !== args.installationId) {
-    return { kind: "app_in_use" };
-  }
-  let targetInstallationId =
-    args.installationId ?? (args.createNew ? undefined : appOwner?.id);
-  if (!targetInstallationId) {
-    const [existingInstallation] = await db
-      .select({ id: feishuOrgInstallations.id })
-      .from(feishuOrgInstallations)
-      .where(
-        and(
-          eq(feishuOrgInstallations.orgId, args.orgId),
-          eq(feishuOrgInstallations.platform, args.platform ?? "feishu"),
-        ),
-      )
-      .orderBy(asc(feishuOrgInstallations.createdAt))
-      .limit(1);
-    signal.throwIfAborted();
-    if (existingInstallation && args.createNew) {
-      return { kind: "installation_exists" };
-    }
-    targetInstallationId = existingInstallation?.id;
-  }
-  if (targetInstallationId) {
-    const [installation] = await db
+    const installations = await db
       .select({
         id: feishuOrgInstallations.id,
         appId: feishuOrgInstallations.appId,
+        platform: feishuOrgInstallations.platform,
+        botName: feishuOrgInstallations.botName,
+        botAvatarUrl: feishuOrgInstallations.botAvatarUrl,
+        tenantKey: feishuOrgInstallations.feishuTenantKey,
+        tenantName: feishuOrgInstallations.feishuTenantName,
+        callbackVerifiedAt: feishuOrgInstallations.callbackVerifiedAt,
+        setupCompletedAt: feishuOrgInstallations.setupCompletedAt,
+        messageReceivedAt: feishuOrgInstallations.messageReceivedAt,
+        defaultAgentId: agents.id,
+        defaultAgentName: agents.name,
+        defaultAgentDisplayName: agents.displayName,
       })
       .from(feishuOrgInstallations)
+      .leftJoin(
+        orgMetadata,
+        eq(orgMetadata.orgId, feishuOrgInstallations.orgId),
+      )
+      .leftJoin(agents, eq(agents.id, orgMetadata.defaultAgentId))
       .where(
         and(
-          eq(feishuOrgInstallations.id, targetInstallationId),
           eq(feishuOrgInstallations.orgId, args.orgId),
           eq(feishuOrgInstallations.platform, args.platform ?? "feishu"),
         ),
       )
-      .limit(1);
-    signal.throwIfAborted();
-    if (!installation) {
-      return { kind: "installation_not_found" };
-    }
-    if (installation.appId !== args.appId) {
-      return { kind: "app_identity_mismatch" };
-    }
-  }
-  return { kind: "target", installationId: targetInstallationId };
-}
-
-export const configureFeishuInstallation$ = command(
-  async (
-    { set },
-    args: ConfigureFeishuArgs,
-    signal: AbortSignal,
-  ): Promise<ConfigureFeishuResult> => {
-    const db = set(writeDb$);
-    const preflight = await resolveFeishuInstallationTarget(db, args, signal);
-    if (preflight.kind !== "target") {
-      return preflight;
-    }
-    const existing = preflight.installationId
-      ? await loadFeishuInstallationConfig(db, preflight.installationId)
-      : null;
-    signal.throwIfAborted();
-    if (existing && existing.appId !== args.appId) {
-      return { kind: "app_identity_mismatch" };
-    }
-    const prepared = await prepareFeishuInstallation(args, existing, signal);
-    const result = await persistFeishuInstallation(
-      {
-        db,
-        input: args,
-        prepared,
-        targetInstallationId: preflight.installationId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (result.kind === "ok") {
-      await set(
-        ensureFeishuCustomConnector$,
-        {
-          orgId: args.orgId,
-          userId: args.userId,
-          installationId: result.installationId,
-          configurationChanged: result.connectorConfigurationChanged,
-        },
-        signal,
+      .orderBy(asc(feishuOrgInstallations.createdAt));
+    const orgId = args.orgId;
+    const userId = args.userId;
+    let connectedUserNameByInstallationId: Map<string, string | null>;
+    if (installations.length === 0) {
+      connectedUserNameByInstallationId = new Map();
+    } else {
+      const rows = await db
+        .select({
+          installationId: feishuOrgConnections.installationId,
+          userName: feishuOrgConnections.feishuUserName,
+          connectorId: feishuOrgConnections.connectorId,
+          feishuOpenId: feishuOrgConnections.feishuOpenId,
+        })
+        .from(feishuOrgConnections)
+        .where(
+          and(
+            inArray(
+              feishuOrgConnections.installationId,
+              installations.map((installation) => {
+                return installation.id;
+              }),
+            ),
+            eq(feishuOrgConnections.userId, userId),
+          ),
+        );
+      const connectedRows = await Promise.all(
+        rows.map(async (connection) => {
+          const connected = await hasFeishuCustomConnectorOAuthConnection(db, {
+            orgId,
+            userId,
+            installationId: connection.installationId,
+            memberConnectorId: connection.connectorId,
+            feishuOpenId: connection.feishuOpenId,
+          });
+          return connected ? connection : null;
+        }),
       );
-      signal.throwIfAborted();
+      connectedUserNameByInstallationId = new Map(
+        connectedRows.flatMap((connection) => {
+          return connection
+            ? [[connection.installationId, connection.userName] as const]
+            : [];
+        }),
+      );
     }
-    return result;
-  },
-);
+    const statuses = installations.map(
+      (installation): FeishuInstallationStatus => {
+        return {
+          id: installation.id,
+          platform: installation.platform,
+          isConnected: connectedUserNameByInstallationId.has(installation.id),
+          connectedUserName:
+            connectedUserNameByInstallationId.get(installation.id) ?? null,
+          appId: installation.appId,
+          botName: installation.botName,
+          botAvatarUrl: installation.botAvatarUrl,
+          callbackUrl: feishuCallbackUrl(installation.id),
+          oauthRedirectUrl: feishuOAuthAppCallbackUrl(installation.platform),
+          oauthScopes: [...FEISHU_OAUTH_SCOPES],
+          connectUrl: installation.setupCompletedAt
+            ? buildFeishuOAuthConnectUrl({
+                installationId: installation.id,
+                platform: installation.platform,
+                orgId: args.orgId,
+                userId: args.userId,
+              })
+            : null,
+          callbackVerified: Boolean(installation.callbackVerifiedAt),
+          setupCompleted: Boolean(installation.setupCompletedAt),
+          messageReceived: Boolean(installation.messageReceivedAt),
+          tenantKey: installation.tenantKey,
+          tenantName: installation.tenantName,
+          defaultAgentId: installation.defaultAgentId,
+          defaultAgentName:
+            installation.defaultAgentDisplayName ??
+            installation.defaultAgentName ??
+            null,
+        };
+      },
+    );
+    return feishuStatusResponse(statuses, args);
+  });
+};
 
 export const removeFeishuInstallation$ = command(
   async (

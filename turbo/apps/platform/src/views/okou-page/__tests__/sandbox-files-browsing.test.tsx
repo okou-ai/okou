@@ -1,0 +1,168 @@
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { expect, test } from "vitest";
+import { click } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  entry,
+  filesButton,
+  listing,
+  openFiles,
+  setupFilesPage,
+} from "./sandbox-files-test-helpers.ts";
+
+const context = testContext();
+
+test("Files connects on demand, preserves browsing through fullscreen and releases on close", async () => {
+  const fixture = await setupFilesPage(context, {
+    handler: (request) => {
+      if (request.params.cursor) {
+        return listing(
+          [
+            entry(".hidden"),
+            entry("second.txt"),
+            entry("another", "directory"),
+            entry("aaa.txt"),
+          ],
+          null,
+        );
+      }
+      if (
+        Array.isArray(request.params.path) &&
+        request.params.path.length > 2
+      ) {
+        return listing([entry("inside.txt")], null, "child");
+      }
+      return listing(
+        [
+          entry(".hidden"),
+          entry("workspace", "directory"),
+          entry("<img>"),
+          entry("shortcut", "symlink"),
+          entry("socket", "other"),
+        ],
+        "home-cursor",
+      );
+    },
+  });
+  expect(fixture.bootstraps).toHaveLength(0);
+  const panel = await openFiles();
+  await expect(
+    within(panel).findByText(".hidden"),
+  ).resolves.toBeInTheDocument();
+  expect(within(panel).getByText("<img>")).toBeInTheDocument();
+  expect(panel.querySelector("img")).toBeNull();
+  expect(within(panel).getByText("Link")).toBeInTheDocument();
+  expect(within(panel).getByText("Other")).toBeInTheDocument();
+  expect(panel.querySelector("li")?.textContent).toBe("workspace");
+  click(filesButton("Load more", panel));
+  await expect(
+    within(panel).findByText("second.txt"),
+  ).resolves.toBeInTheDocument();
+  expect(within(panel).getAllByText(".hidden")).toHaveLength(1);
+  const labels = [...panel.querySelectorAll("li")].map((row) => {
+    return row.textContent;
+  });
+  expect(labels.slice(0, 2)).toStrictEqual(["another", "workspace"]);
+  expect(labels.indexOf("aaa.txt")).toBeLessThan(labels.indexOf("second.txt"));
+  const folder = filesButton("workspace", panel);
+  folder.focus();
+  await userEvent.keyboard("{Enter}");
+  await expect(
+    within(panel).findByText("inside.txt"),
+  ).resolves.toBeInTheDocument();
+  expect(folder).toHaveAttribute("aria-expanded", "true");
+  expect(fixture.requests.at(-1)?.params).toStrictEqual({
+    path: [
+      entry("home").nameToken,
+      entry("user").nameToken,
+      entry("workspace").nameToken,
+    ],
+  });
+  click(folder);
+  await waitFor(() => {
+    expect(within(panel).queryByText("inside.txt")).toBeNull();
+  });
+  click(filesButton("Refresh", panel));
+  await waitFor(() => {
+    expect(filesButton("Refresh", panel)).toBeEnabled();
+    expect(filesButton("Refresh", panel)).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+  expect(fixture.sockets).toHaveLength(1);
+  const refreshedFolder = filesButton("workspace", panel);
+  click(refreshedFolder);
+  await expect(
+    within(panel).findByText("inside.txt"),
+  ).resolves.toBeInTheDocument();
+  const fullscreen = filesButton("Enter fullscreen", panel);
+  fullscreen.focus();
+  await userEvent.keyboard("{Enter}");
+  expect(filesButton("Exit fullscreen", panel)).toHaveFocus();
+  expect(within(panel).getByText("inside.txt")).toBeInTheDocument();
+  expect(refreshedFolder).toHaveAttribute("aria-expanded", "true");
+  expect(fixture.sockets).toHaveLength(1);
+  await userEvent.keyboard("{Enter}");
+  expect(filesButton("Enter fullscreen", panel)).toHaveFocus();
+  expect(within(panel).getByText("inside.txt")).toBeInTheDocument();
+  expect(fixture.sockets).toHaveLength(1);
+  await expect(
+    screen.findByRole("separator", { name: "Resize sidebar" }),
+  ).resolves.toBeInTheDocument();
+  click(filesButton("Close files", panel));
+  await waitFor(() => {
+    expect(screen.queryByRole("region", { name: "Files" })).toBeNull();
+  });
+  expect(fixture.sockets[0]?.readyState).toBe(WebSocket.CLOSED);
+});
+
+test("The mobile menu opens the same readonly panel", async () => {
+  const fixture = await setupFilesPage(context, {
+    mobile: true,
+    handler: () => {
+      return listing([]);
+    },
+  });
+  const panel = await openFiles(true);
+  await expect(
+    within(panel).findByText("This folder is empty."),
+  ).resolves.toBeInTheDocument();
+  expect(
+    within(panel).getByText(
+      "Read-only files from the current run. Closing this panel releases its connection.",
+    ),
+  ).toBeInTheDocument();
+  expect(fixture.sockets).toHaveLength(1);
+  click(filesButton("Close files", panel));
+  await waitFor(() => {
+    expect(screen.queryByRole("region", { name: "Files" })).toBeNull();
+  });
+});
+
+test("A disabled Files switch hides entries and starts no Files work", async () => {
+  const fixture = await setupFilesPage(context, { enabled: false });
+  expect(screen.getByTestId("chat-thread-header-title")).toHaveTextContent(
+    "Files test thread",
+  );
+  expect(screen.queryByLabelText("Open files")).toBeNull();
+  expect(fixture.bootstraps).toHaveLength(0);
+  expect(fixture.sockets).toHaveLength(0);
+});
+
+test.each([false, true])(
+  "An inactive thread shows its pending context (%s) without bootstrap",
+  async (queued) => {
+    const fixture = await setupFilesPage(context, { active: false, queued });
+    const panel = await openFiles();
+    await expect(
+      within(panel).findByText(
+        queued
+          ? "Files will be available when the queued run starts."
+          : "Files are available while a run is active.",
+      ),
+    ).resolves.toBeInTheDocument();
+    expect(fixture.bootstraps).toHaveLength(0);
+  },
+);

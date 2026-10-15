@@ -4,11 +4,13 @@ import {
   type RunnerSshPinResponse,
 } from "@okouai/api-contracts/contracts/runner-ssh";
 
+import type { SshConnectionMode } from "@okouai/api-contracts/contracts/ssh-connections";
+
 interface Authority {
   readonly generation: number;
   readonly algorithm: string | null;
   readonly fingerprint: string | null;
-  readonly transport: string;
+  readonly connectionMode: SshConnectionMode;
   readonly needsRebind: boolean;
   readonly accessId: string | null;
   readonly tailscaleId: string | null;
@@ -25,13 +27,14 @@ export function availableRunnerMutationAuthority(
     return null;
   }
   if (
-    current.transport === "tailscale" &&
+    (current.connectionMode === "tailscale" ||
+      current.connectionMode === "tailscale_ssh") &&
     (current.tailscaleId === null || current.tailscaleConfigId === null)
   ) {
     throw new Error("SSH Tailscale configuration is missing");
   }
   if (
-    current.transport === "cloudflare_access" &&
+    current.connectionMode === "cloudflare_access" &&
     (current.accessId === null || current.accessConfigId === null)
   ) {
     throw new Error("SSH Cloudflare Access is missing");

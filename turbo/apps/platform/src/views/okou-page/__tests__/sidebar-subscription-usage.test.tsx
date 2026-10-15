@@ -101,21 +101,25 @@ test("Review personal subscription usage in the account menu", async () => {
   expect(
     within(panel).getByRole("heading", { name: "Your Claude plan" }),
   ).toBeInTheDocument();
-  // Each plan shows only the window that limits it: both weeks are tighter here.
+  // Each plan shows both windows, 5h and Week.
+  expect(within(panel).getAllByText("5h")).toHaveLength(2);
   expect(within(panel).getAllByText("Week")).toHaveLength(2);
-  expect(within(panel).queryByText("5h")).not.toBeInTheDocument();
+  expect(within(panel).getByText("82%")).toBeInTheDocument();
   expect(within(panel).getByText("55%")).toBeInTheDocument();
+  expect(within(panel).getByText("88%")).toBeInTheDocument();
   expect(within(panel).getByText("76%")).toBeInTheDocument();
-  expect(within(panel).queryByText("82%")).not.toBeInTheDocument();
-  expect(within(panel).queryByText("88%")).not.toBeInTheDocument();
   const resetCredits = within(panel).getByLabelText("2 resets left");
   expect(within(resetCredits).getByText("2 resets left")).toBeInTheDocument();
   expect(within(panel).queryByText("Reset")).not.toBeInTheDocument();
-  expect(within(panel).queryByText(/^Resets in /)).not.toBeInTheDocument();
+  expect(within(panel).queryByText(/Resets in /)).not.toBeInTheDocument();
   expect(
     within(panel).queryByText(/codex\.user@example\.com/),
   ).not.toBeInTheDocument();
 
+  const codexFiveHour = within(panel).getByRole("meter", {
+    name: "Your ChatGPT plan 5h remaining",
+  });
+  expect(codexFiveHour).toHaveAttribute("aria-valuenow", "82");
   const codexWeek = within(panel).getByRole("meter", {
     name: "Your ChatGPT plan Week remaining",
   });
@@ -143,7 +147,11 @@ test("Review personal subscription usage in the account menu", async () => {
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   expect(
-    resetCredits.compareDocumentPosition(codexWeek) &
+    resetCredits.compareDocumentPosition(codexFiveHour) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  expect(
+    codexFiveHour.compareDocumentPosition(codexWeek) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   expect(
@@ -197,11 +205,12 @@ test("Show the reset time of a plan that is running low", async () => {
     }),
   ).toHaveAttribute("aria-valuenow", "12");
   expect(within(codex).getByText("12%")).toBeInTheDocument();
-  expect(within(codex).getByText("Resets in 4h 12m")).toBeInTheDocument();
+  expect(within(codex).getByText("47%")).toBeInTheDocument();
+  expect(within(codex).getByText("5h · Resets in 4h 12m")).toBeInTheDocument();
   const claude = within(panel).getByRole("region", {
     name: "Your Claude plan usage",
   });
-  expect(within(claude).queryByText(/^Resets in /)).not.toBeInTheDocument();
+  expect(within(claude).queryByText(/Resets in /)).not.toBeInTheDocument();
 });
 
 test("Show an exhausted week with its own reset time", async () => {
@@ -245,13 +254,16 @@ test("Show an exhausted week with its own reset time", async () => {
     name: "Your ChatGPT plan Week remaining",
   });
   expect(week).toHaveAttribute("aria-valuenow", "0");
+  // An exhausted week also stops the 5h window, and the reset line names the week.
   expect(
-    within(panel).queryByRole("meter", {
+    within(panel).getByRole("meter", {
       name: "Your ChatGPT plan 5h remaining",
     }),
-  ).not.toBeInTheDocument();
-  expect(within(panel).getAllByText("0%")).toHaveLength(1);
-  expect(within(panel).getByText("Resets in 5d 23h")).toBeInTheDocument();
+  ).toHaveAttribute("aria-valuenow", "0");
+  expect(within(panel).getAllByText("0%")).toHaveLength(2);
+  expect(
+    within(panel).getByText("Week · Resets in 5d 23h"),
+  ).toBeInTheDocument();
   await userEvent.setup().hover(week);
   await waitFor(() => {
     expectVisibleText(

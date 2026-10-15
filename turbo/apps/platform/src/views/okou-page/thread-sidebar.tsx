@@ -29,6 +29,7 @@ import { MailDraftPanel } from "./mail-draft-panel.tsx";
 import type { MailDraftSignals } from "../../signals/chat-page/mail-draft.ts";
 import { ArtifactSidebar } from "./artifact-sidebar.tsx";
 import type { ImageArtifactNavigationItem } from "./artifact-image-navigation.ts";
+import { SandboxFilesSidebarBody } from "./sandbox-files-sidebar.tsx";
 
 // ---------------------------------------------------------------------------
 // Thread-owned utility sidebar content.
@@ -476,5 +477,47 @@ export function ThreadSidebarSlot({
     case "browser": {
       return <ThreadBrowserSessionPanel thread={thread} />;
     }
+    case "files": {
+      return <ThreadFilesPanel thread={thread} />;
+    }
   }
+}
+
+function ThreadFilesPanel({ thread }: { readonly thread: ChatPanelSignals }) {
+  const { t } = useTranslation();
+  const enabled = useGet(featureSwitch$)[FeatureSwitchKey.SandboxFilesSidebar];
+  const mount = useSet(thread.sidebar.files.mount$);
+  const close = useSet(thread.sidebar.close$);
+  const fullscreen = useGet(thread.sidebar.fullscreen$);
+  const toggleFullscreen = useSet(thread.sidebar.toggleFullscreen$);
+  if (!enabled) {
+    return null;
+  }
+  return (
+    <FullscreenPanel
+      fullscreen={fullscreen}
+      className={cn(
+        "min-w-0",
+        fullscreen && "h-viewport max-h-viewport min-h-viewport",
+      )}
+    >
+      <section
+        ref={mount}
+        className="flex h-full w-full min-h-0 min-w-0 flex-col"
+        aria-label={t(($) => {
+          return $.chat.files.title;
+        })}
+      >
+        <ThreadSidebarHeader
+          title={t(($) => {
+            return $.chat.files.title;
+          })}
+          onClose={close}
+          fullscreen={fullscreen}
+          onToggleFullscreen={toggleFullscreen}
+        />
+        <SandboxFilesSidebarBody signals={thread.sidebar.files} />
+      </section>
+    </FullscreenPanel>
+  );
 }

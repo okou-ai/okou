@@ -16,6 +16,8 @@ import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { createRouteMocks } from "./helpers/route-test";
 import { createClaimedSshRuntimeApi } from "./helpers/claimed-ssh-runtime";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, joinAll } from "../../utils";
 
@@ -148,6 +150,322 @@ beforeEach(() => {
 
 describe("Tailscale configuration and saved-host authority", () => {
   afterEach(ordinary.cleanup);
+  it("creates a credential-free Tailscale SSH host, enforces transitions and retains network identity", async () => {
+    const first = owner();
+    const draft = {
+      id: randomUUID(),
+      displayName: "Gated identity",
+      host: "peer",
+      username: "ubuntu",
+      transport: { type: "tailscale_ssh" as const, configId: randomUUID() },
+    };
+    await accept(hosts().create({ headers, body: draft }), [403]);
+    await updateFeatureSwitchesForUser(context, first, {
+      [FeatureSwitchKey.TailscaleAccess]: true,
+    });
+    const c = await config();
+    const created = (
+      await accept(
+        hosts().create({
+          headers,
+          body: {
+            id: randomUUID(),
+            displayName: "Identity host",
+            host: "peer",
+            username: "ubuntu",
+            transport: { type: "tailscale_ssh", configId: c.id },
+          },
+        }),
+        [201],
+      )
+    ).body;
+    expect(created).toMatchObject({
+      username: "ubuntu",
+      port: 22,
+      transport: { type: "tailscale_ssh", configId: c.id },
+    });
+    expect(created).not.toHaveProperty("credentialId");
+    expect(created).not.toHaveProperty("credentialName");
+    expect((await resources()).logins).toStrictEqual([]);
+    const params = { connectionId: created.id };
+    for (const changes of [
+      { port: 2222 },
+      { credential: { create: login } },
+      { transport: { type: "direct" as const } },
+    ]) {
+      await accept(
+        hosts().update({
+          headers,
+          params,
+          body: { expectedGeneration: created.generation, ...changes },
+        }),
+        [400],
+      );
+    }
+    const renamed = (
+      await accept(
+        hosts().update({
+          headers,
+          params,
+          body: { expectedGeneration: created.generation, username: "deploy" },
+        }),
+        [200],
+      )
+    ).body;
+    expect(renamed).toMatchObject({
+      username: "deploy",
+      transport: { type: "tailscale_ssh", configId: c.id },
+    });
+    const converted = (
+      await accept(
+        hosts().update({
+          headers,
+          params,
+          body: {
+            expectedGeneration: renamed.generation,
+            transport: { type: "tailscale", configId: c.id },
+            port: 2022,
+            credential: { create: login },
+          },
+        }),
+        [200],
+      )
+    ).body;
+    expect(converted).toHaveProperty("credentialId");
+    const identity = (
+      await accept(
+        hosts().update({
+          headers,
+          params,
+          body: {
+            expectedGeneration: converted.generation,
+            transport: { type: "tailscale_ssh", configId: c.id },
+            port: 22,
+            username: "ubuntu",
+          },
+        }),
+        [200],
+      )
+    ).body;
+    expect(identity).not.toHaveProperty("credentialId");
+    expect((await resources()).logins).toHaveLength(1);
+    const other = owner({ orgId: first.orgId });
+    await updateFeatureSwitchesForUser(context, other, {
+      [FeatureSwitchKey.TailscaleAccess]: true,
+    });
+    await accept(
+      hosts().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "Forbidden",
+          host: "peer",
+          username: "ubuntu",
+          transport: { type: "tailscale_ssh", configId: c.id },
+        },
+      }),
+      [404],
+    );
+    expect((await resources()).hosts).toStrictEqual([]);
+  });
+  it("resolves only authorized Tailscale SSH identity and preserves pin/config-generation fences", async () => {
+    const o = owner();
+    await updateFeatureSwitchesForUser(context, o, {
+      [FeatureSwitchKey.TailscaleAccess]: true,
+    });
+    const c = await config();
+    const h = (
+      await accept(
+        hosts().create({
+          headers,
+          body: {
+            id: randomUUID(),
+            displayName: "Identity",
+            host: "peer",
+            username: "test-user",
+            transport: { type: "tailscale_ssh", configId: c.id },
+          },
+        }),
+        [201],
+      )
+    ).body;
+    const r = await ordinary.runtime(o);
+    const params = { runId: r.runId };
+    const body = { connectionId: h.id, runnerIdentity: r.runnerIdentity };
+    expect(
+      (
+        await accept(
+          runner().resolve({ headers: runnerHeaders, params, body }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual({ outcome: "unavailable" });
+    await accept(
+      remote().updateHostDefault({
+        headers,
+        params: { protocol: "ssh", connectionId: h.id },
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    const resolved = (
+      await accept(
+        runner().resolve({ headers: runnerHeaders, params, body }),
+        [200],
+      )
+    ).body;
+    expect(resolved).toMatchObject({
+      outcome: "resolved_tailscale_ssh",
+      username: "test-user",
+      port: 22,
+      tailscale: { ...oauth, configId: c.id },
+    });
+    expect(resolved).not.toHaveProperty("authentication");
+    const pin = {
+      ...body,
+      expectedGeneration: h.generation,
+      observedHostKey: key,
+    };
+    expect(
+      (
+        await accept(
+          runner().pin({ headers: runnerHeaders, params, body: pin }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual({ outcome: "pinned", generation: h.generation + 1 });
+    await accept(
+      configs().update({
+        headers,
+        params: { configId: c.id },
+        body: { expectedRevision: 1, tags: ["tag:next"] },
+      }),
+      [200],
+    );
+    expect(
+      (
+        await accept(
+          runner().resolve({ headers: runnerHeaders, params, body }),
+          [200],
+        )
+      ).body,
+    ).toMatchObject({
+      outcome: "resolved_tailscale_ssh",
+      generation: h.generation + 2,
+      learnedHostKey: key,
+      tailscale: { generation: 2 },
+    });
+    const reset = (
+      await accept(
+        hosts().resetHostKey({
+          headers,
+          params: { connectionId: h.id },
+          body: { expectedGeneration: h.generation + 2 },
+        }),
+        [200],
+      )
+    ).body;
+    expect(reset.learnedHostKey).toBeNull();
+    expect(reset).not.toHaveProperty("credentialId");
+    expect((await resources()).logins).toStrictEqual([]);
+  });
+  it("creates an inline identity network without a login and preserves the mode through adoption and rebind", async () => {
+    const initial = owner();
+    await updateFeatureSwitchesForUser(context, initial, {
+      [FeatureSwitchKey.TailscaleAccess]: true,
+    });
+    const h = (
+      await accept(
+        hosts().create({
+          headers,
+          body: {
+            id: randomUUID(),
+            displayName: "Inline identity",
+            host: "peer",
+            username: "ubuntu",
+            transport: {
+              type: "tailscale_ssh",
+              create: {
+                name: "Shared identity network",
+                credentials: oauth,
+                tags: ["tag:okou"],
+              },
+            },
+          },
+        }),
+        [201],
+      )
+    ).body;
+    const inventory = await resources();
+    expect(inventory.logins).toStrictEqual([]);
+    expect(inventory.configs).toHaveLength(1);
+    const c = inventory.configs[0];
+    expect(c).toBeDefined();
+    if (!c) {
+      throw new Error("Created network is missing");
+    }
+    authenticate(initial, "org:admin");
+    await accept(
+      configs().convertToOrganization({
+        headers,
+        params: { configId: c.id },
+        body: { expectedRevision: c.revision },
+      }),
+      [200],
+    );
+    owner({ orgId: initial.orgId }, "org:admin");
+    const impact = (
+      await accept(
+        configs().impactPreview({
+          headers,
+          params: { configId: c.id },
+          query: { operation: "convert" },
+        }),
+        [200],
+      )
+    ).body;
+    await accept(
+      configs().convertToPersonal({
+        headers,
+        params: { configId: c.id },
+        body: {
+          expectedRevision: impact.expectedRevision,
+          impactSnapshot: impact.impactSnapshot,
+        },
+      }),
+      [200],
+    );
+    authenticate(initial);
+    const retained = (await resources()).hosts[0];
+    expect(retained).toMatchObject({
+      id: h.id,
+      username: "ubuntu",
+      transport: { type: "tailscale_ssh", needsRebind: true },
+    });
+    if (!retained) {
+      throw new Error("Retained host is missing");
+    }
+    const replacement = await config();
+    const rebound = (
+      await accept(
+        hosts().update({
+          headers,
+          params: { connectionId: h.id },
+          body: {
+            expectedGeneration: retained.generation,
+            transport: { type: "tailscale_ssh", configId: replacement.id },
+          },
+        }),
+        [200],
+      )
+    ).body;
+    expect(rebound).toMatchObject({
+      username: "ubuntu",
+      port: 22,
+      transport: { type: "tailscale_ssh", configId: replacement.id },
+    });
+    expect((await resources()).logins).toStrictEqual([]);
+  });
   it("keeps OAuth write-only, supports explicit-ID reconciliation and separates metadata/effective generations", async () => {
     owner();
     const body = {
@@ -286,7 +604,11 @@ describe("Tailscale configuration and saved-host authority", () => {
     expect((await resources()).configs).toStrictEqual([]);
     authenticate(member);
     await accept(
-      hosts().delete({ headers, params: { connectionId: saved.id } }),
+      hosts().delete({
+        headers,
+        params: { connectionId: saved.id },
+        body: { expectedGeneration: saved.generation },
+      }),
       [204],
     );
     authenticate(admin, "org:admin");
@@ -318,6 +640,9 @@ describe("Tailscale configuration and saved-host authority", () => {
                 },
               }
             : { type: "tailscale" as const, configId: existing.id };
+          if (!("credentialId" in current)) {
+            throw new Error("Expected a credential-backed test host");
+          }
           const fields = {
             displayName: "Combined",
             host: "100.64.2.3",

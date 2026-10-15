@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 import * as workerModule from "../src/worker.js";
+import {
+  previewBuildSha,
+  withPreviewBuildIdentity,
+} from "../src/preview-response.js";
 
 function faviconEntries(favicon) {
   assert.equal(favicon.readUInt16LE(0), 0);
@@ -1873,5 +1877,214 @@ for (const state of [
     );
     assert.doesNotMatch(html, /artifact-og\/image|Shared artifact/u);
   }
+}
+
+const diagnosticSha = "0123456789abcdef0123456789abcdef01234567";
+const diagnosticMeta = `<meta name="okou-app-git-commit-sha" content="${diagnosticSha}">`;
+const diagnosticHtml = `<!doctype html><html><head>${diagnosticMeta}</head><body></body></html>`;
+assert.equal(previewBuildSha(diagnosticHtml), diagnosticSha);
+assert.equal(
+  previewBuildSha(
+    `<head><meta content='${diagnosticSha}' name='okou-app-git-commit-sha'></head>`,
+  ),
+  diagnosticSha,
+);
+assert.equal(
+  previewBuildSha(
+    `<head><!--${diagnosticMeta}--><script>const text = '${diagnosticMeta}';</script><title>${diagnosticMeta}</title>${diagnosticMeta}</head>`,
+  ),
+  diagnosticSha,
+);
+for (const html of [
+  `<head></head><body>${diagnosticMeta}</body>`,
+  `<head><!--${diagnosticMeta}--></head>`,
+  `<head><script>${diagnosticMeta}</script></head>`,
+  `<head><style>${diagnosticMeta}</style></head>`,
+  `<head><noscript>${diagnosticMeta}</noscript></head>`,
+  `<head><div>${diagnosticMeta}</div></head>`,
+  `<head>${diagnosticMeta}${diagnosticMeta}</head>`,
+  `<head>${diagnosticMeta.replace("content=", 'content="duplicate" content=')}</head>`,
+  `<head>${diagnosticMeta.replace("name=", 'name="other" name=')}</head>`,
+  `<head>${diagnosticMeta.replace(diagnosticSha, diagnosticSha.toUpperCase())}</head>`,
+  `<head>${diagnosticMeta.replace(diagnosticSha, "")}</head>`,
+  `<head>${diagnosticMeta.replace(`"${diagnosticSha}"`, diagnosticSha)}</head>`,
+  `<head>${diagnosticMeta.replace("okou-app", "okou&#45;app")}</head>`,
+  `<head><script>${diagnosticMeta}</head>`,
+]) {
+  assert.equal(previewBuildSha(html), undefined);
+}
+
+const diagnosticUrl =
+  "https://pr-39515-app-okou-app-preview.vm0.workers.dev/sign-in";
+function diagnosticRequest(url = diagnosticUrl, options = {}) {
+  return new Request(url, {
+    headers: {
+      "sec-fetch-mode": "navigate",
+      "sec-fetch-dest": "document",
+      "sec-fetch-site": "none",
+    },
+    ...options,
+  });
+}
+
+// The wrapper must leave transfer ownership with its caller, even before data exists.
+{
+  let controller;
+  let cancelled;
+  const body = new ReadableStream({
+    start(value) {
+      controller = value;
+    },
+    cancel(reason) {
+      cancelled = reason;
+    },
+  });
+  const response = new Response(body, {
+    headers: {
+      "content-type": "text/html",
+      "cache-control": "private",
+      "x-existing": "retained",
+    },
+  });
+  const request = diagnosticRequest();
+  const env = { identity: "env" };
+  const context = { identity: "context" };
+  const delegate = {
+    async fetch(actualRequest, actualEnv, actualContext) {
+      assert.equal(this, delegate);
+      assert.equal(actualRequest, request);
+      assert.equal(actualEnv, env);
+      assert.equal(actualContext, context);
+      return response;
+    },
+  };
+  const result = await withPreviewBuildIdentity(delegate, diagnosticHtml).fetch(
+    request,
+    env,
+    context,
+  );
+  assert.equal(result, response);
+  assert.equal(result.body, body);
+  assert.equal(result.bodyUsed, false);
+  assert.equal(body.locked, false);
+  assert.equal(result.status, 200);
+  assert.deepEqual(
+    [...result.headers],
+    [
+      ["cache-control", "private"],
+      ["content-type", "text/html"],
+      ["x-existing", "retained"],
+      ["x-okou-preview-build-sha", diagnosticSha],
+    ],
+  );
+  const reader = result.body.getReader();
+  controller.enqueue(new TextEncoder().encode("delayed chunk"));
+  assert.deepEqual(await reader.read(), {
+    done: false,
+    value: new TextEncoder().encode("delayed chunk"),
+  });
+  const reason = new Error("caller cancellation");
+  await reader.cancel(reason);
+  assert.equal(cancelled, reason);
+}
+{
+  let controller;
+  const body = new ReadableStream({
+    start(value) {
+      controller = value;
+    },
+  });
+  const response = new Response(body, {
+    headers: { "content-type": "text/html" },
+  });
+  const result = await withPreviewBuildIdentity(
+    {
+      fetch: async () => {
+        return response;
+      },
+    },
+    diagnosticHtml,
+  ).fetch(diagnosticRequest());
+  const failure = new Error("stream failure");
+  controller.error(failure);
+  await assert.rejects(
+    () => {
+      return result.text();
+    },
+    (error) => {
+      return error === failure;
+    },
+  );
+  const rejection = new Error("delegate rejection");
+  await assert.rejects(
+    () => {
+      return withPreviewBuildIdentity(
+        {
+          fetch: async () => {
+            throw rejection;
+          },
+        },
+        diagnosticHtml,
+      ).fetch(diagnosticRequest());
+    },
+    (error) => {
+      return error === rejection;
+    },
+  );
+}
+for (const request of [
+  diagnosticRequest(diagnosticUrl, { method: "HEAD" }),
+  diagnosticRequest(diagnosticUrl, {
+    headers: { "sec-fetch-mode": "navigate", "sec-fetch-dest": "iframe" },
+  }),
+  diagnosticRequest(diagnosticUrl, {
+    headers: { "sec-fetch-mode": "cors", "sec-fetch-dest": "empty" },
+  }),
+  diagnosticRequest(diagnosticUrl.replace("https:", "http:")),
+  diagnosticRequest(diagnosticUrl.replace("/sign-in", "/other")),
+  diagnosticRequest(diagnosticUrl.replace("workers.dev/", "workers.dev:8443/")),
+  diagnosticRequest("https://app.okou.ai/sign-in"),
+  diagnosticRequest("https://staging.okou.ai/sign-in"),
+]) {
+  const response = new Response("same body", {
+    headers: { "content-type": "text/html" },
+  });
+  assert.equal(
+    await withPreviewBuildIdentity(
+      {
+        fetch: async () => {
+          return response;
+        },
+      },
+      diagnosticHtml,
+    ).fetch(request),
+    response,
+  );
+  assert.equal(response.headers.has("x-okou-preview-build-sha"), false);
+  assert.equal(await response.text(), "same body");
+}
+for (const response of [
+  new Response("not html", { headers: { "content-type": "text/plain" } }),
+  new Response("error", {
+    status: 500,
+    headers: { "content-type": "text/html" },
+  }),
+  Response.redirect(diagnosticUrl),
+]) {
+  const result = await withPreviewBuildIdentity(
+    {
+      fetch: async () => {
+        return response;
+      },
+    },
+    diagnosticHtml,
+  ).fetch(diagnosticRequest());
+  assert.equal(result, response);
+  assert.equal(result.headers.has("x-okou-preview-build-sha"), false);
+}
+for (const url of [diagnosticUrl, "https://app.okou.ai/sign-in"]) {
+  const response = await embeddedWorker.fetch(diagnosticRequest(url), {});
+  assert.equal(response.headers.has("x-okou-preview-build-sha"), false);
+  await response.body.cancel();
 }
 console.log("okou app worker tests passed");

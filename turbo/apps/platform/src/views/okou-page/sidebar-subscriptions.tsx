@@ -17,7 +17,11 @@ import {
   type AccountMenuSubscriptionUsageWindow,
   type AccountMenuSubscriptionUsageRowsCacheKey,
 } from "../../signals/okou-page/account-menu-subscriptions.ts";
-import { limitingSubscriptionUsageWindow } from "../../lib/subscription-usage-windows.ts";
+import {
+  limitingSubscriptionUsageWindow,
+  subscriptionUsageWindowRemainingPercent,
+  subscriptionUsageWindows,
+} from "../../lib/subscription-usage-windows.ts";
 import { now } from "../../lib/time.ts";
 import {
   CodexResetCreditsButton,
@@ -29,7 +33,7 @@ import { formatLocalizedNumber } from "../../i18n/format.ts";
 type SubscriptionUsage = AccountMenuSubscriptionUsage;
 type SubscriptionUsageWindow = AccountMenuSubscriptionUsageWindow;
 
-/** Below this much left, a window turns amber, breathes and shows its reset. */
+/** Below this much left, a window turns coral, breathes and shows its reset. */
 const LOW_REMAINING_PERCENT = 20;
 /** At or below this much left, the breathing doubles its rate. */
 const CRITICAL_REMAINING_PERCENT = 5;
@@ -115,10 +119,16 @@ function AccountMenuSubscriptionsSkeleton() {
             <div className="flex h-5 items-center">
               <div className="h-3 w-28 animate-skeleton-pulse rounded bg-skeleton" />
             </div>
-            <div className="flex h-4 items-center gap-2">
-              <div className="h-3 w-8 animate-skeleton-pulse rounded bg-skeleton" />
-              <div className="h-1 flex-1 animate-skeleton-pulse rounded-full bg-skeleton" />
-              <div className="h-3 w-8 animate-skeleton-pulse rounded bg-skeleton" />
+            <div className="flex flex-col gap-1.5">
+              {["fiveHour", "week"].map((kind) => {
+                return (
+                  <div key={kind} className="flex h-4 items-center gap-2">
+                    <div className="h-3 w-8 animate-skeleton-pulse rounded bg-skeleton" />
+                    <div className="h-1 flex-1 animate-skeleton-pulse rounded-full bg-skeleton" />
+                    <div className="h-3 w-8 animate-skeleton-pulse rounded bg-skeleton" />
+                  </div>
+                );
+              })}
             </div>
           </div>
         );
@@ -128,9 +138,10 @@ function AccountMenuSubscriptionsSkeleton() {
 }
 
 /**
- * One plan: its name with the Codex reset control top right, then the window
- * that limits it right now. Every line is 12px; weight and colour carry the
- * hierarchy, so the panel reads as one block inside the 14px menu.
+ * One plan: its name with the Codex reset control top right, then one row per
+ * window, 5h and Week. Once the limiting window runs low, a line under them
+ * names it with its reset time. Every line is 12px; weight and colour carry
+ * the hierarchy, so the panel reads as one block inside the 14px menu.
  */
 function AccountMenuSubscriptionProviderSection({
   type,
@@ -152,6 +163,7 @@ function AccountMenuSubscriptionProviderSection({
   readonly onResetCodexUsage?: (resetCredits: number | null) => void;
 }) {
   const { t } = useTranslation();
+  const windows = subscriptionUsageWindows(usage);
   const limiting = limitingSubscriptionUsageWindow(usage);
   const remaining = limiting?.remainingPercent ?? null;
   const low = remaining !== null && remaining < LOW_REMAINING_PERCENT;
@@ -159,6 +171,15 @@ function AccountMenuSubscriptionProviderSection({
     low && limiting !== null
       ? formatSubscriptionUsageReset(limiting.window.resetAt)
       : null;
+  const windowLabel = (kind: "fiveHour" | "week") => {
+    return kind === "fiveHour"
+      ? t(($) => {
+          return $.settings.models.personal.status.fiveHour;
+        })
+      : t(($) => {
+          return $.settings.models.personal.status.week;
+        });
+  };
 
   return (
     <section
@@ -185,25 +206,28 @@ function AccountMenuSubscriptionProviderSection({
           />
         )}
       </div>
-      {limiting === null ? null : (
-        <AccountMenuSubscriptionUsageBar
-          providerLabel={label}
-          windowLabel={
-            limiting.kind === "fiveHour"
-              ? t(($) => {
-                  return $.settings.models.personal.status.fiveHour;
-                })
-              : t(($) => {
-                  return $.settings.models.personal.status.week;
-                })
-          }
-          window={limiting.window}
-          remainingPercent={limiting.remainingPercent}
-        />
+      {windows.length === 0 ? null : (
+        <div className="flex flex-col gap-1.5">
+          {windows.map(({ kind, window }) => {
+            return (
+              <AccountMenuSubscriptionUsageBar
+                key={kind}
+                providerLabel={label}
+                windowLabel={windowLabel(kind)}
+                window={window}
+                remainingPercent={subscriptionUsageWindowRemainingPercent(
+                  window,
+                )}
+              />
+            );
+          })}
+        </div>
       )}
-      {reset === null ? null : (
+      {reset === null || limiting === null ? null : (
         <p className="pl-10 text-xs leading-4 tabular-nums text-muted-foreground">
-          {"fallbackText" in reset ? reset.fallbackText : reset.tooltipTitle}
+          {`${windowLabel(limiting.kind)} · ${
+            "fallbackText" in reset ? reset.fallbackText : reset.tooltipTitle
+          }`}
         </p>
       )}
     </section>
@@ -340,10 +364,12 @@ function AccountMenuSubscriptionUsageBar({
 }
 
 /**
- * The fill and what is left are two pieces with a 2px gap between them. An
- * exhausted window keeps no fill; instead the time already waited drifts in as
- * a stripe, so the meter shows the plan coming back rather than only that it
- * ran out.
+ * The fill and what is left are two pieces with a 2px gap between them. The
+ * healthy gradient spans the whole track rather than the fill, so its
+ * background is sized to the track: a fuller bar reveals the warmer end, and
+ * using some of the plan takes that colour away with it. An exhausted window
+ * keeps no fill; instead the time already waited drifts in as a stripe, so the
+ * meter shows the plan coming back rather than only that it ran out.
  */
 function UsageMeterFill({
   remainingPercent,
@@ -373,7 +399,10 @@ function UsageMeterFill({
     <>
       <span
         className={cn("block h-full rounded-full", fillClassName)}
-        style={{ width: `${String(remainingPercent)}%` }}
+        style={{
+          width: `${String(remainingPercent)}%`,
+          backgroundSize: `${String(10_000 / remainingPercent)}% 100%`,
+        }}
       />
       {remainingPercent < 100 && (
         <span className="block h-full min-w-1 flex-1 rounded-full bg-segment-track" />
@@ -403,8 +432,10 @@ function formatUsagePercent(value: number | null): string | null {
 }
 
 /**
- * A healthy window recedes in the neutral ramp; colour is reserved for the two
- * moments that ask the user to act: running low, and running out.
+ * A healthy window carries the brand: amber warming to orange along the track,
+ * interpolated in OKLCH so it never passes through grey. Running low switches
+ * to the deeper destructive coral and breathes; running out keeps only the
+ * destructive number beside the recharge stripe.
  */
 function usageTone(remainingPercent: number | null): {
   readonly fillClassName: string;
@@ -420,10 +451,13 @@ function usageTone(remainingPercent: number | null): {
     return {
       fillClassName:
         remainingPercent <= CRITICAL_REMAINING_PERCENT
-          ? "bg-primary motion-safe:animate-usage-meter-breathe-fast"
-          : "bg-primary motion-safe:animate-usage-meter-breathe",
-      textClassName: "text-brand-text",
+          ? "bg-destructive motion-safe:animate-usage-meter-breathe-fast"
+          : "bg-destructive motion-safe:animate-usage-meter-breathe",
+      textClassName: "text-destructive",
     };
   }
-  return { fillClassName: "bg-gray-800", textClassName: "text-foreground" };
+  return {
+    fillClassName: "bg-usage-meter-fill",
+    textClassName: "text-foreground",
+  };
 }

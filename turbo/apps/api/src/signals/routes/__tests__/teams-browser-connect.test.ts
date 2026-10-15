@@ -1,3 +1,5 @@
+import { createStore } from "ccstate";
+import { seedOrgMembership$ } from "./helpers/org-membership";
 import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -20,6 +22,22 @@ const context = testContext();
 const mocks = createRouteMocks(context);
 const CONNECT_PATH = "http://api.test/api/teams/connect";
 const APP_ORIGIN = "https://app.okou.test";
+
+const membershipStore = createStore();
+async function session(
+  userId: string,
+  orgId: string | null,
+  role: "org:admin" | "org:member" = "org:admin",
+) {
+  mocks.clerk.session(userId, orgId, role);
+  if (orgId) {
+    await membershipStore.set(
+      seedOrgMembership$,
+      { userId, orgId, role: role === "org:admin" ? "admin" : "member" },
+      context.signal,
+    );
+  }
+}
 
 function connectUrl(params: {
   readonly tenantId?: string;
@@ -125,7 +143,7 @@ async function bindTeamsInstallation(
   fixture: TeamsConnectFixture,
   userId: string,
 ): Promise<void> {
-  mocks.clerk.session(userId, fixture.orgId, "org:admin");
+  await session(userId, fixture.orgId, "org:admin");
   const client = setupApp({ context, routes: teamsConnectRoutes })(
     teamsConnectContract,
   );
@@ -192,7 +210,7 @@ describe("GET /api/teams/connect", () => {
   });
 
   it("redirects invalid connect links to the Teams connect error page", async () => {
-    mocks.clerk.session("user_invalid", "org_invalid", "org:admin");
+    await session("user_invalid", "org_invalid", "org:admin");
 
     const response = await requestConnect(CONNECT_PATH);
 
@@ -211,7 +229,7 @@ describe("GET /api/teams/connect", () => {
     });
     const linkedTeamId = teamsFixtureExternalId(fixture, "team-from-link");
     const linkedActivityId = teamsFixtureExternalId(fixture, "activity-link");
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+    await session(fixture.userId, fixture.orgId, "org:admin");
 
     const response = await requestConnect(
       connectUrl({
@@ -262,7 +280,7 @@ describe("GET /api/teams/connect", () => {
 
   it("rejects a member connecting an unbound installation", async () => {
     const fixture = await seedTeamsInstallation(track);
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
+    await session(fixture.userId, fixture.orgId, "org:member");
 
     const response = await requestConnect(
       connectUrl({
@@ -279,7 +297,7 @@ describe("GET /api/teams/connect", () => {
 
   it("connects from a Teams link that only includes the AAD user id", async () => {
     const fixture = await seedTeamsInstallation(track);
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+    await session(fixture.userId, fixture.orgId, "org:admin");
 
     const response = await requestConnect(
       connectUrl({
@@ -299,7 +317,7 @@ describe("GET /api/teams/connect", () => {
 
   it("keeps reconnecting the same Teams user idempotent", async () => {
     const fixture = await seedTeamsInstallation(track);
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+    await session(fixture.userId, fixture.orgId, "org:admin");
     const url = connectUrl({
       tenantId: fixture.teamsTenantId,
       teamsUserId: fixture.teamsUserId,
@@ -323,7 +341,7 @@ describe("GET /api/teams/connect", () => {
     const fixture = await seedTeamsInstallation(track);
     const memberUserId = `member_${fixture.userId}`;
     await bindTeamsInstallation(fixture, `admin_${fixture.userId}`);
-    mocks.clerk.session(memberUserId, fixture.orgId, "org:member");
+    await session(memberUserId, fixture.orgId, "org:member");
 
     const response = await requestConnect(
       connectUrl({
@@ -343,7 +361,7 @@ describe("GET /api/teams/connect", () => {
   it("redirects org mismatch to the organization error", async () => {
     const fixture = await seedTeamsInstallation(track);
     await bindTeamsInstallation(fixture, fixture.userId);
-    mocks.clerk.session(fixture.userId, "org_other", "org:admin");
+    await session(fixture.userId, "org_other", "org:admin");
 
     const response = await requestConnect(
       connectUrl({
@@ -359,5 +377,110 @@ describe("GET /api/teams/connect", () => {
     expect(new URL(location!).searchParams.get("error")).toContain(
       "active organization",
     );
+  });
+  it.each([false, true])(
+    "rejects query org authority for a bound=%s installation",
+    async (bound) => {
+      const fixture = await seedTeamsInstallation(track);
+      if (bound) {
+        await bindTeamsInstallation(fixture, fixture.userId);
+      }
+      await session(fixture.userId, `other_${fixture.orgId}`, "org:admin");
+      const response = await requestConnect(
+        connectUrl({
+          tenantId: fixture.teamsTenantId,
+          teamsUserId: fixture.teamsUserId,
+          orgId: fixture.orgId,
+          tenantName: "Rejected metadata",
+        }),
+      );
+      const url = new URL(response.headers.get("location")!);
+      expect(url.searchParams.get("error")).toContain("active organization");
+      expect(url.searchParams.get("orgId")).toBe(fixture.orgId);
+      const status = await accept(
+        setupApp({ context, routes: teamsConnectRoutes })(
+          teamsConnectContract,
+        ).getStatus({ headers: { authorization: "Bearer clerk-session" } }),
+        [200],
+      );
+      expect(status.body).toMatchObject({
+        isInstalled: false,
+        isConnected: false,
+        linkedAccounts: [],
+        pendingInstallation: false,
+      });
+      await session(fixture.userId, fixture.orgId, "org:admin");
+      if (bound) {
+        await expectTeamsConnected(fixture, {
+          tenantName: fixture.teamsTenantName,
+        });
+      } else {
+        const retry = await requestConnect(
+          connectUrl({
+            tenantId: fixture.teamsTenantId,
+            teamsUserId: fixture.teamsUserId,
+            orgId: fixture.orgId,
+          }),
+        );
+        expect(
+          new URL(retry.headers.get("location")!).searchParams.get("status"),
+        ).toBe("connected");
+      }
+    },
+  );
+
+  it("rejects a removed membership despite a browser session's admin role", async () => {
+    const fixture = await seedTeamsInstallation(track);
+    await session(fixture.userId, fixture.orgId, "org:admin");
+    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+      data: [],
+      totalCount: 0,
+    });
+    const response = await requestConnect(
+      connectUrl({
+        tenantId: fixture.teamsTenantId,
+        teamsUserId: fixture.teamsUserId,
+        orgId: fixture.orgId,
+      }),
+    );
+    expect(
+      new URL(response.headers.get("location")!).searchParams.get("error"),
+    ).toContain("active organization");
+  });
+
+  it("rejects another owner's legacy binding and preserves its identity and installation", async () => {
+    const fixture = await seedTeamsInstallation(track);
+    await bindTeamsInstallation(fixture, fixture.userId);
+    const client = setupApp({ context, routes: teamsConnectRoutes })(
+      teamsConnectContract,
+    );
+    const before = await accept(
+      client.getStatus({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    await session(`other_${fixture.userId}`, fixture.orgId, "org:member");
+    const response = await requestConnect(
+      connectUrl({
+        tenantId: fixture.teamsTenantId,
+        teamsAadObjectId: fixture.teamsAadObjectId,
+        teamsUserId: "29:replacement",
+        tenantName: "Rejected tenant",
+        displayName: "Rejected name",
+      }),
+    );
+    expect(
+      new URL(response.headers.get("location")!).searchParams.get("error"),
+    ).toContain("already connected");
+    const rejected = await accept(
+      client.getStatus({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(rejected.body.linkedAccounts).toStrictEqual([]);
+    await session(fixture.userId, fixture.orgId, "org:admin");
+    const after = await accept(
+      client.getStatus({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(after.body).toStrictEqual(before.body);
   });
 });

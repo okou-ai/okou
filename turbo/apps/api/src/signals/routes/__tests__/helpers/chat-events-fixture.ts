@@ -25,7 +25,7 @@ import { z } from "zod";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { createAppWithRoutes } from "../../../../app-factory-core";
-import { env, mockEnv, mockOptionalEnv } from "../../../../lib/env";
+import { env, mockOptionalEnv } from "../../../../lib/env";
 import { computeHmacSignature } from "../../../../lib/event-consumer/hmac";
 import { server } from "../../../../mocks/server";
 import { seededSystemSkillArchive } from "../../../../test-fixtures/seeded-system-skill-archive";
@@ -838,6 +838,7 @@ export function createChatEventsFixture(context: TestContext) {
     body: {
       readonly agentId: string;
       readonly clientEventId?: string;
+      readonly clientThreadId?: string;
       readonly prompt: string;
       readonly threadId?: string;
       readonly model?: string;
@@ -1224,13 +1225,4 @@ export function createChatEventsFixture(context: TestContext) {
     mockPiResourceArchiveDownloads,
     completeSandboxFirstPiRun,
   };
-}
-
-export function configureNativeCliArtifact(): string {
-  const commit = "a".repeat(40);
-  const url = `https://static.okou.io/okou-cli/${commit}/package.tgz`;
-
-  mockEnv("GIT_COMMIT_SHA", commit);
-  mockEnv("CLI_PKG_URL", url);
-  return url;
 }

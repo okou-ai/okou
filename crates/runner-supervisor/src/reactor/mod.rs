@@ -35,7 +35,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use futures_util::future::BoxFuture;
 use sandbox::SandboxRuntime;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
@@ -45,9 +44,9 @@ use tracing::{error, info, warn};
 use crate::dns;
 use crate::duration::duration_ms as saturated_duration_ms;
 use crate::executor::{ExecutorConfig, RunnerPreSpawnConcurrency};
+use crate::home_image_cache::HomeCacheChange;
 #[cfg(test)]
 use crate::home_image_cache::HomeImageCache;
-use crate::home_image_cache::{HomeCacheChange, HomeCacheWatcher};
 use crate::idle_pool::ParkingGate;
 #[cfg(test)]
 use crate::idle_pool::{IdlePool, IdlePoolConfig};
@@ -78,6 +77,7 @@ pub mod error;
 mod factory_lifecycle;
 mod finalizing_claim;
 mod heartbeat;
+mod home_cache_observation;
 mod job_discovery;
 mod job_spawn;
 mod job_terminal_log;
@@ -92,8 +92,7 @@ mod startup;
 use crate::blank_pool::{BlankPoolReplenisher, BlankProfile};
 use crate::heartbeat::{
     HEARTBEAT_PERIOD, HeartbeatContext, HeartbeatContextInit, HeartbeatController,
-    HeartbeatSnapshotMetadata, WssIngressServiceProbe, collect_heartbeat_state,
-    refresh_initial_home_cache_snapshot,
+    WssIngressServiceProbe,
 };
 use crate::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool, drain_idle_pool};
 #[cfg(test)]
@@ -102,6 +101,9 @@ use crate::orphan_reap::{OrphanReapMode, OrphanedActiveRuns};
 use claim_tasks::ClaimTasks;
 use factory_lifecycle::{shutdown_factory_instances, shutdown_runtime};
 use heartbeat::heartbeat_profiles;
+use home_cache_observation::{
+    HomeCacheObservation, HomeCacheObservationEvent, InitialHomeCacheObservation,
+};
 use job_discovery::{AdmissionContext, DiscoveredJob};
 use job_spawn::{SpawnContext, handle_job_result};
 use maintenance::{MaintenanceCompletion, MaintenanceTasks};
@@ -161,33 +163,6 @@ impl MaintenanceTrigger {
                     .expect("manual maintenance sender should remain open");
             }
         }
-    }
-}
-
-type HomeCacheChangeFuture = BoxFuture<
-    'static,
-    (
-        HomeCacheWatcher,
-        RunnerResult<crate::home_image_cache::HomeCacheChange>,
-    ),
->;
-
-fn home_cache_change_future(mut watcher: HomeCacheWatcher) -> HomeCacheChangeFuture {
-    Box::pin(async move {
-        let result = watcher.next_change().await;
-        (watcher, result.map_err(Into::into))
-    })
-}
-
-async fn next_home_cache_change(
-    future: &mut Option<HomeCacheChangeFuture>,
-) -> (
-    HomeCacheWatcher,
-    RunnerResult<crate::home_image_cache::HomeCacheChange>,
-) {
-    match future {
-        Some(future) => future.await,
-        None => std::future::pending().await,
     }
 }
 
@@ -271,6 +246,7 @@ pub struct RunConfig {
     pub shared: RunnerSharedState,
     pub provider: ProviderState,
     pub wss_ingress_service_probe: WssIngressServiceProbe,
+    pub sandbox_op_reporter: Option<runner_storage::SandboxOpReporter>,
     pub proxy: ProxyState,
     pub exec_config: Arc<ExecutorConfig>,
     pub shutdown: ShutdownHandles,
@@ -978,6 +954,28 @@ async fn handle_required_network_log_completion(
     }
 }
 
+fn handle_mitm_crash(recovery: &mut MitmRecovery) {
+    error!(
+        r#type = "usage_underbilling",
+        reason = "mitm_restart_in_memory_usage_risk",
+        underbilling_class = "risk",
+        component = "runner",
+        "mitmproxy exited unexpectedly, scheduling restart"
+    );
+    recovery.on_crash();
+}
+
+async fn handle_mitm_recovery_failure(
+    recovery: &mut MitmRecovery,
+    crash_rx: &mut mpsc::Receiver<()>,
+    cancel: &CancellationToken,
+    cancel_tokens: &RunCancellationRegistry,
+    lifecycle: &LifecycleController,
+) {
+    recovery.stop_retries(crash_rx);
+    handle_stopping_signal("mitm-recovery", cancel, cancel_tokens, lifecycle).await;
+}
+
 /// Run the concrete retained reactor and perform its ordered resource teardown.
 pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     let RunConfig {
@@ -988,6 +986,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         shared,
         provider: provider_state,
         wss_ingress_service_probe,
+        sandbox_op_reporter,
         proxy,
         exec_config,
         shutdown,
@@ -1043,7 +1042,6 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                 handler_task: mut signal_handler_task,
             },
         mut wss_task,
-        wss_failed,
         mut factories,
         prune_listener,
         prune_admission,
@@ -1106,20 +1104,6 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     );
     orphan_reap_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
-    let mut home_cache_watcher = match exec_config.home_cache.clone() {
-        Some(cache) => match HomeCacheWatcher::new(cache).await {
-            Ok(watcher) => Some(watcher),
-            Err(error) => {
-                warn!(error = %error, "home cache watcher unavailable; using periodic reconciliation");
-                None
-            }
-        },
-        None => None,
-    };
-    #[cfg(test)]
-    if let Some(gate) = &test_hooks.before_initial_home_cache_scan {
-        gate.enter_and_wait().await;
-    }
     let projected_heartbeat_profiles = heartbeat_profiles(&runner.profiles);
     let hb_ctx = HeartbeatContext::new(HeartbeatContextInit {
         idle_pool: &shared.idle_pool,
@@ -1132,59 +1116,29 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         active_runs: &active_runs,
         home_cache_snapshot: home_cache_snapshot.clone(),
         wss_ingress_service_probe,
+        sandbox_op_reporter: sandbox_op_reporter.clone(),
     });
-    let initial_home_cache = refresh_initial_home_cache_snapshot(
-        &home_cache_snapshot,
+    let (mut home_cache_observation, initial_home_cache) = HomeCacheObservation::initialize(
         exec_config.home_cache.as_ref(),
+        &home_cache_snapshot,
         &projected_heartbeat_profiles,
+        runner.identity,
+        sandbox_op_reporter.as_ref(),
+        #[cfg(test)]
+        &test_hooks,
     )
     .await;
-    #[cfg(test)]
-    if let Some(gate) = &test_hooks.after_initial_home_cache_scan {
-        gate.enter_and_wait().await;
-    }
-    debug_assert!(home_cache_snapshot.home_cache_loaded());
-    let mut initial_relevant_cache_keys = initial_home_cache.loaded_cache_keys;
-    initial_relevant_cache_keys.extend(initial_home_cache.locked_commit_keys.iter().cloned());
-    let mut initial_home_cache_change = match home_cache_watcher.as_mut() {
-        Some(watcher) => match watcher
-            .reconcile_initial_relevant_entries(&initial_relevant_cache_keys)
-            .await
-        {
-            Ok(change) => change,
-            Err(error) => {
-                warn!(error = %error, "home cache watcher failed during startup reconciliation; using periodic reconciliation");
-                home_cache_watcher = None;
-                Some(crate::home_image_cache::HomeCacheChange {
-                    observed_at: tokio::time::Instant::now(),
-                    committed_cache_keys: std::collections::BTreeSet::new(),
-                })
-            }
-        },
-        None => None,
-    };
-    if !initial_home_cache.locked_commit_keys.is_empty() {
-        let locked_change = crate::home_image_cache::HomeCacheChange {
-            observed_at: tokio::time::Instant::now(),
-            committed_cache_keys: initial_home_cache.locked_commit_keys,
-        };
-        match initial_home_cache_change.as_mut() {
-            Some(change) => change.merge(locked_change),
-            None => initial_home_cache_change = Some(locked_change),
-        }
-    }
-    let mut home_cache_change_fut = home_cache_watcher.map(home_cache_change_future);
     let mut heartbeat = HeartbeatController::new(hb_ctx);
     let initial_heartbeat_mode = lifecycle.current_mode();
     if initial_heartbeat_mode == RunnerMode::Running {
-        match initial_home_cache_change {
-            Some(change) => {
+        match initial_home_cache {
+            InitialHomeCacheObservation::Change(change) => {
                 heartbeat.request_initial_home_cache(initial_heartbeat_mode, change)?;
             }
-            None if !initial_home_cache.states.is_empty() => {
+            InitialHomeCacheObservation::LoadedSnapshot => {
                 heartbeat.request_initial_home_cache_snapshot(initial_heartbeat_mode)?;
             }
-            None => {}
+            InitialHomeCacheObservation::Empty => {}
         }
     }
 
@@ -1235,6 +1189,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         budget: Arc::clone(&capacity.budget),
         home_cache_snapshot,
         device_rate_limits: capacity.device_rate_limits.clone(),
+        sandbox_op_reporter,
         #[cfg(test)]
         outer_job_panic: test_hooks.outer_job_panic,
         #[cfg(test)]
@@ -1269,9 +1224,9 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     let mut ready_direct_candidates_left = 0;
     let mut terminal_error = None;
     loop {
-        if wss_failed
+        if wss_task
             .as_ref()
-            .is_some_and(|flag| flag.load(std::sync::atomic::Ordering::SeqCst))
+            .is_some_and(runner_wss::AcceptTask::has_failed)
         {
             terminal_error = Some(RunnerError::Internal(
                 "required Runner WSS accept loop failed".into(),
@@ -1451,7 +1406,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             // The future is pinned outside the loop so other reactor branches
             // do not cancel and restart its internal wait timer. See #8747.
             discovered = &mut discover_fut, if can_discover => {
-                if wss_failed.as_ref().is_some_and(|flag| flag.load(std::sync::atomic::Ordering::SeqCst)) {
+                if wss_task.as_ref().is_some_and(runner_wss::AcceptTask::has_failed) {
                     terminal_error = Some(RunnerError::Internal("required Runner WSS accept loop failed".into()));
                     break;
                 }
@@ -1516,10 +1471,9 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                     break;
                 }
             }
-            (watcher, result) = next_home_cache_change(&mut home_cache_change_fut) => {
-                match result {
-                    Ok(change) => {
-                        home_cache_change_fut = Some(home_cache_change_future(watcher));
+            observation = home_cache_observation.wait() => {
+                match observation {
+                    HomeCacheObservationEvent::Change(change) => {
                         #[cfg(test)]
                         test_hooks
                             .test_observer
@@ -1529,9 +1483,8 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                             heartbeat.request_home_cache(live_mode, change)?;
                         }
                     }
-                    Err(error) => {
+                    HomeCacheObservationEvent::Unavailable(error) => {
                         warn!(error = %error, "home cache watcher failed; using periodic reconciliation");
-                        home_cache_change_fut = None;
                     }
                 }
             }
@@ -1645,21 +1598,15 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             }
             // Mitmproxy crash detection
             Some(()) = mitm_crash_rx.recv() => {
-                error!(
-                    r#type = "usage_underbilling",
-                    reason = "mitm_restart_in_memory_usage_risk",
-                    underbilling_class = "risk",
-                    component = "runner",
-                    "mitmproxy exited unexpectedly, scheduling restart"
-                );
-                mitm_recovery.on_crash();
+                handle_mitm_crash(&mut mitm_recovery);
             }
             // Mitmproxy restart result (background task)
             result = mitm_recovery.wait(&mut mitm) => {
                 if let Err(error) = result {
-                    mitm_recovery.stop_retries(&mut mitm_crash_rx);
-                    handle_stopping_signal("mitm-recovery", &provider_state.cancel,
-                        &provider_state.cancel_tokens, &lifecycle).await;
+                    handle_mitm_recovery_failure(
+                        &mut mitm_recovery, &mut mitm_crash_rx, &provider_state.cancel,
+                        &provider_state.cancel_tokens, &lifecycle,
+                    ).await;
                     terminal_error = Some(error.into());
                 }
             }
@@ -1708,9 +1655,9 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     // Shutdown — drain idle pool, release discovery resources, then drain running jobs
     // -----------------------------------------------------------------------
     // Discovery may observe listener-triggered cancellation before its join.
-    if wss_failed
+    if wss_task
         .as_ref()
-        .is_some_and(|flag| flag.load(std::sync::atomic::Ordering::SeqCst))
+        .is_some_and(runner_wss::AcceptTask::has_failed)
     {
         terminal_error.get_or_insert_with(|| {
             RunnerError::Internal("required Runner WSS accept loop failed".into())
@@ -1743,7 +1690,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     // outcomes still enter the existing activation/executor ownership path.
     drop(discover_fut);
     teardown.event("drop_discover_fut");
-    drop(home_cache_change_fut);
+    drop(home_cache_observation);
     let phase = teardown.phase_start("claims_drain");
     while let Some(result) = claim_tasks.next().await {
         if let Err(failure) = claim_tasks.consume(result, &mut jobs).await {
@@ -1770,7 +1717,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         error!(%error, "failed to drain heartbeat task");
         terminal_error.get_or_insert(error.into());
     }
-    let final_heartbeat_sequence = heartbeat.into_next_snapshot_sequence();
+    let terminal_heartbeat = heartbeat.into_terminal_heartbeat();
     teardown.phase_complete("heartbeat_drain", phase);
 
     let phase = teardown.phase_start("maintenance_drain");
@@ -1804,22 +1751,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     // Send final heartbeat with Stopping so the server stops routing jobs
     // to this runner immediately, without waiting for TTL expiry.
     let phase = teardown.phase_start("final_heartbeat");
-    {
-        let pool = shared.idle_pool.lock().await;
-        let state = collect_heartbeat_state(
-            HeartbeatSnapshotMetadata {
-                runner_identity: runner.identity,
-                group: &runner.group,
-                sequence: final_heartbeat_sequence,
-            },
-            &projected_heartbeat_profiles,
-            &capacity.budget,
-            &pool,
-            RunnerMode::Stopping,
-        );
-        drop(pool);
-        provider_state.provider.heartbeat(&state).await;
-    }
+    terminal_heartbeat.send().await;
     teardown.phase_complete("final_heartbeat", phase);
 
     let remaining = jobs.len();
@@ -1852,20 +1784,14 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                     mitm.request_usage_flush();
                 }
                 Some(()) = mitm_crash_rx.recv() => {
-                    error!(
-                        r#type = "usage_underbilling",
-                        reason = "mitm_restart_in_memory_usage_risk",
-                        underbilling_class = "risk",
-                        component = "runner",
-                        "mitmproxy exited unexpectedly, scheduling restart"
-                    );
-                    mitm_recovery.on_crash();
+                    handle_mitm_crash(&mut mitm_recovery);
                 }
                 result = mitm_recovery.wait(&mut mitm) => {
                     if let Err(error) = result {
-                        mitm_recovery.stop_retries(&mut mitm_crash_rx);
-                        handle_stopping_signal("mitm-recovery", &provider_state.cancel,
-                            &provider_state.cancel_tokens, &lifecycle).await;
+                        handle_mitm_recovery_failure(
+                            &mut mitm_recovery, &mut mitm_crash_rx, &provider_state.cancel,
+                            &provider_state.cancel_tokens, &lifecycle,
+                        ).await;
                         terminal_error.get_or_insert(error.into());
                     }
                 }

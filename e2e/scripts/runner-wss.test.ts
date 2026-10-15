@@ -134,7 +134,7 @@ async function peer(
             result: {
               categories: {
                 diagnostics: 1,
-                ...(options.filesystem ? { fs: 1 } : {}),
+                ...(options.filesystem ? { fs: 2 } : {}),
               },
             },
           });
@@ -165,6 +165,7 @@ async function peer(
         }
         assert.ok(message.type === "request");
         if (message.category === "fs") {
+          assert.equal(message.categoryVersion, 2);
           const fail = (code: string) =>
             emit({
               schemaVersion: 1,
@@ -195,7 +196,17 @@ async function peer(
             return;
           }
           const params = parsed.data;
-          if (params.path?.length === 0) {
+          if (params.path?.length === 0 || params.path?.length === 1) {
+            result(message.id, {
+              listingId: randomUUID(),
+              entries: [
+                entry(params.path.length === 0 ? "home" : "user", "directory"),
+              ],
+              nextCursor: null,
+            });
+            return;
+          }
+          if (params.path?.length === 2) {
             result(message.id, {
               listingId: randomUUID(),
               entries: [entry("wss-home-fixture", "directory")],
@@ -203,7 +214,7 @@ async function peer(
             });
             return;
           }
-          if (params.path?.[1] === token("nested")) {
+          if (params.path?.[3] === token("nested")) {
             result(message.id, {
               listingId: randomUUID(),
               entries: [entry("leaf", "file")],
@@ -211,7 +222,7 @@ async function peer(
             });
             return;
           }
-          if (params.path?.[1] === token("outside")) {
+          if (params.path?.[3] === token("outside")) {
             fail("link_not_expandable");
             return;
           }

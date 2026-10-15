@@ -107,7 +107,7 @@ export function pendingLaunchAdmissionStart(
     validatedAccountIdentity: null,
   };
   const threadId = args.createArgs.chatThreadId;
-  const resolution = args.createArgs.threadSessionResolution;
+  const resolution = args.createArgs.threadContinuation;
   if (threadId && resolution) {
     const captured: AdmissionFacts = {
       ...facts,
@@ -264,7 +264,7 @@ function advanceThreadSnapshot(
   if (!("phase" in row) || row.phase !== "thread") {
     throw new Error("Unexpected pending thread snapshot result");
   }
-  const resolution = args.createArgs.threadSessionResolution;
+  const resolution = args.createArgs.threadContinuation;
   if (!resolution) {
     return subscriptionStep(args, facts);
   }

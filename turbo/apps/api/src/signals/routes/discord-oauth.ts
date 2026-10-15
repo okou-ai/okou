@@ -3,6 +3,7 @@ import { command } from "ccstate";
 import { and, eq, gt, isNotNull, lte } from "drizzle-orm";
 import { z } from "zod";
 import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
+import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
@@ -69,10 +70,16 @@ function invalidAttempt() {
     "This Discord authorization attempt is invalid or expired. Start again from Works.",
   );
 }
-function callbackError(error: Failure | "invalid_state"): Response {
-  const url = new URL("/works", env("APP_URL"));
-  url.searchParams.set("discord", "error");
+function callbackError(
+  error: Failure | "invalid_state",
+  guildId?: string | null,
+): Response {
+  const url = new URL(INTEGRATION_SETTINGS_PATHS.discord, env("APP_URL"));
+  url.searchParams.set("status", "error");
   url.searchParams.set("discord_error", error);
+  if (guildId) {
+    url.searchParams.set("guild_id", guildId);
+  }
   return callbackRedirect(url);
 }
 function callbackRedirect(url: URL): Response {
@@ -85,9 +92,14 @@ function callbackRedirect(url: URL): Response {
     },
   });
 }
-function callbackApproval(state: string, approvalProof: string): Response {
-  const url = new URL("/works", env("APP_URL"));
-  url.searchParams.set("discord", "pending");
+function callbackApproval(
+  state: string,
+  approvalProof: string,
+  guildId: string,
+): Response {
+  const url = new URL(INTEGRATION_SETTINGS_PATHS.discord, env("APP_URL"));
+  url.searchParams.set("status", "pending");
+  url.searchParams.set("guild_id", guildId);
   // Only the consent browser receives this proof. It is not a provider code,
   // completion token, query parameter, cookie or message to the opener.
   url.hash = new URLSearchParams({
@@ -281,7 +293,7 @@ const failCallback$ = command(
         ),
       );
     signal.throwIfAborted();
-    return callbackError(failure);
+    return callbackError(failure, attempt.guildId);
   },
 );
 
@@ -354,7 +366,7 @@ const verifyCallback$ = command(
       .from(verifiedAttempt);
     signal.throwIfAborted();
     return saved
-      ? callbackApproval(state, approvalProof)
+      ? callbackApproval(state, approvalProof, verified.data.guildId)
       : callbackError("invalid_state");
   },
 );

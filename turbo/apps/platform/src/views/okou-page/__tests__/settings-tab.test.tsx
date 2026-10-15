@@ -799,18 +799,18 @@ async function chooseWorkflowCopy(
   await user.click(await screen.findByRole("option", { name: "Copy to Nova" }));
 }
 
-test("Retry unfinished rescues without duplicating completed workflows", async () => {
-  async function chooseBothWorkflowCopies(dialog: HTMLElement) {
-    for (const title of ["Daily research", "Weekly research"]) {
-      click(
-        within(dialog).getByRole("combobox", {
-          name: `Handle workflow ${title}`,
-        }),
-      );
-      click(await screen.findByRole("option", { name: "Copy to Nova" }));
-    }
+async function chooseBothWorkflowCopies(dialog: HTMLElement) {
+  for (const title of ["Daily research", "Weekly research"]) {
+    click(
+      within(dialog).getByRole("combobox", {
+        name: `Handle workflow ${title}`,
+      }),
+    );
+    click(await screen.findByRole("option", { name: "Copy to Nova" }));
   }
+}
 
+async function preparePartialWorkflowRescue() {
   prepareAgentProfile();
   const first = prepareDeleteWorkflow();
   const second: WorkflowSummary = {
@@ -880,6 +880,16 @@ test("Retry unfinished rescues without duplicating completed workflows", async (
   await expect(within(dialog).findByRole("alert")).resolves.toHaveTextContent(
     "Second copy failed",
   );
+  return {
+    dialog,
+    allowRetry() {
+      allowSecondCopy = true;
+    },
+  };
+}
+
+test("A failed rescue keeps the source agent and the completed workflow copy", async () => {
+  const { dialog } = await preparePartialWorkflowRescue();
   expect(within(dialog).getByText("Delete agent")).toBeEnabled();
   expect(screen.getByDisplayValue("Research Agent")).toBeInTheDocument();
   expect(
@@ -891,15 +901,12 @@ test("Retry unfinished rescues without duplicating completed workflows", async (
   for (const select of within(dialog).getAllByRole("combobox")) {
     expect(select).toHaveTextContent("Delete with agent");
   }
+});
 
-  for (const select of within(dialog).getAllByRole("combobox")) {
-    expect(select).toHaveTextContent("Delete with agent");
-  }
-  expect(
-    within(dialog).getByText("Daily research copied to Nova"),
-  ).toBeInTheDocument();
+test("Retry unfinished rescues without duplicating completed workflows", async () => {
+  const { dialog, allowRetry } = await preparePartialWorkflowRescue();
   await chooseBothWorkflowCopies(dialog);
-  allowSecondCopy = true;
+  allowRetry();
   click(within(dialog).getByText("Delete agent"));
   await screen.findByText("Agent deleted");
   await waitFor(() => {

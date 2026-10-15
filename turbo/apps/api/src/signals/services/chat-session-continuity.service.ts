@@ -30,11 +30,9 @@ import {
 export const NATIVE_CONTEXT_RECOVERY_PROMPT =
   "This Run did not resume the earlier native conversation context. Before processing the current request, you must run `okou chat messages --output-dir threads`, read and understand this Thread's earlier messages, and then continue the current request using that context.";
 
-export type ChatThreadSessionRoute = SessionExecutionIdentity;
-export type ChatThreadSessionResolutionAction =
-  "initialized" | "reused" | "rotated";
+export type ChatThreadContinuationRoute = SessionExecutionIdentity;
 
-export interface ChatThreadSessionSnapshot {
+export interface ChatThreadNativeBinding {
   readonly threadAgentId: string | null;
   readonly framework: string | null;
   readonly frameworkSessionId: string | null;
@@ -57,31 +55,28 @@ export interface ChatThreadExecutionSnapshot {
   readonly nativeContinuation: NativeContinuation;
 }
 
-export interface ChatThreadSessionRead {
+export interface ChatThreadContinuationRead {
   readonly selectedModel: string | null;
   readonly cliAgentType: string | null;
   readonly previousRun: NativeSourceRun | null;
   readonly hasPriorConversationRound: boolean;
 }
 
-export interface ChatThreadSessionQuerySnapshot
-  extends ChatThreadSessionRead, ChatThreadSessionSnapshot {
+export interface ChatThreadContinuationSnapshot
+  extends ChatThreadContinuationRead, ChatThreadNativeBinding {
   readonly cloudBrowserEnabled: boolean;
   readonly agent: ChatThreadExecutionSnapshot["agent"];
 }
 
-export interface ChatThreadSessionResolution {
-  readonly previousAgentId: string | null;
-  readonly action: ChatThreadSessionResolutionAction;
-  readonly resetNativeSession: boolean;
-  readonly expected: ChatThreadSessionSnapshot;
+export interface ChatThreadContinuation {
+  readonly expected: ChatThreadNativeBinding;
   readonly cloudBrowserEnabled: boolean;
   readonly nativeContinuation: NativeContinuation;
   readonly executionSnapshot: ChatThreadExecutionSnapshot;
 }
 
 /** Reads native provenance and an existence fact, never message bodies. */
-export function createChatThreadSessionRead(
+export function createChatThreadContinuationRead(
   pickedEvent$: Computed<
     Promise<{
       readonly id: string;
@@ -91,7 +86,7 @@ export function createChatThreadSessionRead(
   >,
   orgId: string,
   userId: string,
-): Computed<Promise<ChatThreadSessionRead | undefined>> {
+): Computed<Promise<ChatThreadContinuationRead | undefined>> {
   return computed(async (get) => {
     const event = await get(pickedEvent$);
     if (!event) {
@@ -192,8 +187,8 @@ export function createChatThreadSessionRead(
   });
 }
 
-export function chatThreadSessionIdentity(
-  read: ChatThreadSessionRead | undefined,
+export function chatThreadNativeIdentity(
+  read: ChatThreadContinuationRead | undefined,
 ): SessionExecutionIdentity | null {
   return read?.previousRun
     ? {
@@ -203,11 +198,11 @@ export function chatThreadSessionIdentity(
     : null;
 }
 
-export function capturedChatThreadSessionSnapshot(
+export function capturedChatThreadContinuationSnapshot(
   thread: ChatThreadRequestRow,
-  read: ChatThreadSessionRead | undefined,
+  read: ChatThreadContinuationRead | undefined,
   agent: ChatThreadExecutionSnapshot["agent"],
-): ChatThreadSessionQuerySnapshot {
+): ChatThreadContinuationSnapshot {
   return {
     threadAgentId: thread.agentId,
     framework: thread.framework,
@@ -222,11 +217,11 @@ export function capturedChatThreadSessionSnapshot(
   };
 }
 
-export function resolveChatThreadSessionSnapshot(
-  thread: ChatThreadSessionQuerySnapshot,
-  args: { readonly route: ChatThreadSessionRoute },
-): ChatThreadSessionResolution {
-  const identity = chatThreadSessionIdentity(thread);
+export function resolveChatThreadContinuation(
+  thread: ChatThreadContinuationSnapshot,
+  args: { readonly route: ChatThreadContinuationRoute },
+): ChatThreadContinuation {
+  const identity = chatThreadNativeIdentity(thread);
   const reusable = identity !== null && canReuseSession(identity, args.route);
   const nativeContinuation: NativeContinuation = {
     sessionId: reusable ? thread.frameworkSessionId : null,
@@ -236,14 +231,6 @@ export function resolveChatThreadSessionSnapshot(
       : null,
   };
   return {
-    previousAgentId: thread.previousRun?.agentId ?? null,
-    action:
-      thread.frameworkSessionId === null
-        ? "initialized"
-        : reusable
-          ? "reused"
-          : "rotated",
-    resetNativeSession: !reusable,
     expected: {
       threadAgentId: thread.threadAgentId,
       framework: thread.framework,

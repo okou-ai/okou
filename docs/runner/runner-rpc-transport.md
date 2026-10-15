@@ -208,9 +208,14 @@ The shared owner admits at most eight requests per Run and moves each stream and
 capacity permit into its consumer. Request reading has the existing 60-second
 setup budget; validated SSH file methods retain their longer method-owned budget.
 SSH authorization, session pruning, retained host-work capacity, and diagnostic
-reporting remain with SSH. Run cancellation/Drop synchronously closes its SSH
-registration; normal shutdown joins dispatched requests before session cleanup.
-Required native SSH cleanup also joins its owned SDK resources, control and relay
+reporting remain with SSH. Run cancellation/Drop synchronously closes its consumers;
+normal shutdown joins dispatched requests before session cleanup. A common native
+owner is registered before SSH/VNC consumers and retains the host node budget,
+assignment replacement identity, provisioning journals and physical cleanup receipts.
+Consumers keep their own host/route authority and node/stream/capacity leases.
+Evicting or closing one consumer releases only its leases; it cannot close another
+consumer's shared configuration node. Required native cleanup operates even
+without an SSH consumer and joins the owned SDK resources, control and relay
 IO, runtime and worker thread. Its capacity remains reserved until physical
 retirement completes. A five-second cleanup deadline reports failure while the
 independent cleanup owner retains unfinished work. The dispatcher propagates
@@ -222,6 +227,10 @@ diagnostic isolation. SSH converts its private resolved authority into the
 transport's validated configuration and retains host capacity through an opaque
 lease until physical transport retirement. The transport does not depend on SSH
 response types or session ownership, so later consumers can use the same core.
+The shared Cloudflare carrier likewise accepts generic owned byte IO and exposes
+bounded provider failures; each consumer adapts its own authority and diagnostics.
+Gateway destination policy, certificate validation and bounded WSS framing remain
+independent of the consumer's application authentication.
 TLS clients share a consumer-independent WebPKI policy with an explicit crypto
 provider. The official Tailscale SDK remains unchanged.
 The current-run usage consumer described below shares this owner without
@@ -417,9 +426,10 @@ verification use the generic helper identity. Runner and bundled guest binaries
 ship together, without an SSH-specific compatibility alias. API and
 control-channel contracts are unchanged.
 
-Runner/rootfs, API, UI and selected commit-addressed CLI artifacts retain their
-independent deployment boundaries. Add no negotiation header, fallback routing, plugin
-registry, batching or pooling. See [deployment compatibility](../deployment-compatibility.md).
+API and UI deploy independently of Runner/rootfs and its bundled Okou CLI. See
+[CLI deployment compatibility](../deployment-compatibility.md#runner-guest-and-cli-artifacts)
+for deployment overlap and retained package consumers.
+Add no negotiation header, fallback routing, plugin registry, batching or pooling.
 
 Local tests use real sockets, files, the real control handshake and operation
 tracker, plus unrelated external test methods. They require no web server.

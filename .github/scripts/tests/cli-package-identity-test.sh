@@ -20,7 +20,6 @@ JSON
 cat > "${fixture}/turbo/packages/pi-agent-runtime/package.json" <<'JSON'
 {"version":"1.36.0","dependencies":{"@earendil-works/pi-coding-agent":"0.86.1"}}
 JSON
-jq -n '{digest: ("d" * 64)}' > "${fixture}/turbo/packages/pi-agent-runtime/session-construction-digest.json"
 printf 'first patch\n' > "${fixture}/turbo/patches/@earendil-works__a.patch"
 printf 'second patch\n' > "${fixture}/turbo/patches/@earendil-works__b.patch"
 for asset in okou.js image-resize-worker.js photon_rs_bg.wasm; do
@@ -44,10 +43,9 @@ first_sha="$(jq -r '.package.sha256' "${tmp_dir}/first/manifest.json")"
 # Packaging must use the already-built package identity, not reread the workspace.
 jq '.version = "1.36.1"' "${fixture}/turbo/packages/pi-agent-runtime/package.json" > "${tmp_dir}/runtime.json"
 mv "${tmp_dir}/runtime.json" "${fixture}/turbo/packages/pi-agent-runtime/package.json"
-jq -n '{digest: ("e" * 64)}' > "${fixture}/turbo/packages/pi-agent-runtime/session-construction-digest.json"
 build bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb "${tmp_dir}/second" >/dev/null
 cmp "${tmp_dir}/first/package.tgz" "${tmp_dir}/second/package.tgz"
-jq -e '.versions.piAgentRuntime == "1.36.0" and .sessionConstruction.digest == ("d" * 64)' \
+jq -e '.versions.piAgentRuntime == "1.36.0"' \
   "${tmp_dir}/second/manifest.json" >/dev/null
 
 # A new preparation records the new identity in bytes, which must rotate SHA.
@@ -63,8 +61,7 @@ import io, json, pathlib, subprocess, sys, tarfile
 root = pathlib.Path(sys.argv[1])
 reader = sys.argv[2]
 metadata = {"name":"@okouai/cli","version":"9.353.0","okouBuildIdentity":{
-    "schemaVersion":1,"piAgentRuntime":"1.36.0","piSdk":"0.86.1+okou.0123456789ab",
-    "sessionConstruction":{"digest":"d"*64}}}
+    "schemaVersion":1,"piAgentRuntime":"1.36.0","piSdk":"0.86.1+okou.0123456789ab"}}
 valid = json.dumps(metadata).encode()
 cases = {
     "missing-record": [json.dumps({"name":"@okouai/cli","version":"9.353.0"}).encode()],
@@ -77,7 +74,6 @@ cases = {
     "float-schema": [valid.replace(b'"schemaVersion": 1', b'"schemaVersion": 1.0')],
     "invalid-runtime": [valid.replace(b'1.36.0', b'01.36.0')],
     "invalid-sdk": [valid.replace(b'0123456789ab', b'0123456789AB')],
-    "invalid-session": [valid.replace(b'd'*64, b'e'*63)],
     "symlink-metadata": [None],
 }
 for name, values in cases.items():

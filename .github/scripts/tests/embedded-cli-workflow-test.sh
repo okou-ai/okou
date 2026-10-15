@@ -80,31 +80,30 @@ jq -e '
 }
 
 jq -e '
-  .jobs["publish-cli-versioned-artifact"] as $publisher |
-  $publisher.steps as $steps |
-  ($steps | map(.id // "") | index("publish")) as $publish |
+  .jobs["prepare-runner-cli"] as $prepare |
+  $prepare.steps as $steps |
+  ($steps | map(.run // "" | contains("fetch-okou-cli-artifact.sh")) | index(true)) as $fetch |
   ($steps | map(((.uses // "") | startswith("actions/upload-artifact@")) and
     .with.name == "runner-release-cli-${{ github.run_id }}") | index(true)) as $upload |
-  $publisher.needs == "release-please" and
-  ($publish < $upload) and
-  $steps[$publish].env.ARTIFACT_SHA == "${{ needs.release-please.outputs.release_target }}" and
-  $steps[$publish].env.OUTPUT_DIR == "runner-cli-intermediate" and
-  $steps[$publish].run == "bash .github/scripts/release/publish-okou-cli-versioned-artifact.sh" and
-  $steps[$upload].if == "${{ needs.release-please.outputs.runner_rs_release_created == \u0027true\u0027 }}" and
+  $prepare.needs == "release-please" and
+  $prepare.if == "${{ needs.release-please.outputs.runner_rs_release_created == \u0027true\u0027 }}" and
+  ($fetch < $upload) and
+  $steps[$fetch].env.ARTIFACT_SHA == "${{ needs.release-please.outputs.release_target }}" and
+  $steps[$fetch].run == "bash .github/scripts/artifacts/fetch-okou-cli-artifact.sh \"$ARTIFACT_SHA\" runner-cli-intermediate" and
   ($steps[$upload].with.path | split("\n") | index("runner-cli-intermediate/package.tgz") != null and index("runner-cli-intermediate/manifest.json") != null) and
   $steps[$upload].with.name == "runner-release-cli-${{ github.run_id }}" and
   $steps[$upload].with.overwrite == true and
   $steps[$upload].with["if-no-files-found"] == "error" and
   $steps[$upload].with["retention-days"] == 1 and
-  (.jobs["build-runner-release-assets"].needs | index("publish-cli-versioned-artifact") != null) and
+  (.jobs["build-runner-release-assets"].needs | index("prepare-runner-cli") != null) and
   any(.jobs["build-runner-release-assets"].steps[];
     ((.uses // "") | startswith("actions/download-artifact@")) and
     .with.name == $steps[$upload].with.name and
-    .with.path == $steps[$publish].env.OUTPUT_DIR) and
+    .with.path == "runner-cli-intermediate") and
   any(.jobs["build-runner-release-assets"].steps[];
     .env.GUEST_CLI_PATH == "${{ github.workspace }}/runner-cli-intermediate/package.tgz" and
     .env.GUEST_CLI_MANIFEST_PATH == "${{ github.workspace }}/runner-cli-intermediate/manifest.json") and
-  (.jobs["builds-complete"].needs | index("publish-cli-versioned-artifact") != null) and
+  (.jobs["builds-complete"].needs | index("prepare-runner-cli") != null) and
   (.jobs["build-runner-production"].needs | index("build-runner-release-assets") != null) and
   any(.jobs["build-runner-production"].steps[];
     .env.RUNNER_TARGET == "${{ matrix.target }}" and

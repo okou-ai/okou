@@ -247,6 +247,7 @@ fn build_mock_run_config_with_runtime(
     let active_runs = ActiveRuns::new(Arc::clone(&reuse_state_notify));
 
     let config = RunConfig {
+        sandbox_op_reporter: None,
         runner: RunnerInfo {
             identity: test_runner_identity(),
             group: "test-group".into(),

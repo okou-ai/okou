@@ -1,3 +1,4 @@
+import { credentialBackedSshHost } from "./helpers/ssh-credential";
 import { randomUUID } from "node:crypto";
 
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
@@ -169,7 +170,7 @@ test("only an admin may promote their own Personal configuration in place withou
     return id === original.id;
   });
   expect(retained).toMatchObject({
-    credentialId: original.credentialId,
+    credentialId: credentialBackedSshHost(original).credentialId,
     port: original.port,
     generation: original.generation + 1,
     transport: { type: "cloudflare_access", configId: personal.id },
@@ -464,7 +465,7 @@ test("an admin reviews aggregate impact before deleting other owners' hosts; sta
     expect.objectContaining({
       id: firstHost.id,
       host: firstHost.host,
-      credentialId: firstHost.credentialId,
+      credentialId: credentialBackedSshHost(firstHost).credentialId,
       generation: firstHost.generation + 1,
       updatedAt: deletedAt,
       transport: { type: "cloudflare_access", needsRebind: true },
@@ -502,7 +503,11 @@ test("a reviewed deletion is stale when a member removes the last reference", as
   ).body;
   session(member, "member");
   await accept(
-    hosts().delete({ headers, params: { connectionId: host.id } }),
+    hosts().delete({
+      headers,
+      params: { connectionId: host.id },
+      body: { expectedGeneration: host.generation },
+    }),
     [204],
   );
   session(admin, "admin");
@@ -547,7 +552,11 @@ test("removing one reviewed peer host rejects deletion without detaching the rem
   ).body;
   session(member, "member");
   await accept(
-    hosts().delete({ headers, params: { connectionId: removed.id } }),
+    hosts().delete({
+      headers,
+      params: { connectionId: removed.id },
+      body: { expectedGeneration: removed.generation },
+    }),
     [204],
   );
   const before = (await accept(hosts().list({ headers }), [200])).body;
@@ -819,7 +828,7 @@ test("a competing new binding cannot leave a reviewed peer detached while its co
           displayName: "New binding",
           host: "new.example.com",
           port: 443,
-          credential: { id: direct.credentialId },
+          credential: { id: credentialBackedSshHost(direct).credentialId },
           transport: { type: "cloudflare_access", configId: shared.id },
         },
       }),

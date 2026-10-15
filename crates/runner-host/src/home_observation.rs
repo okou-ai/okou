@@ -16,6 +16,10 @@ pub enum HomeObservationKind {
     Consumption,
     #[serde(rename = "runner_home_image_removal")]
     Removal,
+    #[serde(rename = "runner_home_inventory")]
+    Inventory,
+    #[serde(rename = "runner_home_admission")]
+    Admission,
 }
 
 impl fmt::Display for HomeObservationKind {
@@ -25,6 +29,8 @@ impl fmt::Display for HomeObservationKind {
             Self::Publication => "runner_home_image_publication",
             Self::Consumption => "runner_home_image_consumption",
             Self::Removal => "runner_home_image_removal",
+            Self::Inventory => "runner_home_inventory",
+            Self::Admission => "runner_home_admission",
         })
     }
 }
@@ -32,6 +38,9 @@ impl fmt::Display for HomeObservationKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HomeObservationOutcome {
+    Selected,
+    Busy,
+    Unavailable,
     Retained,
     Published,
     PreservedExisting,
@@ -39,11 +48,17 @@ pub enum HomeObservationOutcome {
     Failed,
     Fallback,
     Deleted,
+    Assembled,
+    Loading,
+    Deferred,
 }
 
 impl fmt::Display for HomeObservationOutcome {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
+            Self::Selected => "selected",
+            Self::Busy => "busy",
+            Self::Unavailable => "unavailable",
             Self::Retained => "retained",
             Self::Published => "published",
             Self::PreservedExisting => "preserved_existing",
@@ -51,6 +66,9 @@ impl fmt::Display for HomeObservationOutcome {
             Self::Failed => "failed",
             Self::Fallback => "fallback",
             Self::Deleted => "deleted",
+            Self::Assembled => "assembled",
+            Self::Loading => "loading",
+            Self::Deferred => "deferred",
         })
     }
 }
@@ -81,6 +99,23 @@ pub struct HomeObservation {
     pub reason: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub handoff_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runner_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runner_heartbeat_generation: Option<u64>,
+    /// Known source history correlation; never the operation's attributed Run.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub history_generation_run_id: Option<RunId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inventory_loaded: Option<bool>,
+    /// States assembled before active/profile filtering and the heartbeat cap.
+    /// Earlier snapshot truncation is outside this observation's scope.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inventory_observed_states: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inventory_output_states: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inventory_omitted_states: Option<usize>,
 }
 
 impl HomeObservation {
@@ -97,6 +132,13 @@ impl HomeObservation {
             allocated_bytes: None,
             reason: None,
             handoff_path: None,
+            runner_id: None,
+            runner_heartbeat_generation: None,
+            history_generation_run_id: None,
+            inventory_loaded: None,
+            inventory_observed_states: None,
+            inventory_output_states: None,
+            inventory_omitted_states: None,
         }
     }
 }
@@ -123,6 +165,13 @@ impl HomeObservation {
             allocated_bytes = self.allocated_bytes,
             reason = self.reason.as_deref(),
             handoff_path = self.handoff_path.as_deref(),
+            runner_id = self.runner_id.as_deref(),
+            runner_heartbeat_generation = self.runner_heartbeat_generation,
+            history_generation_run_id = self.history_generation_run_id.as_ref().map(tracing::field::display),
+            inventory_loaded = self.inventory_loaded,
+            inventory_observed_states = self.inventory_observed_states,
+            inventory_output_states = self.inventory_output_states,
+            inventory_omitted_states = self.inventory_omitted_states,
             local_detail = details.detail,
             local_path = details.path.map(|path| tracing::field::display(path.display())),
             "home resource observation"

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import { httpInstrumentationMiddleware } from "@hono/otel";
 import { DISCORD_OAUTH_CALLBACK_PATH } from "./lib/discord-oauth-telemetry";
+import { isTelegramAuthTelemetryUrl } from "./lib/telegram-auth-telemetry";
 import * as Sentry from "@sentry/node";
 import {
   CLIENT_FORCE_UPGRADE_STATUS,
@@ -592,11 +593,12 @@ export function createAppWithRoutes({
     captureRequestHeaders: [],
     captureResponseHeaders: [],
   });
-  // @hono/otel captures url.full before handlers run. This callback carries
-  // provider code/state and returns a secret approval fragment in Location.
-  // Exclude it BEFORE span creation; its path/status Axiom log remains below.
+  // @hono/otel captures url.full before handlers run. Discord carries provider
+  // code/state and Telegram carries identity/proof, including on invalid input.
+  // Exclude BEFORE span creation; their path/status Axiom logs remain below.
   app.use("*", (context, next) => {
-    return context.req.path.replace(/\/$/u, "") === DISCORD_OAUTH_CALLBACK_PATH
+    return context.req.path.replace(/\/$/u, "") ===
+      DISCORD_OAUTH_CALLBACK_PATH || isTelegramAuthTelemetryUrl(context.req.url)
       ? next()
       : instrumentHttpRequest(context, next);
   });

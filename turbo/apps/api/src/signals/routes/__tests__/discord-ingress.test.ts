@@ -91,6 +91,21 @@ function currentInputs(rows: readonly ChatEvent[]) {
   );
 }
 
+function observeDiscordRequests() {
+  const requests: { readonly method: string; readonly url: URL }[] = [];
+  const observe = ({ request }: { request: Request }) => {
+    const url = new URL(request.url);
+    if (url.origin === "https://discord.com") {
+      requests.push({ method: request.method, url });
+    }
+  };
+  server.events.on("request:start", observe);
+  onTestFinished(() => {
+    server.events.removeListener("request:start", observe);
+  });
+  return requests;
+}
+
 interface PublicThreadPermissionCase {
   readonly name: string;
   readonly allowed: boolean;
@@ -170,6 +185,174 @@ async function discordStatus(
 }
 
 describe("canonical Discord ingress", () => {
+  it.each(["channel", "thread", "private thread", "dm"] as const)(
+    "reads each provider resource once and starts typing before importing %s context",
+    async (kind) => {
+      const actor = await connected();
+      const provider = mockDiscordProvider(actor);
+      mockDiscordApplication(1 << 19);
+      let channelId = provider.guildChannelId;
+      if (kind === "dm") {
+        channelId = provider.dmChannelId;
+      } else if (kind !== "channel") {
+        const thread = provider.createThread(uniqueDiscordSnowflake());
+        channelId = thread.id;
+        if (kind === "private thread") {
+          provider.channels.set(thread.id, { ...thread, type: 12 });
+          // VIEW_CHANNEL | SEND_MESSAGES | READ_MESSAGE_HISTORY |
+          // SEND_MESSAGES_IN_THREADS, without MANAGE_THREADS.
+          provider.state.everyonePermissions = "274877975552";
+        }
+      }
+      const attachmentId = uniqueDiscordSnowflake();
+      const url = `https://cdn.discordapp.com/attachments/${channelId}/${attachmentId}/notes.txt`;
+      const message = {
+        ...discordMessageForTest(actor, {
+          channelId,
+          guild: kind !== "dm",
+          content: `<@${actor.botUserId}> read this attachment`,
+          attachments: [
+            { id: attachmentId, filename: "notes.txt", size: 5, url },
+          ],
+        }),
+        // A standalone thread's missing starter may also be quoted. Its 404
+        // must not cause the quote path to repeat the same message read.
+        ...((kind === "thread" || kind === "private thread") && {
+          message_reference: {
+            message_id: channelId,
+            channel_id: provider.guildChannelId,
+            guild_id: actor.guildId,
+          },
+        }),
+      };
+      provider.messages.set(message.id, message);
+      const downloading = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<void>(context.signal);
+      onTestFinished(() => {
+        if (!release.settled()) {
+          release.resolve(undefined);
+        }
+      });
+      server.use(
+        http.get(url, async () => {
+          downloading.resolve(undefined);
+          await release.promise;
+          return new HttpResponse("notes", {
+            headers: { "content-type": "text/plain", "content-length": "5" },
+          });
+        }),
+      );
+      const requests = observeDiscordRequests();
+      const memberships =
+        context.mocks.clerk.organizations.getOrganizationMembershipList;
+      memberships.mockClear();
+      let processing: Promise<void> | undefined;
+      const checked = await settleIncludingAbort(async () => {
+        await postDiscordMessage(context, message);
+        processing = flushWaitUntilForTest();
+        await Promise.race([
+          downloading.promise,
+          processing.then(() => {
+            if (!downloading.settled()) {
+              throw new Error("Ingress ended before attachment download");
+            }
+          }),
+        ]);
+        // Pause at the last external read in admission. Queued launch is a
+        // separate authority boundary and must still perform fresh checks.
+        const reads = requests.filter((request) => {
+          return request.method === "GET";
+        });
+        expect(
+          new Set(
+            reads.map((request) => {
+              return request.url.href;
+            }),
+          ).size,
+        ).toBe(reads.length);
+        expect(reads).toHaveLength(
+          kind === "dm"
+            ? 3
+            : kind === "channel"
+              ? 9
+              : kind === "thread"
+                ? 12
+                : 13,
+        );
+        expect(memberships).toHaveBeenCalledTimes(1);
+        expect(provider.typingChannels).toStrictEqual([channelId]);
+        const typing = requests.findIndex((request) => {
+          return (
+            request.method === "POST" &&
+            request.url.pathname.endsWith("/typing")
+          );
+        });
+        const contextRead = requests.findIndex((request) => {
+          return (
+            request.method === "GET" &&
+            request.url.pathname.includes("/messages")
+          );
+        });
+        expect(typing).toBeGreaterThanOrEqual(0);
+        expect(typing).toBeLessThan(contextRead);
+      });
+      if (!release.settled()) {
+        release.resolve(undefined);
+      }
+      await processing;
+      if (!checked.ok) {
+        throw checked.error;
+      }
+      const [thread] = await discordChatThreads(context, actor);
+      expect(thread).toBeDefined();
+      await expect(launchedRun(actor, thread!.id)).resolves.toMatchObject({
+        prompt: expect.stringContaining("read this attachment"),
+      });
+    },
+  );
+
+  it("reads fresh permissions on the next message and does not type after revocation", async () => {
+    const actor = await connected();
+    const provider = mockDiscordProvider(actor);
+    mockDiscordApplication(1 << 19);
+    const first = discordMessageForTest(actor, {
+      channelId: provider.guildChannelId,
+      content: `<@${actor.botUserId}> first authorized message`,
+    });
+    await postDiscordMessage(context, first);
+    await flushWaitUntilForTest();
+    expect(provider.typingChannels).toStrictEqual([provider.guildChannelId]);
+    const requests = observeDiscordRequests();
+    provider.state.everyonePermissions = "0";
+    const second = discordMessageForTest(actor, {
+      channelId: provider.guildChannelId,
+      content: `<@${actor.botUserId}> revoked message`,
+    });
+    await postDiscordMessage(context, second);
+    await flushWaitUntilForTest();
+    expect(
+      requests.filter((request) => {
+        return request.url.pathname.endsWith("/roles");
+      }),
+    ).toHaveLength(1);
+    expect(
+      requests.some((request) => {
+        return (
+          request.url.pathname.includes("/messages") ||
+          request.url.pathname.endsWith("/typing")
+        );
+      }),
+    ).toBeFalsy();
+    const threads = await discordChatThreads(context, actor);
+    expect(threads).toHaveLength(1);
+    const inputs = currentInputs(await events(actor, threads[0]!.id));
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]?.userMessage.parts).toContainEqual({
+      type: "text",
+      text: "@Okou first authorized message",
+    });
+  });
+
   it("sends one unavailable-agent notice before workspace bootstrap without admitting or replaying a chat", async () => {
     configureDiscordApp();
     mockEnv("DISCORD_APPLICATION_ID", DISCORD_TEST_APPLICATION_ID);

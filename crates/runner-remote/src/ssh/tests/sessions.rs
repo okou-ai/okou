@@ -330,7 +330,7 @@ async fn eight_retained_sessions_do_not_occupy_short_request_slots_or_park_lease
         "completed"
     );
     let _ = start(&h, json!({"type":"exec","command":"true"}), false).await;
-    let other = AdditionalRun::new(&h.runtime, "other").await;
+    let other = AdditionalRun::new(&h.rpc, "other").await;
     let frames = harness::request_frames(
         other.open().await,
         envelope("status", json!({"sessionId":ids[1]})),
@@ -465,7 +465,10 @@ async fn credential_cache_saturation_does_not_create_a_global_session_cap() {
     let mut h = Harness::new(Reply::Hold).await;
     let mut registrations = Vec::new();
     for _ in 0..256 {
-        let registration = h.runtime.cache.register(runner_types::ids::RunId::new_v4());
+        let run = runner_types::ids::RunId::new_v4();
+        let native = crate::native::Runtime::new()
+            .register(run, &tokio_util::sync::CancellationToken::new());
+        let registration = h.runtime.cache.register(run, native);
         let _access = registration.lookup(uuid::Uuid::new_v4()).unwrap();
         registrations.push(registration);
     }

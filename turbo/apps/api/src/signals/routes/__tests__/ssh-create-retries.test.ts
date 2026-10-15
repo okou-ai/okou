@@ -10,6 +10,7 @@ import { sshConnectionsRoutes } from "../ssh-connections";
 import { cloudflareAccessRoutes } from "../cloudflare-access";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { createRouteMocks } from "./helpers/route-test";
+import { sshCredentialId } from "./helpers/ssh-credential";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -348,7 +349,11 @@ test("a host can be saved again after overlapping low-frequency edits", async ()
     [200],
   );
   const current = await resources();
-  expect(current.hosts[0]).toMatchObject({
+  const savedHost = current.hosts[0];
+  if (!savedHost) {
+    throw new Error("Expected the saved host");
+  }
+  expect(savedHost).toMatchObject({
     displayName: "Saved again",
     generation: host.generation + 1,
     credentialName: "Replacement",
@@ -358,5 +363,5 @@ test("a host can be saved again after overlapping low-frequency edits", async ()
     current.credentials.map((credential) => {
       return credential.id;
     }),
-  ).toContain(current.hosts[0]?.credentialId);
+  ).toContain(sshCredentialId(savedHost));
 });

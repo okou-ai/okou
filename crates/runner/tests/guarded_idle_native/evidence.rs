@@ -16,6 +16,7 @@ use super::{TestResult, io};
 pub const PREFIX: &str = "NATIVE_TERMINAL_RECEIPT ";
 const PRESSURE_PREFIX: &str = "NATIVE_PRESSURE_WITNESS ";
 const CONTINUATION_PREFIX: &str = "NATIVE_CONTINUATION_WITNESS ";
+const OPTIONAL_PREFIX: &str = "NATIVE_OPTIONAL_WITNESS ";
 pub const TAIL_BYTES: usize = 64 * 1024 * 1024;
 
 #[derive(Clone, Deserialize)]
@@ -135,7 +136,7 @@ pub fn verify_file(path: &Path, expected: &str) -> TestResult<()> {
 }
 
 /// CLOCK_MONOTONIC matches P1's monotonic_ns; wall time is supplementary.
-fn clocks() -> io::Result<(u64, u128)> {
+pub(super) fn clocks() -> io::Result<(u64, u128)> {
     let mut time = libc::timespec {
         tv_sec: 0,
         tv_nsec: 0,
@@ -205,6 +206,26 @@ impl Case {
 
     pub fn continuation_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
         self.write_event(CONTINUATION_PREFIX, phase, evidence)
+    }
+
+    pub fn optional_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event(OPTIONAL_PREFIX, phase, evidence)
+    }
+
+    pub fn recovery_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_RECOVERY_WITNESS ", phase, evidence)
+    }
+
+    pub fn critical_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_CRITICAL_WITNESS ", phase, evidence)
+    }
+
+    pub fn snapshot_memory_hash(&self) -> io::Result<&str> {
+        self.artifacts
+            .snapshot_files
+            .get("memory.bin")
+            .map(String::as_str)
+            .ok_or_else(|| io::Error::other("native optional snapshot memory identity missing"))
     }
 
     pub fn bind_original_lease(

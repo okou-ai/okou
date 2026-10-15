@@ -684,12 +684,19 @@ async function connectBriefSource(actor: ApiTestUser): Promise<void> {
   if (!onboarding.defaultAgentId) {
     throw new Error("Expected default Agent");
   }
+  await connectBriefSourceForAgent(actor, onboarding.defaultAgentId);
+}
+
+async function connectBriefSourceForAgent(
+  actor: ApiTestUser,
+  defaultAgentId: string,
+): Promise<void> {
   mockGmailConnectorOAuth();
   const start = await connectors.startOauth(
     actor,
     "gmail",
     "oauth",
-    onboarding.defaultAgentId,
+    defaultAgentId,
   );
   const state = new URL(start.authorizationUrl).searchParams.get("state");
   if (!state) {
@@ -701,7 +708,7 @@ async function connectBriefSource(actor: ApiTestUser): Promise<void> {
   });
   const membershipRead =
     context.mocks.clerk.organizations.getOrganizationMembershipList.getMockImplementation();
-  await runs.enableAgentConnectors(actor, onboarding.defaultAgentId, ["gmail"]);
+  await runs.enableAgentConnectors(actor, defaultAgentId, ["gmail"]);
   if (membershipRead) {
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
       membershipRead,
@@ -1772,76 +1779,199 @@ describe("Official schedule expiry", () => {
     return response.body;
   }
 
-  it.each(["user.deleted", "organization.deleted"] as const)(
-    "stops claimed Morning Brief occurrences only in the deleted scope after %s",
-    async (type) => {
+  async function prepareBriefDeletionOwners({
+    type,
+    bulk,
+  }: {
+    readonly type: "user.deleted" | "organization.deleted";
+    readonly bulk: "revoked" | "surviving";
+  }) {
+    const stoppedOwnerKeys =
+      type === "user.deleted"
+        ? (["doomed", "sameUserElsewhere"] as const)
+        : (["doomed", "peer"] as const);
+    const survivingOwnerKeys =
+      type === "user.deleted"
+        ? (["peer", "foreign"] as const)
+        : (["sameUserElsewhere", "foreign"] as const);
+    const selectedOwnerKeys = new Set(
+      bulk === "revoked"
+        ? [...stoppedOwnerKeys, survivingOwnerKeys[0]]
+        : [stoppedOwnerKeys[0], ...survivingOwnerKeys],
+    );
+    const { actor: doomed, ...entitlement } =
+      await workflowBdd.setupWorkflowOrg({
+        tier: "team",
+      });
+    const sameUserElsewhere = bdd.user({ userId: doomed.userId });
+    const peer = bdd.user({ orgId: doomed.orgId, orgRole: "org:admin" });
+    // These IDs came from real onboarding responses. Members of the same org
+    // share its default Agent; reconnecting a source need not reread onboarding.
+    const defaultAgentIds = new Map<ApiTestUser, string>([
+      [doomed, entitlement.defaultAgentId],
+      [peer, entitlement.defaultAgentId],
+    ]);
+    const foreignSetup = selectedOwnerKeys.has("foreign")
+      ? await workflowBdd.setupWorkflowOrg({ tier: "team" })
+      : null;
+    const foreign = foreignSetup?.actor ?? bdd.user();
+    if (foreignSetup) {
+      defaultAgentIds.set(foreign, foreignSetup.defaultAgentId);
+    }
+    if (selectedOwnerKeys.has("sameUserElsewhere")) {
+      const sameUserEntitlement = await runs.grantProEntitlement(
+        sameUserElsewhere,
+        { tier: "team" },
+      );
+      defaultAgentIds.set(
+        sameUserElsewhere,
+        sameUserEntitlement.defaultAgentId,
+      );
+      // Personal subscriptions belong to this membership, not every org
+      // of the same Clerk user.
+      await selectPersonalDefaultModel(sameUserElsewhere);
+    }
+    const existingOrgMembers: ApiTestUser[] = [];
+    if (selectedOwnerKeys.has("peer")) {
+      await bdd.completeOnboarding(peer);
+      await selectPersonalDefaultModel(peer);
+      existingOrgMembers.push(peer);
+    }
+    const otherAuditor =
+      type === "user.deleted" && selectedOwnerKeys.has("sameUserElsewhere")
+        ? bdd.user({
+            orgId: sameUserElsewhere.orgId,
+            orgRole: "org:admin",
+          })
+        : null;
+    if (otherAuditor) {
+      await bdd.completeOnboarding(otherAuditor);
+      existingOrgMembers.push(otherAuditor);
+    }
+    const owners = { doomed, sameUserElsewhere, peer, foreign };
+    const occurrenceOwners = [...selectedOwnerKeys].map((key) => {
+      const actor = owners[key];
+      const defaultAgentId = defaultAgentIds.get(actor);
+      if (!defaultAgentId) {
+        throw new Error("Expected the owner's public onboarding Agent");
+      }
+      const stopped =
+        type === "user.deleted"
+          ? actor.userId === doomed.userId
+          : actor.orgId === doomed.orgId;
+      return { actor, defaultAgentId, stopped };
+    });
+    const occurrenceActors = occurrenceOwners.map(({ actor }) => {
+      return actor;
+    });
+    const members = [...new Set([...occurrenceActors, ...existingOrgMembers])];
+    return {
+      doomed,
+      entitlement,
+      peer,
+      otherAuditor,
+      initialOwners: occurrenceOwners.filter(({ stopped }) => {
+        return bulk === "revoked" || stopped;
+      }),
+      deferredOwners: occurrenceOwners.filter(({ stopped }) => {
+        return bulk === "surviving" && !stopped;
+      }),
+      members,
+      existingOrgMembers,
+      stoppedCount: bulk === "revoked" ? 2 : 1,
+      survivingCount: bulk === "surviving" ? 2 : 1,
+    };
+  }
+
+  async function prepareBriefOccurrence({
+    actor,
+    defaultAgentId,
+    stopped,
+  }: {
+    readonly actor: ApiTestUser;
+    readonly defaultAgentId: string;
+    readonly stopped: boolean;
+  }) {
+    await bdd.updateUserTimezone(actor, "Asia/Shanghai");
+    await connectBriefSourceForAgent(actor, defaultAgentId);
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers: authHeaders(actor),
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    const [installation] = await listMorningBriefInstallations(actor);
+    if (!installation?.agentId) {
+      throw new Error("Expected the member's Morning Brief Agent");
+    }
+    const [automation] = await readMorningBriefAutomations(
+      actor,
+      installation.id,
+    );
+    if (!automation?.nextRunAt) {
+      throw new Error("Expected the Morning Brief anchor");
+    }
+    expect(automation).toMatchObject({
+      enabled: true,
+      official: { intendedEnabled: true },
+    });
+    return { actor, agentId: installation.agentId, automation, stopped };
+  }
+
+  it.each([
+    {
+      type: "user.deleted",
+      bulk: "revoked",
+      phase: "bulk cancellation and late callbacks",
+    },
+    {
+      type: "user.deleted",
+      bulk: "surviving",
+      phase: "bulk continuation after late callbacks",
+    },
+    {
+      type: "organization.deleted",
+      bulk: "revoked",
+      phase: "bulk cancellation and late callbacks",
+    },
+    {
+      type: "organization.deleted",
+      bulk: "surviving",
+      phase: "bulk continuation after late callbacks",
+    },
+  ] as const)(
+    "preserves Morning Brief $phase after $type",
+    async ({ type, bulk }) => {
       await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
         // The authenticated catalog publisher and automation cron are explicitly
         // in scope as production system/operator boundaries. Catalog publication
         // is the first real request and owns this case's isolated database.
         installCatalogStorageFixture();
         await syncDeployedCatalog();
-        const { actor: doomed, ...entitlement } =
-          await workflowBdd.setupWorkflowOrg({
-            timezone: "Asia/Shanghai",
-            tier: "team",
-          });
-        const sameUserElsewhere = bdd.user({ userId: doomed.userId });
-        const peer = bdd.user({ orgId: doomed.orgId, orgRole: "org:admin" });
-        const { actor: foreign } = await workflowBdd.setupWorkflowOrg({
-          timezone: "Asia/Shanghai",
-          tier: "team",
-        });
-        await runs.grantProEntitlement(sameUserElsewhere, { tier: "team" });
-        // The model preference and personal subscription belong to this org's
-        // member, not every membership of the same Clerk user.
-        await selectPersonalDefaultModel(sameUserElsewhere);
-        await bdd.completeOnboarding(peer);
-        await selectPersonalDefaultModel(peer);
-        const otherAuditor = bdd.user({
-          orgId: sameUserElsewhere.orgId,
-          orgRole: "org:admin",
-        });
-        await bdd.completeOnboarding(otherAuditor);
-        const occurrences = [];
-        for (const actor of [doomed, sameUserElsewhere, peer, foreign]) {
-          await bdd.updateUserTimezone(actor, "Asia/Shanghai");
-          await connectBriefSource(actor);
-          await accept(
-            morningBriefPreferenceClient().update({
-              headers: authHeaders(actor),
-              body: { enabled: true },
-            }),
-            [200],
-          );
-          const [installation] = await listMorningBriefInstallations(actor);
-          if (!installation?.agentId) {
-            throw new Error("Expected the member's Morning Brief Agent");
-          }
-          const [automation] = await readMorningBriefAutomations(
-            actor,
-            installation.id,
-          );
-          if (!automation?.nextRunAt) {
-            throw new Error("Expected the Morning Brief anchor");
-          }
-          expect(automation).toMatchObject({
-            enabled: true,
-            official: { intendedEnabled: true },
-          });
-          occurrences.push({
-            actor,
-            agentId: installation.agentId,
-            automation,
-          });
-        }
-        const members = [
+        const {
           doomed,
-          sameUserElsewhere,
+          entitlement,
           peer,
-          foreign,
           otherAuditor,
-        ];
+          initialOwners,
+          deferredOwners,
+          members,
+          existingOrgMembers,
+          stoppedCount,
+          survivingCount,
+        } = await prepareBriefDeletionOwners({
+          type,
+          bulk,
+        });
+        const occurrences = [];
+        // Cancellation cases claim two revoked owners and one live owner.
+        // Continuation cases arm both survivors after the initial claim, so
+        // their first real dispatch follows deletion and the late callbacks.
+        for (const owner of initialOwners) {
+          occurrences.push(await prepareBriefOccurrence(owner));
+        }
+        expect(occurrences).toHaveLength(initialOwners.length);
         function mockCurrentMembers(currentMembers: readonly ApiTestUser[]) {
           // BDD authentication helpers install a single-actor Clerk response.
           // Restore the complete provider directory before background work and
@@ -1892,7 +2022,7 @@ describe("Official schedule expiry", () => {
         // Existing-org joiners must enter through the real membership webhook
         // before the scheduler can recognize them as present owners/admins.
         webhooks.configureClerkWebhookSecret();
-        for (const actor of [peer, otherAuditor]) {
+        for (const actor of existingOrgMembers) {
           webhooks.verifyNextClerkWebhook({
             type: "organizationMembership.created",
             data: {
@@ -1920,13 +2050,10 @@ describe("Official schedule expiry", () => {
           10,
         );
         mockCurrentMembers(members);
-        expect((await executeAutomationCron()).body.executed).toBe(4);
+        expect((await executeAutomationCron()).body.executed).toBe(
+          occurrences.length,
+        );
         await flushWaitUntilForTest();
-        const isStopped = (actor: ApiTestUser) => {
-          return type === "user.deleted"
-            ? actor.userId === doomed.userId
-            : actor.orgId === doomed.orgId;
-        };
         const claimed: ((typeof occurrences)[number] & {
           runId: string;
           claim: Awaited<ReturnType<typeof runs.claimRunnerJob>>;
@@ -1973,8 +2100,12 @@ describe("Official schedule expiry", () => {
             claim,
             complete,
             inFlight,
-            stopped: isStopped(occurrence.actor),
           });
+        }
+
+        const deferredOccurrences = [];
+        for (const owner of deferredOwners) {
+          deferredOccurrences.push(await prepareBriefOccurrence(owner));
         }
 
         if (type === "organization.deleted") {
@@ -1997,13 +2128,12 @@ describe("Official schedule expiry", () => {
           type,
           data: { id: type === "user.deleted" ? doomed.userId : doomed.orgId },
         });
-        mockCurrentMembers(
-          members.filter((actor) => {
-            return type === "user.deleted"
-              ? actor.userId !== doomed.userId
-              : actor.orgId !== doomed.orgId;
-          }),
-        );
+        const survivingMembers = members.filter((actor) => {
+          return type === "user.deleted"
+            ? actor.userId !== doomed.userId
+            : actor.orgId !== doomed.orgId;
+        });
+        mockCurrentMembers(survivingMembers);
         await webhooks.requestClerkWebhook("{}", {}, [200]);
         await flushWaitUntilForTest();
 
@@ -2034,6 +2164,9 @@ describe("Official schedule expiry", () => {
           })) {
             const observer =
               occurrence.actor.orgId === peer.orgId ? peer : otherAuditor;
+            if (!observer) {
+              throw new Error("Expected a surviving Morning Brief admin");
+            }
             await accept(
               automationClient().get({
                 headers: authHeaders(observer),
@@ -2043,11 +2176,18 @@ describe("Official schedule expiry", () => {
             );
           }
         }
+        expect(
+          claimed.filter((entry) => {
+            return entry.stopped;
+          }),
+        ).toHaveLength(stoppedCount);
         await assertStoppedOccurrences();
         const unaffected = claimed.filter((entry) => {
           return !entry.stopped;
         });
-        expect(unaffected).toHaveLength(2);
+        expect(unaffected.length + deferredOccurrences.length).toBe(
+          survivingCount,
+        );
         for (const occurrence of unaffected) {
           await expect(
             runs.readRunnerCancellation(
@@ -2058,6 +2198,7 @@ describe("Official schedule expiry", () => {
           ).resolves.toMatchObject({ state: "present", mode: null });
         }
 
+        mockCurrentMembers(survivingMembers);
         mockNow(now() + 60 * 60_000);
         // A late callback and its replay must not revive a revoked occurrence
         // or fall back to advancing the untracked legacy schedule.
@@ -2072,7 +2213,7 @@ describe("Official schedule expiry", () => {
         await assertStoppedOccurrences();
 
         const successors = [];
-        for (const occurrence of unaffected) {
+        for (const occurrence of [...unaffected, ...deferredOccurrences]) {
           const settled = await readAutomation(
             occurrence.actor,
             occurrence.automation.id,
@@ -2087,6 +2228,19 @@ describe("Official schedule expiry", () => {
           expect(Date.parse(settled.nextRunAt)).toBeGreaterThan(now());
           successors.push(settled.nextRunAt);
         }
+        // Pause the one surviving owner's settled schedule through its normal
+        // preference API. The next-day cron must then admit zero jobs, exposing
+        // revival of either revoked owner without creating an unrelated Run.
+        for (const occurrence of unaffected) {
+          await accept(
+            morningBriefPreferenceClient().update({
+              headers: authHeaders(occurrence.actor),
+              body: { enabled: false },
+            }),
+            [200],
+          );
+        }
+        mockCurrentMembers(survivingMembers);
         mockNow(
           Math.max(
             ...successors.map((anchor) => {
@@ -2096,21 +2250,21 @@ describe("Official schedule expiry", () => {
             30 * 60_000,
         );
         await runs.heartbeatRunner(runnerGroup);
-        // The real scheduler reports only the two surviving owners dispatched.
+        // The real scheduler dispatches only this case's surviving owners.
         // No private journal/queue reader is needed, including for a deleted
         // organization whose private configuration has no surviving caller.
-        expect((await executeAutomationCron()).body.executed).toBe(2);
+        expect((await executeAutomationCron()).body.executed).toBe(
+          deferredOccurrences.length,
+        );
         await flushWaitUntilForTest();
         const polledRunIds = [];
-        for (const occurrence of unaffected) {
+        for (const occurrence of deferredOccurrences) {
           const runIds = await listAgentRunLogIds(
             occurrence.actor,
             occurrence.agentId,
           );
-          expect(runIds).toHaveLength(2);
-          const nextRunId = runIds.find((id) => {
-            return id !== occurrence.runId;
-          });
+          expect(runIds).toHaveLength(1);
+          const nextRunId = runIds[0];
           if (!nextRunId) {
             throw new Error(
               "Expected the surviving owner's next Morning Brief",

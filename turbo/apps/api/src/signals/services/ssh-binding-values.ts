@@ -22,20 +22,8 @@ import type {
 
 type Owner = { readonly orgId: string; readonly userId: string };
 type PreparedCredential = NonNullable<
-  PreparedSshConnectionCreation["preparedCredential"]["create"]
+  NonNullable<PreparedSshConnectionCreation["preparedCredential"]>["create"]
 >;
-function bindingTransport(
-  args: Pick<
-    PreparedSshConnectionCreation,
-    "preparedTailscale" | "tailscaleId" | "preparedAccess" | "accessId"
-  >,
-): (typeof sshConnections.$inferSelect)["transport"] {
-  return args.preparedTailscale !== undefined || args.tailscaleId !== null
-    ? "tailscale"
-    : args.preparedAccess !== undefined || args.accessId !== null
-      ? "cloudflare_access"
-      : "direct";
-}
 export function sshBindingUpdateValues(
   args: PreparedSshConnectionUpdate,
   current: ReturnType<typeof createSshUpdateReads>["current"],
@@ -43,10 +31,10 @@ export function sshBindingUpdateValues(
   access: SQL,
   tailscale: SQL,
 ) {
-  const transport = bindingTransport(args);
+  const connectionMode = args.connectionMode;
   const clear = and(
-    eq(current.transport, "direct"),
-    sql`${transport === "direct"}`,
+    eq(current.connectionMode, "direct"),
+    sql`${connectionMode === "direct"}`,
     or(ne(current.host, args.host), ne(current.port, args.port)),
   );
   return {
@@ -54,9 +42,10 @@ export function sshBindingUpdateValues(
     host: args.host,
     port: args.port,
     credentialId: credential,
+    tailscaleSshUsername: args.tailscaleSshUsername,
     cloudflareAccessId: access,
     tailscaleId: tailscale,
-    transport,
+    connectionMode,
     learnedHostKeyAlgorithm: sql`CASE WHEN ${clear} THEN NULL ELSE ${current.learnedHostKeyAlgorithm} END`,
     learnedHostKeyFingerprint: sql`CASE WHEN ${clear} THEN NULL ELSE ${current.learnedHostKeyFingerprint} END`,
     generation: sql`${current.generation} + 1`,
@@ -185,7 +174,7 @@ export function sshConnectionCreationSource(
   tailscale: SQL,
 ) {
   const at = nowDate();
-  const transport = bindingTransport(args);
+  const connectionMode = args.connectionMode;
   return new QueryBuilder()
     .select({
       id: sql`${args.body.id}::uuid`.mapWith(pgTextDecoder).as("id"),
@@ -196,15 +185,17 @@ export function sshConnectionCreationSource(
         .as("display_name"),
       host: sql`${args.canonicalHost}`.mapWith(pgTextDecoder).as("host"),
       port: sql`${args.body.port}`.mapWith(pgIntegerDecoder).as("port"),
-      credentialId: credential.mapWith(pgTextDecoder).as("credential_id"),
+      credentialId: credential
+        .mapWith(nullableDriverValueDecoder(pgTextDecoder))
+        .as("credential_id"),
       cloudflareAccessId: access
         .mapWith(nullableDriverValueDecoder(pgTextDecoder))
         .as("cloudflare_access_id"),
       tailscaleId: tailscale
         .mapWith(nullableDriverValueDecoder(pgTextDecoder))
         .as("tailscale_id"),
-      transport: sql`${transport}`
-        .mapWith(zodDriverValueDecoder(z.literal(transport)))
+      connectionMode: sql`${connectionMode}`
+        .mapWith(zodDriverValueDecoder(z.literal(connectionMode)))
         .as("transport"),
       learnedHostKeyAlgorithm: sql`NULL`
         .mapWith(nullableDriverValueDecoder(pgTextDecoder))
@@ -222,6 +213,9 @@ export function sshConnectionCreationSource(
       updatedAt: sql`${sql.param(at, sshConnections.updatedAt)}`
         .mapWith(sshCredentials.updatedAt)
         .as("updated_at"),
+      tailscaleSshUsername: sql`${args.tailscaleSshUsername}`
+        .mapWith(nullableDriverValueDecoder(pgTextDecoder))
+        .as("tailscale_ssh_username"),
     })
     .from(ready);
 }

@@ -4,10 +4,7 @@ import { eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 
-import {
-  agentRuns,
-  agentSessions,
-} from "../src/schema/agent-run-session-conversation";
+import { agentRuns } from "../src/schema/agent-run";
 import { storages, storageVersions } from "../src/schema/storage";
 import { storageVersionLineage } from "../src/schema/storage-version-lineage";
 
@@ -18,7 +15,6 @@ export async function validatePermanentStorageLineage(databaseUrl: string) {
   const db = drizzle(client);
   const owner = `lineage-owner-${randomUUID()}`;
   const orgId = `lineage-org-${randomUUID()}`;
-  const sessionId = randomUUID();
   const runIds: [string, string] = [randomUUID(), randomUUID()];
   const storageValues = [
     { id: randomUUID(), orgId, userId: owner, name: "memory" },
@@ -63,14 +59,10 @@ export async function validatePermanentStorageLineage(databaseUrl: string) {
     assert.ok(runIndex);
     assert.match(runIndex.definition, /USING btree \(run_id\)/);
 
-    await db
-      .insert(agentSessions)
-      .values({ id: sessionId, orgId, userId: owner });
     await db.insert(agentRuns).values(
       runIds.map((id) => {
         return {
           id,
-          sessionId,
           orgId,
           userId: owner,
           status: "completed",
@@ -228,7 +220,7 @@ export async function validatePermanentStorageLineage(databaseUrl: string) {
   } finally {
     try {
       await db.delete(storages).where(inArray(storages.id, storageIds));
-      await db.delete(agentSessions).where(eq(agentSessions.id, sessionId));
+      await db.delete(agentRuns).where(inArray(agentRuns.id, runIds));
     } finally {
       await client.end();
     }

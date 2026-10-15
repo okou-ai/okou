@@ -73,13 +73,20 @@ async function openInstructionsThenChat(): Promise<void> {
     return getLink("Rich content");
   });
   click(chatLink);
-
-  await screen.findByRole("textbox", { name: "Message" });
 }
 
-async function prepareLiteralPlusMarkdownChat() {
+async function prepareLiteralPlusMarkdownChat(initialReply?: string) {
   const chat = createMarkdownChatFixture(context);
   const rows = [chat.outputMessage("++Plain message++", { seqId: 1 })];
+  if (initialReply) {
+    rows.push(
+      chat.outputMessage(initialReply, {
+        id: "streamed-markdown",
+        runEventId: "streamed-markdown",
+        seqId: 2,
+      }),
+    );
+  }
   chat.install({
     rows: () => {
       return rows;
@@ -89,7 +96,7 @@ async function prepareLiteralPlusMarkdownChat() {
   return { chat, rows };
 }
 
-test("Opening Instructions preserves literal plus signs in an unfinished streamed reply", async () => {
+test("Opening Instructions preserves literal plus signs in a new streamed reply", async () => {
   const { chat, rows } = await prepareLiteralPlusMarkdownChat();
   await expect(
     screen.findByText("++Plain message++"),
@@ -102,6 +109,17 @@ test("Opening Instructions preserves literal plus signs in an unfinished streame
     }),
   );
   context.mocks.ably.trigger(chat.realtimeTopic);
+  const streaming = await screen.findByText("Streaming:");
+  expect(streaming.tagName).toBe("STRONG");
+  expect(markdownFrameFor(streaming)).toHaveTextContent("++Reply");
+  expect(markdownFrameFor(streaming).querySelector("u")).toBeNull();
+  expect(screen.queryByText("Try again")).not.toBeInTheDocument();
+});
+
+test("Opening Instructions preserves literal plus signs as an unfinished reply grows", async () => {
+  const { chat, rows } = await prepareLiteralPlusMarkdownChat(
+    "**Streaming:** ++Reply",
+  );
   const streaming = await screen.findByText("Streaming:");
   expect(streaming.tagName).toBe("STRONG");
   expect(markdownFrameFor(streaming)).toHaveTextContent("++Reply");

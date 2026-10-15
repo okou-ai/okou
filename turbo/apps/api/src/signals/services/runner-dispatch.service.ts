@@ -183,6 +183,7 @@ export const notifyRunnerJob$ = command(
     const dimensions: Record<string, string> = {
       ...attributionDimensions,
       reuse_key_kind: runnerReuseKeyTelemetryKind(args.reuseKey),
+      ...(args.reuseKey === null ? {} : { reuse_key: args.reuseKey }),
       ...runnerPreferenceTelemetryDimensions(runnerPreference),
       ...(finalizingPreferenceSource
         ? { runner_preference_finalizing_source: finalizingPreferenceSource }

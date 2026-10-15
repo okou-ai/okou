@@ -41,7 +41,7 @@ async fn byte_adapter_handles_partial_writes_and_ping_during_socket_backpressure
     let client = WebSocketStream::from_raw_socket(client, Role::Client, Some(config)).await;
     let mut server = WebSocketStream::from_raw_socket(server, Role::Server, Some(config)).await;
     let failed = Arc::new(AtomicBool::new(false));
-    let stream = super::super::access::ByteStream::new(client, Arc::clone(&failed));
+    let stream = crate::cloudflare::ByteStream::new(client, Arc::clone(&failed));
     let (mut reader, mut writer) = tokio::io::split(stream);
     let bytes = vec![0x5a; 100_001];
     tokio::time::timeout(std::time::Duration::from_secs(10), async {

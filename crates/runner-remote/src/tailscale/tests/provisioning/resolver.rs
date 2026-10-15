@@ -5,7 +5,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::super::fixture::bounded;
 use crate::{
-    ssh::cache::Cache,
+    tailscale::tests::fixture::Cache,
     tailscale::{Failure, Key, Work, resolver::Resolver},
 };
 

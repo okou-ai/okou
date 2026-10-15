@@ -1161,7 +1161,9 @@ async fn generation_protected_different_idle_sandbox_defers_before_claim() {
 
 #[tokio::test(start_paused = true)]
 async fn matching_preference_without_local_resource_defers_before_claim() {
-    let (config, env) = mock_run_config(test_profiles(), 2, 4096, 1);
+    let (mut config, env) = mock_run_config(test_profiles(), 2, 4096, 1);
+    let observations = runner_storage::operation_test_support::RecordedHomeObservations::default();
+    config.sandbox_op_reporter = Some(observations.handle());
     let budget = Arc::clone(&config.capacity.budget);
     let run_handle = tokio::spawn(run(config));
 
@@ -1181,6 +1183,11 @@ async fn matching_preference_without_local_resource_defers_before_claim() {
         .unwrap();
 
     wait_discover_entered(&env, Duration::from_secs(5)).await;
+    assert!(
+        env.handle
+            .wait_deferred_poll_count(1, Duration::from_secs(5))
+            .await
+    );
     wait_cancel_token_removed(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
     wait_budget_count(&budget, 0, Duration::from_secs(5)).await;
 
@@ -1194,6 +1201,65 @@ async fn matching_preference_without_local_resource_defers_before_claim() {
         "runner should schedule a follow-up poll after the preference expires"
     );
 
+    let event = observations
+        .events()
+        .into_iter()
+        .find(|event| event.run_id == Some(run_id))
+        .unwrap();
+    assert_eq!(
+        event.outcome,
+        runner_host::home_observation::HomeObservationOutcome::Deferred
+    );
+    assert_eq!(
+        event.reason.as_deref(),
+        Some("no_qualifying_local_resource")
+    );
+    assert_eq!(event.reuse_key.as_deref(), Some("sess-owned-elsewhere"));
+    assert_eq!(event.profile_name.as_deref(), Some("vm0/default"));
+    assert_eq!(event.runner_id.as_deref(), Some(TEST_RUNNER_ID));
+    assert_eq!(
+        event.runner_heartbeat_generation,
+        Some(TEST_HEARTBEAT_GENERATION)
+    );
+    assert!(event.is_first_run.is_none());
+
+    shutdown(&env, run_handle).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn selected_finalizing_preference_without_local_proof_records_actual_deferral() {
+    let (mut config, env) = mock_run_config(test_profiles(), 2, 4096, 1);
+    let observations = runner_storage::operation_test_support::RecordedHomeObservations::default();
+    config.sandbox_op_reporter = Some(observations.handle());
+    let run_handle = tokio::spawn(run(config));
+    wait_discover_entered(&env, Duration::from_secs(2)).await;
+    let run_id = RunId::new_v4();
+    let generation = RunId::new_v4();
+    env.handle
+        .discover_tx
+        .send(finalizing_candidate(
+            run_id,
+            "thread:unknown-producer",
+            generation,
+            TEST_RUNNER_ID,
+            TEST_HEARTBEAT_GENERATION,
+        ))
+        .unwrap();
+    assert!(
+        env.handle
+            .wait_deferred_poll_count(1, Duration::from_secs(5))
+            .await
+    );
+    assert!(env.handle.claim_candidates().is_empty());
+    let event = observations
+        .events()
+        .into_iter()
+        .find(|event| event.run_id == Some(run_id))
+        .unwrap();
+    assert_eq!(event.reason.as_deref(), Some("no_publishable_predecessor"));
+    assert_eq!(event.reuse_key.as_deref(), Some("thread:unknown-producer"));
+    assert_eq!(event.runner_id.as_deref(), Some(TEST_RUNNER_ID));
+    assert_eq!(event.history_generation_run_id, Some(generation));
     shutdown(&env, run_handle).await;
 }
 
@@ -3434,6 +3500,8 @@ async fn saturated_cache_only_holder_defers_before_reclaiming_unrelated_idle() {
     let mut profiles = test_profiles();
     profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
     let (mut config, env) = mock_run_config(profiles, 2, 4096, 1);
+    let observations = runner_storage::operation_test_support::RecordedHomeObservations::default();
+    config.sandbox_op_reporter = Some(observations.handle());
     let runner_paths = RunnerPaths::new(config.paths.base_dir.clone());
     let home_cache = HomeImageCache::shared(
         runner_paths.clone(),
@@ -3481,6 +3549,11 @@ async fn saturated_cache_only_holder_defers_before_reclaiming_unrelated_idle() {
 
     wait_discover_entered(&env, Duration::from_secs(5)).await;
     assert!(
+        env.handle
+            .wait_deferred_poll_count(1, Duration::from_secs(5))
+            .await
+    );
+    assert!(
         env.handle.claim_candidates().is_empty(),
         "a cache-only preference must not bypass exhausted fresh admission"
     );
@@ -3495,6 +3568,15 @@ async fn saturated_cache_only_holder_defers_before_reclaiming_unrelated_idle() {
         "preference deferral must happen before candidate-aware reclamation"
     );
     assert_eq!(budget.allocated(), (2, 4096, 1));
+
+    let event = observations
+        .events()
+        .into_iter()
+        .find(|event| event.run_id == Some(run_id))
+        .unwrap();
+    assert_eq!(event.reason.as_deref(), Some("capacity_exhausted"));
+    assert_eq!(event.reuse_key.as_deref(), Some(reuse_key));
+    assert!(event.is_first_run.is_none());
 
     shutdown(&env, run_handle).await;
 }

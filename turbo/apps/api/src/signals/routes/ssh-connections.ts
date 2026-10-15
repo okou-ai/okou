@@ -12,6 +12,8 @@ import {
   updateSshCredential$,
 } from "../services/ssh-credential.service";
 import { command } from "ccstate";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { remoteControlOwnerRoute } from "./remote-control-owner-auth";
@@ -96,6 +98,16 @@ const createSshConnectionInner$ = command(
       );
     }
 
+    if (
+      bodyResult.data.transport?.type === "tailscale_ssh" &&
+      !isFeatureEnabled(FeatureSwitchKey.TailscaleAccess, featureContext)
+    ) {
+      return sshErrorResponse(
+        403,
+        SSH_ERROR_CODES.UNAVAILABLE,
+        "Tailscale SSH setup is not available",
+      );
+    }
     const result = await set(createSshConnection$, {
       orgId: auth.orgId,
       userId: auth.userId,
@@ -133,6 +145,16 @@ const updateSshConnectionInner$ = command(
       );
     }
 
+    if (
+      bodyResult.data.transport?.type === "tailscale_ssh" &&
+      !isFeatureEnabled(FeatureSwitchKey.TailscaleAccess, featureContext)
+    ) {
+      return sshErrorResponse(
+        403,
+        SSH_ERROR_CODES.UNAVAILABLE,
+        "Tailscale SSH setup is not available",
+      );
+    }
     const result = await set(updateSshConnection$, {
       orgId: auth.orgId,
       userId: auth.userId,
@@ -162,18 +184,6 @@ const deleteSshConnectionInner$ = command(
         400,
         SSH_ERROR_CODES.INVALID_INPUT,
         "Invalid SSH configuration",
-      );
-    }
-    // Old session/App -> prepared API bridge, retired by #40074 once #40073's
-    // supporting App is live and the API enforces its published client floor.
-    if (
-      bodyResult.data.expectedGeneration === undefined &&
-      auth.tokenType !== "session"
-    ) {
-      return sshErrorResponse(
-        400,
-        SSH_ERROR_CODES.INVALID_INPUT,
-        "SSH host deletion requires an expected generation",
       );
     }
     const result = await set(deleteSshConnection$, {

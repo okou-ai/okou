@@ -1,5 +1,7 @@
+import { emptyChatRunUsage$ } from "../../signals/chat-page/chat-run-usage.ts";
 import { ExternalSourceMessageAnnotation } from "./external-source-message-annotation.tsx";
 import { ChatResourcesButton } from "./chat-resources.tsx";
+import { chatResourcePanelEnabled$ } from "../../signals/chat-page/chat-resources.ts";
 import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import { ScrollArea } from "@base-ui/react/scroll-area";
@@ -47,6 +49,7 @@ import {
   Image,
   ChartLine,
   Globe,
+  Folder,
   Video,
   File,
   Copy,
@@ -135,7 +138,10 @@ import {
 } from "../../signals/external/model-catalog.ts";
 import { emptyChatImg, thinkingSpinnerImg } from "./platform-assets.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { ChatThreadPinButton } from "./chat-thread-header-actions.tsx";
+import {
+  ChatThreadMutedButton,
+  ChatThreadPinButton,
+} from "./chat-thread-header-actions.tsx";
 import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { Markdown, MarkdownEventBody } from "../components/markdown.tsx";
 import { hasChatEventBodyContent } from "../../signals/chat-page/chat-event-body-blocks.ts";
@@ -222,6 +228,7 @@ import {
   activeThreadSidebar$,
   openThreadAutomations$,
   openThreadBrowserSession$,
+  openThreadFiles$,
 } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import type { ThreadSidebarSignals } from "../../signals/chat-page/thread-sidebar.ts";
 import {
@@ -672,6 +679,28 @@ function BrowserMenuButton({ thread }: { thread: ChatPanelSignals }) {
   );
 }
 
+function FilesMenuButton({ thread }: { thread: ChatPanelSignals }) {
+  const { t } = useTranslation();
+  const enabled = useGet(featureSwitch$)[FeatureSwitchKey.SandboxFilesSidebar];
+  const target = useGet(thread.sidebar.target$);
+  const open = useSet(openThreadFiles$);
+  if (!enabled) {
+    return null;
+  }
+  return (
+    <ChatThreadHeaderIconButton
+      icon={<Folder size={18} />}
+      label={t(($) => {
+        return $.chat.files.open;
+      })}
+      open={target?.type === "files"}
+      onClick={() => {
+        open(thread);
+      }}
+    />
+  );
+}
+
 export function ChatThreadHeaderTitle({
   thread,
 }: {
@@ -779,7 +808,10 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
       <div className="flex min-w-0 items-center gap-2 pr-3">
         <ChatThreadHeaderTitle thread={thread} />
         <SettledChatThreadActions thread={thread}>
-          <ChatThreadPinButton thread={thread} />
+          <div className="flex shrink-0 items-center gap-0.5">
+            <ChatThreadPinButton thread={thread} />
+            <ChatThreadMutedButton thread={thread} />
+          </div>
         </SettledChatThreadActions>
       </div>
       <SettledChatThreadActions thread={thread}>
@@ -818,6 +850,7 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
           </TooltipProvider>
           <AutomationMenuButton thread={thread} />
           <BrowserMenuButton thread={thread} />
+          <FilesMenuButton thread={thread} />
           <ArtifactsButton thread={thread} />
         </div>
       </SettledChatThreadActions>
@@ -3816,43 +3849,63 @@ function ChatThreadNotFound() {
   );
 }
 
-function ChatThreadContent({ thread }: { thread: ChatPanelSignals }) {
+function ChatThreadFeedbackSlot({ thread }: { thread: ChatPanelSignals }) {
   const { t } = useTranslation();
-  const threadMeta = useGet(thread.threadMeta$);
   const sharingPhase = useGet(thread.sharing.phase$);
-  const resourcesEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel];
+  const agentId = useGet(thread.threadAgentId$);
+  const title = useGet(thread.threadTitle$);
+  if (sharingPhase !== "idle" || agentId === null) {
+    return null;
+  }
+  return (
+    <ChatFeedbackSelection
+      feedback={thread.feedback}
+      sourceAgentId={agentId}
+      sourceThreadTitle={
+        title ??
+        t(($) => {
+          return $.chat.newChat;
+        })
+      }
+    />
+  );
+}
+
+function ChatThreadResourceLayout({
+  thread,
+  children,
+}: {
+  thread: ChatPanelSignals;
+  children: ReactNode;
+}) {
+  const resourcesEnabled = useGet(chatResourcePanelEnabled$);
   const resourceLayoutRef = useSet(thread.resources.layoutOnRef$);
-  if (!threadMeta) {
+  return (
+    <div
+      className="relative min-h-0 flex-1"
+      ref={resourcesEnabled ? resourceLayoutRef : undefined}
+    >
+      {children}
+    </div>
+  );
+}
+
+function ChatThreadContent({ thread }: { thread: ChatPanelSignals }) {
+  const exists = useGet(thread.threadExists$);
+  if (!exists) {
     return <ChatThreadNotFound />;
   }
 
   return (
     <>
       <ChatThreadHeader thread={thread} />
-
-      <div
-        className="relative min-h-0 flex-1"
-        ref={resourcesEnabled ? resourceLayoutRef : undefined}
-      >
+      <ChatThreadResourceLayout thread={thread}>
         <div className="flex h-full min-w-0 flex-col">
           <ChatThreadEventsPane thread={thread} />
           <ChatThreadBottomBar thread={thread} />
         </div>
-      </div>
-
-      {sharingPhase === "idle" ? (
-        <ChatFeedbackSelection
-          feedback={thread.feedback}
-          sourceAgentId={threadMeta.agentId}
-          sourceThreadTitle={
-            threadMeta.title ??
-            t(($) => {
-              return $.chat.newChat;
-            })
-          }
-        />
-      ) : null}
+      </ChatThreadResourceLayout>
+      <ChatThreadFeedbackSlot thread={thread} />
     </>
   );
 }
@@ -8115,14 +8168,21 @@ function UsageChip({
 
 function RunUsageChip({
   runId,
-  usage,
+  thread,
 }: {
   runId: string;
-  usage: ChatEventUsagePayload;
+  thread: ChatPanelSignals;
 }) {
   const { t } = useTranslation();
   const openRunId = useGet(runUsagePopoverOpenRunId$);
   const setOpenRunId = useSet(setRunUsagePopoverOpenRunId$);
+  const runUsage = useGet(thread.visibleRunUsageSignals$).find((run) => {
+    return run.runId === runId;
+  });
+  const usage = useLastResolved(runUsage?.usage$ ?? emptyChatRunUsage$);
+  if (usage === undefined) {
+    return null;
+  }
 
   return (
     <UsageChip
@@ -8359,14 +8419,16 @@ function MessageShareAction({
 function PagedGroupPrimaryActions({
   firstRunId,
   hasContent,
-  usage,
+  showRunUsage,
+  thread,
   onCopy,
   onShare,
   relatedArtifacts,
 }: {
   firstRunId: string | undefined;
   hasContent: boolean;
-  usage: ChatEventUsagePayload | undefined;
+  showRunUsage: boolean;
+  thread: ChatPanelSignals;
   onCopy: () => Promise<boolean>;
   onShare: ((revert: () => void) => void) | undefined;
   relatedArtifacts?: RunWorkSectionControl["remainingArtifactCards"];
@@ -8427,7 +8489,9 @@ function PagedGroupPrimaryActions({
       {relatedArtifacts ? (
         <RelatedArtifactsDialog cards={relatedArtifacts} />
       ) : null}
-      {usage && firstRunId && <RunUsageChip runId={firstRunId} usage={usage} />}
+      {showRunUsage && firstRunId && (
+        <RunUsageChip runId={firstRunId} thread={thread} />
+      )}
     </div>
   );
 }
@@ -8459,7 +8523,6 @@ function PagedGroupActions({
   const firstRunId = group.events.find((m) => {
     return m.runId;
   })?.runId;
-  const usage = group.usage;
   const hasContent = content.length > 0;
 
   const handleCopy = () => {
@@ -8494,7 +8557,8 @@ function PagedGroupActions({
       <PagedGroupPrimaryActions
         firstRunId={firstRunId}
         hasContent={hasContent}
-        usage={usage}
+        showRunUsage={group.showRunUsage ?? false}
+        thread={thread}
         onCopy={handleCopy}
         onShare={handleShare}
         relatedArtifacts={relatedArtifacts}

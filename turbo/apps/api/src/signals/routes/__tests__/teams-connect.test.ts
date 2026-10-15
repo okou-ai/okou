@@ -18,9 +18,7 @@ import {
   type TeamsConnectFixture,
 } from "./helpers/teams-connect";
 import { teamsConnectRoutes } from "../teams-connect";
-import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi } from "./helpers/api-bdd";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -149,18 +147,8 @@ async function seedTeamsInstallation(
 
 describe("GET /api/integrations/teams/connect", () => {
   const bdd = createBddApi(context);
-  const webhooks = createWebhookCallbackApi(context);
   const track = createFixtureTracker<TeamsConnectFixture>((fixture) => {
     return removeTeamsForTest(context.signal, fixture);
-  });
-  const trackOrg = createFixtureTracker<string>(async (orgId) => {
-    webhooks.configureClerkWebhookSecret();
-    webhooks.verifyNextClerkWebhook({
-      type: "organization.deleted",
-      data: { id: orgId },
-    });
-    await webhooks.requestClerkWebhook("{}", {}, [200]);
-    await flushWaitUntilForTest();
   });
 
   beforeEach(() => {
@@ -199,6 +187,8 @@ describe("GET /api/integrations/teams/connect", () => {
     expect(response.body).toStrictEqual({
       isInstalled: false,
       isConnected: false,
+      linkedAccounts: [],
+      pendingInstallation: false,
       isAdmin: true,
       installUrl: teamsInstallUrl(),
       connectUrl: teamsOauthConnectUrl({
@@ -206,6 +196,20 @@ describe("GET /api/integrations/teams/connect", () => {
         userId: fixture.userId,
       }),
     });
+    const { linkedAccounts, pendingInstallation, ...oldResponse } =
+      response.body;
+    expect(linkedAccounts).toStrictEqual([]);
+    expect(pendingInstallation).toBeFalsy();
+    const schema = teamsConnectContract.getStatus.responses[200];
+    // Old readers strip additive fields; new readers preserve absence as unknown.
+    expect(
+      schema
+        .omit({ linkedAccounts: true, pendingInstallation: true })
+        .parse(response.body),
+    ).toStrictEqual(oldResponse);
+    expect(schema.parse(oldResponse)).toStrictEqual(oldResponse);
+    expect(schema.parse(oldResponse).linkedAccounts).toBeUndefined();
+    expect(schema.parse(oldResponse).pendingInstallation).toBeUndefined();
   });
 
   it("falls back to the web origin when the API backend URL is unset", async () => {
@@ -227,6 +231,8 @@ describe("GET /api/integrations/teams/connect", () => {
     expect(response.body).toStrictEqual({
       isInstalled: false,
       isConnected: false,
+      linkedAccounts: [],
+      pendingInstallation: false,
       isAdmin: true,
       installUrl: teamsInstallUrl(),
       connectUrl: teamsOauthConnectUrl(
@@ -270,6 +276,8 @@ describe("GET /api/integrations/teams/connect", () => {
     expect(response.body).toStrictEqual({
       isInstalled: true,
       isConnected: false,
+      linkedAccounts: [],
+      pendingInstallation: false,
       isAdmin: true,
       installUrl: null,
       connectUrl: teamsOauthConnectUrl(fixture),
@@ -331,7 +339,6 @@ describe("GET /api/integrations/teams/connect", () => {
 
   it("returns the configured default agent display name for a connected user", async () => {
     const fixture = await seedTeamsInstallation(track);
-    await trackOrg(Promise.resolve(fixture.orgId));
     const actor = bdd.user({
       userId: fixture.userId,
       orgId: fixture.orgId,
@@ -368,6 +375,16 @@ describe("GET /api/integrations/teams/connect", () => {
     expect(response.body).toMatchObject({
       isInstalled: true,
       isConnected: true,
+      linkedAccounts: [
+        {
+          tenantId: fixture.teamsTenantId,
+          teamsUserId: fixture.teamsUserId,
+          teamsAadObjectId: fixture.teamsAadObjectId,
+          displayName: "Ada Lovelace",
+          userPrincipalName: fixture.teamsUserPrincipalName,
+        },
+      ],
+      pendingInstallation: false,
       isAdmin: false,
       connectUrl: null,
       defaultAgentName: "Okou",
@@ -405,6 +422,16 @@ describe("GET /api/integrations/teams/connect", () => {
     expect(adminStatus.body).toStrictEqual({
       isInstalled: true,
       isConnected: true,
+      linkedAccounts: [
+        {
+          tenantId: fixture.teamsTenantId,
+          teamsUserId: fixture.teamsUserId,
+          teamsAadObjectId: fixture.teamsAadObjectId,
+          displayName: "Ada Lovelace",
+          userPrincipalName: fixture.teamsUserPrincipalName,
+        },
+      ],
+      pendingInstallation: false,
       isAdmin: true,
       installUrl: null,
       connectUrl: null,
@@ -434,6 +461,8 @@ describe("GET /api/integrations/teams/connect", () => {
     expect(memberStatus.body).toStrictEqual({
       isInstalled: true,
       isConnected: false,
+      linkedAccounts: [],
+      pendingInstallation: false,
       isAdmin: false,
       installUrl: null,
       connectUrl: teamsOauthConnectUrl({
@@ -458,6 +487,8 @@ describe("GET /api/integrations/teams/connect", () => {
     expect(otherOrgStatus.body).toStrictEqual({
       isInstalled: false,
       isConnected: false,
+      linkedAccounts: [],
+      pendingInstallation: false,
       isAdmin: true,
       installUrl: teamsInstallUrl(),
       connectUrl: teamsOauthConnectUrl(otherOrg),
@@ -500,6 +531,16 @@ describe("GET /api/integrations/teams/connect", () => {
     expect(response.body).toStrictEqual({
       isInstalled: true,
       isConnected: true,
+      linkedAccounts: [
+        {
+          tenantId: fixture.teamsTenantId,
+          teamsUserId: fixture.teamsUserId,
+          teamsAadObjectId: fixture.teamsAadObjectId,
+          displayName: "Ada Lovelace",
+          userPrincipalName: fixture.teamsUserPrincipalName,
+        },
+      ],
+      pendingInstallation: false,
       isAdmin: false,
       installUrl: null,
       connectUrl: null,
@@ -764,6 +805,327 @@ describe("POST /api/integrations/teams/connect", () => {
     expect(second.body.connectionId).toBe(first.body.connectionId);
   });
 
+  it("returns all of the caller's identities without exposing another user's rows", async () => {
+    const fixture = await seedTeamsInstallation(track);
+    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+    const client = setupApp({ context, routes: teamsConnectRoutes })(
+      teamsConnectContract,
+    );
+    await accept(
+      client.connect({
+        headers: { authorization: "Bearer clerk-session" },
+        body: connectBody(fixture),
+      }),
+      [200],
+    );
+    await accept(
+      client.connect({
+        headers: { authorization: "Bearer clerk-session" },
+        body: connectBody(fixture, "29:second", "aad-second"),
+      }),
+      [200],
+    );
+    const status = await accept(
+      client.getStatus({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(status.body.linkedAccounts).toHaveLength(2);
+    expect(status.body.linkedAccounts).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          teamsUserId: fixture.teamsUserId,
+          teamsAadObjectId: fixture.teamsAadObjectId,
+        }),
+        expect.objectContaining({
+          teamsUserId: "29:second",
+          teamsAadObjectId: "aad-second",
+        }),
+      ]),
+    );
+    mocks.clerk.session(`other_${fixture.userId}`, fixture.orgId, "org:member");
+    const other = await accept(
+      client.getStatus({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(other.body).toMatchObject({
+      isInstalled: true,
+      isConnected: false,
+      linkedAccounts: [],
+      pendingInstallation: false,
+    });
+  });
+
+  it.each(["teams", "aad", "both"] as const)(
+    "rejects another owner matching %s before metadata or welcome effects",
+    async (identity) => {
+      const fixture = await seedTeamsInstallation(track);
+      mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+      const client = setupApp({ context, routes: teamsConnectRoutes })(
+        teamsConnectContract,
+      );
+      await accept(
+        client.connect({
+          headers: { authorization: "Bearer clerk-session" },
+          body: connectBody(fixture),
+        }),
+        [200],
+      );
+      const before = await accept(
+        client.getStatus({
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+      mockEnv("MICROSOFT_TEAMS_BOT_APP_PASSWORD", BOT_APP_PASSWORD);
+      const deliveries = teamsWelcomeHandlers(fixture);
+      mocks.clerk.session(
+        `other_${fixture.userId}`,
+        fixture.orgId,
+        "org:member",
+      );
+      const rejected = await accept(
+        client.connect({
+          headers: { authorization: "Bearer clerk-session" },
+          body: {
+            tenantId: fixture.teamsTenantId,
+            ...(identity !== "aad" ? { teamsUserId: fixture.teamsUserId } : {}),
+            ...(identity !== "teams"
+              ? { teamsAadObjectId: fixture.teamsAadObjectId }
+              : {}),
+            teamName: "Rejected team",
+            teamsUserDisplayName: "Rejected identity",
+            conversationType: "personal",
+            conversationId: "personal-rejected",
+          },
+        }),
+        [403],
+      );
+      expect(rejected.body.error.code).toBe("FORBIDDEN");
+      expect(deliveries).toStrictEqual([]);
+      const other = await accept(
+        client.getStatus({
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+      expect(other.body.linkedAccounts).toStrictEqual([]);
+      mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+      const after = await accept(
+        client.getStatus({
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+      expect(after.body).toStrictEqual(before.body);
+    },
+  );
+
+  it.each(["teams", "aad", "split"] as const)(
+    "rejects a contradictory %s identity pair for the same owner",
+    async (identity) => {
+      const fixture = await seedTeamsInstallation(track);
+      mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+      const client = setupApp({ context, routes: teamsConnectRoutes })(
+        teamsConnectContract,
+      );
+      await accept(
+        client.connect({
+          headers: { authorization: "Bearer clerk-session" },
+          body: connectBody(fixture),
+        }),
+        [200],
+      );
+      await accept(
+        client.connect({
+          headers: { authorization: "Bearer clerk-session" },
+          body: connectBody(fixture, "29:second", "aad-second"),
+        }),
+        [200],
+      );
+      const before = await accept(
+        client.getStatus({
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+      await accept(
+        client.connect({
+          headers: { authorization: "Bearer clerk-session" },
+          body: {
+            ...connectBody(
+              fixture,
+              identity === "aad" ? "29:replacement" : fixture.teamsUserId,
+              identity === "aad"
+                ? fixture.teamsAadObjectId
+                : identity === "split"
+                  ? "aad-second"
+                  : "aad-replacement",
+            ),
+            teamName: "Rejected team",
+            teamsUserDisplayName: "Rejected identity",
+          },
+        }),
+        [403],
+      );
+      const after = await accept(
+        client.getStatus({
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+      expect(after.body).toStrictEqual(before.body);
+    },
+  );
+
+  it.each(["teams", "aad"] as const)(
+    "enriches a missing %s counterpart without replacing the established identity",
+    async (identity) => {
+      const fixture = await seedTeamsInstallation(track);
+      mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+      const client = setupApp({ context, routes: teamsConnectRoutes })(
+        teamsConnectContract,
+      );
+      const first = await accept(
+        client.connect({
+          headers: { authorization: "Bearer clerk-session" },
+          body: {
+            tenantId: fixture.teamsTenantId,
+            ...(identity === "teams"
+              ? { teamsUserId: fixture.teamsUserId }
+              : { teamsAadObjectId: fixture.teamsAadObjectId }),
+          },
+        }),
+        [200],
+      );
+      const second = await accept(
+        client.connect({
+          headers: { authorization: "Bearer clerk-session" },
+          body: connectBody(fixture),
+        }),
+        [200],
+      );
+      expect(second.body.connectionId).toBe(first.body.connectionId);
+      const status = await accept(
+        client.getStatus({
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+      expect(status.body.linkedAccounts).toStrictEqual([
+        {
+          tenantId: fixture.teamsTenantId,
+          teamsUserId: fixture.teamsUserId,
+          teamsAadObjectId: fixture.teamsAadObjectId,
+          displayName: "Ada Lovelace",
+          userPrincipalName: fixture.teamsUserPrincipalName,
+        },
+      ]);
+    },
+  );
+
+  it.each([false, true])(
+    "arbitrates concurrent owners without a losing installation claim (different org=%s)",
+    async (differentOrg) => {
+      const fixture = await seedTeamsInstallation(track);
+      const otherUser = `other_${fixture.userId}`;
+      const otherOrg = differentOrg ? `other_${fixture.orgId}` : fixture.orgId;
+      context.mocks.clerk.authenticateRequest.mockImplementation(
+        (request: unknown) => {
+          if (!(request instanceof Request)) {
+            throw new Error("Expected Clerk HTTP request");
+          }
+          const other =
+            request.headers.get("authorization") === "Bearer contender";
+          return Promise.resolve({
+            isAuthenticated: true,
+            toAuth: () => {
+              return {
+                userId: other ? otherUser : fixture.userId,
+                orgId: other ? otherOrg : fixture.orgId,
+                orgRole: "org:admin",
+              };
+            },
+          });
+        },
+      );
+      const client = setupApp({ context, routes: teamsConnectRoutes })(
+        teamsConnectContract,
+      );
+      const responses = await Promise.all([
+        accept(
+          client.connect({
+            headers: { authorization: "Bearer clerk-session" },
+            body: { ...connectBody(fixture), teamName: "First team" },
+          }),
+          [200, 403],
+        ),
+        accept(
+          client.connect({
+            headers: { authorization: "Bearer contender" },
+            body: { ...connectBody(fixture), teamName: "Second team" },
+          }),
+          [200, 403],
+        ),
+      ]);
+      expect(
+        responses
+          .map((response) => {
+            return response.status;
+          })
+          .sort(),
+      ).toStrictEqual([200, 403]);
+      const winner =
+        responses[0].status === 200 ? "clerk-session" : "contender";
+      const loser = winner === "clerk-session" ? "contender" : "clerk-session";
+      const status = await accept(
+        client.getStatus({ headers: { authorization: `Bearer ${winner}` } }),
+        [200],
+      );
+      expect(status.body).toMatchObject({
+        isConnected: true,
+        teamName: winner === "clerk-session" ? "First team" : "Second team",
+      });
+      expect(status.body.linkedAccounts).toHaveLength(1);
+      const rejected = await accept(
+        client.getStatus({ headers: { authorization: `Bearer ${loser}` } }),
+        [200],
+      );
+      expect(rejected.body).toMatchObject({
+        isInstalled: !differentOrg,
+        isConnected: false,
+        linkedAccounts: [],
+        pendingInstallation: false,
+      });
+    },
+  );
+
+  it("resolves concurrent same-owner inserts to one idempotent connection", async () => {
+    const fixture = await seedTeamsInstallation(track);
+    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+    const client = setupApp({ context, routes: teamsConnectRoutes })(
+      teamsConnectContract,
+    );
+    const responses = await Promise.all(
+      [1, 2].map(() => {
+        return accept(
+          client.connect({
+            headers: { authorization: "Bearer clerk-session" },
+            body: connectBody(fixture),
+          }),
+          [200],
+        );
+      }),
+    );
+    expect(responses[0]?.body.connectionId).toBe(
+      responses[1]?.body.connectionId,
+    );
+    const status = await accept(
+      client.getStatus({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(status.body.linkedAccounts).toHaveLength(1);
+  });
+
   it("uses the connect Host for a one-time welcome without renaming the Teams bot", async () => {
     const fixture = await seedTeamsInstallation(track);
     const personalConversationId = `a:${teamsFixtureExternalId(
@@ -922,6 +1284,8 @@ describe("DELETE /api/integrations/teams/connect", () => {
     expect(status.body).toStrictEqual({
       isInstalled: false,
       isConnected: false,
+      linkedAccounts: [],
+      pendingInstallation: false,
       isAdmin: true,
       installUrl: teamsInstallUrl(),
       connectUrl: teamsOauthConnectUrl(fixture),

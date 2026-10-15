@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.8.4](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.3...runner-provider-v0.8.4) (2026-10-15)
+
+
+### Refactoring
+
+* **pi:** always use the runner-bundled cli ([#40232](https://github.com/okou-ai/okou/issues/40232)) ([dfff160](https://github.com/okou-ai/okou/commit/dfff1605013103371cd90962ee5b54c80fc93140))
+
+## [0.8.3](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.2...runner-provider-v0.8.3) (2026-10-15)
+
+
+### Documentation
+
+* **rust:** correct completion reuse metadata documentation ([#40278](https://github.com/okou-ai/okou/issues/40278)) ([2534320](https://github.com/okou-ai/okou/commit/25343206017d857cb6dc473d15f7a0be3ec48a61))
+
+## [0.8.2](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.1...runner-provider-v0.8.2) (2026-10-15)
+
+## [0.8.1](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.0...runner-provider-v0.8.1) (2026-10-15)
+
 ## [0.8.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.21...runner-provider-v0.8.0) (2026-10-15)
 
 

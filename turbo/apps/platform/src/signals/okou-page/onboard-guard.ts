@@ -2,6 +2,7 @@ import { command } from "ccstate";
 import { match } from "path-to-regexp";
 import { clerk$, clerkUser$, resolveAppAuthUrl } from "../auth.ts";
 import { ROUTES } from "../route-paths.ts";
+import { isLegacyDiscordCallback } from "../integration-continuation.ts";
 import { detachedNavigateTo$, pathname$, searchParams$ } from "../route.ts";
 import { tapError } from "../utils.ts";
 import { onboardingStatus$ } from "./onboarding.ts";
@@ -38,7 +39,6 @@ const ONBOARDING_GUARDED_PATHS = [
   ROUTES.settings,
   ROUTES.settingsFeishu,
   ROUTES.settingsLark,
-  ROUTES.telegramConnect,
   ROUTES.workflowDetail,
   ROUTES.workflowDetailAutomations,
   ROUTES.workflowDetailInfo,
@@ -61,7 +61,15 @@ const onboardingGuardedPathMatchers = ONBOARDING_GUARDED_PATHS.map((path) => {
   return match(path, { decode: decodeURIComponent });
 });
 
-function isOnboardingGuardedPath(pathname: string): boolean {
+function isOnboardingGuardedPath(
+  pathname: string,
+  searchParams: URLSearchParams,
+): boolean {
+  // A recognized callback belongs to its consent/result page, not onboarding.
+  // The marker never proves that authorization or linking succeeded.
+  if (isLegacyDiscordCallback(pathname, searchParams)) {
+    return false;
+  }
   return onboardingGuardedPathMatchers.some((matcher) => {
     return matcher(pathname);
   });
@@ -96,7 +104,7 @@ export const redirectToConfiguredOnboarding$ = command(
  */
 export const bootstrapOnboardingGuard$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    if (!isOnboardingGuardedPath(get(pathname$))) {
+    if (!isOnboardingGuardedPath(get(pathname$), get(searchParams$))) {
       return;
     }
     const onboardingSearchParams = new URLSearchParams(get(searchParams$));
@@ -118,7 +126,7 @@ export const bootstrapOnboardingGuard$ = command(
       clerk.session?.id !== session.id ||
       clerk.user?.id !== user.id ||
       clerk.organization?.id !== organization.id ||
-      !isOnboardingGuardedPath(get(pathname$))
+      !isOnboardingGuardedPath(get(pathname$), get(searchParams$))
     ) {
       return;
     }

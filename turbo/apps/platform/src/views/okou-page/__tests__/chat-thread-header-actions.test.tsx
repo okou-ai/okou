@@ -2,6 +2,7 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
   chatThreadArchiveContract,
+  chatThreadMuteContract,
   chatThreadPinContract,
   chatThreadUnpinContract,
   chatThreadsContract,
@@ -28,6 +29,7 @@ const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 async function setupHeaderPage(
   threadEvents: readonly ChatThreadEvent[] = [],
   archiveEnabled = true,
+  mutingEnabled = false,
 ) {
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
@@ -70,6 +72,7 @@ async function setupHeaderPage(
     path: `/chats/${THREAD_ID}`,
     featureSwitches: {
       [FeatureSwitchKey.ChatThreadArchiving]: archiveEnabled,
+      [FeatureSwitchKey.ChatThreadMuting]: mutingEnabled,
     },
   });
   await screen.findByText("Review the header layout");
@@ -107,7 +110,7 @@ function menuItemNames() {
   });
 }
 
-async function expectMobileSidebarPin(pinned: boolean) {
+async function openMobileSidebarPin(pinned: boolean): Promise<HTMLElement> {
   click(buttonNamed("Open menu"));
   const drawer = await screen.findByRole("dialog", { name: "Sidebar" });
   await waitFor(() => {
@@ -115,6 +118,11 @@ async function expectMobileSidebarPin(pinned: boolean) {
       within(drawer).getByTestId("chat-thread-menu-trigger"),
     ).toHaveAttribute("data-pinned", String(pinned));
   });
+  return drawer;
+}
+
+async function expectMobileSidebarPin(pinned: boolean) {
+  const drawer = await openMobileSidebarPin(pinned);
   click(within(drawer).getByLabelText("Collapse sidebar"));
   await waitFor(() => {
     expect(screen.queryByRole("dialog", { name: "Sidebar" })).toBeNull();
@@ -185,15 +193,23 @@ test("Keep rapid pin changes responsive across resize and save without a success
     expect(menuItemNamed("Unpin chat")).toBeEnabled();
   });
   click(menuItemNamed("Unpin chat"));
-  await expectMobileSidebarPin(false);
+  const drawer = await openMobileSidebarPin(false);
 
   pinResponse.resolve();
   await waitFor(() => {
-    expect(screen.getByTestId("chat-thread-header-title")).toHaveTextContent(
-      "Pin changes saved",
-    );
+    expect(drawer).toBeInTheDocument();
+    expect(drawer).toHaveTextContent("Pin changes saved");
   });
-  await expectMobileSidebarPin(false);
+  expect(
+    within(drawer).getByTestId("chat-thread-menu-trigger"),
+  ).toHaveAttribute("data-pinned", "false");
+  click(within(drawer).getByLabelText("Collapse sidebar"));
+  await waitFor(() => {
+    expect(drawer).not.toBeInTheDocument();
+  });
+  expect(screen.getByTestId("chat-thread-header-title")).toHaveTextContent(
+    "Pin changes saved",
+  );
   expect(screen.queryByText("Chat pinned")).not.toBeInTheDocument();
   expect(screen.queryByText("Chat unpinned")).not.toBeInTheDocument();
   expect(screen.queryByText("Undo")).not.toBeInTheDocument();
@@ -322,6 +338,66 @@ test("Undo a header archive from its toast and return to the thread", async () =
   await waitFor(() => {
     expect(menuItemNames()).toContain("Archive chat");
   });
+});
+
+function mockMuteRequests(events: ChatThreadEvent[]) {
+  for (const [route, muted] of [
+    [chatThreadMuteContract.mute, true],
+    [chatThreadMuteContract.unmute, false],
+  ] as const) {
+    context.mocks.api(route, ({ params, query, respond }) => {
+      events.push(
+        chatListEvent(951, events.length + 1, "sort_touched", params.id, {
+          id: query?.eventId,
+          agentId: AGENT_ID,
+          muted,
+        }),
+      );
+      changeChatThreadList();
+      return respond(204);
+    });
+  }
+}
+
+test("Mute from the mobile header and unmute from the desktop header", async () => {
+  const viewport = context.mocks.browser.matchMedia(false);
+  const events: ChatThreadEvent[] = [];
+  mockMuteRequests(events);
+  await setupHeaderPage(events, true, true);
+  click(buttonNamed("More actions"));
+  await screen.findByRole("menu");
+  expect(menuItemNames()).toStrictEqual([
+    "Pin chat",
+    "Rename chat",
+    "Mute chat",
+    "Archive chat",
+    "Artifacts",
+  ]);
+  click(menuItemNamed("Mute chat"));
+  await expect(
+    screen.findByText(
+      "Chat muted. New replies won't show as unread or send push notifications.",
+    ),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe(`/chats/${THREAD_ID}`);
+  click(buttonNamed("More actions"));
+  await waitFor(() => {
+    expect(menuItemNames()).toContain("Unmute chat");
+  });
+
+  act(() => {
+    viewport.setMatches(true);
+  });
+  const unmute = await waitFor(() => {
+    return buttonNamed("Unmute chat");
+  });
+  expect(
+    screen.getByTestId("chat-thread-header-title").closest("header"),
+  ).toContainElement(unmute);
+  click(unmute);
+  await expect(screen.findByText("Chat unmuted")).resolves.toBeInTheDocument();
+  expect(screen.queryByLabelText("Unmute chat")).not.toBeInTheDocument();
+  expect(buttonNamed("Pin chat")).toBeInTheDocument();
 });
 
 test("Show the archive API error after leaving the thread", async () => {

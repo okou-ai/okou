@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.13.4](https://github.com/okou-ai/okou/compare/runner-executor-v0.13.3...runner-executor-v0.13.4) (2026-10-15)
+
+## [0.13.3](https://github.com/okou-ai/okou/compare/runner-executor-v0.13.2...runner-executor-v0.13.3) (2026-10-15)
+
+
+### Refactoring
+
+* **pi:** always use the runner-bundled cli ([#40232](https://github.com/okou-ai/okou/issues/40232)) ([dfff160](https://github.com/okou-ai/okou/commit/dfff1605013103371cd90962ee5b54c80fc93140))
+
+## [0.13.2](https://github.com/okou-ai/okou/compare/runner-executor-v0.13.1...runner-executor-v0.13.2) (2026-10-15)
+
+
+### Documentation
+
+* **rust:** correct completion reuse metadata documentation ([#40278](https://github.com/okou-ai/okou/issues/40278)) ([2534320](https://github.com/okou-ai/okou/commit/25343206017d857cb6dc473d15f7a0be3ec48a61))
+
+
+### Refactoring
+
+* **remote:** share assignment-owned native network resources ([#40243](https://github.com/okou-ai/okou/issues/40243)) ([4cbbd49](https://github.com/okou-ai/okou/commit/4cbbd4991faf6a1771c2f4cab6e187cc3e544e17))
+* **runner:** consolidate home reuse observations ([#40207](https://github.com/okou-ai/okou/issues/40207)) ([2511826](https://github.com/okou-ai/okou/commit/25118260fc61ef6317a98dda0194b0fb9a11f5fa))
+
+## [0.13.1](https://github.com/okou-ai/okou/compare/runner-executor-v0.13.0...runner-executor-v0.13.1) (2026-10-15)
+
+## [0.13.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.12.0...runner-executor-v0.13.0) (2026-10-15)
+
+
+### Features
+
+* **runner:** record cache routing and inventory outcomes ([#40171](https://github.com/okou-ai/okou/issues/40171)) ([8d94f8f](https://github.com/okou-ai/okou/commit/8d94f8f0b601173b3fe6cb5431f48cb916959226))
+
 ## [0.12.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.11.0...runner-executor-v0.12.0) (2026-10-15)
 
 

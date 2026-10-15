@@ -1,5 +1,9 @@
 # Runner Host Configuration
 
+This guide owns shared host configuration and resource contracts. For local
+configuration examples and startup-log checks, use the component's
+[operating instructions](../../crates/runner/README.md).
+
 ## Diagnostic Host Attribution
 
 `runner.yaml` may contain an optional `hostname` used to identify the physical
@@ -327,26 +331,16 @@ and measurement semantics.
 
 ## Host-Local Overrides
 
-For control-plane URL and authentication options, use `runner config --help`
-and `runner start --help`.
-
 The runner reads host-local overrides from `/etc/vm0-runner/host.env` once
 during startup. A missing file is equivalent to an empty file: the runner uses
 `runner.yaml` for its concurrency factor and leaves I/O limiters disabled.
-
-Apply file changes through the normal runner drain and restart workflow. A
-running process does not reload this file.
+A running process does not reload this file.
 
 ## File Format
 
 `host.env` is a runner-specific `KEY=VALUE` file. It is not sourced by a shell.
 Blank lines and full-line comments are allowed, and whitespace around keys and
-values is ignored:
-
-```text
-# Optional host-local concurrency override
-OKOU_RUNNER_CONCURRENCY_FACTOR = 1.5
-```
+values is ignored.
 
 Do not use `export`, shell interpolation, quoted numeric values, or inline
 comments. The parser accepts only the keys listed below. An unreadable file, a
@@ -369,6 +363,15 @@ Each key may appear at most once. Retired host-tuning names and every other
 unlisted key are unsupported and cannot select or override a value. The four
 I/O keys form one all-or-none group.
 
+I/O values describe sustainable total host capacity, not desired per-sandbox
+rates and not short benchmark peaks. Every valid capacity is reduced by the
+host reserve and divided among the maximum number of sandboxes the runner can
+admit. Supplying per-sandbox targets here would reduce them again and could
+throttle every sandbox below the intended rate.
+
+A complete valid I/O configuration applies to every job on the runner. There
+is no per-job feature switch.
+
 Bandwidth values may be fractional. After conversion from MiB/s, the byte/s
 value must be at least `1`, must fit in a `u64`, and is rounded down to an
 integer. Disk IOPS must parse directly as a nonzero `u64`.
@@ -389,25 +392,8 @@ already-running old services available.
 
 ## Configure Host I/O Capacity
 
-The four I/O keys are one atomic configuration. Either omit all four or provide
-all four:
-
-```text
-# Example sustainable aggregate host capacity; measure values for this host.
-OKOU_RUNNER_DISK_BANDWIDTH_MIB_PER_SEC=2000
-OKOU_RUNNER_DISK_IOPS=200000
-OKOU_RUNNER_NET_RX_MIB_PER_SEC=1250
-OKOU_RUNNER_NET_TX_MIB_PER_SEC=1000
-```
-
-These values describe sustainable total host capacity, not desired per-sandbox
-rates and not short benchmark peaks. Every valid capacity is reduced by the
-host reserve and divided among the maximum number of sandboxes the runner can
-admit. Supplying per-sandbox targets here would reduce them again and could
-throttle every sandbox below the intended rate.
-
-A complete valid I/O configuration applies to every job on the runner. There
-is no per-job feature switch.
+Configuration examples and application instructions live with
+[Runner operations](../../crates/runner/README.md#configure-host-io-capacity).
 
 ## How The Runner Derives Limits
 
@@ -444,8 +430,8 @@ all I/O limiters are disabled.
 
 ### Worked Example
 
-With the example values above and a resolved denominator of `4`, startup logs
-show these sandbox-level limits:
+With a resolved denominator of `4`, the example host inputs below produce these
+sandbox-level limits:
 
 | Capacity       | Host input     | Sandbox limit after reserve and division | Structured log field           |
 | -------------- | -------------- | ---------------------------------------- | ------------------------------ |
@@ -474,38 +460,9 @@ enabled when the network pair is missing or invalid, and vice versa.
 
 ## Verify The Effective Configuration
 
-After applying the file through the normal restart workflow, inspect the runner
-startup logs. For a named systemd service, use:
-
-```bash
-runner service logs --name <service-suffix> --lines 100
-```
-
-First find `resource budget initialized` and verify:
-
-- `concurrency_factor` and `concurrency_factor_source`
-- `max_concurrent`
-- `effective_vcpu` and `effective_memory_mb`
-- `profiles`
-
-Then verify exactly one I/O resolution message:
-
-- `I/O limiters disabled` when no capacity is configured;
-- `I/O limiter host env config invalid; disabling I/O limiter capacity` and
-  its `reason` when the I/O group is unusable; or
-- `I/O limiter capacity configured; applying limiters to all jobs` when the
-  group is active.
-
-The configured message includes:
-
-- `denominator`
-- `disk_bandwidth_bytes_per_sec`
-- `disk_ops_per_sec`
-- `net_rx_bytes_per_sec`
-- `net_tx_bytes_per_sec`
-
-These are effective sandbox-level limits. The disk fields are logged before
-the per-drive split.
+Use the component's
+[startup-log checks](../../crates/runner/README.md#verify-the-effective-configuration)
+to inspect the effective resource budget and I/O limiter state.
 
 ## Implementation Sources
 

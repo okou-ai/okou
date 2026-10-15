@@ -11,7 +11,6 @@ import {
 import {
   chatThreadArtifactsContract,
   resolveChatEventRecommendedFollowups,
-  type ChatEventUsagePayload,
   type ChatRunOptionsRequest,
   type ChatThreadArtifactRun,
   type ChatThreadDraft,
@@ -348,7 +347,13 @@ function createThreadMeta(threadId: string) {
   return threadMeta(threadId);
 }
 
-function createThreadTitleParts(threadMeta$: Computed<ThreadMeta | null>) {
+function createThreadMetadata(threadMeta$: Computed<ThreadMeta | null>) {
+  const threadExists$ = computed((get) => {
+    return get(threadMeta$) !== null;
+  });
+  const threadAgentId$ = computed((get) => {
+    return get(threadMeta$)?.agentId ?? null;
+  });
   const threadTitle$ = computed((get): string | null => {
     return get(threadMeta$)?.title ?? null;
   });
@@ -361,7 +366,13 @@ function createThreadTitleParts(threadMeta$: Computed<ThreadMeta | null>) {
   const threadTitleText$ = computed((get) => {
     return get(threadTitleParts$).text;
   });
-  return { threadTitle$, threadTitleEmoji$, threadTitleText$ };
+  return {
+    threadExists$,
+    threadAgentId$,
+    threadTitle$,
+    threadTitleEmoji$,
+    threadTitleText$,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -870,10 +881,7 @@ function orderEventsByRunTurn(
     });
 }
 
-function groupEventsForDisplay(
-  events: EnrichedChatEvent[],
-  usageByRunId: ReadonlyMap<string, ChatEventUsagePayload>,
-): ChatEventGroup[] {
+function groupEventsForDisplay(events: EnrichedChatEvent[]): ChatEventGroup[] {
   const activeEvents: EnrichedChatEvent[] = [];
   const queuedEvents: EnrichedChatEvent[] = [];
   for (const event of events) {
@@ -890,18 +898,10 @@ function groupEventsForDisplay(
     activeEvents.push(event);
   }
 
-  const groups = [
+  return [
     ...mergeIntoGroups([], orderEventsByRunTurn(activeEvents)),
     ...mergeIntoGroups([], queuedEvents),
   ];
-  return groups.map((group) => {
-    if (group.role !== "assistant") {
-      return group;
-    }
-    const runId = firstRunIdForGroup(group);
-    const usage = runId === undefined ? undefined : usageByRunId.get(runId);
-    return usage === undefined ? group : { ...group, usage };
-  });
 }
 
 // While a run is active or a prompt is being sent, a conversation that ends
@@ -942,13 +942,11 @@ function withPendingAssistantGroup(
 function createRenderedChatGroups(
   semanticEvents$: Computed<SemanticChatEvent[]>,
   runActive$: Computed<boolean>,
-  usageByRunId$: Computed<ReadonlyMap<string, ChatEventUsagePayload>>,
 ) {
   const allChatGroups$ = computed((get): ChatEventGroup[] => {
     return withPendingAssistantGroup(
       groupEventsForDisplay(
         enrichedChatEventsFromSemantic(get(semanticEvents$)),
-        get(usageByRunId$),
       ),
       get(runActive$),
     );
@@ -2102,14 +2100,12 @@ interface ThinkingIndicatorSources {
 
 function createPagedEventProjections({
   chatEvents$,
-  usageByRunId$,
   thinkingSources,
   registeredEvents$,
   eventTrees$,
   eventTreeErrors$,
 }: {
   chatEvents$: Computed<ChatEvent[]>;
-  usageByRunId$: Computed<ReadonlyMap<string, ChatEventUsagePayload>>;
   thinkingSources: ThinkingIndicatorSources;
   registeredEvents$: State<RegisteredChatEvent[]>;
   eventTrees$: Computed<ReadonlyMap<string, Root>>;
@@ -2136,7 +2132,7 @@ function createPagedEventProjections({
       ...thinkingSources,
       runActive$,
     }),
-    ...createRenderedChatGroups(semanticEvents$, runActive$, usageByRunId$),
+    ...createRenderedChatGroups(semanticEvents$, runActive$),
   };
 }
 
@@ -2238,7 +2234,7 @@ function createEventChangeEffects({
     [boolean, AbortSignal]
   >;
 }) {
-  const sidebar = createThreadSidebarSignals(threadId);
+  const sidebar = createThreadSidebarSignals(threadId, chatEvents.chatEvents$);
   const locallyMarkedReadAt$ = state<string | undefined>(undefined);
   const markThreadReadIfNeeded$ = createMarkThreadReadIfNeeded({
     threadId,
@@ -2299,14 +2295,12 @@ function createEventChangeEffects({
 
 function createChatEventPresentationLifecycle({
   chatEvents,
-  usage,
   eventChangeHandler,
   syncVisibleEventTrees$,
   enableSidebarEntryAnimations$,
   initialEventsReady$,
 }: {
   readonly chatEvents: ChatEventSignals;
-  readonly usage: ReturnType<typeof createChatRunUsageSignals>;
   readonly eventChangeHandler: ChatEventChangeHandler;
   readonly syncVisibleEventTrees$: Command<
     Promise<void>,
@@ -2323,7 +2317,6 @@ function createChatEventPresentationLifecycle({
         eventChangeHandler,
         signal,
       );
-      set(usage.subscribe$, signal);
       await set(syncVisibleEventTrees$, false, signal);
       set(enableSidebarEntryAnimations$);
       const result = await settle(set(chatEvents.setup$, signal), signal);
@@ -2331,7 +2324,6 @@ function createChatEventPresentationLifecycle({
         set(initialEventsReady$, true);
         throw result.error;
       }
-      set(usage.refresh$, false, signal);
     },
   );
   const catchUp$ = command(
@@ -2341,7 +2333,6 @@ function createChatEventPresentationLifecycle({
       if (!result.ok) {
         throw result.error;
       }
-      set(usage.refresh$, true, signal);
     },
   );
   return { setup$, catchUp$ };
@@ -2421,7 +2412,6 @@ function createChatThreadMessagePipeline({
   const usage = createChatRunUsageSignals(threadId, chatEvents.chatEvents$);
   const projections = createPagedEventProjections({
     chatEvents$: chatEvents.chatEvents$,
-    usageByRunId$: usage.usageByRunId$,
     thinkingSources: {
       serverRunState$: chatEvents.serverRunState$,
       hasOptimisticUserMessage$: chatEvents.hasOptimisticUserMessage$,
@@ -2443,6 +2433,7 @@ function createChatThreadMessagePipeline({
     ensureEventTrees$: resources.ensureEventTrees$,
     diagramCodesForEvents$: resources.diagramCodesForEvents$,
     mermaidDiagrams: resources.mermaidDiagrams,
+    syncVisibleRunUsage$: usage.syncVisibleRuns$,
     initialEventsReady$,
   });
   const syncVisibleEventTrees$ = command(
@@ -2482,7 +2473,6 @@ function createChatThreadMessagePipeline({
   });
   const lifecycle = createChatEventPresentationLifecycle({
     chatEvents,
-    usage,
     eventChangeHandler: effects.eventChangeHandler,
     syncVisibleEventTrees$,
     enableSidebarEntryAnimations$: effects.sidebar.enableEntryAnimations$,
@@ -2509,6 +2499,7 @@ function createChatThreadMessagePipeline({
     ...assistantErrorRecovery,
     ...projections,
     ...resources.publicSignals,
+    visibleRunUsageSignals$: usage.visibleRunUsageSignals$,
     ...renderWindow,
     readyScrollAfterRenderRequest$,
     loadMoreRenderedChatGroups$,
@@ -2703,6 +2694,9 @@ interface ChatRenderWindowOptions {
     [readonly ChatEvent[]]
   >;
   readonly mermaidDiagrams: MermaidDiagramRegistry;
+  readonly syncVisibleRunUsage$: ReturnType<
+    typeof createChatRunUsageSignals
+  >["syncVisibleRuns$"];
   readonly initialEventsReady$: State<boolean>;
 }
 
@@ -2778,12 +2772,14 @@ function createEnsureVisibleEventTrees({
   ensureEventTrees$,
   diagramCodesForEvents$,
   mermaidDiagrams,
+  syncVisibleRunUsage$,
   initialEventsReady$,
 }: {
   readonly visibleRenderedChatGroups$: Computed<Promise<ChatEventGroup[]>>;
   readonly ensureEventTrees$: ChatRenderWindowOptions["ensureEventTrees$"];
   readonly diagramCodesForEvents$: ChatRenderWindowOptions["diagramCodesForEvents$"];
   readonly mermaidDiagrams: MermaidDiagramRegistry;
+  readonly syncVisibleRunUsage$: ChatRenderWindowOptions["syncVisibleRunUsage$"];
   readonly initialEventsReady$: State<boolean>;
 }): Command<Promise<void>, [boolean, AbortSignal]> {
   return command(
@@ -2794,6 +2790,7 @@ function createEnsureVisibleEventTrees({
     ): Promise<void> => {
       const groups = await get(visibleRenderedChatGroups$);
       signal.throwIfAborted();
+      set(syncVisibleRunUsage$, groups);
       const visibleEvents = groups.flatMap((group) => {
         return group.events;
       });
@@ -2821,6 +2818,7 @@ function createChatRenderWindow({
   ensureEventTrees$,
   diagramCodesForEvents$,
   mermaidDiagrams,
+  syncVisibleRunUsage$,
   initialEventsReady$,
 }: ChatRenderWindowOptions) {
   const visibleRenderedChatGroups$ = computed(
@@ -2860,6 +2858,7 @@ function createChatRenderWindow({
     ensureEventTrees$,
     diagramCodesForEvents$,
     mermaidDiagrams,
+    syncVisibleRunUsage$,
     initialEventsReady$,
   });
 
@@ -3552,6 +3551,7 @@ function publicChatThreadEventSignals(events: MessageListSignals) {
     latestAssistantTextCreatedAt$: events.latestAssistantTextCreatedAt$,
     visibleRenderedChatGroups$: events.visibleRenderedChatGroups$,
     visibleRenderedChatGroupsReady$: events.visibleRenderedChatGroupsReady$,
+    visibleRunUsageSignals$: events.visibleRunUsageSignals$,
     readyScrollAfterRenderRequest$: events.readyScrollAfterRenderRequest$,
     initialEventsReady$: events.initialEventsReady$,
     assistantErrorRecovery$: events.assistantErrorRecovery$,
@@ -3820,7 +3820,7 @@ export function createChatPanelSignals(
   const previewCatalogReady$ = computed((get) => {
     return !get(optimisticCreateUnsettled$);
   });
-  const threadTitle = createThreadTitleParts(threadMeta$);
+  const threadMetadata = createThreadMetadata(threadMeta$);
   const sessionOutput = createSessionOutputStreamSignals(
     threadId,
     chatEvents.chatEvents$,
@@ -3895,7 +3895,7 @@ export function createChatPanelSignals(
     threadDraft$,
     threadMeta$,
     optimisticCreateUnsettled$,
-    ...threadTitle,
+    ...threadMetadata,
     scrollContainerOnRef$: messages.scroll.scrollContainerOnRef$,
     scrollContentOnRef$: messages.scroll.scrollContentOnRef$,
     composerLayoutOnRef$: createChatComposerLayoutOnRef(

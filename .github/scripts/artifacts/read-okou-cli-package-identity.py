@@ -91,8 +91,7 @@ def read_identity(path):
         parse_int=JsonInteger, parse_constant=invalid_constant,
     ), ("name", "version", "okouBuildIdentity"))
     build = fields(package["okouBuildIdentity"],
-                   ("schemaVersion", "piAgentRuntime", "piSdk", "sessionConstruction"))
-    session = fields(build["sessionConstruction"], ("digest",))
+                   ("schemaVersion", "piAgentRuntime", "piSdk"))
     if package["name"] != "@okouai/cli":
         raise ValueError("unexpected CLI package name")
     if not isinstance(build["schemaVersion"], JsonInteger) or build["schemaVersion"].token != "1":
@@ -106,11 +105,8 @@ def read_identity(path):
     parts = sdk.split("+okou.")
     if len(parts) != 2 or not RELEASE_VERSION.fullmatch(parts[0]) or not re.fullmatch(r"[0-9a-f]{12}", parts[1]):
         raise ValueError("invalid CLI package SDK identity")
-    digest = session["digest"]
-    if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
-        raise ValueError("invalid CLI package session digest")
     return {"versions": {"cli": package["version"], "piAgentRuntime": build["piAgentRuntime"],
-                         "piSdk": sdk}, "sessionConstruction": {"digest": digest}}
+                         "piSdk": sdk}}
 
 
 if __name__ == "__main__":

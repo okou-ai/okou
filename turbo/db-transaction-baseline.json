@@ -652,29 +652,9 @@
       "owner": "fulfillUsagePackSubscriptionChangeInvoice"
     },
     {
-      "id": "TX-0273",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-allocation-change.service.ts",
-      "owner": "prepareUsagePackChangeConfirmation$"
-    },
-    {
-      "id": "TX-0274",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
-      "owner": "insertPendingInvitationPurchase$"
-    },
-    {
-      "id": "TX-0275",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
-      "owner": "persistSuccessfulPayment$"
-    },
-    {
       "id": "TX-0277",
       "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
       "owner": "persistInvitation$"
-    },
-    {
-      "id": "TX-0279",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
-      "owner": "refundPurchase$"
     },
     {
       "id": "TX-0281",
@@ -772,11 +752,6 @@
       "owner": "publishConcurrencyInvoice$"
     },
     {
-      "id": "TX-0328",
-      "file": "turbo/apps/api/src/signals/services/webhooks-stripe.service.ts",
-      "owner": "publishConcurrencySubscription$"
-    },
-    {
       "id": "TX-0329",
       "file": "turbo/apps/api/src/signals/services/webhooks-stripe.service.ts",
       "owner": "publishLegacyPlanSubscription$"
@@ -867,11 +842,6 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0390",
-      "file": "turbo/packages/db/scripts/test-historical-session-blob-audit.ts",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0392",
       "file": "turbo/packages/db/scripts/test-hosted-publication-contraction.ts",
       "owner": "<module>"
@@ -888,11 +858,6 @@
     },
     {
       "id": "TX-0411",
-      "file": "turbo/packages/db/scripts/test-pi-candidate-trigger-retirement.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0412",
       "file": "turbo/packages/db/scripts/test-pi-candidate-trigger-retirement.ts",
       "owner": "<module>"
     },

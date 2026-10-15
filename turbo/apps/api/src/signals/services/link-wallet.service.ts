@@ -3,6 +3,8 @@ import type { WalletChangedPayload } from "@okouai/api-contracts/contracts/realt
 
 import {
   type WalletCreateSpend,
+  type WalletConnect,
+  type WalletSpendListQuery,
   type WalletConnectStatus,
   type WalletSpend,
   type WalletSpendCredentials,
@@ -16,7 +18,18 @@ import {
   linkWalletSpends,
 } from "@okouai/db/schema/link-wallet";
 import { command, computed } from "ccstate";
-import { and, eq, gt, isNull, isNotNull, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  gt,
+  gte,
+  lt,
+  or,
+  desc,
+  isNull,
+  isNotNull,
+  sql,
+} from "drizzle-orm";
 import { z } from "zod";
 
 import { now, nowDate } from "../../lib/time";
@@ -40,12 +53,24 @@ import {
   requestLinkApproval,
   retrieveLinkSpendCredentials,
   revokeLinkToken,
+  readLinkWallet,
   type LinkSpend,
 } from "./link-wallet-provider.service";
 import {
   recordWalletConnectionUsage,
   recordWalletSpendUsage,
 } from "./link-wallet-usage";
+
+import type { LinkWalletReadRequest } from "../external/link-wallet-client";
+import {
+  walletAuthorization,
+  requireWalletPermission,
+  type WalletPermission,
+} from "./link-wallet-grants";
+
+// Public consent-mode marker, followed by 256 random bits. Hash and verify the
+// entire value so callers cannot strip or change the requested consent mode.
+const READ_ONLY_CONSENT_MARKER = "read-only.";
 
 export interface WalletOwner {
   readonly orgId: string;
@@ -127,10 +152,22 @@ const connection$ = computed(async (get): Promise<Connection | undefined> => {
 export const walletStatus$ = computed(async (get) => {
   const row = await get(connection$);
   const connected = Boolean(row?.encryptedCredentials && !row.revokedAt);
+  const credentials =
+    connected && row?.encryptedCredentials
+      ? linkCredentialsSchema.parse(
+          JSON.parse(
+            await decryptStoredSecretValue(row.encryptedCredentials),
+          ) as unknown,
+        )
+      : undefined;
+  const authorization = walletAuthorization(credentials);
   return {
     connected,
-    nextAction: connected ? ("create_spend" as const) : ("connect" as const),
+    nextAction: authorization.capabilities.payments
+      ? ("create_spend" as const)
+      : ("connect" as const),
     checkoutAvailable: false as const,
+    authorization,
   };
 });
 
@@ -184,9 +221,40 @@ export const walletConnectStatus$ = command(
 );
 
 export const startWalletOAuth$ = command(
-  async ({ set }, owner: WalletOwner, signal: AbortSignal) => {
+  async (
+    { get, set },
+    owner: WalletOwner,
+    input: WalletConnect,
+    signal: AbortSignal,
+  ) => {
     const config = linkWalletConfig();
-    const state = randomBytes(32).toString("base64url");
+    const current = await get(connection$);
+    signal.throwIfAborted();
+    const credentials =
+      current?.encryptedCredentials && !current.revokedAt
+        ? linkCredentialsSchema.parse(
+            JSON.parse(
+              await decryptStoredSecretValue(current.encryptedCredentials),
+            ) as unknown,
+          )
+        : undefined;
+    signal.throwIfAborted();
+    const granted = walletAuthorization(credentials);
+    const scopes = new Set(granted.scopes);
+    scopes.add("userinfo:read");
+    if (input.readOnly) {
+      scopes.delete("payment_methods.agentic");
+    } else if (!input.transactions || granted.capabilities.payments) {
+      scopes.add("payment_methods.agentic");
+    }
+    const actions = new Set(granted.sourceActions);
+    if (input.transactions || input.readOnly) {
+      actions.add("read_link_transactions");
+    }
+    const readOnly = !scopes.has("payment_methods.agentic");
+    // The prefix is authenticated by the stored hash of the full one-time state.
+    // Legacy base64url states cannot contain a dot; their PKCE format is unchanged.
+    const state = `${readOnly ? READ_ONLY_CONSENT_MARKER : ""}${randomBytes(32).toString("base64url")}`;
     const verifier = randomBytes(48).toString("base64url");
     const expiresAt = new Date(now() + 30 * 60_000);
     const encryptedVerifier = await encryptStoredSecretValue(verifier);
@@ -207,12 +275,18 @@ export const startWalletOAuth$ = command(
       client_id: config.clientId,
       redirect_uri: linkWalletRedirectUri(),
       response_type: "code",
-      scope: "payment_methods.agentic userinfo:read",
+      scope: [...scopes].sort().join(" "),
       state,
       code_challenge: createHash("sha256").update(verifier).digest("base64url"),
       code_challenge_method: "S256",
     })) {
       url.searchParams.set(key, value);
+    }
+    if (actions.size > 0) {
+      url.searchParams.set(
+        "authorization_details",
+        JSON.stringify([{ type: "source", actions: [...actions].sort() }]),
+      );
     }
     recordWalletConnectionUsage(owner, authorizationId, "connection_started");
     return { url: url.toString(), expiresAt: expiresAt.toISOString() };
@@ -267,6 +341,7 @@ export const completeWalletOAuth$ = command(
         const verifier = await decryptStoredSecretValue(
           attempt.encryptedVerifier,
         );
+        const readOnly = input.state.startsWith(READ_ONLY_CONSENT_MARKER);
         signal.throwIfAborted();
         const token = await linkTokenRequest(
           {
@@ -277,7 +352,25 @@ export const completeWalletOAuth$ = command(
           },
           signal,
         );
-        return await set(publishWalletOAuth$, { attempt, token });
+        if (
+          readOnly &&
+          token.scope.split(/[ ,]+/).includes("payment_methods.agentic")
+        ) {
+          await revokeLinkToken(
+            token.refresh_token,
+            AbortSignal.timeout(15_000),
+          );
+          throw new LinkWalletError(
+            403,
+            "WALLET_SCOPE_REQUIRED",
+            "Link returned payment authorization for a read-only request; reconnect with read-only consent",
+          );
+        }
+        return await set(publishWalletOAuth$, {
+          attempt,
+          token,
+          readOnly,
+        });
       })(),
       async () => {
         await set(failWalletOAuth$, attempt);
@@ -319,11 +412,8 @@ const publishWalletOAuth$ = command(
     { set },
     input: {
       readonly attempt: typeof linkWalletOAuthAttempts.$inferSelect;
-      readonly token: {
-        readonly access_token: string;
-        readonly refresh_token: string;
-        readonly expires_in: number;
-      };
+      readonly token: Awaited<ReturnType<typeof linkTokenRequest>>;
+      readonly readOnly: boolean;
     },
   ) => {
     const { attempt, token } = input;
@@ -332,6 +422,9 @@ const publishWalletOAuth$ = command(
         accessToken: token.access_token,
         refreshToken: token.refresh_token,
         expiresAt: now() + token.expires_in * 1000,
+        scope: token.scope,
+        authorizationDetails: token.authorization_details,
+        readOnly: input.readOnly,
       }),
     );
     const db = set(writeDb$);
@@ -383,8 +476,13 @@ const refreshWalletConnection$ = command(
         readonly encryptedCredentials: string;
       };
       readonly refreshToken: string;
+      readonly readOnly?: boolean;
     },
-  ): Promise<{ connection: Connection; token: string }> => {
+  ): Promise<{
+    connection: Connection;
+    token: string;
+    credentials: z.infer<typeof linkCredentialsSchema>;
+  }> => {
     const { owner, connection } = input;
     const db = set(writeDb$);
     // Consume the one-time refresh credential before the remote effect. Only a
@@ -415,12 +513,32 @@ const refreshWalletConnection$ = command(
       { grant_type: "refresh_token", refresh_token: input.refreshToken },
       AbortSignal.timeout(15_000),
     );
+    if (
+      input.readOnly &&
+      refreshed.scope.split(/[ ,]+/).includes("payment_methods.agentic")
+    ) {
+      await revokeLinkToken(
+        refreshed.refresh_token,
+        AbortSignal.timeout(15_000),
+      );
+      throw new LinkWalletError(
+        403,
+        "WALLET_SCOPE_REQUIRED",
+        "Link changed a read-only grant to payment access; reconnect with read-only consent",
+      );
+    }
+    const credentials = {
+      accessToken: refreshed.access_token,
+      refreshToken: refreshed.refresh_token,
+      expiresAt: now() + refreshed.expires_in * 1000,
+      scope: refreshed.scope,
+      authorizationDetails: refreshed.authorization_details,
+      // Legacy credentials came from payment consent; persist the missing marker
+      // on refresh until the old-writer/data retirement gates in #40206 close.
+      readOnly: input.readOnly ?? false,
+    };
     const encryptedCredentials = await encryptStoredSecretValue(
-      JSON.stringify({
-        accessToken: refreshed.access_token,
-        refreshToken: refreshed.refresh_token,
-        expiresAt: now() + refreshed.expires_in * 1000,
-      }),
+      JSON.stringify(credentials),
     );
     // Persist rotated credentials even if the caller canceled after Link returned.
     // A disconnect or newer OAuth authorization cannot be resurrected by this write.
@@ -466,7 +584,7 @@ const refreshWalletConnection$ = command(
         "Wallet authorization changed; reconnect before continuing",
       );
     }
-    return { connection: saved, token: refreshed.access_token };
+    return { connection: saved, token: refreshed.access_token, credentials };
   },
 );
 
@@ -474,8 +592,13 @@ const walletAccess$ = command(
   async (
     { get, set },
     owner: WalletOwner,
+    permission: WalletPermission,
     signal: AbortSignal,
-  ): Promise<{ connection: Connection; token: string }> => {
+  ): Promise<{
+    connection: Connection;
+    token: string;
+    credentials: z.infer<typeof linkCredentialsSchema>;
+  }> => {
     const connection = await get(connection$);
     signal.throwIfAborted();
     if (!connection?.encryptedCredentials || connection.revokedAt) {
@@ -491,15 +614,26 @@ const walletAccess$ = command(
     const credentials = linkCredentialsSchema.parse(
       JSON.parse(plaintext) as unknown,
     );
-    if (credentials.expiresAt > now() + 60_000) {
-      return { connection, token: credentials.accessToken };
+    // Old encrypted credentials lack scope metadata. Until old writers/rollback
+    // targets and those credentials are gone, refresh before provider reads.
+    // Remove this metadata branch with the legacy schema handling in #40206.
+    if (
+      credentials.expiresAt > now() + 60_000 &&
+      (credentials.scope !== undefined ||
+        permission === "payments" ||
+        permission === "spendHistory")
+    ) {
+      requireWalletPermission(credentials, permission);
+      return { connection, token: credentials.accessToken, credentials };
     }
     const refreshed = await set(refreshWalletConnection$, {
       owner,
       connection: { ...connection, encryptedCredentials },
       refreshToken: credentials.refreshToken,
+      readOnly: credentials.readOnly,
     });
     signal.throwIfAborted();
+    requireWalletPermission(refreshed.credentials, permission);
     return refreshed;
   },
 );
@@ -649,6 +783,9 @@ function publicSpend(row: Spend, remote?: LinkSpend): WalletSpend {
     test: row.test,
     approvalUrl: state === "pending_approval" ? row.approvalUrl : null,
     expiresAt: row.expiresAt.toISOString(),
+    createdAt: row.createdAt.toISOString(),
+    payment: remote?.payment_status_details,
+    paymentHistory: remote?.payment_history,
     nextAction,
     action,
   });
@@ -685,7 +822,7 @@ export const createWalletSpend$ = command(
     input: WalletCreateSpend,
     signal: AbortSignal,
   ): Promise<WalletSpend> => {
-    const access = await set(walletAccess$, owner, signal);
+    const access = await set(walletAccess$, owner, "payments", signal);
     signal.throwIfAborted();
     const db = set(writeDb$);
     const [created] = await db
@@ -740,7 +877,13 @@ export const createWalletSpend$ = command(
       );
     }
     if (existing.providerSpendId) {
-      return await set(readProviderSpend$, existing, access, false, signal);
+      return await set(
+        readProviderSpend$,
+        existing,
+        access,
+        "resume_approval",
+        signal,
+      );
     }
     if (existing.expiresAt.getTime() <= now()) {
       return publicSpend({ ...existing, status: "expired" });
@@ -812,7 +955,7 @@ const walletSpendAccess$ = command(
         "Spend request not found",
       );
     }
-    const access = await set(walletAccess$, owner, signal);
+    const access = await set(walletAccess$, owner, "payments", signal);
     signal.throwIfAborted();
     if (row.authorizationId !== access.connection.authorizationId) {
       throw new LinkWalletError(
@@ -834,7 +977,23 @@ export const getWalletSpend$ = command(
     signal: AbortSignal,
   ): Promise<WalletSpend> => {
     const { row, access } = await set(walletSpendAccess$, owner, id, signal);
-    return await set(readProviderSpend$, row, access, cancel, signal);
+    signal.throwIfAborted();
+    const result = await set(
+      readProviderSpend$,
+      row,
+      access,
+      cancel ? "cancel" : "inspect",
+      signal,
+    );
+    signal.throwIfAborted();
+    await set(
+      verifyWalletReadAccess$,
+      owner,
+      access.connection.authorizationId,
+      "payments",
+      signal,
+    );
+    return result;
   },
 );
 
@@ -939,7 +1098,7 @@ const readProviderSpend$ = command(
     { set },
     row: Spend,
     access: { readonly token: string },
-    cancel: boolean,
+    operation: "inspect" | "cancel" | "resume_approval",
     signal: AbortSignal,
   ): Promise<WalletSpend> => {
     if (!row.providerSpendId) {
@@ -956,7 +1115,7 @@ const readProviderSpend$ = command(
       signal,
     );
     validateSpend(row, remote);
-    if (cancel) {
+    if (operation === "cancel") {
       if (
         !["created", "pending_approval", "approved"].includes(remote.status)
       ) {
@@ -979,7 +1138,7 @@ const readProviderSpend$ = command(
     let saved = await set(saveProviderSpend$, row, remote);
     signal.throwIfAborted();
     if (
-      !cancel &&
+      operation === "resume_approval" &&
       ["created", "pending_approval"].includes(remote.status) &&
       !saved.approvalUrl
     ) {
@@ -998,5 +1157,175 @@ const readProviderSpend$ = command(
       remote = { ...remote, status: "pending_approval" };
     }
     return publicSpend(saved, remote);
+  },
+);
+
+const verifyWalletReadAccess$ = command(
+  async (
+    { get },
+    owner: WalletOwner,
+    authorizationId: string,
+    permission: WalletPermission,
+    signal: AbortSignal,
+  ) => {
+    const [current] = await get(db$)
+      .select({
+        encryptedCredentials: linkWalletConnections.encryptedCredentials,
+      })
+      .from(linkWalletConnections)
+      .where(
+        and(
+          connectionOwner(owner),
+          eq(linkWalletConnections.authorizationId, authorizationId),
+          isNull(linkWalletConnections.revokedAt),
+          isNotNull(linkWalletConnections.encryptedCredentials),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!current?.encryptedCredentials) {
+      throw new LinkWalletError(
+        409,
+        "WALLET_AUTHORIZATION_CHANGED",
+        "Wallet authorization changed during the query; check wallet status before retrying",
+      );
+    }
+    const credentials = linkCredentialsSchema.parse(
+      JSON.parse(
+        await decryptStoredSecretValue(current.encryptedCredentials),
+      ) as unknown,
+    );
+    signal.throwIfAborted();
+    requireWalletPermission(credentials, permission);
+  },
+);
+
+export const readWallet$ = command(
+  async (
+    { set },
+    owner: WalletOwner,
+    request: LinkWalletReadRequest,
+    signal: AbortSignal,
+  ) => {
+    const permission =
+      request.operation === "transactions_read"
+        ? "transactions"
+        : request.operation === "user_info_read"
+          ? "userInfo"
+          : "paymentMethods";
+    const access = await set(walletAccess$, owner, permission, signal);
+    signal.throwIfAborted();
+    const data = await readLinkWallet(access.token, request, signal);
+    signal.throwIfAborted();
+    await set(
+      verifyWalletReadAccess$,
+      owner,
+      access.connection.authorizationId,
+      permission,
+      signal,
+    );
+    return data;
+  },
+);
+
+export const listWalletSpends$ = command(
+  async (
+    { get, set },
+    owner: WalletOwner,
+    query: WalletSpendListQuery,
+    signal: AbortSignal,
+  ) => {
+    const access = await set(walletAccess$, owner, "spendHistory", signal);
+    signal.throwIfAborted();
+    const db = get(db$);
+    const limit = query.limit ?? 20;
+    const [cursor] = query.startingAfter
+      ? await db
+          .select({
+            id: linkWalletSpends.id,
+            createdAt: linkWalletSpends.createdAt,
+          })
+          .from(linkWalletSpends)
+          .where(
+            and(
+              spendOwner(owner),
+              eq(linkWalletSpends.id, query.startingAfter),
+            ),
+          )
+          .limit(1)
+      : [];
+    signal.throwIfAborted();
+    if (query.startingAfter && !cursor) {
+      throw new LinkWalletError(
+        400,
+        "WALLET_INVALID_CURSOR",
+        "The pagination cursor is not available for this wallet",
+      );
+    }
+    const rows = await db
+      .select()
+      .from(linkWalletSpends)
+      .where(
+        and(
+          spendOwner(owner),
+          query.startDate
+            ? gte(
+                linkWalletSpends.createdAt,
+                new Date(`${query.startDate}T00:00:00Z`),
+              )
+            : undefined,
+          query.endDate
+            ? lt(
+                linkWalletSpends.createdAt,
+                new Date(
+                  new Date(`${query.endDate}T00:00:00Z`).getTime() + 86_400_000,
+                ),
+              )
+            : undefined,
+          query.status ? eq(linkWalletSpends.status, query.status) : undefined,
+          query.mode && query.mode !== "all"
+            ? eq(linkWalletSpends.test, query.mode === "test")
+            : undefined,
+          cursor
+            ? or(
+                lt(linkWalletSpends.createdAt, cursor.createdAt),
+                and(
+                  eq(linkWalletSpends.createdAt, cursor.createdAt),
+                  lt(linkWalletSpends.id, cursor.id),
+                ),
+              )
+            : undefined,
+        ),
+      )
+      .orderBy(desc(linkWalletSpends.createdAt), desc(linkWalletSpends.id))
+      .limit(limit + 1);
+    signal.throwIfAborted();
+    await set(
+      verifyWalletReadAccess$,
+      owner,
+      access.connection.authorizationId,
+      "spendHistory",
+      signal,
+    );
+    const data = rows.slice(0, limit).map((row) => {
+      return {
+        id: row.id,
+        status: row.status,
+        amount: row.amount,
+        currency: row.currency,
+        merchantName: row.merchantName,
+        test: row.test,
+        createdAt: row.createdAt.toISOString(),
+        statusSource: "recorded" as const,
+        canRefresh:
+          row.authorizationId === access.connection.authorizationId &&
+          walletAuthorization(access.credentials).capabilities.payments,
+      };
+    });
+    return {
+      data,
+      hasMore: rows.length > limit,
+      nextCursor: rows.length > limit ? (data.at(-1)?.id ?? null) : null,
+    };
   },
 );

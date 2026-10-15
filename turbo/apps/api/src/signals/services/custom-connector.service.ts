@@ -26,6 +26,7 @@ import {
   validateBaseUrlHostPolicy,
 } from "@okouai/connectors/firewall-types";
 import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
+import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgCustomConnectorDcrRegistrations } from "@okouai/db/schema/org-custom-connector-dcr-registration";
 import {
@@ -59,7 +60,6 @@ import {
   type ConnectorConnectionMetadataArgs,
   type ReadyConnectorConnectionMutation,
 } from "./connector-connection-write.service";
-import { deleteConnectorSelectionsForCustomConnectorDefinition } from "./connector-credential-storage-write.service";
 import {
   commitConnectorRuntimeMutation,
   publishConnectorRuntimeSyncWakeups$,
@@ -68,7 +68,7 @@ import { encryptStoredSecretValue } from "./crypto.utils";
 import {
   customConnectorDefinitionConnectedAccount,
   customConnectorConnectedConnections,
-  loadCurrentCustomConnectorStoredValues,
+  customConnectorRuntimeStorageReadQuery,
   customConnectorRuntimeStorageSnapshot,
   customConnectorValueMarkers,
   type CustomConnectorCredentialAccess,
@@ -2471,11 +2471,16 @@ export const deleteCustomConnector$ = command(
       ) {
         return integrationManagedCustomConnectorMutationForbidden();
       }
-      await deleteConnectorSelectionsForCustomConnectorDefinition(
-        tx,
-        { customConnectorId: args.id },
-        signal,
-      );
+      const selectionDeletion = { customConnectorId: args.id };
+      await tx
+        .delete(chatThreadConnectorSelections)
+        .where(
+          eq(
+            chatThreadConnectorSelections.customConnectorId,
+            selectionDeletion.customConnectorId,
+          ),
+        );
+      signal.throwIfAborted();
       await tx
         .delete(orgCustomConnectors)
         .where(
@@ -3363,13 +3368,38 @@ export async function loadCustomConnectorRuntimeData(
         storageVersion: row.connector.storageVersion,
       };
     });
-    const runtimeStorage = await loadCurrentCustomConnectorStoredValues(db, {
+    const connectorIds = definitions.map((definition) => {
+      return definition.id;
+    });
+    const memberConnectorIds = definitions.flatMap((definition) => {
+      const memberConnectorId = args.memberConnectorIdsByCustomConnectorId.get(
+        definition.id,
+      );
+      return memberConnectorId ? [memberConnectorId] : [];
+    });
+    if (memberConnectorIds.length === 0) {
+      return customConnectorRuntimeDataFromRows(
+        connectorRows,
+        customConnectorRuntimeStorageSnapshot(
+          definitions,
+          [],
+          args.memberConnectorIdsByCustomConnectorId,
+        ),
+      );
+    }
+    const query = customConnectorRuntimeStorageReadQuery({
       orgId: args.orgId,
       userId: args.userId,
-      definitions,
-      memberConnectorIdsByCustomConnectorId:
-        args.memberConnectorIdsByCustomConnectorId,
+      connectorIds,
+      memberConnectorIds,
     });
+    const captured = db.$with("captured_custom_runtime_storage").as(query);
+    const rows = await db.with(captured).select().from(captured);
+    const runtimeStorage = customConnectorRuntimeStorageSnapshot(
+      definitions,
+      rows,
+      args.memberConnectorIdsByCustomConnectorId,
+    );
     return customConnectorRuntimeDataFromRows(connectorRows, runtimeStorage);
   });
 }

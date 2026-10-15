@@ -97,6 +97,63 @@ afterEach(async () => {
 });
 
 describe("okou ssh management", () => {
+  it("creates and lists a Tailscale SSH host without a reusable SSH credential", async () => {
+    let received: unknown;
+    const identity = {
+      id,
+      displayName: "Identity host",
+      host: "peer",
+      port: 22,
+      username: "ubuntu",
+      generation: 1,
+      learnedHostKey: null,
+      ...dates,
+      transport: { type: "tailscale_ssh", configId },
+    };
+    server.use(
+      http.post(`${base}/api/ssh/connections`, async ({ request }) => {
+        received = await request.json();
+        return HttpResponse.json(
+          { ...identity, password: secrets.password },
+          { status: 201 },
+        );
+      }),
+      http.get(`${base}/api/ssh/connections`, () => {
+        return HttpResponse.json({ connections: [identity] });
+      }),
+    );
+    await invoke(
+      "host",
+      "create",
+      "--input",
+      await input({
+        id,
+        displayName: identity.displayName,
+        host: "peer",
+        username: "ubuntu",
+        transport: identity.transport,
+      }),
+      "--json",
+    );
+    expect(received).toStrictEqual({
+      id,
+      displayName: identity.displayName,
+      host: "peer",
+      username: "ubuntu",
+      port: 22,
+      transport: identity.transport,
+    });
+    expect(result()).toMatchObject({
+      transport: identity.transport,
+      username: "ubuntu",
+    });
+    expect(result()).not.toHaveProperty("credentialId");
+    expect(displayed()).not.toContain(secrets.password);
+    await invoke("host", "list", "--scope", "configured", "--json");
+    expect(result()).toMatchObject({
+      connections: [{ transport: identity.transport }],
+    });
+  });
   it("lists configured hosts with connector:read, projecting safe nested metadata", async () => {
     token(["connector:read"]);
     server.use(
@@ -316,18 +373,186 @@ describe("okou ssh management", () => {
     expectNoSecrets();
   });
 
-  it("deletes hosts without inventing a generation requirement", async () => {
-    let text: string | undefined;
+  it.each(["file", "stdin"])(
+    "deletes a host with the caller's reviewed generation from %s",
+    async (source) => {
+      const requests: unknown[] = [];
+      server.use(
+        http.delete(
+          `${base}/api/ssh/connections/${id}`,
+          async ({ request }) => {
+            requests.push(await request.json());
+            return new HttpResponse(null, { status: 204 });
+          },
+        ),
+      );
+      const stdin = vi.spyOn(process.stdin, Symbol.asyncIterator);
+      if (source === "stdin") {
+        stdin.mockImplementation(async function* () {
+          yield Buffer.from(JSON.stringify({ expectedGeneration: 7 }));
+          return undefined;
+        });
+      }
+      try {
+        await invoke(
+          "host",
+          "delete",
+          id,
+          "--input",
+          source === "stdin" ? "-" : await input({ expectedGeneration: 7 }),
+          "--json",
+        );
+      } finally {
+        stdin.mockRestore();
+      }
+      expect(requests).toEqual([{ expectedGeneration: 7 }]);
+      expect(result()).toEqual({ id, outcome: "deleted" });
+      expectNoSecrets();
+    },
+  );
+
+  it.each([
+    null,
+    {},
+    { expectedGeneration: 0 },
+    { expectedGeneration: -1 },
+    { expectedGeneration: 1.5 },
+    { expectedGeneration: "7" },
+    { expectedGeneration: 2_147_483_648 },
+    { expectedGeneration: 7, password: secrets.password },
+  ])("rejects invalid deletion input %j before mutation", async (value) => {
+    const requests: unknown[] = [];
     server.use(
       http.delete(`${base}/api/ssh/connections/${id}`, async ({ request }) => {
-        text = await request.text();
+        requests.push(await request.json());
         return new HttpResponse(null, { status: 204 });
       }),
     );
-    await invoke("host", "delete", id, "--json");
-    expect(text).toBe("");
-    expect(result()).toEqual({ id, outcome: "deleted" });
+    await expect(
+      invoke("host", "delete", id, "--input", await input(value)),
+    ).rejects.toThrow("CLI exit");
+    expect(displayed()).toContain("Invalid configuration input");
+    expect(requests).toEqual([]);
+    expectNoSecrets();
   });
+
+  it("requires explicit deletion input without fetching or mutating the host", async () => {
+    const requests: string[] = [];
+    server.use(
+      http.get(`${base}/api/ssh/connections`, () => {
+        requests.push("read");
+        return HttpResponse.json({ connections: [host] });
+      }),
+      http.delete(`${base}/api/ssh/connections/${id}`, () => {
+        requests.push("delete");
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await expect(invoke("host", "delete", id)).rejects.toThrow("CLI exit");
+    expect(requests).toEqual([]);
+  });
+
+  it("rejects malformed deletion JSON without reflecting it or mutating", async () => {
+    const path = join(directory, "malformed.json");
+    await writeFile(path, secrets.privateKey);
+    const requests: string[] = [];
+    server.use(
+      http.delete(`${base}/api/ssh/connections/${id}`, () => {
+        requests.push("delete");
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await expect(invoke("host", "delete", id, "--input", path)).rejects.toThrow(
+      "CLI exit",
+    );
+    expect(displayed()).toContain("Invalid JSON input");
+    expect(requests).toEqual([]);
+    expectNoSecrets();
+  });
+
+  it("requires explicit review after deletion conflict without fetching or retrying", async () => {
+    const requests: unknown[] = [];
+    server.use(
+      http.get(`${base}/api/ssh/connections`, () => {
+        requests.push("read");
+        return HttpResponse.json({ connections: [{ ...host, generation: 8 }] });
+      }),
+      http.delete(`${base}/api/ssh/connections/${id}`, async ({ request }) => {
+        requests.push(await request.json());
+        return HttpResponse.json(
+          {
+            error: {
+              code: "SSH_GENERATION_CONFLICT",
+              message: JSON.stringify(secrets),
+            },
+          },
+          { status: 409 },
+        );
+      }),
+    );
+    await expect(
+      invoke(
+        "host",
+        "delete",
+        id,
+        "--input",
+        await input({ expectedGeneration: 7 }),
+      ),
+    ).rejects.toThrow("CLI exit");
+    expect(displayed()).toContain("HTTP 409");
+    expect(displayed()).toContain(`okou ssh host show ${id}`);
+    expect(displayed()).toContain("reviewed expectedGeneration");
+    expect(requests).toEqual([{ expectedGeneration: 7 }]);
+    expectNoSecrets();
+  });
+
+  it("refuses deletion from a read-only Run before reading input or dispatching", async () => {
+    token(["connector:read"]);
+    const requests: string[] = [];
+    server.use(
+      http.delete(`${base}/api/ssh/connections/${id}`, () => {
+        requests.push("delete");
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await expect(
+      invoke("host", "delete", id, "--input", "/missing-input-file"),
+    ).rejects.toThrow("CLI exit");
+    expect(displayed()).toContain("connector:write");
+    expect(displayed()).not.toContain("ENOENT");
+    expect(requests).toEqual([]);
+  });
+
+  it.each([401, 403])(
+    "redacts HTTP %s deletion failures and preserves authentication guidance",
+    async (status) => {
+      server.use(
+        http.delete(`${base}/api/ssh/connections/${id}`, () => {
+          return HttpResponse.json(
+            {
+              error: {
+                code: secrets.password,
+                message: JSON.stringify(secrets),
+              },
+            },
+            { status },
+          );
+        }),
+      );
+      await expect(
+        invoke(
+          "host",
+          "delete",
+          id,
+          "--input",
+          await input({ expectedGeneration: 7 }),
+        ),
+      ).rejects.toThrow("CLI exit");
+      expect(displayed()).toContain(`HTTP ${status}`);
+      expect(displayed()).toContain("authentication");
+      expectNoSecrets();
+    },
+  );
 
   it("deletes an unused credential with its expected revision", async () => {
     let body: unknown;

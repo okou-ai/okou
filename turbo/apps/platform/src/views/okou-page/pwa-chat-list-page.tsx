@@ -7,10 +7,6 @@ import { currentChatAgentId$ } from "../../signals/agent-chat.ts";
 import { chatThreadOnlyArchived$ } from "../../signals/chat-page/chat-thread-only-archived.ts";
 import { chatThreadOnlyMuted$ } from "../../signals/chat-page/chat-thread-only-muted.ts";
 import { chatThreadOnlyUnread$ } from "../../signals/chat-page/chat-thread-only-unread.ts";
-import {
-  createNewChatThread$,
-  newChatThreadDisabled$,
-} from "../../signals/chat-page/optimistic-chat-thread-page.ts";
 import type {
   SidebarChatThreadListSignals,
   SidebarChatThreadScrollSignals,
@@ -23,10 +19,11 @@ import {
   PWA_CHAT_THREAD_ROW_HEIGHT,
   pwaChatThreadScrollSignals$,
 } from "../../signals/okou-page/pwa-chat-list.ts";
+import { navigateToNewChat$ } from "../../signals/okou-page/nav.ts";
 import { openThreeColumnSearchDialog$ } from "../../signals/okou-page/sidebar-state.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { InstatusStatusNotice } from "../components/instatus-status-notice.tsx";
 import { PwaAgentSwitcher } from "./pwa-agent-switcher.tsx";
 import { OverlayScrollArea } from "./sidebar-scroll.tsx";
 import { ChatThreadItem, ChatThreadsListMenu } from "./sidebar-threads.tsx";
@@ -39,12 +36,21 @@ function useSelectFilter() {
   };
 }
 
+function useOpenNewChat() {
+  const currentAgentId = useLastResolved(currentChatAgentId$);
+  const openNewChat = useSet(navigateToNewChat$);
+  const pageSignal = useGet(pageSignal$);
+  return {
+    disabled: !currentAgentId,
+    open: () => {
+      detach(openNewChat(pageSignal), Reason.DomCallback);
+    },
+  };
+}
+
 function PwaChatListHeader() {
   const { t } = useTranslation();
-  const currentAgentId = useLastResolved(currentChatAgentId$);
-  const createNewChat = useSet(createNewChatThread$);
-  const rootSignal = useGet(rootSignal$);
-  const newChatDisabled = useGet(newChatThreadDisabled$);
+  const newChat = useOpenNewChat();
   const openSearch = useSet(openThreeColumnSearchDialog$);
 
   return (
@@ -71,18 +77,11 @@ function PwaChatListHeader() {
           size="icon"
           iconSize="lg"
           className="min-h-11 min-w-11 shrink-0"
-          disabled={!currentAgentId || newChatDisabled}
+          disabled={newChat.disabled}
           aria-label={t(($) => {
             return $.chat.newChat;
           })}
-          onClick={() => {
-            if (currentAgentId) {
-              detach(
-                createNewChat(currentAgentId, "main", rootSignal),
-                Reason.DomCallback,
-              );
-            }
-          }}
+          onClick={newChat.open}
         >
           <SquarePen aria-hidden="true" />
         </Button>
@@ -105,6 +104,26 @@ function ShowAllChatsButton() {
     >
       {t(($) => {
         return $.chat.sidebar.showAllChats;
+      })}
+    </Button>
+  );
+}
+
+// A first visit lands on an empty list, so the start page is one tap away
+// rather than behind the header icon.
+function StartChatButton() {
+  const { t } = useTranslation();
+  const newChat = useOpenNewChat();
+  return (
+    <Button
+      variant="neutral"
+      className="min-h-11 gap-2"
+      disabled={newChat.disabled}
+      onClick={newChat.open}
+    >
+      <SquarePen aria-hidden="true" />
+      {t(($) => {
+        return $.chat.newChat;
       })}
     </Button>
   );
@@ -145,6 +164,9 @@ function PwaChatListEmpty({
       <MessageSquare size={28} aria-hidden="true" />
       <p className="text-sm">{message}</p>
       {unread || archived || muted ? <ShowAllChatsButton /> : null}
+      {!unread && !archived && !muted && !hasHiddenArchivedThreads ? (
+        <StartChatButton />
+      ) : null}
       {hasHiddenArchivedThreads ? (
         <Button
           variant="quiet"
@@ -262,6 +284,7 @@ export function PwaChatListPage() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PwaChatListHeader />
+      <InstatusStatusNotice placement="list" />
       <PwaChatListContent />
     </div>
   );

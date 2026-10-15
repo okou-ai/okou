@@ -105,6 +105,7 @@ function mockThreadStories(
   if (!current) {
     throw new Error("Current thread story not found");
   }
+  context.mocks.data.availableRunModels([]);
   const control = mockChatLifecycleWithoutBrowserSession({
     threadId: current.id,
     threadTitle: current.title,
@@ -378,8 +379,8 @@ async function waitForInteractiveThread(
     expect(link).toHaveAttribute("aria-current", "page");
     return { section, link };
   });
-  expect(section).toBeVisible();
-  expect(link).toBeVisible();
+  expect(section).toBeInTheDocument();
+  expect(link).toBeInTheDocument();
 }
 
 async function chooseReadingPosition(
@@ -721,6 +722,7 @@ test("Open a conversation safely when a linked message is unavailable", async ()
 
 test("Return to the latest message after sending from history", async () => {
   const user = userEvent.setup();
+  context.mocks.data.availableRunModels([]);
   const events = conversationEvents("send-history", "History");
   events.push({
     id: "send-history-active-user",

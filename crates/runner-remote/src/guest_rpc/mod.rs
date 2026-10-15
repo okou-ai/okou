@@ -16,7 +16,7 @@ use tokio_util::sync::CancellationToken;
 
 use runner_types::{ids::RunId, types::ExecutionContext};
 
-use crate::{run_usage, ssh, vnc};
+use crate::{native, run_usage, ssh, vnc};
 
 const RUN_REQUEST_CAPACITY: usize = 8;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
@@ -26,12 +26,13 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 pub enum CleanupError {
     #[error("guest RPC owner failed during required cleanup")]
     Owner,
-    #[error("native SSH resource cleanup was not confirmed")]
+    #[error("native resource cleanup was not confirmed")]
     Native,
 }
 
 #[derive(Clone)]
 pub struct Runtime {
+    native: native::Runtime,
     pub ssh: Option<Arc<ssh::SshRuntime>>,
     pub vnc: Option<Arc<vnc::VncRuntime>>,
     pub usage: Option<run_usage::Runtime>,
@@ -66,6 +67,19 @@ pub(crate) struct Request {
 }
 
 impl Runtime {
+    pub fn new(
+        ssh: Option<Arc<ssh::SshRuntime>>,
+        vnc: Option<Arc<vnc::VncRuntime>>,
+        usage: Option<run_usage::Runtime>,
+    ) -> Self {
+        Self {
+            native: native::Runtime::new(),
+            ssh,
+            vnc,
+            usage,
+        }
+    }
+
     pub fn install(
         &self,
         sandbox: &dyn Sandbox,
@@ -106,29 +120,31 @@ impl Runtime {
         usage: Option<Arc<run_usage::Run>>,
     ) -> Run {
         let cancel = cancel.child_token();
+        let native = self.native.register(run, &cancel);
         let ssh = self
             .ssh
             .as_ref()
-            .map(|runtime| runtime.for_run(run, &cancel));
+            .map(|runtime| runtime.for_run(run, &cancel, Arc::clone(&native)));
         let vnc = self
             .vnc
             .as_ref()
             .map(|runtime| runtime.for_run(run, &cancel, ssh.clone()));
-        let task_cancel = cancel.clone();
         let task_ssh = ssh.clone();
         let task_vnc = vnc.clone();
+        let task_native = Arc::clone(&native);
         let task = tokio::spawn(serve(
             acceptor,
             sandbox,
             run,
-            task_cancel,
             task_ssh,
             task_vnc,
+            task_native,
             usage,
         ));
         Run {
             cancel,
             task: Some(task),
+            native,
             ssh,
             vnc,
         }
@@ -139,11 +155,12 @@ async fn serve(
     acceptor: Arc<dyn GuestRpcAcceptor>,
     sandbox: String,
     run: RunId,
-    cancel: CancellationToken,
     ssh: Option<Arc<ssh::Run>>,
     vnc: Option<Arc<vnc::Run>>,
+    native: Arc<native::Run>,
     usage: Option<Arc<run_usage::Run>>,
 ) {
+    let cancel = native.cancelled();
     let permits = Arc::new(Semaphore::new(RUN_REQUEST_CAPACITY));
     let mut prune = tokio::time::interval(Duration::from_secs(30));
     prune.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -191,6 +208,7 @@ async fn serve(
         ));
     }
     cancel.cancel();
+    native.close();
     if let Some(ssh) = &ssh {
         ssh.close();
     }
@@ -204,6 +222,9 @@ async fn serve(
     if let Some(vnc) = &vnc {
         vnc.shutdown().await;
     }
+    // The Registry keeps any failure sticky for shutdown() and later replacement.
+    // Settling here also retains physical cleanup when its external waiter is gone.
+    let _ = native.shutdown().await;
 }
 
 async fn dispatch(
@@ -330,11 +351,17 @@ async fn reject(accepted: AcceptedGuestRpc, cancel: &CancellationToken) {
 pub struct Run {
     cancel: CancellationToken,
     task: Option<JoinHandle<()>>,
+    native: Arc<native::Run>,
     ssh: Option<Arc<ssh::Run>>,
     vnc: Option<Arc<vnc::Run>>,
 }
 
 impl Run {
+    #[cfg(test)]
+    pub(crate) fn native(&self) -> Arc<native::Run> {
+        Arc::clone(&self.native)
+    }
+
     #[cfg(test)]
     pub(crate) fn ssh(&self) -> Option<Arc<ssh::Run>> {
         self.ssh.clone()
@@ -342,6 +369,7 @@ impl Run {
 
     fn close(&self) {
         self.cancel.cancel();
+        self.native.close();
         if let Some(ssh) = &self.ssh {
             ssh.close();
         }
@@ -353,25 +381,28 @@ impl Run {
     pub async fn shutdown(mut self) -> Result<(), CleanupError> {
         self.close();
         let task = self.task.take();
-        let Some(ssh) = &self.ssh else {
-            return match task {
-                Some(task) => task.await.map_err(|_| CleanupError::Owner),
-                None => Ok(()),
-            };
-        };
         let Some(task) = task else {
-            return ssh.shutdown_native().await;
+            return self
+                .native
+                .shutdown()
+                .await
+                .map_err(|_| CleanupError::Native);
         };
         // Transfer join ownership before any cleanup await. Dropping this waiter
         // cannot detach the ordinary serve epilogue or its retained native owners.
-        let mut joined = ssh.retain_cleanup(task);
+        let mut joined = self.native.retain_cleanup(task);
         let outcome = |result| match result {
             Ok(true) => Ok(()),
             _ => Err(CleanupError::Owner),
         };
         // A native failure must reach the executor at its five-second deadline,
         // even if the ordinary serve epilogue is still waiting for host work.
-        let native = ssh.shutdown_native();
+        let native = async {
+            self.native
+                .shutdown()
+                .await
+                .map_err(|_| CleanupError::Native)
+        };
         tokio::pin!(native);
         tokio::select! {
             result = &mut native => match result {

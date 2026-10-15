@@ -9,11 +9,53 @@ Use native okou wallet commands, not link-cli, the Stripe merchant connector,
 raw Link API calls, or environment-variable tokens. Client credentials and user
 OAuth tokens belong only to the Okou API server.
 
-Native wallet commands manage consent, purchase approval and one-time virtual
-card retrieval. They do not poll for approval, fill checkout or execute a
+Native wallet commands read authorized wallet data and manage consent,
+purchase approval and one-time virtual card retrieval. They do not poll for approval, fill checkout or execute a
 purchase. Paying the merchant requires a separate payment tool. Never describe
 wallet connection, approval or credential retrieval as a successful payment or
 order.
+
+## Read authorized wallet data
+
+Use okou wallet status --json to inspect granted scopes, source actions and
+available capabilities. Read commands require wallet:read (wallet:write also
+permits reads); they never return payment credentials. The same user, workspace,
+Agent and active web-run boundaries apply to reads.
+
+- okou wallet spend list --start-date YYYY-MM-DD --end-date YYYY-MM-DD --limit 20 --json
+  lists this user's recorded purchase requests for this Agent. Dates use UTC.
+  These amounts are requested budgets, not settled spending. statusSource=recorded
+  can be stale; use spend get only when canRefresh=true to obtain the latest
+  payment outcome, failure and refund details. Reads never send approval
+  requests; only retry the original spend create input and intent to resume
+  incomplete setup for a purchase the user still authorizes. Old authorizations remain local
+  history and never authorize another payment.
+- okou wallet transactions list --origin link --start-date YYYY-MM-DD --end-date YYYY-MM-DD --json
+  reads actual Link activity within the user's granted financial-data access.
+  Follow nextCursor with --starting-after until hasMore=false before reporting
+  complete totals. A null hasMore means Link did not report completeness;
+  follow an available nextCursor and retain that uncertainty. Keep currencies separate and distinguish refunds and payment
+  states. Empty or incomplete results do not establish zero spending. External
+  bank/card transactions are not supported by these commands.
+- okou wallet payment-methods list/get reads saved-method metadata and card tail
+  digits; it does not retrieve a reusable card or authorize a purchase.
+- okou wallet user-info get --json reads profile, spend limits and verification
+  requirements. Missing values mean unavailable, not zero. Share any returned
+  verification action URL exactly; the user must complete it personally.
+
+Saved-method metadata currently requires payment_methods.agentic in Link;
+do not request that permission solely for a financial-data question.
+
+For financial reads only, use okou wallet connect --read-only --json. This asks
+for profile access and read_link_transactions without payment_methods.agentic.
+To add Link activity to an existing connection, use connect --transactions
+--json. Existing grants remain usable while consent is pending or declined;
+completed reauthorization replaces the grant and old purchase intents cannot be
+reused. Share the exact consent URL and end the turn. Inspect granted access
+again after the callback; requesting a permission does not mean it was granted.
+Do not request payment access merely to answer a financial-data question.
+
+## Purchase approval
 
 1. Run okou wallet status --json. If disconnected, run okou wallet connect
    --json, share the exact returned Link URL, and end the turn. The user must

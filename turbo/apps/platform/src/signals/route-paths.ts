@@ -1,3 +1,5 @@
+import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
+
 export const ROUTES = {
   home: "/",
   agents: "/agents",
@@ -39,10 +41,11 @@ export const ROUTES = {
   directedReconnect: "/connectors/:connectorSlug/reconnect/:connectionId",
   directedAuthorize: "/connectors/:connectorSlug/authorize",
   settings: "/settings",
-  settingsSlack: "/settings/slack",
-  settingsDiscord: "/settings/discord",
+  settingsSlack: INTEGRATION_SETTINGS_PATHS.slack,
+  settingsDiscord: INTEGRATION_SETTINGS_PATHS.discord,
   settingsDiscordInstall: "/settings/discord/install",
-  settingsTeams: "/settings/teams",
+  settingsTeams: INTEGRATION_SETTINGS_PATHS.teams,
+  settingsTelegram: INTEGRATION_SETTINGS_PATHS.telegram,
   settingsFeishu: "/settings/feishu",
   settingsLark: "/settings/lark",
   githubConnect: "/github/connect",

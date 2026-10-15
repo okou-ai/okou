@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.25.2](https://github.com/okou-ai/okou/compare/guest-contracts-v0.25.1...guest-contracts-v0.25.2) (2026-10-15)
+
+
+### Refactoring
+
+* **pi:** always use the runner-bundled cli ([#40232](https://github.com/okou-ai/okou/issues/40232)) ([dfff160](https://github.com/okou-ai/okou/commit/dfff1605013103371cd90962ee5b54c80fc93140))
+
+## [0.25.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.25.0...guest-contracts-v0.25.1) (2026-10-15)
+
+## [0.25.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.24.0...guest-contracts-v0.25.0) (2026-10-15)
+
+
+### Features
+
+* add a live sandbox files sidebar with directory navigation ([#40112](https://github.com/okou-ai/okou/issues/40112)) ([b1a320c](https://github.com/okou-ai/okou/commit/b1a320ca71c1ddafd5e867157db868dc31d88fce))
+
 ## [0.24.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.23.3...guest-contracts-v0.24.0) (2026-10-15)
 
 

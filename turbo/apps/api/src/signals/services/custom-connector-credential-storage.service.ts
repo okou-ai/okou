@@ -1,13 +1,15 @@
 import { and, eq } from "drizzle-orm";
 import { connectors } from "@okouai/db/schema/connector";
+import { secrets } from "@okouai/db/schema/secret";
+import { variables } from "@okouai/db/schema/variable";
 
 import type { Db } from "../external/db";
 import type { Tx } from "../../lib/db-types";
 import {
   deleteConnectorCredentialStorageConnection,
   type ConnectorCredentialStorageDeclaration,
-  upsertConnectorOwnedSecret,
-  upsertConnectorOwnedVariable,
+  connectorOwnedSecretWrite,
+  connectorOwnedVariableWrite,
 } from "./connector-credential-storage-write.service";
 import { prepareConnectorAccountDeletionWithTargetLocked } from "./connector-account-lifecycle.service";
 
@@ -61,7 +63,7 @@ export async function upsertCustomConnectorStoredValues(
   const storage = customConnectorStorageDeclaration(args.fields);
   for (const value of args.values) {
     if (value.kind === "secret") {
-      await upsertConnectorOwnedSecret(db, {
+      const credential = {
         connectorId: args.connectionId,
         storage,
         orgId: args.orgId,
@@ -70,9 +72,20 @@ export async function upsertCustomConnectorStoredValues(
         encryptedValue: value.encryptedValue,
         description: null,
         updatedDescription: null,
-      });
+      };
+      const write = connectorOwnedSecretWrite(credential);
+      const [row] = await db
+        .insert(secrets)
+        .values(write.values)
+        .onConflictDoUpdate(write.conflict)
+        .returning({ id: secrets.id });
+      if (!row) {
+        throw new Error(
+          `Connector secret ${credential.name} is owned by another row`,
+        );
+      }
     } else {
-      await upsertConnectorOwnedVariable(db, {
+      const credential = {
         connectorId: args.connectionId,
         storage,
         orgId: args.orgId,
@@ -81,7 +94,18 @@ export async function upsertCustomConnectorStoredValues(
         value: value.value,
         description: null,
         updatedDescription: null,
-      });
+      };
+      const write = connectorOwnedVariableWrite(credential);
+      const [row] = await db
+        .insert(variables)
+        .values(write.values)
+        .onConflictDoUpdate(write.conflict)
+        .returning({ id: variables.id });
+      if (!row) {
+        throw new Error(
+          `Connector variable ${credential.name} is owned by another row`,
+        );
+      }
     }
     signal.throwIfAborted();
   }

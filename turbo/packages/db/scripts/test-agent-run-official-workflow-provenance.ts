@@ -28,11 +28,9 @@ export async function validateAgentRunOfficialWorkflowProvenanceSchema(
   );
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();
-  const sessionId = randomUUID();
-  let sessionOwned = false;
+  const runId = randomUUID();
 
   try {
-    const runId = randomUUID();
     const identity = randomUUID();
     const userId = `official-provenance-user-${identity}`;
     const orgId = `official-provenance-org-${identity}`;
@@ -55,19 +53,11 @@ export async function validateAgentRunOfficialWorkflowProvenanceSchema(
 
     await client.query(
       `
-        INSERT INTO "agent_sessions" ("id", "user_id", "org_id")
-        VALUES ($1, $2, $3)
-      `,
-      [sessionId, userId, orgId],
-    );
-    sessionOwned = true;
-    await client.query(
-      `
         INSERT INTO "agent_runs" (
-          "id", "user_id", "org_id", "session_id", "status", "prompt"
-        ) VALUES ($1, $2, $3, $4, 'pending', 'official provenance schema')
+          "id", "user_id", "org_id", "status", "prompt"
+        ) VALUES ($1, $2, $3, 'pending', 'official provenance schema')
       `,
-      [runId, userId, orgId, sessionId],
+      [runId, userId, orgId],
     );
     await client.query(
       `
@@ -127,11 +117,7 @@ export async function validateAgentRunOfficialWorkflowProvenanceSchema(
     );
   } finally {
     try {
-      if (sessionOwned) {
-        await client.query('DELETE FROM "agent_sessions" WHERE "id" = $1', [
-          sessionId,
-        ]);
-      }
+      await client.query('DELETE FROM "agent_runs" WHERE "id" = $1', [runId]);
     } finally {
       await client.end();
     }

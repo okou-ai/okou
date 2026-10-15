@@ -53,7 +53,6 @@ import { validatePermanentChatThreadStorage } from "./test-chat-thread-storage-p
 import { validatePermanentStorageLineage } from "./test-storage-lineage-permanent";
 import { validatePermanentMemberMetadata } from "./test-member-metadata-permanent";
 import { validatePermanentPiMemoryJobs } from "./test-pi-memory-job-permanent";
-import { validateSessionMountRetirementPreparation } from "./test-session-mount-retirement-preparation";
 import { validatePermanentComputerUseHostStorage } from "./test-computer-use-host-storage-permanent";
 import { validatePermanentPlatformGenerationReceipts } from "./test-platform-generation-receipts-permanent";
 import { validateChatRelations } from "./test-chat-relations-permanent";
@@ -1362,7 +1361,6 @@ async function validatePermanentAgentRunMetadataState(
     outOfRangeRunId: "00000000-0000-4000-8000-000000270955",
     partialRunId: "00000000-0000-4000-8000-000000270954",
     productRunId: "00000000-0000-4000-8000-000000270952",
-    sessionId: "00000000-0000-4000-8000-000000270950",
     orgId: "permanent-agent-run-metadata-org",
     userId: "permanent-agent-run-metadata-user",
   } as const;
@@ -1542,22 +1540,15 @@ async function validatePermanentAgentRunMetadataState(
       [fixture.agentId, fixture.orgId, fixture.userId],
     );
     await client.query(
-      `INSERT INTO "agent_sessions" (
-         "id", "user_id", "org_id", "agent_id"
-       ) VALUES ($1, $2, $3, $4)`,
-      [fixture.sessionId, fixture.userId, fixture.orgId, fixture.agentId],
-    );
-    await client.query(
       `INSERT INTO "agent_runs" (
-         "id", "user_id", "session_id", "status", "prompt", "org_id"
+         "id", "user_id", "status", "prompt", "org_id"
        ) VALUES
-         ($1, $3, $4, 'failed', 'durable lifecycle-only history', $5),
-         ($2, $3, $4, 'completed', 'valid product run', $5)`,
+         ($1, $3, 'failed', 'durable lifecycle-only history', $4),
+         ($2, $3, 'completed', 'valid product run', $4)`,
       [
         fixture.lifecycleRunId,
         fixture.productRunId,
         fixture.userId,
-        fixture.sessionId,
         fixture.orgId,
       ],
     );
@@ -1571,15 +1562,10 @@ async function validatePermanentAgentRunMetadataState(
       code: "23514",
       messageIncludes: "agent_runs_metadata_presence_check",
       query: `INSERT INTO "agent_runs" (
-        "id", "user_id", "session_id", "status", "prompt", "org_id",
+        "id", "user_id", "status", "prompt", "org_id",
         "trigger_source"
-      ) VALUES ($1, $2, $3, 'failed', 'partial metadata', $4, 'chat')`,
-      values: [
-        fixture.partialRunId,
-        fixture.userId,
-        fixture.sessionId,
-        fixture.orgId,
-      ],
+      ) VALUES ($1, $2, 'failed', 'partial metadata', $3, 'chat')`,
+      values: [fixture.partialRunId, fixture.userId, fixture.orgId],
     });
     await expectDatabaseError(client, {
       code: "23514",
@@ -1592,15 +1578,10 @@ async function validatePermanentAgentRunMetadataState(
       code: "23514",
       messageIncludes: "agent_runs_autonomy_budget_check",
       query: `INSERT INTO "agent_runs" (
-        "id", "user_id", "session_id", "status", "prompt", "org_id",
+        "id", "user_id", "status", "prompt", "org_id",
         "trigger_source", "autonomy_budget"
-      ) VALUES ($1, $2, $3, 'failed', 'invalid budget', $4, 'chat', 33)`,
-      values: [
-        fixture.outOfRangeRunId,
-        fixture.userId,
-        fixture.sessionId,
-        fixture.orgId,
-      ],
+      ) VALUES ($1, $2, 'failed', 'invalid budget', $3, 'chat', 33)`,
+      values: [fixture.outOfRangeRunId, fixture.userId, fixture.orgId],
     });
 
     // Every remaining optional metadata term must reject partial SQL writes.
@@ -2846,7 +2827,6 @@ async function main(): Promise<void> {
     await validatePermanentStorageLineage(dbUrl1);
     await validatePermanentMemberMetadata(dbUrl1);
     await validatePermanentPiMemoryJobs(dbUrl1);
-    await validateSessionMountRetirementPreparation(dbUrl1);
     await validatePermanentComputerUseHostStorage(dbUrl1);
     await validatePermanentSshStorage(dbUrl1);
     await validatePermanentPlatformGenerationReceipts(dbUrl1);
@@ -2888,7 +2868,6 @@ async function main(): Promise<void> {
     await validatePermanentStorageLineage(dbUrl2);
     await validatePermanentMemberMetadata(dbUrl2);
     await validatePermanentPiMemoryJobs(dbUrl2);
-    await validateSessionMountRetirementPreparation(dbUrl2);
     await validatePermanentComputerUseHostStorage(dbUrl2);
     await validatePermanentSshStorage(dbUrl2);
     await validatePermanentPlatformGenerationReceipts(dbUrl2);

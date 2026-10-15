@@ -14,6 +14,7 @@ import {
 } from "@okouai/api-contracts/contracts/sandbox-channel-diagnostics";
 import type { WssTicket } from "./runner-wss-api";
 import {
+  SANDBOX_FS_VERSION,
   sandboxFsListParamsSchema,
   sandboxFsListResultSchema,
   sandboxFsListCloseParamsSchema,
@@ -268,14 +269,14 @@ export class RunnerWssClient {
         schemaVersion: limits.schemaVersion,
         type: "hello",
         id: randomUUID(),
-        categories: { diagnostics: 1, fs: 1 },
+        categories: { diagnostics: 1, fs: SANDBOX_FS_VERSION },
       },
       sandboxChannelHelloResultSchema,
       (hello) => {
         if (hello.categories.diagnostics !== 1)
           throw new Error("Diagnostics unavailable");
         this.ready = true; // Apply synchronously before resolving hello.
-        this.filesystemReady = hello.categories.fs === 1;
+        this.filesystemReady = hello.categories.fs === SANDBOX_FS_VERSION;
       },
     );
     if (!this.noticeCount) {
@@ -360,7 +361,7 @@ export class RunnerWssClient {
         type: "request",
         id: randomUUID(),
         category: "fs",
-        categoryVersion: 1,
+        categoryVersion: SANDBOX_FS_VERSION,
         operation: "list",
         params: sandboxFsListParamsSchema.parse(params),
       },
@@ -376,7 +377,7 @@ export class RunnerWssClient {
         type: "request",
         id: randomUUID(),
         category: "fs",
-        categoryVersion: 1,
+        categoryVersion: SANDBOX_FS_VERSION,
         operation: "list.close",
         params: sandboxFsListCloseParamsSchema.parse({ cursor }),
       },
@@ -397,7 +398,7 @@ export class RunnerWssClient {
           type: "request",
           id: randomUUID(),
           category: "fs",
-          categoryVersion: 1,
+          categoryVersion: SANDBOX_FS_VERSION,
           operation,
           params,
         },

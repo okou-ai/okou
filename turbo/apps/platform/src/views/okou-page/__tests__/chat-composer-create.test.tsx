@@ -16,6 +16,8 @@ import { openTemplatePicker } from "./chat-composer-template-gallery-test-helper
 import { clickComposerAddMenuItem } from "./chat-composer-add-menu-test-helpers.ts";
 import {
   AGENT_ID,
+  buildRunModel,
+  CLAUDE_SUBSCRIPTION_PROVIDER_ID,
   THREAD_ID,
   composerInlineTemplates,
   context,
@@ -35,6 +37,14 @@ import { mockChatLifecycle } from "./chat-test-helpers.ts";
 function setupModels(): void {
   mockAgent();
   mockPersonalModelRoutes();
+  context.mocks.data.availableRunModels([
+    buildRunModel({
+      model: "claude-fable-5-1",
+      modelLabel: "Claude Fable 5.1",
+      providerType: "claude-code-oauth-token",
+      modelProviderId: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
+    }),
+  ]);
   mockBillingCapabilities({
     restrictedBuiltInModels: false,
   });
@@ -69,7 +79,9 @@ async function setupComposer(): Promise<HTMLElement> {
 
 /** The panel's rows act on mousedown, which only a full pointer sequence fires. */
 async function clickPanelRow(label: string, menu: HTMLElement): Promise<void> {
-  await userEvent.setup({ delay: null }).click(button(label, menu));
+  await userEvent
+    .setup({ delay: null, skipHover: true })
+    .click(button(label, menu));
   await closeTemplatePicker();
 }
 
@@ -397,13 +409,33 @@ test("Create image sends every edited draft template reference", async () => {
 
 test("Presentation adds another template when the draft already has one", async () => {
   setupModels();
-  const editor = await setupComposer();
-  const user = userEvent.setup({ delay: null });
   const [first, second] = PRESENTATION_TEMPLATE_PICKER_ITEMS;
   if (!first || !second) {
     throw new Error("Expected two presentation templates");
   }
-  await selectTemplate(first);
+  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+    return respond(200, {
+      draftUserMessage: {
+        version: 1,
+        parts: [
+          {
+            type: "template",
+            titleSnapshot: first.title,
+            template: {
+              type: "presentation",
+              selection: { templateId: first.templateId },
+            },
+          },
+        ],
+      },
+      draftAttachments: null,
+    });
+  });
+  const editor = await setupComposer();
+  const user = userEvent.setup({ delay: null });
+  await waitFor(() => {
+    expect(composerInlineTemplates()[0]).toHaveTextContent(first.title);
+  });
   await user.click(editor);
   await user.paste(" /");
   const menu = await screen.findByTestId("slash-workflow-menu");

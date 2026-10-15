@@ -236,6 +236,12 @@ The input command rejects disabled forwarding or unavailable job metadata withou
 creating an input entry. A successful command reports file publication, not an
 acknowledgement that the running agent consumed the input.
 
+The runner reads only the next sequence from its canonical queue path, with a
+2 MiB limit on each serialized entry including metadata. A missing or invalid
+entry holds later inputs in order. Accepted inputs drain immediately; missing
+entries and definite Guest backpressure retain the 250 ms local polling delay.
+The Guest control payload still has its separate 1 MiB limit.
+
 Input publication and terminal input cleanup take the same cross-process lock on
 the existing group directory. Publication rechecks the terminal result and
 retained job under that lock, so a late input command cannot recreate a completed

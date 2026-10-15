@@ -1,13 +1,5 @@
 export { runPiOfficialRpcMode } from "./rpc";
 export { runPiSubagent } from "./subagent";
-export {
-  computePiSessionConstructionDigest,
-  computePiSessionConstructionDocument,
-} from "./session-construction-digest-node";
-export type {
-  PiSessionConstructionDocument,
-  PiSessionConstructionProfileDocument,
-} from "./session-construction-digest-node";
 export { runPiMemoryPhase2MountedConsolidation } from "./phase2-memory";
 export type { PiMemoryPhase2MountedConsolidationArgs } from "./phase2-memory";
 export { createPiSessionJsonl, projectPiSessionJsonlForExport } from "./api";

@@ -60,7 +60,7 @@ pub struct ApiActiveInputSource {
 }
 
 pub enum ActiveInputBatch {
-    Local(Vec<ActiveInputEntry>),
+    Local(Option<ActiveInputEntry>),
     Api(NextSteerableInputResponse),
 }
 
@@ -152,14 +152,14 @@ impl ActiveInputSource {
         })
     }
 
-    pub async fn read(&mut self, min_sequence: u64) -> ProviderResult<ActiveInputBatch> {
+    pub async fn read(&mut self, next_local_sequence: u64) -> ProviderResult<ActiveInputBatch> {
         match self {
             Self::LocalQueue(source) => {
                 let source = source.clone();
-                let entries = tokio::task::spawn_blocking(move || {
+                let entry = tokio::task::spawn_blocking(move || {
                     source
                         .queue
-                        .read_active_input_entries_from_sequence_sync(source.run_id, min_sequence)
+                        .read_active_input_entry_sync(source.run_id, next_local_sequence)
                 })
                 .await
                 .map_err(|error| {
@@ -167,7 +167,7 @@ impl ActiveInputSource {
                         "active-input reader task failed: {error}"
                     ))
                 })?;
-                Ok(ActiveInputBatch::Local(entries))
+                Ok(ActiveInputBatch::Local(entry))
             }
             Self::Api(source) => read_api_active_input(source).await,
         }

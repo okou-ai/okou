@@ -8,6 +8,7 @@ import {
   type ClerkEmailCodeSignInOptions,
 } from "./auth";
 import {
+  expectedAppBuild,
   safeNetworkUrl,
   startRunnerNetworkDiagnostics,
 } from "./runner-network-diagnostics";
@@ -68,7 +69,10 @@ export async function signInRunnerWithDiagnostics(
   page: Page,
   email: string,
   appUrl: string,
-  options: ClerkEmailCodeSignInOptions & { readonly diagnosticPath: string },
+  options: ClerkEmailCodeSignInOptions & {
+    readonly diagnosticPath: string;
+    readonly expectedAppBuildSha?: string;
+  },
 ): Promise<string> {
   const started = performance.now();
   const elapsed = () => Math.round(performance.now() - started);
@@ -153,7 +157,11 @@ export async function signInRunnerWithDiagnostics(
   page.on("pageerror", onPageError);
   page.on("crash", onCrash);
   page.on("close", onClose);
-  const network = await startRunnerNetworkDiagnostics(page, elapsed);
+  const build = {
+    appOrigin: new URL(appUrl).origin,
+    expected: expectedAppBuild(options.expectedAppBuildSha),
+  };
+  const network = await startRunnerNetworkDiagnostics(page, elapsed, build);
   try {
     try {
       return await signInWithClerkEmailCode(page, email, appUrl, options);
@@ -174,6 +182,8 @@ export async function signInRunnerWithDiagnostics(
   } catch (error: unknown) {
     try {
       const report = {
+        expectedAppBuild: build.expected,
+        appOrigin: build.appOrigin,
         elapsedMs: elapsed(),
         route: safeNetworkUrl(page.url()),
         closed,

@@ -12,6 +12,116 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1030.0](https://github.com/okou-ai/okou/compare/app-v0.1029.1...app-v0.1030.0) (2026-10-15)
+
+
+### Features
+
+* **app:** adopt telegram connection settings and callback protocol ([#40330](https://github.com/okou-ai/okou/issues/40330)) ([84f0f66](https://github.com/okou-ai/okou/commit/84f0f6685d8755e9f006590fa2f4acb86c32b845)) [#40196](https://github.com/okou-ai/okou/issues/40196)
+
+
+### Performance Improvements
+
+* isolate chat sidebar, panel, and composer subscriptions ([#40261](https://github.com/okou-ai/okou/issues/40261)) ([c145bd1](https://github.com/okou-ai/okou/commit/c145bd12252817b0a684cf6f535f13e204898f8e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.566.2
+    * @okouai/core bumped to 8.759.3
+
+## [0.1029.1](https://github.com/okou-ai/okou/compare/app-v0.1029.0...app-v0.1029.1) (2026-10-15)
+
+
+### Bug Fixes
+
+* **app:** fix sandbox files layout and fullscreen ([#40269](https://github.com/okou-ai/okou/issues/40269)) ([45fcb41](https://github.com/okou-ai/okou/commit/45fcb41e207e67d1867a778e862f5dffa6bfc8ed))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.566.1
+    * @okouai/core bumped to 8.759.2
+
+## [0.1029.0](https://github.com/okou-ai/okou/compare/app-v0.1028.0...app-v0.1029.0) (2026-10-15)
+
+
+### Features
+
+* add a home shortcut to the sandbox files toolbar ([#40235](https://github.com/okou-ai/okou/issues/40235)) ([64f6cca](https://github.com/okou-ai/okou/commit/64f6cca3778211b939109df56b7913b850a70875))
+* **app:** show both usage windows in the subscription usage panel ([#40249](https://github.com/okou-ai/okou/issues/40249)) ([130af21](https://github.com/okou-ai/okou/commit/130af21b73bd62f337cf4d926204255e6277b652))
+* **ssh:** support tailscale ssh with saved networks ([#40212](https://github.com/okou-ai/okou/issues/40212)) ([31db119](https://github.com/okou-ai/okou/commit/31db1195d86e33e52a576e0b50286312366d198e))
+
+
+### Bug Fixes
+
+* **app:** derive visible run usage from the latest usage hint ([#40241](https://github.com/okou-ai/okou/issues/40241)) ([9500b2a](https://github.com/okou-ai/okou/commit/9500b2abffa416353363b419ea342aea42000ac0))
+* **chat:** give thread muting feedback, header entry points and a clean unmute ([#40253](https://github.com/okou-ai/okou/issues/40253)) ([59d7408](https://github.com/okou-ai/okou/commit/59d74089e1e28403b00b04f2aeef146a5f448333))
+
+
+### Performance Improvements
+
+* **app:** narrow file subscriptions and trim ci fixture overhead ([#40239](https://github.com/okou-ai/okou/issues/40239)) ([cbeb10f](https://github.com/okou-ai/okou/commit/cbeb10fd3ff50ef6b1b44f1bfcf3c7883474903a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.566.0
+    * @okouai/core bumped to 8.759.1
+
+## [0.1028.0](https://github.com/okou-ai/okou/compare/app-v0.1027.1...app-v0.1028.0) (2026-10-15)
+
+
+### Features
+
+* add a live sandbox files sidebar with directory navigation ([#40112](https://github.com/okou-ai/okou/issues/40112)) ([b1a320c](https://github.com/okou-ai/okou/commit/b1a320ca71c1ddafd5e867157db868dc31d88fce))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.565.0
+    * @okouai/core bumped to 8.759.0
+
+## [0.1027.1](https://github.com/okou-ai/okou/compare/app-v0.1027.0...app-v0.1027.1) (2026-10-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.564.0
+    * @okouai/core bumped to 8.758.2
+
+## [0.1027.0](https://github.com/okou-ai/okou/compare/app-v0.1026.1...app-v0.1027.0) (2026-10-15)
+
+
+### Features
+
+* **app:** give the subscription usage meter the brand colour ([#40185](https://github.com/okou-ai/okou/issues/40185)) ([69741b8](https://github.com/okou-ai/okou/commit/69741b8c378ccf8f66439e722940dd9690497577))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.563.0
+    * @okouai/core bumped to 8.758.1
+
+## [0.1026.1](https://github.com/okou-ai/okou/compare/app-v0.1026.0...app-v0.1026.1) (2026-10-15)
+
+
+### Bug Fixes
+
+* loop suggestion card navigation ([#40170](https://github.com/okou-ai/okou/issues/40170)) ([6a9343b](https://github.com/okou-ai/okou/commit/6a9343b974a2f0f94ae8d95dc7f7e3d8ca8be1e9))
+
 ## [0.1026.0](https://github.com/okou-ai/okou/compare/app-v0.1025.0...app-v0.1026.0) (2026-10-15)
 
 

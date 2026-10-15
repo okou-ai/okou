@@ -988,7 +988,6 @@ interface ExistingAutomationReconciliationArgs {
   readonly blueprint: OfficialWorkflowAcceptedBlueprint;
   readonly activeDefinitionOnly: boolean;
   readonly automation: OfficialAutomationRow;
-  readonly overrides: readonly OfficialWorkflowParameterBinding[];
   readonly userTimezone: string | null;
 }
 
@@ -1011,7 +1010,6 @@ const prepareExistingAutomationReconfiguration$ = command(
     const resolution = resolveOfficialWorkflowBlueprintForReconciliation(
       args.blueprint,
       args.automation.officialParameterBindings ?? [],
-      args.overrides,
       args.userTimezone,
     );
     if (!resolution.ok) {
@@ -2869,7 +2867,6 @@ interface DormantBlueprintReconciliationArgs {
   readonly activeDefinitionOnly: boolean;
   readonly identity:
     typeof officialWorkflowAutomationIdentities.$inferSelect | undefined;
-  readonly overrides: readonly OfficialWorkflowParameterBinding[];
   readonly userTimezone: string | null;
 }
 
@@ -3056,7 +3053,6 @@ const reconcileDormantBlueprint$ = command(
     const resolution = resolveOfficialWorkflowBlueprintForReconciliation(
       args.blueprint,
       args.identity?.retainedParameterBindings ?? [],
-      args.overrides,
       args.userTimezone,
     );
     if (!resolution.ok) {
@@ -3449,10 +3445,6 @@ interface InstallationReconciliationExecution {
   readonly args: ReconcileOfficialWorkflowInstallationArgs;
   readonly context: ReconciliationContext;
   readonly indexes: ReconciliationIndexes;
-  readonly overridesByKey: ReadonlyMap<
-    string,
-    readonly OfficialWorkflowParameterBinding[]
-  >;
   readonly userTimezone: string | null;
 }
 
@@ -3480,79 +3472,6 @@ function buildReconciliationIndexes(
   };
 }
 
-function invalidReconciliationResult(
-  workflowId: string,
-  message: string,
-): OfficialWorkflowReconciliationResult {
-  return { kind: "invalid", workflowId, message };
-}
-
-function validateReconciliationOverrides(
-  args: ReconcileOfficialWorkflowInstallationArgs,
-  indexes: ReconciliationIndexes,
-  userTimezone: string | null,
-):
-  | {
-      readonly ok: true;
-      readonly overridesByKey: ReadonlyMap<
-        string,
-        readonly OfficialWorkflowParameterBinding[]
-      >;
-    }
-  | {
-      readonly ok: false;
-      readonly result: OfficialWorkflowReconciliationResult;
-    } {
-  const overridesByKey = new Map<
-    string,
-    readonly OfficialWorkflowParameterBinding[]
-  >();
-  for (const entry of args.overrides ?? []) {
-    if (overridesByKey.has(entry.blueprintKey)) {
-      return {
-        ok: false,
-        result: invalidReconciliationResult(
-          args.workflowId,
-          `Duplicate Blueprint bindings: ${entry.blueprintKey}`,
-        ),
-      };
-    }
-    const blueprint = indexes.blueprintByKey.get(entry.blueprintKey);
-    if (!blueprint) {
-      return {
-        ok: false,
-        result: invalidReconciliationResult(
-          args.workflowId,
-          `Unknown Blueprint: ${entry.blueprintKey}`,
-        ),
-      };
-    }
-    const automation = indexes.automationByKey.get(entry.blueprintKey);
-    const identity = indexes.identityByKey.get(entry.blueprintKey);
-    const validation = resolveOfficialWorkflowBlueprintForReconciliation(
-      blueprint,
-      automation?.officialParameterBindings ??
-        identity?.retainedParameterBindings ??
-        [],
-      entry.bindings,
-      userTimezone,
-    );
-    if (
-      !validation.ok &&
-      /^(Duplicate|Unknown|Invalid) /.test(validation.message)
-    ) {
-      return {
-        ok: false,
-        result: invalidReconciliationResult(
-          args.workflowId,
-          validation.message,
-        ),
-      };
-    }
-    overridesByKey.set(entry.blueprintKey, entry.bindings);
-  }
-  return { ok: true, overridesByKey };
-}
 const reconcileReservedDormantMaterialization$ = command(
   async (
     { set },
@@ -3566,7 +3485,6 @@ const reconcileReservedDormantMaterialization$ = command(
   ): Promise<OfficialWorkflowReconciliationResult | null> => {
     const { blueprint, automation, identity } = candidate;
     const { args, context, userTimezone } = execution;
-    const overrides = execution.overridesByKey.get(blueprint.key) ?? [];
     const matchingPhase =
       (automation.officialReconciliationStatus === "reconciling" &&
         identity.state === "reconciling") ||
@@ -3593,7 +3511,6 @@ const reconcileReservedDormantMaterialization$ = command(
     }
     const cleanupOnly =
       automation.officialReconciliationStatus === "failed" ||
-      overrides.length !== 0 ||
       automation.officialAppliedFingerprint !== blueprint.fingerprint;
     if (cleanupOnly) {
       await set(
@@ -3628,7 +3545,6 @@ const reconcileReservedDormantMaterialization$ = command(
         blueprint,
         activeDefinitionOnly: args.activeDefinitionOnly === true,
         identity,
-        overrides,
         userTimezone,
       },
       {
@@ -3649,9 +3565,7 @@ const reconcileCurrentBlueprintLifecycleGap$ = command(
     signal: AbortSignal,
   ): Promise<OfficialWorkflowReconciliationResult | null> => {
     const { args, context } = execution;
-    const overrides = execution.overridesByKey.get(blueprint.key) ?? [];
     if (
-      overrides.length !== 0 ||
       automation.officialAppliedFingerprint !== blueprint.fingerprint ||
       automation.officialReconciliationStatus !== "current"
     ) {
@@ -3700,7 +3614,6 @@ const reconcileDesiredBlueprint$ = command(
     const { args, context, indexes, userTimezone } = execution;
     const automation = indexes.automationByKey.get(blueprint.key);
     const identity = indexes.identityByKey.get(blueprint.key);
-    const overrides = execution.overridesByKey.get(blueprint.key) ?? [];
     if (automation && identity) {
       const materialization = await set(
         reconcileReservedDormantMaterialization$,
@@ -3734,7 +3647,6 @@ const reconcileDesiredBlueprint$ = command(
             blueprint,
             activeDefinitionOnly: args.activeDefinitionOnly === true,
             automation,
-            overrides,
             userTimezone,
           },
           signal,
@@ -3749,7 +3661,6 @@ const reconcileDesiredBlueprint$ = command(
             blueprint,
             activeDefinitionOnly: args.activeDefinitionOnly === true,
             identity: indexes.identityByKey.get(blueprint.key),
-            overrides,
             userTimezone,
           },
           signal,
@@ -3829,14 +3740,6 @@ export const reconcileOfficialWorkflowInstallation$ = command(
       .limit(1);
     signal.throwIfAborted();
     const userTimezone = metadata?.timezone ?? null;
-    const overrides = validateReconciliationOverrides(
-      args,
-      indexes,
-      userTimezone,
-    );
-    if (!overrides.ok) {
-      return overrides.result;
-    }
     const target =
       args.targetAutomationId === undefined
         ? undefined
@@ -3852,7 +3755,6 @@ export const reconcileOfficialWorkflowInstallation$ = command(
         args,
         context,
         indexes,
-        overridesByKey: overrides.overridesByKey,
         userTimezone,
       },
       target,

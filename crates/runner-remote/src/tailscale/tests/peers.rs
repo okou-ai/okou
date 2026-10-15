@@ -497,7 +497,7 @@ async fn ciphertext_capacity_stays_reserved_until_retained_frames_drop() {
 #[tokio::test]
 async fn public_sdk_map_io_rejects_max_length_and_joins_actual_cache_owner() {
     use crate::{
-        ssh::cache::Cache,
+        tailscale::tests::fixture::Cache,
         tailscale::{Control, Key, Work},
     };
     use runner_types::ids::RunId;
@@ -872,7 +872,7 @@ where
     Fut: std::future::Future<Output = ()> + 'static,
 {
     use crate::{
-        ssh::cache::Cache,
+        tailscale::tests::fixture::Cache,
         tailscale::{Key, Work},
     };
     let cache = Cache::new();

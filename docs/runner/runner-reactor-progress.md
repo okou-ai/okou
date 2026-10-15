@@ -156,7 +156,7 @@ not wait for the old blank's exit. Rejected incoming ownership remains caller
 owned for an explicit retry or conversion to shared required cleanup. Accepted
 replacement/required cleanup is adopted before status publication. Production
 assembly must supply the same host authority and measured preparation/cleanup
-coverage; these component APIs do not enable the P4 production policy.
+coverage; these component APIs alone do not activate a production policy.
 
 The supplied-policy finalizing component preserves actual broker delivery
 bindings in `GuardedFinalizingOffer` and keeps the original provider
@@ -185,8 +185,8 @@ Callers must settle or drop their finalizing capsules before dependent teardown.
 claims afterward. Successful cleanup leases and accepted uncertainty remain in
 the separate activation registry. Recovery is an explicit reconciliation
 boundary, not completion proof or memory credit. The production root still
-uses its existing policy until P4 assembly; the native finalizing fixture and
-broader P3d corpus need separate execution and do not calibrate host limits.
+owns its admission policy. Native finalizing fixtures do not by themselves
+establish full session/history restoration or calibrate production host limits.
 
 ## Routine GC and promotion capacity
 
@@ -215,14 +215,22 @@ remain periodic GC policy, not a strict per-promotion whole-cache admission
 bound. Profile-bound image eligibility, fresh allocation/reserve and cross-device
 copy headroom remain mandatory.
 
-Publication gives observed capacity contention a bounded asynchronous retry
-before staging, while retaining its entry lock. A capacity owner must never wait
-for an entry lock. This retry has a separate budget from startup's short entry
-wait and immediate-fallback policy. Proven guest exit releases healthy
-reclamation CPU permits before publication, but the entry and applicable logical
-lease remain owned until their cleanup contract completes. Waiting can therefore
-affect same-key checkout, resource-limited blank refill and joined shutdown; its
-contention deadline does not bound filesystem I/O.
+Stopped publishers share one fair process-local publication permit, separate
+from Guest reclamation admission. They retain entry ownership while queued for
+up to 30 seconds before staging. Admission timeout leaves the original context
+untouched and reports `publication_admission_timeout`; ordinary abandonment and
+required-saving recovery retain their existing policies. This initial retention
+cap is not a measured optimum. Only the admitted publisher starts the existing
+250 ms observed capacity-flock contention retry. Other processes and GC still
+compete through that flock; checkout never joins the publication queue.
+
+Publication retains its local permit through the existing commit or refusal.
+A capacity owner must never wait for an entry lock. This retry has a separate
+budget from startup's short entry wait and immediate-fallback policy. Proven
+guest exit releases healthy reclamation CPU permits before publication, but the
+entry and applicable logical lease remain owned until their cleanup contract
+completes. Waiting can therefore affect same-key checkout, resource-limited blank
+refill and joined shutdown; its contention deadline does not bound filesystem I/O.
 
 Checkout protects and examines the requested entry before considering disk
 pressure, with the existing short entry wait or immediate fallback. It never

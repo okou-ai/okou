@@ -3,7 +3,12 @@
   "extends": ["../../.oxlintrc.json"],
   "overrides": [
     {
-      "files": ["eslint.config.mjs", "src/index.ts", "src/worker.js"],
+      "files": [
+        "eslint.config.mjs",
+        "src/index.ts",
+        "src/preview.ts",
+        "src/worker.js"
+      ],
       "rules": {
         "import/no-default-export": "off"
       }

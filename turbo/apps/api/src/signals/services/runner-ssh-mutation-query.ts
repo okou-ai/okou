@@ -94,7 +94,7 @@ function authorityQuery(
         createdAt: host.createdAt,
         algorithm: host.learnedHostKeyAlgorithm,
         fingerprint: host.learnedHostKeyFingerprint,
-        transport: host.transport,
+        connectionMode: host.connectionMode,
         needsRebind: sql`${host.needsRebind}`
           .mapWith(pgBooleanDecoder)
           .as("authority_needs_rebind"),
@@ -139,14 +139,6 @@ function authorityQuery(
         ),
       )
       .innerJoin(
-        sshCredentials,
-        and(
-          eq(sshCredentials.id, host.credentialId),
-          eq(sshCredentials.orgId, agentRuns.orgId),
-          eq(sshCredentials.userId, agentRuns.userId),
-        ),
-      )
-      .innerJoin(
         chatThreads,
         and(
           eq(chatThreads.id, agentRuns.chatThreadId),
@@ -182,9 +174,29 @@ function authorityQuery(
           ),
         ),
       )
-      .where(authorityPredicate(input, queries))
+      .where(
+        and(
+          authorityPredicate(input, queries),
+          or(
+            eq(host.connectionMode, "tailscale_ssh"),
+            exists(
+              qb
+                .select({ id: sshCredentials.id })
+                .from(sshCredentials)
+                .where(
+                  and(
+                    eq(sshCredentials.id, host.credentialId),
+                    eq(sshCredentials.orgId, host.orgId),
+                    eq(sshCredentials.userId, host.userId),
+                  ),
+                )
+                .for("share"),
+            ),
+          ),
+        ),
+      )
       .for("share", {
-        of: [agentRuns, agents, sshCredentials],
+        of: [agentRuns, agents],
       }),
   );
 }
@@ -209,7 +221,7 @@ export function createRunnerSshMutationReads(
       .innerJoin(current, eq(cloudflareAccessConfigs.id, current.accessId))
       .where(
         and(
-          eq(current.transport, "cloudflare_access"),
+          eq(current.connectionMode, "cloudflare_access"),
           eq(cloudflareAccessConfigs.orgId, current.orgId),
           eq(cloudflareAccessConfigs.generation, current.accessGeneration),
           or(
@@ -230,7 +242,10 @@ export function createRunnerSshMutationReads(
       .innerJoin(current, eq(tailscaleConfigs.id, current.tailscaleId))
       .where(
         and(
-          eq(current.transport, "tailscale"),
+          or(
+            eq(current.connectionMode, "tailscale"),
+            eq(current.connectionMode, "tailscale_ssh"),
+          ),
           eq(tailscaleConfigs.orgId, current.orgId),
           eq(tailscaleConfigs.generation, current.tailscaleGeneration),
           or(
@@ -256,13 +271,16 @@ export function createRunnerSshMutationReads(
         and(
           not(current.needsRebind),
           or(
-            eq(current.transport, "direct"),
+            eq(current.connectionMode, "direct"),
             and(
-              eq(current.transport, "cloudflare_access"),
+              eq(current.connectionMode, "cloudflare_access"),
               exists(qb.select({ id: access.id }).from(access)),
             ),
             and(
-              eq(current.transport, "tailscale"),
+              or(
+                eq(current.connectionMode, "tailscale"),
+                eq(current.connectionMode, "tailscale_ssh"),
+              ),
               exists(qb.select({ id: tailscale.id }).from(tailscale)),
             ),
           ),
@@ -274,7 +292,7 @@ export function createRunnerSshMutationReads(
     generation: current.generation,
     algorithm: current.algorithm,
     fingerprint: current.fingerprint,
-    transport: current.transport,
+    connectionMode: current.connectionMode,
     needsRebind: current.needsRebind,
     accessId: current.accessId,
     tailscaleId: current.tailscaleId,

@@ -25,7 +25,7 @@ const transportSchema = z.union([
   }),
   z.object({ type: z.literal("tailscale"), needsRebind: z.literal(true) }),
 ]);
-const hostMetadataSchema = sshConnectionMetadataSchema
+const credentialHostMetadataSchema = sshConnectionMetadataSchema
   .pick({
     id: true,
     displayName: true,
@@ -44,6 +44,21 @@ const hostMetadataSchema = sshConnectionMetadataSchema
     transport: transportSchema.optional(),
   })
   .strip();
+const hostMetadataSchema = z.union([
+  credentialHostMetadataSchema,
+  credentialHostMetadataSchema
+    .omit({ credentialId: true, credentialName: true })
+    .extend({
+      username: z.string(),
+      transport: z.union([
+        z.object({ type: z.literal("tailscale_ssh"), configId: z.uuid() }),
+        z.object({
+          type: z.literal("tailscale_ssh"),
+          needsRebind: z.literal(true),
+        }),
+      ]),
+    }),
+]);
 const credentialMetadataSchema = sshCredentialResponseSchema
   .pick({
     id: true,
@@ -125,11 +140,20 @@ export async function updateSshHost(
   return metadata(hostMetadataSchema, result.body);
 }
 
-export async function deleteSshHost(id: string) {
+export async function deleteSshHost(id: string, expectedGeneration: number) {
   const client = initClient(sshConnectionsContract, await getClientConfig());
   const result = await managementRequest(() => {
-    return client.delete({ params: { connectionId: id } });
+    return client.delete({
+      params: { connectionId: id },
+      body: { expectedGeneration },
+    });
   });
+  if (result.status === 409) {
+    handleManagementError(
+      result,
+      `Cannot delete SSH host. Review it with okou ssh host show ${id}, then explicitly delete with the reviewed expectedGeneration`,
+    );
+  }
   if (result.status !== 204)
     handleManagementError(result, "Cannot delete SSH host");
   return { id, outcome: "deleted" };

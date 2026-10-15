@@ -1,3 +1,4 @@
+import type { ChatRunUsageSignals } from "./chat-run-usage.ts";
 import type { ChatRelationSignals } from "./chat-relations.ts";
 import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import type { Root } from "hast";
@@ -78,6 +79,7 @@ export interface MessageListSignals {
   readonly latestAssistantTextCreatedAt$: Computed<Promise<string | undefined>>;
   readonly visibleRenderedChatGroups$: Computed<Promise<ChatEventGroup[]>>;
   readonly visibleRenderedChatGroupsReady$: Computed<Promise<boolean>>;
+  readonly visibleRunUsageSignals$: Computed<readonly ChatRunUsageSignals[]>;
   readonly readyScrollAfterRenderRequest$: Computed<
     Promise<ReadyScrollAfterRenderRequest | null>
   >;
@@ -140,6 +142,8 @@ export interface ChatPanelSignals {
   // -- Data signals ----------------------------------------------------------
   readonly threadDraft$: Computed<Promise<ChatThreadDraft | null>>;
   readonly threadMeta$: Computed<ThreadMeta | null>;
+  readonly threadExists$: Computed<boolean>;
+  readonly threadAgentId$: Computed<string | null>;
   readonly optimisticCreateUnsettled$: Computed<boolean>;
   readonly threadTitle$: Computed<string | null>;
   readonly threadTitleEmoji$: Computed<string | null>;
@@ -217,6 +221,7 @@ export interface ChatPanelSignals {
   readonly initialEventsReady$: Computed<boolean>;
   readonly visibleRenderedChatGroups$: Computed<Promise<ChatEventGroup[]>>;
   readonly visibleRenderedChatGroupsReady$: Computed<Promise<boolean>>;
+  readonly visibleRunUsageSignals$: Computed<readonly ChatRunUsageSignals[]>;
   readonly eventImageGroups$: Computed<Promise<EventImageGroupProjection[]>>;
   readonly browserSessionSignals: BrowserSessionSignals;
   readonly hasEvents$: Computed<Promise<boolean>>;

@@ -147,6 +147,49 @@ test("Restore the mobile chat-list scroll position after reopening the sidebar",
   expect(within(reopened).queryByText("History 1")).not.toBeInTheDocument();
 });
 
+test("Keep the chat viewport keyboard-focusable only while a conversation is open", async () => {
+  mockThreads(120);
+  mockViewportHeight(() => {
+    return 5 * ROW_HEIGHT;
+  });
+  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  const sidebar = await screen.findByTestId("chat-list-column");
+  await within(sidebar).findByText("History 1");
+  const viewport = within(sidebar).getByTestId("sidebar-scroll-area");
+  expect(viewport).toHaveAttribute("tabindex", "-1");
+
+  click(within(sidebar).getByText("History 1"));
+  await waitFor(() => {
+    expect(viewport).toHaveAttribute("tabindex", "0");
+  });
+  viewport.focus();
+  expect(viewport).toHaveFocus();
+  // The next conversation lies outside the scrolled window. Keyboard
+  // navigation must bring it back into view without losing the viewport.
+  fireEvent.scroll(viewport, { target: { scrollTop: 40 * ROW_HEIGHT } });
+  await within(sidebar).findByText("History 41");
+  fireEvent.keyDown(viewport, {
+    key: "ArrowDown",
+    ctrlKey: true,
+    shiftKey: true,
+  });
+  const next = await within(sidebar).findByText("History 2");
+  await waitFor(() => {
+    expect(next.closest("a")).toHaveAttribute("aria-current", "page");
+    expect(viewport.scrollTop).toBe(ROW_HEIGHT);
+  });
+  expect(viewport).toHaveAttribute("tabindex", "0");
+
+  click(
+    within(sidebar).getByLabelText("New chat", {
+      selector: "button[aria-keyshortcuts]",
+    }),
+  );
+  await waitFor(() => {
+    expect(viewport).toHaveAttribute("tabindex", "-1");
+  });
+});
+
 test("Resize and navigate a loaded virtual viewport", async () => {
   const threadCount = 6406;
   mockThreads(threadCount);

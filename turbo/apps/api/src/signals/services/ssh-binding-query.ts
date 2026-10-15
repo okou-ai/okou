@@ -123,7 +123,7 @@ export function createSshCreationReads(
         and(
           eq(sshCredentials.orgId, args.orgId),
           eq(sshCredentials.userId, args.userId),
-          args.preparedCredential.id === undefined
+          args.preparedCredential?.id === undefined
             ? sql`false`
             : eq(sshCredentials.id, args.preparedCredential.id),
         ),
@@ -134,7 +134,7 @@ export function createSshCreationReads(
       .select({ id: base.id })
       .from(base)
       .where(
-        args.preparedCredential.id === undefined
+        args.preparedCredential?.id === undefined
           ? sql`true`
           : exists(qb.select({ id: credential.id }).from(credential)),
       ),
@@ -202,13 +202,16 @@ function createSshUpdateCoreReads(
           args.body.transport !== undefined
             ? sql`true`
             : or(
-                eq(current.transport, "direct"),
+                eq(current.connectionMode, "direct"),
                 and(
-                  eq(current.transport, "tailscale"),
+                  or(
+                    eq(current.connectionMode, "tailscale"),
+                    eq(current.connectionMode, "tailscale_ssh"),
+                  ),
                   not(isNull(current.tailscaleId)),
                 ),
                 and(
-                  eq(current.transport, "cloudflare_access"),
+                  eq(current.connectionMode, "cloudflare_access"),
                   not(isNull(current.cloudflareAccessId)),
                 ),
               ),
@@ -244,7 +247,8 @@ function createSshUpdateCoreReads(
       .select({ id: base.id })
       .from(base)
       .where(
-        prepared !== undefined && prepared.id === undefined
+        args.connectionMode === "tailscale_ssh" ||
+          (prepared !== undefined && prepared.id === undefined)
           ? sql`true`
           : exists(qb.select({ id: credential.id }).from(credential)),
       ),

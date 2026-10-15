@@ -112,8 +112,8 @@ binaries are not re-uploaded as a combined GitHub artifact.
 The binary input key hashes the committed source/build inventory, target and
 embedded CLI content, not the source commit identity. The CLI contribution is
 its actual package SHA-256 plus a canonical projection of the validated
-manifest fields consumed by `crates/runner/build.rs`: CLI/Pi versions and
-session-construction digest. Fixed manifest schema/path and package SHA/size
+manifest fields consumed by `crates/runner/build.rs`: CLI/Pi versions.
+Fixed manifest schema/path and package SHA/size
 agreement remain validated before lookup, but are not hashed again. Commit
 provenance, JSON formatting/key order and unused manifest fields do not affect
 reuse. Manifest validation preserves JSON
@@ -128,9 +128,8 @@ hash recipe also rotates keys without changing the cache artifact schema.
 ### Package-bound CLI identity and local rootfs keys
 
 The CLI postbuild step writes `okouBuildIdentity` into the existing packed
-`package.json`. Its mandatory schema version 1 contains `piAgentRuntime`, `piSdk`
-(the upstream version plus first-party patch-set digest), and
-`sessionConstruction.digest`; the existing package `version` remains the CLI
+`package.json`. Its mandatory schema version 1 contains `piAgentRuntime` and `piSdk`
+(the upstream version plus first-party patch-set digest); the existing package `version` remains the CLI
 version. The record contains neither commit provenance nor its own final SHA or
 size. Artifact preparation reads identity from the actual packed file, rather
 than independently rereading workspace metadata after packing.
@@ -142,9 +141,9 @@ consumed keys or metadata entries. The compressed package remains bounded at
 extract or execute package code. Missing identity or disagreement with the
 external identity fails directly; there is no legacy-format fallback.
 Commit provenance, actual package SHA/size, ready checksums, canonical asset
-checks, captured package URLs and immutable versioned publication remain
-mandatory. New package bytes require a new CLI version through the normal
-CLI-to-Runner release dependency, not overwriting an existing versioned object.
+checks and immutable commit-addressed publication remain mandatory. Captured
+package URLs continue to serve draining Runners and explicit tool consumers.
+CLI changes trigger a Runner release through the existing release dependency.
 
 The build-only native module `crates/runner/cli_package.rs` validates external
 inputs inside the existing Runner package. Compilation snapshots the exact
@@ -156,15 +155,19 @@ identity comparison, SHA/size self-checks or installed-manifest regeneration.
 External disk state still needs installation verification and exact cached-sidecar
 comparison. No separate CLI package crate or runtime decoder is needed.
 
+Pi executes this rootfs-installed CLI. See
+[CLI deployment compatibility](../deployment-compatibility.md#runner-guest-and-cli-artifacts)
+for deployment overlap and package lifetime requirements.
+
 The **local rootfs** CLI contribution is only the build-time SHA-256 computed from
-the verified package. Packed identity uniquely determines the installed versions and
-session metadata; package size follows from bytes and installation paths follow
+the verified package. Packed identity uniquely determines the installed versions;
+package size follows from bytes and installation paths follow
 from the CLI version and fixed rules. Installed metadata and exact sidecar
 checks remain, but they are not independent hash inputs. Changes to installed
 schema, serialization or fixed installation paths must rotate the local rootfs
-recipe version. Local rootfs cache version 3 starts a new namespace without old-cache fallback. Shared R2 template
+recipe version. Local rootfs cache version 4 starts a new namespace without old-cache fallback. Shared R2 template
 cache version 1, snapshot cache version 3, guest binaries, customization, disk,
-CA and DNS inputs are unchanged. The CI binary-key recipe above is unchanged.
+CA and DNS inputs are unchanged.
 This makes the authority and hash contract simpler; it does not establish a
 higher cache-hit rate or measured build acceleration.
 

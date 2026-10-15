@@ -2,8 +2,6 @@ import {
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
   DEFAULT_PROFILE,
   PI_MEMORY_ROOT,
-  PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
-  type PiInstalledCliRequirement,
   type PiLaunchConfig,
   type PiMemoryRecallSelection,
   piMemoryRecallSelectionSchema,
@@ -207,8 +205,8 @@ import type {
 } from "./chat-queue-run-assembly";
 import type {
   ChatThreadExecutionSnapshot,
-  ChatThreadSessionResolution,
-  ChatThreadSessionRoute,
+  ChatThreadContinuation,
+  ChatThreadContinuationRoute,
 } from "./chat-session-continuity.service";
 import { compactRecord } from "./connector-runtime-preparation.service";
 
@@ -279,10 +277,6 @@ import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import type { PersistedStorageMount } from "@okouai/db/types";
-import {
-  PI_AGENT_RUNTIME_VERSION,
-  PI_SESSION_CONSTRUCTION_DIGEST,
-} from "@okouai/pi-agent-runtime";
 import { command, type Command, computed, type Computed, state } from "ccstate";
 import {
   and,
@@ -322,10 +316,6 @@ import {
   type RunContextAxiomSnapshot,
 } from "./run-context-snapshot.service";
 import { runnerJobQueueTimestamps } from "./runner-job-queue-lifecycle.service";
-import {
-  canReuseSession,
-  type SessionExecutionIdentity,
-} from "./session-compatibility";
 
 import { teamsDeliveryTargetSchema } from "./teams-chat-callback-payload";
 
@@ -480,7 +470,7 @@ function queuedPromptRunInput(args: {
   readonly launch: QueuedLaunchMaterial;
   readonly promptAndSkills: PromptAndSkillVolumes;
   readonly model: ThreadModelSelection;
-  readonly session: ChatThreadSessionResolution;
+  readonly session: ChatThreadContinuation;
   readonly host: CreateQueuedChatRunInput["computerUseHostGrant"];
   readonly capture: boolean;
   readonly features: FeatureSwitchContext;
@@ -493,7 +483,7 @@ function queuedPromptRunInput(args: {
     orgId: input.agent.orgId,
     userId: input.userId,
     agentId: input.agent.id,
-    threadSessionResolution: args.session,
+    threadContinuation: args.session,
     featureSwitchContext: args.features,
     prompt: args.promptAndSkills.userPrompt,
     threadId: input.threadId,
@@ -876,13 +866,8 @@ function claimCommitArguments(
     codexServiceTier: args.codexServiceTier,
     queueFirstAssociation: args.queueFirstAssociation,
     timingDimensions: args.timingDimensions,
-    threadSessionResolution: args.threadSessionResolution
-      ? {
-          action: args.threadSessionResolution.action,
-          previousAgentId: args.threadSessionResolution.previousAgentId,
-          resetNativeSession: args.threadSessionResolution.resetNativeSession,
-          expected: args.threadSessionResolution.expected,
-        }
+    threadContinuation: args.threadContinuation
+      ? { expected: args.threadContinuation.expected }
       : undefined,
   };
 }
@@ -1546,7 +1531,7 @@ export function createThreadClaimRunObjects(
       throw new QueuedPromptLaunchUnavailableError();
     },
   );
-  const promptSessionSession$ = threadContext.threadSession$;
+  const promptContinuation$ = threadContext.threadContinuation$;
   const runTemplates$ = threadContext.templates$;
   const promptHostHost$ = threadContext.computerUseHostGrant$;
   const promptCaptureCapture$ = computed(async (get) => {
@@ -1571,7 +1556,7 @@ export function createThreadClaimRunObjects(
           get(promptArgsArgs$),
           get(promptMaterialMaterial$),
           get(threadContext.modelSelection$),
-          get(promptSessionSession$),
+          get(promptContinuation$),
           get(promptHostHost$),
           get(promptCaptureCapture$),
           get(bootstrap.featureSwitches$),
@@ -1772,11 +1757,11 @@ export function createThreadClaimRunObjects(
       },
     };
   });
-  const promptExecutionResourcesThreadSession$ = computed(async (get) => {
+  const promptExecutionResourcesContinuation$ = computed(async (get) => {
     if (await get(internalEarlyAssembly$)) {
       return undefined;
     }
-    return (await get(promptSessionSession$)) ?? undefined;
+    return (await get(promptContinuation$)) ?? undefined;
   });
   const command$ = computed(async (get) => {
     const assembly = await get(promptAssembleQueuedPromptRunAssembly$);
@@ -2330,11 +2315,11 @@ export function createThreadClaimRunObjects(
         : get(promptExecutionResourcesCallbackInputs$);
     },
   );
-  const threadSession$ = computed(
-    async (get): Promise<ChatThreadSessionResolution | undefined> => {
+  const threadContinuation$ = computed(
+    async (get): Promise<ChatThreadContinuation | undefined> => {
       return (await get(isAutomation$))
-        ? ((await get(threadContext.threadSession$)) ?? undefined)
-        : get(promptExecutionResourcesThreadSession$);
+        ? ((await get(threadContext.threadContinuation$)) ?? undefined)
+        : get(promptExecutionResourcesContinuation$);
     },
   );
   const preCreateInput$ = computed(async (get): Promise<AgentRunGraphInput> => {
@@ -2475,7 +2460,7 @@ export function createThreadClaimRunObjects(
   const preCreatePreparedInput$ = computed(async (get) => {
     const [input, resolution, fullCommand, catalog] = await Promise.all([
       get(preCreatePostAuthorizationPostAuthorization$),
-      get(threadSession$),
+      get(threadContinuation$),
       get(selectedCommand$),
       get(claimCatalog$),
     ]);
@@ -2495,7 +2480,7 @@ export function createThreadClaimRunObjects(
         agentRunModelPin: input.command.agentRunModelPin,
         body,
       },
-      threadSessionResolution: resolution,
+      threadContinuation: resolution,
     };
   });
   const preCreateRunArgsRunArgs$ = computed(async (get) => {
@@ -2603,7 +2588,7 @@ export function createThreadClaimRunObjects(
     identityInput$: selectedIdentityInputIdentityInput$,
     agentId$: preCreateAgentIdAgentId$,
     agent$: preCreateAgentAgent$,
-    threadSession$: threadSession$,
+    threadContinuation$: threadContinuation$,
     runArgs$: preCreateRunArgsRunArgs$,
     shared: shared,
   };
@@ -2648,7 +2633,7 @@ export function createThreadClaimRunObjects(
     const [{ command, timing }, agent, session] = await Promise.all([
       get(preCreateInput$),
       get(preCreateAgentAgent$),
-      get(threadSession$),
+      get(threadContinuation$),
     ]);
     if (!agent) {
       throw new Error("Agent disappeared after preparation authorization");
@@ -2668,7 +2653,6 @@ export function createThreadClaimRunObjects(
           ownerUserId: agent.owner,
           agentOrgId: agent.orgId,
         },
-        nativeFramework: session?.expected.framework,
         sessionSnapshot: session?.executionSnapshot,
         timing,
       },
@@ -2832,13 +2816,7 @@ export function createThreadClaimRunObjects(
       input: piModelPreparationInput(args),
       modelProvider,
     });
-    const resolved = resolveCompatibleDirectResumeSession({
-      resolved: bodyContext.resolved,
-      next: {
-        selectedModel: modelProvider?.selectedModel ?? null,
-        cliAgentType: piSandbox ? "pi" : framework,
-      },
-    });
+    const { resolved } = bodyContext;
     const promptAndSkills = await get(preparedPromptAndSkillVolumes$);
     if (isRouteError(promptAndSkills)) {
       return promptAndSkills;
@@ -3220,10 +3198,6 @@ export function createThreadClaimRunObjects(
         args.featureSwitchContext,
       ),
       runId: args.run.id,
-      resumeSession:
-        args.resolved.resumeSessionIdentity?.cliAgentType === "pi"
-          ? args.resolved.resumeSession
-          : undefined,
       storagePlan: Promise.resolve(storage.resolved),
       piSandbox: args.piSandbox,
       chatThreadId: args.chatThreadId,
@@ -3378,10 +3352,6 @@ export function createThreadClaimRunObjects(
               modelConfig: piSandbox,
               piLaunchConfig: args.piLaunchConfig,
               memoryRecall,
-              resumeSession:
-                args.chatThreadId === undefined
-                  ? undefined
-                  : args.resumeSession,
               sessionId: args.chatThreadId ?? args.runId,
             }),
           );
@@ -4426,10 +4396,7 @@ type CommittedAtomicLaunchResult = Exclude<
   QueueFirstRunClaimLost
 >;
 
-type PendingThreadSessionResolution = Pick<
-  ChatThreadSessionResolution,
-  "action" | "previousAgentId" | "resetNativeSession" | "expected"
->;
+type PendingThreadContinuation = Pick<ChatThreadContinuation, "expected">;
 /** Explicit facts the atomic launch persists; owners assemble them privately. */
 interface PendingRunArguments {
   readonly userId: string;
@@ -4442,7 +4409,7 @@ interface PendingRunArguments {
   readonly codexServiceTier?: "fast";
   readonly queueFirstAssociation?: QueueFirstRunAssociation;
   readonly timingDimensions?: ApiDispatchTimingDimensions;
-  readonly threadSessionResolution?: PendingThreadSessionResolution;
+  readonly threadContinuation?: PendingThreadContinuation;
 }
 
 /** Explicit run facts persisted with the launch rows. */
@@ -5085,7 +5052,7 @@ interface ThreadRunCommand {
   readonly callbacks?: readonly AgentRunsCreateRunCallback[];
   readonly chatThreadId: string;
   readonly connectorSourceId?: string;
-  readonly threadSessionRoute?: ChatThreadSessionRoute;
+  readonly threadSessionRoute?: ChatThreadContinuationRoute;
   /** A producer may atomically move an integration thread to this run's agent. */
   readonly computerUseHostId?: string;
   readonly modelProviderId?: string;
@@ -5576,8 +5543,6 @@ interface ResolveAgentExecutionOptions {
   readonly agentObservation?: RunAgentObservation;
   readonly preloadedAgentExecutionObservation?: AgentExecutionRequestObservation;
   readonly timing?: ApiDispatchTimingCollector;
-  readonly resetNativeSession?: boolean;
-  readonly nativeFramework?: string | null;
   readonly sessionSnapshot?: ChatThreadExecutionSnapshot;
 }
 
@@ -5665,10 +5630,6 @@ function resolveProductAgentExecution(
     ...(snapshot
       ? {
           nativeContinuation: snapshot.nativeContinuation,
-          resumeSessionIdentity: {
-            selectedModel: snapshot.previousRun?.selectedModel ?? null,
-            cliAgentType: options.nativeFramework ?? null,
-          },
         }
       : {}),
   };
@@ -5797,7 +5758,7 @@ interface AgentRunAfterBootstrap extends AgentConnectorScopeSnapshot {
   readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
   readonly timing: ApiDispatchTimingCollector;
   readonly command: ThreadRunIdentity;
-  readonly threadSessionResolution?: ChatThreadSessionResolution;
+  readonly threadContinuation?: ChatThreadContinuation;
 }
 
 interface AgentRunAfterPreCreate extends AgentRunAfterBootstrap {
@@ -5817,7 +5778,7 @@ interface ProductRunArgsInput {
   readonly allowedCustomConnectorIds: readonly string[];
   readonly customConnectorGrants: readonly AgentCustomConnectorGrant[];
   readonly timing: ApiDispatchTimingCollector;
-  readonly threadSessionResolution?: ChatThreadSessionResolution;
+  readonly threadContinuation?: ChatThreadContinuation;
 }
 
 /**
@@ -5841,7 +5802,7 @@ interface ProductRunArgs {
   readonly apiStartTime: number;
   readonly chatThreadId?: string;
   readonly connectorSourceId?: string;
-  readonly threadSessionResolution?: ChatThreadSessionResolution;
+  readonly threadContinuation?: ChatThreadContinuation;
   readonly callbacks?: readonly RunCallback[];
   readonly includeOkouTokenSecret?: boolean;
   readonly preloadedAgentExecutionObservation?: AgentExecutionRequestObservation;
@@ -5873,8 +5834,8 @@ function buildProductRunArgs(
     ...(command.connectorSourceId
       ? { connectorSourceId: command.connectorSourceId }
       : {}),
-    ...(args.threadSessionResolution
-      ? { threadSessionResolution: args.threadSessionResolution }
+    ...(args.threadContinuation
+      ? { threadContinuation: args.threadContinuation }
       : {}),
     callbacks: command.callbacks,
     includeOkouTokenSecret: true,
@@ -5931,28 +5892,6 @@ interface AgentRunGraphInput {
 
 // --- Thread-private implementation: execution context prompts ---
 
-function resolveCompatibleDirectResumeSession(args: {
-  readonly resolved: ResolvedRunExecution;
-  readonly next: SessionExecutionIdentity;
-}): ResolvedRunExecution {
-  const previous = args.resolved.resumeSessionIdentity;
-  return previous && canReuseSession(previous, args.next)
-    ? args.resolved
-    : {
-        ...args.resolved,
-        resumeSession: undefined,
-        ...(args.resolved.nativeContinuation
-          ? {
-              nativeContinuation: {
-                ...args.resolved.nativeContinuation,
-                sessionId: null,
-                generationRunId: null,
-              },
-            }
-          : {}),
-      };
-}
-
 // --- Thread-private implementation: Pi launch resources ---
 
 function noContentPiMemoryRecall(args: {
@@ -5967,7 +5906,6 @@ interface PreparePiLaunchResourcesArgs {
   readonly userId: string;
   readonly piMemoryEnabled: boolean;
   readonly runId: string;
-  readonly resumeSession: StoredExecutionContext["resumeSession"] | undefined;
   readonly storagePlan: Promise<ResolvedAgentRunStorage>;
   readonly piSandbox: PiModelConfig | undefined;
   readonly chatThreadId: string | undefined;
@@ -6147,16 +6085,6 @@ function buildRunContextSnapshot(args: {
   return snapshot;
 }
 
-/**
- * The installed CLI must have this session construction and meet the CLI
- * floor; otherwise the guest uses the commit-addressed package.
- */
-const PI_INSTALLED_CLI_REQUIREMENT = {
-  requiredPiAgentRuntimeVersion: PI_AGENT_RUNTIME_VERSION,
-  minCliVersion: PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
-  requiredPiSessionConstructionDigest: PI_SESSION_CONSTRUCTION_DIGEST,
-} as const satisfies PiInstalledCliRequirement;
-
 function storedExecutionContextWithPiResources(
   context: StoredExecutionContext,
   resources: PreparedPiLaunchResources | undefined,
@@ -6168,11 +6096,9 @@ function storedExecutionContextWithPiResources(
   }
   return {
     ...finalizedContext,
-    resumeSession: resources.resumeSession ?? null,
     piSessionId: resources.sessionId,
     piLaunchConfig: resources.launchConfig,
     piModelConfig: resources.modelConfig,
-    piInstalledCliRequirement: PI_INSTALLED_CLI_REQUIREMENT,
   };
 }
 
@@ -6198,7 +6124,6 @@ interface PreparedPiLaunchResources {
   readonly modelConfig: PiModelConfig;
   readonly launchConfig: PiLaunchConfig;
   readonly memoryRecall?: PiMemoryRecallSelection;
-  readonly resumeSession: StoredExecutionContext["resumeSession"] | undefined;
   readonly sessionId: string;
 }
 
@@ -6206,10 +6131,9 @@ function assemblePiLaunchResources(args: {
   readonly modelConfig: PiModelConfig;
   readonly piLaunchConfig: PiLaunchConfigOverrides | undefined;
   readonly memoryRecall: PiMemoryRecallSelection | undefined;
-  readonly resumeSession: PreparedPiLaunchResources["resumeSession"];
   readonly sessionId: string;
 }): PreparedPiLaunchResources {
-  const { memoryRecall, resumeSession, sessionId } = args;
+  const { memoryRecall, sessionId } = args;
   return {
     modelConfig: args.modelConfig,
     launchConfig: {
@@ -6218,7 +6142,6 @@ function assemblePiLaunchResources(args: {
       ...args.piLaunchConfig,
     },
     ...(memoryRecall === undefined ? {} : { memoryRecall }),
-    resumeSession,
     sessionId,
   };
 }

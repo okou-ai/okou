@@ -67,7 +67,7 @@ async function createShared() {
 }
 
 async function createHost(configId: string) {
-  return (
+  const created = (
     await accept(
       hosts().create({
         headers,
@@ -89,6 +89,10 @@ async function createHost(configId: string) {
       [201],
     )
   ).body;
+  if (!("credentialId" in created)) {
+    throw new Error("Expected a credential-backed test host");
+  }
+  return created;
 }
 
 async function webhook(

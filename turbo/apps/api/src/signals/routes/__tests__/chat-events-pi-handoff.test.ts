@@ -1,11 +1,6 @@
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { randomUUID } from "node:crypto";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
-import { PI_SANDBOX_INSTALLED_CLI_MIN_VERSION } from "@okouai/api-contracts/contracts/runners";
-import {
-  PI_AGENT_RUNTIME_VERSION,
-  PI_SESSION_CONSTRUCTION_DIGEST,
-} from "@okouai/pi-agent-runtime";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
@@ -100,12 +95,6 @@ describe("CHAT-02: model-first routing", () => {
             cliAgentType: "pi",
             piSessionId: run.threadId,
             prompt: originalPrompt,
-            piInstalledCliRequirement: {
-              requiredPiAgentRuntimeVersion: PI_AGENT_RUNTIME_VERSION,
-              minCliVersion: PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
-              requiredPiSessionConstructionDigest:
-                PI_SESSION_CONSTRUCTION_DIGEST,
-            },
           });
           expect(claim.claim.resumeSession).toBeNull();
           expect(claim.claim.nativeContinuation).toMatchObject({

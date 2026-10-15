@@ -5,7 +5,6 @@ const constraintName = "agent_runs_launch_snapshot_check";
 
 interface CanonicalAgentFixture {
   readonly agentId: string;
-  readonly sessionId: string;
   readonly suffix: string;
 }
 
@@ -50,7 +49,7 @@ async function expectConstraintViolation(
   );
 }
 
-async function seedCanonicalAgentAndSession(
+async function seedCanonicalAgent(
   client: Client,
   fixture: CanonicalAgentFixture,
 ): Promise<void> {
@@ -66,37 +65,23 @@ async function seedCanonicalAgentAndSession(
       `launch snapshot ${fixture.suffix}`,
     ],
   );
-  await client.query(
-    `
-      INSERT INTO "agent_sessions" (
-        "id", "user_id", "org_id", "agent_id"
-      ) VALUES ($1, $2, $3, $4)
-    `,
-    [
-      fixture.sessionId,
-      `launch-snapshot-${fixture.suffix}-user`,
-      `launch-snapshot-${fixture.suffix}-org`,
-      fixture.agentId,
-    ],
-  );
 }
 
 async function seedCanonicalAgentRun(
   client: Client,
   fixture: CanonicalAgentRunFixture,
 ): Promise<void> {
-  await seedCanonicalAgentAndSession(client, fixture);
+  await seedCanonicalAgent(client, fixture);
   await client.query(
     `
       INSERT INTO "agent_runs" (
-        "id", "user_id", "org_id", "session_id", "status", "prompt"
-      ) VALUES ($1, $2, $3, $4, 'pending', $5)
+        "id", "user_id", "org_id", "status", "prompt"
+      ) VALUES ($1, $2, $3, 'pending', $4)
     `,
     [
       fixture.runId,
       `launch-snapshot-${fixture.suffix}-user`,
       `launch-snapshot-${fixture.suffix}-org`,
-      fixture.sessionId,
       `launch snapshot ${fixture.suffix}`,
     ],
   );
@@ -366,7 +351,6 @@ export async function validateAgentRunLaunchSnapshotSchema(
   const fixture = {
     agentId: "00000000-0000-4000-8000-000000093311",
     runId: "00000000-0000-4000-8000-000000093313",
-    sessionId: "00000000-0000-4000-8000-000000093312",
     suffix: "fresh",
   } as const;
   try {

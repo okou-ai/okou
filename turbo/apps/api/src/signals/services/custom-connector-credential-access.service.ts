@@ -1,4 +1,4 @@
-import { computed } from "ccstate";
+import { computed, type Computed } from "ccstate";
 import { connectors } from "@okouai/db/schema/connector";
 import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
 import {
@@ -26,7 +26,7 @@ import {
   zodEnumDriverValueDecoder,
 } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
-import { db$, type ReadonlyDb } from "../external/db";
+import { db$ } from "../external/db";
 import {
   connectorCredentialStatusForAccess,
   connectorRuntimeCredentialStatusForAccess,
@@ -607,41 +607,49 @@ function customConnectorRuntimeConnectionIds(args: {
   return { connectorIds, memberConnectorIds };
 }
 
-export async function loadCurrentCustomConnectorStoredValues(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly definitions: readonly CustomConnectorCredentialDefinition[];
-    readonly memberConnectorIdsByCustomConnectorId: ReadonlyMap<string, string>;
-  },
-): Promise<CustomConnectorRuntimeStorageSnapshot> {
-  if (args.definitions.length === 0) {
-    return { accesses: new Map(), values: [] };
-  }
+export function currentCustomConnectorStoredValues(
+  scope$: Computed<
+    Promise<{
+      readonly orgId: string;
+      readonly userId: string;
+      readonly definitions: readonly CustomConnectorCredentialDefinition[];
+      readonly memberConnectorIdsByCustomConnectorId: ReadonlyMap<
+        string,
+        string
+      >;
+    }>
+  >,
+): Computed<Promise<CustomConnectorRuntimeStorageSnapshot>> {
+  return computed(async (get) => {
+    const args = await get(scope$);
+    if (args.definitions.length === 0) {
+      return { accesses: new Map(), values: [] };
+    }
 
-  const { connectorIds, memberConnectorIds } =
-    customConnectorRuntimeConnectionIds(args);
-  if (memberConnectorIds.length === 0) {
+    const { connectorIds, memberConnectorIds } =
+      customConnectorRuntimeConnectionIds(args);
+    if (memberConnectorIds.length === 0) {
+      return customConnectorRuntimeStorageSnapshot(
+        args.definitions,
+        [],
+        args.memberConnectorIdsByCustomConnectorId,
+      );
+    }
+    const query = customConnectorRuntimeStorageReadQuery({
+      orgId: args.orgId,
+      userId: args.userId,
+      connectorIds,
+      memberConnectorIds,
+    });
+    const db = get(db$);
+    const captured = db.$with("captured_custom_runtime_storage").as(query);
+    const rows = await db.with(captured).select().from(captured);
     return customConnectorRuntimeStorageSnapshot(
       args.definitions,
-      [],
+      rows,
       args.memberConnectorIdsByCustomConnectorId,
     );
-  }
-  const query = customConnectorRuntimeStorageReadQuery({
-    orgId: args.orgId,
-    userId: args.userId,
-    connectorIds,
-    memberConnectorIds,
   });
-  const captured = db.$with("captured_custom_runtime_storage").as(query);
-  const rows = await db.with(captured).select().from(captured);
-  return customConnectorRuntimeStorageSnapshot(
-    args.definitions,
-    rows,
-    args.memberConnectorIdsByCustomConnectorId,
-  );
 }
 
 /** Pure query construction; its caller owns execution and snapshot lifetime. */

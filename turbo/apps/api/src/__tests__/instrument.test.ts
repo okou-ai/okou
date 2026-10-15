@@ -64,12 +64,6 @@ describe("instrument", () => {
       envModule.mockEnv("GIT_COMMIT_SHA", "abc123");
     });
 
-    const {
-      filterDiscordOauthSentryEvent,
-      filterDiscordOauthSentryBreadcrumb,
-      isDiscordOauthTelemetryUrl,
-    } = await import("../lib/discord-oauth-telemetry");
-
     expect(context.mocks.sentry.init).toHaveBeenCalledWith({
       dsn: "https://examplePublicKey@o0.ingest.sentry.io/0",
       enableLogs: false,
@@ -79,15 +73,15 @@ describe("instrument", () => {
           app: "api",
         },
       },
-      beforeSend: filterDiscordOauthSentryEvent,
-      beforeBreadcrumb: filterDiscordOauthSentryBreadcrumb,
+      beforeSend: expect.any(Function),
+      beforeBreadcrumb: expect.any(Function),
       integrations: [
         {
           name: "Http",
           options: {
             spans: false,
             tracePropagation: false,
-            ignoreIncomingRequestBody: isDiscordOauthTelemetryUrl,
+            ignoreIncomingRequestBody: expect.any(Function),
           },
         },
         { name: "NodeFetch", options: { tracePropagation: false } },
@@ -101,12 +95,25 @@ describe("instrument", () => {
     expect(context.mocks.sentry.httpIntegration).toHaveBeenCalledWith({
       spans: false,
       tracePropagation: false,
-      ignoreIncomingRequestBody: isDiscordOauthTelemetryUrl,
+      ignoreIncomingRequestBody: expect.any(Function),
     });
     expect(
       context.mocks.sentry.nativeNodeFetchIntegration,
     ).toHaveBeenCalledWith({
       tracePropagation: false,
     });
+    // Body capture happens before beforeSend. Keep this collection boundary
+    // covered in addition to the real transport assertions in instrument-export.
+    const ignoreBody =
+      context.mocks.sentry.httpIntegration.mock.calls[0]?.[0]
+        ?.ignoreIncomingRequestBody;
+    for (const url of [
+      "/api/integrations/telegram/auth-callback?hash=synthetic",
+      "/api/integrations/telegram/auth-callback?callbackProtocol=invalid",
+      "/api/integrations/discord/oauth/callback?code=synthetic",
+    ]) {
+      expect(ignoreBody?.(url, {})).toBeTruthy();
+    }
+    expect(ignoreBody?.("/health", {})).toBeFalsy();
   });
 });

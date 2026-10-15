@@ -40,6 +40,7 @@ const CONDITIONAL_CAPABILITIES = [
   ["suggestion:read", FeatureSwitchKey.AgentSuggestion],
   ["suggestion:write", FeatureSwitchKey.AgentSuggestion],
   ["banking:read", FeatureSwitchKey.Banking],
+  ["wallet:read", FeatureSwitchKey.LinkWallet],
   ["wallet:write", FeatureSwitchKey.LinkWallet],
   ["lark:write", FeatureSwitchKey.LarkIntegration],
   ["discord:read", FeatureSwitchKey.DiscordIntegration],

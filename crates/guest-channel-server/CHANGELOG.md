@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.2](https://github.com/okou-ai/okou/compare/guest-channel-server-v0.4.1...guest-channel-server-v0.4.2) (2026-10-15)
+
+## [0.4.1](https://github.com/okou-ai/okou/compare/guest-channel-server-v0.4.0...guest-channel-server-v0.4.1) (2026-10-15)
+
+## [0.4.0](https://github.com/okou-ai/okou/compare/guest-channel-server-v0.3.0...guest-channel-server-v0.4.0) (2026-10-15)
+
+
+### Features
+
+* add a live sandbox files sidebar with directory navigation ([#40112](https://github.com/okou-ai/okou/issues/40112)) ([b1a320c](https://github.com/okou-ai/okou/commit/b1a320ca71c1ddafd5e867157db868dc31d88fce))
+
 ## [0.3.0](https://github.com/okou-ai/okou/compare/guest-channel-server-v0.2.2...guest-channel-server-v0.3.0) (2026-10-15)
 
 

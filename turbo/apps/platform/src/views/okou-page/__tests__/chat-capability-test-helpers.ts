@@ -71,11 +71,15 @@ export function completedConversation(
 export function installCapabilityChat(args: {
   readonly events: MockChatEventInput[];
   readonly threadTitle?: string;
+  readonly selectedModel?: string | null;
   readonly onSend?: (send: CapturedChatSend) => void;
 }): void {
   installRunChat({
     chatEvents: args.events,
     threadTitle: args.threadTitle ?? "Capability conversation",
+    ...(args.selectedModel === undefined
+      ? {}
+      : { selectedModel: args.selectedModel }),
     onSendRequest(body) {
       args.onSend?.({
         prompt: body.prompt,

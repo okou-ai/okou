@@ -1,8 +1,6 @@
 import { isPiAgentModelSupported as isPiAgentModelSupportedImpl } from "./model";
 import type { PiAgentModelConfig } from "./types";
 
-// (no-op Pi release marker for Pi -> CLI -> Runner on 2026-09-30)
-
 /** Whether Pi's provider catalog knows this model. */
 export const isPiAgentModelSupported: (config: PiAgentModelConfig) => boolean =
   isPiAgentModelSupportedImpl;
@@ -14,8 +12,6 @@ export {
 export { normalizePiExecutionRoute } from "./execution-route";
 export type { PiExecutionRoute } from "./execution-route";
 export { PI_AGENT_THINKING_LEVELS } from "./types";
-export { PI_AGENT_RUNTIME_VERSION } from "./version";
-export { PI_SESSION_CONSTRUCTION_DIGEST } from "./session-construction-digest";
 export type {
   PiAgentCredentialReference,
   PiAgentDialect,

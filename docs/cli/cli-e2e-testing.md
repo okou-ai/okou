@@ -150,28 +150,19 @@ payment, and verifies the resulting public entitlement before publishing tokens.
 Platform Vitest covers the video onboarding UI and checkout return flow.
 The deployed Playwright suite covers one chat send-and-reply happy path.
 
-Runner account preparation reads Clerk's Backend API
-`GET /v1/instance/organization_settings` once before creating its five identities.
-When the returned `creator_role` is `org:admin`, creation with `created_by`
-already assigns the required role. The preparation-scoped provisioner omits
-the five redundant membership PATCHes: successful setup uses 11 requests
-(one settings GET, five user POSTs, five organization POSTs), down from 15.
-This excludes authentication, onboarding, retries, and cleanup. Non-admin
-Creator Roles retain explicit admin PATCHes and their rollback behavior,
-using 16 setup requests. Unavailable settings, disabled organizations, or an
-invalid Creator Role response fail before creating identities. Single-organization
-callers retain explicit admin setup because an added settings read would not
-reduce their request count.
-
-Clerk's
-[organization settings contract](https://github.com/clerk/openapi-specs/blob/a91bd1815277a236107ef325be6e138db32762cb/bapi/2026-05-12.yml)
-defines Creator Role as the role assigned after organization creation; its
+Clerk's configured Creator Role determines the role granted by `created_by`,
+as defined by its
+[organization settings contract](https://github.com/clerk/openapi-specs/blob/a91bd1815277a236107ef325be6e138db32762cb/bapi/2026-05-12.yml).
+Account preparation must establish the required admin role; the provider's
 [roles documentation](https://clerk.com/docs/guides/organizations/control-access/roles-and-permissions)
-confirms that it is configurable. Every preparation must read current settings;
-do not cache them across batches or treat an earlier observation as a permanent
-configuration guarantee. A preparation-scoped read does not provide atomic
-isolation from administrator changes to Creator Roles or Role Sets during
-provisioning. Account preparation does not change those instance settings.
+confirms that Creator Role is configurable. When preparation relies on that
+configured role, read current organization settings within preparation and fail
+before creating identities when settings are unavailable, organizations are
+disabled, or Creator Role is invalid. Do not cache settings across batches or
+treat an earlier observation as a permanent guarantee. A preparation-scoped
+read does not provide atomic isolation from administrator changes to Creator
+Roles or Role Sets during provisioning. Account preparation does not change
+those instance settings.
 
 Clerk resource creation records exact IDs in `E2E_CLERK_RESOURCE_DIR`. Normal
 cleanup verifies those IDs' ownership against Clerk and deletes organizations
@@ -245,8 +236,30 @@ byte events: zero observed data does not prove that the server sent nothing.
 These client-side observations can locate a stalled transfer or script but
 cannot alone distinguish a Worker stall from a remote edge/transport failure.
 Page-state capture has its own one-second deadline and can be unavailable.
+The preview-only Worker entry adds `x-okou-preview-build-sha` to eligible
+same-origin `/sign-in` HTML navigation responses. Its value comes from the
+unique canonical source-SHA meta declaration in the immutable bundled shell,
+not the expected artifact or request. Default and production entries omit it.
+The wrapper annotates the existing Response without consuming its body.
+
+Runner preparation carries the resolved artifact SHA as
+`OKOU_EXPECTED_APP_BUILD_SHA`; failure reports retain its valid/missing/invalid
+classification separately from each eligible CDP document hop's observation.
+`requestId` plus `redirectHop` identify the hop. Observations are
+valid/missing/invalid/unavailable; comparisons are match/mismatch/not-comparable
+with a reason. Duplicate, combined or malformed marker values are rejected
+without retaining raw values. CDP can normalize headers before observation, so
+this cannot prove the absence of duplicate fields on the wire. External and
+ineligible hops are not compared. Missing markers do not distinguish an older
+Worker from an omitted or invalid bundled declaration.
+
+This source SHA is not an asset-byte digest or unique upload identity. Even a
+match and `loadingFinished` do not prove DOMContentLoaded, native streaming
+behavior or the cause of a historical failure. Retain this bounded preview
+contract; changing or removing it requires review of its producer and observer.
+
 These reports exclude URL queries/fragments/userinfo, headers other than the
-validated cf-ray identifier, cookies, payloads,
+validated cf-ray and preview-build identifiers, cookies, payloads,
 raw console/error text, screenshots and raw traces. Successful sign-in writes
 no report; diagnostic failure preserves the original sign-in error and does not
 retry authentication or increase its deadlines. This evidence diagnoses future

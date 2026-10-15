@@ -942,6 +942,7 @@ export {
   type CodexDeviceAuthScope,
   type CodexDeviceAuthContract,
 } from "./codex-device-auth";
+export { atomSubscriptionGrantsContract } from "./atom-subscription-grants";
 export {
   claudeCodeDeviceAuthScopeSchema,
   claudeCodeDeviceAuthContract,

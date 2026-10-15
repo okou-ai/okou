@@ -31,7 +31,11 @@ async fn wait_for_active_inputs_and_write_success(
                 }
                 let request: JobRequest =
                     serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-                let inputs = queue.read_active_input_entries_from_sequence_sync(request.job_id, 0);
+                let inputs = (1..=expected_inputs as u64)
+                    .map_while(|sequence| {
+                        queue.read_active_input_entry_sync(request.job_id, sequence)
+                    })
+                    .collect::<Vec<_>>();
                 last_seen_inputs = last_seen_inputs.max(inputs.len());
                 if inputs.len() < expected_inputs {
                     continue;

@@ -54,6 +54,7 @@ async fn pi_masks_live_http_text_across_deltas_chunks_and_completion()
         api_url: server.base_url.clone(),
         api_token: "test-token".into(),
         cli_agent_type: "pi".into(),
+        test_pi_cli_path: Some(tmp.path().join("bin/okou").to_string_lossy().into_owned()),
         home: Some(tmp.path().to_string_lossy().into_owned()),
         run_payload_file: payload_path.to_string_lossy().into_owned(),
         guest_runtime_dir: Some(paths.runtime_dir().into()),
@@ -137,15 +138,11 @@ async fn pi_masks_live_http_text_across_deltas_chunks_and_completion()
     std::fs::write(&stages_path, serde_json::to_vec(&stages)?)?;
     let bin = tmp.path().join("bin");
     std::fs::create_dir_all(&bin)?;
-    let npx = bin.join("npx");
-    std::fs::write(&npx, include_str!("fixtures/pi_rpc_streaming.py"))?;
-    std::fs::set_permissions(&npx, std::fs::Permissions::from_mode(0o700))?;
+    let okou = bin.join("okou");
+    std::fs::write(&okou, include_str!("fixtures/pi_rpc_streaming.py"))?;
+    std::fs::set_permissions(&okou, std::fs::Permissions::from_mode(0o700))?;
     config.user_env.extend([
         ("PATH".into(), format!("{}:/usr/bin:/bin", bin.display())),
-        (
-            "CLI_PKG_URL".into(),
-            "https://example.invalid/cli.tgz".into(),
-        ),
         ("PI_SESSION_ID".into(), session_id.clone()),
         (
             "PI_SESSION_PATH".into(),

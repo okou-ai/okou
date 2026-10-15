@@ -6,7 +6,10 @@ import {
   type DiscordMessage,
 } from "../external/discord-client";
 import { discordMessageUrl } from "../../lib/discord-message";
-import { requireDiscordRunReadAccess$ } from "./discord-access.service";
+import {
+  requireDiscordRunReadAccess$,
+  type DiscordConversationAccess,
+} from "./discord-access.service";
 import { discordApiFailure } from "./discord-api-response";
 
 /**
@@ -71,44 +74,7 @@ export const readDiscordHistoryPage$ = command(
     if (access.kind === "denied") {
       return access;
     }
-    const result = await discordClient.fetchDiscordMessages(
-      {
-        botToken: access.botToken,
-        channelId: args.channelId,
-        before: args.before,
-        limit: args.limit,
-      },
-      signal,
-    );
-    if (result.kind !== "ok") {
-      return { kind: "denied" as const, response: discordApiFailure(result) };
-    }
-    if (
-      result.data.some((message) => {
-        return message.channel_id !== args.channelId;
-      })
-    ) {
-      throw new Error(
-        "Discord history returned a message from another channel",
-      );
-    }
-    const messages = [...result.data].sort((a, b) => {
-      return BigInt(a.id) > BigInt(b.id)
-        ? -1
-        : BigInt(a.id) < BigInt(b.id)
-          ? 1
-          : 0;
-    });
-    return {
-      kind: "ok" as const,
-      contextMode: access.messageContentEnabled
-        ? ("full" as const)
-        : ("mentions_only" as const),
-      channel: access.channel,
-      binding: access.binding,
-      messages,
-      nextBefore: messages.length === args.limit ? messages.at(-1)!.id : null,
-    };
+    return await readDiscordHistoryWithAccess(access, args, signal);
   },
 );
 
@@ -129,27 +95,85 @@ export const readDiscordContextMessage$ = command(
     if (access.kind === "denied") {
       return access;
     }
-    const result = await discordClient.fetchDiscordMessage(
-      {
-        botToken: access.botToken,
-        channelId: args.channelId,
-        messageId: args.messageId,
-      },
-      signal,
-    );
-    if (result.kind !== "ok") {
-      return { kind: "denied" as const, response: discordApiFailure(result) };
-    }
-    if (
-      result.data.channel_id !== args.channelId ||
-      result.data.id !== args.messageId
-    ) {
-      throw new Error("Discord context message has another message identity");
-    }
-    return {
-      kind: "ok" as const,
-      binding: access.binding,
-      message: result.data,
-    };
+    return await readDiscordMessageWithAccess(access, args.messageId, signal);
   },
 );
+
+type AuthorizedDiscordContext = Extract<
+  DiscordConversationAccess,
+  { readonly kind: "allowed" }
+>;
+
+/** Read one page with authority already established by the owning operation. */
+export async function readDiscordHistoryWithAccess(
+  access: AuthorizedDiscordContext,
+  args: { readonly before?: string; readonly limit: number },
+  signal: AbortSignal,
+) {
+  const result = await discordClient.fetchDiscordMessages(
+    {
+      botToken: access.botToken,
+      channelId: access.channel.id,
+      before: args.before,
+      limit: args.limit,
+    },
+    signal,
+  );
+  if (result.kind !== "ok") {
+    return { kind: "denied" as const, response: discordApiFailure(result) };
+  }
+  if (
+    result.data.some((message) => {
+      return message.channel_id !== access.channel.id;
+    })
+  ) {
+    throw new Error("Discord history returned a message from another channel");
+  }
+  const messages = [...result.data].sort((a, b) => {
+    return BigInt(a.id) > BigInt(b.id)
+      ? -1
+      : BigInt(a.id) < BigInt(b.id)
+        ? 1
+        : 0;
+  });
+  return {
+    kind: "ok" as const,
+    contextMode: access.messageContentEnabled
+      ? ("full" as const)
+      : ("mentions_only" as const),
+    channel: access.channel,
+    binding: access.binding,
+    messages,
+    nextBefore: messages.length === args.limit ? messages.at(-1)!.id : null,
+  };
+}
+
+/** Read a referenced message within the same authorized channel snapshot. */
+export async function readDiscordMessageWithAccess(
+  access: AuthorizedDiscordContext,
+  messageId: string,
+  signal: AbortSignal,
+) {
+  const result = await discordClient.fetchDiscordMessage(
+    {
+      botToken: access.botToken,
+      channelId: access.channel.id,
+      messageId: messageId,
+    },
+    signal,
+  );
+  if (result.kind !== "ok") {
+    return { kind: "denied" as const, response: discordApiFailure(result) };
+  }
+  if (
+    result.data.channel_id !== access.channel.id ||
+    result.data.id !== messageId
+  ) {
+    throw new Error("Discord context message has another message identity");
+  }
+  return {
+    kind: "ok" as const,
+    binding: access.binding,
+    message: result.data,
+  };
+}

@@ -711,12 +711,14 @@ async fn run_start_observed(
         None
     };
     let (usage_flush_tx, usage_flush_rx) = mpsc::channel(1);
-    let guest_rpc = (ssh.is_some() || vnc.is_some()).then(|| crate::guest_rpc::Runtime {
-        ssh,
-        vnc,
-        usage: Some(crate::run_usage::Runtime::new(
-            crate::MitmUsageHandle::from(&mitm),
-        )),
+    let guest_rpc = (ssh.is_some() || vnc.is_some()).then(|| {
+        crate::guest_rpc::Runtime::new(
+            ssh,
+            vnc,
+            Some(crate::run_usage::Runtime::new(
+                crate::MitmUsageHandle::from(&mitm),
+            )),
+        )
     });
     let host_telemetry = if args.local {
         None
@@ -817,6 +819,9 @@ async fn run_start_observed(
     let reuse_state_notify = Arc::new(tokio::sync::Notify::new());
     let active_runs = ActiveRuns::new(Arc::clone(&reuse_state_notify));
     let config = RunConfig {
+        sandbox_op_reporter: host_telemetry
+            .as_ref()
+            .map(|telemetry| telemetry.reporter()),
         runner: RunnerInfo {
             identity: runner_identity,
             group: group_name,

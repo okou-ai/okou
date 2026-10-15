@@ -1,5 +1,5 @@
 import { createClaimedSshRuntimeApi } from "./helpers/claimed-ssh-runtime";
-import { inlineSshKey } from "./helpers/ssh-credential";
+import { inlineSshKey, sshCredentialId } from "./helpers/ssh-credential";
 import { randomUUID } from "node:crypto";
 
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
@@ -154,7 +154,7 @@ async function ordinaryFixture(group?: string) {
     ...runtime,
     connectionId: connection.body.id,
     connectionCreatedAt: connection.body.createdAt,
-    credentialId: connection.body.credentialId,
+    credentialId: sshCredentialId(connection.body),
   };
 }
 
@@ -258,7 +258,7 @@ function useClaimedFixture() {
       sandboxToken,
       connectionId: connection.body.id,
       connectionCreatedAt: connection.body.createdAt,
-      credentialId: connection.body.credentialId,
+      credentialId: sshCredentialId(connection.body),
     };
   }
 
@@ -323,7 +323,7 @@ describe("SSH authority invalidation", () => {
       ]);
     }
     context.mocks.ably.publish.mockClear();
-    await accept(
+    const reset = await accept(
       config().resetHostKey({
         headers: sessionHeaders,
         params: { connectionId: f.connectionId },
@@ -343,6 +343,7 @@ describe("SSH authority invalidation", () => {
       config().delete({
         headers: sessionHeaders,
         params: { connectionId: f.connectionId },
+        body: { expectedGeneration: reset.body.generation },
       }),
       [204],
     );
@@ -480,6 +481,16 @@ async function list(f: Fixture) {
     .connections;
 }
 
+async function reviewedConnection(f: Fixture) {
+  const connection = (await list(f)).find((host) => {
+    return host.id === f.connectionId;
+  });
+  if (!connection) {
+    throw new Error("Expected the fixture's SSH host");
+  }
+  return connection;
+}
+
 beforeEach(() => {
   mockEnv("OFFICIAL_RUNNER_SECRET", runnerSecret);
   useSecretKmsProbe();
@@ -517,7 +528,7 @@ function createPublicHostApi() {
       ...claimed,
       connectionId: connection.body.id,
       connectionCreatedAt: connection.body.createdAt,
-      credentialId: connection.body.credentialId,
+      credentialId: sshCredentialId(connection.body),
     };
   }
 
@@ -683,7 +694,9 @@ describe("shared credential runtime authority", () => {
       });
       expect(host.generation).toBe(
         (previous?.generation ?? 0) +
-          (host.credentialId === f.credentialId ? 1 : 0),
+          ("credentialId" in host && host.credentialId === f.credentialId
+            ? 1
+            : 0),
       );
       expect(host.learnedHostKey).toStrictEqual(previous?.learnedHostKey);
     }
@@ -729,7 +742,7 @@ describe("shared credential runtime authority", () => {
         params: { connectionId: shared.body.id },
         body: {
           expectedGeneration: 2,
-          credential: { id: unrelated.body.credentialId },
+          credential: { id: sshCredentialId(unrelated.body) },
         },
       }),
       [200],
@@ -824,6 +837,7 @@ describe("SSH connection observations", () => {
       config().delete({
         headers: sessionHeaders,
         params: { connectionId: f.connectionId },
+        body: { expectedGeneration: (await reviewedConnection(f)).generation },
       }),
       [204],
     );
@@ -983,6 +997,9 @@ describe("SSH connection observations", () => {
         config().delete({
           headers: sessionHeaders,
           params: { connectionId: f.connectionId },
+          body: {
+            expectedGeneration: (await reviewedConnection(f)).generation,
+          },
         }),
         [204],
       );
@@ -1122,6 +1139,7 @@ describe("SSH connection observations", () => {
       config().delete({
         headers: sessionHeaders,
         params: { connectionId: f.connectionId },
+        body: { expectedGeneration: (await reviewedConnection(f)).generation },
       }),
       [204],
     );
@@ -1391,7 +1409,7 @@ describe("official Runner SSH authority", () => {
       ...runtime,
       connectionId: connection.body.id,
       connectionCreatedAt: connection.body.createdAt,
-      credentialId: connection.body.credentialId,
+      credentialId: sshCredentialId(connection.body),
     };
     const kms = useSecretKmsProbe();
     authenticate(f);
@@ -1422,6 +1440,7 @@ describe("official Runner SSH authority", () => {
       config().delete({
         headers: sessionHeaders,
         params: { connectionId: f.connectionId },
+        body: { expectedGeneration: (await reviewedConnection(f)).generation },
       }),
       [204],
     );
@@ -1464,6 +1483,7 @@ describe("official Runner SSH authority", () => {
       config().delete({
         params: { connectionId: f.connectionId },
         headers: sessionHeaders,
+        body: { expectedGeneration: (await reviewedConnection(f)).generation },
       }),
       [204],
     );
