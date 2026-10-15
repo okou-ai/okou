@@ -3402,10 +3402,15 @@ export function registerFeishuIntegrationTests(
             [200],
           );
         });
+        expect(disconnectedMemberStatus.body).toMatchObject({
+          isConnected: false,
+          connectedUserName: null,
+        });
         expect(disconnectedMemberStatus.body.installations).toMatchObject([
           {
             id: installationId,
             isConnected: false,
+            connectedUserName: null,
           },
         ]);
 
@@ -3431,6 +3436,22 @@ export function registerFeishuIntegrationTests(
           );
         });
         expect(removedConnectorList.body.connectors).toStrictEqual([]);
+        const removedStatus = await own(() => {
+          return accept(
+            client.getStatus({
+              headers: { authorization: "Bearer clerk-session" },
+            }),
+            [200],
+          );
+        });
+        expect(removedStatus.body).toMatchObject({
+          platform,
+          isInstalled: false,
+          isConnected: false,
+          connectedUserName: null,
+          installationId: null,
+          installations: [],
+        });
       });
 
       it("uses the configured Okou origins for Feishu OAuth", async () => {
