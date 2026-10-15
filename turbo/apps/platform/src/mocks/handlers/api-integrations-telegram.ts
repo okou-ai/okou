@@ -160,6 +160,7 @@ export const apiIntegrationsTelegramHandlers = [
           installation: {
             id: status.id,
             botUsername: status.username ?? "telegram_bot",
+            ...(status.id === "official" ? { loginBotId: "123456789" } : {}),
             domainConfigured: status.domainConfigured,
           },
         });
