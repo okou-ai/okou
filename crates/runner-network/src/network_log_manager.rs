@@ -586,6 +586,128 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn batched_append_settles_original_sessions_after_same_path_reregistration() {
+        for write_fails in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let first_path = dir.path().join("first.jsonl");
+            let shared_path = dir.path().join("shared.jsonl");
+            let other_path = dir.path().join("other.jsonl");
+            if write_fails {
+                std::fs::create_dir(&shared_path).unwrap();
+            }
+            let started = Arc::new(Notify::new());
+            let release = Arc::new(Semaphore::new(0));
+            let _release_on_drop = CloseWriteGateOnDrop(Arc::clone(&release));
+            let manager = NetworkLogManager::new_for_test(
+                Some(WriteGate {
+                    started: Arc::clone(&started),
+                    release: Arc::clone(&release),
+                    blocking: true,
+                }),
+                None,
+                WriterConfig {
+                    shards: 1,
+                    ..Default::default()
+                },
+            );
+            let first = manager
+                .register_source_ip("10.0.0.1", first_path.clone())
+                .await;
+            let old = manager
+                .register_source_ip("10.0.0.2", shared_path.clone())
+                .await;
+            let other = manager
+                .register_source_ip("10.0.0.3", other_path.clone())
+                .await;
+            assert!(manager.append_for_ip("10.0.0.1", json!({"row": 0})).await);
+            tokio::time::timeout(Duration::from_secs(2), started.notified())
+                .await
+                .unwrap();
+
+            // Hold the first append so both generations enter the next path batch.
+            assert!(manager.append_for_ip("10.0.0.2", json!({"row": 1})).await);
+            assert!(manager.append_for_ip("10.0.0.2", json!({"row": 2})).await);
+            let new = manager
+                .register_source_ip("10.0.0.2", shared_path.clone())
+                .await;
+            assert!(manager.append_for_ip("10.0.0.2", json!({"row": 3})).await);
+            assert!(manager.append_for_ip("10.0.0.2", json!({"row": 4})).await);
+            assert!(manager.append_for_ip("10.0.0.3", json!({"row": 5})).await);
+            assert!(manager.append_for_ip("10.0.0.3", json!({"row": 6})).await);
+            release.add_permits(1);
+            tokio::time::timeout(Duration::from_secs(2), started.notified())
+                .await
+                .unwrap();
+
+            let drain = NetworkLogDrainCoordinator::noop();
+            let close = async {
+                tokio::join!(
+                    old.close_for_upload(RunId::new_v4(), &drain),
+                    new.close_for_upload(RunId::new_v4(), &drain),
+                )
+            };
+            tokio::pin!(close);
+            assert!(poll_fn(|cx| Poll::Ready(close.as_mut().poll(cx).is_pending())).await);
+            assert!(
+                !manager
+                    .append_for_ip("10.0.0.2", json!({"row": "after-close"}))
+                    .await
+            );
+            if write_fails {
+                assert!(shared_path.is_dir());
+            } else {
+                assert!(!shared_path.exists());
+            }
+
+            release.add_permits(1);
+            // The other path remains held while both shared-path sessions finish.
+            tokio::time::timeout(Duration::from_secs(2), started.notified())
+                .await
+                .unwrap();
+            let (old_observation, new_observation) =
+                tokio::time::timeout(Duration::from_secs(2), close)
+                    .await
+                    .unwrap();
+            assert_eq!(old_observation.writer_failed(), write_fails);
+            assert_eq!(new_observation.writer_failed(), write_fails);
+            if write_fails {
+                assert!(shared_path.is_dir());
+            } else {
+                assert_eq!(
+                    read_json_lines(&shared_path),
+                    vec![
+                        json!({"row": 1}),
+                        json!({"row": 2}),
+                        json!({"row": 3}),
+                        json!({"row": 4})
+                    ]
+                );
+            }
+            let mut other_flush = std::pin::pin!(manager.flush_path(&other_path));
+            assert!(poll_fn(|cx| Poll::Ready(other_flush.as_mut().poll(cx).is_pending())).await);
+            assert!(!other_path.exists());
+            release.add_permits(1);
+            let ((), first_observation, other_observation) =
+                tokio::time::timeout(Duration::from_secs(2), async {
+                    tokio::join!(
+                        other_flush,
+                        first.close_for_upload(RunId::new_v4(), &drain),
+                        other.close_for_upload(RunId::new_v4(), &drain),
+                    )
+                })
+                .await
+                .unwrap();
+            assert!(!first_observation.writer_failed());
+            assert!(!other_observation.writer_failed());
+            assert_eq!(read_json_lines(&first_path), vec![json!({"row": 0})]);
+            assert_eq!(
+                read_json_lines(&other_path),
+                vec![json!({"row": 5}), json!({"row": 6})]
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn append_for_ip_writes_json_line_to_registered_path() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("network.jsonl");
