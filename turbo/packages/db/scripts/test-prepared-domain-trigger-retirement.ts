@@ -566,6 +566,7 @@ try {
         failClient({ error });
       };
       let ending = false;
+      let writerClosed = false;
       const onWriterEnd = () => {
         if (!ending) onClientError(new Error("Writer ended before release"));
       };
@@ -1061,10 +1062,11 @@ WHERE m.application_name = $1::text
           );
           ending = true;
           await writer.end();
+          writerClosed = true;
         } catch (error) {
           errors.push(error);
         }
-        if (ending) {
+        if (writerClosed) {
           writer.off("error", onClientError);
           writer.off("end", onWriterEnd);
         }
