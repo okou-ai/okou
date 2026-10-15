@@ -211,13 +211,13 @@ pub async fn exercise(request: Request) -> TestResult<()> {
                 settle(&mut operation).await?;
                 // Return this synthetic read-only foreground command to its original
                 // fixture identity and promotion owner for the required saving proof.
-                parts.sandbox.bind_run_control(&original.to_string())?;
                 if parts.sandbox.park().await? != SandboxParkOutcome::Reusable {
                     return Err(io::Error::other(
                         "native reuse could not repark its original owner",
                     )
                     .into());
                 }
+                parts.sandbox.bind_run_control(&original.to_string())?;
                 if parts.home_promotion.is_none() {
                     return Err(
                         io::Error::other("native reuse lost original home promotion").into(),
