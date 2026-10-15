@@ -11,8 +11,9 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Client } from "pg";
+import { Client, DatabaseError, Query } from "pg";
 import postgres from "postgres";
+import { z } from "zod";
 import { applyPendingMigrations } from "./migration-runner";
 
 // DDL, catalog corruption and journal failures are infrastructure boundaries.
@@ -289,18 +290,264 @@ try {
     "default lock timeout leaves data/catalog/journal untouched",
     async (client, url) => {
       const blocker = new Client({ connectionString: url });
-      await blocker.connect();
+      const errors: unknown[] = [];
+      let failClient: (result: { error: unknown }) => void = () => {};
+      const clientFailure = new Promise<{ error: unknown }>((resolve) => {
+        failClient = resolve;
+      });
+      const onClientError = (error: unknown) => {
+        errors.push(error);
+        failClient({ error });
+      };
+      let ending = false;
+      blocker.on("error", onClientError);
+      blocker.on("end", () => {
+        if (!ending) {
+          onClientError(new Error("COPY client ended before release"));
+        }
+      });
+      client.on("error", onClientError);
+      let pid: number | undefined;
+      let submitted = false;
+      let resourceEnded = false;
+      let attemptOutcome:
+        Promise<{ error: unknown } | { completed: true }> | undefined;
+      // The native client and Query resource belong only to this scenario.
+      let outcome:
+        Promise<{ error: unknown } | { completed: true }> | undefined;
+      let receivedRows = 0;
+      let receivedBytes = 0;
+      const started = performance.now();
       try {
-        await blocker.query(
-          // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0420; new non-billing transactions are prohibited.
-          "BEGIN; SELECT * FROM usage_pack_subscriptions FOR UPDATE",
+        await blocker.connect();
+        const subscription = z
+          .tuple([z.object({ id: z.guid() })])
+          .parse(
+            (
+              await client.query(
+                "SELECT id FROM public.usage_pack_subscriptions WHERE org_id = $1",
+                ["domain-org"],
+              )
+            ).rows,
+          )[0];
+        // COPY uses simple-query protocol and cannot bind values. Interpolate
+        // only the actual sole fixture UUID after runtime validation.
+        const copySql = `COPY (
+          SELECT s.id, ordinal, repeat('x', 8192)
+          FROM public.usage_pack_subscriptions s
+          CROSS JOIN generate_series(1, 8192) AS ordinal
+          WHERE s.id = '${subscription.id}'::uuid
+        ) TO STDOUT`;
+        const firstRow = `${subscription.id}\t1\t${"x".repeat(8192)}\n`;
+        class PausedCopy extends Query<Record<string, unknown>, []> {
+          handleCopyData(message: { chunk: unknown }): void {
+            try {
+              assert.ok(Buffer.isBuffer(message.chunk));
+              receivedRows += 1;
+              receivedBytes += message.chunk.length;
+              if (receivedRows !== 1) return;
+              assert.equal(message.chunk.toString("utf8"), firstRow);
+              blocker.connection.stream.pause();
+              this.emit("firstCopyData", { ready: true });
+            } catch (error) {
+              this.emit("firstCopyData", { error });
+            }
+          }
+        }
+        // One PK-selected subscription, 8192 rows and 8192 bytes of padding
+        // per row bound this ordinary ACCESS SHARE read to about 64 MiB.
+        const resource = new PausedCopy(copySql);
+        outcome = new Promise<{ error: unknown } | { completed: true }>(
+          (resolve) => {
+            resource.once("error", (error: unknown) => {
+              resourceEnded = true;
+              resolve({ error });
+            });
+            resource.once("end", () => {
+              resourceEnded = true;
+              resolve({ completed: true });
+            });
+          },
         );
+        const firstData = new Promise<{ ready: true } | { error: unknown }>(
+          (resolve) => {
+            resource.once("firstCopyData", resolve);
+          },
+        );
+        // Every observer precedes submission. All stored outcomes fulfill,
+        // including client failures, so setup failure owns early rejection.
+        const ready = Promise.race([firstData, outcome, clientFailure]);
+        const backend = await blocker.query<{ pid: unknown }>(
+          "SELECT pg_backend_pid() AS pid",
+        );
+        assert.equal(backend.rowCount, 1);
+        const value = backend.rows[0]?.pid;
+        assert.ok(
+          typeof value === "number" && Number.isSafeInteger(value) && value > 0,
+        );
+        pid = value;
+        blocker.query(resource);
+        submitted = true;
+        const first = await ready;
+        if ("error" in first) throw first.error;
+        assert.ok("ready" in first, "COPY completed before readiness");
+        assert.equal(blocker.connection.stream.isPaused(), true);
+        assert.equal(resourceEnded, false);
+        const live = await client.query(
+          `SELECT a.pid, a.state, a.query, l.mode, l.granted
+          FROM pg_stat_activity a JOIN pg_locks l ON l.pid = a.pid
+          WHERE a.pid = $1 AND a.datname = current_database()
+            AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+            AND l.locktype = 'relation'
+            AND l.relation = 'public.usage_pack_subscriptions'::regclass
+            AND l.mode = 'AccessShareLock' AND l.granted`,
+          [pid],
+        );
+        assert.deepEqual(live.rows, [
+          {
+            pid,
+            state: "active",
+            query: copySql,
+            mode: "AccessShareLock",
+            granted: true,
+          },
+        ]);
+        console.log(
+          "Prepared domain read-only COPY ready:",
+          JSON.stringify({
+            ...live.rows[0],
+            subscriptionId: subscription.id,
+            firstRowBytes: Buffer.byteLength(firstRow),
+            exactFirstRow: true,
+            maximumRows: 8192,
+            paddingBytesPerRow: 8192,
+          }),
+        );
+        assert.equal(errors.length, 0);
         const before = await catalog(client);
-        await assert.rejects(apply(url), /lock timeout/);
-        assert.deepEqual(await catalog(client), before);
+        attemptOutcome = (async () => {
+          await assert.rejects(apply(url), (error: unknown) => {
+            assert.ok(error instanceof postgres.PostgresError);
+            assert.equal(error.code, "55P03");
+            assert.match(error.message, /lock timeout/u);
+            console.log(
+              "Prepared domain migration rejected:",
+              JSON.stringify({
+                name: error.name,
+                code: error.code,
+                message: error.message,
+              }),
+            );
+            return true;
+          });
+          assert.deepEqual(await catalog(client), before);
+        })().then(
+          () => {
+            return { completed: true as const };
+          },
+          (error: unknown) => {
+            return { error };
+          },
+        );
+        await Promise.race([
+          attemptOutcome.then((result) => {
+            if ("error" in result) throw result.error;
+          }),
+          outcome.then((result) => {
+            if ("error" in result) throw result.error;
+            assert.fail("COPY completed before the migration timeout");
+          }),
+          clientFailure.then((result) => {
+            throw result.error;
+          }),
+        ]);
+        assert.equal(resourceEnded, false);
+      } catch (error) {
+        errors.push(error);
       } finally {
-        await blocker.query("ROLLBACK");
-        await blocker.end();
+        if (submitted) {
+          let cancellationRequested = false;
+          let cancellationDrained = false;
+          try {
+            if (!resourceEnded) {
+              assert.ok(pid !== undefined);
+              const cancelled = await client.query(
+                "SELECT pg_cancel_backend($1) AS cancelled",
+                [pid],
+              );
+              assert.deepEqual(cancelled.rows, [{ cancelled: true }]);
+              cancellationRequested = true;
+            }
+          } catch (error) {
+            errors.push(error);
+          }
+          // Attempt each release step independently and retain all failures.
+          // DROP DATABASE is never used as the resource release mechanism.
+          try {
+            blocker.connection.stream.resume();
+          } catch (error) {
+            errors.push(error);
+          }
+          try {
+            assert.ok(outcome);
+            const result = await Promise.race([outcome, clientFailure]);
+            assert.ok("error" in result, "COPY completed without cancellation");
+            const error = result.error;
+            if (!(error instanceof DatabaseError) || error.code !== "57014") {
+              errors.push(error);
+            }
+            assert.ok(error instanceof DatabaseError);
+            assert.equal(error.code, "57014");
+            assert.equal(cancellationRequested, true);
+            cancellationDrained = true;
+            console.log(
+              "Prepared domain COPY drained:",
+              JSON.stringify({ pid, code: error.code, message: error.message }),
+            );
+          } catch (error) {
+            errors.push(error);
+          }
+          try {
+            // The same client's query waits for COPY ReadyForQuery and its
+            // own idle ACK; a cancellation request alone proves no release.
+            const releaseACK = await blocker.query(
+              "SELECT pg_backend_pid() AS pid",
+            );
+            assert.deepEqual(releaseACK.rows, [{ pid }]);
+            assert.equal(blocker.getTransactionStatus(), "I");
+            console.log(
+              "Prepared domain read-only COPY release:",
+              JSON.stringify({
+                pid,
+                cancellationRequested,
+                cancellationDrained,
+                transactionStatus: blocker.getTransactionStatus(),
+                receivedRows,
+                receivedBytes,
+                elapsedMs: Math.round(performance.now() - started),
+              }),
+            );
+          } catch (error) {
+            errors.push(error);
+          }
+        }
+        if (attemptOutcome) {
+          const result = await attemptOutcome;
+          if ("error" in result && !errors.includes(result.error)) {
+            errors.push(result.error);
+          }
+        }
+        try {
+          ending = true;
+          await blocker.end();
+          console.log("Prepared domain COPY client ended");
+        } catch (error) {
+          errors.push(error);
+        }
+        client.off("error", onClientError);
+      }
+      if (errors.length > 0) {
+        throw new AggregateError(errors, "Prepared domain COPY blocker failed");
       }
     },
   );
