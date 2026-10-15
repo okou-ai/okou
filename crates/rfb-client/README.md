@@ -185,6 +185,14 @@ established. The implementation does not prove modulus primality. One absolute
 deadline, no longer than 30 seconds, covers the handshake. Failure or
 cancellation drops the owned stream and never falls back to another type.
 
+Local errors expose a static `diagnostic_code()` without nested source errors or
+peer-provided text. Apple DH parameter rejection also retains an allow-listed
+check and, when read, the public generator and declared key-byte count. It does
+not retain modulus/public-value bytes, credentials or derived key material.
+Runner records this bounded metadata with the Run/connection identity and
+connection stage before converting it to the existing coarse RPC/observation
+reason. This diagnostic does not broaden the accepted authentication parameters.
+
 **Type 30 protects the credential exchange only.** It does not authenticate the
 server or encrypt later RFB framebuffer/input. Use a separately verified outer
 transport ending on the Mac for untrusted-network use; an SSH tunnel ending on

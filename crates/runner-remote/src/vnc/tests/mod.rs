@@ -1,6 +1,7 @@
 mod authority_cache;
 mod boundaries;
 mod delivery;
+mod diagnostics;
 mod harness;
 mod list;
 mod list_lifecycle;

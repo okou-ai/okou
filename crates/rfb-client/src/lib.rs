@@ -121,6 +121,40 @@ impl fmt::Display for AuthenticationStage {
     }
 }
 
+/// The bounded local check that rejected Apple DH peer parameters.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AppleDhParameterCheck {
+    /// The security-type list did not fit its bounded buffer.
+    SecurityTypes,
+    /// The generator is outside the accepted range.
+    Generator,
+    /// The declared key length is outside the accepted range or alignment.
+    KeyLength,
+    /// The modulus does not occupy its declared bit width.
+    ModulusWidth,
+    /// The modulus is not odd.
+    ModulusParity,
+    /// The peer public value is outside the accepted group range.
+    ServerPublicRange,
+    /// A bounded integer or parameter buffer could not be constructed.
+    Encoding,
+}
+
+impl AppleDhParameterCheck {
+    /// Stable label that contains no peer bytes or credential material.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SecurityTypes => "security_types",
+            Self::Generator => "generator",
+            Self::KeyLength => "key_length",
+            Self::ModulusWidth => "modulus_width",
+            Self::ModulusParity => "modulus_parity",
+            Self::ServerPublicRange => "server_public_range",
+            Self::Encoding => "encoding",
+        }
+    }
+}
+
 /// A validated VNC password. Debug output is redacted and owned bytes are erased
 /// when dropped, including on validation failure or cancellation.
 pub struct VncPassword(Zeroizing<Vec<u8>>);
@@ -700,7 +734,14 @@ pub enum Error {
     #[error("Apple DH password must contain 1-63 UTF-8 bytes without NUL")]
     InvalidAppleDhPassword,
     #[error("invalid or unsupported Apple DH parameters")]
-    InvalidAppleDhParameters,
+    InvalidAppleDhParameters {
+        /// The allow-listed local rejection check, never a peer error string.
+        check: AppleDhParameterCheck,
+        /// Public generator header value, when it has been read.
+        generator: Option<u16>,
+        /// Public declared key-byte count, when it has been read.
+        key_bytes: Option<u16>,
+    },
     #[error("Apple SRP username must contain 1-255 UTF-8 bytes without NUL")]
     InvalidAppleSrpUsername,
     #[error("Apple SRP password must contain 1-1023 UTF-8 bytes without NUL")]
@@ -760,6 +801,66 @@ pub enum Error {
     Io(#[from] io::Error),
     #[error("TLS provider configuration failed")]
     TlsConfiguration(#[source] rustls::Error),
+}
+
+impl Error {
+    /// Stable local category for diagnostics. Nested errors and peer data are
+    /// deliberately excluded, including transport, TLS and Kerberos sources.
+    pub const fn diagnostic_code(&self) -> &'static str {
+        match self {
+            Self::SessionClosed => "session_closed",
+            Self::InvalidInput => "invalid_input",
+            Self::StaleGeometry => "stale_geometry",
+            Self::ImageTooLarge => "image_too_large",
+            Self::ImageEncoding => "image_encoding",
+            Self::InvalidFramebuffer => "invalid_framebuffer",
+            Self::InvalidPixelFormat => "invalid_pixel_format",
+            Self::UnsupportedEncoding => "unsupported_encoding",
+            Self::InvalidCompressedData => "invalid_compressed_data",
+            Self::ResourceLimit => "resource_limit",
+            Self::FullUpdateRequired => "full_update_required",
+            Self::UnsupportedMessage => "unsupported_message",
+            Self::InvalidPassword => "invalid_password",
+            Self::InvalidPlainUsername => "invalid_plain_username",
+            Self::InvalidPlainPassword => "invalid_plain_password",
+            Self::InvalidScramUsername => "invalid_scram_username",
+            Self::InvalidScramPassword => "invalid_scram_password",
+            Self::UnsupportedScramMechanism => "unsupported_scram_mechanism",
+            Self::InvalidScramExchange => "invalid_scram_exchange",
+            Self::InvalidKerberosExchange => "invalid_kerberos_exchange",
+            Self::Kerberos(_) => "kerberos",
+            Self::InvalidAppleDhUsername => "invalid_apple_dh_username",
+            Self::InvalidAppleDhPassword => "invalid_apple_dh_password",
+            Self::InvalidAppleDhParameters { .. } => "invalid_apple_dh_parameters",
+            Self::InvalidAppleSrpUsername => "invalid_apple_srp_username",
+            Self::InvalidAppleSrpPassword => "invalid_apple_srp_password",
+            Self::InvalidAppleSrpParameters => "invalid_apple_srp_parameters",
+            Self::InvalidAppleRsaSrpUsername => "invalid_apple_rsa_srp_username",
+            Self::InvalidAppleRsaSrpPassword => "invalid_apple_rsa_srp_password",
+            Self::InvalidAppleRsaSrpParameters => "invalid_apple_rsa_srp_parameters",
+            Self::InvalidRsaAesCredential => "invalid_rsa_aes_credential",
+            Self::InvalidRsaAesExchange => "invalid_rsa_aes_exchange",
+            Self::RsaServerKeyMismatch => "rsa_server_key_mismatch",
+            Self::Randomness => "randomness",
+            Self::InvalidServerName => "invalid_server_name",
+            Self::InvalidTrustRoots => "invalid_trust_roots",
+            Self::InvalidClientIdentity => "invalid_client_identity",
+            Self::ClientCertificateNotRequested => "client_certificate_not_requested",
+            Self::ClientCertificateNotSelected => "client_certificate_not_selected",
+            Self::UnsupportedRfbVersion => "unsupported_rfb_version",
+            Self::UnsupportedSecurity => "unsupported_security",
+            Self::NegotiationRejected => "negotiation_rejected",
+            Self::ServerRejected => "server_rejected",
+            Self::AuthenticationFailed => "authentication_failed",
+            Self::InvalidAuthenticationResult => "invalid_authentication_result",
+            Self::RemoteDataTooLarge => "remote_data_too_large",
+            Self::AuthenticationDeadlineExceeded { .. } => "authentication_deadline_exceeded",
+            Self::DeadlineExceeded => "deadline_exceeded",
+            Self::Tls(_) => "tls",
+            Self::Io(_) => "io",
+            Self::TlsConfiguration(_) => "tls_configuration",
+        }
+    }
 }
 
 #[cfg(test)]

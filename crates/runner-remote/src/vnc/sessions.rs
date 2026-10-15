@@ -186,6 +186,7 @@ impl Run {
         scope: &Scope,
         operation: Arc<OwnedSemaphorePermit>,
     ) -> Result<Arc<Session>, Failure> {
+        let started = Instant::now();
         scope.check()?;
         if self.cancel.is_cancelled() {
             return Err(Failure::Cancelled);
@@ -252,6 +253,11 @@ impl Run {
             authenticated_at: None,
         };
         let connection_id = request.connection_id;
+        let mut diagnostic = super::diagnostics::Attempt::new(
+            started,
+            &credential.authentication,
+            credential.transport,
+        );
         let result = async {
             let mut transport = credential.transport;
             let stream = match transport {
@@ -306,6 +312,7 @@ impl Run {
                 Authentication::Kerberos { binding, .. } => Some(*binding),
                 _ => None,
             };
+            diagnostic.stage = "authentication";
             let authenticated = scope
                 .wait_deadline_aware(async {
                     match credential.authentication {
@@ -425,19 +432,12 @@ impl Run {
                     }
                 })
                 .await?
-                .map_err(|error| {
-                    if let rfb_client::Error::AuthenticationDeadlineExceeded { stage } = &error {
-                        tracing::info!(
-                            vnc_authentication_stage = stage.as_str(),
-                            "VNC authentication deadline exceeded"
-                        );
-                    }
-                    Failure::from(error)
-                })?;
+                .map_err(|error| diagnostic.rfb_failure(error))?;
+            diagnostic.stage = "initialization";
             let connection = scope
                 .wait(authenticated.initialize(request.mode.into(), scope.deadline))
                 .await?
-                .map_err(Failure::from)?;
+                .map_err(|error| diagnostic.rfb_failure(error))?;
             observation.authenticated_at = Some(chrono::Utc::now());
             let engine = Engine::new(connection);
             let expires = engine.expires_at();
@@ -446,6 +446,7 @@ impl Run {
                 deadline: scope.deadline.min(expires),
                 ..scope.clone()
             };
+            diagnostic.stage = "authority_recheck";
             authority_scope
                 .wait(self.runtime.authority.check(
                     self.id,
@@ -459,6 +460,7 @@ impl Run {
             if self.cancel.is_cancelled() {
                 return Err(Failure::Cancelled);
             }
+            diagnostic.stage = "session_admission";
             let session = Arc::new(Session {
                 info: Info {
                     session_id: Uuid::new_v4(),
@@ -483,6 +485,7 @@ impl Run {
             Ok(session)
         }
         .await;
+        diagnostic.finish(self.id, connection_id, result.as_ref().err().copied());
         if let Some(report) = observation.finish(result.as_ref().err().copied()) {
             if let Ok(permit) = Arc::clone(&self.runtime.reports).try_acquire_owned() {
                 let runtime = Arc::clone(&self.runtime);
