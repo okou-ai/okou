@@ -57,17 +57,23 @@ pub type HeartbeatResult<T> = Result<T, HeartbeatError>;
 /// Avoids passing 8+ arguments through `send_heartbeat`.
 #[derive(Clone)]
 pub struct HeartbeatContext {
+    base: BaseHeartbeatContext,
+    home_cache: Option<HomeImageCache>,
+    active_runs: ActiveRuns,
+    home_cache_snapshot: HomeCacheStateSnapshot,
+    wss_ingress_service_probe: WssIngressServiceProbe,
+    sandbox_op_reporter: Option<runner_storage::SandboxOpReporter>,
+}
+
+/// Original snapshot authority shared by ordinary and terminal publication.
+#[derive(Clone)]
+struct BaseHeartbeatContext {
     idle_pool: Arc<tokio::sync::Mutex<IdlePool>>,
     runner_identity: RunnerProcessIdentity,
     group: Arc<str>,
     profiles: Arc<BTreeMap<String, HeartbeatProfile>>,
     budget: Arc<ResourceBudget>,
     provider: Arc<dyn JobProvider>,
-    home_cache: Option<HomeImageCache>,
-    active_runs: ActiveRuns,
-    home_cache_snapshot: HomeCacheStateSnapshot,
-    wss_ingress_service_probe: WssIngressServiceProbe,
-    sandbox_op_reporter: Option<runner_storage::SandboxOpReporter>,
 }
 
 pub struct HeartbeatContextInit<'a> {
@@ -87,18 +93,39 @@ pub struct HeartbeatContextInit<'a> {
 impl HeartbeatContext {
     pub fn new(init: HeartbeatContextInit<'_>) -> Self {
         Self {
-            idle_pool: Arc::clone(init.idle_pool),
-            runner_identity: init.runner_identity,
-            group: Arc::from(init.group),
-            profiles: Arc::new(init.profiles.clone()),
-            budget: Arc::clone(init.budget),
-            provider: init.provider,
+            base: BaseHeartbeatContext {
+                idle_pool: Arc::clone(init.idle_pool),
+                runner_identity: init.runner_identity,
+                group: Arc::from(init.group),
+                profiles: Arc::new(init.profiles.clone()),
+                budget: Arc::clone(init.budget),
+                provider: init.provider,
+            },
             home_cache: init.home_cache,
             active_runs: init.active_runs.clone(),
             home_cache_snapshot: init.home_cache_snapshot,
             wss_ingress_service_probe: init.wss_ingress_service_probe,
             sandbox_op_reporter: init.sandbox_op_reporter,
         }
+    }
+}
+
+impl BaseHeartbeatContext {
+    async fn collect_state(&self, mode: RunnerMode, snapshot_sequence: u64) -> HeartbeatState {
+        let pool = self.idle_pool.lock().await;
+        let state = collect_heartbeat_state(
+            HeartbeatSnapshotMetadata {
+                runner_identity: self.runner_identity,
+                group: &self.group,
+                sequence: snapshot_sequence,
+            },
+            &self.profiles,
+            &self.budget,
+            &pool,
+            mode,
+        );
+        drop(pool);
+        state
     }
 }
 
@@ -113,6 +140,23 @@ pub struct HeartbeatController {
     in_flight: Option<AbortOnDropHandle<()>>,
     pending: Option<HeartbeatRequest>,
     next_snapshot_sequence: u64,
+}
+
+/// One final basic snapshot, retained after controller work has drained.
+pub(crate) struct TerminalHeartbeat {
+    context: BaseHeartbeatContext,
+    snapshot_sequence: u64,
+}
+
+impl TerminalHeartbeat {
+    /// Publish after provider shutdown, without ordinary cache or WSS enrichment.
+    pub(crate) async fn send(self) {
+        let state = self
+            .context
+            .collect_state(RunnerMode::Stopping, self.snapshot_sequence)
+            .await;
+        self.context.provider.heartbeat(&state).await;
+    }
 }
 
 struct HeartbeatRequest {
@@ -270,9 +314,14 @@ impl HeartbeatController {
         Ok(())
     }
 
-    pub fn into_next_snapshot_sequence(self) -> u64 {
+    /// Transfer the original base context and sequence after [`Self::drain`].
+    pub(crate) fn into_terminal_heartbeat(self) -> TerminalHeartbeat {
         debug_assert!(self.in_flight.is_none());
-        self.next_snapshot_sequence
+        debug_assert!(self.pending.is_none());
+        TerminalHeartbeat {
+            context: self.context.base,
+            snapshot_sequence: self.next_snapshot_sequence,
+        }
     }
 
     fn start(&mut self, mode: RunnerMode, request: HeartbeatRequest) -> HeartbeatResult<()> {
@@ -310,19 +359,7 @@ async fn send_heartbeat(
     // A producer can move into the idle pool while the heartbeat waits for
     // its lock. Include either side of that transfer in this advisory snapshot.
     let mut producers = hb.active_runs.active_reuse_producers();
-    let pool = hb.idle_pool.lock().await;
-    let mut state = collect_heartbeat_state(
-        HeartbeatSnapshotMetadata {
-            runner_identity: hb.runner_identity,
-            group: &hb.group,
-            sequence: snapshot_sequence,
-        },
-        &hb.profiles,
-        &hb.budget,
-        &pool,
-        mode,
-    );
-    drop(pool);
+    let mut state = hb.base.collect_state(mode, snapshot_sequence).await;
     let cache_change = request.home_cache_change.as_ref();
     let previous_home_states = cache_change.map(|_| {
         hb.home_cache_snapshot
@@ -332,7 +369,7 @@ async fn send_heartbeat(
         refresh_home_cache_snapshot_after_change(
             &hb.home_cache_snapshot,
             hb.home_cache.as_ref(),
-            &hb.profiles,
+            &hb.base.profiles,
             cache_change,
         )
         .await
@@ -351,7 +388,7 @@ async fn send_heartbeat(
     let inventory_observed_states = refresh.states.len();
     state.held_home_states = filter_home_states_for_profiles(
         filter_current_held_home_states(refresh.states, &hb.active_runs, None),
-        &hb.profiles,
+        &hb.base.profiles,
     );
     if let Some(change) = cache_change
         && !request.force_send
@@ -373,8 +410,9 @@ async fn send_heartbeat(
             HomeObservationKind::Inventory,
             HomeObservationOutcome::Assembled,
         );
-        observation.runner_id = Some(hb.runner_identity.runner_id().to_string());
-        observation.runner_heartbeat_generation = Some(hb.runner_identity.heartbeat_generation());
+        observation.runner_id = Some(hb.base.runner_identity.runner_id().to_string());
+        observation.runner_heartbeat_generation =
+            Some(hb.base.runner_identity.heartbeat_generation());
         observation.inventory_loaded = Some(refresh.loaded);
         observation.inventory_observed_states = Some(inventory_observed_states);
         observation.inventory_output_states = Some(state.held_home_states.len());
@@ -397,7 +435,7 @@ async fn send_heartbeat(
         home_states = state.held_home_states.len(),
         "heartbeat"
     );
-    hb.provider.heartbeat(&state).await;
+    hb.base.provider.heartbeat(&state).await;
     if let Some(change) = cache_change {
         info!(
             changed = true,

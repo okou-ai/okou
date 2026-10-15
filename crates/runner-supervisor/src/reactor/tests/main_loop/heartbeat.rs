@@ -1,11 +1,12 @@
 use super::super::super::*;
 use super::super::support::{
-    MockRunEnv, assert_run_exits_within, minimal_context, mock_run_config,
+    MockRunEnv, TEST_RUNNER_ID, assert_run_exits_within, minimal_context, mock_run_config,
     mock_run_config_with_delay, mock_run_config_with_overrides, push_job, shutdown, test_profiles,
     wait_budget_count, wait_budget_exhausted_reactor, wait_cancel_token, wait_cancel_token_removed,
     wait_discover_entered, wait_status_idle_reuse_keys_and_active_runs, wait_status_mode,
 };
 use crate::status::StatusPersistenceError;
+use runner_types::types::HeartbeatState;
 use sandbox::SandboxId;
 use std::sync::Arc;
 
@@ -38,6 +39,22 @@ async fn trigger_routine_heartbeat(
     env.start_observer
         .wait_routine_heartbeat_requested_after(cursor, expected_mode, Duration::from_secs(5))
         .await;
+}
+
+fn assert_final_basic_heartbeat(state: &HeartbeatState) {
+    assert_eq!(state.runner_id, TEST_RUNNER_ID);
+    assert_eq!(state.group, "test-group");
+    // The 8-CPU host retains the existing host reservation before rounding.
+    assert_eq!(state.total_vcpu, 7);
+    assert_eq!(state.total_memory_mb, 32768);
+    assert_eq!(state.max_concurrent, 4);
+    assert_eq!(state.allocated_vcpu, 0);
+    assert_eq!(state.allocated_memory_mb, 0);
+    assert_eq!(state.running_count, 0);
+    assert!(state.admittable_profiles.is_empty());
+    assert!(state.held_sandbox_states.is_empty());
+    assert!(state.held_home_states.is_empty());
+    assert!(state.active_reuse_producers.is_empty());
 }
 
 #[tokio::test]
@@ -282,7 +299,8 @@ async fn heartbeat_triggers_coalesce_into_one_current_mode_follow_up() {
 
 #[tokio::test(start_paused = true)]
 async fn hard_shutdown_drains_current_heartbeat_and_discards_pending_work() {
-    let (config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
+    let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
+    config.wss_ingress_service_probe = Arc::new(|| Box::pin(async { true }));
     let status_path = env._temp_dir.path().join("status.json");
     env.handle.block_heartbeats();
     let run_handle = tokio::spawn(run(config));
@@ -329,6 +347,14 @@ async fn hard_shutdown_drains_current_heartbeat_and_discards_pending_work() {
                 .iter()
                 .all(|heartbeat| heartbeat.snapshot_generation == 7)
         );
+        assert_eq!(
+            heartbeats
+                .iter()
+                .map(|heartbeat| heartbeat.wss_ingress_service_active)
+                .collect::<Vec<_>>(),
+            [true, false],
+        );
+        assert_final_basic_heartbeat(heartbeats.last().unwrap());
     }
     assert_eq!(env.handle.heartbeat_in_flight(), 0);
     assert_eq!(env.handle.max_heartbeat_in_flight(), 1);
@@ -336,7 +362,8 @@ async fn hard_shutdown_drains_current_heartbeat_and_discards_pending_work() {
 
 #[tokio::test(start_paused = true)]
 async fn natural_shutdown_flushes_stopping_after_current_heartbeat() {
-    let (config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
+    let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
+    config.wss_ingress_service_probe = Arc::new(|| Box::pin(async { true }));
     env.handle.block_heartbeats();
     let run_handle = tokio::spawn(run(config));
     wait_for_blocked_routine_heartbeat(&env).await;
@@ -387,6 +414,14 @@ async fn natural_shutdown_flushes_stopping_after_current_heartbeat() {
                 .iter()
                 .all(|heartbeat| heartbeat.snapshot_generation == 7)
         );
+        assert_eq!(
+            heartbeats
+                .iter()
+                .map(|heartbeat| heartbeat.wss_ingress_service_active)
+                .collect::<Vec<_>>(),
+            [true, true, false],
+        );
+        assert_final_basic_heartbeat(heartbeats.last().unwrap());
     }
     assert_eq!(env.handle.heartbeat_in_flight(), 0);
     assert_eq!(env.handle.max_heartbeat_in_flight(), 1);
