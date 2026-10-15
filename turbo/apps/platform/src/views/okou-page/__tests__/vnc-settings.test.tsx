@@ -199,56 +199,68 @@ async function openAddHostPage() {
   );
 }
 
-test("Prepared native RFB and KDC routes preserve identity and cannot be converted by the legacy editor", async () => {
-  const native: VncConnectionResponse = {
-    ...host,
-    displayName: "Native desktop",
-    transport: {
-      type: "cloudflare_access",
-      configId: host.id,
-      originTls: {
-        serverName: "origin.example.com",
-        trust: { mode: "custom_ca", caBundle: "ORIGIN_CA" },
+test.each(["cloudflare_access", "direct"] as const)(
+  "Prepared %s RFB and native KDC routes preserve identity and cannot be converted by the legacy editor",
+  async (rfbTransport) => {
+    const native: VncConnectionResponse = {
+      ...host,
+      displayName: "Native desktop",
+      transport:
+        rfbTransport === "direct"
+          ? { type: "direct" }
+          : {
+              type: "cloudflare_access",
+              configId: host.id,
+              originTls: {
+                serverName: "origin.example.com",
+                trust: { mode: "custom_ca", caBundle: "ORIGIN_CA" },
+              },
+            },
+      kerberosAuthentication: "qemu_kerberos_password",
+      security: {
+        type: "qemu_x509_gssapi",
+        serverName: "rfb.example.com",
+        trust: { mode: "system" },
+        service: { realm: "EXAMPLE.COM", components: ["vnc", "desktop"] },
+        kdc: {
+          host: "kdc.tailnet",
+          port: 88,
+          transport: { type: "tailscale", needsRebind: true },
+          ticketLifetimeSeconds: 1200,
+          renewableLifetimeSeconds: 7200,
+        },
       },
-    },
-    kerberosAuthentication: "qemu_kerberos_password",
-    security: {
-      type: "qemu_x509_gssapi",
-      serverName: "rfb.example.com",
-      trust: { mode: "system" },
-      service: { realm: "EXAMPLE.COM", components: ["vnc", "desktop"] },
-      kdc: {
-        host: "kdc.tailnet",
-        port: 88,
-        transport: { type: "tailscale", needsRebind: true },
-        ticketLifetimeSeconds: 1200,
-        renewableLifetimeSeconds: 7200,
-      },
-    },
-  };
-  mockSettings({ connections: [native] });
-  await page();
-  const title = await screen.findByRole("heading", { name: "Native desktop" });
-  const card = title.closest("article");
-  expect(card).not.toBeNull();
-  if (!card) {
-    throw new Error("Missing host card");
-  }
-  expect(within(card).getByText("Cloudflare Access")).toBeInTheDocument();
-  expect(within(card).getByText("Tailscale")).toBeInTheDocument();
-  expect(
-    within(card).getByText(/Origin TLS: origin.example.com/),
-  ).toBeInTheDocument();
-  expect(
-    within(card).getByText("rfb.example.com", { exact: false }),
-  ).toBeInTheDocument();
-  expect(
-    within(card).getByText(/needs a new configuration/),
-  ).toBeInTheDocument();
-  expect(getAction("button", "Edit host", card)).toBeDisabled();
-  expect(getAction("button", "Delete host", card)).toBeEnabled();
-  expect(within(card).queryByText("Direct from Runner")).toBeNull();
-});
+    };
+    mockSettings({ connections: [native] });
+    await page();
+    const title = await screen.findByRole("heading", {
+      name: "Native desktop",
+    });
+    const card = title.closest("article");
+    expect(card).not.toBeNull();
+    if (!card) {
+      throw new Error("Missing host card");
+    }
+    expect(within(card).queryAllByText("Cloudflare Access")).toHaveLength(
+      rfbTransport === "cloudflare_access" ? 1 : 0,
+    );
+    expect(
+      within(card).queryAllByText(/Origin TLS: origin.example.com/),
+    ).toHaveLength(rfbTransport === "cloudflare_access" ? 1 : 0);
+    expect(within(card).queryAllByText("Direct from Runner")).toHaveLength(
+      rfbTransport === "direct" ? 1 : 0,
+    );
+    expect(within(card).getByText("Tailscale")).toBeInTheDocument();
+    expect(
+      within(card).getByText("rfb.example.com", { exact: false }),
+    ).toBeInTheDocument();
+    expect(
+      within(card).getByText(/needs a new configuration/),
+    ).toBeInTheDocument();
+    expect(getAction("button", "Edit host", card)).toBeDisabled();
+    expect(getAction("button", "Delete host", card)).toBeEnabled();
+  },
+);
 
 test("A conflict cannot reapply a Direct draft over a newly native saved route", async () => {
   const data = mockSettings();
