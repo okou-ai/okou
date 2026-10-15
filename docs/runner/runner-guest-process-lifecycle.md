@@ -151,9 +151,15 @@ waitpid ownership. Operation teardown cancels and joins brokers before its
 existing recursive outer cleanup.
 
 Task parent/tools aggregates use `memory.oom.group=0`; task runtime/tool leaves
-use 1. Runtime launch resets the inherited tool score to 0, while its tools retain 1000. Tasks receive no protected-memory floor or additional quota; the main
+use 1. Task runtime launch explicitly sets `oom_score_adj=1000`, including direct
+main-runtime launches. Ordinary descendants and nested tasks retain tool priority;
+managed shell tools also set 1000. Tasks receive no protected-memory floor or additional quota; the main
 runtime's 384 MiB protection and inclusive workload limits are unchanged.
 Nested task OOM paths remain evidence, never main agent-domain attribution.
+Correlated kernel victims or reliable operation-local local kill counters can
+prove a main-domain kill; the counters identify the domain, not a victim PID.
+Incomplete kernel records alone never prove tool containment: current counters
+must exclude main-domain kills and account for workload kills inside tools.
 Placement does not move memory already charged to the starting tool.
 
 The task protocol is a separate bounded version-one endpoint derived from the
@@ -366,12 +372,14 @@ measures the interval after controlled Agent launch until confirmed
 runtime-descriptor adoption. Fresh pre-spawn admission remains held until the
 ready event rather than process creation.
 
-The production-path benchmark lives in
-`crates/runner/tests/behavior/runner-behavior-process-containment.sh`. It submits the
+The manual production-path benchmark lives in
+`crates/runner/tests/behavior/runner-behavior-agent-ready.sh`. It submits the
 deterministic mock CLI through the same-metal runner and Guest Agent path, then
 measures fresh sandbox, home-cache reuse, and exact sandbox reuse samples
-under one service profile. Routine lane C measures one sample per path, using
-six local submissions without contention, including warmups and home-cache
+under one service profile. It runs explicitly on a provisioned host reserved for
+measurement; required per-PR CI does not assume uncontended optional home-cache
+publication on a host shared by multiple PRs. The default is one sample per path,
+using six local submissions without contention, including warmups and home-cache
 eviction. Set `AGENT_READY_BENCHMARK_SAMPLES` (1..100) explicitly for repeated
 measurements. The script retains bounded raw JSONL evidence and reports local
 submission attempts, sample counts, failures, and observed min/nearest-rank

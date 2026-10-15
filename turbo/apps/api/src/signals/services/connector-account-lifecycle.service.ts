@@ -7,7 +7,10 @@ import {
   type ConnectorAccountSummary,
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
+import {
+  connectorSlugSchema,
+  type ConnectorSlug,
+} from "@okouai/api-contracts/contracts/connector-identity";
 import {
   connectorReconnectReasonSchema,
   type ConnectorReconnectReason,
@@ -149,7 +152,7 @@ function accountSelection() {
 }
 
 type ConnectorAccountRow = Awaited<
-  ReturnType<typeof loadConnectorAccountRows>
+  ReturnType<ReturnType<typeof connectorAccountDetailRows>["read"]>
 >[number];
 
 function targetCondition(target: ConnectorAccountTarget): SQL {
@@ -188,105 +191,86 @@ function decodeCursor(raw: string): ConnectorAccountCursor | null {
     : null;
 }
 
-async function loadConnectorAccountRows(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly target?: ConnectorAccountTarget;
-    readonly connectionId?: string;
-    readonly connectionIds?: readonly string[];
-    readonly cursor?: ConnectorAccountCursor;
-    readonly limit?: number;
-    readonly search?: string;
-    readonly defaultOnly?: boolean;
-  },
+interface ConnectorAccountBatchScope {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly connectionIds: readonly string[];
+}
+
+function connectorAccountBatchRows(
+  scope$: Computed<
+    | ConnectorAccountBatchScope
+    | null
+    | Promise<ConnectorAccountBatchScope | null>
+  >,
 ) {
-  const searchPattern = args.search
-    ? `%${args.search
-        .replaceAll("\\", String.raw`\\`)
-        .replaceAll("%", String.raw`\%`)
-        .replaceAll("_", String.raw`\_`)}%`
-    : undefined;
-  const cursorCondition = args.cursor
-    ? or(
-        lt(connectors.createdAt, sql`${args.cursor.createdAt}::timestamp`),
+  return computed(async (get) => {
+    const args = await get(scope$);
+    if (!args) {
+      return [];
+    }
+    const connectionIds = [...new Set(args.connectionIds)];
+    if (connectionIds.length === 0) {
+      return [];
+    }
+    const db = get(db$);
+    return await db
+      .select(accountSelection())
+      .from(connectors)
+      .leftJoin(
+        orgCustomConnectors,
         and(
-          eq(connectors.createdAt, sql`${args.cursor.createdAt}::timestamp`),
-          lt(connectors.id, args.cursor.id),
+          eq(orgCustomConnectors.id, connectors.customConnectorId),
+          eq(orgCustomConnectors.orgId, connectors.orgId),
         ),
       )
-    : undefined;
-  const searchCondition =
-    searchPattern === undefined
-      ? undefined
-      : or(
-          ilike(sql`${connectors.id}::text`, searchPattern),
-          ilike(connectors.displayName, searchPattern),
-          ilike(connectors.externalEmail, searchPattern),
-          ilike(connectors.externalUsername, searchPattern),
-          ilike(connectors.externalId, searchPattern),
-        );
-  return await db
-    .select(accountSelection())
-    .from(connectors)
-    .leftJoin(
-      orgCustomConnectors,
-      and(
-        eq(orgCustomConnectors.id, connectors.customConnectorId),
-        eq(orgCustomConnectors.orgId, connectors.orgId),
-      ),
-    )
-    .leftJoin(
-      orgCustomConnectorOauthConfigs,
-      and(
-        eq(orgCustomConnectorOauthConfigs.connectorId, orgCustomConnectors.id),
-        eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
-      ),
-    )
-    .leftJoin(
-      accessTokenSecret,
-      and(
-        eq(accessTokenSecret.connectorId, connectors.id),
-        eq(accessTokenSecret.name, "access_token"),
-      ),
-    )
-    .leftJoin(
-      refreshTokenSecret,
-      and(
-        eq(refreshTokenSecret.connectorId, connectors.id),
-        eq(refreshTokenSecret.name, "refresh_token"),
-      ),
-    )
-    .leftJoin(
-      customConnectorAccountOauthBindings,
-      and(
-        eq(
-          customConnectorAccountOauthBindings.connectorAccountId,
-          connectors.id,
+      .leftJoin(
+        orgCustomConnectorOauthConfigs,
+        and(
+          eq(
+            orgCustomConnectorOauthConfigs.connectorId,
+            orgCustomConnectors.id,
+          ),
+          eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
         ),
-        eq(
-          customConnectorAccountOauthBindings.customConnectorId,
-          orgCustomConnectors.id,
+      )
+      .leftJoin(
+        accessTokenSecret,
+        and(
+          eq(accessTokenSecret.connectorId, connectors.id),
+          eq(accessTokenSecret.name, "access_token"),
         ),
-      ),
-    )
-    .where(
-      and(
-        eq(connectors.orgId, args.orgId),
-        eq(connectors.userId, args.userId),
-        args.target ? targetCondition(args.target) : undefined,
-        args.connectionId ? eq(connectors.id, args.connectionId) : undefined,
-        args.connectionIds
-          ? inArray(connectors.id, [...args.connectionIds])
-          : undefined,
-        args.defaultOnly ? eq(connectors.isDefault, true) : undefined,
-        cursorCondition,
-        searchCondition,
-      ),
-    )
-    .orderBy(desc(connectors.createdAt), desc(connectors.id))
-    .limit(args.limit ?? 2_147_483_647);
+      )
+      .leftJoin(
+        refreshTokenSecret,
+        and(
+          eq(refreshTokenSecret.connectorId, connectors.id),
+          eq(refreshTokenSecret.name, "refresh_token"),
+        ),
+      )
+      .leftJoin(
+        customConnectorAccountOauthBindings,
+        and(
+          eq(
+            customConnectorAccountOauthBindings.connectorAccountId,
+            connectors.id,
+          ),
+          eq(
+            customConnectorAccountOauthBindings.customConnectorId,
+            orgCustomConnectors.id,
+          ),
+        ),
+      )
+      .where(
+        and(
+          eq(connectors.orgId, args.orgId),
+          eq(connectors.userId, args.userId),
+          inArray(connectors.id, connectionIds),
+        ),
+      )
+      .orderBy(desc(connectors.createdAt), desc(connectors.id))
+      .limit(2_147_483_647);
+  });
 }
 
 function connectorAccountSummaryGroups(
@@ -689,6 +673,30 @@ function projectSummaryGroup(
   };
 }
 
+function accountAuthLookupFromCatalogRows(
+  rows: readonly {
+    readonly current: { readonly schemaVersion: number; readonly hash: string };
+    readonly entry:
+      Parameters<typeof materializeConnectorCatalogCompatibilityRow>[0] | null;
+  }[],
+  connectorSlugs: readonly ConnectorSlug[],
+): ConnectorRuntimeAuthLookup {
+  // Account projections omit a stored builtin account with no catalog entry.
+  const source = connectorCatalogSlugSourceFromRows(
+    rows.map((row) => {
+      return {
+        ...row,
+        entry:
+          row.entry === null
+            ? null
+            : materializeConnectorCatalogCompatibilityRow(row.entry),
+      };
+    }),
+    connectorSlugs,
+  );
+  return materializeConnectorRuntimeAuthLookup(source);
+}
+
 function connectorAccountAuthLookup(
   rows$: Computed<
     | readonly { readonly connectorSlug: string | null }[]
@@ -721,21 +729,7 @@ function connectorAccountAuthLookup(
             connectorCatalogSlugJoin(connectorSlugs),
           )
           .where(connectorCatalogCurrentWhere());
-        // Account projections are presentation and single-item reads: a stored
-        // account whose connector has no entry is omitted (404 for one item).
-        const source = connectorCatalogSlugSourceFromRows(
-          catalogRows.map((row) => {
-            return {
-              ...row,
-              entry:
-                row.entry === null
-                  ? null
-                  : materializeConnectorCatalogCompatibilityRow(row.entry),
-            };
-          }),
-          connectorSlugs,
-        );
-        return materializeConnectorRuntimeAuthLookup(source);
+        return accountAuthLookupFromCatalogRows(catalogRows, connectorSlugs);
       })(),
     );
     if (result.ok) {
@@ -1216,85 +1210,155 @@ export function connectorAccount(
   });
 }
 
-async function loadConnectorAccountAuthLookup(
-  db: ReadonlyDb,
-  rows: readonly { readonly connectorSlug: string | null }[],
-): Promise<ConnectorRuntimeAuthLookup | null> {
-  const connectorSlugs = rows.flatMap((row) => {
-    const slug = connectorSlugSchema.safeParse(row.connectorSlug);
-    return slug.success ? [slug.data] : [];
+export function connectorAccountsByIds(
+  scope$: Computed<
+    | ConnectorAccountBatchScope
+    | null
+    | Promise<ConnectorAccountBatchScope | null>
+  >,
+): Computed<Promise<readonly ConnectorAccountConnection[]>> {
+  const rows$ = connectorAccountBatchRows(scope$);
+  const authLookup$ = connectorAccountAuthLookup(rows$);
+  return computed(async (get) => {
+    const args = await get(scope$);
+    if (!args || args.connectionIds.length === 0) {
+      return [];
+    }
+    const rows = await get(rows$);
+    const snapshot = await get(authLookup$);
+    const now = nowDate();
+    return rows.flatMap((row) => {
+      const connection = projectConnection(row, snapshot, now);
+      return connection ? [connection] : [];
+    });
   });
-  if (connectorSlugs.length === 0) {
-    return null;
-  }
-  const result = await settle(
-    (async () => {
-      const catalogRows = await db
-        .select({
-          current: {
-            schemaVersion: connectorCatalog.schemaVersion,
-            hash: connectorCatalog.hash,
-          },
-          entry: connectorCatalogCompatibilityColumns,
-        })
-        .from(connectorCatalog)
-        .leftJoin(
-          connectorCatalogEntries,
-          connectorCatalogSlugJoin(connectorSlugs),
-        )
-        .where(connectorCatalogCurrentWhere());
-      // Account projections are presentation and single-item reads: a stored
-      // account whose connector has no entry is omitted (404 for one item).
-      const source = connectorCatalogSlugSourceFromRows(
-        catalogRows.map((row) => {
-          return {
-            ...row,
-            entry:
-              row.entry === null
-                ? null
-                : materializeConnectorCatalogCompatibilityRow(row.entry),
-          };
-        }),
-        connectorSlugs,
-      );
-      return materializeConnectorRuntimeAuthLookup(source);
-    })(),
-  );
-  if (result.ok) {
-    return result.value;
-  }
-  if (!isConnectorCatalogUnavailableError(result.error)) {
-    throw result.error;
-  }
-  log.warn("Connector catalog unavailable while resolving account lifecycle", {
-    error: result.error,
-  });
-  return null;
 }
 
-export async function listConnectorAccountsByIds(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectionIds: readonly string[];
+export const readConnectorAccountsByIds$ = command(
+  async (
+    { get },
+    args: ConnectorAccountBatchScope,
+    signal: AbortSignal,
+  ): Promise<readonly ConnectorAccountConnection[]> => {
+    // Keep the legacy batch's row/catalog projection and clock before its
+    // caller-owned cancellation boundary; no step here mutates account state.
+    const connections = await (async () => {
+      const connectionIds = [...new Set(args.connectionIds)];
+      if (connectionIds.length === 0) {
+        return [];
+      }
+      const db = get(db$);
+      const rows = await db
+        .select(accountSelection())
+        .from(connectors)
+        .leftJoin(
+          orgCustomConnectors,
+          and(
+            eq(orgCustomConnectors.id, connectors.customConnectorId),
+            eq(orgCustomConnectors.orgId, connectors.orgId),
+          ),
+        )
+        .leftJoin(
+          orgCustomConnectorOauthConfigs,
+          and(
+            eq(
+              orgCustomConnectorOauthConfigs.connectorId,
+              orgCustomConnectors.id,
+            ),
+            eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
+          ),
+        )
+        .leftJoin(
+          accessTokenSecret,
+          and(
+            eq(accessTokenSecret.connectorId, connectors.id),
+            eq(accessTokenSecret.name, "access_token"),
+          ),
+        )
+        .leftJoin(
+          refreshTokenSecret,
+          and(
+            eq(refreshTokenSecret.connectorId, connectors.id),
+            eq(refreshTokenSecret.name, "refresh_token"),
+          ),
+        )
+        .leftJoin(
+          customConnectorAccountOauthBindings,
+          and(
+            eq(
+              customConnectorAccountOauthBindings.connectorAccountId,
+              connectors.id,
+            ),
+            eq(
+              customConnectorAccountOauthBindings.customConnectorId,
+              orgCustomConnectors.id,
+            ),
+          ),
+        )
+        .where(
+          and(
+            eq(connectors.orgId, args.orgId),
+            eq(connectors.userId, args.userId),
+            inArray(connectors.id, connectionIds),
+          ),
+        )
+        .orderBy(desc(connectors.createdAt), desc(connectors.id))
+        .limit(2_147_483_647);
+      const snapshot =
+        await (async (): Promise<ConnectorRuntimeAuthLookup | null> => {
+          const connectorSlugs = rows.flatMap((row) => {
+            const slug = connectorSlugSchema.safeParse(row.connectorSlug);
+            return slug.success ? [slug.data] : [];
+          });
+          if (connectorSlugs.length === 0) {
+            return null;
+          }
+          const result = await settle(
+            (async () => {
+              const catalogRows = await db
+                .select({
+                  current: {
+                    schemaVersion: connectorCatalog.schemaVersion,
+                    hash: connectorCatalog.hash,
+                  },
+                  entry: connectorCatalogCompatibilityColumns,
+                })
+                .from(connectorCatalog)
+                .leftJoin(
+                  connectorCatalogEntries,
+                  connectorCatalogSlugJoin(connectorSlugs),
+                )
+                .where(connectorCatalogCurrentWhere());
+              return accountAuthLookupFromCatalogRows(
+                catalogRows,
+                connectorSlugs,
+              );
+            })(),
+          );
+          if (result.ok) {
+            return result.value;
+          }
+          if (!isConnectorCatalogUnavailableError(result.error)) {
+            throw result.error;
+          }
+          log.warn(
+            "Connector catalog unavailable while resolving account lifecycle",
+            {
+              error: result.error,
+            },
+          );
+          return null;
+        })();
+      const now = nowDate();
+      return rows.flatMap((row) => {
+        const connection = projectConnection(row, snapshot, now);
+        return connection ? [connection] : [];
+      });
+    })();
+    signal.throwIfAborted();
+    return connections;
   },
-): Promise<readonly ConnectorAccountConnection[]> {
-  const connectionIds = [...new Set(args.connectionIds)];
-  if (connectionIds.length === 0) {
-    return [];
-  }
-  const rows = await loadConnectorAccountRows(db, {
-    ...args,
-    connectionIds,
-  });
-  const snapshot = await loadConnectorAccountAuthLookup(db, rows);
-  const now = nowDate();
-  return rows.flatMap((row) => {
-    const connection = projectConnection(row, snapshot, now);
-    return connection ? [connection] : [];
-  });
-}
+);
 
 export const renameConnectorAccount$ = command(
   async (

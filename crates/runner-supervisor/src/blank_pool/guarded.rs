@@ -35,7 +35,7 @@ impl BlankPoolReplenisher {
     /// method covers the old pool-owned phase; the native fixture composes both.
     pub async fn maybe_start_guarded(&mut self, request: GuardedBlankPoolRequest<'_>) {
         if !self.attempt_requested
-            || self.task.is_some()
+            || self.preparation.is_some()
             || self.optional.is_some()
             || request.mode != RunnerMode::Running
         {
@@ -84,14 +84,14 @@ impl BlankPoolReplenisher {
         drop(pool);
         let cancel = pre_spawn_lease.cancellation_token();
         self.diagnostics.preparing(cancel.clone());
-        self.task_cancel = Some(cancel.clone());
+        let task_cancel = cancel.clone();
         let pool = request.pool.clone();
         let status = request.status.clone();
         let tracker = request.tracker.clone();
         let budget = request.budget.clone();
         let operations = request.operations.clone();
         let envelope = request.envelope;
-        self.task = Some(tokio::spawn(async move {
+        let task = tokio::spawn(async move {
             let mut pre_spawn_lease = Some(pre_spawn_lease);
             let retired_exact = matches!(prepare_budget, GuardedPrepareBudget::Aged(_));
             let lease = match prepare_budget {
@@ -237,7 +237,11 @@ impl BlankPoolReplenisher {
                 },
                 failed => failed,
             }
-        }));
+        });
+        self.preparation = Some(BlankPreparation {
+            task,
+            cancel: task_cancel,
+        });
     }
 
     /// The caller retains the incoming capsule across cancellation/refusal.

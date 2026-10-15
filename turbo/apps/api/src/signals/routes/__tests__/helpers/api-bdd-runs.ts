@@ -601,6 +601,8 @@ export function createRunsApi(context: TestContext) {
       readonly customerId: string;
       readonly subscriptionId: string;
       readonly invoiceId: string;
+      readonly defaultAgentId: string;
+      readonly credits: number;
     }> {
       const run =
         options.run ??
@@ -782,7 +784,14 @@ export function createRunsApi(context: TestContext) {
         );
       }
 
-      return { customerId, subscriptionId, invoiceId };
+      // Reuse facts already observed through billing and onboarding responses.
+      return {
+        customerId,
+        subscriptionId,
+        invoiceId,
+        defaultAgentId: onboarding.defaultAgentId,
+        credits: billingStatus.body.credits,
+      };
     },
 
     /** Start an Agent run through the real Thread entrypoint (chat send + pick). */
@@ -803,6 +812,7 @@ export function createRunsApi(context: TestContext) {
           body: {
             runnerIdentity: defaultRunnerIdentity,
             capabilities: defaultClaimCapabilities(),
+            nativeContinuationSupported: true,
             ...body,
           },
         }),
@@ -972,7 +982,11 @@ export function createRunsApi(context: TestContext) {
           headers: authorization === undefined ? {} : { authorization },
           ...(extraHeaders ? { extraHeaders } : {}),
           params: { id: runId },
-          body: { capabilities: defaultClaimCapabilities(), ...body },
+          body: {
+            capabilities: defaultClaimCapabilities(),
+            nativeContinuationSupported: true,
+            ...body,
+          },
         }),
         statuses,
       );
@@ -1435,6 +1449,7 @@ export function createRunsApi(context: TestContext) {
           body: {
             runnerIdentity: defaultRunnerIdentity,
             capabilities: defaultClaimCapabilities(),
+            nativeContinuationSupported: true,
             ...body,
           },
         }),

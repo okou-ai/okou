@@ -13,7 +13,6 @@ import {
 import { createBddApi, expectApiError } from "./helpers/api-bdd";
 import { manualHttpCustomConnectorCreateBody } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 
@@ -116,16 +115,8 @@ async function withOwnedInvitationOrg(
     });
     await webhooks.requestClerkWebhook("{}", {}, [200]);
     await flushWaitUntilForTest();
-    expect(
-      (
-        await createRunReadsApi(context).requestListLogs(
-          admin,
-          { limit: 50 },
-          [200],
-        )
-      ).body.data,
-    ).toStrictEqual([]);
-    // UUID-owned invitation completion receipts intentionally survive deletion.
+    // Clerk deletion stops active work; UUID-owned history, agents, billing and
+    // invitation completion receipts remain retained.
   });
   await owner.run(scenario);
 }

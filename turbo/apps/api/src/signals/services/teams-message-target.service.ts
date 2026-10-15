@@ -1,7 +1,7 @@
 import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
 import { and, eq } from "drizzle-orm";
-import { computed, type Computed } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 
 import { db$, type ReadonlyDb } from "../external/db";
 import { createTeamsPersonalConversation } from "../external/teams-bot-client";
@@ -100,85 +100,87 @@ async function resolveConnectedTeamsUser(args: {
  * (Teams user ID, or `"me"` for the caller's connected Teams user) is resolved
  * to the bot's personal conversation with that user.
  */
-export async function resolveTeamsMessageTarget(
-  args: {
-    readonly db: ReadonlyDb;
-    readonly installation: TeamsInstallation;
-    readonly userId: string;
-    readonly body: {
-      readonly conversationId?: string;
-      readonly user?: string;
-      readonly activityId?: string;
+export const resolveTeamsMessageTarget$ = command(
+  async (
+    { get },
+    args: {
+      readonly installation: TeamsInstallation;
+      readonly userId: string;
+      readonly body: {
+        readonly conversationId?: string;
+        readonly user?: string;
+        readonly activityId?: string;
+      };
+    },
+    signal: AbortSignal,
+  ): Promise<TeamsMessageTarget | ReturnType<typeof routeError>> => {
+    if (args.body.conversationId) {
+      return {
+        conversationId: args.body.conversationId,
+        activityId: args.body.activityId,
+      };
+    }
+
+    if (!args.installation.botId) {
+      return routeError(
+        404,
+        "Microsoft Teams installation has no bot identity yet. Send a message to the Teams bot first.",
+        "NOT_FOUND",
+      );
+    }
+    if (!args.installation.serviceUrl) {
+      return routeError(
+        404,
+        "Microsoft Teams installation has no service URL yet. Send a message to the Teams bot first.",
+        "NOT_FOUND",
+      );
+    }
+    if (!args.body.user) {
+      return routeError(400, "Teams user ID is required", "BAD_REQUEST");
+    }
+
+    const targetUser =
+      args.body.user === "me"
+        ? await resolveConnectedTeamsUser({
+            db: get(db$),
+            tenantId: args.installation.teamsTenantId,
+            userId: args.userId,
+          })
+        : {
+            kind: "ok" as const,
+            teamsUserId: args.body.user,
+            teamsUserDisplayName: null,
+          };
+    signal.throwIfAborted();
+
+    if (targetUser.kind === "not_found") {
+      return routeError(
+        404,
+        "No connected Microsoft Teams user found for this organization",
+        "NOT_FOUND",
+      );
+    }
+
+    const conversation = await createTeamsPersonalConversation(
+      {
+        serviceUrl: args.installation.serviceUrl,
+        tenantId: args.installation.teamsTenantId,
+        botId: args.installation.botId,
+        botName: args.installation.botName,
+        teamsUserId: targetUser.teamsUserId,
+        teamsUserDisplayName: targetUser.teamsUserDisplayName,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+
+    if (conversation.kind === "teams-error") {
+      return teamsErrorResponse(conversation);
+    }
+
+    return {
+      conversationId: conversation.conversationId,
+      activityId: undefined,
     };
   },
-  signal: AbortSignal,
-): Promise<TeamsMessageTarget | ReturnType<typeof routeError>> {
-  if (args.body.conversationId) {
-    return {
-      conversationId: args.body.conversationId,
-      activityId: args.body.activityId,
-    };
-  }
-
-  if (!args.installation.botId) {
-    return routeError(
-      404,
-      "Microsoft Teams installation has no bot identity yet. Send a message to the Teams bot first.",
-      "NOT_FOUND",
-    );
-  }
-  if (!args.installation.serviceUrl) {
-    return routeError(
-      404,
-      "Microsoft Teams installation has no service URL yet. Send a message to the Teams bot first.",
-      "NOT_FOUND",
-    );
-  }
-  if (!args.body.user) {
-    return routeError(400, "Teams user ID is required", "BAD_REQUEST");
-  }
-
-  const targetUser =
-    args.body.user === "me"
-      ? await resolveConnectedTeamsUser({
-          db: args.db,
-          tenantId: args.installation.teamsTenantId,
-          userId: args.userId,
-        })
-      : {
-          kind: "ok" as const,
-          teamsUserId: args.body.user,
-          teamsUserDisplayName: null,
-        };
-  signal.throwIfAborted();
-
-  if (targetUser.kind === "not_found") {
-    return routeError(
-      404,
-      "No connected Microsoft Teams user found for this organization",
-      "NOT_FOUND",
-    );
-  }
-
-  const conversation = await createTeamsPersonalConversation(
-    {
-      serviceUrl: args.installation.serviceUrl,
-      tenantId: args.installation.teamsTenantId,
-      botId: args.installation.botId,
-      botName: args.installation.botName,
-      teamsUserId: targetUser.teamsUserId,
-      teamsUserDisplayName: targetUser.teamsUserDisplayName,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-
-  if (conversation.kind === "teams-error") {
-    return teamsErrorResponse(conversation);
-  }
-
-  return {
-    conversationId: conversation.conversationId,
-    activityId: undefined,
-  };
-}
+);

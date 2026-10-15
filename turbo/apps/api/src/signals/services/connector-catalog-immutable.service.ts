@@ -11,7 +11,7 @@ import {
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import { db$, writeDb$ } from "../external/db";
 import {
-  prepareConnectorCatalogSkills,
+  prepareConnectorCatalogSkills$,
   registerPreparedConnectorCatalogSkills$,
 } from "./connector-catalog-skill-registration.service";
 
@@ -65,8 +65,9 @@ export const prepareImmutableCatalogEntries$ = command(
     if (missing.length === 0) {
       return;
     }
-    const registrations = await prepareConnectorCatalogSkills(
-      { db, artifact: { ...args.artifact, connectors: missing } },
+    const registrations = await set(
+      prepareConnectorCatalogSkills$,
+      { ...args.artifact, connectors: missing },
       signal,
     );
     await set(registerPreparedConnectorCatalogSkills$, registrations, signal);

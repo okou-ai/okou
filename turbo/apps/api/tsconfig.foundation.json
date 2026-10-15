@@ -29,7 +29,6 @@
     "src/signals/services/agent-draft-write.service.ts",
     "src/signals/services/agent-instructions-storage-transaction.service.ts",
     "src/signals/services/agent-lifecycle.service.ts",
-    "src/signals/services/artifact-catalog-deletion.service.ts",
     "src/signals/services/canonical-chat-event-read.service.ts",
     "src/signals/services/chat-event-append.service.ts",
     "src/signals/services/chat-event-type.service.ts",
@@ -38,7 +37,6 @@
     "src/signals/services/chat-session-continuity.service.ts",
     "src/signals/services/chat-thread-organization.service.ts",
     "src/signals/services/chat-thread-request-facts.ts",
-    "src/signals/services/clerk-lifecycle-plan.ts",
     "src/signals/services/concurrency-subscription-write.ts",
     "src/signals/services/connector-account-mutation.service.ts",
     "src/signals/services/context-rowset.ts",
@@ -132,7 +130,6 @@
     "src/signals/services/org-plan-entitlement-read.service.ts",
     "src/signals/services/stripe-preview-metadata.service.ts",
     "src/signals/services/stripe-subscription-schedules.service.ts",
-    "src/signals/services/usage-event-cleanup.service.ts",
     "src/signals/services/usage-pack-allocation-change.service.ts",
     "src/signals/services/usage-pack-credit-refund.service.ts",
     "src/signals/services/usage-pack-overdraft-transfer.service.ts",
@@ -342,7 +339,13 @@
     "src/signals/services/ssh-creation.service.ts",
     "src/signals/services/ssh-runtime-wakeup.service.ts",
     "src/signals/services/remote-runtime-wakeup.service.ts",
-    "src/signals/services/uploaded-artifact.service.ts"
+    "src/signals/services/uploaded-artifact.service.ts",
+    "src/lib/event-consumer/verify.ts",
+    "src/signals/services/chat-event-row-read.service.ts",
+    "src/signals/services/chat-event-snapshot-body.service.ts",
+    "src/signals/services/pi-memory-chat-source.service.ts",
+    "src/signals/services/run-native-session.service.ts",
+    "src/signals/services/session-history-blobs.ts"
   ],
   "exclude": ["node_modules", "dist"],
   "references": [

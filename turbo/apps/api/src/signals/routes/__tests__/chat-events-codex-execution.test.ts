@@ -202,8 +202,11 @@ describe("Codex execution switch", () => {
       const secondClaim = await claimChatRun(runnerGroup, second.runId);
       expect(secondClaim.claim.cliAgentType).toBe("codex");
       expect(secondClaim.claim.resumeSession).toBeNull();
-      expect(secondClaim.claim.appendSystemPrompt).toContain(
+      expect(secondClaim.claim.appendSystemPrompt).not.toContain(
         "The earlier Pi answer",
+      );
+      expect(secondClaim.claim.nativeContinuation?.recoveryPrompt).toContain(
+        "okou chat messages --output-dir threads",
       );
       chatCallbacks.mockChatOutputEvents([
         {
@@ -237,7 +240,7 @@ describe("Codex execution switch", () => {
       const thirdClaim = await claimChatRun(runnerGroup, third.runId);
       expect(thirdClaim.claim.cliAgentType).toBe("pi");
       expect(thirdClaim.claim.resumeSession).toBeNull();
-      expect(thirdClaim.claim.appendSystemPrompt).toContain(
+      expect(thirdClaim.claim.appendSystemPrompt).not.toContain(
         "The later Codex answer",
       );
     });

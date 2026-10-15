@@ -31,7 +31,6 @@ import {
   type ApiTestUser,
 } from "./helpers/api-bdd";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
-import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { ClerkTransportTestError } from "./helpers/clerk-transport-error";
 
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -193,49 +192,11 @@ async function fundActorWithSubscription(
     storageBucket: env("R2_USER_STORAGES_BUCKET_NAME"),
     kmsKeyId: env("SECRETS_KMS_KEY_ID"),
   };
-  let cliToken: string | undefined;
-  const owner = createFixtureOperationOwner(async () => {
-    const outcome = await settleIncludingAbort(
-      (async () => {
-        const cleanupResult = await settleIncludingAbort(
-          cleanupFundedScrapeActor(owned),
-        );
-        if (options.createCliTokenBeforeFunding) {
-          const webhooks = createWebhookCallbackApi(context);
-          webhooks.configureClerkWebhookSecret();
-          webhooks.verifyNextClerkWebhook({
-            type: "user.deleted",
-            data: { id: actor.userId },
-          });
-          await webhooks.requestClerkWebhook("{}", {}, [200]);
-          await flushWaitUntilForTest();
-          if (cliToken) {
-            mockClerkMembership(context, actor, "org:admin");
-            const revoked = await rawScrapeRequest(
-              null,
-              {
-                url: "https://example.com/page",
-                format: "markdown",
-                mode: "standard",
-              },
-              { authHeaders: { authorization: `Bearer ${cliToken}` } },
-            );
-            expect(revoked.status).toBe(401);
-            await flushWaitUntilForTest();
-          }
-          // Anonymous unapproved challenges retain their public 900-second expiry.
-        }
-        if (!cleanupResult.ok) {
-          throw cleanupResult.error;
-        }
-      })(),
-    );
-    if (!outcome.ok) {
-      throw outcome.error;
-    }
+  const owner = createFixtureOperationOwner(() => {
+    return cleanupFundedScrapeActor(owned);
   });
   await owner.run(async () => {
-    cliToken = await options.createCliTokenBeforeFunding?.();
+    await options.createCliTokenBeforeFunding?.();
     await bootstrapOnboarding(actor);
     await expect(credits(actor)).resolves.toBe(0);
 

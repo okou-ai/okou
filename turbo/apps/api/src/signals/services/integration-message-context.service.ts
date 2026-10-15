@@ -1,7 +1,6 @@
 import { computed } from "ccstate";
 import { getRunModelDisplayName } from "@okouai/core/model-display-name";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { agents } from "@okouai/db/schema/agent";
 import { eq } from "drizzle-orm";
 
@@ -16,7 +15,7 @@ const attributionRun$ = computed(async (get) => {
   }
   const [row] = await get(db$)
     .select({
-      sessionId: agentRuns.sessionId,
+      agentId: agentRuns.agentId,
       orgId: agentRuns.orgId,
       userId: agentRuns.userId,
       selectedModel: agentRuns.selectedModel,
@@ -31,14 +30,13 @@ const attributionRun$ = computed(async (get) => {
 
 const agentLabel$ = computed(async (get) => {
   const run = await get(attributionRun$);
-  if (!run) {
+  if (!run?.agentId) {
     return undefined;
   }
   const [row] = await get(db$)
     .select({ displayName: agents.displayName, name: agents.name })
-    .from(agentSessions)
-    .innerJoin(agents, eq(agentSessions.agentId, agents.id))
-    .where(eq(agentSessions.id, run.sessionId))
+    .from(agents)
+    .where(eq(agents.id, run.agentId))
     .limit(1);
   return row ? (row.displayName ?? row.name) : undefined;
 });

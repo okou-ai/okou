@@ -38,14 +38,16 @@ use std::time::{Duration, Instant};
 use futures_util::future::BoxFuture;
 use sandbox::SandboxRuntime;
 use tokio::sync::mpsc;
-use tokio::task::{JoinHandle, JoinSet};
+use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
-use tracing::{Instrument, error, info, warn};
+use tracing::{error, info, warn};
 
 use crate::dns;
 use crate::duration::duration_ms as saturated_duration_ms;
 use crate::executor::{ExecutorConfig, RunnerPreSpawnConcurrency};
-use crate::home_image_cache::{HomeCacheChange, HomeCacheWatcher, HomeImageCache};
+#[cfg(test)]
+use crate::home_image_cache::HomeImageCache;
+use crate::home_image_cache::{HomeCacheChange, HomeCacheWatcher};
 use crate::idle_pool::ParkingGate;
 #[cfg(test)]
 use crate::idle_pool::{IdlePool, IdlePoolConfig};
@@ -61,6 +63,7 @@ use crate::proxy;
 use crate::resource_budget::ResourceBudget;
 use crate::status::StatusTracker;
 use error::{ReactorError as RunnerError, ReactorResult as RunnerResult};
+use runner_host::home_observation::{HomeObservation, HomeObservationKind, HomeObservationOutcome};
 use runner_host::paths::HomePaths;
 #[cfg(test)]
 use runner_host::paths::RunnerPaths;
@@ -79,9 +82,12 @@ mod heartbeat;
 mod job_discovery;
 mod job_spawn;
 mod job_terminal_log;
+mod maintenance;
+mod pending_candidate;
 mod prune_idle;
 mod runner_wss;
 pub(crate) mod signals;
+mod soft_drain;
 mod startup;
 
 use crate::blank_pool::{BlankPoolReplenisher, BlankProfile};
@@ -90,16 +96,17 @@ use crate::heartbeat::{
     HeartbeatSnapshotMetadata, WssIngressServiceProbe, collect_heartbeat_state,
     refresh_initial_home_cache_snapshot,
 };
-use crate::idle_lifecycle::{IdleCleanupTask, IdleDestroyTracker, SharedIdlePool, drain_idle_pool};
+use crate::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool, drain_idle_pool};
 #[cfg(test)]
 use crate::orphan_reap::OrphanReapProcessDiscovery;
 use crate::orphan_reap::{OrphanReapMode, OrphanedActiveRuns};
-use crate::pre_claim_admission::PendingFinalizingCandidate;
 use claim_tasks::ClaimTasks;
 use factory_lifecycle::{shutdown_factory_instances, shutdown_runtime};
 use heartbeat::heartbeat_profiles;
-use job_discovery::{AdmissionContext, DiscoveredJob, DiscoveredJobContext};
+use job_discovery::{AdmissionContext, DiscoveredJob};
 use job_spawn::{SpawnContext, handle_job_result};
+use maintenance::{MaintenanceCompletion, MaintenanceTasks};
+use pending_candidate::PendingCandidate;
 use runner_lifecycle::active_runs::ActiveRuns;
 use runner_lifecycle::home_image_cache::snapshot::HomeCacheStateSnapshot;
 use runner_network::proxy::MitmRecovery;
@@ -185,44 +192,6 @@ async fn next_home_cache_change(
     }
 }
 
-// Maintenance tasks are joined during teardown, not aborted: filesystem work
-// may continue after its async future is dropped. If the reactor itself is
-// cancelled, these tasks retain their locks until their work completes.
-fn home_cache_gc_task(cache: HomeImageCache) -> JoinHandle<()> {
-    tokio::spawn(
-        async move {
-            match cache.try_routine_gc(HOME_CACHE_GC_PERIOD).await {
-                Ok(Some(freed_bytes)) if freed_bytes > 0 => {
-                    info!(freed_bytes, "periodic home image cache GC completed");
-                }
-                Ok(Some(_) | None) => {}
-                Err(error) => warn!(%error, "periodic home image cache GC failed"),
-            }
-        }
-        .in_current_span(),
-    )
-}
-
-fn status_retry_task(status: Arc<StatusTracker>) -> JoinHandle<()> {
-    tokio::spawn(
-        async move {
-            if let Err(error) = status.retry_unpublished_snapshot().await {
-                warn!(%error, "failed to retry unpublished runner status");
-            }
-        }
-        .in_current_span(),
-    )
-}
-
-async fn next_maintenance_task(task: &mut Option<JoinHandle<()>>, name: &str) -> RunnerResult<()> {
-    match task {
-        Some(task) => task
-            .await
-            .map_err(|error| RunnerError::Internal(format!("{name} task failed: {error}"))),
-        None => std::future::pending().await,
-    }
-}
-
 struct TeardownTimer {
     start: Instant,
 }
@@ -303,6 +272,7 @@ pub struct RunConfig {
     pub shared: RunnerSharedState,
     pub provider: ProviderState,
     pub wss_ingress_service_probe: WssIngressServiceProbe,
+    pub sandbox_op_reporter: Option<runner_storage::SandboxOpReporter>,
     pub proxy: ProxyState,
     pub exec_config: Arc<ExecutorConfig>,
     pub shutdown: ShutdownHandles,
@@ -1020,6 +990,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         shared,
         provider: provider_state,
         wss_ingress_service_probe,
+        sandbox_op_reporter,
         proxy,
         exec_config,
         shutdown,
@@ -1164,7 +1135,28 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         active_runs: &active_runs,
         home_cache_snapshot: home_cache_snapshot.clone(),
         wss_ingress_service_probe,
+        sandbox_op_reporter: sandbox_op_reporter.clone(),
     });
+    if exec_config.home_cache.is_some()
+        && let Some(reporter) = &sandbox_op_reporter
+    {
+        let mut observation = HomeObservation::new(
+            HomeObservationKind::Inventory,
+            HomeObservationOutcome::Loading,
+        );
+        observation.runner_id = Some(runner.identity.runner_id().to_string());
+        observation.runner_heartbeat_generation = Some(runner.identity.heartbeat_generation());
+        observation.inventory_loaded = Some(false);
+        observation.reason = Some("initial_scan".into());
+        let mut record = runner_storage::SandboxOpRecord::new(
+            "runner_home_inventory",
+            Duration::ZERO,
+            true,
+            None,
+        );
+        record.home = Some(observation);
+        reporter.record(record);
+    }
     let initial_home_cache = refresh_initial_home_cache_snapshot(
         &home_cache_snapshot,
         exec_config.home_cache.as_ref(),
@@ -1267,6 +1259,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         budget: Arc::clone(&capacity.budget),
         home_cache_snapshot,
         device_rate_limits: capacity.device_rate_limits.clone(),
+        sandbox_op_reporter,
         #[cfg(test)]
         outer_job_panic: test_hooks.outer_job_panic,
         #[cfg(test)]
@@ -1295,13 +1288,9 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         HOME_CACHE_RECONCILIATION_PERIOD,
     );
     home_cache_reconciliation_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let mut home_cache_gc_handle = None;
-    let mut status_retry_handle = None;
-    let mut draining_idle_pool_drained = false;
-    let mut idle_drain_task: Option<IdleCleanupTask<()>> = None;
-    let mut idle_drain_current = false;
-    let mut pending_finalizing_candidate = PendingFinalizingCandidate::new();
-    let mut pending_finalizing_retry = false;
+    let mut maintenance = MaintenanceTasks::new();
+    let mut soft_drain = soft_drain::SoftDrain::new();
+    let mut pending_candidate = PendingCandidate::new();
     let mut ready_direct_candidates_left = 0;
     let mut terminal_error = None;
     loop {
@@ -1331,10 +1320,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                 break;
             }
         }
-        if mode != RunnerMode::Running {
-            pending_finalizing_candidate.clear();
-            pending_finalizing_retry = false;
-        }
+        pending_candidate.clear_if_inactive(mode);
         blank_pool.cancel_if_inactive(mode);
         match mode {
             RunnerMode::Starting => {}
@@ -1345,31 +1331,21 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             // to teardown.
             RunnerMode::Stopping => break,
             RunnerMode::Draining => {
-                if !draining_idle_pool_drained
-                    && idle_drain_task.is_none()
-                    && claim_tasks.is_empty()
-                {
+                if claim_tasks.is_empty() {
                     // Settle admission before removing inventory that an
                     // in-flight claim may return or need for activation. Then
                     // release idle budget and keep servicing running jobs.
-                    idle_drain_task = Some(
-                        idle_destroy_tracker
-                            .start_drain(
-                                Arc::clone(&shared.idle_pool),
-                                Arc::clone(&shared.status),
-                                "draining",
-                            )
-                            .await,
-                    );
-                    idle_drain_current = true;
+                    soft_drain
+                        .start_if_needed(&idle_destroy_tracker, &shared.idle_pool, &shared.status)
+                        .await;
                 }
-                if draining_idle_pool_drained && jobs.is_empty() && claim_tasks.is_empty() {
+                if soft_drain.batch_completed() && jobs.is_empty() && claim_tasks.is_empty() {
                     // Watch updates can coalesce a resume and renewed drain.
                     // Recheck inventory under the same exclusive access that
                     // commits natural stop so a prior batch cannot skip it.
                     let pool = shared.idle_pool.lock().await;
                     if !pool.is_empty() {
-                        draining_idle_pool_drained = false;
+                        soft_drain.inventory_changed();
                         continue;
                     }
                     // Natural drain complete — commit to Stopping so teardown
@@ -1391,8 +1367,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                 }
             }
             RunnerMode::Running => {
-                draining_idle_pool_drained = false;
-                idle_drain_current = false;
+                soft_drain.resume();
             }
         }
 
@@ -1410,12 +1385,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         // Spawn background restart task when timer fires
         mitm_recovery.maybe_start(&mut mitm, &mut mitm_crash_rx);
 
-        if pending_finalizing_retry
-            && mode == RunnerMode::Running
-            && claim_tasks.has_capacity()
-            && let Some(candidate) = pending_finalizing_candidate.take()
-        {
-            pending_finalizing_retry = false;
+        if let Some(candidate) = pending_candidate.take_retry(mode, claim_tasks.has_capacity()) {
             claim_tasks.submit(DiscoveredJob { candidate }, &runner.profiles, &factories);
         }
         let can_discover = if matches!(mode, RunnerMode::Running) {
@@ -1436,31 +1406,21 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         let can_discover = can_discover && claim_tasks.has_capacity();
         let mitm_retry_deadline = mitm_recovery.retry_deadline();
         let heartbeat_sending = heartbeat.is_sending();
-        let pending_finalizing_deadline = pending_finalizing_candidate.deadline();
+        let pending_finalizing_deadline =
+            pending_candidate.expiry_deadline(mode, claim_tasks.has_capacity());
         tokio::select! {
-            result = async {
-                match idle_drain_task.as_mut() {
-                    Some(task) => task.join().await,
-                    None => std::future::pending().await,
-                }
-            }, if idle_drain_task.is_some() => {
-                idle_drain_task = None;
-                match result {
-                    Ok(()) => {
-                        draining_idle_pool_drained = idle_drain_current && lifecycle.current_mode() == RunnerMode::Draining;
-                    }
-                    Err(error) => {
-                        warn!(%error, "idle drain cleanup producer lost");
-                        handle_stopping_signal(
-                            "idle drain cleanup producer lost",
-                            &provider_state.cancel,
-                            &provider_state.cancel_tokens,
-                            &lifecycle,
-                        ).await;
-                        terminal_error.get_or_insert_with(|| {
-                            RunnerError::Internal("idle drain cleanup producer lost".to_owned())
-                        });
-                    }
+            result = soft_drain.join(), if soft_drain.is_in_flight() => {
+                if let Err(error) = soft_drain.complete(result, &lifecycle) {
+                    warn!(%error, "idle drain cleanup producer lost");
+                    handle_stopping_signal(
+                        "idle drain cleanup producer lost",
+                        &provider_state.cancel,
+                        &provider_state.cancel_tokens,
+                        &lifecycle,
+                    ).await;
+                    terminal_error.get_or_insert_with(|| {
+                        RunnerError::Internal("idle drain cleanup producer lost".to_owned())
+                    });
                 }
             }
             result = async {
@@ -1523,7 +1483,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                 let Some(candidate) = discovered else { break };
                 // Future completed — create a new one for the next discovery.
                 discover_fut = Box::pin(provider_state.provider.discover());
-                let candidate = pending_finalizing_candidate.for_admission(candidate);
+                let candidate = pending_candidate.for_admission(candidate);
                 claim_tasks.submit(DiscoveredJob { candidate }, &runner.profiles, &factories);
                 ready_direct_candidates_left = READY_DIRECT_CANDIDATE_DRAIN_LIMIT;
             }
@@ -1532,7 +1492,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             {
                 if let Some(candidate) = candidate {
                     ready_direct_candidates_left -= 1;
-                    let candidate = pending_finalizing_candidate.for_admission(candidate);
+                    let candidate = pending_candidate.for_admission(candidate);
                     claim_tasks.submit(DiscoveredJob { candidate }, &runner.profiles, &factories);
                 } else {
                     ready_direct_candidates_left = 0;
@@ -1542,33 +1502,12 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                 if !claim_tasks.is_empty() || claim_tasks.is_preparing() =>
             {
                 let Some(result) = result else { continue };
-                let result = match result {
+                let result = match claim_tasks.consume(result, &mut jobs).await {
                     Ok(result) => result,
-                    Err(_) => {
+                    Err(failure) => {
+                        let (reason, error) = failure.into_stopping_failure();
                         handle_stopping_signal(
-                            "claim admission task failure",
-                            &provider_state.cancel,
-                            &provider_state.cancel_tokens,
-                            &lifecycle,
-                        ).await;
-                        terminal_error = Some(RunnerError::Internal("claim admission task failed".to_owned()));
-                        break;
-                    }
-                };
-                let result = match result.handle(DiscoveredJobContext {
-                    runner_identity: runner.identity,
-                    budget: &capacity.budget,
-                    idle_pool: &shared.idle_pool,
-                    status: &shared.status,
-                    mode_rx: &mode_rx,
-                    cancel_tokens: &provider_state.cancel_tokens,
-                    spawn_ctx: &spawn_ctx,
-                    jobs: &mut jobs,
-                }).await {
-                    Ok(result) => result,
-                    Err(error) => {
-                        handle_stopping_signal(
-                            "claim result ownership failure",
+                            reason,
                             &provider_state.cancel,
                             &provider_state.cancel_tokens,
                             &lifecycle,
@@ -1577,10 +1516,8 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                         break;
                     }
                 };
-                if let Some(candidate) = result.pending_candidate
-                    && *mode_rx.borrow() == RunnerMode::Running
-                {
-                    pending_finalizing_candidate.retain(candidate);
+                if let Some(candidate) = result.pending_candidate {
+                    pending_candidate.retain(candidate, *mode_rx.borrow());
                 }
                 let live_mode = *mode_rx.borrow();
                 if result.needs_reuse_state_refresh
@@ -1637,25 +1574,19 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                     )?;
                 }
             }
-            result = next_maintenance_task(&mut home_cache_gc_handle, "home cache GC") => {
-                home_cache_gc_handle = None;
-                home_cache_gc_tick.reset();
+            completion = maintenance.wait() => {
+                let (result, stopping_reason) = match completion {
+                    MaintenanceCompletion::HomeCacheGc(result) => {
+                        home_cache_gc_tick.reset();
+                        (result, "home cache GC task failure")
+                    }
+                    MaintenanceCompletion::StatusRetry(result) => {
+                        (result, "status retry task failure")
+                    }
+                };
                 if let Err(error) = result {
                     handle_stopping_signal(
-                        "home cache GC task failure",
-                        &provider_state.cancel,
-                        &provider_state.cancel_tokens,
-                        &lifecycle,
-                    ).await;
-                    terminal_error = Some(error);
-                    break;
-                }
-            }
-            result = next_maintenance_task(&mut status_retry_handle, "status retry") => {
-                status_retry_handle = None;
-                if let Err(error) = result {
-                    handle_stopping_signal(
-                        "status retry task failure",
+                        stopping_reason,
                         &provider_state.cancel,
                         &provider_state.cancel_tokens,
                         &lifecycle,
@@ -1665,11 +1596,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                 }
             }
             _ = home_cache_gc_tick.tick() => {
-                if home_cache_gc_handle.is_none()
-                    && let Some(cache) = exec_config.home_cache.clone()
-                {
-                    home_cache_gc_handle = Some(home_cache_gc_task(cache));
-                }
+                maintenance.request_home_cache_gc(exec_config.home_cache.as_ref());
             }
             // Mode changes (signals)
             _ = mode_rx.changed() => {}
@@ -1768,19 +1695,15 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             _ = heartbeat_tick.tick() => {
                 let live_mode = *mode_rx.borrow();
                 heartbeat.request(live_mode)?;
-                if status_retry_handle.is_none() {
-                    status_retry_handle = Some(status_retry_task(Arc::clone(&shared.status)));
-                }
+                maintenance.request_status_retry(&shared.status);
                 #[cfg(test)]
                 test_hooks
                     .test_observer
                     .notify_routine_heartbeat_requested(live_mode);
             }
-            _ = sleep_until_optional_instant(pending_finalizing_deadline),
-                if pending_finalizing_candidate.is_some() && mode == RunnerMode::Running
-                    && claim_tasks.has_capacity() =>
+            _ = sleep_until_optional_instant(pending_finalizing_deadline) =>
             {
-                let Some(candidate) = pending_finalizing_candidate.take_expired() else {
+                let Some(candidate) = pending_candidate.take_expired() else {
                     continue;
                 };
                 claim_tasks.submit(DiscoveredJob { candidate }, &runner.profiles, &factories);
@@ -1789,11 +1712,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             // up-to-10s blind spot for reuse-aware routing.
             _ = reuse_state_notify.notified(), if matches!(mode, RunnerMode::Running | RunnerMode::Draining) => {
                 let live_mode = *mode_rx.borrow();
-                if live_mode == RunnerMode::Running {
-                    // A wakeup observed while all claim slots are occupied must
-                    // survive until a completion opens a slot.
-                    pending_finalizing_retry = true;
-                }
+                pending_candidate.request_retry(live_mode);
                 let source = match live_mode {
                     RunnerMode::Running if can_discover => "main",
                     RunnerMode::Running => "budget_exhausted",
@@ -1852,43 +1771,16 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     drop(home_cache_change_fut);
     let phase = teardown.phase_start("claims_drain");
     while let Some(result) = claim_tasks.next().await {
-        match result {
-            Ok(result) => {
-                if let Err(error) = result
-                    .handle(DiscoveredJobContext {
-                        runner_identity: runner.identity,
-                        budget: &capacity.budget,
-                        idle_pool: &shared.idle_pool,
-                        status: &shared.status,
-                        mode_rx: &mode_rx,
-                        cancel_tokens: &provider_state.cancel_tokens,
-                        spawn_ctx: &spawn_ctx,
-                        jobs: &mut jobs,
-                    })
-                    .await
-                {
-                    handle_stopping_signal(
-                        "claim result ownership failure",
-                        &provider_state.cancel,
-                        &provider_state.cancel_tokens,
-                        &lifecycle,
-                    )
-                    .await;
-                    terminal_error.get_or_insert(error);
-                }
-            }
-            Err(_) => {
-                handle_stopping_signal(
-                    "claim admission task failure",
-                    &provider_state.cancel,
-                    &provider_state.cancel_tokens,
-                    &lifecycle,
-                )
-                .await;
-                terminal_error.get_or_insert_with(|| {
-                    RunnerError::Internal("claim admission task failed".to_owned())
-                });
-            }
+        if let Err(failure) = claim_tasks.consume(result, &mut jobs).await {
+            let (reason, error) = failure.into_stopping_failure();
+            handle_stopping_signal(
+                reason,
+                &provider_state.cancel,
+                &provider_state.cancel_tokens,
+                &lifecycle,
+            )
+            .await;
+            terminal_error.get_or_insert(error);
         }
     }
     drop(claim_tasks);
@@ -1911,17 +1803,8 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     test_hooks
         .test_observer
         .record(StartLoopEvent::MaintenanceDrainEntered);
-    for (name, task) in [
-        ("status retry", &mut status_retry_handle),
-        ("home cache GC", &mut home_cache_gc_handle),
-    ] {
-        if task.is_some()
-            && let Err(error) = next_maintenance_task(task, name).await
-        {
-            error!(%error, "failed to drain maintenance task");
-            terminal_error.get_or_insert(error);
-        }
-        *task = None;
+    if let Err(error) = maintenance.drain().await {
+        terminal_error.get_or_insert(error);
     }
     teardown.phase_complete("maintenance_drain", phase);
 

@@ -23,18 +23,24 @@ import {
 } from "./chat-composer-connectors-test-helpers.ts";
 
 async function chooseRemoteHost(trigger: HTMLElement, optionName: string) {
-  const user = userEvent.setup({ delay: null });
-  await user.click(trigger);
-  await user.click(await screen.findByRole("option", { name: optionName }));
+  click(trigger);
+  click(await screen.findByRole("option", { name: optionName }));
 }
 
-test("A chat can override multiple SSH hosts and return to each host default", async () => {
+async function prepareRemoteDefaults(operation: "override" | "restore") {
   const hostIds = [
     "b0000000-0000-4000-8000-000000000001",
     "b0000000-0000-4000-8000-000000000002",
   ];
   installComposerConnectorFixture({ threadId: SCOUT_THREAD_ID });
-  const overrides = new Map<string, boolean>();
+  const overrides = new Map<string, boolean>(
+    operation === "restore"
+      ? [
+          [hostIds[0]!, false],
+          [hostIds[1]!, true],
+        ]
+      : [],
+  );
   const host = (connectionId: string, index: number) => {
     const overrideEnabled = overrides.get(connectionId) ?? null;
     const defaultEnabled = index === 0;
@@ -114,8 +120,16 @@ test("A chat can override multiple SSH hosts and return to each host default", a
   expect(remoteTrigger()).toHaveTextContent("1 enabled");
   expect(screen.queryByRole("combobox", { name: "SSH SSH host 1" })).toBeNull();
   click(remoteAccess);
-  const first = await screen.findByRole("combobox", { name: "SSH SSH host 1" });
+  const first = await screen.findByRole("combobox", {
+    name: "SSH SSH host 1",
+  });
   const second = screen.getByRole("combobox", { name: "SSH SSH host 2" });
+  return { hostIds, overrides, remoteTrigger, first, second };
+}
+
+test("A chat can override multiple SSH host defaults independently", async () => {
+  const { hostIds, overrides, remoteTrigger, first, second } =
+    await prepareRemoteDefaults("override");
   expect(first).toHaveTextContent("Default (On)");
   expect(second).toHaveTextContent("Default (Off)");
   await chooseRemoteHost(first, "Off");
@@ -124,21 +138,23 @@ test("A chat can override multiple SSH hosts and return to each host default", a
     expect(second).not.toBeDisabled();
     expect(remoteTrigger()).toHaveTextContent("0 enabled");
   });
-  await chooseRemoteHost(
-    screen.getByRole("combobox", { name: "SSH SSH host 2" }),
-    "On",
-  );
+  await chooseRemoteHost(second, "On");
   await waitFor(() => {
     expect(overrides.get(hostIds[0]!)).toBeFalsy();
     expect(overrides.get(hostIds[1]!)).toBeTruthy();
     expect(remoteTrigger()).toHaveTextContent("1 enabled");
   });
-  await chooseRemoteHost(
-    screen.getByRole("combobox", { name: "SSH SSH host 1" }),
-    "Default (On)",
-  );
+});
+
+test("A chat can restore multiple SSH host defaults independently", async () => {
+  const { hostIds, overrides, remoteTrigger, first, second } =
+    await prepareRemoteDefaults("restore");
+  expect(first).toHaveTextContent("Off");
+  expect(second).toHaveTextContent("On");
+  await chooseRemoteHost(first, "Default (On)");
   await waitFor(() => {
     expect(overrides.has(hostIds[0]!)).toBeFalsy();
+    expect(overrides.get(hostIds[1]!)).toBeTruthy();
     expect(remoteTrigger()).toHaveTextContent("2 enabled");
   });
 });
@@ -505,7 +521,7 @@ test("Remote access can retry a failed chat permission read", async () => {
   await screen.findByText("1 enabled");
 });
 
-test("A new chat applies draft host choices to the thread it creates", async () => {
+async function prepareDraftHostChoices() {
   const fixture = installComposerConnectorFixture();
   context.mocks.api(
     chatRemoteAccessContract.listHostDefaults,
@@ -543,6 +559,11 @@ test("A new chat applies draft host choices to the thread it creates", async () 
   expect(first).toHaveTextContent("Default (On)");
   expect(second).toHaveTextContent("Default (Off)");
   const user = userEvent.setup({ delay: null });
+  return { remoteAccess, first, user, fixture, second };
+}
+
+test("Apply SSH host choices during draft editing", async () => {
+  const { remoteAccess, first, user } = await prepareDraftHostChoices();
   first.focus();
   await user.keyboard("{Enter}");
   await screen.findByRole("option", {
@@ -557,6 +578,12 @@ test("A new chat applies draft host choices to the thread it creates", async () 
   expect(remoteAccess.closest("button")).toHaveTextContent("0 enabled");
   await chooseRemoteHost(first, "Default (On)");
   expect(remoteAccess.closest("button")).toHaveTextContent("1 enabled");
+  return;
+});
+
+test("Apply SSH host choices during thread creation", async () => {
+  const { fixture, remoteAccess, first, second, user } =
+    await prepareDraftHostChoices();
   await chooseRemoteHost(first, "Off");
   await chooseRemoteHost(second, "On");
   expect(remoteAccess.closest("button")).toHaveTextContent("1 enabled");

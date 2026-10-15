@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.232.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.12...runner-rs-v0.232.0) (2026-10-15)
+
+
+### Features
+
+* **runner:** record home outcomes through sandbox operations ([#40086](https://github.com/okou-ai/okou/issues/40086)) ([4118750](https://github.com/okou-ai/okou/commit/4118750fb48f30654288719da44c30ae8dc08a68))
+
+
+### Bug Fixes
+
+* **mitm-addon:** avoid redundant billing work during stream inspection ([#40119](https://github.com/okou-ai/okou/issues/40119)) ([a07dbd0](https://github.com/okou-ai/okou/commit/a07dbd06aae99ca3e7b8e21c819871e12faccb2a))
+* **runner:** align task oom priority and correct runtime attribution ([#40068](https://github.com/okou-ai/okou/issues/40068)) ([b94851a](https://github.com/okou-ai/okou/commit/b94851a584b74d0edfbd53e46576cb66ff753c64))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.231.12](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.11...runner-rs-v0.231.12) (2026-10-14)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.231.11](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.10...runner-rs-v0.231.11) (2026-10-14)
 
 ### Release Dependencies

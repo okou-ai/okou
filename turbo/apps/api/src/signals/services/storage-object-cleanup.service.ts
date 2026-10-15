@@ -1,5 +1,5 @@
 import { exportJobs } from "@okouai/db/schema/export-job";
-import { storages, storageVersions } from "@okouai/db/schema/storage";
+import { storages } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
 import { eq, or, sql } from "drizzle-orm";
 import { v5 as uuidv5 } from "uuid";
@@ -25,10 +25,7 @@ const PAGE_SIZE = 1000;
 const WORK_BATCH_SIZE = 8;
 const inputSchema = z.object({
   bucket: z.string().min(1),
-  target: z.discriminatedUnion("kind", [
-    z.object({ kind: z.literal("prefix"), value: z.string().min(1) }),
-    z.object({ kind: z.literal("key"), value: z.string().min(1) }),
-  ]),
+  target: z.object({ kind: z.literal("prefix"), value: z.string().min(1) }),
 });
 type CleanupInput = z.infer<typeof inputSchema>;
 
@@ -61,53 +58,30 @@ const assertUnreferenced$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const db = get(db$);
-    if (target.kind === "prefix") {
-      const prefix = target.value.replace(/\/+$/, "");
-      if (!prefix) {
-        throw new Error("Storage cleanup cannot erase an empty prefix");
-      }
-      const [storage] = await db
-        .select({ id: storages.id })
-        .from(storages)
-        .where(
-          or(
-            eq(storages.s3Prefix, prefix),
-            sql`starts_with(${storages.s3Prefix}, ${`${prefix}/`})`,
-            sql`starts_with(${prefix}, ${storages.s3Prefix} || '/')`,
-          ),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      const [exportJob] = await db
-        .select({ id: exportJobs.id })
-        .from(exportJobs)
-        .where(sql`starts_with(${exportJobs.s3Key}, ${`${prefix}/`})`)
-        .limit(1);
-      signal.throwIfAborted();
-      if (storage || exportJob) {
-        throw new Error("Storage cleanup prefix still has a live DB reference");
-      }
-      return;
+    const prefix = target.value.replace(/\/+$/, "");
+    if (!prefix) {
+      throw new Error("Storage cleanup cannot erase an empty prefix");
     }
-    const [exportJob] = await db
-      .select({ id: exportJobs.id })
-      .from(exportJobs)
-      .where(eq(exportJobs.s3Key, target.value))
-      .limit(1);
-    signal.throwIfAborted();
-    const [version] = await db
-      .select({ id: storageVersions.id })
-      .from(storageVersions)
+    const [storage] = await db
+      .select({ id: storages.id })
+      .from(storages)
       .where(
         or(
-          eq(sql`${storageVersions.s3Key} || '/archive.tar.gz'`, target.value),
-          eq(sql`${storageVersions.s3Key} || '/manifest.json'`, target.value),
+          eq(storages.s3Prefix, prefix),
+          sql`starts_with(${storages.s3Prefix}, ${`${prefix}/`})`,
+          sql`starts_with(${prefix}, ${storages.s3Prefix} || '/')`,
         ),
       )
       .limit(1);
     signal.throwIfAborted();
-    if (exportJob || version) {
-      throw new Error("Storage cleanup key still has a live DB reference");
+    const [exportJob] = await db
+      .select({ id: exportJobs.id })
+      .from(exportJobs)
+      .where(sql`starts_with(${exportJobs.s3Key}, ${`${prefix}/`})`)
+      .limit(1);
+    signal.throwIfAborted();
+    if (storage || exportJob) {
+      throw new Error("Storage cleanup prefix still has a live DB reference");
     }
   },
 );
@@ -120,11 +94,6 @@ const cleanPage$ = command(
   ): Promise<boolean> => {
     const { bucket, target } = args.input;
     await set(assertUnreferenced$, target, signal);
-    if (target.kind === "key") {
-      await get(deleteS3Objects(bucket, [target.value], signal));
-      signal.throwIfAborted();
-      return true;
-    }
     const prefix = `${target.value.replace(/\/+$/, "")}/`;
     const page = await get(
       listS3ObjectsPage(bucket, prefix, PAGE_SIZE, undefined, signal),

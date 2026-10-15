@@ -95,6 +95,7 @@ pub(super) struct SpawnContext {
     pub(super) blank_pool_diagnostics: BlankPoolDiagnostics,
     pub(super) budget: Arc<ResourceBudget>,
     pub(super) home_cache_snapshot: HomeCacheStateSnapshot,
+    pub(super) sandbox_op_reporter: Option<runner_storage::SandboxOpReporter>,
     pub(super) device_rate_limits: Option<sandbox::DeviceRateLimits>,
     #[cfg(test)]
     pub(super) outer_job_panic: Option<OuterJobPanicPoint>,
@@ -243,6 +244,7 @@ impl ExecutorInvocation {
                         network_log_session: None,
                         home_image: None,
                         home_reuse_result: None,
+                        startup_report: None,
                         discovered_cli_agent_session_id: None,
                         restored_session_identity: None,
                     },
@@ -332,6 +334,7 @@ impl FinalizationPhase {
             network_log_session,
             home_image,
             home_reuse_result: _,
+            startup_report: _,
             discovered_cli_agent_session_id,
             restored_session_identity,
         } = outcome;
@@ -643,6 +646,7 @@ pub(super) async fn run_job(
         maybe_panic_outer_job(outer_job_panic, OuterJobPanicPoint::ActiveOrUnknown, run_id);
 
         let mut executor_result = executor.execute().await;
+        let startup_report = executor_result.outcome.startup_report.take();
         let cancelled_for_log = job_cancel.is_cancelled();
         log_terminal_job_outcome(
             run_id,
@@ -664,10 +668,8 @@ pub(super) async fn run_job(
             failure_reason,
             executor_result.err.take(),
             sandbox_id,
-            reuse_result,
             completion_auth,
-        )
-        .with_home_reuse_result(executor_result.outcome.home_reuse_result);
+        );
         // Structural guarantee: claim (in provider) is always paired with complete.
         signal_usage_flush(run_id, &usage_flush_tx);
         let telemetry = completion_payload
@@ -679,7 +681,13 @@ pub(super) async fn run_job(
                 &cleanup_state_for_body,
             )
             .await;
-        deferred_upload.flush(telemetry).await;
+        // Completion, reuse handoff, and capacity release precede ancillary
+        // delivery. The existing job owner still drains both tasks on shutdown.
+        tokio::join!(deferred_upload.flush(telemetry), async {
+            if let Some(report) = startup_report {
+                report.finish().await;
+            }
+        });
     };
 
     let body_result = AssertUnwindSafe(body).catch_unwind().await;
@@ -774,6 +782,8 @@ mod tests {
     use runner_lifecycle::active_runs::ActiveRuns;
     use runner_provider::RunCancellationRegistry;
     use runner_types::ids::RunId;
+    use tracing_subscriber::prelude::*;
+    use tracing_test_support::CapturedEvents;
 
     fn test_http_client() -> HttpClient {
         HttpClient::new(HttpClientConfig {
@@ -941,6 +951,7 @@ mod tests {
                 network_log_session: None,
                 home_image: None,
                 home_reuse_result: None,
+                startup_report: None,
                 discovered_cli_agent_session_id: None,
                 restored_session_identity,
             },
@@ -960,6 +971,7 @@ mod tests {
                 network_log_session: None,
                 home_image: None,
                 home_reuse_result: None,
+                startup_report: None,
                 discovered_cli_agent_session_id: None,
                 restored_session_identity: None,
             },
@@ -1234,16 +1246,14 @@ mod tests {
             .request_handoff(successor_run_id)
             .expect("exact successor should register one handoff");
 
-        let finalized = finalization
-            .finalize(executor_phase_outcome(run_id, "direct-handoff", None))
-            .await;
+        let outcome = executor_phase_outcome(run_id, "direct-handoff", None);
 
-        assert_telemetry_action(&finalized.telemetry, "runner_host_exact_sandbox_handoff");
-        assert_telemetry_outcome(
-            &finalized.telemetry,
-            "runner_host_exact_sandbox_handoff",
-            Some("after_full_park"),
-        );
+        let local = CapturedEvents::default();
+        let guard =
+            tracing::subscriber::set_default(tracing_subscriber::registry().with(local.clone()));
+        let finalized = finalization.finalize(outcome).await;
+        drop(guard);
+
         assert_no_telemetry_action(&finalized.telemetry, "runner_host_idle_publication");
         assert_eq!(
             cleanup_state.disposition(),
@@ -1251,6 +1261,32 @@ mod tests {
         );
         assert_eq!(fixture.idle_pool.lock().await.len(), 0);
         assert!(handoff.accepted().await);
+        let facts = finalized.telemetry.pending_home_snapshot();
+        assert_eq!(facts.len(), 1);
+        assert_eq!(
+            facts[0].kind,
+            runner_host::home_observation::HomeObservationKind::Preservation,
+        );
+        assert_eq!(
+            facts[0].outcome,
+            runner_host::home_observation::HomeObservationOutcome::Retained,
+        );
+        assert_eq!(facts[0].run_id, Some(run_id));
+        assert_eq!(facts[0].reuse_key.as_deref(), Some(reuse_key));
+        assert_eq!(facts[0].reason.as_deref(), Some("exact_handoff"));
+        assert_eq!(facts[0].handoff_path.as_deref(), Some("after_full_park"));
+        assert!(facts[0].image_generation.is_none());
+        let local_facts: Vec<_> = local
+            .entries()
+            .into_iter()
+            .filter(|event| {
+                event.fields.get("op_type").map(String::as_str) == Some("runner_home_preservation")
+            })
+            .collect();
+        assert_eq!(local_facts.len(), 1);
+        assert_eq!(local_facts[0].fields["run_id"], run_id.to_string());
+        assert_eq!(local_facts[0].fields["outcome"], "retained");
+        assert_eq!(local_facts[0].fields["handoff_path"], "after_full_park");
         let candidate = handoff
             .receive()
             .await

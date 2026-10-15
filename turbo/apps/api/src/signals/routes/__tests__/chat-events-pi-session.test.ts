@@ -1,5 +1,4 @@
 import { publicChatActor } from "./helpers/public-chat-actor";
-import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -11,7 +10,6 @@ import {
   claimEnvironment,
   eventBackedContents,
   assistantEvent,
-  occurrences,
 } from "./helpers/chat-events-fixture";
 
 const context = testContext();
@@ -26,7 +24,6 @@ const {
   mockPiObjectStore,
   mockPiResourceArchiveDownloads,
   completeSandboxFirstPiRun,
-  piSandboxBaseSession,
 } = createChatEventsFixture(context);
 
 describe("CHAT-02: personal subscription model selection", () => {
@@ -151,11 +148,8 @@ describe("CHAT-02: personal subscription model selection", () => {
       runOptions: { codexServiceTier: "fast" },
     });
     const firstCodexRun = await api.readRun(actor, firstCodex.runId);
-    expect(firstCodexRun.appendSystemPrompt).toContain(
-      "# Web Chat Run Context",
-    );
-    expect(firstCodexRun.appendSystemPrompt).toContain(firstPiPrompt);
-    expect(firstCodexRun.appendSystemPrompt).toContain(firstPiAnswer);
+    expect(firstCodexRun.appendSystemPrompt).not.toContain(firstPiPrompt);
+    expect(firstCodexRun.appendSystemPrompt).not.toContain(firstPiAnswer);
     const firstCodexClaim = await claimChatRun(runnerGroup, firstCodex.runId);
     expect(firstCodexClaim.claim.cliAgentType).toBe("codex");
     expect(
@@ -163,6 +157,13 @@ describe("CHAT-02: personal subscription model selection", () => {
     ).toBe("fast");
     expect(firstCodexClaim.claim.piLaunchConfig).toBeUndefined();
     expect(firstCodexClaim.claim.resumeSession).toBeNull();
+    expect(firstCodexClaim.claim.nativeContinuation).toMatchObject({
+      sessionId: null,
+      generationRunId: null,
+    });
+    expect(firstCodexClaim.claim.nativeContinuation?.recoveryPrompt).toContain(
+      "okou chat messages --output-dir threads",
+    );
     chatCallbacks.mockChatOutputEvents([assistantEvent(0, firstCodexAnswer)]);
     await own(async () => {
       return await completeChatRunOk(
@@ -193,32 +194,26 @@ describe("CHAT-02: personal subscription model selection", () => {
       prompt: returnedPiPrompt,
       model: piModel,
     });
-    // A new Pi generation starts from a fresh Sandbox session; prior visible
-    // turns travel only through the run context instructions.
     await flushWaitUntilForTest();
     const returnedPiClaim = await claimChatRun(runnerGroup, returnedPi.runId);
     expect(returnedPiClaim.claim.resumeSession).toBeNull();
     expect(returnedPiClaim.claim.prompt).toBe(returnedPiPrompt);
+    expect(returnedPiClaim.claim.nativeContinuation).toMatchObject({
+      sessionId: null,
+      generationRunId: null,
+    });
+    expect(returnedPiClaim.claim.nativeContinuation?.recoveryPrompt).toContain(
+      "okou chat messages --output-dir threads",
+    );
     const returnedPiRun = await api.readRun(actor, returnedPi.runId);
-    const returnedPiAppend = returnedPiRun.appendSystemPrompt ?? "";
-    expect(returnedPiAppend).toContain("# Web Chat Run Context");
     for (const prior of [
       firstPiPrompt,
       firstPiAnswer,
       firstCodexPrompt,
       firstCodexAnswer,
     ]) {
-      expect(occurrences(returnedPiAppend, prior)).toBe(1);
-    }
-    const returnedPiInstructions =
-      returnedPiClaim.claim.appendSystemPrompt ?? "";
-    for (const prior of [
-      firstPiPrompt,
-      firstPiAnswer,
-      firstCodexPrompt,
-      firstCodexAnswer,
-    ]) {
-      expect(occurrences(returnedPiInstructions, prior)).toBe(1);
+      expect(returnedPiRun.appendSystemPrompt).not.toContain(prior);
+      expect(returnedPiClaim.claim.appendSystemPrompt).not.toContain(prior);
     }
     await own(async () => {
       return await completeSandboxFirstPiRun({
@@ -246,28 +241,15 @@ describe("CHAT-02: personal subscription model selection", () => {
     expect(piFollowUpAppend).not.toContain(firstPiPrompt);
     expect(piFollowUpAppend).not.toContain(firstCodexPrompt);
     const piFollowUpClaim = await claimChatRun(runnerGroup, piFollowUp.runId);
-    const resumedPiSession = piFollowUpClaim.claim.resumeSession;
-    if (!resumedPiSession || !("historyRef" in resumedPiSession)) {
-      throw new Error("Expected the Pi follow-up to resume a blob history");
-    }
-    expect(resumedPiSession).toMatchObject({
+    expect(piFollowUpClaim.claim.resumeSession).toBeNull();
+    expect(piFollowUpClaim.claim.nativeContinuation).toMatchObject({
       sessionId: firstPi.threadId,
-      historyRef: {
-        kind: "blob",
-        hash: expect.stringMatching(/^[a-f0-9]{64}$/u),
-      },
+      generationRunId: returnedPi.runId,
     });
     expect(piFollowUpClaim.claim.piSessionId).toBe(firstPi.threadId);
     expect(piFollowUpClaim.claim.piLaunchConfig).toMatchObject({
       schemaVersion: 2,
     });
-    expect(
-      MemoryPiSession.fromJsonl(
-        piSandboxBaseSession(piFollowUpClaim.claim, historyObjects).toString(
-          "utf8",
-        ),
-      ).getSessionId(),
-    ).toBe(firstPi.threadId);
     await own(async () => {
       return await cancelChatRun(
         actor,
@@ -333,7 +315,6 @@ describe("CHAT-02: personal subscription model selection", () => {
     expect(repeatedPiClaim.claim.prompt).toBe(repeatedPiPrompt);
     const repeatedPiRun = await api.readRun(actor, repeatedPi.runId);
     const repeatedPiAppend = repeatedPiRun.appendSystemPrompt ?? "";
-    expect(repeatedPiAppend).toContain("# Web Chat Run Context");
     for (const prior of [
       firstPiPrompt,
       firstPiAnswer,
@@ -341,29 +322,20 @@ describe("CHAT-02: personal subscription model selection", () => {
       firstCodexAnswer,
       returnedPiPrompt,
       returnedPiAnswer,
-      piFollowUpPrompt,
-      "Run cancelled",
       repeatedCodexPrompt,
       repeatedCodexAnswer,
     ]) {
-      expect(occurrences(repeatedPiAppend, prior)).toBe(1);
+      expect(repeatedPiAppend).not.toContain(prior);
+      expect(repeatedPiClaim.claim.appendSystemPrompt).not.toContain(prior);
     }
-    const repeatedPiInstructions =
-      repeatedPiClaim.claim.appendSystemPrompt ?? "";
-    for (const prior of [
-      firstPiPrompt,
-      firstPiAnswer,
-      firstCodexPrompt,
-      firstCodexAnswer,
-      returnedPiPrompt,
-      returnedPiAnswer,
-      piFollowUpPrompt,
-      "Run cancelled",
-      repeatedCodexPrompt,
-      repeatedCodexAnswer,
-    ]) {
-      expect(occurrences(repeatedPiInstructions, prior)).toBe(1);
-    }
+    expect(repeatedPiAppend).not.toContain(piFollowUpPrompt);
+    expect(repeatedPiClaim.claim.nativeContinuation).toMatchObject({
+      sessionId: null,
+      generationRunId: null,
+    });
+    expect(repeatedPiClaim.claim.nativeContinuation?.recoveryPrompt).toContain(
+      "okou chat messages --output-dir threads",
+    );
     await own(async () => {
       return await completeSandboxFirstPiRun({
         actor,
@@ -376,13 +348,7 @@ describe("CHAT-02: personal subscription model selection", () => {
       });
     });
 
-    for (const completed of [
-      firstPi,
-      firstCodex,
-      returnedPi,
-      repeatedCodex,
-      repeatedPi,
-    ]) {
+    for (const completed of [firstPi, returnedPi, repeatedPi]) {
       await expect(
         readCompletedRunSessionId(context, actor, completed.runId),
       ).resolves.toBe(firstSessionId);

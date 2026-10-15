@@ -9,6 +9,7 @@ use guest_contracts::guest_binary::AGENT_PATH;
 use guest_contracts::home_cache_history::{
     TerminalHomeCachePreparationReport, TerminalHomeCachePreparationRequest,
 };
+use runner_host::home_observation::HomeObservationOutcome;
 use sandbox::{EXEC_OUTPUT_LIMIT_64_KIB, ExecRequest, Sandbox};
 use sha2::{Digest, Sha256};
 use tracing::{Level, warn};
@@ -67,6 +68,8 @@ pub async fn prepare_home_image_from_active_sandbox(
         }
         Err(_) => {
             warn!(run_id = %promotion.run_id(), reason, "home image preparation panicked");
+            promotion
+                .observe_publication(HomeObservationOutcome::Failed, "guest_preparation_panicked");
             abandon_unpublished_home_promotion(Some(promotion), reason).await;
             None
         }
@@ -95,8 +98,13 @@ fn log_guest_operation_failure(
         };
     }
     if skipped_after_cancellation {
+        promotion.observe_publication(
+            HomeObservationOutcome::Skipped,
+            "cancelled_guest_unavailable",
+        );
         emit!(Level::INFO);
     } else {
+        promotion.observe_publication(HomeObservationOutcome::Failed, "guest_preparation_failed");
         emit!(Level::WARN);
     }
 }
@@ -199,15 +207,23 @@ impl PreparedHomeImagePromotion {
         match AssertUnwindSafe(self.publish_inner()).catch_unwind().await {
             Ok(HomePromotionAction::Promoted) => true,
             Ok(HomePromotionAction::PreservedExisting) => false,
-            Ok(HomePromotionAction::AbandonUnpublished) | Err(_) => {
+            Ok(HomePromotionAction::AbandonUnpublished) => {
                 let reason = self.reason;
-                self.abandon(reason).await;
+                abandon_unpublished_home_promotion(Some(self.promotion), reason).await;
+                false
+            }
+            Err(_) => {
+                self.promotion
+                    .observe_publication(HomeObservationOutcome::Failed, "publication_panicked");
+                abandon_unpublished_home_promotion(Some(self.promotion), self.reason).await;
                 false
             }
         }
     }
 
     pub async fn abandon(self, reason: &'static str) {
+        self.promotion
+            .observe_publication(HomeObservationOutcome::Skipped, reason);
         abandon_unpublished_home_promotion(Some(self.promotion), reason).await;
     }
 
@@ -242,6 +258,10 @@ pub async fn prepare_home_image_from_parked_sandbox(
             prepare_home_image_from_active_sandbox(sandbox, Some(promotion), reason).await
         }
         Ok(Err(_)) | Err(_) => {
+            promotion.observe_publication(
+                HomeObservationOutcome::Failed,
+                "unpark_for_publication_failed",
+            );
             abandon_unpublished_home_promotion(Some(promotion), reason).await;
             None
         }

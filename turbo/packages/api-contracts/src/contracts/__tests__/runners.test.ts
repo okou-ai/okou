@@ -97,17 +97,16 @@ describe("runner claim attribution contract", () => {
   });
 });
 
-describe("run runner response compatibility", () => {
-  it("accepts the previous response and current explicit-null attribution", () => {
+describe("run runner response contract", () => {
+  it("accepts nullable startup attribution with optional runner metadata", () => {
     expect(
       runRunnerContract.getRunner.responses[200].parse({
-        sandboxReuseResult: null,
+        sandboxStartupPath: null,
       }),
-    ).toStrictEqual({ sandboxReuseResult: null });
+    ).toStrictEqual({ sandboxStartupPath: null });
 
     const currentResponse = {
-      sandboxReuseResult: null,
-      homeReuseResult: null,
+      sandboxStartupPath: null,
       runnerHostname: null,
       runnerVersion: null,
       runnerId: null,
@@ -120,8 +119,7 @@ describe("run runner response compatibility", () => {
 
   it("accepts a ready runner lifecycle snapshot", () => {
     const readyResponse = {
-      sandboxReuseResult: "reused",
-      homeReuseResult: "sandboxReused",
+      sandboxStartupPath: "sandbox",
       runnerHostname: "prod-1.aws.vm3.ai",
       runnerVersion: "1.381.12",
       runnerId: "00000000-0000-4000-8000-000000000001",

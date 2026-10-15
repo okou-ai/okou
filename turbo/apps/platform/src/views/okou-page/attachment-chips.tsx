@@ -359,6 +359,9 @@ function artifactDialogSyncTarget(
         return undefined;
       }),
     synced: artifact.googleDriveSynced,
+    mimeType: artifact.googleDriveMimeType,
+    originalUploaded: artifact.googleDriveOriginalUploaded,
+    webViewLink: artifact.googleDriveWebViewLink,
   };
 }
 
@@ -410,6 +413,18 @@ function artifactDialogMetadataFromItem(params: {
         ? params.item.file.googleDriveSync.recovery
         : undefined,
     googleDriveSynced: params.item.file.googleDriveSync?.status === "synced",
+    googleDriveOriginalUploaded:
+      params.item.file.googleDriveSync?.status === "synced"
+        ? params.item.file.googleDriveSync.originalUploaded
+        : undefined,
+    googleDriveMimeType:
+      params.item.file.googleDriveSync?.status === "synced"
+        ? params.item.file.googleDriveSync.mimeType
+        : undefined,
+    googleDriveWebViewLink:
+      params.item.file.googleDriveSync?.status === "synced"
+        ? params.item.file.googleDriveSync.webViewLink
+        : undefined,
     onSyncSuccess: params.onSyncSuccess,
     runId: params.item.runId,
     size: params.item.file.size,

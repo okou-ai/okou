@@ -368,17 +368,18 @@ async function waitForInteractiveThread(
   title: string,
   text: string,
 ): Promise<void> {
-  await waitFor(() => {
+  const { section, link } = await waitFor(() => {
     const section = threadSection(threadId);
     const link = sidebarThreadLink(threadId, title);
-    expect(section).toBeVisible();
     expect(section).toHaveTextContent(text);
     expect(section.querySelector('[role="textbox"]')).toHaveAccessibleName(
       "Message",
     );
-    expect(link).toBeVisible();
     expect(link).toHaveAttribute("aria-current", "page");
+    return { section, link };
   });
+  expect(section).toBeVisible();
+  expect(link).toBeVisible();
 }
 
 async function chooseReadingPosition(
@@ -460,11 +461,7 @@ describe("with a measurable thread viewport", () => {
     });
 
     const targetText = "Current message 2";
-    await waitForInteractiveThread(
-      KEYBOARD_CURRENT_THREAD_ID,
-      "Current keyboard thread",
-      targetText,
-    );
+    await waitForThreadMessage(KEYBOARD_CURRENT_THREAD_ID, targetText);
     const initialGeometry = installChatScrollGeometry(
       threadContainer(KEYBOARD_CURRENT_THREAD_ID),
     );

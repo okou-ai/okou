@@ -1,8 +1,7 @@
 import type { RemoteAccessProtocol } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { command } from "ccstate";
-import { and, eq, inArray, isNotNull, ne } from "drizzle-orm";
+import { and, eq, isNotNull, ne } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
 import { db$ } from "../external/db";
@@ -20,8 +19,6 @@ type Recipient = {
 };
 
 type VncLifecycleScope =
-  | { readonly kind: "user"; readonly userId: string }
-  | { readonly kind: "organization"; readonly orgId: string }
   | { readonly kind: "owner"; readonly orgId: string; readonly userId: string }
   | {
       readonly kind: "agent";
@@ -117,7 +114,7 @@ export const publishRemoteRunnerInvalidation$ = command(
   },
 );
 
-/** Owner erasure or loss of agent access retires only matching VNC Runs. */
+/** Membership removal or loss of agent access invalidates matching VNC Runs. */
 export const publishVncLifecycleInvalidation$ = command(
   async (
     { get },
@@ -133,28 +130,15 @@ export const publishVncLifecycleInvalidation$ = command(
           and(
             eq(agentRuns.status, "running"),
             isNotNull(agentRuns.runnerGroup),
-            scope.kind === "user"
-              ? undefined
-              : eq(agentRuns.orgId, scope.orgId),
-            scope.kind === "user" || scope.kind === "owner"
+            eq(agentRuns.orgId, scope.orgId),
+            scope.kind === "owner"
               ? eq(agentRuns.userId, scope.userId)
               : undefined,
             scope.kind === "agent"
               ? ne(agentRuns.userId, scope.ownerId)
               : undefined,
             scope.kind === "agent"
-              ? inArray(
-                  agentRuns.sessionId,
-                  db
-                    .select({ id: agentSessions.id })
-                    .from(agentSessions)
-                    .where(
-                      and(
-                        eq(agentSessions.orgId, scope.orgId),
-                        eq(agentSessions.agentId, scope.agentId),
-                      ),
-                    ),
-                )
+              ? eq(agentRuns.agentId, scope.agentId)
               : undefined,
           ),
         ),

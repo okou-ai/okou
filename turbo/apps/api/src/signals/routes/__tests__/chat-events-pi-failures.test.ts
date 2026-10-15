@@ -1,10 +1,9 @@
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { expectThreadModelCredits } from "./helpers/public-thread-usage";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
-import { env } from "../../../lib/env";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 
 const context = testContext();
@@ -14,7 +13,6 @@ const {
   configureSubscriptionPiModel,
   cancelChatRun,
   mockPiObjectStore,
-  piSandboxBaseSession,
   completeSandboxFirstPiRun,
 } = createChatEventsFixture(context);
 
@@ -25,7 +23,7 @@ function blobEntriesOf(objects: ReadonlyMap<string, Buffer>) {
 }
 
 describe("CHAT-02: model-first routing", () => {
-  it("preserves an ordinary Pi stop history for referenced Sandbox continuation", async () => {
+  it("continues an ordinary Pi stop through retained home without uploading an archive", async () => {
     const {
       run: own,
       actor,
@@ -60,14 +58,7 @@ describe("CHAT-02: model-first routing", () => {
         run: first,
       });
     });
-    const blobEntries = blobEntriesOf(objects);
-    expect(blobEntries).toHaveLength(1);
-    const h0 = blobEntries[0]?.[1];
-    if (!h0) {
-      throw new Error("Expected the ordinary stop history");
-    }
-    expect(h0.toString("utf8")).toContain(answer);
-    const h0Hash = createHash("sha256").update(h0).digest("hex");
+    expect(blobEntriesOf(objects)).toStrictEqual([]);
 
     const resumed = await sendChatRun(actor, {
       agentId,
@@ -75,25 +66,19 @@ describe("CHAT-02: model-first routing", () => {
       prompt: "continue the preserved canonical session with tools",
     });
     const claimed = await claimChatRun(runnerGroup, resumed.runId);
-    const resumeSession = claimed.claim.resumeSession;
-    expect(resumeSession).toMatchObject({
+    expect(claimed.claim.resumeSession).toBeNull();
+    expect(claimed.claim.nativeContinuation).toMatchObject({
       sessionId: first.threadId,
-      historyRef: { kind: "blob", hash: h0Hash, rawSize: h0.length },
+      generationRunId: first.runId,
     });
-    if (!resumeSession || !("historyRef" in resumeSession)) {
-      throw new Error("Expected a referenced resume history");
-    }
-    expect(
-      new URL(resumeSession.historyRef.url).searchParams.get("object"),
-    ).toBe(`${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${h0Hash}.blob`);
-    expect(piSandboxBaseSession(claimed.claim, objects)).toStrictEqual(h0);
+    expect(claimed.claim.appendSystemPrompt).not.toContain(answer);
     await own(async () => {
       return await cancelChatRun(actor, resumed.runId, claimed.sandboxHeaders);
     });
-    expect(blobEntriesOf(objects)).toStrictEqual(blobEntries);
+    expect(blobEntriesOf(objects)).toStrictEqual([]);
   }, 90_000);
 
-  it("preserves subscription H0 and active input during referenced Sandbox transfer", async () => {
+  it("preserves native subscription continuity and active input without a history transfer", async () => {
     const {
       run: own,
       actor,
@@ -157,13 +142,15 @@ describe("CHAT-02: model-first routing", () => {
       },
     });
     expect(claim.prompt).toBe(prompt);
-    expect(claim.resumeSession).toMatchObject({
+    expect(claim.resumeSession).toBeNull();
+    expect(claim.nativeContinuation).toMatchObject({
       sessionId: first.threadId,
-      historyRef: { kind: "blob", hash: expect.any(String) },
+      generationRunId: first.runId,
     });
-    const h0 = piSandboxBaseSession(claim, historyObjects).toString("utf8");
-    expect(h0).toContain("previous settled subscription answer");
-    expect(h0).not.toContain(prompt);
+    expect(claim.appendSystemPrompt).not.toContain(
+      "previous settled subscription answer",
+    );
+    expect(blobEntriesOf(historyObjects)).toStrictEqual([]);
     await expect(
       api.nextSteerableInput(claim.sandboxToken, run.runId),
     ).resolves.toStrictEqual(steerable);

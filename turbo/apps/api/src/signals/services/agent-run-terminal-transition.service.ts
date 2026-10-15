@@ -8,7 +8,7 @@ import { command } from "ccstate";
 import { and, eq, inArray, notExists, type SQL } from "drizzle-orm";
 
 import { notFound, runNotCancellable } from "../../lib/error";
-import { now } from "../../lib/time";
+import { now, nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { scheduleReleasedSlotPicks$ } from "./agent-run-slot-scheduling.service";
 import { lockCancellationProtection } from "./threadless-run-protection.service";
@@ -281,8 +281,6 @@ type TerminalRunValues = Readonly<
       | "failureReason"
       | "result"
       | "sandboxId"
-      | "sandboxReuseResult"
-      | "homeReuseResult"
     >
   >
 >;
@@ -389,3 +387,98 @@ export async function transitionAgentRunsToTerminal(
   }
   return transitioned;
 }
+
+export type DeletedOwner =
+  | { readonly kind: "user"; readonly userId: string }
+  | { readonly kind: "organization"; readonly orgId: string };
+
+/** Clerk deletion stops runtime work without erasing credentials or history.
+ * This owner-scoped statement commits terminal cancellation, runner queue and
+ * transient diagnostic cleanup, and all held slots together, including started
+ * runs. Only committed releases schedule picks; notification stays with Clerk.
+ */
+export const cancelClerkDeletedOwnerRuns$ = command(
+  async (
+    { set },
+    owner: DeletedOwner,
+    signal: AbortSignal,
+  ): Promise<readonly TerminalRunTransition[]> => {
+    const db = set(writeDb$);
+    const runScope =
+      owner.kind === "user"
+        ? eq(agentRuns.userId, owner.userId)
+        : eq(agentRuns.orgId, owner.orgId);
+    const cancelled = db.$with("clerk_stopped_runs").as(
+      db
+        .update(agentRuns)
+        .set({
+          status: "cancelled",
+          completedAt: nowDate(),
+          runnerCancellationMode: "hard",
+        })
+        .where(and(runScope, inArray(agentRuns.status, ["pending", "running"])))
+        .returning({ ...cancelledRunFields }),
+    );
+    const removedJobs = db.$with("clerk_removed_runner_jobs").as(
+      db
+        .delete(runnerJobQueue)
+        .where(
+          inArray(
+            runnerJobQueue.runId,
+            db.select({ id: agentRuns.id }).from(agentRuns).where(runScope),
+          ),
+        )
+        .returning({ runId: runnerJobQueue.runId }),
+    );
+    // These registrations are transient runtime attachments, not stored
+    // credentials or history. Do not run disconnected account cleanup here.
+    const removedDiagnostics = db.$with("clerk_removed_run_diagnostics").as(
+      db
+        .delete(agentRunConnectorDiagnosticRegistrations)
+        .where(
+          inArray(
+            agentRunConnectorDiagnosticRegistrations.runId,
+            db.select({ runId: cancelled.runId }).from(cancelled),
+          ),
+        )
+        .returning({ runId: agentRunConnectorDiagnosticRegistrations.runId }),
+    );
+    const released = db.$with("clerk_released_run_slots").as(
+      db
+        .delete(activeAgentRuns)
+        .where(
+          inArray(
+            activeAgentRuns.runId,
+            db.select({ id: cancelled.runId }).from(cancelled),
+          ),
+        )
+        .returning({
+          runId: activeAgentRuns.runId,
+          orgId: activeAgentRuns.orgId,
+        }),
+    );
+    const runs = await db
+      .with(cancelled, removedJobs, removedDiagnostics, released)
+      .select({
+        runId: cancelled.runId,
+        orgId: cancelled.orgId,
+        userId: cancelled.userId,
+        runnerGroup: cancelled.runnerGroup,
+        startedAt: cancelled.startedAt,
+        releasedOrgId: released.orgId,
+      })
+      .from(cancelled)
+      .leftJoin(released, eq(released.runId, cancelled.runId));
+    signal.throwIfAborted();
+    set(
+      scheduleReleasedSlotPicks$,
+      runs.flatMap((run) => {
+        return run.releasedOrgId === null
+          ? []
+          : [{ runId: run.runId, orgId: run.releasedOrgId }];
+      }),
+      signal,
+    );
+    return runs;
+  },
+);

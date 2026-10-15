@@ -57,7 +57,7 @@ function endpointMarkY(tickCount: number, endpoint: "first" | "last"): number {
   return VIEWPORT_HEIGHT / 2 + (endpoint === "first" ? -halfTrack : halfTrack);
 }
 
-test("sampled markers preserve first-turn navigation beyond the rendered conversation", async () => {
+test("sampled markers preserve the first-turn preview across the whole conversation", async () => {
   const user = userEvent.setup();
   const { container, rail, tickCount } = await setupLocatorConversation({
     threadId: "b0000000-0000-4000-a000-000000000825",
@@ -76,6 +76,21 @@ test("sampled markers preserve first-turn navigation beyond the rendered convers
   const preview = requiredElement("[data-conversation-locator-preview]");
   await waitFor(() => {
     expect(preview).toHaveTextContent("Locator question 1");
+  });
+});
+
+test("first-turn navigation reaches beyond the rendered conversation", async () => {
+  const user = userEvent.setup();
+  const { container, rail, tickCount } = await setupLocatorConversation({
+    threadId: "b0000000-0000-4000-a000-000000000830",
+    turnCount: 8,
+  });
+  expect(
+    within(container).queryByText("Locator question 1"),
+  ).not.toBeInTheDocument();
+  await user.pointer({
+    target: rail,
+    coords: { clientX: 12, clientY: endpointMarkY(tickCount, "first") },
   });
   click(rail);
 

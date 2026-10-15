@@ -17,6 +17,7 @@ mod reading;
 pub(crate) mod sessions;
 mod telemetry;
 mod vnc_classic_password;
+mod vnc_diagnostics;
 mod vnc_forwarding;
 mod vnc_interoperability;
 

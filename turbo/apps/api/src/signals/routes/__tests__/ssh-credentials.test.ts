@@ -698,6 +698,7 @@ describe("reusable SSH credential owner routes", () => {
     ]);
     const remaining = await accept(credentials().list({ headers }), [200]);
     if (deleted.status === 204) {
+      expect(updated.status).toBe(404);
       expect(remaining.body.credentials).toStrictEqual([]);
       return;
     }

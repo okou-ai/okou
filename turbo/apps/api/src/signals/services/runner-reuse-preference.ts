@@ -310,7 +310,7 @@ const noPreferenceResolutionByReason = {
   lookupError: "lookup_error",
 } as const satisfies Record<NoRunnerPreference["reason"], string>;
 
-export type RunnerPreferenceTelemetryResolution =
+type RunnerPreferenceTelemetryResolution =
   | (typeof preferenceResolutionByTier)[keyof typeof preferenceResolutionByTier]
   | (typeof noPreferenceResolutionByReason)[keyof typeof noPreferenceResolutionByReason];
 
@@ -321,7 +321,7 @@ export function runnerReusePreferenceLookupError(): RunnerPreference {
   };
 }
 
-export function runnerPreferenceTelemetryResolution(
+function runnerPreferenceTelemetryResolution(
   preference: RunnerPreference,
 ): RunnerPreferenceTelemetryResolution {
   if (preference.kind === "noPreference") {
@@ -338,7 +338,14 @@ export function runnerPreferenceTelemetryDimensions(
       runnerPreferenceTelemetryResolution(preference),
     runner_preference_decision_kind: preference.kind,
     ...(preference.kind === "preference"
-      ? { runner_preference_tier: preference.tier }
+      ? {
+          runner_preference_tier: preference.tier,
+          runner_preference_runner_id: preference.runnerIdentity.runnerId,
+          runner_preference_heartbeat_generation: String(
+            preference.runnerIdentity.heartbeatGeneration,
+          ),
+          runner_preference_expires_at: preference.expiresAt,
+        }
       : { runner_preference_no_preference_reason: preference.reason }),
   };
 }

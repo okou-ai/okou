@@ -57,12 +57,6 @@ function resumeSessionHistoryZstdBlobKey(hash: string): string {
   return `blobs/${hash}.blob.zst`;
 }
 
-export function isCompressedSessionHistoryBlobEncoding(
-  encoding: SessionHistoryBlobEncoding,
-): encoding is CompressedSessionHistoryBlobEncoding {
-  return encoding !== SESSION_HISTORY_ENCODING_IDENTITY;
-}
-
 export function resumeSessionHistoryBlobKey(
   hash: string,
   encoding: SessionHistoryBlobEncoding,

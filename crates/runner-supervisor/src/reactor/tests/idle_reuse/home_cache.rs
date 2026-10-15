@@ -10,9 +10,7 @@ use super::super::support::{
 use crate::home_image_cache::HomeImageCache;
 use crate::idle_reuse_preparation::add_healthy_reuse_preparation_matcher;
 use runner_host::paths::{HomePaths, RunnerPaths};
-use runner_types::types::{
-    HOME_AFFINITY_VERSION, HeartbeatState, HomeCacheCapability, SandboxReuseResult,
-};
+use runner_types::types::{HOME_AFFINITY_VERSION, HeartbeatState, HomeCacheCapability};
 
 fn reusable_candidate(
     run_id: RunId,
@@ -347,6 +345,8 @@ async fn non_empty_initial_home_cache_is_heartbeated_before_the_routine_tick() {
     let mut profiles = test_profiles();
     profiles.get_mut("vm0/default").unwrap().home_disk_mb = 16;
     let (mut config, env) = mock_run_config(profiles, 8, 32768, 4);
+    let observations = runner_storage::operation_test_support::RecordedHomeObservations::default();
+    config.sandbox_op_reporter = Some(observations.handle());
     let runner_paths = RunnerPaths::new(config.paths.base_dir.clone());
     let home_cache = HomeImageCache::shared(
         runner_paths.clone(),
@@ -373,6 +373,23 @@ async fn non_empty_initial_home_cache_is_heartbeated_before_the_routine_tick() {
         })
         .await,
         "non-empty initial cache should be published before the deferred routine tick",
+    );
+
+    let events = observations.events();
+    let loading = events.first().unwrap();
+    assert_eq!(
+        loading.outcome,
+        runner_host::home_observation::HomeObservationOutcome::Loading
+    );
+    assert_eq!(loading.inventory_loaded, Some(false));
+    assert!(loading.inventory_observed_states.is_none());
+    assert!(loading.inventory_output_states.is_none());
+    assert!(loading.inventory_omitted_states.is_none());
+    assert!(
+        events
+            .iter()
+            .any(|event| event.inventory_loaded == Some(true)
+                && event.inventory_output_states == Some(1))
     );
 
     home_cache.reset_held_state_root_scan_count();
@@ -800,7 +817,6 @@ async fn home_promotion_mismatch_destroys_stale_idle_sandbox_and_fresh_creates()
         .await
         .expect("job should complete");
     assert_eq!(completion.exit_code, 0);
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::PoolMiss));
     assert_ne!(
         completion.sandbox_id,
         Some(stale_sandbox_id),
@@ -841,7 +857,7 @@ async fn reuse_take_preserves_cached_home_snapshot_state() {
     );
     Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(home_cache.clone());
 
-    seed_idle_pool_with_overrides(
+    let reused_sandbox_id = seed_idle_pool_with_overrides(
         &idle_pool,
         &budget,
         &reuse_overrides,
@@ -949,7 +965,7 @@ async fn reuse_take_preserves_cached_home_snapshot_state() {
         .wait_completion(run_id, Duration::from_secs(5))
         .await
         .expect("job should complete");
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::Reused));
+    assert_eq!(completion.sandbox_id, Some(reused_sandbox_id));
     wait_idle_pool_reuse_keys(&idle_pool, &["sess-refresh"], Duration::from_secs(5)).await;
 
     shutdown(&env, run_handle).await;

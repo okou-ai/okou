@@ -9,7 +9,6 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
@@ -68,17 +67,13 @@ function setupModels(): void {
 
 async function openSlashMenu(
   query = "",
-  composerAnchored = false,
-  path = composerAnchored ? `/chats/${THREAD_ID}` : `/agents/${AGENT_ID}/chat`,
+  path = `/agents/${AGENT_ID}/chat`,
 ): Promise<void> {
   setupModels();
   mockChatLifecycle(context, { threadId: THREAD_ID });
   await setupPage({
     context,
     path,
-    featureSwitches: {
-      [FeatureSwitchKey.ComposerAnchoredSuggestions]: composerAnchored,
-    },
   });
   const editor = await findComposerEditor();
   await fill(editor, `Draft /${query}`);
@@ -87,11 +82,6 @@ async function openSlashMenu(
 
 function detailPane(): HTMLElement | null {
   return document.querySelector('[data-slot="slash-template-detail"]');
-}
-
-/** The flyout is portalled beside the menu, so it is a surface of its own. */
-function flyout(): HTMLElement | null {
-  return document.querySelector('[data-slot="slash-template-flyout"]');
 }
 
 /**
@@ -105,22 +95,17 @@ function slashRowLabel(button: HTMLElement): string | undefined {
 }
 
 function querySlashButton(name: string): HTMLElement | null {
-  const surfaces = [screen.getByTestId("slash-workflow-menu"), flyout()];
-  for (const surface of surfaces) {
-    if (!surface) {
-      continue;
-    }
-    const match = queryAllByRoleFast("button", surface).find((candidate) => {
+  return (
+    queryAllByRoleFast(
+      "button",
+      screen.getByTestId("slash-workflow-menu"),
+    ).find((candidate) => {
       return (
         candidate.getAttribute("aria-label") === name ||
         slashRowLabel(candidate) === name
       );
-    });
-    if (match) {
-      return match;
-    }
-  }
-  return null;
+    }) ?? null
+  );
 }
 
 function slashButton(name: string): HTMLElement {
@@ -131,25 +116,11 @@ function slashButton(name: string): HTMLElement {
   return result;
 }
 
-test("The slash panel initially previews the keyboard-selected type's covers", async () => {
-  await openSlashMenu();
-  const pane = detailPane();
-  if (!pane) {
-    throw new Error("Expected the detail pane");
-  }
-  // The first category is selected when the panel opens.
-  expect(pane).toHaveAttribute("data-category", "slides");
-  expect(flyout()).toHaveAccessibleName("Presentation");
-  const [first] = PRESENTATION_TEMPLATE_PICKER_ITEMS;
-  if (!first) {
-    throw new Error("Expected a presentation template");
-  }
-  expect(within(pane).getByText(first.title)).toBeInTheDocument();
-});
-
 test("Illustration covers keep their own proportion; decks keep the 16:9 tile", async () => {
   const user = userEvent.setup();
   await openSlashMenu();
+
+  await user.hover(slashButton("Presentation"));
 
   // A deck cover really is a slide, so it still asks for the 16:9 box.
   const deckCover = detailPane()?.querySelector("img");
@@ -190,19 +161,18 @@ test("Hovering a website row previews the website catalog", async () => {
   if (!pane) {
     throw new Error("Expected the detail pane");
   }
-  expect(flyout()).toHaveAccessibleName("Website");
+  expect(pane).toHaveAccessibleName("Website");
   expect(
     pane.querySelectorAll("[data-slot='slash-template-cover']"),
   ).toHaveLength(WEBSITE_TEMPLATE_ITEMS.length);
 });
 
-test("Arrowing to a type opens its flyout too", async () => {
+test("Arrowing to a type opens its preview too", async () => {
   const user = userEvent.setup();
   await openSlashMenu();
 
-  // The flyout follows the row the menu is on, and the keyboard owns that row
-  // whenever the pointer is elsewhere — so it is not a hover-only surface.
-  await user.keyboard("{ArrowDown}");
+  // The overview starts unselected; keyboard selection opens the preview.
+  await user.keyboard("{ArrowDown>2/}");
 
   await waitFor(() => {
     expect(detailPane()).toHaveAttribute("data-category", "illustration");
@@ -372,6 +342,7 @@ test("The workflow section is hidden when no workflows match", async () => {
 test("Choosing a cover in the pane attaches that template without opening the picker", async () => {
   const user = userEvent.setup();
   await openSlashMenu();
+  await user.keyboard("{ArrowDown}");
   const [first] = PRESENTATION_TEMPLATE_PICKER_ITEMS;
   if (!first) {
     throw new Error("Expected a presentation template");
@@ -412,7 +383,7 @@ test.each(COMPOSER_PATHS)(
     // Below `sm` the start page docks its composer to the floor like a thread.
     context.mocks.browser.matchMedia(false);
     const user = userEvent.setup();
-    await openSlashMenu("", true, path);
+    await openSlashMenu("", path);
     const editor = await findComposerEditor();
     await waitFor(() => {
       expect(slashMenuButtonNames()).toStrictEqual([
@@ -502,7 +473,7 @@ test.each([
       );
     });
     const user = userEvent.setup();
-    await openSlashMenu("", true, path);
+    await openSlashMenu("", path);
     await waitFor(() => {
       expect(slashMenuButtonNames()).toStrictEqual(names);
     });
@@ -524,7 +495,7 @@ test.each([
   "Keyboard navigation crosses from categories into workflows with desktop=$desktop",
   async ({ desktop, keys, workflow }) => {
     context.mocks.browser.matchMedia(desktop);
-    await openSlashMenu("", true);
+    await openSlashMenu("", `/chats/${THREAD_ID}`);
     await waitFor(() => {
       return slashButton(`/${WORKFLOW_NAME}`);
     });
@@ -552,12 +523,11 @@ async function openManyWorkflows(): Promise<HTMLElement> {
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ComposerAnchoredSuggestions]: true },
   });
   const editor = await findComposerEditor();
   await fill(editor, "Draft /");
   await waitFor(() => {
-    expect(slashButton("Show all workflows")).toBeInTheDocument();
+    expect(slashButton("Show all 12")).toBeInTheDocument();
   });
   return editor;
 }
@@ -572,49 +542,30 @@ test.each([true, false])(
     expect(slashButton("Website")).toBeInTheDocument();
     expect(slashButton("Browse all templates")).toBeInTheDocument();
 
-    await user.click(slashButton("Show all workflows"));
+    await user.click(slashButton("Show all 12"));
 
     expect(editor).toHaveFocus();
     expect(editor).toHaveTextContent("Draft /");
-    expect(querySlashButton("Show all workflows")).toBeNull();
+    expect(querySlashButton("Show all 12")).toBeNull();
     await user.click(slashButton("/daily-12"));
     expect(editor).toHaveTextContent("Draft /daily-12");
     expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
   },
 );
 
-test("Keyboard navigation keeps workflows collapsed until the ellipsis is activated", async () => {
+test("Keyboard navigation reveals the hidden workflows instead of stopping on them", async () => {
   const user = userEvent.setup();
   const editor = await openManyWorkflows();
 
-  await user.keyboard("{ArrowDown>5/}");
-
-  expect(slashButton("Show all workflows")).toHaveAttribute(
-    "data-active",
-    "true",
-  );
-  expect(slashButton("Show all workflows")).toHaveAttribute(
-    "aria-expanded",
-    "false",
-  );
-  expect(querySlashButton("/daily-2")).toBeNull();
-  expect(editor).toHaveFocus();
-  expect(editor).toHaveTextContent(/^Draft \/$/);
-
-  await user.keyboard("{ArrowDown}");
-  expect(slashButton("Website")).toHaveAttribute("data-active", "true");
-  expect(querySlashButton("/daily-2")).toBeNull();
-  await user.keyboard("{ArrowUp>2/}");
+  await user.keyboard("{ArrowDown>4/}");
   expect(slashButton("/daily-12")).toHaveAttribute("data-active", "true");
-  await user.keyboard("{ArrowDown}");
-  expect(slashButton("Show all workflows")).toHaveAttribute(
-    "data-active",
-    "true",
-  );
+  expect(querySlashButton("/daily-2")).toBeNull();
 
-  await user.keyboard("{Enter}");
+  // Passing the last visible workflow reveals the rest and lands on the first
+  // one revealed; the overview has no row of its own to stop on.
+  await user.keyboard("{ArrowDown}");
   expect(slashButton("/daily-2")).toHaveAttribute("data-active", "true");
-  expect(querySlashButton("Show all workflows")).toBeNull();
+  expect(querySlashButton("Show all 12")).toBeNull();
   expect(editor).toHaveFocus();
   expect(editor).toHaveTextContent(/^Draft \/$/);
   await user.keyboard("{ArrowDown}");
@@ -623,15 +574,26 @@ test("Keyboard navigation keeps workflows collapsed until the ellipsis is activa
   expect(editor).toHaveTextContent("Draft /daily-3");
   expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
 
+  // Coming up from the categories lands on the last workflow, the row just
+  // above them once the rest are revealed.
+  await fill(editor, "Draft /");
+  expect(slashButton("Show all 12")).toBeInTheDocument();
+  await user.keyboard("{ArrowUp>3/}");
+  expect(slashButton("Website")).toHaveAttribute("data-active", "true");
+  expect(querySlashButton("/daily-9")).toBeNull();
+  await user.keyboard("{ArrowUp}");
+  expect(slashButton("/daily-9")).toHaveAttribute("data-active", "true");
+  expect(querySlashButton("Show all 12")).toBeNull();
+
   await fill(editor, "Draft /");
   await user.keyboard("{Escape}");
   expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
   await fill(editor, "Draft /");
-  expect(slashButton("Show all workflows")).toBeInTheDocument();
+  expect(slashButton("Show all 12")).toBeInTheDocument();
   expect(querySlashButton("/daily-9")).toBeNull();
 
   await fill(editor, "Draft /daily");
-  expect(querySlashButton("Show all workflows")).toBeNull();
+  expect(querySlashButton("Show all 12")).toBeNull();
   expect(slashButton("/daily-12")).toBeInTheDocument();
 });
 
@@ -641,7 +603,7 @@ test.each(COMPOSER_PATHS)(
     context.mocks.browser.matchMedia((query) => {
       return query === SIDEBAR_DESKTOP_MEDIA_QUERY;
     });
-    await openSlashMenu("", true, path);
+    await openSlashMenu("", path);
     const menu = screen.getByTestId("slash-workflow-menu");
     expect(detailPane()).toBeNull();
     const user = userEvent.setup();
@@ -649,7 +611,6 @@ test.each(COMPOSER_PATHS)(
     expect(
       within(menu).getByRole("region", { name: "Presentation" }),
     ).toBeInTheDocument();
-    expect(flyout()).toBeNull();
 
     await user.keyboard("{ArrowUp}");
     expect(
@@ -668,7 +629,7 @@ test.each(COMPOSER_PATHS)(
       throw new Error("Expected a website template");
     }
     const cover = slashButton(first.title);
-    // Use exact boundary events, as in the legacy flyout test above: user-event
+    // Use exact boundary events, as in the preview test above: user-event
     // omits relatedTarget on mouseout and cannot model this pointer handoff.
     fireEvent.mouseOut(website, { relatedTarget: cover });
     fireEvent.mouseOver(cover, { relatedTarget: website });
@@ -682,12 +643,12 @@ test.each(COMPOSER_PATHS)(
 );
 
 test.each(COMPOSER_PATHS)(
-  "Composer-anchored slash suggestions at %s hide the template flyout at the mobile breakpoint and retain the picker",
+  "Composer-anchored slash suggestions at %s hide the template preview at the mobile breakpoint and retain the picker",
   async (path) => {
     const viewport = context.mocks.browser.matchMedia((query) => {
       return query === SIDEBAR_DESKTOP_MEDIA_QUERY;
     });
-    await openSlashMenu("", true, path);
+    await openSlashMenu("", path);
     expect(detailPane()).toBeNull();
     const user = userEvent.setup();
     await user.keyboard("{ArrowUp}");
@@ -700,36 +661,9 @@ test.each(COMPOSER_PATHS)(
     await waitFor(() => {
       expect(detailPane()).toBeNull();
     });
-    expect(flyout()).toBeNull();
     expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
     await user.click(slashButton("Illustration"));
     await screen.findByRole("dialog");
     expect(tabByText("Illustration")).toHaveAttribute("aria-selected", "true");
-  },
-);
-
-test.each(COMPOSER_PATHS)(
-  "Disabling composer-anchored suggestions at %s retains the original menu and mobile preview",
-  async (path) => {
-    context.mocks.browser.matchMedia(false);
-    await openSlashMenu("", false, path);
-    await waitFor(() => {
-      expect(slashMenuButtonNames()).toStrictEqual([
-        "Presentation",
-        "Illustration",
-        "Website",
-        `/${WORKFLOW_NAME}`,
-        `/${SECOND_WORKFLOW_NAME}`,
-        `/${THIRD_WORKFLOW_NAME}`,
-        "Browse all templates",
-      ]);
-    });
-    expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
-    expect(detailPane()).toHaveAttribute("data-category", "slides");
-    expect(flyout()).toHaveAccessibleName("Presentation");
-    // The 260px menu has no room for a description beside the name.
-    expect(slashButton(`/${WORKFLOW_NAME}`)).not.toHaveTextContent(
-      "Query Axiom for RED metrics",
-    );
   },
 );

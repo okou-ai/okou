@@ -1,5 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
-import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
+import { randomUUID } from "node:crypto";
 import { runnersJobClaimContract } from "@okouai/api-contracts/contracts/runners";
 import { expect } from "vitest";
 
@@ -95,6 +94,7 @@ export function createClaimedSshRuntimeApi(
         body: {
           runnerIdentity,
           capabilities: { piModelConfigGenerations: [1, 2, 3] },
+          nativeContinuationSupported: true,
         },
       }),
       [200],
@@ -136,33 +136,6 @@ export function createClaimedSshRuntimeApi(
       headers,
       [200],
     );
-    const history = `bdd session history ${value.runId}`;
-    const historyHash = createHash("sha256").update(history).digest("hex");
-    const historyKey = `blobs/${historyHash}.blob`;
-    // The external object has the exact bytes whose hash is committed below.
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      if (
-        command instanceof HeadObjectCommand &&
-        command.input.Key === historyKey
-      ) {
-        return Promise.resolve({
-          ContentLength: Buffer.byteLength(history, "utf8"),
-        });
-      }
-      if (
-        command instanceof GetObjectCommand &&
-        command.input.Key === historyKey
-      ) {
-        return Promise.resolve({
-          Body: {
-            async *[Symbol.asyncIterator]() {
-              yield Buffer.from(history, "utf8");
-            },
-          },
-        });
-      }
-      return Promise.resolve({ ContentLength: 1024 });
-    });
     await webhooks.requestAgentComplete(
       {
         runId: value.runId,
@@ -171,7 +144,7 @@ export function createClaimedSshRuntimeApi(
         completion: {
           cliAgentType: "claude-code",
           cliAgentSessionId: `bdd-cli-${value.runId}`,
-          cliAgentSessionHistoryHash: historyHash,
+          cliAgentSessionHistoryDisposition: "native_only",
         },
       },
       headers,
@@ -183,7 +156,7 @@ export function createClaimedSshRuntimeApi(
     );
     expect(completed.status).toBe("completed");
     expect(completed.completedAt).toBeDefined();
-    expect(completed.result?.conversationId).toBeDefined();
+    expect(completed.result?.frameworkSessionId).toBeDefined();
     active.delete(value.runId);
     await flushWaitUntilForTest();
     options.authenticate(value);

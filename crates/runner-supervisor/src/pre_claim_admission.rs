@@ -14,6 +14,7 @@ use futures_util::FutureExt;
 use runner_executor::executor::{
     BlankPoolSelection, RunnerPreSpawnOperationTiming, restore_guest_state_with_intent,
 };
+use runner_host::home_observation::{HomeObservation, HomeObservationKind, HomeObservationOutcome};
 use runner_host::paths::short_digest;
 use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_lifecycle::active_runs::{ActiveRunReuseProof, ActiveRuns};
@@ -55,6 +56,7 @@ pub struct PreClaimResources<'a> {
     pub budget: &'a Arc<ResourceBudget>,
     pub active_runs: &'a ActiveRuns,
     pub home_cache_snapshot: &'a HomeCacheStateSnapshot,
+    pub sandbox_op_reporter: Option<&'a runner_storage::SandboxOpReporter>,
     pub has_home_cache: bool,
     pub idle_destroy_tracker: &'a IdleDestroyTracker,
     pub reuse_state_notify: &'a Notify,
@@ -653,12 +655,15 @@ async fn prepare_ranked_preference_candidate(
                 history_generation_run_id,
             );
         }
-        info!(
-            run_id = %candidate.run_id(),
-            reason = "no_publishable_predecessor",
-            "selected finalizing preference has no matching process-local proof"
-        );
-        return defer_preference_candidate(candidate, preference, reuse_key, ctx, true).await;
+        return defer_preference_candidate(
+            candidate,
+            preference,
+            reuse_key,
+            ctx,
+            true,
+            "no_publishable_predecessor",
+        )
+        .await;
     }
 
     if ranked_preference_allows(
@@ -677,18 +682,24 @@ async fn prepare_ranked_preference_candidate(
         return reusable_preparation(candidate, reservation);
     }
 
-    if ranked_preference_allows(advertised_tier, RunnerPreferenceTier::HomeCache, selected)
-        && has_compatible_home(reuse_key, profile_name, ctx)
-        && let Some(lease) = ResourceBudget::try_reserve_lease(ctx.budget, job_vcpu, job_memory)
-    {
-        return PreferencePreparation::Ready(PreparedCandidate {
-            candidate,
-            resource: Some(LocalAdmissionResource::Fresh(lease)),
-            blank_pool_selection: None,
-        });
-    }
+    let reason =
+        if ranked_preference_allows(advertised_tier, RunnerPreferenceTier::HomeCache, selected)
+            && has_compatible_home(reuse_key, profile_name, ctx)
+        {
+            if let Some(lease) = ResourceBudget::try_reserve_lease(ctx.budget, job_vcpu, job_memory)
+            {
+                return PreferencePreparation::Ready(PreparedCandidate {
+                    candidate,
+                    resource: Some(LocalAdmissionResource::Fresh(lease)),
+                    blank_pool_selection: None,
+                });
+            }
+            "capacity_exhausted"
+        } else {
+            "no_qualifying_local_resource"
+        };
 
-    defer_preference_candidate(candidate, preference, reuse_key, ctx, false).await
+    defer_preference_candidate(candidate, preference, reuse_key, ctx, false, reason).await
 }
 
 fn ranked_preference_allows(
@@ -789,6 +800,7 @@ async fn defer_preference_candidate(
     reuse_key: &str,
     ctx: &PreClaimResources<'_>,
     retain: bool,
+    reason: &'static str,
 ) -> PreferencePreparation {
     if preference.is_expired() {
         return ordinary_preparation(
@@ -796,14 +808,16 @@ async fn defer_preference_candidate(
         );
     }
     let delay = preference.remaining();
+    record_home_admission_deferral(&candidate, ctx, reason);
     info!(
         run_id = %candidate.run_id(),
         reuse_key_fingerprint = %diagnostic_reuse_key_fingerprint(reuse_key),
         reuse_key_kind = reuse_key_kind(reuse_key),
         preference_tier = ?preference.tier(),
+        reason,
         delay_ms = delay.as_millis(),
         retained = retain,
-        "runner preference has no qualifying local resource, deferring claim"
+        "runner preference admission deferred"
     );
     ctx.provider.defer_poll_until(preference.deadline()).await;
     if retain {
@@ -815,6 +829,35 @@ async fn defer_preference_candidate(
 
 fn diagnostic_reuse_key_fingerprint(reuse_key: &str) -> String {
     short_digest(reuse_key)
+}
+
+fn record_home_admission_deferral(
+    candidate: &JobCandidate,
+    ctx: &PreClaimResources<'_>,
+    reason: &'static str,
+) {
+    let Some(reporter) = ctx.sandbox_op_reporter else {
+        return;
+    };
+    let mut observation = HomeObservation::new(
+        HomeObservationKind::Admission,
+        HomeObservationOutcome::Deferred,
+    );
+    observation.run_id = Some(candidate.run_id());
+    observation.history_generation_run_id = candidate.history_generation_run_id();
+    observation.reuse_key = candidate.reuse_key().map(str::to_owned);
+    observation.profile_name = Some(candidate.profile_name().to_owned());
+    observation.runner_id = Some(ctx.runner_identity.runner_id().to_string());
+    observation.runner_heartbeat_generation = Some(ctx.runner_identity.heartbeat_generation());
+    observation.reason = Some(reason.to_owned());
+    let mut record = runner_storage::SandboxOpRecord::new(
+        "runner_home_admission",
+        std::time::Duration::ZERO,
+        true,
+        None,
+    );
+    record.home = Some(observation);
+    reporter.record(record);
 }
 
 fn current_local_held_home_states(ctx: &PreClaimResources<'_>) -> Vec<HeldHomeState> {
@@ -881,6 +924,7 @@ async fn acquire_local_admission_resource(
         }
         IdlePressureSelection::Exhausted(retiring_leases) => {
             drop(retiring_leases);
+            record_home_admission_deferral(candidate, ctx, "capacity_exhausted");
             None
         }
     }

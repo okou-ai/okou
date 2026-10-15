@@ -1,6 +1,6 @@
 [package]
 name = "session-history-selector"
-version = "0.3.155"
+version = "0.3.157"
 edition.workspace = true
 description = "Bounded native session-history pruning for Okou guests"
 

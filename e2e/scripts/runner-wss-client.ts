@@ -13,9 +13,21 @@ import {
   sandboxDiagnosticsNoticeSchema,
 } from "@okouai/api-contracts/contracts/sandbox-channel-diagnostics";
 import type { WssTicket } from "./runner-wss-api";
+import {
+  sandboxFsListParamsSchema,
+  sandboxFsListResultSchema,
+  sandboxFsListCloseParamsSchema,
+  sandboxFsListCloseResultSchema,
+} from "@okouai/api-contracts/contracts/sandbox-channel-fs";
 
 export const ECHO_SIZES = [0, 1, 17, 1024, 16384, 37] as const;
 type Pending = { complete(value: unknown): void; reject(error: Error): void };
+
+class SandboxRequestError extends Error {
+  constructor(readonly code: string) {
+    super(`Sandbox request failed: ${code}`);
+  }
+}
 
 export class RunnerWssClient {
   private readonly sockets = new Set<WebSocket>();
@@ -23,6 +35,7 @@ export class RunnerWssClient {
   private primary: WebSocket | undefined;
   private admitted = false;
   private ready = false;
+  private filesystemReady = false;
   private closing = false;
   private failure: Error | undefined;
   private admission:
@@ -111,7 +124,7 @@ export class RunnerWssClient {
         if (!pending) return;
         this.pending.delete(message.requestId);
         if (message.error)
-          pending.reject(new Error("Sandbox diagnostic request failed"));
+          pending.reject(new SandboxRequestError(message.error.code));
         else {
           try {
             pending.complete(message.result);
@@ -255,13 +268,14 @@ export class RunnerWssClient {
         schemaVersion: limits.schemaVersion,
         type: "hello",
         id: randomUUID(),
-        categories: { diagnostics: 1 },
+        categories: { diagnostics: 1, fs: 1 },
       },
       sandboxChannelHelloResultSchema,
       (hello) => {
         if (hello.categories.diagnostics !== 1)
           throw new Error("Diagnostics unavailable");
         this.ready = true; // Apply synchronously before resolving hello.
+        this.filesystemReady = hello.categories.fs === 1;
       },
     );
     if (!this.noticeCount) {
@@ -336,6 +350,66 @@ export class RunnerWssClient {
       this.expectedReverse = undefined;
       this.probing = false;
     }
+  }
+
+  async list(params: unknown) {
+    if (!this.filesystemReady) throw new Error("Filesystem role unavailable");
+    return this.call(
+      {
+        schemaVersion: 1,
+        type: "request",
+        id: randomUUID(),
+        category: "fs",
+        categoryVersion: 1,
+        operation: "list",
+        params: sandboxFsListParamsSchema.parse(params),
+      },
+      sandboxFsListResultSchema,
+    );
+  }
+
+  async closeCursor(cursor: string): Promise<void> {
+    if (!this.filesystemReady) throw new Error("Filesystem role unavailable");
+    await this.call(
+      {
+        schemaVersion: 1,
+        type: "request",
+        id: randomUUID(),
+        category: "fs",
+        categoryVersion: 1,
+        operation: "list.close",
+        params: sandboxFsListCloseParamsSchema.parse({ cursor }),
+      },
+      sandboxFsListCloseResultSchema,
+    );
+  }
+
+  async rejectFs(
+    operation: string,
+    params: Record<string, unknown>,
+    code: string,
+  ): Promise<void> {
+    if (!this.filesystemReady) throw new Error("Filesystem role unavailable");
+    try {
+      await this.call(
+        {
+          schemaVersion: 1,
+          type: "request",
+          id: randomUUID(),
+          category: "fs",
+          categoryVersion: 1,
+          operation,
+          params,
+        },
+        sandboxFsListCloseResultSchema,
+      );
+    } catch (error: unknown) {
+      if (error instanceof SandboxRequestError && error.code === code) return;
+      throw error;
+    }
+    throw new Error(
+      "Filesystem operation was not rejected with its expected code",
+    );
   }
 
   async rejectReplay(): Promise<void> {

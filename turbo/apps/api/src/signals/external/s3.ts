@@ -747,6 +747,34 @@ function closeS3Body(body: unknown): void {
   }
 }
 
+function s3DownloadErrorMetadata(error: unknown): {
+  readonly providerStatus: number | undefined;
+  readonly providerAttempts: number | undefined;
+} {
+  const metadata =
+    typeof error === "object" &&
+    error !== null &&
+    "$metadata" in error &&
+    typeof error.$metadata === "object" &&
+    error.$metadata !== null
+      ? error.$metadata
+      : undefined;
+  return {
+    providerStatus:
+      metadata !== undefined &&
+      "httpStatusCode" in metadata &&
+      typeof metadata.httpStatusCode === "number"
+        ? metadata.httpStatusCode
+        : undefined,
+    providerAttempts:
+      metadata !== undefined &&
+      "attempts" in metadata &&
+      typeof metadata.attempts === "number"
+        ? metadata.attempts
+        : undefined,
+  };
+}
+
 function downloadS3BufferWithClient(
   client$: Computed<S3Client>,
   bucket: string,
@@ -764,6 +792,7 @@ function downloadS3BufferWithClient(
     );
     if (!downloaded.ok) {
       options.onFailure?.({
+        ...s3DownloadErrorMetadata(downloaded.error),
         stage: "get_object",
         stageDurationMs: Math.round(performance.now() - startedAt),
         receivedBytes: 0,

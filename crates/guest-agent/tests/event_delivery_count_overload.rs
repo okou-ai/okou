@@ -78,10 +78,6 @@ async fn claude_code_event_delivery_count_overload_terminates_promptly()
             "00000000-0000-4000-8000-000000000abc",
         )
         .env(
-            guest_contracts::env::CANONICAL_SANDBOX_REUSE_RESULT_ENV,
-            "reused",
-        )
-        .env(
             guest_contracts::env::CANONICAL_RUN_PAYLOAD_FILE_ENV,
             payload_path,
         )

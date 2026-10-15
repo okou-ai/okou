@@ -379,7 +379,7 @@ async fn run_codex_app_server(
             masker,
         )
         .await?;
-        let thread_response = race_with_heartbeat(
+        let (thread_response, native_resumed) = race_with_heartbeat(
             start_or_resume_thread(&mut client, resume_thread_id.as_deref(), runtime),
             heartbeat_monitor,
             &mut heartbeat_done,
@@ -387,12 +387,20 @@ async fn run_codex_app_server(
         )
         .await?;
         let thread_identity = thread_identity_from_response(&thread_response)?;
-        validate_resumed_thread_id(&thread_identity.canonical_id, resume_thread_id.as_deref())?;
+        validate_resumed_thread_id(
+            &thread_identity.canonical_id,
+            if native_resumed {
+                resume_thread_id.as_deref()
+            } else {
+                None
+            },
+        )?;
+        notification_state.allow_historical_usage = native_resumed;
         notification_state.citation_repair =
             super::codex_citation_repair::NativeCitationRepair::new(
                 runtime.codex_home(),
                 &thread_identity.canonical_id,
-                resume_thread_id.is_some(),
+                native_resumed,
             );
 
         while let Some(notification) = client.pop_notification() {
@@ -802,8 +810,11 @@ fn codex_app_server_config(
         .with_workload_containment(workload_containment)
         .with_opt_out_notification_methods(IGNORED_NOTIFICATION_METHODS.iter().copied());
     if runtime.use_mock_codex {
-        let scenario = std::env::var("MOCK_CODEX_APP_SERVER_SCENARIO")
-            .unwrap_or_else(|_| "runtime-turn-complete".to_string());
+        let scenario = child_user_env
+            .get("MOCK_CODEX_APP_SERVER_SCENARIO")
+            .cloned()
+            .or_else(|| std::env::var("MOCK_CODEX_APP_SERVER_SCENARIO").ok())
+            .unwrap_or_else(|| "runtime-turn-complete".to_string());
         config = config.with_env("MOCK_CODEX_APP_SERVER_SCENARIO", scenario);
     }
     if runtime.codex_oauth_mode {
@@ -819,7 +830,7 @@ async fn start_or_resume_thread(
     client: &mut CodexAppServerClient,
     resume_thread_id: Option<&str>,
     runtime: &CliRuntimeConfig<'_>,
-) -> Result<Value, CodexAppServerError> {
+) -> Result<(Value, bool), CodexAppServerError> {
     match resume_thread_id {
         Some(resume_thread_id) => {
             let mut params = thread_param_fields(runtime);
@@ -828,15 +839,32 @@ async fn start_or_resume_thread(
                 Value::String(resume_thread_id.to_string()),
             );
             params.insert("excludeTurns".to_string(), Value::Bool(true));
-            client
+            let resumed = client
                 .request_value("thread/resume", Value::Object(params))
-                .await
+                .await;
+            match resumed {
+                Ok(thread) => Ok((thread, true)),
+                Err(CodexAppServerError::Rpc { method, error, .. })
+                    if runtime.native_continuation.is_some()
+                        && method == "thread/resume"
+                        && error.code == -32602
+                        && (error.message.starts_with("no rollout found for thread id")
+                            || error.message.starts_with("thread not found")) =>
+                {
+                    let mut fresh = runtime.clone();
+                    fresh.enable_native_recovery();
+                    client
+                        .request_value("thread/start", thread_params(&fresh))
+                        .await
+                        .map(|thread| (thread, false))
+                }
+                Err(error) => Err(error),
+            }
         }
-        None => {
-            client
-                .request_value("thread/start", thread_params(runtime))
-                .await
-        }
+        None => client
+            .request_value("thread/start", thread_params(runtime))
+            .await
+            .map(|thread| (thread, false)),
     }
 }
 

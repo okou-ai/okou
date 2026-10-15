@@ -33,16 +33,12 @@ export function deletedRunHistoryReferences(
   rows: readonly z.output<typeof deletedRunHistorySchema>[],
 ) {
   const references = new Map<string, number>();
-  let deletedConversations = 0;
   for (const row of rows) {
-    if (row.hadConversation) {
-      deletedConversations++;
-    }
     if (row.hash !== null) {
       references.set(row.hash, (references.get(row.hash) ?? 0) + 1);
     }
   }
-  return { references, deletedConversations };
+  return { references, deletedRuns: rows.length };
 }
 
 /** The caller must hold every target Run FOR UPDATE until commit. */
@@ -81,9 +77,7 @@ export async function releaseDeletedConversationReferences(
     offset += DELETION_BATCH_SIZE
   ) {
     const batch = references.slice(offset, offset + DELETION_BATCH_SIZE);
-    // Completion of another Run can hold this blob before promoting a
-    // surviving Session that our SET NULL locked. NOWAIT breaks that cycle;
-    // the caller rolls back and uses its existing conflict/retry boundary.
+    // Preserve the existing nonblocking blob acquisition and rollback boundary.
     // Lock hashes in one global order before UPDATE's unspecified row order.
     const locked = await contentFreeDatabaseOperation(
       tx
@@ -129,7 +123,7 @@ export async function releaseDeletedConversationReferences(
     }
   }
   return {
-    deletedConversations: removed.deletedConversations,
+    deletedRuns: removed.deletedRuns,
     releasedReferences: references.reduce((total, entry) => {
       return total + entry.release_count;
     }, 0),
@@ -139,10 +133,10 @@ export async function releaseDeletedConversationReferences(
 
 /** Only call after the owning transaction promise resolves successfully. */
 export function logCommittedConversationDeletion(
-  source: "agent" | "threadless" | "clerk_user" | "clerk_organization",
+  source: "agent" | "threadless",
   receipt: Awaited<ReturnType<typeof releaseDeletedConversationReferences>>,
 ) {
-  if (receipt.deletedConversations > 0 || receipt.releasedReferences > 0) {
-    L.info("Conversation history deletion committed", { source, ...receipt });
+  if (receipt.deletedRuns > 0 || receipt.releasedReferences > 0) {
+    L.debug("Run history deletion committed", { source, ...receipt });
   }
 }

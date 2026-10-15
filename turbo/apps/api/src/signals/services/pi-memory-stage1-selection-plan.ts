@@ -1,8 +1,7 @@
+import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
-import { conversations } from "@okouai/db/schema/conversation";
 import { storages } from "@okouai/db/schema/storage";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import {
@@ -34,7 +33,10 @@ const sourceRunColumns = Object.freeze({
   chatThreadId: agentRuns.chatThreadId,
   completedAt: agentRuns.completedAt,
   createdAt: agentRuns.createdAt,
-  sessionId: agentRuns.sessionId,
+  agentId: agentRuns.agentId,
+  framework: agentRuns.framework,
+  frameworkSessionId: agentRuns.frameworkSessionId,
+  legacyConversationHistoryHash: agentRuns.legacyConversationHistoryHash,
 });
 type SourceRun = Pick<
   typeof agentRuns.$inferSelect,
@@ -171,7 +173,14 @@ export function piMemoryStage1SelectionSourcePlans(
       .as("activity_at");
   return {
     thread: new QueryBuilder()
-      .select({ id: chatThreads.id, activityAt })
+      .select({
+        id: chatThreads.id,
+        activityAt,
+        lastChatEventSeqId:
+          sql`coalesce((select ${chatEventSequences.lastSeqId} from ${chatEventSequences} where ${eq(chatEventSequences.chatThreadId, chatThreads.id)}), 0)`
+            .mapWith(chatEventSequences.lastSeqId)
+            .as("last_chat_event_seq_id"),
+      })
       .from(chatThreads)
       .innerJoin(agents, eq(agents.id, chatThreads.agentId))
       .where(ownerThread)
@@ -235,7 +244,8 @@ export function piMemoryStage1SelectionRunEligible(
     generationEnabled:
       snapshot?.schemaVersion === 2
         ? snapshot.piMemoryGenerationEnabled
-        : snapshot?.schemaVersion === 3 && snapshot.framework === "pi",
+        : (snapshot?.schemaVersion === 3 || snapshot?.schemaVersion === 5) &&
+          snapshot.framework === "pi",
     triggerSource: run.triggerSource,
     chatThreadId: run.chatThreadId,
     completedAt: run.completedAt,
@@ -249,24 +259,23 @@ export function piMemoryStage1SelectionConversationPlan(
 ) {
   return new QueryBuilder()
     .select({
-      piSessionId: conversations.cliAgentSessionId,
-      hash: conversations.cliAgentSessionHistoryHash,
+      piSessionId: agentRuns.frameworkSessionId,
+      hash: agentRuns.legacyConversationHistoryHash,
     })
-    .from(conversations)
-    .innerJoin(agentSessions, eq(agentSessions.id, latest.sessionId))
+    .from(agentRuns)
     .innerJoin(
       chatThreads,
       and(
         eq(chatThreads.id, selection.chatThreadId),
-        eq(chatThreads.agentId, agentSessions.agentId),
+        eq(chatThreads.agentId, agentRuns.agentId),
       ),
     )
     .where(
       and(
-        eq(conversations.runId, latest.id),
-        eq(conversations.cliAgentType, "pi"),
-        eq(agentSessions.userId, selection.userId),
-        eq(agentSessions.orgId, selection.orgId),
+        eq(agentRuns.id, latest.id),
+        eq(agentRuns.userId, selection.userId),
+        eq(agentRuns.orgId, selection.orgId),
+        eq(chatThreads.userId, selection.userId),
       ),
     )
     .limit(1)
@@ -276,15 +285,20 @@ export function piMemoryStage1SelectionConversationPlan(
 export function piMemoryStage1SelectionSourceMatches(
   selection: PiMemoryStage1Selection,
   latest: SourceRun,
-  thread: { readonly activityAt: Date },
+  thread: { readonly activityAt: Date; readonly lastChatEventSeqId: number },
   source:
-    { readonly piSessionId: string; readonly hash: string | null } | undefined,
+    | { readonly piSessionId: string | null; readonly hash: string | null }
+    | undefined,
 ) {
   return (
-    !!source?.hash &&
+    !!source &&
     latest.id === selection.sourceRunId &&
-    source.hash === selection.sourceHistoryHash &&
-    source.piSessionId === selection.piSessionId &&
+    (selection.sourceFormat === "chat-events-v1"
+      ? latest.launchSnapshot?.schemaVersion === 5 &&
+        selection.piSessionId === selection.chatThreadId &&
+        thread.lastChatEventSeqId === selection.sourceChatEventSeqId
+      : source.hash === selection.sourceHistoryHash &&
+        source.piSessionId === selection.piSessionId) &&
     thread.activityAt.getTime() === selection.sourceActivityAt.getTime() &&
     latest.completedAt?.getTime() === selection.sourceCompletedAt.getTime()
   );

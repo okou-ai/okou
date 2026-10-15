@@ -1106,7 +1106,8 @@ const GUEST_MEMORY_OOM_KILLED_ERROR: &str =
 /// Whether this failed run was terminated by a guest out-of-memory kill of the
 /// agent process itself.
 ///
-/// The kernel record supplies the attribution. The terminal exit code only
+/// Kernel victims or reliable local counters supply the domain attribution.
+/// The terminal exit code only
 /// corroborates that the process the guest waited on was killed: depending on
 /// the launcher, that arrives either as an observed signal or as a shell's
 /// `137` exit translation, so a signal field is not required here.
@@ -2625,6 +2626,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
     // inputs before crossing the process-spawn ownership boundary.
     let mut session_restore_diagnostics = staged_restore_diagnostics;
     let mut pre_run_restored_session_identity = None;
+    let mut native_home_proof_failed = false;
     if let Some(session_history_restore_plan) = session_history_restore_plan {
     let session_history_materializer = match session_history_restore_plan {
         SessionHistoryRestorePlan::SkipVerified(identity) => {
@@ -2710,6 +2712,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                     CliFramework::from(effective_cli_framework(&context.cli_agent_type)).as_cli_agent_type(), None);
                 None
             } else {
+                native_home_proof_failed = context.native_continuation.is_some();
                 record_session_history_restore_fallback(telemetry, fallback);
                 telemetry.record("session_history_home_cache_miss", Duration::ZERO, true, None);
                 Some(SessionHistoryMaterializer::start_cancellable(
@@ -2843,7 +2846,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
     // guest file and injected into the CLI child after guest-agent has started.
     let mut user_env_map = build_user_env_json(context);
     let env_build_started = Instant::now();
-    let run_payload = match prepared_run_payload.into_run_payload(context) {
+    let mut run_payload = match prepared_run_payload.into_run_payload(context) {
         Ok(run_payload) => run_payload,
         Err(error) => {
             telemetry.record(
@@ -2855,6 +2858,12 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             return Err(error);
         }
     };
+    if native_home_proof_failed {
+        let mut native = context.native_continuation.clone().ok_or_else(|| RunnerError::Internal("native home proof lost its intent".into()))?;
+        native.session_id = None;
+        native.generation_run_id = None;
+        run_payload.native_continuation = serde_json::to_string(&native).map_err(|error| RunnerError::Internal(format!("serialize fresh native intent: {error}")))?;
+    }
     info!(
         run_id = %context.run_id,
         prompt_bytes = run_payload.prompt.len(),
@@ -2871,8 +2880,6 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         context,
         &config.api_url,
         sandbox.id(),
-        start.reuse_result,
-        start.home_reuse_result,
     ) {
         Ok(env_map) => env_map,
         Err(error) => {
@@ -3011,6 +3018,12 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                 start.sandbox_startup_path,
                 timing.shell_started_at,
                 timing.ready_at,
+            );
+            telemetry.record_sandbox_startup(
+                start.sandbox_startup_path,
+                start.reuse_result,
+                start.home_reuse_result,
+                context.reuse_key(),
             );
             info!(
                 run_id = %context.run_id,
@@ -3275,7 +3288,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         {
             info!(run_id = %context.run_id, operation_id = %evidence.operation_id,
                 evidence_kind = ResourceFailureKind::GuestMemoryOomKilled.as_str(),
-                oom_classification = if agent_domain_oom_kill { "agent_oom_kill" } else { "contained_tool_oom" },
+                oom_classification = evidence.classification().map_or("", guest_contracts::oom_evidence::OomClassification::as_str),
                 "preserved operation-scoped guest kernel oom evidence");
         }
         let path = config.log_paths.oom_evidence_log(context.run_id);

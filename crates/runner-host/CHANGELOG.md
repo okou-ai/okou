@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.8.0](https://github.com/okou-ai/okou/compare/runner-host-v0.7.15...runner-host-v0.8.0) (2026-10-15)
+
+
+### Features
+
+* **runner:** record home outcomes through sandbox operations ([#40086](https://github.com/okou-ai/okou/issues/40086)) ([4118750](https://github.com/okou-ai/okou/commit/4118750fb48f30654288719da44c30ae8dc08a68))
+
+## [0.7.15](https://github.com/okou-ai/okou/compare/runner-host-v0.7.14...runner-host-v0.7.15) (2026-10-14)
+
 ## [0.7.14](https://github.com/okou-ai/okou/compare/runner-host-v0.7.13...runner-host-v0.7.14) (2026-10-14)
 
 ## [0.7.13](https://github.com/okou-ai/okou/compare/runner-host-v0.7.12...runner-host-v0.7.13) (2026-10-14)

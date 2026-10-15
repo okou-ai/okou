@@ -4,7 +4,7 @@ import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { and, eq, inArray } from "drizzle-orm";
 
 import { command } from "ccstate";
-import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import type {
   ConnectorCatalogArtifact,
   ConnectorCatalogArtifactConnector,
@@ -26,12 +26,6 @@ interface ExistingStorageVersion {
   readonly name: string;
   readonly s3Prefix: string;
   readonly s3Key: string;
-}
-
-interface CanonicalStorage {
-  readonly id: string;
-  readonly name: string;
-  readonly s3Prefix: string;
 }
 
 interface ConnectorSkillIdentity {
@@ -115,34 +109,36 @@ function existingVersionMatchesRegistration(
   );
 }
 
-async function readExistingVersions(
-  db: ReadonlyDb,
-  versionIds: readonly string[],
-  signal: AbortSignal,
-): Promise<ReadonlyMap<string, ExistingStorageVersion>> {
-  if (versionIds.length === 0) {
-    return new Map();
-  }
-  const rows = await db
-    .select({
-      id: storageVersions.id,
-      storageId: storageVersions.storageId,
-      orgId: storages.orgId,
-      userId: storages.userId,
-      name: storages.name,
-      s3Prefix: storages.s3Prefix,
-      s3Key: storageVersions.s3Key,
-    })
-    .from(storageVersions)
-    .innerJoin(storages, eq(storageVersions.storageId, storages.id))
-    .where(inArray(storageVersions.id, [...new Set(versionIds)]));
-  signal.throwIfAborted();
-  return new Map(
-    rows.map((row) => {
-      return [row.id, row] as const;
-    }),
-  );
-}
+const readExistingVersions$ = command(
+  async (
+    { get },
+    versionIds: readonly string[],
+    signal: AbortSignal,
+  ): Promise<ReadonlyMap<string, ExistingStorageVersion>> => {
+    if (versionIds.length === 0) {
+      return new Map();
+    }
+    const rows = await get(db$)
+      .select({
+        id: storageVersions.id,
+        storageId: storageVersions.storageId,
+        orgId: storages.orgId,
+        userId: storages.userId,
+        name: storages.name,
+        s3Prefix: storages.s3Prefix,
+        s3Key: storageVersions.s3Key,
+      })
+      .from(storageVersions)
+      .innerJoin(storages, eq(storageVersions.storageId, storages.id))
+      .where(inArray(storageVersions.id, [...new Set(versionIds)]));
+    signal.throwIfAborted();
+    return new Map(
+      rows.map((row) => {
+        return [row.id, row] as const;
+      }),
+    );
+  },
+);
 
 function connectorCatalogSkillRegistrationValues(
   artifact: ConnectorCatalogArtifact,
@@ -169,40 +165,32 @@ function connectorCatalogSkillRegistrationValues(
   });
 }
 
-export async function prepareConnectorCatalogSkills(
-  args: {
-    readonly db: ReadonlyDb;
-    readonly artifact: ConnectorCatalogArtifact;
+export const prepareConnectorCatalogSkills$ = command(
+  async (
+    { set },
+    artifact: ConnectorCatalogArtifact,
+    signal: AbortSignal,
+  ): Promise<readonly PreparedConnectorSkillRegistration[]> => {
+    const bundledSkills = artifact.connectors.flatMap((connector) => {
+      return connector.skill.kind === "bundled" ? [connector.skill] : [];
+    });
+    const existingByVersion = await set(
+      readExistingVersions$,
+      bundledSkills.map((skill) => {
+        return skill.versionId;
+      }),
+      signal,
+    );
+    return connectorCatalogSkillRegistrationValues(artifact, [
+      ...existingByVersion.values(),
+    ]);
   },
-  signal: AbortSignal,
-): Promise<readonly PreparedConnectorSkillRegistration[]> {
-  const bundledSkills = args.artifact.connectors.flatMap((connector) => {
-    return connector.skill.kind === "bundled" ? [connector.skill] : [];
-  });
-  const existingByVersion = await readExistingVersions(
-    args.db,
-    bundledSkills.map((skill) => {
-      return skill.versionId;
-    }),
-    signal,
-  );
-  return connectorCatalogSkillRegistrationValues(args.artifact, [
-    ...existingByVersion.values(),
-  ]);
-}
+);
 
-async function missingRegistrations(
-  db: Db,
+function missingRegistrations(
   registrations: readonly PreparedConnectorSkillRegistration[],
-  signal: AbortSignal,
-): Promise<readonly PreparedConnectorSkillRegistration[]> {
-  const existingByVersion = await readExistingVersions(
-    db,
-    registrations.map((registration) => {
-      return registration.versionId;
-    }),
-    signal,
-  );
+  existingByVersion: ReadonlyMap<string, ExistingStorageVersion>,
+): readonly PreparedConnectorSkillRegistration[] {
   const missing: PreparedConnectorSkillRegistration[] = [];
   for (const registration of registrations) {
     const existing = existingByVersion.get(registration.versionId);
@@ -220,128 +208,112 @@ async function missingRegistrations(
   return missing;
 }
 
-async function createAndReadCanonicalStorages(
-  db: Db,
-  registrations: readonly PreparedConnectorSkillRegistration[],
-  signal: AbortSignal,
-): Promise<ReadonlyMap<string, CanonicalStorage>> {
-  await db
-    .insert(storages)
-    .values(
-      registrations.map((registration) => {
-        return {
-          orgId: SYSTEM_ORG_ID,
-          userId: VOLUME_ORG_USER_ID,
-          name: registration.storageName,
-          s3Prefix: registration.s3Prefix,
-          size: registration.size,
-          fileCount: registration.fileCount,
-        };
-      }),
-    )
-    .onConflictDoNothing();
-  signal.throwIfAborted();
-
-  const rows = await db
-    .select({
-      id: storages.id,
-      name: storages.name,
-      s3Prefix: storages.s3Prefix,
-    })
-    .from(storages)
-    .where(
-      and(
-        eq(storages.orgId, SYSTEM_ORG_ID),
-        eq(storages.userId, VOLUME_ORG_USER_ID),
-        inArray(
-          storages.name,
-          registrations.map((registration) => {
-            return registration.storageName;
-          }),
-        ),
-      ),
-    );
-  signal.throwIfAborted();
-  const byName = new Map(
-    rows.map((row) => {
-      return [row.name, row] as const;
-    }),
-  );
-  for (const registration of registrations) {
-    const storage = byName.get(registration.storageName);
-    if (!storage) {
-      throw new Error("Connector skill storage was not created");
-    }
-    if (storage.s3Prefix !== registration.s3Prefix) {
-      fail("invalid-reference", false);
-    }
-  }
-  return byName;
-}
-
-async function registerMissingStorageVersions(
-  db: Db,
-  registrations: readonly PreparedConnectorSkillRegistration[],
-  storageByName: ReadonlyMap<string, CanonicalStorage>,
-  signal: AbortSignal,
-): Promise<void> {
-  await db
-    .insert(storageVersions)
-    .values(
-      registrations.map((registration) => {
-        const storage = storageByName.get(registration.storageName);
-        if (!storage) {
-          throw new Error("Connector skill storage is unavailable");
-        }
-        return {
-          id: registration.versionId,
-          storageId: storage.id,
-          s3Key: registration.s3Key,
-          size: registration.size,
-          archiveSize: registration.archiveSize,
-          fileCount: registration.fileCount,
-          message: null,
-          createdBy: SYSTEM_STORAGE_CREATOR,
-        };
-      }),
-    )
-    .onConflictDoNothing();
-  signal.throwIfAborted();
-  // A concurrent registrant may win the version INSERT. Reuse its metadata;
-  // only the canonical owner/name/path identity must match this catalog skill.
-  if ((await missingRegistrations(db, registrations, signal)).length > 0) {
-    throw new Error("Connector skill storage version was not created");
-  }
-}
-
-async function registerConnectorCatalogSkills(
-  db: Db,
-  registrations: readonly PreparedConnectorSkillRegistration[],
-  signal: AbortSignal,
-): Promise<void> {
-  const missing = await missingRegistrations(db, registrations, signal);
-  if (missing.length === 0) {
-    return;
-  }
-  const storageByName = await createAndReadCanonicalStorages(
-    db,
-    missing,
-    signal,
-  );
-  await registerMissingStorageVersions(db, missing, storageByName, signal);
-}
-
 export const registerPreparedConnectorCatalogSkills$ = command(
   async (
-    { set },
+    { get, set },
     registrations: readonly PreparedConnectorSkillRegistration[],
     signal: AbortSignal,
   ): Promise<void> => {
     if (registrations.length === 0) {
       return;
     }
-    const db = set(writeDb$);
-    await registerConnectorCatalogSkills(db, registrations, signal);
+    const existingByVersion = await set(
+      readExistingVersions$,
+      registrations.map((registration) => {
+        return registration.versionId;
+      }),
+      signal,
+    );
+    const missing = missingRegistrations(registrations, existingByVersion);
+    if (missing.length > 0) {
+      const db = set(writeDb$);
+      await db
+        .insert(storages)
+        .values(
+          missing.map((registration) => {
+            return {
+              orgId: SYSTEM_ORG_ID,
+              userId: VOLUME_ORG_USER_ID,
+              name: registration.storageName,
+              s3Prefix: registration.s3Prefix,
+              size: registration.size,
+              fileCount: registration.fileCount,
+            };
+          }),
+        )
+        .onConflictDoNothing();
+      signal.throwIfAborted();
+
+      const rows = await get(db$)
+        .select({
+          id: storages.id,
+          name: storages.name,
+          s3Prefix: storages.s3Prefix,
+        })
+        .from(storages)
+        .where(
+          and(
+            eq(storages.orgId, SYSTEM_ORG_ID),
+            eq(storages.userId, VOLUME_ORG_USER_ID),
+            inArray(
+              storages.name,
+              missing.map((registration) => {
+                return registration.storageName;
+              }),
+            ),
+          ),
+        );
+      signal.throwIfAborted();
+      const storageByName = new Map(
+        rows.map((row) => {
+          return [row.name, row] as const;
+        }),
+      );
+      for (const registration of missing) {
+        const storage = storageByName.get(registration.storageName);
+        if (!storage) {
+          throw new Error("Connector skill storage was not created");
+        }
+        if (storage.s3Prefix !== registration.s3Prefix) {
+          fail("invalid-reference", false);
+        }
+      }
+
+      await db
+        .insert(storageVersions)
+        .values(
+          missing.map((registration) => {
+            const storage = storageByName.get(registration.storageName);
+            if (!storage) {
+              throw new Error("Connector skill storage is unavailable");
+            }
+            return {
+              id: registration.versionId,
+              storageId: storage.id,
+              s3Key: registration.s3Key,
+              size: registration.size,
+              archiveSize: registration.archiveSize,
+              fileCount: registration.fileCount,
+              message: null,
+              createdBy: SYSTEM_STORAGE_CREATOR,
+            };
+          }),
+        )
+        .onConflictDoNothing();
+      signal.throwIfAborted();
+      // A concurrent registrant may win the version INSERT. Reuse its metadata;
+      // only the canonical owner/name/path identity must match this catalog skill.
+      const registered = await set(
+        readExistingVersions$,
+        missing.map((registration) => {
+          return registration.versionId;
+        }),
+        signal,
+      );
+      if (missingRegistrations(missing, registered).length > 0) {
+        throw new Error("Connector skill storage version was not created");
+      }
+    }
     await set(
       enqueuePiResourceVersionIndexes$,
       registrations.map((registration) => {

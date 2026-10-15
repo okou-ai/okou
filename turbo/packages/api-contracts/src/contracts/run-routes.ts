@@ -20,8 +20,7 @@ import {
   runnerHeartbeatGenerationSchema,
   runnerHostnameSchema,
   runnerVersionSchema,
-  sandboxReuseResultSchema,
-  homeReuseResultSchema,
+  sandboxStartupPathSchema,
 } from "./runner-primitives";
 
 /**
@@ -267,13 +266,12 @@ export const runNetworkLogsContract = c.router({
 /**
  * Agent run runner contract (GET /api/runs/:id/runner)
  * Returns runner-level metadata about how the run was provisioned
- * (sandbox reuse decision, etc.). Kept separate from logDetailSchema
+ * (sandbox startup path and runner identity). Kept separate from logDetailSchema
  * so runner-tab fields can grow without polluting the generic log
  * detail response.
  */
 const runRunnerResponseSchema = z.object({
-  sandboxReuseResult: sandboxReuseResultSchema.nullable(),
-  homeReuseResult: homeReuseResultSchema.nullable().optional(),
+  sandboxStartupPath: sandboxStartupPathSchema.nullable(),
   runnerHostname: runnerHostnameSchema.nullable().optional(),
   runnerVersion: runnerVersionSchema.nullable().optional(),
   runnerId: z.uuid().nullable().optional(),

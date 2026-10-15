@@ -17,8 +17,7 @@ import { AgentUnreadIndicator } from "./sidebar-agent-row-actions.tsx";
 type PwaParentPathname =
   | typeof ROUTES.me
   | typeof ROUTES.agents
-  | typeof ROUTES.workflows
-  | typeof ROUTES.officialWorkflows;
+  | typeof ROUTES.workflows;
 
 function PwaBackLink({
   pathname,
@@ -64,11 +63,8 @@ function pwaParentPathname(route: RouteKey | null): PwaParentPathname | null {
   if (route === "agentDetail" || route === "agentPermissions") {
     return ROUTES.agents;
   }
-  if (route === "officialWorkflows" || isWorkflowDetailRouteKey(route)) {
+  if (isWorkflowDetailRouteKey(route)) {
     return ROUTES.workflows;
-  }
-  if (route === "officialWorkflowDetail") {
-    return ROUTES.officialWorkflows;
   }
   return null;
 }

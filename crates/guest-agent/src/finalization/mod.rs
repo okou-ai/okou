@@ -7,6 +7,7 @@ use crate::env;
 use crate::error::AgentError;
 use crate::http::HttpClient;
 use crate::run_context::GuestRuntime;
+use crate::session_history_identity::build_final_session_history_identity;
 use crate::session_metadata::CapturedSessionMetadata;
 use api_contracts::generated::types::runners::storage::ArtifactEntryMissingRootPolicy;
 use api_contracts::generated::types::webhooks::agent::complete;
@@ -52,6 +53,7 @@ struct FinalizationInputs<'a> {
     final_session_history_identity_file: Cow<'a, str>,
     pi_launch_config: &'a str,
     pi_launch_payload_file: &'a str,
+    native_only: bool,
 }
 
 impl<'a> FinalizationInputs<'a> {
@@ -70,6 +72,7 @@ impl<'a> FinalizationInputs<'a> {
             ),
             pi_launch_config: &runtime.config.pi_launch_config,
             pi_launch_payload_file: runtime.paths.pi_launch_payload_file(),
+            native_only: runtime.config.native_continuation.is_some(),
         }
     }
 }
@@ -98,12 +101,15 @@ impl PreparedFinalization {
         {
             session_history::write_final_session_history_identity(
                 self.mode,
-                &uploaded_history.cli_agent_session_id,
-                &uploaded_history.history_hash,
-                uploaded_history.history_size,
-                &uploaded_history.history_source,
-                self.framework,
+                build_final_session_history_identity(
+                    self.framework,
+                    &uploaded_history.cli_agent_session_id,
+                    &uploaded_history.history_hash,
+                    uploaded_history.history_size,
+                    &uploaded_history.history_source,
+                ),
                 &self.final_session_history_identity_file,
+                uploaded_history.ref_kind,
             );
         }
         log_info!(LOG_TAG, "{} persisted successfully", self.mode.log_label());
@@ -268,6 +274,15 @@ async fn prepare_finalization_impl(
             let history_hash = history.history_hash.clone();
             (session_id, Some(history_hash), None, Some(history))
         }
+        session_history::SessionHistoryOutcome::NativeOnly {
+            cli_agent_session_id,
+            history,
+        } => (
+            cli_agent_session_id,
+            None,
+            Some(complete::RequestCompletionCliAgentSessionHistoryDisposition::NativeOnly),
+            history,
+        ),
         session_history::SessionHistoryOutcome::DiscardedOversized {
             cli_agent_session_id,
         } => (
@@ -359,6 +374,53 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn native_finalization_reports_identity_without_preparing_an_archive() {
+        let _sandbox_ops_guard = crate::SandboxOpsTestGuard::lock().await;
+        let server = MockServer::start();
+        let history_prepare = server.mock(|when, then| {
+            when.method(POST)
+                .path("/api/webhooks/agent/session-history/prepare");
+            then.status(500);
+        });
+        let http = HttpClient::with_api_config(
+            server.base_url(),
+            "test-token",
+            "",
+            "native-finalization",
+            Duration::ZERO,
+        )
+        .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let guest_paths = crate::paths::GuestPaths::from_runtime_dir(dir.path().join("runtime"));
+        let session_metadata = CapturedSessionMetadata::for_test("native-session", None);
+        let inputs = FinalizationInputs {
+            native_only: true,
+            run_id: "native-finalization",
+            framework: env::Framework::ClaudeCode,
+            session_history_limits: session_history::SessionHistoryLimits::Production,
+            artifact_entries: &[],
+            session_metadata: &session_metadata,
+            final_session_history_identity_file: guest_paths
+                .final_session_history_identity_file()
+                .into(),
+            pi_launch_config: "",
+            pi_launch_payload_file: guest_paths.pi_launch_payload_file(),
+        };
+        for mode in [FinalizationMode::Success, FinalizationMode::Recovery] {
+            let prepared = prepare_finalization_impl(&http, mode, &inputs)
+                .await
+                .unwrap();
+            assert_eq!(prepared.request.cli_agent_session_id, "native-session");
+            assert_eq!(prepared.request.cli_agent_session_history_hash, None);
+            assert_eq!(
+                prepared.request.cli_agent_session_history_disposition,
+                Some(complete::RequestCompletionCliAgentSessionHistoryDisposition::NativeOnly)
+            );
+        }
+        history_prepare.assert_calls(0);
+    }
+
+    #[tokio::test]
     async fn finalization_missing_mount_fails_before_final_completion() {
         let _sandbox_ops_guard = crate::SandboxOpsTestGuard::lock().await;
         let server = MockServer::start();
@@ -401,6 +463,7 @@ mod tests {
             CapturedSessionMetadata::for_test("session-finalization-missing-mount", None);
 
         let inputs = FinalizationInputs {
+            native_only: false,
             run_id: "finalization-missing-mount",
             framework: env::Framework::ClaudeCode,
             session_history_limits: session_history::SessionHistoryLimits::Production,
@@ -478,6 +541,7 @@ mod tests {
         let session_metadata = CapturedSessionMetadata::for_test("maintenance-run-success", None);
         let launch_json = launch.to_string();
         let inputs = FinalizationInputs {
+            native_only: false,
             run_id: "maintenance-run-success",
             framework: env::Framework::Pi,
             session_history_limits: session_history::SessionHistoryLimits::Production,
@@ -605,6 +669,7 @@ printf late > "$1/memory_summary.md""#,
         let session_metadata = CapturedSessionMetadata::for_test("maintenance-run-recovery", None);
         let launch_json = launch.to_string();
         let inputs = FinalizationInputs {
+            native_only: false,
             run_id: "maintenance-run-recovery",
             framework: env::Framework::Pi,
             session_history_limits: session_history::SessionHistoryLimits::Production,
@@ -669,6 +734,7 @@ printf late > "$1/memory_summary.md""#,
         }];
         let session_metadata = CapturedSessionMetadata::for_test("ordinary-recovery-run", None);
         let inputs = FinalizationInputs {
+            native_only: false,
             run_id: "ordinary-recovery-run",
             framework: env::Framework::ClaudeCode,
             session_history_limits: session_history::SessionHistoryLimits::Production,
@@ -758,6 +824,7 @@ printf late > "$1/memory_summary.md""#,
             ),
         );
         let inputs = FinalizationInputs {
+            native_only: false,
             run_id: "finalization-codex-zstd-reuse",
             framework: env::Framework::Codex,
             session_history_limits: session_history::SessionHistoryLimits::Production,

@@ -194,7 +194,7 @@ class _NdjsonExtractor:
     failed, unbilled line.
     """
 
-    def __init__(self, on_row: Callable[[dict, int], None]) -> None:
+    def __init__(self, on_row: Callable[[dict, int], None], *, is_read: bool) -> None:
         self.state: _NdjsonState = {
             "data_count": 0,
             "includes": {},
@@ -207,6 +207,7 @@ class _NdjsonExtractor:
         self._discarding_overlong_line = False
         self._finished = False
         self._on_row = on_row
+        self._is_read = is_read
         self._row_extractor = _create_x_ndjson_row_extractor()
 
     def feed(self, chunk: bytes) -> None:
@@ -287,12 +288,18 @@ class _NdjsonExtractor:
         if not extracted.complete:
             self.state["lines_failed"] += 1
             return
+        self.state["lines_parsed"] += 1
+        has_data = ("data",) in extracted.object_present
+        includes = extracted.wildcard_array_counts.get(("includes", "*"), {})
+        # Valid resource-empty reads still consume a step and a source ordinal.
+        # Their zero counts need no identity copy, timestamp or billing lookup.
+        # Writes retain their per-row quantity even without response resources.
+        if self._is_read and not has_data and not any(includes.values()):
+            return
         previous_includes = dict(self.state["includes"])
         previous_overflow = self.state["unknown_includes_overflow_count"]
-        self.state["lines_parsed"] += 1
-        if ("data",) in extracted.object_present:
+        if has_data:
             self.state["data_count"] += 1
-        includes = extracted.wildcard_array_counts.get(("includes", "*"), {})
         for key, count in includes.items():
             self._record_include_count(key, count)
         self._on_row(
@@ -300,7 +307,7 @@ class _NdjsonExtractor:
                 "body_parsed": True,
                 "body_truncated": False,
                 "body_format": "ndjson",
-                "response_data_count": int(("data",) in extracted.object_present),
+                "response_data_count": int(has_data),
                 "response_includes": {
                     key: count - previous_includes.get(key, 0)
                     for key, count in self.state["includes"].items()
@@ -392,7 +399,7 @@ def create_response_parser(
         # final request metadata cannot diverge.
         stream_path = runtime_url_path(original_url)
         if is_stream_path(stream_path):
-            extractor = _NdjsonExtractor(on_row)
+            extractor = _NdjsonExtractor(on_row, is_read=flow.request.method.upper() == "GET")
             # Deliberately NOT "model_provider_usage" — that key routes through
             # report_model_provider_usage and triggers the model-provider webhook.
             # x_ndjson_state is only consumed by report_connector_usage.

@@ -1168,21 +1168,27 @@ export const deleteVncConnection$ = command(
     signal: AbortSignal,
   ): Promise<VncResult<undefined>> => {
     const db = set(writeDb$);
-    const [current] = await db
-      .select({ generation: vncConnections.generation })
-      .from(vncConnections)
-      .where(ownedConnection(args.owner, args.connectionId));
-    signal.throwIfAborted();
-    if (!current) {
-      return vncFailure("connectionNotFound");
-    }
-    if (current.generation !== args.expectedGeneration) {
-      return vncFailure("generationConflict");
-    }
-    await db
+    const [deleted] = await db
       .delete(vncConnections)
-      .where(ownedConnection(args.owner, args.connectionId));
+      .where(
+        and(
+          ownedConnection(args.owner, args.connectionId),
+          eq(vncConnections.generation, args.expectedGeneration),
+        ),
+      )
+      .returning({ id: vncConnections.id });
     signal.throwIfAborted();
+    if (!deleted) {
+      const [remaining] = await db
+        .select({ id: vncConnections.id })
+        .from(vncConnections)
+        .where(ownedConnection(args.owner, args.connectionId))
+        .limit(1);
+      signal.throwIfAborted();
+      return vncFailure(
+        remaining ? "generationConflict" : "connectionNotFound",
+      );
+    }
     await set(notifyVncConnectionChange$, args, signal);
     return { ok: true, value: undefined };
   },

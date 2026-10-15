@@ -755,13 +755,13 @@ describe("CHAT-02: shared user message queue", () => {
     }
     const rotatedRun = await api.readRun(actor, rotatedRunId);
     const rotatedSystemPrompt = rotatedRun.appendSystemPrompt ?? "";
-    expect(rotatedSystemPrompt).toContain("# Web Chat Run Context");
+    expect(rotatedSystemPrompt).not.toContain("# Web Chat Run Context");
     expect(rotatedSystemPrompt).toContain("# This Run's Trigger");
     expect(rotatedSystemPrompt).toContain(`SOURCE_RUN_ID: ${source.runId}`);
     expect(rotatedSystemPrompt).toContain(
       `SOURCE_THREAD_ID: ${source.threadId}`,
     );
-    expect(rotatedSystemPrompt).toContain(rotatedAnchorPrompt);
+    expect(rotatedSystemPrompt).not.toContain(rotatedAnchorPrompt);
     expect(rotatedSystemPrompt).not.toContain("# Incomplete Rounds Context");
     expect(rotatedSystemPrompt).toContain("Web chat files: use");
     expect(rotatedSystemPrompt).toContain(

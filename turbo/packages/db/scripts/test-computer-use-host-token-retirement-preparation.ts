@@ -10,7 +10,7 @@ import { z } from "zod";
 import { DRIZZLE_MIGRATE_OUT } from "../drizzle.config";
 import { schema } from "../src/index";
 import { computerUseHosts } from "../src/runtime/computer-use-host";
-import { chatThreads } from "../src/runtime/chat-thread";
+import { chatThreads } from "./fixtures/chat-thread-pre-native";
 import {
   computerUseCommands,
   computerUseCommandAuditEvents,

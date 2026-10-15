@@ -12,6 +12,74 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1026.1](https://github.com/okou-ai/okou/compare/app-v0.1026.0...app-v0.1026.1) (2026-10-15)
+
+
+### Bug Fixes
+
+* loop suggestion card navigation ([#40170](https://github.com/okou-ai/okou/issues/40170)) ([6a9343b](https://github.com/okou-ai/okou/commit/6a9343b974a2f0f94ae8d95dc7f7e3d8ca8be1e9))
+
+## [0.1026.0](https://github.com/okou-ai/okou/compare/app-v0.1025.0...app-v0.1026.0) (2026-10-15)
+
+
+### Features
+
+* add built-in document templates ([#40052](https://github.com/okou-ai/okou/issues/40052)) ([987e011](https://github.com/okou-ai/okou/commit/987e0110410c5019842c26411306736b69fe4def))
+* add google docs and sheets artifact conversion ([#40019](https://github.com/okou-ai/okou/issues/40019)) ([9d83ecd](https://github.com/okou-ai/okou/commit/9d83ecdba2060f7f121c00426259e01c82f659a2))
+* **app:** add compact related chats to the resource popover ([#39999](https://github.com/okou-ai/okou/issues/39999)) ([7174a03](https://github.com/okou-ai/okou/commit/7174a038d4499c6ffc859be7dd47ff57eca1dea2))
+* **app:** redesign the subscription usage panel ([#40083](https://github.com/okou-ai/okou/issues/40083)) ([ca1b80f](https://github.com/okou-ai/okou/commit/ca1b80f33705d7ad069048da9012d9b0dc533235))
+* **app:** rename sidebar chats in place on double-click ([#40077](https://github.com/okou-ai/okou/issues/40077)) ([3d24b2c](https://github.com/okou-ai/okou/commit/3d24b2c29fd51ed4fb00906cc389d6bec4d0a28e))
+* **app:** simplify chat resources with tabs and a light gallery ([#40065](https://github.com/okou-ai/okou/issues/40065)) ([793869c](https://github.com/okou-ai/okou/commit/793869c8cd50f78f8d02bfd16c89b9f986d1b6ba))
+
+
+### Bug Fixes
+
+* **app:** avoid reloading discord authorization results ([#40053](https://github.com/okou-ai/okou/issues/40053)) ([119a67d](https://github.com/okou-ai/okou/commit/119a67d641ac616046c3247a1836373e7303386d))
+* **app:** move slash show-all into the workflows header ([#40085](https://github.com/okou-ai/okou/issues/40085)) ([6e390dc](https://github.com/okou-ai/okou/commit/6e390dc283d15025d4a9fcba88452545e946eed5))
+* **app:** restore home task chip styling ([#40069](https://github.com/okou-ai/okou/issues/40069)) ([ec5336e](https://github.com/okou-ai/okou/commit/ec5336e6ea2f4077181c1f99b4a088187eba85d3))
+* display persisted sandbox startup path in runner details ([#39946](https://github.com/okou-ai/okou/issues/39946)) ([75b0bc2](https://github.com/okou-ai/okou/commit/75b0bc230f522ac48a4529c8a97a9e6a335e123e))
+* **platform:** warn about disabled vnc ssh dependencies ([#40055](https://github.com/okou-ai/okou/issues/40055)) ([a7fb389](https://github.com/okou-ai/okou/commit/a7fb3899022d4f30df2b1082b87730ff819607ce))
+* **workflows:** make official workflows internal-only and remove their switch ([#40056](https://github.com/okou-ai/okou/issues/40056)) ([6c9dc4e](https://github.com/okou-ai/okou/commit/6c9dc4e67ad60faf5ce6020c185899cb59a93bc9))
+
+
+### Refactoring
+
+* retire legacy run reuse outcome metadata ([#40102](https://github.com/okou-ai/okou/issues/40102)) ([005af49](https://github.com/okou-ai/okou/commit/005af4965ced3ca60293140d6ede62ec5acaeaeb))
+* roll out composer anchored suggestions ([#40070](https://github.com/okou-ai/okou/issues/40070)) ([b12f3e5](https://github.com/okou-ai/okou/commit/b12f3e54a9f40aafeffdba5f87a46ffb11ed62ca))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.562.0
+    * @okouai/core bumped to 8.758.0
+
+## [0.1025.0](https://github.com/okou-ai/okou/compare/app-v0.1024.0...app-v0.1025.0) (2026-10-14)
+
+
+### Features
+
+* **app:** drop the custom image template detail; rename from the card menu ([#40057](https://github.com/okou-ai/okou/issues/40057)) ([d41f995](https://github.com/okou-ai/okou/commit/d41f9951e6b977ffaa363341aedec94b51e014a6))
+
+
+### Bug Fixes
+
+* **app:** give the slash browse-all row full width and the only fill ([#39985](https://github.com/okou-ai/okou/issues/39985)) ([d5995f5](https://github.com/okou-ai/okou/commit/d5995f550d3415d62adf8e09934228c909c61d42))
+* **app:** remove transient loading notices from template galleries ([#40050](https://github.com/okou-ai/okou/issues/40050)) ([d818f79](https://github.com/okou-ai/okou/commit/d818f794589383b7cda8150802de4ef5f35bc9a1))
+* **app:** rename discord server action to join new server ([#40043](https://github.com/okou-ai/okou/issues/40043)) ([0c6c26d](https://github.com/okou-ai/okou/commit/0c6c26d07e07806dadd597c509fdc1d75e312cca))
+* **app:** repaint template themes in place and align template previews ([#39909](https://github.com/okou-ai/okou/issues/39909)) ([e5ee932](https://github.com/okou-ai/okou/commit/e5ee93228555fbf21e1e4fdc6a82c1b6cfe5eba5))
+* **app:** use native grid lanes for illustration masonry ([#40034](https://github.com/okou-ai/okou/issues/40034)) ([533f591](https://github.com/okou-ai/okou/commit/533f5912192d4bd750daac5d9e7eb324e87839ec))
+* **platform:** collapse tailscale guidance for new networks ([#40040](https://github.com/okou-ai/okou/issues/40040)) ([e86400e](https://github.com/okou-ai/okou/commit/e86400ecdaf4938053548666ceeebd36e2ef50d5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.561.0
+    * @okouai/core bumped to 8.757.0
+
 ## [0.1024.0](https://github.com/okou-ai/okou/compare/app-v0.1023.0...app-v0.1024.0) (2026-10-14)
 
 

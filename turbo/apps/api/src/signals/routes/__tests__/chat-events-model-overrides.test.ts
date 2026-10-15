@@ -1,11 +1,10 @@
 import { expectThreadModelCredits } from "./helpers/public-thread-usage";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { MODEL_PROVIDER_ENV_PLACEHOLDERS } from "@okouai/api-contracts/contracts/model-providers";
-import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { testContext } from "../../../__tests__/test-context";
-import { env } from "../../../lib/env";
+
 import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { expectApiError } from "./helpers/api-bdd";
@@ -13,7 +12,6 @@ import { createFirewallApi } from "./helpers/api-bdd-firewall";
 import {
   createChatEventsFixture,
   GPT_PI_BDD_MODELS,
-  type PiGptBddModel,
   claimEnvironment,
   eventBackedContents,
   assistantEvent,
@@ -38,7 +36,6 @@ const {
   cancelChatRun,
   mockPiObjectStore,
   mockPiResourceArchiveDownloads,
-  piSandboxBaseSession,
 } = createChatEventsFixture(context);
 
 function expectedDefaultEffort(model: string): "xhigh" | "max" | "medium" {
@@ -47,39 +44,6 @@ function expectedDefaultEffort(model: string): "xhigh" | "max" | "medium" {
     : model === "gpt-6.1-sol"
       ? "medium"
       : "max";
-}
-
-function completedSubscriptionHistory(
-  h0: string,
-  prompt: string,
-  selectedModel: PiGptBddModel,
-): string {
-  const h2Session = MemoryPiSession.fromJsonl(h0);
-  h2Session.appendMessage({ role: "user", content: prompt, timestamp: 1 });
-  h2Session.appendMessage({
-    role: "assistant",
-    content: [{ type: "text", text: "Subscription Sandbox complete" }],
-    api: "openai-codex-responses",
-    provider: "openai-codex",
-    model: selectedModel,
-    usage: {
-      input: 5,
-      output: 3,
-      cacheRead: 0,
-      cacheWrite: 0,
-      totalTokens: 8,
-      cost: {
-        input: 0,
-        output: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        total: 0,
-      },
-    },
-    stopReason: "stop",
-    timestamp: 2,
-  });
-  return h2Session.toJsonl();
 }
 
 describe("CHAT-02: run-level model overrides", () => {
@@ -150,8 +114,8 @@ describe("CHAT-02: run-level model overrides", () => {
       "claude-opus-5-5",
     );
     expect(
-      (await api.readRun(actor, first.runId)).result?.agentSessionId,
-    ).toMatch(/[0-9a-f-]{36}/);
+      (await api.readRun(actor, first.runId)).result?.frameworkSessionId,
+    ).toBe(`bdd-cli-${first.runId}`);
 
     // Selecting another model in the same family resumes the CLI session,
     // which already carries the prior web round, so the prompt does not
@@ -170,7 +134,7 @@ describe("CHAT-02: run-level model overrides", () => {
     expect(appended).toContain(`- CHAT_THREAD_ID: ${first.threadId}`);
     expect(appended).toContain("`okou chat messages`");
     const secondClaim = await claimChatRun(runnerGroup, second.runId);
-    expect(secondClaim.claim.resumeSession?.sessionId).toBe(
+    expect(secondClaim.claim.nativeContinuation?.sessionId).toBe(
       `bdd-cli-${first.runId}`,
     );
     expect(claimEnvironment(secondClaim.claim).ANTHROPIC_MODEL).toBe(
@@ -205,7 +169,7 @@ describe("CHAT-02: run-level model overrides", () => {
       prompt: "continue on the thread model",
     });
     const thirdClaim = await claimChatRun(runnerGroup, third.runId);
-    expect(thirdClaim.claim.resumeSession?.sessionId).toBe(
+    expect(thirdClaim.claim.nativeContinuation?.sessionId).toBe(
       `bdd-cli-${second.runId}`,
     );
     expect(claimEnvironment(thirdClaim.claim).ANTHROPIC_MODEL).toBe(
@@ -319,7 +283,7 @@ describe("CHAT-02: run-level model overrides", () => {
       );
 
       mockPiResourceArchiveDownloads();
-      const historyObjects = mockPiObjectStore();
+      mockPiObjectStore();
 
       const prompt = "use the Okou CLI through native subscription Luna";
       const run = await sendChatRun(actor, {
@@ -336,7 +300,10 @@ describe("CHAT-02: run-level model overrides", () => {
           true,
           run.runId,
           [404],
-          { capabilities: { piModelConfigGenerations: [1, 2] } },
+          {
+            capabilities: { piModelConfigGenerations: [1, 2] },
+            nativeContinuationSupported: true,
+          },
         );
         expectApiError(oldClaim.body);
         await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
@@ -347,6 +314,7 @@ describe("CHAT-02: run-level model overrides", () => {
         capabilities: {
           piModelConfigGenerations: tier === "fast" ? [1, 2, 3] : [1, 2],
         },
+        nativeContinuationSupported: true,
       });
       const sandboxHeaders = {
         authorization: `Bearer ${claim.sandboxToken}`,
@@ -426,27 +394,6 @@ describe("CHAT-02: run-level model overrides", () => {
         `Bearer ${refreshedAccessToken}`,
       );
 
-      const h0Text = piSandboxBaseSession(claim, historyObjects).toString(
-        "utf8",
-      );
-      const h2 = completedSubscriptionHistory(h0Text, prompt, selectedModel);
-      expect(h2).not.toMatch(/serviceTier|service_tier/);
-      const h2Hash = createHash("sha256").update(h2).digest("hex");
-      await webhooks.requestAgentSessionHistoryPrepare(
-        {
-          runId: run.runId,
-          hash: h2Hash,
-          rawSize: Buffer.byteLength(h2),
-          encodedSize: Buffer.byteLength(h2),
-          encoding: "identity",
-        },
-        sandboxHeaders,
-        [200],
-      );
-      historyObjects.set(
-        `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${h2Hash}.blob`,
-        Buffer.from(h2, "utf8"),
-      );
       if (outcome === "cancelled") {
         await cancelChatRun(actor, run.runId);
       }
@@ -460,13 +407,13 @@ describe("CHAT-02: run-level model overrides", () => {
           completion: {
             cliAgentType: "pi",
             cliAgentSessionId: run.threadId,
-            cliAgentSessionHistoryHash: h2Hash,
+            cliAgentSessionHistoryDisposition: "native_only",
           },
         },
         sandboxHeaders,
-        outcome === "cancelled" ? [400] : [200],
+        [200],
       );
-      expect(completion.status).toBe(outcome === "cancelled" ? 400 : 200);
+      expect(completion.status).toBe(200);
       await waitForRunStatus(actor, run.runId, outcome);
       await flushWaitUntilForTest();
       await webhooks.requestAgentComplete(
@@ -494,9 +441,9 @@ describe("CHAT-02: run-level model overrides", () => {
       const continuedClaim = await claimChatRun(runnerGroup, continued.runId);
       expect(continuedClaim.claim).toMatchObject({
         piSessionId: run.threadId,
-        resumeSession: {
+        nativeContinuation: {
           sessionId: run.threadId,
-          historyRef: { kind: "blob", hash: h2Hash },
+          generationRunId: run.runId,
         },
         piModelConfig: {
           model: selectedModel,

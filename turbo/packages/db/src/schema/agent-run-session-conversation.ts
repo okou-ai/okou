@@ -23,9 +23,15 @@ import { registerAgentRunReferences } from "./agent-run-reference";
 export const agentRuns = pgTable(
   "agent_runs",
   {
-    ...agentRunColumns(() => {
-      return agentSessions.id;
-    }),
+    ...agentRunColumns(),
+    /** Retained physical storage only; runtime identity belongs to Run/Thread. */
+    continuedFromSessionId: uuid("continued_from_session_id"),
+    sessionId: uuid("session_id").references(
+      (): AnyPgColumn => {
+        return agentSessions.id;
+      },
+      { onDelete: "set null" },
+    ),
   },
   (table) => {
     return [
@@ -236,7 +242,7 @@ export const agentRuns = pgTable(
                   'framework' -
                   'runnerProfile'
                 ) = '{}'::jsonb AND
-                ${table.launchSnapshot} -> 'schemaVersion' = '3'::jsonb
+                ${table.launchSnapshot} -> 'schemaVersion' IN ('3'::jsonb, '5'::jsonb)
               )
             )
             ) OR (

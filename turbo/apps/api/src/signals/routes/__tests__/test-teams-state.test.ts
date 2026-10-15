@@ -130,12 +130,7 @@ async function deletePublicTeamsFixture(
   await webhooks.requestClerkWebhook("{}", {}, [200]);
   await flushWaitUntilForTest();
 
-  if (owned.defaultAgentId) {
-    await bdd.requestReadAgent(actor, owned.defaultAgentId, [404]);
-  }
-  expect(
-    (await reads.requestListLogs(actor, { limit: 50 }, [200])).body.data,
-  ).toStrictEqual([]);
+  // Clerk deletion stops active work without purging UUID-owned resources.
 }
 
 const trackPublicTeamsFixture = createFixtureTracker(deletePublicTeamsFixture);

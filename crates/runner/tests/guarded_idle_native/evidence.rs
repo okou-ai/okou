@@ -14,6 +14,8 @@ use sha2::{Digest, Sha256};
 use super::{TestResult, io};
 
 pub const PREFIX: &str = "NATIVE_TERMINAL_RECEIPT ";
+const PRESSURE_PREFIX: &str = "NATIVE_PRESSURE_WITNESS ";
+const CONTINUATION_PREFIX: &str = "NATIVE_CONTINUATION_WITNESS ";
 pub const TAIL_BYTES: usize = 64 * 1024 * 1024;
 
 #[derive(Clone, Deserialize)]
@@ -160,6 +162,7 @@ struct State {
     backing_generation: Option<String>,
     tail_completed: bool,
     budget: Option<Arc<runner_lifecycle::resource_budget::ResourceBudget>>,
+    original_lease: Option<runner_lifecycle::resource_budget::BudgetLeaseWitness>,
 }
 
 pub struct Case {
@@ -180,6 +183,7 @@ impl Case {
                 backing_generation: None,
                 tail_completed: false,
                 budget: None,
+                original_lease: None,
             }),
             exit_observer: Mutex::new(None),
             retained: Mutex::new(Vec::new()),
@@ -192,13 +196,48 @@ impl Case {
     }
 
     pub fn event(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event(PREFIX, phase, evidence)
+    }
+
+    pub fn pressure_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event(PRESSURE_PREFIX, phase, evidence)
+    }
+
+    pub fn continuation_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event(CONTINUATION_PREFIX, phase, evidence)
+    }
+
+    pub fn bind_original_lease(
+        &self,
+        lease: &runner_lifecycle::resource_budget::BudgetLease,
+    ) -> io::Result<()> {
+        let witness = lease
+            .witness()
+            .ok_or_else(|| io::Error::other("native original reservation is detached"))?;
+        if witness.resources() != (2, 4096) || !witness.is_active() {
+            return Err(io::Error::other(
+                "native original lease has the wrong shape",
+            ));
+        }
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| io::Error::other("native receipt state poisoned"))?;
+        if state.original_lease.is_some() {
+            return Err(io::Error::other("native original lease was bound twice"));
+        }
+        state.original_lease = Some(witness);
+        Ok(())
+    }
+
+    fn write_event(&self, prefix: &str, phase: &str, evidence: Value) -> io::Result<()> {
         let (monotonic_ns, unix_ns) = clocks()?;
         let state = self
             .state
             .lock()
             .map_err(|_| io::Error::other("native receipt state poisoned"))?;
         println!(
-            "\n{PREFIX}{}",
+            "\n{prefix}{}",
             json!({
                 "version": 1, "case": self.id, "phase": phase,
                 "monotonic_ns": monotonic_ns, "unix_ns": unix_ns,
@@ -274,7 +313,12 @@ impl Case {
             .state
             .lock()
             .map_err(|_| io::Error::other("native receipt state poisoned"))?;
-        if state.budget.as_ref().map(|b| b.allocated()) != Some((2, 4096, 1)) {
+        let held = if let Some(original) = &state.original_lease {
+            original.is_active() && original.resources() == (2, 4096)
+        } else {
+            state.budget.as_ref().map(|b| b.allocated()) == Some((2, 4096, 1))
+        };
+        if !held {
             return Err(io::Error::other(
                 "native tail lost its original full logical lease",
             ));
@@ -311,7 +355,12 @@ impl Case {
             .state
             .lock()
             .map_err(|_| io::Error::other("native receipt state poisoned"))?;
-        if !state.tail_completed || state.budget.as_ref().map(|b| b.allocated()) != Some((0, 0, 0))
+        if !state.tail_completed
+            || state.budget.as_ref().map(|b| b.allocated()) != Some((0, 0, 0))
+            || state
+                .original_lease
+                .as_ref()
+                .is_some_and(|lease| lease.is_active())
         {
             return Err(io::Error::other("native required physical tail was not completed").into());
         }

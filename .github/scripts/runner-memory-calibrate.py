@@ -60,7 +60,7 @@ def available_bytes(content):
 def process_identity(pid):
     try:
         content = bounded_read(f"/proc/{pid}/stat", 4096)
-    except FileNotFoundError:
+    except (FileNotFoundError, ProcessLookupError):
         return None
     # comm is opaque bytes and may contain non-ASCII or closing parentheses.
     fields = content.rsplit(b")", 1)[1].split()
@@ -78,12 +78,12 @@ def child_pids(pid):
                     raise ValueError("fixture thread bound exceeded")
                 try:
                     content = bounded_read(Path(task.path) / "children", 4096)
-                except FileNotFoundError:
+                except (FileNotFoundError, ProcessLookupError):
                     continue
                 children.update(int(value) for value in content.split())
                 if len(children) > MAX_CHILDREN:
                     raise ValueError("fixture child bound exceeded")
-    except FileNotFoundError:
+    except (FileNotFoundError, ProcessLookupError):
         return []
     return sorted(children)
 

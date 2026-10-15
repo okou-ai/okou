@@ -255,7 +255,6 @@ function ordinaryStep(
 ): step is Extract<PendingAdmissionProgress, { readonly kind: "statement" }> {
   return (
     step.phase === "thread" ||
-    step.phase === "session" ||
     step.phase === "subscription" ||
     step.phase === "head" ||
     step.phase === "claim"
@@ -266,7 +265,6 @@ function ordinaryRecord(row: Record): row is OrdinaryRecord {
     !("caps" in row) &&
     (!("phase" in row) ||
       row.phase === "thread" ||
-      row.phase === "session" ||
       row.phase === "subscription" ||
       row.phase === "head")
   );

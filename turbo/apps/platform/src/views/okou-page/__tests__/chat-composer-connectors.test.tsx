@@ -6,6 +6,8 @@ import userEvent from "@testing-library/user-event";
 import { expect, test, describe, beforeEach, it } from "vitest";
 
 import {
+  click,
+  fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
@@ -112,7 +114,6 @@ function createAuthWindow(): Window {
 }
 
 test("Configure connector permissions from the composer", async () => {
-  const user = userEvent.setup({ delay: null });
   const axiom = builtinConnector({
     slug: AXIOM_SLUG,
     label: "Axiom",
@@ -131,11 +132,9 @@ test("Configure connector permissions from the composer", async () => {
 
   await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
 
-  await loadComposer();
-  await openConnectors(user);
-  await user.click(
-    await findFastControl("button", "Configure Axiom permissions"),
-  );
+  click(await findFastControl("button", "Connectors"));
+  await findFastControl("button", "Add connectors");
+  click(await findFastControl("button", "Configure Axiom permissions"));
   const dialog = await screen.findByRole("dialog", {
     name: /Axiom permissions.*Scout/u,
   });
@@ -145,11 +144,11 @@ test("Configure connector permissions from the composer", async () => {
   if (!(row instanceof HTMLElement)) {
     throw new Error("Permission row not found");
   }
-  await user.click(await findFastControl("button", "Deny", row));
+  click(await findFastControl("button", "Deny", row));
   await expect(
     findFastControl("button", "Apply", dialog),
   ).resolves.toBeEnabled();
-  await user.click(await findFastControl("button", "Cancel", dialog));
+  click(await findFastControl("button", "Cancel", dialog));
   await waitFor(() => {
     expect(
       screen.queryByRole("dialog", { name: /Axiom permissions.*Scout/u }),
@@ -180,29 +179,34 @@ describe("connecting a custom connector for the active agent", () => {
     await openConnectors(user);
   });
 
-  it("connects a custom connector for only the active agent", async () => {
-    let catalog = await openCustomConnectors(user);
+  async function prepareCustomConnection() {
+    const catalog = await openCustomConnectors(user);
     expect(
       within(catalog).getByText("https://api.example.test/"),
     ).toBeVisible();
-    await user.click(
-      await findFastControl("button", "Connect Acme Search", catalog),
-    );
-    let secret = await screen.findByLabelText("Secret");
+    click(await findFastControl("button", "Connect Acme Search", catalog));
+    const secret = await screen.findByLabelText("Secret");
     expect(secret).toHaveValue("");
-    await user.type(secret, "discarded-secret");
-    await user.click(await findFastControl("button", "Cancel"));
+    return { catalog, secret };
+  }
 
+  it("cancel a custom connector for only the active agent", async () => {
+    const { secret } = await prepareCustomConnection();
+    await fill(secret, "discarded-secret");
+    click(await findFastControl("button", "Cancel"));
     await ensureConnectorsOpen(user);
-    catalog = await openCustomConnectors(user);
-    await user.click(
-      await findFastControl("button", "Connect Acme Search", catalog),
-    );
-    secret = await screen.findByLabelText("Secret");
-    expect(secret).toHaveValue("");
-    await user.type(secret, "scout-secret");
-    await user.click(await findFastControl("button", "Save"));
+    const catalog = await openCustomConnectors(user);
+    click(await findFastControl("button", "Connect Acme Search", catalog));
+    const reopenedSecret = await screen.findByLabelText("Secret");
+    expect(reopenedSecret).toHaveValue("");
+    expect(fixture.customValueRequests).toStrictEqual([]);
+    expect(fixture.customAuthorizationUpdates).toStrictEqual([]);
+  });
 
+  it("connect a custom connector for only the active agent", async () => {
+    const { secret } = await prepareCustomConnection();
+    await fill(secret, "scout-secret");
+    click(await findFastControl("button", "Save"));
     await waitFor(() => {
       expect(fixture.customValueRequests).toStrictEqual([
         {

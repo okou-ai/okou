@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.12.0](https://github.com/okou-ai/okou/compare/codex-mock-v0.11.78...codex-mock-v0.12.0) (2026-10-15)
+
+
+### Features
+
+* continue threads through retained native sandbox history ([#40048](https://github.com/okou-ai/okou/issues/40048)) ([2b6ff73](https://github.com/okou-ai/okou/commit/2b6ff735fcfb0d4f5baf5fd131bcc10ae8a325d3))
+
+## [0.11.78](https://github.com/okou-ai/okou/compare/codex-mock-v0.11.77...codex-mock-v0.11.78) (2026-10-14)
+
 ## [0.11.77](https://github.com/okou-ai/okou/compare/codex-mock-v0.11.76...codex-mock-v0.11.77) (2026-10-14)
 
 ## [0.11.76](https://github.com/okou-ai/okou/compare/codex-mock-v0.11.75...codex-mock-v0.11.76) (2026-10-14)

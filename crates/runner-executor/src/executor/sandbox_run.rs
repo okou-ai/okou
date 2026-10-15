@@ -134,8 +134,6 @@ const RUNNER_FRESH_SANDBOX_START_GUEST_DNS_READINESS: &str =
     "runner_fresh_sandbox_start_guest_dns_readiness";
 const RUNNER_FRESH_SANDBOX_START_RUNTIME_FINALIZE: &str =
     "runner_fresh_sandbox_start_runtime_finalize";
-const RUNNER_FRESH_SANDBOX_RETRY_WITHOUT_HOME_IMAGE: &str =
-    "runner_fresh_sandbox_retry_without_home_image";
 const RUNNER_FRESH_SANDBOX_DNS_READINESS_RETRY: &str = "runner_fresh_sandbox_dns_readiness_retry";
 const RUNNER_FRESH_SANDBOX_RETRY_WITHOUT_CODEX_PREFETCH: &str =
     "runner_fresh_sandbox_retry_without_codex_prefetch";
@@ -630,6 +628,20 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
         let cache_hit = home_image
             .as_ref()
             .is_some_and(HomeImageLease::is_cache_hit);
+        if let Some(image) = home_image.as_ref().filter(|image| image.is_cache_hit()) {
+            telemetry.observe_home(image.consumption_observation(
+                Some(context.run_id),
+                runner_host::home_observation::HomeObservationOutcome::Failed,
+                if !used_retry
+                    && !failure.cleanup_completed
+                    && failure.retry == SandboxPrepareRetry::WithoutHomeImage
+                {
+                    SANDBOX_PREPARE_RETRY_CLEANUP_UNCERTAIN
+                } else {
+                    "sandbox_prepare_failed"
+                },
+            ));
+        }
         if failure.invalidate_consumed_home_cache && cache_hit {
             controls.session_history_restore_plan = discard_home_candidate_restore_plan(
                 std::mem::take(&mut controls.session_history_restore_plan),
@@ -675,12 +687,6 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                     "guest DNS readiness replacement suppressed after uncertain cleanup"
                 );
             } else if retry_without_home_image {
-                telemetry.record(
-                    RUNNER_FRESH_SANDBOX_RETRY_WITHOUT_HOME_IMAGE,
-                    Duration::ZERO,
-                    false,
-                    Some(SANDBOX_PREPARE_RETRY_CLEANUP_UNCERTAIN),
-                );
                 warn!(
                     run_id = %context.run_id,
                     sandbox_id = %sandbox_id,
@@ -754,6 +760,19 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
         }
 
         if cache_hit {
+            if let Some(image) = &home_image {
+                telemetry.observe_home(image.consumption_observation(
+                    Some(context.run_id),
+                    runner_host::home_observation::HomeObservationOutcome::Fallback,
+                    if retry_guest_dns {
+                        "guest_dns_replacement"
+                    } else if retry_without_codex_prefetch {
+                        "codex_prefetch_replacement"
+                    } else {
+                        "home_preparation_failed"
+                    },
+                ));
+            }
             used_home_fallback = true;
             controls.session_history_restore_plan =
                 replace_home_candidate_restore_plan_for_home_retry(
@@ -776,12 +795,6 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                 sandbox_id = %sandbox_id,
                 error = %failure.error,
                 "home image cache hit failed during sandbox preparation; retrying with fresh home image"
-            );
-            telemetry.record(
-                RUNNER_FRESH_SANDBOX_RETRY_WITHOUT_HOME_IMAGE,
-                Duration::ZERO,
-                true,
-                None,
             );
             home_image = None;
             match prepare_storage(context, None, config, &controls.cancel, telemetry).await {
@@ -954,6 +967,7 @@ pub(super) async fn prepare_home_image(
     telemetry: &mut JobTelemetry,
 ) -> Option<HomeImageLease> {
     let cache = config.home_cache.as_ref()?;
+    let cache = cache.clone().with_first_run(context.is_first_run);
     let prepare_started = Instant::now();
     let reuse_key = context.reuse_key();
     let request = HomeImagePrepareRequest {
@@ -1576,6 +1590,15 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
 
     let mut inputs = inputs;
     inputs.controls.prepared_guest_runtime = prepared_guest_runtime;
+    // The actual resource has settled. Transfer this bounded task to the caller
+    // without holding execution, successor handoff, or resource release on HTTP.
+    let startup_report = super::StartupReport::spawn(
+        config.http.clone(),
+        context.run_id,
+        context.sandbox_token.clone(),
+        sandbox_startup_path,
+        cleanup_cancel.clone(),
+    );
     let result = run_in_sandbox_with_process_cancel_timeouts(
         sandbox.as_ref(),
         context,
@@ -1679,6 +1702,7 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
         network_log_session: Some(network_log_session),
         home_image: None,
         home_reuse_result: Some(home_reuse_result),
+        startup_report: Some(startup_report),
         discovered_cli_agent_session_id,
         restored_session_identity,
     }

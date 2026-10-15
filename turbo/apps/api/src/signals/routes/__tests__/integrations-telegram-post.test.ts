@@ -1,5 +1,3 @@
-import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
-import { prepareRunnerSessionHistory } from "./helpers/runner-session-history";
 import { publicRunOwner } from "./helpers/public-run-owner";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { Buffer } from "node:buffer";
@@ -257,11 +255,7 @@ async function createTelegramPostFixture(
     orgId: actor.orgId,
     userId: actor.userId,
     composeId: defaultAgentId,
-    runs: publicRunOwner(context, actor, {
-      afterRuns: async () => {
-        await deletePublicWorkspace(context, actor);
-      },
-    }),
+    runs: publicRunOwner(context, actor),
     telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
     webhookSecret: OFFICIAL_WEBHOOK_SECRET,
     ...(options.linkOfficial === true
@@ -469,14 +463,8 @@ async function completeCanonicalChatRun(args: {
   readonly cliAgentType?: "claude-code" | "codex";
 }): Promise<string> {
   const cliAgentSessionId = `bdd-telegram-cli-${args.runId}`;
-  const cliAgentSessionHistory = `bdd telegram history ${args.runId}`;
+
   const headers = { authorization: `Bearer ${args.sandboxToken}` };
-  const cliAgentSessionHistoryHash = await prepareRunnerSessionHistory(
-    context,
-    args.runId,
-    headers,
-    cliAgentSessionHistory,
-  );
   await webhooksApi.requestAgentComplete(
     {
       runId: args.runId,
@@ -484,7 +472,7 @@ async function completeCanonicalChatRun(args: {
       completion: {
         cliAgentType: args.cliAgentType ?? "claude-code",
         cliAgentSessionId,
-        cliAgentSessionHistoryHash,
+        cliAgentSessionHistoryDisposition: "native_only",
       },
     },
     headers,
@@ -1110,7 +1098,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
           3504,
           branch.botReplyId,
         );
-        expect(branchFollowUp.claim.resumeSession?.sessionId).toBe(
+        expect(branchFollowUp.claim.nativeContinuation?.sessionId).toBe(
           branch.sessionId,
         );
         replyChain = { branch, followUp: branchFollowUp };
@@ -1162,7 +1150,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
             3505,
             3503,
           );
-          expect(earlierReply.claim.resumeSession?.sessionId).toBe(
+          expect(earlierReply.claim.nativeContinuation?.sessionId).toBe(
             branchFollowUp.sessionId,
           );
           return;
@@ -1180,14 +1168,14 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         expect(pinnedReply.claim.modelUsageProvider).toBe("claude-fable-5-1");
         expect(pinnedReply.chatThread.id).toBe(branch.chatThread.id);
         expect(pinnedReply.chatThread.selectedModel).toBe("claude-fable-5-1");
-        expect(pinnedReply.claim.resumeSession?.sessionId).toBe(
+        expect(pinnedReply.claim.nativeContinuation?.sessionId).toBe(
           branchFollowUp.sessionId,
         );
         return;
       }
 
       const followUp = await completeDm("continue the main DM", 3502);
-      expect(followUp.claim.resumeSession?.sessionId).toBe(main.sessionId);
+      expect(followUp.claim.nativeContinuation?.sessionId).toBe(main.sessionId);
       expect(followUp.chatThread.id).toBe(main.chatThread.id);
       expect(followUp.chatThread.selectedModel).toBe("claude-fable-5-1");
       expect(dm.telegram.sentMessages.at(-1)?.text).toContain(
@@ -1362,7 +1350,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       runnerGroup,
       fixture,
     );
-    expect(followUpClaim.resumeSession?.sessionId).toBe(cliAgentSessionId);
+    expect(followUpClaim.nativeContinuation?.sessionId).toBe(cliAgentSessionId);
     await completeCanonicalChatRun({
       runId: followUpRun.id,
       sandboxToken: followUpClaim.sandboxToken,

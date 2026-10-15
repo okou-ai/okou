@@ -10,7 +10,6 @@ import { command } from "ccstate";
 
 import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
-import { isLockNotAvailable } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { request$ } from "../context/hono";
 import { type ClerkWebhookEvent, verifyClerkWebhook } from "../external/clerk";
@@ -19,17 +18,13 @@ import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { settle, tapError } from "../utils";
 import { ensureOrgLimitedFreeBootstrap$ } from "../services/org-limited-free-bootstrap.service";
-import { revokeSharedThreadArtifacts$ } from "../services/shared-thread-artifacts.service";
 import {
   cleanupClerkBannedUser$,
   cleanupClerkDeletedOrgBilling$,
   cleanupClerkDeletedOrgMembership$,
   cleanupClerkDeletedOrg$,
+  cleanupClerkDeletedUser$,
 } from "../services/webhooks-clerk-cleanup.service";
-import {
-  enqueueClerkUserDeletion$,
-  executeClerkUserDeletionWork$,
-} from "../services/clerk-user-deletion-job.service";
 import { handleUsagePackInvitationAccepted$ } from "../services/usage-pack-invitation-purchase.service";
 import {
   deliverWelcomeChatThread$,
@@ -381,16 +376,16 @@ function missingOrganizationDeletedIdResponse(data: unknown): Response {
 
 const handleOrganizationDeletedWebhook$ = command(
   async ({ set }, orgId: string, signal: AbortSignal): Promise<Response> => {
-    const revocation = await settle(
-      set(
-        revokeSharedThreadArtifacts$,
-        { kind: "organization", orgId },
-        signal,
-      ),
+    const stopped = await settle(
+      set(cleanupClerkDeletedOrg$, orgId, signal),
       signal,
     );
-    if (!revocation.ok) {
-      return jsonError("Organization artifact revocation failed", 503);
+    if (!stopped.ok) {
+      L.error("organization.deleted stop failed", {
+        orgId,
+        error: stopped.error,
+      });
+      return jsonError("Organization work could not be stopped", 503);
     }
     const billingCleanup = await settle(
       set(cleanupClerkDeletedOrgBilling$, orgId, signal),
@@ -404,14 +399,6 @@ const handleOrganizationDeletedWebhook$ = command(
       return jsonError("Organization billing cleanup failed", 503);
     }
 
-    waitUntil(
-      tapError(set(cleanupClerkDeletedOrg$, orgId, signal), (error) => {
-        L.error("organization.deleted cleanup failed", { orgId, error });
-        if (isLockNotAvailable(error)) {
-          throw error;
-        }
-      }),
-    );
     return new Response("OK", { status: 200 });
   },
 );
@@ -501,38 +488,14 @@ const handleOrganizationCreatedWebhook$ = command(
 
 const handleDeletedUserWebhook$ = command(
   async ({ set }, userId: string, signal: AbortSignal): Promise<Response> => {
-    const revocation = await settle(
-      set(revokeSharedThreadArtifacts$, { kind: "user", userId }, signal),
+    const stopped = await settle(
+      set(cleanupClerkDeletedUser$, userId, signal),
       signal,
     );
-    if (!revocation.ok) {
-      return jsonError("User artifact revocation failed", 503);
+    if (!stopped.ok) {
+      L.error("user.deleted stop failed", { userId, error: stopped.error });
+      return jsonError("User work could not be stopped", 503);
     }
-
-    const receipt = await settle(
-      set(enqueueClerkUserDeletion$, userId, signal),
-      signal,
-    );
-    if (!receipt.ok) {
-      L.error("user.deleted job persistence failed", {
-        userId,
-        error: receipt.error,
-      });
-      return jsonError("User deletion could not be recorded", 503);
-    }
-
-    waitUntil(
-      tapError(
-        set(
-          executeClerkUserDeletionWork$,
-          { jobId: receipt.value },
-          AbortSignal.timeout(50_000),
-        ),
-        (error) => {
-          L.error("user.deleted worker failed", { userId, error });
-        },
-      ),
-    );
     return new Response("OK", { status: 200 });
   },
 );

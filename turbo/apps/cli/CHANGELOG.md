@@ -1,5 +1,33 @@
 # Changelog
 
+## [9.392.2](https://github.com/okou-ai/okou/compare/cli-v9.392.1...cli-v9.392.2) (2026-10-15)
+
+
+### Bug Fixes
+
+* derive morning brief email keys from the automation event ([#40150](https://github.com/okou-ai/okou/issues/40150)) ([a21f35f](https://github.com/okou-ai/okou/commit/a21f35f72ad8d175d5c1a76b18ddf07a3b9b48ce))
+* **workflows:** make official workflows internal-only and remove their switch ([#40056](https://github.com/okou-ai/okou/issues/40056)) ([6c9dc4e](https://github.com/okou-ai/okou/commit/6c9dc4e67ad60faf5ce6020c185899cb59a93bc9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.562.0
+    * @okouai/core bumped to 8.758.0
+    * @okouai/pi-agent-runtime bumped to 1.50.0
+
+## [9.392.1](https://github.com/okou-ai/okou/compare/cli-v9.392.0...cli-v9.392.1) (2026-10-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.561.0
+    * @okouai/core bumped to 8.757.0
+    * @okouai/pi-agent-runtime bumped to 1.49.36
+
 ## [9.392.0](https://github.com/okou-ai/okou/compare/cli-v9.391.0...cli-v9.392.0) (2026-10-14)
 
 

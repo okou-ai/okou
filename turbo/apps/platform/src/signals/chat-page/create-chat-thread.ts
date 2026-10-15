@@ -34,6 +34,7 @@ import {
 } from "ccstate";
 import { i18n } from "../../i18n/index.ts";
 import { createChatResourceSignals } from "./chat-resources.ts";
+import { createChatRelationSignals } from "./chat-relations.ts";
 import {
   createDraftSignals,
   createRestoredAttachment,
@@ -3921,6 +3922,7 @@ export function createChatPanelSignals(
       artifact.artifacts$,
       messagePipeline.initialEventsReady$,
     ),
+    relations: createChatRelationSignals(threadId, messagePipeline),
     ...threadOwned,
     sidebar: messages.sidebar,
     ...publicChatThreadEventSignals(messages),

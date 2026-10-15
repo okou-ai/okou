@@ -605,22 +605,17 @@ export const deleteVncCredential$ = command(
     signal: AbortSignal,
   ): Promise<VncResult<undefined>> => {
     const db = set(writeDb$);
-    const [current] = await db
-      .select({ revision: vncCredentials.revision })
-      .from(vncCredentials)
-      .where(ownedCredential(args.owner, args.credentialId));
-    signal.throwIfAborted();
-    if (!current) {
-      return vncFailure("credentialNotFound");
-    }
-    if (current.revision !== args.expectedRevision) {
-      return vncFailure("credentialConflict");
-    }
     // The RESTRICT credential FK rejects deleting a credential used by a host.
     const deleted = await settle(
       db
         .delete(vncCredentials)
-        .where(ownedCredential(args.owner, args.credentialId)),
+        .where(
+          and(
+            ownedCredential(args.owner, args.credentialId),
+            eq(vncCredentials.revision, args.expectedRevision),
+          ),
+        )
+        .returning({ id: vncCredentials.id }),
       signal,
     );
     if (!deleted.ok) {
@@ -628,6 +623,17 @@ export const deleteVncCredential$ = command(
         return vncFailure("credentialInUse");
       }
       throw deleted.error;
+    }
+    if (deleted.value.length === 0) {
+      const [remaining] = await db
+        .select({ id: vncCredentials.id })
+        .from(vncCredentials)
+        .where(ownedCredential(args.owner, args.credentialId))
+        .limit(1);
+      signal.throwIfAborted();
+      return vncFailure(
+        remaining ? "credentialConflict" : "credentialNotFound",
+      );
     }
     return { ok: true, value: undefined };
   },

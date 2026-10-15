@@ -1,5 +1,6 @@
 import { screen, waitFor } from "@testing-library/react";
 import { workflowsCollectionContract } from "@okouai/api-contracts";
+import { chatThreadDraftContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
 import { expect, test } from "vitest";
 
@@ -13,7 +14,6 @@ import {
   composerInlineTemplates,
   context,
   mockAgent,
-  selectTemplate,
   THREAD_ID,
 } from "./chat-composer-test-helpers.ts";
 
@@ -55,6 +55,26 @@ test("Replacing an inline template preserves a previously sent reference", async
   context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
     return respond(200, []);
   });
+  // Template insertion is covered separately. Hydrate a genuine persisted
+  // draft so replacement owns a single picker interaction.
+  context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
+    return respond(200, {
+      draftUserMessage: {
+        version: 1,
+        parts: [
+          {
+            type: "template",
+            titleSnapshot: first.title,
+            template: {
+              type: "presentation",
+              selection: { templateId: first.templateId },
+            },
+          },
+        ],
+      },
+      draftAttachments: null,
+    });
+  });
 
   await setupPage({ context, path: `/chats/${THREAD_ID}` });
   const sentReference = await waitFor(() => {
@@ -65,7 +85,9 @@ test("Replacing an inline template preserves a previously sent reference", async
     return reference;
   });
 
-  await selectTemplate(first);
+  await waitFor(() => {
+    expect(composerInlineTemplates()[0]).toHaveTextContent(first.title);
+  });
   const inlineTemplate = composerInlineTemplates()[0];
   if (!inlineTemplate) {
     throw new Error("Expected an inline template to replace");
@@ -75,13 +97,17 @@ test("Replacing an inline template preserves a previously sent reference", async
     throw new Error("Expected inline template button");
   }
   click(inlineButton);
-  await expect(screen.findByRole("dialog")).resolves.toBeVisible();
-  click(screen.getByLabelText(`Select template ${replacement.title}`));
+  const selectTemplate = await screen.findByLabelText(
+    `Select template ${replacement.title}`,
+  );
+  expect(selectTemplate.closest('[role="dialog"]')).toBeInTheDocument();
+  click(selectTemplate);
 
   await waitFor(() => {
     const templates = composerInlineTemplates();
     expect(templates).toHaveLength(1);
     expect(templates[0]).toHaveTextContent(replacement.title);
   });
+  expect(sentReference).toBeInTheDocument();
   expect(sentReference).toHaveTextContent(first.title);
 });

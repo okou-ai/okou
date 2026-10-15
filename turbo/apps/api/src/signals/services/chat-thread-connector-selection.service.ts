@@ -16,14 +16,17 @@ import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
-import { command } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { settle } from "../utils";
 import {
   readAgentConnectorScope$,
   type AgentConnectorScope,
 } from "./agent-connector-scope.service";
-import { listConnectorAccountsByIds } from "./connector-account-lifecycle.service";
+import {
+  connectorAccountsByIds,
+  readConnectorAccountsByIds$,
+} from "./connector-account-lifecycle.service";
 import { connectorAccountTargetKey } from "./connector-account-resolution.service";
 import { ExternalConnectorCatalogUnavailableError } from "./connector-catalog-external-reader.service";
 import {
@@ -169,24 +172,6 @@ async function loadOwnedChatThread(
   return thread?.agentId ? { agentId: thread.agentId } : undefined;
 }
 
-async function loadSelectionRows(
-  db: ReadonlyDb,
-  chatThreadId: string,
-): Promise<readonly ConnectorSelectionRow[]> {
-  return await db
-    .select({
-      connectorId: chatThreadConnectorSelections.connectorId,
-      connectorSlug: chatThreadConnectorSelections.connectorSlug,
-      customConnectorId: chatThreadConnectorSelections.customConnectorId,
-    })
-    .from(chatThreadConnectorSelections)
-    .where(eq(chatThreadConnectorSelections.chatThreadId, chatThreadId))
-    .orderBy(
-      asc(chatThreadConnectorSelections.connectorSlug),
-      asc(chatThreadConnectorSelections.customConnectorId),
-    );
-}
-
 const connectorTargetOwnershipColumns = Object.freeze({
   connectorId: connectors.id,
   connectorSlug: connectors.connectorSlug,
@@ -222,46 +207,94 @@ function connectorTargetOwnershipMatches(
   );
 }
 
-export async function listChatThreadConnectorSelections(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly chatThreadId: string;
-  },
-): Promise<ChatThreadConnectorSelectionList | null> {
-  const thread = await loadOwnedChatThread(db, args);
-  if (!thread) {
-    return null;
-  }
-  const rows = await loadSelectionRows(db, args.chatThreadId);
-  const storedSelections = rows.map(selectionFromRow);
-  const projectedConnections = await listConnectorAccountsByIds(db, {
-    orgId: args.orgId,
-    userId: args.userId,
-    connectionIds: storedSelections.map((selection) => {
-      return selection.connectionId;
-    }),
+interface ChatThreadConnectorSelectionScope {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly chatThreadId: string;
+}
+
+export function connectorSelectionsForChatThread(
+  scope$: Computed<ChatThreadConnectorSelectionScope>,
+): Computed<Promise<ChatThreadConnectorSelectionList | null>> {
+  const ownedThread$ = computed(async (get) => {
+    const args = get(scope$);
+    const db = get(db$);
+    const [thread] = await db
+      .select({ agentId: agents.id })
+      .from(chatThreads)
+      .innerJoin(
+        agents,
+        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, args.orgId)),
+      )
+      .where(
+        and(
+          eq(chatThreads.id, args.chatThreadId),
+          eq(chatThreads.userId, args.userId),
+        ),
+      )
+      .limit(1);
+    return thread?.agentId ? { agentId: thread.agentId } : undefined;
   });
-  const connectionById = new Map(
-    projectedConnections.map((connection) => {
-      return [connection.id, connection];
-    }),
-  );
-  const selections: ConnectorAccountSelection[] = [];
-  const selectedConnections: ConnectorAccountConnection[] = [];
-  for (const selection of storedSelections) {
-    const connection = connectionById.get(selection.connectionId);
-    if (
-      connection &&
-      connectorAccountTargetKey(connection.target) ===
-        connectorAccountTargetKey(selection.target)
-    ) {
-      selections.push(selection);
-      selectedConnections.push(connection);
+  const selections$ = computed(async (get) => {
+    const args = get(scope$);
+    if (!(await get(ownedThread$))) {
+      return null;
     }
-  }
-  return { selections, selectedConnections };
+    const db = get(db$);
+    const rows = await db
+      .select({
+        connectorId: chatThreadConnectorSelections.connectorId,
+        connectorSlug: chatThreadConnectorSelections.connectorSlug,
+        customConnectorId: chatThreadConnectorSelections.customConnectorId,
+      })
+      .from(chatThreadConnectorSelections)
+      .where(eq(chatThreadConnectorSelections.chatThreadId, args.chatThreadId))
+      .orderBy(
+        asc(chatThreadConnectorSelections.connectorSlug),
+        asc(chatThreadConnectorSelections.customConnectorId),
+      );
+    return rows.map(selectionFromRow);
+  });
+  const batchScope$ = computed(async (get) => {
+    const args = get(scope$);
+    const selections = await get(selections$);
+    return selections === null
+      ? null
+      : {
+          orgId: args.orgId,
+          userId: args.userId,
+          connectionIds: selections.map((selection) => {
+            return selection.connectionId;
+          }),
+        };
+  });
+  const connections$ = connectorAccountsByIds(batchScope$);
+  return computed(async (get) => {
+    const storedSelections = await get(selections$);
+    if (storedSelections === null) {
+      return null;
+    }
+    const projectedConnections = await get(connections$);
+    const connectionById = new Map(
+      projectedConnections.map((connection) => {
+        return [connection.id, connection];
+      }),
+    );
+    const selections: ConnectorAccountSelection[] = [];
+    const selectedConnections: ConnectorAccountConnection[] = [];
+    for (const selection of storedSelections) {
+      const connection = connectionById.get(selection.connectionId);
+      if (
+        connection &&
+        connectorAccountTargetKey(connection.target) ===
+          connectorAccountTargetKey(selection.target)
+      ) {
+        selections.push(selection);
+        selectedConnections.push(connection);
+      }
+    }
+    return { selections, selectedConnections };
+  });
 }
 
 export const prepareChatThreadConnectorSelections$ = command(
@@ -341,11 +374,15 @@ export const prepareChatThreadConnectorSelections$ = command(
         .where(inArray(connectors.id, [...new Set(connectionIds)])),
     );
     signal.throwIfAborted();
-    const projectedConnections = await listConnectorAccountsByIds(db, {
-      orgId: args.orgId,
-      userId: args.userId,
-      connectionIds,
-    });
+    const projectedConnections = await set(
+      readConnectorAccountsByIds$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        connectionIds,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     const projectedById = new Map(
       projectedConnections.map((connection) => {

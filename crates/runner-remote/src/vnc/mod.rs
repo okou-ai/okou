@@ -1,6 +1,7 @@
 //! Run-owned VNC sessions. Guest requests carry saved IDs, never authority.
 
 mod authority;
+mod diagnostics;
 mod invalidation;
 mod kerberos;
 mod network;

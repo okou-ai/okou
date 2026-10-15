@@ -52,9 +52,9 @@ export const morningBriefScheduleClaims = pgTable(
     /** Server-generated execution identity; also the claim token. */
     id: uuid("id").defaultRandom().primaryKey(),
     /**
-     * The journal is a child of the automation it fires, so automation, owner
-     * and organization deletion remove it through the existing cascade rather
-     * than through a separate cleanup job.
+     * The journal is a child of the automation it fires. Deleting that
+     * automation row removes its journal through this foreign-key cascade;
+     * Clerk owner or organization identity deletion does not trigger it.
      */
     automationId: uuid("automation_id")
       .notNull()

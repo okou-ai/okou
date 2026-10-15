@@ -4,10 +4,12 @@ import {
   chatThreadConnectorSelectionContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { chatThreadConnectorSelectionRoutes } from "../chat-threads-connector-selections";
 import { chatThreadCreateRoutes } from "../chat-threads-create";
+import { connectorAccountRoutes } from "../connector-accounts";
 import { createBddApi } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
@@ -29,11 +31,13 @@ describe("chat-thread connector account ownership", () => {
       routes: [
         ...chatThreadCreateRoutes,
         ...chatThreadConnectorSelectionRoutes,
+        ...connectorAccountRoutes,
       ],
       isolatePg: true,
     });
     const threads = app(chatThreadsContract);
     const selections = app(chatThreadConnectorSelectionContract);
+    const accounts = app(connectorAccountsContract);
     const owner = bdd.user();
     bdd.acceptAgentStorageWrites();
     await runs.ensurePersonalSubscriptionModel(owner);
@@ -106,6 +110,20 @@ describe("chat-thread connector account ownership", () => {
     expect(initial.body.selections).toStrictEqual(
       expect.arrayContaining(requested),
     );
+    const accountResponses = await Promise.all(
+      initial.body.selections.map(async (selection) => {
+        const account = await accept(
+          accounts.connection({
+            headers,
+            params: { connectionId: selection.connectionId },
+            query: selection.target,
+          }),
+          [200],
+        );
+        return account.body;
+      }),
+    );
+    expect(initial.body.selectedConnections).toStrictEqual(accountResponses);
     for (const selection of requested) {
       const updated = await accept(
         selections.update({ headers, params, body: selection }),
@@ -141,7 +159,57 @@ describe("chat-thread connector account ownership", () => {
       );
       expect(deniedUpdate.body).toStrictEqual(mismatch);
       const retained = await accept(selections.get({ headers, params }), [200]);
-      expect(retained.body.selections).toStrictEqual(initial.body.selections);
+      expect(retained.body).toStrictEqual(initial.body);
     }
+
+    for (const actor of [
+      bdd.user({ orgId: owner.orgId }),
+      bdd.user({ userId: owner.userId }),
+    ]) {
+      mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+      const denied = await accept(selections.get({ headers, params }), [404]);
+      const missing = await accept(
+        selections.get({ headers, params: { id: randomUUID() } }),
+        [404],
+      );
+      expect(denied.body).toStrictEqual(missing.body);
+      expect(denied.body.error.message).toBe("Chat thread not found");
+    }
+    mocks.clerk.session(owner.userId, owner.orgId, owner.orgRole);
+
+    const renamed = await accept(
+      accounts.rename({
+        headers,
+        params: { connectionId: builtin.id },
+        body: { target: builtinTarget, displayName: "Selected work" },
+      }),
+      [200],
+    );
+    const refreshed = await accept(selections.get({ headers, params }), [200]);
+    expect(refreshed.body).toStrictEqual({
+      selections: initial.body.selections,
+      selectedConnections: accountResponses.map((account) => {
+        return account.id === builtin.id ? renamed.body : account;
+      }),
+    });
+
+    const deleted = await accept(
+      accounts.delete({
+        headers,
+        params: { connectionId: builtin.id },
+        body: { target: builtinTarget },
+      }),
+      [200],
+    );
+    expect(deleted.body.deletedConnectionId).toBe(builtin.id);
+    const remaining = await accept(selections.get({ headers, params }), [200]);
+    expect(remaining.body).toStrictEqual({
+      selections: [
+        { connectionId: custom.connectedAccountId, target: customTarget },
+      ],
+      selectedConnections: accountResponses.filter((account) => {
+        return account.id === custom.connectedAccountId;
+      }),
+    });
   });
 });

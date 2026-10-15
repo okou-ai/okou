@@ -33,11 +33,6 @@ import {
   agentsByIdContract,
   type AgentResponse,
 } from "@okouai/api-contracts/contracts/agents";
-import {
-  officialWorkflowInstallationsContract,
-  officialWorkflowsContract,
-  type OfficialWorkflowCatalogDetail,
-} from "@okouai/api-contracts/contracts/official-workflows";
 import { integrationsGithubContract } from "@okouai/api-contracts/contracts/integrations-github";
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -78,7 +73,6 @@ const GOOGLE_CALENDAR_AUTOMATION_ID =
 const GOOGLE_MEET_AUTOMATION_ID = "workflow-automation-google-meet-transcript";
 const WORKFLOW_CHAT_THREAD_ID = "00000000-0000-4000-a000-000000000300";
 const AUTOMATION_RUN_THREAD_ID = "00000000-0000-4000-a000-000000000301";
-const OFFICIAL_REVISION = "a".repeat(64);
 const OFFICIAL_BLUEPRINT_FINGERPRINT = "b".repeat(64);
 
 type WorkflowDetailTestTab = "automations" | "instructions" | "info";
@@ -649,62 +643,6 @@ function salesResearch(): WorkflowDetailResponse {
       },
     ],
     automations: workflowAutomations(),
-  };
-}
-
-function officialCatalogDetail(
-  lifecycle: "active" | "retired" = "active",
-): OfficialWorkflowCatalogDetail {
-  return {
-    name: "sales-research",
-    revision: OFFICIAL_REVISION,
-    lifecycle,
-    displayName: "Sales Research",
-    description: "Collects account context before outreach.",
-    presentation: {
-      category: "Sales",
-      marketingCopy: "Start every sales conversation with useful context.",
-    },
-    workflow: {
-      displayName: "Sales Research",
-      description: "Collects account context before outreach.",
-      instruction: "Use the accepted Official instructions.",
-      files: [{ path: "references/playbook.md", content: "Official playbook" }],
-    },
-    blueprints: [
-      {
-        key: "daily",
-        fingerprint: OFFICIAL_BLUEPRINT_FINGERPRINT,
-        parameters: [
-          {
-            key: "time-zone",
-            type: "string",
-            format: "timezone",
-            required: true,
-            default: "UTC",
-          },
-          {
-            key: "interval-seconds",
-            type: "integer",
-            required: true,
-            default: 3600,
-          },
-          {
-            key: "include-weekends",
-            type: "boolean",
-            required: true,
-            default: false,
-          },
-        ],
-        desiredState: {
-          kind: "schedule",
-          schedule: {
-            type: "loop",
-            intervalSeconds: { parameter: "interval-seconds" },
-          },
-        },
-      },
-    ],
   };
 }
 
@@ -1639,19 +1577,6 @@ function mockConnectedAutomationConnectors(): void {
   ]);
 }
 
-test("Hide Official Workflow discovery when it is unavailable", async () => {
-  mockWorkflowApis([officialSalesResearch()]);
-  await setupPage({
-    context,
-    path: "/workflows",
-    featureSwitches: {
-      [FeatureSwitchKey.OfficialWorkflows]: false,
-    },
-  });
-  await screen.findByRole("heading", { name: "Workflows" });
-  expect(screen.queryByText("Browse Official")).not.toBeInTheDocument();
-});
-
 test("Redirect a cold Morning Brief detail to its preference", async () => {
   mockWorkflowApis([morningBriefWorkflow()]);
   context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
@@ -1664,9 +1589,6 @@ test("Redirect a cold Morning Brief detail to its preference", async () => {
 
   await setupWorkflowDetailPage(
     `/workflows/${MORNING_BRIEF_WORKFLOW_ID}/automations`,
-    {
-      [FeatureSwitchKey.OfficialWorkflows]: false,
-    },
   );
 
   await waitFor(() => {
@@ -1679,194 +1601,45 @@ test("Redirect a cold Morning Brief detail to its preference", async () => {
   expect(screen.queryByText("Instructions")).not.toBeInTheDocument();
 });
 
-test("Show Official Workflow discovery when it is available", async () => {
-  mockWorkflowApis([officialSalesResearch()]);
-  await setupPage({
-    context,
-    path: "/workflows",
-    featureSwitches: {
-      [FeatureSwitchKey.OfficialWorkflows]: true,
+test("Redirect an Official Workflow without a user-facing page to Workflows", async () => {
+  mockWorkflowApis([officialSalesResearch(), opsPlaybook()]);
+
+  await setupWorkflowDetailPage(workflowDetailPath("automations"));
+
+  await waitFor(() => {
+    expect(pathname()).toBe("/workflows");
+    expect(linkByAriaLabel("Open Ops Playbook")).toBeInTheDocument();
+  });
+});
+
+test("Keep Official Workflows out of the Workflows list", async () => {
+  const morningBrief = morningBriefWorkflow();
+  if (!morningBrief.official) {
+    throw new Error("Expected an Official Workflow fixture");
+  }
+  mockWorkflowApis([
+    officialSalesResearch(),
+    {
+      ...morningBrief,
+      name: "internal-test-morning-brief",
+      official: {
+        ...morningBrief.official,
+        definitionName: "internal-test-morning-brief",
+      },
     },
-  });
+    opsPlaybook(),
+  ]);
 
-  await screen.findByRole("heading", { name: "Workflows" });
-  expect(screen.getByText("Browse Official")).toBeVisible();
-});
-
-test("Show an installed workflow in the Official catalog", async () => {
-  const installedWorkflow = officialSalesResearch();
-  const {
-    workflow: _workflow,
-    lifecycle: _lifecycle,
-    ...catalogEntry
-  } = officialCatalogDetail();
-  mockWorkflowApis([installedWorkflow]);
-  context.mocks.api(officialWorkflowsContract.list, ({ respond }) => {
-    return respond(200, [{ ...catalogEntry, name: "sales-research" }]);
-  });
-
-  await setupPage({
-    context,
-    path: "/workflows/official",
-    featureSwitches: { [FeatureSwitchKey.OfficialWorkflows]: true },
-  });
+  await setupPage({ context, path: "/workflows" });
 
   await waitFor(() => {
-    expect(buttonByText("Installed")).toBeDisabled();
+    expect(linkByAriaLabel("Open Ops Playbook")).toBeInTheDocument();
   });
-  expect(screen.queryByText("View and install")).not.toBeInTheDocument();
-});
-
-test("Show the current status of a retired Official Workflow", async () => {
-  const active = officialCatalogDetail("active");
-  const { workflow: _workflow, lifecycle: _lifecycle, ...summary } = active;
-  mockWorkflowApis([salesResearch()]);
-  context.mocks.api(officialWorkflowsContract.list, ({ respond }) => {
-    return respond(200, [summary]);
+  const listed = queryAllByRoleFast("link").map((link) => {
+    return link.getAttribute("aria-label");
   });
-  context.mocks.api(officialWorkflowsContract.get, ({ params, respond }) => {
-    return respond(
-      200,
-      officialCatalogDetail(
-        params.definitionName === active.name ? "retired" : "active",
-      ),
-    );
-  });
-
-  await setupPage({
-    context,
-    path: "/workflows",
-    featureSwitches: { [FeatureSwitchKey.OfficialWorkflows]: true },
-  });
-  click(await screen.findByText("Browse Official"));
-  await waitFor(() => {
-    expect(pathname()).toBe("/workflows/official");
-  });
-  await expect(
-    screen.findByText("View and install"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByText("Sales")).toBeInTheDocument();
-
-  click(screen.getByText("View and install"));
-  await waitFor(() => {
-    expect(pathname()).toBe("/workflows/official/sales-research");
-  });
-  await expect(
-    screen.findByText("Retired Definition"),
-  ).resolves.toBeInTheDocument();
-  expect(
-    screen.getByText(
-      "This retained Definition can be viewed, but it can no longer be installed.",
-    ),
-  ).toBeInTheDocument();
-  expect(queryButtonByText("Install")).toBeNull();
-});
-
-test("Install an Official Workflow with typed Blueprint settings and closed-select typeahead", async () => {
-  const user = userEvent.setup();
-  const definition = officialCatalogDetail();
-  const {
-    workflow: _workflow,
-    lifecycle: _lifecycle,
-    ...catalogEntry
-  } = definition;
-  const workflows: WorkflowDetailResponse[] = [];
-  const installBodies: unknown[] = [];
-  mockAgentPageApis();
-  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
-  context.mocks.data.userPreferences({ timezone: "UTC" });
-  mockWorkflowApis(workflows);
-  context.mocks.api(officialWorkflowsContract.list, ({ respond }) => {
-    return respond(200, [catalogEntry]);
-  });
-  context.mocks.api(officialWorkflowsContract.get, ({ respond }) => {
-    return respond(200, definition);
-  });
-  context.mocks.api(officialWorkflowsContract.install, ({ body, respond }) => {
-    installBodies.push(body);
-    workflows.push(officialSalesResearch());
-    return respond(201, {
-      workflow: officialSalesResearch(),
-      definition: {
-        name: definition.name,
-        revision: definition.revision,
-        lifecycle: "active",
-        blueprints: definition.blueprints,
-      },
-    });
-  });
-
-  await setupPage({
-    context,
-    path: "/workflows/official",
-    featureSwitches: { [FeatureSwitchKey.OfficialWorkflows]: true },
-  });
-  const viewAndInstall = await screen.findByText("View and install");
-  click(viewAndInstall);
-  click(
-    await waitFor(() => {
-      return buttonByText("Install");
-    }),
-  );
-  const dialog = await screen.findByRole("dialog");
-  expect(within(dialog).getByText("Research Bot")).toBeInTheDocument();
-  expect(within(dialog).getByLabelText("time-zone (required)")).toHaveValue(
-    "UTC",
-  );
-  expect(
-    within(dialog).getByLabelText("interval-seconds (required)"),
-  ).toHaveValue(3600);
-  expect(
-    within(dialog).getByRole("combobox", {
-      name: "include-weekends (required)",
-    }),
-  ).toHaveTextContent("No");
-  fireEvent.change(
-    within(dialog).getByLabelText("interval-seconds (required)"),
-    { target: { value: "7200" } },
-  );
-  const includeWeekends = within(dialog).getByRole("combobox", {
-    name: "include-weekends (required)",
-  });
-  act(() => {
-    includeWeekends.focus();
-  });
-  expect(includeWeekends).toHaveFocus();
-  expect(includeWeekends).toHaveAttribute("aria-expanded", "false");
-  await user.keyboard("y");
-  await waitFor(() => {
-    expect(includeWeekends).toHaveTextContent("Yes");
-  });
-  expect(includeWeekends).toHaveAttribute("aria-expanded", "false");
-  click(buttonByText("Install", dialog));
-
-  await waitFor(() => {
-    expect(installBodies).toStrictEqual([
-      {
-        agentId: AGENT_ID,
-        blueprints: [
-          {
-            blueprintKey: "daily",
-            bindings: [
-              { key: "time-zone", value: "UTC" },
-              { key: "interval-seconds", value: 7200 },
-              { key: "include-weekends", value: true },
-            ],
-          },
-        ],
-      },
-    ]);
-  });
-  await waitFor(() => {
-    expect(pathname()).toBe(`/workflows/${SALES_WORKFLOW_ID}/automations`);
-  });
-  await screen.findByText("Official Workflow");
-  click(linkByText("Workflows"));
-  const browseOfficial = await screen.findByText("Browse Official");
-  click(browseOfficial);
-  await waitFor(() => {
-    expect(buttonByText("Installed")).toBeDisabled();
-  });
+  expect(listed).not.toContain("Open Sales Research");
+  expect(listed).not.toContain("Open Morning Brief");
 });
 
 test("Identify existing Stripe automations in the workflow list", async () => {
@@ -2212,282 +1985,6 @@ test("Confirm before making a public workflow private", async () => {
   });
 });
 
-test("Keep official configuration available without manual execution or legacy shadow warnings", async () => {
-  const workflow = {
-    ...officialSalesResearch(),
-    shadowedBy: {
-      id: OPS_WORKFLOW_ID,
-      name: "sales-research",
-      displayName: "Private Sales Research",
-    },
-  };
-  mockWorkflowApis([workflow]);
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-  await expect(screen.findByRole("switch")).resolves.toBeEnabled();
-  expect(screen.queryByLabelText("Run now")).not.toBeInTheDocument();
-
-  click(buttonByText("Instructions"));
-  await screen.findByLabelText("Workflow instruction");
-  expect(screen.queryByText(/currently resolves to/i)).not.toBeInTheDocument();
-
-  click(buttonByText("Settings"));
-  await screen.findByLabelText("Name");
-  expect(buttonByText("Reconfigure")).toBeInTheDocument();
-  expect(buttonByText("Uninstall")).toBeInTheDocument();
-});
-
-test("Keep a retired Official Workflow configurable and structurally read-only", async () => {
-  const workflow = officialSalesResearch("retired", "needs_reconfiguration");
-  const definition = officialCatalogDetail("retired");
-  mockAgentPageApis();
-  context.mocks.data.userPreferences({ timezone: "UTC" });
-  mockWorkflowApis([workflow]);
-  context.mocks.api(
-    officialWorkflowInstallationsContract.get,
-    ({ respond }) => {
-      return respond(200, {
-        workflow,
-        definition: {
-          name: definition.name,
-          revision: definition.revision,
-          lifecycle: "retired",
-          blueprints: definition.blueprints,
-        },
-      });
-    },
-  );
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-  await expect(
-    screen.findByText("Official Workflow retired"),
-  ).resolves.toBeInTheDocument();
-  expect(
-    screen.getByText("Needs reconfiguration · intended on"),
-  ).toBeInTheDocument();
-  expect(screen.queryByLabelText("Run now")).not.toBeInTheDocument();
-  expect(screen.getByRole("switch")).toBeEnabled();
-  expect(screen.queryByText("Add automation")).not.toBeInTheDocument();
-  expect(screen.queryByLabelText("Edit automation")).not.toBeInTheDocument();
-  expect(screen.queryByText("Delete automation")).not.toBeInTheDocument();
-  expect(screen.queryByText(/Refine with/)).not.toBeInTheDocument();
-
-  click(buttonByText("Settings"));
-  await waitFor(() => {
-    expect(screen.getByLabelText("Name")).toBeDisabled();
-  });
-  expect(screen.getByLabelText("Slug")).toBeDisabled();
-  expect(screen.getByLabelText("Description")).toBeDisabled();
-  expect(
-    screen.getByRole("switch", { name: "Make workflow public" }),
-  ).toHaveAttribute("aria-disabled", "true");
-  expect(screen.queryByText("Delete workflow")).not.toBeInTheDocument();
-  expect(buttonByText("Reconfigure")).toBeInTheDocument();
-  expect(buttonByText("Uninstall")).toBeInTheDocument();
-
-  click(buttonByText("Instructions"));
-  const instructions = await screen.findByLabelText("Workflow instruction");
-  expect(instructions).toHaveAttribute("contenteditable", "false");
-  click(screen.getByLabelText("Workflow files"));
-  expect(screen.queryByText("Upload text files")).not.toBeInTheDocument();
-  expect(screen.queryByText("Delete selected file")).not.toBeInTheDocument();
-});
-
-test("Reconfigure typed settings for an Official Workflow", async () => {
-  const workflow = officialSalesResearch("retired");
-  const definition = officialCatalogDetail("retired");
-  const reconfigureBodies: unknown[] = [];
-  mockAgentPageApis();
-  context.mocks.data.userPreferences({ timezone: "UTC" });
-  mockWorkflowApis([workflow]);
-  context.mocks.api(
-    officialWorkflowInstallationsContract.get,
-    ({ respond }) => {
-      return respond(200, {
-        workflow,
-        definition: {
-          name: definition.name,
-          revision: definition.revision,
-          lifecycle: "retired",
-          blueprints: definition.blueprints,
-        },
-      });
-    },
-  );
-  context.mocks.api(
-    officialWorkflowInstallationsContract.reconfigure,
-    ({ body, respond }) => {
-      reconfigureBodies.push(body);
-      return respond(200, {
-        workflow,
-        definition: {
-          name: definition.name,
-          revision: definition.revision,
-          lifecycle: "retired",
-          blueprints: definition.blueprints,
-        },
-      });
-    },
-  );
-  await setupWorkflowDetailPage(workflowDetailPath("info"));
-  click(
-    await waitFor(() => {
-      return buttonByText("Reconfigure");
-    }),
-  );
-  const dialog = await screen.findByRole("dialog");
-  expect(
-    within(dialog).getByLabelText("interval-seconds (required)"),
-  ).toHaveValue(3600);
-  fireEvent.change(within(dialog).getByLabelText("time-zone (required)"), {
-    target: { value: "Asia/Shanghai" },
-  });
-  fireEvent.change(
-    within(dialog).getByLabelText("interval-seconds (required)"),
-    { target: { value: "1800" } },
-  );
-  click(
-    within(dialog).getByRole("combobox", {
-      name: "include-weekends (required)",
-    }),
-  );
-  click(await screen.findByRole("option", { name: "Yes" }));
-  click(buttonByText("Reconfigure", dialog));
-  await waitFor(() => {
-    expect(reconfigureBodies).toStrictEqual([
-      {
-        blueprints: [
-          {
-            blueprintKey: "daily",
-            bindings: [
-              { key: "time-zone", value: "Asia/Shanghai" },
-              { key: "interval-seconds", value: 1800 },
-              { key: "include-weekends", value: true },
-            ],
-          },
-        ],
-      },
-    ]);
-  });
-});
-
-test("Uninstall an Official Workflow", async () => {
-  const workflow = officialSalesResearch("active");
-  const workflows = [workflow];
-  const definition = officialCatalogDetail("active");
-  const {
-    workflow: _workflow,
-    lifecycle: _lifecycle,
-    ...catalogEntry
-  } = definition;
-  const uninstalledWorkflowIds: string[] = [];
-  mockAgentPageApis();
-  mockWorkflowApis(workflows);
-  context.mocks.api(officialWorkflowsContract.list, ({ respond }) => {
-    return respond(200, [catalogEntry]);
-  });
-  context.mocks.api(
-    officialWorkflowInstallationsContract.get,
-    ({ respond }) => {
-      return respond(200, {
-        workflow,
-        definition: {
-          name: definition.name,
-          revision: definition.revision,
-          lifecycle: "active",
-          blueprints: definition.blueprints,
-        },
-      });
-    },
-  );
-  context.mocks.api(
-    officialWorkflowInstallationsContract.uninstall,
-    ({ params, respond }) => {
-      uninstalledWorkflowIds.push(params.workflowId);
-      workflows.splice(0, workflows.length);
-      return respond(204);
-    },
-  );
-
-  await setupWorkflowDetailPage(workflowDetailPath("info"), {
-    [FeatureSwitchKey.OfficialWorkflows]: true,
-  });
-
-  const uninstall = await waitFor(() => {
-    return buttonByText("Uninstall");
-  });
-  click(uninstall);
-  const uninstallDialog = await screen.findByRole("dialog");
-  click(buttonByText("Uninstall", uninstallDialog));
-
-  await waitFor(() => {
-    expect(uninstalledWorkflowIds).toStrictEqual([SALES_WORKFLOW_ID]);
-  });
-  await waitFor(() => {
-    expect(pathname()).toBe("/workflows");
-  });
-  const browseOfficial = await screen.findByText("Browse Official");
-  click(browseOfficial);
-  await screen.findByText("View and install");
-  expect(queryButtonByText("Installed")).toBeNull();
-});
-
-test("Preserve a copied Official Workflow when uninstalling the original fails", async () => {
-  const workflow = officialSalesResearch();
-  const copiedWorkflow: WorkflowDetailResponse = {
-    ...salesResearch(),
-    id: COPIED_WORKFLOW_ID,
-    agentId: OTHER_AGENT_ID,
-    agentName: "support-bot",
-    agentDisplayName: "Support Bot",
-    visibility: "private",
-    automations: [],
-  };
-  const disabledAutomationIds: string[] = [];
-  const deletedWorkflowIds: string[] = [];
-  const uninstallRequests: string[] = [];
-  mockAgentPageApis();
-  mockWorkflowApis([workflow, copiedWorkflow]);
-  mockDisableWorkflowAutomation((automationId) => {
-    disabledAutomationIds.push(automationId);
-  });
-  mockDeleteWorkflow([workflow], (workflowId) => {
-    deletedWorkflowIds.push(workflowId);
-  });
-  context.mocks.api(workflowsDetailContract.copy, ({ respond }) => {
-    return respond(201, summary(copiedWorkflow));
-  });
-  context.mocks.api(
-    officialWorkflowInstallationsContract.uninstall,
-    ({ params, respond }) => {
-      uninstallRequests.push(params.workflowId);
-      return respond(404, {
-        error: { code: "NOT_FOUND", message: "Uninstall failed" },
-      });
-    },
-  );
-
-  await setupWorkflowDetailPage(workflowDetailPath("info"));
-  const dialog = await openCopyDialog();
-  selectOptionByLabel("Copy to", "Support Bot", dialog);
-  await userEvent.setup().click(within(dialog).getByRole("checkbox"));
-  click(buttonByText("Copy and remove", dialog));
-
-  await waitFor(() => {
-    expect(uninstallRequests).toStrictEqual([SALES_WORKFLOW_ID]);
-  });
-  expect(disabledAutomationIds).toStrictEqual([]);
-  expect(deletedWorkflowIds).toStrictEqual([]);
-  await waitFor(() => {
-    expect(pathname()).toBe(`/workflows/${COPIED_WORKFLOW_ID}/automations`);
-  });
-  await expect(
-    screen.findByText(
-      "The copy is ready, but the original Official Workflow could not be uninstalled.",
-    ),
-  ).resolves.toBeInTheDocument();
-});
-
 test("Copy a workflow to another agent", async () => {
   const workflows = [salesResearch()];
   const copiedWorkflow: WorkflowDetailResponse = {
@@ -2776,9 +2273,7 @@ test("Run a workflow automation now and promote it in the next composer overview
     ]);
   });
 
-  await setupWorkflowDetailPage(workflowDetailPath("automations"), {
-    [FeatureSwitchKey.ComposerAnchoredSuggestions]: true,
-  });
+  await setupWorkflowDetailPage(workflowDetailPath("automations"));
 
   await waitFor(() => {
     expect(buttonByText("Run now")).toBeInTheDocument();

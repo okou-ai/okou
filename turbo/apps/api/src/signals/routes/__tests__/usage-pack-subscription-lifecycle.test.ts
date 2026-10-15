@@ -1,7 +1,6 @@
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi } from "./helpers/api-bdd";
-import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
 import { chargePublicSeoUsage } from "./helpers/public-seo-charge";
 import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
 import { purchaseToolCredits } from "./helpers/public-tool-actor";
@@ -39,6 +38,10 @@ import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
+
+beforeEach(async () => {
+  await setupApp({ context, routes: billingCheckoutRoutes, isolatePg: true });
+});
 const routeMocks = createRouteMocks(context);
 
 const TEST_PRICE_PRO = "price_usage_pack_lifecycle_pro";
@@ -363,14 +366,6 @@ async function checkoutUsagePackLifecycle(
   context.mocks.stripe.checkout.sessions.create.mockImplementationOnce(
     (input) => {
       checkoutSubscriptionId(input);
-      if (!existing) {
-        onTestFinished(() => {
-          return deletePublicWorkspace(
-            context,
-            createBddApi(context).user({ orgId, userId }),
-          );
-        });
-      }
       return Promise.resolve({
         id: checkoutSessionId,
         url: `https://checkout.stripe.test/${checkoutSessionId}`,
@@ -1124,12 +1119,6 @@ describe("usage pack subscription Stripe lifecycle", () => {
       invitationId: null,
     };
     routeMocks.clerk.session(grantedUserId, orgId, "org:admin");
-    onTestFinished(() => {
-      return deletePublicWorkspace(
-        context,
-        createBddApi(context).user({ orgId, userId: grantedUserId }),
-      );
-    });
     const planInvoiceId = `in_atom_usage_pack_plan_${randomUUID()}`;
     const metadata = {
       type: "atom_grant",

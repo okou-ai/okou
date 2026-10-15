@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.15.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.14.0...runner-supervisor-v0.15.0) (2026-10-15)
+
+
+### Features
+
+* **runner:** record first-run context and actual home reuse ([#39955](https://github.com/okou-ai/okou/issues/39955)) ([f0577eb](https://github.com/okou-ai/okou/commit/f0577ebc54bdb82e28c225184a7a084080054afd))
+* **runner:** record home outcomes through sandbox operations ([#40086](https://github.com/okou-ai/okou/issues/40086)) ([4118750](https://github.com/okou-ai/okou/commit/4118750fb48f30654288719da44c30ae8dc08a68))
+
+
+### Refactoring
+
+* retire legacy run reuse outcome metadata ([#40102](https://github.com/okou-ai/okou/issues/40102)) ([005af49](https://github.com/okou-ai/okou/commit/005af4965ced3ca60293140d6ede62ec5acaeaeb))
+* **runner-supervisor:** own maintenance task lifecycle ([#40101](https://github.com/okou-ai/okou/issues/40101)) ([b6f69ac](https://github.com/okou-ai/okou/commit/b6f69acea79623aa9d2997d9d026587356d84eb9))
+* **runner-supervisor:** own pending candidate wakeup state ([#40106](https://github.com/okou-ai/okou/issues/40106)) ([16f06c4](https://github.com/okou-ai/okou/commit/16f06c452d34ffb1a5aa96eb892193893d001013))
+* **runner-supervisor:** own soft-drain state ([#40066](https://github.com/okou-ai/okou/issues/40066)) ([e9a2f5e](https://github.com/okou-ai/okou/commit/e9a2f5eca38fc936ed56da70ed57d8eff0d495f7))
+* **runner-supervisor:** pair ordinary blank preparation ownership ([#40118](https://github.com/okou-ai/okou/issues/40118)) ([bb0a133](https://github.com/okou-ai/okou/commit/bb0a13306e1cd1794abac9f304acce13bb964fd9))
+* **runner-supervisor:** share committed idle publication ([#40062](https://github.com/okou-ai/okou/issues/40062)) ([7da4f1f](https://github.com/okou-ai/okou/commit/7da4f1f2e98f3ca56c015581e11d7209564f847c))
+
+## [0.14.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.13.9...runner-supervisor-v0.14.0) (2026-10-14)
+
+
+### Features
+
+* persist sandbox startup path on agent runs ([#39972](https://github.com/okou-ai/okou/issues/39972)) ([db59569](https://github.com/okou-ai/okou/commit/db595699439f7f221fb5df8b9eba14a9a4faac73))
+
 ## [0.13.9](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.13.8...runner-supervisor-v0.13.9) (2026-10-14)
 
 

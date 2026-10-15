@@ -56,6 +56,7 @@ describe("Pi memory Stage 1 candidate schema", () => {
       }),
     );
     expect(Object.keys(checks)).toStrictEqual([
+      "pi_memory_stage1_candidates_source_format_check",
       "pi_memory_stage1_candidates_status_check",
       "pi_memory_stage1_candidates_source_hash_check",
       "pi_memory_stage1_candidates_selected_hash_check",

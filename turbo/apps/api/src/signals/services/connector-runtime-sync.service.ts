@@ -9,13 +9,14 @@ import {
   type ConnectorRuntimeTargetRegistration,
 } from "@okouai/api-contracts/contracts/runners";
 import type { FirewallApi } from "@okouai/connectors/firewall-types";
+import { connectors } from "@okouai/db/schema/connector";
 import { logger } from "../../lib/log";
 import { db$ } from "../external/db";
 import { command } from "ccstate";
 import { resolveBuiltinConnectorCredentialAccess } from "./builtin-connector-credential-access.service";
 import {
   connectorAccountTargetKey,
-  resolveConnectorAccounts,
+  connectorAccountResolutionReadPlan,
   connectorAccountResolutionsFromRows,
   resolvedConnectorAccountIdsByTarget,
   type ConnectorAccountResolutionRequest,
@@ -48,7 +49,7 @@ import {
   customRuntimeSnapshotSectionsFromRows,
 } from "./custom-runtime-snapshot-query";
 
-import { resolveActiveNetworkPolicyRefreshes } from "./user-permission-grants.service";
+import { readActiveNetworkPolicyRefreshes$ } from "./user-permission-grants.service";
 
 const L = logger("connector-runtime-sync");
 
@@ -507,10 +508,10 @@ function resolveBuiltinTarget(args: {
   readonly registration: BuiltinRuntimeTargetRegistration;
   readonly scope: ConnectorRuntimeScope;
   readonly snapshot: ConnectorRuntimeLookup | undefined;
-  readonly accounts: Awaited<ReturnType<typeof resolveConnectorAccounts>>;
+  readonly accounts: ReturnType<typeof connectorAccountResolutionsFromRows>;
   readonly refreshes: ReadonlyMap<
     string,
-    Awaited<ReturnType<typeof resolveActiveNetworkPolicyRefreshes>>[number]
+    Awaited<ReturnType<typeof readActiveNetworkPolicyRefreshes$.write>>[number]
   >;
 }): ResolvedConnectorRuntimeTarget {
   const { registration, scope, snapshot } = args;
@@ -561,6 +562,36 @@ function resolveBuiltinTarget(args: {
         : builtinUnresolvedResult(target),
   };
 }
+
+const readRuntimeConnectorAccountResolutions$ = command(
+  async (
+    { get },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly requests: readonly ConnectorAccountResolutionRequest[];
+    },
+  ): Promise<ReturnType<typeof connectorAccountResolutionsFromRows>> => {
+    const db = get(db$);
+    const plan = connectorAccountResolutionReadPlan(args);
+    if (plan.requests.length === 0) {
+      return new Map();
+    }
+    const [exactRows, defaultRows] = await Promise.all([
+      plan.exactWhere
+        ? db.select(plan.columns).from(connectors).where(plan.exactWhere)
+        : [],
+      plan.defaultWhere
+        ? db.select(plan.columns).from(connectors).where(plan.defaultWhere)
+        : [],
+    ]);
+    return connectorAccountResolutionsFromRows({
+      requests: plan.requests,
+      exactRows,
+      defaultRows,
+    });
+  },
+);
 
 const resolveConnectorRuntimeTargetStates$ = command(
   async (
@@ -627,13 +658,14 @@ const resolveConnectorRuntimeTargetStates$ = command(
     }
     const [builtinRefreshes, builtinAccountResolutions, customSnapshot] =
       await Promise.all([
-        resolveActiveNetworkPolicyRefreshes(
-          db,
-          args.scope,
-          catalogBuiltinConnectorSlugs,
-          builtinCatalogSelection,
-        ),
-        resolveConnectorAccounts(db, {
+        builtinCatalogSelection
+          ? set(readActiveNetworkPolicyRefreshes$, {
+              scope: args.scope,
+              connectorSlugs: catalogBuiltinConnectorSlugs,
+              snapshot: builtinCatalogSelection,
+            })
+          : [],
+        set(readRuntimeConnectorAccountResolutions$, {
           orgId: args.scope.orgId,
           userId: args.scope.userId,
           requests: connectorAccountRequests(

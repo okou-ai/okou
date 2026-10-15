@@ -1,3 +1,6 @@
+import { findDocumentTemplateItem } from "@okouai/core/document-template-items";
+import { DocumentTemplatePickerPane } from "./document-template-picker-pane.tsx";
+import { DocumentTemplatePreviewPage } from "./document-template-preview-page.tsx";
 import { Combobox } from "@base-ui/react/combobox";
 import { ScrollArea } from "@base-ui/react/scroll-area";
 import {
@@ -130,6 +133,7 @@ import {
   Bolt,
   Check,
   Download,
+  FileText,
   Globe,
   Image as ImageIcon,
   Layers,
@@ -3213,7 +3217,7 @@ function IllustrationTemplateCard({
   return (
     <div
       className={cn(
-        "isolate mb-4 break-inside-avoid",
+        "isolate mb-4 break-inside-avoid supports-[display:grid-lanes]:mb-0 supports-[display:grid-lanes]:break-inside-auto",
         TEMPLATE_TILE_SELECTION_FRAME,
         selected && TEMPLATE_TILE_SELECTED,
       )}
@@ -3349,8 +3353,12 @@ function IllustrationTemplateCard({
 function resolveTemplatePickerCategory(
   category: string | null,
   customTemplatesEnabled: boolean,
+  documentTemplatesEnabled: boolean,
 ): string {
   switch (category) {
+    case "document": {
+      return documentTemplatesEnabled ? category : "slides";
+    }
     case "custom": {
       return customTemplatesEnabled ? category : "slides";
     }
@@ -3371,11 +3379,13 @@ function resolveTemplatePickerCategory(
 function TemplatePickerCategoryNav({
   selectedCategory,
   customTemplatesEnabled,
+  documentTemplatesEnabled,
   onChange,
   onReopenCustom,
 }: {
   selectedCategory: string;
   customTemplatesEnabled: boolean;
+  documentTemplatesEnabled: boolean;
   onChange: (value: string) => void;
   onReopenCustom: () => void;
 }) {
@@ -3406,6 +3416,17 @@ function TemplatePickerCategoryNav({
       }),
       Icon: Presentation,
     },
+    ...(documentTemplatesEnabled
+      ? [
+          {
+            value: "document",
+            label: t(($) => {
+              return $.documentTemplates.title;
+            }),
+            Icon: FileText,
+          },
+        ]
+      : []),
     {
       value: "website",
       label: t(($) => {
@@ -3603,11 +3624,10 @@ function IllustrationTemplateGrid({
   onSelect: (item: IllustrationTemplateItem) => void;
   onVariantChange: (slug: string, index: number) => void;
 }) {
-  // CSS multi-column masonry mirrors www.okou.ai/illustration: each tile renders
-  // the full illustration at its native aspect ratio (no cropping, letterbox,
-  // or fixed height), and the column count adapts to the dialog width.
+  // Grid Lanes keeps native-aspect cards out of multi-column fragmentation in
+  // Safari 26.4+. Other browsers retain the existing multi-column layout.
   return (
-    <div className="columns-[244px] gap-4">
+    <div className="columns-[244px] gap-4 supports-[display:grid-lanes]:shrink-0 supports-[display:grid-lanes]:columns-auto supports-[display:grid-lanes]:grid-cols-[repeat(auto-fill,minmax(min(244px,100%),1fr))] supports-[display:grid-lanes]:[display:grid-lanes]">
       {items.map((item, index) => {
         return (
           <IllustrationTemplateCard
@@ -4745,42 +4765,31 @@ function ImportedPresentationTemplateLibraryStatus({
   const templates = useLoadable(
     signals.template.importedPresentationTemplatePickerItems$,
   );
-  const lastResolvedTemplates = useLastResolved(
-    signals.template.importedPresentationTemplatePickerItems$,
-  );
   const realtime = useLoadable(
     signals.template.presentationTemplatesRealtimeReady$,
   );
   const retryCatalog = useSet(
     signals.template.retryImportedPresentationTemplates$,
   );
+  if (templates.state !== "hasError") {
+    return null;
+  }
   let message: string;
   let retry: (() => void) | undefined;
-  if (templates.state === "loading") {
-    if (lastResolvedTemplates?.length) {
-      return null;
-    }
+  if (realtime.state === "hasError") {
     message = t(($) => {
-      return $.chat.templates.importedLoading;
+      return $.chat.templates.importedUnavailable;
     });
-  } else if (templates.state === "hasError") {
-    if (realtime.state === "hasError") {
-      message = t(($) => {
-        return $.chat.templates.importedUnavailable;
-      });
-    } else {
-      message = t(($) => {
-        return $.chat.templates.importedLoadFailed;
-      });
-      retry = retryCatalog;
-    }
   } else {
-    return null;
+    message = t(($) => {
+      return $.chat.templates.importedLoadFailed;
+    });
+    retry = retryCatalog;
   }
   return (
     <div
       className="col-span-full flex flex-wrap items-center gap-2 text-sm text-muted-foreground"
-      role={templates.state === "hasError" ? "alert" : "status"}
+      role="alert"
     >
       <span>{message}</span>
       {retry ? (
@@ -5102,7 +5111,11 @@ function TemplatePickerDialog({
     importedTemplateItems.find((item) => {
       return item.template.id === importedPreviewId;
     }) ?? null;
-  const isPreviewing = Boolean(previewItem ?? importedPreviewItem);
+  const documentPreview = useGet(signals.template.documentPreview$);
+  const closeDocumentPreview = useSet(signals.template.closeDocumentPreview$);
+  const isPreviewing = Boolean(
+    previewItem ?? importedPreviewItem ?? documentPreview,
+  );
   const dialogContentClassName = cn(
     "gap-0 overflow-hidden p-0 focus:outline-none focus-visible:outline-none focus-visible:ring-0",
     "flex flex-col",
@@ -5127,6 +5140,7 @@ function TemplatePickerDialog({
   const selectedCategory = resolveTemplatePickerCategory(
     category,
     customTemplatesEnabled,
+    features[FeatureSwitchKey.BuiltinDocumentTemplates] === true,
   );
   const showTemplatePickerSearch = selectedCategory === "workflow";
 
@@ -5163,6 +5177,7 @@ function TemplatePickerDialog({
 
   const completeTemplatePickerClose = () => {
     clearPresentationPreviews();
+    closeDocumentPreview();
     resetImportedTemplatePicker();
     resetCustomTemplatePicker();
     setPresentationGridScrollTop(0);
@@ -5252,6 +5267,10 @@ function TemplatePickerDialog({
       open={open}
       onOpenChange={(nextOpen) => {
         if (!nextOpen) {
+          if (documentPreview !== undefined) {
+            closeDocumentPreview();
+            return;
+          }
           if (importedPreviewItem !== null) {
             closeImportedPreview();
             return;
@@ -5309,6 +5328,9 @@ function TemplatePickerDialog({
               <TemplatePickerCategoryNav
                 selectedCategory={selectedCategory}
                 customTemplatesEnabled={customTemplatesEnabled}
+                documentTemplatesEnabled={
+                  features[FeatureSwitchKey.BuiltinDocumentTemplates] === true
+                }
                 onChange={handleCategoryChange}
                 onReopenCustom={resetCustomTemplatePickerView}
               />
@@ -5319,7 +5341,8 @@ function TemplatePickerDialog({
                 className="relative flex min-h-0 min-w-0 flex-1 flex-col focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               >
                 <TemplatePaidToolNotice category={selectedCategory} />
-                {selectedCategory !== "custom" ? (
+                {selectedCategory !== "custom" &&
+                selectedCategory !== "document" ? (
                   <div
                     className={cn(
                       "relative h-[68px] shrink-0 items-center px-6 pr-14",
@@ -5350,6 +5373,13 @@ function TemplatePickerDialog({
                   onSelectImportedPresentation={
                     handleSelectImportedPresentation
                   }
+                  onSelectDocument={(item) => {
+                    onChange({
+                      type: "document",
+                      selection: { documentTemplateId: item.id },
+                    });
+                    closeTemplatePicker();
+                  }}
                   onSelectCustom={handleSelectCustom}
                   onPreviewPresentation={handlePreview}
                   onPreviewImportedPresentation={handlePreviewImported}
@@ -5366,7 +5396,19 @@ function TemplatePickerDialog({
             </Tabs>
           </div>
         ) : null}
-        {previewItem ? (
+        {documentPreview ? (
+          <DocumentTemplatePreviewPage
+            signals={signals}
+            item={documentPreview}
+            onSelect={(item) => {
+              onChange({
+                type: "document",
+                selection: { documentTemplateId: item.id },
+              });
+              closeTemplatePicker();
+            }}
+          />
+        ) : previewItem ? (
           <TemplatePreviewPage
             item={previewItem}
             onBack={() => {
@@ -5405,6 +5447,7 @@ function TemplatePickerCategoryContent({
   onSelectPresentation,
   onSelectImportedPresentation,
   onSelectCustom,
+  onSelectDocument,
   onPreviewPresentation,
   onPreviewImportedPresentation,
   onImported,
@@ -5433,6 +5476,9 @@ function TemplatePickerCategoryContent({
   ) => void;
   onSelectImportedPresentation: (template: PresentationTemplateSummary) => void;
   onSelectCustom: (template: UserTemplateCatalogEntry) => void;
+  onSelectDocument: (
+    item: import("@okouai/core/document-template-items").DocumentTemplateItem,
+  ) => void;
   onPreviewPresentation: (
     item: PresentationTemplateItem,
     slideIndex?: number,
@@ -5451,6 +5497,14 @@ function TemplatePickerCategoryContent({
   onSelectWorkflow: (item: WorkflowTemplateItem) => void;
   runtime: TemplatePreviewRuntime;
 }) {
+  if (selectedCategory === "document") {
+    return (
+      <DocumentTemplatePickerPane
+        signals={signals}
+        onSelect={onSelectDocument}
+      />
+    );
+  }
   if (selectedCategory === "custom") {
     return (
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
@@ -5603,6 +5657,12 @@ function selectedComposerTemplateAttachment(
   importedTemplates: readonly PresentationTemplateSummary[] = [],
   customTemplates: readonly UserTemplateCatalogEntry[] = [],
 ): ComposerTemplateAttachment | undefined {
+  if (value?.type === "document") {
+    const item = findDocumentTemplateItem(value.selection.documentTemplateId);
+    return item
+      ? { type: "document", title: item.title, category: "document" }
+      : undefined;
+  }
   if (value?.type === "custom") {
     return customTemplateAttachment(
       value.selection.userTemplateId,
@@ -5697,6 +5757,7 @@ function useTemplatePickerTrigger(signals: ComposerSignals) {
   const selectedCategory = resolveTemplatePickerCategory(
     templateMode === "presentation" ? "slides" : (templateMode ?? category),
     customTemplatesEnabled,
+    pickerFeatures[FeatureSwitchKey.BuiltinDocumentTemplates] === true,
   );
   const prewarm = () => {
     prewarmTemplatePreviewImages(

@@ -29,9 +29,13 @@ import {
   type RunStatus,
 } from "@okouai/api-contracts/contracts/runs";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import {
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/runtime/connector-catalog";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agents } from "@okouai/db/schema/agent";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
+import { chatEvents } from "@okouai/db/schema/chat-event";
 import { blobs } from "@okouai/db/schema/blob";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { runnerState } from "@okouai/db/runtime/runner-state";
@@ -50,6 +54,8 @@ import {
   isNull,
   lt,
   lte,
+  ne,
+  notExists,
   notInArray,
   or,
   sql,
@@ -109,8 +115,12 @@ import {
   type ReleasedRunSlot,
 } from "../services/agent-run-terminal-transition.service";
 import { notifyRunningChatRunOfPendingInput$ } from "../services/chat-thread-queue-drain.service";
-import { loadConnectorRuntimeSlugSelection } from "../services/connector-catalog-slug-source.service";
-import { loadConnectorRunnerFirewallCatalog } from "../services/connector-runner-firewall-catalog.service";
+import {
+  connectorCatalogCurrentWhere,
+  connectorRuntimeSlugSelectionReadPlan,
+  connectorRuntimeSlugSelectionFromRows,
+} from "../services/connector-catalog-slug-source.service";
+import { connectorRunnerFirewallCatalog$ } from "../services/connector-runner-firewall-catalog.service";
 import { resolveConnectorRuntimeTargets$ } from "../services/connector-runtime-sync.service";
 import { decryptPersistentSecretsMap } from "../services/crypto.utils";
 import { historyGenerationRunIdForStoredExecutionContext } from "../services/history-generation-run";
@@ -118,11 +128,9 @@ import { resolvePiModelConfigForClaim } from "../services/pi-model-config-claim-
 import {
   resolveRunnerReusePreference$,
   runnerPreferenceTelemetryDimensions,
-  runnerPreferenceTelemetryResolution,
   runnerReuseKeyTelemetryKind,
   runnerReusePreferenceLookupError,
   runnerReusePreferencePollPriority,
-  type RunnerPreferenceTelemetryResolution,
 } from "../services/runner-reuse-preference";
 import {
   resumeSessionHistoryBlobKey,
@@ -134,7 +142,7 @@ import {
 import {
   mergeNetworkPolicyRefreshes,
   networkPolicyRefreshesRecord,
-  resolveActiveNetworkPolicyRefreshes,
+  readActiveNetworkPolicyRefreshes$,
 } from "../services/user-permission-grants.service";
 import { safeSync, settle, tapError } from "../utils";
 
@@ -386,26 +394,18 @@ class ClaimRouteTimingCollector {
     });
   }
 
-  async measureNetworkPolicyRefresh<T>(
-    operation: () => Promise<{
-      readonly value: T;
-      readonly path: ClaimNetworkPolicyRefreshPath;
-    }>,
-  ): Promise<T> {
-    const startedAt = now();
-    const result = await settle(operation());
-    const finishedAt = now();
+  recordNetworkPolicyRefresh(
+    startedAt: number,
+    finishedAt: number,
+    path: ClaimNetworkPolicyRefreshPath | undefined,
+  ): void {
     this.records.push({
       actionType: "claim_route_response_network_policy_refresh",
       spanKind: "nested",
       durationMs: Math.max(0, finishedAt - startedAt),
       timestamp: new Date(finishedAt).toISOString(),
-      ...(result.ok ? { policyRefreshPath: result.value.path } : {}),
+      ...(path === undefined ? {} : { policyRefreshPath: path }),
     });
-    if (!result.ok) {
-      throw result.error;
-    }
-    return result.value.value;
   }
 
   flush(args: {
@@ -694,12 +694,14 @@ const pollBody$ = bodyResultOf(runnersPollContract.poll);
 
 function recordPollTimingMetrics(args: {
   readonly runId: string;
+  readonly runnerId: string | undefined;
   readonly runnerGroup: string;
   readonly profile: string;
   readonly authType: RunnerAuthContext["type"];
   readonly pollReason: string | undefined;
   readonly runnerPreference: RunnerPreference;
   readonly reuseKeyKind: "thread" | "session" | "none";
+  readonly reuseKey: string | null;
   readonly historyGenerationRunId: string | undefined;
   readonly queueCreatedAtMs: number;
   readonly pollRequestStartedAtMs: number;
@@ -711,7 +713,9 @@ function recordPollTimingMetrics(args: {
     runner_group: args.runnerGroup,
     profile: args.profile,
     auth_type: args.authType,
+    ...(args.runnerId === undefined ? {} : { runner_id: args.runnerId }),
     reuse_key_kind: args.reuseKeyKind,
+    ...(args.reuseKey === null ? {} : { reuse_key: args.reuseKey }),
     ...runnerPreferenceTelemetryDimensions(args.runnerPreference),
   };
   if (args.pollReason) {
@@ -820,7 +824,9 @@ const findPendingRunnerJob$ = command(
         cliAgentSessionId: runnerJobQueue.cliAgentSessionId,
         reuseKey: runnerJobQueue.reuseKey,
         historyGenerationRunId:
-          sql`${runnerJobQueue.executionContext}->'resumeSession'->>'historyGenerationRunId'`.mapWith(
+          sql`CASE WHEN ${runnerJobQueue.executionContext} ? 'nativeContinuation'
+            THEN ${runnerJobQueue.executionContext}->'nativeContinuation'->>'generationRunId'
+            ELSE ${runnerJobQueue.executionContext}->'resumeSession'->>'historyGenerationRunId' END`.mapWith(
             nullableDriverValueDecoder(pgTextDecoder),
           ),
         createdAt: runnerJobQueue.createdAt,
@@ -904,12 +910,14 @@ const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   recordPollTimingMetrics({
     runId: pendingJob.runId,
+    runnerId: body.data.runnerId,
     runnerGroup: group,
     profile: pendingJob.profile,
     authType: auth.type,
     pollReason: body.data.telemetry?.pollReason,
     runnerPreference,
     reuseKeyKind: runnerReuseKeyTelemetryKind(pendingJob.reuseKey),
+    reuseKey: pendingJob.reuseKey,
     historyGenerationRunId: pendingJob.historyGenerationRunId ?? undefined,
     queueCreatedAtMs: pendingJob.createdAt.getTime(),
     pollRequestStartedAtMs,
@@ -960,6 +968,7 @@ interface ClaimedRun {
   readonly prompt: string;
   readonly appendSystemPrompt: string | null;
   readonly vars: unknown;
+  readonly isFirstRun: boolean | null;
 }
 
 interface RunNetworkPolicyScope {
@@ -990,8 +999,8 @@ async function getRunNetworkPolicyScope(
       status: agentRuns.status,
     })
     .from(agentRuns)
-    .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
-    .innerJoin(agents, eq(agents.id, agentSessions.agentId))
+
+    .innerJoin(agents, eq(agents.id, agentRuns.agentId))
     .where(eq(agentRuns.id, runId))
     .limit(1);
   signal.throwIfAborted();
@@ -1042,33 +1051,35 @@ async function getClaimableJob(
         id: agentRuns.id,
         userId: agentRuns.userId,
         orgId: agentRuns.orgId,
-        agentId: agentSessions.agentId,
+        agentId: agentRuns.agentId,
         prompt: agentRuns.prompt,
         appendSystemPrompt: agentRuns.appendSystemPrompt,
         vars: agentRuns.vars,
+        // Claim's current input may already belong to this Run; only another
+        // run-attributed event is evidence of earlier thread activity.
+        isFirstRun: sql`
+          CASE WHEN ${agentRuns.chatThreadId} IS NULL THEN NULL
+          ELSE ${notExists(
+            db
+              .select({ id: chatEvents.id })
+              .from(chatEvents)
+              .where(
+                and(
+                  eq(chatEvents.chatThreadId, agentRuns.chatThreadId),
+                  isNotNull(chatEvents.runId),
+                  ne(chatEvents.runId, agentRuns.id),
+                ),
+              ),
+          )} END
+        `.mapWith(nullableDriverValueDecoder(pgBooleanDecoder)),
       },
     })
     .from(runnerJobQueue)
     .innerJoin(agentRuns, eq(runnerJobQueue.runId, agentRuns.id))
-    .innerJoin(
-      agentSessions,
-      and(
-        eq(agentSessions.id, agentRuns.sessionId),
-        or(
-          isNotNull(agentSessions.agentId),
-          // An unbound session belongs directly to the run's owner. Its
-          // producer owns admission and lifecycle fencing, not runner claim.
-          and(
-            eq(agentSessions.orgId, agentRuns.orgId),
-            eq(agentSessions.userId, agentRuns.userId),
-            isNull(agentRuns.chatThreadId),
-          ),
-        ),
-      ),
-    )
     .where(
       and(
         eq(runnerJobQueue.runId, runId),
+        or(isNotNull(agentRuns.agentId), isNull(agentRuns.chatThreadId)),
         gt(runnerJobQueue.expiresAt, sql`now()`),
       ),
     )
@@ -1452,75 +1463,107 @@ async function secretValuesForRunner(
   });
 }
 
-async function refreshClaimNetworkPolicies(args: {
-  readonly db: Db;
-  readonly run: ClaimedRun;
-  readonly storedContext: StoredExecutionContext;
-  readonly timing: ClaimRouteTimingCollector;
-}): Promise<
-  Pick<StoredExecutionContext, "networkPolicies" | "networkPolicyRefreshes">
-> {
-  const storedNetworkPolicies = args.storedContext.networkPolicies ?? {};
-  assertClaimConnectorIdentity(args.run, args.storedContext);
-  if (Object.keys(storedNetworkPolicies).length === 0) {
-    return {
-      networkPolicies: args.storedContext.networkPolicies,
-      networkPolicyRefreshes: undefined,
-    };
-  }
-
-  const builtinConnectorSlugs = [
-    ...new Set(
-      args.storedContext.connectorRuntimeTargets.flatMap((target) => {
-        return target.kind === "builtin" ? [target.connectorSlug] : [];
-      }),
-    ),
-  ];
-
-  return await args.timing.measureNetworkPolicyRefresh(async () => {
-    if (builtinConnectorSlugs.length === 0) {
+const readClaimNetworkPolicyRefreshes$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly run: ClaimedRun;
+      readonly storedContext: StoredExecutionContext;
+      readonly timing: ClaimRouteTimingCollector;
+    },
+  ): Promise<
+    Pick<StoredExecutionContext, "networkPolicies" | "networkPolicyRefreshes">
+  > => {
+    const storedNetworkPolicies = args.storedContext.networkPolicies ?? {};
+    assertClaimConnectorIdentity(args.run, args.storedContext);
+    if (Object.keys(storedNetworkPolicies).length === 0) {
       return {
-        value: {
-          networkPolicies: args.storedContext.networkPolicies,
-          networkPolicyRefreshes: undefined,
-        },
-        path: "no_builtin_targets",
+        networkPolicies: args.storedContext.networkPolicies,
+        networkPolicyRefreshes: undefined,
       };
     }
-    if (args.run.agentId === null) {
-      throw new Error(
-        "Connector network policy refresh requires an Agent identity",
-      );
+
+    const builtinConnectorSlugs = [
+      ...new Set(
+        args.storedContext.connectorRuntimeTargets.flatMap((target) => {
+          return target.kind === "builtin" ? [target.connectorSlug] : [];
+        }),
+      ),
+    ];
+
+    const startedAt = now();
+    // Keep the whole finite read in the response owner's allSettled group.
+    // Recording accepts captured timing facts, never a database/accessor closure.
+    const result = await settle(
+      (async (): Promise<{
+        readonly value: Pick<
+          StoredExecutionContext,
+          "networkPolicies" | "networkPolicyRefreshes"
+        >;
+        readonly path: ClaimNetworkPolicyRefreshPath;
+      }> => {
+        if (builtinConnectorSlugs.length === 0) {
+          return {
+            value: {
+              networkPolicies: args.storedContext.networkPolicies,
+              networkPolicyRefreshes: undefined,
+            },
+            path: "no_builtin_targets",
+          };
+        }
+        if (args.run.agentId === null) {
+          throw new Error(
+            "Connector network policy refresh requires an Agent identity",
+          );
+        }
+
+        const scope = {
+          orgId: args.run.orgId,
+          userId: args.run.userId,
+          agentId: args.run.agentId,
+        };
+        const plan = connectorRuntimeSlugSelectionReadPlan({
+          connectorSlugs: builtinConnectorSlugs,
+        });
+        const rows = await get(db$)
+          .select(plan.columns)
+          .from(connectorCatalog)
+          .leftJoin(connectorCatalogEntries, plan.join)
+          .where(connectorCatalogCurrentWhere());
+        const snapshot = connectorRuntimeSlugSelectionFromRows(
+          plan.selection,
+          rows,
+        );
+        const refreshes = await set(readActiveNetworkPolicyRefreshes$, {
+          scope,
+          connectorSlugs: builtinConnectorSlugs,
+          snapshot,
+        });
+
+        return {
+          value: {
+            networkPolicies: mergeNetworkPolicyRefreshes(
+              storedNetworkPolicies,
+              refreshes,
+            ),
+            networkPolicyRefreshes: networkPolicyRefreshesRecord(refreshes),
+          },
+          path: "current_catalog",
+        };
+      })(),
+    );
+    const finishedAt = now();
+    args.timing.recordNetworkPolicyRefresh(
+      startedAt,
+      finishedAt,
+      result.ok ? result.value.path : undefined,
+    );
+    if (!result.ok) {
+      throw result.error;
     }
-
-    const scope = {
-      orgId: args.run.orgId,
-      userId: args.run.userId,
-      agentId: args.run.agentId,
-    };
-    const connectorCatalogSnapshot = await loadConnectorRuntimeSlugSelection(
-      args.db,
-      { connectorSlugs: builtinConnectorSlugs },
-    );
-    const refreshes = await resolveActiveNetworkPolicyRefreshes(
-      args.db,
-      scope,
-      builtinConnectorSlugs,
-      connectorCatalogSnapshot,
-    );
-
-    return {
-      value: {
-        networkPolicies: mergeNetworkPolicyRefreshes(
-          storedNetworkPolicies,
-          refreshes,
-        ),
-        networkPolicyRefreshes: networkPolicyRefreshesRecord(refreshes),
-      },
-      path: "current_catalog",
-    };
-  });
-}
+    return result.value.value;
+  },
+);
 
 function assertClaimConnectorIdentity(
   run: ClaimedRun,
@@ -1836,109 +1879,49 @@ async function resolveResumeSessionForClaim(args: {
   );
 }
 
-async function buildClaimResponseBody(
-  args: {
-    readonly db: Db;
-    readonly run: ClaimedRun;
-    readonly reuseKey: string | null;
-    readonly storedContext: StoredExecutionContext;
-    readonly timing: ClaimRouteTimingCollector;
-    readonly loadIdentityRepresentation: (
-      hash: string,
-    ) => Promise<IdentityResumeSessionHistoryRepresentation | undefined>;
-    readonly loadCompressedRepresentation: (
-      hash: string,
-      encoding: CompressedSessionHistoryBlobEncoding,
-    ) => Promise<CompressedResumeSessionHistoryRepresentation | undefined>;
-    readonly generateResumeSessionHistoryUrl: (hash: string) => Promise<string>;
-    readonly generateResumeSessionHistoryObjectUrl: (
-      objectKey: string,
-    ) => Promise<string>;
-  },
-  signal: AbortSignal,
-): Promise<ExecutionContext> {
-  const secretValues = await secretValuesForRunner(
-    args.storedContext,
-    args.timing,
-  );
-  signal.throwIfAborted();
-  return await args.timing.measure(
-    "claim_route_response_assembly",
-    "top_level",
-    async () => {
-      const [resumeSessionResult, refreshedPoliciesResult] =
-        await Promise.allSettled([
-          resolveResumeSessionForClaim({
-            resumeSession: args.storedContext.resumeSession,
-            timing: args.timing,
-            loadIdentityRepresentation(hash: string) {
-              return args.loadIdentityRepresentation(hash);
-            },
-            loadCompressedRepresentation(
-              hash: string,
-              encoding: CompressedSessionHistoryBlobEncoding,
-            ) {
-              return args.loadCompressedRepresentation(hash, encoding);
-            },
-            generateResumeSessionHistoryUrl:
-              args.generateResumeSessionHistoryUrl,
-            generateResumeSessionHistoryObjectUrl:
-              args.generateResumeSessionHistoryObjectUrl,
-          }),
-          refreshClaimNetworkPolicies({
-            db: args.db,
-            run: args.run,
-            storedContext: args.storedContext,
-            timing: args.timing,
-          }),
-        ]);
-      if (resumeSessionResult.status === "rejected") {
-        const error: unknown = resumeSessionResult.reason;
-        throw error;
-      }
-      const resumeSession = resumeSessionResult.value;
-      signal.throwIfAborted();
-      const sandboxToken = generateSandboxToken(
-        args.run.userId,
-        args.run.id,
-        args.run.orgId,
-      );
-      if (refreshedPoliciesResult.status === "rejected") {
-        const error: unknown = refreshedPoliciesResult.reason;
-        throw error;
-      }
-      const refreshedPolicies = refreshedPoliciesResult.value;
-      signal.throwIfAborted();
-      const {
-        secretValueEnvironmentKeys: _secretValueEnvironmentKeys,
-        storageMounts: _storedStorageMounts,
-        ...runnerStoredContext
-      } = args.storedContext;
-      return {
-        ...runnerStoredContext,
-        runId: args.run.id,
-        reuseKey: args.reuseKey,
-        prompt: args.run.prompt,
-        appendSystemPrompt: args.run.appendSystemPrompt,
-        vars: mergeClaimVars({
-          runVars: (args.run.vars as Record<string, string> | null) ?? null,
-          connectorVars: args.storedContext.vars,
-        }),
-        storageManifest: {
-          storageMounts: args.storedContext.storageMounts.map((storedMount) => {
-            const { orgId: _orgId, userId: _userId, ...mount } = storedMount;
-            return mount;
-          }),
-        },
-        resumeSession,
-        sandboxToken,
-        secretValues,
-        connectorRuntimeTargets: args.storedContext.connectorRuntimeTargets,
-        networkPolicies: refreshedPolicies.networkPolicies,
-        networkPolicyRefreshes: refreshedPolicies.networkPolicyRefreshes,
-      };
+function claimResponseBody(args: {
+  readonly run: ClaimedRun;
+  readonly reuseKey: string | null;
+  readonly storedContext: StoredExecutionContext;
+  readonly resumeSession: ExecutionContext["resumeSession"];
+  readonly sandboxToken: string;
+  readonly secretValues: ExecutionContext["secretValues"];
+  readonly refreshedPolicies: Pick<
+    StoredExecutionContext,
+    "networkPolicies" | "networkPolicyRefreshes"
+  >;
+}): ExecutionContext {
+  const {
+    secretValueEnvironmentKeys: _secretValueEnvironmentKeys,
+    storageMounts: _storedStorageMounts,
+    ...runnerStoredContext
+  } = args.storedContext;
+  return {
+    ...runnerStoredContext,
+    ...(args.run.isFirstRun === null
+      ? {}
+      : { isFirstRun: args.run.isFirstRun }),
+    runId: args.run.id,
+    reuseKey: args.reuseKey,
+    prompt: args.run.prompt,
+    appendSystemPrompt: args.run.appendSystemPrompt,
+    vars: mergeClaimVars({
+      runVars: (args.run.vars as Record<string, string> | null) ?? null,
+      connectorVars: args.storedContext.vars,
+    }),
+    storageManifest: {
+      storageMounts: args.storedContext.storageMounts.map((storedMount) => {
+        const { orgId: _orgId, userId: _userId, ...mount } = storedMount;
+        return mount;
+      }),
     },
-  );
+    resumeSession: args.resumeSession,
+    sandboxToken: args.sandboxToken,
+    secretValues: args.secretValues,
+    connectorRuntimeTargets: args.storedContext.connectorRuntimeTargets,
+    networkPolicies: args.refreshedPolicies.networkPolicies,
+    networkPolicyRefreshes: args.refreshedPolicies.networkPolicyRefreshes,
+  };
 }
 
 const buildClaimResponseBodyForClaim$ = command(
@@ -1953,37 +1936,76 @@ const buildClaimResponseBodyForClaim$ = command(
     },
     signal: AbortSignal,
   ): Promise<ExecutionContext> => {
-    return await buildClaimResponseBody(
-      {
-        db: args.db,
-        run: args.run,
-        reuseKey: args.reuseKey,
-        storedContext: args.storedContext,
-        timing: args.timing,
-        loadIdentityRepresentation(hash: string) {
-          return set(loadIdentityResumeSessionHistoryRepresentation$, {
-            db: args.db,
-            hash,
-          });
-        },
-        loadCompressedRepresentation(
-          hash: string,
-          encoding: CompressedSessionHistoryBlobEncoding,
-        ) {
-          return set(loadCompressedResumeSessionHistoryRepresentation$, {
-            db: args.db,
-            encoding,
-            hash,
-          });
-        },
-        generateResumeSessionHistoryUrl(hash: string) {
-          return set(generateResumeSessionHistoryUrl$, hash);
-        },
-        generateResumeSessionHistoryObjectUrl(objectKey: string) {
-          return set(generateResumeSessionHistoryObjectUrl$, objectKey);
-        },
+    const secretValues = await secretValuesForRunner(
+      args.storedContext,
+      args.timing,
+    );
+    signal.throwIfAborted();
+    return await args.timing.measure(
+      "claim_route_response_assembly",
+      "top_level",
+      async () => {
+        const [resumeSessionResult, refreshedPoliciesResult] =
+          await Promise.allSettled([
+            resolveResumeSessionForClaim({
+              resumeSession: args.storedContext.resumeSession,
+              timing: args.timing,
+              loadIdentityRepresentation(hash: string) {
+                return set(loadIdentityResumeSessionHistoryRepresentation$, {
+                  db: args.db,
+                  hash,
+                });
+              },
+              loadCompressedRepresentation(
+                hash: string,
+                encoding: CompressedSessionHistoryBlobEncoding,
+              ) {
+                return set(loadCompressedResumeSessionHistoryRepresentation$, {
+                  db: args.db,
+                  encoding,
+                  hash,
+                });
+              },
+              generateResumeSessionHistoryUrl(hash: string) {
+                return set(generateResumeSessionHistoryUrl$, hash);
+              },
+              generateResumeSessionHistoryObjectUrl(objectKey: string) {
+                return set(generateResumeSessionHistoryObjectUrl$, objectKey);
+              },
+            }),
+            set(readClaimNetworkPolicyRefreshes$, {
+              run: args.run,
+              storedContext: args.storedContext,
+              timing: args.timing,
+            }),
+          ]);
+        if (resumeSessionResult.status === "rejected") {
+          const error: unknown = resumeSessionResult.reason;
+          throw error;
+        }
+        const resumeSession = resumeSessionResult.value;
+        signal.throwIfAborted();
+        const sandboxToken = generateSandboxToken(
+          args.run.userId,
+          args.run.id,
+          args.run.orgId,
+        );
+        if (refreshedPoliciesResult.status === "rejected") {
+          const error: unknown = refreshedPoliciesResult.reason;
+          throw error;
+        }
+        const refreshedPolicies = refreshedPoliciesResult.value;
+        signal.throwIfAborted();
+        return claimResponseBody({
+          run: args.run,
+          reuseKey: args.reuseKey,
+          storedContext: args.storedContext,
+          resumeSession,
+          sandboxToken,
+          secretValues,
+          refreshedPolicies,
+        });
       },
-      signal,
     );
   },
 );
@@ -2006,7 +2028,7 @@ interface ClaimTimingTelemetry {
 type RunnerPreferenceTelemetryState = RunnerPreferenceClaimState | "absent";
 
 interface SuccessfulClaimPreferenceTelemetry {
-  readonly resolution: RunnerPreferenceTelemetryResolution | undefined;
+  readonly dimensions: Readonly<Record<string, string>>;
   readonly claimState: RunnerPreferenceTelemetryState | undefined;
   readonly targetedSelf: boolean | undefined;
 }
@@ -2018,7 +2040,7 @@ function successfulClaimPreferenceTelemetry(args: {
   const preference = args.telemetry?.runnerPreference;
   if (!preference) {
     return {
-      resolution: undefined,
+      dimensions: {},
       claimState: undefined,
       targetedSelf: undefined,
     };
@@ -2026,7 +2048,7 @@ function successfulClaimPreferenceTelemetry(args: {
 
   if (preference.kind === "noPreference") {
     return {
-      resolution: runnerPreferenceTelemetryResolution(preference),
+      dimensions: runnerPreferenceTelemetryDimensions(preference),
       claimState: "absent",
       targetedSelf: undefined,
     };
@@ -2034,7 +2056,7 @@ function successfulClaimPreferenceTelemetry(args: {
 
   const claimState = args.telemetry?.runnerPreferenceClaimState;
   return {
-    resolution: runnerPreferenceTelemetryResolution(preference),
+    dimensions: runnerPreferenceTelemetryDimensions(preference),
     claimState,
     targetedSelf: args.runnerIdentity
       ? preference.runnerIdentity.runnerId.toLowerCase() ===
@@ -2102,9 +2124,10 @@ function scheduleSuccessfulClaimSideEffects(args: {
     pollDueToJobDiscoveredMs: args.telemetry?.pollDueToJobDiscoveredMs,
     pollHttpRequestMs: args.telemetry?.pollHttpRequestMs,
     pollReason: args.telemetry?.pollReason,
-    preferenceResolution: preferenceTelemetry.resolution,
+    preferenceDimensions: preferenceTelemetry.dimensions,
     preferenceClaimState: preferenceTelemetry.claimState,
     preferenceTargetedSelf: preferenceTelemetry.targetedSelf,
+    reuseKey: job.reuseKey,
     historyGenerationRunId: historyGenerationRunIdForStoredExecutionContext(
       args.storedContext,
     ),
@@ -2133,10 +2156,10 @@ function scheduleClaimSucceededSideEffects(args: {
   readonly pollDueToJobDiscoveredMs: number | undefined;
   readonly pollHttpRequestMs: number | undefined;
   readonly pollReason: string | undefined;
-  readonly preferenceResolution:
-    RunnerPreferenceTelemetryResolution | undefined;
+  readonly preferenceDimensions: Readonly<Record<string, string>>;
   readonly preferenceClaimState: RunnerPreferenceTelemetryState | undefined;
   readonly preferenceTargetedSelf: boolean | undefined;
+  readonly reuseKey: string | null;
   readonly historyGenerationRunId: string | undefined;
   readonly runnerAttribution: RunnerClaimAttribution | undefined;
   readonly claimRouteTiming: ClaimRouteTimingCollector;
@@ -2168,10 +2191,10 @@ interface ClaimTimingMetricArgs {
   readonly pollDueToJobDiscoveredMs: number | undefined;
   readonly pollHttpRequestMs: number | undefined;
   readonly pollReason: string | undefined;
-  readonly preferenceResolution:
-    RunnerPreferenceTelemetryResolution | undefined;
+  readonly preferenceDimensions: Readonly<Record<string, string>>;
   readonly preferenceClaimState: RunnerPreferenceTelemetryState | undefined;
   readonly preferenceTargetedSelf: boolean | undefined;
+  readonly reuseKey: string | null;
   readonly historyGenerationRunId: string | undefined;
   readonly runnerAttribution: RunnerClaimAttribution | undefined;
   readonly claimRouteTiming: ClaimRouteTimingCollector;
@@ -2301,11 +2324,8 @@ function claimSuccessfulDimensions(
   return {
     ...dimensions,
     ...runnerClaimAttributionDimensions(args.runnerAttribution),
-    ...(args.preferenceResolution
-      ? {
-          runner_preference_resolution: args.preferenceResolution,
-        }
-      : {}),
+    ...args.preferenceDimensions,
+    ...(args.reuseKey === null ? {} : { reuse_key: args.reuseKey }),
     ...(args.preferenceClaimState
       ? { runner_preference_claim_state: args.preferenceClaimState }
       : {}),
@@ -2466,6 +2486,7 @@ async function resolveStoredExecutionContextForClaim(
     readonly orgId: string;
     readonly executionContext: unknown;
     readonly capabilities: RunnerClaimCapabilities;
+    readonly nativeContinuationSupported: boolean;
     readonly timing: ClaimRouteTimingCollector;
     readonly scheduleFailedSideEffects: (
       args: ClaimFailedSideEffectArgs,
@@ -2492,6 +2513,15 @@ async function resolveStoredExecutionContextForClaim(
     return {
       compatible: false as const,
       response: await failClaimForInvalidStoredExecutionContext(args, signal),
+    };
+  }
+  if (
+    storedContextResult.data.nativeContinuation !== undefined &&
+    !args.nativeContinuationSupported
+  ) {
+    return {
+      compatible: false as const,
+      response: notFound("Job not found in queue"),
     };
   }
   const piModelConfigResolution = resolvePiModelConfigForClaim({
@@ -2533,6 +2563,7 @@ const claimAuthorizedJob$ = command(
       readonly authType: RunnerAuthContext["type"];
       readonly runnerAttribution: RunnerClaimAttribution | undefined;
       readonly capabilities: RunnerClaimCapabilities;
+      readonly nativeContinuationSupported: boolean;
       readonly jobWithRun: ClaimableJob;
       readonly telemetry: ClaimTimingTelemetry | undefined;
       readonly claimRequestStartedAtMs: number;
@@ -2550,6 +2581,7 @@ const claimAuthorizedJob$ = command(
         orgId: run.orgId,
         executionContext: jobWithRun.job.executionContext,
         capabilities: args.capabilities,
+        nativeContinuationSupported: args.nativeContinuationSupported,
         timing: claimRouteTiming,
         scheduleFailedSideEffects(failedArgs) {
           set(scheduleClaimFailedSideEffects$, failedArgs, signal);
@@ -2722,6 +2754,8 @@ const claimInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       authType: auth.type,
       runnerAttribution,
       capabilities: body.data.capabilities,
+      nativeContinuationSupported:
+        body.data.nativeContinuationSupported === true,
       jobWithRun,
       telemetry: body.data.telemetry
         ? { ...body.data.telemetry, runnerPreference }
@@ -2839,9 +2873,7 @@ const builtinFirewallsResolveInner$ = command(
       return body.response;
     }
 
-    const catalog = await loadConnectorRunnerFirewallCatalog(() => {
-      return get(db$);
-    });
+    const catalog = await get(connectorRunnerFirewallCatalog$);
     signal.throwIfAborted();
     const names =
       body.data.names === undefined ? undefined : [...new Set(body.data.names)];

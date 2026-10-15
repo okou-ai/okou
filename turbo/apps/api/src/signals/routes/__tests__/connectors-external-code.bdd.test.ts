@@ -6,12 +6,15 @@
 
 import { Buffer } from "node:buffer";
 
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
+import { connectorAccountRoutes } from "../connector-accounts";
 import {
   createBddApi,
   expectApiError,
@@ -23,6 +26,7 @@ import {
   mockAwsDeferredTokenExchange,
   mockAwsExternalCodeProvider,
 } from "./helpers/api-bdd-connectors";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const connectorsApi = createConnectorBddApi(context);
@@ -513,12 +517,33 @@ describe("CONN-02: external-code session lifecycle", () => {
       ]),
     );
 
+    createRouteMocks(context).clerk.session(
+      actor.userId,
+      actor.orgId,
+      actor.orgRole,
+    );
+    const renamed = await accept(
+      setupApp({ context, routes: connectorAccountRoutes })(
+        connectorAccountsContract,
+      ).rename({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { connectionId: siblingAccount.connector.id },
+        body: {
+          target: { kind: "builtin", connectorSlug: "aws" },
+          displayName: "Renamed AWS sibling",
+        },
+      }),
+      [200],
+    );
     const replay = await connectorsApi.completeExternalCode(actor, "aws", {
       sessionId: siblingSession.sessionId,
       sessionToken: siblingSession.sessionToken,
       code: awsVerificationCode(siblingSession.authorizationUrl),
     });
-    expect(replay.connector.id).toBe(siblingAccount.connector.id);
+    expect(replay.connector).toStrictEqual({
+      ...siblingAccount.connector,
+      updatedAt: renamed.body.updatedAt,
+    });
     expect(provider.tokenRequests).toHaveLength(2);
 
     await connectorsApi.deleteBuiltinConnectorAccount(

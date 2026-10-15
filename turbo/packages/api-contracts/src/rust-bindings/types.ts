@@ -16,6 +16,7 @@ import { sshTypeBindings } from "./ssh-types";
 import { vncTypeBindings } from "./vnc-types";
 import { sandboxChannelTypeBindings } from "./sandbox-channel-types";
 import { runnerWssTicketsContract } from "../contracts/runner-wss-tickets";
+import { runnersRunStartupContract } from "../contracts/runner-startup";
 import { knownRunFailureReasonSchema } from "../contracts/run-failure-reasons";
 import { modelProviderCodexRuntimeConfigSchema } from "../contracts/model-providers";
 import { fileEntryWithHashSchema } from "../contracts/storages";
@@ -56,6 +57,10 @@ export const rustTypeRootDoc = [
 ] as const;
 
 export const rustTypeModuleDocs = [
+  {
+    rustModulePath: ["runners", "runs", "startup"],
+    rustDoc: ["Run-authenticated actual sandbox startup reporting DTOs."],
+  },
   {
     rustModulePath: ["sandbox_channel"],
     rustDoc: ["Shared sandbox application schema and role contracts."],
@@ -153,6 +158,27 @@ export const rustTypeModuleDocs = [
 ] satisfies readonly RustTypeModuleDoc[];
 
 export const rustTypeBindings = [
+  {
+    schema: runnersRunStartupContract.setStartup.body,
+    rustModulePath: ["runners", "runs", "startup"],
+    rustTypeName: "Request",
+    direction: "request",
+    fieldTypeOverrides: {
+      sandboxStartupPath:
+        "crate::generated::types::runners::SandboxStartupPath",
+    },
+    declarations: [
+      {
+        rustTypeName: "Request",
+        rustDoc: ["Actual settled resource reported by the Run's Runner."],
+        fields: {
+          sandboxStartupPath: [
+            "Canonical resource path after preparation and replacement settle.",
+          ],
+        },
+      },
+    ],
+  },
   {
     schema: sandboxStartupPathSchema,
     rustModulePath: ["runners"],
@@ -737,40 +763,6 @@ export const rustTypeBindings = [
     },
     declarations: [
       {
-        rustTypeName: "RequestSandboxReuseResult",
-        rustDoc: ["Outcome of the sandbox reuse decision."],
-        variants: {
-          reused: ["An idle sandbox was reused."],
-          featureDisabled: ["Legacy outcome from the removed feature gate."],
-          noSessionId: ["Legacy outcome for an unavailable reuse identity."],
-          noReuseKey: ["The run had no sandbox reuse key."],
-          poolMiss: ["No matching idle sandbox was available."],
-          profileMismatch: ["The idle sandbox profile did not match."],
-          deviceLimitMismatch: [
-            "The idle sandbox device limits did not match.",
-          ],
-          unparkFailed: ["The selected idle sandbox could not be unparked."],
-        },
-      },
-      {
-        rustTypeName: "RequestHomeReuseResult",
-        rustDoc: ["Final outcome of home reuse preparation."],
-        variants: {
-          reused: ["A cached home directory was reused."],
-          sandboxReused: ["The home directory remained in a reused sandbox."],
-          cacheMiss: ["No matching home cache was available."],
-          noReuseKey: ["The run had no home reuse key."],
-          invalidWorkingDir: ["The home working directory was invalid."],
-          lockBusy: ["The cached home was locked by another run."],
-          invalidMetadata: ["The cached home metadata was invalid."],
-          diskPressure: ["Home reuse was disabled by disk pressure."],
-          notConfigured: ["Home reuse was not configured."],
-          sandboxPrepareFallback: [
-            "Home preparation fell back after sandbox setup.",
-          ],
-        },
-      },
-      {
         rustTypeName: "RequestCompletion",
         rustDoc: ["Final Run output metadata included with completion."],
         fields: {
@@ -802,6 +794,9 @@ export const rustTypeBindings = [
             "The native history exceeded the bounded Run output limit.",
           ],
           unavailable: ["The native history was unavailable or unusable."],
+          native_only: [
+            "Native history is retained only in the disposable sandbox/home.",
+          ],
         },
       },
       {
@@ -849,10 +844,6 @@ export const rustTypeBindings = [
             "Highest contiguous agent event sequence delivered before completion.",
           ],
           sandboxId: ["Optional sandbox identifier used by the run."],
-          sandboxReuseResult: [
-            "Optional outcome of the sandbox reuse decision.",
-          ],
-          homeReuseResult: ["Optional outcome of the home reuse decision."],
           completion: [
             "Native history and published file outputs saved with completion.",
           ],

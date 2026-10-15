@@ -1518,9 +1518,8 @@ export interface ResolvedAgentExecution {
   readonly ownerUserId: string;
   readonly orgId: string;
   readonly additionalVolumes?: readonly AgentRunCreateAdditionalVolume[];
-  readonly agentSessionId?: string;
-  readonly continuedFromAgentSessionId?: string;
   readonly resumeSession?: StoredExecutionContext["resumeSession"];
+  readonly nativeContinuation?: StoredExecutionContext["nativeContinuation"];
   readonly resumeSessionIdentity?: SessionExecutionIdentity;
 }
 

@@ -321,7 +321,9 @@ function mediaKindFromContentType(type: string): BodyPreviewKind | null {
 }
 
 export function classifyChatAttachment(
-  attachment: ChatAttachmentDescriptor,
+  attachment: Pick<ChatAttachmentDescriptor, "filename" | "contentType"> & {
+    readonly url?: string;
+  },
 ): ChatAttachmentKind {
   const type = normalizeType(attachment.contentType);
   const ext = fileExt(attachment.filename);

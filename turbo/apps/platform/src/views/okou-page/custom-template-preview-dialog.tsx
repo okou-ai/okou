@@ -69,27 +69,21 @@ export function CustomTemplatesLoadError() {
 }
 
 /**
- * A deck's pages, or an image style's examples, read the way every other deck
- * detail reads: one picture on the stage, the rest in a filmstrip.
+ * A deck's pages, read the way every other deck detail reads: one page on the
+ * stage, the rest in a filmstrip.
  *
- * A deck shows its own rendered pages rather than its source file through a
- * viewer: they are already ours to serve, and are the same slides a viewer
- * would draw. An image style shows the examples its reverse run made and the
- * member approved, contained rather than cropped, because a picture is judged
- * by its whole frame.
+ * Its own rendered pages rather than its source file through a viewer: they
+ * are already ours to serve, and are the same slides a viewer would draw.
+ * Contained rather than cropped, so a page that is not 16:9 is shown whole.
  */
 function CustomTemplateGallery({
   title,
   pictures,
-  fit,
   pictureLabel,
-  thumbnailTestId,
 }: {
   readonly title: string;
   readonly pictures: readonly string[];
-  readonly fit: "cover" | "contain";
   readonly pictureLabel: (index: number) => string;
-  readonly thumbnailTestId?: string;
 }) {
   const { t } = useTranslation();
   const requestedIndex = useGet(openCustomTemplatePageIndex$);
@@ -129,10 +123,7 @@ function CustomTemplateGallery({
         <img
           src={pictures[activeIndex]}
           alt={pictureLabel(activeIndex)}
-          className={cn(
-            "pointer-events-none absolute inset-0 h-full w-full",
-            fit === "cover" ? "object-cover" : "object-contain",
-          )}
+          className="pointer-events-none absolute inset-0 h-full w-full object-contain"
         />
         <TemplateDetailStageControls
           activeSlideIndex={activeIndex}
@@ -151,7 +142,6 @@ function CustomTemplateGallery({
               src={pictures[index]}
               alt=""
               loading="lazy"
-              data-testid={thumbnailTestId}
               className="pointer-events-none absolute inset-0 h-full w-full object-cover"
             />
           );
@@ -230,7 +220,6 @@ function CustomTemplatePreviewBody({
         <CustomTemplateGallery
           title={detail.title}
           pictures={detail.pageUrls}
-          fit="contain"
           pictureLabel={(index) => {
             return t(
               ($) => {
@@ -246,24 +235,9 @@ function CustomTemplatePreviewBody({
       return <CustomTemplateSourcePreview detail={detail} />;
     }
     case "illustration": {
-      return (
-        <CustomTemplateGallery
-          title={detail.title}
-          pictures={detail.previewAssets.map((asset) => {
-            return asset.url;
-          })}
-          fit="contain"
-          pictureLabel={() => {
-            return t(
-              ($) => {
-                return $.artifacts.preview.dialogLabel;
-              },
-              { filename: detail.title },
-            );
-          }}
-          thumbnailTestId="custom-template-example-preview"
-        />
-      );
+      // An image template is judged and used from its card, which already
+      // carries its pictures and its menu; nothing opens one here.
+      throw new Error("Image templates have no detail page");
     }
   }
 }
@@ -368,7 +342,7 @@ export function CustomTemplatePreviewDialog({
             <div className="flex h-full items-center justify-center text-muted-foreground">
               <Loader2 size={20} className="animate-spin" />
             </div>
-          ) : detail.kind !== "document" ? (
+          ) : detail.kind === "presentation" ? (
             <div className={TEMPLATE_DETAIL_GRID}>
               <CustomTemplatePreviewBody detail={detail} />
               <TemplateDetailSideColumn>

@@ -108,15 +108,17 @@ fi
 ruby -ryaml - "$REPO_ROOT/.github/workflows/crates.yml" <<'RUBY'
 jobs = YAML.load_file(ARGV.fetch(0)).fetch('jobs')
 native = jobs.fetch('guest-rpc-firecracker-test')
-raise 'native test must follow its selected image and compiled binary' unless native.fetch('needs') == ['runner-test-prepare', 'guest-rpc-firecracker-build']
+raise 'native test must follow its compiled binary and architecture selection' unless %w[detect runner-host-groups guest-rpc-firecracker-build].all? { |owner| native.fetch('needs').include?(owner) }
 raise 'container steps require Bash' unless native.dig('defaults', 'run', 'shell') == 'bash'
 validation = native.fetch('steps').index { |step| step['run'] == 'bash .github/scripts/runner/runner-native-test-artifact.sh validate' }
 ssh_setup = native.fetch('steps').index { |step| step['uses'] == './.github/actions/setup-ssh-tunnel' }
 raise 'native artifact must be validated before contacting metal' unless validation && ssh_setup && validation < ssh_setup
 %w[rootfs snapshot].each do |kind|
-  expected = "${{ needs.runner-test-prepare.outputs.default-#{kind}-hash }}"
-  raise "wrong #{kind} source" unless native.fetch('env').fetch("DEFAULT_#{kind.upcase}_HASH") == expected
+  launch = native.fetch('steps').find { |step| step['run'] == 'bash crates/sandbox-firecracker/tests/native/runner-behavior-guest-rpc.sh' }
+  expected = "${{ steps.manifest.outputs.selected-#{kind}-hash }}"
+  raise "wrong #{kind} source" unless launch.fetch('env').fetch("DEFAULT_#{kind.upcase}_HASH") == expected
 end
+raise 'native target must match its architecture matrix' unless native.dig('env', 'TARGET_TRIPLE') == '${{ matrix.target }}'
 gate = jobs.fetch('ci-gate-crates')
 raise 'missing native gate dependency' unless gate.fetch('needs').include?('guest-rpc-firecracker-test')
 raise 'native failure must block' unless gate.fetch('steps').any? { |step| step.fetch('run', '').include?('check_result "guest-rpc-firecracker-test"') }

@@ -247,3 +247,116 @@ with controlled external park errors, an unexpected parked return and an
 unexpected running handoff point. It verifies the original file bytes and cache
 lock remain owned, the complete logical lease stays allocated and no destruction
 occurs until explicit disposal of the ordinary mock fixture.
+
+## Separately measured pressure paths
+
+`native_policy_pressure_records_saving_and_free_logical_capacity` selects the
+job-free independent pressure owner in fresh and snapshot modes. It requires an
+actual fresh Proc/P2 observation at or below the supplied Critical watermark,
+while its original full lease remains allocated and another complete profile
+fits the logical budget. Its resolved one-entry wave and sampling/controller
+shutdown have separate original-identity witnesses.
+
+`native_logical_pressure_records_replacement_and_required_saving` selects logical
+substitution in both modes. It requires exhausted logical capacity and actual
+availability above the recovery watermark and the full profile/preparation plus
+protected bounds. A different Guest must complete accepted preparation through
+the same authority before original retirement joins are requested. This ordering
+does not assert that old physical exit remains pending or impose an exit barrier.
+
+Use the same exact-source binary, immutable artifact manifest, matched snapshot
+creation identity, disposable base and P1 driver requirements above. Each path
+uses a separate supplied policy and new P1 output directory; do not manufacture
+MemAvailable, induce host-wide pressure or alter existing business resources.
+P1 metadata additionally requires `native_pressure_kind` (`physical` or `logical`)
+and `native_pressure_policy_json` containing the exact UTF-8 policy file contents.
+Its SHA-256 must equal `native_terminal_artifacts.policy_sha256`. Scenario receipts
+must agree with those exact parsed bounds and contain valid actual read/age and
+budget observations. Missing, stale or mismatched conditions fail acceptance.
+
+```sh
+"$OWNED_NATIVE_TEST_BINARY" \
+  native_policy_pressure_records_saving_and_free_logical_capacity \
+  --ignored --exact --nocapture --test-threads=1
+
+"$OWNED_NATIVE_TEST_BINARY" \
+  native_logical_pressure_records_replacement_and_required_saving \
+  --ignored --exact --nocapture --test-threads=1
+
+python3 crates/runner/tests/guarded_idle_native/pressure_report.py "$P1_OUTPUT_DIRECTORY"
+```
+
+Each report requires its complete two-mode corpus, original data/backing/full
+lease/required IO and actual P1 windows, plus pressure or different-Guest/join
+witnesses. The original twelve-case terminal report remains separate and strict.
+Ordinary Cargo/default Crates CI runs the pressure report's real-file and CLI
+regressions through its ordinary Rust wrapper; the native entries remain opt-in.
+
+The physical label means observed policy classification under supplied disposable
+test limits. It does not prove calibrated real-host shortage, RAM relief, a
+production envelope or OOM protection. Residency unknowns remain lower bounds;
+rootfs producer provenance, complete continuation, optional/foreground/recovery,
+native races and parent numerical/aggregate acceptance remain separate gates.
+
+## Complete native session/history continuation
+
+`native_continuation_records_complete_session_history_and_required_saving`
+selects ten cases: logical admission, replacement, reserved restore, aged
+replenishment and nonzero terminal saving, each with fresh and snapshot factories.
+It runs the public Executor and packaged mock Codex app-server against an owned
+synthetic history/storage/finalization peer. Every byte of the original committed
+JSONL and its canonical thread must survive native preparation/execution, final
+metadata, export/freeze, original positive backing wait, saved-home continuation
+and joined continued saving. The actual process checks the original full prefix
+and 64 KiB home payload.
+
+Nonzero execution must retain complete history/home data and withhold reusable
+session identity, matching Executor's success-only finalization contract. Its
+first successful continuation therefore restores the complete supplied history
+without a prior cache history binding; that successful assignment must produce a
+new verified identity. The next assignment must consume the resulting bound
+history, and joined saving must preserve the final verified cache identity.
+
+After saving the first continuation, a second Executor assignment reopens that
+image and checks the entire continued history and original home again. Its own
+fresh final identity goes through required saving, so validation preserves a
+usable session/history binding in the final cache rather than promoting a
+read-only assignment without an Agent identity.
+
+Keep the existing artifact and supplied P2 policy environment. Additionally set
+`USE_MOCK_CODEX=true` and `OKOU_TEST_NATIVE_API_HOST` to the authorized test host's
+actual private IPv4 address reachable by its disposable Guests. The synthetic peer
+uses no real model credentials. Missing input, verified final identity, matching
+artifacts or safe headroom fails the native run.
+
+The synthetic Agent request explicitly supplies the canonical Guest HOME with
+its mock scenario/timestamp environment; the fixture does not assume an inherited
+shell environment when the control server starts the Agent.
+
+Select the exact ignored entry through bounded P1. Its metadata must contain
+`native_continuation_policy_json` equal to the raw supplied policy file bytes.
+Validate the resulting directory:
+
+```bash
+python3 crates/runner/tests/guarded_idle_native/continuation_report.py <p1-directory>
+```
+
+The strict report preserves original terminal phase/wait/tail requirements and
+binds complete input/original/continued history and home hashes, distinct run and
+Guest identities, actual policy/observation and final identity/cache/saving proof.
+It rejects incomplete, duplicated, mixed, truncated, stale or mismatched evidence.
+The original lease has a non-owning test-support witness which survives an atomic
+one-for-one same-shape substitution. An unrelated reservation cannot replace it.
+Production builds allocate no witness and change no memory policy or protocol.
+
+Default Crates CI runs the ordinary Rust wrapper and ten real-file/CLI report
+regressions, the resource-budget lifetime/transfer regressions, and the synthetic
+peer's complete-history prepare/upload/completion round trip through its separate
+Guest and loopback Host listeners. A separate peer regression requires rejection
+as soon as a chunked request exceeds 4 MiB, before its terminating chunk or EOF;
+the peer enforces this bound while reading, before buffering the complete request.
+Actual KVM/NBD
+cases remain ignored/opt-in and require separate submitted-source/binary/artifact
+verification. Terminal12 and pressure4 contracts remain unchanged. The remaining
+optional/recovery/full failure/race, provenance/residency/conservative-envelope,
+parent aggregation and P4 activation gates remain #39997/#39998 and the parents.

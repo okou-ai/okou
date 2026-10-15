@@ -30,30 +30,46 @@ const platforms = [
   },
 ] as const;
 
+async function prepareActionShortcuts({
+  userAgent,
+  modifier,
+  hints,
+}: (typeof platforms)[number]) {
+  context.mocks.browser.userAgent(userAgent);
+  context.mocks.browser.matchMedia((query) => {
+    return query === "(min-width: 48rem)";
+  });
+  const thread = chatListThread(1, "Keyboard shortcuts");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 63,
+    threads: [thread],
+  });
+  await setupPage({
+    context,
+    path: `/chats/${thread.id}`,
+    ...workspace.pageOptions,
+  });
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  click(composer);
+  const user = userEvent.setup({ delay: null });
+  return { user, modifier, hints };
+}
+
 test.each(platforms)(
-  "Keep action shortcuts usable in a $platform browser, including the collapsed chat list",
-  async ({ userAgent, modifier, hints }) => {
-    context.mocks.browser.userAgent(userAgent);
-    context.mocks.browser.matchMedia((query) => {
-      return query === "(min-width: 48rem)";
-    });
-    const thread = chatListThread(1, "Keyboard shortcuts");
-    const workspace = installContinuityWorkspace(context, {
-      caseId: 63,
-      threads: [thread],
-    });
-    await setupPage({
-      context,
-      path: `/chats/${thread.id}`,
-      ...workspace.pageOptions,
-    });
-    const composer = await screen.findByRole("textbox", { name: "Message" });
-    click(composer);
-    const user = userEvent.setup();
+  "Keep the new chat shortcut usable in a $platform browser",
+  async (platform) => {
+    const { user, modifier } = await prepareActionShortcuts(platform);
     await user.keyboard(`{${modifier}>}{Shift>}o{/Shift}{/${modifier}}`);
     await waitFor(() => {
       expect(pathname()).toBe(`/agents/${CHAT_LIST_AGENT_ID}/chat`);
     });
+  },
+);
+
+test.each(platforms)(
+  "Keep the chat list shortcut usable in a $platform browser",
+  async (platform) => {
+    const { user, modifier, hints } = await prepareActionShortcuts(platform);
     await user.keyboard(`{${modifier}>}b{/${modifier}}`);
     const showChatList = await screen.findByLabelText("Show chat list");
     expect(screen.queryByTestId("chat-list-column")).toBeNull();
@@ -63,6 +79,13 @@ test.each(platforms)(
     ).resolves.toBeVisible();
     await user.keyboard(`{${modifier}>}b{/${modifier}}`);
     await screen.findByTestId("chat-list-column");
+  },
+);
+
+test.each(platforms)(
+  "Keep the search shortcut usable in a $platform browser",
+  async (platform) => {
+    const { user, modifier } = await prepareActionShortcuts(platform);
     await user.keyboard(`{${modifier}>}{Shift>}f{/Shift}{/${modifier}}`);
     const searchDialog = await screen.findByRole("dialog", {
       name: SEARCH_LABEL,

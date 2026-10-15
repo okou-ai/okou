@@ -832,81 +832,6 @@ describe("storage webhook manifest limits", () => {
   });
 });
 
-describe("agent completion reuse outcomes", () => {
-  const baseBody = {
-    runId: "00000000-0000-4000-8000-000000000000",
-    exitCode: 0,
-  };
-
-  it("accepts legacy sandbox-only completion payloads", () => {
-    for (const sandboxReuseResult of ["reused", "noSessionId"] as const) {
-      expect(
-        webhookCompleteContract.complete.body.safeParse({
-          ...baseBody,
-          sandboxReuseResult,
-        }).success,
-      ).toBe(true);
-    }
-  });
-
-  it("accepts coherent final sandbox and home outcomes", () => {
-    const homeMisses = [
-      "cacheMiss",
-      "noReuseKey",
-      "invalidWorkingDir",
-      "lockBusy",
-      "invalidMetadata",
-      "diskPressure",
-      "notConfigured",
-      "sandboxPrepareFallback",
-    ] as const;
-    const coherentPairs = [
-      ["reused", "sandboxReused"],
-      ["noReuseKey", "reused"],
-      ...homeMisses.map((homeResult) => {
-        return ["poolMiss", homeResult] as const;
-      }),
-    ] as const;
-
-    for (const [sandboxReuseResult, homeReuseResult] of coherentPairs) {
-      expect(
-        webhookCompleteContract.complete.body.safeParse({
-          ...baseBody,
-          sandboxReuseResult,
-          homeReuseResult,
-        }).success,
-      ).toBe(true);
-    }
-  });
-
-  it("rejects missing, legacy, or contradictory sandbox context", () => {
-    const incoherentBodies = [
-      { homeReuseResult: "cacheMiss" },
-      {
-        sandboxReuseResult: "reused",
-        homeReuseResult: "cacheMiss",
-      },
-      {
-        sandboxReuseResult: "poolMiss",
-        homeReuseResult: "sandboxReused",
-      },
-      {
-        sandboxReuseResult: "noSessionId",
-        homeReuseResult: "cacheMiss",
-      },
-    ] as const;
-
-    for (const body of incoherentBodies) {
-      expect(
-        webhookCompleteContract.complete.body.safeParse({
-          ...baseBody,
-          ...body,
-        }).success,
-      ).toBe(false);
-    }
-  });
-});
-
 describe("agent completion failure reasons", () => {
   const baseBody = {
     runId: "00000000-0000-4000-8000-000000000000",
@@ -1144,6 +1069,36 @@ describe("webhook telemetry contract", () => {
     expect(
       webhookTelemetryContract.send.body.parse(homeStartupTelemetry),
     ).toStrictEqual(homeStartupTelemetry);
+  });
+
+  it("preserves false first-run context and actual home-use evidence", () => {
+    const payload = {
+      runId: "00000000-0000-4000-8000-000000000000",
+      sandboxOperations: [
+        {
+          ts: "2026-10-14T03:00:00.000Z",
+          action_type: "runner_sandbox_startup",
+          duration_ms: 0,
+          success: true,
+          runner_startup_path: "blank",
+          is_first_run: false,
+          reuse_key: "thread:00000000-0000-4000-8000-000000000000",
+          sandbox_reuse_result: "poolMiss",
+          home_reuse_result: "cacheMiss",
+        },
+      ],
+    };
+    expect(webhookTelemetryContract.send.body.parse(payload)).toStrictEqual(
+      payload,
+    );
+    expect(
+      webhookTelemetryContract.send.body.safeParse({
+        ...payload,
+        sandboxOperations: [
+          { ...payload.sandboxOperations[0], is_first_run: "false" },
+        ],
+      }).success,
+    ).toBe(false);
   });
 
   it("accepts bounded startup outcomes and keeps them optional", () => {

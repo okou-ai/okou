@@ -718,6 +718,15 @@ async fn run_start_observed(
             crate::MitmUsageHandle::from(&mitm),
         )),
     });
+    let host_telemetry = if args.local {
+        None
+    } else {
+        Some(runner_executor::telemetry::JobTelemetry::new_runner(
+            http.clone(),
+            server.token.clone(),
+            hostname.clone(),
+        ))
+    };
     let (provider, group_name, connector_runtime_sync): (
         Arc<dyn JobProvider>,
         String,
@@ -754,6 +763,11 @@ async fn run_start_observed(
         (provider, group_name, Some(connector_runtime_sync))
     };
 
+    let mut home_cache = HomeImageCache::shared(paths.clone(), &home, &group_name)
+        .with_promotion_host_cpus(host_cpus);
+    if let Some(telemetry) = &host_telemetry {
+        home_cache = home_cache.with_telemetry(telemetry.reporter());
+    }
     let exec_config = Arc::new(ExecutorConfig {
         api_url: server.url,
         runner_hostname: hostname,
@@ -774,10 +788,7 @@ async fn run_start_observed(
         background_fill,
         pre_spawn_admission,
         home: home.clone(),
-        home_cache: Some(
-            HomeImageCache::shared(paths.clone(), &home, &group_name)
-                .with_promotion_host_cpus(host_cpus),
-        ),
+        home_cache: Some(home_cache),
     });
 
     let live_runner_instance_metadata = crate::live_runner_instances::LiveRunnerInstanceMetadata {
@@ -806,6 +817,9 @@ async fn run_start_observed(
     let reuse_state_notify = Arc::new(tokio::sync::Notify::new());
     let active_runs = ActiveRuns::new(Arc::clone(&reuse_state_notify));
     let config = RunConfig {
+        sandbox_op_reporter: host_telemetry
+            .as_ref()
+            .map(|telemetry| telemetry.reporter()),
         runner: RunnerInfo {
             identity: runner_identity,
             group: group_name,
@@ -870,6 +884,9 @@ async fn run_start_observed(
     drop(resource_locks);
     if let Err(e) = live_runner_instance_handle.remove_if_current().await {
         tracing::warn!(error = %e, "failed to remove live runner instance record");
+    }
+    if let Some(telemetry) = host_telemetry {
+        telemetry.flush().await;
     }
     run_result
 }

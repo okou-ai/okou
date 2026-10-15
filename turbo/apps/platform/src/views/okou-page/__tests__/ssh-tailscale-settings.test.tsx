@@ -244,8 +244,12 @@ test("Keyboard guidance preserves the inline network draft without submitting th
   const secret = within(dialog).getByLabelText("OAuth client secret");
   await fill(secret, "oauth-secret-canary");
   const guide = within(dialog).getByRole("region", {
-    name: "Set up Tailscale",
+    name: "How do I configure Tailscale?",
   });
+  const steps = within(guide).getByRole("tablist", { hidden: true });
+  expect(steps).not.toBeVisible();
+  click(within(guide).getByText("How do I configure Tailscale?"));
+  expect(steps).toBeVisible();
   await userEvent.click(getAction("tab", "Tags", guide));
   await userEvent.keyboard("{ArrowRight}{ArrowRight}{Enter}");
   expect(

@@ -145,7 +145,6 @@ import { meModelProvidersResetSubscriptionRoutes } from "./routes/me-model-provi
 import { meModelProvidersUpsertRoutes } from "./routes/me-model-providers-upsert";
 import { modelCatalogRoutes } from "./routes/model-catalog";
 import { morningBriefPreferenceRoutes } from "./routes/morning-brief-preference";
-import { officialWorkflowRoutes } from "./routes/official-workflows";
 import { onboardingCompleteRoutes } from "./routes/onboarding-complete";
 import { onboardingRecommendationRoutes } from "./routes/onboarding-recommendations";
 import { onboardingSourcesRoutes } from "./routes/onboarding-sources";
@@ -216,6 +215,7 @@ import { webhooksAgentFirewallAuthRoutes } from "./routes/webhooks-agent-firewal
 import { webhooksAgentHealthUsageTelemetryRoutes } from "./routes/webhooks-agent-health-usage-telemetry";
 import { webhooksAgentSessionOutputRoutes } from "./routes/webhooks-agent-session-output";
 import { webhooksAgentStorageRoutes } from "./routes/webhooks-agent-storage";
+import { runnersStartupRoutes } from "./routes/runners-startup";
 import { webhooksBuiltInGenerationRoutes } from "./routes/webhooks-built-in-generations";
 import { webhooksClerkRoutes } from "./routes/webhooks-clerk";
 import { webhooksGithubRoutes } from "./routes/webhooks-github";
@@ -232,6 +232,7 @@ import { workflowAutomationsRoutes } from "./routes/workflow-automations";
 import { workflowsRoutes } from "./routes/workflows";
 
 export const ROUTES: readonly RouteEntry[] = [
+  ...runnersStartupRoutes,
   ...getStartedRoutes,
   ...healthRoutes,
   ...buildInfoRoutes,
@@ -404,7 +405,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...notificationsRoutes,
   ...debugMorningBriefRoutes,
   ...workflowsRoutes,
-  ...officialWorkflowRoutes,
   ...workflowAutomationsRoutes,
   ...skillImportRoutes,
   ...integrationsGithubRoutes,

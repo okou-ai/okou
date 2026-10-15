@@ -218,9 +218,9 @@ fn place(report: File) -> io::Result<()> {
             "task placement did not enter the assigned runtime",
         ));
     }
-    // Migration retains inherited oom_score_adj=1000. Reset only this runtime;
-    // ordinary tools still set 1000. Do not allocate protected main-runtime memory.
-    std::fs::write("/proc/self/oom_score_adj", "0")?;
+    // Task runtimes are tool-owned work. Apply the same priority as shell tools,
+    // including tasks launched directly from the main runtime; children inherit it.
+    std::fs::write("/proc/self/oom_score_adj", "1000")?;
     process_control_ipc::write_tool_placement_confirmation(&stream)?;
     process_control_ipc::read_tool_placement_ack(&stream)?;
     drop(stream);

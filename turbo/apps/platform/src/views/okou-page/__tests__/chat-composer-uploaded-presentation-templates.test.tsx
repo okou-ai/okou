@@ -100,45 +100,52 @@ function observeTemplateSubscriptions() {
   };
 }
 
-test("Uploaded templates wait for both subscriptions", async () => {
-  mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
-  mockTemplateChat();
-  const uploaded = createUploadedTemplate({
-    id: UPLOADED_TEMPLATE_ID,
-    title: "Both subscriptions are ready",
-  });
-  mockPresentationTemplateLibrary([uploaded]);
-  const gates = {
-    user: context.mocks.ably.deferSubscribeOnChannel(
-      "user:test-user-123",
-      "presentationTemplatesChanged",
-    ),
-    org: context.mocks.ably.deferSubscribeOnChannel(
-      "org:org_default",
-      "presentationTemplatesChanged",
-    ),
-  };
-  const observed = observeTemplateSubscriptions();
-  const user = userEvent.setup();
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    host: "app.okou.ai",
-    sharedWorkerTestTransport: "message-port",
-  });
-  await Promise.all([gates.user.started, gates.org.started]);
-  const picker = await openTemplatePicker(user, "Presentation");
+test.each(["user", "org"] as const)(
+  "Uploaded templates wait when the %s subscription attaches first",
+  async (scope) => {
+    mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
+    mockTemplateChat();
+    const uploaded = createUploadedTemplate({
+      id: UPLOADED_TEMPLATE_ID,
+      title: "Both subscriptions are ready",
+    });
+    mockPresentationTemplateLibrary([uploaded]);
+    const gates = {
+      user: context.mocks.ably.deferSubscribeOnChannel(
+        "user:test-user-123",
+        "presentationTemplatesChanged",
+      ),
+      org: context.mocks.ably.deferSubscribeOnChannel(
+        "org:org_default",
+        "presentationTemplatesChanged",
+      ),
+    };
+    const observed = observeTemplateSubscriptions();
+    const user = userEvent.setup();
+    await setupPage({
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+      host: "app.okou.ai",
+      sharedWorkerTestTransport: "message-port",
+    });
+    await Promise.all([gates.user.started, gates.org.started]);
+    const picker = await openTemplatePicker(user, "Presentation");
 
-  gates.user.attach();
-  await observed.waitForSubscribed("user");
-  expect(
-    within(picker).getByText("Loading uploaded templates…"),
-  ).toBeInTheDocument();
-  gates.org.attach();
-  await expect(
-    within(picker).findByLabelText(`Select template ${uploaded.title}`),
-  ).resolves.toBeInTheDocument();
-});
+    gates[scope].attach();
+    await observed.waitForSubscribed(scope);
+    expect(
+      within(picker).queryByLabelText(`Select template ${uploaded.title}`),
+    ).not.toBeInTheDocument();
+    expect(within(picker).queryByRole("status")).not.toBeInTheDocument();
+    expect(
+      within(picker).getByLabelText(`Select template ${firstBuiltInTitle()}`),
+    ).toBeEnabled();
+    gates[scope === "user" ? "org" : "user"].attach();
+    await expect(
+      within(picker).findByLabelText(`Select template ${uploaded.title}`),
+    ).resolves.toBeInTheDocument();
+  },
+);
 
 test("A template subscription failure releases both scopes and leaves built-ins usable", async () => {
   mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
@@ -179,7 +186,7 @@ test("A template subscription failure releases both scopes and leaves built-ins 
   await observed.waitForReleased("user");
 });
 
-test("A resolved empty catalog leaves the import card as the only prompt", async () => {
+test("An empty catalog keeps the import card available without status text", async () => {
   mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
   mockTemplateChat();
   mockPresentationTemplateLibrary([]);
@@ -193,6 +200,7 @@ test("A resolved empty catalog leaves the import card as the only prompt", async
       "presentationTemplatesChanged",
     ),
   };
+  const observed = observeTemplateSubscriptions();
   const user = userEvent.setup();
   await setupPage({
     context,
@@ -202,16 +210,11 @@ test("A resolved empty catalog leaves the import card as the only prompt", async
   });
   await Promise.all([gates.user.started, gates.org.started]);
   const picker = await openTemplatePicker(user, "Presentation");
-  expect(
-    within(picker).getByText("Loading uploaded templates…"),
-  ).toBeInTheDocument();
+  expect(within(picker).queryByRole("status")).not.toBeInTheDocument();
   gates.user.attach();
   gates.org.attach();
-  await waitFor(() => {
-    expect(
-      within(picker).queryByText("Loading uploaded templates…"),
-    ).not.toBeInTheDocument();
-  });
+  await observed.waitForSubscribed("user");
+  await observed.waitForSubscribed("org");
   // An empty library is the default state, not a condition worth reporting: the
   // import card already carries both the affordance and the absence.
   expect(
@@ -395,7 +398,7 @@ test("Select and send an uploaded presentation template from its detail preview"
   });
 });
 
-test("Keep workspace templates current through withdrawal after preview", async () => {
+async function openWorkspaceTemplateLibrary(includePublished: boolean) {
   mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
   const capture = mockTemplateChat();
   const existing = createUploadedTemplate({
@@ -408,7 +411,9 @@ test("Keep workspace templates current through withdrawal after preview", async 
     title: "New Workspace Deck",
     canManage: false,
   });
-  const library = mockPresentationTemplateLibrary([existing]);
+  const library = mockPresentationTemplateLibrary(
+    includePublished ? [existing, published] : [existing],
+  );
   capture.lifecycle.setThreadList([
     {
       id: THREAD_ID,
@@ -426,16 +431,22 @@ test("Keep workspace templates current through withdrawal after preview", async 
     },
   ]);
   trackTemplatePreviewImagePreloads();
-  const user = userEvent.setup();
+  const user = userEvent.setup({ delay: null });
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
   });
-  await openTemplatePicker(user, "Presentation");
+  const picker = await openTemplatePicker(user, "Presentation");
   await waitFor(() => {
-    expect(screen.getByText(existing.title)).toBeVisible();
+    expect(within(picker).getByText(existing.title)).toBeInTheDocument();
   });
+  return { library, existing, published, picker };
+}
+
+test("Keep workspace templates current when a new deck is published", async () => {
+  const { library, existing, published, picker } =
+    await openWorkspaceTemplateLibrary(false);
   library.replace([existing, published]);
   context.mocks.ably.triggerOnChannel(
     "org:org_default",
@@ -443,9 +454,19 @@ test("Keep workspace templates current through withdrawal after preview", async 
     published.id,
   );
   await waitFor(() => {
-    expect(screen.getByText(published.title)).toBeVisible();
+    expect(within(picker).getByText(published.title)).toBeInTheDocument();
     expect(
       screen.getByLabelText(`Select template ${published.title}`),
+    ).toBeEnabled();
+  });
+});
+
+test("Remove a withdrawn workspace template after its preview", async () => {
+  const { library, existing, published, picker } =
+    await openWorkspaceTemplateLibrary(true);
+  await waitFor(() => {
+    expect(
+      within(picker).getByLabelText(`Select template ${published.title}`),
     ).toBeEnabled();
   });
   click(buttonNamed(`Preview ${published.title} at current slide`));

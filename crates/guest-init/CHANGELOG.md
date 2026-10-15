@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.20.0](https://github.com/okou-ai/okou/compare/guest-init-v0.19.3...guest-init-v0.20.0) (2026-10-15)
+
+
+### Features
+
+* add bounded readonly guest home listings ([#40042](https://github.com/okou-ai/okou/issues/40042)) ([3e5d3be](https://github.com/okou-ai/okou/commit/3e5d3be42daf26e045459d9ffbbae25d85bbe9cb))
+
+## [0.19.3](https://github.com/okou-ai/okou/compare/guest-init-v0.19.2...guest-init-v0.19.3) (2026-10-14)
+
 ## [0.19.2](https://github.com/okou-ai/okou/compare/guest-init-v0.19.1...guest-init-v0.19.2) (2026-10-14)
 
 ## [0.19.1](https://github.com/okou-ai/okou/compare/guest-init-v0.19.0...guest-init-v0.19.1) (2026-10-14)

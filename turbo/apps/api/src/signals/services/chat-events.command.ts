@@ -1,10 +1,12 @@
-import { chatRelations } from "@okouai/db/schema/chat-relation";
 import {
   AUTO_SELECTED_MODEL,
   isAutoSelectedModel,
 } from "@okouai/core/auto-run-model";
 import { parseRawRows } from "../../lib/db-raw-rows";
-import { chatEventCommandResultSchema } from "./chat-event-append.service";
+import {
+  chatEventCommandResultSchema,
+  type ChatEventRelationSource,
+} from "./chat-event-append.service";
 import {
   chatThreadRequestSelection,
   type ChatThreadRequestFacts,
@@ -792,7 +794,7 @@ function normalSendRequestFacts(
   previousBinding:
     | Pick<
         ChatThreadRequestFacts["thread"],
-        "agentSessionId" | "agentSessionRunId"
+        "framework" | "frameworkSessionId" | "frameworkSessionRunId"
       >
     | undefined,
   event: Pick<
@@ -808,8 +810,9 @@ function normalSendRequestFacts(
       agentId: args.body.agentId,
       ...thread.runSettings,
       ...thread.computerAccess,
-      agentSessionId: previousBinding?.agentSessionId ?? null,
-      agentSessionRunId: previousBinding?.agentSessionRunId ?? null,
+      framework: previousBinding?.framework ?? null,
+      frameworkSessionId: previousBinding?.frameworkSessionId ?? null,
+      frameworkSessionRunId: previousBinding?.frameworkSessionRunId ?? null,
     },
     input: {
       id: event.id,
@@ -1369,15 +1372,28 @@ function normalSendInputPlan(args: NormalSendArgs, input: NormalSendInput) {
 }
 
 function normalSendInputInsertSql(
-  event: ReturnType<typeof normalSendEvent>,
+  args: NormalSendArgs,
+  input: ReturnType<typeof normalSendInputPlan>,
   replacementRows:
     Parameters<typeof requireChatEventReplacementTarget>[0] | null,
 ) {
+  const { event, thread, relationSource: source } = input;
+  const relationSource: ChatEventRelationSource | undefined =
+    source && source.threadId !== thread.threadId
+      ? {
+          orgId: args.orgId,
+          userId: args.userId,
+          threadId: source.threadId,
+          runId: source.runId,
+          createsThread: thread.kind === "new",
+        }
+      : undefined;
   return replacementRows === null
-    ? chatEventInsertSql(event, "id")
+    ? chatEventInsertSql(event, "id", relationSource)
     : chatEventReplacementInsertSql(
         requireChatEventReplacementTarget(replacementRows),
         event,
+        relationSource,
       );
 }
 
@@ -1404,31 +1420,6 @@ function normalSendGetStartedSql(args: NormalSendArgs, sourceEventId: string) {
         nowDate(),
       )
     : undefined;
-}
-
-function normalSendRelationValues(
-  args: NormalSendArgs,
-  input: ReturnType<typeof normalSendInputPlan>,
-  inserted: { readonly id: string; readonly createdAt: Date },
-): (typeof chatRelations.$inferInsert)[] {
-  const { thread, relationSource: source } = input;
-  if (!source || source.threadId === thread.threadId) {
-    return [];
-  }
-  const relation = {
-    orgId: args.orgId,
-    userId: args.userId,
-    sourceChatThreadId: source.threadId,
-    targetChatThreadId: thread.threadId,
-    sourceRunId: source.runId,
-    createdAt: inserted.createdAt,
-  };
-  return [
-    ...(thread.kind === "new"
-      ? [{ ...relation, type: "created" as const }]
-      : []),
-    { ...relation, type: "message", messageEventId: inserted.id },
-  ];
 }
 
 function missingNormalSendInput(thread: SendThread): null {
@@ -1469,7 +1460,7 @@ const appendNormalSendInput$ = command(
             ),
           )
         : null;
-      const insert = normalSendInputInsertSql(event, replacementRows);
+      const insert = normalSendInputInsertSql(args, input, replacementRows);
       const [inserted] = parseRawRows(
         chatEventCommandResultSchema,
         await tx.execute(insert),
@@ -1478,10 +1469,6 @@ const appendNormalSendInput$ = command(
         return missingNormalSendInput(thread);
       }
       const contextInsert = chatEventContextInsertSql(event);
-      const relations = normalSendRelationValues(args, input, inserted);
-      if (relations.length > 0) {
-        await tx.insert(chatRelations).values(relations);
-      }
       if (contextInsert) {
         await tx.execute(contextInsert);
       }

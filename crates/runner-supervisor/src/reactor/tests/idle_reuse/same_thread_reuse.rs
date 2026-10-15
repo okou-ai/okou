@@ -5,8 +5,6 @@ use super::super::support::{
     wait_idle_pool_reuse_keys,
 };
 
-use runner_types::types::{HomeReuseResult, SandboxReuseResult};
-
 // -----------------------------------------------------------------------
 // Test 13: Same-thread work reuses an idle sandbox
 // -----------------------------------------------------------------------
@@ -41,15 +39,6 @@ async fn same_thread_reuses_idle_sandbox() {
     let completion = completion.unwrap();
     assert_eq!(completion.exit_code, 0);
     assert_eq!(
-        completion.reuse_result,
-        Some(SandboxReuseResult::Reused),
-        "reuse_result should be Reused"
-    );
-    assert_eq!(
-        completion.home_reuse_result,
-        Some(HomeReuseResult::SandboxReused),
-    );
-    assert_eq!(
         completion.sandbox_id,
         Some(seeded_sandbox_id),
         "reused completion should carry the seeded sandbox id"
@@ -75,7 +64,7 @@ async fn same_thread_reuses_idle_sandbox() {
 // -----------------------------------------------------------------------
 
 #[tokio::test(start_paused = true)]
-async fn job_without_reuse_key_reports_no_reuse_key() {
+async fn job_without_reuse_key_creates_fresh_sandbox() {
     let (config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
 
     let run_handle = tokio::spawn(run(config));
@@ -90,10 +79,6 @@ async fn job_without_reuse_key_reports_no_reuse_key() {
     assert!(completion.is_some(), "job should complete");
     let completion = completion.unwrap();
     assert_eq!(completion.exit_code, 0);
-    assert_eq!(
-        completion.reuse_result,
-        Some(SandboxReuseResult::NoReuseKey),
-    );
     assert!(
         completion.sandbox_id.is_some(),
         "fresh create still allocates a sandbox id",
@@ -136,7 +121,6 @@ async fn invalid_reserved_resume_session_fails_before_reuse() {
         .await
         .expect("job should complete");
     assert_eq!(completion.exit_code, 1);
-    assert_eq!(completion.reuse_result, None);
     assert_eq!(completion.sandbox_id, None);
     let error = completion.error.as_deref().expect("error should be set");
     assert!(error.contains("invalid session_id"));
@@ -176,7 +160,6 @@ async fn invalid_resume_session_fails_before_fresh_sandbox_creation() {
         .await
         .expect("job should complete");
     assert_eq!(completion.exit_code, 1);
-    assert_eq!(completion.reuse_result, None);
     assert_eq!(completion.sandbox_id, None);
     let error = completion.error.as_deref().expect("error should be set");
     assert!(error.contains("invalid session_id"));
@@ -221,11 +204,6 @@ async fn profile_mismatch_destroys_stale_sandbox() {
     assert!(completion.is_some(), "job should complete");
     let completion = completion.unwrap();
     assert_eq!(completion.exit_code, 0);
-    assert_eq!(
-        completion.reuse_result,
-        Some(SandboxReuseResult::ProfileMismatch),
-        "reuse_result should be ProfileMismatch when profile differs"
-    );
     assert!(
         completion.sandbox_id.is_some(),
         "freshly created sandbox still reports its id"
@@ -253,7 +231,7 @@ async fn profile_mismatch_destroys_stale_sandbox() {
 // -----------------------------------------------------------------------
 
 #[tokio::test(start_paused = true)]
-async fn reuse_enabled_empty_pool_reports_pool_miss() {
+async fn reuse_enabled_empty_pool_creates_fresh_sandbox() {
     let (config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
     let idle_pool = Arc::clone(&config.shared.idle_pool);
 
@@ -274,11 +252,6 @@ async fn reuse_enabled_empty_pool_reports_pool_miss() {
         .await
         .expect("job should complete");
     assert_eq!(completion.exit_code, 0);
-    assert_eq!(
-        completion.reuse_result,
-        Some(SandboxReuseResult::PoolMiss),
-        "empty-pool reuse attempt must tag PoolMiss",
-    );
     assert!(
         completion.sandbox_id.is_some(),
         "fresh create still allocates a sandbox id",

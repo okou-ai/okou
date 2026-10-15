@@ -31,6 +31,11 @@ describe("generationTemplateKind", () => {
     expect(generationTemplateKind(illustration)).toBe("illustration");
     expect(generationTemplateKind(workflow)).toBe("workflow");
     expect(generationTemplateKind(website)).toBe("website");
+    const document: GenerationTemplateRequest = {
+      type: "document",
+      selection: { documentTemplateId: "document-template:creative-brief" },
+    };
+    expect(generationTemplateKind(document)).toBe("document");
   });
 
   it("classifies historical video and avatar selections sharing the video envelope", () => {

@@ -1,3 +1,4 @@
+import { createDocumentTemplateSignals } from "./document-template-picker.ts";
 import { command, computed, state, type Command } from "ccstate";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import { cloudBrowserEnabledByDefault$ } from "../cloud-browser-preference.ts";
@@ -378,6 +379,7 @@ export function createComposerUiSignals() {
     ),
     template: {
       ...dialog,
+      ...createDocumentTemplateSignals(),
       ...list.signals,
       ...cards.signals,
       ...previews,
