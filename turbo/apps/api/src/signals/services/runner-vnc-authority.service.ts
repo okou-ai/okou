@@ -30,8 +30,8 @@ type RunnerVncInput = Pick<
 > & { readonly runId: string };
 const kdcSsh = alias(sshConnections, "vnc_kdc_ssh");
 const kdcSshNeedsRebind =
-  sql`(${kdcSsh.transport} = 'cloudflare_access' AND ${kdcSsh.cloudflareAccessId} IS NULL) OR
-          (${kdcSsh.transport} IN ('tailscale', 'tailscale_ssh') AND ${kdcSsh.tailscaleId} IS NULL)`.mapWith(
+  sql`(${kdcSsh.connectionMode} = 'cloudflare_access' AND ${kdcSsh.cloudflareAccessId} IS NULL) OR
+          (${kdcSsh.connectionMode} IN ('tailscale', 'tailscale_ssh') AND ${kdcSsh.tailscaleId} IS NULL)`.mapWith(
     nullableDriverValueDecoder(pgBooleanDecoder),
   );
 

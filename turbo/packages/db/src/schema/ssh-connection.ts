@@ -31,15 +31,15 @@ export const sshConnections = pgTable(
       index("idx_ssh_connections_tailscale").on(table.tailscaleId, table.id),
       check(
         "chk_ssh_connections_transport",
-        sql`${table.transport} IN ('direct', 'cloudflare_access', 'tailscale', 'tailscale_ssh')`,
+        sql`${table.connectionMode} IN ('direct', 'cloudflare_access', 'tailscale', 'tailscale_ssh')`,
       ),
       check(
         "chk_ssh_connections_transport_binding",
-        sql`(${table.transport} = 'direct' AND ${table.cloudflareAccessId} IS NULL AND ${table.tailscaleId} IS NULL) OR (${table.transport} = 'cloudflare_access' AND ${table.tailscaleId} IS NULL) OR (${table.transport} IN ('tailscale', 'tailscale_ssh') AND ${table.cloudflareAccessId} IS NULL)`,
+        sql`(${table.connectionMode} = 'direct' AND ${table.cloudflareAccessId} IS NULL AND ${table.tailscaleId} IS NULL) OR (${table.connectionMode} = 'cloudflare_access' AND ${table.tailscaleId} IS NULL) OR (${table.connectionMode} IN ('tailscale', 'tailscale_ssh') AND ${table.cloudflareAccessId} IS NULL)`,
       ),
       check(
         "chk_ssh_connections_login",
-        sql`(${table.transport} = 'tailscale_ssh' AND ${table.credentialId} IS NULL AND ${table.tailscaleSshUsername} IS NOT NULL AND char_length(btrim(${table.tailscaleSshUsername})) BETWEEN 1 AND 255 AND ${table.port} = 22) OR (${table.transport} <> 'tailscale_ssh' AND ${table.credentialId} IS NOT NULL AND ${table.tailscaleSshUsername} IS NULL)`,
+        sql`(${table.connectionMode} = 'tailscale_ssh' AND ${table.credentialId} IS NULL AND ${table.tailscaleSshUsername} IS NOT NULL AND char_length(btrim(${table.tailscaleSshUsername})) BETWEEN 1 AND 255 AND ${table.port} = 22) OR (${table.connectionMode} <> 'tailscale_ssh' AND ${table.credentialId} IS NOT NULL AND ${table.tailscaleSshUsername} IS NULL)`,
       ),
       index("idx_ssh_connections_cloudflare_access").on(
         table.cloudflareAccessId,
@@ -47,7 +47,7 @@ export const sshConnections = pgTable(
       ),
       check(
         "chk_ssh_connections_cloudflare_access_destination",
-        sql`${table.transport} <> 'cloudflare_access' OR (${table.port} = 443 AND ${table.host} ~ '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$' AND ${table.host} !~ '^[0-9.]+$')`,
+        sql`${table.connectionMode} <> 'cloudflare_access' OR (${table.port} = 443 AND ${table.host} ~ '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$' AND ${table.host} !~ '^[0-9.]+$')`,
       ),
       foreignKey({
         name: "ssh_connections_credential_owner_fk",

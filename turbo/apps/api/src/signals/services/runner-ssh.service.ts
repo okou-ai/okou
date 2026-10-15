@@ -48,7 +48,7 @@ const connectionFields = Object.freeze({
   host: sshConnections.host,
   port: sshConnections.port,
   username:
-    sql`CASE WHEN ${sshConnections.transport} = 'tailscale_ssh' THEN ${sshConnections.tailscaleSshUsername} ELSE ${sshCredentials.username} END`.mapWith(
+    sql`CASE WHEN ${sshConnections.connectionMode} = 'tailscale_ssh' THEN ${sshConnections.tailscaleSshUsername} ELSE ${sshCredentials.username} END`.mapWith(
       sshCredentials.username,
     ),
   authMethod: sshCredentials.authMethod,
@@ -59,7 +59,7 @@ const connectionFields = Object.freeze({
   fingerprint: sshConnections.learnedHostKeyFingerprint,
   encryptedPrivateKey: sshCredentials.encryptedPrivateKey,
   encryptedPassphrase: sshCredentials.encryptedPassphrase,
-  transport: sshConnections.transport,
+  connectionMode: sshConnections.connectionMode,
   accessId: sshConnections.cloudflareAccessId,
   tailscaleId: sshConnections.tailscaleId,
   tailscale: {
@@ -152,7 +152,7 @@ export function createCurrentRunnerSshConnection(
         and(
           runAuthority(input),
           or(
-            eq(sshConnections.transport, "tailscale_ssh"),
+            eq(sshConnections.connectionMode, "tailscale_ssh"),
             isNotNull(sshCredentials.id),
           ),
         ),
@@ -171,13 +171,14 @@ function availableConnection(row: Connection | null | undefined) {
     return null;
   }
   if (
-    (row.transport === "tailscale" || row.transport === "tailscale_ssh") &&
+    (row.connectionMode === "tailscale" ||
+      row.connectionMode === "tailscale_ssh") &&
     (row.tailscale === null || row.tailscaleId === null)
   ) {
     throw new Error("SSH Tailscale configuration is missing");
   }
   if (
-    row.transport === "cloudflare_access" &&
+    row.connectionMode === "cloudflare_access" &&
     (row.access === null || row.accessId === null)
   ) {
     throw new Error("SSH Cloudflare Access is missing");
@@ -198,7 +199,10 @@ function learnedHostKey(row: {
 }
 
 async function decryptTailscaleAuthority(row: Connection) {
-  if (row.transport !== "tailscale" && row.transport !== "tailscale_ssh") {
+  if (
+    row.connectionMode !== "tailscale" &&
+    row.connectionMode !== "tailscale_ssh"
+  ) {
     return null;
   }
   const network = row.tailscale;
@@ -237,7 +241,7 @@ export const resolveRunnerSsh$ = command(
     };
     const tailscaleCredentials = await decryptTailscaleAuthority(row);
     signal.throwIfAborted();
-    if (row.transport === "tailscale_ssh") {
+    if (row.connectionMode === "tailscale_ssh") {
       if (
         row.port !== 22 ||
         tailscaleCredentials === null ||
@@ -252,7 +256,8 @@ export const resolveRunnerSsh$ = command(
         tailscale: tailscaleCredentials,
       };
     }
-    const access = row.transport === "cloudflare_access" ? row.access : null;
+    const access =
+      row.connectionMode === "cloudflare_access" ? row.access : null;
     const accessCredentials =
       access === null
         ? null

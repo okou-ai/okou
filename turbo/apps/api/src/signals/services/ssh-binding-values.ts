@@ -31,10 +31,10 @@ export function sshBindingUpdateValues(
   access: SQL,
   tailscale: SQL,
 ) {
-  const transport = args.transportType;
+  const connectionMode = args.connectionMode;
   const clear = and(
-    eq(current.transport, "direct"),
-    sql`${transport === "direct"}`,
+    eq(current.connectionMode, "direct"),
+    sql`${connectionMode === "direct"}`,
     or(ne(current.host, args.host), ne(current.port, args.port)),
   );
   return {
@@ -45,7 +45,7 @@ export function sshBindingUpdateValues(
     tailscaleSshUsername: args.tailscaleSshUsername,
     cloudflareAccessId: access,
     tailscaleId: tailscale,
-    transport,
+    connectionMode,
     learnedHostKeyAlgorithm: sql`CASE WHEN ${clear} THEN NULL ELSE ${current.learnedHostKeyAlgorithm} END`,
     learnedHostKeyFingerprint: sql`CASE WHEN ${clear} THEN NULL ELSE ${current.learnedHostKeyFingerprint} END`,
     generation: sql`${current.generation} + 1`,
@@ -174,7 +174,7 @@ export function sshConnectionCreationSource(
   tailscale: SQL,
 ) {
   const at = nowDate();
-  const transport = args.transportType;
+  const connectionMode = args.connectionMode;
   return new QueryBuilder()
     .select({
       id: sql`${args.body.id}::uuid`.mapWith(pgTextDecoder).as("id"),
@@ -194,8 +194,8 @@ export function sshConnectionCreationSource(
       tailscaleId: tailscale
         .mapWith(nullableDriverValueDecoder(pgTextDecoder))
         .as("tailscale_id"),
-      transport: sql`${transport}`
-        .mapWith(zodDriverValueDecoder(z.literal(transport)))
+      connectionMode: sql`${connectionMode}`
+        .mapWith(zodDriverValueDecoder(z.literal(connectionMode)))
         .as("transport"),
       learnedHostKeyAlgorithm: sql`NULL`
         .mapWith(nullableDriverValueDecoder(pgTextDecoder))

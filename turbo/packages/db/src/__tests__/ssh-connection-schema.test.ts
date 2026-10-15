@@ -72,9 +72,9 @@ describe("SSH connection schema", () => {
       "chk_ssh_connections_generation",
       "chk_ssh_connections_learned_host_key_pair",
     ]);
-    expect(sshConnections.transport.notNull).toBe(true);
-    expect(sshConnections.transport.hasDefault).toBe(false);
-    expect(sshConnections.transport.default).toBeUndefined();
+    expect(sshConnections.connectionMode.notNull).toBe(true);
+    expect(sshConnections.connectionMode.hasDefault).toBe(false);
+    expect(sshConnections.connectionMode.default).toBeUndefined();
     expect(checks.chk_ssh_connections_transport).toContain(
       "IN ('direct', 'cloudflare_access', 'tailscale', 'tailscale_ssh')",
     );

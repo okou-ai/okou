@@ -20,6 +20,14 @@ export {
 const c = initContract();
 
 export const SSH_HOST_MAX_LENGTH = 253;
+// A connection mode selects both network access and SSH authentication.
+export const SSH_CONNECTION_MODES = [
+  "direct",
+  "cloudflare_access",
+  "tailscale",
+  "tailscale_ssh",
+] as const;
+export type SshConnectionMode = (typeof SSH_CONNECTION_MODES)[number];
 
 const displayNameSchema = z
   .string()
@@ -35,17 +43,10 @@ const accessTransportSchema = z
 const tailscaleTransportSchema = z
   .object({ type: z.literal("tailscale"), configId: z.uuid() })
   .strict();
-const transportSchema = z.union([
+const credentialConnectionSchema = z.union([
   z.object({ type: z.literal("direct") }).strict(),
   accessTransportSchema,
   tailscaleTransportSchema,
-  z.object({ type: z.literal("tailscale_ssh"), configId: z.uuid() }).strict(),
-  z
-    .object({
-      type: z.literal("tailscale_ssh"),
-      create: createTailscaleRequestSchema,
-    })
-    .strict(),
   z
     .object({
       type: z.literal("tailscale"),
@@ -59,36 +60,52 @@ const transportSchema = z.union([
     })
     .strict(),
 ]);
-export const createSshConnectionRequestSchema = z
+const tailscaleSshConnectionSchema = z.union([
+  z.object({ type: z.literal("tailscale_ssh"), configId: z.uuid() }).strict(),
+  z
+    .object({
+      type: z.literal("tailscale_ssh"),
+      create: createTailscaleRequestSchema,
+    })
+    .strict(),
+]);
+// The public API keeps its existing `transport` key for this selection.
+const connectionSelectionSchema = z.union([
+  credentialConnectionSchema,
+  tailscaleSshConnectionSchema,
+]);
+const createConnectionFields = {
+  id: z.uuid(),
+  displayName: displayNameSchema,
+  host: hostSchema,
+};
+const createCredentialConnectionSchema = z
   .object({
-    id: z.uuid(),
-    displayName: displayNameSchema,
-    host: hostSchema,
+    ...createConnectionFields,
     port: portSchema.default(22),
-    credential: sshCredentialSelectionSchema.optional(),
-    username: usernameSchema.optional(),
-    transport: transportSchema.optional(),
+    credential: sshCredentialSelectionSchema,
+    username: z.never().optional(),
+    transport: credentialConnectionSchema.optional(),
   })
   .strict()
-  .refine(
-    (body) => {
-      return body.transport?.type === "tailscale_ssh"
-        ? body.credential === undefined &&
-            body.username !== undefined &&
-            body.port === 22
-        : body.credential !== undefined && body.username === undefined;
-    },
-    {
-      message:
-        "Tailscale SSH requires a username, port 22 and no SSH credential; other modes require an SSH credential",
-    },
-  )
   .refine(
     (body) => {
       return body.transport?.type !== "cloudflare_access" || body.port === 443;
     },
     { message: "Cloudflare Access hosts use port 443" },
   );
+export const createSshConnectionRequestSchema = z.union([
+  createCredentialConnectionSchema,
+  z
+    .object({
+      ...createConnectionFields,
+      port: z.literal(22).default(22),
+      credential: z.never().optional(),
+      username: usernameSchema,
+      transport: tailscaleSshConnectionSchema,
+    })
+    .strict(),
+]);
 
 export const updateSshConnectionRequestSchema = z
   .object({
@@ -98,7 +115,7 @@ export const updateSshConnectionRequestSchema = z
     port: portSchema.optional(),
     credential: sshCredentialSelectionSchema.optional(),
     username: usernameSchema.optional(),
-    transport: transportSchema.optional(),
+    transport: connectionSelectionSchema.optional(),
   })
   .strict()
   .refine(

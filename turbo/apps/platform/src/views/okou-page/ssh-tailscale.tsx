@@ -12,7 +12,7 @@ import {
 } from "@okouai/ui";
 import {
   chooseSshTailscaleConfig$,
-  sshTransportEditor$,
+  sshConnectionModeEditor$,
 } from "../../signals/ssh.ts";
 import { tailscaleConfigs$ } from "../../signals/tailscale.ts";
 import { TailscaleFields } from "./tailscale-fields.tsx";
@@ -69,7 +69,7 @@ export function TailscaleSelection({
   const { t } = useTranslation();
   const configs = useLoadable(tailscaleConfigs$);
   const available = configs.state === "hasData" ? configs.data : null;
-  const editor = useGet(sshTransportEditor$);
+  const editor = useGet(sshConnectionModeEditor$);
   const choose = useSet(chooseSshTailscaleConfig$);
   const items = [
     ...(configs.state === "hasData" && configs.data

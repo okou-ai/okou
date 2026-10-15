@@ -17,7 +17,7 @@ import {
 import {
   openSshDialog$,
   sshConnections$,
-  usesTailscaleTransport,
+  usesTailscaleNetwork,
 } from "../../signals/ssh.ts";
 import { tailscaleEnabled$ } from "../../signals/tailscale.ts";
 import type { SshConnectionResponse } from "@okouai/api-contracts/contracts/ssh-connections";
@@ -334,7 +334,7 @@ function VncHostCard({
     typeof sshTransport === "object" &&
     sshTransport !== null &&
     "needsRebind" in sshTransport;
-  const tailscale = usesTailscaleTransport(sshConnection);
+  const tailscale = usesTailscaleNetwork(sshConnection);
   const destination = `${connection.host.includes(":") ? `[${connection.host}]` : connection.host}:${connection.port}`;
   return (
     <article className={surfaceVariants({ className: "grid gap-3 p-5" })}>

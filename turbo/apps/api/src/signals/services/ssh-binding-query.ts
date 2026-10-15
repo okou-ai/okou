@@ -202,16 +202,16 @@ function createSshUpdateCoreReads(
           args.body.transport !== undefined
             ? sql`true`
             : or(
-                eq(current.transport, "direct"),
+                eq(current.connectionMode, "direct"),
                 and(
                   or(
-                    eq(current.transport, "tailscale"),
-                    eq(current.transport, "tailscale_ssh"),
+                    eq(current.connectionMode, "tailscale"),
+                    eq(current.connectionMode, "tailscale_ssh"),
                   ),
                   not(isNull(current.tailscaleId)),
                 ),
                 and(
-                  eq(current.transport, "cloudflare_access"),
+                  eq(current.connectionMode, "cloudflare_access"),
                   not(isNull(current.cloudflareAccessId)),
                 ),
               ),
@@ -247,7 +247,7 @@ function createSshUpdateCoreReads(
       .select({ id: base.id })
       .from(base)
       .where(
-        args.transportType === "tailscale_ssh" ||
+        args.connectionMode === "tailscale_ssh" ||
           (prepared !== undefined && prepared.id === undefined)
           ? sql`true`
           : exists(qb.select({ id: credential.id }).from(credential)),

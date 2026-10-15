@@ -48,8 +48,8 @@ export const listRunVncHosts$ = command(
         kdcTransportType: vncConnections.kdcTransportType,
         kdcAllowed: runThreadSshAccess(kdcSsh),
         kdcNeedsRebind:
-          sql`(${kdcSsh.transport} = 'cloudflare_access' AND ${kdcSsh.cloudflareAccessId} IS NULL) OR
-          (${kdcSsh.transport} IN ('tailscale', 'tailscale_ssh') AND ${kdcSsh.tailscaleId} IS NULL)`.mapWith(
+          sql`(${kdcSsh.connectionMode} = 'cloudflare_access' AND ${kdcSsh.cloudflareAccessId} IS NULL) OR
+          (${kdcSsh.connectionMode} IN ('tailscale', 'tailscale_ssh') AND ${kdcSsh.tailscaleId} IS NULL)`.mapWith(
             nullableDriverValueDecoder(pgBooleanDecoder),
           ),
       })

@@ -31,6 +31,7 @@ import {
   SSH_PRIVATE_KEY_MAX_LENGTH,
   SSH_PASSPHRASE_MAX_LENGTH,
   type SshConnectionResponse,
+  type SshConnectionMode,
 } from "@okouai/api-contracts/contracts/ssh-connections";
 import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
 import {
@@ -57,9 +58,9 @@ import {
   mountSshPrivateKey$,
   mountSshForm$,
   sshPrivateKeyFileResult$,
-  sshTransportEditor$,
-  chooseSshTransport$,
-  usesTailscaleTransport,
+  sshConnectionModeEditor$,
+  chooseSshConnectionMode$,
+  usesTailscaleNetwork,
 } from "../../signals/ssh.ts";
 import { cloudflareAccessConfigs$ } from "../../signals/cloudflare-access.ts";
 import { AccessSelection } from "./ssh-cloudflare-access.tsx";
@@ -81,8 +82,8 @@ import { RemoteHostDefaultToggle } from "./remote-access-controls.tsx";
 
 function SshConnectionType({ disabled }: { readonly disabled: boolean }) {
   const { t } = useTranslation();
-  const editor = useGet(sshTransportEditor$);
-  const choose = useSet(chooseSshTransport$);
+  const editor = useGet(sshConnectionModeEditor$);
+  const choose = useSet(chooseSshConnectionMode$);
   const tailscaleEnabled = useGet(tailscaleEnabled$);
   const items = [
     {
@@ -100,20 +101,20 @@ function SshConnectionType({ disabled }: { readonly disabled: boolean }) {
     ...(tailscaleEnabled
       ? [
           {
-            value: "tailscale",
+            value: "tailscale" as const,
             label: t(($) => {
               return $.tailscale.title;
             }),
           },
           {
-            value: "tailscale_ssh",
+            value: "tailscale_ssh" as const,
             label: t(($) => {
               return $.ssh.tailscale.sshTitle;
             }),
           },
         ]
       : []),
-  ];
+  ] satisfies { value: SshConnectionMode; label: string }[];
   return (
     <div className="grid gap-2">
       <span id="ssh-connection-mode">
@@ -158,7 +159,7 @@ function EndpointFields({
   readonly disabled: boolean;
 }) {
   const { t } = useTranslation();
-  const editor = useGet(sshTransportEditor$);
+  const editor = useGet(sshConnectionModeEditor$);
   const protectedHost = editor.mode === "cloudflare_access";
   return (
     <fieldset className="grid min-w-0 gap-4">
@@ -592,7 +593,7 @@ function CredentialImpact({
 function tailscaleReviewBlocked(
   editing: boolean,
   enabled: boolean,
-  mode: string,
+  mode: SshConnectionMode,
 ) {
   return (
     editing && (!enabled || (mode !== "tailscale" && mode !== "tailscale_ssh"))
@@ -606,12 +607,12 @@ function SshConflictDetails({
 }) {
   const { t } = useTranslation();
   const enabled = useGet(tailscaleEnabled$);
-  const transport = useGet(sshTransportEditor$);
+  const connectionEditor = useGet(sshConnectionModeEditor$);
   const acceptReview = useSet(acceptSshConflictReview$);
   const signal = useGet(pageSignal$);
   const deleting = current.kind === "delete";
   const editingTailscale =
-    current.kind === "edit" && usesTailscaleTransport(current.connection);
+    current.kind === "edit" && usesTailscaleNetwork(current.connection);
   return (
     <>
       <h3 className="font-semibold">
@@ -680,7 +681,7 @@ function SshConflictDetails({
         type="button"
         variant="outline"
         disabled={
-          tailscaleReviewBlocked(editingTailscale, enabled, transport.mode) ||
+          tailscaleReviewBlocked(editingTailscale, enabled, connectionEditor.mode) ||
           (current.kind === "delete-credential" &&
             (current.credential?.hosts.length ?? 0) > 0)
         }
@@ -907,7 +908,7 @@ function hasResourceSelection(
 
 function useTailscaleSelectionBlocked(
   hostEditor: boolean,
-  mode: string,
+  mode: SshConnectionMode,
   configId: string | null,
 ) {
   const configs = useLoadable(tailscaleConfigs$);
@@ -921,7 +922,7 @@ function useTailscaleSelectionBlocked(
 
 function useSshHostSaveBlocked(dialog: SshDialogState, isSaving: boolean) {
   const configs = useLoadable(cloudflareAccessConfigs$);
-  const transport = useGet(sshTransportEditor$);
+  const connectionEditor = useGet(sshConnectionModeEditor$);
   const conflict = useGet(sshConflict$);
   const fileResult = useLoadable(sshPrivateKeyFileResult$);
   const credentials = useLoadable(sshCredentials$);
@@ -929,8 +930,8 @@ function useSshHostSaveBlocked(dialog: SshDialogState, isSaving: boolean) {
   const hostEditor = dialog.kind === "create" || dialog.kind === "edit";
   const invalidTailscale = useTailscaleSelectionBlocked(
     hostEditor,
-    transport.mode,
-    transport.tailscaleConfigId,
+    connectionEditor.mode,
+    connectionEditor.tailscaleConfigId,
   );
   const unavailableProtectedHost =
     dialog.connection !== null &&
@@ -941,12 +942,12 @@ function useSshHostSaveBlocked(dialog: SshDialogState, isSaving: boolean) {
     configs.data === null;
   const invalidAccess =
     hostEditor &&
-    transport.mode === "cloudflare_access" &&
+    connectionEditor.mode === "cloudflare_access" &&
     (configs.state !== "hasData" ||
-      !hasResourceSelection(configs.data, transport.configId));
+      !hasResourceSelection(configs.data, connectionEditor.configId));
   const invalidCredential =
     hostEditor &&
-    transport.mode !== "tailscale_ssh" &&
+    connectionEditor.mode !== "tailscale_ssh" &&
     (credentials.state !== "hasData" ||
       !hasResourceSelection(credentials.data, credentialEditor.selection));
   return (
@@ -1003,7 +1004,7 @@ function SshHostForm({ dialog, isSaving, save }: SshFormProps) {
   const { t } = useTranslation();
   const uncertain = useGet(sshSaveUncertain$);
   const fieldsDisabled = isSaving || uncertain;
-  const transport = useGet(sshTransportEditor$);
+  const connectionEditor = useGet(sshConnectionModeEditor$);
   const mountForm = useSet(mountSshForm$);
   const signal = useGet(pageSignal$);
   const blocked = useSshHostSaveBlocked(dialog, isSaving);
@@ -1057,30 +1058,31 @@ function SshHostForm({ dialog, isSaving, save }: SshFormProps) {
                   connection={dialog.connection}
                   disabled={fieldsDisabled}
                 />
-                {transport.mode === "cloudflare_access" && (
+                {connectionEditor.mode === "cloudflare_access" && (
                   <AccessSelection disabled={fieldsDisabled} />
                 )}
-                {(transport.mode === "tailscale" ||
-                  transport.mode === "tailscale_ssh") && (
+                {(connectionEditor.mode === "tailscale" ||
+                  connectionEditor.mode === "tailscale_ssh") && (
                   <TailscaleSelection disabled={fieldsDisabled} />
                 )}
                 <TailscaleSshLogin
                   connection={dialog.connection}
-                  active={transport.mode === "tailscale_ssh"}
+                  active={connectionEditor.mode === "tailscale_ssh"}
                   disabled={fieldsDisabled}
                 />
                 <fieldset
-                  hidden={transport.mode === "tailscale_ssh"}
-                  disabled={transport.mode === "tailscale_ssh"}
+                  hidden={connectionEditor.mode === "tailscale_ssh"}
+                  disabled={connectionEditor.mode === "tailscale_ssh"}
                   className={
-                    transport.mode === "tailscale_ssh"
+                    connectionEditor.mode === "tailscale_ssh"
                       ? "hidden"
                       : "grid min-w-0 gap-4"
                   }
                 >
                   <CredentialSelection
                     disabled={
-                      fieldsDisabled || transport.mode === "tailscale_ssh"
+                      fieldsDisabled ||
+                      connectionEditor.mode === "tailscale_ssh"
                     }
                   />
                 </fieldset>
@@ -1111,7 +1113,7 @@ function SshHostForm({ dialog, isSaving, save }: SshFormProps) {
 
 export function SshDialog() {
   const data = useLoadable(sshDialog$);
-  const editor = useGet(sshTransportEditor$);
+  const editor = useGet(sshConnectionModeEditor$);
   const tailscaleEnabled = useGet(tailscaleEnabled$);
   const close = useSet(closeSshDialog$);
   const [saving, save] = useLoadableSet(saveSsh$);
@@ -1222,7 +1224,7 @@ function HostCard({
   const configs = useLoadable(cloudflareAccessConfigs$);
   const tailscaleEnabled = useGet(tailscaleEnabled$);
   const transport = "transport" in connection ? connection.transport : null;
-  const tailscale = usesTailscaleTransport(connection);
+  const tailscale = usesTailscaleNetwork(connection);
   const configId = cloudflareConfigId(connection);
   const needsRebind =
     "transport" in connection && "needsRebind" in connection.transport;

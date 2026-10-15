@@ -10,6 +10,6 @@ export const sshConnections = pgTable(
 // Preserve SQL NULL for a missing left-joined host. The mapped column supplies
 // the PostgreSQL boolean decoder, without reading its stored value.
 export const sshConnectionNeedsRebind = sql<boolean>`
-  (${sshConnections.transport} = 'cloudflare_access' AND ${sshConnections.cloudflareAccessId} IS NULL)
-  OR (${sshConnections.transport} IN ('tailscale', 'tailscale_ssh') AND ${sshConnections.tailscaleId} IS NULL)
+  (${sshConnections.connectionMode} = 'cloudflare_access' AND ${sshConnections.cloudflareAccessId} IS NULL)
+  OR (${sshConnections.connectionMode} IN ('tailscale', 'tailscale_ssh') AND ${sshConnections.tailscaleId} IS NULL)
 `.mapWith(sshConnections.defaultEnabledForChats);

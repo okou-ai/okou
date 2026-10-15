@@ -84,7 +84,7 @@ export async function prepareTailscaleConfig(
     ...(await encryptCredentials(body.credentials, context)),
   };
 }
-export function selectedSshTailscaleTransport(
+export function selectedSshTailscaleConnection(
   transport: CreateSshConnectionRequest["transport"],
 ) {
   return transport?.type === "tailscale" || transport?.type === "tailscale_ssh"
