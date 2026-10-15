@@ -1,5 +1,8 @@
 //! Bounded Cloudflare Access byte transport. Consumers retain destination authority.
 
+#[cfg(test)]
+mod tests;
+
 use bytes::Bytes;
 use futures_util::{Sink, Stream};
 use rustls::{ClientConfig, pki_types::ServerName};

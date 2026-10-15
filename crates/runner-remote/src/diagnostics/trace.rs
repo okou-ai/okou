@@ -142,7 +142,10 @@ impl Trace {
         });
     }
     pub(crate) fn access_failure(&self, failure: crate::cloudflare::Failure) {
-        self.update(|state| state.access_failure = Some(failure));
+        self.update(|state| {
+            // Preserve the source cause through later carrier/cleanup errors.
+            state.access_failure.get_or_insert(failure);
+        });
     }
     pub(crate) fn access_cause(&self) -> Option<crate::cloudflare::Failure> {
         self.0
