@@ -15,9 +15,7 @@ import { Link } from "../router/link.tsx";
 import { AgentUnreadIndicator } from "./sidebar-agent-row-actions.tsx";
 
 type PwaParentPathname =
-  | typeof ROUTES.me
-  | typeof ROUTES.agents
-  | typeof ROUTES.workflows;
+  typeof ROUTES.me | typeof ROUTES.agents | typeof ROUTES.workflows;
 
 function PwaBackLink({
   pathname,
