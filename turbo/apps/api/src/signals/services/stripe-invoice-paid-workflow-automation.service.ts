@@ -3,6 +3,10 @@ import {
   type StripeInvoicePaidEventConfig,
 } from "@okouai/api-contracts/contracts/workflows";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
+import {
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/runtime/connector-catalog";
 import { and, eq, isNull } from "drizzle-orm";
 
 import type { Db, ReadonlyDb } from "../external/db";
@@ -14,7 +18,11 @@ import {
   type BuiltinConnectorCredentialConnectionResult,
 } from "./builtin-connector-credential-runtime.service";
 import { resolveWorkflowAutomationConnectorId } from "./workflow-automation-account.service";
-import { loadConnectorRuntimeAuthSelection } from "./connector-catalog-slug-source.service";
+import {
+  connectorCatalogCurrentWhere,
+  connectorRuntimeAuthSelectionReadPlan,
+  connectorRuntimeAuthSelectionFromRows,
+} from "./connector-catalog-slug-source.service";
 
 const STRIPE_CONNECTOR_SLUG = "stripe";
 const STRIPE_LIVEMODE_VALUE_REF = "$vars.STRIPE_LIVEMODE";
@@ -134,9 +142,19 @@ async function loadReadyStripeConnection(
   },
   signal: AbortSignal,
 ): Promise<ReadyStripeConnectionResult> {
-  const snapshot = await loadConnectorRuntimeAuthSelection(args.db, {
+  const catalogDb = args.db;
+  const catalogPlan = connectorRuntimeAuthSelectionReadPlan({
     connectorSlugs: [STRIPE_CONNECTOR_SLUG],
   });
+  const snapshot = connectorRuntimeAuthSelectionFromRows(
+    await catalogDb
+      .select(catalogPlan.columns)
+      .from(connectorCatalog)
+      .leftJoin(connectorCatalogEntries, catalogPlan.join)
+      .where(connectorCatalogCurrentWhere()),
+    catalogPlan.requestedConnectorSlugs,
+    catalogPlan.firewallConnectorSlugs,
+  );
   signal.throwIfAborted();
   const loaded = await loadBuiltinConnectorCredentialConnection({
     db: args.db,

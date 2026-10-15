@@ -268,26 +268,6 @@ export function connectorRuntimeAuthSelectionFromRows(
   };
 }
 
-export async function loadConnectorRuntimeAuthSelection(
-  db: ReadonlyDb,
-  args: {
-    readonly connectorSlugs: readonly string[];
-    readonly firewallConnectorSlugs?: readonly ConnectorSlug[];
-  },
-): Promise<ConnectorRuntimeAuthSelection> {
-  const plan = connectorRuntimeAuthSelectionReadPlan(args);
-  const rows = await db
-    .select(plan.columns)
-    .from(connectorCatalog)
-    .leftJoin(connectorCatalogEntries, plan.join)
-    .where(connectorCatalogCurrentWhere());
-  return connectorRuntimeAuthSelectionFromRows(
-    rows,
-    plan.requestedConnectorSlugs,
-    plan.firewallConnectorSlugs,
-  );
-}
-
 export const readConnectorRuntimeAuthSelection$ = command(
   async (
     { get },
