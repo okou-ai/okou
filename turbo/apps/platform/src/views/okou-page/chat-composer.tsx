@@ -204,6 +204,7 @@ import {
   invalidateConnectorOverview$,
 } from "../../signals/okou-page/connector-overview.ts";
 import type { ComposerConnectorData } from "../../signals/okou-page/connectors.ts";
+import { resolveTemplatePickerCategory } from "../../signals/okou-page/chat-composer.ts";
 import {
   loadCustomTemplateCatalog$,
   resetCustomTemplatePicker$,
@@ -3346,33 +3347,6 @@ function IllustrationTemplateCard({
   );
 }
 
-/** `category` is null until an entry point or the member names one. */
-function resolveTemplatePickerCategory(
-  category: string | null,
-  customTemplatesEnabled: boolean,
-  documentTemplatesEnabled: boolean,
-): string {
-  switch (category) {
-    case "document": {
-      return documentTemplatesEnabled ? category : "slides";
-    }
-    case "custom": {
-      return customTemplatesEnabled ? category : "slides";
-    }
-    case "slides":
-    case "website":
-    case "illustration":
-    case "workflow": {
-      return category;
-    }
-    default: {
-      // Whatever leads the nav: Custom while the switch is on, and the first
-      // format below it otherwise.
-      return customTemplatesEnabled ? "custom" : "slides";
-    }
-  }
-}
-
 function TemplatePickerCategoryNav({
   selectedCategory,
   customTemplatesEnabled,
@@ -5058,7 +5032,9 @@ function TemplatePickerDialog({
   signals: ComposerSignals;
 }) {
   const { t } = useTranslation();
-  const category = useGet(signals.template.templatePickerCategory$);
+  const selectedCategory = useGet(
+    signals.template.selectedTemplatePickerCategory$,
+  );
   const setCategory = useSet(signals.template.setTemplatePickerCategory$);
   const search = useGet(signals.template.templatePickerSearch$);
   const setSearch = useSet(signals.template.setTemplatePickerSearch$);
@@ -5134,11 +5110,6 @@ function TemplatePickerDialog({
   const features = useGet(featureSwitch$);
   const customTemplatesEnabled =
     features[FeatureSwitchKey.CustomTemplates] === true;
-  const selectedCategory = resolveTemplatePickerCategory(
-    category,
-    customTemplatesEnabled,
-    features[FeatureSwitchKey.BuiltinDocumentTemplates] === true,
-  );
   const showTemplatePickerSearch = selectedCategory === "workflow";
 
   const previewImageUrlsForCategory = (targetCategory: string) => {
