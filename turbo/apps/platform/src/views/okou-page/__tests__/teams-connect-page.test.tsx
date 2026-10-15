@@ -3,6 +3,10 @@ import {
   type TeamsConnectBody,
   type TeamsConnectStatus,
 } from "@okouai/api-contracts/contracts/teams-connect";
+import {
+  teamsBrowserConnectContract,
+  type TeamsBrowserConnectQuery,
+} from "@okouai/api-contracts/contracts/teams-browser-connect";
 import { act, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click, setupPage, startPage } from "../../../__tests__/page-helper.ts";
@@ -302,10 +306,14 @@ test("A successful POST without connected readback does not claim completion", a
 
 test("Read failures remain visible and recover through manual retry", async () => {
   let failed = true;
-  context.mocks.http.get(`*${teamsConnectContract.getStatus.path}`, () => {
-    return failed
-      ? Response.error()
-      : Response.json(status({ isConnected: true, linkedAccounts: [account] }));
+  context.mocks.api(teamsConnectContract.getStatus, ({ respond }) => {
+    if (failed) {
+      throw Response.error();
+    }
+    return respond(
+      200,
+      status({ isConnected: true, linkedAccounts: [account] }),
+    );
   });
   await setupPage({ context, path: path({ ...target, status: "connected" }) });
   await expect(
@@ -617,8 +625,26 @@ test("Conflicting repeated identity parameters cannot enable binding", async () 
 
 test("Reloading a success link with no current connection remains read-only", async () => {
   mockStatus(status());
-  // Only GET status is mocked: any implicit POST or legacy binding request is
-  // rejected by the shared external HTTP fixture.
+  // Binding is an explicit user action. Observe both mutation entry points at
+  // the HTTP boundary so the default POST fixture cannot hide a replay.
+  let attemptedBinding: TeamsConnectBody | undefined;
+  let attemptedLegacyBinding: TeamsBrowserConnectQuery | undefined;
+  context.mocks.api(teamsConnectContract.connect, ({ body, respond }) => {
+    attemptedBinding = body;
+    return respond(403, {
+      error: {
+        code: "FORBIDDEN",
+        message: "Binding requires an explicit action",
+      },
+    });
+  });
+  context.mocks.api(
+    teamsBrowserConnectContract.connect,
+    ({ query, respond }) => {
+      attemptedLegacyBinding = query;
+      return respond(500, { error: "Binding requires an explicit action" });
+    },
+  );
   await setupPage({
     context,
     path: path({
@@ -638,12 +664,17 @@ test("Reloading a success link with no current connection remains read-only", as
   expect(new URLSearchParams(window.location.search).get("upn")).toBe(
     "old@example.com",
   );
+  expect(attemptedBinding).toBeUndefined();
+  expect(attemptedLegacyBinding).toBeUndefined();
 });
 
 test("A failed readback after binding stays visible until a successful retry", async () => {
   let failed = false;
-  context.mocks.http.get(`*${teamsConnectContract.getStatus.path}`, () => {
-    return failed ? Response.error() : Response.json(status());
+  context.mocks.api(teamsConnectContract.getStatus, ({ respond }) => {
+    if (failed) {
+      throw Response.error();
+    }
+    return respond(200, status());
   });
   context.mocks.api(teamsConnectContract.connect, ({ respond }) => {
     failed = true;

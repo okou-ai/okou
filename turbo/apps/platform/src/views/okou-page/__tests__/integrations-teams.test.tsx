@@ -100,8 +100,11 @@ test("Works sends prepared installations to the canonical page and does not mark
 
 test("Works retries a failed Teams read without hiding the other integrations", async () => {
   let failed = true;
-  context.mocks.http.get(`*${teamsConnectContract.getStatus.path}`, () => {
-    return failed ? Response.error() : Response.json(status());
+  context.mocks.api(teamsConnectContract.getStatus, ({ respond }) => {
+    if (failed) {
+      throw Response.error();
+    }
+    return respond(200, status());
   });
   await setupPage({ context, path: "/works" });
   const card = getIntegrationCard("Microsoft Teams");
