@@ -3,7 +3,6 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use tokio::sync::Semaphore;
 use tracing::warn;
@@ -42,7 +41,6 @@ pub(super) struct StartedRunner {
     pub resources: StartupResources,
     pub signal: SignalController,
     pub wss_task: Option<runner_wss::AcceptTask>,
-    pub wss_failed: Option<Arc<AtomicBool>>,
     pub factories: BTreeMap<String, (SharedFactory, bool)>,
     pub prune_listener: PruneIdleListener,
     pub prune_admission: Arc<Semaphore>,
@@ -53,7 +51,6 @@ struct StartupOwner {
     // Keep factory/listener/signal custody ahead of their backing resources
     // in the default field drop order, without adding another cleanup task.
     factories: BTreeMap<String, (SharedFactory, bool)>,
-    wss_failed: Option<Arc<AtomicBool>>,
     wss_task: Option<runner_wss::AcceptTask>,
     signal: SignalController,
     resources: StartupResources,
@@ -67,13 +64,9 @@ impl StartupOwner {
     }
 
     fn listener_failed(&self) -> bool {
-        self.wss_failed
+        self.wss_task
             .as_ref()
-            .is_some_and(|flag| flag.load(Ordering::SeqCst))
-            || self
-                .wss_task
-                .as_ref()
-                .is_some_and(runner_wss::AcceptTask::is_finished)
+            .is_some_and(runner_wss::AcceptTask::failed_or_finished)
     }
 
     /// Consume startup custody only after its dependent work has been joined.
@@ -148,7 +141,6 @@ pub(super) async fn start(
         resources,
         signal,
         wss_task: None,
-        wss_failed: None,
         factories: BTreeMap::new(),
     };
 
@@ -188,7 +180,6 @@ pub(super) async fn start(
         ) {
             Ok(listener) => {
                 startup.wss_task = Some(listener.task);
-                startup.wss_failed = Some(listener.failed);
                 Some(listener.started)
             }
             Err(error) => {
@@ -303,14 +294,12 @@ pub(super) async fn start(
         resources,
         signal,
         wss_task,
-        wss_failed,
         factories,
     } = startup;
     Ok(Some(StartedRunner {
         resources,
         signal,
         wss_task,
-        wss_failed,
         factories,
         prune_listener,
         prune_admission,

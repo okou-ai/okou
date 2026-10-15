@@ -1,4 +1,5 @@
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
+import { ROUTES } from "../../signals/route-paths.ts";
 import {
   useGet,
   useLoadable,
@@ -205,26 +206,48 @@ function InstalledChannelButton({
 }
 
 function TelegramButton({ connected }: { readonly connected: boolean }) {
+  const { t } = useTranslation();
   const captureChannelClicked = useSet(captureSourceOnboardingChannelClicked$);
   const pageSignal = useGet(pageSignal$);
   const [connection, connect] = useLoadableSet(authorizeTelegramBot$);
   return (
-    <Button
-      type="button"
-      variant="outline"
-      className="min-w-0 flex-1 gap-2 px-3"
-      aria-pressed={connected}
-      disabled={connected || connection.state === "loading"}
-      onClick={() => {
-        captureChannelClicked("telegram", true);
-        detach(
-          connect(OFFICIAL_TELEGRAM_BOT_ID, "onboarding", pageSignal),
-          Reason.DomCallback,
-        );
-      }}
-    >
-      <ChannelButtonContent channel="telegram" connected={connected} />
-    </Button>
+    <div className="flex min-w-0 flex-1 flex-col gap-2">
+      <Button
+        type="button"
+        variant="outline"
+        className="min-w-0 flex-1 gap-2 px-3"
+        aria-pressed={connected}
+        disabled={connected || connection.state === "loading"}
+        onClick={() => {
+          captureChannelClicked("telegram", true);
+          detach(
+            connect(OFFICIAL_TELEGRAM_BOT_ID, "onboarding", pageSignal),
+            Reason.DomCallback,
+          );
+        }}
+      >
+        <ChannelButtonContent channel="telegram" connected={connected} />
+      </Button>
+      {!connected &&
+      (connection.state === "hasError" ||
+        (connection.state === "hasData" && !connection.data)) ? (
+        <p role="status" className="text-xs text-muted-foreground">
+          {t(($) => {
+            return $.connectors.providerConnect.telegram.interrupted;
+          })}
+        </p>
+      ) : null}
+      <a
+        href={ROUTES.settingsTelegram}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-center text-xs text-primary underline-offset-4 hover:underline"
+      >
+        {t(($) => {
+          return $.connectors.providerConnect.telegram.viewSettings;
+        })}
+      </a>
+    </div>
   );
 }
 
@@ -336,7 +359,7 @@ export function OnboardingSlackPage() {
     };
   });
   const phone = useLastLoadable(agentPhoneLinkStatus$);
-  const bots = useLastLoadable(telegramBots$);
+  const bots = useLoadable(telegramBots$);
   const telegramConnected =
     bots.state === "hasData" &&
     bots.data.some((bot) => {

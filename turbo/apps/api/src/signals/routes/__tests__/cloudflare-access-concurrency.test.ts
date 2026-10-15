@@ -266,11 +266,12 @@ async function cleanupRenameFixtures(
         [200],
       );
       await joinAll(
-        connections.body.connections.map(({ id }) => {
+        connections.body.connections.map(({ id, generation }) => {
           return accept(
             hosts().delete({
               headers: participant.headers,
               params: { connectionId: id },
+              body: { expectedGeneration: generation },
             }),
             [204],
           );
@@ -1190,8 +1191,9 @@ test.each(["delete", "detach"] as const)(
             hosts().delete({
               headers: owner.headers,
               params: { connectionId: host.id },
+              body: { expectedGeneration: host.generation },
             }),
-            [204],
+            [204, 409],
           )
         : accept(
             hosts().update({
@@ -1268,7 +1270,7 @@ test.each(["delete", "detach"] as const)(
       credentials: beforeLogins.credentials.map((credential) => {
         return {
           ...credential,
-          hosts: operation === "delete" ? [] : credential.hosts,
+          hosts: departed.status === 204 ? [] : credential.hosts,
         };
       }),
     });
@@ -1421,6 +1423,7 @@ test("creates neither inline resource when its owned host is deleted during KMS"
         hosts().delete({
           headers: owner.headers,
           params: { connectionId: direct.id },
+          body: { expectedGeneration: direct.generation },
         }),
         [204],
       );

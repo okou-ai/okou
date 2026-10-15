@@ -396,6 +396,24 @@ test.each(["/telegram/connect", "/settings/telegram"])(
       integrationsTelegramContract.link,
       ({ body, respond }) => {
         linkedBody = body;
+        context.mocks.data.telegramIntegration({
+          statuses: [
+            {
+              ...telegramStatus(),
+              isConnected: true,
+              connectedUser: {
+                telegramUserId: "99001",
+                telegramUsername: "alice",
+                telegramDisplayName: "Alice Tester",
+              },
+            },
+          ],
+          linkStatus: {
+            linked: true,
+            telegramUserId: "99001",
+            botUsername: "agent_bot",
+          },
+        });
         return respond(200, {
           botUsername: "agent_bot",
           telegramUserId: "99001",
@@ -420,19 +438,24 @@ test.each(["/telegram/connect", "/settings/telegram"])(
     await expect(
       screen.findByText("Connected to Telegram!"),
     ).resolves.toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "You're connected to @agent_bot. Send a message in Telegram to start chatting.",
-      ),
-    ).toBeInTheDocument();
-    expect(getAction("button", "Open Telegram")).toBeInTheDocument();
+    expect(screen.getByText("Connected as @alice.")).toBeInTheDocument();
+    expect(getAction("link", "Open Telegram")).toBeInTheDocument();
     expect(getAction("link", "Back to integrations")).toHaveAttribute(
       "href",
       "/works",
     );
-    expect(locationAssign.calls).toStrictEqual([
-      "tg://resolve?domain=agent_bot",
-    ]);
+    expect(locationAssign.calls).toStrictEqual([]);
+    expect(getAction("link", "Open Telegram")).toHaveAttribute(
+      "href",
+      "https://t.me/agent_bot",
+    );
+    expect(getAction("link", "Open Telegram")).toHaveAttribute(
+      "target",
+      "_blank",
+    );
+    expect({
+      value: new URLSearchParams(window.location.search).has("sig"),
+    }).toStrictEqual({ value: false });
     expect(linkedBody).toStrictEqual({
       telegramBotId: TELEGRAM_BOT_ID,
       connectSignature: {

@@ -3,7 +3,7 @@ use super::super::super::*;
 use super::super::support::{
     assert_run_exits_within, minimal_context, mock_run_config, mock_run_config_with_overrides,
     push_job, shutdown, test_profiles, wait_cancel_token, wait_cancel_token_removed,
-    wait_discover_entered, wait_status_mode,
+    wait_discover_entered, wait_status_mode, wait_usage_flush_requested,
 };
 use std::process::Stdio;
 use std::sync::Arc;
@@ -492,6 +492,147 @@ async fn mitm_recovery_panic_stops_runner_instead_of_retrying_unknown_cleanup() 
     assert_run_error_contains(run_handle, "mitmproxy recovery task failed").await;
     assert!(env.cancel.is_cancelled());
     assert!(crash_tx.is_closed());
+    wait_for_child_cleanup("mitmdump", pid, starttime).await;
+}
+
+#[tokio::test]
+async fn job_drain_services_mitm_crashes_and_joins_held_recovery() {
+    let wait = Duration::from_secs(5);
+    let job_gate = sandbox_mock::MockLifecycleGate::new();
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    overrides.set_wait_process_lifecycle_gate(job_gate.clone());
+    let (mut config, mut env) =
+        mock_run_config_with_overrides(test_profiles(), 8, 32768, 4, overrides);
+    let child = tokio::process::Command::new("sleep")
+        .arg("60")
+        .spawn()
+        .unwrap();
+    let pid = child.id().unwrap();
+    let starttime = runner_host::process::read_process_stat(pid)
+        .await
+        .unwrap()
+        .starttime;
+    let reap_gate = crate::test_fixtures::ReapGate::new();
+    config.proxy.mitm.set_child_for_test(child);
+    config.proxy.mitm.set_reap_gate_for_test(reap_gate.clone());
+    let (crash_tx, crash_rx) = mpsc::channel(1);
+    config.proxy.mitm_crash_rx = crash_rx;
+    let usage_flush_tx = config.usage_flush_tx.clone();
+    let run_handle = tokio::spawn(run(config));
+    let run_id = RunId::new_v4();
+    push_job(&env, run_id, "vm0/default", Some(minimal_context(run_id)));
+    let token = wait_cancel_token(&env.cancel_tokens, run_id, wait).await;
+    job_gate.wait_entered(1, wait).await.unwrap();
+
+    // Exhaust discovery without a hard stop so this job keeps the real drain
+    // select alive. Persisted Stopping alone is not evidence of drain entry.
+    env.handle.discover_tx = mpsc::unbounded_channel().0;
+    env.start_observer
+        .wait_for(wait, "running-job drain", |event| {
+            matches!(event, StartLoopEvent::RunningJobsDrainEntered).then_some(())
+        })
+        .await;
+    assert!(!token.is_cancelled());
+    assert!(!env.cancel.is_cancelled());
+    crash_tx.send(()).await.unwrap();
+    tokio::time::timeout(wait, reap_gate.entered.notified())
+        .await
+        .expect("drain must schedule old-child cleanup");
+
+    crash_tx.send(()).await.unwrap();
+    tokio::time::timeout(wait, async {
+        while crash_tx.capacity() == 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("drain must consume a late crash during recovery");
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_secs(2)).await;
+    tokio::task::yield_now().await;
+    tokio::time::resume();
+    usage_flush_tx.send(()).await.unwrap();
+    wait_usage_flush_requested(&env, wait).await;
+    assert!(!token.is_cancelled());
+    assert!(!run_handle.is_finished());
+
+    job_gate.release_one();
+    let completion = env.handle.wait_completion(run_id, wait).await.unwrap();
+    assert_eq!(completion.exit_code, 0);
+    assert!(completion.error.is_none());
+    env.start_observer
+        .wait_destroy_tasks_drain_entered(wait)
+        .await;
+    assert!(
+        !run_handle.is_finished(),
+        "finishing the job must not abandon in-flight proxy cleanup"
+    );
+    reap_gate.release.add_permits(1);
+    assert_run_exits_within(run_handle, wait, "drain must join proxy recovery").await;
+    wait_cancel_token_removed(&env.cancel_tokens, run_id, wait).await;
+    assert_child_reaped("mitmdump", pid, starttime).await;
+}
+
+#[tokio::test]
+async fn job_drain_mitm_recovery_panic_cancels_and_joins_all_jobs() {
+    let wait = Duration::from_secs(5);
+    let job_gate = sandbox_mock::MockLifecycleGate::new();
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    overrides.set_wait_process_lifecycle_gate(job_gate.clone());
+    let (mut config, mut env) =
+        mock_run_config_with_overrides(test_profiles(), 8, 32768, 4, overrides);
+    let child = tokio::process::Command::new("sleep")
+        .arg("60")
+        .spawn()
+        .unwrap();
+    let pid = child.id().unwrap();
+    let starttime = runner_host::process::read_process_stat(pid)
+        .await
+        .unwrap()
+        .starttime;
+    let reap_gate = crate::test_fixtures::ReapGate::new();
+    config.proxy.mitm.set_child_for_test(child);
+    config.proxy.mitm.set_reap_gate_for_test(reap_gate.clone());
+    let (crash_tx, crash_rx) = mpsc::channel(1);
+    config.proxy.mitm_crash_rx = crash_rx;
+    let run_handle = tokio::spawn(run(config));
+    let runs = [RunId::new_v4(), RunId::new_v4()];
+    for &run_id in &runs {
+        push_job(&env, run_id, "vm0/default", Some(minimal_context(run_id)));
+    }
+    let first_token = wait_cancel_token(&env.cancel_tokens, runs[0], wait).await;
+    let second_token = wait_cancel_token(&env.cancel_tokens, runs[1], wait).await;
+    job_gate.wait_entered(2, wait).await.unwrap();
+    env.handle.discover_tx = mpsc::unbounded_channel().0;
+    env.start_observer
+        .wait_for(wait, "running-job drain", |event| {
+            matches!(event, StartLoopEvent::RunningJobsDrainEntered).then_some(())
+        })
+        .await;
+    assert!(!first_token.is_cancelled());
+    assert!(!second_token.is_cancelled());
+    assert!(!env.cancel.is_cancelled());
+
+    crash_tx.send(()).await.unwrap();
+    tokio::time::timeout(wait, reap_gate.entered.notified())
+        .await
+        .expect("drain must schedule old-child cleanup");
+    crash_tx.send(()).await.unwrap();
+    reap_gate.release.close();
+    assert_run_error_contains(run_handle, "mitmproxy recovery task failed").await;
+    assert!(crash_tx.is_closed(), "fatal recovery must disable retries");
+    assert!(env.cancel.is_cancelled());
+    assert!(first_token.is_cancelled());
+    assert!(second_token.is_cancelled());
+    for &run_id in &runs {
+        wait_cancel_token_removed(&env.cancel_tokens, run_id, wait).await;
+        let completions = env.handle.completions.lock().unwrap();
+        let completion = completions
+            .iter()
+            .find(|entry| entry.run_id == run_id)
+            .expect("fatal recovery must still join every accepted job");
+        assert_eq!(completion.error.as_deref(), Some("cancelled by user"));
+    }
     wait_for_child_cleanup("mitmdump", pid, starttime).await;
 }
 

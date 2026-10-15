@@ -18,9 +18,7 @@ use std::path::PathBuf;
 #[cfg(any(test, feature = "test-support"))]
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
-use tokio::sync::OwnedSemaphorePermit;
-#[cfg(any(test, feature = "test-support"))]
-use tokio::sync::Semaphore;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 mod entry;
 mod fs;
@@ -84,6 +82,8 @@ pub struct HomeImageCache {
     gc_inventory_test_gate: Option<gc::GcInventoryTestGate>,
     #[cfg(test)]
     promotion_capacity_lock_test_gate: Option<(Arc<tokio::sync::Notify>, Arc<Semaphore>)>,
+    #[cfg(test)]
+    publication_capacity_held_test_gate: Option<(Arc<tokio::sync::Notify>, Arc<Semaphore>)>,
 }
 #[cfg(any(test, feature = "test-support"))]
 #[derive(Clone, Default)]
@@ -112,6 +112,9 @@ struct HomeImageCacheInner {
     lock_dir: PathBuf,
     cache_scope: String,
     entry_lock_owners: Mutex<HashMap<String, HomeCacheLockRegistration>>,
+    publication_admission: Semaphore,
+    #[cfg(test)]
+    publication_admission_entered: Semaphore,
     #[cfg(any(test, feature = "test-support"))]
     fs_stats_override: FsStats,
     #[cfg(any(test, feature = "test-support"))]
@@ -191,6 +194,7 @@ impl HomeImageCache {
                     lock_dir,
                     cache_scope: scope.to_owned(),
                     entry_lock_owners: Mutex::new(HashMap::new()),
+                    publication_admission: Semaphore::new(1),
                 }),
                 idle_home_reclamation: Arc::new(IdleHomeReclamation::new(
                     MAX_HOME_PROMOTION_CONCURRENCY,
@@ -215,6 +219,9 @@ impl HomeImageCache {
                 lock_dir,
                 cache_scope: scope.to_owned(),
                 entry_lock_owners: Mutex::new(HashMap::new()),
+                publication_admission: Semaphore::new(1),
+                #[cfg(test)]
+                publication_admission_entered: Semaphore::new(0),
                 fs_stats_override: stats,
                 gc_root_scan_count: AtomicUsize::new(0),
                 held_state_root_scan_count: AtomicUsize::new(0),
@@ -231,6 +238,8 @@ impl HomeImageCache {
             gc_inventory_test_gate: None,
             #[cfg(test)]
             promotion_capacity_lock_test_gate: None,
+            #[cfg(test)]
+            publication_capacity_held_test_gate: None,
         }
     }
     pub fn with_telemetry(mut self, telemetry: SandboxOpReporter) -> Self {

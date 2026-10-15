@@ -1,3 +1,4 @@
+import { getAction } from "../../okou-page/__tests__/connector-integrations-test-helpers.ts";
 import {
   integrationsSlackContract,
   type SlackOrgStatus,
@@ -402,6 +403,39 @@ test("Telegram authorizes the official bot in a new tab and keeps onboarding ope
       });
     },
   );
+  const bindingRequested = context.mocks.deferred<void>();
+  const finishBinding = context.mocks.deferred<void>();
+  context.mocks.api(integrationsTelegramContract.link, async ({ respond }) => {
+    bindingRequested.resolve();
+    await finishBinding.promise;
+    context.mocks.data.telegramIntegration({
+      statuses: [
+        {
+          id: "official",
+          kind: "official",
+          username: "okou_bot",
+          avatarUrl: null,
+          agent: null,
+          isOwner: false,
+          isConnected: true,
+          connectedUser: {
+            telegramUserId: "99001",
+            telegramUsername: "alice",
+            telegramDisplayName: "Alice",
+          },
+          tokenStatus: "valid",
+          domainConfigured: true,
+          environment: {
+            requiredSecrets: [],
+            requiredVars: [],
+            missingSecrets: [],
+            missingVars: [],
+          },
+        },
+      ],
+    });
+    return respond(200, { botUsername: "okou_bot", telegramUserId: "99001" });
+  });
   const authorizationWindow = context.mocks.browser.authWindow();
   Object.defineProperty(authorizationWindow, "location", {
     configurable: true,
@@ -449,6 +483,11 @@ test("Telegram authorizes the official bot in a new tab and keeps onboarding ope
     );
   });
 
+  await bindingRequested.promise;
+  expect(getChannelTile("Telegram")).not.toHaveTextContent("Added");
+  expect(getButtonByName("Continue")).toBeDisabled();
+  expect(pathname()).toBe(ROUTES.onboardingSlack);
+  finishBinding.resolve();
   await expect(
     screen.findByText("Connected to Telegram!"),
   ).resolves.toBeInTheDocument();
@@ -458,4 +497,9 @@ test("Telegram authorizes the official bot in a new tab and keeps onboarding ope
   ).resolves.toBeInTheDocument();
   expect(getChannelTile("Telegram")).toHaveTextContent("Added");
   expect(getButtonByName("Continue")).toBeEnabled();
+  expect({ value: authorizationWindow.closed }).toStrictEqual({ value: false });
+  expect(getAction("link", "View Telegram settings")).toHaveAttribute(
+    "target",
+    "_blank",
+  );
 });

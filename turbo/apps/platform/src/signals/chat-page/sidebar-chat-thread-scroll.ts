@@ -10,7 +10,6 @@ import {
   type ChatThreadVirtualListScrollAlign,
 } from "../okou-page/sidebar-state.ts";
 import {
-  currentChatThreadId$,
   currentChatThreadListIds$,
   currentChatThreadListSignals$,
   unreadChatThreads$,
@@ -30,12 +29,8 @@ export const unreadSidebarChatThreadList$ = computed(async (get) => {
   const threadIds = threads.map((thread) => {
     return thread.id;
   });
-  const currentThreadId = get(currentChatThreadId$);
   return {
     items: get(sidebarChatThreadItemSignalsRegistry$).reconcile(threadIds),
-    currentThreadListed: currentThreadId
-      ? threadIds.includes(currentThreadId)
-      : false,
   };
 });
 

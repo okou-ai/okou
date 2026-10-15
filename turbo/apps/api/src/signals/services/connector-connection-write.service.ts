@@ -4,12 +4,13 @@ import type {
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectors } from "@okouai/db/schema/connector";
 import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
+import { secrets } from "@okouai/db/schema/secret";
+import { variables } from "@okouai/db/schema/variable";
 import { and, eq, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
-import { deleteConnectorOwnedCredentialRows } from "./connector-credential-storage-write.service";
 
 const log = logger("api:connector-account-mutation");
 
@@ -613,11 +614,15 @@ export async function replaceConnectorConnectionOutcome(
   }
   const connection = outcome.row;
 
-  await deleteConnectorOwnedCredentialRows(
-    db,
-    { connectorId: connection.id },
-    signal,
-  );
+  const credentialDeletion = { connectorId: connection.id };
+  await db
+    .delete(secrets)
+    .where(eq(secrets.connectorId, credentialDeletion.connectorId));
+  signal.throwIfAborted();
+  await db
+    .delete(variables)
+    .where(eq(variables.connectorId, credentialDeletion.connectorId));
+  signal.throwIfAborted();
   await db
     .delete(builtinConnectorAccountOauthBindings)
     .where(

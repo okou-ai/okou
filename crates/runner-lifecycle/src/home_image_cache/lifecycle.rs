@@ -47,6 +47,9 @@ const HOME_IMAGE_PREPARE_LOCK_TIMEOUT: Duration = Duration::from_millis(50);
 // Stopped publishers retain their entry and applicable resource lease while
 // waiting. Give contention a short window without changing checkout's lock budget.
 const HOME_IMAGE_PROMOTION_CAPACITY_LOCK_TIMEOUT: Duration = Duration::from_millis(250);
+// Bound queued ownership separately from external flock contention. This is an
+// initial retention policy, not a deadline for started transfer or durable I/O.
+const HOME_IMAGE_PUBLICATION_ADMISSION_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub struct HomeImageLease {
     cache: HomeImageCache,
@@ -1287,6 +1290,34 @@ impl HomeImageCache {
             );
             return Ok(HomeImagePromotionOutcome::PreservedExisting);
         }
+        // Stopped publishers from this process must not spend their external
+        // contention budget racing one another. Keep entry ownership and the
+        // fair acquire future until admitted, cancelled, or refused pre-staging.
+        #[cfg(test)]
+        self.inner.publication_admission_entered.add_permits(1);
+        let _publication = match tokio::time::timeout(
+            HOME_IMAGE_PUBLICATION_ADMISSION_TIMEOUT,
+            self.inner.publication_admission.acquire(),
+        )
+        .await
+        {
+            Ok(permit) => permit.map_err(|error| {
+                LifecycleError::Internal(format!("home publication admission closed: {error}"))
+            })?,
+            Err(_) => {
+                self.observe_publication(
+                    &input,
+                    HomeObservationOutcome::Skipped,
+                    "publication_admission_timeout",
+                    None,
+                    None,
+                );
+                info!(run_id = %input.run_id, cache_key = input.cache_key,
+                    admission_timeout_ms = duration_ms(HOME_IMAGE_PUBLICATION_ADMISSION_TIMEOUT),
+                    "home image cache promotion skipped: publication admission timeout");
+                return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
+            }
+        };
         let _capacity = match self.acquire_promotion_capacity_lock().await {
             Ok(runner_host::lock::TryLock::Acquired(lock)) => lock,
             Ok(runner_host::lock::TryLock::Busy) => {
@@ -1315,6 +1346,15 @@ impl HomeImageCache {
                 return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
             }
         };
+        #[cfg(test)]
+        if let Some((entered, release)) = &self.publication_capacity_held_test_gate {
+            entered.notify_one();
+            release
+                .acquire()
+                .await
+                .expect("publication capacity-held gate closed")
+                .forget();
+        }
         let stats = self.fs_stats().await?;
         let budget = CacheBudget::from_fs_stats(stats);
         // Metadata staging and new directory blocks also need reserve. Never use

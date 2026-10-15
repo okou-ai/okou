@@ -25,3 +25,10 @@ pub use types::{ActiveInputEntry, JobRequest, JobResponse};
 /// Submit, discovery, and claim share this limit so independently deployed
 /// producers and consumers enforce the same local queue resource boundary.
 pub const LOCAL_JOB_MAX_BYTES: usize = 16 * 1024 * 1024;
+
+/// Maximum byte length of one serialized local [`ActiveInputEntry`].
+///
+/// Leave room for queue metadata around a CLI-admitted control payload without
+/// increasing the Guest's separate payload limit. Reads retain only one entry.
+pub const LOCAL_ACTIVE_INPUT_MAX_BYTES: usize =
+    2 * crate::active_input::ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES;

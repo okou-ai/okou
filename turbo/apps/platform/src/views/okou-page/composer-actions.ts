@@ -1,24 +1,126 @@
-import { useGet, useLoadableState, useSet } from "ccstate-react";
+import { processShortcut, type KeyboardEventLike } from "@okouai/ui";
+import {
+  useGet,
+  useLastLoadable,
+  useLastResolved,
+  useLoadableState,
+  useSet,
+} from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
+import { ensurePushSubscription$ } from "../../lib/push-notifications.ts";
+import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
+import type {
+  ComposerPrimaryAction,
+  ComposerSignals,
+} from "../../signals/okou-page/composer-signals.ts";
+import { rootSignal$ } from "../../signals/root-signal.ts";
+import { sendMode$ } from "../../signals/send-mode.ts";
+import { detach, Reason } from "../../signals/utils.ts";
 
 export type ComposerActions = ReturnType<typeof useComposerActions>;
 
-/** One invocation owner for the editor, footer, and global voice shortcut. */
+/** One submission invocation owner shared by the editor and send control. */
 export function useComposerActions(signals: ComposerSignals) {
-  const voiceState = useLoadableState(signals.voice.result$);
   const voice = useSet(signals.voice.run$);
-  const voiceAction = useGet(signals.voice.action$);
-  const bind = useSet(signals.voice.setRootRef$);
+  const bindVoiceShortcut = useSet(signals.voice.setRootRef$);
   const [submissionLoadable, submit] = useLoadableSet(
     signals.submission.activatePrimaryAction$,
   );
   const hasCurrentSubmission = useGet(signals.submission.hasCurrentInvocation$);
   return {
-    bind,
+    bind: bindVoiceShortcut,
     voice,
-    voiceAction: voiceState === "loading" ? voiceAction : null,
     submit,
     submitting: hasCurrentSubmission && submissionLoadable.state === "loading",
+  };
+}
+
+/** Read shared voice execution state only where it changes a control. */
+export function useComposerVoiceAction(signals: ComposerSignals) {
+  const voiceState = useLoadableState(signals.voice.result$);
+  const voiceAction = useGet(signals.voice.action$);
+  return voiceState === "loading" ? voiceAction : null;
+}
+
+export function useComposerPrimaryAction(
+  signals: ComposerSignals,
+  actions: ComposerActions,
+): ComposerPrimaryAction {
+  const voiceAction = useComposerVoiceAction(signals);
+  // Keep the last action while the thread's events resync; falling back to
+  // "disabled" on every recompute would unmount and remount Stop mid-run.
+  const action =
+    useLastResolved(signals.submission.primaryAction$) ?? "disabled";
+  const selectedModelOauthAvailable =
+    useLastResolved(signals.model.selectedModelOauthAvailable$) ?? true;
+  return selectedModelOauthAvailable &&
+    (!actions.submitting || action === "stop") &&
+    voiceAction === null
+    ? action
+    : "disabled";
+}
+
+export function startComposerSubmission(
+  {
+    action,
+    activate,
+    ensurePushSubscription,
+  }: {
+    action: ComposerPrimaryAction;
+    activate: (signal: AbortSignal) => Promise<boolean>;
+    ensurePushSubscription: (signal: AbortSignal) => Promise<void>;
+  },
+  signal: AbortSignal,
+): void {
+  if (action === "disabled" || action === "stop") {
+    return;
+  }
+  if (action === "send") {
+    detach(ensurePushSubscription(signal), Reason.DomCallback);
+  }
+  detach(activate(signal), Reason.DomCallback);
+}
+
+/** Own keyboard availability beside the controls, not the editor subtree. */
+export function useComposerKeyboard(
+  signals: ComposerSignals,
+  actions: ComposerActions,
+) {
+  const primaryAction = useComposerPrimaryAction(signals, actions);
+  const ensurePushSubscription = useSet(ensurePushSubscription$);
+  const rootSignal = useGet(rootSignal$);
+  const sendModeLoadable = useLastLoadable(sendMode$);
+  const sendMode =
+    sendModeLoadable.state === "hasData" ? sendModeLoadable.data : "enter";
+  const submit = () => {
+    startComposerSubmission(
+      {
+        action: primaryAction,
+        activate: (signal) => {
+          return actions.submit(primaryAction, signal);
+        },
+        ensurePushSubscription,
+      },
+      rootSignal,
+    );
+  };
+  return (event: KeyboardEventLike) => {
+    const isTouchDevice = window.matchMedia("(pointer: coarse)").matches;
+    if (isMobileTextInputDevice()) {
+      processShortcut({ "mod+enter": submit }, event);
+      return;
+    }
+    processShortcut(
+      {
+        ...(sendMode === "enter" ? { enter: submit } : { "mod+enter": submit }),
+        ...(isTouchDevice && sendMode === "enter"
+          ? { "mod+enter": submit }
+          : {}),
+        escape: () => {
+          (event.target as HTMLElement).blur();
+        },
+      },
+      event,
+    );
   };
 }

@@ -954,6 +954,28 @@ async fn handle_required_network_log_completion(
     }
 }
 
+fn handle_mitm_crash(recovery: &mut MitmRecovery) {
+    error!(
+        r#type = "usage_underbilling",
+        reason = "mitm_restart_in_memory_usage_risk",
+        underbilling_class = "risk",
+        component = "runner",
+        "mitmproxy exited unexpectedly, scheduling restart"
+    );
+    recovery.on_crash();
+}
+
+async fn handle_mitm_recovery_failure(
+    recovery: &mut MitmRecovery,
+    crash_rx: &mut mpsc::Receiver<()>,
+    cancel: &CancellationToken,
+    cancel_tokens: &RunCancellationRegistry,
+    lifecycle: &LifecycleController,
+) {
+    recovery.stop_retries(crash_rx);
+    handle_stopping_signal("mitm-recovery", cancel, cancel_tokens, lifecycle).await;
+}
+
 /// Run the concrete retained reactor and perform its ordered resource teardown.
 pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     let RunConfig {
@@ -1020,7 +1042,6 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                 handler_task: mut signal_handler_task,
             },
         mut wss_task,
-        wss_failed,
         mut factories,
         prune_listener,
         prune_admission,
@@ -1203,9 +1224,9 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     let mut ready_direct_candidates_left = 0;
     let mut terminal_error = None;
     loop {
-        if wss_failed
+        if wss_task
             .as_ref()
-            .is_some_and(|flag| flag.load(std::sync::atomic::Ordering::SeqCst))
+            .is_some_and(runner_wss::AcceptTask::has_failed)
         {
             terminal_error = Some(RunnerError::Internal(
                 "required Runner WSS accept loop failed".into(),
@@ -1385,7 +1406,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             // The future is pinned outside the loop so other reactor branches
             // do not cancel and restart its internal wait timer. See #8747.
             discovered = &mut discover_fut, if can_discover => {
-                if wss_failed.as_ref().is_some_and(|flag| flag.load(std::sync::atomic::Ordering::SeqCst)) {
+                if wss_task.as_ref().is_some_and(runner_wss::AcceptTask::has_failed) {
                     terminal_error = Some(RunnerError::Internal("required Runner WSS accept loop failed".into()));
                     break;
                 }
@@ -1577,21 +1598,15 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             }
             // Mitmproxy crash detection
             Some(()) = mitm_crash_rx.recv() => {
-                error!(
-                    r#type = "usage_underbilling",
-                    reason = "mitm_restart_in_memory_usage_risk",
-                    underbilling_class = "risk",
-                    component = "runner",
-                    "mitmproxy exited unexpectedly, scheduling restart"
-                );
-                mitm_recovery.on_crash();
+                handle_mitm_crash(&mut mitm_recovery);
             }
             // Mitmproxy restart result (background task)
             result = mitm_recovery.wait(&mut mitm) => {
                 if let Err(error) = result {
-                    mitm_recovery.stop_retries(&mut mitm_crash_rx);
-                    handle_stopping_signal("mitm-recovery", &provider_state.cancel,
-                        &provider_state.cancel_tokens, &lifecycle).await;
+                    handle_mitm_recovery_failure(
+                        &mut mitm_recovery, &mut mitm_crash_rx, &provider_state.cancel,
+                        &provider_state.cancel_tokens, &lifecycle,
+                    ).await;
                     terminal_error = Some(error.into());
                 }
             }
@@ -1640,9 +1655,9 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     // Shutdown — drain idle pool, release discovery resources, then drain running jobs
     // -----------------------------------------------------------------------
     // Discovery may observe listener-triggered cancellation before its join.
-    if wss_failed
+    if wss_task
         .as_ref()
-        .is_some_and(|flag| flag.load(std::sync::atomic::Ordering::SeqCst))
+        .is_some_and(runner_wss::AcceptTask::has_failed)
     {
         terminal_error.get_or_insert_with(|| {
             RunnerError::Internal("required Runner WSS accept loop failed".into())
@@ -1769,20 +1784,14 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                     mitm.request_usage_flush();
                 }
                 Some(()) = mitm_crash_rx.recv() => {
-                    error!(
-                        r#type = "usage_underbilling",
-                        reason = "mitm_restart_in_memory_usage_risk",
-                        underbilling_class = "risk",
-                        component = "runner",
-                        "mitmproxy exited unexpectedly, scheduling restart"
-                    );
-                    mitm_recovery.on_crash();
+                    handle_mitm_crash(&mut mitm_recovery);
                 }
                 result = mitm_recovery.wait(&mut mitm) => {
                     if let Err(error) = result {
-                        mitm_recovery.stop_retries(&mut mitm_crash_rx);
-                        handle_stopping_signal("mitm-recovery", &provider_state.cancel,
-                            &provider_state.cancel_tokens, &lifecycle).await;
+                        handle_mitm_recovery_failure(
+                            &mut mitm_recovery, &mut mitm_crash_rx, &provider_state.cancel,
+                            &provider_state.cancel_tokens, &lifecycle,
+                        ).await;
                         terminal_error.get_or_insert(error.into());
                     }
                 }

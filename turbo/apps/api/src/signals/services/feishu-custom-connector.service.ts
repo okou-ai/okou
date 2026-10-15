@@ -12,6 +12,7 @@ import { and, eq } from "drizzle-orm";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import { FEISHU_OAUTH_SCOPES } from "@okouai/api-contracts/contracts/feishu-connect";
 import { connectors } from "@okouai/db/schema/connector";
+import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
@@ -25,7 +26,6 @@ import {
   type CapturedConnectorClientInvalidationAbort,
 } from "./connector-client-invalidation.service";
 import { deleteCustomConnectorMemberConnectionById } from "./custom-connector-credential-storage.service";
-import { deleteConnectorSelectionsForCustomConnectorDefinition } from "./connector-credential-storage-write.service";
 import { prepareCustomConnectorSkillVolume$ } from "./custom-connector-skill-volume.service";
 import {
   FEISHU_CUSTOM_CONNECTOR_SKILL_METADATA,
@@ -631,11 +631,16 @@ export const deleteFeishuInstallationAndCustomConnector$ = command(
       if (!connectorId) {
         return { installationDeleted: true, connectorId: null };
       }
-      await deleteConnectorSelectionsForCustomConnectorDefinition(
-        tx,
-        { customConnectorId: connectorId },
-        signal,
-      );
+      const selectionDeletion = { customConnectorId: connectorId };
+      await tx
+        .delete(chatThreadConnectorSelections)
+        .where(
+          eq(
+            chatThreadConnectorSelections.customConnectorId,
+            selectionDeletion.customConnectorId,
+          ),
+        );
+      signal.throwIfAborted();
       const [deletedConnector] = await tx
         .delete(orgCustomConnectors)
         .where(

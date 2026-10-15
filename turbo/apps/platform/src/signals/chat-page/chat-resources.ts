@@ -1,4 +1,6 @@
 import { command, computed, state, type Computed } from "ccstate";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 import { marked } from "marked";
 import type {
   ChatThreadArtifactFile,
@@ -15,6 +17,10 @@ import {
 } from "../okou-page/settings/user-preferences.ts";
 import { onRef, onRejection, withCleanup } from "../utils.ts";
 import type { ChatEventGroup } from "./chat-event.ts";
+
+export const chatResourcePanelEnabled$ = computed((get) => {
+  return get(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel] === true;
+});
 
 const RESOURCE_PANEL_MIN_GUTTER = 408;
 const optimisticPreference$ = state<boolean | null>(null);

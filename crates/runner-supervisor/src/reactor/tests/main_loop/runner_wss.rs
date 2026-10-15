@@ -217,6 +217,38 @@ async fn soft_drain_retains_socket_until_active_run_finishes() {
 }
 
 #[tokio::test]
+async fn stop_during_readiness_with_healthy_listener_exits_successfully() {
+    let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
+    let dir = env._temp_dir.path().join("wss");
+    std::fs::create_dir(&dir).unwrap();
+    std::fs::set_permissions(&dir, std::os::unix::fs::PermissionsExt::from_mode(0o710)).unwrap();
+    let path = dir.join(format!("{}.sock", config.runner.identity.runner_id()));
+    enable_wss(&mut config, dir);
+    env.handle.block_startup_readiness();
+    let status_path = env._temp_dir.path().join("status.json");
+    let run_handle = tokio::spawn(run(config));
+    assert!(
+        env.handle
+            .wait_startup_readiness_entered(Duration::from_secs(2))
+            .await
+    );
+    assert!(UnixStream::connect(&path).await.is_ok());
+
+    env.trigger_stopping().await;
+    tokio::time::timeout(Duration::from_secs(5), run_handle)
+        .await
+        .expect("normal stop must finish rollback while readiness is blocked")
+        .unwrap()
+        .expect("stopping a healthy listener must not become a WSS failure");
+    wait_status_mode(&status_path, "stopped", Duration::from_secs(5)).await;
+    assert_eq!(env.handle.discover_started_count(), 0);
+    assert!(
+        !path.exists(),
+        "startup rollback must remove its listener socket"
+    );
+}
+
+#[tokio::test]
 async fn accept_loop_failure_is_fatal_during_readiness_and_after_running() {
     for during_startup in [true, false] {
         let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 4);

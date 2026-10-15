@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.107.3](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.2...guest-agent-v0.107.3) (2026-10-15)
+
+
+### Refactoring
+
+* **pi:** always use the runner-bundled cli ([#40232](https://github.com/okou-ai/okou/issues/40232)) ([dfff160](https://github.com/okou-ai/okou/commit/dfff1605013103371cd90962ee5b54c80fc93140))
+
 ## [0.107.2](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.1...guest-agent-v0.107.2) (2026-10-15)
 
 ## [0.107.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.0...guest-agent-v0.107.1) (2026-10-15)

@@ -104,35 +104,34 @@ async fn run_forwarder(
             batch = source.read(next_local_sequence) => batch,
         };
         match batch {
-            Ok(ActiveInputBatch::Local(entries)) => {
-                for entry in entries {
-                    if entry.sequence < next_local_sequence {
+            Ok(ActiveInputBatch::Local(Some(entry))) => {
+                let event_id = local_active_input_event_id(run_id, entry.sequence);
+                let disposition = forward(
+                    run_id,
+                    event_id,
+                    entry.text,
+                    DeliveryMode::Local,
+                    &control,
+                    &job_cancel,
+                    &stop,
+                )
+                .await;
+                match disposition {
+                    ForwardDisposition::Accepted => {
+                        let Some(next) = next_local_sequence.checked_add(1) else {
+                            return;
+                        };
+                        next_local_sequence = next;
+                        // Drain healthy inputs without imposing the idle poll
+                        // delay on each one. The next read checks cancellation.
                         continue;
                     }
-                    if entry.sequence > next_local_sequence {
-                        break;
-                    }
-                    let event_id = local_active_input_event_id(run_id, entry.sequence);
-                    let disposition = forward(
-                        run_id,
-                        event_id,
-                        entry.text,
-                        DeliveryMode::Local,
-                        &control,
-                        &job_cancel,
-                        &stop,
-                    )
-                    .await;
-                    match disposition {
-                        ForwardDisposition::Accepted => {
-                            next_local_sequence = next_local_sequence.saturating_add(1);
-                        }
-                        // The next local poll reads this sequence again.
-                        ForwardDisposition::NotForwarded => break,
-                        ForwardDisposition::Suppress | ForwardDisposition::Stop => return,
-                    }
+                    // The next local poll reads only this sequence again.
+                    ForwardDisposition::NotForwarded => {}
+                    ForwardDisposition::Suppress | ForwardDisposition::Stop => return,
                 }
             }
+            Ok(ActiveInputBatch::Local(None)) => {}
             Ok(ActiveInputBatch::Api(response)) => match response.input {
                 Some(ResponseInput { event_id, prompt }) => {
                     if forwarded_api_event_id.as_deref() != Some(&event_id) {
