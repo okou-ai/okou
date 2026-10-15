@@ -1,12 +1,17 @@
 //! Shared setup for CLI integration tests.
 //!
-//! # Why separate test binaries instead of cases in one
+//! # Test executable boundaries
 //!
 //! Many CLI tests mutate process env, current directory, and guest runtime path
-//! overrides as setup input. Consolidating scenarios with different prompts or
-//! grace windows into one `#[tokio::test]` binary would make those process-wide
-//! side effects race. Splitting into separate binaries gives each scenario a
-//! fresh process, paid for by a small cargo build-cache hit (idempotent).
+//! overrides as setup input. Keep those scenarios, process-global telemetry/log sinks and
+//! signal/resource-limit fixtures in separate binaries: ordinary Cargo can run
+//! cases concurrently within one executable. Nextest's per-case isolation does
+//! not make an unsafe shared executable valid for ordinary Cargo.
+//!
+//! Domain targets share this module once for cases with explicit configuration
+//! and independently owned resources, including parents that already isolate
+//! their guarded children. Keep self-spawn filters fully module-qualified; see
+//! `tests/README.md` for the target layout and selection commands.
 //!
 //! # Error handling
 //!
