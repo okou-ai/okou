@@ -24,10 +24,22 @@ use std::path::{Component, Path, PathBuf};
 ///
 /// Stop at the first cleanup failure. Protected filesystem metadata at a
 /// mountpoint root may remain; it is not a managed input.
-pub(crate) fn cleanup_stale_paths(cleanup_paths: &[String], preserved: &[String]) -> bool {
-    cleanup_stale_paths_with_mountinfo_loader(cleanup_paths, preserved, cleanup_mountinfo)
+pub(crate) fn cleanup_stale_paths(
+    cleanup_paths: &[String],
+    preserved: &[String],
+    retained_roots: &[String],
+) -> bool {
+    let detector = CleanupMountPointDetector::new(cleanup_mountinfo);
+    cleanup_stale_paths_with_options(
+        cleanup_paths,
+        preserved,
+        retained_roots,
+        |path| detector.is_mount_point(path),
+        remove_entry,
+    )
 }
 
+#[cfg(test)]
 fn cleanup_stale_paths_with_mountinfo_loader<L>(
     cleanup_paths: &[String],
     preserved: &[String],
@@ -40,6 +52,7 @@ where
     cleanup_stale_paths_with_options(
         cleanup_paths,
         preserved,
+        &[],
         |path| detector.is_mount_point(path),
         remove_entry,
     )
@@ -57,6 +70,7 @@ where
     cleanup_stale_paths_with_options(
         cleanup_paths,
         preserved,
+        &[],
         |path| Ok(is_mount_point(path)),
         remove_entry,
     )
@@ -65,6 +79,7 @@ where
 fn cleanup_stale_paths_with_options<M, R>(
     cleanup_paths: &[String],
     preserved: &[String],
+    retained_roots: &[String],
     is_mount_point: M,
     remove_entry: R,
 ) -> bool
@@ -73,6 +88,10 @@ where
     R: Fn(&fs::DirEntry) -> io::Result<()>,
 {
     let preserved = PreservedPaths::new(preserved);
+    let retained_roots: HashSet<_> = retained_roots
+        .iter()
+        .map(|path| normalize_path(Path::new(path)))
+        .collect();
     let mut sorted = cleanup_paths
         .iter()
         .map(|path| {
@@ -92,7 +111,10 @@ where
 
         let preserved_child_count = preserved.count_preserved_children(&path.logical);
 
-        let clean_contents = if preserved_child_count > 0 {
+        let retain_root = retained_roots
+            .iter()
+            .any(|root| root.starts_with(&path.logical));
+        let clean_contents = if preserved_child_count > 0 || retain_root {
             true
         } else {
             match is_mount_point(&path.logical) {
@@ -113,6 +135,7 @@ where
                 path.original,
                 &path.logical,
                 &preserved,
+                &retained_roots,
                 &is_mount_point,
                 &remove_entry,
             ) {
@@ -129,6 +152,12 @@ where
                     "Selectively cleaned {} (preserved {} children)",
                     path.original.display(),
                     preserved_child_count
+                );
+            } else if retain_root {
+                log_info!(
+                    LOG_TAG,
+                    "Cleaned retained target contents: {}",
+                    path.original.display()
                 );
             } else {
                 log_info!(
@@ -166,6 +195,7 @@ fn clean_directory_contents<M, R>(
     original_path: &Path,
     logical_path: &Path,
     preserved: &PreservedPaths,
+    retained_roots: &HashSet<PathBuf>,
     is_mount_point: &M,
     remove_entry: &R,
 ) -> io::Result<()>
@@ -186,6 +216,21 @@ where
         let logical_entry_path = logical_path.join(entry.file_name());
 
         if preserved.entry_overlaps_preserved_path(&logical_entry_path) {
+            continue;
+        }
+
+        if retained_roots
+            .iter()
+            .any(|root| root.starts_with(&logical_entry_path))
+        {
+            clean_directory_contents(
+                &entry_path,
+                &logical_entry_path,
+                preserved,
+                retained_roots,
+                is_mount_point,
+                remove_entry,
+            )?;
             continue;
         }
 
@@ -433,6 +478,10 @@ fn mount_points_from_mountinfo(mountinfo: &[u8]) -> HashSet<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn cleanup_stale_paths(paths: &[String], preserved: &[String]) -> bool {
+        super::cleanup_stale_paths(paths, preserved, &[])
+    }
     use std::cell::{Cell, RefCell};
     use std::ffi::OsStr;
 
@@ -684,6 +733,7 @@ mod tests {
 
         cleanup_stale_paths_with_options(
             &[path_string(&path)],
+            &[],
             &[],
             |candidate| Ok(candidate == path),
             |entry| {

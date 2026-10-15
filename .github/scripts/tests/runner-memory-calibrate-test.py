@@ -684,6 +684,58 @@ runpy.run_path(sys.argv[0], run_name='__main__')
             self.assertEqual(owned, initial)
             self.assertNotIn(child, owned)
 
+    def test_disappearing_process_stat_does_not_invent_residency(self):
+        for error in (FileNotFoundError, ProcessLookupError):
+            with self.subTest(error=error), unittest.mock.patch.object(
+                MODULE, "bounded_read", side_effect=error
+            ):
+                self.assertIsNone(MODULE.process_identity(123))
+                self.assertIsNone(MODULE.residency(123, 1))
+
+    def test_disappearing_task_keeps_other_threads_children(self):
+        tasks = self.root / "tasks"
+        tasks.mkdir()
+        for tid in (1, 2):
+            (tasks / str(tid)).mkdir()
+        real_scandir = os.scandir
+
+        def read_children(path, limit):
+            if Path(path).parent.name == "1":
+                raise ProcessLookupError
+            return b"123 456\n"
+
+        with (
+            unittest.mock.patch.object(
+                MODULE.os, "scandir", side_effect=lambda path: real_scandir(tasks)
+            ),
+            unittest.mock.patch.object(
+                MODULE, "bounded_read", side_effect=read_children
+            ),
+        ):
+            self.assertEqual(MODULE.child_pids(123), [123, 456])
+
+    def test_disappearing_task_directory_keeps_captured_ownership(self):
+        owned = {123: 456}
+        with (
+            unittest.mock.patch.object(
+                MODULE.os, "scandir", side_effect=ProcessLookupError
+            ),
+            unittest.mock.patch.object(
+                MODULE, "process_identity", return_value=(1, "S", 0)
+            ),
+        ):
+            MODULE.discover_owned(owned)
+        self.assertEqual(owned, {123: 456})
+
+    def test_unexpected_process_read_errors_still_fail_closed(self):
+        with unittest.mock.patch.object(
+            MODULE, "bounded_read", side_effect=PermissionError
+        ):
+            with self.assertRaises(PermissionError):
+                MODULE.process_identity(123)
+            with self.assertRaises(PermissionError):
+                MODULE.child_pids(os.getpid())
+
     def test_pid_generation_change_discards_residency(self):
         with (
             unittest.mock.patch.object(

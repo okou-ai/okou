@@ -114,7 +114,6 @@ function createAuthWindow(): Window {
 }
 
 test("Configure connector permissions from the composer", async () => {
-  const user = userEvent.setup({ delay: null });
   const axiom = builtinConnector({
     slug: AXIOM_SLUG,
     label: "Axiom",
@@ -133,11 +132,9 @@ test("Configure connector permissions from the composer", async () => {
 
   await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
 
-  await loadComposer();
-  await openConnectors(user);
-  await user.click(
-    await findFastControl("button", "Configure Axiom permissions"),
-  );
+  click(await findFastControl("button", "Connectors"));
+  await findFastControl("button", "Add connectors");
+  click(await findFastControl("button", "Configure Axiom permissions"));
   const dialog = await screen.findByRole("dialog", {
     name: /Axiom permissions.*Scout/u,
   });
@@ -147,11 +144,11 @@ test("Configure connector permissions from the composer", async () => {
   if (!(row instanceof HTMLElement)) {
     throw new Error("Permission row not found");
   }
-  await user.click(await findFastControl("button", "Deny", row));
+  click(await findFastControl("button", "Deny", row));
   await expect(
     findFastControl("button", "Apply", dialog),
   ).resolves.toBeEnabled();
-  await user.click(await findFastControl("button", "Cancel", dialog));
+  click(await findFastControl("button", "Cancel", dialog));
   await waitFor(() => {
     expect(
       screen.queryByRole("dialog", { name: /Axiom permissions.*Scout/u }),

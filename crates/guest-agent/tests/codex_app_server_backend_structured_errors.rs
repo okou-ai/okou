@@ -9,6 +9,7 @@ use guest_agent::error::AgentError;
 use guest_agent::masker::SecretMasker;
 use guest_contracts::diagnostics::{FailureClass, FailureReason};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::time::Duration;
 
 struct StructuredErrorCase {
@@ -99,9 +100,18 @@ async fn codex_app_server_classifies_supported_structured_errors()
                 common::CodexAppServerEnvConfig {
                     run_id: &run_id,
                     prompt: "exercise structured Codex error classification",
-                    scenario: Some(case.scenario),
+                    scenario: None,
                     resume_session_id: None,
                 },
+            )?;
+            let runtime_dir =
+                guest_contracts::runtime_paths::run_dir_for_home(tmp.path(), &run_id)?;
+            common::set_user_env_file_env_for_test(
+                &runtime_dir,
+                &HashMap::from([(
+                    "MOCK_CODEX_APP_SERVER_SCENARIO".to_string(),
+                    case.scenario.to_string(),
+                )]),
             )?;
         }
         let runtime = common::guest_runtime_from_process_env()?;

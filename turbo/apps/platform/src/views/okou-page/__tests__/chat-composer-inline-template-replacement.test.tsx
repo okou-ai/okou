@@ -97,13 +97,17 @@ test("Replacing an inline template preserves a previously sent reference", async
     throw new Error("Expected inline template button");
   }
   click(inlineButton);
-  await expect(screen.findByRole("dialog")).resolves.toBeInTheDocument();
-  click(screen.getByLabelText(`Select template ${replacement.title}`));
+  const selectTemplate = await screen.findByLabelText(
+    `Select template ${replacement.title}`,
+  );
+  expect(selectTemplate.closest('[role="dialog"]')).toBeInTheDocument();
+  click(selectTemplate);
 
   await waitFor(() => {
     const templates = composerInlineTemplates();
     expect(templates).toHaveLength(1);
     expect(templates[0]).toHaveTextContent(replacement.title);
   });
+  expect(sentReference).toBeInTheDocument();
   expect(sentReference).toHaveTextContent(first.title);
 });

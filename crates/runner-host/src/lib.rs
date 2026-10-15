@@ -6,6 +6,7 @@ pub mod child_cleanup;
 pub mod cleanup_progress;
 pub mod error;
 pub mod gc;
+pub mod home_observation;
 pub mod host;
 pub mod host_env;
 pub mod host_file;

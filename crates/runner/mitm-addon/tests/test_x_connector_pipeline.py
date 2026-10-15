@@ -29,6 +29,7 @@ from tests.x_flow_helpers import (
     make_x_pipeline_flow,
     make_x_stream_pipeline_flow,
 )
+from usage.idempotency import USAGE_EVENT_NAMESPACE_CONNECTOR, derive_usage_idempotency_key
 
 
 def _compress_body(encoding: str, payload: bytes) -> bytes:
@@ -373,6 +374,81 @@ class TestXConnectorResponsePipeline:
             [{"id": "2", "occurrences": 1}],
             [{"id": "3", "occurrences": 1}],
         ]
+
+    async def test_full_streaming_pipeline_empty_rows_preserve_resource_sources(
+        self, tmp_path, real_flow, mitm_ctx
+    ):
+        flow = make_x_stream_pipeline_flow(real_flow, tmp_path)
+        with self._usage_webhook_api() as webhook:
+            mitm_addon.responseheaders(flow)
+            response_stream(flow)(
+                b'{}\n{"errors":[{"detail":"no results"}]}\n'
+                b'{"includes":{"users":[],"tweets":null}}\n{"data":[]}\r\n\n'
+                b'{"n":}\n{"data":{"id":"1"}}\n'
+                b'{"includes":{"users":[{"id":"2"}]}}\n'
+                b'{"includes":{"future_kind":[{}]}}\n'
+                b'{"includes":{"unsafe/key":[{}]}}\n'
+                b'{"data":{}}\n{"data":{"id":"3"}}'
+            )
+            await mitm_addon.responseinspection(flow)
+            state = flow.metadata[metadata_keys.X_NDJSON_STATE]
+            assert state["lines_parsed"] == 9
+            assert state["lines_failed"] == 1
+            mitm_addon.response(flow)
+            assert state["lines_parsed"] == 10
+            usage.flush_usage_events(trigger="test")
+
+        events = webhook.usage_events()
+        categories = [
+            "posts.read",
+            "user.read",
+            "includes.future_kind",
+            "includes.__overflow__",
+            "posts.read",
+            "posts.read",
+        ]
+        expected_keys = [
+            derive_usage_idempotency_key(
+                USAGE_EVENT_NAMESPACE_CONNECTOR,
+                ("run-abc-123", flow.id, str(row), category),
+            )
+            for row, category in zip(range(5, 11), categories, strict=True)
+        ]
+        by_key = {event["idempotencyKey"]: event for event in events}
+        assert len(events) == len(by_key) == len(expected_keys)
+        assert set(by_key) == set(expected_keys)
+        assert [by_key[key]["category"] for key in expected_keys] == categories
+        assert all(event["quantity"] == 1 for event in events)
+        assert by_key[expected_keys[0]]["resources"] == [{"id": "1", "occurrences": 1}]
+        assert by_key[expected_keys[1]]["resources"] == [{"id": "2", "occurrences": 1}]
+        assert by_key[expected_keys[4]]["resources"] == []
+        assert by_key[expected_keys[4]]["remainder"] == [{"reason": "missing_id", "quantity": 1}]
+        assert by_key[expected_keys[5]]["resources"] == [{"id": "3", "occurrences": 1}]
+        entries = read_jsonl_entries_after_flush(tmp_path / "proxy.jsonl")
+        assert any(entry.get("reason") == "unparseable_ndjson_rows" for entry in entries)
+
+    @pytest.mark.parametrize("method", ["GET", "POST"])
+    def test_full_streaming_pipeline_empty_rows_retain_write_pricing(
+        self, tmp_path, real_flow, mitm_ctx, method
+    ):
+        flow = make_x_stream_pipeline_flow(real_flow, tmp_path)
+        flow.request.method = method
+        flow.metadata[metadata_keys.FIREWALL_PERMISSION] = (
+            "tweet.read" if method == "GET" else "tweet.write"
+        )
+        with self._usage_webhook_api() as webhook:
+            mitm_addon.responseheaders(flow)
+            response_stream(flow)(b'{}\n{"includes":{"users":[]}}')
+            mitm_addon.response(flow)
+            usage.flush_usage_events(trigger="test")
+
+        events = webhook.usage_events()
+        assert [(event["category"], event["quantity"]) for event in events] == (
+            []
+            if method == "GET"
+            else [("content.create_with_url", 1), ("content.create_with_url", 1)]
+        )
+        assert len({event["idempotencyKey"] for event in events}) == len(events)
 
     def test_full_streaming_pipeline_counts_final_line_without_newline(
         self, tmp_path, real_flow, mitm_ctx, headers

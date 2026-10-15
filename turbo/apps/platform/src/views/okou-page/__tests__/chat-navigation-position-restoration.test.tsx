@@ -461,11 +461,7 @@ describe("with a measurable thread viewport", () => {
     });
 
     const targetText = "Current message 2";
-    await waitForInteractiveThread(
-      KEYBOARD_CURRENT_THREAD_ID,
-      "Current keyboard thread",
-      targetText,
-    );
+    await waitForThreadMessage(KEYBOARD_CURRENT_THREAD_ID, targetText);
     const initialGeometry = installChatScrollGeometry(
       threadContainer(KEYBOARD_CURRENT_THREAD_ID),
     );

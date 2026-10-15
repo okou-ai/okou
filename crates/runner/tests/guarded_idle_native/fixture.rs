@@ -26,7 +26,7 @@ pub const IMAGE_BYTES: u64 = 16384 * 1024 * 1024;
 pub const PAYLOAD_BYTES: usize = 64 * 1024;
 const HOME: &str = api_contracts::generated::constants::runners::paths::CANONICAL_GUEST_HOME_DIR;
 
-fn home_payload(run_id: RunId) -> Vec<u8> {
+pub fn home_payload(run_id: RunId) -> Vec<u8> {
     run_id
         .to_string()
         .into_bytes()
@@ -220,7 +220,7 @@ pub async fn verify_saved_guest(sandbox: &dyn Sandbox, previous_run: RunId) -> T
     Ok(())
 }
 
-async fn exec(sandbox: &dyn Sandbox, cmd: &str) -> TestResult<Vec<u8>> {
+pub async fn exec(sandbox: &dyn Sandbox, cmd: &str) -> TestResult<Vec<u8>> {
     let result = sandbox
         .exec(&ExecRequest {
             cmd,
