@@ -1272,52 +1272,6 @@ interface UsagePackPurchaseSnapshot {
   readonly allocations: readonly UsagePackCheckoutAllocation[];
 }
 
-async function loadUsagePackPurchaseSnapshot(
-  db: Pick<Db, "select">,
-  orgId: string,
-  preview: UsagePackPurchasePreviewToken,
-  signal: AbortSignal,
-): Promise<UsagePackPurchaseSnapshot | null> {
-  const [subscription] = await db
-    .select()
-    .from(usagePackSubscriptions)
-    .where(
-      and(
-        eq(usagePackSubscriptions.id, preview.usagePackSubscriptionId),
-        eq(usagePackSubscriptions.orgId, orgId),
-      ),
-    )
-    .limit(1);
-  const allocationRows = await db
-    .select({
-      usagePackUsd: usagePackAllocations.usagePackUsd,
-      stripePriceId: usagePackAllocations.stripePriceId,
-      userId: usagePackAllocations.userId,
-      invitationId: usagePackAllocations.invitationId,
-    })
-    .from(usagePackAllocations)
-    .where(
-      eq(
-        usagePackAllocations.usagePackSubscriptionId,
-        preview.usagePackSubscriptionId,
-      ),
-    );
-  signal.throwIfAborted();
-  const allocations = checkoutAllocationsFromRows(allocationRows);
-  if (
-    !subscription ||
-    subscription.subscriptionStatus === "checkout_expired" ||
-    subscription.orgId !== orgId ||
-    subscription.stripeCustomerId !== preview.customerId ||
-    subscription.tier !== preview.tier ||
-    subscription.stripePlanPriceId !== preview.planPriceId ||
-    !allocations
-  ) {
-    return null;
-  }
-  return { subscription, allocations };
-}
-
 function competingUsagePackPurchase(
   subscriptions: readonly StripeSubscription[],
   args: {
@@ -1803,12 +1757,48 @@ export const confirmUsagePackPurchase$ = command(
       return { status: "invalid_preview" };
     }
     const db = set(writeDb$);
-    const snapshot = await loadUsagePackPurchaseSnapshot(
-      db,
-      orgId,
-      preview,
-      signal,
-    );
+    const snapshot = await (async (
+      stageSignal: AbortSignal,
+    ): Promise<UsagePackPurchaseSnapshot | null> => {
+      const [subscription] = await db
+        .select()
+        .from(usagePackSubscriptions)
+        .where(
+          and(
+            eq(usagePackSubscriptions.id, preview.usagePackSubscriptionId),
+            eq(usagePackSubscriptions.orgId, orgId),
+          ),
+        )
+        .limit(1);
+      const allocationRows = await db
+        .select({
+          usagePackUsd: usagePackAllocations.usagePackUsd,
+          stripePriceId: usagePackAllocations.stripePriceId,
+          userId: usagePackAllocations.userId,
+          invitationId: usagePackAllocations.invitationId,
+        })
+        .from(usagePackAllocations)
+        .where(
+          eq(
+            usagePackAllocations.usagePackSubscriptionId,
+            preview.usagePackSubscriptionId,
+          ),
+        );
+      stageSignal.throwIfAborted();
+      const allocations = checkoutAllocationsFromRows(allocationRows);
+      if (
+        !subscription ||
+        subscription.subscriptionStatus === "checkout_expired" ||
+        subscription.orgId !== orgId ||
+        subscription.stripeCustomerId !== preview.customerId ||
+        subscription.tier !== preview.tier ||
+        subscription.stripePlanPriceId !== preview.planPriceId ||
+        !allocations
+      ) {
+        return null;
+      }
+      return { subscription, allocations };
+    })(signal);
     if (!snapshot) {
       return { status: "invalid_preview" };
     }
