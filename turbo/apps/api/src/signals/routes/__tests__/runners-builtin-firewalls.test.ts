@@ -114,6 +114,7 @@ describe("runner builtin firewall resolver", () => {
     { body: "not-json", label: "invalid JSON" },
     { body: "null", label: "null JSON" },
     { body: "[]", label: "array JSON" },
+    { body: '{"names":[]}', label: "empty names" },
   ])("rejects $label full-catalog request bodies", async ({ body }) => {
     const response = await rawApp().request(
       "/api/runners/builtin-firewalls/resolve",
@@ -227,7 +228,7 @@ describe("runner builtin firewall resolver", () => {
     }
   });
 
-  it("isolates concurrent full, selected and empty firewall responses with one catalog identity", async () => {
+  it("isolates concurrent full and selected firewall responses with one catalog identity", async () => {
     const providerName = "model-provider:codex-oauth-token";
     const requests = [
       { body: {}, firewalls: EXPECTED_RUNNER_FIREWALL_CATALOG.firewalls },
@@ -239,7 +240,13 @@ describe("runner builtin firewall resolver", () => {
             EXPECTED_RUNNER_FIREWALL_CATALOG.firewalls[providerName],
         },
       },
-      { body: { names: [] }, firewalls: {} },
+      {
+        body: { names: [providerName] },
+        firewalls: {
+          [providerName]:
+            EXPECTED_RUNNER_FIREWALL_CATALOG.firewalls[providerName],
+        },
+      },
     ];
     await Promise.all(
       requests.map(async ({ body, firewalls }) => {
