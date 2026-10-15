@@ -9,7 +9,15 @@ import {
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ScrollArea } from "@base-ui/react/scroll-area";
-import { Button, ScrollBar, cn } from "@okouai/ui";
+import {
+  Button,
+  ScrollBar,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+  cn,
+} from "@okouai/ui";
 import type {
   FilesError,
   FilesDirectory,
@@ -17,7 +25,6 @@ import type {
 } from "../../signals/chat-page/sandbox-files-sidebar.ts";
 import {
   FILES_ROW_HEIGHT,
-  filesDirectoryKey,
   type FilesVirtualRow,
 } from "../../signals/chat-page/sandbox-files-virtual-list.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -138,27 +145,15 @@ function FilesRow({
       </Button>
     );
   }
-  return (
-    <FilesDirectoryStatus
-      signals={signals}
-      directory={row.directory}
-      path={row.path}
-    />
-  );
+  return <FilesDirectoryStatus directory={row.directory} />;
 }
 
 function FilesDirectoryStatus({
-  signals,
   directory,
-  path,
 }: {
-  readonly signals: SandboxFilesSidebarSignals;
   readonly directory: FilesDirectory;
-  readonly path: readonly string[];
 }) {
   const { t } = useTranslation();
-  const signal = useGet(pageSignal$);
-  const refresh = useSet(signals.refresh$);
   if (directory.loading && directory.listingId === null) {
     return (
       <p role="status" className="px-3 py-2 text-sm text-muted-foreground">
@@ -166,29 +161,6 @@ function FilesDirectoryStatus({
           return $.chat.files.loading;
         })}
       </p>
-    );
-  }
-  if (directory.error) {
-    return (
-      <div className="space-y-2 px-3 py-2">
-        <p role="status" className="text-sm text-muted-foreground">
-          <FilesErrorMessage error={directory.error} />
-        </p>
-        {directory.error !== "updateRequired" && (
-          <Button
-            type="button"
-            variant="neutral"
-            size="sm"
-            onClick={() => {
-              detach(refresh(path, signal), Reason.DomCallback);
-            }}
-          >
-            {t(($) => {
-              return $.chat.files.retry;
-            })}
-          </Button>
-        )}
-      </div>
     );
   }
   return (
@@ -223,7 +195,7 @@ function FilesVirtualList({
               DEPTH_PADDING[Math.min(row.depth, 4)],
             )}
             style={{
-              height: row.slots * FILES_ROW_HEIGHT,
+              height: FILES_ROW_HEIGHT,
               transform: "translateY(" + row.offset + "px)",
             }}
             onFocus={() => {
@@ -241,6 +213,87 @@ function FilesVirtualList({
   );
 }
 
+function FilesRefreshControl({
+  signals,
+  errorId,
+}: {
+  readonly signals: SandboxFilesSidebarSignals;
+  readonly errorId: string;
+}) {
+  const { t } = useTranslation();
+  const signal = useGet(pageSignal$);
+  const phase = useGet(signals.phase$);
+  const failure = useGet(signals.failure$);
+  const loading = useGet(signals.refreshing$);
+  const refresh = useSet(signals.refresh$);
+  const retry = useSet(signals.retry$);
+  const error =
+    phase === "ready" ? failure?.error : phase === "connecting" ? null : phase;
+  return (
+    <>
+      <TooltipProvider delay={200}>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                variant="quiet"
+                size="icon-sm"
+                className={cn(
+                  error && "text-destructive hover:text-destructive",
+                )}
+                aria-label={t(($) => {
+                  return error ? $.chat.files.retry : $.chat.files.refresh;
+                })}
+                aria-describedby={error ? errorId : undefined}
+                disabled={loading || error === "updateRequired"}
+                focusableWhenDisabled
+                aria-busy={loading}
+                onClick={() => {
+                  if (phase !== "ready") {
+                    retry(signal);
+                  } else {
+                    detach(
+                      refresh(failure?.path ?? [], signal),
+                      Reason.DomCallback,
+                    );
+                  }
+                }}
+              >
+                <span
+                  aria-hidden="true"
+                  className="relative inline-flex size-5 items-center justify-center"
+                >
+                  <RefreshCw size={16} />
+                  {error && (
+                    <span className="absolute -right-1 -top-1 flex size-3 items-center justify-center rounded-full bg-background text-xs font-bold">
+                      !
+                    </span>
+                  )}
+                </span>
+              </Button>
+            }
+          />
+          <TooltipContent role="tooltip" side="bottom">
+            {error ? (
+              <FilesErrorMessage error={error} />
+            ) : (
+              t(($) => {
+                return $.chat.files.refresh;
+              })
+            )}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+      {phase === "ready" && error && (
+        <span id={errorId} role="status" className="sr-only">
+          <FilesErrorMessage error={error} />
+        </span>
+      )}
+    </>
+  );
+}
+
 export function SandboxFilesSidebarBody({
   signals,
 }: {
@@ -248,16 +301,11 @@ export function SandboxFilesSidebarBody({
 }) {
   const { t } = useTranslation();
   const runId = useGet(signals.activeRunId$);
-  const signal = useGet(pageSignal$);
   const pending = useGet(signals.pending$);
   const phase = useGet(signals.phase$);
-  const limit = useGet(signals.limit$);
-  const directories = useGet(signals.directories$);
-  const refresh = useSet(signals.refresh$);
-  const retry = useSet(signals.retry$);
   const viewport = useSet(signals.virtual.scroll.setScrollViewport$);
   const metrics = useSet(signals.virtual.scroll.setScrollMetrics$);
-  const root = directories.get(filesDirectoryKey([]));
+  const errorId = "sandbox-files-error-" + runId;
   if (!runId) {
     return (
       <p role="status" className="p-4 text-sm text-muted-foreground">
@@ -271,10 +319,41 @@ export function SandboxFilesSidebarBody({
       </p>
     );
   }
-  if (phase !== "ready") {
-    return (
-      <div className="space-y-3 p-4">
-        <p role="status" className="text-sm text-muted-foreground">
+  return (
+    <>
+      <div className="flex items-center gap-2 px-4 py-2">
+        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+          /home/user
+        </span>
+        <FilesRefreshControl signals={signals} errorId={errorId} />
+      </div>
+      {phase === "ready" ? (
+        <ScrollArea.Root className="min-h-0 flex-1">
+          <ScrollArea.Viewport
+            ref={viewport}
+            data-slot="scroll-area-viewport"
+            data-testid="sandbox-files-viewport"
+            className="h-full focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            tabIndex={0}
+            onScroll={(event) => {
+              metrics({
+                scrollTop: event.currentTarget.scrollTop,
+                clientHeight: event.currentTarget.clientHeight,
+              });
+            }}
+          >
+            <ScrollArea.Content className="pb-4">
+              <FilesVirtualList signals={signals} />
+            </ScrollArea.Content>
+          </ScrollArea.Viewport>
+          <ScrollBar />
+        </ScrollArea.Root>
+      ) : (
+        <p
+          id={errorId}
+          role="status"
+          className="p-4 text-sm text-muted-foreground"
+        >
           {phase === "connecting" ? (
             t(($) => {
               return $.chat.files.connecting;
@@ -283,74 +362,7 @@ export function SandboxFilesSidebarBody({
             <FilesErrorMessage error={phase} />
           )}
         </p>
-        {phase !== "connecting" && phase !== "updateRequired" && (
-          <Button
-            type="button"
-            variant="neutral"
-            size="sm"
-            onClick={() => {
-              retry(signal);
-            }}
-          >
-            {t(($) => {
-              return $.chat.files.retry;
-            })}
-          </Button>
-        )}
-      </div>
-    );
-  }
-  return (
-    <>
-      <div className="flex items-center gap-2 px-4 py-2">
-        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-          /home/user
-        </span>
-        <Button
-          showTooltip
-          type="button"
-          variant="quiet"
-          size="icon-sm"
-          aria-label={t(($) => {
-            return $.chat.files.refresh;
-          })}
-          disabled={root?.loading}
-          focusableWhenDisabled
-          aria-busy={root?.loading}
-          onClick={() => {
-            detach(refresh([], signal), Reason.DomCallback);
-          }}
-        >
-          <RefreshCw size={16} />
-        </Button>
-      </div>
-      {limit && (
-        <p role="status" className="px-4 py-2 text-sm text-muted-foreground">
-          {t(($) => {
-            return $.chat.files.limit;
-          })}
-        </p>
       )}
-      <ScrollArea.Root className="min-h-0 flex-1">
-        <ScrollArea.Viewport
-          ref={viewport}
-          data-slot="scroll-area-viewport"
-          data-testid="sandbox-files-viewport"
-          className="h-full focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-          tabIndex={0}
-          onScroll={(event) => {
-            metrics({
-              scrollTop: event.currentTarget.scrollTop,
-              clientHeight: event.currentTarget.clientHeight,
-            });
-          }}
-        >
-          <ScrollArea.Content className="pb-4">
-            <FilesVirtualList signals={signals} />
-          </ScrollArea.Content>
-        </ScrollArea.Viewport>
-        <ScrollBar />
-      </ScrollArea.Root>
       <p className="border-t border-border px-4 py-3 text-xs text-muted-foreground">
         {t(($) => {
           return $.chat.files.readonly;

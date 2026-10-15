@@ -78,5 +78,5 @@ test("A Guest load limit preserves partial rows and exposes a recoverable state"
     ),
   ).resolves.toBeInTheDocument();
   expect(within(panel).getByText("partial.txt")).toBeInTheDocument();
-  expect(filesButton("Refresh", panel)).toBeEnabled();
+  expect(filesButton("Retry", panel)).toBeEnabled();
 });

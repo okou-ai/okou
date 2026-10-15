@@ -43,6 +43,10 @@ export type FilesEntry = z.infer<
   typeof sandboxFsListResultSchema
 >["entries"][number];
 export type FilesError = "unavailable" | "updateRequired" | "stale" | "limit";
+interface FilesFailure {
+  readonly path: readonly string[];
+  readonly error: FilesError;
+}
 export interface FilesDirectory {
   readonly id: number;
   readonly path: readonly string[];
@@ -993,6 +997,9 @@ function createDemandCommands(
 }
 
 function createFilesActions(graph: FilesGraph, listing: ListingCommands) {
+  const refreshRequest$ = state<{ readonly connection: Connection } | null>(
+    null,
+  );
   const toggle$ = command(
     async (
       { get, set },
@@ -1006,7 +1013,7 @@ function createFilesActions(graph: FilesGraph, listing: ListingCommands) {
       }
     },
   );
-  const refresh$ = command(
+  const reload$ = command(
     async (
       { get, set },
       path: readonly string[],
@@ -1020,12 +1027,40 @@ function createFilesActions(graph: FilesGraph, listing: ListingCommands) {
       }
     },
   );
+  const refresh$ = command(
+    async (
+      { get, set },
+      path: readonly string[],
+      signal: AbortSignal,
+    ): Promise<void> => {
+      const connection = get(graph.connection$);
+      if (!connection || get(refreshRequest$)?.connection === connection) {
+        return;
+      }
+      const request = { connection };
+      set(refreshRequest$, request);
+      await withCleanup(set(reload$, path, signal), () => {
+        if (get(refreshRequest$) === request) {
+          set(refreshRequest$, null);
+        }
+      });
+    },
+  );
+  const refreshing$ = computed((get) => {
+    const request = get(refreshRequest$);
+    return (
+      get(graph.phase$) === "connecting" ||
+      get(graph.directoriesView$).get(filesDirectoryKey([]))?.loading ===
+        true ||
+      (request !== null && request.connection === get(graph.connection$))
+    );
+  });
   const more$ = command(
     ({ set }, path: readonly string[], signal: AbortSignal) => {
       return set(listing.load$, path, true, signal);
     },
   );
-  return { toggle$, refresh$, more$ };
+  return { toggle$, refresh$, refreshing$, more$ };
 }
 
 /** Construct the thread graph without network work; its visible ref owns demand. */
@@ -1046,13 +1081,17 @@ export function createSandboxFilesSidebarSignals(
     ...createFilesActions(graph, listing),
     activeRunId$: graph.activeRunId$,
     pending$: graph.pending$,
-    directories$: graph.directoriesView$,
     virtual: graph.virtual,
     phase$: computed((get) => {
       return get(graph.phase$);
     }),
-    limit$: computed((get) => {
-      return get(graph.limit$);
+    failure$: computed((get): FilesFailure | null => {
+      for (const directory of get(graph.directories$).values()) {
+        if (directory.error) {
+          return { path: directory.path, error: directory.error };
+        }
+      }
+      return get(graph.limit$) ? { path: [], error: "limit" } : null;
     }),
   };
 }

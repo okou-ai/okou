@@ -7,7 +7,7 @@ import {
 } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import userEvent from "@testing-library/user-event";
-import { click } from "../../../__tests__/page-helper.ts";
+import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
@@ -260,7 +260,7 @@ test("A failed focused pagination action keeps rows and makes Retry reachable by
   ).resolves.toBeInTheDocument();
   expect(within(panel).getByText("first.txt")).toBeInTheDocument();
   expect(within(panel).getByTestId("sandbox-files-viewport")).toHaveFocus();
-  await userEvent.keyboard("{Tab}");
+  await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
   expect(filesButton("Retry", panel)).toHaveFocus();
   await userEvent.keyboard("{Enter}");
   await waitFor(() => {
@@ -271,7 +271,7 @@ test("A failed focused pagination action keeps rows and makes Retry reachable by
   await expect(
     within(panel).findByText("first.txt"),
   ).resolves.toBeInTheDocument();
-  expect(within(panel).getByTestId("sandbox-files-viewport")).toHaveFocus();
+  expect(filesButton("Refresh", panel)).toHaveFocus();
 });
 
 test("Background refresh failure keeps rows and pauses until the user retries", async () => {
@@ -306,4 +306,164 @@ test("Background refresh failure keeps rows and pauses until the user retries", 
   await expect(
     within(panel).findByText("retained.txt"),
   ).resolves.toBeInTheDocument();
+});
+
+test("A scrolled listing exposes failure and retry on the existing refresh control", async () => {
+  let fail = false;
+  await setupFilesPage(context, {
+    handler: () => {
+      return fail
+        ? { error: { code: "forbidden" } }
+        : listing(
+            Array.from({ length: 128 }, (_unused, index) => {
+              return entry(`file-${String(index).padStart(3, "0")}`);
+            }),
+          );
+    },
+  });
+  const panel = await openFiles();
+  await expect(
+    within(panel).findByText("file-000"),
+  ).resolves.toBeInTheDocument();
+  const viewport = within(panel).getByTestId("sandbox-files-viewport");
+  const refresh = filesButton("Refresh", panel);
+  fireEvent.scroll(viewport, { target: { scrollTop: 1760 } });
+  await expect(
+    within(panel).findByText("file-040"),
+  ).resolves.toBeInTheDocument();
+  fail = true;
+  fireEvent(document, new Event("visibilitychange"));
+  await waitFor(() => {
+    expect(refresh).toHaveAccessibleName("Retry");
+  });
+  expect(refresh).toBeVisible();
+  expect(refresh).toHaveTextContent("!");
+  expect(refresh).toHaveAccessibleDescription(
+    "Files are unavailable. Try again.",
+  );
+  expect(within(panel).getByText("file-040")).toBeInTheDocument();
+  expect(viewport.scrollTop).toBe(1760);
+  expect(panel.querySelectorAll("li").length).toBeLessThan(40);
+  expect(
+    queryAllByRoleFast("button", viewport).some((button) => {
+      return button.getAttribute("aria-label") === "Retry";
+    }),
+  ).toBeFalsy();
+  expect(within(panel).queryByText("Retry")).toBeNull();
+  const user = userEvent.setup();
+  await user.hover(refresh);
+  await expect(screen.findByRole("tooltip")).resolves.toHaveTextContent(
+    "Files are unavailable. Try again.",
+  );
+  fail = false;
+  refresh.focus();
+  await userEvent.keyboard("{Enter}");
+  await expect(
+    within(panel).findByText("file-000"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    within(panel).queryByText("Files are unavailable. Try again."),
+  ).toBeNull();
+  expect(filesButton("Refresh", panel)).toBe(refresh);
+  expect(refresh).not.toHaveTextContent("!");
+  expect(refresh).toHaveFocus();
+});
+
+test("Removing a failed directory retains focus on the same refresh control", async () => {
+  let fail = false;
+  let removed = false;
+  await setupFilesPage(context, {
+    handler: (request) => {
+      if (Array.isArray(request.params.path) && request.params.path.length) {
+        return fail
+          ? { error: { code: "forbidden" } }
+          : listing([entry("inside.txt")], null, "child");
+      }
+      return removed ? listing([entry("replacement.txt")]) : listing();
+    },
+  });
+  const panel = await openFiles();
+  await expect(
+    within(panel).findByText("workspace"),
+  ).resolves.toBeInTheDocument();
+  click(filesButton("workspace", panel));
+  await expect(
+    within(panel).findByText("inside.txt"),
+  ).resolves.toBeInTheDocument();
+  fail = true;
+  fireEvent(document, new Event("visibilitychange"));
+  await expect(
+    within(panel).findByText("Files are unavailable. Try again."),
+  ).resolves.toBeInTheDocument();
+  const viewport = within(panel).getByTestId("sandbox-files-viewport");
+  viewport.focus();
+  await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
+  const refresh = filesButton("Retry", panel);
+  expect(refresh).toHaveFocus();
+  removed = true;
+  fireEvent(document, new Event("visibilitychange"));
+  await expect(
+    within(panel).findByText("replacement.txt"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    within(panel).queryByText("Files are unavailable. Try again."),
+  ).toBeNull();
+  expect(filesButton("Refresh", panel)).toBe(refresh);
+  expect(refresh).toHaveFocus();
+});
+
+test("Retrying a failed folder keeps the toolbar focused and inert until it settles", async () => {
+  const response = createDeferredPromise<FilesReply>(context.signal);
+  let state: "healthy" | "failed" | "retry" = "healthy";
+  await setupFilesPage(context, {
+    handler: (request) => {
+      if (!Array.isArray(request.params.path) || !request.params.path.length) {
+        return listing();
+      }
+      if (state === "retry") {
+        return response.promise;
+      }
+      return state === "failed"
+        ? { error: { code: "forbidden" } }
+        : listing([entry("before.txt")], null, "child");
+    },
+  });
+  const panel = await openFiles();
+  await expect(
+    within(panel).findByText("workspace"),
+  ).resolves.toBeInTheDocument();
+  click(filesButton("workspace", panel));
+  await expect(
+    within(panel).findByText("before.txt"),
+  ).resolves.toBeInTheDocument();
+  state = "failed";
+  fireEvent(document, new Event("visibilitychange"));
+  await expect(
+    within(panel).findByText("Files are unavailable. Try again."),
+  ).resolves.toBeInTheDocument();
+  const refresh = filesButton("Retry", panel);
+  refresh.focus();
+  state = "retry";
+  await userEvent.keyboard("{Enter}");
+  await expect(
+    within(panel).findByText("Loading…"),
+  ).resolves.toBeInTheDocument();
+  expect(refresh).toHaveAttribute("aria-disabled", "true");
+  expect(refresh).toHaveAttribute("aria-busy", "true");
+  expect(refresh).toHaveFocus();
+  await userEvent.keyboard("{Enter}");
+  await act(async () => {
+    response.resolve(listing([entry("after.txt")], null, "child-retried"));
+    await response.promise;
+  });
+  await expect(
+    within(panel).findByText("after.txt"),
+  ).resolves.toBeInTheDocument();
+  expect(filesButton("workspace", panel)).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  expect(refresh).toHaveAttribute("aria-disabled", "false");
+  expect(refresh).toHaveAttribute("aria-busy", "false");
+  expect(refresh).toHaveFocus();
 });

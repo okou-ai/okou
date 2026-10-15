@@ -77,7 +77,7 @@ test.each(["directory_changed"] as const)(
         params: { cursor: "home-cursor" },
       });
     });
-    click(filesButton("Refresh", panel));
+    click(filesButton("Retry", panel));
     await waitFor(() => {
       expect(
         within(panel).queryByText(
@@ -143,7 +143,7 @@ test("A failed fresh listing after expiration stops automatic recovery", async (
       "This listing changed or expired. Refresh to continue.",
     ),
   ).resolves.toBeInTheDocument();
-  expect(filesButton("Refresh", panel)).toBeEnabled();
+  expect(filesButton("Retry", panel)).toBeEnabled();
   expect(initialListings).toBe(2);
 });
 

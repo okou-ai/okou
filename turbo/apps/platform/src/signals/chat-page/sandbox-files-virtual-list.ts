@@ -15,7 +15,6 @@ export type FilesVirtualRow = {
   readonly path: readonly string[];
   readonly depth: number;
   readonly offset: number;
-  readonly slots: number;
 } & (
   | {
       readonly type: "entry";
@@ -50,7 +49,6 @@ export function createSandboxFilesVirtualListSignals(
           path: directory.path,
           depth,
           offset,
-          slots: 1,
           entry,
           expanded,
         });
@@ -60,21 +58,19 @@ export function createSandboxFilesVirtualListSignals(
         }
       }
       if (
-        (directory.loading && directory.listingId === null) ||
-        directory.error ||
-        (directory.entries.length === 0 && !directory.cursor)
+        !directory.error &&
+        ((directory.loading && directory.listingId === null) ||
+          (directory.entries.length === 0 && !directory.cursor))
       ) {
-        const slots = directory.error ? 5 : 1;
         rows.push({
           type: "status",
           key: `status:${directory.id}`,
           path: directory.path,
           depth,
           offset,
-          slots,
           directory,
         });
-        offset += slots * FILES_ROW_HEIGHT;
+        offset += FILES_ROW_HEIGHT;
       }
       if (directory.cursor && !directory.error) {
         rows.push({
@@ -83,7 +79,6 @@ export function createSandboxFilesVirtualListSignals(
           path: directory.path,
           depth,
           offset,
-          slots: 1,
           directory,
         });
         offset += FILES_ROW_HEIGHT;
@@ -97,7 +92,7 @@ export function createSandboxFilesVirtualListSignals(
     const metrics = get(scroll.scrollMetrics$);
     const viewport = get(scroll.scrollViewport$);
     const range = getFixedVirtualRange({
-      itemCount: height / FILES_ROW_HEIGHT,
+      itemCount: rows.length,
       rowHeight: FILES_ROW_HEIGHT,
       scrollTop: metrics.scrollTop,
       viewportHeight:
@@ -108,7 +103,7 @@ export function createSandboxFilesVirtualListSignals(
       height,
       rows: rows.filter((row) => {
         return (
-          (row.offset + row.slots * FILES_ROW_HEIGHT >
+          (row.offset + FILES_ROW_HEIGHT >
             range.startIndex * FILES_ROW_HEIGHT &&
             row.offset < range.endIndex * FILES_ROW_HEIGHT) ||
           row.key === focusedKey
