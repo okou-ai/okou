@@ -2,17 +2,22 @@ import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { agentLoopCommand } from "../__agent-loop";
-import { buildProcessEntry } from "../../test/fixtures/build-process-entry";
+import {
+  buildProcessEntry,
+  disposePreparedProcessEntry,
+} from "../../test/fixtures/build-process-entry";
 
 const previousExit = process.exitCode;
 let compiled: Awaited<ReturnType<typeof buildProcessEntry>>;
+let preparation: ReturnType<typeof buildProcessEntry> | undefined;
 beforeAll(async () => {
-  compiled = await buildProcessEntry(
+  preparation = buildProcessEntry(
     fileURLToPath(new URL("../../okou.ts", import.meta.url)),
   );
+  compiled = await preparation;
 });
 afterAll(async () => {
-  await compiled?.dispose();
+  await disposePreparedProcessEntry(preparation);
 });
 
 it("reports startup phases through the main entry without changing a failed command", async () => {

@@ -26,7 +26,10 @@ import {
 import { z } from "zod";
 
 import { createSubagentCommand } from "../index";
-import { buildProcessEntry } from "../../../test/fixtures/build-process-entry";
+import {
+  buildProcessEntry,
+  disposePreparedProcessEntry,
+} from "../../../test/fixtures/build-process-entry";
 
 const helper = vi.hoisted(() => {
   return { root: "", mode: "normal" };
@@ -198,11 +201,13 @@ describe("okou subagent", () => {
   const log = vi.spyOn(console, "log").mockImplementation(() => {});
   const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
   let compiled: Awaited<ReturnType<typeof buildProcessEntry>>;
+  let preparation: ReturnType<typeof buildProcessEntry> | undefined;
   beforeAll(async () => {
-    compiled = await buildProcessEntry(fixture);
+    preparation = buildProcessEntry(fixture);
+    compiled = await preparation;
   });
   afterAll(async () => {
-    await compiled?.dispose();
+    await disposePreparedProcessEntry(preparation);
   });
 
   async function run(...args: string[]): Promise<string[]> {

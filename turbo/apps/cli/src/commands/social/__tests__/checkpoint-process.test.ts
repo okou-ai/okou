@@ -13,17 +13,22 @@ import {
   expect,
   it,
 } from "vitest";
-import { buildProcessEntry } from "../../../test/fixtures/build-process-entry";
+import {
+  buildProcessEntry,
+  disposePreparedProcessEntry,
+} from "../../../test/fixtures/build-process-entry";
 
 let directory: string;
 let compiled: Awaited<ReturnType<typeof buildProcessEntry>>;
+let preparation: ReturnType<typeof buildProcessEntry> | undefined;
 beforeAll(async () => {
-  compiled = await buildProcessEntry(
+  preparation = buildProcessEntry(
     fileURLToPath(new URL("../../../okou.ts", import.meta.url)),
   );
+  compiled = await preparation;
 });
 afterAll(async () => {
-  await compiled?.dispose();
+  await disposePreparedProcessEntry(preparation);
 });
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), "okou-collection-process-"));

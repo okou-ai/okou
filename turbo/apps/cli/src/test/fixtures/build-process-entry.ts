@@ -59,3 +59,17 @@ export async function buildProcessEntry(source: string) {
     throw error;
   }
 }
+
+/** A timed-out setup may still be building when the suite starts teardown. */
+export async function disposePreparedProcessEntry(
+  preparation: ReturnType<typeof buildProcessEntry> | undefined,
+): Promise<void> {
+  if (!preparation) {
+    return;
+  }
+  const [prepared] = await Promise.allSettled([preparation]);
+  // Failed builds clean their directory and are already reported by beforeAll.
+  if (prepared.status === "fulfilled") {
+    await prepared.value.dispose();
+  }
+}
