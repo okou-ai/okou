@@ -346,6 +346,107 @@ fn record_session_history_materializer_state(
     }
 }
 
+async fn finish_session_history_materialization(
+    materializer: SessionHistoryMaterializer,
+    cancel: &CancellationToken,
+    telemetry: &mut JobTelemetry,
+) -> RunnerResult<Option<MaterializedResumeSession>> {
+    let should_record_wait = materializer.is_downloading();
+    let completed_before_restore = materializer.is_download_finished();
+    let wait_started = Instant::now();
+    let materialization = materializer.finish(cancel).await;
+    let wait_finished = Instant::now();
+    let restore_wait_window = HistoryTimingWindow::new(wait_started, wait_finished);
+    let materialization_wait = restore_wait_window.elapsed();
+    let downloaded = match materialization {
+        SessionHistoryMaterialization::Missing
+        | SessionHistoryMaterialization::NoDownloadNeeded => None,
+        SessionHistoryMaterialization::Downloaded {
+            session,
+            prefix_outcome,
+            elapsed,
+            timings,
+        } => {
+            record_session_history_materializer_state(
+                telemetry,
+                should_record_wait,
+                completed_before_restore,
+                materialization_wait,
+                true,
+                timings.metadata(),
+            );
+            if should_record_wait {
+                telemetry.record_with_session_history_metadata(
+                    "session_history_materialization_wait",
+                    materialization_wait,
+                    true,
+                    None,
+                    timings.metadata(),
+                );
+            }
+            telemetry.record_with_session_history_metadata(
+                "session_history_download",
+                elapsed,
+                true,
+                None,
+                timings.metadata(),
+            );
+            record_session_history_download_timings(
+                telemetry,
+                &timings,
+                restore_wait_window,
+                HistoryMaterializationOutcome::Succeeded,
+            );
+            if let Some(prefix_outcome) = prefix_outcome {
+                record_session_history_prefix_outcome(telemetry, prefix_outcome);
+            }
+            Some(session)
+        }
+        SessionHistoryMaterialization::Failed {
+            elapsed,
+            timings,
+            error,
+        } => {
+            record_session_history_materializer_state(
+                telemetry,
+                should_record_wait,
+                completed_before_restore,
+                materialization_wait,
+                false,
+                timings.metadata(),
+            );
+            if should_record_wait {
+                telemetry.record_with_session_history_metadata(
+                    "session_history_materialization_wait",
+                    materialization_wait,
+                    false,
+                    Some(SESSION_HISTORY_MATERIALIZATION_WAIT_TELEMETRY_ERROR),
+                    timings.metadata(),
+                );
+            }
+            telemetry.record_with_session_history_metadata(
+                "session_history_download",
+                elapsed,
+                false,
+                Some(SESSION_HISTORY_DOWNLOAD_TELEMETRY_ERROR),
+                timings.metadata(),
+            );
+            record_session_history_download_timings(
+                telemetry,
+                &timings,
+                restore_wait_window,
+                if matches!(&error, RunnerError::Cancelled) {
+                    HistoryMaterializationOutcome::Cancelled
+                } else {
+                    HistoryMaterializationOutcome::Failed
+                },
+            );
+            return Err(error);
+        }
+    };
+    Ok(downloaded)
+}
+
 fn record_session_history_restore_fallback(
     telemetry: &mut JobTelemetry,
     fallback: Option<SessionHistoryRestoreFallback>,
@@ -1696,99 +1797,8 @@ async fn prepare_staged_session_restore(
     let Some(remote_materializer) = remote_materializer else {
         return Ok(StagedSessionRestorePreparation::Missing);
     };
-    let should_record_wait = remote_materializer.is_downloading();
-    let completed_before_restore = remote_materializer.is_download_finished();
-    let wait_started = Instant::now();
-    let materialization = remote_materializer.finish(cancel).await;
-    let wait_finished = Instant::now();
-    let restore_wait_window = HistoryTimingWindow::new(wait_started, wait_finished);
-    let materialization_wait = restore_wait_window.elapsed();
-    let downloaded = match materialization {
-        SessionHistoryMaterialization::Missing
-        | SessionHistoryMaterialization::NoDownloadNeeded => None,
-        SessionHistoryMaterialization::Downloaded {
-            session,
-            prefix_outcome,
-            elapsed,
-            timings,
-        } => {
-            record_session_history_materializer_state(
-                telemetry,
-                should_record_wait,
-                completed_before_restore,
-                materialization_wait,
-                true,
-                timings.metadata(),
-            );
-            if should_record_wait {
-                telemetry.record_with_session_history_metadata(
-                    "session_history_materialization_wait",
-                    materialization_wait,
-                    true,
-                    None,
-                    timings.metadata(),
-                );
-            }
-            telemetry.record_with_session_history_metadata(
-                "session_history_download",
-                elapsed,
-                true,
-                None,
-                timings.metadata(),
-            );
-            record_session_history_download_timings(
-                telemetry,
-                &timings,
-                restore_wait_window,
-                HistoryMaterializationOutcome::Succeeded,
-            );
-            if let Some(prefix_outcome) = prefix_outcome {
-                record_session_history_prefix_outcome(telemetry, prefix_outcome);
-            }
-            Some(session)
-        }
-        SessionHistoryMaterialization::Failed {
-            elapsed,
-            timings,
-            error,
-        } => {
-            record_session_history_materializer_state(
-                telemetry,
-                should_record_wait,
-                completed_before_restore,
-                materialization_wait,
-                false,
-                timings.metadata(),
-            );
-            if should_record_wait {
-                telemetry.record_with_session_history_metadata(
-                    "session_history_materialization_wait",
-                    materialization_wait,
-                    false,
-                    Some(SESSION_HISTORY_MATERIALIZATION_WAIT_TELEMETRY_ERROR),
-                    timings.metadata(),
-                );
-            }
-            telemetry.record_with_session_history_metadata(
-                "session_history_download",
-                elapsed,
-                false,
-                Some(SESSION_HISTORY_DOWNLOAD_TELEMETRY_ERROR),
-                timings.metadata(),
-            );
-            record_session_history_download_timings(
-                telemetry,
-                &timings,
-                restore_wait_window,
-                if matches!(&error, RunnerError::Cancelled) {
-                    HistoryMaterializationOutcome::Cancelled
-                } else {
-                    HistoryMaterializationOutcome::Failed
-                },
-            );
-            return Err(error);
-        }
-    };
+    let downloaded =
+        finish_session_history_materialization(remote_materializer, cancel, telemetry).await?;
     let (source, session) = match downloaded {
         Some(session) => (HistoryTransferSource::Downloaded, Some(session)),
         None => (
@@ -2726,89 +2736,9 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
     if let Some(session_history_materializer) = session_history_materializer {
         // Finish any remaining history materialization immediately before
         // restoring it into the guest.
-        let should_record_materialization_wait = session_history_materializer.is_downloading();
-        let materializer_completed_before_restore =
-            session_history_materializer.is_download_finished();
-        let materialization_wait_started = Instant::now();
-        let materialization = session_history_materializer.finish(&cancel).await;
-        let materialization_wait_finished = Instant::now();
-        let restore_wait_window = HistoryTimingWindow::new(materialization_wait_started, materialization_wait_finished);
-        let materialization_wait = restore_wait_window.elapsed();
-        let downloaded_resume_session = match materialization {
-            SessionHistoryMaterialization::Missing => None,
-            SessionHistoryMaterialization::NoDownloadNeeded => None,
-            SessionHistoryMaterialization::Downloaded {
-                session,
-                prefix_outcome,
-                elapsed,
-                timings,
-            } => {
-                record_session_history_materializer_state(
-                    telemetry,
-                    should_record_materialization_wait,
-                    materializer_completed_before_restore,
-                    materialization_wait,
-                    true,
-                    timings.metadata(),
-                );
-                if should_record_materialization_wait {
-                    telemetry.record_with_session_history_metadata(
-                        "session_history_materialization_wait",
-                        materialization_wait,
-                        true,
-                        None,
-                        timings.metadata(),
-                    );
-                }
-                telemetry.record_with_session_history_metadata(
-                    "session_history_download",
-                    elapsed,
-                    true,
-                    None,
-                    timings.metadata(),
-                );
-                record_session_history_download_timings(telemetry, &timings, restore_wait_window,
-                    HistoryMaterializationOutcome::Succeeded);
-                if let Some(prefix_outcome) = prefix_outcome {
-                    record_session_history_prefix_outcome(telemetry, prefix_outcome);
-                }
-                Some(session)
-            }
-            SessionHistoryMaterialization::Failed {
-                elapsed,
-                timings,
-                error,
-            } => {
-                record_session_history_materializer_state(
-                    telemetry,
-                    should_record_materialization_wait,
-                    materializer_completed_before_restore,
-                    materialization_wait,
-                    false,
-                    timings.metadata(),
-                );
-                if should_record_materialization_wait {
-                    telemetry.record_with_session_history_metadata(
-                        "session_history_materialization_wait",
-                        materialization_wait,
-                        false,
-                        Some(SESSION_HISTORY_MATERIALIZATION_WAIT_TELEMETRY_ERROR),
-                        timings.metadata(),
-                    );
-                }
-                telemetry.record_with_session_history_metadata(
-                    "session_history_download",
-                    elapsed,
-                    false,
-                    Some(SESSION_HISTORY_DOWNLOAD_TELEMETRY_ERROR),
-                    timings.metadata(),
-                );
-                record_session_history_download_timings(telemetry, &timings, restore_wait_window,
-                    if matches!(&error, RunnerError::Cancelled) { HistoryMaterializationOutcome::Cancelled }
-                    else { HistoryMaterializationOutcome::Failed });
-                return Err(error);
-            }
-        };
+        let downloaded_resume_session = finish_session_history_materialization(
+            session_history_materializer, &cancel, telemetry,
+        ).await?;
         let transfer_source = if downloaded_resume_session.is_some() {
             HistoryTransferSource::Downloaded
         } else {
