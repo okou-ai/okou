@@ -21,6 +21,13 @@ download dependencies, contact APIs, or silently skip the integration. Crates
 coverage prepares the same environment before running tests. The status/log-only
 control tests retain their standard-library Python boundary.
 
+Ordinary Supervisor reactor fixtures retain a loopback startup API in the test's
+Tokio runtime so paused time cannot outrun a separate server thread. The peer
+acknowledges startup reports with HTTP 204. Keep the run environment alive through
+Runner shutdown; the shared shutdown helper joins delivery before cancelling and
+joining the peer. Tests that control response failure or timing use the
+explicit-URL variants and keep their supplied server alive through shutdown.
+
 ## Running Tests
 
 Use the `local` profile for routine local validation. It retains source locations in
