@@ -892,12 +892,6 @@ test("Retry unfinished rescues without duplicating completed workflows", async (
     expect(select).toHaveTextContent("Delete with agent");
   }
 
-  for (const select of within(dialog).getAllByRole("combobox")) {
-    expect(select).toHaveTextContent("Delete with agent");
-  }
-  expect(
-    within(dialog).getByText("Daily research copied to Nova"),
-  ).toBeInTheDocument();
   await chooseBothWorkflowCopies(dialog);
   allowSecondCopy = true;
   click(within(dialog).getByText("Delete agent"));

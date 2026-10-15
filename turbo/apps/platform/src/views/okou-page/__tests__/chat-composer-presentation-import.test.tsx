@@ -11,9 +11,27 @@ import {
   mockTemplateChat,
   openTemplatePicker,
 } from "./chat-composer-template-gallery-test-helpers.ts";
+import {
+  buildRunModel,
+  CLAUDE_SUBSCRIPTION_PROVIDER_ID,
+} from "./chat-composer-test-helpers.ts";
 
 const IMPORT_PROMPT =
   "Analyse this deck and save its visual language as a reusable presentation template.";
+
+function mockDeckImportChat() {
+  const capture = mockTemplateChat();
+  // Importing a deck needs one usable model, not a model-switching catalog.
+  context.mocks.data.availableRunModels([
+    buildRunModel({
+      model: "claude-sonnet-5",
+      modelLabel: "Claude Sonnet 5",
+      providerType: "claude-code-oauth-token",
+      modelProviderId: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
+    }),
+  ]);
+  return capture;
+}
 
 function uploadedFilePart(message: UserMessageDocument) {
   const part = message.parts.find((candidate) => {
@@ -37,7 +55,7 @@ async function importDeck(
 }
 
 test("Import a presentation deck into chat", async () => {
-  const capture = mockTemplateChat();
+  const capture = mockDeckImportChat();
   context.mocks.upload.success({
     id: "81000000-0000-4000-a000-000000000001",
     filename: "modern-deck.pptx",
@@ -79,7 +97,7 @@ test("Import a presentation deck into chat", async () => {
 });
 
 test("Import a presentation deck from a new chat", async () => {
-  const capture = mockTemplateChat();
+  const capture = mockDeckImportChat();
   context.mocks.upload.success({
     id: "81000000-0000-4000-a000-000000000003",
     filename: "new-chat-deck.pptx",
@@ -118,7 +136,7 @@ test("Import a presentation deck from a new chat", async () => {
 });
 
 test("The Presentation tile still offers exactly the decks it always has", async () => {
-  mockTemplateChat();
+  mockDeckImportChat();
   const user = userEvent.setup();
 
   await setupPage({

@@ -9,6 +9,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
+import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import {
   AGENT_ID,
   context,
@@ -37,13 +38,35 @@ test("Preview a website template and return to its picker", async () => {
   if (!template) {
     throw new Error("Website template fixture not found");
   }
-  const user = userEvent.setup({ delay: null });
+  mockTemplateChat();
+  // Category navigation has its own suite. Open this preview from a genuine
+  // saved website draft instead of mounting and replacing another catalog.
+  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+    return respond(200, {
+      draftUserMessage: {
+        version: 1,
+        parts: [
+          {
+            type: "template",
+            titleSnapshot: template.title,
+            template: {
+              type: "website",
+              selection: { websiteTemplateId: template.id },
+            },
+          },
+        ],
+      },
+      draftAttachments: null,
+    });
+  });
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     host: "app.okou.ai",
   });
-  const picker = await openTemplatePicker(user, "Website");
+  const inline = await expectInlineTemplate(template.title);
+  click(buttonNamed(`Preview website template ${template.title}`, inline));
+  const picker = await screen.findByRole("dialog");
   click(
     within(picker).getByLabelText(`Preview website template ${template.title}`),
   );

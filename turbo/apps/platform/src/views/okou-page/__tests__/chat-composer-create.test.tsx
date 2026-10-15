@@ -397,13 +397,33 @@ test("Create image sends every edited draft template reference", async () => {
 
 test("Presentation adds another template when the draft already has one", async () => {
   setupModels();
-  const editor = await setupComposer();
-  const user = userEvent.setup({ delay: null });
   const [first, second] = PRESENTATION_TEMPLATE_PICKER_ITEMS;
   if (!first || !second) {
     throw new Error("Expected two presentation templates");
   }
-  await selectTemplate(first);
+  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+    return respond(200, {
+      draftUserMessage: {
+        version: 1,
+        parts: [
+          {
+            type: "template",
+            titleSnapshot: first.title,
+            template: {
+              type: "presentation",
+              selection: { templateId: first.templateId },
+            },
+          },
+        ],
+      },
+      draftAttachments: null,
+    });
+  });
+  const editor = await setupComposer();
+  const user = userEvent.setup({ delay: null });
+  await waitFor(() => {
+    expect(composerInlineTemplates()[0]).toHaveTextContent(first.title);
+  });
   await user.click(editor);
   await user.paste(" /");
   const menu = await screen.findByTestId("slash-workflow-menu");

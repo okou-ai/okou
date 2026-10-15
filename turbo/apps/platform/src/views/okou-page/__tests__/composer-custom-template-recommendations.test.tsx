@@ -83,49 +83,60 @@ const SHELVES = [
   },
 ] as const;
 
-async function openShelf(task: string, label: string, enabled = true) {
+async function openShelf(
+  task: string,
+  label: string,
+  enabled = true,
+  draft = "Keep my launch brief",
+) {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: { [FeatureSwitchKey.CustomTemplates]: enabled },
   });
   const editor = await findComposerEditor();
-  await fill(editor, "Keep my launch brief");
+  if (draft) {
+    await fill(editor, draft);
+  }
   click(button(task, screen.getByRole("group", { name: "Choose a task" })));
   const shelf = await screen.findByRole("group", { name: label });
   return { editor, shelf };
 }
 
-test.each(SHELVES)(
-  "$task shows accessible custom templates of its kind and sends the selected reference",
-  async ({ task, kind, label, builtInTitle }) => {
-    const capture = mockTemplateChat();
-    const own = template(kind);
-    const shared = {
-      ...own,
-      id: "44444444-4444-4444-8444-444444444444",
-      title: "Shared brand template",
-      visibility: "organization" as const,
-      ownerUserId: "user_colleague",
-      canManage: false,
-    };
-    context.mocks.api(userTemplatesContract.list, ({ respond }) => {
-      return respond(200, [
-        template("presentation"),
-        template("illustration"),
-        template("document"),
-        shared,
-      ]);
-    });
-    mockPresentationTemplateLibrary([
-      createUploadedTemplate({
-        id: own.id,
-        title: "Legacy deck",
-        canManage: true,
-      }),
+function mockShelfCatalog(kind: UserTemplateKind) {
+  const capture = mockTemplateChat();
+  const own = template(kind);
+  const shared = {
+    ...own,
+    id: "44444444-4444-4444-8444-444444444444",
+    title: "Shared brand template",
+    visibility: "organization" as const,
+    ownerUserId: "user_colleague",
+    canManage: false,
+  };
+  context.mocks.api(userTemplatesContract.list, ({ respond }) => {
+    return respond(200, [
+      template("presentation"),
+      template("illustration"),
+      template("document"),
+      shared,
     ]);
+  });
+  mockPresentationTemplateLibrary([
+    createUploadedTemplate({
+      id: own.id,
+      title: "Legacy deck",
+      canManage: true,
+    }),
+  ]);
+  return { capture, own, shared };
+}
 
-    const { editor, shelf } = await openShelf(task, label);
+test.each(SHELVES)(
+  "$task shows accessible custom templates only of its kind",
+  async ({ task, kind, label, builtInTitle }) => {
+    const { own, shared } = mockShelfCatalog(kind);
+    const { shelf } = await openShelf(task, label, true, "");
     await within(shelf).findByText(own.title);
     expect(within(shelf).getByText(shared.title)).toBeInTheDocument();
     expect(within(shelf).getByText(builtInTitle)).toBeInTheDocument();
@@ -146,7 +157,15 @@ test.each(SHELVES)(
       "src",
       kind === "presentation" ? own.coverUrl : own.previewAssets[0]!.url,
     );
+  },
+);
 
+test.each(SHELVES)(
+  "$task sends the selected custom reference and preserves the draft text",
+  async ({ task, kind, label }) => {
+    const { capture, own } = mockShelfCatalog(kind);
+    const { editor, shelf } = await openShelf(task, label);
+    await within(shelf).findByText(own.title);
     click(
       button(
         kind === "presentation" ? own.title : `Use template ${own.title}`,
