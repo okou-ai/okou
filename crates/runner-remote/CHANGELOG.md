@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.19.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.18.1...runner-remote-v0.19.0) (2026-10-15)
+
+
+### Features
+
+* **vnc:** prepare native network contracts and readers ([#40316](https://github.com/okou-ai/okou/issues/40316)) ([ea3aa10](https://github.com/okou-ai/okou/commit/ea3aa10c7fa4fce02f776752a904c4cca8b43f7e))
+
+
+### Bug Fixes
+
+* **runner:** apply official tailscale netmap delta semantics ([#40344](https://github.com/okou-ai/okou/issues/40344)) ([33c1fd9](https://github.com/okou-ai/okou/commit/33c1fd97094e3bb71cf6e05de233c99762533e2f))
+
 ## [0.18.1](https://github.com/okou-ai/okou/compare/runner-remote-v0.18.0...runner-remote-v0.18.1) (2026-10-15)
 
 
