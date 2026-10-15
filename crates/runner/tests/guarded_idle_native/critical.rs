@@ -119,9 +119,12 @@ pub async fn exercise(
         }
     }
     if context.budget.allocated() != (6, 12288, 3) || !context.budget.can_afford(2, 4096) {
-        return Err(
-            io::Error::other("Critical corpus lost full initial leases/spare capacity").into(),
-        );
+        return Err(io::Error::other(format!(
+            "Critical initial leases/spare capacity unavailable: allocated={:?}, vcpu_limit={}",
+            context.budget.allocated(),
+            context.budget.vcpu_admission_limit()
+        ))
+        .into());
     }
     proof.critical_witness(
         "inputs_verified",

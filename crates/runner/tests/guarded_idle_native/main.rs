@@ -271,6 +271,38 @@ enum NativeScope {
     Pressure,
 }
 
+fn native_budget(scope: NativeScope) -> Arc<ResourceBudget> {
+    let (vcpu, memory) = match scope {
+        NativeScope::Pressure => (6, 12288),
+        // Three parked profiles plus one fitting foreground profile, after
+        // ResourceBudget's host CPU reservation. This is logical fixture
+        // capacity, not a measurement of available physical host CPUs.
+        NativeScope::Critical => (10, 16384),
+        NativeScope::Replacement | NativeScope::Restore => (6, 12288),
+        NativeScope::Aged | NativeScope::OptionalOrdinary | NativeScope::OptionalAged => {
+            (12, 24576)
+        }
+        _ => (2, 4096),
+    };
+    Arc::new(ResourceBudget::new(vcpu, memory, 1.0, 0))
+}
+
+#[test]
+fn native_critical_budget_keeps_a_full_spare_profile_after_host_reservation() {
+    let budget = native_budget(NativeScope::Critical);
+    let mut leases = Vec::new();
+    for _ in 0..3 {
+        leases.push(ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap());
+    }
+    assert_eq!(budget.allocated(), (6, 12288, 3));
+    assert!(budget.can_afford(2, 4096));
+    leases.push(ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap());
+    assert_eq!(budget.allocated(), (8, 16384, 4));
+    assert!(ResourceBudget::try_reserve_lease(&budget, 2, 4096).is_none());
+    drop(leases);
+    assert_eq!(budget.allocated(), (0, 0, 0));
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires root, KVM, NBD, packaged guest artifacts and supplied measured policy"]
 async fn guarded_terminal_saving_restores_home_without_private_runtime_bytes() -> TestResult<()> {
@@ -579,16 +611,7 @@ async fn exercise_retirement(
         Some(source) => inputs.operations_with_source(source.clone())?,
         None => inputs.operations()?,
     };
-    let (vcpu, memory) = match scope {
-        NativeScope::Pressure => (6, 12288),
-        NativeScope::Critical => (8, 16384),
-        NativeScope::Replacement | NativeScope::Restore => (6, 12288),
-        NativeScope::Aged | NativeScope::OptionalOrdinary | NativeScope::OptionalAged => {
-            (12, 24576)
-        }
-        _ => (2, 4096),
-    };
-    let budget = Arc::new(ResourceBudget::new(vcpu, memory, 1.0, 0));
+    let budget = native_budget(scope);
     let mut first_lease = None;
     let mut session_identity = None;
     let mut original_history = Vec::new();
