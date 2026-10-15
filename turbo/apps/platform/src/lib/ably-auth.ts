@@ -37,22 +37,18 @@ type AuthCallback = NonNullable<AuthOptions["authCallback"]>;
  * `try/catch` to bridge that error surface into the callback's error
  * argument — both patterns are restricted inside `signals/`.
  *
- * The fetch intentionally does NOT bind `signal` via `fetchOptions: { signal }`.
- * Aborting the fetch while MSW is still resolving the handler races MSW's
- * handler-lookup pipeline and surfaces as an "unhandled exception during the
- * handler lookup" stderr in tests. The signal is honoured at the await
- * boundary instead (`signal.throwIfAborted()`), and the catch re-throws
- * abort errors via `throwIfAbort` so `detach`'s abort-aware silencer can
- * track them — preserving the documented contract that Ably's callback is
- * not invoked once `setupRealtime$` has called `ably.close()`. The wasted
- * in-flight POST during teardown is negligible (single-shot, fast endpoint).
+ * Each invocation has a five-second budget shared by token acquisition and
+ * HTTP through the existing cancellation-aware token and request pipeline.
+ * Report a deadline failure to Ably before its own ten-second timeout, but
+ * never invoke its callback after the connection's root signal aborts.
  */
 export function createAblyAuthCallback(
   createClient: (diagnostic: AuthDiagnosticContext) => RealtimeTokenClient,
   scope: AblyAuthDiagnosticScope,
-  signal: AbortSignal,
+  rootSignal: AbortSignal,
 ): AuthCallback {
   return (_params, callback) => {
+    const signal = AbortSignal.any([rootSignal, AbortSignal.timeout(5000)]);
     const invocation: AuthDiagnosticContext = {
       ...scope.context,
       ablyAuthId: createAuthDiagnosticId(),
@@ -69,8 +65,13 @@ export function createAblyAuthCallback(
         let enteredCallback = false;
         // eslint-disable-next-line no-restricted-syntax -- bridging Ably's node-style auth callback into our promise-based `accept()` helper; justified per eslint.config.js "If genuinely needed (JSON.parse, clipboard, polling), add an inline eslint-disable with justification"
         try {
+          signal.throwIfAborted();
           const client = createClient(invocation);
-          const res = await accept(client.create({ body: {} }), [200]);
+          const res = await accept(
+            client.create({ body: {}, fetchOptions: { signal } }),
+            [200],
+            signal,
+          );
           recordAuthDiagnostic({
             stage: "ably_auth_api_finished",
             context: invocation,
@@ -78,17 +79,6 @@ export function createAblyAuthCallback(
             status: res.status,
             ownerAborted: signal.aborted,
           });
-          // The fetch above does not accept our signal, so check it
-          // explicitly per ccstate skill ("AbortSignal Lifecycle"): aborts
-          // surface as an AbortError that the catch re-throws to detach.
-          if (signal.aborted) {
-            recordAuthDiagnostic({
-              stage: "ably_auth_callback",
-              context: invocation,
-              ownerAborted: true,
-              outcome: "aborted",
-            });
-          }
           signal.throwIfAborted();
           recordAuthDiagnostic({
             stage: "ably_auth_callback",
@@ -102,8 +92,10 @@ export function createAblyAuthCallback(
           enteredCallback = true;
           callback(null, res.body);
         } catch (error) {
-          // Preserve Ably's existing callback-after-close suppression.
           throwIfAbort(error);
+          // Connection teardown suppresses callbacks; a per-invocation
+          // deadline must instead finish Ably's pending authentication.
+          rootSignal.throwIfAborted();
           recordAuthDiagnostic({
             stage: "ably_auth_callback",
             context: invocation,
