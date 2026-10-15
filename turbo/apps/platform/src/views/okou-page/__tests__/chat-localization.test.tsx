@@ -226,6 +226,7 @@ async function openLocalizedChatWithDraft() {
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}?settings=preference`,
+    locale: portuguese.locale,
   });
   await waitFor(() => {
     expect(document.documentElement).toHaveAttribute("lang", portuguese.locale);

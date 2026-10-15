@@ -13,9 +13,9 @@ import {
 } from "@okouai/api-contracts/contracts/teams-connect";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 
 import {
+  click,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
@@ -25,10 +25,8 @@ export async function chooseSshConnectionType(
   dialog: HTMLElement,
   name: string,
 ) {
-  await userEvent.click(
-    within(dialog).getByRole("combobox", { name: "Connection" }),
-  );
-  await userEvent.click(await screen.findByRole("option", { name }));
+  click(within(dialog).getByRole("combobox", { name: "Connection" }));
+  click(await screen.findByRole("option", { name }));
 }
 
 export function queryAction(
