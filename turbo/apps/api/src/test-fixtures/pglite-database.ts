@@ -62,6 +62,22 @@ export async function createPgliteSnapshot(): Promise<Blob> {
     extensions: { pgcrypto, btree_gin, btree_gist },
     parsers: driverParsers,
   });
+  const replayUuidBatch = async (statement: string, name: string) => {
+    let cursor: string | null = null;
+    while (true) {
+      const result = await engine.query(statement, [cursor]);
+      const [{ next_cursor: nextCursor }] = z
+        .tuple([z.object({ next_cursor: z.guid().nullable() })])
+        .parse(result.rows);
+      if (nextCursor === null) {
+        break;
+      }
+      if (cursor !== null && nextCursor <= cursor) {
+        throw new Error(`Batch cursor did not advance in ${name}`);
+      }
+      cursor = nextCursor;
+    }
+  };
   return await releaseAfter(
     (async () => {
       const directory = new URL(
@@ -124,20 +140,7 @@ export async function createPgliteSnapshot(): Promise<Blob> {
               await engine.exec(statement);
               continue;
             }
-            let cursor: string | null = null;
-            while (true) {
-              const result = await engine.query(statement, [cursor]);
-              const [{ next_cursor: nextCursor }] = z
-                .tuple([z.object({ next_cursor: z.guid().nullable() })])
-                .parse(result.rows);
-              if (nextCursor === null) {
-                break;
-              }
-              if (cursor !== null && nextCursor <= cursor) {
-                throw new Error(`Batch cursor did not advance in ${name}`);
-              }
-              cursor = nextCursor;
-            }
+            await replayUuidBatch(statement, name);
           }
         } else {
           await engine.exec(sql);
