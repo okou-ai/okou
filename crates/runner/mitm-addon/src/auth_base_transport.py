@@ -49,6 +49,7 @@ HOP_BY_HOP: frozenset[str] = frozenset(
 DEFAULT_HTTPS_PORT = 443
 MAX_AUTH_BASE_REQUEST_BODY_BYTES = 32 * 1024 * 1024
 MAX_AUTH_BASE_RESPONSE_BODY_BYTES = 32 * 1024 * 1024
+_AUTH_BASE_RESPONSE_READ_BUFFER_BYTES = 64 * 1024
 _PERCENT_DECODED_UPSTREAM_HOST_SYNTAX_CHARS = frozenset("{}*.\u3002\uff0e\uff61,")
 _UPSTREAM_HOST_FORBIDDEN_CHARS = frozenset("{}*")
 _https_context: ssl.SSLContext | None = None
@@ -487,13 +488,25 @@ def _outbound_request_headers(
 
 
 def _read_response_body(resp) -> bytes:
-    body = resp.read(MAX_AUTH_BASE_RESPONSE_BODY_BYTES + 1)
-    if len(body) > MAX_AUTH_BASE_RESPONSE_BODY_BYTES:
-        raise ForwardedResponseTooLargeError("Forwarded auth.base response body too large")
+    body = bytearray()
+    buffer = bytearray(
+        min(_AUTH_BASE_RESPONSE_READ_BUFFER_BYTES, MAX_AUTH_BASE_RESPONSE_BODY_BYTES + 1)
+    )
+    view = memoryview(buffer)
+    while True:
+        read_size = min(len(buffer), MAX_AUTH_BASE_RESPONSE_BODY_BYTES + 1 - len(body))
+        # HTTPResponse.read() retains a list of wire chunks before joining them.
+        # readinto() fills this reusable buffer without accumulating chunk objects.
+        count = resp.readinto(view[:read_size])
+        if not count:
+            break
+        body.extend(view[:count])
+        if len(body) > MAX_AUTH_BASE_RESPONSE_BODY_BYTES:
+            raise ForwardedResponseTooLargeError("Forwarded auth.base response body too large")
     remaining = resp.length
     if remaining is not None and remaining > 0:
-        raise http_client.IncompleteRead(body, remaining)
-    return body
+        raise http_client.IncompleteRead(bytes(body), remaining)
+    return bytes(body)
 
 
 def validate_request_body_size(body: bytes | None) -> None:
