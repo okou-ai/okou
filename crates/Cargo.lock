@@ -1087,6 +1087,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "cli-test-support"
+version = "0.1.0"
+dependencies = [
+ "aho-corasick",
+ "base64 0.23.1",
+ "flate2",
+ "libc",
+ "nix",
+ "rustix",
+ "serde",
+ "serde_json",
+ "shell-quote",
+ "tokio",
+]
+
+[[package]]
 name = "cmac"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2043,6 +2059,7 @@ dependencies = [
  "base64 0.23.1",
  "bytes",
  "chrono",
+ "cli-test-support",
  "flate2",
  "futures-util",
  "guest-contracts",
@@ -2054,7 +2071,6 @@ dependencies = [
  "http-body",
  "httpmock",
  "libc",
- "nix",
  "pin-project-lite",
  "process-control-ipc",
  "reqwest",

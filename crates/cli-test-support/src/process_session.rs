@@ -1,3 +1,5 @@
+//! Owned process sessions and pidfd-backed descendant cleanup.
+
 use std::io;
 use std::os::fd::OwnedFd;
 use std::time::Duration;
@@ -270,7 +272,7 @@ fn record_owned_stat_error(
     }
 }
 
-pub(crate) fn session_id_matches_target(
+pub fn session_id_matches_target(
     target_session_id: Pid,
     observed_session_id: Result<libc::pid_t, nix::errno::Errno>,
 ) -> bool {

@@ -4,13 +4,13 @@ use serde::Serialize;
 use serde_json::Value;
 use std::io::{self, Write};
 
-pub(crate) struct JsonFieldTemplate {
+pub struct JsonFieldTemplate {
     prefix: Vec<u8>,
     suffix: Vec<u8>,
 }
 
 impl JsonFieldTemplate {
-    pub(crate) fn new(object: &Value, field: &str) -> io::Result<Self> {
+    pub fn new(object: &Value, field: &str) -> io::Result<Self> {
         let fields = object.as_object().ok_or_else(|| {
             io::Error::new(io::ErrorKind::InvalidInput, "fixture must be a JSON object")
         })?;
@@ -46,7 +46,7 @@ impl JsonFieldTemplate {
         Ok(Self { prefix, suffix })
     }
 
-    pub(crate) fn write(&self, output: &mut impl Write, value: &impl Serialize) -> io::Result<()> {
+    pub fn write(&self, output: &mut impl Write, value: &impl Serialize) -> io::Result<()> {
         output.write_all(&self.prefix)?;
         serde_json::to_writer(&mut *output, value).map_err(io::Error::other)?;
         output.write_all(&self.suffix)
@@ -69,8 +69,22 @@ impl Write for SerializedByteCount {
     }
 }
 
-pub(crate) fn serialized_len(value: &impl Serialize) -> Result<usize, serde_json::Error> {
+pub fn serialized_len(value: &impl Serialize) -> Result<usize, serde_json::Error> {
     let mut count = SerializedByteCount(0);
     serde_json::to_writer(&mut count, value)?;
     Ok(count.0)
+}
+
+/// Search textual JSON values and member names without cloning or serialization.
+/// This is not arbitrary serialized-JSON substring search: callers use literal
+/// unescaped ASCII sentinels, not JSON syntax, escapes or primitive numbers.
+pub fn contains_json_text(value: &Value, needle: &str) -> bool {
+    match value {
+        Value::String(text) => text.contains(needle),
+        Value::Array(values) => values.iter().any(|value| contains_json_text(value, needle)),
+        Value::Object(members) => members
+            .iter()
+            .any(|(key, value)| key.contains(needle) || contains_json_text(value, needle)),
+        Value::Null | Value::Bool(_) | Value::Number(_) => false,
+    }
 }

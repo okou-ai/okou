@@ -33,8 +33,8 @@ uuid = { workspace = true, features = ["std", "v4", "v5"] }
 zstd.workspace = true
 
 [dev-dependencies]
+cli-test-support = { workspace = true, features = ["test-support"] }
 httpmock = { workspace = true, features = ["cookies"] }
-nix = { workspace = true, features = ["inotify", "process"] }
 rustix = { workspace = true, features = ["event"] }
 shell-quote.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
