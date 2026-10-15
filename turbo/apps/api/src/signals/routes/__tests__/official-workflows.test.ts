@@ -1158,7 +1158,7 @@ describe("Morning Brief catalog reconciliation", () => {
         const next = await fireOfficialSchedule(actor, scheduled);
         expect(next.chatThreadId).toBe(first.chatThreadId);
         const claim = await runs.claimRunnerJob(next.runId);
-        expect(claim.prompt).toMatch(new RegExp(`^/${definitionName}\\n`));
+        expect(claim.prompt.startsWith(`/${definitionName}\n`)).toBeTruthy();
         expect(
           capturedOfficialSkill(claim.storageManifest, definitionName),
         ).toContain("Execute only the accepted Definition content.");
