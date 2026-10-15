@@ -33,7 +33,7 @@ import {
   materializeConnectorCatalogRuntimeRow,
 } from "./connector-catalog-columns";
 import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
-import { db$, type ReadonlyDb } from "../external/db";
+import { db$ } from "../external/db";
 import { command, computed } from "ccstate";
 import {
   catalogIdentityFromCapture,
@@ -311,6 +311,12 @@ export function createConnectorRuntimeAuthSelection(args: {
   });
 }
 
+/**
+ * Runtime connectors for the named slugs, captured with the pointer in one
+ * statement. Missing entries are omitted, as they are absent from a
+ * whole-catalog snapshot; a missing pointer fails like a whole-catalog read.
+ * Metadata-only slugs contribute firewall metadata and never grant execution.
+ */
 export function connectorRuntimeSlugSelectionReadPlan(args: {
   readonly connectorSlugs: readonly ConnectorSlug[];
   readonly metadataConnectorSlugs?: readonly ConnectorSlug[];
@@ -372,26 +378,4 @@ export function connectorRuntimeSlugSelectionFromRows(
     }),
     catalogIdentity: connectorCatalogSlugIdentityFromRows(materialized),
   };
-}
-
-/**
- * Runtime connectors for the named slugs, captured with the pointer in one
- * statement. Missing entries are omitted, as they are absent from a
- * whole-catalog snapshot; a missing pointer fails like a whole-catalog read.
- * Metadata-only slugs contribute firewall metadata and never grant execution.
- */
-export async function loadConnectorRuntimeSlugSelection(
-  db: ReadonlyDb,
-  args: {
-    readonly connectorSlugs: readonly ConnectorSlug[];
-    readonly metadataConnectorSlugs?: readonly ConnectorSlug[];
-  },
-): Promise<ConnectorRuntimeSelection> {
-  const plan = connectorRuntimeSlugSelectionReadPlan(args);
-  const rows = await db
-    .select(plan.columns)
-    .from(connectorCatalog)
-    .leftJoin(connectorCatalogEntries, plan.join)
-    .where(connectorCatalogCurrentWhere());
-  return connectorRuntimeSlugSelectionFromRows(plan.selection, rows);
 }

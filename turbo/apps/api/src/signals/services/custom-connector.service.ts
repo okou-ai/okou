@@ -49,7 +49,15 @@ import { nowDate } from "../../lib/time";
 import { clerk$ } from "../external/clerk";
 import { db$, writeDb$, type ReadonlyDb } from "../external/db";
 import { safeSync, settle } from "../utils";
-import { loadConnectorRuntimeSlugSelection } from "./connector-catalog-slug-source.service";
+import {
+  connectorCatalogCurrentWhere,
+  connectorRuntimeSlugSelectionReadPlan,
+  connectorRuntimeSlugSelectionFromRows,
+} from "./connector-catalog-slug-source.service";
+import {
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/runtime/connector-catalog";
 import {
   publishCustomConnectorOrganizationInvalidationAfterCommit,
   publishCustomConnectorUserInvalidationAfterCommit,
@@ -1580,19 +1588,6 @@ function validateDefinition(
   };
 }
 
-/** A bundle reads only its dependency connector's firewall metadata. */
-async function loadPermissionBundleCatalog(
-  db: ReadonlyDb,
-  permissionBundleRef: CustomConnectorPermissionBundleRef,
-) {
-  const dependency =
-    customConnectorPermissionBundleDependencySlug(permissionBundleRef);
-  return await loadConnectorRuntimeSlugSelection(db, {
-    connectorSlugs: [],
-    metadataConnectorSlugs: dependency === null ? [] : [dependency],
-  });
-}
-
 const validatePermissionBundleRef$ = command(
   async (
     { set },
@@ -1602,9 +1597,21 @@ const validatePermissionBundleRef$ = command(
     if (permissionBundleRef === null) {
       return null;
     }
-    const snapshot = await loadPermissionBundleCatalog(
-      set(writeDb$),
-      permissionBundleRef,
+    const catalogDb = set(writeDb$);
+    // A bundle reads only its dependency connector's firewall metadata.
+    const dependency =
+      customConnectorPermissionBundleDependencySlug(permissionBundleRef);
+    const catalogPlan = connectorRuntimeSlugSelectionReadPlan({
+      connectorSlugs: [],
+      metadataConnectorSlugs: dependency === null ? [] : [dependency],
+    });
+    const snapshot = connectorRuntimeSlugSelectionFromRows(
+      catalogPlan.selection,
+      await catalogDb
+        .select(catalogPlan.columns)
+        .from(connectorCatalog)
+        .leftJoin(connectorCatalogEntries, catalogPlan.join)
+        .where(connectorCatalogCurrentWhere()),
     );
     signal.throwIfAborted();
     const bundle = await loadCustomConnectorPermissionBundle({
@@ -2622,7 +2629,21 @@ export function getCustomConnectorPermissionBundle(args: {
     if (!permissionBundleRef) {
       return null;
     }
-    const snapshot = await loadPermissionBundleCatalog(db, permissionBundleRef);
+    const catalogDb = db;
+    const dependency =
+      customConnectorPermissionBundleDependencySlug(permissionBundleRef);
+    const catalogPlan = connectorRuntimeSlugSelectionReadPlan({
+      connectorSlugs: [],
+      metadataConnectorSlugs: dependency === null ? [] : [dependency],
+    });
+    const snapshot = connectorRuntimeSlugSelectionFromRows(
+      catalogPlan.selection,
+      await catalogDb
+        .select(catalogPlan.columns)
+        .from(connectorCatalog)
+        .leftJoin(connectorCatalogEntries, catalogPlan.join)
+        .where(connectorCatalogCurrentWhere()),
+    );
     const bundle = await loadCustomConnectorPermissionBundle({
       catalog: snapshot.serverFirewallMetadata,
       ref: permissionBundleRef,
