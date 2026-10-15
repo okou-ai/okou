@@ -1,4 +1,3 @@
-import { timingSafeEqual } from "node:crypto";
 import {
   atomSubscriptionGrantsContract,
   type atomSubscriptionGrantSchema,
@@ -15,9 +14,9 @@ import {
   providerUnavailable,
 } from "../../lib/error";
 import { nowDate } from "../../lib/time";
-import { authorization$, setResHeader$ } from "../context/hono";
+import { request$, setResHeader$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
-import { clerk$ } from "../external/clerk";
+import { authenticateClerkMachine, clerk$ } from "../external/clerk";
 import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { handleCodexAuthJsonPaste } from "../services/codex-auth-json-paste-handler";
@@ -216,22 +215,42 @@ const deliver$ = command(
 const deliverAtomSubscription$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     set(setResHeader$, "Cache-Control", "no-store");
-    const secret = optionalEnv("ATOM_SUBSCRIPTION_GRANT_SECRET");
-    if (!secret || secret.length < 32) {
+    const machineSecretKey = optionalEnv("OKOU_MACHINE_SECRET_KEY");
+    const allowedMachineIds = optionalEnv("ATOM_SUBSCRIPTION_GRANT_MACHINE_IDS")
+      ?.split(",")
+      .map((id) => {
+        return id.trim();
+      })
+      .filter(Boolean);
+    if (!machineSecretKey || !allowedMachineIds?.length) {
       return providerUnavailable("Atom subscription grants are not configured");
     }
-    const supplied = Buffer.from(get(authorization$) ?? "");
-    const expected = Buffer.from(`Bearer ${secret}`);
-    if (
-      supplied.length !== expected.length ||
-      !timingSafeEqual(supplied, expected)
-    ) {
+    const authentication = await settle(
+      authenticateClerkMachine(get(request$).raw, machineSecretKey),
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!authentication.ok) {
+      return providerUnavailable("Atom M2M authentication is unavailable");
+    }
+    if (!authentication.value) {
       return {
         status: 401 as const,
         body: {
           error: {
-            message: "Invalid Atom grant credential",
+            message: "Invalid Atom M2M token",
             code: "UNAUTHORIZED",
+          },
+        },
+      };
+    }
+    if (!allowedMachineIds.includes(authentication.value.machineId)) {
+      return {
+        status: 403 as const,
+        body: {
+          error: {
+            message: "Machine is not authorized to grant subscriptions",
+            code: "FORBIDDEN",
           },
         },
       };

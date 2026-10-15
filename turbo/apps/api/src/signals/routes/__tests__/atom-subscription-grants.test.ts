@@ -13,12 +13,12 @@ import { now } from "../../../lib/time";
 import { atomSubscriptionGrantRoutes } from "../atom-subscription-grants";
 import { meModelProvidersListRoutes } from "../me-model-providers-list";
 import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
-import { createRouteMocks } from "./helpers/route-test";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
-const SECRET = "atom-test-grant-credential-32-characters";
+const MACHINE_SECRET = "msk_existing_vm0_machine";
+const M2M_TOKEN = "mt_atom_grant";
+const ATOM_MACHINE = "mch_atom_api";
 const routes = Object.freeze([
   ...atomSubscriptionGrantRoutes,
   ...meModelProvidersListRoutes,
@@ -37,7 +37,46 @@ function fixture() {
     { ...actor, orgRole: "org:member", email: "recipient@example.com" },
     "org:member",
   );
-  mocks.clerk.session(actor.userId, actor.orgId);
+  context.mocks.clerk.authenticateRequest.mockImplementation(
+    (request, options) => {
+      if (
+        typeof options === "object" &&
+        options !== null &&
+        "acceptsToken" in options &&
+        options.acceptsToken === "m2m_token"
+      ) {
+        expect(options).toMatchObject({ machineSecretKey: MACHINE_SECRET });
+        const token =
+          request instanceof Request
+            ? request.headers.get("authorization")
+            : null;
+        if (
+          token !== `Bearer ${M2M_TOKEN}` &&
+          token !== "Bearer mt_other_machine"
+        ) {
+          return Promise.resolve({ isAuthenticated: false });
+        }
+        const machineId =
+          token === "Bearer mt_other_machine" ? "mch_other" : ATOM_MACHINE;
+        return Promise.resolve({
+          isAuthenticated: true,
+          toAuth: () => {
+            return {
+              tokenType: "m2m_token",
+              id: "m2m_valid",
+              machineId,
+            };
+          },
+        });
+      }
+      return Promise.resolve({
+        isAuthenticated: true,
+        toAuth: () => {
+          return { ...actor, orgRole: "org:member" };
+        },
+      });
+    },
+  );
   return {
     ...actor,
     grantId: randomUUID(),
@@ -53,26 +92,79 @@ function jwt(payload: Record<string, unknown>) {
 
 describe("Atom subscription grants", () => {
   beforeEach(() => {
-    mockOptionalEnv("ATOM_SUBSCRIPTION_GRANT_SECRET", SECRET);
+    mockOptionalEnv("OKOU_MACHINE_SECRET_KEY", MACHINE_SECRET);
+    mockOptionalEnv(
+      "ATOM_SUBSCRIPTION_GRANT_MACHINE_IDS",
+      ` ${ATOM_MACHINE}, mch_other_allowed `,
+    );
   });
 
-  it("rejects ordinary user sessions and disables ingestion without a configured bridge credential", async () => {
+  it.each([
+    "clerk-session",
+    "msk_existing_vm0_machine",
+    "atom-test-grant-credential-32-characters",
+    "mt_invalid",
+  ])("rejects a non-M2M or unverified credential: %s", async (token) => {
     const body = fixture();
     const response = await accept(
       client()(atomSubscriptionGrantsContract).deliver({
-        headers: { authorization: "Bearer clerk-session" },
+        headers: { authorization: `Bearer ${token}` },
         body,
       }),
       [401],
     );
     expect(response.body).toMatchObject({ error: { code: "UNAUTHORIZED" } });
-    mockOptionalEnv("ATOM_SUBSCRIPTION_GRANT_SECRET", undefined);
+  });
+
+  it.each(["OKOU_MACHINE_SECRET_KEY", "ATOM_SUBSCRIPTION_GRANT_MACHINE_IDS"])(
+    "disables ingestion when %s is not configured",
+    async (key) => {
+      const body = fixture();
+      mockOptionalEnv(key, undefined);
+      await accept(
+        client()(atomSubscriptionGrantsContract).deliver({
+          headers: { authorization: `Bearer ${M2M_TOKEN}` },
+          body,
+        }),
+        [503],
+      );
+      expect(context.mocks.clerk.authenticateRequest).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects a valid M2M token from a machine outside the allowlist", async () => {
+    const body = fixture();
     await accept(
       client()(atomSubscriptionGrantsContract).deliver({
-        headers: { authorization: `Bearer ${SECRET}` },
+        headers: { authorization: "Bearer mt_other_machine" },
+        body,
+      }),
+      [403],
+    );
+    expect(
+      context.mocks.clerk.organizations.getOrganizationMembershipList,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("does not expose Clerk failures and allows retry after verification recovers", async () => {
+    const body = fixture();
+    context.mocks.clerk.authenticateRequest.mockRejectedValueOnce(
+      new Error(`private Clerk error ${MACHINE_SECRET}`),
+    );
+    const response = await accept(
+      client()(atomSubscriptionGrantsContract).deliver({
+        headers: { authorization: `Bearer ${M2M_TOKEN}` },
         body,
       }),
       [503],
+    );
+    expect(JSON.stringify(response.body)).not.toContain(MACHINE_SECRET);
+    await accept(
+      client()(atomSubscriptionGrantsContract).deliver({
+        headers: { authorization: `Bearer ${M2M_TOKEN}` },
+        body,
+      }),
+      [200],
     );
   });
 
@@ -83,7 +175,7 @@ describe("Atom subscription grants", () => {
     );
     await accept(
       client()(atomSubscriptionGrantsContract).deliver({
-        headers: { authorization: `Bearer ${SECRET}` },
+        headers: { authorization: `Bearer ${M2M_TOKEN}` },
         body,
       }),
       [403],
@@ -122,7 +214,7 @@ describe("Atom subscription grants", () => {
       const deliver = async () => {
         return await accept(
           client()(atomSubscriptionGrantsContract).deliver({
-            headers: { authorization: `Bearer ${SECRET}` },
+            headers: { authorization: `Bearer ${M2M_TOKEN}` },
             body,
           }),
           [200],
@@ -151,7 +243,7 @@ describe("Atom subscription grants", () => {
       expect(JSON.stringify(listed.body)).not.toContain(tokens.accessToken);
       await accept(
         client()(atomSubscriptionGrantsContract).deliver({
-          headers: { authorization: `Bearer ${SECRET}` },
+          headers: { authorization: `Bearer ${M2M_TOKEN}` },
           body: { ...body, userId: `user_${randomUUID()}` },
         }),
         [409],
@@ -163,7 +255,7 @@ describe("Atom subscription grants", () => {
     const body = fixture();
     await accept(
       client()(atomSubscriptionGrantsContract).deliver({
-        headers: { authorization: `Bearer ${SECRET}` },
+        headers: { authorization: `Bearer ${M2M_TOKEN}` },
         body,
       }),
       [200],
@@ -176,7 +268,7 @@ describe("Atom subscription grants", () => {
     );
     await accept(
       client()(atomSubscriptionGrantsContract).deliver({
-        headers: { authorization: `Bearer ${SECRET}` },
+        headers: { authorization: `Bearer ${M2M_TOKEN}` },
         body: {
           ...body,
           grantId: randomUUID(),
@@ -205,7 +297,7 @@ describe("Atom subscription grants", () => {
     const body = fixture();
     await accept(
       client()(atomSubscriptionGrantsContract).deliver({
-        headers: { authorization: `Bearer ${SECRET}` },
+        headers: { authorization: `Bearer ${M2M_TOKEN}` },
         body,
       }),
       [200],
@@ -219,7 +311,7 @@ describe("Atom subscription grants", () => {
     );
     await accept(
       client()(atomSubscriptionGrantsContract).deliver({
-        headers: { authorization: `Bearer ${SECRET}` },
+        headers: { authorization: `Bearer ${M2M_TOKEN}` },
         body,
       }),
       [200],

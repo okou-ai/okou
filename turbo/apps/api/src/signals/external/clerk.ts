@@ -773,6 +773,25 @@ export async function authenticateClerkSession(
   };
 }
 
+/** Verify the caller and machine-to-machine scope with the receiver's key. */
+export async function authenticateClerkMachine(
+  request: Request,
+  machineSecretKey: string,
+): Promise<{ readonly machineId: string } | null> {
+  const requestState = await clerkSdk().authenticateRequest(request, {
+    acceptsToken: "m2m_token",
+    machineSecretKey,
+  });
+  if (!requestState.isAuthenticated) {
+    return null;
+  }
+  const auth = requestState.toAuth();
+  if (auth.tokenType !== "m2m_token" || !auth.machineId || !auth.id) {
+    return null;
+  }
+  return { machineId: auth.machineId };
+}
+
 export async function verifyClerkWebhook(
   request: Request,
   options: { readonly signingSecret?: string },
