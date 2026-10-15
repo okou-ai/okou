@@ -47,6 +47,7 @@ type TestResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 enum Corpus {
     Terminal,
     Continuation,
+    Optional,
 }
 
 const MISSING_GUEST_TIMEZONE: &str = "Etc/okou-test-missing-zone";
@@ -79,6 +80,22 @@ fn native_pressure_report_consumer_validates_external_receipts() {
     assert!(
         output.status.success(),
         "native pressure report contract failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn native_optional_report_consumer_requires_complete_reads_and_joined_owners() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/optional_report_test.py"
+        ))
+        .output()
+        .expect("native optional contract tests require Python 3");
+    assert!(
+        output.status.success(),
+        "native optional report failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 }
@@ -265,6 +282,17 @@ async fn native_logical_pressure_records_replacement_and_required_saving() -> Te
 
 async fn measured_corpus(scopes: &[NativeScope]) -> TestResult<()> {
     measured_selected_corpus(scopes, Corpus::Terminal).await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD artifacts, complete snapshot reads, real Ready headroom and exact-source P1 proof"]
+async fn native_optional_records_ready_preparation_prefetch_and_required_saving() -> TestResult<()>
+{
+    measured_selected_corpus(
+        &[NativeScope::OptionalOrdinary, NativeScope::OptionalAged],
+        Corpus::Optional,
+    )
+    .await
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -586,7 +614,7 @@ async fn exercise_retirement(
         return Err(error);
     }
     if let Some(proof) = proof
-        && corpus == Corpus::Terminal
+        && corpus != Corpus::Continuation
     {
         let backing = sandbox
             .backing_process()
@@ -677,6 +705,11 @@ async fn exercise_retirement(
         },
     });
     let tracker = IdleDestroyTracker::new(Arc::new(Notify::new()));
+    if corpus == Corpus::Optional
+        && let Some(proof) = proof
+    {
+        proof.bind_original_lease(&lease)?;
+    }
     let candidate = ParkedIdleCandidateBuilder::new(&reuse_key, lease)
         .with_sandbox(sandbox)
         .with_factory(factory.clone())
@@ -759,7 +792,7 @@ async fn exercise_retirement(
                     factory: factory.clone(), pool: pool.clone(), status: status.clone(),
                     operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
                     rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
-                }, inputs, matches!(scope, NativeScope::OptionalAged)).await?;
+                }, inputs, matches!(scope, NativeScope::OptionalAged), proof).await?;
                 Ok(None)
             }
             NativeScope::Pressure => {

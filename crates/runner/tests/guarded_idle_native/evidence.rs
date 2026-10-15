@@ -16,6 +16,7 @@ use super::{TestResult, io};
 pub const PREFIX: &str = "NATIVE_TERMINAL_RECEIPT ";
 const PRESSURE_PREFIX: &str = "NATIVE_PRESSURE_WITNESS ";
 const CONTINUATION_PREFIX: &str = "NATIVE_CONTINUATION_WITNESS ";
+const OPTIONAL_PREFIX: &str = "NATIVE_OPTIONAL_WITNESS ";
 pub const TAIL_BYTES: usize = 64 * 1024 * 1024;
 
 #[derive(Clone, Deserialize)]
@@ -205,6 +206,18 @@ impl Case {
 
     pub fn continuation_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
         self.write_event(CONTINUATION_PREFIX, phase, evidence)
+    }
+
+    pub fn optional_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event(OPTIONAL_PREFIX, phase, evidence)
+    }
+
+    pub fn snapshot_memory_hash(&self) -> io::Result<&str> {
+        self.artifacts
+            .snapshot_files
+            .get("memory.bin")
+            .map(String::as_str)
+            .ok_or_else(|| io::Error::other("native optional snapshot memory identity missing"))
     }
 
     pub fn bind_original_lease(
