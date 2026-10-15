@@ -433,7 +433,7 @@ function usageTone(remainingPercent: number | null): {
     };
   }
   return {
-    fillClassName: "bg-linear-to-r/oklch from-primary-300 to-interrupt",
+    fillClassName: "bg-usage-meter-fill",
     textClassName: "text-foreground",
   };
 }

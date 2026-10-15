@@ -203,6 +203,16 @@
     infinite;
   --animate-usage-meter-recharge: usage-meter-recharge
     var(--duration-running-indicator) linear infinite;
+  /* The meter's healthy fill: the brand amber warming to Coral 500 along the
+     track, interpolated in OKLCH so the two warm stops never meet in grey.
+     Coral 500 is written as its exact value rather than through `--interrupt`,
+     so the stop action's colour can change without recolouring usage. The
+     consumer sizes it to the whole track, so a fuller bar shows the warmer end. */
+  --background-image-usage-meter-fill: linear-gradient(
+    in oklch to right,
+    hsl(var(--primary-300)),
+    hsl(13.9 100% 59.4%)
+  );
   --background-image-usage-meter-recharge: repeating-linear-gradient(
     -45deg,
     hsl(var(--gray-500) / 0.55) 0 3px,
