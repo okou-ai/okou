@@ -88,6 +88,8 @@ const CONTRACT_HARNESS_SUFFIX =
 const PRODUCTION_ROUTE_SUFFIX = "/src/signals/route.ts";
 const PI_LIFECYCLE_SUFFIX =
   "/turbo/apps/api/src/signals/routes/__tests__/pi-memory-maintenance-publication.test.ts";
+const COMPUTER_USE_RETENTION_SUFFIX =
+  "/turbo/apps/api/src/signals/routes/__tests__/computer-use-retention.test.ts";
 const CONTRACT_HELPER_SUFFIX =
   "/signals/routes/__tests__/helpers/global-sweep-contract";
 const CONTRACT_HELPER_RELATIVE = "./helpers/global-sweep-contract";
@@ -230,7 +232,7 @@ export const noGlobalSweepTestRoutes = createRule({
       readonly boundary: GlobalSweepBoundary;
       readonly specifier: TSESTree.ImportSpecifier;
     }[] = [];
-    const piLifecycleBindings: typeof harnessBindings = [];
+    const systemBoundaryBindings: typeof harnessBindings = [];
     const calls: TSESTree.CallExpression[] = [];
 
     function report(node: TSESTree.Node, boundary: GlobalSweepBoundary): void {
@@ -859,7 +861,7 @@ export const noGlobalSweepTestRoutes = createRule({
       );
     }
 
-    function isCanonicalPiLifecycleMount(
+    function isCanonicalSystemBoundaryMount(
       call: TSESTree.CallExpression,
     ): boolean {
       if (call.callee.type !== AST_NODE_TYPES.Identifier) {
@@ -897,15 +899,20 @@ export const noGlobalSweepTestRoutes = createRule({
           if (!boundary) {
             continue;
           }
-          // One approved system boundary: direct canonical mounting in the
-          // isolated, publicly constructed serial Pi lifecycle case only.
+          // Approved operator boundaries use isolated databases and construct
+          // business state through the normal public lifecycle.
           if (
-            filename.endsWith(PI_LIFECYCLE_SUFFIX) &&
-            node.source.value === "../cron-cleanup-sandboxes" &&
-            boundary.exportName === "cronCleanupSandboxesRoutes" &&
+            ((filename.endsWith(PI_LIFECYCLE_SUFFIX) &&
+              node.source.value === "../cron-cleanup-sandboxes" &&
+              boundary.exportName === "cronCleanupSandboxesRoutes") ||
+              (filename.endsWith(COMPUTER_USE_RETENTION_SUFFIX) &&
+                node.source.value ===
+                  "../cron-computer-use-screenshot-cleanup" &&
+                boundary.exportName ===
+                  "cronComputerUseScreenshotCleanupRoutes")) &&
             specifier.local.name === boundary.exportName
           ) {
-            piLifecycleBindings.push({ boundary, specifier });
+            systemBoundaryBindings.push({ boundary, specifier });
             continue;
           }
           // This system-boundary suite publishes through the real catalog cron
@@ -992,7 +999,7 @@ export const noGlobalSweepTestRoutes = createRule({
             }
           }
         }
-        for (const { boundary, specifier } of piLifecycleBindings) {
+        for (const { boundary, specifier } of systemBoundaryBindings) {
           for (const variable of context.sourceCode.getDeclaredVariables(
             specifier,
           )) {
@@ -1009,7 +1016,19 @@ export const noGlobalSweepTestRoutes = createRule({
                 options?.type !== AST_NODE_TYPES.ObjectExpression ||
                 call?.type !== AST_NODE_TYPES.CallExpression ||
                 call.arguments[0] !== options ||
-                !isCanonicalPiLifecycleMount(call)
+                !isCanonicalSystemBoundaryMount(call) ||
+                (filename.endsWith(COMPUTER_USE_RETENTION_SUFFIX) &&
+                  (options.properties.some((entry) => {
+                    return entry.type === AST_NODE_TYPES.SpreadElement;
+                  }) ||
+                    !options.properties.some((entry) => {
+                      return (
+                        entry.type === AST_NODE_TYPES.Property &&
+                        propertyName(entry) === "isolatePg" &&
+                        entry.value.type === AST_NODE_TYPES.Literal &&
+                        entry.value.value === true
+                      );
+                    })))
               ) {
                 report(identifier, boundary);
               }

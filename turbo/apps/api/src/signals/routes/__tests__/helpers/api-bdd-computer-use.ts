@@ -113,6 +113,7 @@ export interface ComputerUseS3Fake {
   readonly holdNextBody: () => ComputerUseS3Barrier;
   readonly failNextPutObject: (error: unknown) => void;
   readonly failNextGetObject: (error: unknown) => void;
+  readonly failNextDeleteObjects: (error: unknown) => void;
   readonly failNextBody: (error: unknown) => void;
 }
 
@@ -410,6 +411,7 @@ export function createComputerUseBddApi(
       let heldBody: PendingComputerUseS3Barrier | undefined;
       let putObjectFailure: unknown | undefined;
       let getObjectFailure: unknown | undefined;
+      let deleteObjectsFailure: unknown | undefined;
       let bodyFailure: unknown | undefined;
 
       const reserveBarrier = (
@@ -505,6 +507,11 @@ export function createComputerUseBddApi(
             };
           }
           if (name === "DeleteObjectsCommand") {
+            if (deleteObjectsFailure !== undefined) {
+              const error = deleteObjectsFailure;
+              deleteObjectsFailure = undefined;
+              throw error;
+            }
             for (const deletedKey of deleteObjectKeys(input)) {
               store.delete(`${bucket}/${deletedKey}`);
             }
@@ -537,6 +544,14 @@ export function createComputerUseBddApi(
             throw new Error("Computer-use S3 GetObject failure is already set");
           }
           getObjectFailure = error;
+        },
+        failNextDeleteObjects: (error) => {
+          if (deleteObjectsFailure !== undefined) {
+            throw new Error(
+              "Computer-use S3 DeleteObjects failure is already set",
+            );
+          }
+          deleteObjectsFailure = error;
         },
         failNextBody: (error) => {
           if (bodyFailure !== undefined) {
