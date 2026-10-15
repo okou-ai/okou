@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   useGet,
   useLastLoadable,
@@ -74,6 +75,7 @@ import {
   currentChatAgentScope$,
   currentChatAgentId$,
   currentChatThreadId$,
+  hasCurrentChatThread$,
 } from "../../signals/agent-chat.ts";
 import { setSidebarExpanded$ } from "../../signals/okou-page/nav.ts";
 import { chatThreadOnlyArchived$ } from "../../signals/chat-page/chat-thread-only-archived.ts";
@@ -368,6 +370,35 @@ function ChatThreadPinMenuItems({
   );
 }
 
+function ChatThreadRenameMenuItem({
+  signals,
+}: {
+  signals: SidebarChatThreadItemSignals;
+}) {
+  const { t } = useTranslation();
+  const openRename = useSet(signals.openRename$);
+  const pageSignal = useGet(pageSignal$);
+  const label = t(($) => {
+    return $.chat.sidebar.rename;
+  });
+
+  return (
+    <DropdownMenuItem
+      aria-label={label}
+      aria-keyshortcuts={GLOBAL_KEYBOARD_SHORTCUTS.renameChat.ariaKeyShortcuts}
+      onClick={() => {
+        detach(openRename(pageSignal), Reason.DomCallback);
+      }}
+    >
+      <Pencil size={16} className="mr-2" />
+      {label}
+      <ChatThreadMenuShortcut
+        shortcut={GLOBAL_KEYBOARD_SHORTCUTS.renameChat.binding}
+      />
+    </DropdownMenuItem>
+  );
+}
+
 type ChatThreadMenuProps = {
   signals: SidebarChatThreadItemSignals;
   rowIndex: number;
@@ -382,16 +413,7 @@ function ChatThreadMenu({
   const { t } = useTranslation();
   const isPinned = useGet(signals.pinned$);
   const indicatorState = useLastResolved(signals.indicatorState$) ?? null;
-  const openRename = useSet(signals.openRename$);
   const requestDelete = useSet(signals.requestDelete$);
-  const pageSignal = useGet(pageSignal$);
-  const renameLabel = t(($) => {
-    return $.chat.sidebar.rename;
-  });
-
-  function openRenameDialog() {
-    detach(openRename(pageSignal), Reason.DomCallback);
-  }
 
   const showStateIndicator = indicatorState !== null;
   const showPinIndicator = isPinned && indicatorState === null;
@@ -475,19 +497,7 @@ function ChatThreadMenu({
           <ChatThreadMarkUnreadMenuItem signals={signals} />
           <ChatThreadMuteMenuItem signals={signals} />
           <ChatThreadArchiveMenuSection signals={signals} />
-          <DropdownMenuItem
-            aria-label={renameLabel}
-            aria-keyshortcuts={
-              GLOBAL_KEYBOARD_SHORTCUTS.renameChat.ariaKeyShortcuts
-            }
-            onClick={openRenameDialog}
-          >
-            <Pencil size={16} className="mr-2" />
-            {renameLabel}
-            <ChatThreadMenuShortcut
-              shortcut={GLOBAL_KEYBOARD_SHORTCUTS.renameChat.binding}
-            />
-          </DropdownMenuItem>
+          <ChatThreadRenameMenuItem signals={signals} />
           <DropdownMenuItem
             onClick={() => {
               requestDelete();
@@ -1538,20 +1548,39 @@ function ChatThreadsContent({
   );
 }
 
-function UnreadChatThreadsContent({
-  currentMainThreadId,
+function UnreadChatThreadScrollMarker({
+  items,
   scrollSignals,
 }: {
-  currentMainThreadId: string | null;
+  items: readonly SidebarChatThreadItemSignals[];
+  scrollSignals: SidebarChatThreadScrollSignals;
+}) {
+  const currentThreadId = useGet(currentChatThreadId$);
+  const scrollCurrentChatThreadOnRef = useSet(
+    scrollSignals.scrollCurrentChatThreadOnRef$,
+  );
+  const listed = items.some((item) => {
+    return item.threadId === currentThreadId;
+  });
+
+  return currentThreadId && listed ? (
+    <span
+      ref={scrollCurrentChatThreadOnRef}
+      data-chat-thread-id={currentThreadId}
+      hidden
+    />
+  ) : null;
+}
+
+function UnreadChatThreadsContent({
+  scrollSignals,
+}: {
   scrollSignals: SidebarChatThreadScrollSignals;
 }) {
   const { t } = useTranslation();
   const list = useLastLoadable(unreadSidebarChatThreadList$);
   const setShortcutRoot = useSet(setThreadListNumberShortcutRoot$);
   const searchOpen = useGet(threeColumnSearchOpen$);
-  const scrollCurrentChatThreadOnRef = useSet(
-    scrollSignals.scrollCurrentChatThreadOnRef$,
-  );
 
   if (list.state === "loading") {
     return (
@@ -1581,13 +1610,10 @@ function UnreadChatThreadsContent({
 
   return (
     <div ref={setShortcutRoot} className="w-full">
-      {currentMainThreadId && list.data.currentThreadListed ? (
-        <span
-          ref={scrollCurrentChatThreadOnRef}
-          data-chat-thread-id={currentMainThreadId}
-          hidden
-        />
-      ) : null}
+      <UnreadChatThreadScrollMarker
+        items={list.data.items}
+        scrollSignals={scrollSignals}
+      />
       {list.data.items.map((signals, index) => {
         return (
           <div key={signals.threadId} className="pb-1">
@@ -1605,10 +1631,8 @@ function UnreadChatThreadsContent({
 }
 
 function AllChatThreadsContent({
-  currentMainThreadId,
   scrollSignals,
 }: {
-  currentMainThreadId: string | null;
   scrollSignals: SidebarChatThreadScrollSignals;
 }) {
   const listLoadable = useLastLoadable(scrollSignals.list$);
@@ -1626,52 +1650,64 @@ function AllChatThreadsContent({
 
   return (
     <ResolvedAgentChatThreadsContent
-      currentMainThreadId={currentMainThreadId}
       listSignals={listLoadable.data}
       scrollSignals={scrollSignals}
     />
   );
 }
 
-function ResolvedAgentChatThreadsContent({
-  currentMainThreadId,
+function CurrentChatThreadScrollMarker({
   listSignals,
   scrollSignals,
 }: {
-  currentMainThreadId: string | null;
   listSignals: SidebarChatThreadListSignals;
   scrollSignals: SidebarChatThreadScrollSignals;
 }) {
+  const currentMainThreadId = useGet(currentChatThreadId$);
   const currentMainThreadListed = useGet(listSignals.currentThreadListed$);
   const scrollCurrentChatThreadOnRef = useSet(
     scrollSignals.scrollCurrentChatThreadOnRef$,
   );
 
+  return currentMainThreadId && currentMainThreadListed ? (
+    <span
+      ref={scrollCurrentChatThreadOnRef}
+      data-chat-thread-id={currentMainThreadId}
+      hidden
+    />
+  ) : null;
+}
+
+function ResolvedAgentChatThreadsContent({
+  listSignals,
+  scrollSignals,
+}: {
+  listSignals: SidebarChatThreadListSignals;
+  scrollSignals: SidebarChatThreadScrollSignals;
+}) {
   return (
     <div className="flex flex-col gap-1">
-      {currentMainThreadId && currentMainThreadListed ? (
-        <span
-          ref={scrollCurrentChatThreadOnRef}
-          data-chat-thread-id={currentMainThreadId}
-          hidden
-        />
-      ) : null}
+      <CurrentChatThreadScrollMarker
+        listSignals={listSignals}
+        scrollSignals={scrollSignals}
+      />
       <ChatThreads listSignals={listSignals} />
     </div>
   );
 }
 
-function ExpandedChatThreadsContent({
+function ChatThreadsViewport({
   scrollSignals,
   contentClassName,
+  children,
 }: {
   scrollSignals: SidebarChatThreadScrollSignals;
   contentClassName: string;
+  children: ReactNode;
 }) {
   const { t } = useTranslation();
   const isScrolled = useGet(scrollSignals.isScrolled$);
-  const currentMainThreadId = useGet(currentChatThreadId$);
-  const unreadOnly = useGet(chatThreadOnlyUnread$);
+  const hasCurrentChatThread = useGet(hasCurrentChatThread$);
 
   return (
     <OverlayScrollArea
@@ -1688,20 +1724,33 @@ function ExpandedChatThreadsContent({
         return $.chat.sidebar.chatThreads;
       })}
       data-testid="sidebar-scroll-area"
-      tabIndex={currentMainThreadId ? 0 : undefined}
+      tabIndex={hasCurrentChatThread ? 0 : undefined}
+    >
+      {children}
+    </OverlayScrollArea>
+  );
+}
+
+function ExpandedChatThreadsContent({
+  scrollSignals,
+  contentClassName,
+}: {
+  scrollSignals: SidebarChatThreadScrollSignals;
+  contentClassName: string;
+}) {
+  const unreadOnly = useGet(chatThreadOnlyUnread$);
+
+  return (
+    <ChatThreadsViewport
+      scrollSignals={scrollSignals}
+      contentClassName={contentClassName}
     >
       {unreadOnly ? (
-        <UnreadChatThreadsContent
-          currentMainThreadId={currentMainThreadId}
-          scrollSignals={scrollSignals}
-        />
+        <UnreadChatThreadsContent scrollSignals={scrollSignals} />
       ) : (
-        <AllChatThreadsContent
-          currentMainThreadId={currentMainThreadId}
-          scrollSignals={scrollSignals}
-        />
+        <AllChatThreadsContent scrollSignals={scrollSignals} />
       )}
-    </OverlayScrollArea>
+    </ChatThreadsViewport>
   );
 }
 export function ChatThreadsSection({

@@ -39,9 +39,6 @@ const ONBOARDING_GUARDED_PATHS = [
   ROUTES.settings,
   ROUTES.settingsFeishu,
   ROUTES.settingsLark,
-  // Both Telegram entries retain the existing gate during the #40196 migration.
-  ROUTES.settingsTelegram,
-  ROUTES.telegramConnect,
   ROUTES.workflowDetail,
   ROUTES.workflowDetailAutomations,
   ROUTES.workflowDetailInfo,

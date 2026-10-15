@@ -76,24 +76,6 @@ export function connectorOwnedSecretWrite(
   };
 }
 
-export async function upsertConnectorOwnedSecret(
-  db: Db,
-  args: ConnectorOwnedCredentialWrite &
-    ConnectorOwnedCredentialDescription & {
-      readonly encryptedValue: string;
-    },
-): Promise<void> {
-  const write = connectorOwnedSecretWrite(args);
-  const [row] = await db
-    .insert(secrets)
-    .values(write.values)
-    .onConflictDoUpdate(write.conflict)
-    .returning({ id: secrets.id });
-  if (!row) {
-    throw new Error(`Connector secret ${args.name} is owned by another row`);
-  }
-}
-
 export function connectorOwnedVariableWrite(
   args: ConnectorOwnedCredentialWrite &
     ConnectorOwnedCredentialDescription & {
@@ -129,24 +111,6 @@ export function connectorOwnedVariableWrite(
   };
 }
 
-export async function upsertConnectorOwnedVariable(
-  db: Db,
-  args: ConnectorOwnedCredentialWrite &
-    ConnectorOwnedCredentialDescription & {
-      readonly value: string;
-    },
-): Promise<void> {
-  const write = connectorOwnedVariableWrite(args);
-  const [row] = await db
-    .insert(variables)
-    .values(write.values)
-    .onConflictDoUpdate(write.conflict)
-    .returning({ id: variables.id });
-  if (!row) {
-    throw new Error(`Connector variable ${args.name} is owned by another row`);
-  }
-}
-
 /**
  * Actually delete the account, then resolve its references in the next SQL
  * snapshot. The existing deferred account FK is checked at commit. A selection
@@ -161,7 +125,12 @@ async function deleteConnectorCredentialStorageConnectionsWhere(
 ): Promise<number> {
   // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0115; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
-    await deleteConnectorOwnedCredentialRows(tx, args, signal);
+    await tx.delete(secrets).where(eq(secrets.connectorId, args.connectorId));
+    signal.throwIfAborted();
+    await tx
+      .delete(variables)
+      .where(eq(variables.connectorId, args.connectorId));
+    signal.throwIfAborted();
     await tx.execute(
       sql`SET CONSTRAINTS fk_chat_thread_connector_selections_connector_slug, fk_chat_thread_connector_selections_custom_connector DEFERRED`,
     );
@@ -219,33 +188,4 @@ async function deleteConnectorCredentialStorageConnectionsWhere(
   });
 }
 
-export async function deleteConnectorOwnedCredentialRows(
-  db: Db,
-  args: {
-    readonly connectorId: string;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  await db.delete(secrets).where(eq(secrets.connectorId, args.connectorId));
-  signal.throwIfAborted();
-  await db.delete(variables).where(eq(variables.connectorId, args.connectorId));
-  signal.throwIfAborted();
-}
-
 export { deleteConnectorCredentialStorageConnectionsWhere as deleteConnectorCredentialStorageConnection };
-
-export async function deleteConnectorSelectionsForCustomConnectorDefinition(
-  db: Db,
-  args: { readonly customConnectorId: string },
-  signal: AbortSignal,
-): Promise<void> {
-  await db
-    .delete(chatThreadConnectorSelections)
-    .where(
-      eq(
-        chatThreadConnectorSelections.customConnectorId,
-        args.customConnectorId,
-      ),
-    );
-  signal.throwIfAborted();
-}

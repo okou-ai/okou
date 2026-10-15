@@ -1,4 +1,8 @@
 import {
+  getAction,
+  queryAction,
+} from "./connector-integrations-test-helpers.ts";
+import {
   integrationsTelegramContract,
   OFFICIAL_TELEGRAM_BOT_ID,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
@@ -42,8 +46,14 @@ test.each(TELEGRAM_PATHS)(
     await expect(
       screen.findByRole("heading", { name: "Already connected to Telegram" }),
     ).resolves.toBeInTheDocument();
-    expect(screen.getByText(/@agent_bot/u)).toBeInTheDocument();
-    expect(window.location.href).toBe(`https://app.okou.ai${entry}`);
+    expect(screen.getByText("Connected as 99001.")).toBeInTheDocument();
+    expect(getAction("link", "Open Telegram")).toHaveAttribute(
+      "href",
+      "https://t.me/agent_bot",
+    );
+    expect(window.location.href).toBe(
+      `https://app.okou.ai${entry.replace(path, "/settings/telegram")}`,
+    );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   },
 );
@@ -64,25 +74,30 @@ test.each(TELEGRAM_PATHS)(
 );
 
 test.each(TELEGRAM_PATHS)(
-  "%s retains Telegram's onboarding gate and connection parameters",
+  "%s keeps the signed link while setup opens separately",
   async (path) => {
     context.mocks.data.onboardingStatus({
       needsOnboarding: true,
       onboardingComplete: false,
+      hasDefaultAgent: false,
+      defaultAgentId: null,
     });
     const search = `${connectSearch()}&prompt=hello%20world&context=one&context=two`;
 
     await setupPage({ context, path: `${path}?${search}` });
 
     await expect(
-      screen.findByRole("heading", { name: "Try this prompt" }),
+      screen.findByRole("heading", { name: "Finish account setup" }),
     ).resolves.toBeInTheDocument();
-    expect(window.location.pathname).toBe("/onboarding");
+    expect(window.location.pathname).toBe("/settings/telegram");
     expect([...new URLSearchParams(window.location.search)]).toStrictEqual([
       ...new URLSearchParams(search),
     ]);
-    expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(
-      "hello world",
+    expect(getAction("link", "Open setup")).toHaveAttribute(
+      "href",
+      "/onboarding",
     );
+    expect(getAction("link", "Open setup")).toHaveAttribute("target", "_blank");
+    expect(queryAction("button", "Connect")).not.toBeInTheDocument();
   },
 );

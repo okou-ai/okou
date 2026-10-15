@@ -26,6 +26,7 @@ import {
   validateBaseUrlHostPolicy,
 } from "@okouai/connectors/firewall-types";
 import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
+import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgCustomConnectorDcrRegistrations } from "@okouai/db/schema/org-custom-connector-dcr-registration";
 import {
@@ -59,7 +60,6 @@ import {
   type ConnectorConnectionMetadataArgs,
   type ReadyConnectorConnectionMutation,
 } from "./connector-connection-write.service";
-import { deleteConnectorSelectionsForCustomConnectorDefinition } from "./connector-credential-storage-write.service";
 import {
   commitConnectorRuntimeMutation,
   publishConnectorRuntimeSyncWakeups$,
@@ -2471,11 +2471,16 @@ export const deleteCustomConnector$ = command(
       ) {
         return integrationManagedCustomConnectorMutationForbidden();
       }
-      await deleteConnectorSelectionsForCustomConnectorDefinition(
-        tx,
-        { customConnectorId: args.id },
-        signal,
-      );
+      const selectionDeletion = { customConnectorId: args.id };
+      await tx
+        .delete(chatThreadConnectorSelections)
+        .where(
+          eq(
+            chatThreadConnectorSelections.customConnectorId,
+            selectionDeletion.customConnectorId,
+          ),
+        );
+      signal.throwIfAborted();
       await tx
         .delete(orgCustomConnectors)
         .where(

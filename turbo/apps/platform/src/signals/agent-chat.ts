@@ -31,6 +31,10 @@ export const currentChatThreadId$ = computed((get): string | null => {
   return typeof threadId === "string" ? threadId : null;
 });
 
+export const hasCurrentChatThread$ = computed((get): boolean => {
+  return get(currentChatThreadId$) !== null;
+});
+
 const currentChatThreadAgentId$ = computed((get): string | null => {
   const threadId = get(currentChatThreadId$);
   if (!threadId) {

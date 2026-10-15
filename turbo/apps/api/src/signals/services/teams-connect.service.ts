@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import type { TeamsConnectStatus } from "@okouai/api-contracts/contracts/teams-connect";
 import { command, computed, type Computed } from "ccstate";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { agents } from "@okouai/db/schema/agent";
@@ -6,19 +8,22 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
 import type { TeamsInboundActivity } from "@okouai/api-contracts/contracts/teams-bot";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, sql, or, exists, notExists } from "drizzle-orm";
 
 import { env } from "../../lib/env";
 import { internalApiBaseUrl } from "../../lib/internal-api-url";
 import { logger } from "../../lib/log";
 import { teamsBotDisplayName } from "../../lib/teams-official-app";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import {
   createTeamsPersonalConversation,
   sendTeamsMessageReply,
   type TeamsAdaptiveCard,
 } from "../external/teams-bot-client";
+import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
+import { isUniqueViolation } from "../../lib/pg-errors";
+import { settle } from "../utils";
 import { nowDate } from "../../lib/time";
 
 type TeamsInstallation = typeof teamsOrgInstallations.$inferSelect;
@@ -199,154 +204,300 @@ export function buildTeamsConnectUrlForActivity(args: {
   });
 }
 
-async function upsertTeamsConnection(
-  writeDb: Db,
-  args: {
-    readonly teamsUserId?: string;
-    readonly teamsAadObjectId?: string;
-    readonly teamsTenantId: string;
-    readonly userId: string;
-    readonly teamsUserDisplayName?: string;
-    readonly teamsUserPrincipalName?: string;
-  },
-): Promise<string> {
-  if (!args.teamsUserId && !args.teamsAadObjectId) {
-    throw new Error("Teams connection requires a Teams user identity");
-  }
+const identityConflictMessage =
+  "This Teams identity is already connected to a different account or identity. Please use the original account.";
 
-  if (args.teamsAadObjectId) {
-    const [existingByAad] = await writeDb
-      .select({ id: teamsOrgConnections.id })
-      .from(teamsOrgConnections)
-      .where(
-        and(
-          eq(teamsOrgConnections.teamsAadObjectId, args.teamsAadObjectId),
-          eq(teamsOrgConnections.teamsTenantId, args.teamsTenantId),
-        ),
+function teamsConnectionValues(
+  args: ConnectTeamsInstallationArgs,
+  createdAt: Date,
+) {
+  return {
+    id: sql`${randomUUID()}`.mapWith(teamsOrgConnections.id).as("id"),
+    teamsUserId: sql`${args.teamsUserId ?? null}`
+      .mapWith(nullableDriverValueDecoder(teamsOrgConnections.teamsUserId))
+      .as("teams_user_id"),
+    teamsAadObjectId: sql`${args.teamsAadObjectId ?? null}`
+      .mapWith(nullableDriverValueDecoder(teamsOrgConnections.teamsAadObjectId))
+      .as("teams_aad_object_id"),
+    teamsTenantId: sql`${args.tenantId}`
+      .mapWith(teamsOrgConnections.teamsTenantId)
+      .as("teams_tenant_id"),
+    userId: sql`${args.userId}`
+      .mapWith(teamsOrgConnections.userId)
+      .as("user_id"),
+    teamsUserDisplayName: sql`${args.teamsUserDisplayName ?? null}`
+      .mapWith(
+        nullableDriverValueDecoder(teamsOrgConnections.teamsUserDisplayName),
       )
-      .limit(1);
+      .as("teams_user_display_name"),
+    teamsUserPrincipalName: sql`${args.teamsUserPrincipalName ?? null}`
+      .mapWith(
+        nullableDriverValueDecoder(teamsOrgConnections.teamsUserPrincipalName),
+      )
+      .as("teams_user_principal_name"),
+    dmWelcomeSent: sql`false`
+      .mapWith(teamsOrgConnections.dmWelcomeSent)
+      .as("dm_welcome_sent"),
+    createdAt: sql`${sql.param(createdAt, teamsOrgConnections.createdAt)}`
+      .mapWith(teamsOrgConnections.createdAt)
+      .as("created_at"),
+    updatedAt: sql`${sql.param(createdAt, teamsOrgConnections.updatedAt)}`
+      .mapWith(teamsOrgConnections.updatedAt)
+      .as("updated_at"),
+  };
+}
 
-    if (existingByAad) {
-      if (args.teamsUserId) {
-        await writeDb
-          .update(teamsOrgConnections)
-          .set({
-            teamsUserId: args.teamsUserId,
-            teamsUserDisplayName: args.teamsUserDisplayName,
-            teamsUserPrincipalName: args.teamsUserPrincipalName,
-            updatedAt: nowDate(),
-          })
-          .where(eq(teamsOrgConnections.id, existingByAad.id));
-      }
-      return existingByAad.id;
-    }
-  }
-
-  if (args.teamsUserId) {
-    const [existingByTeamsUser] = await writeDb
-      .select({ id: teamsOrgConnections.id })
-      .from(teamsOrgConnections)
-      .where(
-        and(
+function compatibleTeamsIdentity(args: ConnectTeamsInstallationArgs) {
+  return and(
+    eq(teamsOrgConnections.userId, args.userId),
+    args.teamsUserId
+      ? or(
+          isNull(teamsOrgConnections.teamsUserId),
           eq(teamsOrgConnections.teamsUserId, args.teamsUserId),
-          eq(teamsOrgConnections.teamsTenantId, args.teamsTenantId),
-        ),
-      )
-      .limit(1);
+        )
+      : undefined,
+    args.teamsAadObjectId
+      ? or(
+          isNull(teamsOrgConnections.teamsAadObjectId),
+          eq(teamsOrgConnections.teamsAadObjectId, args.teamsAadObjectId),
+        )
+      : undefined,
+  );
+}
 
-    if (existingByTeamsUser) {
-      await writeDb
+/** Installation and identity writes commit together; unique conflicts roll both back. */
+const commitTeamsBinding$ = command(
+  async (
+    { set },
+    args: ConnectTeamsInstallationArgs,
+    installation: TeamsInstallation | undefined,
+    connectionId: string | undefined,
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    const installed = db.$with("teams_binding_installation").as(
+      installation
+        ? db
+            .update(teamsOrgInstallations)
+            .set({
+              ...installationMetadataPatch({
+                tenantName: args.tenantName,
+                teamId: args.teamId,
+                teamName: args.teamName,
+                serviceUrl: args.serviceUrl,
+              }),
+              orgId: args.orgId,
+              installedByUserId: installation.orgId
+                ? installation.installedByUserId
+                : args.userId,
+            })
+            .where(
+              and(
+                eq(teamsOrgInstallations.teamsTenantId, args.tenantId),
+                or(
+                  eq(teamsOrgInstallations.orgId, args.orgId),
+                  args.orgRole === "admin"
+                    ? isNull(teamsOrgInstallations.orgId)
+                    : undefined,
+                ),
+              ),
+            )
+            .returning()
+        : db
+            .insert(teamsOrgInstallations)
+            .values({
+              teamsTenantId: args.tenantId,
+              teamsTenantName: args.tenantName,
+              orgId: args.orgId,
+              installedByUserId: args.userId,
+            })
+            .returning(),
+    );
+    const updated = db.$with("teams_binding_updated").as(
+      db
         .update(teamsOrgConnections)
         .set({
-          teamsAadObjectId: args.teamsAadObjectId,
+          teamsUserId: sql`coalesce(${teamsOrgConnections.teamsUserId}, ${args.teamsUserId ?? null})`,
+          teamsAadObjectId: sql`coalesce(${teamsOrgConnections.teamsAadObjectId}, ${args.teamsAadObjectId ?? null})`,
           teamsUserDisplayName: args.teamsUserDisplayName,
           teamsUserPrincipalName: args.teamsUserPrincipalName,
           updatedAt: nowDate(),
         })
-        .where(eq(teamsOrgConnections.id, existingByTeamsUser.id));
-      return existingByTeamsUser.id;
+        .where(
+          and(
+            connectionId
+              ? eq(teamsOrgConnections.id, connectionId)
+              : sql`false`,
+            compatibleTeamsIdentity(args),
+            exists(
+              db.select({ tenantId: installed.teamsTenantId }).from(installed),
+            ),
+          ),
+        )
+        .returning({ id: teamsOrgConnections.id }),
+    );
+    const createdAt = nowDate();
+    const inserted = db.$with("teams_binding_inserted").as(
+      db
+        .insert(teamsOrgConnections)
+        .select(
+          db
+            .select(teamsConnectionValues(args, createdAt))
+            .from(installed)
+            .where(notExists(db.select({ id: updated.id }).from(updated))),
+        )
+        .returning({ id: teamsOrgConnections.id }),
+    );
+    // Do not swallow a conflict with DO NOTHING: a rejected identity must roll
+    // back the installation claim and metadata in this same statement.
+    const result = await settle(
+      db
+        .with(installed, updated, inserted)
+        .select({
+          connectionId: sql`coalesce(${updated.id}, ${inserted.id})`.mapWith(
+            teamsOrgConnections.id,
+          ),
+          installation: {
+            teamsTenantId: installed.teamsTenantId,
+            teamsTenantName: installed.teamsTenantName,
+            teamsTeamId: installed.teamsTeamId,
+            teamsTeamName: installed.teamsTeamName,
+            teamsAppId: installed.teamsAppId,
+            botId: installed.botId,
+            botName: installed.botName,
+            serviceUrl: installed.serviceUrl,
+            orgId: installed.orgId,
+            installedByUserId: installed.installedByUserId,
+            createdAt: installed.createdAt,
+            updatedAt: installed.updatedAt,
+          },
+        })
+        .from(installed)
+        .leftJoin(updated, sql`true`)
+        .leftJoin(inserted, sql`true`),
+    );
+    signal.throwIfAborted();
+    return result;
+  },
+);
+
+function conflictsWithTeamsIdentity(
+  existing: typeof teamsOrgConnections.$inferSelect,
+  args: ConnectTeamsInstallationArgs,
+): boolean {
+  return Boolean(
+    existing.userId !== args.userId ||
+    (args.teamsUserId &&
+      existing.teamsUserId &&
+      args.teamsUserId !== existing.teamsUserId) ||
+    (args.teamsAadObjectId &&
+      existing.teamsAadObjectId &&
+      args.teamsAadObjectId !== existing.teamsAadObjectId),
+  );
+}
+
+const persistTeamsBinding$ = command(
+  async (
+    { set },
+    args: ConnectTeamsInstallationArgs,
+    installation: TeamsInstallation | undefined,
+    signal: AbortSignal,
+  ): Promise<TeamsPrepareInstallResult> => {
+    if (!args.teamsUserId && !args.teamsAadObjectId) {
+      throw new Error("Teams connection requires a Teams user identity");
     }
-  }
-
-  const [connection] = await writeDb
-    .insert(teamsOrgConnections)
-    .values({
-      teamsUserId: args.teamsUserId,
-      teamsAadObjectId: args.teamsAadObjectId,
-      teamsTenantId: args.teamsTenantId,
-      userId: args.userId,
-      teamsUserDisplayName: args.teamsUserDisplayName,
-      teamsUserPrincipalName: args.teamsUserPrincipalName,
-    })
-    .onConflictDoNothing()
-    .returning({ id: teamsOrgConnections.id });
-
-  if (connection) {
-    return connection.id;
-  }
-
-  if (args.teamsAadObjectId) {
-    const [existingByAad] = await writeDb
-      .select({ id: teamsOrgConnections.id })
+    const db = set(writeDb$);
+    const identities = await db
+      .select()
       .from(teamsOrgConnections)
       .where(
         and(
-          eq(teamsOrgConnections.teamsAadObjectId, args.teamsAadObjectId),
-          eq(teamsOrgConnections.teamsTenantId, args.teamsTenantId),
+          eq(teamsOrgConnections.teamsTenantId, args.tenantId),
+          or(
+            args.teamsUserId
+              ? eq(teamsOrgConnections.teamsUserId, args.teamsUserId)
+              : undefined,
+            args.teamsAadObjectId
+              ? eq(teamsOrgConnections.teamsAadObjectId, args.teamsAadObjectId)
+              : undefined,
+          ),
+        ),
+      );
+    signal.throwIfAborted();
+    const [existing] = identities;
+    if (
+      identities.length > 1 ||
+      (existing && conflictsWithTeamsIdentity(existing, args))
+    ) {
+      return { kind: "forbidden", message: identityConflictMessage };
+    }
+
+    const result = await set(
+      commitTeamsBinding$,
+      args,
+      installation,
+      existing?.id,
+      signal,
+    );
+    if (result.ok) {
+      const [bound] = result.value;
+      return bound
+        ? { kind: "ok", ...bound }
+        : { kind: "forbidden", message: orgMismatchMessage };
+    }
+    if (
+      ![
+        "idx_teams_org_connections_user_tenant",
+        "idx_teams_org_connections_aad_tenant",
+        "teams_org_installations_pkey",
+        "idx_teams_org_installations_org_unique",
+      ].some((constraint) => {
+        return isUniqueViolation(result.error, constraint);
+      })
+    ) {
+      throw result.error;
+    }
+    // A fresh snapshot resolves an insert race only when every supplied identity
+    // belongs to this caller in the requested org. Never transfer the winner.
+    const [winner] = await db
+      .select({
+        connectionId: teamsOrgConnections.id,
+        installation: teamsOrgInstallations,
+      })
+      .from(teamsOrgConnections)
+      .innerJoin(
+        teamsOrgInstallations,
+        eq(
+          teamsOrgInstallations.teamsTenantId,
+          teamsOrgConnections.teamsTenantId,
         ),
       )
-      .limit(1);
-    if (existingByAad) {
-      return existingByAad.id;
-    }
-  }
-
-  if (args.teamsUserId) {
-    const [existingByTeamsUser] = await writeDb
-      .select({ id: teamsOrgConnections.id })
-      .from(teamsOrgConnections)
       .where(
         and(
-          eq(teamsOrgConnections.teamsUserId, args.teamsUserId),
-          eq(teamsOrgConnections.teamsTenantId, args.teamsTenantId),
+          eq(teamsOrgConnections.userId, args.userId),
+          eq(teamsOrgConnections.teamsTenantId, args.tenantId),
+          eq(teamsOrgInstallations.orgId, args.orgId),
+          args.teamsUserId
+            ? eq(teamsOrgConnections.teamsUserId, args.teamsUserId)
+            : undefined,
+          args.teamsAadObjectId
+            ? eq(teamsOrgConnections.teamsAadObjectId, args.teamsAadObjectId)
+            : undefined,
         ),
       )
       .limit(1);
-    if (existingByTeamsUser) {
-      return existingByTeamsUser.id;
-    }
-  }
+    signal.throwIfAborted();
+    return winner
+      ? { kind: "ok", ...winner }
+      : { kind: "forbidden", message: identityConflictMessage };
+  },
+);
 
-  throw new Error("Teams connection upsert did not return a row");
-}
-
-interface TeamsEnvironment {
-  readonly requiredSecrets: readonly string[];
-  readonly requiredVars: readonly string[];
-  readonly missingSecrets: readonly string[];
-  readonly missingVars: readonly string[];
-}
+type TeamsEnvironment = NonNullable<TeamsConnectStatus["environment"]>;
 
 interface ConnectedTeamsStatusFields {
   readonly defaultAgentName: string | null;
   readonly environment: TeamsEnvironment;
-}
-
-interface TeamsConnectStatus {
-  readonly isInstalled: boolean;
-  readonly isConnected: boolean;
-  readonly isAdmin: boolean;
-  readonly installUrl?: string | null;
-  readonly connectUrl?: string | null;
-  readonly tenantId?: string | null;
-  readonly tenantName?: string | null;
-  readonly teamId?: string | null;
-  readonly teamName?: string | null;
-  readonly botName?: string | null;
-  readonly defaultAgentName?: string | null;
-  readonly permissionMismatch?: boolean | null;
-  readonly reinstallUrl?: string | null;
-  readonly environment?: TeamsEnvironment;
 }
 
 function emptyTeamsEnvironment(): TeamsEnvironment {
@@ -363,8 +514,11 @@ function inactiveTeamsStatus(args: {
   readonly orgId: string;
   readonly userId: string;
   readonly isAdmin: boolean;
+  readonly linkedAccounts: NonNullable<TeamsConnectStatus["linkedAccounts"]>;
 }): TeamsConnectStatus {
   return {
+    linkedAccounts: args.linkedAccounts,
+    pendingInstallation: Boolean(args.installation),
     isInstalled: false,
     isConnected: false,
     isAdmin: args.isAdmin,
@@ -382,7 +536,7 @@ function teamsPermissionStatus(args: {
   readonly installation: TeamsInstallation;
   readonly isAdmin: boolean;
 }): {
-  readonly permissionMismatch?: boolean | null;
+  readonly permissionMismatch?: boolean;
   readonly reinstallUrl?: string | null;
 } {
   if (!args.isAdmin) {
@@ -412,8 +566,11 @@ function activeTeamsStatus(args: {
   readonly userId: string;
   readonly isAdmin: boolean;
   readonly connectedFields: ConnectedTeamsStatusFields | null;
+  readonly linkedAccounts: NonNullable<TeamsConnectStatus["linkedAccounts"]>;
 }): TeamsConnectStatus {
   const status: TeamsConnectStatus = {
+    linkedAccounts: args.linkedAccounts,
+    pendingInstallation: false,
     isInstalled: true,
     isConnected: Boolean(args.connection),
     isAdmin: args.isAdmin,
@@ -460,20 +617,30 @@ export function teamsConnectStatus(
       .where(eq(teamsOrgInstallations.orgId, args.orgId))
       .limit(1);
 
+    const connections = installation
+      ? await db
+          .select()
+          .from(teamsOrgConnections)
+          .where(
+            and(
+              eq(teamsOrgConnections.userId, args.userId),
+              eq(teamsOrgConnections.teamsTenantId, installation.teamsTenantId),
+            ),
+          )
+      : [];
+    const linkedAccounts = connections.map((connection) => {
+      return {
+        tenantId: connection.teamsTenantId,
+        teamsUserId: connection.teamsUserId,
+        teamsAadObjectId: connection.teamsAadObjectId,
+        displayName: connection.teamsUserDisplayName,
+        userPrincipalName: connection.teamsUserPrincipalName,
+      };
+    });
     if (!installation || !isTeamsInstallationActive(installation)) {
-      return inactiveTeamsStatus({ ...args, installation });
+      return inactiveTeamsStatus({ ...args, installation, linkedAccounts });
     }
-
-    const [connection] = await db
-      .select()
-      .from(teamsOrgConnections)
-      .where(
-        and(
-          eq(teamsOrgConnections.userId, args.userId),
-          eq(teamsOrgConnections.teamsTenantId, installation.teamsTenantId),
-        ),
-      )
-      .limit(1);
+    const [connection] = connections;
     let connectedFields: ConnectedTeamsStatusFields | null = null;
     if (connection) {
       const [metadata] = await db
@@ -502,6 +669,7 @@ export function teamsConnectStatus(
       installation,
       connection,
       connectedFields,
+      linkedAccounts,
     });
   });
 }
@@ -685,6 +853,7 @@ const finalizeTeamsConnection$ = command(
   async (
     { set },
     args: {
+      readonly connectionId: string;
       readonly connectArgs: ConnectTeamsInstallationArgs;
       readonly installation: TeamsInstallation;
       readonly role: "admin" | "member";
@@ -692,16 +861,7 @@ const finalizeTeamsConnection$ = command(
     signal: AbortSignal,
   ): Promise<Extract<TeamsConnectResult, { readonly kind: "ok" }>> => {
     const { connectArgs } = args;
-    const writeDb = set(writeDb$);
-    const connectionId = await upsertTeamsConnection(writeDb, {
-      teamsUserId: connectArgs.teamsUserId,
-      teamsAadObjectId: connectArgs.teamsAadObjectId,
-      teamsTenantId: connectArgs.tenantId,
-      userId: connectArgs.userId,
-      teamsUserDisplayName: connectArgs.teamsUserDisplayName,
-      teamsUserPrincipalName: connectArgs.teamsUserPrincipalName,
-    });
-    signal.throwIfAborted();
+    const connectionId = args.connectionId;
 
     await set(
       notifyTeamsConnect$,
@@ -763,41 +923,7 @@ export const prepareTeamsInstallation$ = command(
       return { kind: "forbidden", message: orgMismatchMessage };
     }
 
-    const [installation] = await writeDb
-      .insert(teamsOrgInstallations)
-      .values({
-        teamsTenantId: args.tenantId,
-        teamsTenantName: args.tenantName,
-        orgId: args.orgId,
-        installedByUserId: args.userId,
-      })
-      .onConflictDoUpdate({
-        target: teamsOrgInstallations.teamsTenantId,
-        set: {
-          orgId: args.orgId,
-          teamsTenantName: sql`coalesce(excluded.teams_tenant_name, ${teamsOrgInstallations.teamsTenantName})`,
-          installedByUserId: args.userId,
-          updatedAt: nowDate(),
-        },
-      })
-      .returning();
-    signal.throwIfAborted();
-
-    if (!installation) {
-      throw new Error("Failed to prepare Teams installation");
-    }
-
-    const connectionId = await upsertTeamsConnection(writeDb, {
-      teamsUserId: args.teamsUserId,
-      teamsAadObjectId: args.teamsAadObjectId,
-      teamsTenantId: args.tenantId,
-      userId: args.userId,
-      teamsUserDisplayName: args.teamsUserDisplayName,
-      teamsUserPrincipalName: args.teamsUserPrincipalName,
-    });
-    signal.throwIfAborted();
-
-    return { kind: "ok", connectionId, installation };
+    return set(persistTeamsBinding$, args, existingForTenant, signal);
   },
 );
 
@@ -819,88 +945,22 @@ export const connectTeamsInstallation$ = command(
       return { kind: "not_found", message: installationNotFoundMessage };
     }
 
-    if (installation.orgId === null) {
-      if (args.orgRole !== "admin") {
-        return { kind: "forbidden", message: adminRequiredMessage };
-      }
-
-      const patch = installationMetadataPatch({
-        tenantName: args.tenantName,
-        teamId: args.teamId,
-        teamName: args.teamName,
-        serviceUrl: args.serviceUrl,
-      });
-      await writeDb
-        .update(teamsOrgInstallations)
-        .set(patch)
-        .where(eq(teamsOrgInstallations.teamsTenantId, args.tenantId));
-      signal.throwIfAborted();
-
-      const [updated] = await writeDb
-        .update(teamsOrgInstallations)
-        .set({
-          orgId: args.orgId,
-          installedByUserId: args.userId,
-          updatedAt: nowDate(),
-        })
-        .where(
-          and(
-            eq(teamsOrgInstallations.teamsTenantId, args.tenantId),
-            isNull(teamsOrgInstallations.orgId),
-          ),
-        )
-        .returning();
-      signal.throwIfAborted();
-
-      let boundInstallation = updated;
-      if (!boundInstallation) {
-        const [existing] = await writeDb
-          .select()
-          .from(teamsOrgInstallations)
-          .where(eq(teamsOrgInstallations.teamsTenantId, args.tenantId))
-          .limit(1);
-        signal.throwIfAborted();
-        if (!existing) {
-          return { kind: "not_found", message: installationNotFoundMessage };
-        }
-        if (existing.orgId !== args.orgId) {
-          return { kind: "forbidden", message: orgMismatchMessage };
-        }
-        boundInstallation = existing;
-      }
-
-      return set(
-        finalizeTeamsConnection$,
-        {
-          connectArgs: args,
-          installation: boundInstallation,
-          role: "admin",
-        },
-        signal,
-      );
+    if (installation.orgId === null && args.orgRole !== "admin") {
+      return { kind: "forbidden", message: adminRequiredMessage };
     }
-
-    if (installation.orgId !== args.orgId) {
+    if (installation.orgId !== null && installation.orgId !== args.orgId) {
       return { kind: "forbidden", message: orgMismatchMessage };
     }
-
-    const patch = installationMetadataPatch({
-      tenantName: args.tenantName,
-      teamId: args.teamId,
-      teamName: args.teamName,
-      serviceUrl: args.serviceUrl,
-    });
-    await writeDb
-      .update(teamsOrgInstallations)
-      .set(patch)
-      .where(eq(teamsOrgInstallations.teamsTenantId, args.tenantId));
-    signal.throwIfAborted();
-
+    const bound = await set(persistTeamsBinding$, args, installation, signal);
+    if (bound.kind === "forbidden") {
+      return bound;
+    }
     return set(
       finalizeTeamsConnection$,
       {
+        connectionId: bound.connectionId,
         connectArgs: args,
-        installation,
+        installation: bound.installation,
         role: args.orgRole,
       },
       signal,
