@@ -4,12 +4,7 @@ import type {
 } from "@okouai/api-contracts/contracts/trpc-contract";
 import type { AuthOptions } from "ably";
 import type { platformRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
-import {
-  detach,
-  Reason,
-  throwIfAbort,
-  waitForOperation,
-} from "../signals/utils.ts";
+import { detach, Reason, throwIfAbort } from "../signals/utils.ts";
 import { accept } from "./accept.ts";
 import type { AblyAuthDiagnosticScope } from "./ably-auth-diagnostics.ts";
 import {
@@ -43,7 +38,7 @@ type AuthCallback = NonNullable<AuthOptions["authCallback"]>;
  * argument — both patterns are restricted inside `signals/`.
  *
  * Each invocation has a five-second budget shared by token acquisition and
- * HTTP. Stop waiting even if a dependency cannot cancel its underlying work.
+ * HTTP through the existing cancellation-aware token and request pipeline.
  * Report a deadline failure to Ably before its own ten-second timeout, but
  * never invoke its callback after the connection's root signal aborts.
  */
@@ -72,11 +67,9 @@ export function createAblyAuthCallback(
         try {
           signal.throwIfAborted();
           const client = createClient(invocation);
-          const res = await waitForOperation(
-            accept(
-              client.create({ body: {}, fetchOptions: { signal } }),
-              [200],
-            ),
+          const res = await accept(
+            client.create({ body: {}, fetchOptions: { signal } }),
+            [200],
             signal,
           );
           recordAuthDiagnostic({

@@ -10,6 +10,7 @@ import {
   createDeferredPromise,
   resetSignal,
   settle,
+  waitForOperation,
 } from "../../signals/utils.ts";
 import { createAuthedContractClient } from "../../signals/api-client-base.ts";
 import { mockNow, now } from "../time.ts";
@@ -175,7 +176,9 @@ test("Auth deadline rejects the SDK request and ignores a late page token before
       throw new Error("Token acquisition requires the auth signal");
     }
     tokenStarted.resolve(signal);
-    return token.promise;
+    // Match the production Worker provider: stop waiting on cancellation
+    // even though the page can still deliver its token later.
+    return waitForOperation(token.promise, signal);
   });
   const result = settle(ably.auth.requestToken());
   const signal = await tokenStarted.promise;
