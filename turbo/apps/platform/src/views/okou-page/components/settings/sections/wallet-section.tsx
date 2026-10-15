@@ -51,11 +51,7 @@ export function WalletSection() {
         </div>
         <Button
           variant={shouldDisconnect ? "neutral" : "default"}
-          className={
-            shouldDisconnect
-              ? "shrink-0"
-              : "shrink-0 bg-foreground text-background hover:bg-foreground-hover active:bg-foreground-pressed"
-          }
+          className="shrink-0"
           pending={busy}
           disabled={
             connection.state !== "hasData" || busy || !signal || signal.aborted

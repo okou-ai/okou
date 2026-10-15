@@ -1,9 +1,8 @@
 import type { UsagePackManagementResponse } from "@okouai/api-contracts/contracts/billing";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../external/feature-switch.ts";
 import {
   observeWalletConnection$,
   refreshWalletConnection$,
+  walletSettingsEnabled$,
 } from "./wallet.ts";
 import { command, computed, state } from "ccstate";
 import { isOrgAdmin$ } from "../../org.ts";
@@ -271,7 +270,7 @@ export const setSettingsDialogOpen$ = command(
       { once: true },
     );
     set(internalSettingsDialogSignal$, modalSignal);
-    if (get(featureSwitch$)[FeatureSwitchKey.LinkWallet]) {
+    if (get(walletSettingsEnabled$)) {
       set(observeWalletConnection$, modalSignal);
     }
     set(internalSettingsDialogSessionActive$, true);

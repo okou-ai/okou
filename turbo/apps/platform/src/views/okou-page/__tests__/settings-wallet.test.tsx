@@ -25,7 +25,9 @@ async function button(text: string) {
   });
 }
 
-async function openWallet(enabled = true) {
+async function openWallet(
+  featureSwitches: Partial<Record<FeatureSwitchKey, boolean>> = {},
+) {
   context.mocks.data.org({ id: "org_1", name: "Test Org", role: "member" });
   await setupPage({
     context,
@@ -37,7 +39,11 @@ async function openWallet(enabled = true) {
         memberships: [{ id: "org_1" }],
       },
     },
-    featureSwitches: { [FeatureSwitchKey.LinkWallet]: enabled },
+    featureSwitches: {
+      [FeatureSwitchKey.LinkWallet]: true,
+      [FeatureSwitchKey.WalletSettings]: true,
+      ...featureSwitches,
+    },
   });
 }
 
@@ -96,19 +102,23 @@ test("lets a member connect their workspace wallet and disconnect after consent 
   await expect(button("Connect")).resolves.toBeEnabled();
 });
 
-test("does not show Wallet or fetch its connection when the feature is disabled", async () => {
-  context.mocks.api(walletUserContract.status, ({ never }) => {
-    return never();
-  });
-  await openWallet(false);
-  await screen.findByRole("dialog");
-  expect(
-    queryAllByRoleFast("button").some((element) => {
-      return element.textContent?.trim() === "Wallet";
-    }),
-  ).toBeFalsy();
-  expect(screen.queryByText("Link")).not.toBeInTheDocument();
-});
+test.each([FeatureSwitchKey.LinkWallet, FeatureSwitchKey.WalletSettings])(
+  "hides Wallet and its deep link without fetching or subscribing when %s is disabled",
+  async (feature) => {
+    context.mocks.api(walletUserContract.status, ({ never }) => {
+      return never();
+    });
+    await openWallet({ [feature]: false });
+    await screen.findByRole("dialog");
+    expect(
+      queryAllByRoleFast("button").some((element) => {
+        return element.textContent?.trim() === "Wallet";
+      }),
+    ).toBeFalsy();
+    expect(screen.queryByText("Link")).not.toBeInTheDocument();
+    expect(context.mocks.ably.hasSubscription("wallet:changed")).toBeFalsy();
+  },
+);
 
 test("updates the wallet after a workspace notification", async () => {
   let connected = false;

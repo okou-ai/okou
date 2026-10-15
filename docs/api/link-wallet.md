@@ -3,8 +3,11 @@
 A Link authorization belongs to one workspace and one user. All of that user's
 active, user-initiated web-chat runs in that workspace use the same authorization.
 Other users and workspaces remain isolated. Settings > Billing & pricing > Wallet
-is available to members and admins behind `LinkWallet` and manages the current
-user's connection through session-only endpoints.
+is available to members and admins when both `LinkWallet` and `WalletSettings`
+are enabled, and manages the current user's connection through session-only
+endpoints. `WalletSettings` (`walletSettings`) defaults to staff workspaces only;
+turning it off hides the menu and its deep link and skips the Settings wallet
+subscription. Session and run wallet endpoints retain the `LinkWallet` gate.
 
 Connection management does not permit spending. Purchase endpoints still require
 an active interactive run with `wallet:write`; every purchase needs separate Link

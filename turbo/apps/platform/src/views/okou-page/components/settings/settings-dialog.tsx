@@ -42,6 +42,7 @@ import {
   type SettingsSection,
 } from "../../../../signals/okou-page/settings/settings-dialog.ts";
 import { billingPlansStandalone$ } from "../../../../signals/okou-page/settings/workspace-settings-state.ts";
+import { walletSettingsEnabled$ } from "../../../../signals/okou-page/settings/wallet.ts";
 import { isOrgAdmin$ } from "../../../../signals/org.ts";
 import { BillingSection } from "./sections/billing-section.tsx";
 import { ChatSection } from "./sections/chat-section.tsx";
@@ -154,7 +155,7 @@ function SettingsDialog({
   const isAdminLoadable = useLoadable(isOrgAdmin$);
   const isAdmin =
     isAdminLoadable.state === "hasData" ? isAdminLoadable.data : false;
-  const showWallet = features[FeatureSwitchKey.LinkWallet] ?? false;
+  const showWallet = useGet(walletSettingsEnabled$);
   const showDebug = features[FeatureSwitchKey.OkouDebug] ?? false;
 
   const sectionMeta = {
