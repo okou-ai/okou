@@ -1655,17 +1655,30 @@ struct GuestStageWrite {
     bytes: Bytes,
 }
 
+impl GuestStageWrite {
+    fn as_file_entry(&self) -> WriteFileEntry<'_> {
+        WriteFileEntry {
+            path: self.guest_path.as_str(),
+            content: self.bytes.as_ref(),
+        }
+    }
+}
+
 #[derive(Default)]
 struct GuestStageBatch {
     writes: Vec<GuestStageWrite>,
     content_bytes: usize,
 }
 
+struct FreshGuestStageEntry {
+    group: CacheTargetGroup,
+    write: GuestStageWrite,
+    permit: OwnedSemaphorePermit,
+}
+
 #[derive(Default)]
 struct FreshGuestStageBatch {
-    groups: Vec<CacheTargetGroup>,
-    writes: Vec<GuestStageWrite>,
-    permits: Vec<OwnedSemaphorePermit>,
+    entries: Vec<FreshGuestStageEntry>,
     content_bytes: usize,
 }
 
@@ -1962,15 +1975,12 @@ impl GuestWriteLocks {
     async fn write_files(
         &self,
         sandbox: &dyn Sandbox,
-        writes: &[GuestStageWrite],
+        writes: &[WriteFileEntry<'_>],
     ) -> RunnerResult<()> {
         if writes.is_empty() {
             return Ok(());
         }
-        let mut paths = writes
-            .iter()
-            .map(|write| write.guest_path.as_str())
-            .collect::<Vec<_>>();
+        let mut paths = writes.iter().map(|write| write.path).collect::<Vec<_>>();
         paths.sort_unstable();
         paths.dedup();
         let locks = {
@@ -1990,14 +2000,7 @@ impl GuestWriteLocks {
         for lock in &locks {
             guards.push(lock.lock().await);
         }
-        let entries = writes
-            .iter()
-            .map(|write| WriteFileEntry {
-                path: write.guest_path.as_str(),
-                content: write.bytes.as_ref(),
-            })
-            .collect::<Vec<_>>();
-        sandbox.write_files(&entries).await?;
+        sandbox.write_files(writes).await?;
         Ok(())
     }
 }
@@ -2023,26 +2026,19 @@ impl GuestStageBatch {
 
 impl FreshGuestStageBatch {
     fn should_flush_before(&self, write: &GuestStageWrite) -> bool {
-        !self.writes.is_empty()
-            && (self.writes.len() >= GUEST_STAGE_BATCH_MAX_FILES
+        !self.entries.is_empty()
+            && (self.entries.len() >= GUEST_STAGE_BATCH_MAX_FILES
                 || self.content_bytes.saturating_add(write.bytes.len())
                     > GUEST_STAGE_BATCH_MAX_BYTES)
     }
 
-    fn push(
-        &mut self,
-        group: CacheTargetGroup,
-        write: GuestStageWrite,
-        permit: OwnedSemaphorePermit,
-    ) {
-        self.content_bytes += write.bytes.len();
-        self.groups.push(group);
-        self.writes.push(write);
-        self.permits.push(permit);
+    fn push(&mut self, entry: FreshGuestStageEntry) {
+        self.content_bytes += entry.write.bytes.len();
+        self.entries.push(entry);
     }
 
     fn should_flush_after_push(&self) -> bool {
-        self.writes.len() >= GUEST_STAGE_BATCH_MAX_FILES
+        self.entries.len() >= GUEST_STAGE_BATCH_MAX_FILES
             || self.content_bytes >= GUEST_STAGE_BATCH_MAX_BYTES
     }
 }
@@ -2099,10 +2095,14 @@ async fn flush_guest_stage_batch(
         return Ok(());
     }
     let started_at = Instant::now();
-    let result = stage
-        .guest_writes
-        .write_files(stage.sandbox, &batch.writes)
-        .await;
+    let result = {
+        let writes = batch
+            .writes
+            .iter()
+            .map(GuestStageWrite::as_file_entry)
+            .collect::<Vec<_>>();
+        stage.guest_writes.write_files(stage.sandbox, &writes).await
+    };
     stage.metrics.record_write_result(
         stage.telemetry,
         STORAGE_CACHE_STAGE_BATCH_WRITE,
@@ -2135,14 +2135,18 @@ async fn flush_fresh_guest_stage_batch(
     stage: &mut GuestStageRecorder<'_>,
     outcomes: &mut Vec<(CacheTargetGroup, TargetOutcome)>,
 ) -> RunnerResult<()> {
-    if batch.writes.is_empty() {
+    if batch.entries.is_empty() {
         return Ok(());
     }
     let started_at = Instant::now();
-    let result = stage
-        .guest_writes
-        .write_files(stage.sandbox, &batch.writes)
-        .await;
+    let result = {
+        let writes = batch
+            .entries
+            .iter()
+            .map(|entry| entry.write.as_file_entry())
+            .collect::<Vec<_>>();
+        stage.guest_writes.write_files(stage.sandbox, &writes).await
+    };
     stage.metrics.record_write_result(
         stage.telemetry,
         STORAGE_CACHE_STAGE_BATCH_WRITE,
@@ -2150,7 +2154,15 @@ async fn flush_fresh_guest_stage_batch(
         &result,
     );
     result?;
-    for group in batch.groups.drain(..) {
+    // Moving groups into outcomes must not release capacity while other
+    // entries in this successful batch still need their bookkeeping.
+    let mut retained_permits = Vec::with_capacity(batch.entries.len());
+    for FreshGuestStageEntry {
+        group,
+        write,
+        permit,
+    } in batch.entries.drain(..)
+    {
         stage.telemetry.record(
             STORAGE_CACHE_FRESH_DELIVERY_STAGED,
             Duration::ZERO,
@@ -2158,9 +2170,10 @@ async fn flush_fresh_guest_stage_batch(
             None,
         );
         outcomes.push((group, TargetOutcome::Hit));
+        drop(write);
+        retained_permits.push(permit);
     }
-    batch.writes.clear();
-    batch.permits.clear();
+    drop(retained_permits);
     batch.content_bytes = 0;
     Ok(())
 }
@@ -2192,7 +2205,11 @@ async fn stage_fresh_archives(
         if batch.should_flush_before(&write) {
             flush_fresh_guest_stage_batch(&mut batch, &mut stage, &mut outcomes).await?;
         }
-        batch.push(group, write, permit);
+        batch.push(FreshGuestStageEntry {
+            group,
+            write,
+            permit,
+        });
         if batch.should_flush_after_push() {
             flush_fresh_guest_stage_batch(&mut batch, &mut stage, &mut outcomes).await?;
         }
@@ -4353,6 +4370,7 @@ mod tests {
 
     mod archive_retries;
     mod decoded_observation;
+    mod fresh_staging;
     mod http_reuse;
     mod large_selection;
     mod phase_diagnostics;
