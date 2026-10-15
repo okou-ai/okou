@@ -80,7 +80,8 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
       expect(completed.status).toBe(200);
     }
     if (model === "gpt-6-luna") {
-      await chat.configureSubscriptionPiModel(actor);
+      // Ordinary Runs name GPT explicitly; maintenance uses its built-in route.
+      await chat.connectSubscriptionPiModel(actor);
     } else {
       await runs.ensurePersonalSubscriptionModel(actor);
     }

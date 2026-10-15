@@ -431,10 +431,9 @@ export function createChatEventsFixture(context: TestContext) {
     };
   }
 
-  async function configureSubscriptionPiModel(
+  async function connectSubscriptionPiModel(
     actor: ApiTestUser,
     options: Parameters<typeof mockCodexDeviceAuthProvider>[0] = {},
-    selectedModel: PiGptBddModel = "gpt-6-luna",
   ) {
     const oauth = mockCodexDeviceAuthProvider({
       ...options,
@@ -458,8 +457,17 @@ export function createChatEventsFixture(context: TestContext) {
     if (!("status" in completed.body) || completed.body.status !== "complete") {
       throw new Error("Expected subscription auth to complete");
     }
-    await api.updateUserModelPreference(actor, selectedModel);
     return { oauth, accountSourceId: completed.body.provider.id };
+  }
+
+  async function configureSubscriptionPiModel(
+    actor: ApiTestUser,
+    options: Parameters<typeof mockCodexDeviceAuthProvider>[0] = {},
+    selectedModel: PiGptBddModel = "gpt-6-luna",
+  ) {
+    const connected = await connectSubscriptionPiModel(actor, options);
+    await api.updateUserModelPreference(actor, selectedModel);
+    return connected;
   }
 
   async function sendChatRun(
@@ -1194,6 +1202,7 @@ export function createChatEventsFixture(context: TestContext) {
     entitledChatActor,
     entitledNativeChatActor,
     configureUserOwnedGptPiModel,
+    connectSubscriptionPiModel,
     configureSubscriptionPiModel,
     sendChatRun,
     sendChatRunAfterPick,
