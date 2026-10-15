@@ -519,54 +519,6 @@ function eventMode(event: unknown): "live" | "test" | "unknown" {
   return parsed.data.livemode ? "live" : "test";
 }
 
-async function repairMissingStripeIngressProjections(
-  db: Db,
-  accountId: string,
-  signal: AbortSignal,
-): Promise<void> {
-  const owners = await (async (): Promise<readonly StripeAutomationOwner[]> => {
-    const owners = await db
-      .selectDistinct({
-        automationId: workflowAutomations.id,
-        orgId: workflowAutomations.orgId,
-        userId: workflowAutomations.ownerUserId,
-      })
-      .from(connectors)
-      .innerJoin(
-        workflowAutomations,
-        and(
-          eq(workflowAutomations.orgId, connectors.orgId),
-          eq(workflowAutomations.ownerUserId, connectors.userId),
-        ),
-      )
-      .where(
-        and(
-          eq(connectors.connectorSlug, "stripe"),
-          eq(connectors.authMethod, "oauth"),
-          eq(connectors.externalId, accountId),
-          eq(workflowAutomations.kind, "event"),
-          eq(workflowAutomations.eventType, "stripe-invoice-paid"),
-          eq(workflowAutomations.enabled, true),
-          isNull(workflowAutomations.eventConnectorId),
-        ),
-      )
-      .orderBy(
-        asc(workflowAutomations.orgId),
-        asc(workflowAutomations.ownerUserId),
-        asc(workflowAutomations.id),
-      );
-    signal.throwIfAborted();
-    return owners;
-  })();
-  for (const owner of owners) {
-    // No row lock: the repair publishes only while the automation is still
-    // unbound (conditional UPDATE). A reprojection that binds it first wins;
-    // one that commits afterward recomputes from current rows and overwrites.
-    await repairMissingStripeInvoicePaidAutomationProjection(db, owner, signal);
-    signal.throwIfAborted();
-  }
-}
-
 function stripeMappedConnectorsReadPlan(accountId: string) {
   return {
     columns: { id: connectors.id },
@@ -1002,11 +954,56 @@ export const dispatchStripeAutomationEvent$ = command(
       });
       return { kind: "bad_request" };
     }
-    await repairMissingStripeIngressProjections(
-      db,
-      parsed.data.account,
-      signal,
-    );
+    const accountId = parsed.data.account;
+    await (async (): Promise<void> => {
+      const owners = await (async (): Promise<
+        readonly StripeAutomationOwner[]
+      > => {
+        const owners = await db
+          .selectDistinct({
+            automationId: workflowAutomations.id,
+            orgId: workflowAutomations.orgId,
+            userId: workflowAutomations.ownerUserId,
+          })
+          .from(connectors)
+          .innerJoin(
+            workflowAutomations,
+            and(
+              eq(workflowAutomations.orgId, connectors.orgId),
+              eq(workflowAutomations.ownerUserId, connectors.userId),
+            ),
+          )
+          .where(
+            and(
+              eq(connectors.connectorSlug, "stripe"),
+              eq(connectors.authMethod, "oauth"),
+              eq(connectors.externalId, accountId),
+              eq(workflowAutomations.kind, "event"),
+              eq(workflowAutomations.eventType, "stripe-invoice-paid"),
+              eq(workflowAutomations.enabled, true),
+              isNull(workflowAutomations.eventConnectorId),
+            ),
+          )
+          .orderBy(
+            asc(workflowAutomations.orgId),
+            asc(workflowAutomations.ownerUserId),
+            asc(workflowAutomations.id),
+          );
+        signal.throwIfAborted();
+        return owners;
+      })();
+      for (const owner of owners) {
+        // No row lock: the repair publishes only while the automation is still
+        // unbound (conditional UPDATE). A reprojection that binds it first wins;
+        // one that commits afterward recomputes from current rows and overwrites.
+        await repairMissingStripeInvoicePaidAutomationProjection(
+          db,
+          owner,
+          signal,
+        );
+        signal.throwIfAborted();
+      }
+    })();
     signal.throwIfAborted();
     const fanout = await set(recordStripeInvoiceFanout$, parsed.data, signal);
     signal.throwIfAborted();
@@ -1330,7 +1327,7 @@ async function repairMissingStripeDeliveryProjection(
     return;
   }
   // No row lock: the repair publishes only while the automation is still
-  // unbound (conditional UPDATE); see repairMissingStripeIngressProjections.
+  // unbound (conditional UPDATE); see dispatchStripeAutomationEvent$.
   await repairMissingStripeInvoicePaidAutomationProjection(
     db,
     {
