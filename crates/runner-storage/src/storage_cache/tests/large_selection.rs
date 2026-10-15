@@ -64,7 +64,14 @@ async fn alias_group_retains_archive_delivery_when_decoded_files_do_not_fit() {
             .collect();
         let mut plan = plan_from_entries(entries, Vec::new(), None);
         let group = CacheTargetGroup {
-            targets: (0..count)
+            representative: CacheTarget {
+                handle: ArchiveHandle::storage(0),
+                name: "name".into(),
+                version: "v1".into(),
+                archive_url: "https://storage.example/retained".into(),
+                archive_size: None,
+            },
+            additional_targets: (1..count)
                 .map(|index| CacheTarget {
                     handle: ArchiveHandle::storage(index),
                     name: "name".into(),
