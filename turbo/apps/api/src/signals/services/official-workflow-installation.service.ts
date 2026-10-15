@@ -361,13 +361,7 @@ function resolveBlueprint(
 function reconciliationParameterValues(
   blueprint: OfficialWorkflowAcceptedBlueprint,
   existing: readonly OfficialWorkflowParameterBinding[],
-  overrides: readonly OfficialWorkflowParameterBinding[],
-):
-  | {
-      readonly ok: true;
-      readonly values: ReadonlyMap<string, OfficialWorkflowParameterValue>;
-    }
-  | { readonly ok: false; readonly message: string } {
+): ReadonlyMap<string, OfficialWorkflowParameterValue> {
   const parameters = new Map(
     blueprint.parameters.map((parameter) => {
       return [parameter.key, parameter] as const;
@@ -380,52 +374,20 @@ function reconciliationParameterValues(
       values.set(binding.key, binding.value);
     }
   }
-  const overrideKeys = new Set<string>();
-  for (const binding of overrides) {
-    if (overrideKeys.has(binding.key)) {
-      return {
-        ok: false,
-        message: `Duplicate parameter binding: ${blueprint.key}.${binding.key}`,
-      };
-    }
-    overrideKeys.add(binding.key);
-    const parameter = parameters.get(binding.key);
-    if (!parameter) {
-      return {
-        ok: false,
-        message: `Unknown parameter: ${blueprint.key}.${binding.key}`,
-      };
-    }
-    if (!validParameterValue(parameter, binding.value)) {
-      return {
-        ok: false,
-        message: `Invalid value for parameter: ${blueprint.key}.${binding.key}`,
-      };
-    }
-    values.set(binding.key, binding.value);
-  }
-  return { ok: true, values };
+  return values;
 }
 
 export function resolveOfficialWorkflowBlueprintForReconciliation(
   blueprint: OfficialWorkflowAcceptedBlueprint,
   existing: readonly OfficialWorkflowParameterBinding[],
-  overrides: readonly OfficialWorkflowParameterBinding[],
   defaultTimezone: string | null,
 ): OfficialWorkflowBlueprintReconciliationResolution {
-  const parameterValues = reconciliationParameterValues(
-    blueprint,
-    existing,
-    overrides,
-  );
-  if (!parameterValues.ok) {
-    return { ok: false, bindings: [], message: parameterValues.message };
-  }
+  const parameterValues = reconciliationParameterValues(blueprint, existing);
 
   const bindings: OfficialWorkflowParameterBinding[] = [];
   let unresolvedMessage: string | undefined;
   for (const parameter of blueprint.parameters) {
-    let value = parameterValues.values.get(parameter.key);
+    let value = parameterValues.get(parameter.key);
     if (value === undefined && parameter.default !== undefined) {
       value = parameter.default;
     }

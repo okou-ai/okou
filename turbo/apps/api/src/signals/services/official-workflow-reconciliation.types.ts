@@ -1,5 +1,3 @@
-import type { OfficialWorkflowBlueprintBindings } from "@okouai/api-contracts/contracts/official-workflow-catalog";
-
 import type { WorkflowMember } from "./workflow-data.service";
 
 export type OfficialWorkflowReconciliationResult =
@@ -14,11 +12,6 @@ export type OfficialWorkflowReconciliationResult =
       readonly workflowId: string;
       readonly message: string;
     }
-  | {
-      readonly kind: "invalid";
-      readonly workflowId: string;
-      readonly message: string;
-    }
   | { readonly kind: "removed"; readonly workflowId: string }
   | { readonly kind: "not-found" };
 
@@ -27,7 +20,6 @@ export interface OfficialWorkflowReconciliationArgs {
   readonly member: WorkflowMember;
   readonly workflowId: string;
   readonly targetAutomationId?: string;
-  readonly overrides?: readonly OfficialWorkflowBlueprintBindings[];
   /** Proactive workers must stop if the Definition retires mid-reconcile. */
   readonly activeDefinitionOnly?: boolean;
 }
