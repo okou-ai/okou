@@ -10,15 +10,19 @@ use futures_util::StreamExt;
 use serde_json::{Value, json};
 use std::{net::SocketAddr, sync::Arc};
 use ts_control::{Node, StateUpdate};
-use ts_keys::NodeKeyPair;
+use ts_keys::{NodeKeyPair, NodePublicKey};
 use ts_netstack_smoltcp_socket::CreateSocket;
 use ts_packet::PacketMut;
 use ts_transport::{DynEndpoint, UnderlayTransportId};
 use wire::{Stack, local, peer_ip, remote};
 
 pub(in crate::tailscale::tests) fn node(id: i64, name: &str, ip: u8, keys: &NodeKeyPair) -> Value {
+    node_with_key(id, name, ip, keys.public)
+}
+
+fn node_with_key(id: i64, name: &str, ip: u8, key: NodePublicKey) -> Value {
     json!({"ID":id,"StableID":format!("synthetic-node-{id}"),"Name":name,
-        "Key":keys.public.to_string(),"KeyExpiry":"0001-01-01T00:00:00Z","Addresses":[format!("100.64.0.{ip}/32"),format!("fd7a:115c:a1e0::{ip}/128")],
+        "Key":key.to_string(),"KeyExpiry":"0001-01-01T00:00:00Z","Addresses":[format!("100.64.0.{ip}/32"),format!("fd7a:115c:a1e0::{ip}/128")],
         "AllowedIPs":["0.0.0.0/0","::/0","192.168.0.0/16"],"Online":true})
 }
 
@@ -236,20 +240,73 @@ async fn withdrawal_reassignment_and_cross_owner_bindings_cannot_redirect_old_tc
 }
 
 #[tokio::test]
-async fn unknown_patches_inventory_and_policy_accumulation_fail_closed() {
+async fn netmap_overlapping_deltas_preserve_original_encrypted_tcp() {
+    inside(|control| async move {
+        let mut fixture = wire::Fixture::new().await;
+        control.ready();
+        let original_b = fixture.connect_b().await;
+        let obsolete = NodeKeyPair::random();
+        let mut current = node_with_key(3, "b.tail-okou.ts.net.", 3, fixture.b_key);
+        current["KeyExpiry"] = json!("2000-01-01T00:00:00Z");
+        fixture
+            .peers
+            .update(
+                update(json!({
+                    "PeersRemoved": [3, 3, 999, 999],
+                    "PeersChanged": [
+                        node(3, "obsolete.tail-okou.ts.net.", 4, &obsolete),
+                        current
+                    ],
+                    "OnlineChange": {"3": true},
+                    "PeersChangedPatch": [{
+                        "NodeID": 3,
+                        "KeyExpiry": "0001-01-01T00:00:00Z"
+                    }]
+                }))
+                .await,
+            )
+            .unwrap();
+        assert!(fixture.peers.bind("obsolete", 22, local(6010)).is_err());
+        assert!(fixture.peers.bind("100.64.0.4", 22, local(6010)).is_err());
+        fixture.transfer_b(original_b, 65_536).await;
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn netmap_absent_peer_patches_do_not_restore_routes_or_interrupt_other_tcp() {
+    inside(|control| async move {
+        let mut fixture = wire::Fixture::new().await;
+        control.ready();
+        let original_b = fixture.connect_b().await;
+        let old_a = fixture.peers.bind("100.64.0.2", 22, local(6001)).unwrap();
+        fixture
+            .peers
+            .update(
+                update(json!({
+                    "PeersRemoved": [2],
+                    "OnlineChange": {"2": true, "999": true},
+                    "PeerSeenChange": {"2": true, "999": true},
+                    "PeersChangedPatch": [
+                        {"NodeID": 2, "KeyExpiry": "0001-01-01T00:00:00Z"},
+                        {"NodeID": 999, "Key": fixture.b_key.to_string()}
+                    ]
+                }))
+                .await,
+            )
+            .unwrap();
+        assert!(old_a.cancelled().is_cancelled());
+        assert!(fixture.peers.bind("100.64.0.2", 22, local(6010)).is_err());
+        assert!(fixture.peers.bind("100.64.0.99", 22, local(6010)).is_err());
+        fixture.transfer_b(original_b, 65_536).await;
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn inventory_and_policy_accumulation_fail_closed() {
     let keys = NodeKeyPair::random();
     let a = NodeKeyPair::random();
-    let mut peers = Peers::new(keys.clone(), own(&keys).await).unwrap();
-    peers
-        .update(update(json!({"Peers":[node(2,"saved.tail-okou.ts.net.",2,&a)]})).await)
-        .unwrap();
-    let held = peers.bind("saved", 22, local(6001)).unwrap();
-    assert!(
-        peers
-            .update(update(json!({"PeersChangedPatch":[{"NodeID":999,"Online":true}]})).await)
-            .is_err()
-    );
-    assert!(held.cancelled().is_cancelled());
     let full = (0..257)
         .map(|i| node(i + 2, &format!("peer-{i}.tail-okou.ts.net."), 2, &a))
         .collect::<Vec<_>>();
