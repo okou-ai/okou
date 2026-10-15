@@ -1,22 +1,39 @@
-import type { DefaultModelFirstPin } from "./model-selection.service";
-import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
-import { createHash, randomUUID } from "node:crypto";
-import { command } from "ccstate";
+import { createHash } from "node:crypto";
+import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import { explicitModelSettings } from "@okouai/core/auto-run-model";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { discordGatewayReceipts } from "@okouai/db/schema/discord-gateway-receipt";
+import {
+  chatThreadEventSequences,
+  chatThreadEvents,
+} from "@okouai/db/schema/chat-thread-event";
 import {
   discordChatIngress,
   type DiscordChatIngressStatus,
 } from "@okouai/db/schema/discord-chat-ingress";
 import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
-import { and, eq } from "drizzle-orm";
+import { discordGatewayReceipts } from "@okouai/db/schema/discord-gateway-receipt";
+import { command } from "ccstate";
+import {
+  and,
+  count,
+  eq,
+  ne,
+  isNull,
+  isNotNull,
+  notExists,
+  sql,
+  type SQL,
+} from "drizzle-orm";
+import { z } from "zod";
 
+import {
+  parseRawRows,
+  pgTimestampWithoutTimezoneToDateSchema,
+} from "../../lib/db-raw-rows";
+import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { writeDb$, type Db } from "../external/db";
 import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
-import {
-  integrationChatThreadValues,
-  integrationThreadCreatedEventSql,
-} from "./integration-chat-thread-publication";
+import type { DefaultModelFirstPin } from "./model-selection.service";
 
 interface DiscordChatThreadRouteKey {
   readonly connectionId: string;
@@ -99,6 +116,240 @@ interface CanonicalDiscordChatThreadRouteArgs extends DiscordChatThreadRouteKey 
   readonly initialModel: DefaultModelFirstPin;
 }
 
+type RouteDefaults = {
+  readonly modelSettings: ModelSettings;
+  readonly cloudBrowserEnabled: boolean;
+};
+
+// PostgreSQL UUID text is canonical 8-4-4-4-12 hex; do not impose an RFC
+// version/variant restriction stronger than the actual native uuid column.
+const nativeUuidSchema = z
+  .string()
+  .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u);
+const canonicalRouteRowSchema = z.strictObject({
+  id: nativeUuidSchema,
+  connectionId: nativeUuidSchema,
+  channelId: z.string(),
+  sessionKey: z.string(),
+  userId: z.string(),
+  chatThreadId: nativeUuidSchema,
+  destinationChannelId: z.string().nullable(),
+  createdAt: pgTimestampWithoutTimezoneToDateSchema,
+});
+const canonicalRouteResultSchema = z.discriminatedUnion("outcome", [
+  canonicalRouteRowSchema.extend({ outcome: z.literal("route") }),
+  z.strictObject({
+    outcome: z.enum([
+      "claim_missing",
+      "assigned_missing",
+      "dm_update_missing",
+      "conflict",
+      "winner_missing",
+    ]),
+    id: z.null(),
+    connectionId: z.null(),
+    channelId: z.null(),
+    sessionKey: z.null(),
+    userId: z.null(),
+    chatThreadId: z.null(),
+    destinationChannelId: z.null(),
+    createdAt: z.null(),
+  }),
+]);
+
+// Enforce the single-outcome boundary after runtime row decoding.
+function canonicalRouteResult(
+  rows: readonly z.output<typeof canonicalRouteResultSchema>[],
+) {
+  if (rows.length !== 1 || !rows[0]) {
+    throw new Error("Expected one canonical Discord route outcome");
+  }
+  return rows[0];
+}
+
+// Creation values use the same column encoders and defaults as the existing owner.
+function canonicalRouteCreationInput(
+  args: CanonicalDiscordChatThreadRouteArgs,
+  defaults: RouteDefaults,
+): SQL {
+  const t = chatThreads;
+  const e = chatThreadEvents;
+  return sql`, creation_input AS MATERIALIZED (
+    SELECT ${sql.param(args.agentId, t.agentId)}::uuid AS agent_id,
+      ${sql.param(args.initialModel.selectedModel, t.selectedModel)}::text AS selected_model,
+      ${sql.param(args.initialModel.serviceTier === "priority" ? "fast" : null, t.codexServiceTier)}::text AS codex_service_tier,
+      ${sql.param(explicitModelSettings(defaults.modelSettings), t.modelSettings)}::jsonb AS model_settings,
+      ${sql.param(defaults.cloudBrowserEnabled, t.cloudBrowserEnabled)}::boolean AS cloud_browser_enabled,
+      ${sql.param(args.currentTime, t.createdAt)}::timestamp AS current_time,
+      ${sql.param(args.orgId, e.orgId)}::text AS org_id
+  )`;
+}
+
+// Only actual route RETURNING can publish a thread, sequence and created event.
+function canonicalRouteCreationWrites(): SQL {
+  const r = discordChatThreadRoutes;
+  const t = chatThreads;
+  const q = chatThreadEventSequences;
+  const e = chatThreadEvents;
+  return sql`, candidate AS MATERIALIZED (
+    SELECT gen_random_uuid() AS thread_id
+    FROM claim
+    WHERE ${isNull(sql`claim.route_id`)} AND ${notExists(sql`(SELECT 1 FROM selected_route)`)}
+  ), inserted_route AS (
+    INSERT INTO ${r} (connection_id, channel_id, session_key, user_id, chat_thread_id, created_at)
+    SELECT input.connection_id, input.channel_id, input.session_key, input.user_id,
+      candidate.thread_id, creation_input.current_time
+    FROM candidate CROSS JOIN input CROSS JOIN creation_input
+    ON CONFLICT (connection_id, channel_id, session_key, user_id) DO NOTHING
+    RETURNING id, connection_id, channel_id, session_key, user_id, chat_thread_id,
+      destination_channel_id, created_at
+  ), inserted_thread AS (
+    INSERT INTO ${t} (
+      id, user_id, agent_id, selected_model, codex_service_tier, model_settings,
+      cloud_browser_enabled, title, last_read_at, last_message_at, created_at, updated_at
+    )
+    SELECT inserted_route.chat_thread_id, inserted_route.user_id, creation_input.agent_id,
+      creation_input.selected_model, creation_input.codex_service_tier, creation_input.model_settings,
+      creation_input.cloud_browser_enabled, NULL, creation_input.current_time,
+      creation_input.current_time, creation_input.current_time, creation_input.current_time
+    FROM inserted_route CROSS JOIN creation_input
+    RETURNING id, user_id, agent_id, title, selected_model, codex_service_tier,
+      model_settings, cloud_browser_enabled, created_at
+  ), reserved AS (
+    INSERT INTO ${q} (user_id, org_id, last_seq_id)
+    SELECT inserted_thread.user_id, creation_input.org_id, 1
+    FROM inserted_thread CROSS JOIN creation_input
+    ON CONFLICT (user_id, org_id) DO UPDATE
+    SET last_seq_id = ${q.lastSeqId} + 1
+    RETURNING last_seq_id
+  ), created_event AS (
+    INSERT INTO ${e} (
+      user_id, org_id, seq_id, chat_thread_id, kind, agent_id, reassigned_agent_id,
+      title, pin_order, muted, selected_model, model_settings, model_settings_patch,
+      service_tier, computer_use_host_id, cloud_browser_enabled, created_at
+    )
+    SELECT inserted_thread.user_id, creation_input.org_id, reserved.last_seq_id,
+      inserted_thread.id, 'created'::chat_thread_event_kind, inserted_thread.agent_id,
+      NULL, inserted_thread.title, NULL, NULL, inserted_thread.selected_model,
+      inserted_thread.model_settings, NULL,
+      CASE WHEN ${eq(sql`inserted_thread.codex_service_tier`, sql`'fast'`)} THEN 'priority' ELSE NULL END,
+      NULL, inserted_thread.cloud_browser_enabled, inserted_thread.created_at
+    FROM inserted_thread CROSS JOIN reserved CROSS JOIN creation_input
+    ON CONFLICT (id) DO NOTHING
+    RETURNING id
+  )`;
+}
+
+// Pure SQL preparation from ordinary values, never a handle-taking helper.
+// "conflict" denotes ONLY the already-existing single fresh-winner continuation.
+function canonicalRouteStatement(
+  args: CanonicalDiscordChatThreadRouteArgs,
+  defaults: RouteDefaults,
+  phase: "initial" | "conflict",
+): SQL {
+  const r = discordChatThreadRoutes;
+  const i = discordChatIngress;
+  const initial = phase === "initial";
+  // The two SQLs share this exact 8-parameter prefix, in the written order.
+  const input = sql`input AS MATERIALIZED (
+    SELECT ${sql.param(args.connectionId, r.connectionId)}::uuid AS connection_id,
+      ${sql.param(args.channelId, r.channelId)}::text AS channel_id,
+      ${sql.param(args.sessionKey, r.sessionKey)}::text AS session_key,
+      ${sql.param(args.userId, r.userId)}::text AS user_id,
+      ${sql.param(args.ingressId, i.id)}::uuid AS ingress_id,
+      ${sql.param(args.claimToken, i.claimToken)}::uuid AS claim_token,
+      ${sql.param(INTEGRATION_DM_SESSION_KEY, r.sessionKey)}::text AS dm_key,
+      ${sql.param("processing", i.status)}::text AS processing_status
+  )`;
+  const creationInput = initial
+    ? canonicalRouteCreationInput(args, defaults)
+    : sql.empty();
+  const creation = initial ? canonicalRouteCreationWrites() : sql.empty();
+  const createdEffective = initial
+    ? sql`
+    SELECT inserted_route.*
+    FROM inserted_route JOIN inserted_thread ON ${eq(sql`inserted_thread.id`, sql`inserted_route.chat_thread_id`)}
+    CROSS JOIN (SELECT ${count()} AS n FROM created_event) AS event_exhausted
+    UNION ALL`
+    : sql.empty();
+  const createdExhaustion = initial
+    ? sql`,
+      (SELECT ${count()} FROM candidate) AS candidate_n,
+      (SELECT ${count()} FROM inserted_route) AS inserted_route_n,
+      (SELECT ${count()} FROM inserted_thread) AS inserted_thread_n,
+      (SELECT ${count()} FROM reserved) AS reserved_n,
+      (SELECT ${count()} FROM created_event) AS created_event_n`
+    : sql.empty();
+  const noEffectiveOutcome = initial ? sql`'conflict'` : sql`'winner_missing'`;
+  return sql`WITH ${input}${creationInput},
+    claim AS MATERIALIZED (
+      SELECT ${i.id} AS id, ${i.routeId} AS route_id
+      FROM ${i} CROSS JOIN input
+      WHERE ${eq(i.id, sql`input.ingress_id`)} AND ${eq(i.connectionId, sql`input.connection_id`)}
+        AND ${eq(i.claimToken, sql`input.claim_token`)} AND ${eq(i.status, sql`input.processing_status`)}
+      LIMIT 1 FOR UPDATE OF discord_chat_ingress
+    ), selected_route AS MATERIALIZED (
+      SELECT ${r.id} AS id, ${r.connectionId} AS connection_id, ${r.channelId} AS channel_id,
+        ${r.sessionKey} AS session_key, ${r.userId} AS user_id,
+        ${r.chatThreadId} AS chat_thread_id, ${r.destinationChannelId} AS destination_channel_id,
+        ${r.createdAt} AS created_at,
+        (${eq(r.sessionKey, sql`input.dm_key`)} AND
+          (${ne(r.channelId, sql`input.channel_id`)} OR
+            (${isNotNull(r.destinationChannelId)} AND ${ne(r.destinationChannelId, sql`input.channel_id`)}))) AS needs_dm
+      FROM ${r} CROSS JOIN claim CROSS JOIN input
+      WHERE ${eq(r.connectionId, sql`input.connection_id`)} AND ${eq(r.userId, sql`input.user_id`)}
+        AND ((${isNotNull(sql`claim.route_id`)} AND ${eq(r.id, sql`claim.route_id`)})
+          OR (${isNull(sql`claim.route_id`)} AND ${eq(r.sessionKey, sql`input.session_key`)}
+            AND (${eq(sql`input.session_key`, sql`input.dm_key`)} OR ${eq(r.channelId, sql`input.channel_id`)})))
+      LIMIT 1
+    )${creation}, updated_route AS (
+      UPDATE ${r}
+      SET channel_id = input.channel_id, destination_channel_id = input.channel_id
+      FROM selected_route CROSS JOIN claim CROSS JOIN input
+      WHERE selected_route.needs_dm AND ${eq(r.id, sql`selected_route.id`)}
+        AND ${eq(r.connectionId, sql`selected_route.connection_id`)}
+        AND ${eq(r.sessionKey, sql`selected_route.session_key`)} AND ${eq(r.userId, sql`selected_route.user_id`)}
+      RETURNING ${r.id} AS id, ${r.connectionId} AS connection_id, ${r.channelId} AS channel_id,
+        ${r.sessionKey} AS session_key, ${r.userId} AS user_id,
+        ${r.chatThreadId} AS chat_thread_id, ${r.destinationChannelId} AS destination_channel_id,
+        ${r.createdAt} AS created_at
+    ), effective_route AS MATERIALIZED (
+      ${createdEffective}
+      SELECT * FROM updated_route
+      UNION ALL
+      SELECT id, connection_id, channel_id, session_key, user_id, chat_thread_id,
+        destination_channel_id, created_at
+      FROM selected_route WHERE NOT needs_dm
+    ), attached_ingress AS (
+      UPDATE ${i} SET route_id = effective_route.id
+      FROM claim CROSS JOIN effective_route
+      WHERE ${isNull(sql`claim.route_id`)} AND ${eq(i.id, sql`claim.id`)}
+      RETURNING ${i.id}
+    ), exhausted AS MATERIALIZED (
+      SELECT (SELECT ${count()} FROM claim) AS claim_n,
+        (SELECT ${count()} FROM selected_route) AS selected_n,
+        (SELECT ${count()} FROM updated_route) AS updated_n,
+        (SELECT ${count()} FROM effective_route) AS effective_n,
+        (SELECT ${count()} FROM attached_ingress) AS attached_n
+        ${createdExhaustion}
+    )
+    SELECT CASE
+      WHEN exhausted.claim_n = 0 THEN 'claim_missing'
+      WHEN ${isNotNull(sql`claim.route_id`)} AND exhausted.selected_n = 0 THEN 'assigned_missing'
+      WHEN selected_route.needs_dm AND exhausted.updated_n = 0 THEN 'dm_update_missing'
+      WHEN exhausted.effective_n = 1 THEN 'route'
+      ELSE ${noEffectiveOutcome}
+    END AS outcome,
+      effective_route.id AS "id", effective_route.connection_id AS "connectionId",
+      effective_route.channel_id AS "channelId", effective_route.session_key AS "sessionKey",
+      effective_route.user_id AS "userId", effective_route.chat_thread_id AS "chatThreadId",
+      effective_route.destination_channel_id AS "destinationChannelId", effective_route.created_at AS "createdAt"
+    FROM exhausted
+    LEFT JOIN claim ON TRUE
+    LEFT JOIN selected_route ON TRUE
+    LEFT JOIN effective_route ON TRUE`;
+}
+
 export const ensureCanonicalDiscordChatThreadRoute$ = command(
   async (
     { set },
@@ -107,120 +358,58 @@ export const ensureCanonicalDiscordChatThreadRoute$ = command(
   ): Promise<DiscordChatThreadRouteBinding | undefined> => {
     const db = set(writeDb$);
     const defaults = await set(loadNewChatThreadDefaults$, args, signal);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0149; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      const [claim] = await tx
-        .select({ routeId: discordChatIngress.routeId })
-        .from(discordChatIngress)
-        .where(
-          and(
-            eq(discordChatIngress.id, args.ingressId),
-            eq(discordChatIngress.connectionId, args.connectionId),
-            eq(discordChatIngress.claimToken, args.claimToken),
-            eq(discordChatIngress.status, "processing"),
-          ),
-        )
-        .for("update")
-        .limit(1);
+    signal.throwIfAborted();
+    let result = canonicalRouteResult(
+      parseRawRows(
+        canonicalRouteResultSchema,
+        await db.execute(canonicalRouteStatement(args, defaults, "initial")),
+      ),
+    );
+    signal.throwIfAborted();
+    if (result.outcome === "conflict") {
+      // The completed preceding statement performed ZERO own durable mutations.
+      // No loop/retry/fallback: the owner's one existing fresh-winner branch.
       signal.throwIfAborted();
-      if (!claim) {
+      result = canonicalRouteResult(
+        parseRawRows(
+          canonicalRouteResultSchema,
+          await db.execute(canonicalRouteStatement(args, defaults, "conflict")),
+        ),
+      );
+      signal.throwIfAborted();
+    }
+    switch (result.outcome) {
+      case "claim_missing": {
         return undefined;
       }
-      let [route] = await tx
-        .select()
-        .from(discordChatThreadRoutes)
-        .where(
-          claim.routeId
-            ? and(
-                eq(discordChatThreadRoutes.id, claim.routeId),
-                eq(discordChatThreadRoutes.connectionId, args.connectionId),
-                eq(discordChatThreadRoutes.userId, args.userId),
-              )
-            : discordChatThreadRouteWhere(args),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      if (claim.routeId && !route) {
+      case "assigned_missing": {
         throw new Error("Discord ingress has no assigned route");
       }
-      if (!route) {
-        const thread = integrationChatThreadValues(
-          args,
-          randomUUID(),
-          defaults,
+      case "dm_update_missing": {
+        throw new Error("Failed to update Discord DM route destination");
+      }
+      case "winner_missing":
+      case "conflict": {
+        // "conflict" cannot be returned by phase 2; it maps to the same old error,
+        // without a new read or mutation if an invalid future plan introduces it.
+        throw new Error(
+          "Failed to resolve Discord chat thread route after conflict",
         );
-        await tx.insert(chatThreads).values(thread);
-        [route] = await tx
-          .insert(discordChatThreadRoutes)
-          .values({
-            connectionId: args.connectionId,
-            channelId: args.channelId,
-            sessionKey: args.sessionKey,
-            userId: args.userId,
-            chatThreadId: thread.id,
-            createdAt: args.currentTime,
-          })
-          .onConflictDoNothing({
-            target: [
-              discordChatThreadRoutes.connectionId,
-              discordChatThreadRoutes.channelId,
-              discordChatThreadRoutes.sessionKey,
-              discordChatThreadRoutes.userId,
-            ],
-          })
-          .returning();
-        signal.throwIfAborted();
-        if (route) {
-          await tx.execute(
-            integrationThreadCreatedEventSql(args.orgId, thread),
-          );
-        } else {
-          await tx.delete(chatThreads).where(eq(chatThreads.id, thread.id));
-          [route] = await tx
-            .select()
-            .from(discordChatThreadRoutes)
-            .where(discordChatThreadRouteWhere(args))
-            .limit(1);
-          if (!route) {
-            throw new Error(
-              "Failed to resolve Discord chat thread route after conflict",
-            );
-          }
-        }
       }
-      if (
-        route.sessionKey === INTEGRATION_DM_SESSION_KEY &&
-        (route.channelId !== args.channelId ||
-          (route.destinationChannelId !== null &&
-            route.destinationChannelId !== args.channelId))
-      ) {
-        const [updated] = await tx
-          .update(discordChatThreadRoutes)
-          .set({
-            channelId: args.channelId,
-            destinationChannelId: args.channelId,
-          })
-          .where(
-            and(
-              eq(discordChatThreadRoutes.id, route.id),
-              discordChatThreadRouteWhere(route),
-            ),
-          )
-          .returning();
-        if (!updated) {
-          throw new Error("Failed to update Discord DM route destination");
-        }
-        route = updated;
+      case "route": {
+        const route = {
+          id: result.id,
+          connectionId: result.connectionId,
+          channelId: result.channelId,
+          sessionKey: result.sessionKey,
+          userId: result.userId,
+          chatThreadId: result.chatThreadId,
+          destinationChannelId: result.destinationChannelId,
+          createdAt: result.createdAt,
+        };
+        return route;
       }
-      if (!claim.routeId) {
-        await tx
-          .update(discordChatIngress)
-          .set({ routeId: route.id })
-          .where(eq(discordChatIngress.id, args.ingressId));
-      }
-      signal.throwIfAborted();
-      return route;
-    });
+    }
   },
 );
 

@@ -307,11 +307,6 @@
       "owner": "deleteCustomConnectorAccount$"
     },
     {
-      "id": "TX-0149",
-      "file": "turbo/apps/api/src/signals/services/discord-chat-ingress.service.ts",
-      "owner": "ensureCanonicalDiscordChatThreadRoute$"
-    },
-    {
       "id": "TX-0150",
       "file": "turbo/apps/api/src/signals/services/discord-chat-ingress.service.ts",
       "owner": "admitCanonicalDiscordChatEvent$"
