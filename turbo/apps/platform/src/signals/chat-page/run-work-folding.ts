@@ -1,9 +1,7 @@
 import { command, computed, state } from "ccstate";
-import type { ChatEventUsagePayload } from "@okouai/api-contracts/contracts/chat-threads";
 import type { Element, Root } from "hast";
 import {
   chatEventCompatibilityRole,
-  foldLatestChatUsageByRunId,
   isChatEventContentTextType,
   isChatInputEventType,
   isChatRunTerminalEventType,
@@ -275,30 +273,8 @@ function firstRunIdForEvents(
   })?.runId;
 }
 
-function usageByRunIdFromGroups(
+function markRunUsageGroups(
   groups: readonly ChatEventGroup[],
-): Map<string, ChatEventUsagePayload> {
-  return foldLatestChatUsageByRunId(
-    groups.flatMap((group) => {
-      const runId = firstRunIdForEvents(group.events);
-      return group.role === "assistant" &&
-        group.usage !== undefined &&
-        runId !== undefined
-        ? [
-            {
-              eventType: "usage.recorded" as const,
-              runId,
-              usage: group.usage,
-            },
-          ]
-        : [];
-    }),
-  );
-}
-
-function attachUsageToRunWorkGroups(
-  groups: readonly ChatEventGroup[],
-  usageByRunId: ReadonlyMap<string, ChatEventUsagePayload>,
   workAnchorEventIds: ReadonlySet<string>,
 ): ChatEventGroup[] {
   const lastAssistantGroupIndexByRunId = new Map<string, number>();
@@ -328,8 +304,7 @@ function attachUsageToRunWorkGroups(
     ) {
       return group;
     }
-    const usage = usageByRunId.get(runId);
-    return usage === undefined ? group : { ...group, usage };
+    return { ...group, showRunUsage: true };
   });
 }
 
@@ -536,7 +511,6 @@ function runWorkGroups(events: readonly EnrichedChatEvent[]): RunWorkGroup[] {
 export function buildRunWorkFolding(
   groups: readonly ChatEventGroup[],
 ): RunWorkFolding {
-  const usageByRunId = usageByRunIdFromGroups(groups);
   const events = groups.flatMap((group) => {
     return group.events;
   });
@@ -578,9 +552,8 @@ export function buildRunWorkFolding(
   return {
     statusTail,
     visibleGroups: [
-      ...attachUsageToRunWorkGroups(
+      ...markRunUsageGroups(
         groupEventsForRunWorkDisplay(visibleEvents, workAnchorEventIds),
-        usageByRunId,
         workAnchorEventIds,
       ),
       ...(pendingGroup ? [pendingGroup] : []),

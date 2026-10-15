@@ -3,7 +3,7 @@ import {
   chatThreadUsageContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { modelCatalogContract } from "@okouai/api-contracts/contracts/model-catalog";
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
   click,
@@ -13,6 +13,8 @@ import {
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import { createMockModelCatalog } from "../../../mocks/handlers/api-model-catalog.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { createChatEvent } from "../../../mocks/mock-helpers.ts";
+import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 const context = testContext();
 
@@ -73,6 +75,303 @@ async function openUsage(total: string): Promise<void> {
   click(usageButton(total));
   await screen.findByText("Credit usage");
 }
+
+function ledgerUsage(totalCredits: number): ChatEventUsagePayload {
+  return {
+    version: 1,
+    totalCredits,
+    settledAt: "2026-08-14T12:00:02.000Z",
+    breakdown: [
+      {
+        kind: "model/gpt-6-luna/tokens.output",
+        credits: totalCredits,
+        providers: [{ provider: "openai", credits: totalCredits }],
+      },
+    ],
+  };
+}
+
+function mockObservedUsageChat(
+  threadId: string,
+  events: MockChatEventInput[],
+  ledger: Map<string, ChatEventUsagePayload>,
+  activeRunIds: string[] = [],
+): string[][] {
+  mockChatLifecycle(context, { threadId, chatEvents: events, activeRunIds });
+  const requestedRuns: string[][] = [];
+  // HTTP observation is intentional: not fetching an unaffected run is part of
+  // this contract, in addition to keeping its displayed ledger amount intact.
+  context.mocks.api(chatThreadUsageContract.read, ({ body, respond }) => {
+    requestedRuns.push([...body.runIds]);
+    return respond(200, {
+      runs: body.runIds.flatMap((runId) => {
+        const usage = ledger.get(runId);
+        return usage ? [{ runId, usage }] : [];
+      }),
+    });
+  });
+  return requestedRuns;
+}
+
+function usageChatEvent(
+  id: string,
+  runId: string,
+  seqId: number,
+  fields: Partial<MockChatEventInput>,
+): MockChatEventInput {
+  return {
+    id,
+    runId,
+    seqId,
+    role: "assistant",
+    content: null,
+    createdAt: new Date(
+      Date.parse("2026-08-14T12:00:00.000Z") + seqId * 1000,
+    ).toISOString(),
+    ...fields,
+  };
+}
+
+test("A historical run's usage is queried only when scrolling reveals it outside the initial render window", async () => {
+  const threadId = "b0000000-0000-4000-a000-000000000815";
+  const historicalRunId = "a0000000-0000-4000-a000-000000000815";
+  const latestRunId = "a0000000-0000-4000-a000-000000000821";
+  const events: MockChatEventInput[] = [];
+  // Seven completed turns exceed the initial ten user/assistant groups, while
+  // fitting within one additional page when the reader scrolls to the top.
+  for (let turn = 0; turn < 7; turn++) {
+    const runId =
+      turn === 0
+        ? historicalRunId
+        : turn === 6
+          ? latestRunId
+          : `a0000000-0000-4000-a000-${String(815 + turn).padStart(12, "0")}`;
+    const seqId = turn * 4 + 1;
+    events.push(
+      usageChatEvent(`window-prompt-${String(turn)}`, runId, seqId, {
+        role: "user",
+        content: `Question ${String(turn + 1)}`,
+      }),
+      usageChatEvent(`window-answer-${String(turn)}`, runId, seqId + 1, {
+        content: `Completed answer ${String(turn + 1)}`,
+      }),
+      usageChatEvent(`window-completed-${String(turn)}`, runId, seqId + 2, {
+        runLifecycleEvent: "completed",
+      }),
+    );
+    if (turn === 0 || turn === 6) {
+      events.push(
+        usageChatEvent(`window-hint-${String(turn)}`, runId, seqId + 3, {
+          usage: ledgerUsage(999),
+        }),
+      );
+    }
+  }
+  const requests = mockObservedUsageChat(
+    threadId,
+    events,
+    new Map([
+      [historicalRunId, ledgerUsage(61)],
+      [latestRunId, ledgerUsage(67)],
+    ]),
+  );
+
+  await setupPage({ context, path: `/chats/${threadId}`, locale: "en-US" });
+  const latestAnswer = await screen.findByText("Completed answer 7");
+  await waitFor(() => {
+    expect(usageButton("67")).toBeInTheDocument();
+  });
+  expect(screen.queryByText("Completed answer 1")).not.toBeInTheDocument();
+  expect(requests).toStrictEqual([[latestRunId]]);
+  expect(
+    queryAllByRoleFast("button").some((button) => {
+      return button.getAttribute("aria-label") === "Credit usage 61";
+    }),
+  ).toBeFalsy();
+
+  const viewport = latestAnswer.closest("[data-scroll-container]");
+  if (!(viewport instanceof HTMLElement)) {
+    throw new Error("Chat scroll viewport not found");
+  }
+  fireEvent.scroll(viewport, { target: { scrollTop: 0 } });
+
+  await screen.findByText("Completed answer 1");
+  await openUsage("61");
+  expect(requests).toStrictEqual([[latestRunId], [historicalRunId]]);
+  expect(usageButton("67")).toBeInTheDocument();
+  const details = screen.getByRole("dialog");
+  expect(
+    within(details).getByText("Credit usage").parentElement,
+  ).toHaveTextContent("Credit usage61");
+  expect(within(details).queryByText("999")).not.toBeInTheDocument();
+});
+
+// These fixtures change only the mocked server's event stream and ledger;
+// createChatEvent delivers the same realtime notification as the production API.
+test("A run without a usage hint does not query an existing ledger until its hint arrives", async () => {
+  const threadId = "b0000000-0000-4000-a000-000000000811";
+  const runId = "a0000000-0000-4000-a000-000000000811";
+  const events = [
+    usageChatEvent("no-hint-prompt", runId, 1, {
+      role: "user",
+      content: "Show the answer before usage arrives",
+    }),
+    usageChatEvent("no-hint-answer", runId, 2, {
+      content: "The answer is available without a usage hint.",
+    }),
+    usageChatEvent("no-hint-completed", runId, 3, {
+      runLifecycleEvent: "completed",
+    }),
+  ];
+  const requests = mockObservedUsageChat(
+    threadId,
+    events,
+    new Map([[runId, ledgerUsage(17)]]),
+  );
+
+  await setupPage({ context, path: `/chats/${threadId}`, locale: "en-US" });
+  await screen.findByText("The answer is available without a usage hint.");
+  expect(requests).toStrictEqual([]);
+  expect(
+    queryAllByRoleFast("button").some((button) => {
+      return button.getAttribute("aria-label")?.startsWith("Credit usage ");
+    }),
+  ).toBeFalsy();
+
+  events.push(
+    usageChatEvent("first-usage-hint", runId, 4, { usage: ledgerUsage(999) }),
+  );
+  createChatEvent(threadId);
+
+  await openUsage("17");
+  expect(requests).toStrictEqual([[runId]]);
+  const details = screen.getByRole("dialog");
+  expect(
+    within(details).getByText("Credit usage").parentElement,
+  ).toHaveTextContent("Credit usage17");
+  expect(within(details).queryByText("999")).not.toBeInTheDocument();
+});
+
+test("A new usage hint ID refreshes a run's displayed ledger even when the hint payload is unchanged", async () => {
+  const threadId = "b0000000-0000-4000-a000-000000000812";
+  const runId = "a0000000-0000-4000-a000-000000000812";
+  const hint = ledgerUsage(999);
+  const events = [
+    usageChatEvent("refresh-prompt", runId, 1, {
+      role: "user",
+      content: "Keep the settled usage current",
+    }),
+    usageChatEvent("refresh-answer", runId, 2, {
+      content: "This answer has settled usage.",
+    }),
+    usageChatEvent("refresh-completed", runId, 3, {
+      runLifecycleEvent: "completed",
+    }),
+    usageChatEvent("refresh-first-hint", runId, 4, { usage: hint }),
+  ];
+  const ledger = new Map([[runId, ledgerUsage(23)]]);
+  const requests = mockObservedUsageChat(threadId, events, ledger);
+
+  await setupPage({ context, path: `/chats/${threadId}`, locale: "en-US" });
+  await waitFor(() => {
+    expect(usageButton("23")).toBeInTheDocument();
+  });
+  expect(requests).toStrictEqual([[runId]]);
+
+  ledger.set(runId, ledgerUsage(31));
+  events.push(usageChatEvent("refresh-second-hint", runId, 5, { usage: hint }));
+  createChatEvent(threadId);
+
+  await openUsage("31");
+  expect(requests).toStrictEqual([[runId], [runId]]);
+  expect(
+    within(screen.getByRole("dialog")).getByText("Credit usage").parentElement,
+  ).toHaveTextContent("Credit usage31");
+  expect(
+    queryAllByRoleFast("button").some((button) => {
+      return button.getAttribute("aria-label") === "Credit usage 23";
+    }),
+  ).toBeFalsy();
+});
+
+test("Ordinary output, run completion, and another run's hint do not refetch an unaffected run", async () => {
+  const threadId = "b0000000-0000-4000-a000-000000000813";
+  const runA = "a0000000-0000-4000-a000-000000000813";
+  const runB = "a0000000-0000-4000-a000-000000000814";
+  const events = [
+    usageChatEvent("isolated-prompt-a", runA, 1, {
+      role: "user",
+      content: "Prepare the first answer",
+    }),
+    usageChatEvent("isolated-answer-a", runA, 2, {
+      content: "The first answer is ready.",
+    }),
+    usageChatEvent("isolated-hint-a", runA, 3, { usage: ledgerUsage(999) }),
+  ];
+  const ledger = new Map([
+    [runA, ledgerUsage(41)],
+    [runB, ledgerUsage(53)],
+  ]);
+  const requests = mockObservedUsageChat(threadId, events, ledger, [runA]);
+
+  await setupPage({ context, path: `/chats/${threadId}`, locale: "en-US" });
+  await waitFor(() => {
+    expect(usageButton("41")).toBeInTheDocument();
+  });
+  expect(requests).toStrictEqual([[runA]]);
+  // An accidental refresh would both cross the HTTP boundary and replace 41.
+  ledger.set(runA, ledgerUsage(777));
+
+  events.push(
+    usageChatEvent("isolated-extra-output", runA, 4, {
+      content: "An ordinary message adds more detail.",
+    }),
+  );
+  createChatEvent(threadId);
+  await screen.findByText("An ordinary message adds more detail.");
+  expect(usageButton("41")).toBeInTheDocument();
+  expect(requests).toStrictEqual([[runA]]);
+
+  events.push(
+    usageChatEvent("isolated-completed-a", runA, 5, {
+      runLifecycleEvent: "completed",
+    }),
+  );
+  createChatEvent(threadId);
+  await waitFor(() => {
+    const response = screen
+      .getByText("An ordinary message adds more detail.")
+      .closest('[data-role="assistant"]');
+    expect(response).toHaveTextContent("Worked for");
+  });
+  expect(usageButton("41")).toBeInTheDocument();
+  expect(requests).toStrictEqual([[runA]]);
+
+  events.push(
+    usageChatEvent("isolated-prompt-b", runB, 6, {
+      role: "user",
+      content: "Prepare a separate answer",
+    }),
+    usageChatEvent("isolated-answer-b", runB, 7, {
+      content: "The second answer has its own usage.",
+    }),
+    usageChatEvent("isolated-completed-b", runB, 8, {
+      runLifecycleEvent: "completed",
+    }),
+    usageChatEvent("isolated-hint-b", runB, 9, { usage: ledgerUsage(888) }),
+  );
+  createChatEvent(threadId);
+
+  await openUsage("53");
+  expect(
+    screen.getByText("The second answer has its own usage."),
+  ).toBeInTheDocument();
+  expect(usageButton("41")).toBeInTheDocument();
+  expect(
+    within(screen.getByRole("dialog")).getByText("Credit usage").parentElement,
+  ).toHaveTextContent("Credit usage53");
+  expect(requests).toStrictEqual([[runA], [runB]]);
+});
 
 test("Credit usage preserves unknown historical model identifiers", async () => {
   await setupUsageChat(
