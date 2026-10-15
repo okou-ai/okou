@@ -920,12 +920,17 @@ test("owner deletion revokes a snapshot and preserves the private original", asy
 });
 
 test.each(["organization", "user"] as const)(
-  "%s deletion revokes resource access before acknowledging the webhook",
+  "clerk %s deletion preserves published snapshot access and bytes",
   async (kind) => {
     const f = await fixture();
     const file = await f.upload();
     const selection = await f.selection(file.url);
     const created = await accept(share(f.actor, selection), [201]);
+    const before = await accept(
+      api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
+      [200],
+    );
+    const objectsBefore = new Map(f.objects);
     context.mocks.stripe.subscriptions.list.mockResolvedValue({
       data: [],
       has_more: false,
@@ -937,48 +942,15 @@ test.each(["organization", "user"] as const)(
       data: { id: kind === "organization" ? f.actor.orgId : f.actor.userId },
     });
     await webhooks.requestClerkWebhook("{}", {}, [200]);
-    // The foreground revocation is sufficient even before background deletion.
-    await accept(
-      api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
-      [404],
-    );
     await flushWaitUntilForTest();
-    expect(
-      [...f.objects.keys()].filter((key) => {
-        return key.includes("/thread-shares/");
-      }),
-    ).toStrictEqual([]);
+    const retained = await accept(
+      api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
+      [200],
+    );
+    expect(retained.body).toStrictEqual(before.body);
+    expect(f.objects).toStrictEqual(objectsBefore);
   },
 );
-
-test("a failed deletion revocation is retryable and is never acknowledged as success", async () => {
-  const f = await fixture();
-  const file = await f.upload();
-  const selection = await f.selection(file.url);
-  const created = await accept(share(f.actor, selection), [201]);
-  const key = `test-hosted-sites/shared-thread-artifacts/okou/${created.body.id}.json`;
-  f.failedWrites.add(key);
-  const webhooks = createWebhookCallbackApi(context);
-  webhooks.configureClerkWebhookSecret();
-  webhooks.verifyNextClerkWebhook({
-    type: "organization.deleted",
-    data: { id: f.actor.orgId },
-  });
-  await webhooks.requestClerkWebhook("{}", {}, [503]);
-  f.failedWrites.delete(key);
-  context.mocks.stripe.subscriptions.list.mockResolvedValue({
-    data: [],
-    has_more: false,
-  });
-  webhooks.verifyNextClerkWebhook({
-    type: "organization.deleted",
-    data: { id: f.actor.orgId },
-  });
-  await webhooks.requestClerkWebhook("{}", {}, [200]);
-  await expect(
-    api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
-  ).resolves.toMatchObject({ status: 404 });
-});
 
 test("publication rechecks current ownership after allocating its durable snapshot", async () => {
   const f = await fixture();

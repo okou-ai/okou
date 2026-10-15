@@ -224,53 +224,40 @@ test("requires a workspace session and rejects run credentials", async () => {
   await expect(listFor(identity)).resolves.toStrictEqual(["web-search"]);
 });
 
-test.each(["membership", "user", "organization"] as const)(
-  "%s deletion clears exactly its paid tool preferences",
-  async (scope) => {
-    const current = await owner();
-    const peer = await owner({ orgId: current.orgId });
-    const elsewhere = await owner({ userId: current.userId });
-    for (const identity of [current, peer, elsewhere]) {
-      mocks.clerk.session(identity.userId, identity.orgId, "org:member");
-      await accept(
-        client().update({
-          headers,
-          params: { toolId: "web-search" },
-          body: { disabled: true },
-        }),
-        [200],
-      );
-    }
-    const event =
-      scope === "membership"
-        ? {
-            type: "organizationMembership.deleted",
-            data: {
-              id: current.membershipId,
-              organization_id: current.orgId,
-              user_id: current.userId,
-            },
-          }
-        : {
-            type: `${scope}.deleted`,
-            data: { id: scope === "user" ? current.userId : current.orgId },
-          };
-    mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", "paid-tools-test-secret");
-    context.mocks.clerk.verifyWebhook.mockResolvedValueOnce(event);
+test("membership deletion clears exactly its paid tool preferences", async () => {
+  const current = await owner();
+  const peer = await owner({ orgId: current.orgId });
+  const elsewhere = await owner({ userId: current.userId });
+  for (const identity of [current, peer, elsewhere]) {
+    mocks.clerk.session(identity.userId, identity.orgId, "org:member");
     await accept(
-      setupApp({ context, routes: webhooksClerkRoutes })(
-        webhookClerkContract,
-      ).post({ body: JSON.stringify(event) }),
+      client().update({
+        headers,
+        params: { toolId: "web-search" },
+        body: { disabled: true },
+      }),
       [200],
     );
-    await flushWaitUntilForTest();
+  }
+  const event = {
+    type: "organizationMembership.deleted",
+    data: {
+      id: current.membershipId,
+      organization_id: current.orgId,
+      user_id: current.userId,
+    },
+  };
+  mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", "paid-tools-test-secret");
+  context.mocks.clerk.verifyWebhook.mockResolvedValueOnce(event);
+  await accept(
+    setupApp({ context, routes: webhooksClerkRoutes })(
+      webhookClerkContract,
+    ).post({ body: JSON.stringify(event) }),
+    [200],
+  );
+  await flushWaitUntilForTest();
 
-    await expect(listFor(current)).resolves.toStrictEqual([]);
-    await expect(listFor(peer)).resolves.toStrictEqual(
-      scope === "organization" ? [] : ["web-search"],
-    );
-    await expect(listFor(elsewhere)).resolves.toStrictEqual(
-      scope === "user" ? [] : ["web-search"],
-    );
-  },
-);
+  await expect(listFor(current)).resolves.toStrictEqual([]);
+  await expect(listFor(peer)).resolves.toStrictEqual(["web-search"]);
+  await expect(listFor(elsewhere)).resolves.toStrictEqual(["web-search"]);
+});

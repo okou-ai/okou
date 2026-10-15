@@ -133,7 +133,7 @@ export async function releaseDeletedConversationReferences(
 
 /** Only call after the owning transaction promise resolves successfully. */
 export function logCommittedConversationDeletion(
-  source: "agent" | "threadless" | "clerk_user" | "clerk_organization",
+  source: "agent" | "threadless",
   receipt: Awaited<ReturnType<typeof releaseDeletedConversationReferences>>,
 ) {
   if (receipt.deletedRuns > 0 || receipt.releasedReferences > 0) {

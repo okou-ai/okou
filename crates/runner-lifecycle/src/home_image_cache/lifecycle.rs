@@ -41,6 +41,7 @@ use super::{
     HomeImageCacheInner,
 };
 use guest_contracts::home_cache_history::HomeCacheHistoryProofBinding;
+use runner_host::home_observation::{HomeObservation, HomeObservationKind, HomeObservationOutcome};
 
 const HOME_IMAGE_PREPARE_LOCK_TIMEOUT: Duration = Duration::from_millis(50);
 // Stopped publishers retain their entry and applicable resource lease while
@@ -303,6 +304,80 @@ impl HomeImageLease {
 }
 
 impl HomeImageCache {
+    pub(crate) fn observe_home(&self, observation: HomeObservation) {
+        self.observe_home_with_local_details(observation, Default::default());
+    }
+
+    pub(crate) fn observe_home_with_local_details(
+        &self,
+        mut observation: HomeObservation,
+        details: runner_host::home_observation::HomeObservationLocalDetails<'_>,
+    ) {
+        if observation.run_id.is_some() {
+            observation.is_first_run = self.is_first_run;
+        }
+        observation.log_local(details);
+        if let Some(telemetry) = &self.telemetry {
+            let mut record =
+                runner_storage::SandboxOpRecord::new("home", Duration::ZERO, true, None);
+            record.home = Some(observation);
+            telemetry.record(record);
+        }
+    }
+
+    fn observe_invalidated_entry(
+        &self,
+        run_id: RunId,
+        cache_key: &str,
+        outcome: HomeObservationOutcome,
+        reason: &str,
+    ) {
+        let mut observation = HomeObservation::new(HomeObservationKind::Removal, outcome);
+        observation.run_id = Some(run_id);
+        observation.cache_key = Some(cache_key.to_owned());
+        observation.reason = Some(reason.to_owned());
+        self.observe_home(observation);
+    }
+
+    fn observe_checkout(
+        &self,
+        common: &HomeImageLeaseCommon<'_>,
+        cache_key: &str,
+        reason: &str,
+        generation: Option<&str>,
+    ) {
+        let mut observation = HomeObservation::new(
+            HomeObservationKind::Consumption,
+            HomeObservationOutcome::Fallback,
+        );
+        observation.run_id = Some(common.run_id);
+        observation.reuse_key = common.reuse_key.map(str::to_owned);
+        observation.cache_key = Some(cache_key.to_owned());
+        observation.profile_name = Some(common.profile_name.to_owned());
+        observation.image_generation = generation.map(str::to_owned);
+        observation.reason = Some(reason.to_owned());
+        self.observe_home(observation);
+    }
+
+    fn observe_publication(
+        &self,
+        input: &HomeImagePromotionInput<'_>,
+        outcome: HomeObservationOutcome,
+        reason: &str,
+        generation: Option<&str>,
+        allocated: Option<u64>,
+    ) {
+        let mut observation = HomeObservation::new(HomeObservationKind::Publication, outcome);
+        observation.run_id = Some(input.run_id);
+        observation.reuse_key = Some(input.reuse_key.to_owned());
+        observation.cache_key = Some(input.cache_key.to_owned());
+        observation.profile_name = Some(input.profile_name.to_owned());
+        observation.image_generation = generation.map(str::to_owned);
+        observation.allocated_bytes = allocated;
+        observation.reason = Some(reason.to_owned());
+        self.observe_home(observation);
+    }
+
     fn local_entry_lock_observation(&self, cache_key: &str) -> Option<HomeCacheLockRegistration> {
         self.inner
             .entry_lock_owners
@@ -664,6 +739,12 @@ impl HomeImageCache {
                             error = %e,
                             "failed to remove home image cache metadata before move checkout; using fresh home image"
                         );
+                        self.observe_checkout(
+                            &common,
+                            &cache_key,
+                            "checkout_commit_remove_failed",
+                            Some(&metadata.image_generation),
+                        );
                         return home_drive(
                             HomeCacheCheckoutResult::Miss,
                             None,
@@ -697,13 +778,15 @@ impl HomeImageCache {
                     error = %e,
                     "home image cache metadata invalid; using fresh home image"
                 );
+                self.observe_checkout(&common, &cache_key, "invalid_metadata", None);
                 let entry_dir = self.home_image_cache_entry_dir(&cache_key);
                 match fs::remove_dir_all(&entry_dir).await {
                     Ok(()) => {
-                        info!(
-                            run_id = %common.run_id,
-                            cache_key,
-                            "removed invalid home image cache entry before fresh checkout"
+                        self.observe_invalidated_entry(
+                            common.run_id,
+                            &cache_key,
+                            HomeObservationOutcome::Deleted,
+                            "invalid_metadata",
                         );
                         return home_drive(
                             HomeCacheCheckoutResult::Miss,
@@ -727,6 +810,12 @@ impl HomeImageCache {
                         );
                     }
                     Err(remove_error) => {
+                        self.observe_invalidated_entry(
+                            common.run_id,
+                            &cache_key,
+                            HomeObservationOutcome::Failed,
+                            "invalid_metadata",
+                        );
                         warn!(
                             run_id = %common.run_id,
                             cache_key,
@@ -754,6 +843,15 @@ impl HomeImageCache {
                     .as_ref()
                     .is_ok_and(|pin| pin.identity() == expected_image)
                 {
+                    self.observe_checkout(
+                        &common,
+                        &cache_key,
+                        "source_identity_changed",
+                        source
+                            .file_name()
+                            .and_then(|name| name.to_str())
+                            .and_then(super::entry::image_generation),
+                    );
                     return home_drive(
                         HomeCacheCheckoutResult::Miss,
                         None,
@@ -1094,16 +1192,24 @@ impl HomeImageCache {
         match remove_home_cache_path_if_exists(&entry_dir).await {
             Ok(removed) => {
                 if removed {
-                    info!(
-                        run_id = %run_id,
+                    self.observe_invalidated_entry(
+                        run_id,
                         cache_key,
+                        HomeObservationOutcome::Deleted,
                         reason,
-                        "home image cache entry invalidated"
                     );
                 }
                 Ok(removed)
             }
-            Err(e) => Err(e.into()),
+            Err(e) => {
+                self.observe_invalidated_entry(
+                    run_id,
+                    cache_key,
+                    HomeObservationOutcome::Failed,
+                    reason,
+                );
+                Err(e.into())
+            }
         }
     }
 
@@ -1148,6 +1254,13 @@ impl HomeImageCache {
             || input.image_size_bytes == 0
             || !input.image_size_bytes.is_multiple_of(1024 * 1024)
         {
+            self.observe_publication(
+                &input,
+                HomeObservationOutcome::Skipped,
+                "invalid_image_identity",
+                None,
+                None,
+            );
             return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
         }
         let previous = self
@@ -1165,17 +1278,38 @@ impl HomeImageCache {
             .as_ref()
             .is_some_and(|m| m.last_completed_at.as_str() >= input.completed_at)
         {
+            self.observe_publication(
+                &input,
+                HomeObservationOutcome::PreservedExisting,
+                "newer_committed_image",
+                previous.as_ref().map(|m| m.image_generation.as_str()),
+                None,
+            );
             return Ok(HomeImagePromotionOutcome::PreservedExisting);
         }
         let _capacity = match self.acquire_promotion_capacity_lock().await {
             Ok(runner_host::lock::TryLock::Acquired(lock)) => lock,
             Ok(runner_host::lock::TryLock::Busy) => {
+                self.observe_publication(
+                    &input,
+                    HomeObservationOutcome::Skipped,
+                    "capacity_lock_busy",
+                    None,
+                    None,
+                );
                 info!(run_id = %input.run_id, cache_key = input.cache_key,
                         contention_timeout_ms = duration_ms(HOME_IMAGE_PROMOTION_CAPACITY_LOCK_TIMEOUT),
                         "home image cache promotion skipped: capacity lock busy");
                 return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
             }
             Err(error) => {
+                self.observe_publication(
+                    &input,
+                    HomeObservationOutcome::Skipped,
+                    "capacity_lock_unavailable",
+                    None,
+                    None,
+                );
                 warn!(run_id = %input.run_id, cache_key = input.cache_key, %error,
                         "home image cache promotion skipped: capacity lock unavailable");
                 return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
@@ -1187,12 +1321,26 @@ impl HomeImageCache {
         // an unavailable scan as zero or assume another locked image is reclaimable.
         let metadata_peak = runner_host::state_file::HOME_METADATA_MAX_BYTES.saturating_add(8192);
         if !has_copy_headroom(stats, budget, metadata_peak) {
+            self.observe_publication(
+                &input,
+                HomeObservationOutcome::Skipped,
+                "disk_reserve",
+                None,
+                None,
+            );
             return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
         }
         let source = match PinnedImage::open(input.active_image, input.image_size_bytes) {
             Ok(source) => source,
             Err(error) => {
                 info!(%error, "home publication source unavailable");
+                self.observe_publication(
+                    &input,
+                    HomeObservationOutcome::Skipped,
+                    "source_unavailable",
+                    None,
+                    None,
+                );
                 return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
             }
         };
@@ -1212,6 +1360,13 @@ impl HomeImageCache {
                 .saturating_add(metadata_peak)
                 > budget.max_cache_bytes
             {
+                self.observe_publication(
+                    &input,
+                    HomeObservationOutcome::Skipped,
+                    "cache_budget",
+                    None,
+                    None,
+                );
                 return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
             }
         }
@@ -1243,6 +1398,13 @@ impl HomeImageCache {
                     budget,
                     active_allocated.saturating_add(metadata_peak),
                 ) {
+                    self.observe_publication(
+                        &input,
+                        HomeObservationOutcome::Skipped,
+                        "copy_disk_reserve",
+                        None,
+                        None,
+                    );
                     return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
                 }
                 let copied = sparse_copy_pinned(&source, &staging, input.image_size_bytes).await?;
@@ -1292,6 +1454,13 @@ impl HomeImageCache {
                 .saturating_add(metadata_peak)
                 > budget.max_cache_bytes
         {
+            self.observe_publication(
+                &input,
+                HomeObservationOutcome::Skipped,
+                "post_transfer_budget",
+                None,
+                None,
+            );
             return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
         }
         let metadata = HomeCacheMetadata {
@@ -1327,7 +1496,22 @@ impl HomeImageCache {
             && old_pin.identity() == previous.current_image
             && old_pin.validate_path(&old).is_ok()
         {
-            let _ = fs::remove_file(&old).await;
+            let removed = fs::remove_file(&old).await;
+            let mut observation = HomeObservation::new(
+                HomeObservationKind::Removal,
+                if removed.is_ok() {
+                    HomeObservationOutcome::Deleted
+                } else {
+                    HomeObservationOutcome::Failed
+                },
+            );
+            observation.run_id = Some(input.run_id);
+            observation.reuse_key = Some(input.reuse_key.to_owned());
+            observation.cache_key = Some(input.cache_key.to_owned());
+            observation.profile_name = Some(input.profile_name.to_owned());
+            observation.image_generation = Some(previous.image_generation);
+            observation.reason = Some("replaced_generation".into());
+            self.observe_home(observation);
             let _ = sync_directory(paths.entry_dir()).await;
         }
         if copied
@@ -1348,6 +1532,13 @@ impl HomeImageCache {
         info!(run_id = %input.run_id, cache_key = input.cache_key,
             image_generation = %input.run_id, image_size_bytes = input.image_size_bytes,
             "home image cache promoted");
+        self.observe_publication(
+            &input,
+            HomeObservationOutcome::Published,
+            "synced_commit",
+            Some(&input.run_id.to_string()),
+            Some(allocated_bytes(&observed)),
+        );
         Ok(HomeImagePromotionOutcome::Promoted)
     }
 }
@@ -1358,6 +1549,11 @@ struct HeldHomeStateScan {
 }
 
 impl HomeImageLease {
+    pub fn with_first_run(mut self, is_first_run: Option<bool>) -> Self {
+        self.cache.is_first_run = is_first_run;
+        self
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub fn working_dir(&self) -> &str {
         &self.working_dir
@@ -1365,6 +1561,39 @@ impl HomeImageLease {
 
     pub fn result(&self) -> HomeCacheCheckoutResult {
         self.result
+    }
+
+    pub fn observe_consumption(
+        &self,
+        run_id: Option<RunId>,
+        outcome: HomeObservationOutcome,
+        reason: &str,
+    ) {
+        self.cache
+            .observe_home(self.consumption_observation(run_id, outcome, reason));
+    }
+
+    pub fn consumption_observation(
+        &self,
+        run_id: Option<RunId>,
+        outcome: HomeObservationOutcome,
+        reason: &str,
+    ) -> HomeObservation {
+        let mut observation = HomeObservation::new(HomeObservationKind::Consumption, outcome);
+        observation.run_id = run_id;
+        observation.reuse_key = self.reuse_key.clone();
+        observation.cache_key = self.cache_key.clone();
+        observation.profile_name = Some(self.profile_name.clone());
+        observation.image_generation = self
+            .source_image
+            .as_deref()
+            .and_then(|path| path.file_name())
+            .and_then(|name| name.to_str())
+            .and_then(super::entry::image_generation)
+            .map(str::to_owned);
+        observation.reason = Some(reason.to_owned());
+        observation.is_first_run = self.cache.is_first_run;
+        observation
     }
 
     pub fn lock_outcome_and_reason(&self) -> Option<(&'static str, Option<&'static str>)> {
@@ -1399,6 +1628,11 @@ impl HomeImageLease {
                 .as_ref()
                 .is_none_or(|pin| pin.validate_path(source).is_err())
         }) {
+            self.observe_consumption(
+                None,
+                HomeObservationOutcome::Fallback,
+                "source_identity_changed",
+            );
             self.discard_cached_image();
         }
         self.home_drive_enabled.then(|| sandbox::HomeDriveConfig {
@@ -1482,7 +1716,31 @@ impl HomeImageLease {
             completed_at,
             storage_fingerprints,
         } = request;
-        let target = self.promotion_target()?;
+        let Some(target) = self.promotion_target() else {
+            let mut observation = HomeObservation::new(
+                HomeObservationKind::Publication,
+                HomeObservationOutcome::Skipped,
+            );
+            observation.run_id = Some(run_id);
+            observation.reuse_key = self.reuse_key.clone();
+            observation.cache_key = self.cache_key.clone();
+            observation.profile_name = Some(self.profile_name.clone());
+            observation.reason = Some(
+                match self.result {
+                    HomeCacheCheckoutResult::NoReuseKey => "no_reuse_key",
+                    HomeCacheCheckoutResult::InvalidWorkingDir => "invalid_working_dir",
+                    HomeCacheCheckoutResult::LockBusy => "entry_lock_busy",
+                    HomeCacheCheckoutResult::InvalidMetadata => "invalid_metadata",
+                    HomeCacheCheckoutResult::DiskPressure => "disk_pressure",
+                    HomeCacheCheckoutResult::Hit | HomeCacheCheckoutResult::Miss => {
+                        "home_drive_unavailable"
+                    }
+                }
+                .into(),
+            );
+            self.cache.observe_home(observation);
+            return None;
+        };
         let storage_fingerprints = match terminal_status {
             HomeCacheTerminalStatus::Success => storage_fingerprints,
             HomeCacheTerminalStatus::NonzeroExit | HomeCacheTerminalStatus::Cancelled => {
@@ -1645,13 +1903,18 @@ impl HomeImagePromotionContext {
                             error = %e,
                             "home image cache promotion skipped: late entry lock unavailable"
                         );
+                        self.observe_publication(
+                            HomeObservationOutcome::Skipped,
+                            "late_entry_lock_unavailable",
+                        );
                         return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
                     }
                 }
             }
         };
 
-        self.cache
+        let result = self
+            .cache
             .promote_locked(HomeImagePromotionInput {
                 run_id: self.run_id,
                 cache_key: &self.cache_key,
@@ -1666,7 +1929,21 @@ impl HomeImagePromotionContext {
                 storage_fingerprints: &self.storage_fingerprints,
                 history_proof: self.history_proof.as_ref(),
             })
-            .await
+            .await;
+        if result.is_err() {
+            self.observe_publication(HomeObservationOutcome::Failed, "publication_error");
+        }
+        result
+    }
+
+    pub fn observe_publication(&self, outcome: HomeObservationOutcome, reason: &str) {
+        let mut observation = HomeObservation::new(HomeObservationKind::Publication, outcome);
+        observation.run_id = Some(self.run_id);
+        observation.reuse_key = Some(self.reuse_key.clone());
+        observation.cache_key = Some(self.cache_key.clone());
+        observation.profile_name = Some(self.profile_name.clone());
+        observation.reason = Some(reason.to_owned());
+        self.cache.observe_home(observation);
     }
 
     pub async fn abandon_unpublished(self, reason: &str) -> LifecycleResult<bool> {

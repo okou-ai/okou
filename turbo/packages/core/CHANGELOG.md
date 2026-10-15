@@ -1,5 +1,33 @@
 # Changelog
 
+## [8.758.0](https://github.com/okou-ai/okou/compare/core-v8.757.0...core-v8.758.0) (2026-10-15)
+
+
+### Features
+
+* add bounded readonly guest home listings ([#40042](https://github.com/okou-ai/okou/issues/40042)) ([3e5d3be](https://github.com/okou-ai/okou/commit/3e5d3be42daf26e045459d9ffbbae25d85bbe9cb))
+* add built-in document templates ([#40052](https://github.com/okou-ai/okou/issues/40052)) ([987e011](https://github.com/okou-ai/okou/commit/987e0110410c5019842c26411306736b69fe4def))
+* add google docs and sheets artifact conversion ([#40019](https://github.com/okou-ai/okou/issues/40019)) ([9d83ecd](https://github.com/okou-ai/okou/commit/9d83ecdba2060f7f121c00426259e01c82f659a2))
+* **app:** redesign the subscription usage panel ([#40083](https://github.com/okou-ai/okou/issues/40083)) ([ca1b80f](https://github.com/okou-ai/okou/commit/ca1b80f33705d7ad069048da9012d9b0dc533235))
+* **app:** rename sidebar chats in place on double-click ([#40077](https://github.com/okou-ai/okou/issues/40077)) ([3d24b2c](https://github.com/okou-ai/okou/commit/3d24b2c29fd51ed4fb00906cc389d6bec4d0a28e))
+
+
+### Bug Fixes
+
+* **workflows:** make official workflows internal-only and remove their switch ([#40056](https://github.com/okou-ai/okou/issues/40056)) ([6c9dc4e](https://github.com/okou-ai/okou/commit/6c9dc4e67ad60faf5ce6020c185899cb59a93bc9))
+
+
+### Refactoring
+
+* roll out composer anchored suggestions ([#40070](https://github.com/okou-ai/okou/issues/40070)) ([b12f3e5](https://github.com/okou-ai/okou/commit/b12f3e54a9f40aafeffdba5f87a46ffb11ed62ca))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.562.0
+
 ## [8.757.0](https://github.com/okou-ai/okou/compare/core-v8.756.0...core-v8.757.0) (2026-10-14)
 
 

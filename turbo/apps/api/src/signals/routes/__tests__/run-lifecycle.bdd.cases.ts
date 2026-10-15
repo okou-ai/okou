@@ -2601,8 +2601,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const runner = await api.requestRunRunner(actor, run.runId, [200]);
         expect(runner.body).toStrictEqual({
-          sandboxReuseResult: null,
-          homeReuseResult: null,
           sandboxStartupPath: null,
           runnerHostname: winningClaim.candidate.runnerHostname,
           runnerVersion: winningClaim.candidate.runnerVersion,
@@ -2650,8 +2648,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.claimRunnerJob(run.runId);
         const runner = await api.requestRunRunner(actor, run.runId, [200]);
         expect(runner.body).toStrictEqual({
-          sandboxReuseResult: null,
-          homeReuseResult: null,
           sandboxStartupPath: null,
           runnerHostname: null,
           runnerVersion: null,
@@ -2740,8 +2736,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const runner = await api.requestRunRunner(actor, run.runId, [200]);
         expect(runner.body).toStrictEqual({
-          sandboxReuseResult: null,
-          homeReuseResult: null,
           sandboxStartupPath: null,
           runnerHostname: null,
           runnerVersion: null,
@@ -5663,6 +5657,37 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           target: { kind: "builtin", connectorSlug: "lark" },
           state: "available",
         });
+        const sibling = await connectors.requestManualGrant(
+          actor,
+          "lark",
+          "api-token",
+          {
+            appId: "lark-sibling-app-id",
+            appSecret: "lark-sibling-app-secret",
+          },
+          {
+            statuses: [200],
+            account: { intent: "add", displayName: "Sibling" },
+          },
+        );
+        if (sibling.status !== 200) {
+          throw new Error("Expected the sibling Lark account to connect");
+        }
+        const defaultAccount =
+          await connectors.setDefaultBuiltinConnectorAccount(
+            actor,
+            "lark",
+            sibling.body.id,
+          );
+        expect(defaultAccount).toMatchObject({
+          id: sibling.body.id,
+          isDefault: true,
+        });
+        const [exactRuntimeWithSibling] = await api.syncConnectorRuntime(
+          run.runId,
+          { targets: [larkTarget] },
+        );
+        expect(exactRuntimeWithSibling).toStrictEqual(exactRuntime);
         const [missingSourceRuntime] = await api.syncConnectorRuntime(
           run.runId,
           {
@@ -5684,28 +5709,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           target: { kind: "builtin", connectorSlug: "lark" },
           state: "unresolved",
           reason: "connector-unavailable",
-        });
-
-        await connectors.requestManualGrant(
-          actor,
-          "lark",
-          "api-token",
-          {
-            appId: "lark-sibling-app-id",
-            appSecret: "lark-sibling-app-secret",
-          },
-          {
-            statuses: [200],
-            account: { intent: "add", displayName: "Sibling" },
-          },
-        );
-        const [exactRuntimeWithSibling] = await api.syncConnectorRuntime(
-          run.runId,
-          { targets: [larkTarget] },
-        );
-        expect(exactRuntimeWithSibling).toMatchObject({
-          target: { kind: "builtin", connectorSlug: "lark" },
-          state: "available",
         });
 
         await api.requestCancelRun(actor, run.runId, [200]);
@@ -12985,8 +12988,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             exitCode: 124,
             error: "runner job timed out",
             lastEventSequence: 0,
-            sandboxReuseResult: "poolMiss",
-            homeReuseResult: "lockBusy",
           },
           sandboxHeaders,
           [200],
@@ -13000,8 +13001,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(failed.error).toBe("runner job timed out");
         const runner = await api.requestRunRunner(actor, run.runId, [200]);
         expect(runner.body).toStrictEqual({
-          sandboxReuseResult: "poolMiss",
-          homeReuseResult: "lockBusy",
           sandboxStartupPath: null,
           runnerHostname: null,
           runnerVersion: null,
@@ -13127,8 +13126,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               runId: run.runId,
               exitCode: 0,
               lastEventSequence: 0,
-              sandboxReuseResult: "poolMiss",
-              homeReuseResult: "cacheMiss",
             },
             sandboxHeaders,
             [200],
@@ -13147,8 +13144,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect(failed.error).toBe("Run completion outputs were not provided");
           const runner = await api.requestRunRunner(actor, run.runId, [200]);
           expect(runner.body).toStrictEqual({
-            sandboxReuseResult: "poolMiss",
-            homeReuseResult: "cacheMiss",
             sandboxStartupPath: null,
             runnerHostname: null,
             runnerVersion: null,
@@ -13191,8 +13186,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               runId: run.runId,
               exitCode: 0,
               lastEventSequence: 0,
-              sandboxReuseResult: "poolMiss",
-              homeReuseResult: "diskPressure",
             },
             {
               authorization: `Bearer ${claim.sandboxToken}`,
@@ -13207,8 +13200,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect(cancelled.status).toBe("cancelled");
           const runner = await api.requestRunRunner(actor, run.runId, [200]);
           expect(runner.body).toStrictEqual({
-            sandboxReuseResult: "poolMiss",
-            homeReuseResult: "diskPressure",
             sandboxStartupPath: null,
             runnerHostname: null,
             runnerVersion: null,
@@ -13221,8 +13212,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               runId: run.runId,
               exitCode: 0,
               lastEventSequence: 0,
-              sandboxReuseResult: "reused",
-              homeReuseResult: "sandboxReused",
             },
             {
               authorization: `Bearer ${claim.sandboxToken}`,

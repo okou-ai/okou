@@ -77,6 +77,29 @@ pub struct BudgetLease {
     budget: Option<Arc<ResourceBudget>>,
     vcpu: u32,
     memory_mb: u32,
+    #[cfg(any(test, feature = "test-support"))]
+    lifetime: Option<Arc<()>>,
+}
+
+/// Non-owning test observation of one reservation, including a same-shape
+/// one-for-one atomic substitution. It cannot keep budget resources reserved.
+#[cfg(any(test, feature = "test-support"))]
+#[derive(Clone)]
+pub struct BudgetLeaseWitness {
+    lifetime: std::sync::Weak<()>,
+    vcpu: u32,
+    memory_mb: u32,
+}
+
+#[cfg(any(test, feature = "test-support"))]
+impl BudgetLeaseWitness {
+    pub fn is_active(&self) -> bool {
+        self.lifetime.strong_count() > 0
+    }
+
+    pub fn resources(&self) -> (u32, u32) {
+        (self.vcpu, self.memory_mb)
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -105,7 +128,19 @@ impl BudgetLease {
             budget: Some(budget),
             vcpu,
             memory_mb,
+            #[cfg(any(test, feature = "test-support"))]
+            lifetime: Some(Arc::new(())),
         }
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn witness(&self) -> Option<BudgetLeaseWitness> {
+        self.budget.as_ref()?;
+        Some(BudgetLeaseWitness {
+            lifetime: Arc::downgrade(self.lifetime.as_ref()?),
+            vcpu: self.vcpu,
+            memory_mb: self.memory_mb,
+        })
     }
 
     /// Returns the vCPU reservation held by this lease.
@@ -254,6 +289,16 @@ impl ResourceBudget {
 
         *state = virtual_state;
         Self::reserve_locked(&mut state, vcpu, memory_mb);
+        #[cfg(any(test, feature = "test-support"))]
+        let inherited_witness = if leases.len() == 1
+            && leases
+                .first()
+                .is_some_and(|lease| lease.vcpu == vcpu && lease.memory_mb == memory_mb)
+        {
+            leases.first_mut().and_then(|lease| lease.lifetime.take())
+        } else {
+            None
+        };
         for lease in &mut leases {
             lease.budget = None;
         }
@@ -266,7 +311,16 @@ impl ResourceBudget {
             budget.availability.notify_waiters();
         }
 
-        Ok(BudgetLease::new(Arc::clone(budget), vcpu, memory_mb))
+        let incoming = BudgetLease::new(Arc::clone(budget), vcpu, memory_mb);
+        #[cfg(any(test, feature = "test-support"))]
+        let incoming = {
+            let mut incoming = incoming;
+            if let Some(witness) = inherited_witness {
+                incoming.lifetime = Some(witness);
+            }
+            incoming
+        };
+        Ok(incoming)
     }
 
     /// Wait until selected leases can be atomically substituted for one
@@ -620,6 +674,57 @@ mod tests {
         assert_eq!(state.running_vcpu, 2);
         assert_eq!(state.running_memory_mb, 2048);
         assert_eq!(state.running_count, 1);
+    }
+
+    #[test]
+    fn original_lease_witness_cannot_be_replaced_by_an_unrelated_reservation() {
+        let budget = Arc::new(ResourceBudget::new(12, 24576, 1.0, 0));
+        let original = ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap();
+        let witness = original.witness().unwrap();
+        let unrelated = ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap();
+        assert!(witness.is_active());
+        assert_eq!(witness.resources(), (2, 4096));
+        drop(original);
+        assert_eq!(budget.allocated(), (2, 4096, 1));
+        assert!(!witness.is_active());
+        drop(unrelated);
+        assert_eq!(budget.allocated(), (0, 0, 0));
+    }
+
+    #[test]
+    fn same_shape_atomic_transfer_preserves_the_original_nonowning_witness() {
+        let budget = Arc::new(ResourceBudget::new(2, 4096, 1.0, 0));
+        let original = ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap();
+        let witness = original.witness().unwrap();
+        let incoming = ResourceBudget::try_substitute_leases(&budget, vec![original], 2, 4096)
+            .unwrap_or_else(|_| panic!("same shape substitution should fit"));
+        assert_eq!(budget.allocated(), (2, 4096, 1));
+        assert!(witness.is_active());
+        drop(incoming);
+        assert!(!witness.is_active());
+        assert_eq!(budget.allocated(), (0, 0, 0));
+    }
+
+    #[test]
+    fn failed_substitution_keeps_the_original_witness_and_shape_change_does_not() {
+        let budget = Arc::new(ResourceBudget::new(8, 8192, 1.0, 0));
+        let original = ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap();
+        let witness = original.witness().unwrap();
+        let other = ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap();
+        let originals =
+            match ResourceBudget::try_substitute_leases(&budget, vec![original], 2, 8192) {
+                Err(leases) => leases,
+                Ok(_) => panic!("substitution must not steal the unrelated reservation"),
+            };
+        assert!(witness.is_active());
+        assert_eq!(budget.allocated(), (4, 8192, 2));
+        drop(other);
+        let incoming = ResourceBudget::try_substitute_leases(&budget, originals, 2, 8192)
+            .unwrap_or_else(|_| panic!("changed shape should now fit"));
+        assert!(!witness.is_active());
+        assert_eq!(budget.allocated(), (2, 8192, 1));
+        drop(incoming);
+        assert_eq!(budget.allocated(), (0, 0, 0));
     }
 
     #[test]

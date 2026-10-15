@@ -10,12 +10,14 @@ pub(crate) use crate::ArchiveSizeMismatch;
 
 /// Caller-supplied data for a timed sandbox operation or a zero-duration marker.
 ///
-/// This value carries no run identity, completion timestamp, or structured
-/// archive diagnostics. Ordinary background reporting through
+/// Ordinary timing records carry no run identity, completion timestamp or
+/// archive diagnostics. Optional home fields preserve already-known producer
+/// identity; the receiving telemetry collector supplies its authentication.
+/// Ordinary background reporting through
 /// [`SandboxOpReporter`] therefore does not preserve the operation's completion
 /// time. Archive phases supply that information separately through
 /// [`StorageTelemetry::record_archive_phase_at`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SandboxOpRecord {
     /// Fixed operation name used to classify the record.
     pub action_type: &'static str,
@@ -25,6 +27,8 @@ pub struct SandboxOpRecord {
     pub success: bool,
     /// Optional bounded error label, not a raw error message or object identity.
     pub error: Option<&'static str>,
+    /// Resource dimensions, without local paths or error detail.
+    pub home: Option<runner_host::home_observation::HomeObservation>,
 }
 
 impl SandboxOpRecord {
@@ -40,12 +44,14 @@ impl SandboxOpRecord {
             duration,
             success,
             error,
+            home: None,
         }
     }
 }
 
 type ReportFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
 type ReportFn = dyn Fn(Vec<SandboxOpRecord>) -> ReportFuture + Send + Sync;
+type RecordFn = dyn Fn(SandboxOpRecord) + Send + Sync;
 
 /// Cloneable callback wrapper for reporting operations independently of a sink.
 ///
@@ -56,6 +62,7 @@ type ReportFn = dyn Fn(Vec<SandboxOpRecord>) -> ReportFuture + Send + Sync;
 #[derive(Clone)]
 pub struct SandboxOpReporter {
     report: Arc<ReportFn>,
+    record: Option<Arc<RecordFn>>,
 }
 
 impl SandboxOpReporter {
@@ -70,6 +77,20 @@ impl SandboxOpReporter {
     {
         Self {
             report: Arc::new(move |records| Box::pin(report(records))),
+            record: None,
+        }
+    }
+
+    /// Attach synchronous buffering owned by the existing telemetry collector.
+    pub fn with_record(mut self, record: impl Fn(SandboxOpRecord) + Send + Sync + 'static) -> Self {
+        self.record = Some(Arc::new(record));
+        self
+    }
+
+    /// Buffer a record without awaiting network delivery.
+    pub fn record(&self, record: SandboxOpRecord) {
+        if let Some(buffer) = &self.record {
+            buffer(record);
         }
     }
 

@@ -665,7 +665,6 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
         displayName: "BDD resume agent",
         visibility: "private",
       });
-      fixture.registerAgent(agent.agentId);
       const workflowName = `bdd-resume-${randomUUID().slice(0, 8)}`;
       const misc = createMiscRoutesApi(context);
       const workflowWritesStart = context.mocks.s3.send.mock.calls.length;
@@ -1995,70 +1994,6 @@ describe("RUN-04: agent run telemetry families", () => {
     });
   });
 
-  it("preserves reuse outcomes from completion through runner reads", async () => {
-    const actor = await entitledActor();
-    await api.ensurePersonalSubscriptionModel(actor, {
-      model: "claude-fable-5-1",
-    });
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD sandbox reuse reason agent",
-      description: "Sandbox reuse reason compatibility.",
-      visibility: "private",
-    });
-    const scenarios = [
-      {
-        name: "legacy no session ID",
-        sandboxResult: "noSessionId",
-        homeResult: undefined,
-      },
-      {
-        name: "no reuse key",
-        sandboxResult: "noReuseKey",
-        homeResult: "reused",
-      },
-    ] as const;
-
-    for (const scenario of scenarios) {
-      const run = await api.createThreadRun(actor, {
-        agentId: agent.agentId,
-        prompt: `record ${scenario.name}`,
-      });
-      const claim = await api.claimRunnerJob(run.runId);
-      const headers = sandboxHeaders(claim.sandboxToken);
-
-      const completion = await webhooks.requestAgentComplete(
-        {
-          runId: run.runId,
-          exitCode: 0,
-          completion: {
-            cliAgentType: "claude-code",
-            cliAgentSessionId: `bdd-cli-${run.runId}`,
-            cliAgentSessionHistoryDisposition: "native_only",
-          },
-          sandboxReuseResult: scenario.sandboxResult,
-          homeReuseResult: scenario.homeResult,
-        },
-        headers,
-        [200],
-      );
-      expect(completion.body).toStrictEqual({
-        success: true,
-        status: "completed",
-      });
-
-      const runner = await api.requestRunRunner(actor, run.runId, [200]);
-      expect(runner.body).toStrictEqual({
-        sandboxReuseResult: scenario.sandboxResult,
-        homeReuseResult: scenario.homeResult ?? null,
-        sandboxStartupPath: null,
-        runnerHostname: null,
-        runnerVersion: null,
-        runnerId: expect.any(String),
-        runnerHeartbeatGeneration: 1,
-      });
-    }
-  });
-
   it("reads fresh run context within the creation-time window after a cached miss", async () => {
     const actor = await entitledActor();
     await api.ensurePersonalSubscriptionModel(actor);
@@ -2178,8 +2113,6 @@ describe("RUN-04: agent run telemetry families", () => {
           cliAgentSessionId: `bdd-cli-${agentRun.runId}`,
           cliAgentSessionHistoryDisposition: "native_only",
         },
-        sandboxReuseResult: "reused",
-        homeReuseResult: "sandboxReused",
       },
       headers,
       [200],
@@ -2716,11 +2649,9 @@ describe("RUN-04: agent run telemetry families", () => {
     expectApiError(memberNetwork.body);
     expect(memberNetwork.body.error.message).toBe("Agent run not found");
 
-    // Runner metadata mirrors the final reuse outcomes from completion.
+    // Runner identity stays available after completion without a startup report.
     const runner = await api.requestRunRunner(actor, runId, [200]);
     expect(runner.body).toStrictEqual({
-      sandboxReuseResult: "reused",
-      homeReuseResult: "sandboxReused",
       sandboxStartupPath: null,
       runnerHostname: null,
       runnerVersion: null,
@@ -2729,8 +2660,6 @@ describe("RUN-04: agent run telemetry families", () => {
     });
     const bareRunner = await api.requestRunRunner(actor, bareRun.runId, [200]);
     expect(bareRunner.body).toStrictEqual({
-      sandboxReuseResult: null,
-      homeReuseResult: null,
       sandboxStartupPath: null,
       runnerHostname: null,
       runnerVersion: null,

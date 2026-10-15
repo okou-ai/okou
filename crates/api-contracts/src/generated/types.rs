@@ -3247,70 +3247,6 @@ pub mod webhooks {
     pub mod agent {
         /// DTOs for atomically completing agent runs.
         pub mod complete {
-            /// Outcome of the sandbox reuse decision.
-            #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-            pub enum RequestSandboxReuseResult {
-                /// An idle sandbox was reused.
-                #[serde(rename = "reused")]
-                Reused,
-                /// Legacy outcome from the removed feature gate.
-                #[serde(rename = "featureDisabled")]
-                FeatureDisabled,
-                /// Legacy outcome for an unavailable reuse identity.
-                #[serde(rename = "noSessionId")]
-                NoSessionId,
-                /// The run had no sandbox reuse key.
-                #[serde(rename = "noReuseKey")]
-                NoReuseKey,
-                /// No matching idle sandbox was available.
-                #[serde(rename = "poolMiss")]
-                PoolMiss,
-                /// The idle sandbox profile did not match.
-                #[serde(rename = "profileMismatch")]
-                ProfileMismatch,
-                /// The idle sandbox device limits did not match.
-                #[serde(rename = "deviceLimitMismatch")]
-                DeviceLimitMismatch,
-                /// The selected idle sandbox could not be unparked.
-                #[serde(rename = "unparkFailed")]
-                UnparkFailed,
-            }
-
-            /// Final outcome of home reuse preparation.
-            #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-            pub enum RequestHomeReuseResult {
-                /// A cached home directory was reused.
-                #[serde(rename = "reused")]
-                Reused,
-                /// The home directory remained in a reused sandbox.
-                #[serde(rename = "sandboxReused")]
-                SandboxReused,
-                /// No matching home cache was available.
-                #[serde(rename = "cacheMiss")]
-                CacheMiss,
-                /// The run had no home reuse key.
-                #[serde(rename = "noReuseKey")]
-                NoReuseKey,
-                /// The home working directory was invalid.
-                #[serde(rename = "invalidWorkingDir")]
-                InvalidWorkingDir,
-                /// The cached home was locked by another run.
-                #[serde(rename = "lockBusy")]
-                LockBusy,
-                /// The cached home metadata was invalid.
-                #[serde(rename = "invalidMetadata")]
-                InvalidMetadata,
-                /// Home reuse was disabled by disk pressure.
-                #[serde(rename = "diskPressure")]
-                DiskPressure,
-                /// Home reuse was not configured.
-                #[serde(rename = "notConfigured")]
-                NotConfigured,
-                /// Home preparation fell back after sandbox setup.
-                #[serde(rename = "sandboxPrepareFallback")]
-                SandboxPrepareFallback,
-            }
-
             /// Reason a final Run output intentionally omits resumable CLI agent session history.
             #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
             pub enum RequestCompletionCliAgentSessionHistoryDisposition {
@@ -3402,12 +3338,6 @@ pub mod webhooks {
                 /// Optional sandbox identifier used by the run.
                 #[serde(default, skip_serializing_if = "Option::is_none")]
                 pub sandbox_id: Option<String>,
-                /// Optional outcome of the sandbox reuse decision.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                pub sandbox_reuse_result: Option<RequestSandboxReuseResult>,
-                /// Optional outcome of the home reuse decision.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                pub home_reuse_result: Option<RequestHomeReuseResult>,
                 /// Native history and published file outputs saved with completion.
                 #[serde(default, skip_serializing_if = "Option::is_none")]
                 pub completion: Option<RequestCompletion>,

@@ -134,7 +134,7 @@ describe("POST /api/billing/usage-pack-checkout", () => {
     async (tier) => {
       const lifecycle = createPublicBillingScenario(context);
       return await lifecycle.run(async () => {
-        const fixture = lifecycle.own(createOrgFixture());
+        const fixture = createOrgFixture();
         const freeMemberId = `user_${randomUUID()}`;
         authenticateOrg(fixture);
         context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
@@ -224,7 +224,7 @@ describe("POST /api/billing/usage-pack-checkout", () => {
   it("checks out the new plan", async () => {
     const lifecycle = createPublicBillingScenario(context);
     return await lifecycle.run(async () => {
-      const fixture = lifecycle.own(createOrgFixture());
+      const fixture = createOrgFixture();
       authenticateOrg(fixture);
       const memberIds = Array.from({ length: 101 }, (_, index) => {
         return index === 0 ? fixture.userId : `user_${randomUUID()}`;
@@ -391,7 +391,7 @@ describe("POST /api/billing/usage-pack-checkout", () => {
   it("separates the immediate balance-adjusted charge from the recurring amount", async () => {
     const lifecycle = createPublicBillingScenario(context);
     return await lifecycle.run(async () => {
-      const fixture = lifecycle.own(createOrgFixture());
+      const fixture = createOrgFixture();
       const customerId = `cus_${randomUUID()}`;
       const paymentMethodId = `pm_${randomUUID()}`;
       authenticateOrg(fixture);
@@ -593,7 +593,7 @@ describe("POST /api/billing/usage-pack-checkout", () => {
   it("recovers usage pack checkout from a transient Clerk server failure", async () => {
     const lifecycle = createPublicBillingScenario(context);
     return await lifecycle.run(async () => {
-      const fixture = lifecycle.own(createOrgFixture());
+      const fixture = createOrgFixture();
       authenticateOrg(fixture);
       const checkoutSessionId = `cs_${randomUUID()}`;
       context.mocks.signalTimers.delay.mockResolvedValue(undefined);
@@ -1085,7 +1085,7 @@ describe("POST /api/billing/usage-pack-checkout", () => {
   it("keeps only one payable Checkout across concurrent different configurations", async () => {
     const lifecycle = createPublicBillingScenario(context);
     return await lifecycle.run(async () => {
-      const fixture = lifecycle.own(createOrgFixture());
+      const fixture = createOrgFixture();
       const customerId = `cus_${randomUUID()}`;
       await lifecycle.run(() => {
         return createStripeCustomerOrgForFixture(
@@ -1413,7 +1413,7 @@ describe("POST /api/billing/usage-pack-checkout", () => {
   it("rejects a replacement usage pack purchase while a confirmation owns the claim", async () => {
     const lifecycle = createPublicBillingScenario(context);
     return await lifecycle.run(async () => {
-      const fixture = lifecycle.own(createOrgFixture());
+      const fixture = createOrgFixture();
       authenticateOrg(fixture);
       const customerId = `cus_${randomUUID()}`;
       const paymentMethodId = `pm_${randomUUID()}`;
@@ -1591,7 +1591,7 @@ describe("POST /api/billing/usage-pack-checkout", () => {
     async (failure) => {
       const lifecycle = createPublicBillingScenario(context);
       return await lifecycle.run(async () => {
-        const fixture = lifecycle.own(createOrgFixture());
+        const fixture = createOrgFixture();
         authenticateOrg(fixture);
         const customerId = `cus_${randomUUID()}`;
         const paymentMethodId = `pm_${randomUUID()}`;

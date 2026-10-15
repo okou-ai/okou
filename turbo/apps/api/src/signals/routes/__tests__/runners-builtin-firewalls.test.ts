@@ -67,7 +67,7 @@ describe("runner builtin firewall resolver", () => {
     expect(response.body.error.code).toBe("UNAUTHORIZED");
   });
 
-  it("rejects unknown builtin firewall names", async () => {
+  it("rejects unknown builtin firewall names and preserves subsequent valid resolution", async () => {
     const response = await accept(
       client().resolve({
         headers: { authorization: OFFICIAL_RUNNER_AUTHORIZATION },
@@ -79,6 +79,19 @@ describe("runner builtin firewall resolver", () => {
     expect(response.body.error.message).toBe(
       "Unknown builtin firewall: not-a-builtin-firewall",
     );
+
+    const resolved = await accept(
+      client().resolve({
+        headers: { authorization: OFFICIAL_RUNNER_AUTHORIZATION },
+        body: { names: ["github"] },
+      }),
+      [200],
+    );
+    expect(resolved.body).toStrictEqual({
+      catalogDigest: EXPECTED_RUNNER_FIREWALL_CATALOG.catalogDigest,
+      catalogVersion: EXPECTED_RUNNER_FIREWALL_CATALOG.catalogVersion,
+      firewalls: { github: EXPECTED_RUNNER_FIREWALL_CATALOG.firewalls.github },
+    });
   });
 
   it("rejects misspelled full-catalog request fields", async () => {
@@ -101,6 +114,7 @@ describe("runner builtin firewall resolver", () => {
     { body: "not-json", label: "invalid JSON" },
     { body: "null", label: "null JSON" },
     { body: "[]", label: "array JSON" },
+    { body: '{"names":[]}', label: "empty names" },
   ])("rejects $label full-catalog request bodies", async ({ body }) => {
     const response = await rawApp().request(
       "/api/runners/builtin-firewalls/resolve",
@@ -212,6 +226,44 @@ describe("runner builtin firewall resolver", () => {
         ...EXPECTED_RUNNER_FIREWALL_CATALOG.names,
       ]);
     }
+  });
+
+  it("isolates concurrent full and selected firewall responses with one catalog identity", async () => {
+    const providerName = "model-provider:codex-oauth-token";
+    const requests = [
+      { body: {}, firewalls: EXPECTED_RUNNER_FIREWALL_CATALOG.firewalls },
+      {
+        body: { names: ["github", "github", providerName] },
+        firewalls: {
+          github: EXPECTED_RUNNER_FIREWALL_CATALOG.firewalls.github,
+          [providerName]:
+            EXPECTED_RUNNER_FIREWALL_CATALOG.firewalls[providerName],
+        },
+      },
+      {
+        body: { names: [providerName] },
+        firewalls: {
+          [providerName]:
+            EXPECTED_RUNNER_FIREWALL_CATALOG.firewalls[providerName],
+        },
+      },
+    ];
+    await Promise.all(
+      requests.map(async ({ body, firewalls }) => {
+        const response = await accept(
+          client().resolve({
+            headers: { authorization: OFFICIAL_RUNNER_AUTHORIZATION },
+            body,
+          }),
+          [200],
+        );
+        expect(response.body).toStrictEqual({
+          catalogDigest: EXPECTED_RUNNER_FIREWALL_CATALOG.catalogDigest,
+          catalogVersion: EXPECTED_RUNNER_FIREWALL_CATALOG.catalogVersion,
+          firewalls,
+        });
+      }),
+    );
   });
 
   it("keeps the complete serialized builtin firewall catalog within the Runner byte budget", async () => {

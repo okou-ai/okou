@@ -25,6 +25,9 @@ pub use object_download_policy::{
 };
 pub use telemetry::{SandboxOpRecord, SandboxOpReporter, StorageTelemetry};
 
+#[cfg(any(test, feature = "test-support"))]
+pub mod operation_test_support;
+
 #[cfg(test)]
 mod test_fixtures {
     pub(crate) mod http_body;

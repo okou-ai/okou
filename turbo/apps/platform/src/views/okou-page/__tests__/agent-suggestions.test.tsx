@@ -408,7 +408,8 @@ function numberedSuggestions(count: number): Suggestion[] {
     };
   });
 }
-test("Suggestions show one at a time and page without modifying the composer", async () => {
+test("Suggestions loop in both directions without modifying the composer", async () => {
+  const user = userEvent.setup();
   mockPool(numberedSuggestions(3));
   await setupPage({
     context,
@@ -418,21 +419,23 @@ test("Suggestions show one at a time and page without modifying the composer", a
   await screen.findByText("Suggested action 1");
   expect(screen.getByText("1 of 3")).toBeInTheDocument();
   expect(screen.queryByText("Suggested action 2")).not.toBeInTheDocument();
-  expect(button("Previous suggestion")).toHaveAttribute(
-    "aria-disabled",
-    "true",
-  );
   await fill(composer(), "Keep this draft");
-  click(button("Next suggestion"));
+  await user.click(button("Next suggestion"));
   await screen.findByText("Suggested action 2");
   expect(screen.getByText("2 of 3")).toBeInTheDocument();
   expect(screen.queryByText("Suggested action 1")).not.toBeInTheDocument();
-  click(button("Next suggestion"));
+  await user.keyboard("{Enter}");
   await screen.findByText("Suggested action 3");
-  // Disabled at the end, yet still focusable for the keyboard user who got here.
-  expect(button("Next suggestion")).toHaveAttribute("aria-disabled", "true");
-  expect(button("Next suggestion")).not.toBeDisabled();
-  click(button("Previous suggestion"));
+  expect(screen.getByText("3 of 3")).toBeInTheDocument();
+  await user.keyboard("{Enter}");
+  await screen.findByText("Suggested action 1");
+  expect(screen.getByText("1 of 3")).toBeInTheDocument();
+  expect(button("Next suggestion")).toHaveFocus();
+  await user.click(button("Previous suggestion"));
+  await screen.findByText("Suggested action 3");
+  expect(screen.getByText("3 of 3")).toBeInTheDocument();
+  expect(button("Previous suggestion")).toHaveFocus();
+  await user.keyboard("{Enter}");
   await screen.findByText("Suggested action 2");
   expect(composer()).toHaveTextContent("Keep this draft");
   expect(pathname()).toBe(`/agents/${agentId}/chat`);
@@ -449,6 +452,11 @@ test("Dismissing a suggestion consumes it without opening it and brings up the n
   click(button("Dismiss"));
   await screen.findByText("Suggested action 2");
   expect(screen.getByText("1 of 1")).toBeInTheDocument();
+  expect(button("Previous suggestion")).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  expect(button("Next suggestion")).toHaveAttribute("aria-disabled", "true");
   await waitFor(() => {
     expect(pool.consumed).toStrictEqual([
       "a0000000-0000-4000-a000-000000000001",

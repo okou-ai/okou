@@ -102,7 +102,7 @@ use crate::orphan_reap::{OrphanReapMode, OrphanedActiveRuns};
 use claim_tasks::ClaimTasks;
 use factory_lifecycle::{shutdown_factory_instances, shutdown_runtime};
 use heartbeat::heartbeat_profiles;
-use job_discovery::{AdmissionContext, DiscoveredJob, DiscoveredJobContext};
+use job_discovery::{AdmissionContext, DiscoveredJob};
 use job_spawn::{SpawnContext, handle_job_result};
 use maintenance::{MaintenanceCompletion, MaintenanceTasks};
 use pending_candidate::PendingCandidate;
@@ -1477,33 +1477,12 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                 if !claim_tasks.is_empty() || claim_tasks.is_preparing() =>
             {
                 let Some(result) = result else { continue };
-                let result = match result {
+                let result = match claim_tasks.consume(result, &mut jobs).await {
                     Ok(result) => result,
-                    Err(_) => {
+                    Err(failure) => {
+                        let (reason, error) = failure.into_stopping_failure();
                         handle_stopping_signal(
-                            "claim admission task failure",
-                            &provider_state.cancel,
-                            &provider_state.cancel_tokens,
-                            &lifecycle,
-                        ).await;
-                        terminal_error = Some(RunnerError::Internal("claim admission task failed".to_owned()));
-                        break;
-                    }
-                };
-                let result = match result.handle(DiscoveredJobContext {
-                    runner_identity: runner.identity,
-                    budget: &capacity.budget,
-                    idle_pool: &shared.idle_pool,
-                    status: &shared.status,
-                    mode_rx: &mode_rx,
-                    cancel_tokens: &provider_state.cancel_tokens,
-                    spawn_ctx: &spawn_ctx,
-                    jobs: &mut jobs,
-                }).await {
-                    Ok(result) => result,
-                    Err(error) => {
-                        handle_stopping_signal(
-                            "claim result ownership failure",
+                            reason,
                             &provider_state.cancel,
                             &provider_state.cancel_tokens,
                             &lifecycle,
@@ -1767,43 +1746,16 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     drop(home_cache_change_fut);
     let phase = teardown.phase_start("claims_drain");
     while let Some(result) = claim_tasks.next().await {
-        match result {
-            Ok(result) => {
-                if let Err(error) = result
-                    .handle(DiscoveredJobContext {
-                        runner_identity: runner.identity,
-                        budget: &capacity.budget,
-                        idle_pool: &shared.idle_pool,
-                        status: &shared.status,
-                        mode_rx: &mode_rx,
-                        cancel_tokens: &provider_state.cancel_tokens,
-                        spawn_ctx: &spawn_ctx,
-                        jobs: &mut jobs,
-                    })
-                    .await
-                {
-                    handle_stopping_signal(
-                        "claim result ownership failure",
-                        &provider_state.cancel,
-                        &provider_state.cancel_tokens,
-                        &lifecycle,
-                    )
-                    .await;
-                    terminal_error.get_or_insert(error);
-                }
-            }
-            Err(_) => {
-                handle_stopping_signal(
-                    "claim admission task failure",
-                    &provider_state.cancel,
-                    &provider_state.cancel_tokens,
-                    &lifecycle,
-                )
-                .await;
-                terminal_error.get_or_insert_with(|| {
-                    RunnerError::Internal("claim admission task failed".to_owned())
-                });
-            }
+        if let Err(failure) = claim_tasks.consume(result, &mut jobs).await {
+            let (reason, error) = failure.into_stopping_failure();
+            handle_stopping_signal(
+                reason,
+                &provider_state.cancel,
+                &provider_state.cancel_tokens,
+                &lifecycle,
+            )
+            .await;
+            terminal_error.get_or_insert(error);
         }
     }
     drop(claim_tasks);

@@ -284,7 +284,6 @@ async function withPublicFirewallRun(
       description: "Exercises firewall auth resolution.",
       visibility: "private",
     });
-    fixture.registerAgent(agent.agentId);
     const run = await runsApi.createThreadRun(fixture.actor, {
       agentId: agent.agentId,
       prompt: "resolve firewall auth",

@@ -2,16 +2,15 @@ use super::super::super::*;
 use super::super::support::{
     TestParkedIdleCandidateSpec, context_with_session, minimal_context, mock_run_config,
     mock_run_config_with_overrides, push_job, seed_home_cache_state, seed_idle_pool_with_timing,
-    shutdown, test_profiles, two_profiles, wait_budget_count, wait_idle_pool_len,
+    shutdown, test_profiles, two_profiles, wait_budget_count, wait_idle_pool_len, wait_status_mode,
 };
 use super::blank_session_history::history_context;
 
 use crate::home_image_cache::HomeImageCache;
 use runner_host::paths::RunnerPaths;
-use runner_types::types::{HomeReuseResult, SandboxReuseResult};
 
 #[tokio::test(start_paused = true)]
-async fn blank_pool_prepares_and_serves_a_job_without_changing_reuse_attribution() {
+async fn blank_pool_prepares_and_serves_a_job() {
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     let calls = Arc::clone(&overrides);
     let (config, env) = mock_run_config_with_overrides(test_profiles(), 16, 32_768, 8, overrides);
@@ -51,14 +50,6 @@ async fn blank_pool_prepares_and_serves_a_job_without_changing_reuse_attribution
         .expect("job should complete");
 
     assert_eq!(completion.exit_code, 0);
-    assert_eq!(
-        completion.reuse_result,
-        Some(SandboxReuseResult::NoReuseKey)
-    );
-    assert_eq!(
-        completion.home_reuse_result,
-        Some(HomeReuseResult::NotConfigured)
-    );
     assert_eq!(completion.sandbox_id, Some(blank_sandbox_id));
     assert_eq!(calls.home_drive_mount_calls(), 1);
 
@@ -129,10 +120,6 @@ async fn full_capacity_claims_compatible_blank_before_pressure_eviction() {
         .expect("full-capacity job should claim the compatible blank");
 
     assert_eq!(completion.exit_code, 0);
-    assert_eq!(
-        completion.reuse_result,
-        Some(SandboxReuseResult::NoReuseKey)
-    );
     assert_eq!(completion.sandbox_id, Some(blank_sandbox_id));
 
     shutdown(&env, run_handle).await;
@@ -194,7 +181,6 @@ async fn exact_idle_that_parks_during_claim_takes_priority_over_reserved_blank()
         .expect("job should use the exact sandbox that parked during claim");
 
     assert_eq!(completion.exit_code, 0);
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::Reused));
     assert_eq!(completion.sandbox_id, Some(exact_sandbox_id));
     assert_eq!(idle_pool.lock().await.blank_len(), 1);
 
@@ -315,7 +301,6 @@ async fn blank_backed_run_becomes_exact_reuse_and_wins_over_refilled_blank() {
         .await
         .expect("blank-backed job should complete");
 
-    assert_eq!(first.reuse_result, Some(SandboxReuseResult::PoolMiss));
     assert_eq!(first.sandbox_id, Some(blank_sandbox_id));
     wait_idle_pool_len(&idle_pool, 2, Duration::from_secs(5)).await;
     {
@@ -337,7 +322,6 @@ async fn blank_backed_run_becomes_exact_reuse_and_wins_over_refilled_blank() {
         .await
         .expect("exact-reuse job should complete");
 
-    assert_eq!(second.reuse_result, Some(SandboxReuseResult::Reused));
     assert_eq!(second.sandbox_id, Some(blank_sandbox_id));
     assert_eq!(idle_pool.lock().await.blank_len(), 1);
 
@@ -345,7 +329,7 @@ async fn blank_backed_run_becomes_exact_reuse_and_wins_over_refilled_blank() {
 }
 
 #[tokio::test]
-async fn blank_unpark_failure_falls_back_without_changing_cold_attribution() {
+async fn blank_unpark_failure_falls_back_to_fresh_sandbox() {
     use httpmock::prelude::*;
 
     let server = MockServer::start_async().await;
@@ -380,13 +364,55 @@ async fn blank_unpark_failure_falls_back_without_changing_cold_attribution() {
         .expect("fresh fallback should complete");
 
     assert_eq!(completion.exit_code, 0);
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::PoolMiss));
     assert_ne!(completion.sandbox_id, Some(blank_sandbox_id));
     assert_eq!(calls.unpark_call_count(), 1);
     assert_eq!(calls.destroy_call_count(), 1);
 
     shutdown(&env, run_handle).await;
     history_mock.assert_calls_async(1).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn shutdown_joins_blank_start_and_destroy_before_releasing_budget() {
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    let calls = Arc::clone(&overrides);
+    let start_gate = sandbox_mock::MockLifecycleGate::new();
+    let destroy_gate = sandbox_mock::MockLifecycleGate::new();
+    overrides.set_start_lifecycle_gate(start_gate.clone());
+    overrides.set_destroy_lifecycle_gate(destroy_gate.clone());
+    let (config, env) = mock_run_config_with_overrides(test_profiles(), 16, 32_768, 8, overrides);
+    let budget = Arc::clone(&config.capacity.budget);
+    let idle_pool = Arc::clone(&config.shared.idle_pool);
+    let run_handle = tokio::spawn(run(config));
+
+    start_gate
+        .wait_entered(1, Duration::from_secs(5))
+        .await
+        .expect("blank start should enter before stopping");
+    env.trigger_stopping().await;
+    wait_status_mode(
+        &env._temp_dir.path().join("status.json"),
+        "stopping",
+        Duration::from_secs(5),
+    )
+    .await;
+    assert_eq!(calls.destroy_call_count(), 0);
+    assert_eq!(budget.allocated(), (2, 4096, 1));
+
+    start_gate.release_one();
+    destroy_gate
+        .wait_entered(1, Duration::from_secs(5))
+        .await
+        .expect("stopping should destroy the joined blank");
+    assert_eq!(budget.allocated(), (2, 4096, 1));
+    assert!(!run_handle.is_finished());
+    assert_eq!(calls.blank_park_call_count(), 0);
+
+    destroy_gate.release_one();
+    shutdown(&env, run_handle).await;
+    assert_eq!(budget.allocated(), (0, 0, 0));
+    assert!(idle_pool.lock().await.is_empty());
+    assert_eq!(calls.destroy_call_count(), 1);
 }
 
 #[tokio::test(start_paused = true)]
@@ -431,7 +457,6 @@ async fn foreground_admission_drains_cancelled_blank_start_before_destroy() {
         .expect("foreground job should complete");
 
     assert_eq!(completion.exit_code, 0);
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::PoolMiss));
     assert_eq!(calls.destroy_call_count(), 1);
 
     shutdown(&env, run_handle).await;
@@ -483,7 +508,6 @@ async fn foreground_admission_drains_cancelled_blank_mount_before_destroy() {
         .expect("foreground job should complete");
 
     assert_eq!(completion.exit_code, 0);
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::PoolMiss));
     assert_eq!(calls.destroy_call_count(), 1);
 
     shutdown(&env, run_handle).await;
@@ -533,7 +557,6 @@ async fn foreground_admission_cancels_blank_create_without_leaking_ownership() {
         .expect("foreground job should complete");
 
     assert_eq!(completion.exit_code, 0);
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::PoolMiss));
     assert_eq!(calls.destroy_call_count(), 0);
 
     shutdown(&env, run_handle).await;
@@ -585,7 +608,6 @@ async fn foreground_admission_drains_cancelled_blank_park_before_destroy() {
         .expect("foreground job should complete");
 
     assert_eq!(completion.exit_code, 0);
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::PoolMiss));
     assert_eq!(calls.destroy_call_count(), 1);
 
     shutdown(&env, run_handle).await;
@@ -638,10 +660,6 @@ async fn incompatible_profile_fresh_creates_without_consuming_blank_inventory() 
         .expect("job should complete");
 
     assert_eq!(completion.exit_code, 0);
-    assert_eq!(
-        completion.reuse_result,
-        Some(SandboxReuseResult::NoReuseKey)
-    );
     assert_ne!(completion.sandbox_id, Some(blank_sandbox_id));
     assert_eq!(idle_pool.lock().await.blank_len(), 1);
 
@@ -652,7 +670,9 @@ async fn incompatible_profile_fresh_creates_without_consuming_blank_inventory() 
 async fn home_cache_hit_takes_priority_over_compatible_blank_inventory() {
     let mut profiles = test_profiles();
     profiles.get_mut("vm0/default").unwrap().home_disk_mb = 16;
-    let (mut config, env) = mock_run_config(profiles, 16, 32_768, 8);
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    let (mut config, env) =
+        mock_run_config_with_overrides(profiles, 16, 32_768, 8, Arc::clone(&overrides));
     let idle_pool = Arc::clone(&config.shared.idle_pool);
     let runner_paths = RunnerPaths::new(config.paths.base_dir.clone());
     let home_cache = HomeImageCache::shared(
@@ -686,9 +706,16 @@ async fn home_cache_hit_takes_priority_over_compatible_blank_inventory() {
         .expect("job should complete");
 
     assert_eq!(completion.exit_code, 0);
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::PoolMiss));
-    assert_eq!(completion.home_reuse_result, Some(HomeReuseResult::Reused));
     assert_ne!(completion.sandbox_id, Some(blank_sandbox_id));
+    let launches = overrides.start_agent_process_calls();
+    assert_eq!(launches.len(), 1);
+    assert_eq!(
+        launches[0].env.iter().find_map(|(key, value)| {
+            (key == guest_contracts::env::CANONICAL_SANDBOX_STARTUP_PATH_ENV)
+                .then_some(value.as_str())
+        }),
+        Some("home")
+    );
     assert_eq!(idle_pool.lock().await.blank_len(), 1);
 
     shutdown(&env, run_handle).await;
@@ -708,7 +735,9 @@ async fn claimed_home_cache_metadata_takes_priority_over_reserved_blank() {
         .await;
     let mut profiles = test_profiles();
     profiles.get_mut("vm0/default").unwrap().home_disk_mb = 16;
-    let (mut config, env) = mock_run_config(profiles, 16, 32_768, 8);
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    let (mut config, env) =
+        mock_run_config_with_overrides(profiles, 16, 32_768, 8, Arc::clone(&overrides));
     let idle_pool = Arc::clone(&config.shared.idle_pool);
     let runner_paths = RunnerPaths::new(config.paths.base_dir.clone());
     let home_cache = HomeImageCache::shared(
@@ -746,9 +775,16 @@ async fn claimed_home_cache_metadata_takes_priority_over_reserved_blank() {
         .expect("claimed workspace metadata should override the reserved blank");
 
     assert_eq!(completion.exit_code, 0);
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::PoolMiss));
-    assert_eq!(completion.home_reuse_result, Some(HomeReuseResult::Reused));
     assert_ne!(completion.sandbox_id, Some(blank_sandbox_id));
+    let launches = overrides.start_agent_process_calls();
+    assert_eq!(launches.len(), 1);
+    assert_eq!(
+        launches[0].env.iter().find_map(|(key, value)| {
+            (key == guest_contracts::env::CANONICAL_SANDBOX_STARTUP_PATH_ENV)
+                .then_some(value.as_str())
+        }),
+        Some("home")
+    );
 
     shutdown(&env, run_handle).await;
     history_mock.assert_calls_async(1).await;

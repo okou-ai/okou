@@ -61,8 +61,9 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
     runnerGroup: string,
     orgId?: string,
     model: "gpt-6-luna" | "claude-fable-5-1" = "gpt-6-luna",
+    userId?: string,
   ) {
-    const identity = chat.bdd.user(orgId ? { orgId } : {});
+    const identity = chat.bdd.user({ orgId, userId });
     if (!identity.orgId) {
       throw new Error("Expected the Pi actor's organization");
     }
@@ -86,7 +87,12 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
     return { actor, agentId: onboarding.defaultAgentId, runnerGroup };
   }
 
-  async function prepareMaintenance(options: { independentOwner?: true } = {}) {
+  async function prepareSources(
+    options: {
+      independentOwner?: true;
+      peerScope?: "same-org" | "same-user-other-org" | "foreign";
+    } = {},
+  ) {
     mockNow(now());
     mockEnv("PI_MEMORY_BACKGROUND_WORKERS_ENABLED", "true");
     // These production operators are this case's explicitly scoped system boundary.
@@ -96,18 +102,10 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
       isolatePg: true,
     });
     const stage1 = isolated(cronExtractPiMemoryStage1Contract);
-    await accept(
-      stage1.extract({ headers: { authorization: "Bearer wrong-secret" } }),
-      [401],
-    );
     const stage2 = setupApp({
       context,
       routes: cronConsolidatePiMemoryPhase2Routes,
     })(cronConsolidatePiMemoryPhase2Contract);
-    await accept(
-      stage2.consolidate({ headers: { authorization: "Bearer wrong-secret" } }),
-      [401],
-    );
 
     chat.chatCallbacks.acceptChatObjectStorage();
     runs.acceptStorageDownloads();
@@ -124,14 +122,21 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
       },
     );
     const peerActor = options.independentOwner
-      ? await createChatActor(runnerGroup, actor.actor.orgId)
+      ? await createChatActor(
+          runnerGroup,
+          !options.peerScope || options.peerScope === "same-org"
+            ? actor.actor.orgId
+            : undefined,
+          "gpt-6-luna",
+          options.peerScope === "same-user-other-org"
+            ? actor.actor.userId
+            : undefined,
+        )
       : undefined;
     if (peerActor) {
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...peerActor.actor, orgId: actor.actor.orgId },
-        { [FeatureSwitchKey.PiMemory]: true },
-      );
+      await updateFeatureSwitchesForUser(context, peerActor.actor, {
+        [FeatureSwitchKey.PiMemory]: true,
+      });
     }
     const runnerIdentity = { runnerId: randomUUID(), heartbeatGeneration: 1 };
     let snapshotSequence = 0;
@@ -218,26 +223,6 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
       });
     }
 
-    // A later ordinary Thread requests the next UTC day's selection. The genuine
-    // source has now been idle for more than six hours; no rows are backdated.
-    mockNow(now() + 24 * 60 * 60 * 1000);
-    const trigger = await chat.sendChatRun(actor.actor, {
-      agentId: actor.agentId,
-      prompt: "Start another Thread after the source has become idle.",
-      model: "gpt-6-luna",
-    });
-    await runs.requestCancelRun(actor.actor, trigger.runId, [200]);
-    await flushWaitUntilForTest();
-    if (peerActor) {
-      const peerTrigger = await chat.sendChatRun(peerActor.actor, {
-        agentId: peerActor.agentId,
-        prompt: "Request the next day's selection",
-        model: "gpt-6-luna",
-      });
-      await runs.requestCancelRun(peerActor.actor, peerTrigger.runId, [200]);
-      await flushWaitUntilForTest();
-    }
-
     server.use(
       http.post("https://openrouter.ai/api/v1/chat/completions", () => {
         const base = {
@@ -287,26 +272,42 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
         );
       }),
     );
-    const extracted = await accept(
-      stage1.extract({ headers: cronHeaders() }),
-      [200],
-    );
-    expect(extracted.body).toMatchObject({
-      success: true,
-      succeeded: peerActor ? 2 : 1,
-      terminalFailure: 0,
-      retryableFailure: 0,
+    // A later ordinary Thread requests the next UTC day's selection. The genuine
+    // source has now been idle for more than six hours; no rows are backdated.
+    mockNow(now() + 24 * 60 * 60 * 1000);
+    const trigger = await chat.sendChatRun(actor.actor, {
+      agentId: actor.agentId,
+      prompt: "Start another Thread after the source has become idle.",
+      model: "gpt-6-luna",
     });
-    const dispatched = await accept(
-      stage2.consolidate({ headers: cronHeaders() }),
-      [200],
-    );
-    expect(dispatched.body).toMatchObject({
-      success: true,
-      claimed: 1,
-      failed: 0,
-      stale: 0,
-    });
+    await runs.requestCancelRun(actor.actor, trigger.runId, [200]);
+    await flushWaitUntilForTest();
+    if (peerActor) {
+      if (peerActor.actor.userId === actor.actor.userId) {
+        // Stage 1 owns one day per USER, not per org. Extract the first org's
+        // genuine selection before a later UTC day can select the other org.
+        // Both succeeded candidates must still reach distinct maintenance jobs.
+        const firstDay = await accept(
+          stage1.extract({ headers: cronHeaders() }),
+          [200],
+        );
+        expect(firstDay.body).toMatchObject({
+          success: true,
+          succeeded: 1,
+          terminalFailure: 0,
+          retryableFailure: 0,
+        });
+        mockNow(now() + 24 * 60 * 60 * 1000);
+      }
+      const peerTrigger = await chat.sendChatRun(peerActor.actor, {
+        agentId: peerActor.agentId,
+        prompt: "Request the next day's selection",
+        model: "gpt-6-luna",
+      });
+      await runs.requestCancelRun(peerActor.actor, peerTrigger.runId, [200]);
+      await flushWaitUntilForTest();
+    }
+
     async function claimMaintenance(runningCount = 0) {
       await heartbeatRunner(runningCount);
       const polled = await runs.pollRunner(actor.runnerGroup);
@@ -360,15 +361,51 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
         memory,
       };
     }
-    const maintenance = await claimMaintenance();
     return {
       ...actor,
+      sourceActor: actor,
+      runnerIdentity,
+      peerActor,
+      source,
+      peerSource,
+      stage1,
       stage2,
       claimMaintenance,
       claimOrdinaryRun,
       heartbeatRunner,
-      ...maintenance,
     };
+  }
+
+  async function prepareMaintenance(
+    options: Parameters<typeof prepareSources>[0] = {},
+  ) {
+    const sources = await prepareSources(options);
+    const extracted = await accept(
+      sources.stage1.extract({ headers: cronHeaders() }),
+      [200],
+    );
+    expect(extracted.body).toMatchObject({
+      success: true,
+      // A shared user's first org was already extracted on the preceding day.
+      succeeded:
+        sources.peerActor &&
+        sources.peerActor.actor.userId !== sources.sourceActor.actor.userId
+          ? 2
+          : 1,
+      terminalFailure: 0,
+      retryableFailure: 0,
+    });
+    const dispatched = await accept(
+      sources.stage2.consolidate({ headers: cronHeaders() }),
+      [200],
+    );
+    expect(dispatched.body).toMatchObject({
+      success: true,
+      claimed: 1,
+      failed: 0,
+      stale: 0,
+    });
+    return { ...sources, ...(await sources.claimMaintenance()) };
   }
 
   type Maintenance = Awaited<ReturnType<typeof prepareMaintenance>>;
@@ -408,7 +445,7 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
     };
   }
 
-  async function publish(
+  async function preparePublication(
     run: Pick<Maintenance, "runId" | "maintenance" | "headers">,
     content?: string,
   ) {
@@ -422,7 +459,7 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
       throw new Error("Expected maintenance upload preparation to succeed");
     }
     expect(prepared.body.versionId).toBe(body.versionId);
-    if (content !== undefined) {
+    if (content !== undefined && body.versionId !== body.parentVersionId) {
       const uploads = prepared.body.uploads;
       if (!uploads) {
         throw new Error("Expected the real maintenance upload authorization");
@@ -450,6 +487,14 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
       expect(prepared.body.existing).toBeTruthy();
       expect(body.versionId).toBe(body.parentVersionId);
     }
+    return body;
+  }
+
+  async function publish(
+    run: Pick<Maintenance, "runId" | "maintenance" | "headers">,
+    content?: string,
+  ) {
+    const body = await preparePublication(run, content);
     const committed = await webhooks.requestAgentStorageCommit(
       body,
       run.headers,
@@ -463,13 +508,12 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
     return body;
   }
 
-  async function completeMaintenance(
-    run: Pick<Maintenance, "runId" | "headers" | "memory">,
+  function maintenanceCompletion(
+    run: Pick<Maintenance, "runId" | "memory">,
     versionId: string,
-    concurrent = false,
     exitCode = 0,
   ) {
-    const body = {
+    return {
       runId: run.runId,
       exitCode,
       completion: {
@@ -485,6 +529,15 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
         ],
       },
     };
+  }
+
+  async function completeMaintenance(
+    run: Pick<Maintenance, "runId" | "headers" | "memory">,
+    versionId: string,
+    concurrent = false,
+    exitCode = 0,
+  ) {
+    const body = maintenanceCompletion(run, versionId, exitCode);
     const [completed, repeated] = concurrent
       ? await Promise.all([
           webhooks.requestAgentComplete(body, run.headers, [200]),
@@ -497,8 +550,6 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
     if (repeated) {
       expect(repeated.body).toStrictEqual(completed.body);
     }
-    await flushWaitUntilForTest();
-    await webhooks.requestAgentComplete(body, run.headers, [200]);
     await flushWaitUntilForTest();
     return { body, response: completed };
   }
@@ -655,10 +706,13 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
     webhooks,
     cronHeaders,
     createChatActor,
+    prepareSources,
     prepareMaintenance,
     publication,
+    preparePublication,
     publish,
     completeMaintenance,
+    maintenanceCompletion,
     observeMemory,
     publishOrdinaryMemory,
     expectBlocked,

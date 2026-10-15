@@ -238,8 +238,7 @@ const changeSharedThreadArtifactPhase$ = command(
     if (!current || current.policy.status !== "preparing") {
       throw new Error("Conversation snapshot is no longer pending publication");
     }
-    // The durable denied identity is discoverable by owner cleanup. Policy
-    // ETags fence publication against revocation without holding SQL locks.
+    // Policy ETags fence publication against revocation without holding SQL locks.
     const membership = await settle(
       get(clerk$).organizations.getOrganizationMembershipList(
         {
@@ -471,40 +470,3 @@ export const deleteSharedThread$ = command(
     return true;
   },
 );
-
-function manageSharedThreadArtifacts(removeCopies: boolean) {
-  return command(
-    async (
-      { set },
-      owner:
-        | { readonly kind: "organization"; readonly orgId: string }
-        | { readonly kind: "user"; readonly userId: string },
-      signal: AbortSignal,
-    ) => {
-      const db = set(writeDb$);
-      const rows = await db
-        .select()
-        .from(sharedThreads)
-        .where(
-          and(
-            eq(sharedThreads.hasArtifactSnapshot, true),
-            owner.kind === "organization"
-              ? eq(sharedThreads.orgId, owner.orgId)
-              : eq(sharedThreads.userId, owner.userId),
-          ),
-        );
-      signal.throwIfAborted();
-      for (const row of rows) {
-        if (removeCopies) {
-          await set(removeSharedThreadArtifactCopies$, row, signal);
-        } else {
-          await set(revokePolicy$, row, signal);
-        }
-        signal.throwIfAborted();
-      }
-    },
-  );
-}
-
-export const revokeSharedThreadArtifacts$ = manageSharedThreadArtifacts(false);
-export const cleanupSharedThreadArtifacts$ = manageSharedThreadArtifacts(true);

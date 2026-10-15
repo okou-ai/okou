@@ -65,7 +65,6 @@ import {
 } from "../../lib/db-raw-rows";
 import {
   nullableDriverValueDecoder,
-  pgBooleanDecoder,
   pgTextDecoder,
 } from "../../lib/db-structured-result";
 import { env, optionalEnv } from "../../lib/env";
@@ -143,10 +142,7 @@ import {
   rejectedQueuedRunAdmissionFailure,
 } from "./internal-chat-run-callback.service";
 import type { ModelCatalog } from "./model-catalog.service";
-import {
-  morningBriefScheduleClaimBound$,
-  morningBriefScheduleClaimSupersededCondition,
-} from "./morning-brief-schedule-claim.service";
+import { morningBriefScheduleClaimBound$ } from "./morning-brief-schedule-claim.service";
 import {
   OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE,
   OfficialWorkflowRunAdmissionError,
@@ -4240,39 +4236,6 @@ export function createThreadClaimRunObjects(
         };
         if (await set(morningBriefScheduleClaimBound$, pending.runId, signal)) {
           signal.throwIfAborted();
-          // Only journaled occurrences require this post-commit lock. Read
-          // supersession after acquiring it so a concurrent claim is visible.
-          // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0262; new non-billing transactions are prohibited.
-          await database.transaction(async (tx) => {
-            const [locked] = await tx
-              .select({ id: workflowAutomations.id })
-              .from(workflowAutomations)
-              .where(eq(workflowAutomations.id, launched.automationId))
-              .limit(1)
-              .for("update");
-            signal.throwIfAborted();
-            if (!locked) {
-              return;
-            }
-            const [observation] = await tx
-              .select({
-                superseded: morningBriefScheduleClaimSupersededCondition(
-                  pending.runId,
-                ).mapWith(pgBooleanDecoder),
-              })
-              .from(sql`(SELECT 1) AS schedule_claim_observation`);
-            signal.throwIfAborted();
-            if (!observation) {
-              throw new Error("Schedule claim observation returned no row");
-            }
-            if (observation.superseded) {
-              return;
-            }
-            await tx
-              .update(workflowAutomations)
-              .set(lastRunFields())
-              .where(eq(workflowAutomations.id, launched.automationId));
-          });
         } else {
           await database
             .update(workflowAutomations)

@@ -6,7 +6,6 @@ const RUN_SCOPED_ENV_READER_NAMES: &[&str] = &[
     "api_url",
     "api_token",
     "sandbox_id",
-    "sandbox_reuse_result",
     "prompt",
     "append_system_prompt",
     "resume_session_id",

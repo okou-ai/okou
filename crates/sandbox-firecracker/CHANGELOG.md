@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.50.0](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.49.2...sandbox-firecracker-v0.50.0) (2026-10-15)
+
+
+### Features
+
+* add bounded readonly guest home listings ([#40042](https://github.com/okou-ai/okou/issues/40042)) ([3e5d3be](https://github.com/okou-ai/okou/commit/3e5d3be42daf26e045459d9ffbbae25d85bbe9cb))
+
 ## [0.49.2](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.49.1...sandbox-firecracker-v0.49.2) (2026-10-14)
 
 ## [0.49.1](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.49.0...sandbox-firecracker-v0.49.1) (2026-10-14)

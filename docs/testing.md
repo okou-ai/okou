@@ -70,6 +70,30 @@ remain part of the runtime contract.
   in a test body. Repair missing awaits, cancellation ownership, or observable
   synchronization when a test races its background work.
 
+## Shared Native CI Hosts
+
+Prefer isolated Rust tests for cache publication, checkout, lock contention and
+GC policy. Use real files and flocks under independent temporary roots, and
+explicit synchronization to exercise competing owners and cancellation.
+
+Avoid adding required native CI scenarios that depend on a best-effort cache
+hit, an uncontended host-global lock or descriptive performance measurements.
+One metal host can run several PRs, Runner services and background collectors.
+Per-PR service names and directories do not isolate shared cache/GC locks or
+host resources. A correct publication skip can therefore fail an unrelated PR;
+bounded retries or ordering lanes within one PR cannot make that assumption
+deterministic. Holding global capacity or maintenance locks across a full Guest
+task to force a test outcome can also disrupt other PRs.
+
+Keep required native coverage for behavior that needs the actual Guest or host
+boundary, with fixture-owned resources and observable completion. Run shared
+cache integration and descriptive benchmarks explicitly on a provisioned host
+reserved for verification. Making such a scenario required needs resource
+isolation across every participating Runner and collector, not an assumption of
+an idle host. Ordinary Rust tests do not establish the complete native Guest
+filesystem/freeze/restart chain; retain explicit native verification when that
+integration changes.
+
 ## Guides
 
 Read only the guides matching the work:

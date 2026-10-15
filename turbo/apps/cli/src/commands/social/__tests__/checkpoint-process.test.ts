@@ -4,9 +4,32 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from "vitest";
+import {
+  buildProcessEntry,
+  disposePreparedProcessEntry,
+} from "../../../test/fixtures/build-process-entry";
 
 let directory: string;
+let compiled: Awaited<ReturnType<typeof buildProcessEntry>>;
+let preparation: ReturnType<typeof buildProcessEntry> | undefined;
+beforeAll(async () => {
+  preparation = buildProcessEntry(
+    fileURLToPath(new URL("../../../okou.ts", import.meta.url)),
+  );
+  compiled = await preparation;
+});
+afterAll(async () => {
+  await disposePreparedProcessEntry(preparation);
+});
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), "okou-collection-process-"));
 });
@@ -24,7 +47,7 @@ function invoke(args: string[], failPage = false) {
           import.meta.resolve("tsx"),
           "--import",
           fileURLToPath(new URL("./fixtures/process-http.ts", import.meta.url)),
-          fileURLToPath(new URL("../../../okou.ts", import.meta.url)),
+          compiled.entry,
           join(directory, "requests.jsonl"),
           failPage ? "1" : "0",
           "social",

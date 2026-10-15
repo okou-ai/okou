@@ -45,6 +45,13 @@ async fn list(
         .map_err(|_| Error::Unavailable)
 }
 
+async fn maintenance_barrier(filesystem: &Filesystem, owner: &Arc<Owner>) {
+    // The worker may already be waiting for a job after sweeping a live owner.
+    // Wake it first, then await another job after the next maintenance pass.
+    list(filesystem, owner, json!({"path":[]})).await.unwrap();
+    list(filesystem, owner, json!({"path":[]})).await.unwrap();
+}
+
 fn tree(path: &Path, count: usize) {
     for index in 0..count {
         std::fs::write(path.join(format!("file-{index:04}")), b"private contents").unwrap();
@@ -232,6 +239,8 @@ async fn cursor_cap_foreign_close_expiry_and_connection_disposal_are_owned() {
     let weak = Arc::downgrade(&first);
     first.cancelled.cancel();
     drop(first);
+    // Reuse the surviving owner so the barrier cannot hold another owner permit.
+    maintenance_barrier(&filesystem, &foreign).await;
     assert!(weak.upgrade().is_none());
     assert_eq!(filesystem.owners.available_permits(), RETAINED_OWNERS - 1);
 }
@@ -441,6 +450,39 @@ async fn cancelled_peer_releases_its_observation_before_physical_filesystem_work
 }
 
 #[tokio::test]
+async fn peer_closing_during_maintenance_releases_filesystem_state() {
+    let home = tempfile::tempdir().unwrap();
+    tree(home.path(), 300);
+    let filesystem = Filesystem::start(home.path().into()).unwrap();
+    let active = owner(&filesystem);
+    let (entered, waiting) = oneshot::channel();
+    let (release, gate) = mpsc::sync_channel(1);
+    active.hooks.lock().unwrap().after_maintenance = Some(Box::new(move || {
+        entered.send(()).unwrap();
+        gate.recv_timeout(Duration::from_secs(5)).unwrap();
+    }));
+    let mut fixture = PeerFixture::new(Arc::new(HomeFiles {
+        filesystem: filesystem.clone(),
+        owner: Some(Arc::clone(&active)),
+    }))
+    .await;
+    fixture.send(json!({"schemaVersion":1,"type":"request","id":id(2),"category":"fs","categoryVersion":1,"operation":"list","params":{"path":[]}})).await;
+    assert!(fixture.receive().await["result"]["nextCursor"].is_string());
+    tokio::time::timeout(Duration::from_secs(5), waiting)
+        .await
+        .unwrap()
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), fixture.close())
+        .await
+        .unwrap();
+    assert!(active.closed());
+    release.send(()).unwrap();
+    let fresh = owner(&filesystem);
+    maintenance_barrier(&filesystem, &fresh).await;
+    assert!(active.state.lock().unwrap().is_none());
+}
+
+#[tokio::test]
 async fn blocked_physical_worker_keeps_protocol_routing_live_and_admission_bounded() {
     let home = tempfile::tempdir().unwrap();
     tree(home.path(), 300);
@@ -511,8 +553,7 @@ async fn blocked_physical_worker_keeps_protocol_routing_live_and_admission_bound
     drop(extra);
     fixture.close().await;
     assert!(first.closed());
-    // A subsequent job is the worker's maintenance barrier, without sleeps.
     let fresh = owner(&filesystem);
-    list(&filesystem, &fresh, json!({"path":[]})).await.unwrap();
+    maintenance_barrier(&filesystem, &fresh).await;
     assert!(first.state.lock().unwrap().is_none());
 }

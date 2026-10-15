@@ -196,16 +196,22 @@ async fn prepare_incoming(
                     memory_mb: 4096,
                 },
                 device_rate_limits: None,
-                home_drive: None,
+                home_drive: Some(sandbox::HomeDriveConfig {
+                    size_mb: 16384,
+                    seed_image: None,
+                    space_reserve: runner_lifecycle::home_image_cache::HOME_IMAGE_SPACE_RESERVE,
+                }),
             })
             .await?;
         let prepared: TestResult<()> = async {
+            // Fresh coverage is retained across startup. Firecracker publishes
+            // the backing capability only after its process has started.
+            sandbox.start().await?;
             operation.bind_backing(
                 sandbox
                     .backing_process()
                     .ok_or_else(|| io::Error::other("native incoming backing unavailable"))?,
             )?;
-            sandbox.start().await?;
             if sandbox.park_for_blank_pool().await? != SandboxParkOutcome::Reusable {
                 return Err(io::Error::other("native incoming could not physically park").into());
             }

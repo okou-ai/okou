@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import {
   computerUseSessionHostsContract as contract,
   computerUseHostsContract,
@@ -776,6 +776,7 @@ describe("Native Computer Use session authentication", () => {
   );
 
   it("pauses after expired validation during a Clerk outage and recovers the same connection", async () => {
+    onTestFinished(context.mocks.clerkRetryJitter(0));
     mockNow(Date.parse("2026-10-08T02:00:00Z"));
     const api = await app();
     const client = api(contract);

@@ -28,7 +28,7 @@ describe("thread connector selection", () => {
     await own(() => {
       return api.updateUserModelPreference(actor, "claude-fable-5-1");
     });
-    const connection = await own(() => {
+    const defaultConnection = await own(() => {
       return connectors.connectManualGrant(
         actor,
         "openai",
@@ -37,6 +37,29 @@ describe("thread connector selection", () => {
         agentId,
       );
     });
+    const connection = await own(() => {
+      return connectors.connectManualGrant(
+        actor,
+        "openai",
+        "api-token",
+        { apiKey: "thread-selected-openai-key" },
+        agentId,
+        { intent: "add", displayName: "Selected sibling" },
+      );
+    });
+    const accounts = await own(() => {
+      return connectors.listBuiltinConnectorAccounts(actor, "openai");
+    });
+    expect(
+      accounts.find((account) => {
+        return account.id === defaultConnection.id;
+      }),
+    ).toMatchObject({ isDefault: true });
+    expect(
+      accounts.find((account) => {
+        return account.id === connection.id;
+      }),
+    ).toMatchObject({ isDefault: false });
     const runtimeConnection = await own(() => {
       return connectors.connectManualGrant(
         actor,
@@ -104,6 +127,22 @@ describe("thread connector selection", () => {
     });
     expect(run.threadId).toBe(thread.id);
     const claimed = await claimChatRun(runnerGroup, run.runId);
+    expect(claimed.claim.environment).toMatchObject({
+      OPENAI_TOKEN: "thread-selected-openai-key",
+      RUNTIME_API_KEY: "thread-runtime-key",
+    });
+    expect(
+      claimed.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
+    ).toMatchObject({
+      sourceType: "connector",
+      sourceId: connection.id,
+    });
+    expect(
+      claimed.claim.secretConnectorMetadataMap?.RUNTIME_API_KEY,
+    ).toMatchObject({
+      sourceType: "connector",
+      sourceId: runtimeConnection.id,
+    });
     await own(() => {
       return accept(
         selectionsClient().clear({

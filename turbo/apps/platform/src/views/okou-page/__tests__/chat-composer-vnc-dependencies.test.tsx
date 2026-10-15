@@ -8,7 +8,6 @@ import {
 } from "@okouai/api-contracts/contracts/vnc-connections";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
@@ -202,12 +201,11 @@ async function openRemoteAccess(newChat = false) {
 }
 
 async function chooseHost(name: string, option: string) {
-  const user = userEvent.setup({ delay: null });
-  await user.click(screen.getByRole("combobox", { name }));
-  await user.click(await screen.findByRole("option", { name: option }));
+  click(screen.getByRole("combobox", { name }));
+  click(await screen.findByRole("option", { name: option }));
 }
 
-test("An enabled VNC host warns until its exact SSH dependency is enabled", async () => {
+test("An unrelated SSH host does not satisfy an enabled VNC host's dependency", async () => {
   installDependencyFixture();
   const menu = await openRemoteAccess();
   const warning = await within(menu).findByText(SSH_WARNING);
@@ -220,6 +218,12 @@ test("An enabled VNC host warns until its exact SSH dependency is enabled", asyn
     ).toHaveTextContent("On");
     expect(within(menu).getByText(SSH_WARNING)).toBeInTheDocument();
   });
+});
+
+test("An enabled VNC host follows its exact SSH dependency", async () => {
+  installDependencyFixture();
+  const menu = await openRemoteAccess();
+  await within(menu).findByText(SSH_WARNING);
   await chooseHost("SSH MacinCloud", "On");
   await expect(
     within(menu).findByText(SSH_ENABLED_NOTE),
@@ -230,6 +234,12 @@ test("An enabled VNC host warns until its exact SSH dependency is enabled", asyn
   await expect(
     within(menu).findByText(SSH_WARNING),
   ).resolves.toBeInTheDocument();
+});
+
+test("A disabled VNC host shows its SSH dependency without a warning", async () => {
+  installDependencyFixture();
+  const menu = await openRemoteAccess();
+  await within(menu).findByText(SSH_WARNING);
   await chooseHost("VNC MacinCloud", "Off");
   await expect(within(menu).findByText(SSH_NOTE)).resolves.toBeInTheDocument();
   expect(within(menu).queryByText(SSH_WARNING)).toBeNull();

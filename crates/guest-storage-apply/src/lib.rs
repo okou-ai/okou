@@ -27,6 +27,8 @@
 //! best-effort temporary-source cleanup are not managed Run inputs.
 //!
 //! Cached ordinary storages and artifacts preserve their entire mount roots.
+//! Empty artifacts retain existing root identity and ownership while clearing
+//! stale contents, including when a containing directory is also cleaned.
 //! Cached instructions preserve only the managed instruction filenames needed
 //! for normalization, allowing changed or removed skills beneath the same
 //! framework home to be cleaned independently.
@@ -202,8 +204,15 @@ fn run_manifest_with_files(
     // This must run before parallel downloads to avoid race conditions with
     // parent-child mount path overlaps.
     let cleanup_start = Instant::now();
-    let cleanup_success = cleanup::cleanup_stale_paths(&cleanup_paths, &preserved_paths)
-        && instructions::cleanup_instruction_files(&instruction_cleanups);
+    // Empty artifact reset must clear stale data without replacing the existing
+    // mount-root inode and its sandbox-account ownership with a root-owned mkdir.
+    let retained_roots = empty_artifacts
+        .iter()
+        .map(|entry| entry.mount_path.clone())
+        .collect::<Vec<_>>();
+    let cleanup_success =
+        cleanup::cleanup_stale_paths(&cleanup_paths, &preserved_paths, &retained_roots)
+            && instructions::cleanup_instruction_files(&instruction_cleanups);
     record_sandbox_op(
         "guest_storage_apply_cleanup",
         cleanup_start.elapsed(),
@@ -308,6 +317,33 @@ fn prepare_empty_artifacts(entries: &[EmptyArtifactPreparation]) -> bool {
 #[cfg(test)]
 mod tests {
     use serde_json::json;
+
+    #[test]
+    fn empty_artifact_reset_preserves_directory_identity_and_permissions() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let dir = tempfile::tempdir().unwrap();
+        let mount = dir.path().join("workspace");
+        std::fs::create_dir(&mount).unwrap();
+        std::fs::set_permissions(&mount, std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::fs::write(mount.join("stale"), b"previous failed run data").unwrap();
+        std::fs::create_dir(mount.join("lost+found")).unwrap();
+        let before = mount.metadata().unwrap();
+        let manifest = json!({
+            "cleanupPaths": [dir.path()],
+            "storageMounts": [{"mountPath": mount, "empty": true,
+                "name": "workspace", "versionId": "empty-v1", "writeback": true}]
+        });
+        assert!(super::run_manifest_bytes(
+            &serde_json::to_vec(&manifest).unwrap()
+        ));
+        let after = mount.metadata().unwrap();
+        assert_eq!((after.dev(), after.ino()), (before.dev(), before.ino()));
+        assert_eq!(
+            (after.uid(), after.gid(), after.mode()),
+            (before.uid(), before.gid(), before.mode())
+        );
+        assert_eq!(std::fs::read_dir(&mount).unwrap().count(), 0);
+    }
 
     #[test]
     fn run_manifest_removes_staged_instruction_source_when_download_fails() {

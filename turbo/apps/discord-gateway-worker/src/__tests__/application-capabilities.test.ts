@@ -84,14 +84,14 @@ describe("Discord application message-content capability", () => {
       relay.applicationReply = null;
       return new Response(null, {
         status: 429,
-        headers: { "Retry-After": "3" },
+        headers: { "Retry-After": "1" },
       });
     };
     expect((await relay.request("/start")).status).toBe(200);
     await relay.applications.next();
     const limitedAt = Date.now();
     await relay.applications.next();
-    expect(Date.now() - limitedAt).toBeGreaterThanOrEqual(2_900);
+    expect(Date.now() - limitedAt).toBeGreaterThanOrEqual(900);
     const gateway = await relay.connections.next();
     gateway.hello();
     expect((await gateway.next(2)).d).toMatchObject({ intents: 4609 });

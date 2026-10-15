@@ -20,10 +20,10 @@ function client() {
   );
 }
 
-async function fixture() {
+async function fixture(options: { orgId?: string; userId?: string } = {}) {
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
-  const actor = bdd.user();
+  const actor = bdd.user(options);
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
@@ -39,7 +39,11 @@ async function fixture() {
     agentId: agent.agentId,
     prompt: "exercise cancellation reconciliation",
   });
+  let identityDeleted = false;
   onTestFinished(async () => {
+    if (identityDeleted) {
+      return;
+    }
     await runs.requestCancelRun(actor, run.runId, [200, 400, 404]);
     await flushWaitUntilForTest();
     await bdd.requestDeleteAgent(actor, agent.agentId, [204, 404]);
@@ -61,6 +65,9 @@ async function fixture() {
     headers: { authorization: `Bearer ${claim.sandboxToken}` },
     agentToken: claim.platformEnvironment.OKOU_TOKEN,
     query: { runnerGroup, ...identity },
+    markIdentityDeleted: () => {
+      identityDeleted = true;
+    },
   };
 }
 
@@ -402,22 +409,55 @@ describe("Run cancellation reconciliation", () => {
   });
 
   it.each(["user.deleted", "organization.deleted"])(
-    "keeps authenticated absence readable after %s",
+    "retains the Run and its original Runner credential with hard cancellation after %s",
     async (type) => {
       const f = await fixture();
+      if (!f.actor.orgId) {
+        throw new Error("Expected an org-scoped cancellation fixture");
+      }
+      const peer = await fixture({ orgId: f.actor.orgId });
+      const sameUserElsewhere = await fixture({ userId: f.actor.userId });
+      const foreign = await fixture();
       const webhooks = createWebhookCallbackApi(context);
       webhooks.configureClerkWebhookSecret();
       webhooks.verifyNextClerkWebhook({
         type,
         data: { id: type === "user.deleted" ? f.actor.userId : f.actor.orgId },
       });
+      f.markIdentityDeleted();
+      if (type === "user.deleted") {
+        sameUserElsewhere.markIdentityDeleted();
+      } else {
+        peer.markIdentityDeleted();
+      }
       await webhooks.requestClerkWebhook("{}", {}, [200]);
       await flushWaitUntilForTest();
-      expect((await read(f)).body).toStrictEqual({
+      const retained = {
         protocolVersion: 1,
         runId: f.runId,
-        state: "gone",
+        state: "present",
+        mode: "hard",
+      };
+      expect((await read(f)).body).toStrictEqual(retained);
+      expect((await read(peer)).body).toMatchObject({
+        state: "present",
+        mode: type === "organization.deleted" ? "hard" : null,
       });
+      expect((await read(sameUserElsewhere)).body).toMatchObject({
+        state: "present",
+        mode: type === "user.deleted" ? "hard" : null,
+      });
+      expect((await read(foreign)).body).toMatchObject({
+        state: "present",
+        mode: null,
+      });
+      webhooks.verifyNextClerkWebhook({
+        type,
+        data: { id: type === "user.deleted" ? f.actor.userId : f.actor.orgId },
+      });
+      await webhooks.requestClerkWebhook("{}", {}, [200]);
+      await flushWaitUntilForTest();
+      expect((await read(f)).body).toStrictEqual(retained);
     },
   );
 });

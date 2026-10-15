@@ -20,7 +20,6 @@ import { createFixtureOperationOwner } from "./fixture-operation-owner";
 import { createPublicComputerUseHosts } from "./public-computer-use-hosts";
 import { captureConnectorExternalState } from "./public-connector-actor";
 import { captureSessionStorageMocks } from "./prepared-session-history";
-import { deletePublicWorkspace } from "./public-workspace-cleanup";
 import { mockClaudeCodeTokenEndpoint } from "./api-bdd-auth-device";
 import { createAuthOrgAgentsBddApi } from "./api-bdd-auth-org";
 
@@ -176,32 +175,6 @@ export function createPublicComputerUseScenario(
         });
         for (const cleanup of resources) {
           await settle(cleanup);
-        }
-        const workspaces = new Map<string, ApiTestUser>();
-        for (const actor of actors.values()) {
-          if (actor.orgId) {
-            workspaces.set(actor.orgId, actor);
-          }
-        }
-        for (const actor of workspaces.values()) {
-          await settle(() => {
-            return deletePublicWorkspace(context, actor);
-          });
-        }
-        for (const userId of new Set(
-          [...actors.values()].map((actor) => {
-            return actor.userId;
-          }),
-        )) {
-          await settle(async () => {
-            const webhooks = createWebhookCallbackApi(context);
-            webhooks.configureClerkWebhookSecret();
-            webhooks.verifyNextClerkWebhook({
-              type: "user.deleted",
-              data: { id: userId },
-            });
-            await webhooks.requestClerkWebhook("{}", {}, [200]);
-          });
         }
         await settle(flushWaitUntilForTest);
         if (errors.length) {

@@ -129,8 +129,6 @@ test("Runner diagnostics identify the exact environment used for an activity", a
     [firstRunId]: {
       status: "completed",
       runner: {
-        sandboxReuseResult: "reused",
-        homeReuseResult: "sandboxReused",
         sandboxStartupPath: "sandbox",
         runnerHostname: "prod-1.aws.vm3.ai",
         runnerVersion: "0.168.14",
@@ -142,8 +140,6 @@ test("Runner diagnostics identify the exact environment used for an activity", a
       status: "completed",
       framework: "codex",
       runner: {
-        sandboxReuseResult: "reused",
-        homeReuseResult: "sandboxReused",
         sandboxStartupPath: "sandbox",
         runnerHostname: "prod-2.aws.vm3.ai",
         runnerVersion: "0.168.14",
@@ -155,7 +151,6 @@ test("Runner diagnostics identify the exact environment used for an activity", a
       status: "completed",
       framework: "pi",
       runner: {
-        sandboxReuseResult: "reused",
         sandboxStartupPath: "sandbox",
         runnerHostname: "prod-3.aws.vm3.ai",
       },
@@ -237,8 +232,6 @@ test("Runner diagnostics display each persisted startup path", async () => {
             status: "completed",
             runner: {
               sandboxStartupPath: entry.path,
-              sandboxReuseResult: "poolMiss",
-              homeReuseResult: "cacheMiss",
             },
           } satisfies ActivityFixture,
         ];
@@ -268,8 +261,6 @@ test("Runner metadata remains visible when the startup path is unreported", asyn
       status: "completed",
       runner: {
         sandboxStartupPath: null,
-        sandboxReuseResult: "poolMiss",
-        homeReuseResult: "cacheMiss",
         runnerHostname: "available-runner",
       },
     },
@@ -288,7 +279,6 @@ test("The persisted startup path is visible before completion metadata is saved"
       status: "running",
       runner: {
         sandboxStartupPath: "home",
-        sandboxReuseResult: null,
         runnerHostname: "running-runner",
       },
     },
@@ -309,14 +299,10 @@ test("Runner diagnostics do not carry over while the next activity's request is 
   const releaseRunner = context.mocks.deferred<void>();
   const firstRunner = {
     sandboxStartupPath: "blank",
-    sandboxReuseResult: "poolMiss",
-    homeReuseResult: "cacheMiss",
     runnerHostname: "blank-runner",
   } as const satisfies RunRunnerResponse;
   const nextRunner = {
     sandboxStartupPath: "cold",
-    sandboxReuseResult: "poolMiss",
-    homeReuseResult: "cacheMiss",
     runnerHostname: "cold-runner",
   } as const satisfies RunRunnerResponse;
   mockActivities({

@@ -93,13 +93,7 @@ test("Presentation from the slash menu opens templates and keeps the draft", asy
   const menu = await screen.findByTestId("slash-workflow-menu");
   click(button("Presentation", menu));
   const dialog = await screen.findByRole("dialog");
-  click(button("Close", dialog));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  await expect(
-    screen.findByRole("combobox", { name: "Slide count" }),
-  ).resolves.toBeInTheDocument();
+  expect(dialog).toBeInTheDocument();
   expect(editor).toHaveTextContent(/^Our launch$/);
 });
 

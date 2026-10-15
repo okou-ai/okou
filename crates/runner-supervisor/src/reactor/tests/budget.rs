@@ -150,6 +150,7 @@ async fn idle_sandbox_remains_reusable_until_capacity_is_needed() {
         },
     )
     .await;
+    let aged_sandbox_id = idle_pool.lock().await.status_snapshot().idle_sandboxes[0].sandbox_id;
     assert_eq!(
         idle_pool.lock().await.len(),
         1,
@@ -176,10 +177,7 @@ async fn idle_sandbox_remains_reusable_until_capacity_is_needed() {
         .wait_completion(run_id, Duration::from_secs(5))
         .await
         .expect("aged idle sandbox should remain reusable");
-    assert_eq!(
-        completion.reuse_result,
-        Some(runner_types::types::SandboxReuseResult::Reused)
-    );
+    assert_eq!(completion.sandbox_id, Some(aged_sandbox_id));
 
     shutdown(&env, run_handle).await;
 }

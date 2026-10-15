@@ -177,16 +177,6 @@
       "owner": "deleteChatThreadContent$"
     },
     {
-      "id": "TX-0098",
-      "file": "turbo/apps/api/src/signals/services/clerk-agent-lifecycle.service.ts",
-      "owner": "deleteClerkUserLifecycleData$"
-    },
-    {
-      "id": "TX-0099",
-      "file": "turbo/apps/api/src/signals/services/clerk-agent-lifecycle.service.ts",
-      "owner": "deleteClerkOrganizationLifecycleData$"
-    },
-    {
       "id": "TX-0104",
       "file": "turbo/apps/api/src/signals/services/cloudflare-access.service.ts",
       "owner": "updateCloudflareAccessConfig$"
@@ -617,11 +607,6 @@
       "owner": "createThreadClaimRunObjects/commitQueueHeadRejection$"
     },
     {
-      "id": "TX-0262",
-      "file": "turbo/apps/api/src/signals/services/thread-claim-run.service.ts",
-      "owner": "createThreadClaimRunObjects/activatePendingRun$"
-    },
-    {
       "id": "TX-0263",
       "file": "turbo/apps/api/src/signals/services/thread-claim-run.service.ts",
       "owner": "commitPreparedPendingLaunch$"
@@ -767,19 +752,9 @@
       "owner": "applyVisibleAgentGrantRows"
     },
     {
-      "id": "TX-0319",
-      "file": "turbo/apps/api/src/signals/services/webhooks-clerk-cleanup.service.ts",
-      "owner": "cancelOrgRuns"
-    },
-    {
       "id": "TX-0320",
       "file": "turbo/apps/api/src/signals/services/webhooks-clerk-cleanup.service.ts",
       "owner": "cancelUserRuns"
-    },
-    {
-      "id": "TX-0321",
-      "file": "turbo/apps/api/src/signals/services/webhooks-clerk-cleanup.service.ts",
-      "owner": "deleteClerkStorageReferences"
     },
     {
       "id": "TX-0324",
@@ -882,11 +857,6 @@
       "owner": "validateConnectorCatalogColumnContract"
     },
     {
-      "id": "TX-0377",
-      "file": "turbo/packages/db/scripts/test-connector-catalog-columns-permanent.ts",
-      "owner": "validatePermanentConnectorCatalogColumns"
-    },
-    {
       "id": "TX-0378",
       "file": "turbo/packages/db/scripts/test-connector-catalog-entry-columns.ts",
       "owner": "<module>"
@@ -915,11 +885,6 @@
       "id": "TX-0394",
       "file": "turbo/packages/db/scripts/test-legacy-free-retirement.ts",
       "owner": "<module>"
-    },
-    {
-      "id": "TX-0403",
-      "file": "turbo/packages/db/scripts/test-model-catalog-permanent.ts",
-      "owner": "validatePermanentModelCatalogConstraints"
     },
     {
       "id": "TX-0411",

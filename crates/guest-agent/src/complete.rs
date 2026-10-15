@@ -21,12 +21,13 @@
 //! failures to the caller. Metadata-free cancellation fallback remains
 //! fire-and-forget because the runner is its correctness guarantee.
 //!
-//! Trust model: sandbox and home metadata are relayed from
-//! runner-set env vars and included in the payload for analytics only. The
+//! Trust model: the sandbox identifier is relayed from runner-set env vars
+//! and included in the payload for diagnostics only. The
 //! guest is semi-trusted under the normal threat model, and the runner's
 //! fallback call is idempotency-short-circuited, so a compromised guest
-//! could skew these values with no way for the runner to correct them. Do
-//! not treat these fields as authoritative for security decisions.
+//! could skew this value with no way for the runner to correct it. Do
+//! not treat the reported identifier as authoritative for security decisions.
+//! Startup attribution is reported independently by the Runner.
 
 use crate::constants;
 use crate::error::AgentError;
@@ -54,10 +55,6 @@ struct CompletePayload<'a> {
     last_event_sequence: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     sandbox_id: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    sandbox_reuse_result: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    home_reuse_result: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     completion: Option<&'a complete::RequestCompletion>,
 }
@@ -123,8 +120,6 @@ pub async fn report_user_cancellation_for_run(
     http: &HttpClient,
     run_id: &str,
     sandbox_id: &str,
-    sandbox_reuse_result: &str,
-    home_reuse_result: &str,
     last_event_sequence: Option<u32>,
 ) {
     if !http.has_api() {
@@ -133,14 +128,7 @@ pub async fn report_user_cancellation_for_run(
 
     if let Err(error) = report_payload(
         http,
-        metadata_free_payload_for_run(
-            run_id,
-            1,
-            sandbox_id,
-            sandbox_reuse_result,
-            home_reuse_result,
-            last_event_sequence,
-        ),
+        metadata_free_payload_for_run(run_id, 1, sandbox_id, last_event_sequence),
         1,
     )
     .await
@@ -170,8 +158,6 @@ fn payload_for_runtime<'a>(
         error,
         last_event_sequence,
         sandbox_id: as_optional(&config.sandbox_id),
-        sandbox_reuse_result: as_optional(&config.sandbox_reuse_result),
-        home_reuse_result: as_optional(&config.home_reuse_result),
         completion,
     }
 }
@@ -180,8 +166,6 @@ fn metadata_free_payload_for_run<'a>(
     run_id: &'a str,
     exit_code: i32,
     sandbox_id: &'a str,
-    sandbox_reuse_result: &'a str,
-    home_reuse_result: &'a str,
     last_event_sequence: Option<u32>,
 ) -> CompletePayload<'a> {
     CompletePayload {
@@ -191,8 +175,6 @@ fn metadata_free_payload_for_run<'a>(
         error: None,
         last_event_sequence,
         sandbox_id: as_optional(sandbox_id),
-        sandbox_reuse_result: as_optional(sandbox_reuse_result),
-        home_reuse_result: as_optional(home_reuse_result),
         completion: None,
     }
 }
@@ -220,8 +202,6 @@ mod tests {
             error: None,
             last_event_sequence: None,
             sandbox_id: None,
-            sandbox_reuse_result: None,
-            home_reuse_result: None,
             completion: None,
         };
         let json = serde_json::to_string(&payload).unwrap();
@@ -237,14 +217,10 @@ mod tests {
             error: None,
             last_event_sequence: None,
             sandbox_id: Some("abc"),
-            sandbox_reuse_result: Some("reused"),
-            home_reuse_result: Some("sandboxReused"),
             completion: None,
         };
         let json = serde_json::to_string(&payload).unwrap();
         assert!(json.contains(r#""sandboxId":"abc""#));
-        assert!(json.contains(r#""sandboxReuseResult":"reused""#));
-        assert!(json.contains(r#""homeReuseResult":"sandboxReused""#));
     }
 
     #[test]
@@ -256,52 +232,11 @@ mod tests {
             error: Some("Codex input exceeded the app-server limit"),
             last_event_sequence: None,
             sandbox_id: None,
-            sandbox_reuse_result: None,
-            home_reuse_result: None,
             completion: None,
         };
 
         let json = serde_json::to_value(&payload).unwrap();
         assert_eq!(json["failureReason"], "input_too_large");
-    }
-
-    /// Completion metadata fields must be skipped independently so one absent
-    /// runner value does not silently drop another useful value.
-    #[test]
-    fn payload_skips_sandbox_id_when_only_reuse_result_present() {
-        let payload = CompletePayload {
-            run_id: "run-123",
-            exit_code: 0,
-            failure_reason: None,
-            error: None,
-            last_event_sequence: None,
-            sandbox_id: None,
-            sandbox_reuse_result: Some("poolMiss"),
-            home_reuse_result: None,
-            completion: None,
-        };
-        let json = serde_json::to_string(&payload).unwrap();
-        assert!(!json.contains("sandboxId"));
-        assert!(json.contains(r#""sandboxReuseResult":"poolMiss""#));
-    }
-
-    #[test]
-    fn payload_skips_reuse_result_when_only_sandbox_id_present() {
-        let payload = CompletePayload {
-            run_id: "run-123",
-            exit_code: 0,
-            failure_reason: None,
-            error: None,
-            last_event_sequence: None,
-            sandbox_id: Some("sid"),
-            sandbox_reuse_result: None,
-            home_reuse_result: Some("cacheMiss"),
-            completion: None,
-        };
-        let json = serde_json::to_string(&payload).unwrap();
-        assert!(json.contains(r#""sandboxId":"sid""#));
-        assert!(!json.contains("sandboxReuseResult"));
-        assert!(json.contains(r#""homeReuseResult":"cacheMiss""#));
     }
 
     #[test]
@@ -319,8 +254,6 @@ mod tests {
             error: None,
             last_event_sequence: Some(7),
             sandbox_id: None,
-            sandbox_reuse_result: None,
-            home_reuse_result: None,
             completion: None,
         };
         let json = serde_json::to_string(&payload).unwrap();

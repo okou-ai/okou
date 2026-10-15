@@ -1836,19 +1836,11 @@ pub struct CompleteRequest {
     /// reuse status.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sandbox_id: Option<SandboxId>,
-    /// Outcome of the sandbox-reuse decision made before this run started.
-    /// `None` means the run failed before the runner reached that decision, or
-    /// that the caller could not determine it.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sandbox_reuse_result: Option<SandboxReuseResult>,
-    /// Final home reuse outcome; absent when no reliable decision was reached.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub home_reuse_result: Option<HomeReuseResult>,
 }
 
 /// Outcome of the sandbox-reuse decision made at job dispatch time. `Reused`
 /// means the sandbox was unparked from the idle pool; the other variants describe
-/// why reuse did not happen. Wire name: `sandboxReuseResult`.
+/// why reuse did not happen. Values also label sandbox reuse telemetry.
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum SandboxReuseResult {
@@ -1876,7 +1868,7 @@ impl SandboxReuseResult {
 }
 
 /// Final outcome of home reuse after sandbox preparation has settled.
-/// Reported as `homeReuseResult`; this type never reads old images.
+/// Used by settled startup selection and reuse telemetry; this type never reads old images.
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum HomeReuseResult {
@@ -2321,8 +2313,6 @@ mod tests {
             failure_reason: None,
             error: None,
             sandbox_id: None,
-            sandbox_reuse_result: None,
-            home_reuse_result: None,
         };
         let json = serde_json::to_value(&req).unwrap();
         assert!(json.get("runId").is_some());
@@ -2331,8 +2321,6 @@ mod tests {
         assert!(json.get("error").is_none());
         assert!(json.get("failureReason").is_none());
         assert!(json.get("sandboxId").is_none());
-        assert!(json.get("sandboxReuseResult").is_none());
-        assert!(json.get("homeReuseResult").is_none());
     }
 
     #[test]
@@ -2345,15 +2333,11 @@ mod tests {
             failure_reason: Some(RequestFailureReason::ProviderRateLimited),
             error: Some("timeout".into()),
             sandbox_id: None,
-            sandbox_reuse_result: None,
-            home_reuse_result: None,
         };
         let json = serde_json::to_value(&req).unwrap();
         assert_eq!(json["error"], "timeout");
         assert_eq!(json["failureReason"], "provider_rate_limited");
         assert!(json.get("sandboxId").is_none());
-        assert!(json.get("sandboxReuseResult").is_none());
-        assert!(json.get("homeReuseResult").is_none());
     }
 
     #[test]
@@ -2369,8 +2353,6 @@ mod tests {
                     .into(),
             ),
             sandbox_id: None,
-            sandbox_reuse_result: None,
-            home_reuse_result: None,
         };
 
         let json = serde_json::to_value(&req).unwrap();
@@ -2379,7 +2361,7 @@ mod tests {
     }
 
     #[test]
-    fn complete_request_with_reuse_fields() {
+    fn complete_request_with_sandbox_identity() {
         let sid: SandboxId = "11111111-2222-3333-4444-555555555555".parse().unwrap();
         let req = CompleteRequest {
             run_id: "550e8400-e29b-41d4-a716-446655440000"
@@ -2389,13 +2371,9 @@ mod tests {
             failure_reason: None,
             error: None,
             sandbox_id: Some(sid),
-            sandbox_reuse_result: Some(SandboxReuseResult::Reused),
-            home_reuse_result: Some(HomeReuseResult::SandboxReused),
         };
         let json = serde_json::to_value(&req).unwrap();
         assert_eq!(json["sandboxId"], "11111111-2222-3333-4444-555555555555");
-        assert_eq!(json["sandboxReuseResult"], "reused");
-        assert_eq!(json["homeReuseResult"], "sandboxReused");
     }
 
     #[test]

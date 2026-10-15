@@ -6,7 +6,6 @@ import { mockOptionalEnv } from "../../../../lib/env";
 import { createChatEventsFixture } from "./chat-events-fixture";
 import { captureConnectorExternalState } from "./public-connector-actor";
 import { publicRunOwner } from "./public-run-owner";
-import { deletePublicWorkspace } from "./public-workspace-cleanup";
 import { deleteFeatureSwitchesForUser } from "./feature-switches";
 
 /** Own a normal Stripe/personal-model chat actor from its first API write. */
@@ -65,10 +64,7 @@ export async function publicChatActor(
       const external = await settleIncludingAbort(() => {
         return options.beforeWorkspaceCleanup?.(actor) ?? Promise.resolve();
       });
-      const workspace = await settleIncludingAbort(() => {
-        return deletePublicWorkspace(context, actor);
-      });
-      const errors = [features, external, workspace].flatMap((result) => {
+      const errors = [features, external].flatMap((result) => {
         return result.ok ? [] : [result.error];
       });
       if (errors.length === 1) {

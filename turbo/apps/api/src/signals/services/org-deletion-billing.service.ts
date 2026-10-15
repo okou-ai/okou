@@ -696,9 +696,8 @@ async function cancelAndRefundSubscription(
 /**
  * Cancels live billing subscriptions associated with an organization and
  * refunds only unused, paid subscription time. Archived standalone Allowance
- * subscriptions are not automatically cancelled or refunded. Historical local
- * records are erased by the separate organization privacy-cleanup lifecycle.
- * One-time purchases are intentionally excluded.
+ * subscriptions are not automatically cancelled or refunded.
+ * Historical local records are retained. One-time purchases are excluded.
  */
 export async function cancelAndRefundOrgBillingForDeletion(
   db: ReadonlyDb,

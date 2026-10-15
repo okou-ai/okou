@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { isDeepStrictEqual } from "node:util";
 
 import type { BackgroundJobData } from "@okouai/db/jsonb-contracts/background-job";
 import { backgroundJobs } from "@okouai/db/schema/background-job";
@@ -16,64 +15,6 @@ export type ClaimedBackgroundJob = BackgroundJob & {
   readonly leaseId: string;
   readonly leaseExpiresAt: Date;
 };
-
-interface EnqueueBackgroundJobArgs {
-  readonly id: string;
-  readonly kind: string;
-  readonly handlerVersion: number;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly input: BackgroundJobData;
-  readonly checkpoint?: BackgroundJobData;
-}
-
-/**
- * Safe to repeat after a lost commit receipt. An ID can never be reused for a
- * different handler, owner, or input, and replay never resets durable progress.
- */
-export const enqueueBackgroundJob$ = command(
-  async (
-    { set },
-    args: EnqueueBackgroundJobArgs,
-    signal: AbortSignal,
-  ): Promise<BackgroundJob> => {
-    const db = set(writeDb$);
-    signal.throwIfAborted();
-    const [inserted] = await db
-      .insert(backgroundJobs)
-      .values({
-        ...args,
-        availableAt: backgroundJobDatabaseNow,
-        createdAt: backgroundJobDatabaseNow,
-        updatedAt: backgroundJobDatabaseNow,
-      })
-      .onConflictDoNothing({ target: backgroundJobs.id })
-      .returning();
-    signal.throwIfAborted();
-    if (inserted) {
-      return inserted;
-    }
-    const [existing] = await db
-      .select()
-      .from(backgroundJobs)
-      .where(eq(backgroundJobs.id, args.id))
-      .limit(1);
-    signal.throwIfAborted();
-    if (
-      !existing ||
-      existing.kind !== args.kind ||
-      existing.handlerVersion !== args.handlerVersion ||
-      existing.userId !== args.userId ||
-      existing.orgId !== args.orgId ||
-      !isDeepStrictEqual(existing.input, args.input)
-    ) {
-      throw new Error(
-        "Background job identity conflicts with its durable input",
-      );
-    }
-    return existing;
-  },
-);
 
 interface ClaimBackgroundJobArgs {
   readonly jobId?: string;
@@ -199,35 +140,9 @@ const updateLeasedJob$ = command(
   },
 );
 
-interface CheckpointBackgroundJobArgs {
+interface YieldBackgroundJobArgs {
   readonly job: ClaimedBackgroundJob;
   readonly checkpoint: BackgroundJobData;
-}
-
-/** Commit progress without extending the invocation's bounded lease. */
-export const checkpointBackgroundJob$ = command(
-  async (
-    { set },
-    args: CheckpointBackgroundJobArgs,
-    signal: AbortSignal,
-  ): Promise<boolean> => {
-    return await set(
-      updateLeasedJob$,
-      {
-        job: args.job,
-        values: {
-          checkpoint: args.checkpoint,
-          failureCount: 0,
-          lastError: null,
-        },
-      },
-      signal,
-    );
-  },
-);
-
-interface YieldBackgroundJobArgs extends CheckpointBackgroundJobArgs {
-  readonly availableAt?: Date;
 }
 
 /** Normal continuation is progress, not a failure or a retry attempt. */
@@ -246,7 +161,7 @@ export const yieldBackgroundJob$ = command(
           checkpoint: args.checkpoint,
           failureCount: 0,
           lastError: null,
-          availableAt: args.availableAt ?? backgroundJobDatabaseNow,
+          availableAt: backgroundJobDatabaseNow,
           leaseId: null,
           leaseExpiresAt: null,
         },
@@ -293,8 +208,6 @@ export const completeBackgroundJob$ = command(
     { set },
     args: {
       readonly job: ClaimedBackgroundJob;
-      /** Optional terminal result committed atomically with completion. */
-      readonly checkpoint?: BackgroundJobData;
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
@@ -304,9 +217,6 @@ export const completeBackgroundJob$ = command(
         job: args.job,
         values: {
           status: "completed",
-          ...(args.checkpoint === undefined
-            ? {}
-            : { checkpoint: args.checkpoint }),
           leaseId: null,
           leaseExpiresAt: null,
           lastError: null,

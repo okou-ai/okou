@@ -95,6 +95,7 @@ type PinnedRequestCallback = (
 ) => void;
 
 export interface ApiTestMocks {
+  readonly clerkRetryJitter: (value: number) => () => void;
   readonly abortSignal: {
     readonly timeout: AbortSignalTimeoutMock;
   };
@@ -559,6 +560,12 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
   };
 
   return {
+    clerkRetryJitter: (value) => {
+      const spy = vi.spyOn(Math, "random").mockReturnValue(value);
+      return () => {
+        spy.mockRestore();
+      };
+    },
     abortSignal: {
       timeout: vi.fn<(milliseconds: number) => AbortSignal | undefined>(),
     },

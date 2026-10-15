@@ -83,7 +83,6 @@ import {
   connectorCatalogCurrentWhere,
   connectorRuntimeSlugSelectionFromRows,
   connectorRuntimeSlugSelectionReadPlan,
-  loadConnectorRuntimeSlugSelection,
 } from "./connector-catalog-slug-source.service";
 import { publishBuiltinConnectorInvalidationAfterCommit } from "./connector-client-invalidation.service";
 import {
@@ -294,37 +293,27 @@ type PendingBuiltinConnectorTokenRevoke = {
  * local cleanup into server failures. Callers use a missing snapshot to skip
  * runtime-dependent presentation and provider revocation only.
  */
-export async function loadStoredBuiltinConnectorRuntimeSnapshot(
-  db: ReadonlyDb,
-  connectorSlugs: readonly ConnectorSlug[],
-): Promise<ConnectorRuntimeSelection | null> {
-  const result = await settle(
-    loadConnectorRuntimeSlugSelection(db, { connectorSlugs }),
-  );
-  if (result.ok) {
-    return result.value;
-  }
-  if (!isConnectorCatalogUnavailableError(result.error)) {
-    throw result.error;
-  }
-  log.warn("Connector catalog unavailable while resolving stored connectors", {
-    error: result.error,
-  });
-  return null;
-}
-
-/** Own the accepted-catalog read used by local lifecycle cleanup. */
-export const loadStoredBuiltinConnectorRuntimeSnapshot$ = command(
+export const readStoredBuiltinConnectorRuntimeSnapshot$ = command(
   async (
-    { set },
+    { get },
     connectorSlugs: readonly ConnectorSlug[],
-    signal: AbortSignal,
+    // Account deletion retains its enclosing post-read cancellation check
+    // by omitting this optional signal.
+    signal?: AbortSignal,
   ): Promise<ConnectorRuntimeSelection | null> => {
     const result = await settle(
-      loadConnectorRuntimeSlugSelection(set(writeDb$), { connectorSlugs }),
+      (async () => {
+        const plan = connectorRuntimeSlugSelectionReadPlan({ connectorSlugs });
+        const rows = await get(db$)
+          .select(plan.columns)
+          .from(connectorCatalog)
+          .leftJoin(connectorCatalogEntries, plan.join)
+          .where(connectorCatalogCurrentWhere());
+        return connectorRuntimeSlugSelectionFromRows(plan.selection, rows);
+      })(),
       signal,
     );
-    signal.throwIfAborted();
+    signal?.throwIfAborted();
     if (result.ok) {
       return result.value;
     }
@@ -1114,7 +1103,6 @@ interface DeleteBuiltinConnectorLocalStateArgs {
   readonly userId: string;
   readonly connectorSlug: string;
   readonly sourceId: string;
-  readonly snapshot?: ConnectorRuntimeSelection | null;
 }
 
 interface PendingConnectorAutomationCleanup {
@@ -1349,16 +1337,6 @@ const prepareDeletedConnectorWatches$ = command(
   },
 );
 
-/** A caller-provided snapshot, including an unavailable `null`, is reused. */
-async function deletionRuntimeSnapshot(
-  db: ReadonlyDb,
-  args: DeleteBuiltinConnectorLocalStateArgs,
-): Promise<ConnectorRuntimeSelection | null> {
-  return args.snapshot === undefined
-    ? await loadStoredBuiltinConnectorRuntimeSnapshot(db, [args.connectorSlug])
-    : args.snapshot;
-}
-
 export const deleteBuiltinConnectorLocalState$ = command(
   async (
     { get, set },
@@ -1366,7 +1344,9 @@ export const deleteBuiltinConnectorLocalState$ = command(
     signal: AbortSignal,
   ): Promise<DeleteBuiltinConnectorLocalStateResult> => {
     const writeDb = set(writeDb$);
-    const snapshot = await deletionRuntimeSnapshot(get(db$), args);
+    const snapshot = await set(readStoredBuiltinConnectorRuntimeSnapshot$, [
+      args.connectorSlug,
+    ]);
     signal.throwIfAborted();
     const featureSwitchOverrides =
       snapshot === null

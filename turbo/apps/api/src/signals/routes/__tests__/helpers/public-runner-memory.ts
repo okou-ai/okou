@@ -117,7 +117,6 @@ export function createPublicRunnerMemory(
       displayName: "Owned Memory carrier",
       visibility: "private",
     });
-    fixture.registerAgent(agent.agentId);
     return agent.agentId;
   }
   async function claim(agentId: string, prompt: string) {

@@ -21,9 +21,7 @@ use super::cli_framework::{
 };
 use super::{JOB_TIMEOUT, RunnerError, RunnerResult, guest_runtime_dir, guest_runtime_path};
 use runner_types::ids::RunId;
-use runner_types::types::{
-    ConnectorRuntimeTargetRegistration, ExecutionContext, HomeReuseResult, SandboxReuseResult,
-};
+use runner_types::types::{ConnectorRuntimeTargetRegistration, ExecutionContext};
 
 pub(super) struct ProtectedModelProviderEnvKey {
     name: &'static str,
@@ -115,23 +113,15 @@ pub(super) fn validate_execution_context_before_sandbox(
     context: &ExecutionContext,
     api_url: &str,
     sandbox_id: &str,
-    reuse_result: SandboxReuseResult,
 ) -> Result<PreparedRunPayload, String> {
     let host_env = HostEnv::from_process();
-    validate_execution_context_before_sandbox_with_host_env(
-        context,
-        api_url,
-        sandbox_id,
-        reuse_result,
-        &host_env,
-    )
+    validate_execution_context_before_sandbox_with_host_env(context, api_url, sandbox_id, &host_env)
 }
 
 pub(super) fn validate_execution_context_before_sandbox_with_host_env(
     context: &ExecutionContext,
     api_url: &str,
     sandbox_id: &str,
-    reuse_result: SandboxReuseResult,
     host_env: &HostEnv,
 ) -> Result<PreparedRunPayload, String> {
     validate_resume_session_id(context)?;
@@ -143,9 +133,8 @@ pub(super) fn validate_execution_context_before_sandbox_with_host_env(
             RunnerError::Internal(message) => message,
             error => error.to_string(),
         })?;
-    let bootstrap_env =
-        build_env_json_with_host_env(context, api_url, sandbox_id, reuse_result, host_env)
-            .map_err(|error| error.to_string())?;
+    let bootstrap_env = build_env_json_with_host_env(context, api_url, sandbox_id, host_env)
+        .map_err(|error| error.to_string())?;
     validate_bootstrap_environment_for_guest(&bootstrap_env)?;
     Ok(prepared_run_payload)
 }
@@ -758,16 +747,6 @@ pub(super) async fn write_required_agent_files(
     })
 }
 
-pub(super) fn build_env_json_with_host_env(
-    context: &ExecutionContext,
-    api_url: &str,
-    sandbox_id: &str,
-    reuse_result: SandboxReuseResult,
-    host_env: &HostEnv,
-) -> RunnerResult<HashMap<String, String>> {
-    build_env_json_with_host_env_inner(context, api_url, sandbox_id, reuse_result, None, host_env)
-}
-
 /// Build the guest-agent bootstrap environment.
 ///
 /// This intentionally excludes `context.environment`. User/model/connector
@@ -776,44 +755,15 @@ pub(super) fn build_env_json_for_run(
     context: &ExecutionContext,
     api_url: &str,
     sandbox_id: &str,
-    reuse_result: SandboxReuseResult,
-    home_reuse_result: HomeReuseResult,
 ) -> RunnerResult<HashMap<String, String>> {
     let host_env = HostEnv::from_process();
-    build_env_json_with_host_env_for_run(
-        context,
-        api_url,
-        sandbox_id,
-        reuse_result,
-        home_reuse_result,
-        &host_env,
-    )
+    build_env_json_with_host_env(context, api_url, sandbox_id, &host_env)
 }
 
-pub(super) fn build_env_json_with_host_env_for_run(
+pub(super) fn build_env_json_with_host_env(
     context: &ExecutionContext,
     api_url: &str,
     sandbox_id: &str,
-    reuse_result: SandboxReuseResult,
-    home_reuse_result: HomeReuseResult,
-    host_env: &HostEnv,
-) -> RunnerResult<HashMap<String, String>> {
-    build_env_json_with_host_env_inner(
-        context,
-        api_url,
-        sandbox_id,
-        reuse_result,
-        Some(home_reuse_result),
-        host_env,
-    )
-}
-
-fn build_env_json_with_host_env_inner(
-    context: &ExecutionContext,
-    api_url: &str,
-    sandbox_id: &str,
-    reuse_result: SandboxReuseResult,
-    home_reuse_result: Option<HomeReuseResult>,
     host_env: &HostEnv,
 ) -> RunnerResult<HashMap<String, String>> {
     let mut env = HashMap::new();
@@ -838,16 +788,6 @@ fn build_env_json_with_host_env_inner(
         guest_contracts::runtime_paths::CANONICAL_GUEST_RUNTIME_DIR_ENV.into(),
         guest_runtime_dir(context.run_id)?,
     );
-    env.insert(
-        guest_contracts::env::CANONICAL_SANDBOX_REUSE_RESULT_ENV.into(),
-        reuse_result.as_wire().into(),
-    );
-    if let Some(home_reuse_result) = home_reuse_result {
-        env.insert(
-            guest_contracts::env::CANONICAL_HOME_REUSE_RESULT_ENV.into(),
-            home_reuse_result.as_wire().into(),
-        );
-    }
     env.insert(
         guest_contracts::env::CANONICAL_AGENT_EXECUTION_TIMEOUT_SECS_ENV.into(),
         JOB_TIMEOUT.as_secs().to_string(),

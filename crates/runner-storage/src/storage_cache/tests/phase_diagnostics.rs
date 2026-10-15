@@ -240,7 +240,7 @@ async fn delayed_collection_preserves_the_measured_header_phase() {
                 .unwrap()
                 .iter()
                 .find(|record| record.operation.action_type == PHASES[0])
-                .map(|record| (record.operation, record.completed_at));
+                .map(|record| (record.operation.clone(), record.completed_at));
             if let Some(header) = header {
                 return header;
             }

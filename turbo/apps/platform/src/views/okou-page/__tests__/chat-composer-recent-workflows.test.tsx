@@ -127,11 +127,11 @@ test("The overview fills from the alphabet and expanding preserves the visible w
 });
 
 test.each([`/chats/${THREAD_ID}`, `/agents/${AGENT_ID}/chat`])(
-  "Accepted sends at %s promote workflows by recency, while abandoned selections do not",
+  "An abandoned workflow selection at %s does not change recency",
   async (path) => {
     mockWorkflows();
     mockChatLifecycle(context, { threadId: THREAD_ID });
-    let editor = await openComposer(path);
+    const editor = await openComposer(path);
     click(button("Show all 6"));
     click(button("/echo"));
     await fill(editor, "Draft /");
@@ -143,10 +143,54 @@ test.each([`/chats/${THREAD_ID}`, `/agents/${AGENT_ID}/chat`])(
         "/delta",
       ]);
     });
+  },
+);
 
-    const names = path.startsWith("/agents/")
-      ? ["zulu"]
-      : ["zulu", "echo", "zulu"];
+test.each([
+  {
+    path: `/agents/${AGENT_ID}/chat`,
+    history: [],
+    name: "zulu",
+    expected: ["/zulu", "/alpha", "/beta", "/charlie"],
+  },
+  {
+    path: `/chats/${THREAD_ID}`,
+    history: [],
+    name: "zulu",
+    expected: ["/zulu", "/alpha", "/beta", "/charlie"],
+  },
+  {
+    path: `/chats/${THREAD_ID}`,
+    history: ["zulu"],
+    name: "echo",
+    expected: ["/echo", "/zulu", "/alpha", "/beta"],
+  },
+  {
+    path: `/chats/${THREAD_ID}`,
+    history: ["echo", "zulu"],
+    name: "zulu",
+    expected: ["/zulu", "/echo", "/alpha", "/beta"],
+  },
+])(
+  "An accepted $name send at $path promotes the workflow from $history",
+  async ({ path, history, name, expected }) => {
+    const workflows = mockWorkflows();
+    mockHistory([
+      {
+        ids: history.map((token) => {
+          const workflow = workflows.find((workflow) => {
+            return workflow.name === token;
+          });
+          if (!workflow) {
+            throw new Error(`Missing workflow ${token}`);
+          }
+          return workflow.id;
+        }),
+      },
+    ]);
+    mockChatLifecycle(context, { threadId: THREAD_ID });
+    let editor = await openComposer(path);
+    const names = [name];
     for (const name of names) {
       await fill(editor, `/${name}`);
       await waitFor(() => {
@@ -168,9 +212,6 @@ test.each([`/chats/${THREAD_ID}`, `/agents/${AGENT_ID}/chat`])(
       });
     }
     await fill(editor, "Draft /");
-    const expected = path.startsWith("/agents/")
-      ? ["/zulu", "/alpha", "/beta", "/charlie"]
-      : ["/zulu", "/echo", "/alpha", "/beta"];
     await waitFor(() => {
       expect(workflowNames()).toStrictEqual(expected);
     });
@@ -229,14 +270,19 @@ test("An open menu keeps its order when an earlier send finishes, then refreshes
 
 test("An accepted use retains history written by another browser tab", async () => {
   const workflows = mockWorkflows();
-  const history = mockHistory([]);
   const [zulu, , echo] = workflows;
   if (!zulu || !echo) {
     throw new Error("Expected workflow fixtures");
   }
+  const history = mockHistory([{ ids: [zulu.id] }]);
   mockChatLifecycle(context, { threadId: THREAD_ID });
   const editor = await openComposer();
-  for (const name of ["zulu", "delta"]) {
+  // The page has read the first accepted use; another tab writes before the next send.
+  history.set(
+    "okou_recent-workflows:test-user-123:org_default",
+    JSON.stringify([echo.id, zulu.id]),
+  );
+  for (const name of ["delta"]) {
     await fill(editor, `/${name}`);
     await waitFor(() => {
       expect(button("Send")).toBeEnabled();
@@ -249,13 +295,6 @@ test("An accepted use retains history written by another browser tab", async () 
     await waitFor(() => {
       expect(button("Send")).toBeEnabled();
     });
-    if (name === "zulu") {
-      // Supply another tab's write at the browser Storage boundary.
-      history.set(
-        "okou_recent-workflows:test-user-123:org_default",
-        JSON.stringify([echo.id, zulu.id]),
-      );
-    }
   }
   await fill(editor, "Draft /");
   await waitFor(() => {

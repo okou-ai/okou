@@ -12,9 +12,9 @@ use super::super::cli_framework::{
     EffectiveCliFramework, effective_cli_framework, normalized_cli_agent_type,
 };
 use super::super::env::{
-    HostEnv, build_env_json_with_host_env, build_env_json_with_host_env_for_run,
-    build_run_payload_for_run, build_user_env_json, is_runner_owned_env_key,
-    validate_execution_context_before_sandbox, validate_model_provider_env_placeholders,
+    HostEnv, build_env_json_with_host_env, build_run_payload_for_run, build_user_env_json,
+    is_runner_owned_env_key, validate_execution_context_before_sandbox,
+    validate_model_provider_env_placeholders,
 };
 use super::super::guest_runtime_dir;
 use super::support::{
@@ -24,17 +24,11 @@ use super::support::{
 use crate::error::{RunnerError, RunnerResult};
 use runner_types::ids::RunId;
 use runner_types::storage_manifest::StorageManifest;
-use runner_types::types::{ExecutionContext, HomeReuseResult, ResumeSession, SandboxReuseResult};
+use runner_types::types::{ExecutionContext, ResumeSession};
 
 fn validate_context_for_test(ctx: &ExecutionContext) -> Result<(), String> {
     let sandbox_id = SandboxId::new_v4().to_string();
-    validate_execution_context_before_sandbox(
-        ctx,
-        "http://localhost",
-        &sandbox_id,
-        SandboxReuseResult::Reused,
-    )
-    .map(drop)
+    validate_execution_context_before_sandbox(ctx, "http://localhost", &sandbox_id).map(drop)
 }
 
 fn codex_runtime_config_for_test(model_catalog: Option<serde_json::Value>) -> CodexRuntimeConfig {
@@ -431,12 +425,10 @@ fn model_provider_env_placeholder_validation_accepts_codex_oauth_placeholders() 
 fn build_env_json_required_keys() {
     let ctx = minimal_context();
     let sandbox_id = "00000000-0000-4000-8000-000000000abc";
-    let env = build_env_json_with_host_env_for_run(
+    let env = build_env_json_with_host_env(
         &ctx,
         "https://api.example.com",
         sandbox_id,
-        SandboxReuseResult::Reused,
-        HomeReuseResult::SandboxReused,
         &HostEnv::default(),
     )
     .expect("test env should build");
@@ -473,60 +465,10 @@ fn build_env_json_required_keys() {
         Some(sandbox_id)
     );
     assert_eq!(
-        env.get(guest_contracts::env::CANONICAL_SANDBOX_REUSE_RESULT_ENV)
-            .map(String::as_str),
-        Some("reused")
-    );
-    assert_eq!(
-        env.get(guest_contracts::env::CANONICAL_HOME_REUSE_RESULT_ENV)
-            .map(String::as_str),
-        Some("sandboxReused")
-    );
-    assert_eq!(
         env.get(guest_contracts::env::CANONICAL_API_START_TIME_ENV)
             .unwrap(),
         ""
     );
-}
-
-#[test]
-fn build_env_json_sandbox_reuse_result_wire_format() {
-    let ctx = minimal_context();
-    let sid = SandboxId::new_v4().to_string();
-    for (variant, expected) in [
-        (SandboxReuseResult::Reused, "reused"),
-        (SandboxReuseResult::NoReuseKey, "noReuseKey"),
-        (SandboxReuseResult::PoolMiss, "poolMiss"),
-        (SandboxReuseResult::ProfileMismatch, "profileMismatch"),
-        (
-            SandboxReuseResult::DeviceLimitMismatch,
-            "deviceLimitMismatch",
-        ),
-        (SandboxReuseResult::UnparkFailed, "unparkFailed"),
-    ] {
-        let env = build_env_json_with_host_env(
-            &ctx,
-            "http://localhost",
-            &sid,
-            variant,
-            &HostEnv::default(),
-        )
-        .expect("test env should build");
-        assert_eq!(
-            env.get(guest_contracts::env::CANONICAL_SANDBOX_ID_ENV)
-                .map(String::as_str),
-            Some(sid.as_str())
-        );
-        assert_eq!(
-            env.get(guest_contracts::env::CANONICAL_SANDBOX_REUSE_RESULT_ENV)
-                .map(String::as_str),
-            Some(expected)
-        );
-        assert!(
-            !env.contains_key(guest_contracts::env::CANONICAL_HOME_REUSE_RESULT_ENV),
-            "builder without a home outcome emitted canonical home reuse metadata"
-        );
-    }
 }
 
 #[test]
@@ -1074,15 +1016,10 @@ fn pi_execution_context_preserves_additive_launch_fields_in_run_payload() {
     ctx.pi_installed_cli_requirement = Some(json!({ "minCliVersion": "9.352.7" }));
     ctx.pi_model_config.as_mut().unwrap()["catalogModel"] = json!("gpt-6-luna");
     let sandbox_id = SandboxId::new_v4().to_string();
-    let payload = validate_execution_context_before_sandbox(
-        &ctx,
-        "http://localhost",
-        &sandbox_id,
-        SandboxReuseResult::Reused,
-    )
-    .unwrap()
-    .into_run_payload(&ctx)
-    .unwrap();
+    let payload = validate_execution_context_before_sandbox(&ctx, "http://localhost", &sandbox_id)
+        .unwrap()
+        .into_run_payload(&ctx)
+        .unwrap();
 
     assert_eq!(
         payload.pi_session_id,
@@ -1146,15 +1083,11 @@ fn pi_maintenance_candidates_use_only_the_private_run_payload() {
         }]
     });
     let sandbox_id = SandboxId::new_v4().to_string();
-    let payload = validate_execution_context_before_sandbox(
-        &context,
-        "http://localhost",
-        &sandbox_id,
-        SandboxReuseResult::Reused,
-    )
-    .unwrap()
-    .into_run_payload(&context)
-    .unwrap();
+    let payload =
+        validate_execution_context_before_sandbox(&context, "http://localhost", &sandbox_id)
+            .unwrap()
+            .into_run_payload(&context)
+            .unwrap();
 
     let launch: serde_json::Value = serde_json::from_str(&payload.pi_launch_config).unwrap();
     assert_eq!(

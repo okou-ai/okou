@@ -15,7 +15,6 @@ import {
   publicRunOwner,
   type RunCleanupReceiptEntry,
 } from "./helpers/public-run-owner";
-import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
 
 const context = testContext();
 const api = createAuthOrgAgentsBddApi(context);
@@ -301,8 +300,23 @@ test("fixture lifecycle: finalizes a real empty workspace once and restores its 
     async afterSuccessfulCleanup(receipt) {
       expect(receipt).toStrictEqual([]);
       events.push("finalize");
-      await deletePublicWorkspace(context, actor);
+      context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
+        id: actor.orgId,
+      });
+      context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+        { data: [{ publicUserData: { userId: actor.userId } }] },
+      );
+      context.mocks.stripe.subscriptions.list.mockResolvedValue({
+        data: [],
+        has_more: false,
+      });
+      context.mocks.stripe.invoices.list.mockResolvedValue({
+        data: [],
+        has_more: false,
+      });
+      const deleted = await api.deleteOrg(actor);
       context.signal.throwIfAborted();
+      expect(deleted).toStrictEqual({ message: "Organization deleted" });
     },
   });
   const setup = await settleIncludingAbort(() => {
