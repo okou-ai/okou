@@ -12,6 +12,26 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1030.0](https://github.com/okou-ai/okou/compare/app-v0.1029.1...app-v0.1030.0) (2026-10-15)
+
+
+### Features
+
+* **app:** adopt telegram connection settings and callback protocol ([#40330](https://github.com/okou-ai/okou/issues/40330)) ([84f0f66](https://github.com/okou-ai/okou/commit/84f0f6685d8755e9f006590fa2f4acb86c32b845)) [#40196](https://github.com/okou-ai/okou/issues/40196)
+
+
+### Performance Improvements
+
+* isolate chat sidebar, panel, and composer subscriptions ([#40261](https://github.com/okou-ai/okou/issues/40261)) ([c145bd1](https://github.com/okou-ai/okou/commit/c145bd12252817b0a684cf6f535f13e204898f8e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.566.2
+    * @okouai/core bumped to 8.759.3
+
 ## [0.1029.1](https://github.com/okou-ai/okou/compare/app-v0.1029.0...app-v0.1029.1) (2026-10-15)
 
 
