@@ -660,6 +660,28 @@ test("Open a conversation with double-click and rename it from the sidebar menu"
       within(sidebar()).queryByText("Release plan"),
     ).not.toBeInTheDocument();
   });
+
+  // Reopen the same row's menu after another page lifetime starts. Rename
+  // must bind the current page signal, even when the row was kept mounted.
+  click(threadLinkByTitle("Incident notes", sidebar()));
+  await waitFor(() => {
+    expect(threadLinkByTitle("Incident notes", sidebar())).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+  openThreadMenu("Launch plan");
+  click(menuItemByText("Rename chat"));
+  const reopened = await screen.findByRole("dialog", { name: "Rename chat" });
+  const reopenedInput = within(reopened).getByPlaceholderText("Chat title");
+  expect(reopenedInput).toHaveValue("Launch plan");
+  await fill(reopenedInput, "Final launch plan");
+  click(buttonByText("Rename", reopened));
+  await within(sidebar()).findByText("Final launch plan");
+  expect(threadLinkByTitle("Incident notes", sidebar())).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
 });
 
 test("Reorder pinned agents while keeping Nova first", async () => {

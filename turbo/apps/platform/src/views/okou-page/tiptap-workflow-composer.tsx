@@ -5,6 +5,7 @@ import {
   useLoadable,
   useSet,
 } from "ccstate-react";
+import type { ReactNode } from "react";
 import type { Editor } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { useEditorState } from "@tiptap/react";
@@ -41,6 +42,10 @@ import {
   type SlashTemplatePreview,
 } from "./composer-template-catalog.ts";
 import type { ComposerPasteEvent } from "./composer-input-types.ts";
+import {
+  useComposerKeyboard,
+  type ComposerActions,
+} from "./composer-actions.ts";
 
 import { composerCreatePlaceholder } from "../../signals/okou-page/composer-create.ts";
 
@@ -123,12 +128,11 @@ function workflowComposerHasContent(editor: Editor): boolean {
 
 function WorkflowComposerPlaceholder({
   composer,
-  sending,
 }: {
   composer: ComposerSignals;
-  sending: boolean | undefined;
 }) {
   useTranslation();
+  const sending = useLastResolved(composer.submission.sending$);
   const createMode = useGet(composer.create.mode$);
   const hasInput = useGet(composer.editor.hasInput$);
   const hasEditorContent = useEditorState({
@@ -160,8 +164,7 @@ function WorkflowComposerPlaceholder({
 interface TiptapWorkflowComposerProps {
   readonly signals: ComposerSignals;
   readonly onDraftChange: (() => void) | undefined;
-  readonly sending: boolean | undefined;
-  readonly onKeyDown: (event: KeyboardEventLike) => void;
+  readonly actions: ComposerActions;
   readonly onPaste: (event: ComposerPasteEvent) => void;
 }
 
@@ -749,14 +752,21 @@ function useComposerPasteHandler(
   };
 }
 
-export function TiptapWorkflowComposer({
-  signals,
-  onDraftChange,
-  sending,
-  onKeyDown,
-  onPaste,
-}: TiptapWorkflowComposerProps) {
-  const composer = signals;
+/**
+ * Own the menu subscriptions and the capture handler together. The editor is
+ * composed as children by its parent, so menu data and selection updates do
+ * not re-execute the editor's render or replace its DOM/ref lifecycle.
+ */
+function ComposerSuggestionMenu({
+  composer,
+  actions,
+  children,
+}: {
+  readonly composer: ComposerSignals;
+  readonly actions: ComposerActions;
+  readonly children: ReactNode;
+}) {
+  const onKeyDown = useComposerKeyboard(composer, actions);
   // Composer-anchored menus open on the side with the room. A docked composer
   // sits on the floor of the screen, so its menus open above it. From `sm` up
   // the start page centres its composer and the free space is below it, where
@@ -779,8 +789,6 @@ export function TiptapWorkflowComposer({
       '[data-slot="chat-composer-card"]',
     );
   };
-  const handlePaste = useComposerPasteHandler(composer, onPaste);
-  const setContainerRef = useSet(composer.editor.setContainerRef$);
   const setSuggestionMenuRef = useSet(
     composer.suggestion.setSuggestionMenuRef$,
   );
@@ -794,65 +802,17 @@ export function TiptapWorkflowComposer({
         }
       }}
     >
-      <div className="relative flex min-h-full flex-col">
-        <WorkflowComposerPlaceholder composer={composer} sending={sending} />
-        <div
-          // The composer card owns responsive height allocation so its footer
-          // can change modes without changing the surrounding card height.
-          //
-          // The editable area has to claim all of that height, the way a
-          // textarea does. ProseMirror's own stylesheet only sets `position`
-          // and whitespace handling and never sizes the editor, so filling the
-          // container is entirely the caller's job:
-          // https://github.com/ProseMirror/prosemirror-view/blob/master/style/prosemirror.css
-          //
-          // This used to be a chain of `min-h-full`, and it silently stopped
-          // one level in. A percentage `min-height` only resolves against a
-          // parent whose own `height` is definite, and an element carrying just
-          // `min-height: 100%` still computes `height: auto`, so the next
-          // `min-height: 100%` below it resolved to nothing. On a 900px-wide
-          // composer that left `.ProseMirror` 40px tall inside a 144px input
-          // area: four fifths of the card looked like the editor but was not.
-          // Every click there landed on this wrapper instead, blurring the
-          // editor before the slot's click handler focused it again, and that
-          // focus round trip re-ran the composer card's `focus-within`
-          // border-color and focus-veil transitions, repainting the whole card.
-          //
-          // Both ProseMirror and Tiptap answer "make the editor fill its box"
-          // with flex rather than percentage heights, which is what this does:
-          // the wrapper is the column, this container grows into it, and the
-          // editor grows into this container. `flex-auto` keeps `flex-basis:
-          // auto`, so a long draft still contributes its intrinsic height and
-          // the composer keeps growing until the editor's own max-height takes
-          // over.
-          // https://discuss.prosemirror.net/t/how-can-i-set-a-prosemirror-editor-to-be-100-height/5226
-          // https://github.com/ueberdosis/tiptap/discussions/1546
-          className="flex min-h-0 flex-auto flex-col [&_.ProseMirror]:flex-auto"
-          ref={setContainerRef}
-          onInput={(event) => {
-            // The mount command targets the container for semantic document
-            // changes; native contenteditable input targets ProseMirror.
-            if (event.target === event.currentTarget) {
-              onDraftChange?.();
-            }
-          }}
-          onKeyDownCapture={(event) => {
-            const nativeEvent = event.nativeEvent;
-            const handled = suggestionMenu.handleKeyDown(nativeEvent);
-            if (handled || nativeEvent.defaultPrevented) {
-              event.stopPropagation();
-            }
-          }}
-          onPasteCapture={(event) => {
-            const handled = handlePaste(
-              event.nativeEvent,
-              composer.editor.editor.view.dom,
-            );
-            if (handled) {
-              event.stopPropagation();
-            }
-          }}
-        />
+      <div
+        className="relative flex min-h-full flex-col"
+        onKeyDownCapture={(event) => {
+          const nativeEvent = event.nativeEvent;
+          const handled = suggestionMenu.handleKeyDown(nativeEvent);
+          if (handled || nativeEvent.defaultPrevented) {
+            event.stopPropagation();
+          }
+        }}
+      >
+        {children}
       </div>
       {suggestionMenu.showWorkflows && (
         <SlashWorkflowMenu
@@ -894,5 +854,72 @@ export function TiptapWorkflowComposer({
         />
       )}
     </Popover>
+  );
+}
+
+export function TiptapWorkflowComposer({
+  signals,
+  onDraftChange,
+  actions,
+  onPaste,
+}: TiptapWorkflowComposerProps) {
+  const composer = signals;
+  const handlePaste = useComposerPasteHandler(composer, onPaste);
+  const setContainerRef = useSet(composer.editor.setContainerRef$);
+
+  return (
+    <ComposerSuggestionMenu composer={composer} actions={actions}>
+      <WorkflowComposerPlaceholder composer={composer} />
+      <div
+        // The composer card owns responsive height allocation so its footer
+        // can change modes without changing the surrounding card height.
+        //
+        // The editable area has to claim all of that height, the way a
+        // textarea does. ProseMirror's own stylesheet only sets `position`
+        // and whitespace handling and never sizes the editor, so filling the
+        // container is entirely the caller's job:
+        // https://github.com/ProseMirror/prosemirror-view/blob/master/style/prosemirror.css
+        //
+        // This used to be a chain of `min-h-full`, and it silently stopped
+        // one level in. A percentage `min-height` only resolves against a
+        // parent whose own `height` is definite, and an element carrying just
+        // `min-height: 100%` still computes `height: auto`, so the next
+        // `min-height: 100%` below it resolved to nothing. On a 900px-wide
+        // composer that left `.ProseMirror` 40px tall inside a 144px input
+        // area: four fifths of the card looked like the editor but was not.
+        // Every click there landed on this wrapper instead, blurring the
+        // editor before the slot's click handler focused it again, and that
+        // focus round trip re-ran the composer card's `focus-within`
+        // border-color and focus-veil transitions, repainting the whole card.
+        //
+        // Both ProseMirror and Tiptap answer "make the editor fill its box"
+        // with flex rather than percentage heights, which is what this does:
+        // the wrapper is the column, this container grows into it, and the
+        // editor grows into this container. `flex-auto` keeps `flex-basis:
+        // auto`, so a long draft still contributes its intrinsic height and
+        // the composer keeps growing until the editor's own max-height takes
+        // over.
+        // https://discuss.prosemirror.net/t/how-can-i-set-a-prosemirror-editor-to-be-100-height/5226
+        // https://github.com/ueberdosis/tiptap/discussions/1546
+        className="flex min-h-0 flex-auto flex-col [&_.ProseMirror]:flex-auto"
+        ref={setContainerRef}
+        onInput={(event) => {
+          // The mount command targets the container for semantic document
+          // changes; native contenteditable input targets ProseMirror.
+          if (event.target === event.currentTarget) {
+            onDraftChange?.();
+          }
+        }}
+        onPasteCapture={(event) => {
+          const handled = handlePaste(
+            event.nativeEvent,
+            composer.editor.editor.view.dom,
+          );
+          if (handled) {
+            event.stopPropagation();
+          }
+        }}
+      />
+    </ComposerSuggestionMenu>
   );
 }
