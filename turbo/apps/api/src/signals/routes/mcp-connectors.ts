@@ -10,20 +10,38 @@ import type { RouteEntry } from "../route-entry";
 import { startCustomConnectorAutomaticOAuthReauthorization$ } from "../services/custom-connector-oauth2.service";
 import { runMcpConnectorList } from "../services/run-mcp-connectors.service";
 
-const listRunMcpConnectorsInner$ = computed(async (get) => {
+const runMcpAuth$ = computed((get) => {
   const auth = get(organizationAuthContext$);
   if (auth.tokenType !== "agent") {
     throw new Error("Run MCP connector route requires agent authentication");
   }
-  const connectors = await get(
-    runMcpConnectorList({
-      orgId: auth.orgId,
-      userId: auth.userId,
-      runId: auth.runId,
-      customConnectorSourceIds: auth.customConnectorSourceIds,
-      builtinConnectorSourceIds: auth.builtinConnectorSourceIds,
-    }),
-  );
+  return auth;
+});
+const runMcpScope$ = computed((get) => {
+  const auth = get(runMcpAuth$);
+  return Promise.resolve({
+    orgId: auth.orgId,
+    userId: auth.userId,
+    runId: auth.runId,
+    customConnectorSourceIds: auth.customConnectorSourceIds,
+    builtinConnectorSourceIds: auth.builtinConnectorSourceIds,
+  });
+});
+const builtinMcpScope$ = computed(async (get) => {
+  const scope = await get(runMcpScope$);
+  return {
+    orgId: scope.orgId,
+    userId: scope.userId,
+    runId: scope.runId,
+    builtinConnectorSourceIds: scope.builtinConnectorSourceIds,
+  };
+});
+const runMcpConnectors$ = runMcpConnectorList(runMcpScope$);
+const builtinMcpConnectors$ = runMcpConnectorList(builtinMcpScope$);
+
+const listRunMcpConnectorsInner$ = computed(async (get) => {
+  get(runMcpAuth$);
+  const connectors = await get(runMcpConnectors$);
   return { status: 200 as const, body: { connectors: [...connectors] } };
 });
 
@@ -46,14 +64,7 @@ const reauthorizeMcpOAuthInner$ = command(
     if (target.kind === "builtin") {
       const connectionId =
         auth.builtinConnectorSourceIds?.[target.connectorSlug];
-      const descriptors = await get(
-        runMcpConnectorList({
-          orgId: auth.orgId,
-          userId: auth.userId,
-          runId: auth.runId,
-          builtinConnectorSourceIds: auth.builtinConnectorSourceIds,
-        }),
-      );
+      const descriptors = await get(builtinMcpConnectors$);
       signal.throwIfAborted();
       if (
         !connectionId ||
