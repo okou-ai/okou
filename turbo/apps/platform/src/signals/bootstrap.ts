@@ -375,6 +375,11 @@ const ROUTE_CONFIG = [
     setup: setupAuthPageWrapper(setupGithubConnectPage$),
   },
   {
+    // Direct alias preserves Telegram's standalone auth and URL context.
+    path: ROUTES.settingsTelegram,
+    setup: setupAuthPageWrapper(setupTelegramConnectPage$),
+  },
+  {
     path: ROUTES.telegramConnect,
     setup: setupAuthPageWrapper(setupTelegramConnectPage$),
   },
