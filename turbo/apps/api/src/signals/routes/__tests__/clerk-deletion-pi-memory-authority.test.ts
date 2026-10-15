@@ -28,28 +28,32 @@ describe("Clerk deletion revokes active Pi memory authority", () => {
     });
   });
 
+  async function activeOwners(peerScope: (typeof scopes)[number]) {
+    const first = await prepareMaintenance({
+      independentOwner: true,
+      peerScope,
+    });
+    await dispatch(first);
+    const second = await first.claimMaintenance(1);
+    expect(second.runId).not.toBe(first.runId);
+    const active = [first, second];
+    expect(
+      active.flatMap((run) => {
+        return run.maintenance.selected.map((selected) => {
+          return selected.sourceRunId;
+        });
+      }),
+    ).toStrictEqual(
+      expect.arrayContaining([first.source.runId, first.peerSource?.runId]),
+    );
+    expect(second.memory.storageId).not.toBe(first.memory.storageId);
+    return { first, active, target: first.sourceActor.actor };
+  }
+
   it.each(activeCases)(
-    "$type removes active maintenance authority with $peerScope isolation",
+    "$type revokes active uploads with $peerScope isolation",
     async ({ type, peerScope }) => {
-      const first = await prepareMaintenance({
-        independentOwner: true,
-        peerScope,
-      });
-      await dispatch(first);
-      const second = await first.claimMaintenance(1);
-      expect(second.runId).not.toBe(first.runId);
-      const active = [first, second];
-      expect(
-        active.flatMap((run) => {
-          return run.maintenance.selected.map((selected) => {
-            return selected.sourceRunId;
-          });
-        }),
-      ).toStrictEqual(
-        expect.arrayContaining([first.source.runId, first.peerSource?.runId]),
-      );
-      expect(second.memory.storageId).not.toBe(first.memory.storageId);
-      const target = first.sourceActor.actor;
+      const { first, active, target } = await activeOwners(peerScope);
       const pending = await Promise.all(
         active.map(async (run) => {
           const stopped =
@@ -85,7 +89,22 @@ describe("Clerk deletion revokes active Pi memory authority", () => {
             run.headers,
             [404],
           );
-        } else {
+        }
+      }
+    },
+  );
+
+  it.each(activeCases)(
+    "$type consumes active selections with $peerScope isolation",
+    async ({ type, peerScope }) => {
+      const { first, active, target } = await activeOwners(peerScope);
+      await deleteOwner(type, target);
+      for (const run of active) {
+        const stopped =
+          type === "user.deleted"
+            ? run.actor.userId === target.userId
+            : run.actor.orgId === target.orgId;
+        if (!stopped) {
           // A surviving user, not a resurrected deleted identity, observes HEAD.
           const output = await publish(run, `Surviving ${run.runId}.\n`);
           await completeMaintenance(run, output.versionId);
