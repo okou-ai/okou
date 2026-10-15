@@ -9,6 +9,7 @@ import { Client, DatabaseError, Query } from "pg";
 import {
   applyPendingMigrations,
   NON_TRANSACTIONAL_MIGRATION_MARKER,
+  UUID_BATCH_MIGRATION_MARKER,
 } from "./migration-runner";
 
 if (!process.env.DATABASE_URL) {
@@ -312,6 +313,101 @@ UPDATE migration_probe SET value = 1, annotation = 'applied';`,
     assert.deepEqual(await state(), [
       { row: { id: 1, value: 2, annotation: "applied" }, journal: 4 },
     ]);
+
+    await appendMigrationFixture(
+      4,
+      "0004_uuid_batches",
+      `CREATE TABLE batch_probe (id uuid PRIMARY KEY, eligible boolean NOT NULL, value integer NOT NULL);
+INSERT INTO batch_probe
+SELECT ('00000000-0000-0000-0000-' || lpad(i::text, 12, '0'))::uuid,
+  i BETWEEN 3 AND 5, 0 FROM generate_series(1, 6) i;
+--> statement-breakpoint
+${UUID_BATCH_MIGRATION_MARKER}
+WITH batch AS MATERIALIZED (
+  SELECT id FROM batch_probe WHERE $1::uuid IS NULL OR id > $1::uuid
+  ORDER BY id LIMIT 2
+), updated AS (
+  UPDATE batch_probe p SET value = 10 FROM batch b
+  WHERE p.id = b.id AND p.eligible RETURNING p.id
+)
+SELECT (SELECT id FROM batch ORDER BY id DESC LIMIT 1) AS next_cursor;`,
+    );
+    await applyPendingMigrations(sql);
+    assert.deepEqual(
+      Array.from(await sql`SELECT value FROM batch_probe ORDER BY id`),
+      [0, 0, 10, 10, 10, 0].map((value) => {
+        return { value };
+      }),
+    );
+
+    const failureTag = "0005_uuid_batch_rollback";
+    const batchBody = `${UUID_BATCH_MIGRATION_MARKER}
+WITH batch AS MATERIALIZED (
+  SELECT id FROM batch_probe WHERE $1::uuid IS NULL OR id > $1::uuid
+  ORDER BY id LIMIT 2
+), updated AS (
+  UPDATE batch_probe p SET value = p.value + 1 / CASE
+    WHEN p.id = '00000000-0000-0000-0000-000000000005'::uuid THEN 0 ELSE 1 END
+  FROM batch b WHERE p.id = b.id RETURNING p.id
+)
+SELECT (SELECT id FROM batch ORDER BY id DESC LIMIT 1) AS next_cursor;`;
+    await appendMigrationFixture(
+      5,
+      failureTag,
+      `ALTER TABLE batch_probe ADD COLUMN annotation text;
+--> statement-breakpoint
+${batchBody}`,
+    );
+    const beforeBatches = Array.from(
+      await sql`SELECT * FROM batch_probe ORDER BY id`,
+    );
+    await assert.rejects(applyPendingMigrations(sql), /division by zero/);
+    assert.deepEqual(
+      Array.from(await sql`SELECT * FROM batch_probe ORDER BY id`),
+      beforeBatches,
+    );
+    assert.equal(
+      (
+        await sql`SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations`
+      )[0]?.count,
+      5,
+    );
+    await fs.writeFile(
+      path.join(fixtureDirectory, "src", "migrations", `${failureTag}.sql`),
+      batchBody.replace("THEN 0 ELSE 1", "THEN 1 ELSE 1"),
+    );
+    await applyPendingMigrations(sql);
+    const afterBatches = Array.from(
+      await sql`SELECT value FROM batch_probe ORDER BY id`,
+    );
+    assert.deepEqual(
+      afterBatches,
+      [1, 1, 11, 11, 11, 1].map((value) => {
+        return { value };
+      }),
+    );
+    await applyPendingMigrations(sql);
+    assert.deepEqual(
+      Array.from(await sql`SELECT value FROM batch_probe ORDER BY id`),
+      afterBatches,
+    );
+
+    await appendMigrationFixture(
+      6,
+      "0006_stuck_batch_cursor",
+      `${UUID_BATCH_MIGRATION_MARKER}
+SELECT COALESCE($1::uuid, '00000000-0000-0000-0000-000000000001'::uuid) AS next_cursor;`,
+    );
+    await assert.rejects(
+      applyPendingMigrations(sql),
+      /Batch cursor did not advance/,
+    );
+    assert.equal(
+      (
+        await sql`SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations`
+      )[0]?.count,
+      6,
+    );
   } finally {
     process.chdir(originalDirectory);
     await sql.end();
