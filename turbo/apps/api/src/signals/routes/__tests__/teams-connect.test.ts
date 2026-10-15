@@ -18,9 +18,7 @@ import {
   type TeamsConnectFixture,
 } from "./helpers/teams-connect";
 import { teamsConnectRoutes } from "../teams-connect";
-import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi } from "./helpers/api-bdd";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -149,18 +147,8 @@ async function seedTeamsInstallation(
 
 describe("GET /api/integrations/teams/connect", () => {
   const bdd = createBddApi(context);
-  const webhooks = createWebhookCallbackApi(context);
   const track = createFixtureTracker<TeamsConnectFixture>((fixture) => {
     return removeTeamsForTest(context.signal, fixture);
-  });
-  const trackOrg = createFixtureTracker<string>(async (orgId) => {
-    webhooks.configureClerkWebhookSecret();
-    webhooks.verifyNextClerkWebhook({
-      type: "organization.deleted",
-      data: { id: orgId },
-    });
-    await webhooks.requestClerkWebhook("{}", {}, [200]);
-    await flushWaitUntilForTest();
   });
 
   beforeEach(() => {
@@ -331,7 +319,6 @@ describe("GET /api/integrations/teams/connect", () => {
 
   it("returns the configured default agent display name for a connected user", async () => {
     const fixture = await seedTeamsInstallation(track);
-    await trackOrg(Promise.resolve(fixture.orgId));
     const actor = bdd.user({
       userId: fixture.userId,
       orgId: fixture.orgId,
