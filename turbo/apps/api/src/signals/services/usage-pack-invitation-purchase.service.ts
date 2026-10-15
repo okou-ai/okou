@@ -15,9 +15,11 @@ import {
 import {
   and,
   asc,
+  count,
   desc,
   eq,
   gt,
+  gte,
   getTableColumns,
   inArray,
   isNotNull,
@@ -33,6 +35,7 @@ import { command } from "ccstate";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
+import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import {
   clerk$,
   createClerkReadContext,
@@ -405,6 +408,116 @@ function checkoutMetadata(
   };
 }
 
+// INSERT SELECT needs every schema column, including native defaults and nulls.
+function pendingInvitationPurchaseInsertSource(
+  args: PendingInvitationPurchaseArgs,
+) {
+  const purchases = usagePackInvitationPurchases;
+  const columns = getTableColumns(usagePackInvitationPurchases);
+  return {
+    id: sql`gen_random_uuid()`.mapWith(purchases.id).as("id"),
+    usagePackSubscriptionId:
+      sql`${sql.param(args.subscription.id, columns.usagePackSubscriptionId)}`
+        .mapWith(purchases.usagePackSubscriptionId)
+        .as("usage_pack_subscription_id"),
+    allocationId: sql`null`
+      .mapWith(nullableDriverValueDecoder(purchases.allocationId))
+      .as("allocation_id"),
+    orgId: sql`${sql.param(args.orgId, columns.orgId)}`
+      .mapWith(purchases.orgId)
+      .as("org_id"),
+    normalizedEmail: sql`${sql.param(args.email, columns.normalizedEmail)}`
+      .mapWith(purchases.normalizedEmail)
+      .as("normalized_email"),
+    role: sql`${sql.param(args.role, columns.role)}`
+      .mapWith(purchases.role)
+      .as("role"),
+    inviterUserId: sql`${sql.param(args.inviterUserId, columns.inviterUserId)}`
+      .mapWith(purchases.inviterUserId)
+      .as("inviter_user_id"),
+    impactClickId: sql`null`
+      .mapWith(nullableDriverValueDecoder(purchases.impactClickId))
+      .as("impact_click_id"),
+    impactClickAt: sql`null`
+      .mapWith(nullableDriverValueDecoder(purchases.impactClickAt))
+      .as("impact_click_at"),
+    usagePackUsd: sql`${sql.param(args.usagePackUsd, columns.usagePackUsd)}`
+      .mapWith(purchases.usagePackUsd)
+      .as("usage_pack_usd"),
+    stripePriceId: sql`${sql.param(args.stripePriceId, columns.stripePriceId)}`
+      .mapWith(purchases.stripePriceId)
+      .as("stripe_price_id"),
+    status: sql`'checkout_pending'`.mapWith(purchases.status).as("status"),
+    currentPeriodStart:
+      sql`${sql.param(args.preview.currentPeriodStart, columns.currentPeriodStart)}`
+        .mapWith(purchases.currentPeriodStart)
+        .as("current_period_start"),
+    currentPeriodEnd:
+      sql`${sql.param(args.preview.currentPeriodEnd, columns.currentPeriodEnd)}`
+        .mapWith(purchases.currentPeriodEnd)
+        .as("current_period_end"),
+    prorationTimestamp:
+      sql`${sql.param(args.preview.prorationTimestamp, columns.prorationTimestamp)}`
+        .mapWith(purchases.prorationTimestamp)
+        .as("proration_timestamp"),
+    unitAmountCents:
+      sql`${sql.param(args.unitAmountCents, columns.unitAmountCents)}`
+        .mapWith(purchases.unitAmountCents)
+        .as("unit_amount_cents"),
+    expectedAmountCents:
+      sql`${sql.param(args.preview.amountCents, columns.expectedAmountCents)}`
+        .mapWith(purchases.expectedAmountCents)
+        .as("expected_amount_cents"),
+    amountPaidCents: sql`null`
+      .mapWith(nullableDriverValueDecoder(purchases.amountPaidCents))
+      .as("amount_paid_cents"),
+    currency: sql`${sql.param(args.preview.currency, columns.currency)}`
+      .mapWith(purchases.currency)
+      .as("currency"),
+    purchasedCredits:
+      sql`${sql.param(args.purchasedCredits, columns.purchasedCredits)}`
+        .mapWith(purchases.purchasedCredits)
+        .as("purchased_credits"),
+    bonusCredits: sql`${sql.param(args.bonusCredits, columns.bonusCredits)}`
+      .mapWith(purchases.bonusCredits)
+      .as("bonus_credits"),
+    stripeCheckoutSessionId: sql`null`
+      .mapWith(nullableDriverValueDecoder(purchases.stripeCheckoutSessionId))
+      .as("stripe_checkout_session_id"),
+    stripeCheckoutExpiresAt:
+      sql`${sql.param(new Date(args.checkoutExpiresAt * 1000), columns.stripeCheckoutExpiresAt)}`
+        .mapWith(purchases.stripeCheckoutExpiresAt)
+        .as("stripe_checkout_expires_at"),
+    stripePaymentIntentId: sql`null`
+      .mapWith(nullableDriverValueDecoder(purchases.stripePaymentIntentId))
+      .as("stripe_payment_intent_id"),
+    stripeRefundId: sql`null`
+      .mapWith(nullableDriverValueDecoder(purchases.stripeRefundId))
+      .as("stripe_refund_id"),
+    refundAttempt: sql`1`.mapWith(purchases.refundAttempt).as("refund_attempt"),
+    clerkInvitationId: sql`null`
+      .mapWith(nullableDriverValueDecoder(purchases.clerkInvitationId))
+      .as("clerk_invitation_id"),
+    acceptedUserId: sql`null`
+      .mapWith(nullableDriverValueDecoder(purchases.acceptedUserId))
+      .as("accepted_user_id"),
+    failureReason: sql`null`
+      .mapWith(nullableDriverValueDecoder(purchases.failureReason))
+      .as("failure_reason"),
+    paidAt: sql`null`
+      .mapWith(nullableDriverValueDecoder(purchases.paidAt))
+      .as("paid_at"),
+    acceptedAt: sql`null`
+      .mapWith(nullableDriverValueDecoder(purchases.acceptedAt))
+      .as("accepted_at"),
+    refundedAt: sql`null`
+      .mapWith(nullableDriverValueDecoder(purchases.refundedAt))
+      .as("refunded_at"),
+    createdAt: sql`now()`.mapWith(purchases.createdAt).as("created_at"),
+    updatedAt: sql`now()`.mapWith(purchases.updatedAt).as("updated_at"),
+  };
+}
+
 const insertPendingInvitationPurchase$ = command(
   async (
     { set },
@@ -412,15 +525,15 @@ const insertPendingInvitationPurchase$ = command(
     signal: AbortSignal,
   ): Promise<string | null> => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0274; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      signal.throwIfAborted();
-      await tx
+    signal.throwIfAborted();
+    const supersededAt = nowDate();
+    const superseded = db.$with("superseded_invitation_previews").as(
+      db
         .update(usagePackInvitationPurchases)
         .set({
           status: "failed",
           failureReason: "superseded_by_new_preview",
-          updatedAt: nowDate(),
+          updatedAt: supersededAt,
         })
         .where(
           and(
@@ -429,31 +542,29 @@ const insertPendingInvitationPurchase$ = command(
             eq(usagePackInvitationPurchases.status, "checkout_pending"),
             isNull(usagePackInvitationPurchases.stripeCheckoutSessionId),
           ),
-        );
-      const [created] = await tx
-        .insert(usagePackInvitationPurchases)
-        .values({
-          usagePackSubscriptionId: args.subscription.id,
-          orgId: args.orgId,
-          normalizedEmail: args.email,
-          role: args.role,
-          inviterUserId: args.inviterUserId,
-          usagePackUsd: args.usagePackUsd,
-          stripePriceId: args.stripePriceId,
-          currentPeriodStart: args.preview.currentPeriodStart,
-          currentPeriodEnd: args.preview.currentPeriodEnd,
-          prorationTimestamp: args.preview.prorationTimestamp,
-          unitAmountCents: args.unitAmountCents,
-          expectedAmountCents: args.preview.amountCents,
-          currency: args.preview.currency,
-          purchasedCredits: args.purchasedCredits,
-          bonusCredits: args.bonusCredits,
-          stripeCheckoutExpiresAt: new Date(args.checkoutExpiresAt * 1000),
-        })
-        .onConflictDoNothing()
-        .returning({ id: usagePackInvitationPurchases.id });
-      return created?.id ?? null;
-    });
+        )
+        .returning({ id: usagePackInvitationPurchases.id }),
+    );
+    const supersession = db
+      .select({ count: count().as("count") })
+      .from(superseded)
+      .as("supersession");
+    return (
+      (
+        await db
+          .with(superseded)
+          .insert(usagePackInvitationPurchases)
+          .select(
+            db
+              .select(pendingInvitationPurchaseInsertSource(args))
+              // Consume the entire UPDATE before INSERT, even when no old row exists.
+              .from(supersession)
+              .where(gte(supersession.count, 0)),
+          )
+          .onConflictDoNothing()
+          .returning({ id: usagePackInvitationPurchases.id })
+      )[0]?.id ?? null
+    );
   },
 );
 
