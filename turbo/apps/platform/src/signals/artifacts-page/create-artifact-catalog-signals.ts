@@ -366,26 +366,23 @@ export function createArtifactCatalogSignals(
 
   const loadThroughArtifact$ = command(
     async ({ get, set }, artifactId: string, signal: AbortSignal) => {
-      while (true) {
-        const loaded = await get(catalog$);
-        signal.throwIfAborted();
-        if (
-          loaded.artifacts.some((artifact) => {
-            return artifact.id === artifactId;
-          }) ||
-          !loaded.nextCursor
-        ) {
-          return;
-        }
+      let loaded = await get(catalog$);
+      signal.throwIfAborted();
+      while (
+        loaded.nextCursor &&
+        !loaded.artifacts.some((artifact) => {
+          return artifact.id === artifactId;
+        })
+      ) {
         const loadedCount = loaded.artifacts.length;
         const loadedCursor = loaded.nextCursor;
         await set(loadMore$, signal);
         signal.throwIfAborted();
-        const next = await get(catalog$);
+        loaded = await get(catalog$);
         signal.throwIfAborted();
         if (
-          next.artifacts.length === loadedCount &&
-          next.nextCursor === loadedCursor
+          loaded.artifacts.length === loadedCount &&
+          loaded.nextCursor === loadedCursor
         ) {
           return;
         }
