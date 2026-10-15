@@ -120,7 +120,7 @@ import {
   connectorRuntimeSlugSelectionReadPlan,
   connectorRuntimeSlugSelectionFromRows,
 } from "../services/connector-catalog-slug-source.service";
-import { loadConnectorRunnerFirewallCatalog } from "../services/connector-runner-firewall-catalog.service";
+import { connectorRunnerFirewallCatalog$ } from "../services/connector-runner-firewall-catalog.service";
 import { resolveConnectorRuntimeTargets$ } from "../services/connector-runtime-sync.service";
 import { decryptPersistentSecretsMap } from "../services/crypto.utils";
 import { historyGenerationRunIdForStoredExecutionContext } from "../services/history-generation-run";
@@ -2871,9 +2871,7 @@ const builtinFirewallsResolveInner$ = command(
       return body.response;
     }
 
-    const catalog = await loadConnectorRunnerFirewallCatalog(() => {
-      return get(db$);
-    });
+    const catalog = await get(connectorRunnerFirewallCatalog$);
     signal.throwIfAborted();
     const names =
       body.data.names === undefined ? undefined : [...new Set(body.data.names)];
