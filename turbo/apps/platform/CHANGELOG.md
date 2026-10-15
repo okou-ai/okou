@@ -12,6 +12,29 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1031.0](https://github.com/okou-ai/okou/compare/app-v0.1030.0...app-v0.1031.0) (2026-10-15)
+
+
+### Features
+
+* connect wechat from works with qr pairing ([#40373](https://github.com/okou-ai/okou/issues/40373)) ([116a68f](https://github.com/okou-ai/okou/commit/116a68fc8f66048e7d80593c3bf303a7475f409a))
+* **vnc:** prepare native network contracts and readers ([#40316](https://github.com/okou-ai/okou/issues/40316)) ([ea3aa10](https://github.com/okou-ai/okou/commit/ea3aa10c7fa4fce02f776752a904c4cca8b43f7e))
+
+
+### Bug Fixes
+
+* **app:** let slash preview covers scroll to the panel top edge ([#40324](https://github.com/okou-ai/okou/issues/40324)) ([6902a74](https://github.com/okou-ai/okou/commit/6902a7431d799b6b6d31d0ebb7289106a220beb3))
+* **app:** reconcile teams connection completion and entry flows ([#40366](https://github.com/okou-ai/okou/issues/40366)) ([6c2075b](https://github.com/okou-ai/okou/commit/6c2075b4f81a94c1ee22f4b67bbb25aff1d6bbe6)) [#40196](https://github.com/okou-ai/okou/issues/40196)
+* **slack:** reconcile canonical connection journeys ([#40347](https://github.com/okou-ai/okou/issues/40347)) ([d521a3b](https://github.com/okou-ai/okou/commit/d521a3b4b5843220237c5676529904fb4f1c5c49))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.567.0
+    * @okouai/core bumped to 8.760.0
+
 ## [0.1030.0](https://github.com/okou-ai/okou/compare/app-v0.1029.1...app-v0.1030.0) (2026-10-15)
 
 

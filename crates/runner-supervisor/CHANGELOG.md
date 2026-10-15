@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.6](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.16.5...runner-supervisor-v0.16.6) (2026-10-15)
+
+
+### Performance Improvements
+
+* **test:** acknowledge supervisor startup reports in reactor fixtures ([#40340](https://github.com/okou-ai/okou/issues/40340)) ([edcf551](https://github.com/okou-ai/okou/commit/edcf55171391d7f32c22d21b6d5cd6f00eb47bd4))
+
 ## [0.16.5](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.16.4...runner-supervisor-v0.16.5) (2026-10-15)
 
 

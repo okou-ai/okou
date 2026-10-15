@@ -9,6 +9,41 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.742.0](https://github.com/okou-ai/okou/compare/api-v1.741.2...api-v1.742.0) (2026-10-15)
+
+
+### Features
+
+* connect wechat from works with qr pairing ([#40373](https://github.com/okou-ai/okou/issues/40373)) ([116a68f](https://github.com/okou-ai/okou/commit/116a68fc8f66048e7d80593c3bf303a7475f409a))
+* **vnc:** prepare native network contracts and readers ([#40316](https://github.com/okou-ai/okou/issues/40316)) ([ea3aa10](https://github.com/okou-ai/okou/commit/ea3aa10c7fa4fce02f776752a904c4cca8b43f7e))
+
+
+### Bug Fixes
+
+* **app:** reconcile teams connection completion and entry flows ([#40366](https://github.com/okou-ai/okou/issues/40366)) ([6c2075b](https://github.com/okou-ai/okou/commit/6c2075b4f81a94c1ee22f4b67bbb25aff1d6bbe6)) [#40196](https://github.com/okou-ai/okou/issues/40196)
+* expire computer use command data after three days ([#40356](https://github.com/okou-ai/okou/issues/40356)) ([da99c9b](https://github.com/okou-ai/okou/commit/da99c9b582347fdc4aaea9a17ff6f880dc6f46ac))
+* **slack:** reconcile canonical connection journeys ([#40347](https://github.com/okou-ai/okou/issues/40347)) ([d521a3b](https://github.com/okou-ai/okou/commit/d521a3b4b5843220237c5676529904fb4f1c5c49))
+
+
+### Refactoring
+
+* **api:** inline connector account resolution queries ([#40335](https://github.com/okou-ai/okou/issues/40335)) ([035bd69](https://github.com/okou-ai/okou/commit/035bd69c8bf06219a2df1727e7ea98a44b55c038))
+* **api:** inline custom connector credential upserts ([#40365](https://github.com/okou-ai/okou/issues/40365)) ([a8a1f5e](https://github.com/okou-ai/okou/commit/a8a1f5e3bac43a37f487b60c606fd2b51f5c656f))
+* **api:** inline runtime authentication catalog reads ([#40343](https://github.com/okou-ai/okou/issues/40343)) ([eead57c](https://github.com/okou-ai/okou/commit/eead57c73de69e68ec179c1fd4fd0106818e2018))
+* **api:** retire tx-0199 reconfiguration transaction ([#40354](https://github.com/okou-ai/okou/issues/40354)) ([9269bc4](https://github.com/okou-ai/okou/commit/9269bc48f327f1da17e2faa44668cf5fa62998b4))
+* **api:** retire tx-0200 with atomic configuration pause ([#40362](https://github.com/okou-ai/okou/issues/40362)) ([1d23814](https://github.com/okou-ai/okou/commit/1d2381442a25bdbfa82e9dca9ad8a3831e0a0cc2))
+* **api:** retire tx-0203 official failure projection transaction ([#40352](https://github.com/okou-ai/okou/issues/40352)) ([c852cac](https://github.com/okou-ai/okou/commit/c852cac0dd94c2444368b88d0d328bc7b02eea85))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.567.0
+    * @okouai/core bumped to 8.760.0
+    * @okouai/db bumped to 1.342.0
+    * @okouai/pi-agent-runtime bumped to 1.50.7
+
 ## [1.741.2](https://github.com/okou-ai/okou/compare/api-v1.741.1...api-v1.741.2) (2026-10-15)
 
 
