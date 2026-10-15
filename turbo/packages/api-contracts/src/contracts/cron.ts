@@ -501,7 +501,7 @@ export const cronComputerUseScreenshotCleanupContract = c.router({
       200: cronComputerUseScreenshotCleanupResponseSchema,
       401: apiErrorSchema,
     },
-    summary: "Delete expired desktop computer-use screenshots",
+    summary: "Delete expired desktop computer-use commands and screenshots",
   },
 });
 

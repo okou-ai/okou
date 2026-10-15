@@ -39,7 +39,12 @@ import {
 import type { Tx } from "../../lib/db-types";
 import { writeCustomConnectorOAuthState } from "./custom-connector-oauth-write.service";
 import type { PreparedServerSideVolume } from "./storage-volume-publication.service";
-import { resolveConnectorAccount } from "./connector-account-resolution.service";
+import {
+  connectorAccountResolutionReadPlan,
+  connectorAccountResolutionsFromRows,
+  connectorAccountTargetKey,
+  type ConnectorAccountResolutionRequest,
+} from "./connector-account-resolution.service";
 
 const FEISHU_AUTHORIZATION_HEADER = "Authorization";
 const FEISHU_AUTHORIZATION_TEMPLATE = "Bearer {{oauth.access_token}}";
@@ -795,17 +800,35 @@ export async function resolveFeishuCustomConnectorOAuthConnection(
     return null;
   }
 
-  const resolution = await resolveConnectorAccount(db, {
-    orgId: args.orgId,
-    userId: args.userId,
-    request: {
-      target: {
-        kind: "custom",
-        customConnectorId: installation.customConnectorId,
-      },
-      selection: { kind: "exact", sourceId: memberConnectorId },
+  const scope = { orgId: args.orgId, userId: args.userId };
+  const request: ConnectorAccountResolutionRequest = {
+    target: {
+      kind: "custom",
+      customConnectorId: installation.customConnectorId,
     },
+    selection: { kind: "exact", sourceId: memberConnectorId },
+  };
+  const targetKey = connectorAccountTargetKey(request.target);
+  const plan = connectorAccountResolutionReadPlan({
+    ...scope,
+    requests: [request],
   });
+  const [exactRows, defaultRows] = await Promise.all([
+    plan.exactWhere
+      ? db.select(plan.columns).from(connectors).where(plan.exactWhere)
+      : [],
+    plan.defaultWhere
+      ? db.select(plan.columns).from(connectors).where(plan.defaultWhere)
+      : [],
+  ]);
+  const resolution = connectorAccountResolutionsFromRows({
+    requests: plan.requests,
+    exactRows,
+    defaultRows,
+  }).get(targetKey);
+  if (!resolution) {
+    throw new Error("Expected one connector account resolution");
+  }
   if (resolution.kind !== "resolved") {
     return null;
   }

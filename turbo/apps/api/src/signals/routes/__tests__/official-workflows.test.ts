@@ -920,6 +920,172 @@ describe("Morning Brief explicit installation", () => {
     });
   });
 
+  it.each([
+    { suggestion: false, intendedEnabled: true },
+    { suggestion: false, intendedEnabled: false },
+    { suggestion: true, intendedEnabled: true },
+    { suggestion: true, intendedEnabled: false },
+  ])(
+    "retains Morning Brief intent=$intendedEnabled through an unresolved catalog schedule and correction (suggestion=$suggestion)",
+    async ({ suggestion, intendedEnabled }) => {
+      await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
+        const { actor } = await prepareBriefMember();
+        await initializeBriefMember(actor, "Asia/Shanghai");
+        if (!actor.orgId) {
+          throw new Error("Expected an organization-scoped member");
+        }
+        await updateFeatureSwitchesForUser(
+          context,
+          { ...actor, orgId: actor.orgId },
+          { [FeatureSwitchKey.AgentSuggestion]: suggestion },
+        );
+        await accept(
+          morningBriefPreferenceClient().update({
+            headers: authHeaders(actor),
+            body: { enabled: true },
+          }),
+          [200],
+        );
+        const [installation] = await listMorningBriefInstallations(actor);
+        if (!installation) {
+          throw new Error("Expected the Morning Brief installation");
+        }
+        const [before] = await readMorningBriefAutomations(
+          actor,
+          installation.id,
+        );
+        if (!before || before.kind !== "schedule" || before.official === null) {
+          throw new Error("Expected its scheduled Official automation");
+        }
+        if (!intendedEnabled) {
+          await accept(
+            morningBriefPreferenceClient().update({
+              headers: authHeaders(actor),
+              body: { enabled: false },
+            }),
+            [200],
+          );
+        }
+        const publishSchedule = async (defaultTimezone?: string) => {
+          const publication = await syncCatalog(
+            catalog([
+              ...MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.map((name) => {
+                return activeDefinition(name, [
+                  {
+                    key: "daily-delivery",
+                    parameters: [
+                      {
+                        key: "delivery-cron",
+                        type: "string",
+                        format: "text",
+                        required: true,
+                        default: "0 7 * * *",
+                      },
+                      {
+                        key: "delivery-timezone",
+                        type: "string",
+                        format: "timezone",
+                        required: true,
+                        ...(defaultTimezone === undefined
+                          ? {}
+                          : { default: defaultTimezone }),
+                      },
+                    ],
+                    desiredState: {
+                      kind: "schedule",
+                      schedule: {
+                        type: "cron",
+                        cronExpression: { parameter: "delivery-cron" },
+                        timezone: { parameter: "delivery-timezone" },
+                      },
+                    },
+                  },
+                ]);
+              }),
+              {
+                name: "connector-doctor",
+                lifecycle: "retired",
+                presentation: { category: "productivity" },
+              },
+            ]),
+          );
+          expect(publication.body).toMatchObject({
+            outcome: "accepted",
+            diagnostics: [],
+          });
+          await executeAutomationCron();
+          await flushWaitUntilForTest();
+        };
+        // A real catalog publication can introduce an unresolved schedule
+        // parameter. The system cron owns reconciliation; observations stay public.
+        await publishSchedule();
+        const [paused] = await readMorningBriefAutomations(
+          actor,
+          installation.id,
+        );
+        expect(paused).toMatchObject({
+          id: before.id,
+          enabled: false,
+          nextRunAt: null,
+          schedule: before.schedule,
+          official: {
+            blueprintKey: "daily-delivery",
+            appliedFingerprint: before.official.appliedFingerprint,
+            intendedEnabled,
+            reconciliationStatus: "needs_reconfiguration",
+            parameterBindings: [{ key: "delivery-cron", value: "0 7 * * *" }],
+          },
+        });
+        await expect(
+          listMorningBriefInstallations(actor),
+        ).resolves.toMatchObject([
+          {
+            id: installation.id,
+            official: {
+              definitionName: suggestion
+                ? "internal-test-morning-brief"
+                : "morning-brief",
+            },
+          },
+        ]);
+        await publishSchedule("America/Los_Angeles");
+        const [recovered] = await readMorningBriefAutomations(
+          actor,
+          installation.id,
+        );
+        if (!recovered) {
+          throw new Error("Expected the recovered Morning Brief automation");
+        }
+        expect(recovered).toMatchObject({
+          id: before.id,
+          enabled: intendedEnabled,
+          schedule: {
+            type: "cron",
+            cronExpression: "0 7 * * *",
+            timezone: "America/Los_Angeles",
+          },
+          official: {
+            intendedEnabled,
+            reconciliationStatus: "current",
+            parameterBindings: [
+              { key: "delivery-cron", value: "0 7 * * *" },
+              { key: "delivery-timezone", value: "America/Los_Angeles" },
+            ],
+          },
+        });
+        if (intendedEnabled) {
+          expect(recovered.nextRunAt).not.toBeNull();
+        } else {
+          expect(recovered.nextRunAt).toBeNull();
+        }
+        expect((await readBriefPreference(actor)).body).toMatchObject({
+          enabled: intendedEnabled,
+          status: intendedEnabled ? "enabled" : "paused",
+        });
+      });
+    },
+  );
+
   it("installs a rejoined member's brief from their explicit preference", async () => {
     const owner = await prepareBriefMember({
       createdAt: new Date("2020-01-01T00:00:00.000Z"),

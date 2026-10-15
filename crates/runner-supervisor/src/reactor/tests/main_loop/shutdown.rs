@@ -579,8 +579,9 @@ async fn job_drain_mitm_recovery_panic_cancels_and_joins_all_jobs() {
     let job_gate = sandbox_mock::MockLifecycleGate::new();
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     overrides.set_wait_process_lifecycle_gate(job_gate.clone());
+    overrides.set_process_cancel_releases_wait_gate(false);
     let (mut config, mut env) =
-        mock_run_config_with_overrides(test_profiles(), 8, 32768, 4, overrides);
+        mock_run_config_with_overrides(test_profiles(), 8, 32768, 4, Arc::clone(&overrides));
     let child = tokio::process::Command::new("sleep")
         .arg("60")
         .spawn()
@@ -619,6 +620,20 @@ async fn job_drain_mitm_recovery_panic_cancels_and_joins_all_jobs() {
         .expect("drain must schedule old-child cleanup");
     crash_tx.send(()).await.unwrap();
     reap_gate.release.close();
+    // Cancel requests may arrive in a different order from the shared gate's
+    // FIFO tickets. Observe both requests before releasing either process so
+    // one job's cancel cannot let the other job finish without sending its own.
+    assert!(
+        overrides
+            .wait_for_process_cancel_calls(runs.len(), wait)
+            .await,
+        "fatal recovery must cancel every held guest process",
+    );
+    assert!(
+        !run_handle.is_finished(),
+        "fatal recovery must join every held job before returning",
+    );
+    job_gate.release_many(runs.len());
     assert_run_error_contains(run_handle, "mitmproxy recovery task failed").await;
     assert!(crash_tx.is_closed(), "fatal recovery must disable retries");
     assert!(env.cancel.is_cancelled());

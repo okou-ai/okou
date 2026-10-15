@@ -119,7 +119,7 @@
     },
     {
       "path": "/api/cron/computer-use-screenshot-cleanup",
-      "schedule": "30 2 * * *"
+      "schedule": "0 * * * *"
     },
     {
       "path": "/api/cron/reconcile-browsers",
