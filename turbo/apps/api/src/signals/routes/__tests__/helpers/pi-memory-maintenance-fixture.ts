@@ -687,7 +687,9 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
     return newer;
   }
 
-  async function expectBlocked(run: Maintenance) {
+  async function expectBlocked(
+    run: Pick<Maintenance, "stage2" | "runnerGroup">,
+  ) {
     const responses = await Promise.all([
       run.stage2.consolidate({ headers: cronHeaders() }),
       run.stage2.consolidate({ headers: cronHeaders() }),
