@@ -12,6 +12,15 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1031.2](https://github.com/okou-ai/okou/compare/app-v0.1031.1...app-v0.1031.2) (2026-10-15)
+
+
+### Performance Improvements
+
+* **app:** isolate sidebar menus from navigation updates ([#40476](https://github.com/okou-ai/okou/issues/40476)) ([4bca21e](https://github.com/okou-ai/okou/commit/4bca21e8c3b333c06b102bd14f0af110585a5eaa))
+* isolate uploaded template catalog renders ([#40462](https://github.com/okou-ai/okou/issues/40462)) ([c13a5c5](https://github.com/okou-ai/okou/commit/c13a5c5e298c4ad1f6d62bd2e5bcddbaa1870bc7))
+* trim composer rendering and connector fixture work ([#40474](https://github.com/okou-ai/okou/issues/40474)) ([6e989ed](https://github.com/okou-ai/okou/commit/6e989ed0aa8beffbf9969284545dedfbd5aaeabc))
+
 ## [0.1031.1](https://github.com/okou-ai/okou/compare/app-v0.1031.0...app-v0.1031.1) (2026-10-15)
 
 

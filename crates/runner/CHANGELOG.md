@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.233.8](https://github.com/okou-ai/okou/compare/runner-rs-v0.233.7...runner-rs-v0.233.8) (2026-10-15)
+
 ## [0.233.7](https://github.com/okou-ai/okou/compare/runner-rs-v0.233.6...runner-rs-v0.233.7) (2026-10-15)
 
 ### Release Dependencies
