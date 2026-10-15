@@ -18,7 +18,7 @@ import { getOAuthApiOrigin } from "../../lib/oauth-origin";
 import {
   buildGithubAppInstallUrl,
   startGithubUserOAuth$,
-  findGithubInstallationByInstallationId,
+  findGithubInstallationByInstallationId$,
   getGithubOAuthAuthMethod,
   linkGithubUser,
   verifyGithubConnectSignature,
@@ -180,9 +180,9 @@ export const connectGithubUser$ = command(
     }
 
     const installation = connectSignature
-      ? await findGithubInstallationByInstallationId(
+      ? await set(
+          findGithubInstallationByInstallationId$,
           {
-            db,
             installationId: connectSignature.installationId,
             orgId: auth.orgId,
           },
