@@ -1957,6 +1957,7 @@
       "currentFolder": "Cartella attuale",
       "empty": "Questa cartella è vuota.",
       "enterFolder": "Apri la cartella {{name}}",
+      "goHome": "Vai alla cartella home",
       "limit": "Alcuni file non sono stati caricati perché è stato raggiunto il limite del pannello. Comprimi le cartelle o aggiorna per continuare.",
       "link": "Collegamento",
       "loading": "Caricamento…",

@@ -3,6 +3,7 @@ import {
   ChevronRight,
   File,
   Folder,
+  House,
   Link,
   RefreshCw,
   ArrowRightToLine,
@@ -30,7 +31,10 @@ import {
 } from "../../signals/chat-page/sandbox-files-virtual-list.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { filesLocationLabel } from "../../signals/chat-page/sandbox-files-location.ts";
+import {
+  FILES_HOME_LOCATION,
+  filesLocationLabel,
+} from "../../signals/chat-page/sandbox-files-location.ts";
 import { SandboxFilesBreadcrumb } from "./sandbox-files-breadcrumb.tsx";
 
 function FilesErrorMessage({ error }: { readonly error: FilesError }) {
@@ -350,6 +354,8 @@ export function SandboxFilesSidebarBody({
   const runId = useGet(signals.activeRunId$);
   const pending = useGet(signals.pending$);
   const phase = useGet(signals.phase$);
+  const signal = useGet(pageSignal$);
+  const navigate = useSet(signals.navigate$);
   const viewport = useSet(signals.virtual.scroll.setScrollViewport$);
   const metrics = useSet(signals.virtual.scroll.setScrollMetrics$);
   const errorId = "sandbox-files-error-" + runId;
@@ -370,6 +376,23 @@ export function SandboxFilesSidebarBody({
     <>
       <div className="flex items-center gap-2 px-4 py-2">
         <SandboxFilesBreadcrumb signals={signals} />
+        <Button
+          type="button"
+          variant="quiet"
+          size="icon-sm"
+          className="shrink-0"
+          showTooltip
+          aria-label={t(($) => {
+            return $.chat.files.goHome;
+          })}
+          disabled={phase !== "ready"}
+          focusableWhenDisabled
+          onClick={() => {
+            detach(navigate(FILES_HOME_LOCATION, signal), Reason.DomCallback);
+          }}
+        >
+          <House size={16} />
+        </Button>
         <FilesRefreshControl signals={signals} errorId={errorId} />
       </div>
       {phase === "ready" ? (
