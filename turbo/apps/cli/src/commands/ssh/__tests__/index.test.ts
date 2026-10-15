@@ -337,7 +337,9 @@ describe("okou ssh command", () => {
       await expect(
         sshCommand.parseAsync(["--help"], { from: "user" }),
       ).rejects.toThrow("CLI exit");
-      expect(help).toContain("Direct or Cloudflare Access");
+      expect(help).toContain(
+        "Direct SSH, Cloudflare Access, SSH over Tailscale or Tailscale SSH",
+      );
       expect(help).toContain("port 443 identify the gateway");
       expect(help).toContain("Remote control tab of /connectors");
       expect(help).toContain("availability.status=ready");
@@ -453,7 +455,7 @@ describe("okou ssh command", () => {
       expect.stringContaining("blocked: needs_rebind"),
     ]);
     expect(String(output.mock.calls[1]?.[0])).toContain(
-      "explicitly choose Direct",
+      "ask the owner to rebind the saved network in Connectors",
     );
     expect(spawn).not.toHaveBeenCalled();
   });
