@@ -17,6 +17,7 @@ const context = testContext();
 test("Replacing a directory frees its cached descendants before the refresh quota check", async () => {
   let replaced = false;
   await setupFilesPage(context, {
+    viewportHeight: 88,
     handler: (request) => {
       if (
         Array.isArray(request.params.path) &&
@@ -51,8 +52,17 @@ test("Replacing a directory frees its cached descendants before the refresh quot
   await expect(
     within(panel).findByText("file-00000"),
   ).resolves.toBeInTheDocument();
+  // Keep the focused paging control mounted in a compact pane. Replacing a
+  // directory at the quota edge does not need a new virtual viewport per page.
+  scrollFilesToEnd(panel);
+  filesButton("Load more", panel).focus();
+  fireEvent.scroll(within(panel).getByTestId("sandbox-files-viewport"), {
+    target: { scrollTop: 0 },
+  });
+  // The home row plus 4095 descendants fill the 4096-entry budget. The two
+  // refreshed home entries fit only after the old descendants are discarded.
   for (let page = 1; page <= 31; page++) {
-    await loadMoreFiles(panel);
+    await loadMoreFiles(panel, { scrollToEnd: false });
   }
   scrollFilesToEnd(panel);
   await expect(
