@@ -9,7 +9,11 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
 mod guarded;
+#[cfg(any(test, feature = "test-support"))]
+mod startup_observation;
 pub use guarded::{GuardedPrefetchConfig, GuardedPrefetchSnapshot};
+#[cfg(any(test, feature = "test-support"))]
+pub use startup_observation::StartupPrefetchSnapshot;
 use tracing::{info, warn};
 
 const MEMORY_PREFETCH_CHUNK_BYTES: usize = 1024 * 1024;
@@ -32,6 +36,8 @@ pub struct MemoryPrefetchTasks {
     cancel: CancellationToken,
     handles: Vec<JoinHandle<()>>,
     physical_io: TaskTracker,
+    #[cfg(any(test, feature = "test-support"))]
+    startup_observer: Option<startup_observation::Observer>,
 }
 
 impl MemoryPrefetchTasks {
@@ -39,14 +45,32 @@ impl MemoryPrefetchTasks {
         candidates: impl IntoIterator<Item = MemoryPrefetchCandidate>,
         budget_mb: u64,
     ) -> Self {
-        Self::spawn_with(
+        #[cfg(any(test, feature = "test-support"))]
+        let observer = startup_observation::Observer::default();
+        #[cfg(any(test, feature = "test-support"))]
+        let worker_observer = observer.clone();
+        let tasks = Self::spawn_with(
             candidates,
             budget_mb,
             MEMORY_PREFETCH_CONCURRENCY,
-            |path, cancel| {
-                let _ = prefetch_memory_with_cancel(path, cancel);
+            move |path, cancel| {
+                #[cfg(any(test, feature = "test-support"))]
+                worker_observer.started();
+                let outcome = prefetch_memory_with_cancel(path, cancel);
+                #[cfg(any(test, feature = "test-support"))]
+                worker_observer.finished(&outcome);
+                #[cfg(not(any(test, feature = "test-support")))]
+                let _ = outcome;
             },
-        )
+        );
+        #[cfg(any(test, feature = "test-support"))]
+        {
+            let mut tasks = tasks;
+            tasks.startup_observer = Some(observer);
+            tasks
+        }
+        #[cfg(not(any(test, feature = "test-support")))]
+        tasks
     }
 
     fn spawn_with<F>(
@@ -85,6 +109,8 @@ impl MemoryPrefetchTasks {
             cancel,
             handles,
             physical_io,
+            #[cfg(any(test, feature = "test-support"))]
+            startup_observer: None,
         }
     }
 
@@ -94,6 +120,7 @@ impl MemoryPrefetchTasks {
             cancel: CancellationToken::new(),
             handles: Vec::new(),
             physical_io: TaskTracker::new(),
+            startup_observer: None,
         }
     }
 
@@ -122,6 +149,7 @@ impl MemoryPrefetchTasks {
             cancel,
             handles: vec![handle],
             physical_io: TaskTracker::new(),
+            startup_observer: None,
         }
     }
 }
