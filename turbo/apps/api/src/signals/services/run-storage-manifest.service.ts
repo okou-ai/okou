@@ -54,7 +54,6 @@ import {
   cacheRowsFromProjection,
   storageVersionCacheKeySql,
 } from "./execution-storage-cache-read.service";
-import type { SessionExecutionIdentity } from "./session-compatibility";
 import {
   readStorageBaseIndex,
   type StorageIndex,
@@ -1518,9 +1517,7 @@ export interface ResolvedAgentExecution {
   readonly ownerUserId: string;
   readonly orgId: string;
   readonly additionalVolumes?: readonly AgentRunCreateAdditionalVolume[];
-  readonly resumeSession?: StoredExecutionContext["resumeSession"];
   readonly nativeContinuation?: StoredExecutionContext["nativeContinuation"];
-  readonly resumeSessionIdentity?: SessionExecutionIdentity;
 }
 
 interface ResolvedUnboundExecution extends Omit<
