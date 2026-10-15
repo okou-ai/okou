@@ -308,6 +308,10 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
                 client_writer.close()
                 await provider_writer.wait_closed()
                 await client_writer.wait_closed()
+                # Cleanup must preserve native failures behind a barrier timeout.
+                for task in [reader_task, *hook_tasks]:
+                    if task.done() and not task.cancelled():
+                        task.result()
             await provider_done
             await client_done
 
