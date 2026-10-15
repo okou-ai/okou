@@ -1177,6 +1177,168 @@ function capturedOfficialSkill(
   return gunzipSync(archive).toString("utf8");
 }
 
+describe("Morning Brief catalog reconciliation", () => {
+  it.each(
+    MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.flatMap((definitionName) => {
+      return [false, true].map((paused) => {
+        return { definitionName, paused };
+      });
+    }),
+  )(
+    "reconciles a schedule revision without replacing identities ($definitionName, paused=$paused)",
+    async ({ definitionName, paused }) => {
+      await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
+        // Publication and the scheduler are explicitly scoped authenticated
+        // system boundaries; this first request selects the case-owned DB.
+        installCatalogStorageFixture();
+        await syncDeployedCatalog();
+        const { actor } = await workflowBdd.setupWorkflowOrg({
+          timezone: "Asia/Tokyo",
+        });
+        if (!actor.orgId) {
+          throw new Error("Expected a Morning Brief workspace");
+        }
+        await updateFeatureSwitchesForUser(
+          context,
+          { ...actor, orgId: actor.orgId },
+          {
+            [FeatureSwitchKey.AgentSuggestion]:
+              definitionName === "internal-test-morning-brief",
+          },
+        );
+        await connectBriefSource(actor);
+        await accept(
+          morningBriefPreferenceClient().update({
+            headers: authHeaders(actor),
+            body: { enabled: true },
+          }),
+          [200],
+        );
+        const [installation] = await listMorningBriefInstallations(actor);
+        if (!installation) {
+          throw new Error("Expected the Morning Brief installation");
+        }
+        const [initial] = await readMorningBriefAutomations(
+          actor,
+          installation.id,
+        );
+        if (!initial?.nextRunAt) {
+          throw new Error("Expected its initial schedule");
+        }
+        const runnerGroup = runs.configureRunnerGroup();
+        runs.acceptStorageDownloads();
+        await runs.heartbeatRunner(runnerGroup);
+        const first = await fireOfficialSchedule(actor, initial);
+        const firstClaim = await runs.claimRunnerJob(first.runId);
+        await webhooks.requestAgentComplete(
+          { runId: first.runId, exitCode: 0 },
+          { authorization: `Bearer ${firstClaim.sandboxToken}` },
+          [200],
+        );
+        await flushWaitUntilForTest();
+        mockNow(new Date(initial.nextRunAt).getTime() + 1000);
+        if (paused) {
+          await accept(
+            morningBriefPreferenceClient().update({
+              headers: authHeaders(actor),
+              body: { enabled: false },
+            }),
+            [200],
+          );
+        }
+
+        // A supported schedule-to-schedule source revision exercises existing
+        // configuration finalization, without inventing an event-based brief.
+        await syncCatalog(
+          catalog([
+            ...MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.map((name) => {
+              return activeDefinition(name, [
+                {
+                  key: "daily-delivery",
+                  parameters: [],
+                  desiredState: {
+                    kind: "schedule",
+                    schedule: { type: "cron", cronExpression: "0 8 * * *" },
+                  },
+                },
+              ]);
+            }),
+            {
+              name: "connector-doctor",
+              lifecycle: "retired",
+              presentation: { category: "productivity" },
+            },
+          ]),
+        );
+        await executeAutomationCron();
+        await flushWaitUntilForTest();
+        await expect(
+          listMorningBriefInstallations(actor),
+        ).resolves.toMatchObject([
+          { id: installation.id, official: { definitionName } },
+        ]);
+        const [reconciled] = await readMorningBriefAutomations(
+          actor,
+          installation.id,
+        );
+        expect(reconciled).toMatchObject({
+          id: initial.id,
+          chatThreadId: first.chatThreadId,
+          enabled: !paused,
+          schedule: {
+            type: "cron",
+            cronExpression: "0 8 * * *",
+            timezone: "Asia/Tokyo",
+          },
+          official: {
+            blueprintKey: "daily-delivery",
+            reconciliationStatus: "current",
+            intendedEnabled: !paused,
+            parameterBindings: [],
+          },
+        });
+        expect(reconciled?.official?.appliedFingerprint).not.toBe(
+          initial.official?.appliedFingerprint,
+        );
+        expect((await readBriefPreference(actor)).body).toMatchObject({
+          enabled: !paused,
+          status: paused ? "paused" : "enabled",
+        });
+        if (paused) {
+          expect(reconciled?.nextRunAt).toBeNull();
+          await accept(
+            morningBriefPreferenceClient().update({
+              headers: authHeaders(actor),
+              body: { enabled: true },
+            }),
+            [200],
+          );
+        }
+        const [scheduled] = await readMorningBriefAutomations(
+          actor,
+          installation.id,
+        );
+        if (!scheduled) {
+          throw new Error("Expected the reconciled schedule");
+        }
+        const next = await fireOfficialSchedule(actor, scheduled);
+        expect(next.chatThreadId).toBe(first.chatThreadId);
+        const claim = await runs.claimRunnerJob(next.runId);
+        expect(claim.prompt.startsWith(`/${definitionName}\n`)).toBeTruthy();
+        expect(
+          capturedOfficialSkill(claim.storageManifest, definitionName),
+        ).toContain("Execute only the accepted Definition content.");
+        await webhooks.requestAgentComplete(
+          { runId: next.runId, exitCode: 0 },
+          { authorization: `Bearer ${claim.sandboxToken}` },
+          [200],
+        );
+        await flushWaitUntilForTest();
+      });
+    },
+  );
+});
+
 describe("Morning Brief suggestion instruction rollout", () => {
   it.each([
     { enabled: false, expected: false },
