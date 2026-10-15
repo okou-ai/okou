@@ -2755,22 +2755,23 @@ describe("POST /api/webhooks/teams/bot", () => {
       authOrgApi.acceptAgentStorageWrites();
       runsApi.acceptStorageDownloads();
       runsApi.acceptTelemetryIngest();
-      await authOrgApi.completeOnboarding(actor);
-      const { defaultAgentId } = await authOrgApi.readOnboardingStatus(actor);
-      if (!defaultAgentId) {
-        throw new Error("Expected the normal onboarding Agent");
-      }
-      await authOrgApi.updateAgentMetadata(actor, defaultAgentId, {
-        visibility: "public",
-      });
       const ownedRuns = publicRunOwner(context, actor, {
         afterRuns: async () => {
           await deletePublicWorkspace(context, actor);
         },
       });
-      await runsApi.grantProEntitlement(actor);
-      await runsApi.ensurePersonalSubscriptionModel(actor, {
-        model: "claude-fable-5-1",
+      const { defaultAgentId } = await ownedRuns.run(() => {
+        return runsApi.grantProEntitlement(actor);
+      });
+      await ownedRuns.run(() => {
+        return authOrgApi.updateAgentMetadata(actor, defaultAgentId, {
+          visibility: "public",
+        });
+      });
+      await ownedRuns.run(() => {
+        return runsApi.ensurePersonalSubscriptionModel(actor, {
+          model: "claude-fable-5-1",
+        });
       });
       botFrameworkHandlers();
       const outboundRequests = teamsOutboundHandlers(fixture.serviceUrl);
