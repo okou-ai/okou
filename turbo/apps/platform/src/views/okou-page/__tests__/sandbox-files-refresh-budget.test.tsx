@@ -1,4 +1,5 @@
-import { fireEvent, within } from "@testing-library/react";
+import { fireEvent, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { click } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -17,6 +18,7 @@ const context = testContext();
 test("Replacing a directory frees its cached descendants before the refresh quota check", async () => {
   let replaced = false;
   await setupFilesPage(context, {
+    viewportHeight: 44,
     handler: (request) => {
       if (
         Array.isArray(request.params.path) &&
@@ -51,8 +53,15 @@ test("Replacing a directory frees its cached descendants before the refresh quot
   await expect(
     within(panel).findByText("file-00000"),
   ).resolves.toBeInTheDocument();
-  for (let page = 1; page <= 31; page++) {
-    await loadMoreFiles(panel);
+  scrollFilesToEnd(panel);
+  const more = await waitFor(() => {
+    return filesButton("Load more", panel);
+  });
+  // Retain the focused Load more row while filling the real descendant cache.
+  await userEvent.setup({ delay: null, skipHover: true }).click(more);
+  expect(more).toHaveFocus();
+  for (let page = 2; page <= 31; page++) {
+    await loadMoreFiles(panel, { scrollToEnd: false });
   }
   scrollFilesToEnd(panel);
   await expect(

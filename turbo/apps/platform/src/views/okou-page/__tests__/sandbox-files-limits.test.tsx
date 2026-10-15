@@ -1,4 +1,5 @@
 import { waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { click } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -16,6 +17,7 @@ const context = testContext();
 
 test("The panel entry budget keeps its partial listing and closes an over-limit continuation", async () => {
   const fixture = await setupFilesPage(context, {
+    viewportHeight: 44,
     handler: (request) => {
       const page =
         typeof request.params.cursor === "string"
@@ -33,8 +35,16 @@ test("The panel entry budget keeps its partial listing and closes an over-limit 
   await expect(
     within(panel).findByText("file-00000"),
   ).resolves.toBeInTheDocument();
-  for (let page = 1; page <= 32; page++) {
-    await loadMoreFiles(panel);
+  scrollFilesToEnd(panel);
+  const more = await waitFor(() => {
+    return filesButton("Load more", panel);
+  });
+  // A focused pagination control stays mounted as rows are appended. Paging
+  // the entry budget does not need to scroll through each intermediate page.
+  await userEvent.setup({ delay: null, skipHover: true }).click(more);
+  expect(more).toHaveFocus();
+  for (let page = 2; page <= 32; page++) {
+    await loadMoreFiles(panel, { scrollToEnd: false });
   }
   scrollFilesToEnd(panel);
   await expect(
