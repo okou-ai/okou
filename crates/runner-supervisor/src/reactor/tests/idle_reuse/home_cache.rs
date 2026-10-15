@@ -646,6 +646,81 @@ async fn unavailable_home_cache_watcher_uses_periodic_reconciliation() {
     shutdown(&env, run_handle).await;
 }
 
+#[tokio::test(start_paused = true)]
+async fn invalidated_home_cache_watcher_uses_periodic_reconciliation() {
+    let mut profiles = test_profiles();
+    profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
+    let (mut config, env) = mock_run_config(profiles, 8, 32768, 4);
+    let home = config.paths.home.clone();
+    let group = config.runner.group.clone();
+    let cache_root = home.home_image_cache_dir();
+    let home_cache = HomeImageCache::shared(
+        RunnerPaths::new(config.paths.base_dir.clone()),
+        &home,
+        &group,
+    );
+    Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(home_cache.clone());
+
+    let run_handle = tokio::spawn(run(config));
+    wait_discover_entered(&env, Duration::from_secs(5)).await;
+    home_cache.reset_held_state_root_scan_count();
+
+    // Moving the watched directory invalidates its root watch. Publishing under
+    // a new directory at the original path cannot use that old descriptor.
+    tokio::fs::rename(
+        &cache_root,
+        cache_root.with_file_name("invalidated-home-cache"),
+    )
+    .await
+    .unwrap();
+    let runner_paths = RunnerPaths::new(env._temp_dir.path().join("replacement-publisher"));
+    tokio::fs::create_dir_all(runner_paths.base_dir())
+        .await
+        .unwrap();
+    let publisher_cache = HomeImageCache::shared(runner_paths.clone(), &home, &group);
+    seed_home_cache_state(
+        &publisher_cache,
+        &runner_paths,
+        "thread:replacement-cache-root",
+        "vm0/default",
+        1024 * 1024,
+    )
+    .await;
+    let before = env.handle.heartbeat_count();
+    let mut heartbeat_cursor = env.start_observer.cursor();
+    for _ in 0..2 {
+        tokio::time::advance(HEARTBEAT_PERIOD).await;
+        heartbeat_cursor = env
+            .start_observer
+            .wait_routine_heartbeat_requested_after(
+                heartbeat_cursor,
+                RunnerMode::Running,
+                Duration::from_secs(5),
+            )
+            .await;
+    }
+    assert_eq!(
+        home_cache.held_state_root_scan_count(),
+        0,
+        "routine heartbeats must retain the snapshot after runtime watcher failure",
+    );
+
+    tokio::time::advance(HOME_CACHE_RECONCILIATION_INITIAL_DELAY - HEARTBEAT_PERIOD * 2).await;
+    assert!(
+        wait_heartbeat_matching_after(&env.handle, before, Duration::from_secs(5), |heartbeat| {
+            heartbeat
+                .held_home_states
+                .iter()
+                .any(|state| state.reuse_key == "thread:replacement-cache-root")
+        })
+        .await,
+        "periodic reconciliation must discover publications after root watch invalidation",
+    );
+    assert_eq!(home_cache.held_state_root_scan_count(), 1);
+
+    shutdown(&env, run_handle).await;
+}
+
 #[tokio::test]
 async fn home_cache_promotion_triggers_immediate_heartbeat_without_park() {
     let wait_gate = sandbox_mock::MockLifecycleGate::new();
