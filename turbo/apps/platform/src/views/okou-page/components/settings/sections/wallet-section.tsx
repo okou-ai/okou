@@ -1,3 +1,4 @@
+import type { WalletConnectionStatus } from "@okouai/api-contracts/contracts/wallet";
 import { Button, Card } from "@okouai/ui";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -11,6 +12,36 @@ import {
   walletConnection$,
 } from "../../../../../signals/okou-page/settings/wallet.ts";
 import { detach, Reason } from "../../../../../signals/utils.ts";
+import { WalletScopeReviewDialog } from "../wallet-scope-review-dialog.tsx";
+
+function WalletConnectionNotice({
+  status,
+}: {
+  readonly status: WalletConnectionStatus | null;
+}) {
+  const { t } = useTranslation();
+  if (
+    status?.connectionStatus !== "scope-mismatch" &&
+    status?.connectionStatus !== "reconnect-required"
+  ) {
+    return null;
+  }
+  return (
+    <p
+      role="status"
+      className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400"
+    >
+      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+      {status.connectionStatus === "scope-mismatch"
+        ? t(($) => {
+            return $.connectors.card.updatePermissions;
+          })
+        : t(($) => {
+            return $.connectors.accounts.reconnectRequired;
+          })}
+    </p>
+  );
+}
 
 export function WalletSection() {
   const { t } = useTranslation();
@@ -21,14 +52,19 @@ export function WalletSection() {
   const signal = useGet(settingsActionSignal$);
   const busy =
     connecting.state === "loading" || disconnecting.state === "loading";
-  const connected = connection.state === "hasData" && connection.data.connected;
-  const shouldDisconnect =
-    connected ||
-    (connection.state === "hasData" && connection.data.revocationPending) ||
-    disconnecting.state === "hasError";
+  const status = connection.state === "hasData" ? connection.data : null;
+  const hasConnection =
+    status !== null && status.connectionStatus !== "not-connected";
+  const disconnectOnly =
+    status?.revocationPending || disconnecting.state === "hasError";
+  const disabled = !status || busy || !signal || signal.aborted;
   const failed =
-    (!connected && connecting.state === "hasError") ||
-    disconnecting.state === "hasError";
+    connecting.state === "hasError" || disconnecting.state === "hasError";
+  const reconnect = () => {
+    if (signal) {
+      detach(connect(signal), Reason.DomCallback);
+    }
+  };
   return (
     <Card className="rounded-3xl border-surface-border p-6">
       <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
@@ -47,32 +83,54 @@ export function WalletSection() {
                 return $.settings.wallet.description;
               })}
             </p>
+            <WalletConnectionNotice status={status} />
           </div>
         </div>
-        <Button
-          variant={shouldDisconnect ? "neutral" : "default"}
-          className="shrink-0"
-          pending={busy}
-          disabled={
-            connection.state !== "hasData" || busy || !signal || signal.aborted
-          }
-          onClick={() => {
-            if (signal) {
-              detach(
-                shouldDisconnect ? disconnect(signal) : connect(signal),
-                Reason.DomCallback,
-              );
-            }
-          }}
-        >
-          {shouldDisconnect
-            ? t(($) => {
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {!disconnectOnly &&
+            (status?.scopeChange ? (
+              <WalletScopeReviewDialog
+                change={status.scopeChange}
+                disabled={disabled}
+                onReconnect={reconnect}
+              />
+            ) : (
+              <Button
+                variant={
+                  status?.connectionStatus === "connected"
+                    ? "neutral"
+                    : "default"
+                }
+                pending={connecting.state === "loading"}
+                disabled={disabled}
+                onClick={reconnect}
+              >
+                {hasConnection
+                  ? t(($) => {
+                      return $.connectors.actions.reconnect;
+                    })
+                  : t(($) => {
+                      return $.settings.wallet.connect;
+                    })}
+              </Button>
+            ))}
+          {(hasConnection || disconnectOnly) && (
+            <Button
+              variant="neutral"
+              pending={disconnecting.state === "loading"}
+              disabled={disabled}
+              onClick={() => {
+                if (signal) {
+                  detach(disconnect(signal), Reason.DomCallback);
+                }
+              }}
+            >
+              {t(($) => {
                 return $.settings.wallet.disconnect;
-              })
-            : t(($) => {
-                return $.settings.wallet.connect;
               })}
-        </Button>
+            </Button>
+          )}
+        </div>
       </div>
       {connection.state === "hasError" ? (
         <div className="mt-4 flex items-center gap-2">

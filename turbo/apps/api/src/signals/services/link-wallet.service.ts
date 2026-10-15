@@ -4,6 +4,7 @@ import type { WalletChangedPayload } from "@okouai/api-contracts/contracts/realt
 import {
   type WalletCreateSpend,
   type WalletConnectStatus,
+  type WalletConnectionStatus,
   type WalletSpend,
   type WalletSpendCredentials,
   walletSpendSchema,
@@ -31,6 +32,7 @@ import {
 } from "./crypto.utils";
 import {
   LinkWalletError,
+  LINK_WALLET_OAUTH_SCOPES,
   linkActionUrl,
   linkCredentialsSchema,
   linkSpendRequest,
@@ -140,23 +142,99 @@ export const walletStatus$ = computed(async (get) => {
   };
 });
 
-export const walletSettingsStatus$ = computed(async (get) => {
-  const status = await get(walletStatus$);
-  const owner = get(organizationAuthContext$);
-  const [pending] = await get(db$)
-    .select({ id: linkWalletConnections.id })
-    .from(linkWalletConnections)
-    .where(
-      and(
-        eq(linkWalletConnections.orgId, owner.orgId),
-        eq(linkWalletConnections.userId, owner.userId),
-        isNotNull(linkWalletConnections.revokedAt),
-        isNull(linkWalletConnections.revocationConfirmedAt),
-      ),
-    )
-    .limit(1);
-  return { ...status, revocationPending: Boolean(pending) };
-});
+function walletScopeChange(
+  storedScopes: string | null,
+  workspaceScopeChanged = false,
+): WalletConnectionStatus["scopeChange"] {
+  const current = [...LINK_WALLET_OAUTH_SCOPES];
+  const stored =
+    storedScopes === null
+      ? null
+      : z.array(z.string()).parse(JSON.parse(storedScopes));
+  const addedScopes = stored
+    ? current.filter((scope) => {
+        return !stored.includes(scope);
+      })
+    : [];
+  const removedScopes = (stored ?? []).filter((scope) => {
+    return !current.some((requested) => {
+      return requested === scope;
+    });
+  });
+  if (
+    !workspaceScopeChanged &&
+    stored !== null &&
+    addedScopes.length === 0 &&
+    removedScopes.length === 0
+  ) {
+    return null;
+  }
+  return {
+    reason: workspaceScopeChanged
+      ? "workspace_scope_changed"
+      : stored === null
+        ? "permissions_unknown"
+        : "permissions_changed",
+    addedScopes,
+    removedScopes,
+    currentScopes: current,
+    storedScopes: stored ?? [],
+  };
+}
+
+export const walletSettingsStatus$ = computed(
+  async (get): Promise<WalletConnectionStatus> => {
+    const status = await get(walletStatus$);
+    const row = await get(connection$);
+    const owner = get(organizationAuthContext$);
+    const db = get(db$);
+    const [pending] = await db
+      .select({ id: linkWalletConnections.id })
+      .from(linkWalletConnections)
+      .where(
+        and(
+          eq(linkWalletConnections.orgId, owner.orgId),
+          eq(linkWalletConnections.userId, owner.userId),
+          isNotNull(linkWalletConnections.revokedAt),
+          isNull(linkWalletConnections.revocationConfirmedAt),
+        ),
+      )
+      .limit(1);
+    const [legacy] = await db
+      .select({ id: linkWalletConnections.id })
+      .from(linkWalletConnections)
+      .where(
+        and(
+          eq(linkWalletConnections.orgId, owner.orgId),
+          eq(linkWalletConnections.userId, owner.userId),
+          isNotNull(linkWalletConnections.agentId),
+          isNull(linkWalletConnections.revokedAt),
+        ),
+      )
+      .limit(1);
+    const scopeChange =
+      row && !row.revokedAt
+        ? status.connected
+          ? walletScopeChange(row.oauthRequestedScopes)
+          : null
+        : legacy
+          ? walletScopeChange(null, true)
+          : null;
+    const connectionStatus = scopeChange
+      ? "scope-mismatch"
+      : status.connected
+        ? "connected"
+        : row && !row.revokedAt
+          ? "reconnect-required"
+          : "not-connected";
+    return {
+      ...status,
+      revocationPending: Boolean(pending),
+      connectionStatus,
+      scopeChange,
+    };
+  },
+);
 
 export const walletConnectStatus$ = command(
   async (
@@ -228,6 +306,7 @@ export const startWalletOAuth$ = command(
       id: authorizationId,
       ...owner,
       scope: "workspace_user",
+      oauthRequestedScopes: JSON.stringify(LINK_WALLET_OAUTH_SCOPES),
       stateHash: hash(state),
       encryptedVerifier,
       expiresAt,
@@ -239,7 +318,7 @@ export const startWalletOAuth$ = command(
       client_id: config.clientId,
       redirect_uri: linkWalletRedirectUri(),
       response_type: "code",
-      scope: "payment_methods.agentic userinfo:read",
+      scope: LINK_WALLET_OAUTH_SCOPES.join(" "),
       state,
       code_challenge: createHash("sha256").update(verifier).digest("base64url"),
       code_challenge_method: "S256",
@@ -386,11 +465,12 @@ const publishWalletOAuth$ = command(
         RETURNING org_id, user_id, agent_id, id
       )
       INSERT INTO ${linkWalletConnections}
-        (org_id, user_id, agent_id, authorization_id, encrypted_credentials)
-      SELECT org_id, user_id, ${grantAgentId}::uuid, id, ${encryptedCredentials} FROM authorized
+        (org_id, user_id, agent_id, authorization_id, encrypted_credentials, oauth_requested_scopes)
+      SELECT org_id, user_id, ${grantAgentId}::uuid, id, ${encryptedCredentials}, ${attempt.oauthRequestedScopes} FROM authorized
       ON CONFLICT ${conflictTarget} DO UPDATE
       SET authorization_id = EXCLUDED.authorization_id,
           encrypted_credentials = EXCLUDED.encrypted_credentials, revoked_at = NULL,
+          oauth_requested_scopes = EXCLUDED.oauth_requested_scopes,
           revocation_confirmed_at = NULL
       RETURNING id
     `),
@@ -448,9 +528,14 @@ const refreshWalletConnection$ = command(
         "Wallet authorization changed; check status or reconnect",
       );
     }
-    const refreshed = await linkTokenRequest(
-      { grant_type: "refresh_token", refresh_token: input.refreshToken },
-      AbortSignal.timeout(15_000),
+    const refreshed = await onRejection(
+      linkTokenRequest(
+        { grant_type: "refresh_token", refresh_token: input.refreshToken },
+        AbortSignal.timeout(15_000),
+      ),
+      () => {
+        return publishWalletChanged(owner);
+      },
     );
     const encryptedCredentials = await encryptStoredSecretValue(
       JSON.stringify({

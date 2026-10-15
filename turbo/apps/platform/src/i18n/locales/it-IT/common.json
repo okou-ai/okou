@@ -5168,9 +5168,11 @@
       "description": "I tuoi agenti possono richiedere acquisti tramite Link. Approvi tu ogni acquisto.",
       "disconnect": "Scollega",
       "loadError": "Impossibile caricare il tuo portafoglio.",
+      "permissionsUnknown": "Ricollega Link per esaminare e confermare le autorizzazioni attuali.",
       "retry": "Riprova",
       "scope": "Il tuo portafoglio Link, condiviso dai tuoi agenti in questo spazio di lavoro.",
-      "title": "Portafoglio"
+      "title": "Portafoglio",
+      "workspaceScopeChanged": "Ora il tuo portafoglio Link può essere usato da tutti i tuoi agenti in questo spazio di lavoro. Ricollegalo per approvare la modifica."
     },
     "workspace": {
       "danger": {

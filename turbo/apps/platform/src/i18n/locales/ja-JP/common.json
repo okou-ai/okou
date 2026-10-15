@@ -5079,9 +5079,11 @@
       "description": "エージェントが Link を通じて購入をリクエストできます。購入ごとにあなたの承認が必要です。",
       "disconnect": "接続を解除",
       "loadError": "ウォレットを読み込めませんでした。",
+      "permissionsUnknown": "Link に再接続して、現在の権限を確認し承認してください。",
       "retry": "再試行",
       "scope": "このワークスペース内のあなたのエージェントで共有する Link ウォレット。",
-      "title": "ウォレット"
+      "title": "ウォレット",
+      "workspaceScopeChanged": "Link ウォレットが、このワークスペース内のすべてのエージェントで使えるようになります。再接続して、この変更を承認してください。"
     },
     "workspace": {
       "danger": {

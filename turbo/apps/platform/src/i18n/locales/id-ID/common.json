@@ -5079,9 +5079,11 @@
       "description": "Agen Anda dapat meminta pembelian melalui Link. Anda menyetujui setiap pembelian.",
       "disconnect": "Putuskan",
       "loadError": "Dompet Anda tidak dapat dimuat.",
+      "permissionsUnknown": "Hubungkan kembali Link untuk meninjau dan mengonfirmasi izin saat ini.",
       "retry": "Coba lagi",
       "scope": "Dompet Link Anda, digunakan bersama oleh agen Anda di ruang kerja ini.",
-      "title": "Dompet"
+      "title": "Dompet",
+      "workspaceScopeChanged": "Dompet Link Anda kini dapat digunakan oleh semua agen Anda di ruang kerja ini. Hubungkan kembali untuk menyetujui perubahan ini."
     },
     "workspace": {
       "danger": {

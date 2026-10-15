@@ -5168,9 +5168,11 @@
       "description": "Tes agents peuvent demander des achats via Link. Tu approuves chaque achat.",
       "disconnect": "Déconnecter",
       "loadError": "Impossible de charger ton portefeuille.",
+      "permissionsUnknown": "Reconnectez Link pour examiner et confirmer ses autorisations actuelles.",
       "retry": "Réessayer",
       "scope": "Ton portefeuille Link, partagé par tes agents dans cet espace de travail.",
-      "title": "Portefeuille"
+      "title": "Portefeuille",
+      "workspaceScopeChanged": "Votre portefeuille Link peut désormais être utilisé par tous vos agents dans cet espace de travail. Reconnectez-le pour approuver ce changement."
     },
     "workspace": {
       "danger": {

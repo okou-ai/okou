@@ -9,6 +9,19 @@ endpoints. `WalletSettings` (`walletSettings`) defaults to staff workspaces only
 turning it off hides the menu and its deep link and skips the Settings wallet
 subscription. Session and run wallet endpoints retain the `LinkWallet` gate.
 
+Reconnect starts a new hosted consent without disconnecting the current wallet.
+The existing authorization remains usable if that consent is canceled or declined;
+successful consent replaces it. Settings distinguishes an expired connection from
+changed permissions and reuses the connector permission-review dialog before
+reconnecting. Agent-scoped grants require explicit approval of workspace/user
+sharing. Grants without a permission snapshot require a fresh review.
+
+Migration `1401_link_wallet_scope_snapshots` adds nullable request-snapshot fields
+to OAuth attempts and connections. Capture the requested scopes when consent starts
+and copy that exact snapshot on callback; token refresh must preserve it. This
+keeps a callback issued before a scope change from claiming approval of the newer
+permissions. Existing rows remain null instead of being backfilled as authorized.
+
 Connection management does not permit spending. Purchase endpoints still require
 an active interactive run with `wallet:write`; every purchase needs separate Link
 approval. A spend retains its originating agent, immutable intent details, and

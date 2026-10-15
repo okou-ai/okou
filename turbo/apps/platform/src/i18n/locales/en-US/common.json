@@ -5092,9 +5092,11 @@
       "description": "Let your agents request purchases through Link. You approve each purchase.",
       "disconnect": "Disconnect",
       "loadError": "Couldn’t load your wallet.",
+      "permissionsUnknown": "Reconnect Link to review and confirm its current permissions.",
       "retry": "Retry",
       "scope": "Your Link wallet, shared by your agents in this workspace.",
-      "title": "Wallet"
+      "title": "Wallet",
+      "workspaceScopeChanged": "Your Link wallet now works across your agents in this workspace. Reconnect to approve this change."
     },
     "workspace": {
       "danger": {

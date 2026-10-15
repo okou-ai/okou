@@ -5168,9 +5168,11 @@
       "description": "Tus agentes pueden solicitar compras a través de Link. Tú apruebas cada compra.",
       "disconnect": "Desconectar",
       "loadError": "No se pudo cargar tu cartera.",
+      "permissionsUnknown": "Vuelve a conectar Link para revisar y confirmar sus permisos actuales.",
       "retry": "Reintentar",
       "scope": "Tu cartera de Link, compartida por tus agentes en este espacio de trabajo.",
-      "title": "Cartera"
+      "title": "Cartera",
+      "workspaceScopeChanged": "Tu cartera de Link ahora puede usarse con todos tus agentes de este espacio de trabajo. Vuelve a conectarla para aprobar este cambio."
     },
     "workspace": {
       "danger": {

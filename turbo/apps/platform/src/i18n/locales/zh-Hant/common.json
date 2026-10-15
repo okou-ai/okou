@@ -5079,9 +5079,11 @@
       "description": "讓 Agent 透過 Link 發起購買請求。每筆購買都由你確認。",
       "disconnect": "中斷連線",
       "loadError": "無法載入錢包。",
+      "permissionsUnknown": "請重新連線 Link，查看並確認目前的授權權限。",
       "retry": "重試",
       "scope": "你的 Link 錢包，由你在此工作區的所有 Agent 共用。",
-      "title": "錢包"
+      "title": "錢包",
+      "workspaceScopeChanged": "你的 Link 錢包現在可供此工作區內你的所有 Agent 使用。請重新連線以確認此變更。"
     },
     "workspace": {
       "danger": {

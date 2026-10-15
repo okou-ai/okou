@@ -29,6 +29,8 @@ export const linkWalletConnections = pgTable(
     ),
     // Identifies the actual OAuth authorization, not a refresh coordination lease.
     authorizationId: uuid("authorization_id").notNull(),
+    // The authorization request snapshot, preserved across token refreshes.
+    oauthRequestedScopes: text("oauth_requested_scopes"),
     encryptedCredentials: text("encrypted_credentials"),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     revocationConfirmedAt: timestamp("revocation_confirmed_at", {
@@ -75,6 +77,7 @@ export const linkWalletOAuthAttempts = pgTable(
       .$type<"agent" | "workspace_user">()
       .notNull()
       .default("agent"),
+    oauthRequestedScopes: text("oauth_requested_scopes"),
     encryptedVerifier: text("encrypted_verifier").notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },

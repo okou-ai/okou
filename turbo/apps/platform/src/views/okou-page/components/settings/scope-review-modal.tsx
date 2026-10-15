@@ -7,6 +7,7 @@ import {
   DialogTitle,
 } from "@okouai/ui/components/ui/dialog";
 import { useTranslation } from "react-i18next";
+import type { ReactNode } from "react";
 import { ConnectorIcon } from "./connector-icons.tsx";
 import {
   builtinConnectorScopeDiff$,
@@ -20,26 +21,25 @@ interface ScopeReviewModalProps {
   onReconnect: (selection: BuiltinConnectorScopeReviewSelection) => void;
 }
 
-function ScopeDiffContent({
-  selection,
+export function ScopeReviewContent({
   addedScopes,
   removedScopes,
-  onClose,
-  onReconnect,
+  description,
+  children,
 }: {
-  selection: BuiltinConnectorScopeReviewSelection;
   addedScopes: readonly string[];
   removedScopes: readonly string[];
-  onClose: () => void;
-  onReconnect: (selection: BuiltinConnectorScopeReviewSelection) => void;
+  description?: string;
+  children: ReactNode;
 }) {
   const { t } = useTranslation();
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-muted-foreground">
-        {t(($) => {
-          return $.connectors.permissions.scopeReview.description;
-        })}
+        {description ??
+          t(($) => {
+            return $.connectors.permissions.scopeReview.description;
+          })}
       </p>
 
       {addedScopes.length > 0 && (
@@ -92,24 +92,7 @@ function ScopeDiffContent({
         </div>
       )}
 
-      <div className="flex gap-2 pt-2">
-        <Button
-          type="button"
-          onClick={() => {
-            return onReconnect(selection);
-          }}
-          className="flex-1"
-        >
-          {t(($) => {
-            return $.connectors.actions.reconnect;
-          })}
-        </Button>
-        <Button type="button" variant="outline" onClick={onClose}>
-          {t(($) => {
-            return $.connectors.actions.close;
-          })}
-        </Button>
-      </div>
+      <div className="flex gap-2 pt-2">{children}</div>
     </div>
   );
 }
@@ -161,13 +144,27 @@ export function ScopeReviewModal({
             })}
           </p>
         ) : scopeDiff ? (
-          <ScopeDiffContent
-            selection={selection}
+          <ScopeReviewContent
             addedScopes={scopeDiff.addedScopes}
             removedScopes={scopeDiff.removedScopes}
-            onClose={onClose}
-            onReconnect={onReconnect}
-          />
+          >
+            <Button
+              type="button"
+              onClick={() => {
+                return onReconnect(selection);
+              }}
+              className="flex-1"
+            >
+              {t(($) => {
+                return $.connectors.actions.reconnect;
+              })}
+            </Button>
+            <Button type="button" variant="outline" onClick={onClose}>
+              {t(($) => {
+                return $.connectors.actions.close;
+              })}
+            </Button>
+          </ScopeReviewContent>
         ) : (
           <p className="text-sm text-muted-foreground">
             {t(($) => {

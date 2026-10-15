@@ -3,6 +3,7 @@ import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { connectorOauthCallbackResultSchema } from "./connectors-slug-callback";
+import { scopeDiffResponseSchema } from "./connector-schemas";
 
 const c = initContract();
 
@@ -251,6 +252,21 @@ export const walletUserContract = c.router({
       ...walletContract.status.responses,
       200: walletContract.status.responses[200].extend({
         revocationPending: z.boolean(),
+        connectionStatus: z.enum([
+          "not-connected",
+          "connected",
+          "reconnect-required",
+          "scope-mismatch",
+        ]),
+        scopeChange: scopeDiffResponseSchema
+          .extend({
+            reason: z.enum([
+              "permissions_changed",
+              "permissions_unknown",
+              "workspace_scope_changed",
+            ]),
+          })
+          .nullable(),
       }),
     },
   },
@@ -278,3 +294,7 @@ export const walletUserContract = c.router({
     },
   },
 });
+
+export type WalletConnectionStatus = z.infer<
+  (typeof walletUserContract.status.responses)[200]
+>;

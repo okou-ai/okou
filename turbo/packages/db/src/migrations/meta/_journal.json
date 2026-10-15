@@ -2262,6 +2262,13 @@
       "when": 1792034277792,
       "tag": "1400_cuddly_doctor_faustus",
       "breakpoints": true
+    },
+    {
+      "idx": 1401,
+      "version": "7",
+      "when": 1792037085748,
+      "tag": "1401_link_wallet_scope_snapshots",
+      "breakpoints": true
     }
   ]
 }

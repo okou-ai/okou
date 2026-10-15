@@ -58,12 +58,13 @@ try {
       z.object({
         authorization_id: z.uuid(),
         encrypted_credentials: z.string(),
+        oauth_requested_scopes: z.null(),
       }),
     )
     .parse(
       (
         await client.query(
-          "SELECT authorization_id, encrypted_credentials FROM link_wallet_connections WHERE agent_id = $1",
+          "SELECT authorization_id, encrypted_credentials, oauth_requested_scopes FROM link_wallet_connections WHERE agent_id = $1",
           [agentId],
         )
       ).rows,
@@ -72,16 +73,17 @@ try {
     {
       authorization_id: legacyAuthorization,
       encrypted_credentials: "legacy-fixture",
+      oauth_requested_scopes: null,
     },
   ]);
   assert.deepEqual(
     (
       await client.query(
-        "SELECT scope FROM link_wallet_oauth_attempts WHERE id = $1",
+        "SELECT scope, oauth_requested_scopes FROM link_wallet_oauth_attempts WHERE id = $1",
         [legacyAuthorization],
       )
     ).rows,
-    [{ scope: "agent" }],
+    [{ scope: "agent", oauth_requested_scopes: null }],
   );
   // The outgoing API still uses this exact conflict target after the migration.
   await client.query(

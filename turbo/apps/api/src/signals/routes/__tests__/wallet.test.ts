@@ -25,7 +25,10 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { channelsPublishedTo } from "./helpers/realtime-publications";
+import {
+  channelsPublishedTo,
+  countPublishedTo,
+} from "./helpers/realtime-publications";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -776,6 +779,16 @@ test("refreshes rotating credentials only on the backend and isolates requests f
     client().createSpend({ headers: fixture.headers, body: input }),
     [200],
   );
+  // Provider token scopes are not the authorization-request snapshot. Refresh
+  // must preserve the scopes the user reviewed, even when Link returns fewer.
+  expect(
+    (await accept(userClient().status({ headers: sessionHeaders }), [200]))
+      .body,
+  ).toMatchObject({
+    connected: true,
+    connectionStatus: "connected",
+    scopeChange: null,
+  });
   await connect(fixture);
   const oldAuthorization = await accept(
     client().getSpend({
@@ -794,6 +807,50 @@ test("refreshes rotating credentials only on the backend and isolates requests f
     [409],
   );
   expect(credentials.body.error.code).toBe("WALLET_AUTHORIZATION_CHANGED");
+});
+
+test("keeps the existing wallet usable when a reconnect is started and declined", async () => {
+  const fixture = await carrier();
+  server.use(tokenHandler());
+  await connect(fixture);
+  const reconnect = await accept(
+    userClient().connect({ headers: sessionHeaders, body: {} }),
+    [200],
+  );
+  expect(
+    (await accept(userClient().status({ headers: sessionHeaders }), [200]))
+      .body,
+  ).toMatchObject({
+    connected: true,
+    connectionStatus: "connected",
+    scopeChange: null,
+  });
+  const declined = await accept(
+    callbackClient().callback({
+      headers: sessionHeaders,
+      query: {
+        state: new URL(reconnect.body.url).searchParams.get("state") ?? "",
+        error: "access_denied",
+        responseMode: "json",
+      },
+    }),
+    [200],
+  );
+  expect(declined.body.status).toBe("error");
+  expect(
+    (await accept(userClient().status({ headers: sessionHeaders }), [200]))
+      .body,
+  ).toMatchObject({
+    connected: true,
+    connectionStatus: "connected",
+    scopeChange: null,
+  });
+  const input = purchase();
+  spendProvider(input);
+  await accept(
+    client().createSpend({ headers: fixture.headers, body: input }),
+    [200],
+  );
 });
 
 test("prevents an in-flight OAuth callback from resurrecting a disconnected grant", async () => {
@@ -1620,6 +1677,10 @@ test("requires reconnecting when Link explicitly rejects a rotating refresh gran
   const fixture = await carrier();
   server.use(tokenHandler({ expiresIn: 30 }));
   await connect(fixture);
+  const notificationsBefore = countPublishedTo(context.mocks, {
+    channel: `user:${fixture.actor.userId}`,
+    topic: "wallet:changed",
+  });
   server.use(
     http.post("https://login.link.com/auth/token", () => {
       return HttpResponse.json({ error: "invalid_grant" }, { status: 400 });
@@ -1637,6 +1698,20 @@ test("requires reconnecting when Link explicitly rejects a rotating refresh gran
     [200],
   );
   expect(status.body.connected).toBeFalsy();
+  expect(
+    (await accept(userClient().status({ headers: sessionHeaders }), [200]))
+      .body,
+  ).toMatchObject({
+    connected: false,
+    connectionStatus: "reconnect-required",
+    scopeChange: null,
+  });
+  expect(
+    countPublishedTo(context.mocks, {
+      channel: `user:${fixture.actor.userId}`,
+      topic: "wallet:changed",
+    }),
+  ).toBe(notificationsBefore + 1);
 });
 
 test("keeps Link credentials and provider free text out of diagnostic responses", async () => {

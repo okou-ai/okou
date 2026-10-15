@@ -60,6 +60,11 @@ export const linkTokenSchema = z.object({
   token_type: z.literal("Bearer"),
 });
 
+export const LINK_WALLET_OAUTH_SCOPES = [
+  "payment_methods.agentic",
+  "userinfo:read",
+] as const;
+
 export const linkCredentialsSchema = z.object({
   accessToken: z.string().min(1),
   refreshToken: z.string().min(1),
