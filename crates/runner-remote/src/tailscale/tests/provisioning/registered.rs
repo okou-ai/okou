@@ -10,7 +10,7 @@ use super::regional_fixture::{Relay, map};
 use super::{configuration, fixture::Service as Api};
 use crate::{
     ssh::FailureReason,
-    ssh::cache::Cache,
+    tailscale::tests::fixture::Cache,
     tailscale::{
         Failure,
         tests::{

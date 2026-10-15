@@ -29,11 +29,7 @@ fn message(topic: &str, data: Value) -> Message {
 }
 
 fn runtime(h: &Harness) -> Runtime {
-    Runtime {
-        ssh: None,
-        vnc: Some(Arc::clone(&h.runtime)),
-        usage: None,
-    }
+    Runtime::new(None, Some(Arc::clone(&h.runtime)), None)
 }
 
 #[tokio::test]

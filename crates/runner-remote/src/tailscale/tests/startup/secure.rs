@@ -3,7 +3,7 @@
 
 use super::fixture::{ACCEPTED, DERIVED, NoiseService};
 use crate::{
-    ssh::cache::Cache,
+    tailscale::tests::fixture::Cache,
     tailscale::{
         Failure, Key, Work,
         registration::{Registration, Tls},

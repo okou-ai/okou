@@ -144,8 +144,13 @@ impl SshRuntime {
         })))
     }
 
-    pub(crate) fn for_run(self: &Arc<Self>, run: RunId, cancel: &CancellationToken) -> Arc<Run> {
-        let registration = self.cache.register(run);
+    pub(crate) fn for_run(
+        self: &Arc<Self>,
+        run: RunId,
+        cancel: &CancellationToken,
+        native: Arc<crate::native::Run>,
+    ) -> Arc<Run> {
+        let registration = self.cache.register(run, native);
         Arc::new(Run {
             runtime: Arc::clone(self),
             sessions: sessions::Manager::new(Arc::clone(self), run, registration, cancel.clone()),
@@ -555,21 +560,6 @@ impl Run {
 
     pub(crate) async fn shutdown(&self) {
         self.sessions.shutdown().await;
-    }
-
-    pub(crate) async fn shutdown_native(&self) -> Result<(), crate::guest_rpc::CleanupError> {
-        self.sessions
-            .registration
-            .shutdown_native()
-            .await
-            .map_err(|_| crate::guest_rpc::CleanupError::Native)
-    }
-
-    pub(crate) fn retain_cleanup(
-        &self,
-        task: tokio::task::JoinHandle<()>,
-    ) -> tokio::sync::oneshot::Receiver<bool> {
-        self.sessions.registration.retain_cleanup(task)
     }
 
     pub(crate) async fn dispatch(&self, request: crate::guest_rpc::Request) {
