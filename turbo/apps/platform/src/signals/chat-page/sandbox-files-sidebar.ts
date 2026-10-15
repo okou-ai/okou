@@ -1,5 +1,4 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
-import { interval } from "signal-timers";
 import type { z } from "zod";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type {
@@ -21,9 +20,11 @@ import { pageSignal$ } from "../page-signal.ts";
 import {
   bestEffort,
   detach,
+  onDomEventFn,
   onRef,
   Reason,
   resetSignal,
+  setLoop,
   tapError,
   withCleanup,
 } from "../utils.ts";
@@ -62,6 +63,7 @@ interface Connection {
 const MAX_ENTRIES = 4096;
 const MAX_BYTES = 4 * 1024 * 1024;
 const MAX_REFRESH_PAGES = 128;
+const REFRESH_INTERVAL_MS = 5000;
 function beneath(path: readonly string[], parent: readonly string[]): boolean {
   return parent.every((token, index) => {
     return path[index] === token;
@@ -816,11 +818,25 @@ function createPollingCommands(
   );
   return command(({ set }, signal: AbortSignal): void => {
     const owner = set(graph.resetPolling$, signal);
-    const refresh = () => {
-      detach(set(tick$, owner), Reason.Daemon, "refresh visible sandbox files");
-    };
-    interval(refresh, 5000, { signal: owner });
-    document.addEventListener("visibilitychange", refresh, { signal: owner });
+    setLoop(
+      async (loopSignal) => {
+        await set(tick$, loopSignal);
+        return false;
+      },
+      REFRESH_INTERVAL_MS,
+      owner,
+      {
+        retryTransientErrors: false,
+        testIntervalMs: REFRESH_INTERVAL_MS,
+      },
+    );
+    document.addEventListener(
+      "visibilitychange",
+      onDomEventFn(() => {
+        return set(tick$, owner);
+      }),
+      { signal: owner },
+    );
   });
 }
 
