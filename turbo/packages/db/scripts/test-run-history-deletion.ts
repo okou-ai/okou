@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { Client } from "pg";
 import postgres from "postgres";
 import { PgDialect, QueryBuilder } from "drizzle-orm/pg-core";
@@ -81,7 +82,23 @@ async function fixture(args: {
 }
 
 try {
-  await applyPendingMigrations(migrationClient);
+  const journal = z
+    .object({
+      entries: z.array(z.object({ tag: z.string(), when: z.number() })),
+    })
+    .parse(
+      JSON.parse(
+        await readFile(
+          new URL("../src/migrations/meta/_journal.json", import.meta.url),
+          "utf8",
+        ),
+      ),
+    );
+  const cutover = journal.entries.find((entry) => {
+    return entry.tag.endsWith("_retire_session_conversation_runtime");
+  });
+  assert.ok(cutover);
+  await applyPendingMigrations(migrationClient, { beforeMillis: cutover.when });
   await client.connect();
   await writer.connect();
   const [writerBackend] = z
