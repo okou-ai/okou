@@ -1,6 +1,6 @@
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
-import { and, count, eq, gte } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { command } from "ccstate";
 import { isClerkResourceNotFound, type ClerkClient } from "../external/clerk";
@@ -51,25 +51,11 @@ export const eraseVncOwnerData$ = command(
       eq(vncCredentials.orgId, scope.orgId),
       eq(vncCredentials.userId, scope.userId),
     );
-    const removedConnections = db
-      .$with("removed_vnc_connections")
-      .as(
-        db
-          .delete(vncConnections)
-          .where(connectionCondition)
-          .returning({ id: vncConnections.id }),
-      );
-    await db
-      .with(removedConnections)
-      .delete(vncCredentials)
-      .where(
-        and(
-          credentialCondition,
-          // Consume the entire child deletion before RESTRICT checks on parents.
-          // The aggregate also permits unused credentials when no hosts exist.
-          gte(db.select({ count: count() }).from(removedConnections), 0),
-        ),
-      );
+    // Commit host removal before waiting on credentials: rotations update a
+    // credential before its hosts, so retaining child locks would deadlock.
+    await db.delete(vncConnections).where(connectionCondition);
+    signal.throwIfAborted();
+    await db.delete(vncCredentials).where(credentialCondition);
     signal.throwIfAborted();
     await set(publishVncLifecycleInvalidation$, scope, signal);
   },
