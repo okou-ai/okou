@@ -500,7 +500,7 @@ test("reinstall refreshes the existing connector and preserves the upgrade redir
   const authorization = await start(status.reinstallUrl);
   expect(authorization.searchParams.get("team")).toBe(current.workspaceId);
   const result = await complete(authorization, current);
-  expect(result.pathname).toBe("/");
+  expect(result.pathname).toBe("/settings/slack");
   expect(result.searchParams.get("updated")).toBe("1");
   await expect(accounts()).resolves.toStrictEqual([
     expect.objectContaining({ id: original.id }),
@@ -762,4 +762,47 @@ test("an admin binds an anonymously installed workspace through user OAuth", asy
       earnedCredits: 2000,
     }),
   );
+});
+
+test("slack success and denial retain the verified conversation context for the canonical page", async () => {
+  const current = actor();
+  await complete(await startInstall(), current);
+  await disconnectChat();
+  const origin = { channelId: "C_ORIGIN", threadTs: "42.0" };
+  const authorization = await startConnect(current, origin);
+  const denied = location(
+    await accept(
+      clients()(slackOauthContract).callback({
+        query: {
+          state: parameter(authorization, "state"),
+          error: "access_denied",
+        },
+      }),
+      [307],
+    ),
+  );
+  expect(denied.pathname).toBe("/settings/slack");
+  expect(Object.fromEntries(denied.searchParams)).toMatchObject({
+    w: current.workspaceId,
+    u: current.slackUserId,
+    c: origin.channelId,
+    t: origin.threadTs,
+    error: "Slack authorization was not completed. Please try again.",
+  });
+  await expect(integrationStatus()).resolves.toMatchObject({
+    isConnected: false,
+  });
+  const retry = await startConnect(current, origin);
+  const completed = await complete(retry, current);
+  expect(completed.pathname).toBe("/settings/slack");
+  expect(Object.fromEntries(completed.searchParams)).toMatchObject({
+    status: "connected",
+    w: current.workspaceId,
+    u: current.slackUserId,
+    c: origin.channelId,
+    t: origin.threadTs,
+  });
+  await expect(integrationStatus()).resolves.toMatchObject({
+    isConnected: true,
+  });
 });

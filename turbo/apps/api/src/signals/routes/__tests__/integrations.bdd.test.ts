@@ -1585,7 +1585,7 @@ describe("INT-01: Slack integration and Slack app routes", () => {
       [307],
     );
     expect(callbackError.headers.get("location") ?? "").toContain(
-      "/slack/failed?error=access_denied",
+      "/settings/slack?error=access_denied",
     );
 
     const callbackMissingCode = await integrations.requestSlackOauthCallback(

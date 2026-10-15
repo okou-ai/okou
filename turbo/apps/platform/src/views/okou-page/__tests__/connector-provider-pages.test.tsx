@@ -176,12 +176,12 @@ test("A connected Slack workspace shows success and next actions", async () => {
   await setupPage({ context, path: `/settings/slack?${params.toString()}` });
 
   await expect(
-    screen.findByText("Connected to Slack!"),
+    screen.findByText("Slack is connected"),
   ).resolves.toBeInTheDocument();
   expect(
     screen.getByText(/You're connected to Acme Workspace/u),
   ).toBeInTheDocument();
-  expect(getAction("button", "Open Slack")).toBeInTheDocument();
+  expect(getAction("link", "Open Slack")).toBeInTheDocument();
   expect(getAction("link", "Back to settings")).toBeInTheDocument();
 });
 

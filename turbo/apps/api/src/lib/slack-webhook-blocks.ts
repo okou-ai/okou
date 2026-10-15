@@ -1,3 +1,4 @@
+import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 
 import type {
@@ -64,7 +65,7 @@ function buildAppHomeNotInstalledBlocks(): SlackBlocks {
         {
           type: "button",
           text: { type: "plain_text", text: `Open ${brandName} Settings` },
-          url: `${appUrl()}/works`,
+          url: `${appUrl()}${INTEGRATION_SETTINGS_PATHS.slack}`,
           action_id: "home_open_settings",
           style: "primary",
         },
