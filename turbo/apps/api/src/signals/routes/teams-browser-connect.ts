@@ -7,6 +7,7 @@ import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { teamsBotDisplayName } from "../../lib/teams-official-app";
 import { requiredAuthContext$ } from "../auth/auth-context";
+import { getMemberRoleAndUpdateCache$ } from "../services/auth.service";
 import { request$ } from "../context/hono";
 import { queryOf } from "../context/request";
 import { db$ } from "../external/db";
@@ -166,7 +167,10 @@ function resolveBrowserConnectOrgId(args: {
       readonly kind: "error";
       readonly message: string;
     } {
-  const effectiveOrgId = args.query.orgId ?? args.activeOrgId;
+  if (args.query.orgId && args.query.orgId !== args.activeOrgId) {
+    return { kind: "error", message: orgMismatchMessage };
+  }
+  const effectiveOrgId = args.activeOrgId;
   if (!args.installation.orgId) {
     if (!effectiveOrgId || args.orgRole !== "admin") {
       return { kind: "error", message: adminRequiredMessage };
@@ -229,12 +233,23 @@ const browserConnect$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const orgId = orgResolution.orgId;
 
+  const membership = await set(
+    getMemberRoleAndUpdateCache$,
+    orgId,
+    auth.userId,
+    signal,
+  );
+  signal.throwIfAborted();
+  if (membership.kind !== "member") {
+    return connectError(orgMismatchMessage, query);
+  }
+
   const result = await set(
     connectTeamsInstallation$,
     {
       userId: auth.userId,
       orgId,
-      orgRole: auth.orgRole === "admin" ? "admin" : "member",
+      orgRole: membership.role,
       tenantId,
       tenantName: query.tenantName ?? installation.teamsTenantName ?? undefined,
       teamsUserId,
