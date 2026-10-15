@@ -56,7 +56,7 @@ import {
   calculateUsagePackAdditionCreditGrant,
   calculateUsagePackUpgradeCreditGrants,
   fulfillUsagePackSubscriptionChangeInvoice,
-  reconcileUsagePackAllocationChangeSubscription,
+  reconcileUsagePackAllocationChangeSubscription$,
   usagePackInvoiceFulfillmentExists,
   usagePackPreviewSubscriptionMatches,
   type UsagePackChangeInvoiceInput,
@@ -3901,7 +3901,7 @@ export const handleUsagePackSubscriptionChangeInvoicePaid$ = command(
       );
     }
     const period = usagePackPeriod(subscription);
-    await reconcileUsagePackAllocationChangeSubscription(db, subscription);
+    await set(reconcileUsagePackAllocationChangeSubscription$, subscription);
     await fulfillUsagePackSubscriptionChangeInvoice(db, {
       subscriptionChangeId: root.id,
       prorationTimestamp: root.prorationTimestamp,

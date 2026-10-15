@@ -57,7 +57,7 @@ import {
   type BillingPurchasePaymentMethod,
 } from "../services/billing-payment-method.service";
 import {
-  confirmUsagePackAllocationChange,
+  confirmUsagePackAllocationChange$,
   prepareUsagePackChangeConfirmation$,
   repairUsagePackConfigurationBeforeConfirmation$,
   getUsagePackManagement,
@@ -991,8 +991,8 @@ const usagePackChangeConfirmAuthed$ = command(
       { orgId: access.auth.orgId, changeId },
       signal,
     );
-    const result = await confirmUsagePackAllocationChange(
-      db,
+    const result = await set(
+      confirmUsagePackAllocationChange$,
       {
         orgId: access.auth.orgId,
         changeId,

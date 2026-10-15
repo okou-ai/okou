@@ -41,7 +41,7 @@ import { cancelAndRefundOrgBillingForDeletion } from "./org-deletion-billing.ser
 import { cleanupOrgMemberResources$ } from "./org-member-cleanup.service";
 import {
   cancelUsagePackMemberRemovalReservation,
-  removeUsagePackMemberAllocation,
+  removeUsagePackMemberAllocation$,
   reserveUsagePackMemberRemoval,
 } from "./usage-pack-allocation-change.service";
 import { refundUsagePackMemberCredits } from "./usage-pack-credit-refund.service";
@@ -336,8 +336,8 @@ const commitOrgMemberRemoval$ = command(
       await cancelUsagePackMemberRemovalReservation(db, reservationId);
     });
     signal.throwIfAborted();
-    const emptyCancellation = await removeUsagePackMemberAllocation(
-      db,
+    const emptyCancellation = await set(
+      removeUsagePackMemberAllocation$,
       args,
       signal,
     );

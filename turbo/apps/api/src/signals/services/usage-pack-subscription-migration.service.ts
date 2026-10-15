@@ -62,7 +62,7 @@ import {
 } from "./context-rowset";
 import {
   handleUsagePackInvoicePaid$,
-  handleUsagePackSubscriptionUpdated,
+  handleUsagePackSubscriptionUpdated$,
   loadUsagePackCatalog,
   usagePackSubscriptionIdFromMetadata,
   usagePackSubscriptionMetadata,
@@ -2809,7 +2809,6 @@ const finalizeAppliedMigration$ = command(
     },
     signal: AbortSignal,
   ): Promise<AppliedMigrationResult> => {
-    const db = set(writeDb$);
     const { migration, selections, subscription, invoice } = args;
     if (invoice.status !== "paid") {
       return {
@@ -2840,8 +2839,8 @@ const finalizeAppliedMigration$ = command(
       { idempotencyKey: `usage-pack-migration:${migration.id}:metadata` },
     );
     signal.throwIfAborted();
-    const subscriptionOutcome = await handleUsagePackSubscriptionUpdated(
-      db,
+    const subscriptionOutcome = await set(
+      handleUsagePackSubscriptionUpdated$,
       tagged as UsagePackSubscriptionInput,
     );
     signal.throwIfAborted();
@@ -3455,8 +3454,8 @@ export const handleUsagePackMigrationSubscriptionUpdated$ = command(
         migration.stripeSubscriptionId,
       );
       signal.throwIfAborted();
-      const outcome = await handleUsagePackSubscriptionUpdated(
-        db,
+      const outcome = await set(
+        handleUsagePackSubscriptionUpdated$,
         current as UsagePackSubscriptionInput,
       );
       signal.throwIfAborted();

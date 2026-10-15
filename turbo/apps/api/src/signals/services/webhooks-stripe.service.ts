@@ -1,3 +1,6 @@
+import { canceledPlanSubscriptionPlan } from "./usage-pack-subscription-deletion-plan";
+import { parseRawRows } from "../../lib/db-raw-rows";
+import { z } from "zod";
 import { publishLegacyPlanInvoice$ } from "./legacy-plan-invoice.service";
 import { legacyPlanInvoiceAdmission } from "./legacy-plan-invoice";
 import {
@@ -77,18 +80,13 @@ import {
   isConcurrencyPriceId,
 } from "./org-concurrency-entitlements.service";
 import { disableIneligibleWorkflowWebhookAutomationsForOrg$ } from "./workflow-webhook-automation-entitlement.service";
-import {
-  orgPlanEntitlementValues,
-  orgPlanEntitlementOrgIdForStripeSubscription,
-  upsertOrgPlanEntitlement,
-  writeOrgMetadataWithPlanEntitlements,
-} from "./org-plan-entitlements.service";
+import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
 import {
   handleUsagePackCheckoutCompleted$,
   handleUsagePackInvoicePaid$,
-  handleUsagePackSubscriptionCreated,
-  handleUsagePackSubscriptionDeleted,
-  handleUsagePackSubscriptionUpdated,
+  handleUsagePackSubscriptionCreated$,
+  handleUsagePackSubscriptionDeleted$,
+  handleUsagePackSubscriptionUpdated$,
 } from "./usage-pack-subscription.service";
 import { failScheduledUsagePackAllocationChangesForSchedule } from "./usage-pack-allocation-change.service";
 import {
@@ -109,6 +107,7 @@ import {
   isArchivedUsageAllowanceMetadata,
   survivingStripeBillingInvoiceLines,
 } from "./archived-allowance";
+const retainedSubscriptionDeletionRow = z.record(z.string(), z.unknown());
 
 const L = logger("WebhookStripe");
 
@@ -3307,12 +3306,11 @@ const handleSubscriptionCreated$ = command(
     { set },
     subscription: SubscriptionInput,
   ): Promise<readonly string[]> => {
-    const db = set(writeDb$);
     if (isArchivedUsageAllowanceMetadata(subscription.metadata)) {
       return [];
     }
-    const usagePackOutcome = await handleUsagePackSubscriptionCreated(
-      db,
+    const usagePackOutcome = await set(
+      handleUsagePackSubscriptionCreated$,
       subscription,
     );
     const orgIds = await set(
@@ -3982,7 +3980,7 @@ const handleSubscriptionUpdated$ = command(
     if (!archivedSubscriptionHasSurvivingComponents(subscription)) {
       return [];
     }
-    const db = set(writeDb$);
+
     if (isArchivedUsageAllowanceMetadata(subscription.metadata)) {
       const orgIds = await set(publishConcurrencySubscription$, subscription);
       signal.throwIfAborted();
@@ -3996,8 +3994,8 @@ const handleSubscriptionUpdated$ = command(
     if (migrationOutcome.handled) {
       return migrationOutcome.orgId ? [migrationOutcome.orgId] : [];
     }
-    const usagePackOutcome = await handleUsagePackSubscriptionUpdated(
-      db,
+    const usagePackOutcome = await set(
+      handleUsagePackSubscriptionUpdated$,
       subscription,
     );
     signal.throwIfAborted();
@@ -4091,129 +4089,87 @@ async function handleSubscriptionScheduleEnded(
   });
 }
 
-async function handleSubscriptionDeletedLegacy(
-  db: Db,
-  subscription: SubscriptionDeletedInput,
-): Promise<readonly string[]> {
-  const concurrencyRows = await db
-    .update(orgConcurrencySubscriptions)
-    .set({
-      subscriptionStatus: "canceled",
-      cancelAtPeriodEnd: false,
-      currentPeriodEnd: nowDate(),
-      updatedAt: concurrencySubscriptionUpdatedAt(nowDate()),
-    })
-    .where(
-      eq(orgConcurrencySubscriptions.stripeSubscriptionId, subscription.id),
-    )
-    .returning({ orgId: orgConcurrencySubscriptions.orgId });
+const handleSubscriptionDeletedLegacy$ = command(
+  async function handleSubscriptionDeletedLegacy(
+    { set },
+    subscription: SubscriptionDeletedInput,
+  ): Promise<readonly string[]> {
+    const db = set(writeDb$);
 
-  if (!archivedSubscriptionHasSurvivingPlan(subscription)) {
-    return concurrencyRows.map((row) => {
-      return row.orgId;
-    });
-  }
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0331; new non-billing transactions are prohibited.
-  const planRows = await db.transaction(async (tx) => {
-    const downgraded = await writeOrgMetadataWithPlanEntitlements(tx, {
-      writeOrgMetadata: async (writeTx) => {
-        return await writeTx
-          .update(orgMetadata)
-          .set({
-            tier: CANCELED_SUBSCRIPTION_TARGET_TIER,
-            subscriptionStatus: "canceled",
-            stripeSubscriptionId: null,
-            cancelAtPeriodEnd: false,
-            currentPeriodEnd: null,
-            pendingSubscriptionScheduleId: null,
-            pendingSubscriptionTargetTier: null,
-            pendingSubscriptionChangeAt: null,
-            updatedAt: nowDate(),
-          })
-          .where(eq(orgMetadata.stripeSubscriptionId, subscription.id))
-          .returning({ orgId: orgMetadata.orgId });
-      },
-      writePlanEntitlement: async (writeTx, row) => {
-        await upsertOrgPlanEntitlement(writeTx, {
-          orgId: row.orgId,
-          tier: CANCELED_SUBSCRIPTION_TARGET_TIER,
-          source: "stripe_subscription",
-          sourceMetadata: subscription.metadata ?? {},
-        });
-      },
-    });
+    const concurrencyRows = await db
+      .update(orgConcurrencySubscriptions)
+      .set({
+        subscriptionStatus: "canceled",
+        cancelAtPeriodEnd: false,
+        currentPeriodEnd: nowDate(),
+        updatedAt: concurrencySubscriptionUpdatedAt(nowDate()),
+      })
+      .where(
+        eq(orgConcurrencySubscriptions.stripeSubscriptionId, subscription.id),
+      )
+      .returning({ orgId: orgConcurrencySubscriptions.orgId });
 
-    const persistedOrgId =
-      downgraded.length === 0
-        ? await orgPlanEntitlementOrgIdForStripeSubscription(
-            tx,
-            subscription.id,
-          )
-        : null;
-    const [persistedOrg] = persistedOrgId
-      ? await tx
-          .select({
-            tier: orgMetadata.tier,
-            stripeSubscriptionId: orgMetadata.stripeSubscriptionId,
-          })
-          .from(orgMetadata)
-          .where(eq(orgMetadata.orgId, persistedOrgId))
-          .limit(1)
-      : [];
-    const replayedDowngradeOrgId =
-      persistedOrg?.tier === CANCELED_SUBSCRIPTION_TARGET_TIER &&
-      persistedOrg.stripeSubscriptionId === null
-        ? persistedOrgId
-        : null;
-    if (replayedDowngradeOrgId) {
-      await upsertOrgPlanEntitlement(tx, {
-        orgId: replayedDowngradeOrgId,
-        tier: CANCELED_SUBSCRIPTION_TARGET_TIER,
-        source: "stripe_subscription",
-        sourceMetadata: subscription.metadata ?? {},
+    if (!archivedSubscriptionHasSurvivingPlan(subscription)) {
+      return concurrencyRows.map((row) => {
+        return row.orgId;
       });
     }
-    return [
-      ...downgraded.map((row) => {
-        return row.orgId;
-      }),
-      ...(replayedDowngradeOrgId ? [replayedDowngradeOrgId] : []),
-    ].map((orgId) => {
-      return { orgId };
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0331; new non-billing transactions are prohibited.
+    const planRows = await db.transaction(async (tx) => {
+      const plan = canceledPlanSubscriptionPlan(subscription);
+      let step = plan.next();
+      while (!step.done) {
+        const statement = step.value;
+        let rows: readonly unknown[] = [];
+        if (statement.kind === "timestamp") {
+          rows = [nowDate()];
+        } else if (statement.kind === "read") {
+          rows = parseRawRows(
+            retainedSubscriptionDeletionRow,
+            await tx.execute(statement.sql),
+          );
+        } else {
+          await tx.execute(statement.sql);
+        }
+        step = plan.next(rows);
+      }
+      return step.value;
     });
-  });
-  return [
-    ...new Set([
-      ...concurrencyRows.map((row) => {
-        return row.orgId;
-      }),
-      ...planRows.map((row) => {
-        return row.orgId;
-      }),
-    ]),
-  ];
-}
+    return [
+      ...new Set([
+        ...concurrencyRows.map((row) => {
+          return row.orgId;
+        }),
+        ...planRows.map((row) => {
+          return row.orgId;
+        }),
+      ]),
+    ];
+  },
+);
 
-async function handleSubscriptionDeleted(
-  db: Db,
-  subscription: SubscriptionDeletedInput,
-): Promise<readonly string[]> {
-  // Existing concurrency bindings, not an Allowance/Plan price overlap, own archive-root deletion.
-  if (isArchivedUsageAllowanceMetadata(subscription.metadata)) {
-    return await handleSubscriptionDeletedLegacy(db, subscription);
-  }
-  const usagePackOutcome = await handleUsagePackSubscriptionDeleted(
-    db,
-    subscription,
-  );
-  const orgIds = await handleSubscriptionDeletedLegacy(db, subscription);
-  return [
-    ...new Set([
-      ...orgIds,
-      ...(usagePackOutcome.orgId ? [usagePackOutcome.orgId] : []),
-    ]),
-  ];
-}
+const handleSubscriptionDeleted$ = command(
+  async function handleSubscriptionDeleted(
+    { set },
+    subscription: SubscriptionDeletedInput,
+  ): Promise<readonly string[]> {
+    // Existing concurrency bindings, not an Allowance/Plan price overlap, own archive-root deletion.
+    if (isArchivedUsageAllowanceMetadata(subscription.metadata)) {
+      return await set(handleSubscriptionDeletedLegacy$, subscription);
+    }
+    const usagePackOutcome = await set(
+      handleUsagePackSubscriptionDeleted$,
+      subscription,
+    );
+    const orgIds = await set(handleSubscriptionDeletedLegacy$, subscription);
+    return [
+      ...new Set([
+        ...orgIds,
+        ...(usagePackOutcome.orgId ? [usagePackOutcome.orgId] : []),
+      ]),
+    ];
+  },
+);
 
 export interface StripeSubscriptionSnapshotReconciliation {
   readonly orgIds: readonly string[];
@@ -4258,21 +4214,6 @@ function reconciliationPreviousAttributes(
   };
 }
 
-async function paidPlanOrgIdForSubscription(
-  db: Db,
-  subscriptionId: string,
-): Promise<string | null> {
-  const [row] = await db
-    .select({ orgId: orgMetadata.orgId, tier: orgMetadata.tier })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.stripeSubscriptionId, subscriptionId))
-    .limit(1);
-  return row &&
-    (row.tier === "pro" || row.tier === "team" || row.tier === "custom")
-    ? row.orgId
-    : null;
-}
-
 /**
  * Replays the idempotent Stripe webhook projections from a current
  * subscription snapshot. The billing cron uses this when delivery of any
@@ -4287,17 +4228,17 @@ export const reconcileStripeSubscriptionSnapshot$ = command(
     if (!archivedSubscriptionHasSurvivingComponents(subscription)) {
       return { orgIds: [], downgradedOrgIds: [], paidInvoiceId: null };
     }
-    const db = set(writeDb$);
+
     const terminal =
       subscription.status === "canceled" ||
       subscription.status === "ended" ||
       subscription.status === "incomplete_expired";
     if (terminal) {
       const downgradedOrgId = archivedSubscriptionHasSurvivingPlan(subscription)
-        ? await paidPlanOrgIdForSubscription(db, subscription.id)
+        ? await set(paidPlanOrgIdForSubscriptionOwned$, subscription.id)
         : null;
       signal.throwIfAborted();
-      const orgIds = await handleSubscriptionDeleted(db, subscription);
+      const orgIds = await set(handleSubscriptionDeleted$, subscription);
       signal.throwIfAborted();
       return {
         orgIds,
@@ -4352,27 +4293,29 @@ export const reconcileStripeSubscriptionSnapshot$ = command(
 );
 
 /** Reconciles a locally referenced subscription that Stripe no longer has. */
-export async function reconcileMissingStripeSubscription(
-  db: Db,
-  subscriptionId: string,
-  signal: AbortSignal,
-): Promise<StripeSubscriptionSnapshotReconciliation> {
-  const downgradedOrgId = await paidPlanOrgIdForSubscription(
-    db,
-    subscriptionId,
-  );
-  signal.throwIfAborted();
-  const orgIds = await handleSubscriptionDeleted(db, {
-    id: subscriptionId,
-    metadata: {},
-  });
-  signal.throwIfAborted();
-  return {
-    orgIds,
-    downgradedOrgIds: downgradedOrgId ? [downgradedOrgId] : [],
-    paidInvoiceId: null,
-  };
-}
+export const reconcileMissingStripeSubscription$ = command(
+  async function reconcileMissingStripeSubscription(
+    { set },
+    subscriptionId: string,
+    signal: AbortSignal,
+  ): Promise<StripeSubscriptionSnapshotReconciliation> {
+    const downgradedOrgId = await set(
+      paidPlanOrgIdForSubscriptionOwned$,
+      subscriptionId,
+    );
+    signal.throwIfAborted();
+    const orgIds = await set(handleSubscriptionDeleted$, {
+      id: subscriptionId,
+      metadata: {},
+    });
+    signal.throwIfAborted();
+    return {
+      orgIds,
+      downgradedOrgIds: downgradedOrgId ? [downgradedOrgId] : [],
+      paidInvoiceId: null,
+    };
+  },
+);
 
 const publishBillingChanges$ = command(
   async (
@@ -4552,7 +4495,7 @@ export const handleStripeWebhookEvent$ = command(
         break;
       }
       case "customer.subscription.deleted": {
-        const orgIds = await handleSubscriptionDeleted(db, event.object);
+        const orgIds = await set(handleSubscriptionDeleted$, event.object);
         signal.throwIfAborted();
         addBillingChangedOrgIds(billingChangedOrgIds, orgIds);
         break;
@@ -4587,5 +4530,24 @@ export const handleStripeWebhookEvent$ = command(
         set(pickOrgQueuedChatThreads$, { orgId: drainOrgId }, queueSignal),
       );
     }
+  },
+);
+
+const paidPlanOrgIdForSubscriptionOwned$ = command(
+  async function paidPlanOrgIdForSubscriptionOwned(
+    { set },
+    subscriptionId: string,
+  ): Promise<string | null> {
+    const db = set(writeDb$);
+
+    const [row] = await db
+      .select({ orgId: orgMetadata.orgId, tier: orgMetadata.tier })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.stripeSubscriptionId, subscriptionId))
+      .limit(1);
+    return row &&
+      (row.tier === "pro" || row.tier === "team" || row.tier === "custom")
+      ? row.orgId
+      : null;
   },
 );

@@ -59,7 +59,7 @@ import { reconcileUsagePackSubscriptionMigrations$ } from "./usage-pack-subscrip
 import { disableIneligibleWorkflowWebhookAutomationsForOrg$ } from "./workflow-webhook-automation-entitlement.service";
 import { isCurrentStripePreviewMetadata } from "./stripe-preview-metadata.service";
 import {
-  reconcileMissingStripeSubscription,
+  reconcileMissingStripeSubscription$,
   reconcilePaidStripeCheckoutSession$,
   reconcilePaidStripeInvoice$,
   reconcileStripeSubscriptionSnapshot$,
@@ -419,7 +419,7 @@ const reconcileStripeSubscriptionSnapshots$ = command(
     }
     for (const subscriptionId of discovery.missingSubscriptionIds) {
       const result = await settle(
-        reconcileMissingStripeSubscription(db, subscriptionId, signal),
+        set(reconcileMissingStripeSubscription$, subscriptionId, signal),
         signal,
       );
       if (!result.ok) {
