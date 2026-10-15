@@ -3,6 +3,7 @@ import {
   integrationsTelegramContract,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
+import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -643,7 +644,7 @@ function buildConnectUrl(args: {
   if (displayName) {
     params.set("tgDisplayName", displayName);
   }
-  return `${env("APP_URL")}/telegram/connect?${params.toString()}`;
+  return `${env("APP_URL")}${INTEGRATION_SETTINGS_PATHS.telegram}?${params.toString()}`;
 }
 
 function buildTelegramConnectReplyMarkup(connectUrl: string) {

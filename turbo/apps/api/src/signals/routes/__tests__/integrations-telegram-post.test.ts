@@ -35,6 +35,7 @@ import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { integrationsTelegramRoutes } from "../integrations-telegram";
+import { createPublicTelegramActor } from "./helpers/public-telegram-actor";
 
 // Mirrors the pause internal-telegram-chat-run-callback.service.ts takes between
 // completion chunks.
@@ -530,6 +531,198 @@ function userModelPreferenceClient() {
 }
 
 describe("POST /api/telegram/webhook/:telegramBotId", () => {
+  it.each([
+    {
+      name: "normalized username and display name",
+      text: "/connect",
+      profile: {
+        username: "  @alice_connect  ",
+        first_name: "  Alice   &  ",
+        last_name: "  王  ",
+      },
+      username: "alice_connect",
+      displayName: "Alice & 王",
+    },
+    {
+      name: "display name without a username",
+      text: "/start connect",
+      profile: { first_name: "  Alice   王  " },
+      username: null,
+      displayName: "Alice 王",
+    },
+    {
+      name: "no optional identity names",
+      text: "hello",
+      profile: {},
+      username: null,
+      displayName: null,
+    },
+  ])(
+    "binds the canonical private Connect link with $name",
+    async (scenario) => {
+      configureOfficialBotEnv();
+      mockEnv("APP_URL", "https://app.okou.ai");
+      const telegram = telegramApiMocks();
+      const actor = createPublicTelegramActor(context);
+      await actor.onboard();
+      const { defaultAgentId } = await authOrgApi.readOnboardingStatus(
+        actor.actor,
+      );
+      expect(defaultAgentId).toBeTruthy();
+      const telegramUserId = newTelegramBotId();
+      const issuedAt = new Date("2026-10-15T12:00:00Z");
+      mockNow(issuedAt);
+
+      await actor.run(async () => {
+        const response = await postWebhook({
+          telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
+          secret: OFFICIAL_WEBHOOK_SECRET,
+          apiOrigin: "https://api.okou.ai",
+          body: {
+            update_id: 40_196,
+            message: {
+              message_id: 196,
+              chat: { id: Number(telegramUserId), type: "private" },
+              from: { id: Number(telegramUserId), ...scenario.profile },
+              text: scenario.text,
+            },
+          },
+        });
+        expect(response.status).toBe(200);
+        await flushWaitUntilForTest();
+        expect(telegram.sentMessages).toHaveLength(1);
+        const reply = telegram.sentMessages[0];
+        expect(reply).toMatchObject({ chat_id: telegramUserId });
+        const button = reply?.reply_markup?.inline_keyboard[0]?.[0];
+        if (!button) {
+          throw new Error("Expected a private Connect button");
+        }
+        expect(button.text).toBe("Connect");
+        const url = new URL(button.url);
+        expect(url.origin).toBe("https://app.okou.ai");
+        expect(url.pathname).toBe("/settings/telegram");
+        expect(Object.fromEntries(url.searchParams)).toStrictEqual({
+          bot: OFFICIAL_TELEGRAM_BOT_ID,
+          tgUser: telegramUserId,
+          ts: String(issuedAt.getTime() / 1000),
+          sig: expect.stringMatching(/^[0-9a-f]{64}$/u),
+          ...(scenario.username ? { tgUserName: scenario.username } : {}),
+          ...(scenario.displayName
+            ? { tgDisplayName: scenario.displayName }
+            : {}),
+        });
+
+        actor.session();
+        const client = telegramClient();
+        const headers = { authorization: `Bearer ${actor.token}` };
+        const before = await accept(client.list({ headers }), [200]);
+        expect(before.body.bots).toContainEqual(
+          expect.objectContaining({
+            id: OFFICIAL_TELEGRAM_BOT_ID,
+            isConnected: false,
+            connectedUser: null,
+          }),
+        );
+
+        // Submit the emitted proof unchanged through the authenticated consumer.
+        const body = integrationsTelegramContract.link.body.parse({
+          telegramBotId: url.searchParams.get("bot"),
+          connectSignature: {
+            telegramUserId: url.searchParams.get("tgUser"),
+            timestamp: Number(url.searchParams.get("ts")),
+            signature: url.searchParams.get("sig"),
+            telegramUsername: url.searchParams.get("tgUserName") ?? undefined,
+            telegramDisplayName:
+              url.searchParams.get("tgDisplayName") ?? undefined,
+          },
+        });
+        const linked = await accept(client.link({ headers, body }), [200]);
+        expect(linked.body).toStrictEqual({
+          telegramUserId,
+          botUsername: OFFICIAL_BOT_USERNAME,
+        });
+        await flushWaitUntilForTest();
+        const status = await accept(
+          client.getLinkStatus({
+            headers,
+            query: { botId: body.telegramBotId },
+          }),
+          [200],
+        );
+        expect(status.body).toStrictEqual({
+          linked: true,
+          telegramUserId,
+          botUsername: OFFICIAL_BOT_USERNAME,
+        });
+        const listed = await accept(client.list({ headers }), [200]);
+        expect(listed.body.bots).toContainEqual(
+          expect.objectContaining({
+            id: OFFICIAL_TELEGRAM_BOT_ID,
+            username: OFFICIAL_BOT_USERNAME,
+            isConnected: true,
+            agent: expect.objectContaining({ id: defaultAgentId }),
+            connectedUser: {
+              telegramUserId,
+              telegramUsername: scenario.username,
+              telegramDisplayName: scenario.displayName,
+            },
+            official: {
+              configured: true,
+              usesDefaultAgent: true,
+              linkedTelegramUserId: telegramUserId,
+            },
+          }),
+        );
+      });
+    },
+  );
+
+  it.each([OFFICIAL_BOT_USERNAME, undefined])(
+    "keeps group Connect private with bot username %s",
+    async (botUsername) => {
+      configureOfficialBotEnv();
+      mockEnv("TELEGRAM_OFFICIAL_BOT_USERNAME", botUsername);
+      const telegram = telegramApiMocks();
+      const response = await postWebhook({
+        telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
+        secret: OFFICIAL_WEBHOOK_SECRET,
+        body: {
+          update_id: 40_197,
+          message: {
+            message_id: 197,
+            chat: { id: -40_197, type: "supergroup" },
+            from: { id: Number(newTelegramBotId()), first_name: "Alice" },
+            text: "/connect",
+          },
+        },
+      });
+      expect(response.status).toBe(200);
+      await flushWaitUntilForTest();
+      expect(telegram.sentMessages).toHaveLength(1);
+      const reply = telegram.sentMessages[0];
+      expect(reply).toMatchObject({
+        chat_id: "-40197",
+        reply_parameters: { message_id: 197 },
+      });
+      if (botUsername) {
+        expect(reply?.reply_markup).toStrictEqual({
+          inline_keyboard: [
+            [
+              {
+                text: "Connect",
+                url: `https://t.me/${botUsername}?start=connect`,
+              },
+            ],
+          ],
+        });
+      } else {
+        expect(reply?.reply_markup).toBeUndefined();
+        expect(reply?.text).toContain("Send me /connect in a private message.");
+      }
+      expect(reply?.text).not.toContain("https://app.");
+    },
+  );
+
   it("validates bot ownership, webhook secret, and JSON payload", async () => {
     const fixture = await createTelegramPostFixture();
 
