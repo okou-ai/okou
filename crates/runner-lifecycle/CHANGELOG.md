@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.4](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.14.3...runner-lifecycle-v0.14.4) (2026-10-15)
+
+
+### Bug Fixes
+
+* **runner:** queue stopped home publications before capacity contention ([#40318](https://github.com/okou-ai/okou/issues/40318)) ([103516f](https://github.com/okou-ai/okou/commit/103516f314a06dcac0895a01b4e52845d22010e9))
+
 ## [0.14.3](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.14.2...runner-lifecycle-v0.14.3) (2026-10-15)
 
 ## [0.14.2](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.14.1...runner-lifecycle-v0.14.2) (2026-10-15)
