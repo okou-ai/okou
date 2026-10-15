@@ -2,7 +2,6 @@ import type { BuiltinConnectorSearchItem } from "@okouai/api-contracts/contracts
 import type { BuiltinConnectorBrief } from "@okouai/api-contracts/contracts/connector-overview";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type {
-  PublicConnectorCatalogConnectListResponse,
   PublicConnectorCatalogListResponse,
   PublicConnectorCatalogDiscoveryResponse,
   PublicConnectorCatalogPermissionDetail,
@@ -13,7 +12,6 @@ import {
   connectorCatalogEntries,
 } from "@okouai/db/runtime/connector-catalog";
 import {
-  connectorCatalogDisplayColumns,
   connectorCatalogRuntimeColumns,
   materializeConnectorCatalogDisplayRow,
 } from "./connector-catalog-columns";
@@ -23,12 +21,10 @@ import type { ConnectorFeatureStates } from "./connector-catalog-feature-states"
 import type { ConnectorCatalogConnection } from "./connector-catalog-connection";
 import {
   connectorBriefsFromSource,
-  connectorCatalogConnectItemsFromSource,
   discoverExternalPublicConnectorCatalogStatus,
   ExternalConnectorCatalogUnavailableError,
   listExternalPublicConnectorCatalog,
   listExternalPublicConnectorCatalogStatus,
-  loadCompleteConnectorCatalogSource,
   publicConnectorCatalogPermissionDetailFromSource,
   searchExternalConnectorCatalog,
 } from "./connector-catalog-external-reader.service";
@@ -49,39 +45,6 @@ interface ConnectorCatalogReadArgs {
 
 interface ConnectorCatalogSearchArgs extends ConnectorCatalogReadArgs {
   readonly keyword: string | undefined;
-}
-
-/**
- * Connected briefs and connect items by slug are optional reads, so a slug
- * without an entry is omitted. Required paths reject through their own readers.
- */
-async function loadSlugDisplaySource(
-  db: ReadonlyDb,
-  slugs: readonly ConnectorSlug[],
-) {
-  const rows = await db
-    .select({
-      current: {
-        schemaVersion: connectorCatalog.schemaVersion,
-        hash: connectorCatalog.hash,
-      },
-      entry: connectorCatalogDisplayColumns,
-    })
-    .from(connectorCatalog)
-    .leftJoin(connectorCatalogEntries, connectorCatalogSlugJoin(slugs))
-    .where(connectorCatalogCurrentWhere());
-  return connectorCatalogSlugSourceFromRows(
-    rows.map((row) => {
-      return {
-        current: row.current,
-        entry:
-          row.entry === null
-            ? null
-            : materializeConnectorCatalogDisplayRow(row.entry),
-      };
-    }),
-    slugs,
-  );
 }
 
 export async function searchConnectorCatalog(
@@ -134,31 +97,6 @@ export function connectorBriefsFromRows(args: {
       args.connectorSlugs,
     ),
     featureStates: args.featureStates,
-  });
-}
-
-export async function listConnectorCatalogConnectItems(
-  args: ConnectorCatalogReadArgs & {
-    readonly connections: readonly ConnectorCatalogConnection[];
-    readonly filter:
-      | {
-          readonly kind: "slugs";
-          readonly connectorSlugs: readonly ConnectorSlug[];
-        }
-      | { readonly kind: "one-click" };
-  },
-): Promise<PublicConnectorCatalogConnectListResponse> {
-  const catalog =
-    args.filter.kind === "slugs" && args.filter.connectorSlugs.length === 0
-      ? { connectors: [], filteredMethodKeys: new Set<string>() }
-      : args.filter.kind === "slugs"
-        ? await loadSlugDisplaySource(args.db, args.filter.connectorSlugs)
-        : await loadCompleteConnectorCatalogSource(args.db);
-  return connectorCatalogConnectItemsFromSource({
-    catalog,
-    featureStates: args.featureStates,
-    connections: args.connections,
-    oneClickOnly: args.filter.kind === "one-click",
   });
 }
 
