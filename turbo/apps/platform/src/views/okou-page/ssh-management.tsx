@@ -3,7 +3,7 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { buttonVariants } from "@okouai/ui/components/ui/button";
 import { cn } from "@okouai/ui/lib/utils";
-import { Plus } from "lucide-react";
+import { ExternalLink, Plus } from "lucide-react";
 import {
   Button,
   Dialog,
@@ -748,9 +748,9 @@ function SshConflictReview({ dialog }: { readonly dialog: SshDialogState }) {
   );
 }
 
-function useDialogCopy(kind: SshDialogState["kind"] | undefined) {
+function useDialogCopy(dialog: SshDialogState | null) {
   const { t } = useTranslation();
-  switch (kind) {
+  switch (dialog?.kind) {
     case "create": {
       return {
         title: t(($) => {
@@ -775,7 +775,9 @@ function useDialogCopy(kind: SshDialogState["kind"] | undefined) {
           return $.ssh.delete;
         }),
         description: t(($) => {
-          return $.ssh.deleteHelp;
+          return dialog.connection && !("credentialId" in dialog.connection)
+            ? $.ssh.tailscale.deleteHelp
+            : $.ssh.deleteHelp;
         }),
       };
     }
@@ -1000,6 +1002,17 @@ function TailscaleSshLogin({
           return $.ssh.tailscale.sshHelp;
         })}
       </p>
+      <a
+        href="https://tailscale.com/docs/features/tailscale-ssh"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex w-fit items-center gap-1 text-sm text-link underline underline-offset-4 hover:text-link-hover"
+      >
+        {t(($) => {
+          return $.ssh.tailscale.sshDocs;
+        })}
+        <ExternalLink size={12} aria-hidden />
+      </a>
     </fieldset>
   );
 }
@@ -1012,7 +1025,7 @@ function SshHostForm({ dialog, isSaving, save }: SshFormProps) {
   const mountForm = useSet(mountSshForm$);
   const signal = useGet(pageSignal$);
   const blocked = useSshHostSaveBlocked(dialog, isSaving);
-  const { title } = useDialogCopy(dialog.kind);
+  const { title } = useDialogCopy(dialog);
   const hostEditor = dialog.kind === "create" || dialog.kind === "edit";
   const destructive = ["delete", "reset", "delete-credential"].includes(
     dialog.kind,
@@ -1122,7 +1135,7 @@ export function SshDialog() {
   const close = useSet(closeSshDialog$);
   const [saving, save] = useLoadableSet(saveSsh$);
   const dialog = data.state === "hasData" ? data.data : null;
-  const { title, description } = useDialogCopy(dialog?.kind);
+  const { title, description } = useDialogCopy(dialog);
   const isSaving = saving.state === "loading";
   if (
     !dialog ||
