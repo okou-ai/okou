@@ -2269,6 +2269,13 @@
       "when": 1792051007140,
       "tag": "1401_contract_session_conversation",
       "breakpoints": true
+    },
+    {
+      "idx": 1402,
+      "version": "7",
+      "when": 1792053651078,
+      "tag": "1402_backfill_billing_thread_attribution",
+      "breakpoints": true
     }
   ]
 }
