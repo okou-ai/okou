@@ -862,11 +862,6 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0412",
-      "file": "turbo/packages/db/scripts/test-pi-candidate-trigger-retirement.ts",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0417",
       "file": "turbo/packages/db/scripts/test-pi-memory-stage1-cost.ts",
       "owner": "validatePiMemoryStage1Cost"
