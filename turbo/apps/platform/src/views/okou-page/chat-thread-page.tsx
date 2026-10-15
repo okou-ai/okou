@@ -1,3 +1,4 @@
+import { emptyChatRunUsage$ } from "../../signals/chat-page/chat-run-usage.ts";
 import { ExternalSourceMessageAnnotation } from "./external-source-message-annotation.tsx";
 import { ChatResourcesButton } from "./chat-resources.tsx";
 import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
@@ -8140,14 +8141,21 @@ function UsageChip({
 
 function RunUsageChip({
   runId,
-  usage,
+  thread,
 }: {
   runId: string;
-  usage: ChatEventUsagePayload;
+  thread: ChatPanelSignals;
 }) {
   const { t } = useTranslation();
   const openRunId = useGet(runUsagePopoverOpenRunId$);
   const setOpenRunId = useSet(setRunUsagePopoverOpenRunId$);
+  const runUsage = useGet(thread.visibleRunUsageSignals$).find((run) => {
+    return run.runId === runId;
+  });
+  const usage = useLastResolved(runUsage?.usage$ ?? emptyChatRunUsage$);
+  if (usage === undefined) {
+    return null;
+  }
 
   return (
     <UsageChip
@@ -8384,14 +8392,16 @@ function MessageShareAction({
 function PagedGroupPrimaryActions({
   firstRunId,
   hasContent,
-  usage,
+  showRunUsage,
+  thread,
   onCopy,
   onShare,
   relatedArtifacts,
 }: {
   firstRunId: string | undefined;
   hasContent: boolean;
-  usage: ChatEventUsagePayload | undefined;
+  showRunUsage: boolean;
+  thread: ChatPanelSignals;
   onCopy: () => Promise<boolean>;
   onShare: ((revert: () => void) => void) | undefined;
   relatedArtifacts?: RunWorkSectionControl["remainingArtifactCards"];
@@ -8452,7 +8462,9 @@ function PagedGroupPrimaryActions({
       {relatedArtifacts ? (
         <RelatedArtifactsDialog cards={relatedArtifacts} />
       ) : null}
-      {usage && firstRunId && <RunUsageChip runId={firstRunId} usage={usage} />}
+      {showRunUsage && firstRunId && (
+        <RunUsageChip runId={firstRunId} thread={thread} />
+      )}
     </div>
   );
 }
@@ -8484,7 +8496,6 @@ function PagedGroupActions({
   const firstRunId = group.events.find((m) => {
     return m.runId;
   })?.runId;
-  const usage = group.usage;
   const hasContent = content.length > 0;
 
   const handleCopy = () => {
@@ -8519,7 +8530,8 @@ function PagedGroupActions({
       <PagedGroupPrimaryActions
         firstRunId={firstRunId}
         hasContent={hasContent}
-        usage={usage}
+        showRunUsage={group.showRunUsage ?? false}
+        thread={thread}
         onCopy={handleCopy}
         onShare={handleShare}
         relatedArtifacts={relatedArtifacts}
