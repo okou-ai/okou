@@ -39,7 +39,7 @@ function releasePageDom() {
 }
 
 function installVoiceBoundaries() {
-  installRunChat({ selectedModel: null });
+  installRunChat({ selectedModel: null, chatEvents: [] });
   context.mocks.data.availableRunModels([]);
   context.mocks.api(voiceIoQuotaContract.get, ({ respond }) => {
     return respond(200, { allowed: true, count: 0, limit: 60 });

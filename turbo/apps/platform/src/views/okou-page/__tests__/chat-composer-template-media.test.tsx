@@ -15,10 +15,13 @@ import {
   context,
   expectInlineTemplate,
   mockTemplateChat,
-  openTemplatePicker,
   sendComposerMessage,
   templatePart,
 } from "./chat-composer-template-gallery-test-helpers.ts";
+import {
+  buildRunModel,
+  CLAUDE_SUBSCRIPTION_PROVIDER_ID,
+} from "./chat-composer-test-helpers.ts";
 
 function buttonNamed(name: string, container: ParentNode = document.body) {
   const button = queryAllByRoleFast("button", container).find((candidate) => {
@@ -98,6 +101,12 @@ test("Preview a website template and return to its picker", async () => {
 
 test("Select and send a website template", async () => {
   const capture = mockTemplateChat();
+  context.mocks.data.availableRunModels([
+    buildRunModel({
+      model: "claude-sonnet-5",
+      modelProviderId: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
+    }),
+  ]);
   const template = WEBSITE_TEMPLATE_ITEMS[0];
   if (!template) {
     throw new Error("Website template fixture not found");
@@ -105,10 +114,10 @@ test("Select and send a website template", async () => {
   const user = userEvent.setup({ delay: null });
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/agents/${AGENT_ID}/chat?templatePicker=website`,
     host: "app.okou.ai",
   });
-  const picker = await openTemplatePicker(user, "Website");
+  const picker = await screen.findByRole("dialog");
   click(
     within(picker).getByLabelText(`Select website template ${template.title}`),
   );

@@ -7,6 +7,7 @@ import {
   type BrowserUserActionResponse,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   act,
@@ -1604,6 +1605,9 @@ test.each([
       selectedModel: null,
     });
     context.mocks.data.availableRunModels([]);
+    context.mocks.api(connectorCatalogContract.discovery, ({ respond }) => {
+      return respond(200, { connectors: [], totalConnectorCount: 0 });
+    });
     // An abandoned refresh has no page result. Observe the actual HTTP
     // boundary, then assert route ownership in the test body rather than
     // throwing inside a handler that MSW could turn into a 500 response.

@@ -60,6 +60,8 @@ export default defineConfig({
       ],
     },
     globals: true,
+    // Leave CPU capacity for page rendering, transforms and V8 coverage.
+    maxWorkers: 2,
     environment: "happy-dom",
     env: {
       VITE_CLERK_PUBLISHABLE_KEY_PREVIEW: "test_preview_key",
