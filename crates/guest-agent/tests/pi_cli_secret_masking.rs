@@ -54,6 +54,7 @@ async fn pi_masks_live_http_text_across_deltas_chunks_and_completion()
         api_url: server.base_url.clone(),
         api_token: "test-token".into(),
         cli_agent_type: "pi".into(),
+        test_pi_cli_path: Some(tmp.path().join("bin/okou").to_string_lossy().into_owned()),
         home: Some(tmp.path().to_string_lossy().into_owned()),
         run_payload_file: payload_path.to_string_lossy().into_owned(),
         guest_runtime_dir: Some(paths.runtime_dir().into()),

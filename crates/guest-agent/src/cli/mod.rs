@@ -378,6 +378,8 @@ pub(super) struct CliRuntimeConfig<'a> {
     pi_launch_config: Cow<'a, str>,
     pi_launch_payload_file: Cow<'a, str>,
     pi_model_config: Cow<'a, str>,
+    #[cfg(debug_assertions)]
+    test_pi_cli_path: Option<&'a str>,
     user_env: &'a HashMap<String, String>,
 }
 
@@ -472,6 +474,8 @@ impl<'a> CliRuntimeConfig<'a> {
             pi_launch_config: Cow::Borrowed(&config.pi_launch_config),
             pi_launch_payload_file: Cow::Borrowed(paths.pi_launch_payload_file()),
             pi_model_config: Cow::Borrowed(&config.pi_model_config),
+            #[cfg(debug_assertions)]
+            test_pi_cli_path: config.test_pi_cli_path.as_deref(),
             user_env: &config.user_env,
         })
     }
@@ -524,6 +528,14 @@ impl<'a> CliRuntimeConfig<'a> {
         }
         Cow::Owned(user_env)
     }
+
+    fn pi_cli_path(&self) -> &str {
+        #[cfg(debug_assertions)]
+        if let Some(path) = self.test_pi_cli_path {
+            return path;
+        }
+        guest_contracts::okou_cli::OKOU_CLI_LAUNCHER_PATH
+    }
 }
 
 fn user_env_value<'a>(user_env: &'a HashMap<String, String>, key: &str) -> &'a str {
@@ -542,7 +554,10 @@ fn build_pi_command_for_runtime(runtime: &CliRuntimeConfig<'_>) -> Result<Vec<St
             )));
         }
     }
-    Ok(vec!["okou".to_string(), "__agent-loop".to_string()])
+    Ok(vec![
+        runtime.pi_cli_path().to_string(),
+        "__agent-loop".to_string(),
+    ])
 }
 
 fn is_pi_memory_maintenance(runtime: &CliRuntimeConfig<'_>) -> Result<bool, AgentError> {
@@ -2461,6 +2476,8 @@ mod tests {
             pi_launch_config: String::new(),
             pi_model_config: String::new(),
             pi_session_id: String::new(),
+            #[cfg(debug_assertions)]
+            test_pi_cli_path: None,
             stuck_tool_timeout_secs: constants::STUCK_TOOL_TIMEOUT_SECS,
             post_result_sigterm_grace: Duration::from_secs(
                 constants::POST_RESULT_SIGTERM_GRACE_SECS,
@@ -2547,6 +2564,8 @@ mod tests {
             pi_launch_config: Cow::Borrowed(""),
             pi_launch_payload_file: Cow::Borrowed("/tmp/pi-launch-payload/payload.json"),
             pi_model_config: Cow::Borrowed(""),
+            #[cfg(debug_assertions)]
+            test_pi_cli_path: None,
             user_env,
         }
     }

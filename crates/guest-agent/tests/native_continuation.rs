@@ -79,6 +79,7 @@ fn runtime(
         home: Some(home.to_string_lossy().into_owned()),
         test_claude_config_dir: Some(home.join(".claude")),
         test_codex_home_dir: Some(home.join(".codex")),
+        test_pi_cli_path: Some(binary.to_string_lossy().into_owned()),
         run_payload_file: payload.to_string_lossy().into_owned(),
         user_env_file: env_path.to_string_lossy().into_owned(),
         ..GuestConfigRaw::default()

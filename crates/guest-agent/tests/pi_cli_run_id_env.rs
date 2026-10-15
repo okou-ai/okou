@@ -134,11 +134,7 @@ fi
             "00000000-0000-4000-8000-000000000abc",
         );
         std::env::set_var("HOME", tmp.path());
-        let mut paths = vec![bin_dir.clone()];
-        paths.extend(std::env::split_paths(
-            &std::env::var_os("PATH").unwrap_or_default(),
-        ));
-        std::env::set_var("PATH", std::env::join_paths(paths)?);
+        std::env::set_var("OKOU_TEST_PI_CLI_PATH", &okou);
         common::set_run_payload_file_env_for_test(
             &runtime_dir,
             &guest_contracts::env::RunPayload {
@@ -153,6 +149,9 @@ fi
         common::set_user_env_file_env_for_test(
             &runtime_dir,
             &HashMap::from([
+                // A user PATH without the installed launcher must not change
+                // which Pi runtime executes this run.
+                ("PATH".to_string(), "/usr/bin:/bin".to_string()),
                 (
                     "RUN_ID_CAPTURE_PATH".to_string(),
                     capture_path.to_string_lossy().into_owned(),

@@ -153,6 +153,7 @@ done
         ])
         .env_clear()
         .env(guest_contracts::env::CLI_AGENT_TYPE_ENV, "pi")
+        .env("OKOU_TEST_PI_CLI_PATH", &okou)
         .env(guest_contracts::env::RUN_ID_ENV, case.run_id)
         .env(
             guest_contracts::env::CANONICAL_API_URL_ENV,

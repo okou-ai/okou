@@ -124,6 +124,7 @@ fi
         api_token: "test-token".into(),
         sandbox_id: "00000000-0000-4000-8000-000000000abc".into(),
         cli_agent_type: "pi".into(),
+        test_pi_cli_path: Some(okou.to_string_lossy().into_owned()),
         home: Some(tmp.path().to_string_lossy().into_owned()),
         run_payload_file: payload_path.to_string_lossy().into_owned(),
         guest_runtime_dir: Some(paths.runtime_dir().into()),

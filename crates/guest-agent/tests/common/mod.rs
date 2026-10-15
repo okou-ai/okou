@@ -1099,6 +1099,7 @@ pub unsafe fn clear_guest_agent_bootstrap_env_for_test() {
         "OKOU_TEST_ALLOW_UNMANAGED_PROCESS_CONTROL",
         "OKOU_TEST_CLAUDE_CONFIG_DIR",
         "OKOU_TEST_CODEX_HOME_DIR",
+        "OKOU_TEST_PI_CLI_PATH",
         "MOCK_CODEX_APP_SERVER_SCENARIO",
     ] {
         unsafe {

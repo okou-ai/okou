@@ -59,11 +59,7 @@ done
             "00000000-0000-4000-8000-000000000abc",
         );
         std::env::set_var("HOME", tmp.path());
-        let mut paths = vec![bin_dir];
-        paths.extend(std::env::split_paths(
-            &std::env::var_os("PATH").unwrap_or_default(),
-        ));
-        std::env::set_var("PATH", std::env::join_paths(paths)?);
+        std::env::set_var("OKOU_TEST_PI_CLI_PATH", &okou);
         common::set_run_payload_file_env_for_test(
             &runtime_dir,
             &guest_contracts::env::RunPayload {

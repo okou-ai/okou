@@ -26,6 +26,8 @@ pub(crate) const AGENT_EXECUTION_TIMEOUT_DIAGNOSTIC: &str = "agent execution tim
 const TEST_CLAUDE_CONFIG_DIR_ENV_KEY: &str = "OKOU_TEST_CLAUDE_CONFIG_DIR";
 #[cfg(debug_assertions)]
 const TEST_CODEX_HOME_DIR_ENV_KEY: &str = "OKOU_TEST_CODEX_HOME_DIR";
+#[cfg(debug_assertions)]
+const TEST_PI_CLI_PATH_ENV_KEY: &str = "OKOU_TEST_PI_CLI_PATH";
 
 fn env_or_empty(name: &str) -> String {
     std::env::var(name).unwrap_or_default()
@@ -242,6 +244,8 @@ pub struct GuestConfigRaw {
     pub test_claude_config_dir: Option<PathBuf>,
     #[cfg(debug_assertions)]
     pub test_codex_home_dir: Option<PathBuf>,
+    #[cfg(debug_assertions)]
+    pub test_pi_cli_path: Option<String>,
     pub stuck_tool_timeout_secs: String,
     pub post_result_sigterm_grace_secs: String,
     pub post_result_total_cap_secs: String,
@@ -312,6 +316,8 @@ impl GuestConfigRaw {
             test_codex_home_dir: std::env::var_os(TEST_CODEX_HOME_DIR_ENV_KEY)
                 .filter(|value| !value.is_empty())
                 .map(PathBuf::from),
+            #[cfg(debug_assertions)]
+            test_pi_cli_path: std::env::var(TEST_PI_CLI_PATH_ENV_KEY).ok(),
             stuck_tool_timeout_secs,
             post_result_sigterm_grace_secs,
             post_result_total_cap_secs,
@@ -480,6 +486,10 @@ pub struct GuestConfig {
     /// [`guest_contracts::env::PI_SESSION_ID_ENV`] environment variable and used
     /// as Pi's native session identifier and for session-history lookup.
     pub pi_session_id: String,
+    /// Private debug-build fixture executable. Release builds always use the
+    /// Runner-installed launcher, independently of the child's `PATH`.
+    #[cfg(debug_assertions)]
+    pub test_pi_cli_path: Option<String>,
     /// Stuck-tool timeout in seconds parsed from
     /// [`guest_contracts::env::CANONICAL_STUCK_TOOL_TIMEOUT_SECS_ENV`]. Empty
     /// or invalid input uses the 300-second compiled default; the CLI loop
@@ -607,6 +617,8 @@ impl GuestConfig {
             pi_launch_config: payload.pi_launch_config,
             pi_model_config: payload.pi_model_config,
             pi_session_id: payload.pi_session_id,
+            #[cfg(debug_assertions)]
+            test_pi_cli_path: raw.test_pi_cli_path,
             stuck_tool_timeout_secs: u64_value_or(
                 guest_contracts::env::CANONICAL_STUCK_TOOL_TIMEOUT_SECS_ENV,
                 non_empty(&raw.stuck_tool_timeout_secs),

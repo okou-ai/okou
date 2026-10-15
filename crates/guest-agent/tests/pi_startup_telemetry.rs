@@ -277,6 +277,7 @@ async fn run_pi_guest_agent(
         .env_clear()
         .env(guest_contracts::env::RUN_ID_ENV, guest_run_id())
         .env("CLI_AGENT_TYPE", "pi")
+        .env("OKOU_TEST_PI_CLI_PATH", okou)
         .env(
             guest_contracts::env::CANONICAL_RUN_PAYLOAD_FILE_ENV,
             &run_payload_path,
