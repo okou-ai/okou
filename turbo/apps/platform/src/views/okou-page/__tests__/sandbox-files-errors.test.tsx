@@ -32,7 +32,7 @@ test("An unsupported schema is a stable update state while chat remains usable",
   expect(fixture.requests).toHaveLength(0);
 });
 
-test.each<Record<string, number>>([{}, { fs: 2 }])(
+test.each<Record<string, number>>([{}, { fs: 1 }, { fs: 3 }])(
   "An unsupported fs category %j shows an update state without a list call",
   async (categories) => {
     const fixture = await setupFilesPage(context, { categories });

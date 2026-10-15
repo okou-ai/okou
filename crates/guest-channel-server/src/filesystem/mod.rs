@@ -66,12 +66,12 @@ impl Owner {
     }
 }
 
-struct HomeFiles {
+struct GuestFiles {
     filesystem: Filesystem,
     owner: Option<Arc<Owner>>,
 }
 
-impl Drop for HomeFiles {
+impl Drop for GuestFiles {
     fn drop(&mut self) {
         if let Some(owner) = &self.owner {
             owner.cancelled.cancel();
@@ -134,9 +134,9 @@ impl Scope<'_> {
 }
 
 impl Filesystem {
-    /// Install the fixed home contract; neither process HOME nor cwd is used.
+    /// fs v2 captures Guest /; neither process HOME nor cwd is used.
     pub fn new() -> std::io::Result<Self> {
-        Self::start(PathBuf::from(guest_contracts::home_mount::HOME_DIR))
+        Self::start(PathBuf::from("/"))
     }
 
     fn start(root: PathBuf) -> std::io::Result<Self> {
@@ -170,7 +170,7 @@ impl Filesystem {
                     hooks: Mutex::new(Hooks::default()),
                 })
             });
-        Arc::new(HomeFiles {
+        Arc::new(GuestFiles {
             filesystem: self.clone(),
             owner,
         })
@@ -211,7 +211,7 @@ impl Filesystem {
     }
 }
 
-impl Service for HomeFiles {
+impl Service for GuestFiles {
     fn categories(&self) -> Categories {
         let mut categories = Diagnostics.categories();
         categories.insert("fs".into(), u64::from(limits::fs::VERSION));

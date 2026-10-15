@@ -103,10 +103,6 @@ function isUserVisibleFunctionName(value) {
 function getInternalAllowedLiterals() {
   return [
     [
-      "src/views/okou-page/sandbox-files-sidebar.tsx\u0000/home/user",
-      "Exact Guest filesystem root used by the fs protocol, not translatable copy",
-    ],
-    [
       "src/signals/okou-page/chat-feedback.ts\u0000a sent email (mail ID: {…}{…})",
       "locale-neutral serialized agent prompt metadata",
     ],

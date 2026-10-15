@@ -27,7 +27,7 @@ fn fixtures() -> Result<Fixtures, serde_json::Error> {
     serde_json::from_slice(include_bytes!("fixtures/sandbox-channel.json"))
 }
 fn categories() -> BTreeMap<String, u64> {
-    BTreeMap::from([("fs".to_owned(), 1), ("diagnostics".to_owned(), 1)])
+    BTreeMap::from([("fs".to_owned(), 2), ("diagnostics".to_owned(), 1)])
 }
 
 #[test]
@@ -83,11 +83,11 @@ fn ordered_category_and_role_gates() {
     let local = categories();
     let mut peer = categories();
     assert_eq!(
-        channel::operation_contract("fs", 1, "list", Role::External, &local, &peer),
+        channel::operation_contract("fs", 2, "list", Role::External, &local, &peer),
         Ok(Operation::FsList)
     );
     assert_eq!(
-        channel::operation_contract("fs", 1, "list", Role::Guest, &local, &peer),
+        channel::operation_contract("fs", 2, "list", Role::Guest, &local, &peer),
         Err(ChannelError::Forbidden)
     );
     assert_eq!(
@@ -98,9 +98,9 @@ fn ordered_category_and_role_gates() {
         channel::operation_contract("constructor", 1, "list", Role::External, &local, &peer),
         Err(ChannelError::UnsupportedCategory)
     );
-    peer.insert("fs".to_owned(), 2);
+    peer.insert("fs".to_owned(), 1);
     assert_eq!(
-        channel::operation_contract("fs", 1, "unknown", Role::External, &local, &peer),
+        channel::operation_contract("fs", 2, "unknown", Role::External, &local, &peer),
         Err(ChannelError::CategoryVersionMismatch)
     );
     assert_eq!(
@@ -144,7 +144,7 @@ fn malformed_diagnostics_payloads_use_business_error_codes() {
 
 #[test]
 fn integral_versions_utf8_and_depth_are_interoperable() {
-    let raw = br#"{"schemaVersion":1.0,"type":"hello","id":"00000000-0000-4000-8000-000000000001","categories":{"fs":1e0}}"#;
+    let raw = br#"{"schemaVersion":1.0,"type":"hello","id":"00000000-0000-4000-8000-000000000001","categories":{"fs":2e0}}"#;
     assert!(channel::decode_message(raw).is_ok());
     let mut with_bom = vec![0xef, 0xbb, 0xbf];
     with_bom.extend_from_slice(raw);
@@ -153,15 +153,15 @@ fn integral_versions_utf8_and_depth_are_interoperable() {
         Err(ChannelError::InvalidRequest)
     );
     assert!(channel::decode_message(&[0xff]).is_err());
-    let unpaired = br#"{"schemaVersion":1,"type":"request","id":"00000000-0000-4000-8000-000000000001","category":"fs","categoryVersion":1,"operation":"list","params":{"x":"\ud800"}}"#;
+    let unpaired = br#"{"schemaVersion":1,"type":"request","id":"00000000-0000-4000-8000-000000000001","category":"fs","categoryVersion":2,"operation":"list","params":{"x":"\ud800"}}"#;
     assert!(channel::decode_message(unpaired).is_err());
-    let prototype_key = br#"{"schemaVersion":1,"type":"request","id":"00000000-0000-4000-8000-000000000001","category":"fs","categoryVersion":1,"operation":"list","params":{"path":[],"__proto__":{"probe":true}}}"#;
+    let prototype_key = br#"{"schemaVersion":1,"type":"request","id":"00000000-0000-4000-8000-000000000001","category":"fs","categoryVersion":2,"operation":"list","params":{"path":[],"__proto__":{"probe":true}}}"#;
     assert!(channel::decode_message(prototype_key).is_err());
     let mut nested = Value::from(0);
     for _ in 0..66 {
         nested = Value::Array(vec![nested]);
     }
-    let envelope = json!({"schemaVersion":1,"type":"request","id":"00000000-0000-4000-8000-000000000001","category":"fs","categoryVersion":1,"operation":"list","params":{"nested":nested}});
+    let envelope = json!({"schemaVersion":1,"type":"request","id":"00000000-0000-4000-8000-000000000001","category":"fs","categoryVersion":2,"operation":"list","params":{"nested":nested}});
     assert_eq!(
         channel::decode_message(&serde_json::to_vec(&envelope).expect("nested frame")),
         Err(ChannelError::LimitExceeded)
@@ -188,7 +188,7 @@ fn frame_limit_and_schema_gate_precede_business_decode() {
         channel::decode_message(br#"{"schemaVersion":2,"future":true}"#),
         Err(ChannelError::UnsupportedSchema)
     );
-    assert!(channel::decode_hello_result(json!({"categories":{"fs":1},"extra":true})).is_err());
+    assert!(channel::decode_hello_result(json!({"categories":{"fs":2},"extra":true})).is_err());
     assert!(channel::decode_hello_result(json!({"categories":{"fs":0}})).is_err());
 }
 

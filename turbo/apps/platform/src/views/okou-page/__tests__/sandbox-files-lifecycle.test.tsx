@@ -11,6 +11,7 @@ import {
 import {
   entry,
   filesButton,
+  filesPath,
   listing,
   openFiles,
   setupFilesPage,
@@ -23,7 +24,10 @@ test("Collapsing an in-flight folder closes its late cursor without publishing s
   const response = createDeferredPromise<FilesReply>(context.signal);
   const fixture = await setupFilesPage(context, {
     handler: (request) => {
-      if (Array.isArray(request.params.path) && request.params.path.length) {
+      if (
+        Array.isArray(request.params.path) &&
+        request.params.path.length > 2
+      ) {
         return response.promise;
       }
       return listing();
@@ -57,7 +61,8 @@ test("Refreshing home invalidates pending descendants and releases their termina
   const response = createDeferredPromise<FilesReply>(context.signal);
   const fixture = await setupFilesPage(context, {
     handler: (request) => {
-      return Array.isArray(request.params.path) && request.params.path.length
+      return Array.isArray(request.params.path) &&
+        request.params.path.length > 2
         ? response.promise
         : listing();
     },
@@ -96,7 +101,7 @@ test("Reconnect repeats readiness and reloads home while rejecting old-epoch dat
       if (
         connection === 0 &&
         Array.isArray(request.params.path) &&
-        request.params.path.length
+        request.params.path.length > 2
       ) {
         return response.promise;
       }
@@ -222,8 +227,14 @@ test("Files follows its initiating pane and switching to the other thread releas
 test("An event-derived replacement Run clears the old directory and opens only the new peer", async () => {
   const fixture = await setupFilesPage(context, {
     twoThreads: true,
-    handler: (_request, connection) => {
-      return listing([entry(connection === 0 ? "old-run.txt" : "new-run.txt")]);
+    handler: (request, connection) => {
+      if (connection > 0) {
+        return listing([entry("new-run.txt")]);
+      }
+      return Array.isArray(request.params.path) &&
+        request.params.path.length > 2
+        ? listing([entry("selected-old-run.txt")])
+        : listing([entry("workspace", "directory"), entry("old-run.txt")]);
     },
   });
   const leftPane = screen.getAllByRole("region", { name: "Chat thread" })[0];
@@ -235,6 +246,10 @@ test("An event-derived replacement Run clears the old directory and opens only t
   const panel = await screen.findByRole("region", { name: "Files" });
   await expect(
     within(panel).findByText("old-run.txt"),
+  ).resolves.toBeInTheDocument();
+  click(filesButton("Open workspace as current folder", panel));
+  await expect(
+    within(panel).findByText("selected-old-run.txt"),
   ).resolves.toBeInTheDocument();
   const rows = mockChatEventRows(
     normalizeMockChatEvents(
@@ -276,6 +291,19 @@ test("An event-derived replacement Run clears the old directory and opens only t
     within(panel).findByText("new-run.txt"),
   ).resolves.toBeInTheDocument();
   expect(within(panel).queryByText("old-run.txt")).toBeNull();
+  expect(within(panel).queryByText("selected-old-run.txt")).toBeNull();
+  expect(
+    within(panel)
+      .getByRole("navigation", { name: "Current folder" })
+      .querySelector('[aria-current="location"]'),
+  ).toHaveTextContent("user");
+  expect(
+    fixture.requests
+      .filter((request) => {
+        return request.operation === "list";
+      })
+      .at(-1)?.params.path,
+  ).toStrictEqual(filesPath("home", "user"));
   expect(fixture.sockets[0]?.readyState).toBe(WebSocket.CLOSED);
   expect(fixture.bootstraps.at(-1)).toBe(
     "d0000000-0000-4000-a000-000000000966",

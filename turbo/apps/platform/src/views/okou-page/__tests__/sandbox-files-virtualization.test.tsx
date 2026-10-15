@@ -16,7 +16,8 @@ const context = testContext();
 test("The Files virtual viewport scrolls, resizes and retains a focused folder", async () => {
   await setupFilesPage(context, {
     handler: (request) => {
-      return Array.isArray(request.params.path) && request.params.path.length
+      return Array.isArray(request.params.path) &&
+        request.params.path.length > 2
         ? listing([entry("inside.txt")], null, "child")
         : listing(
             Array.from({ length: 128 }, (_unused, index) => {

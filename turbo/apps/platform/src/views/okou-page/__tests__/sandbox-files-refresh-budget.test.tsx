@@ -20,7 +20,7 @@ test("Replacing a directory frees its cached descendants before the refresh quot
     handler: (request) => {
       if (
         Array.isArray(request.params.path) &&
-        request.params.path.length === 0
+        request.params.path.length === 2
       ) {
         return replaced
           ? listing([entry("replacement", "directory"), entry("new.txt")])

@@ -5,6 +5,7 @@ import {
   Folder,
   Link,
   RefreshCw,
+  ArrowRightToLine,
 } from "lucide-react";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -29,6 +30,8 @@ import {
 } from "../../signals/chat-page/sandbox-files-virtual-list.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import { filesLocationLabel } from "../../signals/chat-page/sandbox-files-location.ts";
+import { SandboxFilesBreadcrumb } from "./sandbox-files-breadcrumb.tsx";
 
 function FilesErrorMessage({ error }: { readonly error: FilesError }) {
   const { t } = useTranslation();
@@ -68,33 +71,61 @@ function FilesRow({
   const signal = useGet(pageSignal$);
   const toggle = useSet(signals.toggle$);
   const more = useSet(signals.more$);
+  const enter = useSet(signals.enter$);
+  const location = useGet(signals.location$);
+  const navigating = useGet(signals.navigating$);
   if (row.type === "entry") {
     const { entry } = row;
     if (entry.kind === "directory") {
       return (
-        <Button
-          type="button"
-          variant="quiet"
-          size="sm"
-          className="h-11 w-full justify-start gap-2"
-          aria-expanded={row.expanded}
-          onClick={() => {
-            detach(
-              toggle([...row.path, entry.nameToken], signal),
-              Reason.DomCallback,
-            );
-          }}
-        >
-          {row.expanded ? (
-            <ChevronDown size={14} />
-          ) : (
-            <ChevronRight size={14} />
-          )}
-          <Folder size={16} className="shrink-0 text-muted-foreground" />
-          <span className="min-w-0 truncate" title={entry.displayName}>
-            {entry.displayName}
-          </span>
-        </Button>
+        <div className="group/files-row flex h-11 min-w-0 items-center gap-1">
+          <Button
+            type="button"
+            variant="quiet"
+            size="sm"
+            className="h-11 min-w-0 flex-1 justify-start gap-2"
+            aria-expanded={row.expanded}
+            disabled={navigating}
+            focusableWhenDisabled
+            onClick={() => {
+              detach(
+                toggle([...row.path, entry.nameToken], signal),
+                Reason.DomCallback,
+              );
+            }}
+          >
+            {row.expanded ? (
+              <ChevronDown size={14} />
+            ) : (
+              <ChevronRight size={14} />
+            )}
+            <Folder size={16} className="shrink-0 text-muted-foreground" />
+            <span className="min-w-0 truncate" title={entry.displayName}>
+              {entry.displayName}
+            </span>
+          </Button>
+          <Button
+            type="button"
+            variant="quiet"
+            size="icon-sm"
+            showTooltip
+            className="shrink-0 [@media(pointer:coarse)]:size-10 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/files-row:opacity-100 group-focus-within/files-row:opacity-100"
+            aria-label={t(
+              ($) => {
+                return $.chat.files.enterFolder;
+              },
+              { name: entry.displayName },
+            )}
+            onClick={() => {
+              detach(
+                enter(location, [...row.path, entry.nameToken], signal),
+                Reason.DomCallback,
+              );
+            }}
+          >
+            <ArrowRightToLine size={16} />
+          </Button>
+        </div>
       );
     }
     return (
@@ -132,7 +163,7 @@ function FilesRow({
         variant="quiet"
         size="sm"
         className="h-11"
-        disabled={row.directory.loading}
+        disabled={row.directory.loading || navigating}
         focusableWhenDisabled
         aria-busy={row.directory.loading}
         onClick={() => {
@@ -275,7 +306,14 @@ function FilesRefreshControl({
             }
           />
           <TooltipContent role="tooltip" side="bottom">
-            {error ? (
+            {failure?.location && error !== "updateRequired" ? (
+              t(
+                ($) => {
+                  return $.chat.files.navigationFailed;
+                },
+                { path: filesLocationLabel(failure.location) },
+              )
+            ) : error ? (
               <FilesErrorMessage error={error} />
             ) : (
               t(($) => {
@@ -287,7 +325,16 @@ function FilesRefreshControl({
       </TooltipProvider>
       {phase === "ready" && error && (
         <span id={errorId} role="status" className="sr-only">
-          <FilesErrorMessage error={error} />
+          {failure?.location && error !== "updateRequired" ? (
+            t(
+              ($) => {
+                return $.chat.files.navigationFailed;
+              },
+              { path: filesLocationLabel(failure.location) },
+            )
+          ) : (
+            <FilesErrorMessage error={error} />
+          )}
         </span>
       )}
     </>
@@ -322,9 +369,7 @@ export function SandboxFilesSidebarBody({
   return (
     <>
       <div className="flex items-center gap-2 px-4 py-2">
-        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-          /home/user
-        </span>
+        <SandboxFilesBreadcrumb signals={signals} />
         <FilesRefreshControl signals={signals} errorId={errorId} />
       </div>
       {phase === "ready" ? (

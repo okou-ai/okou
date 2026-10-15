@@ -27,7 +27,8 @@ test("Foreground refresh updates expanded files silently and stops after close",
   let generation = 0;
   const fixture = await setupFilesPage(context, {
     handler: (request) => {
-      return Array.isArray(request.params.path) && request.params.path.length
+      return Array.isArray(request.params.path) &&
+        request.params.path.length > 2
         ? listing([entry(generation ? "fresh.txt" : "old.txt")], null, "child")
         : listing();
     },
@@ -374,7 +375,10 @@ test("Removing a failed directory retains focus on the same refresh control", as
   let removed = false;
   await setupFilesPage(context, {
     handler: (request) => {
-      if (Array.isArray(request.params.path) && request.params.path.length) {
+      if (
+        Array.isArray(request.params.path) &&
+        request.params.path.length > 2
+      ) {
         return fail
           ? { error: { code: "forbidden" } }
           : listing([entry("inside.txt")], null, "child");
@@ -417,7 +421,10 @@ test("Retrying a failed folder keeps the toolbar focused and inert until it sett
   let state: "healthy" | "failed" | "retry" = "healthy";
   await setupFilesPage(context, {
     handler: (request) => {
-      if (!Array.isArray(request.params.path) || !request.params.path.length) {
+      if (
+        !Array.isArray(request.params.path) ||
+        request.params.path.length === 2
+      ) {
         return listing();
       }
       if (state === "retry") {

@@ -59,6 +59,34 @@ export function listing(
 ): FilesReply {
   return { result: { listingId, entries, nextCursor } };
 }
+export function filesPath(...names: string[]): string[] {
+  return names.map((name) => {
+    return entry(name).nameToken;
+  });
+}
+export function navigationListing(request: FilesRequest): FilesReply {
+  const tree: Record<string, ReturnType<typeof entry>[]> = {
+    [JSON.stringify([])]: [entry("home", "directory"), entry("root.txt")],
+    [JSON.stringify(filesPath("home"))]: [entry("user", "directory")],
+    [JSON.stringify(filesPath("home", "user"))]: [
+      entry("workspace", "directory"),
+      entry("reports", "directory"),
+      entry("home.txt"),
+    ],
+    [JSON.stringify(filesPath("home", "user", "workspace"))]: [
+      entry("nested", "directory"),
+      entry("workspace.txt"),
+    ],
+    [JSON.stringify(filesPath("home", "user", "workspace", "nested"))]: [
+      entry("nested.txt"),
+    ],
+    [JSON.stringify(filesPath("home", "user", "reports"))]: [
+      entry("report.txt"),
+    ],
+  };
+  const entries = tree[JSON.stringify(request.params.path)];
+  return entries ? listing(entries) : { error: { code: "not_found" } };
+}
 export function filesButton(
   name: string,
   container: ParentNode = document.body,
@@ -74,6 +102,15 @@ export function filesButton(
   }
   return button;
 }
+export function filesMenuItem(name: string): HTMLElement {
+  const item = queryAllByRoleFast("menuitem").find((candidate) => {
+    return candidate.textContent?.trim() === name;
+  });
+  if (!item) {
+    throw new Error(`Expected Files menu item ${name}`);
+  }
+  return item;
+}
 export async function setupFilesPage(
   context: TestContext,
   options: {
@@ -81,6 +118,7 @@ export async function setupFilesPage(
       request: FilesRequest,
       connection: number,
     ) => FilesReply | Promise<FilesReply>;
+    readonly closeHandler?: () => FilesReply | Promise<FilesReply>;
     readonly categories?: Record<string, number>;
     readonly active?: boolean;
     readonly queued?: boolean;
@@ -142,7 +180,7 @@ export async function setupFilesPage(
           request.id,
           options.helloError
             ? { error: options.helloError }
-            : { result: { categories: options.categories ?? { fs: 1 } } },
+            : { result: { categories: options.categories ?? { fs: 2 } } },
         );
       } else if (request.type === "request") {
         requests.push(request);
@@ -158,7 +196,7 @@ export async function setupFilesPage(
     async respond(request: FilesRequest): Promise<void> {
       const response =
         request.operation === "list.close"
-          ? { result: {} }
+          ? await (options.closeHandler?.() ?? { result: {} })
           : await (options.handler?.(request, this.index) ?? listing());
       context.signal.throwIfAborted();
       if (this.readyState === Socket.OPEN) {

@@ -289,7 +289,7 @@ pub mod sandbox_channel {
         pub const PROCESSING_BUDGET_MS: u32 = 2000;
 
         /// Shared finite policy: version.
-        pub const VERSION: u32 = 1;
+        pub const VERSION: u32 = 2;
     }
 }
 

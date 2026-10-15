@@ -38,6 +38,14 @@ import {
   createSandboxFilesVirtualListSignals,
   filesDirectoryKey,
 } from "./sandbox-files-virtual-list.ts";
+import {
+  FILES_HOME_LOCATION,
+  FILES_VIEW_BYTES,
+  filesLocationTokens,
+  retainFilesViewPreferences,
+  type FilesLocation,
+  type FilesViewPreference,
+} from "./sandbox-files-location.ts";
 
 export type FilesEntry = z.infer<
   typeof sandboxFsListResultSchema
@@ -46,6 +54,7 @@ export type FilesError = "unavailable" | "updateRequired" | "stale" | "limit";
 interface FilesFailure {
   readonly path: readonly string[];
   readonly error: FilesError;
+  readonly location?: FilesLocation;
 }
 export interface FilesDirectory {
   readonly id: number;
@@ -63,6 +72,10 @@ interface Connection {
   readonly peer: SandboxChannelPeer;
   readonly epoch: number;
   readonly sessionKey: string;
+}
+interface NavigationRequest {
+  readonly connection: Connection;
+  readonly location: FilesLocation;
 }
 const MAX_ENTRIES = 4096;
 const MAX_BYTES = 4 * 1024 * 1024;
@@ -111,7 +124,7 @@ function withinBudget(
       );
     }, 0) +
       retained.length * 32 <=
-      MAX_BYTES
+      MAX_BYTES - FILES_VIEW_BYTES
   );
 }
 
@@ -143,6 +156,14 @@ function createFilesGraph(chatEvents$: Computed<ChatEvent[]>) {
     resetDemand$: resetSignal(),
     resetPolling$: resetSignal(),
     limit$: state(false),
+    location$: state<FilesLocation>(FILES_HOME_LOCATION),
+    locationOwner$: state<string | null>(null),
+    preferences$: state<ReadonlyMap<string, FilesViewPreference>>(new Map()),
+    navigation$: state<NavigationRequest | null>(null),
+    navigationFailure$: state<{
+      readonly location: FilesLocation;
+      readonly error: FilesError;
+    } | null>(null),
     activeRunId$: computed((get) => {
       return liveRunIdsFromChatEvents(get(chatEvents$)).at(-1) ?? null;
     }),
@@ -261,7 +282,9 @@ function createPrepareListingCommand(graph: FilesGraph) {
       if (previous?.loading) {
         return null;
       }
-      let params: z.infer<typeof sandboxFsList.params> = { path: [...path] };
+      let params: z.infer<typeof sandboxFsList.params> = {
+        path: [...filesLocationTokens(get(graph.location$)), ...path],
+      };
       if (more) {
         if (!previous?.cursor) {
           return null;
@@ -595,9 +618,7 @@ function createCollectFreshListingCommand(cursors: CursorCommands) {
         const result = await tapError(
           connection.peer.call(
             sandboxFsList,
-            fresh.cursor
-              ? { cursor: fresh.cursor }
-              : { path: [...directory.path] },
+            fresh.cursor ? { cursor: fresh.cursor } : request.params,
             signal,
           ),
           (error) => {
@@ -699,7 +720,9 @@ function createAutomaticRefreshCommand(
         key,
         directory,
         more: false,
-        params: { path: [...path] },
+        params: {
+          path: [...filesLocationTokens(get(graph.location$)), ...path],
+        },
       };
       set(
         graph.directories$,
@@ -777,6 +800,427 @@ function createAutomaticRefreshCommand(
   );
 }
 
+function createNavigationSnapshotCommands(
+  graph: FilesGraph,
+  cursors: CursorCommands,
+) {
+  const remember$ = command(({ get, set }) => {
+    const directories = get(graph.directories$);
+    const root = directories.get(filesDirectoryKey([]));
+    if (!root?.listingId) {
+      return;
+    }
+    set(
+      graph.preferences$,
+      retainFilesViewPreferences(
+        get(graph.preferences$),
+        get(graph.location$),
+        {
+          rootEntries: root.entries.length,
+          expanded: [...directories.values()]
+            .filter((directory) => {
+              return directory.path.length > 0;
+            })
+            .sort((a, b) => {
+              return a.path.length - b.path.length;
+            })
+            .slice(0, 7)
+            .map((directory) => {
+              return {
+                path: directory.path,
+                entries: directory.entries.length,
+              };
+            }),
+          scrollTop: get(graph.virtual.scroll.scrollMetrics$).scrollTop,
+        },
+      ),
+    );
+  });
+  const current$ = command(({ get, set }, request: NavigationRequest) => {
+    return (
+      get(graph.navigation$) === request &&
+      set(cursors.live$, request.connection)
+    );
+  });
+  const close$ = command(
+    async (
+      { set },
+      connection: Connection,
+      handles: readonly string[],
+      signal: AbortSignal,
+    ): Promise<void> => {
+      for (const handle of new Set(handles)) {
+        await set(
+          cursors.close$,
+          connection.peer,
+          connection.epoch,
+          handle,
+          signal,
+        );
+      }
+    },
+  );
+  return { remember$, current$, close$ };
+}
+type NavigationSnapshotCommands = ReturnType<
+  typeof createNavigationSnapshotCommands
+>;
+
+function createNavigationRestoreCommand(
+  graph: FilesGraph,
+  listing: ListingCommands,
+  snapshot: NavigationSnapshotCommands,
+) {
+  const { current$ } = snapshot;
+  const restoreDirectory$ = command(
+    async (
+      { get, set },
+      request: NavigationRequest,
+      path: readonly string[],
+      entries: number,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      if (!set(current$, request)) {
+        return;
+      }
+      const key = filesDirectoryKey(path);
+      if (!get(graph.directories$).has(key)) {
+        await set(listing.load$, path, false, signal);
+      }
+      for (let page = 0; page < MAX_REFRESH_PAGES; page++) {
+        signal.throwIfAborted();
+        const directory = get(graph.directories$).get(key);
+        if (
+          !set(current$, request) ||
+          !directory?.cursor ||
+          directory.error ||
+          directory.entries.length >= entries
+        ) {
+          return;
+        }
+        await set(listing.load$, path, true, signal);
+      }
+    },
+  );
+  const restore$ = command(
+    async (
+      { get, set },
+      request: NavigationRequest,
+      preference: FilesViewPreference | undefined,
+      focus: boolean,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      if (preference) {
+        await set(
+          restoreDirectory$,
+          request,
+          [],
+          preference.rootEntries,
+          signal,
+        );
+        for (const directory of preference.expanded) {
+          if (!set(current$, request)) {
+            return;
+          }
+          await set(
+            restoreDirectory$,
+            request,
+            directory.path,
+            directory.entries,
+            signal,
+          );
+        }
+      }
+      if (
+        set(current$, request) &&
+        get(graph.virtual.scroll.scrollMetrics$).scrollTop === 0
+      ) {
+        set(graph.virtual.restore$, preference?.scrollTop ?? 0, focus, signal);
+      }
+    },
+  );
+  return restore$;
+}
+
+function createNavigationPerformCommand(
+  graph: FilesGraph,
+  snapshot: NavigationSnapshotCommands,
+  restore$: ReturnType<typeof createNavigationRestoreCommand>,
+) {
+  const { current$, close$ } = snapshot;
+  const perform$ = command(
+    async (
+      { get, set },
+      request: NavigationRequest,
+      location: FilesLocation,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      const handles: string[] = [];
+      const frozen = new Map<string, FilesDirectory>();
+      for (const [key, directory] of get(graph.directories$)) {
+        const revision = get(graph.revision$) + 1;
+        set(graph.revision$, revision);
+        if (directory.cursor) {
+          handles.push(directory.cursor);
+        }
+        frozen.set(key, {
+          ...directory,
+          revision,
+          loading: false,
+          cursor: null,
+          error:
+            directory.cursor || directory.loading ? "stale" : directory.error,
+        });
+      }
+      set(graph.directories$, frozen);
+      set(graph.virtual.reconcileFocus$);
+      // Free the old view's finite cursor slots before requesting a new one.
+      // Its readable rows remain; invalidated requests can only close results.
+      await set(close$, request.connection, handles, signal);
+      if (!set(current$, request)) {
+        return;
+      }
+      const result = await tapError(
+        request.connection.peer.call(
+          sandboxFsList,
+          { path: filesLocationTokens(location) },
+          signal,
+        ),
+        (error) => {
+          if (set(current$, request)) {
+            set(graph.navigationFailure$, {
+              location,
+              error: filesError(error),
+            });
+          }
+        },
+      );
+      signal.throwIfAborted();
+      if (!result) {
+        return;
+      }
+      if (!set(current$, request)) {
+        if (result.nextCursor) {
+          await set(close$, request.connection, [result.nextCursor], signal);
+        }
+        return;
+      }
+      const revision = get(graph.revision$) + 1;
+      set(graph.revision$, revision);
+      const directory = appendPage(
+        {
+          id: revision,
+          revision,
+          path: [],
+          entries: [],
+          entryBytes: 0,
+          loading: false,
+          listingId: null,
+          cursor: null,
+          error: null,
+        },
+        result,
+      );
+      const next = new Map([[filesDirectoryKey([]), directory]]);
+      if (!withinBudget(next)) {
+        set(graph.navigationFailure$, { location, error: "limit" });
+        if (result.nextCursor) {
+          await set(close$, request.connection, [result.nextCursor], signal);
+        }
+        return;
+      }
+      const preference = get(graph.preferences$).get(
+        filesDirectoryKey(filesLocationTokens(location)),
+      );
+      set(graph.location$, location);
+      set(graph.directories$, next);
+      set(graph.limit$, false);
+      set(graph.navigationFailure$, null);
+      set(graph.virtual.reset$);
+      set(graph.virtual.restore$, 0, true, signal);
+      await set(restore$, request, preference, false, signal);
+    },
+  );
+  return perform$;
+}
+
+function createNavigationInitializeCommand(
+  graph: FilesGraph,
+  listing: ListingCommands,
+  snapshot: NavigationSnapshotCommands,
+  restore$: ReturnType<typeof createNavigationRestoreCommand>,
+) {
+  const { current$ } = snapshot;
+  const initialize$ = command(
+    async ({ get, set }, signal: AbortSignal): Promise<void> => {
+      const connection = get(graph.connection$);
+      if (!connection) {
+        return;
+      }
+      const request = {
+        connection,
+        location: get(graph.location$),
+      };
+      set(graph.navigation$, request);
+      await withCleanup(
+        (async () => {
+          await set(listing.load$, [], false, signal);
+          if (
+            set(current$, request) &&
+            !get(graph.directories$).get(filesDirectoryKey([]))?.error
+          ) {
+            await set(
+              restore$,
+              request,
+              get(graph.preferences$).get(
+                filesDirectoryKey(filesLocationTokens(get(graph.location$))),
+              ),
+              false,
+              signal,
+            );
+          }
+        })(),
+        () => {
+          if (get(graph.navigation$) === request) {
+            set(graph.navigation$, null);
+          }
+        },
+      );
+    },
+  );
+  return initialize$;
+}
+
+function createNavigationEnterCommand(
+  graph: FilesGraph,
+  navigate$: Command<Promise<void>, [FilesLocation, AbortSignal]>,
+) {
+  const enter$ = command(
+    async (
+      { get, set },
+      origin: FilesLocation,
+      path: readonly string[],
+      signal: AbortSignal,
+    ): Promise<void> => {
+      if (
+        filesDirectoryKey(filesLocationTokens(origin)) !==
+        filesDirectoryKey(filesLocationTokens(get(graph.location$)))
+      ) {
+        return;
+      }
+      const location = [...get(graph.location$)];
+      for (let index = 0; index < path.length; index++) {
+        const entry = get(graph.directories$)
+          .get(filesDirectoryKey(path.slice(0, index)))
+          ?.entries.find((candidate) => {
+            return (
+              candidate.nameToken === path[index] &&
+              candidate.kind === "directory"
+            );
+          });
+        if (!entry) {
+          return;
+        }
+        location.push({
+          nameToken: entry.nameToken,
+          displayName: entry.displayName,
+        });
+      }
+      await set(navigate$, location, signal);
+    },
+  );
+  return enter$;
+}
+
+function createNavigationCommands(
+  graph: FilesGraph,
+  listing: ListingCommands,
+  cursors: CursorCommands,
+) {
+  const snapshot = createNavigationSnapshotCommands(graph, cursors);
+  const { remember$ } = snapshot;
+  const restore$ = createNavigationRestoreCommand(graph, listing, snapshot);
+  const perform$ = createNavigationPerformCommand(graph, snapshot, restore$);
+  const navigate$ = command(
+    async (
+      { get, set },
+      location: FilesLocation,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      signal.throwIfAborted();
+      const connection = get(graph.connection$);
+      if (
+        !connection ||
+        connection.peer.state !== "ready" ||
+        !set(cursors.live$, connection)
+      ) {
+        return;
+      }
+      const locationKey = filesDirectoryKey(filesLocationTokens(location));
+      const pending = get(graph.navigation$);
+      if (
+        (pending?.connection === connection &&
+          filesDirectoryKey(filesLocationTokens(pending.location)) ===
+            locationKey) ||
+        (!pending &&
+          !get(graph.navigationFailure$) &&
+          !get(graph.limit$) &&
+          locationKey ===
+            filesDirectoryKey(filesLocationTokens(get(graph.location$))) &&
+          get(graph.directories$).get(filesDirectoryKey([]))?.listingId)
+      ) {
+        return;
+      }
+      if (
+        new TextEncoder().encode(JSON.stringify(location)).byteLength >
+        FILES_VIEW_BYTES / 2 - 1024
+      ) {
+        set(graph.navigation$, null);
+        set(graph.navigationFailure$, null);
+        set(graph.limit$, true);
+        return;
+      }
+      set(remember$);
+      const preferences = new Map(get(graph.preferences$));
+      for (const key of preferences.keys()) {
+        if (
+          new TextEncoder().encode(
+            JSON.stringify({
+              current: get(graph.location$),
+              target: location,
+              preferences: [...preferences],
+            }),
+          ).byteLength <= FILES_VIEW_BYTES
+        ) {
+          break;
+        }
+        preferences.delete(key);
+      }
+      set(graph.preferences$, preferences);
+      const request = { connection, location };
+      set(graph.navigation$, request);
+      set(graph.navigationFailure$, null);
+      await withCleanup(set(perform$, request, location, signal), () => {
+        if (get(graph.navigation$) === request) {
+          set(graph.navigation$, null);
+        }
+      });
+    },
+  );
+  return {
+    navigate$,
+    initialize$: createNavigationInitializeCommand(
+      graph,
+      listing,
+      snapshot,
+      restore$,
+    ),
+    remember$,
+    enter$: createNavigationEnterCommand(graph, navigate$),
+  };
+}
+type NavigationCommands = ReturnType<typeof createNavigationCommands>;
+
 function createPollingCommands(
   graph: FilesGraph,
   refresh$: Command<Promise<void>, [readonly string[], AbortSignal]>,
@@ -811,7 +1255,12 @@ function createPollingCommands(
   );
   const tick$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
-      if (signal.aborted || document.hidden || get(busy$)) {
+      if (
+        signal.aborted ||
+        document.hidden ||
+        get(busy$) ||
+        get(graph.navigation$)
+      ) {
         return;
       }
       set(busy$, true);
@@ -844,7 +1293,11 @@ function createPollingCommands(
   });
 }
 
-function createConnectionCommands(graph: FilesGraph, listing: ListingCommands) {
+function createConnectionCommands(
+  graph: FilesGraph,
+  listing: ListingCommands,
+  navigation: NavigationCommands,
+) {
   const startPolling$ = createPollingCommands(graph, listing.automaticRefresh$);
   const peerState$ = command(
     (
@@ -859,6 +1312,9 @@ function createConnectionCommands(graph: FilesGraph, listing: ListingCommands) {
       }
       if (state === "connecting" || state === "reconnecting") {
         set(graph.resetPolling$);
+        set(navigation.remember$);
+        set(graph.navigation$, null);
+        set(graph.navigationFailure$, null);
         set(graph.directories$, new Map());
         set(graph.virtual.reset$);
         set(graph.limit$, false);
@@ -877,12 +1333,14 @@ function createConnectionCommands(graph: FilesGraph, listing: ListingCommands) {
         set(graph.phase$, "ready");
         set(startPolling$, signal);
         detach(
-          set(listing.load$, [], false, signal),
+          set(navigation.initialize$, signal),
           Reason.Daemon,
-          "load sandbox home for the current epoch",
+          "load the current sandbox directory for this epoch",
         );
       } else if (state === "failed" || state === "closed") {
         set(graph.resetPolling$);
+        set(graph.navigation$, null);
+        set(graph.navigationFailure$, null);
         if (get(graph.connection$)?.peer !== peer) {
           return;
         }
@@ -910,6 +1368,13 @@ function createConnectionCommands(graph: FilesGraph, listing: ListingCommands) {
         get(graph.ownerKey$) !== get(authenticatedSessionKey$)
       ) {
         return;
+      }
+      const owner = `${get(graph.ownerKey$)}:${runId}`;
+      if (get(graph.locationOwner$) !== owner) {
+        set(graph.locationOwner$, owner);
+        set(graph.location$, FILES_HOME_LOCATION);
+        set(graph.preferences$, new Map());
+        set(graph.navigationFailure$, null);
       }
       const peer = createBrowserSandboxChannelPeer(runId, get(apiClient$), {
         categories: [sandboxFsCategory],
@@ -943,6 +1408,7 @@ function createDemandCommands(
   chatEvents$: Computed<ChatEvent[]>,
   startRun$: Command<void, [string, AbortSignal]>,
   closeSidebar$: Command<void, []>,
+  rememberView$: Command<void, []>,
 ) {
   const subscription = createActiveRunSubscription(
     chatEvents$,
@@ -969,13 +1435,19 @@ function createDemandCommands(
           if (get(graph.mountVersion$) !== version) {
             return;
           }
+          set(rememberView$);
           set(graph.resetDemand$);
           set(graph.mounted$, false);
+          set(graph.navigation$, null);
+          set(graph.navigationFailure$, null);
           set(graph.directories$, new Map());
           if (
             !get(featureSwitch$)[FeatureSwitchKey.SandboxFilesSidebar] ||
             sessionKey !== get(authenticatedSessionKey$)
           ) {
+            set(graph.location$, FILES_HOME_LOCATION);
+            set(graph.preferences$, new Map());
+            set(graph.locationOwner$, null);
             set(closeSidebar$);
           }
         },
@@ -996,7 +1468,11 @@ function createDemandCommands(
   return { mount$, retry$ };
 }
 
-function createFilesActions(graph: FilesGraph, listing: ListingCommands) {
+function createFilesActions(
+  graph: FilesGraph,
+  listing: ListingCommands,
+  navigation: NavigationCommands,
+) {
   const refreshRequest$ = state<{ readonly connection: Connection } | null>(
     null,
   );
@@ -1006,6 +1482,9 @@ function createFilesActions(graph: FilesGraph, listing: ListingCommands) {
       path: readonly string[],
       signal: AbortSignal,
     ): Promise<void> => {
+      if (get(graph.navigation$)) {
+        return;
+      }
       if (get(graph.directories$).has(filesDirectoryKey(path))) {
         await set(listing.discard$, path, signal);
       } else {
@@ -1019,10 +1498,22 @@ function createFilesActions(graph: FilesGraph, listing: ListingCommands) {
       path: readonly string[],
       signal: AbortSignal,
     ): Promise<void> => {
+      const failedNavigation = get(graph.navigationFailure$);
+      if (failedNavigation) {
+        await set(navigation.navigate$, failedNavigation.location, signal);
+        return;
+      }
       const connection = get(graph.connection$);
+      const location = get(graph.location$);
       await set(listing.discard$, path, signal);
       signal.throwIfAborted();
-      if (connection && connection === get(graph.connection$)) {
+      if (
+        connection &&
+        connection === get(graph.connection$) &&
+        location === get(graph.location$) &&
+        !get(graph.navigation$) &&
+        !get(graph.navigationFailure$)
+      ) {
         await set(listing.load$, path, false, signal);
       }
     },
@@ -1050,13 +1541,17 @@ function createFilesActions(graph: FilesGraph, listing: ListingCommands) {
     const request = get(refreshRequest$);
     return (
       get(graph.phase$) === "connecting" ||
+      get(graph.navigation$)?.connection === get(graph.connection$) ||
       get(graph.directoriesView$).get(filesDirectoryKey([]))?.loading ===
         true ||
       (request !== null && request.connection === get(graph.connection$))
     );
   });
   const more$ = command(
-    ({ set }, path: readonly string[], signal: AbortSignal) => {
+    ({ get, set }, path: readonly string[], signal: AbortSignal) => {
+      if (get(graph.navigation$)) {
+        return Promise.resolve();
+      }
       return set(listing.load$, path, true, signal);
     },
   );
@@ -1069,16 +1564,28 @@ export function createSandboxFilesSidebarSignals(
   closeSidebar$: Command<void, []>,
 ) {
   const graph = createFilesGraph(chatEvents$);
-  const listing = createListingCommands(graph, createCursorCommands(graph));
-  const connection = createConnectionCommands(graph, listing);
+  const cursors = createCursorCommands(graph);
+  const listing = createListingCommands(graph, cursors);
+  const navigation = createNavigationCommands(graph, listing, cursors);
+  const connection = createConnectionCommands(graph, listing, navigation);
   return {
     ...createDemandCommands(
       graph,
       chatEvents$,
       connection.startRun$,
       closeSidebar$,
+      navigation.remember$,
     ),
-    ...createFilesActions(graph, listing),
+    ...createFilesActions(graph, listing, navigation),
+    enter$: navigation.enter$,
+    navigate$: navigation.navigate$,
+    location$: computed((get) => {
+      return get(graph.location$);
+    }),
+    navigating$: computed((get) => {
+      const request = get(graph.navigation$);
+      return request !== null && request.connection === get(graph.connection$);
+    }),
     activeRunId$: graph.activeRunId$,
     pending$: graph.pending$,
     virtual: graph.virtual,
@@ -1086,6 +1593,13 @@ export function createSandboxFilesSidebarSignals(
       return get(graph.phase$);
     }),
     failure$: computed((get): FilesFailure | null => {
+      const navigationFailure = get(graph.navigationFailure$);
+      if (navigationFailure) {
+        return { path: [], ...navigationFailure };
+      }
+      if (get(graph.navigation$)) {
+        return null;
+      }
       for (const directory of get(graph.directories$).values()) {
         if (directory.error) {
           return { path: directory.path, error: directory.error };

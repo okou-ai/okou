@@ -27,7 +27,10 @@ test("Files connects only on demand, browses raw names and paginates without dup
           null,
         );
       }
-      if (Array.isArray(request.params.path) && request.params.path.length) {
+      if (
+        Array.isArray(request.params.path) &&
+        request.params.path.length > 2
+      ) {
         return listing([entry("inside.txt")], null, "child");
       }
       return listing(
@@ -70,7 +73,11 @@ test("Files connects only on demand, browses raw names and paginates without dup
   ).resolves.toBeInTheDocument();
   expect(folder).toHaveAttribute("aria-expanded", "true");
   expect(fixture.requests.at(-1)?.params).toStrictEqual({
-    path: [entry("workspace").nameToken],
+    path: [
+      entry("home").nameToken,
+      entry("user").nameToken,
+      entry("workspace").nameToken,
+    ],
   });
   click(folder);
   await waitFor(() => {

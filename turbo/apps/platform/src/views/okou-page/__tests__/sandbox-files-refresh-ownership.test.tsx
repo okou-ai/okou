@@ -19,7 +19,10 @@ test("Collapsing a directory during automatic refresh releases a late cursor wit
   let childListings = 0;
   const fixture = await setupFilesPage(context, {
     handler: (request) => {
-      if (Array.isArray(request.params.path) && request.params.path.length) {
+      if (
+        Array.isArray(request.params.path) &&
+        request.params.path.length > 2
+      ) {
         childListings++;
         return childListings === 1
           ? listing([entry("first.txt"), entry("second.txt")], null, "child")
