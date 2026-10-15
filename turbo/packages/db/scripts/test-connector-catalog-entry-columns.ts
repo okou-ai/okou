@@ -19,6 +19,12 @@ import {
   connectorCatalog,
   connectorCatalogEntries as runtimeEntries,
 } from "../src/runtime/connector-catalog";
+import {
+  physicalCatalogRows,
+  physicalCatalogSql,
+  catalogFrontierSql,
+  catalogRowsSchema,
+} from "./test-connector-catalog-frontier";
 import { validateConnectorCatalogColumnContract } from "./test-connector-catalog-columns-permanent";
 
 // Frozen outgoing table shape, only for expand/preparation migration replay.
@@ -42,73 +48,6 @@ function throwCollectedErrors(errors: readonly unknown[], message: string) {
     throw new AggregateError(errors, message);
   }
 }
-
-// Keep every selected catalog field; result generics do not decode pg rows.
-const physicalCatalogRows = z.tuple([
-  z.strictObject({
-    catalog: z.strictObject({
-      columns: z.array(
-        z.strictObject({
-          oid: z.string().regex(/^\d+$/u),
-          table: z.string(),
-          attnum: z.number().int().positive(),
-          name: z.string(),
-          type: z.string(),
-          notNull: z.boolean(),
-          default: z.string().nullable(),
-          identity: z.string(),
-          generated: z.string(),
-          dropped: z.boolean(),
-          collation: z.string().nullable(),
-        }),
-      ),
-      constraints: z.array(
-        z.strictObject({
-          oid: z.string().regex(/^\d+$/u),
-          name: z.string(),
-          type: z.string(),
-          validated: z.boolean(),
-          deferrable: z.boolean(),
-          deferred: z.boolean(),
-          definition: z.string(),
-        }),
-      ),
-      indexes: z.array(
-        z.strictObject({
-          table: z.string(),
-          name: z.string(),
-          definition: z.string(),
-        }),
-      ),
-      tables: z.array(
-        z.strictObject({
-          name: z.string(),
-          kind: z.string(),
-          rls: z.boolean(),
-        }),
-      ),
-      triggers: z.array(
-        z.strictObject({ name: z.string(), definition: z.string() }),
-      ),
-      routines: z.array(
-        z.strictObject({
-          name: z.string(),
-          kind: z.string(),
-          body: z.string(),
-        }),
-      ),
-    }),
-  }),
-]);
-
-const physicalCatalogSql = `SELECT jsonb_build_object(
- 'columns', (SELECT coalesce(jsonb_agg(jsonb_build_object('oid',c.oid,'table',c.relname,'attnum',a.attnum,'name',a.attname,'type',format_type(a.atttypid,a.atttypmod),'notNull',a.attnotnull,'default',pg_get_expr(d.adbin,d.adrelid),'identity',a.attidentity,'generated',a.attgenerated,'dropped',a.attisdropped,'collation',co.collname) ORDER BY c.relname,a.attnum),'[]'::jsonb) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace JOIN pg_attribute a ON a.attrelid=c.oid AND a.attnum>0 LEFT JOIN pg_attrdef d ON d.adrelid=c.oid AND d.adnum=a.attnum LEFT JOIN pg_collation co ON co.oid=a.attcollation WHERE n.nspname=$1 AND c.relkind='r'),
- 'constraints',(SELECT coalesce(jsonb_agg(jsonb_build_object('oid',c.oid,'name',c.conname,'type',c.contype,'validated',c.convalidated,'deferrable',c.condeferrable,'deferred',c.condeferred,'definition',pg_get_constraintdef(c.oid)) ORDER BY c.conname),'[]'::jsonb) FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace WHERE n.nspname=$1),
- 'indexes',(SELECT coalesce(jsonb_agg(jsonb_build_object('table',tablename,'name',indexname,'definition',indexdef) ORDER BY indexname),'[]'::jsonb) FROM pg_indexes WHERE schemaname=$1),
- 'tables',(SELECT coalesce(jsonb_agg(jsonb_build_object('name',c.relname,'kind',c.relkind,'rls',c.relrowsecurity) ORDER BY c.relname),'[]'::jsonb) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=$1 AND c.relkind IN ('r','v','m','S','f')),
- 'triggers',(SELECT coalesce(jsonb_agg(jsonb_build_object('name',t.tgname,'definition',pg_get_triggerdef(t.oid)) ORDER BY t.tgname),'[]'::jsonb) FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=$1 AND NOT t.tgisinternal),
- 'routines',(SELECT coalesce(jsonb_agg(jsonb_build_object('name',r.proname,'kind',r.prokind,'body',r.prosrc) ORDER BY r.proname),'[]'::jsonb) FROM pg_proc r JOIN pg_namespace n ON n.oid=r.pronamespace WHERE n.nspname=$1)
- ) AS catalog`;
 
 async function validateRejectedPreparation(args: {
   readonly databaseUrl: string;
@@ -362,107 +301,6 @@ async function validateRejectedPreparation(args: {
   );
 }
 
-// Compare physical contracts across namespaces without comparing allocated OIDs
-// or the private namespace prefix. Keep dropped attributes in the frontier.
-const catalogFrontierSql = `SELECT jsonb_build_object(
-  'columns', (SELECT coalesce(jsonb_agg(jsonb_build_object(
-    'table', c.relname, 'position', a.attnum, 'name', a.attname,
-    'type', format_type(a.atttypid, a.atttypmod), 'notNull', a.attnotnull,
-    'default', pg_get_expr(d.adbin, d.adrelid), 'identity', a.attidentity,
-    'generated', a.attgenerated, 'dropped', a.attisdropped,
-    'collation', co.collname) ORDER BY c.relname, a.attnum), '[]'::jsonb)
-    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-    JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0
-    LEFT JOIN pg_attrdef d ON d.adrelid = c.oid AND d.adnum = a.attnum
-    LEFT JOIN pg_collation co ON co.oid = a.attcollation
-    WHERE n.nspname = $1 AND c.relkind = 'r'),
-  'constraints', (SELECT coalesce(jsonb_agg(jsonb_build_object(
-    'name', c.conname, 'type', c.contype, 'validated', c.convalidated,
-    'deferrable', c.condeferrable, 'deferred', c.condeferred,
-    'definition', pg_get_constraintdef(c.oid)) ORDER BY c.conname), '[]'::jsonb)
-    FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
-    WHERE n.nspname = $1),
-  'indexes', (SELECT coalesce(jsonb_agg(jsonb_build_object(
-    'table', tablename, 'name', indexname,
-    'definition', replace(indexdef, quote_ident($1) || '.', ''))
-    ORDER BY indexname), '[]'::jsonb)
-    FROM pg_indexes WHERE schemaname = $1),
-  'relations', (SELECT coalesce(jsonb_agg(jsonb_build_object(
-    'name', c.relname, 'kind', c.relkind, 'persistence', c.relpersistence,
-    'rls', c.relrowsecurity, 'forceRls', c.relforcerowsecurity)
-    ORDER BY c.relname), '[]'::jsonb)
-    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-    WHERE n.nspname = $1),
-  'triggers', (SELECT coalesce(jsonb_agg(jsonb_build_object(
-    'name', t.tgname, 'definition', pg_get_triggerdef(t.oid))
-    ORDER BY t.tgname), '[]'::jsonb)
-    FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
-    JOIN pg_namespace n ON n.oid = c.relnamespace
-    WHERE n.nspname = $1 AND NOT t.tgisinternal),
-  'routines', (SELECT coalesce(jsonb_agg(jsonb_build_object(
-    'name', r.proname, 'kind', r.prokind, 'body', r.prosrc)
-    ORDER BY r.proname), '[]'::jsonb)
-    FROM pg_proc r JOIN pg_namespace n ON n.oid = r.pronamespace
-    WHERE n.nspname = $1)
-) AS catalog`;
-const catalogRowsSchema = z
-  .array(
-    z.strictObject({
-      catalog: z.strictObject({
-        columns: z.array(
-          z.strictObject({
-            table: z.string(),
-            position: z.number().int(),
-            name: z.string(),
-            type: z.string(),
-            notNull: z.boolean(),
-            default: z.string().nullable(),
-            identity: z.string(),
-            generated: z.string(),
-            dropped: z.boolean(),
-            collation: z.string().nullable(),
-          }),
-        ),
-        constraints: z.array(
-          z.strictObject({
-            name: z.string(),
-            type: z.string(),
-            validated: z.boolean(),
-            deferrable: z.boolean(),
-            deferred: z.boolean(),
-            definition: z.string(),
-          }),
-        ),
-        indexes: z.array(
-          z.strictObject({
-            table: z.string(),
-            name: z.string(),
-            definition: z.string(),
-          }),
-        ),
-        relations: z.array(
-          z.strictObject({
-            name: z.string(),
-            kind: z.string(),
-            persistence: z.string(),
-            rls: z.boolean(),
-            forceRls: z.boolean(),
-          }),
-        ),
-        triggers: z.array(
-          z.strictObject({ name: z.string(), definition: z.string() }),
-        ),
-        routines: z.array(
-          z.strictObject({
-            name: z.string(),
-            kind: z.string(),
-            body: z.string(),
-          }),
-        ),
-      }),
-    }),
-  )
-  .length(1);
 const namespaceRowsSchema = z.array(z.strictObject({ nspname: z.string() }));
 const fixtureSettings = [
   "search_path",
@@ -1047,7 +885,16 @@ try {
   const before = await db.select().from(connectorCatalogEntries);
   await client.query(preparation);
   assert.deepEqual(await db.select().from(connectorCatalogEntries), before);
-  await validateConnectorCatalogColumnContract(client);
+  await validateConnectorCatalogColumnContract(client, {
+    databaseUrl,
+    sourceSchema: testSchema,
+    phase: "prepared",
+    expectedRows: 41,
+    expansion,
+    backfill,
+    preparation,
+    contraction,
+  });
   // The immediately outgoing dual writer remains valid while migrations run
   // before API promotion, even though payload is now optional.
   await db.insert(connectorCatalogEntries).values({
@@ -1075,7 +922,16 @@ try {
   // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0380; new non-billing transactions are prohibited.
   await client.query("SAVEPOINT contraction");
   await client.query(contraction);
-  await validateConnectorCatalogColumnContract(client);
+  await validateConnectorCatalogColumnContract(client, {
+    databaseUrl,
+    sourceSchema: testSchema,
+    phase: "contracted",
+    expectedRows: 42,
+    expansion,
+    backfill,
+    preparation,
+    contraction,
+  });
   await client.query("ROLLBACK TO SAVEPOINT contraction");
   await client.query("RELEASE SAVEPOINT contraction");
   assert.deepEqual(await db.select().from(connectorCatalogEntries), [
@@ -1151,7 +1007,16 @@ try {
       return a.hash.localeCompare(b.hash) || a.slug.localeCompare(b.slug);
     }),
   );
-  await validateConnectorCatalogColumnContract(client);
+  await validateConnectorCatalogColumnContract(client, {
+    databaseUrl,
+    sourceSchema: testSchema,
+    phase: "contracted",
+    expectedRows: 59,
+    expansion,
+    backfill,
+    preparation,
+    contraction,
+  });
   successMessage = `Catalog entry expansion/backfill/preparation/contraction: ${rows.length} retained rows, ${cases.length} summary boundaries, transactional DDL rollback, outgoing/new writers, unchanged identity/projections/pointer, post-DROP runtime reads`;
 } catch (error: unknown) {
   errors.push(error);
