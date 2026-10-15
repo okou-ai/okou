@@ -11,7 +11,10 @@ import {
 import type { ComposerVoiceInputStatus } from "../../signals/okou-page/composer-voice-input.ts";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import {
+  startComposerSubmission,
   useComposerActions,
+  useComposerPrimaryAction,
+  useComposerVoiceAction,
   type ComposerActions,
 } from "./composer-actions.ts";
 import {
@@ -69,13 +72,7 @@ import {
   findWorkflowTemplateItem,
   type WorkflowTemplateItem,
 } from "@okouai/core/workflow-template-items";
-import {
-  ElapsedTime,
-  getShortcutLabel,
-  processShortcut,
-  ScrollBar,
-  type KeyboardEventLike,
-} from "@okouai/ui";
+import { ElapsedTime, getShortcutLabel, ScrollBar } from "@okouai/ui";
 import { Button, buttonVariants } from "@okouai/ui/components/ui/button";
 import { Card, CardContent } from "@okouai/ui/components/ui/card";
 import {
@@ -7375,7 +7372,8 @@ function MicButton({
   // The last resolved status keeps this control stable while a composer
   // target reads its stored draft; run$ awaits that read before acting.
   const voiceDraftStatus = useLastResolved(signals.voice.state$)?.status;
-  const starting = actions.voiceAction === "start";
+  const voiceAction = useComposerVoiceAction(signals);
+  const starting = voiceAction === "start";
 
   const signal = useGet(pageSignal$);
   const draftLoading = voiceDraftStatus === undefined;
@@ -7470,7 +7468,8 @@ function VoiceDraftFooter({
   const { t } = useTranslation();
   const capture = useGet(signals.voice.capture$);
   const recording = capture !== null;
-  const starting = actions.voiceAction === "start";
+  const voiceAction = useComposerVoiceAction(signals);
+  const starting = voiceAction === "start";
   const recordingStartedAt = capture?.startedAt ?? null;
 
   const voiceLevelSamples = useGet(signals.voice.voiceLevelSamples$);
@@ -7542,7 +7541,7 @@ function VoiceDraftFooter({
         ? t(($) => {
             return $.chat.voice.returningToComposer;
           })
-        : actions.voiceAction === "retry"
+        : voiceAction === "retry"
           ? t(($) => {
               return $.chat.voice.retryingSavedAudio;
             })
@@ -7838,44 +7837,6 @@ function useComposerTemplatePicker(
   };
 }
 
-function useComposerPrimaryAction(
-  signals: ComposerSignals,
-  actions: ComposerActions,
-): ComposerPrimaryAction {
-  // Keep the last action while the thread's events resync; falling back to
-  // "disabled" on every recompute would unmount and remount Stop mid-run.
-  const action =
-    useLastResolved(signals.submission.primaryAction$) ?? "disabled";
-  const selectedModelOauthAvailable =
-    useLastResolved(signals.model.selectedModelOauthAvailable$) ?? true;
-  return selectedModelOauthAvailable &&
-    (!actions.submitting || action === "stop") &&
-    actions.voiceAction === null
-    ? action
-    : "disabled";
-}
-
-function startComposerSubmission(
-  {
-    action,
-    activate,
-    ensurePushSubscription,
-  }: {
-    action: ComposerPrimaryAction;
-    activate: (signal: AbortSignal) => Promise<boolean>;
-    ensurePushSubscription: (signal: AbortSignal) => Promise<void>;
-  },
-  signal: AbortSignal,
-): void {
-  if (action === "disabled" || action === "stop") {
-    return;
-  }
-  if (action === "send") {
-    detach(ensurePushSubscription(signal), Reason.DomCallback);
-  }
-  detach(activate(signal), Reason.DomCallback);
-}
-
 function useComposerFileUpload(
   signals: ComposerSignals,
 ): (file: File) => boolean {
@@ -7960,7 +7921,6 @@ function ComposerInputSlot({
   actions: ComposerActions;
   minimumHeightClassName: string;
 }) {
-  const sending = useLastResolved(signals.submission.sending$) ?? false;
   const notifyDraftChanged = useComposerDraftChange(signals);
   const restoreAttachments = useSet(signals.draft.restoreAttachments$);
   const pageSignal = useGet(pageSignal$);
@@ -7968,13 +7928,6 @@ function ComposerInputSlot({
   const insertPromptMarkdown = useSet(signals.editor.insertPromptMarkdown$);
   const insertUserMessage = useSet(signals.editor.insertUserMessage$);
   const uploadFile = useComposerFileUpload(signals);
-  const primaryAction = useComposerPrimaryAction(signals, actions);
-
-  const ensurePushSubscription = useSet(ensurePushSubscription$);
-  const rootSignal = useGet(rootSignal$);
-  const sendModeLoadable = useLastLoadable(sendMode$);
-  const sendMode =
-    sendModeLoadable.state === "hasData" ? sendModeLoadable.data : "enter";
   const handlePaste = (event: ComposerPasteEvent) => {
     if (
       restoreChatClipboardPayload({
@@ -8031,39 +7984,6 @@ function ComposerInputSlot({
     }
   };
 
-  const submit = () => {
-    startComposerSubmission(
-      {
-        action: primaryAction,
-        activate: (signal) => {
-          return actions.submit(primaryAction, signal);
-        },
-        ensurePushSubscription,
-      },
-      rootSignal,
-    );
-  };
-
-  const handleKeyDown = (event: KeyboardEventLike) => {
-    const isTouchDevice = window.matchMedia("(pointer: coarse)").matches;
-    if (isMobileTextInputDevice()) {
-      processShortcut({ "mod+enter": submit }, event);
-      return;
-    }
-    processShortcut(
-      {
-        ...(sendMode === "enter" ? { enter: submit } : { "mod+enter": submit }),
-        ...(isTouchDevice && sendMode === "enter"
-          ? { "mod+enter": submit }
-          : {}),
-        escape: () => {
-          (event.target as HTMLElement).blur();
-        },
-      },
-      event,
-    );
-  };
-
   return (
     <div
       className={cn("min-h-0 flex-1", minimumHeightClassName)}
@@ -8081,8 +8001,7 @@ function ComposerInputSlot({
       <TiptapWorkflowComposer
         signals={signals}
         onDraftChange={notifyDraftChanged}
-        sending={sending}
-        onKeyDown={handleKeyDown}
+        actions={actions}
         onPaste={handlePaste}
       />
     </div>
@@ -9048,12 +8967,13 @@ function ComposerFooter({
 }) {
   const voiceDraft = useResolved(signals.voice.state$);
   const capture = useGet(signals.voice.capture$);
+  const voiceAction = useComposerVoiceAction(signals);
   const status =
-    actions.voiceAction === "start"
+    voiceAction === "start"
       ? "idle"
-      : actions.voiceAction === "discard"
+      : voiceAction === "discard"
         ? "discarding"
-        : actions.voiceAction === "finish" || actions.voiceAction === "retry"
+        : voiceAction === "finish" || voiceAction === "retry"
           ? "transcribing"
           : capture
             ? "recording"
