@@ -240,7 +240,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_duplicate_nonregular_missing_and_oversized_metadata() {
+    fn rejects_duplicate_nonregular_and_missing_metadata() {
         let bytes = metadata();
         assert!(
             read_identity(&archive(&[
@@ -251,8 +251,27 @@ mod tests {
         );
         assert!(read_identity(&archive(&[(&[], tar::EntryType::Symlink)])).is_err());
         assert!(read_identity(&archive(&[])).is_err());
-        let oversized = vec![b' '; MAX_METADATA_BYTES as usize + 1];
-        assert!(read_identity(&archive(&[(&oversized, tar::EntryType::Regular)])).is_err());
+    }
+
+    #[test]
+    fn compilation_enforces_packed_metadata_size_boundary() {
+        for size in [16_384, 16_385] {
+            let mut bytes = metadata();
+            // Legal trailing JSON whitespace prevents parsing errors from masking
+            // a missing metadata-size check.
+            bytes.resize(size, b' ');
+            let package = archive(&[(&bytes, tar::EntryType::Regular)]);
+            let external = serde_json::to_vec(&manifest(&package)).unwrap();
+            let result = prepare(package, &external);
+            if size == 16_384 {
+                result.unwrap();
+            } else {
+                assert_eq!(
+                    result.unwrap_err(),
+                    "CLI package metadata size exceeds limit"
+                );
+            }
+        }
     }
 
     #[test]
