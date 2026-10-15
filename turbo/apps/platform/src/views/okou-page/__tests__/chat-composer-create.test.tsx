@@ -475,6 +475,22 @@ test("The slash panel's Illustration row opens the image style flow", async () =
   expect(taskChip("Image")).toBeInTheDocument();
 });
 
+test("Image mode opens its style picker from the Add menu", async () => {
+  setupModels();
+  await setupComposer();
+  const tasks = await screen.findByRole("group", { name: "Choose a task" });
+  click(button("Image", tasks));
+  await waitFor(() => {
+    expect(taskChip("Image")).toBeInTheDocument();
+  });
+  await clickComposerAddMenuItem("Add style");
+  const dialog = await screen.findByRole("dialog");
+  const tab = queryAllByRoleFast("tab", dialog).find((item) => {
+    return item.textContent?.trim() === "Illustration";
+  });
+  expect(tab).toHaveAttribute("aria-selected", "true");
+});
+
 async function setupCreateModeWithTemplate() {
   setupModels();
   const submissions: UserMessageDocument[] = [];
