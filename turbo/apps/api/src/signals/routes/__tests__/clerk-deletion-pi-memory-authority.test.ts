@@ -134,10 +134,10 @@ describe("Clerk deletion revokes active Pi memory authority", () => {
             ? run.actor.userId === target.userId
             : run.actor.orgId === target.orgId;
         if (!stopped) {
-          // A genuine no-diff completion releases every surviving claim before
-          // no-work is asserted. Changed-byte publication is covered above.
-          const output = await publish(run);
-          expect(output.versionId).toBe(run.memory.versionId);
+          // Finish a changed-byte result before asserting no work. Its ordinary
+          // Runner readback is the independent publication contract above.
+          const output = await publish(run, `Surviving ${run.runId}.\n`);
+          expect(output.versionId).not.toBe(run.memory.versionId);
           await completeMaintenance(run, output.versionId);
         }
       }
