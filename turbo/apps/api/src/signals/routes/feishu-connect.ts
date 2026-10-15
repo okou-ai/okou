@@ -22,6 +22,8 @@ import { settle } from "../utils";
 import {
   configureFeishuInstallation$,
   type ConfigureFeishuResult,
+} from "../services/feishu-installation-configuration.service";
+import {
   disconnectFeishuConnection$,
   feishuConnectStatus,
   removeFeishuInstallation$,
