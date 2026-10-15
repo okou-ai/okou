@@ -1,8 +1,6 @@
 import { isPiAgentModelSupported as isPiAgentModelSupportedImpl } from "./model";
 import type { PiAgentModelConfig } from "./types";
 
-// (no-op Pi release marker for Pi -> CLI -> Runner on 2026-09-30)
-
 /** Whether Pi's provider catalog knows this model. */
 export const isPiAgentModelSupported: (config: PiAgentModelConfig) => boolean =
   isPiAgentModelSupportedImpl;
