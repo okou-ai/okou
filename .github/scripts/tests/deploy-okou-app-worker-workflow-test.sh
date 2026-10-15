@@ -67,6 +67,31 @@ worker_release_job = release_jobs["promote-app-worker-production"]
 release_dashboard_job = release_jobs["update-rollback-dashboard"]
 rollback_verification_job = rollback_jobs["verify-production-domains"]
 
+# App rollback has a distinct queue-dependent branch. API/Runner jobs retain
+# their normal dependencies, so a skipped resolver cannot reach SSH/mutations.
+inputs = rollback[True]["workflow_dispatch"]["inputs"]
+assert inputs["component"]["default"] == "api-runner"
+assert inputs["component"]["options"] == ["api-runner", "app"]
+assert inputs["confirmed_compatible"]["default"] == "no"
+assert rollback_jobs["resolve-target"]["if"] == "inputs.component != 'app'"
+assert rollback_jobs["rollback-app"]["if"] == "inputs.component == 'app'"
+for job_id in ("rollback-app", "resolve-target"):
+    assert rollback_jobs[job_id]["needs"] == "queue-production-deploy"
+    assert rollback_jobs[job_id]["environment"] == "production"
+for job_id in ("rollback-api", "rollback-runner"):
+    assert rollback_jobs[job_id]["needs"] == "resolve-target"
+    assert "if" not in rollback_jobs[job_id]  # retain success() dependency gating
+app_rollback = rollback_jobs["rollback-app"]
+assert len(app_rollback["steps"]) == 2
+checkout, execute = app_rollback["steps"]
+assert checkout["with"] == {"fetch-depth": 0, "ref": "main"}
+assert execute["run"] == "bash .github/scripts/release/rollback-app-production.sh"
+assert execute["env"]["CONFIRMED_COMPATIBLE"] == "${{ inputs.confirmed_compatible }}"
+assert execute["env"]["APP_VERSION_ID"] == "${{ inputs.app_version_id }}"
+assert execute["env"]["TARGET_COMMIT"] == "${{ inputs.target_commit }}"
+assert not any("SSH" in key or "RUNNER" in key for key in execute["env"])
+assert not any("continue-on-error" in step for step in app_rollback["steps"])
+
 expected_needs = ["release-please", "builds-complete", "promote-api-production"]
 if worker_release_job.get("needs") != expected_needs:
     raise RuntimeError("the production Worker must wait for App builds and API production")
