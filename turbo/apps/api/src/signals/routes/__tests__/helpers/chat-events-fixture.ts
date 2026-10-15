@@ -838,6 +838,7 @@ export function createChatEventsFixture(context: TestContext) {
     body: {
       readonly agentId: string;
       readonly clientEventId?: string;
+      readonly clientThreadId?: string;
       readonly prompt: string;
       readonly threadId?: string;
       readonly model?: string;

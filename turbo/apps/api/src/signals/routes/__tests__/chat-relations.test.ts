@@ -79,11 +79,21 @@ describe("chat relationships", () => {
         headers: { authorization: `Bearer ${token}` },
         body: { agentId, clientThreadId, title: `Child ${index}` },
       };
-      const created = await accept(threads.create(request), [201]);
-      await accept(threads.create(request), [201]);
+      const [created, replayed] = await Promise.all([
+        accept(threads.create(request), [201]),
+        accept(threads.create(request), [201]),
+      ]);
+      expect(replayed.body.id).toBe(created.body.id);
       createdIds.push(created.body.id);
     }
-    await chat.createThread(actor, { agentId });
+    const humanThread = await chat.createThread(actor, { agentId });
+    await accept(
+      threads.create({
+        headers: { authorization: `Bearer ${token}` },
+        body: { agentId, clientThreadId: humanThread.id },
+      }),
+      [201],
+    );
     const first = await accept(
       relations.children({
         headers: headers(actor),
@@ -141,8 +151,10 @@ describe("chat relationships", () => {
       model: "claude-fable-5-1",
       prompt: "Investigate the customer request",
     };
-    await requestSendEventWithBearer(token, send, [201]);
-    await requestSendEventWithBearer(token, send, [201]);
+    await Promise.all([
+      requestSendEventWithBearer(token, send, [201]),
+      requestSendEventWithBearer(token, send, [201]),
+    ]);
     await flushWaitUntilForTest();
     const events = await chat.listThreadEvents(actor, peer.id);
     const peerRunId = userMessages(events.events).find((event) => {
@@ -303,14 +315,22 @@ describe("chat relationships", () => {
 
   it("records implicit creation and enforces the feature, user and organization boundaries", async () => {
     const { actor, agentId, source, claimed, token } = await sourceFixture();
-    const sent = await requestSendEventWithBearer(
-      token,
-      { agentId, prompt: "Start a delegated chat", model: "claude-fable-5-1" },
-      [201],
-    );
-    if (sent.status !== 201) {
+    const send = {
+      agentId,
+      clientThreadId: randomUUID(),
+      clientEventId: randomUUID(),
+      prompt: "Start a delegated chat",
+      model: "claude-fable-5-1",
+    };
+    const [sent, replayed] = await Promise.all([
+      requestSendEventWithBearer(token, send, [201]),
+      requestSendEventWithBearer(token, send, [201]),
+    ]);
+    if (sent.status !== 201 || replayed.status !== 201) {
       throw new Error("Expected an accepted message");
     }
+    expect(sent.body.threadId).toBe(send.clientThreadId);
+    expect(replayed.body.threadId).toBe(send.clientThreadId);
     const children = await accept(
       relations.children({
         headers: headers(actor),
@@ -321,6 +341,17 @@ describe("chat relationships", () => {
     );
     expect(children.body.items).toMatchObject([
       { threadId: sent.body.threadId, sourceRunId: source.runId },
+    ]);
+    const messages = await accept(
+      relations.messages({
+        headers: headers(actor),
+        params: { id: source.threadId, peerId: sent.body.threadId },
+        query: {},
+      }),
+      [200],
+    );
+    expect(messages.body.items).toMatchObject([
+      { messageEventId: send.clientEventId, sourceRunId: source.runId },
     ]);
     const other = bdd.user({ orgId: actor.orgId });
     await enable(other);

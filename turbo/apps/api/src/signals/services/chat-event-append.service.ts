@@ -1,4 +1,5 @@
 import { chatEvents } from "@okouai/db/schema/chat-event";
+import { chatRelations } from "@okouai/db/schema/chat-relation";
 import { sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -7,6 +8,13 @@ import {
 } from "../../lib/db-raw-rows";
 
 export type ChatEventAppendConflict = "none" | "any" | "id" | "run-lifecycle";
+export interface ChatEventRelationSource {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly threadId: string;
+  readonly runId: string;
+  readonly createsThread: boolean;
+}
 export type PreparedChatEventRow = Omit<
   typeof chatEvents.$inferInsert,
   "seqId" | "contextType" | "id" | "createdAt"
@@ -129,9 +137,29 @@ export function appendCanonicalChatEventsSql(
   values: readonly PreparedChatEventRow[],
   conflict: ChatEventAppendConflict,
   inputEligibility?: SQL,
+  relationSource?: ChatEventRelationSource,
 ): SQL {
+  // A replay or losing replacement returns no inserted input, so it owns no
+  // relation. The relation is visible as soon as another run can consume it.
+  const relations = relationSource
+    ? sql`, recorded_relations AS (
+      INSERT INTO ${chatRelations} (
+        org_id, user_id, type, source_chat_thread_id, target_chat_thread_id,
+        source_run_id, message_event_id, created_at
+      )
+      SELECT ${relationSource.orgId}, ${relationSource.userId}, action.type,
+        ${relationSource.threadId}, input."chatThreadId", ${relationSource.runId},
+        CASE WHEN action.type = 'message' THEN inserted.id ELSE NULL END,
+        inserted.created_at
+      FROM input JOIN inserted ON inserted.id = input.id
+      CROSS JOIN (VALUES ('message'), ('created')) AS action(type)
+      WHERE input."chatThreadId" <> ${relationSource.threadId}::uuid
+        AND (action.type = 'message' OR ${relationSource.createsThread})
+    )`
+    : sql.empty();
   return sql`
     WITH ${canonicalChatEventAppendCtes(values, conflict, inputEligibility)}
+    ${relations}
     SELECT inserted.id, inserted.created_at::text AS "createdAt",
       inserted.seq_id AS "seqId", inserted.run_event_sequence_number AS "sequenceNumber"
     FROM inserted
