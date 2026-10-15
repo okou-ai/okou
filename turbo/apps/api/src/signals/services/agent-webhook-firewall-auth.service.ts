@@ -73,6 +73,10 @@ import {
 } from "@okouai/connectors/firewall-types";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import {
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/runtime/connector-catalog";
 import { connectors } from "@okouai/db/schema/connector";
 import {
   modelProviderAccounts,
@@ -107,7 +111,9 @@ import {
 } from "./connector-account-resolution.service";
 import type { ConnectorRuntimeMethod } from "./connector-catalog-runtime.service";
 import {
-  loadConnectorRuntimeAuthSelection,
+  connectorCatalogCurrentWhere,
+  connectorRuntimeAuthSelectionReadPlan,
+  connectorRuntimeAuthSelectionFromRows,
   type ConnectorRuntimeAuthSelection,
 } from "./connector-catalog-slug-source.service";
 import {
@@ -5340,10 +5346,19 @@ async function loadFirewallAuthConnectorCatalog(
   body: FirewallAuthBody,
 ): Promise<ConnectorRuntimeAuthSelection> {
   const connectorSlug = body.matchedFirewall?.connectorSlug;
-  return await loadConnectorRuntimeAuthSelection(db, {
+  const catalogPlan = connectorRuntimeAuthSelectionReadPlan({
     connectorSlugs: Object.values(body.secretConnectorMap ?? {}),
     firewallConnectorSlugs: connectorSlug === undefined ? [] : [connectorSlug],
   });
+  return connectorRuntimeAuthSelectionFromRows(
+    await db
+      .select(catalogPlan.columns)
+      .from(connectorCatalog)
+      .leftJoin(connectorCatalogEntries, catalogPlan.join)
+      .where(connectorCatalogCurrentWhere()),
+    catalogPlan.requestedConnectorSlugs,
+    catalogPlan.firewallConnectorSlugs,
+  );
 }
 
 async function prepareNonCustomFirewallAuth(args: {
