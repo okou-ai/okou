@@ -149,6 +149,16 @@ runs:
           add_env "$1" "$(repo_secret "$2")"
         }
 
+        add_required_secret() {
+          local value
+          value="$(repo_secret "$2")"
+          if [[ -z "$value" ]]; then
+            echo "::error::$2 is missing from GitHub secrets" >&2
+            exit 1
+          fi
+          add_env "$1" "$value"
+        }
+
         add_oauth_client_config_key() {
           local key="$1"
           local value
@@ -298,10 +308,16 @@ runs:
         add_var OKOU_PUBLIC_HOST_DOMAIN OKOU_PUBLIC_HOST_DOMAIN
         add_var OKOU_HOST_SCHEME OKOU_HOST_SCHEME
         add_secret SECRETS_ENCRYPTION_KEY SECRETS_ENCRYPTION_KEY
-        add_secret SECRETS_KMS_KEY_ID SECRETS_KMS_KEY_ID
+        if [[ "$INPUT_ENVIRONMENT" == "production" ]]; then
+          add_secret SECRETS_KMS_KEY_ID SECRETS_KMS_KEY_ID
+          add_secret AWS_ACCESS_KEY_ID AWS_ACCESS_KEY_ID
+          add_secret AWS_SECRET_ACCESS_KEY AWS_SECRET_ACCESS_KEY
+        else
+          add_required_secret SECRETS_KMS_KEY_ID PREVIEW_KMS_KEY_ID
+          add_required_secret AWS_ACCESS_KEY_ID PREVIEW_KMS_ACCESS_KEY_ID
+          add_required_secret AWS_SECRET_ACCESS_KEY PREVIEW_KMS_SECRET_ACCESS_KEY
+        fi
         add_var AWS_REGION AWS_REGION
-        add_secret AWS_ACCESS_KEY_ID AWS_ACCESS_KEY_ID
-        add_secret AWS_SECRET_ACCESS_KEY AWS_SECRET_ACCESS_KEY
         add_secret OFFICIAL_RUNNER_SECRET OFFICIAL_RUNNER_SECRET
         add_env RUNNER_DEFAULT_GROUP "$runner_default_group"
         add_secret AXIOM_TOKEN_SESSIONS AXIOM_TOKEN_SESSIONS

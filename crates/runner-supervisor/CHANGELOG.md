@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.5](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.16.4...runner-supervisor-v0.16.5) (2026-10-15)
+
+
+### Refactoring
+
+* **runner-supervisor:** share proxy recovery event handling ([#40309](https://github.com/okou-ai/okou/issues/40309)) ([3cd182f](https://github.com/okou-ai/okou/commit/3cd182f6317f08f34c2aaa481670bf4597e8d7e8))
+
 ## [0.16.4](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.16.3...runner-supervisor-v0.16.4) (2026-10-15)
 
 ## [0.16.3](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.16.2...runner-supervisor-v0.16.3) (2026-10-15)
