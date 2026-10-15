@@ -15,8 +15,7 @@ import { chatThreads } from "./chat-thread";
 import type {
   CanonicalAssetDeliveryDestination,
   CanonicalAssetDeliveryError,
-  CanonicalAssetDiscordDeliveryState,
-  CanonicalAssetWechatDeliveryState,
+  CanonicalAssetDeliveryProviderState,
   CanonicalAssetMaterializationError,
   CanonicalAssetProvenance,
   RunUploadedFileMetadata,
@@ -161,9 +160,8 @@ export const canonicalAssetDeliveries = pgTable(
     destination: jsonb("destination")
       .$type<CanonicalAssetDeliveryDestination>()
       .notNull(),
-    providerState: jsonb("provider_state").$type<
-      CanonicalAssetDiscordDeliveryState | CanonicalAssetWechatDeliveryState
-    >(),
+    providerState:
+      jsonb("provider_state").$type<CanonicalAssetDeliveryProviderState>(),
     externalId: text("external_id"),
     url: text("url"),
     lastError: jsonb("last_error").$type<CanonicalAssetDeliveryError>(),

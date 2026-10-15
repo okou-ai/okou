@@ -81,3 +81,6 @@ export interface CanonicalAssetWechatDeliveryState {
   readonly provider: "wechat";
   readonly attempt: { readonly id: string; readonly startedAt: string } | null;
 }
+
+export type CanonicalAssetDeliveryProviderState =
+  CanonicalAssetDiscordDeliveryState | CanonicalAssetWechatDeliveryState;

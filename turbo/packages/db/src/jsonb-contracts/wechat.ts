@@ -5,3 +5,5 @@ export interface WechatAttachment {
   readonly filename: string;
   readonly size: number | null;
 }
+
+export type WechatAttachments = readonly WechatAttachment[];

@@ -10,7 +10,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import type { WechatAttachment } from "../jsonb-contracts/wechat";
+import type { WechatAttachments } from "../jsonb-contracts/wechat";
 import { chatThreads } from "./chat-thread";
 
 /** One scanner identity belongs to exactly one Okou owner/workspace. */
@@ -149,7 +149,7 @@ export const wechatMessages = pgTable(
     quotedText: text("quoted_text"),
     requestHash: text("request_hash"),
     attachments: jsonb("attachments")
-      .$type<readonly WechatAttachment[]>()
+      .$type<WechatAttachments>()
       .notNull()
       .default([]),
     mediaCiphertext: text("media_ciphertext"),
