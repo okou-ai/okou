@@ -107,14 +107,15 @@ use tokio::task::JoinSet;
 use tracing::{info, warn};
 
 use super::RuntimeProfile as ProfileConfig;
+use super::error::{ReactorError, ReactorResult};
 use super::finalizing_claim::{FinalizingClaimRequest, spawn_finalizing_claim};
-use super::job_spawn::{JobProfile, SpawnContext, SpawnJobRequest, spawn_job};
+use super::job_spawn::{JobProfile, JobResult, SpawnContext, SpawnJobRequest, spawn_job};
 #[cfg(test)]
 use super::{OuterJobPanicPoint, maybe_panic_outer_job};
 use crate::SharedFactory;
 use crate::claimed_activation::{
-    ClaimedActivationGuard, ClaimedActivationResources, ClaimedJobSetup, ReadyClaimedResource,
-    blank_pool_selection_telemetry,
+    ClaimedActivationError, ClaimedActivationGuard, ClaimedActivationResources, ClaimedJobSetup,
+    ReadyClaimedResource, blank_pool_selection_telemetry,
 };
 use crate::claimed_resource_activation::{
     ActivationResources, ExactActivation, ReservedActivation, ReservedActivationRequest,
@@ -133,7 +134,7 @@ use crate::pre_claim_admission::{
     rollback_sandbox_admitted_resource,
 };
 use crate::resource_budget::ResourceBudget;
-use crate::status::{StatusPersistenceError, StatusTracker};
+use crate::status::StatusTracker;
 use crate::telemetry::JobTelemetry;
 use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_provider::{ClaimedJob, JobCandidate};
@@ -196,7 +197,7 @@ pub(super) struct DiscoveredJobContext<'a> {
     pub(super) mode_rx: &'a tokio::sync::watch::Receiver<RunnerMode>,
     pub(super) cancel_tokens: &'a RunCancellationRegistry,
     pub(super) spawn_ctx: &'a SpawnContext,
-    pub(super) jobs: &'a mut JoinSet<RunCancellationRegistration>,
+    pub(super) jobs: &'a mut JoinSet<JobResult>,
 }
 
 pub(super) struct DiscoveredJobResult {
@@ -302,7 +303,7 @@ pub(super) async fn handle_admitted_job(
     admission: AdmittedClaim,
     profile: DiscoveredJobProfile,
     mut ctx: DiscoveredJobContext<'_>,
-) -> DiscoveredJobResult {
+) -> ReactorResult<DiscoveredJobResult> {
     let run_id = admission.claimed.context().run_id;
     let DiscoveredJobProfile {
         profile_name,
@@ -343,7 +344,7 @@ pub(super) async fn handle_admitted_job(
                 ctx.spawn_ctx,
                 ctx.jobs,
             );
-            return DiscoveredJobResult::completed(false);
+            return Ok(DiscoveredJobResult::completed(false));
         }
         AdmittedResource::Fresh(lease) => SandboxAdmittedResource::Fresh(lease),
         AdmittedResource::Reusable(reservation) => SandboxAdmittedResource::Reusable(reservation),
@@ -364,7 +365,7 @@ pub(super) async fn handle_admitted_job(
             &mut ctx,
         )
         .await;
-        return DiscoveredJobResult::completed(true);
+        return Ok(DiscoveredJobResult::completed(true));
     }
     let mut pre_spawn_timing = RunnerPreSpawnTiming::start_at(
         claim_returned_at,
@@ -392,7 +393,7 @@ pub(super) async fn handle_admitted_job(
             &mut ctx,
         )
         .await;
-        return DiscoveredJobResult::completed(needs_reuse_state_refresh);
+        return Ok(DiscoveredJobResult::completed(needs_reuse_state_refresh));
     }
     info!(run_id = %run_id, profile = %profile_name, "job claimed, spawning executor");
     let started_at = Instant::now();
@@ -452,7 +453,7 @@ pub(super) async fn handle_admitted_job(
                     .await;
                     drop(active_run_guard);
                     completion.flush_telemetry().await;
-                    return DiscoveredJobResult::completed(true);
+                    return Ok(DiscoveredJobResult::completed(true));
                 }
             };
             (
@@ -479,7 +480,7 @@ pub(super) async fn handle_admitted_job(
                     &mut ctx,
                 )
                 .await;
-                return DiscoveredJobResult::completed(true);
+                return Ok(DiscoveredJobResult::completed(true));
             }
             match activate_reserved_idle(
                 reservation,
@@ -538,7 +539,7 @@ pub(super) async fn handle_admitted_job(
                         .await;
                         completion.flush_telemetry().await;
                     }
-                    return DiscoveredJobResult::completed(true);
+                    return Ok(DiscoveredJobResult::completed(true));
                 }
             }
         }
@@ -590,7 +591,7 @@ pub(super) async fn handle_admitted_job(
                         .rollback(run_id, job_home_disk_mb, &pre_claim_resources(&ctx))
                         .await;
                     completion.flush_telemetry().await;
-                    return DiscoveredJobResult::completed(true);
+                    return Ok(DiscoveredJobResult::completed(true));
                 }
                 ExactActivation::CannotStart {
                     budget_lease,
@@ -607,7 +608,7 @@ pub(super) async fn handle_admitted_job(
                         &mut ctx,
                     )
                     .await;
-                    return DiscoveredJobResult::completed(true);
+                    return Ok(DiscoveredJobResult::completed(true));
                 }
             }
         }
@@ -643,32 +644,32 @@ pub(super) async fn handle_admitted_job(
         Ok(Ok(request)) => request,
         Ok(Err(error)) => {
             activation
-                .recover(
-                    "active_status_persistence_failed",
-                    format!("persist active runner ownership: {error}"),
-                )
+                .recover(error.recovery_reason(), error.to_string())
                 .await
+                .map_err(|error| ReactorError::Internal(error.to_string()))?
                 .finish()
                 .await;
             drop(activation_transfer_guard);
-            return DiscoveredJobResult::completed(true);
+            return Ok(DiscoveredJobResult::completed(true));
         }
         Err(panic) => {
-            activation
+            match activation
                 .recover(
                     "activation_setup_panicked",
                     "claimed activation setup panicked".to_owned(),
                 )
                 .await
-                .finish()
-                .await;
+            {
+                Ok(recovery) => recovery.finish().await,
+                Err(error) => tracing::error!(%error, "claimed activation panic recovery failed"),
+            }
             drop(activation_transfer_guard);
             std::panic::resume_unwind(panic);
         }
     };
     spawn_job(request, ctx.spawn_ctx, ctx.jobs);
     drop(activation_transfer_guard);
-    DiscoveredJobResult::completed(needs_reuse_state_refresh)
+    Ok(DiscoveredJobResult::completed(needs_reuse_state_refresh))
 }
 
 pub(super) fn claimed_activation_resources(ctx: &SpawnContext) -> ClaimedActivationResources {
@@ -685,10 +686,10 @@ pub(super) fn claimed_activation_resources(ctx: &SpawnContext) -> ClaimedActivat
 pub(super) async fn build_spawn_job_request(
     activation: &mut ClaimedActivationGuard,
     ctx: &SpawnContext,
-) -> Result<SpawnJobRequest, StatusPersistenceError> {
-    activation.record_resource_budget_occupancy(&ctx.budget);
+) -> Result<SpawnJobRequest, ClaimedActivationError> {
+    activation.record_resource_budget_occupancy(&ctx.budget)?;
     #[cfg(test)]
-    let run_id = activation.setup().claimed.context().run_id;
+    let run_id = activation.setup()?.claimed.context().run_id;
     let sandbox_id = activation.sandbox_id();
     #[cfg(test)]
     maybe_panic_outer_job(
@@ -700,7 +701,7 @@ pub(super) async fn build_spawn_job_request(
     #[cfg(test)]
     ctx.test_observer.notify_active_run_status_published(run_id);
 
-    let setup = activation.setup();
+    let setup = activation.setup()?;
     let session_history_restore_plan =
         build_session_history_restore_plan(SessionHistoryRestorePlanInput {
             http: &ctx.exec_config.http,
@@ -736,7 +737,7 @@ pub(super) async fn build_spawn_job_request(
         resource,
         pre_spawn_timing,
         active_run_guard,
-    } = activation.take_setup_after_status();
+    } = activation.take_setup_after_status()?;
     let ReadyClaimedResource {
         reuse_entry,
         active_lease,

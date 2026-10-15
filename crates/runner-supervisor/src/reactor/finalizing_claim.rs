@@ -62,7 +62,7 @@ use tracing::info;
 use super::job_discovery::{
     activation_resources, build_spawn_job_request, claimed_activation_resources,
 };
-use super::job_spawn::{SpawnContext, run_job};
+use super::job_spawn::{JobResult, SpawnContext, run_job};
 #[cfg(test)]
 use super::{OuterJobPanicPoint, maybe_panic_outer_job};
 use crate::SharedFactory;
@@ -136,15 +136,12 @@ struct FinalizingPreparation<'a> {
 pub(super) fn spawn_finalizing_claim(
     request: FinalizingClaimRequest,
     ctx: &SpawnContext,
-    jobs: &mut JoinSet<RunCancellationRegistration>,
+    jobs: &mut JoinSet<JobResult>,
 ) {
     jobs.spawn(run_finalizing_claim(request, ctx.clone()));
 }
 
-async fn run_finalizing_claim(
-    request: FinalizingClaimRequest,
-    ctx: SpawnContext,
-) -> RunCancellationRegistration {
+async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext) -> JobResult {
     let FinalizingClaimRequest {
         claimed,
         cancellation,
@@ -199,14 +196,14 @@ async fn run_finalizing_claim(
                 )
                 .await;
             }
-            return complete_claimed_without_sandbox(
+            return Ok(complete_claimed_without_sandbox(
                 claimed,
                 cancellation,
                 *failure,
                 pre_spawn_timing.finalizing_diagnostics(),
                 &ctx,
             )
-            .await;
+            .await);
         }
         Err(payload) => {
             if let Some(reservation) = reserved_exact.take() {
@@ -261,7 +258,7 @@ async fn run_finalizing_claim(
                             FinalizingHandoffOutcome::ActivationFailed,
                             Some(FinalizingHandoffReason::HandoffIdentityMismatch),
                         );
-                        return complete_claimed_without_sandbox(
+                        return Ok(complete_claimed_without_sandbox(
                             claimed,
                             cancellation,
                             ExecutionFailure::from_error(
@@ -270,7 +267,7 @@ async fn run_finalizing_claim(
                             pre_spawn_timing.finalizing_diagnostics(),
                             &ctx,
                         )
-                        .await;
+                        .await);
                     }
                 };
             let idle_snapshot = ctx.idle_pool.lock().await.status_snapshot();
@@ -309,14 +306,14 @@ async fn run_finalizing_claim(
                     FinalizingHandoffOutcome::ActivationFailed,
                     Some(FinalizingHandoffReason::ActivationCancelled),
                 );
-                return complete_claimed_without_sandbox(
+                return Ok(complete_claimed_without_sandbox(
                     claimed,
                     cancellation,
                     ExecutionFailure::cancelled(),
                     pre_spawn_timing.finalizing_diagnostics(),
                     &ctx,
                 )
-                .await;
+                .await);
             }
             activation_transfer_guard = Some(transfer_guard);
             match activate_reserved_idle(
@@ -376,7 +373,7 @@ async fn run_finalizing_claim(
                     )
                     .await;
                     drop(budget_lease);
-                    return cancellation;
+                    return Ok(cancellation);
                 }
             }
         }
@@ -405,24 +402,23 @@ async fn run_finalizing_claim(
     {
         Ok(Ok(request)) => request,
         Ok(Err(error)) => {
-            return activation
-                .recover(
-                    "active_status_persistence_failed",
-                    format!("persist active runner ownership: {error}"),
-                )
-                .await
+            return Ok(activation
+                .recover(error.recovery_reason(), error.to_string())
+                .await?
                 .into_cancellation()
-                .await;
+                .await);
         }
         Err(panic) => {
-            activation
+            match activation
                 .recover(
                     "activation_setup_panicked",
                     "claimed activation setup panicked".to_owned(),
                 )
                 .await
-                .finish()
-                .await;
+            {
+                Ok(recovery) => recovery.finish().await,
+                Err(error) => tracing::error!(%error, "claimed activation panic recovery failed"),
+            }
             std::panic::resume_unwind(panic);
         }
     };
@@ -438,7 +434,7 @@ async fn run_finalizing_claim(
             );
         }
     }
-    run_job(request, ctx).await
+    Ok(run_job(request, ctx).await)
 }
 
 async fn prepare_finalizing_resource(
