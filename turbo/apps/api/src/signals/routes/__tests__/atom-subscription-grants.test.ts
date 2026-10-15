@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
+import { http, HttpResponse } from "msw";
 import { atomSubscriptionGrantsContract } from "@okouai/api-contracts/contracts/atom-subscription-grants";
 import {
   personalModelProvidersMainContract,
@@ -10,6 +11,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
+import { server } from "../../../mocks/server";
 import { atomSubscriptionGrantRoutes } from "../atom-subscription-grants";
 import { meModelProvidersListRoutes } from "../me-model-providers-list";
 import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
@@ -96,6 +98,23 @@ describe("Atom subscription grants", () => {
     mockOptionalEnv(
       "ATOM_SUBSCRIPTION_GRANT_MACHINE_IDS",
       ` ${ATOM_MACHINE}, mch_other_allowed `,
+    );
+    server.use(
+      http.get("https://api.anthropic.com/api/oauth/profile", ({ request }) => {
+        const accountId =
+          request.headers.get("authorization") ===
+          "Bearer sk-ant-another-account"
+            ? "claude-second-account"
+            : "claude-first-account";
+        return HttpResponse.json({
+          account: {
+            uuid: accountId,
+            email: `${accountId}@example.com`,
+            has_claude_pro: true,
+          },
+          organization: { uuid: "claude-workspace", name: "Personal" },
+        });
+      }),
     );
   });
 
@@ -286,6 +305,7 @@ describe("Atom subscription grants", () => {
       }),
       [200],
     );
+    expect(listed.body.modelProviders).toHaveLength(2);
     expect(
       listed.body.modelProviders.find((account) => {
         return account.isActive;
