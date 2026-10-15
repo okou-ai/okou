@@ -197,7 +197,7 @@ const handleDiscordMessage$ = command(
         tapError(
           set(
             processCanonicalDiscordIngress$,
-            { ingressId: ingress.id },
+            { ingressId: ingress.id, admittedBinding: selection },
             processingSignal,
           ),
           (error) => {
