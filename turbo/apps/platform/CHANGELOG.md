@@ -12,6 +12,21 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1028.0](https://github.com/okou-ai/okou/compare/app-v0.1027.1...app-v0.1028.0) (2026-10-15)
+
+
+### Features
+
+* add a live sandbox files sidebar with directory navigation ([#40112](https://github.com/okou-ai/okou/issues/40112)) ([b1a320c](https://github.com/okou-ai/okou/commit/b1a320ca71c1ddafd5e867157db868dc31d88fce))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.565.0
+    * @okouai/core bumped to 8.759.0
+
 ## [0.1027.1](https://github.com/okou-ai/okou/compare/app-v0.1027.0...app-v0.1027.1) (2026-10-15)
 
 
