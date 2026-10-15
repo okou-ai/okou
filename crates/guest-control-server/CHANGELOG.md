@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.14](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.13...guest-control-server-v0.24.14) (2026-10-15)
+
+
+### Bug Fixes
+
+* **runner:** align task oom priority and correct runtime attribution ([#40068](https://github.com/okou-ai/okou/issues/40068)) ([b94851a](https://github.com/okou-ai/okou/commit/b94851a584b74d0edfbd53e46576cb66ff753c64))
+
 ## [0.24.13](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.12...guest-control-server-v0.24.13) (2026-10-14)
 
 ## [0.24.12](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.11...guest-control-server-v0.24.12) (2026-10-14)
