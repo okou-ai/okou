@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.107.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.106.18...guest-agent-v0.107.0) (2026-10-15)
+
+
+### Features
+
+* continue threads through retained native sandbox history ([#40048](https://github.com/okou-ai/okou/issues/40048)) ([2b6ff73](https://github.com/okou-ai/okou/commit/2b6ff735fcfb0d4f5baf5fd131bcc10ae8a325d3))
+
+
+### Bug Fixes
+
+* **runner:** align task oom priority and correct runtime attribution ([#40068](https://github.com/okou-ai/okou/issues/40068)) ([b94851a](https://github.com/okou-ai/okou/commit/b94851a584b74d0edfbd53e46576cb66ff753c64))
+
+
+### Refactoring
+
+* retire legacy run reuse outcome metadata ([#40102](https://github.com/okou-ai/okou/issues/40102)) ([005af49](https://github.com/okou-ai/okou/commit/005af4965ced3ca60293140d6ede62ec5acaeaeb))
+
 ## [0.106.18](https://github.com/okou-ai/okou/compare/guest-agent-v0.106.17...guest-agent-v0.106.18) (2026-10-14)
 
 ## [0.106.17](https://github.com/okou-ai/okou/compare/guest-agent-v0.106.16...guest-agent-v0.106.17) (2026-10-14)

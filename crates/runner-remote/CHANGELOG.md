@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.17.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.16.1...runner-remote-v0.17.0) (2026-10-15)
+
+
+### Features
+
+* continue threads through retained native sandbox history ([#40048](https://github.com/okou-ai/okou/issues/40048)) ([2b6ff73](https://github.com/okou-ai/okou/commit/2b6ff735fcfb0d4f5baf5fd131bcc10ae8a325d3))
+* **runner:** record first-run context and actual home reuse ([#39955](https://github.com/okou-ai/okou/issues/39955)) ([f0577eb](https://github.com/okou-ai/okou/commit/f0577ebc54bdb82e28c225184a7a084080054afd))
+
+
+### Bug Fixes
+
+* **runner-remote:** preserve vnc connection failure diagnostics ([#40114](https://github.com/okou-ai/okou/issues/40114)) ([0470d18](https://github.com/okou-ai/okou/commit/0470d1885fcd09bbde8eb4752471e19ace74c1be))
+
 ## [0.16.1](https://github.com/okou-ai/okou/compare/runner-remote-v0.16.0...runner-remote-v0.16.1) (2026-10-14)
 
 ## [0.16.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.15.0...runner-remote-v0.16.0) (2026-10-14)
