@@ -2058,6 +2058,14 @@ describe("connector catalog valid lifecycle", () => {
       { credential: "legacy-catalog-secret" },
     );
 
+    const legacySibling = await connectorsApi.connectManualGrant(
+      actor,
+      "agora",
+      "legacy",
+      { credential: "sibling-legacy-catalog-secret" },
+    );
+    expect(legacySibling.id).not.toBe(legacyConnection.id);
+
     const removed = buildRelease({
       version: "2026-07-15.external-stored-method-removed",
       connectorSlug: "agora",
@@ -2126,6 +2134,25 @@ describe("connector catalog valid lifecycle", () => {
         });
       },
     );
+    const accountsBeforeDeletion =
+      await connectorsApi.listBuiltinConnectorAccounts(actor, "agora");
+    expect(accountsBeforeDeletion).toHaveLength(2);
+    const defaultAccount = accountsBeforeDeletion.find((account) => {
+      return account.id === legacyConnection.id;
+    });
+    expect(defaultAccount).toMatchObject({
+      isDefault: true,
+      authMethod: "current",
+      connectionStatus: "connected",
+    });
+    await connectorsApi.deleteBuiltinConnectorAccount(
+      actor,
+      "agora",
+      legacySibling.id,
+    );
+    await expect(
+      connectorsApi.listBuiltinConnectorAccounts(actor, "agora"),
+    ).resolves.toStrictEqual([defaultAccount]);
     await connectorsApi.deleteDefaultBuiltinConnectorAccount(actor, "agora");
     await expect(
       connectorsApi.listBuiltinConnectorAccounts(actor, "agora"),

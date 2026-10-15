@@ -1,7 +1,8 @@
+import { state, createStore } from "ccstate";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { HttpResponse, http } from "msw";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
@@ -45,6 +46,12 @@ import { readGetStartedStatus } from "./helpers/get-started";
 // S3, and Axiom boundaries.
 
 const context = testContext();
+// The mock CLI observes the same resume intent the real Guest receives.
+const claimedNativeSessions$ = state<Readonly<Record<string, string>>>({});
+const nativeSessionStore = createStore();
+beforeEach(() => {
+  nativeSessionStore.set(claimedNativeSessions$, {});
+});
 interface LinkedAgentPhoneActor {
   readonly actor: ApiTestUser;
   readonly ap: ReturnType<typeof createAgentPhoneBddApi>;
@@ -200,13 +207,19 @@ async function claimDispatchedRun(runnerGroup: string): Promise<{
       `Expected a native AgentPhone claim, got ${claim.cliAgentType}`,
     );
   }
+  if (claim.nativeContinuation?.sessionId) {
+    nativeSessionStore.set(claimedNativeSessions$, {
+      ...nativeSessionStore.get(claimedNativeSessions$),
+      [runId]: claim.nativeContinuation.sessionId,
+    });
+  }
   return {
     runId,
     sandboxToken: claim.sandboxToken,
     prompt: claim.prompt,
     appendSystemPrompt: claim.appendSystemPrompt ?? "",
     okouToken: claim.platformEnvironment.OKOU_TOKEN,
-    resumedSessionId: claim.resumeSession?.sessionId,
+    resumedSessionId: claim.nativeContinuation?.sessionId ?? undefined,
     cliAgentType: claim.cliAgentType,
     environment: claim.environment,
     serviceTier: claim.platformEnvironment.OKOU_CODEX_SERVICE_TIER,
@@ -214,7 +227,10 @@ async function claimDispatchedRun(runnerGroup: string): Promise<{
 }
 
 function agentPhoneCliAgentSessionIdForRun(runId: string): string {
-  return `bdd-agentphone-cli-${runId}`;
+  return (
+    nativeSessionStore.get(claimedNativeSessions$)[runId] ??
+    `bdd-agentphone-cli-${runId}`
+  );
 }
 
 async function completeSandboxRun(
@@ -254,9 +270,7 @@ async function completeSandboxRun(
             completion: {
               cliAgentType: options.cliAgentType ?? "claude-code",
               cliAgentSessionId: agentPhoneCliAgentSessionIdForRun(runId),
-              cliAgentSessionHistoryHash: createHash("sha256")
-                .update(`bdd agentphone history ${runId}`)
-                .digest("hex"),
+              cliAgentSessionHistoryDisposition: "native_only",
             },
           }
         : {}),
@@ -1210,9 +1224,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
           completion: {
             cliAgentType: "claude-code",
             cliAgentSessionId: agentPhoneCliAgentSessionIdForRun(runId),
-            cliAgentSessionHistoryHash: createHash("sha256")
-              .update(`bdd agentphone history ${runId}`)
-              .digest("hex"),
+            cliAgentSessionHistoryDisposition: "native_only",
           },
         },
         { authorization: `Bearer ${sandboxToken}` },

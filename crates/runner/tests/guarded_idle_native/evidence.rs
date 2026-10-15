@@ -14,6 +14,7 @@ use sha2::{Digest, Sha256};
 use super::{TestResult, io};
 
 pub const PREFIX: &str = "NATIVE_TERMINAL_RECEIPT ";
+const PRESSURE_PREFIX: &str = "NATIVE_PRESSURE_WITNESS ";
 pub const TAIL_BYTES: usize = 64 * 1024 * 1024;
 
 #[derive(Clone, Deserialize)]
@@ -192,13 +193,21 @@ impl Case {
     }
 
     pub fn event(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event(PREFIX, phase, evidence)
+    }
+
+    pub fn pressure_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event(PRESSURE_PREFIX, phase, evidence)
+    }
+
+    fn write_event(&self, prefix: &str, phase: &str, evidence: Value) -> io::Result<()> {
         let (monotonic_ns, unix_ns) = clocks()?;
         let state = self
             .state
             .lock()
             .map_err(|_| io::Error::other("native receipt state poisoned"))?;
         println!(
-            "\n{PREFIX}{}",
+            "\n{prefix}{}",
             json!({
                 "version": 1, "case": self.id, "phase": phase,
                 "monotonic_ns": monotonic_ns, "unix_ns": unix_ns,

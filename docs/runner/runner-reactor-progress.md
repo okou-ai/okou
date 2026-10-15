@@ -44,6 +44,29 @@ teardown path and are returned as terminal errors. Ordinary optional GC or statu
 retry errors remain warnings. Runtime task ownership does not make an individual
 filesystem or network operation infinitely fast or cancellation-safe.
 
+## Startup-fact delivery
+
+Once preparation and replacement settle the actual resource, Executor starts an
+owned `StartupReport` for `sandbox`, `home`, `blank`, or `cold`. The dedicated
+`PUT /api/runners/runs/:runId/startup` uses the Run token; telemetry does not
+persist this fact. `ExecuteOutcome` transfers the task to Supervisor, which
+performs reuse handoff, completion and resource settlement before joining it
+alongside deferred telemetry. Delivery cannot hold guest startup, execution
+results, successor reuse or capacity release.
+
+The existing job owner drains delivery during normal shutdown. Report-owner
+drop aborts its task, and Run cancellation interrupts requests and backoff.
+There are at most three attempts, each with a two-second request timeout and
+two-second delays between retryable failures. Retrying failures log INFO;
+terminal failure, including a report-task join failure, logs ERROR and leaves
+the Run outcome unchanged. The report task owns only HTTP delivery state, never
+a sandbox or capacity lease.
+
+The nullable persisted field can arrive after Run completion. Missing, failed,
+cancelled or older reports remain unknown; they are not inferred as `cold` from
+legacy reuse diagnostics. Identical late reports are safe to replay, while a
+different accepted path cannot be overwritten.
+
 ## Idle cleanup handoff
 
 After removing or rejecting idle inventory, synchronously register each cleanup

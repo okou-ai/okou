@@ -3,7 +3,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
-import { setupPage } from "../../../__tests__/page-helper.ts";
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import {
   builtinConnector,
   installComposerConnectorFixture,
@@ -34,7 +34,7 @@ async function openLoadingConnectors() {
   });
   await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
   const trigger = await findFastControl("button", "Connectors");
-  await user.click(trigger);
+  click(trigger);
   const dialog = await screen.findByRole("dialog", { name: "Connectors" });
   const add = await findFastControl("button", "Add connectors", dialog);
   expect(
@@ -43,29 +43,37 @@ async function openLoadingConnectors() {
   return { user, authorization, trigger, dialog, add };
 }
 
-test("Focus connector search when the first connector list finishes loading", async () => {
+async function prepareLoadedConnectorSearch() {
   const { user, authorization, trigger, dialog } =
     await openLoadingConnectors();
   await waitFor(() => {
     expect(dialog.contains(document.activeElement)).toBeTruthy();
   });
-
   authorization.resolve(undefined);
   const search =
     await within(dialog).findByPlaceholderText("Find connectors...");
   await waitFor(() => {
     expect(search).toHaveFocus();
   });
-  await user.keyboard("Focus app 20");
+  await fill(search, "Focus app 20");
   expect(search).toHaveValue("Focus app 20");
   expect(within(dialog).getByText("Focus app 20")).toBeInTheDocument();
   expect(within(dialog).queryByText("Focus app 0")).toBeNull();
+  return { user, trigger };
+}
 
+test("Focus the loaded connector search during filter", async () => {
+  await prepareLoadedConnectorSearch();
+  expect(screen.getByPlaceholderText("Find connectors...")).toHaveFocus();
+});
+
+test("Focus the loaded connector search during reopen", async () => {
+  const { user, trigger } = await prepareLoadedConnectorSearch();
   await user.keyboard("{Escape}");
   await waitFor(() => {
     expect(trigger).toHaveFocus();
   });
-  await user.click(trigger);
+  click(trigger);
   const reopenedSearch =
     await screen.findByPlaceholderText("Find connectors...");
   await waitFor(() => {

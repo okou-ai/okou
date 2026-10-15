@@ -1,8 +1,10 @@
+import { DocumentTemplateCover } from "./document-template-cover.tsx";
 import {
   Check,
   ChevronRight,
   MoreHorizontal,
   FileText,
+  Pencil,
   Image as ImageIcon,
   Layers,
   Presentation,
@@ -55,16 +57,21 @@ import {
   CustomTemplatesLoadError,
 } from "./custom-template-preview-dialog.tsx";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
+import { normalizeTemplateTitle } from "./template-detail-layout.tsx";
 import { TEMPLATE_CARD_SHADOW, TEMPLATE_TILE_SCRIM } from "./template-tile.ts";
 import {
   cancelDeleteCustomTemplate$,
+  cancelRenameCustomTemplate$,
   customTemplateActiveExample$,
   customTemplateSearchQuery$,
   customTemplateCatalog$,
   deleteCustomTemplate$,
   openCustomTemplate$,
   pendingCustomTemplateDeletion$,
+  pendingCustomTemplateRename$,
+  renameCustomTemplate$,
   requestDeleteCustomTemplate$,
+  requestRenameCustomTemplate$,
   setCustomTemplateSearchQuery$,
   projectCustomTemplatePicker$,
   setCustomTemplateKindFilter$,
@@ -85,91 +92,6 @@ import { detach, Reason } from "../../signals/utils.ts";
 // actions controls beside it still paint over it in tree order.
 const CARD_MEDIA =
   "relative isolate block aspect-video w-full overflow-hidden rounded-xl border border-border bg-muted";
-
-/**
- * One sheet of paper lying in a tile.
- *
- * The two percentages are what set how much of the page shows. The tile is
- * `aspect-video`, so its height is its own width times 9/16 and both values
- * resolve against that same width: a page 61% of the tile wide is 86.3% of it
- * tall, 8% of the tile's height above it leaves 51.8% of the tile below, and
- * 51.8/86.3 is 60% of the page. Any tile size, the same 60%.
- *
- * Centred with a negative margin rather than `-translate-x-1/2` because the
- * sheets behind are offset with `translate`, and one transform utility cannot
- * hold both. A margin percentage resolves against the tile and a translate
- * percentage against the sheet, which is why the two are written against
- * different denominators.
- *
- * The literal `#ffffff` rather than `bg-white` or a surface token: this is
- * paper, and it stays paper-coloured in Dark. `--color-white` is theme-flipped
- * and resolves to Ink there, so `bg-white` would paint these sheets near-black
- * behind a white page image — a hole rather than the next sheet down. A
- * `bg-card` sheet does the same thing.
- */
-const DOCUMENT_SHEET =
-  "absolute left-1/2 top-[8%] ml-[-30.5%] aspect-[210/297] w-[61%] " +
-  "overflow-hidden rounded-[2px] bg-[#ffffff] " +
-  "shadow-[0_1px_2px_hsl(220_12%_50%/0.16),0_7px_18px_hsl(220_12%_50%/0.07)]";
-
-/**
- * A document template's cover: the source's first page, over the sheets that
- * say it had more.
- *
- * Drawn larger than the tile and cropped by its bottom edge rather than fitted
- * inside it. A whole page scaled into this tile puts its title at about five
- * pixels — below what any script reads at — so fitting it buys a smaller
- * smudge, not a legible one. What the crop keeps is the head of the page,
- * where the format lives: how many columns, how much white space, whether it
- * opens with a masthead or a row of form fields. The title is the line
- * underneath the tile, and stays there.
- *
- * The sheets behind carry no image because there is none to carry: a document
- * template uploads its first page and no others. They are the claim that the
- * file continued, not a preview of what it continued into, which is why two of
- * them stand for three pages and for three hundred alike.
- */
-function DocumentTemplateCover({
-  template,
-  coverUrl,
-}: {
-  readonly template: UserTemplateCatalogEntry;
-  readonly coverUrl: string;
-}) {
-  return (
-    <>
-      {template.coverHasMorePages ? (
-        <>
-          <span
-            data-testid="document-cover-sheet"
-            className={cn(
-              DOCUMENT_SHEET,
-              "translate-x-[6.4%] translate-y-[3.8%]",
-            )}
-          />
-          <span
-            data-testid="document-cover-sheet"
-            className={cn(
-              DOCUMENT_SHEET,
-              "translate-x-[3.2%] translate-y-[1.9%]",
-            )}
-          />
-        </>
-      ) : null}
-      {/* No z-index: the sheets are positioned siblings at `z-index: auto`, so
-          tree order already paints this one over them. */}
-      <span className={DOCUMENT_SHEET}>
-        <img
-          src={coverUrl}
-          alt=""
-          loading="lazy"
-          data-testid="document-cover-page"
-          className="h-full w-full object-cover object-top"
-        />
-      </span>
-    </>
-  );
-}
 
 /**
  * One meta line: who can see it — or, for a colleague's template, whose it is,
@@ -199,10 +121,12 @@ function CustomTemplateMeta({
 function CustomTemplateActions({
   template,
   onVisibilityChange,
+  onRename,
   onDelete,
 }: {
   readonly template: UserTemplateCatalogEntry;
   readonly onVisibilityChange: (visibility: UserTemplateVisibility) => void;
+  readonly onRename: () => void;
   readonly onDelete: () => void;
 }) {
   const { t } = useTranslation();
@@ -234,6 +158,12 @@ function CustomTemplateActions({
           <MoreHorizontal />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
+          <DropdownMenuItem onClick={onRename}>
+            <Pencil />
+            {t(($) => {
+              return $.templates.rename.action;
+            })}
+          </DropdownMenuItem>
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>
               <span className="flex-1">
@@ -335,6 +265,80 @@ function CustomTemplateExampleStrip({
 }
 
 /**
+ * An image template's picture. There is no detail page, like the built-in
+ * Illustration card: the card already shows the pictures, the strip and the
+ * action. Where there is more than one picture, clicking a half of it steps
+ * that way, the same affordance the built-in card uses.
+ */
+function CustomTemplateIllustrationHero({
+  template,
+  pictures,
+  shown,
+}: {
+  readonly template: UserTemplateCatalogEntry;
+  readonly pictures: readonly string[];
+  readonly shown: number;
+}) {
+  const { t } = useTranslation();
+  const showExample = useSet(showCustomTemplateExample$);
+  const hero = pictures[shown];
+  const navigable = pictures.length > 1;
+  return (
+    <div className="block w-full bg-muted">
+      {hero ? (
+        <img
+          src={hero}
+          alt={t(
+            ($) => {
+              return $.artifacts.templates.illustrationPreview;
+            },
+            { title: template.title },
+          )}
+          loading="lazy"
+          className={cn(
+            "block h-auto w-full",
+            navigable &&
+              "data-[half=left]:cursor-w-resize data-[half=right]:cursor-e-resize",
+          )}
+          onMouseMove={
+            navigable
+              ? (event) => {
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  event.currentTarget.dataset.half =
+                    event.clientX - rect.left < rect.width / 2
+                      ? "left"
+                      : "right";
+                }
+              : undefined
+          }
+          onMouseLeave={
+            navigable
+              ? (event) => {
+                  delete event.currentTarget.dataset.half;
+                }
+              : undefined
+          }
+          onClick={
+            navigable
+              ? (event) => {
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  const direction =
+                    event.clientX - rect.left < rect.width / 2 ? -1 : 1;
+                  showExample({
+                    templateId: template.id,
+                    index:
+                      (shown + direction + pictures.length) % pictures.length,
+                  });
+                }
+              : undefined
+          }
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/**
  * An image template, shown the way the built-in Illustration tab shows a
  * style: the picture it draws, the other pictures beneath it, then the name.
  *
@@ -352,9 +356,9 @@ function CustomTemplateIllustrationCard({
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
-  const openTemplate = useSet(openCustomTemplate$);
   const updateTemplate = useSet(updateCustomTemplate$);
   const requestDelete = useSet(requestDeleteCustomTemplate$);
+  const requestRename = useSet(requestRenameCustomTemplate$);
   const activeExample = useGet(customTemplateActiveExample$);
   const pictures = template.previewAssets.map((asset) => {
     return asset.url;
@@ -363,7 +367,6 @@ function CustomTemplateIllustrationCard({
     activeExample(template.id),
     Math.max(0, pictures.length - 1),
   );
-  const hero = pictures[shown];
   return (
     <div className="mb-6 break-inside-avoid">
       <div
@@ -374,28 +377,11 @@ function CustomTemplateIllustrationCard({
         )}
       >
         <div className="relative isolate">
-          <button
-            type="button"
-            className="block w-full cursor-pointer bg-muted"
-            aria-label={t(
-              ($) => {
-                return $.templates.actions.preview;
-              },
-              { title: template.title },
-            )}
-            onClick={() => {
-              openTemplate({ templateId: template.id, kind: template.kind });
-            }}
-          >
-            {hero ? (
-              <img
-                src={hero}
-                alt=""
-                loading="lazy"
-                className="block h-auto w-full"
-              />
-            ) : null}
-          </button>
+          <CustomTemplateIllustrationHero
+            template={template}
+            pictures={pictures}
+            shown={shown}
+          />
           {template.canManage ? (
             <CustomTemplateActions
               template={template}
@@ -407,6 +393,9 @@ function CustomTemplateIllustrationCard({
                   ),
                   Reason.DomCallback,
                 );
+              }}
+              onRename={() => {
+                requestRename({ id: template.id, title: template.title });
               }}
               onDelete={() => {
                 requestDelete({ id: template.id, title: template.title });
@@ -462,6 +451,7 @@ function CustomTemplateCard({
   const openTemplate = useSet(openCustomTemplate$);
   const updateTemplate = useSet(updateCustomTemplate$);
   const requestDelete = useSet(requestDeleteCustomTemplate$);
+  const requestRename = useSet(requestRenameCustomTemplate$);
   const open = () => {
     openTemplate({ templateId: template.id, kind: template.kind });
   };
@@ -483,7 +473,7 @@ function CustomTemplateCard({
         >
           {template.coverUrl && template.kind === "document" ? (
             <DocumentTemplateCover
-              template={template}
+              hasMorePages={template.coverHasMorePages}
               coverUrl={template.coverUrl}
             />
           ) : template.coverUrl ? (
@@ -535,6 +525,9 @@ function CustomTemplateCard({
                 ),
                 Reason.DomCallback,
               );
+            }}
+            onRename={() => {
+              requestRename({ id: template.id, title: template.title });
             }}
             onDelete={() => {
               requestDelete({ id: template.id, title: template.title });
@@ -850,6 +843,130 @@ function CustomTemplateDeleteConfirm({
   );
 }
 
+/**
+ * The rename a card's menu asked for. Image templates have no detail page, so
+ * this is where every template can be renamed from the catalog. It mounts per
+ * request, keyed by the template, so one request's failure is never shown on
+ * the next, and it closes only once the new name is saved.
+ */
+function CustomTemplateRenameSlot() {
+  const pending = useGet(pendingCustomTemplateRename$);
+  return pending ? (
+    <CustomTemplateRenameDialog
+      key={pending.id}
+      templateId={pending.id}
+      title={pending.title}
+    />
+  ) : null;
+}
+
+function CustomTemplateRenameDialog({
+  templateId,
+  title,
+}: {
+  readonly templateId: string;
+  readonly title: string;
+}) {
+  const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
+  const cancel = useSet(cancelRenameCustomTemplate$);
+  const [renameLoadable, renameTemplate] = useLoadableSet(
+    renameCustomTemplate$,
+  );
+  const saving = renameLoadable.state === "loading";
+  return (
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next && !saving) {
+          cancel();
+        }
+      }}
+    >
+      <DialogContent smMaxWidth={420}>
+        <form
+          className="grid gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (saving) {
+              return;
+            }
+            const field = new FormData(event.currentTarget).get("title");
+            const normalized =
+              typeof field === "string" ? normalizeTemplateTitle(field) : "";
+            if (normalized.length === 0) {
+              return;
+            }
+            if (normalized === title) {
+              cancel();
+              return;
+            }
+            detach(
+              renameTemplate({ templateId, title: normalized }, pageSignal),
+              Reason.DomCallback,
+            );
+          }}
+        >
+          <DialogHeader className="min-w-0 pr-8">
+            <DialogTitle className="break-words leading-tight">
+              {t(($) => {
+                return $.templates.actions.rename;
+              })}
+            </DialogTitle>
+          </DialogHeader>
+          <Input
+            name="title"
+            defaultValue={title}
+            maxLength={255}
+            required
+            autoFocus
+            disabled={saving}
+            aria-label={t(($) => {
+              return $.templates.actions.rename;
+            })}
+            onKeyDown={(event) => {
+              // Confirming an input method's candidate must not submit the
+              // half-composed name. Safari ends composition before that Enter
+              // and reports it with keyCode 229, so both are checked.
+              if (
+                event.key === "Enter" &&
+                (event.nativeEvent.isComposing ||
+                  event.nativeEvent.keyCode === 229)
+              ) {
+                event.preventDefault();
+              }
+            }}
+          />
+          {renameLoadable.state === "hasError" ? (
+            <p role="alert" className="text-sm text-destructive">
+              {t(($) => {
+                return $.templates.renameFailed;
+              })}
+            </p>
+          ) : null}
+          <DialogFooter className="min-w-0">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={saving}
+              onClick={cancel}
+            >
+              {t(($) => {
+                return $.templates.rename.cancel;
+              })}
+            </Button>
+            <Button type="submit" pending={saving}>
+              {t(($) => {
+                return $.templates.rename.save;
+              })}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /** Custom templates retain their loaded cards while a catalog refresh runs. */
 export function CustomTemplatePickerPane({
   signals,
@@ -956,6 +1073,7 @@ export function CustomTemplatePickerPane({
       </div>
       <CustomTemplatePreviewDialog onSelect={onSelect} />
       <CustomTemplateDeleteConfirmSlot />
+      <CustomTemplateRenameSlot />
     </div>
   );
 }

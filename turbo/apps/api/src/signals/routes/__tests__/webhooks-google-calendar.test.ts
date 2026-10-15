@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
@@ -53,9 +51,7 @@ async function completeRunThroughSandbox(
       completion: {
         cliAgentType: "claude-code",
         cliAgentSessionId: `calendar-webhook-cli-${runId}`,
-        cliAgentSessionHistoryHash: createHash("sha256")
-          .update(`calendar webhook history ${runId}`)
-          .digest("hex"),
+        cliAgentSessionHistoryDisposition: "native_only",
       },
     },
     sandboxHeaders,

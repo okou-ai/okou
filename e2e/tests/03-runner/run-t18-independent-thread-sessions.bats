@@ -60,13 +60,13 @@ teardown() {
     local first_run_response="$output"
     run jq -e '
         .status == "completed" and
-        (.result.agentSessionId | type == "string" and length > 0)
+        (.result.frameworkSessionId | type == "string" and length > 0)
     ' <<<"$first_run_response"
     echo "$output"
     assert_success
     local first_session_id
     first_session_id=$(jq -er \
-        '.result.agentSessionId | select(type == "string" and length > 0)' \
+        '.result.frameworkSessionId | select(type == "string" and length > 0)' \
         <<<"$first_run_response")
 
     run runner_e2e_start_mock_shell_chat_run \
@@ -83,13 +83,13 @@ teardown() {
     local second_run_response="$output"
     run jq -e '
         .status == "completed" and
-        (.result.agentSessionId | type == "string" and length > 0)
+        (.result.frameworkSessionId | type == "string" and length > 0)
     ' <<<"$second_run_response"
     echo "$output"
     assert_success
     local second_session_id
     second_session_id=$(jq -er \
-        '.result.agentSessionId | select(type == "string" and length > 0)' \
+        '.result.frameworkSessionId | select(type == "string" and length > 0)' \
         <<<"$second_run_response")
 
     [[ "$SECOND_THREAD_ID" != "$FIRST_THREAD_ID" ]]

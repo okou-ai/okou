@@ -7,6 +7,7 @@ mod finalizing;
 mod fixture;
 mod optional;
 mod pressure;
+mod pressure_condition;
 mod refusal;
 mod tail;
 mod transitions;
@@ -58,6 +59,22 @@ fn native_report_consumer_validates_external_receipts() {
     );
 }
 
+#[test]
+fn native_pressure_report_consumer_validates_external_receipts() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/pressure_report_test.py"
+        ))
+        .output()
+        .expect("native pressure report contract tests require Python 3");
+    assert!(
+        output.status.success(),
+        "native pressure report contract failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 #[derive(Clone, Copy, Debug)]
 enum NativeScope {
     Batch(IdleRetirementBatchScope),
@@ -97,6 +114,30 @@ async fn guarded_terminal_saving_restores_home_without_private_runtime_bytes() -
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires owned KVM/NBD artifacts, compiled source identity and P1 measurement"]
 async fn native_terminal_corpus_records_data_and_phase_ownership() -> TestResult<()> {
+    measured_corpus(&[
+        NativeScope::Batch(IdleRetirementBatchScope::Exact),
+        NativeScope::Batch(IdleRetirementBatchScope::All),
+        NativeScope::CallerOwned,
+        NativeScope::SpeculativeGuestFailure,
+        NativeScope::FinalizingParked,
+        NativeScope::FinalizingRunning,
+    ])
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD artifacts, real Critical-policy observation and P1 measurement"]
+async fn native_policy_pressure_records_saving_and_free_logical_capacity() -> TestResult<()> {
+    measured_corpus(&[NativeScope::Pressure]).await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD artifacts, real fitting headroom and P1 measurement"]
+async fn native_logical_pressure_records_replacement_and_required_saving() -> TestResult<()> {
+    measured_corpus(&[NativeScope::Logical]).await
+}
+
+async fn measured_corpus(scopes: &[NativeScope]) -> TestResult<()> {
     native_logging()?;
     if !nix::unistd::getuid().is_root() {
         return Err(io::Error::other("native terminal corpus requires root").into());
@@ -120,16 +161,8 @@ async fn native_terminal_corpus_records_data_and_phase_ownership() -> TestResult
         host_cpu_placement: None,
     })
     .await?;
-    let scopes = [
-        NativeScope::Batch(IdleRetirementBatchScope::Exact),
-        NativeScope::Batch(IdleRetirementBatchScope::All),
-        NativeScope::CallerOwned,
-        NativeScope::SpeculativeGuestFailure,
-        NativeScope::FinalizingParked,
-        NativeScope::FinalizingRunning,
-    ];
     let result =
-        exercise_selected_factories(&runtime, &base, &inputs, &scopes, Some(&artifacts)).await;
+        exercise_selected_factories(&runtime, &base, &inputs, scopes, Some(&artifacts)).await;
     if result.is_ok() {
         runtime.shutdown().await;
     }
@@ -305,6 +338,7 @@ async fn exercise_retirement(
         return Err(error);
     }
     let (vcpu, memory) = match scope {
+        NativeScope::Pressure => (6, 12288),
         NativeScope::Replacement | NativeScope::Restore => (4, 8192),
         NativeScope::Aged | NativeScope::OptionalOrdinary | NativeScope::OptionalAged => {
             (12, 24576)
@@ -415,6 +449,9 @@ async fn exercise_retirement(
         proof.retain(pool.clone());
         proof.retain(tracker.clone());
         proof.retain(operations.clone());
+        if matches!(scope, NativeScope::Pressure | NativeScope::Logical) {
+            pressure_condition::observe(&operations, &budget, inputs, scope, proof).await?;
+        }
         proof.event("terminal_started", serde_json::json!({}))?;
     }
     let retirement: TestResult<_> = async {
@@ -428,7 +465,7 @@ async fn exercise_retirement(
                 Ok(None)
             }
             NativeScope::Pressure => {
-                pressure::exercise(&pool, &status, &tracker, &operations, inputs).await?;
+                pressure::exercise(&pool, &status, &tracker, &operations, inputs, proof).await?;
                 Ok(None)
             }
             NativeScope::FinalizingParked | NativeScope::FinalizingRunning => Err(io::Error::other("finalizing scope did not enter its producer transition").into()),
@@ -606,52 +643,83 @@ async fn exercise_retirement(
                 };
                 assert_eq!((lease.vcpu(), lease.memory_mb()), (2, 4096));
                 assert_eq!(result.retirements.len(), 1);
-                // Prepare a different guest before joining old cleanup. Ordinary
-                // external gates establish still-live overlap, without timing claims.
-                let next_factory = factory.clone();
-                let next_cache = cache.clone();
-                let next_rootfs = rootfs_hash.clone();
-                let work = permit.spawn(move |mut operation| async move {
-                    let next_run = RunId::new_v4();
-                    let next_id = SandboxId::new_v4();
-                    let key = format!("thread:native-logical-replacement-{next_run}");
-                    let mut home =
-                        fixture::checkout(&next_cache, next_run, next_id, &key, &next_rootfs).await;
-                    let mut next = next_factory
-                        .create(fixture::sandbox_config(next_id, &mut home))
-                        .await?;
-                    let prepared: TestResult<()> = async {
-                        let backing = next
-                            .backing_process()
-                            .ok_or_else(|| io::Error::other("replacement supplied no backing"))?;
-                        operation.bind_backing(backing)?;
-                        fixture::prepare_guest(&mut *next, next_run).await?;
-                        loop {
-                            match operation.complete_phase().await {
-                                Ok(()) => break,
-                                Err(MemoryOperationError::AccountingChanged) => {
-                                    tokio::task::yield_now().await
+                let completed: TestResult<()> = async {
+                    // Prepare a different guest before joining old cleanup;
+                    // this adds no old-exit barrier or still-live overlap claim.
+                    let next_factory = factory.clone();
+                    let next_cache = cache.clone();
+                    let next_rootfs = rootfs_hash.clone();
+                    let next_proof = proof.cloned();
+                    let work = permit.spawn(move |mut operation| async move {
+                        let next_run = RunId::new_v4();
+                        let next_id = SandboxId::new_v4();
+                        let key = format!("thread:native-logical-replacement-{next_run}");
+                        let mut home =
+                            fixture::checkout(&next_cache, next_run, next_id, &key, &next_rootfs).await;
+                        let mut next = next_factory
+                            .create(fixture::sandbox_config(next_id, &mut home))
+                            .await?;
+                        let prepared: TestResult<()> = async {
+                            // The Fresh operation covers startup; Firecracker exposes
+                            // its backing only after the process has started.
+                            fixture::start_guest(&mut *next, next_run).await?;
+                            let backing = next
+                                .backing_process()
+                                .ok_or_else(|| io::Error::other("replacement supplied no backing"))?;
+                            operation.bind_backing(backing)?;
+                            fixture::prepare_started_guest(&mut *next, next_run).await?;
+                            loop {
+                                match operation.complete_phase().await {
+                                    Ok(()) => break,
+                                    Err(MemoryOperationError::AccountingChanged) => {
+                                        tokio::task::yield_now().await
+                                    }
+                                    Err(error) => return Err(error.into()),
                                 }
-                                Err(error) => return Err(error.into()),
                             }
+                            if let Some(proof) = &next_proof {
+                                proof.pressure_witness(
+                                    "different_guest_prepared",
+                                    serde_json::json!({
+                                        "incoming_sandbox_id": next_id.to_string(),
+                                        "admitted": true,
+                                    }),
+                                )?;
+                            }
+                            Ok(())
                         }
-                        Ok(())
+                        .await;
+                        next_factory.destroy(next).await;
+                        prepared
+                    })?;
+                    work.join().await??;
+                    if let Some(proof) = proof {
+                        proof.pressure_witness(
+                            "original_join_requested",
+                            serde_json::json!({"retirements": result.retirements.len()}),
+                        )?;
                     }
-                    .await;
-                    next_factory.destroy(next).await;
-                    prepared
-                })?;
-                work.join().await??;
-                for task in &mut result.retirements {
-                    let completion = task.join().await??;
-                    if completion.outcome != DestroyOutcome::Completed
-                        || !completion.home_cache_promoted
-                    {
-                        return Err(io::Error::other(
-                            "native logical retirement did not prove complete saving",
-                        )
-                        .into());
+                    for task in &mut result.retirements {
+                        let completion = task.join().await??;
+                        if completion.outcome != DestroyOutcome::Completed
+                            || !completion.home_cache_promoted
+                        {
+                            return Err(io::Error::other(
+                                "native logical retirement did not prove complete saving",
+                            )
+                            .into());
+                        }
                     }
+                    Ok(())
+                }
+                .await;
+                if let Err(error) = completed {
+                    if let Some(proof) = proof {
+                        // Accepted saving can outlive failed replacement work.
+                        // Preserve its complete original lease with the owners.
+                        proof.retain(lease);
+                    }
+                    return Err(error);
                 }
                 Ok(Some(lease))
             }

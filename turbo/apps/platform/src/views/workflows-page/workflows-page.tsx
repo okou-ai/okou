@@ -13,11 +13,9 @@ import type {
   WorkflowOwnerProfile,
   WorkflowSummary,
 } from "@okouai/api-contracts/contracts/workflows";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   ArrowUpDown,
   AlertTriangle,
-  BadgeCheck,
   ChevronDown,
   Download,
   Lock,
@@ -43,7 +41,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
   cn,
-  buttonVariants,
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 
@@ -57,7 +54,6 @@ import { i18n } from "../../i18n/index.ts";
 import { nowDate } from "../../lib/time.ts";
 import { openCreateWorkflowDialog$ } from "../../signals/automation-page/workflow-automation-dialog.ts";
 import { brandName$ } from "../../signals/branding.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import { openSkillImportDialog$ } from "../../signals/skill-import/skill-import-dialog.ts";
 import {
@@ -606,25 +602,6 @@ function WorkflowRow({
             <span className="min-w-0 truncate text-sm font-medium underline decoration-dotted decoration-foreground/40 decoration-[1px] underline-offset-2">
               {title}
             </span>
-            {workflow.official ? (
-              <span
-                className={cn(
-                  "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",
-                  workflow.official.definitionLifecycle === "retired"
-                    ? "bg-amber-50 text-amber-700"
-                    : "bg-blue-50 text-blue-700",
-                )}
-              >
-                <BadgeCheck size={11} />
-                {workflow.official.definitionLifecycle === "retired"
-                  ? i18n.t(($) => {
-                      return $.workflows.official.retiredBadge;
-                    })
-                  : i18n.t(($) => {
-                      return $.workflows.official.badge;
-                    })}
-              </span>
-            ) : null}
             {workflow.importSource ? (
               <Badge className="shrink-0 text-xs font-medium text-muted-foreground">
                 {workflow.importSource === "codex"
@@ -1289,10 +1266,8 @@ function useImportSkills(): () => void {
 }
 
 function WorkflowsHeaderActions({
-  officialWorkflowsEnabled,
   onImportSkills,
 }: {
-  readonly officialWorkflowsEnabled: boolean;
   readonly onImportSkills: () => void;
 }) {
   const { t } = useTranslation();
@@ -1300,20 +1275,6 @@ function WorkflowsHeaderActions({
 
   return (
     <div className="flex shrink-0 items-center gap-2">
-      {officialWorkflowsEnabled ? (
-        <Link
-          pathname={ROUTES.officialWorkflows}
-          className={cn(
-            buttonVariants({ variant: "neutral", size: "sm" }),
-            "h-9 shrink-0 gap-2 rounded-lg",
-          )}
-        >
-          <BadgeCheck size={14} />
-          {t(($) => {
-            return $.workflows.official.browse;
-          })}
-        </Link>
-      ) : null}
       <Button
         type="button"
         variant="neutral"
@@ -1355,9 +1316,6 @@ export function WorkflowsPage() {
     allWorkflowAutomationEntries$,
   );
   const preferences = useLastResolved(userPreferences$);
-  const features = useGet(featureSwitch$);
-  const officialWorkflowsEnabled =
-    features[FeatureSwitchKey.OfficialWorkflows] ?? false;
   const importSkills = useImportSkills();
   const loading =
     workflowsLoadable.state === "loading" ||
@@ -1407,10 +1365,7 @@ export function WorkflowsPage() {
               })}
             </p>
           </div>
-          <WorkflowsHeaderActions
-            officialWorkflowsEnabled={officialWorkflowsEnabled}
-            onImportSkills={importSkills}
-          />
+          <WorkflowsHeaderActions onImportSkills={importSkills} />
         </div>
       </header>
 

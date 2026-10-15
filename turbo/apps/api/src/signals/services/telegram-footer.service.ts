@@ -2,7 +2,6 @@ import { computed, type Computed } from "ccstate";
 import { getRunModelDisplayName } from "@okouai/core/model-display-name";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { eq } from "drizzle-orm";
 
 import { db$, type ReadonlyDb } from "../external/db";
@@ -48,8 +47,7 @@ async function resolveRunAgentLabel(
       agentName: agents.name,
     })
     .from(agentRuns)
-    .innerJoin(agentSessions, eq(agentRuns.sessionId, agentSessions.id))
-    .innerJoin(agents, eq(agentSessions.agentId, agents.id))
+    .innerJoin(agents, eq(agentRuns.agentId, agents.id))
     .where(eq(agentRuns.id, runId))
     .limit(1);
   return row ? displayLabel(row) : undefined;

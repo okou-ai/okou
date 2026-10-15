@@ -1,12 +1,24 @@
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { agentLoopCommand } from "../__agent-loop";
+import {
+  buildProcessEntry,
+  disposePreparedProcessEntry,
+} from "../../test/fixtures/build-process-entry";
 
 const previousExit = process.exitCode;
-const entryFixture = fileURLToPath(
-  new URL("../../test/fixtures/pi-startup-cli-entry.mjs", import.meta.url),
-);
+let compiled: Awaited<ReturnType<typeof buildProcessEntry>>;
+let preparation: ReturnType<typeof buildProcessEntry> | undefined;
+beforeAll(async () => {
+  preparation = buildProcessEntry(
+    fileURLToPath(new URL("../../okou.ts", import.meta.url)),
+  );
+  compiled = await preparation;
+});
+afterAll(async () => {
+  await disposePreparedProcessEntry(preparation);
+});
 
 it("reports startup phases through the main entry without changing a failed command", async () => {
   const result = await new Promise<{
@@ -16,7 +28,7 @@ it("reports startup phases through the main entry without changing a failed comm
   }>((resolve) => {
     execFile(
       process.execPath,
-      ["--import", import.meta.resolve("tsx"), entryFixture, "__agent-loop"],
+      [compiled.entry, "__agent-loop"],
       {
         env: {
           ...process.env,

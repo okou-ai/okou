@@ -69,10 +69,6 @@ async fn assert_api_token_process_isolation() -> TestResult {
             guest_contracts::env::CANONICAL_SANDBOX_ID_ENV,
             "00000000-0000-4000-8000-000000000abc",
         )
-        .env(
-            guest_contracts::env::CANONICAL_SANDBOX_REUSE_RESULT_ENV,
-            "reused",
-        )
         .env(guest_contracts::env::CLI_AGENT_TYPE_ENV, "claude-code")
         .env(guest_contracts::env::USE_MOCK_CLAUDE_ENV, "true")
         .env(

@@ -5,11 +5,16 @@ import { createPublicCreditAlertScenario } from "./helpers/public-credit-alert-s
 const context = testContext();
 
 describe("low-credit membership cache public authority", () => {
-  it("preserves the first admin across pages and revokes omitted cached membership after a five-credit shared debit", async () => {
+  it("preserves the first admin across membership pages after a five-credit shared debit", async () => {
     const scenario = await createPublicCreditAlertScenario(context);
     const observation = await scenario.debitWithMemberships("paginated");
     const promoted = await observation.memberAuthority();
     expect(promoted.status).toBe(200);
+  });
+
+  it("revokes an omitted cached admin after a five-credit shared debit", async () => {
+    const scenario = await createPublicCreditAlertScenario(context);
+    const observation = await scenario.debitWithMemberships("paginated");
     const omitted = await observation.adminAuthority();
     expect(omitted.status).toBe(503);
     expect(omitted.headers.get("cache-control")).toBe("no-store");

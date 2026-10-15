@@ -1,8 +1,7 @@
 import type { RemoteAccessProtocol } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { command } from "ccstate";
-import { and, eq, inArray, isNotNull, ne } from "drizzle-orm";
+import { and, eq, isNotNull, ne } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
 import { db$ } from "../external/db";
@@ -139,18 +138,7 @@ export const publishVncLifecycleInvalidation$ = command(
               ? ne(agentRuns.userId, scope.ownerId)
               : undefined,
             scope.kind === "agent"
-              ? inArray(
-                  agentRuns.sessionId,
-                  db
-                    .select({ id: agentSessions.id })
-                    .from(agentSessions)
-                    .where(
-                      and(
-                        eq(agentSessions.orgId, scope.orgId),
-                        eq(agentSessions.agentId, scope.agentId),
-                      ),
-                    ),
-                )
+              ? eq(agentRuns.agentId, scope.agentId)
               : undefined,
           ),
         ),

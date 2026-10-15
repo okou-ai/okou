@@ -2241,6 +2241,20 @@
       "when": 1791968972629,
       "tag": "1397_detach_storage_lineage_from_run_retention",
       "breakpoints": true
+    },
+    {
+      "idx": 1398,
+      "version": "7",
+      "when": 1791971626628,
+      "tag": "1398_persist_sandbox_startup_path",
+      "breakpoints": true
+    },
+    {
+      "idx": 1399,
+      "version": "7",
+      "when": 1791974038062,
+      "tag": "1399_retire_session_conversation_runtime",
+      "breakpoints": true
     }
   ]
 }

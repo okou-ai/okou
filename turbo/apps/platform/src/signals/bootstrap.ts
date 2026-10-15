@@ -47,7 +47,6 @@ import { setupAgentDetailPage$ } from "./agents-page/agent-detail-page-setup.ts"
 import { setupArtifactsPage$ } from "./artifacts-page/artifacts-page-setup.ts";
 import { setupWorkflowsPage$ } from "./workflows-page/workflows-page-setup.ts";
 import { setupWorkflowDetailPage$ } from "./workflows-page/workflow-detail-page-setup.ts";
-import { setupOfficialWorkflowsPage$ } from "./workflows-page/official-workflows-page-setup.ts";
 import { setupWorksPage$ } from "./works-page/works-page-setup.ts";
 import { setupAgentChatPage$ } from "./okou-page/agent-chat-page-setup.ts";
 import { setupHomePage$ } from "./okou-page/home-page-setup.ts";
@@ -314,14 +313,6 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.agentPermissions,
     setup: setupAuthPageWrapper(setupPermissionAllowPage$),
-  },
-  {
-    path: ROUTES.officialWorkflowDetail,
-    setup: setupAuthSidebarPageWrapper(setupOfficialWorkflowsPage$),
-  },
-  {
-    path: ROUTES.officialWorkflows,
-    setup: setupAuthSidebarPageWrapper(setupOfficialWorkflowsPage$),
   },
   {
     path: ROUTES.workflowDetail,

@@ -167,10 +167,6 @@ done
             guest_contracts::env::CANONICAL_SANDBOX_ID_ENV,
             "00000000-0000-4000-8000-000000000abc",
         )
-        .env(
-            guest_contracts::env::CANONICAL_SANDBOX_REUSE_RESULT_ENV,
-            "reused",
-        )
         .env("HOME", &case_dir)
         .env(
             "PATH",

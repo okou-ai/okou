@@ -1,7 +1,7 @@
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { expectThreadModelCredits } from "./helpers/public-thread-usage";
 import { randomUUID } from "node:crypto";
-import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
+
 import { HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -245,7 +245,7 @@ describe("CHAT-02: run-level model overrides", () => {
         claimChatRun,
         sendChatRun,
       } = await publicChatActor(context);
-      const { secret } = await own(async () => {
+      await own(async () => {
         return await configureUserOwnedGptPiModel(actor, route);
       });
       mockPiResourceArchiveDownloads();
@@ -288,12 +288,10 @@ describe("CHAT-02: run-level model overrides", () => {
       });
       await flushWaitUntilForTest();
       const fastClaim = await claimChatRun(runnerGroup, fast.runId);
-      expect(fastClaim.claim.resumeSession).toMatchObject({
+      expect(fastClaim.claim.resumeSession).toBeNull();
+      expect(fastClaim.claim.nativeContinuation).toMatchObject({
         sessionId: first.threadId,
-        historyRef: {
-          kind: "blob",
-          hash: expect.stringMatching(/^[a-f0-9]{64}$/u),
-        },
+        generationRunId: first.runId,
       });
       expect(fastClaim.claim.piModelConfig).toMatchObject({
         model: route.runtimeModel,
@@ -353,14 +351,7 @@ describe("CHAT-02: run-level model overrides", () => {
       const histories = [...objects.entries()].filter(([key]) => {
         return key.endsWith(".blob");
       });
-      expect(histories).toHaveLength(3);
-      for (const [, value] of histories) {
-        expect(
-          MemoryPiSession.fromJsonl(value.toString("utf8")).getSessionId(),
-        ).toBe(first.threadId);
-        expect(value.toString("utf8")).not.toMatch(/serviceTier|service_tier/);
-        expect(value.toString("utf8")).not.toContain(secret);
-      }
+      expect(histories).toStrictEqual([]);
       for (const run of [first, fast, standard]) {
         await expectThreadModelCredits(context, actor, run.threadId, 0);
       }

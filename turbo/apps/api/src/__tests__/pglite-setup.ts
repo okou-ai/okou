@@ -1,6 +1,9 @@
-import { inject, vi } from "vitest";
+import { afterAll, inject, vi } from "vitest";
 import { API_DATABASE_SNAPSHOT } from "./database-snapshot";
-import { configureCaseDatabase } from "../test-fixtures/case-database";
+import {
+  closePreparedCaseDatabase,
+  configureCaseDatabase,
+} from "../test-fixtures/case-database";
 import { preloadPgliteSnapshot } from "../test-fixtures/pglite-database";
 
 // One transport binding for the entire API project. Production SQL and services
@@ -23,5 +26,6 @@ vi.mock("../lib/db", async (importOriginal) => {
 });
 
 const snapshotPath = inject(API_DATABASE_SNAPSHOT);
-await preloadPgliteSnapshot(snapshotPath);
-configureCaseDatabase(snapshotPath);
+const prepared = await preloadPgliteSnapshot(snapshotPath);
+configureCaseDatabase(snapshotPath, prepared);
+afterAll(closePreparedCaseDatabase);

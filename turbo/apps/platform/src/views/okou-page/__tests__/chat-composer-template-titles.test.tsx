@@ -91,12 +91,20 @@ test("A shared imported template cannot be renamed and can still be applied", as
   await screen.findByRole("group", {
     name: `${template.title} slide preview`,
   });
+  // The name is read-only: the breadcrumb states it, and nothing edits it.
   expect(
-    within(picker).getByRole("heading", { name: template.title, level: 3 }),
+    within(picker).getByRole("heading", {
+      name: `Template / ${template.title}`,
+      level: 2,
+    }),
   ).toBeInTheDocument();
   expect(
     within(picker).queryByRole("textbox", { name: "Rename template" }),
   ).not.toBeInTheDocument();
+  expect(
+    within(picker).queryByText("Change template visibility"),
+  ).not.toBeInTheDocument();
+  expect(within(picker).queryByText("Delete")).not.toBeInTheDocument();
   expect(composerInlineTemplates()).toHaveLength(0);
 
   await user.click(buttonContainingText("Template", picker));

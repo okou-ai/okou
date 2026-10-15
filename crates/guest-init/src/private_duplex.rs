@@ -1,6 +1,6 @@
 //! Guest-side worker for the independent, private run-scoped duplex transport.
 //! Started by guest-init in its existing PID 2 child; no separate daemon.
-//! No exec, file, chat, SSH or VNC method is interpreted here.
+//! Service handlers live in guest-channel-server; this owner grants no authority.
 
 use std::io::{self, Read};
 use std::os::unix::net::UnixStream;
@@ -24,6 +24,15 @@ impl Drop for WorkerCount {
 /// Run separately from the guest control loop. Only one idle connection waits
 /// for host activation; no per-sandbox pool of speculative guest workers.
 pub(super) fn run() {
+    // PID2 has already forked. One worker serves all activated connection epochs.
+    let filesystem = loop {
+        match guest_channel_server::Filesystem::new() {
+            Ok(filesystem) => break filesystem,
+            // Match the acceptor's owned resource-recovery loop. A temporary
+            // thread shortage must not permanently remove the application port.
+            Err(_) => std::thread::sleep(RETRY),
+        }
+    };
     let active = Arc::new(AtomicUsize::new(0));
     loop {
         if active.load(Ordering::Acquire) >= MAX_STREAMS_PER_RUN {
@@ -36,12 +45,13 @@ pub(super) fn run() {
                     std::thread::sleep(RETRY);
                     continue;
                 }
+                let filesystem = filesystem.clone();
                 if start_worker(stream, &active, |stream, count| {
                     std::thread::Builder::new()
                         .name("gdup-channel".into())
                         .spawn(move || {
                             let _count = count;
-                            let _ = guest_channel_server::run(stream);
+                            let _ = guest_channel_server::run_with_filesystem(stream, &filesystem);
                         })
                 })
                 .is_err()

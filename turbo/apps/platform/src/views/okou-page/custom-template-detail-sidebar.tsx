@@ -3,17 +3,11 @@ import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
-  Button,
-  Input,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuRadioItemIndicator,
 } from "@okouai/ui";
 import type {
-  UserTemplateCatalogEntry,
   UserTemplateDetail,
   UserTemplateVisibility,
 } from "@okouai/api-contracts/contracts/user-templates";
@@ -24,6 +18,13 @@ import {
 } from "../../signals/okou-page/custom-template-library.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import {
+  TEMPLATE_DETAIL_TITLE_FIELD,
+  TEMPLATE_DETAIL_TITLE_TEXTAREA,
+  TemplateDetailAccess,
+  TemplateDetailDeleteButton,
+  normalizeTemplateTitle,
+} from "./template-detail-layout.tsx";
 
 /**
  * Everything an open custom template can be managed by, in one column.
@@ -168,10 +169,9 @@ function VisibilityOptionList({
 }
 
 /**
- * Visibility stated as its consequence rather than as a setting, the way the
- * imported deck panel states it: the two words that name the levels carry less
- * than the sentence that says what they do, so the sentence stays on screen and
- * the picker moves behind `Change`.
+ * Visibility the way the imported deck panel states it: the level, and under
+ * it the sentence that says what the level does. The whole block opens the
+ * picker.
  */
 function CustomTemplateVisibilityControl({
   detail,
@@ -181,48 +181,45 @@ function CustomTemplateVisibilityControl({
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const updateTemplate = useSet(updateCustomTemplate$);
-  const CurrentIcon = detail.visibility === "private" ? Lock : Users;
   return (
-    <DropdownMenu>
-      <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
-        <CurrentIcon size={14} className="shrink-0" aria-hidden="true" />
-        <span>
-          {detail.visibility === "private"
-            ? t(($) => {
-                return $.templates.visibility.privateState;
-              })
-            : t(($) => {
-                return $.templates.visibility.organizationState;
-              })}
-        </span>
-        <span aria-hidden="true">·</span>
-        <DropdownMenuTrigger className="font-medium text-foreground underline decoration-muted-foreground/40 underline-offset-2 transition-colors hover:decoration-foreground">
-          {t(($) => {
-            return $.templates.visibility.change;
-          })}
-        </DropdownMenuTrigger>
-      </p>
-      <DropdownMenuContent
-        align="start"
-        side="bottom"
-        sideOffset={6}
-        className="w-[19rem] p-1.5"
-      >
-        <VisibilityOptionList
-          templateId={detail.id}
-          visibility={detail.visibility}
-          onChange={(visibility) => {
-            detach(
-              updateTemplate(
-                { templateId: detail.id, body: { visibility } },
-                pageSignal,
-              ),
-              Reason.DomCallback,
-            );
-          }}
-        />
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <TemplateDetailAccess
+      icon={detail.visibility === "private" ? Lock : Users}
+      level={
+        detail.visibility === "private"
+          ? t(($) => {
+              return $.templates.visibility.private;
+            })
+          : t(($) => {
+              return $.templates.visibility.organization;
+            })
+      }
+      consequence={
+        detail.visibility === "private"
+          ? t(($) => {
+              return $.templates.visibility.privateState;
+            })
+          : t(($) => {
+              return $.templates.visibility.organizationState;
+            })
+      }
+      triggerLabel={t(($) => {
+        return $.artifacts.templates.visibility.changeLabel;
+      })}
+    >
+      <VisibilityOptionList
+        templateId={detail.id}
+        visibility={detail.visibility}
+        onChange={(visibility) => {
+          detach(
+            updateTemplate(
+              { templateId: detail.id, body: { visibility } },
+              pageSignal,
+            ),
+            Reason.DomCallback,
+          );
+        }}
+      />
+    </TemplateDetailAccess>
   );
 }
 
@@ -234,7 +231,7 @@ function CustomTemplateVisibilityControl({
  * the order they were typed — which is how the earlier of the two could land
  * last and take the name back.
  */
-function CustomTemplateTitleInput({
+export function CustomTemplateTitleInput({
   detail,
 }: {
   readonly detail: UserTemplateDetail;
@@ -244,7 +241,7 @@ function CustomTemplateTitleInput({
   const [saveLoadable, updateTemplate] = useLoadableSet(updateCustomTemplate$);
   const saving = saveLoadable.state === "loading";
   const rename = (nextTitle: string) => {
-    const normalized = nextTitle.replace(/\s+/gu, " ").trim();
+    const normalized = normalizeTemplateTitle(nextTitle);
     if (normalized.length === 0 || normalized === detail.title) {
       return;
     }
@@ -258,38 +255,50 @@ function CustomTemplateTitleInput({
   };
   return (
     <>
-      <Input
-        // Re-keyed on the stored title so the server's own normalisation
-        // replaces what was typed, once it is stored. A save that failed did
-        // not change the title, which is what leaves the rejected text in the
-        // field to be corrected and sent again.
+      {/* Re-keyed on the stored title so the server's own normalisation
+          replaces what was typed, once it is stored. A save that failed did
+          not change the title, which is what leaves the rejected text in the
+          field to be corrected and sent again. */}
+      <div
         key={detail.title}
-        defaultValue={detail.title}
-        disabled={saving}
-        aria-label={t(($) => {
-          return $.templates.actions.rename;
-        })}
-        className="h-auto min-h-10 rounded-lg border-transparent px-1 py-[5px] text-xl font-semibold leading-7 hover:border-[hsl(var(--gray-400))]"
-        onBlur={(event) => {
-          rename(event.target.value);
-        }}
-        onKeyDown={(event) => {
-          if (
-            event.key === "Enter" &&
-            !event.nativeEvent.isComposing &&
-            event.nativeEvent.keyCode !== 229
-          ) {
-            event.preventDefault();
-            event.currentTarget.blur();
-          }
-        }}
-      />
+        className={TEMPLATE_DETAIL_TITLE_FIELD}
+        data-value={detail.title}
+      >
+        <textarea
+          defaultValue={detail.title}
+          disabled={saving}
+          rows={1}
+          maxLength={255}
+          aria-label={t(($) => {
+            return $.templates.actions.rename;
+          })}
+          className={TEMPLATE_DETAIL_TITLE_TEXTAREA}
+          onChange={(event) => {
+            // The field always renders inside the mirror that sizes it.
+            const mirror = event.currentTarget.parentElement!;
+            mirror.dataset.value = event.currentTarget.value;
+          }}
+          onBlur={(event) => {
+            rename(event.target.value);
+          }}
+          onKeyDown={(event) => {
+            if (
+              event.key === "Enter" &&
+              !event.nativeEvent.isComposing &&
+              event.nativeEvent.keyCode !== 229
+            ) {
+              event.preventDefault();
+              event.currentTarget.blur();
+            }
+          }}
+        />
+      </div>
       {saveLoadable.state === "hasError" ? (
-        <p role="alert" className="mt-1 text-xs text-destructive">
+        <span role="alert" className="shrink-0 text-xs text-destructive">
           {t(($) => {
             return $.templates.renameFailed;
           })}
-        </p>
+        </span>
       ) : null}
     </>
   );
@@ -297,68 +306,50 @@ function CustomTemplateTitleInput({
 
 export function CustomTemplateDetailSidebar({
   detail,
-  onSelect,
 }: {
   readonly detail: UserTemplateDetail;
-  readonly onSelect: (template: UserTemplateCatalogEntry) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="-mx-2 flex min-h-0 flex-col gap-5 px-2 lg:overflow-y-auto">
+      {detail.kind === "presentation" ? (
+        <p className="text-sm text-muted-foreground">
+          {t(
+            ($) => {
+              return $.artifacts.templates.importedSlides;
+            },
+            { count: detail.pageUrls.length },
+          )}
+        </p>
+      ) : null}
+      {detail.canManage ? (
+        <CustomTemplateVisibilityControl detail={detail} />
+      ) : (
+        <TemplateDetailAccess
+          icon={User}
+          level={<SharedByLabel ownerDisplayName={detail.ownerDisplayName} />}
+        />
+      )}
+    </div>
+  );
+}
+
+/** The footer's way to be rid of a template, for the member who can manage it. */
+export function CustomTemplateDeleteButton({
+  detail,
+}: {
+  readonly detail: UserTemplateDetail;
 }) {
   const { t } = useTranslation();
   const requestDelete = useSet(requestDeleteCustomTemplate$);
   return (
-    // The imported deck panel's column, which this now shares: the name, what
-    // it means to share it, then the action, then the way to be rid of it.
-    <aside className="flex w-full shrink-0 flex-col lg:sticky lg:top-0 lg:w-[320px]">
-      <div className="rounded-lg border border-border bg-background p-4 shadow-sm">
-        {detail.canManage ? (
-          <CustomTemplateTitleInput detail={detail} />
-        ) : (
-          <h3 className="text-xl font-semibold text-foreground">
-            {detail.title}
-          </h3>
-        )}
-        {/*
-         * No line naming the file it was reversed from. The template is what
-         * the member uses from here on, and once it is named and renameable
-         * the original filename is a fact about an import that already
-         * happened — one the preview beside this column shows anyway, for the
-         * kinds whose source is what gets drawn.
-         */}
-        <div className="my-5 border-t border-border" />
-        {detail.canManage ? (
-          <CustomTemplateVisibilityControl detail={detail} />
-        ) : (
-          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <User size={14} className="shrink-0" aria-hidden />
-            <SharedByLabel ownerDisplayName={detail.ownerDisplayName} />
-          </p>
-        )}
-        <Button
-          type="button"
-          className="mt-5 h-12 w-full font-semibold shadow-sm"
-          onClick={() => {
-            onSelect(detail);
-          }}
-        >
-          {t(($) => {
-            return $.artifacts.templates.useThisTemplate;
-          })}
-        </Button>
-        {detail.canManage ? (
-          <Button
-            type="button"
-            variant="quiet"
-            size="sm"
-            className="mt-2 w-full text-destructive hover:text-destructive"
-            onClick={() => {
-              requestDelete({ id: detail.id, title: detail.title });
-            }}
-          >
-            {t(($) => {
-              return $.templates.actions.delete;
-            })}
-          </Button>
-        ) : null}
-      </div>
-    </aside>
+    <TemplateDetailDeleteButton
+      label={t(($) => {
+        return $.templates.actions.delete;
+      })}
+      onDelete={() => {
+        requestDelete({ id: detail.id, title: detail.title });
+      }}
+    />
   );
 }

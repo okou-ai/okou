@@ -39,8 +39,6 @@ import {
   VOICE_IO_TRANSCRIBE_MAX_EDITOR_CONTEXT_CHARS,
   type VoiceIoEditorContext,
 } from "@okouai/api-contracts/contracts/voice-io-transcribe";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { splitPlainTextUrls } from "../../lib/plain-text-urls.ts";
 import { agents$ } from "../agent.ts";
@@ -284,7 +282,12 @@ export type OpenComposerTemplatePickerIntent =
   | { readonly kind: "edit-legacy"; readonly category: string };
 
 export type ComposerTemplateAttachmentType =
-  "custom" | "presentation" | "illustration" | "workflow" | "website";
+  | "custom"
+  | "document"
+  | "presentation"
+  | "illustration"
+  | "workflow"
+  | "website";
 
 export interface ComposerTemplateAttachment {
   readonly type: ComposerTemplateAttachmentType;
@@ -846,6 +849,7 @@ function templateAttachmentNodeAttributes(
   if (
     (type !== "presentation" &&
       type !== "custom" &&
+      type !== "document" &&
       type !== "illustration" &&
       type !== "workflow" &&
       type !== "website") ||
@@ -932,6 +936,11 @@ function templateAttachmentRemoveLabel(
 function templateAttachmentTypeLabel(
   type: ComposerTemplateAttachmentType,
 ): string {
+  if (type === "document") {
+    return i18n.t(($) => {
+      return $.documentTemplates.title;
+    });
+  }
   if (type === "presentation") {
     return i18n.t(($) => {
       return $.chat.templates.categories.presentation;
@@ -2231,9 +2240,7 @@ function createMountEditorCommand({
         set(caretIndex$, updatedEditor.state.selection.head);
       };
       runtime.focus = (focusedEditor) => {
-        if (get(featureSwitch$)[FeatureSwitchKey.ComposerAnchoredSuggestions]) {
-          set(selectedSuggestionIndexState$, null);
-        }
+        set(selectedSuggestionIndexState$, null);
         set(previewSuggestionIndexState$, null);
         set(editorInteractionActiveState$, true);
         set(caretIndex$, focusedEditor.state.selection.head);
@@ -2946,10 +2953,7 @@ function createSelectedSuggestionIndex(
     }
     // Opening the overview only lists choices. A pointer or arrow key must
     // choose a row before it becomes active or opens a template preview.
-    return get(featureSwitch$)[FeatureSwitchKey.ComposerAnchoredSuggestions] &&
-      get(activeSlashRange$)?.query === ""
-      ? -1
-      : 0;
+    return get(activeSlashRange$)?.query === "" ? -1 : 0;
   });
 }
 
@@ -2967,8 +2971,9 @@ function createSlashWorkflowExpansionSignals(
       return range !== null && range === get(expandedSlashRange$);
     }),
     expandSlashWorkflows$: command(({ get, set }) => {
-      // The ellipsis leaves the DOM after activation. Return focus to the
-      // editor, which owns suggestion keyboard navigation, before removing it.
+      // The show-all control leaves the DOM after activation. Return focus to
+      // the editor, which owns suggestion keyboard navigation, before removing
+      // it.
       editor.view.focus();
       set(expandedSlashRange$, get(activeSlashRange$));
     }),

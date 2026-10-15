@@ -1,9 +1,18 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
+import {
+  agentDraftContract,
+  type AgentDraftRequest,
+} from "@okouai/api-contracts/contracts/agent-draft";
+import { composerInlineTemplates } from "./chat-composer-test-helpers.ts";
 import {
   AGENT_ID,
   context,
@@ -24,14 +33,26 @@ function builtInTemplate(index = 0) {
 }
 
 function detailGroup(title: string): HTMLElement {
-  return screen.getByRole("group", { name: `${title} slide preview` });
+  const preview = Array.from(
+    document.querySelectorAll<HTMLElement>('[role="group"]'),
+  ).find((group) => {
+    return (
+      group.getAttribute("aria-label") === `${title} slide preview` &&
+      !group.closest('[aria-hidden="true"], [hidden], [inert]')
+    );
+  });
+  if (!preview) {
+    throw new Error(`Expected the ${title} slide preview`);
+  }
+  return preview;
 }
 
 async function openPresentationThemePreview() {
   const capture = mockTemplateChat();
   const template = builtInTemplate();
+  const drafts = mockSavedThemeDraft(template.colorSystemId);
   mockPresentationHtml(template.embedUrl, ["Opening"]);
-  const user = userEvent.setup();
+  const user = userEvent.setup({ delay: null });
 
   await setupPage({
     context,
@@ -39,22 +60,101 @@ async function openPresentationThemePreview() {
     host: "app.okou.ai",
   });
 
-  await openTemplatePicker(user, "Presentation");
-  click(screen.getByLabelText(`Preview ${template.title} at current slide`));
+  await expectInlineTemplate(template.title);
+  const inline = composerInlineTemplates()[0];
+  const edit = inline && queryAllByRoleFast("button", inline)[0];
+  if (!edit) {
+    throw new Error("The saved presentation template has no edit control");
+  }
+  click(edit);
+  const dialog = await screen.findByRole("dialog");
+  click(
+    within(dialog).getByLabelText(`Preview ${template.title} at current slide`),
+  );
   await waitFor(() => {
-    expect(detailGroup(template.title)).toBeVisible();
+    expect(detailGroup(template.title)).toBeInTheDocument();
   });
-  return { capture, template, user, detail: detailGroup(template.title) };
+  return {
+    capture,
+    template,
+    user,
+    drafts,
+    dialog,
+    detail: detailGroup(template.title),
+  };
 }
 
-test("Send the selected presentation theme from its preview", async () => {
-  const { capture, template, user } = await openPresentationThemePreview();
-  click(screen.getByLabelText("Select style Deep dive"));
-  click(
-    within(screen.getByRole("dialog")).getByLabelText(
-      `Select template ${template.title}`,
-    ),
-  );
+test("Select a presentation theme from its preview", async () => {
+  const { capture, template, drafts, dialog } =
+    await openPresentationThemePreview();
+  click(within(dialog).getByLabelText("Select style Deep dive"));
+  click(within(dialog).getByLabelText(`Select template ${template.title}`));
+  await expectInlineTemplate(template.title);
+  await waitFor(() => {
+    expect(drafts).toContainEqual(
+      expect.objectContaining({
+        draftUserMessage: {
+          version: 1,
+          parts: expect.arrayContaining([
+            expect.objectContaining({
+              type: "template",
+              template: expect.objectContaining({
+                type: "presentation",
+                selection: expect.objectContaining({
+                  templateId: template.templateId,
+                  colorSystemId: "color-system:ocean-deep",
+                }),
+              }),
+            }),
+          ]),
+        },
+      }),
+    );
+  });
+  expect(capture.sentMessages).toStrictEqual([]);
+});
+
+function mockSavedThemeDraft(colorSystemId: string) {
+  const template = builtInTemplate();
+  const drafts: AgentDraftRequest[] = [];
+  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+    return respond(200, {
+      draftUserMessage: {
+        version: 1,
+        parts: [
+          {
+            type: "template",
+            titleSnapshot: template.title,
+            template: {
+              type: "presentation",
+              selection: {
+                templateId: template.templateId,
+                colorSystemId,
+              },
+            },
+          },
+        ],
+      },
+      draftAttachments: null,
+    });
+  });
+  context.mocks.api(agentDraftContract.patch, ({ body, respond }) => {
+    drafts.push(body);
+    return respond(204);
+  });
+  return drafts;
+}
+
+test("Send a presentation theme restored from a saved draft", async () => {
+  const capture = mockTemplateChat();
+  const template = builtInTemplate();
+  const user = userEvent.setup({ delay: null });
+  mockSavedThemeDraft("color-system:ocean-deep");
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    host: "app.okou.ai",
+  });
   await expectInlineTemplate(template.title);
   await sendComposerMessage(user, "Create the quarterly presentation");
   await waitFor(() => {
@@ -201,4 +301,49 @@ test("Step back through a presentation template from its filmstrip", async () =>
     "true",
   );
   expect(within(preview).getByText("2 / 3")).toBeInTheDocument();
+});
+
+function stagePreviewFrame(title: string): HTMLIFrameElement {
+  const frame = screen.getByTitle(`${title} HTML preview`);
+  if (!(frame instanceof HTMLIFrameElement)) {
+    throw new Error("The stage preview is not a frame");
+  }
+  return frame;
+}
+
+function loadPreviewFrame(frame: HTMLIFrameElement): void {
+  const frameDocument = frame.contentDocument;
+  if (frameDocument === null) {
+    throw new Error("Presentation preview frame has no document");
+  }
+  frameDocument.open();
+  frameDocument.write(frame.srcdoc);
+  frameDocument.close();
+  fireEvent.load(frame);
+}
+
+/** The accent the slide on the stage is painted with right now. */
+function stageAccent(title: string): string {
+  const frameDocument = stagePreviewFrame(title).contentDocument;
+  const frameWindow = frameDocument?.defaultView;
+  if (!frameDocument || !frameWindow) {
+    throw new Error("The stage preview has no rendered document");
+  }
+  return frameWindow
+    .getComputedStyle(frameDocument.documentElement)
+    .getPropertyValue("--accent")
+    .trim();
+}
+
+test("A slide already on the stage takes a new theme as soon as it is picked", async () => {
+  await openThreeSlidePreview();
+  const template = builtInTemplate();
+  loadPreviewFrame(stagePreviewFrame(template.title));
+  expect(stageAccent(template.title)).toBe("#7257E6");
+
+  click(
+    within(screen.getByRole("dialog")).getByLabelText("Select style Deep dive"),
+  );
+
+  expect(stageAccent(template.title)).toBe("#38C7B4");
 });

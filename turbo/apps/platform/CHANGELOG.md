@@ -12,6 +12,51 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1025.0](https://github.com/okou-ai/okou/compare/app-v0.1024.0...app-v0.1025.0) (2026-10-14)
+
+
+### Features
+
+* **app:** drop the custom image template detail; rename from the card menu ([#40057](https://github.com/okou-ai/okou/issues/40057)) ([d41f995](https://github.com/okou-ai/okou/commit/d41f9951e6b977ffaa363341aedec94b51e014a6))
+
+
+### Bug Fixes
+
+* **app:** give the slash browse-all row full width and the only fill ([#39985](https://github.com/okou-ai/okou/issues/39985)) ([d5995f5](https://github.com/okou-ai/okou/commit/d5995f550d3415d62adf8e09934228c909c61d42))
+* **app:** remove transient loading notices from template galleries ([#40050](https://github.com/okou-ai/okou/issues/40050)) ([d818f79](https://github.com/okou-ai/okou/commit/d818f794589383b7cda8150802de4ef5f35bc9a1))
+* **app:** rename discord server action to join new server ([#40043](https://github.com/okou-ai/okou/issues/40043)) ([0c6c26d](https://github.com/okou-ai/okou/commit/0c6c26d07e07806dadd597c509fdc1d75e312cca))
+* **app:** repaint template themes in place and align template previews ([#39909](https://github.com/okou-ai/okou/issues/39909)) ([e5ee932](https://github.com/okou-ai/okou/commit/e5ee93228555fbf21e1e4fdc6a82c1b6cfe5eba5))
+* **app:** use native grid lanes for illustration masonry ([#40034](https://github.com/okou-ai/okou/issues/40034)) ([533f591](https://github.com/okou-ai/okou/commit/533f5912192d4bd750daac5d9e7eb324e87839ec))
+* **platform:** collapse tailscale guidance for new networks ([#40040](https://github.com/okou-ai/okou/issues/40040)) ([e86400e](https://github.com/okou-ai/okou/commit/e86400ecdaf4938053548666ceeebd36e2ef50d5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.561.0
+    * @okouai/core bumped to 8.757.0
+
+## [0.1024.0](https://github.com/okou-ai/okou/compare/app-v0.1023.0...app-v0.1024.0) (2026-10-14)
+
+
+### Features
+
+* **app:** add passive ably token exchange diagnostics ([#40037](https://github.com/okou-ai/okou/issues/40037)) ([eecafda](https://github.com/okou-ai/okou/commit/eecafda4f3043a7a32d7d0695431ca2398d8524f))
+
+
+### Bug Fixes
+
+* report billing models from captured usage providers ([#40036](https://github.com/okou-ai/okou/issues/40036)) ([72071ff](https://github.com/okou-ai/okou/commit/72071ff711d0f9452a1e44cf52302696f29bf31b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.560.1
+    * @okouai/core bumped to 8.756.0
+
 ## [0.1023.0](https://github.com/okou-ai/okou/compare/app-v0.1022.3...app-v0.1023.0) (2026-10-14)
 
 

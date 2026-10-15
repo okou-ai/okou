@@ -57,8 +57,6 @@ use runner_types::types::{
     CompleteRequest, ConnectorRuntimeSyncBatchResponse, ConnectorRuntimeTargetRegistration,
     ExecutionContext, HeartbeatState, Job, PollResponse,
 };
-#[cfg(test)]
-use runner_types::types::{HomeReuseResult, SandboxReuseResult};
 
 fn supports_thread_active_input(reuse_key: Option<&str>) -> bool {
     reuse_key.is_some_and(|key| key.starts_with("thread:"))
@@ -71,6 +69,7 @@ struct ClaimRequestBody<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     runner_hostname: Option<&'a str>,
     capabilities: RunnerClaimCapabilities,
+    native_continuation_supported: bool,
     telemetry: ClaimRequestTelemetry,
     /// Versions of the Okou CLI installed in this runner's rootfs. Older APIs
     /// strip the field; a runner without an installed CLI omits it.
@@ -1828,6 +1827,7 @@ fn claim_request_body<'a>(
                 PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION,
             ],
         },
+        native_continuation_supported: true,
         telemetry: ClaimRequestTelemetry {
             discovery_source: candidate.discovery_source().map(JobDiscoverySource::as_str),
             job_discovered_to_claim_request_ms: claim_telemetry_duration_ms(
@@ -2893,8 +2893,6 @@ mod tests {
             failure_reason: None,
             error: None,
             sandbox_id: None,
-            sandbox_reuse_result: None,
-            home_reuse_result: None,
         }
     }
 
@@ -5753,8 +5751,6 @@ mod tests {
                     failure_reason: None,
                     error: Some("boom".to_string()),
                     sandbox_id: None,
-                    sandbox_reuse_result: None,
-                    home_reuse_result: None,
                 },
             )
             .await
@@ -5770,9 +5766,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn api_client_complete_serializes_no_reuse_key() {
+    async fn api_client_complete_serializes_sandbox_identity() {
         let server = MockServer::start_async().await;
         let run_id = RunId::from(uuid::Uuid::nil());
+        let sandbox_id = sandbox::SandboxId::new_v4();
         let mock = server
             .mock_async(|when, then| {
                 when.method(POST)
@@ -5781,8 +5778,7 @@ mod tests {
                     .json_body(serde_json::json!({
                         "runId": run_id,
                         "exitCode": 0,
-                        "sandboxReuseResult": "noReuseKey",
-                        "homeReuseResult": "noReuseKey",
+                        "sandboxId": sandbox_id,
                     }));
                 then.status(200);
             })
@@ -5796,9 +5792,7 @@ mod tests {
                 exit_code: 0,
                 failure_reason: None,
                 error: None,
-                sandbox_id: None,
-                sandbox_reuse_result: Some(SandboxReuseResult::NoReuseKey),
-                home_reuse_result: Some(HomeReuseResult::NoReuseKey),
+                sandbox_id: Some(sandbox_id),
             },
         )
         .await
@@ -6251,7 +6245,7 @@ mod tests {
             .mock_async(|when, then| {
                 when.method(POST)
                     .path(claim_path.as_str())
-                    // A previous API ignores the capability header and still
+                    // A previous API strips the optional root capability and still
                     // validates the unchanged strict claim body.
                     .is_true(|request| {
                         let Ok(mut body) =
@@ -6263,7 +6257,11 @@ mod tests {
                             return false;
                         };
                         let elapsed = telemetry.remove("jobDiscoveredToClaimRequestMs");
+                        let native = body
+                            .as_object_mut()
+                            .and_then(|body| body.remove("nativeContinuationSupported"));
                         elapsed.as_ref().is_some_and(serde_json::Value::is_u64)
+                            && native == Some(serde_json::Value::Bool(true))
                             && body
                                 == serde_json::json!({
                                     "runnerIdentity": {

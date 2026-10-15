@@ -4,6 +4,7 @@
 
 mod connection;
 mod diagnostics;
+mod filesystem;
 mod io;
 
 use std::{future::Future, pin::Pin, sync::Arc};
@@ -11,6 +12,7 @@ use std::{future::Future, pin::Pin, sync::Arc};
 pub use api_contracts::generated::types::sandbox_channel::diagnostics::{Echo, Notice};
 pub use connection::Peer;
 pub use diagnostics::Diagnostics;
+pub use filesystem::Filesystem;
 pub use guest_contracts::sandbox_channel::{Categories, ChannelError, Operation, Params};
 use serde_json::Value;
 
@@ -103,13 +105,28 @@ pub trait Service: Send + Sync + 'static {
 /// Run an admitted stream on a runtime created in its post-fork worker.
 /// Returning means all connection tasks and the physical descriptor are retired.
 pub fn run(stream: std::os::unix::net::UnixStream) -> std::io::Result<()> {
+    run_service(stream, Arc::new(Diagnostics))
+}
+
+/// Run the complete diagnostics/fs roles using the Guest's fixed post-fork worker.
+pub fn run_with_filesystem(
+    stream: std::os::unix::net::UnixStream,
+    filesystem: &Filesystem,
+) -> std::io::Result<()> {
+    run_service(stream, filesystem.service())
+}
+
+fn run_service(
+    stream: std::os::unix::net::UnixStream,
+    service: Arc<dyn Service>,
+) -> std::io::Result<()> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_io()
         .enable_time()
         .build()?;
     runtime.block_on(async {
         let stream = io::FdStream::new(stream)?;
-        serve(stream, Arc::new(Diagnostics)).await
+        serve(stream, service).await
     })
 }
 

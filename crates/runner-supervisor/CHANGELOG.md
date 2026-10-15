@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.14.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.13.9...runner-supervisor-v0.14.0) (2026-10-14)
+
+
+### Features
+
+* persist sandbox startup path on agent runs ([#39972](https://github.com/okou-ai/okou/issues/39972)) ([db59569](https://github.com/okou-ai/okou/commit/db595699439f7f221fb5df8b9eba14a9a4faac73))
+
+## [0.13.9](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.13.8...runner-supervisor-v0.13.9) (2026-10-14)
+
+
+### Refactoring
+
+* **runner-supervisor:** own startup resources and rollback ([#40028](https://github.com/okou-ai/okou/issues/40028)) ([68dabea](https://github.com/okou-ai/okou/commit/68dabea4f59c75adf45f1e67890c7b0f5bb7d34d))
+
 ## [0.13.8](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.13.7...runner-supervisor-v0.13.8) (2026-10-14)
 
 ## [0.13.7](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.13.6...runner-supervisor-v0.13.7) (2026-10-14)

@@ -218,7 +218,8 @@ export function captureOnboardingEvent(
 
 export function captureSubscriptionLinkingEvent(
   name: "entry_clicked" | "provider_selected",
-  source: "composer_model_slot" | "account_menu" | "me_page",
+  source:
+    "composer_model_slot" | "composer_model_panel" | "account_menu" | "me_page",
   provider?: "codex-oauth-token" | "claude-code-oauth-token",
 ): void {
   runPostHog(() => {

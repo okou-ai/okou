@@ -231,6 +231,15 @@ pub fn build_session_history_restore_plan(
         pre_spawn_timing,
         probe,
     } = input;
+    if context.native_continuation.is_some() {
+        // Fresh-home preparation can supply existing local integrity evidence.
+        // Native mode has no materializer input or remote restore on a miss.
+        return if reuse_result == SandboxReuseResult::Reused {
+            SessionHistoryRestorePlan::Default
+        } else {
+            SessionHistoryRestorePlan::DeferredHashBacked { fallback: None }
+        };
+    }
     let Some(resume_session) = context.resume_session.as_ref() else {
         return SessionHistoryRestorePlan::Default;
     };

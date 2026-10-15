@@ -33,6 +33,8 @@ export default defineConfig({
       "activity.network.details.*",
       "artifacts.templates.workflowCatalog.*",
       "artifacts.templates.workflowCategories.*",
+      // Document purposes are selected from the shared catalog at runtime.
+      "documentTemplates.categories.*",
       // Shared bot views choose the provider at runtime.
       "connectors.providerSettings.feishu.*",
       "connectors.providerSettings.lark.*",

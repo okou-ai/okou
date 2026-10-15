@@ -11,8 +11,6 @@ import {
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
-import { conversations } from "@okouai/db/schema/conversation";
 import {
   and,
   count,
@@ -149,12 +147,12 @@ export function logsList(
           agentId: agents.id,
           launchSnapshot: agentRuns.launchSnapshot,
           displayName: agents.displayName,
-          cliAgentSessionId: conversations.cliAgentSessionId,
+          cliAgentSessionId: agentRuns.frameworkSessionId,
         })
         .from(agentRuns)
-        .leftJoin(agentSessions, eq(agentRuns.sessionId, agentSessions.id))
-        .leftJoin(agents, eq(agentSessions.agentId, agents.id))
-        .leftJoin(conversations, eq(agentRuns.id, conversations.runId))
+
+        .leftJoin(agents, eq(agentRuns.agentId, agents.id))
+
         .where(whereClause)
         .orderBy(desc(agentRuns.createdAt), desc(agentRuns.id))
         .limit(limit + 1),
@@ -222,8 +220,8 @@ async function getLogsTotalCount(
   const [result] = await db
     .select({ count: count() })
     .from(agentRuns)
-    .leftJoin(agentSessions, eq(agentRuns.sessionId, agentSessions.id))
-    .leftJoin(agents, eq(agentSessions.agentId, agents.id))
+
+    .leftJoin(agents, eq(agentRuns.agentId, agents.id))
     .where(and(...conditions));
 
   return result?.count ?? 0;
@@ -251,8 +249,8 @@ async function getAvailableFilters(
     db
       .selectDistinct({ agentId: agents.id })
       .from(agentRuns)
-      .leftJoin(agentSessions, eq(agentRuns.sessionId, agentSessions.id))
-      .leftJoin(agents, eq(agentSessions.agentId, agents.id))
+
+      .leftJoin(agents, eq(agentRuns.agentId, agents.id))
       .where(and(...baseConditions, isNotNull(agents.id))),
   ]);
 
@@ -298,8 +296,6 @@ interface LogDetailParams {
 }
 
 interface RunResult {
-  agentSessionId?: string;
-  conversationId?: string;
   artifact?: Record<string, string>;
   volumes?: Record<string, string>;
 }
@@ -335,8 +331,8 @@ export function logDetail(
         modelRuntimeModel: agentRuns.modelRuntimeModel,
       })
       .from(agentRuns)
-      .leftJoin(agentSessions, eq(agentRuns.sessionId, agentSessions.id))
-      .leftJoin(agents, eq(agentSessions.agentId, agents.id))
+
+      .leftJoin(agents, eq(agentRuns.agentId, agents.id))
       .where(
         and(
           eq(agentRuns.id, params.runId),
@@ -361,7 +357,6 @@ export function logDetail(
       modelRuntimeModel,
     } = result;
     const runResult = run.result as RunResult | null;
-    const agentSessionId = runResult?.agentSessionId ?? null;
     const framework =
       (await get(runContextCliAgentType(params.runId))) ??
       run.launchSnapshot?.framework ??
@@ -369,7 +364,7 @@ export function logDetail(
 
     return {
       id: run.id,
-      sessionId: agentSessionId,
+      sessionId: run.frameworkSessionId,
       agentId,
       displayName: agentDisplayName ?? null,
       framework,

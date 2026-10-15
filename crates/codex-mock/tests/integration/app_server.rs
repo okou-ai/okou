@@ -476,7 +476,28 @@ fn app_server_turn_steer_returns_active_turn_and_records_inputs() -> std::io::Re
     assert_eq!(recorded["result"]["steered"], json!(["follow-up prompt"]));
 
     let session_path = require_session_file(dir.path())?;
-    let events = read_session_file(&session_path)?;
+    let records = read_session_file(&session_path)?;
+    assert_eq!(
+        records.first().map(|event| &event["type"]),
+        Some(&json!("session_meta"))
+    );
+    assert_eq!(
+        records.first().map(|event| &event["payload"]["id"]),
+        Some(&json!(thread_id))
+    );
+    let messages = records
+        .iter()
+        .filter(|event| event["type"] == "response_item")
+        .map(|event| event["payload"]["content"][0]["text"].clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        messages,
+        vec![json!("initial prompt"), json!("follow-up prompt")]
+    );
+    let events = records
+        .iter()
+        .filter(|event| event["type"] == "mock.app_server.input")
+        .collect::<Vec<_>>();
     assert_eq!(events.len(), 2);
     assert_eq!(events[0]["type"], "mock.app_server.input");
     assert_eq!(events[0]["kind"], "initial");
@@ -555,7 +576,11 @@ fn app_server_turn_steer_can_complete_runtime_turn_after_success() -> std::io::R
     );
 
     let session_path = require_session_file(dir.path())?;
-    let events = read_session_file(&session_path)?;
+    let records = read_session_file(&session_path)?;
+    let events = records
+        .iter()
+        .filter(|event| event["type"] == "mock.app_server.input")
+        .collect::<Vec<_>>();
     assert_eq!(events[1]["kind"], "steered");
     assert_eq!(
         events[1]["turn_request_client_user_message_id"],
@@ -1247,7 +1272,11 @@ fn app_server_resumed_non_uuid_thread_records_inputs() -> std::io::Result<()> {
         !file_name.starts_with(supplied_thread_id),
         "non-UUID app-server thread ids should not be used directly as session filenames: {file_name}"
     );
-    let events = read_session_file(&session_path)?;
+    let records = read_session_file(&session_path)?;
+    let events = records
+        .iter()
+        .filter(|event| event["type"] == "mock.app_server.input")
+        .collect::<Vec<_>>();
     assert_eq!(events[0]["thread_id"], supplied_thread_id);
     assert_eq!(events[0]["text"], "initial prompt");
     assert_eq!(events[1]["thread_id"], supplied_thread_id);
@@ -1310,7 +1339,11 @@ fn app_server_reuses_artifact_for_repeated_non_uuid_resume() -> std::io::Result<
             "app-server session artifact not found",
         )
     })?;
-    let events = read_session_file(&session_path)?;
+    let records = read_session_file(&session_path)?;
+    let events = records
+        .iter()
+        .filter(|event| event["type"] == "mock.app_server.input")
+        .collect::<Vec<_>>();
     assert_eq!(events.len(), 2);
     assert_eq!(events[0]["thread_id"], supplied_thread_id);
     assert_eq!(events[0]["text"], "first prompt");

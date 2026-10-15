@@ -138,102 +138,122 @@ describe("POST /api/integrations/slack/message", () => {
     });
   }
 
-  it("selects each request's installation across users and organizations", async () => {
-    const scenario = createPublicComputerUseScenario(context);
-    const first = scenario.user({ orgRole: "org:admin" });
-    const member = scenario.user({ orgId: first.orgId, orgRole: "org:member" });
-    const second = scenario.user({ orgRole: "org:admin" });
-    const missing = scenario.user({ orgRole: "org:admin" });
-    await scenario.run(async () => {
-      for (const actor of [first, member, second, missing]) {
-        await scenario.prepareActor(actor);
-      }
-      const a = await slackOrgs.installOrg({
-        actor: first,
-        withConnection: true,
+  it.each(["membership", "organization", "missing"] as const)(
+    "selects the installation across the %s boundary",
+    async (boundary) => {
+      const scenario = createPublicComputerUseScenario(context);
+      const first = scenario.user({ orgRole: "org:admin" });
+      const member = scenario.user({
+        orgId: first.orgId,
+        orgRole: "org:member",
       });
-      scenario.beforeWorkspaceCleanup(() => {
-        return slackOrgs.uninstallWorkspace(a.slackWorkspaceId);
-      });
-      const b = await slackOrgs.installOrg({
-        actor: second,
-        withConnection: true,
-      });
-      scenario.beforeWorkspaceCleanup(() => {
-        return slackOrgs.uninstallWorkspace(b.slackWorkspaceId);
-      });
-      await flushWaitUntilForTest();
-      const requests = [
-        { actor: first, installation: a },
-        { actor: member, installation: a },
-        { actor: second, installation: b },
-        { actor: missing, installation: undefined },
-        { actor: first, installation: a },
-      ];
-      const client = setupApp({
-        context,
-        routes: integrationsSlackMessageRoutes,
-      })(integrationsSlackMessageContract);
-      for (const [index, request] of requests.entries()) {
-        const claim = await scenario.claim(request.actor);
+      const second = scenario.user({ orgRole: "org:admin" });
+      const missing = scenario.user({ orgRole: "org:admin" });
+      await scenario.run(async () => {
+        for (const actor of [
+          first,
+          ...(boundary === "membership"
+            ? [member]
+            : boundary === "organization"
+              ? [second]
+              : [missing]),
+        ]) {
+          await scenario.prepareActor(actor);
+        }
+        const a = await slackOrgs.installOrg({
+          actor: first,
+          withConnection: true,
+        });
+        scenario.beforeWorkspaceCleanup(() => {
+          return slackOrgs.uninstallWorkspace(a.slackWorkspaceId);
+        });
+        const b =
+          boundary === "organization"
+            ? await slackOrgs.installOrg({
+                actor: second,
+                withConnection: true,
+              })
+            : undefined;
+        scenario.beforeWorkspaceCleanup(() => {
+          return b
+            ? slackOrgs.uninstallWorkspace(b.slackWorkspaceId)
+            : Promise.resolve();
+        });
         await flushWaitUntilForTest();
-        context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
-          {
-            data: [
-              {
-                role: request.actor.orgRole,
-                organization: { id: request.actor.orgId },
-                publicUserData: { userId: request.actor.userId },
-              },
-            ],
-          },
-        );
-        const channel = `C_GRAPH_${String(index)}`;
-        const text = `request ${String(index)}`;
-        const threadTs = `${String(index + 1)}.123`;
-        context.mocks.slack.chat.postMessage.mockResolvedValue({
-          ok: true,
-          ts: threadTs,
-          channel,
-        });
-        const clients = context.mocks.slack.createClient.mock.calls.length;
-        const posts = context.mocks.slack.chat.postMessage.mock.calls.length;
-        const response = client.sendMessage({
-          headers: { authorization: `Bearer ${claim.token}` },
-          body: { channel, text, threadTs },
-        });
-        if (!request.installation) {
-          expect((await accept(response, [404])).body.error.code).toBe(
-            "NOT_FOUND",
+        const requests = [
+          { actor: first, installation: a },
+          ...(boundary === "membership"
+            ? [{ actor: member, installation: a }]
+            : boundary === "organization"
+              ? [{ actor: second, installation: b }]
+              : [{ actor: missing, installation: undefined }]),
+          { actor: first, installation: a },
+        ];
+        const client = setupApp({
+          context,
+          routes: integrationsSlackMessageRoutes,
+        })(integrationsSlackMessageContract);
+        for (const [index, request] of requests.entries()) {
+          const claim = await scenario.claim(request.actor);
+          await flushWaitUntilForTest();
+          context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
+            {
+              data: [
+                {
+                  role: request.actor.orgRole,
+                  organization: { id: request.actor.orgId },
+                  publicUserData: { userId: request.actor.userId },
+                },
+              ],
+            },
           );
+          const channel = `C_GRAPH_${String(index)}`;
+          const text = `request ${String(index)}`;
+          const threadTs = `${String(index + 1)}.123`;
+          context.mocks.slack.chat.postMessage.mockResolvedValue({
+            ok: true,
+            ts: threadTs,
+            channel,
+          });
+          const clients = context.mocks.slack.createClient.mock.calls.length;
+          const posts = context.mocks.slack.chat.postMessage.mock.calls.length;
+          const response = client.sendMessage({
+            headers: { authorization: `Bearer ${claim.token}` },
+            body: { channel, text, threadTs },
+          });
+          if (!request.installation) {
+            expect((await accept(response, [404])).body.error.code).toBe(
+              "NOT_FOUND",
+            );
+            expect(
+              context.mocks.slack.createClient.mock.calls.slice(clients),
+            ).toStrictEqual([]);
+            expect(
+              context.mocks.slack.chat.postMessage.mock.calls.slice(posts),
+            ).toStrictEqual([]);
+            continue;
+          }
+          expect((await accept(response, [200])).body).toStrictEqual({
+            ok: true,
+            ts: threadTs,
+            channel,
+          });
           expect(
-            context.mocks.slack.createClient.mock.calls.slice(clients),
-          ).toStrictEqual([]);
+            context.mocks.slack.createClient.mock.calls
+              .slice(clients)
+              .map(([token]) => {
+                return token;
+              }),
+          ).toStrictEqual([request.installation.botToken]);
           expect(
             context.mocks.slack.chat.postMessage.mock.calls.slice(posts),
-          ).toStrictEqual([]);
-          continue;
+          ).toStrictEqual([
+            [expect.objectContaining({ channel, text, thread_ts: threadTs })],
+          ]);
         }
-        expect((await accept(response, [200])).body).toStrictEqual({
-          ok: true,
-          ts: threadTs,
-          channel,
-        });
-        expect(
-          context.mocks.slack.createClient.mock.calls
-            .slice(clients)
-            .map(([token]) => {
-              return token;
-            }),
-        ).toStrictEqual([request.installation.botToken]);
-        expect(
-          context.mocks.slack.chat.postMessage.mock.calls.slice(posts),
-        ).toStrictEqual([
-          [expect.objectContaining({ channel, text, thread_ts: threadTs })],
-        ]);
-      }
-    });
-  });
+      });
+    },
+  );
   it("returns 401 when the token has no active organization membership", async () => {
     const orgId = `org_${randomUUID().slice(0, 8)}`;
     const userId = `user_${randomUUID().slice(0, 8)}`;

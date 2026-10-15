@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { testContext } from "../../../__tests__/test-context";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -11,11 +9,7 @@ const bdd = createBddApi(context);
 const runs = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
 
-async function completedRun(
-  actor: ApiTestUser,
-  agentId?: string,
-  retainHistory = true,
-) {
+async function completedRun(actor: ApiTestUser, agentId?: string) {
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
@@ -31,18 +25,13 @@ async function completedRun(
     agentId: targetAgentId,
     prompt: "retain history",
   });
-  const hash = createHash("sha256")
-    .update(`bdd session history ${run.runId}`)
-    .digest("hex");
   await runs.heartbeatRunner(runnerGroup);
   const claim = await runs.claimRunnerJob(run.runId);
   const headers = { authorization: `Bearer ${claim.sandboxToken}` };
   const completion = {
     cliAgentType: "claude-code" as const,
     cliAgentSessionId: run.runId,
-    ...(retainHistory
-      ? { cliAgentSessionHistoryHash: hash }
-      : { cliAgentSessionHistoryDisposition: "unavailable" as const }),
+    cliAgentSessionHistoryDisposition: "native_only" as const,
   };
   await webhooks.requestAgentComplete(
     { runId: run.runId, exitCode: 0, completion },
@@ -52,20 +41,17 @@ async function completedRun(
   await expect(runs.readRun(actor, run.runId)).resolves.toMatchObject({
     status: "completed",
   });
-  return { ...run, agentId: targetAgentId, hash, headers, completion };
+  return { ...run, agentId: targetAgentId, headers, completion };
 }
 
-test.each([true, false])(
-  "deletes a completed Run (retained history=%s) with its Agent",
-  async (retainHistory) => {
-    const actor = bdd.user();
-    const run = await completedRun(actor, undefined, retainHistory);
-    await bdd.requestDeleteAgent(actor, run.agentId, [204]);
-    const deleted = await runs.requestReadRun(actor, run.runId, [404]);
-    expect(deleted.body).toMatchObject({ error: { code: "NOT_FOUND" } });
-    await bdd.requestDeleteAgent(actor, run.agentId, [404]);
-  },
-);
+test("deletes a native-only completed Run with its Agent", async () => {
+  const actor = bdd.user();
+  const run = await completedRun(actor);
+  await bdd.requestDeleteAgent(actor, run.agentId, [204]);
+  const deleted = await runs.requestReadRun(actor, run.runId, [404]);
+  expect(deleted.body).toMatchObject({ error: { code: "NOT_FOUND" } });
+  await bdd.requestDeleteAgent(actor, run.agentId, [404]);
+});
 
 test.each(["user", "organization"] as const)(
   "preserves completed Run history and callback replay after Clerk %s deletion",

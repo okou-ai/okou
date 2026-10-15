@@ -213,8 +213,6 @@ pub struct GuestConfigRaw {
     pub api_url: String,
     pub api_token: String,
     pub sandbox_id: String,
-    pub sandbox_reuse_result: String,
-    pub home_reuse_result: String,
     pub sandbox_startup_path: String,
     pub vercel_bypass: String,
     pub resume_session_id: String,
@@ -285,10 +283,6 @@ impl GuestConfigRaw {
             api_url,
             api_token: env_or_empty(guest_contracts::env::CANONICAL_API_TOKEN_ENV),
             sandbox_id: env_or_empty(guest_contracts::env::CANONICAL_SANDBOX_ID_ENV),
-            sandbox_reuse_result: env_or_empty(
-                guest_contracts::env::CANONICAL_SANDBOX_REUSE_RESULT_ENV,
-            ),
-            home_reuse_result: env_or_empty(guest_contracts::env::CANONICAL_HOME_REUSE_RESULT_ENV),
             sandbox_startup_path: env_or_empty(
                 guest_contracts::env::CANONICAL_SANDBOX_STARTUP_PATH_ENV,
             ),
@@ -357,16 +351,6 @@ pub struct GuestConfig {
     /// [`guest_contracts::env::CANONICAL_SANDBOX_ID_ENV`]. It is included in
     /// completion and user-cancellation reports.
     pub sandbox_id: String,
-    /// Wire-format outcome of the runner's sandbox-reuse decision from
-    /// [`guest_contracts::env::CANONICAL_SANDBOX_REUSE_RESULT_ENV`]. `reused`
-    /// means the sandbox was unparked; other values explain why reuse did not
-    /// happen. The value is retained for completion and cancellation reports.
-    pub sandbox_reuse_result: String,
-    /// Final wire-format outcome of home preparation from
-    /// [`guest_contracts::env::CANONICAL_HOME_REUSE_RESULT_ENV`]. Values
-    /// such as `reused` and `sandboxReused` identify the reuse path, while the
-    /// other values describe why home reuse did not happen.
-    pub home_reuse_result: String,
     /// Settled startup resource, when supplied in canonical Runner metadata.
     pub sandbox_startup_path: Option<guest_contracts::sandbox_startup::SandboxStartupPath>,
     /// User prompt loaded from [`guest_contracts::env::RunPayload`] and passed
@@ -377,6 +361,8 @@ pub struct GuestConfig {
     /// system prompt; non-empty content is transferred through the selected
     /// CLI's launch payload or private prompt file.
     pub append_system_prompt: String,
+    /// Native-only continuation intent from the current API claim.
+    pub native_continuation: Option<guest_contracts::env::NativeContinuation>,
     /// Optional Vercel protection-bypass secret from
     /// [`guest_contracts::env::VERCEL_PROTECTION_BYPASS_ENV`]. A non-empty
     /// value is attached to guest-agent API requests as the bypass header.
@@ -575,8 +561,6 @@ impl GuestConfig {
             api_url: raw.api_url,
             api_token: raw.api_token,
             sandbox_id: raw.sandbox_id,
-            sandbox_reuse_result: raw.sandbox_reuse_result,
-            home_reuse_result: raw.home_reuse_result,
             sandbox_startup_path: if raw.sandbox_startup_path.is_empty() {
                 None
             } else {
@@ -587,6 +571,14 @@ impl GuestConfig {
             },
             prompt: payload.prompt,
             append_system_prompt: payload.append_system_prompt,
+            native_continuation: if payload.native_continuation.is_empty() {
+                None
+            } else {
+                Some(
+                    serde_json::from_str(&payload.native_continuation)
+                        .map_err(|error| format!("invalid native continuation: {error}"))?,
+                )
+            },
             vercel_bypass: raw.vercel_bypass,
             resume_session_id: raw.resume_session_id,
             api_start_time: raw.api_start_time,
@@ -1103,6 +1095,7 @@ mod tests {
         let payload = guest_contracts::env::RunPayload {
             prompt: "hello".to_string(),
             append_system_prompt: "extra system".to_string(),
+            native_continuation: String::new(),
             secret_values: "encoded-secret".to_string(),
             disallowed_tools: "WebFetch".to_string(),
             tools: "Bash".to_string(),
@@ -1117,8 +1110,6 @@ mod tests {
             api_url: "https://api.example.test".to_string(),
             api_token: String::new(),
             sandbox_id: "sandbox-1".to_string(),
-            sandbox_reuse_result: "reused".to_string(),
-            home_reuse_result: "sandboxReused".to_string(),
             sandbox_startup_path: "sandbox".to_string(),
             vercel_bypass: "bypass".to_string(),
             resume_session_id: "session-1".to_string(),
@@ -1140,8 +1131,6 @@ mod tests {
         assert_eq!(config.api_url, "https://api.example.test");
         assert_eq!(config.api_token, "");
         assert_eq!(config.sandbox_id, "sandbox-1");
-        assert_eq!(config.sandbox_reuse_result, "reused");
-        assert_eq!(config.home_reuse_result, "sandboxReused");
         assert_eq!(
             config.sandbox_startup_path,
             Some(guest_contracts::sandbox_startup::SandboxStartupPath::Sandbox)
@@ -1250,6 +1239,7 @@ mod tests {
         let payload = guest_contracts::env::RunPayload {
             prompt: "payload prompt".to_string(),
             append_system_prompt: "payload system".to_string(),
+            native_continuation: String::new(),
             secret_values: "payload-secret".to_string(),
             disallowed_tools: "WebFetch".to_string(),
             tools: "Bash".to_string(),

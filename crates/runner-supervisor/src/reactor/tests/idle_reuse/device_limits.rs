@@ -4,8 +4,6 @@ use super::super::support::{
     shutdown, test_profiles, wait_budget_count,
 };
 
-use runner_types::types::SandboxReuseResult;
-
 fn device_rate_limits() -> sandbox::DeviceRateLimits {
     sandbox::DeviceRateLimits {
         block: sandbox::BlockRateLimits {
@@ -36,12 +34,10 @@ async fn configured_io_limiter_capacity_applies_limits_on_fresh_create() {
         Some(context_with_session(run_id, "sess-io-limit")),
     );
 
-    let completion = env
-        .handle
+    env.handle
         .wait_completion(run_id, Duration::from_secs(5))
         .await
         .expect("job should complete");
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::PoolMiss));
 
     let create_configs = overrides.create_configs();
     assert_eq!(create_configs.len(), 1);
@@ -83,7 +79,6 @@ async fn absent_io_limiter_capacity_reuses_unlimited_idle_sandbox() {
         .wait_completion(run_id, Duration::from_secs(5))
         .await
         .expect("job should complete");
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::Reused));
     assert_eq!(completion.sandbox_id, Some(seeded_sandbox_id));
     assert!(
         overrides
@@ -131,10 +126,6 @@ async fn device_limit_mismatch_destroys_idle_sandbox_and_fresh_creates() {
         .wait_completion(run_id, Duration::from_secs(5))
         .await
         .expect("job should complete");
-    assert_eq!(
-        completion.reuse_result,
-        Some(SandboxReuseResult::DeviceLimitMismatch),
-    );
     assert_ne!(
         completion.sandbox_id,
         Some(seeded_sandbox_id),

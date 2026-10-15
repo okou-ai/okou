@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use guest_contracts::{
     codex_session_path::codex_rollout_relative_path, codex_thread_id::CodexThreadId,
 };
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io::{self, Write};
@@ -56,6 +56,12 @@ pub(crate) fn persist_resume_session(
         build_session_path(codex_home, timestamp, &thread_id)
     };
     let mut existing = read_session_bytes_for_append_in_store(codex_home, &path)?;
+    if existing.is_empty() {
+        append_events_to_jsonl_bytes(
+            &mut existing,
+            &[json!({"type": "session_meta", "payload": {"id": thread_id.as_str()}})],
+        )?;
+    }
     append_events_to_jsonl_bytes(&mut existing, events)?;
     write_session_bytes_in_store(codex_home, &path, existing)
 }

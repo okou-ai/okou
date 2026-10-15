@@ -6,8 +6,6 @@ export const ROUTES = {
   agentIdeas: "/agents/:agentId/ideas",
   agentPermissions: "/agents/:agentId/permissions",
   workflows: "/workflows",
-  officialWorkflows: "/workflows/official",
-  officialWorkflowDetail: "/workflows/official/:definitionName",
   workflowDetail: "/workflows/:workflowId",
   workflowDetailAutomations: "/workflows/:workflowId/automations",
   workflowDetailInstructions: "/workflows/:workflowId/instructions",

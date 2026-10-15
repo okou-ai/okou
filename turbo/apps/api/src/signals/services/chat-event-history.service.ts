@@ -17,7 +17,7 @@ import {
   decodeChatEventSnapshotBody,
   validateChatEventSnapshotRows,
 } from "./chat-event-snapshot-body.service";
-import { chatEventRowFromDbRow } from "./cron-snapshot-chat-events.service";
+import { chatEventRowFromDbRow } from "./chat-event-row-read.service";
 
 const gunzipAsync = promisify(gunzip);
 

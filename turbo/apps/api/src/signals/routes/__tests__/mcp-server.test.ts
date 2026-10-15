@@ -1,7 +1,7 @@
 import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
@@ -348,6 +348,8 @@ describe("external MCP authentication and transport", () => {
 
   it("keeps signing-key outages distinct from invalid credentials", async () => {
     const auth = await fixture();
+    // Keep all real Clerk retries; make only their external SDK jitter deterministic.
+    onTestFinished(context.mocks.clerkRetryJitter(0));
     server.use(
       http.get("https://api.clerk.com/v1/jwks", () => {
         return HttpResponse.json({ error: "unavailable" }, { status: 503 });

@@ -1,12 +1,12 @@
+import { findDocumentTemplateItem } from "@okouai/core/document-template-items";
+import { DocumentTemplatePickerPane } from "./document-template-picker-pane.tsx";
+import { DocumentTemplatePreviewPage } from "./document-template-preview-page.tsx";
 import { Combobox } from "@base-ui/react/combobox";
 import { ScrollArea } from "@base-ui/react/scroll-area";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuRadioItemIndicator,
-  DropdownMenuTrigger,
 } from "@okouai/ui/components/ui/dropdown-menu";
 import type { ComposerVoiceInputStatus } from "../../signals/okou-page/composer-voice-input.ts";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
@@ -132,9 +132,8 @@ import {
   ArrowUp,
   Bolt,
   Check,
-  ChevronLeft,
-  ChevronRight,
   Download,
+  FileText,
   Globe,
   Image as ImageIcon,
   Layers,
@@ -321,10 +320,19 @@ import {
   TEMPLATE_TILE_USE,
   TEMPLATE_TILE_WRAPPER,
 } from "./template-tile.ts";
+import { SCROLL_FADE_Y_WHEN_OVERFLOWING } from "./scroll-fade.ts";
 import {
-  SCROLL_FADE_X_WHEN_OVERFLOWING,
-  SCROLL_FADE_Y_WHEN_OVERFLOWING,
-} from "./scroll-fade.ts";
+  TEMPLATE_DETAIL_BODY,
+  TEMPLATE_DETAIL_FOOTER,
+  TEMPLATE_DETAIL_GRID,
+  TEMPLATE_DETAIL_STAGE,
+  TemplateDetailAccess,
+  TemplateDetailDeleteButton,
+  TemplateDetailFilmstrip,
+  TemplateDetailSideColumn,
+  TemplateDetailStageControls,
+  TemplateDetailTitle,
+} from "./template-detail-layout.tsx";
 import { TiptapWorkflowComposer } from "./tiptap-workflow-composer.tsx";
 import { VoiceLevelWaveform } from "./voice-level-waveform.tsx";
 import { WebsiteTemplatePreviewDialogSlot } from "./website-template-preview-dialog.tsx";
@@ -2024,12 +2032,14 @@ function PresentationTemplateHtmlFrame({
   dataTestId,
   className,
   loading,
+  frameRef,
 }: {
   readonly html: string | null;
   readonly title: string;
   readonly dataTestId?: string;
   readonly className?: string;
   readonly loading?: "eager" | "lazy";
+  readonly frameRef?: RefCallback<HTMLIFrameElement>;
 }) {
   if (html === null) {
     return null;
@@ -2037,6 +2047,7 @@ function PresentationTemplateHtmlFrame({
   return (
     <iframe
       key={html}
+      ref={frameRef}
       title={title}
       data-testid={dataTestId}
       srcDoc={html}
@@ -2233,8 +2244,10 @@ function TemplatePreviewPage({
   const focusPreview = useSet(signals.template.focusTemplatePreviewRef$);
   const detailPreview = useGet(signals.template.openedTemplateSelection$);
   const template = useLoadable(signals.template.openedTemplate$);
-  const html = useLoadable(signals.template.openedTemplateHtml$);
-  const thumbnails = useLoadable(signals.template.openedTemplateThumbnails$);
+  const slideDocuments = useLoadable(
+    signals.template.openedTemplateSlideDocuments$,
+  );
+  const setThemedFrameRef = useSet(signals.template.setOpenedTemplateFrameRef$);
   const setCardThemeId = useSet(signals.template.setTemplateCardThemeId$);
   const selectDetailPreview = useSet(signals.template.selectOpenedTemplate$);
   const visibleDetailPreview = templateDetailPreviewMatchesItem(
@@ -2257,7 +2270,9 @@ function TemplatePreviewPage({
     detailSlideCount - 1,
   );
   const htmlPreviewFailed =
-    template.state === "hasError" || html.state === "hasError";
+    template.state === "hasError" || slideDocuments.state === "hasError";
+  const documents =
+    slideDocuments.state === "hasData" ? slideDocuments.data : null;
   const detailImageSource = presentationTemplateDetailSlideImageSource(
     item,
     activeSlideIndex,
@@ -2322,40 +2337,67 @@ function TemplatePreviewPage({
           </span>
         </DialogTitle>
       </DialogHeader>
-      {/* One height owner: the dialog. From lg the body is a size container
-          and the stage takes the 16:9 box that fits beside the theme list and
-          above the filmstrip, so no viewport height clips the page. */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-0.5 duration-200 motion-reduce:animate-none lg:overflow-hidden lg:pb-0 lg:[container-type:size]">
-        <div className="grid gap-3 lg:grid-cols-[auto_minmax(0,1fr)] lg:gap-x-6">
+      <div className={TEMPLATE_DETAIL_BODY}>
+        <div className={TEMPLATE_DETAIL_GRID}>
           <TemplateDetailStage
             title={item.title}
             focusRef={focusPreview}
+            frameRef={setThemedFrameRef}
             activeSlideIndex={activeSlideIndex}
             slideCount={detailSlideCount}
             lowResolutionImage={detailLowResolutionImage}
             highResolutionImage={detailHighResolutionImage}
-            html={html.state === "hasData" ? html.data : null}
+            documents={documents}
             onChange={selectDetailSlide}
             onKeyDown={handleDetailSlideKeyDown}
           />
           <TemplateDetailFilmstrip
-            item={item}
             slideCount={Math.min(detailSlideCount, 15)}
             activeSlideIndex={activeSlideIndex}
-            theme={selectedTheme}
-            htmlPreviewFailed={htmlPreviewFailed}
-            thumbnails={thumbnails.state === "hasData" ? thumbnails.data : null}
             onChange={selectDetailSlide}
             onKeyDown={handleDetailSlideKeyDown}
+            renderThumbnail={(slideIndex) => {
+              return (
+                <>
+                  <img
+                    src={r2ImageTransformUrl(
+                      presentationTemplateDetailSlideImageSource(
+                        item,
+                        slideIndex,
+                        selectedTheme,
+                        htmlPreviewFailed,
+                      ),
+                      TEMPLATE_DETAIL_THUMBNAIL_PREVIEW_SIZE,
+                    )}
+                    alt=""
+                    loading="lazy"
+                    className="absolute inset-0 h-full w-full object-cover"
+                  />
+                  <PresentationTemplateHtmlFrame
+                    html={documents?.[slideIndex]?.html ?? null}
+                    frameRef={setThemedFrameRef}
+                    loading="lazy"
+                    title={t(
+                      ($) => {
+                        return $.artifacts.templates.slideThumbnail;
+                      },
+                      { title: item.title, slideNumber: slideIndex + 1 },
+                    )}
+                  />
+                </>
+              );
+            }}
           />
-          <TemplateDetailThemeList
-            item={item}
-            selectedTheme={selectedTheme}
-            onSelect={selectDetailTheme}
-          />
+          <TemplateDetailSideColumn>
+            <TemplateDetailThemeList
+              item={item}
+              selectedTheme={selectedTheme}
+              onSelect={selectDetailTheme}
+            />
+          </TemplateDetailSideColumn>
         </div>
       </div>
-      <div className="flex shrink-0 items-center justify-end px-6 py-4">
+      <div className={TEMPLATE_DETAIL_FOOTER}>
         <Button
           type="button"
           size="lg"
@@ -2381,39 +2423,27 @@ function TemplatePreviewPage({
   );
 }
 
-// From lg the stage is as wide as the body allows once the theme list keeps
-// its 180px floor and the 24px gap beside it, and as tall as the body allows
-// once the filmstrip's 74px row and the 12px gap under the stage are taken.
-// The smaller of the two decides, so the slide is never cropped and never
-// letterboxed. Spelled out because Tailwind only emits what it finds written.
-const TEMPLATE_DETAIL_STAGE_WIDTH =
-  "lg:w-[min(calc(100cqw_-_204px),calc((100cqh_-_86px)*16/9))]";
-
-// The stage controls sit on cover art, which looks the same in both themes, so
-// the counter is literal white on a literal black like `TEMPLATE_TILE_SCRIM`
-// (the `white` token flips in Dark). Arrows appear on hover where the pointer
-// can hover, without an opacity transition, and stay visible on touch.
-const TEMPLATE_DETAIL_STAGE_ARROW =
-  "absolute top-1/2 z-50 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-background/90 text-foreground backdrop-blur hover:bg-background focus-visible:outline-none disabled:hidden [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/stage:opacity-100 [@media(hover:hover)]:group-focus-visible/stage:opacity-100";
-
 function TemplateDetailStage({
   title,
   focusRef,
+  frameRef,
   activeSlideIndex,
   slideCount,
   lowResolutionImage,
   highResolutionImage,
-  html,
+  documents,
   onChange,
   onKeyDown,
 }: {
   readonly title: string;
   readonly focusRef: RefCallback<HTMLDivElement>;
+  readonly frameRef: RefCallback<HTMLIFrameElement>;
   readonly activeSlideIndex: number;
   readonly slideCount: number;
   readonly lowResolutionImage: string;
   readonly highResolutionImage: string;
-  readonly html: string | null;
+  readonly documents:
+    readonly { readonly id: string; readonly html: string }[] | null;
   readonly onChange: (index: number) => void;
   readonly onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => void;
 }) {
@@ -2430,11 +2460,7 @@ function TemplateDetailStage({
       )}
       tabIndex={0}
       onKeyDown={onKeyDown}
-      className={cn(
-        TEMPLATE_TILE_MEDIA,
-        TEMPLATE_DETAIL_STAGE_WIDTH,
-        "group/stage isolate aspect-video focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:col-start-1 lg:row-start-1",
-      )}
+      className={TEMPLATE_DETAIL_STAGE}
     >
       <ProgressiveTemplatePreviewImage
         alt=""
@@ -2445,184 +2471,42 @@ function TemplateDetailStage({
         loading="eager"
         lowResolutionUrl={lowResolutionImage}
       />
-      <PresentationTemplateHtmlFrame
-        html={html}
-        title={t(
-          ($) => {
-            return $.artifacts.templates.htmlPreview;
-          },
-          { title },
-        )}
-        dataTestId={`${title} detail HTML preview`}
-        className="z-40"
-      />
-      <button
-        type="button"
-        aria-label={t(($) => {
-          return $.artifacts.templates.previousSlide;
-        })}
-        disabled={activeSlideIndex === 0}
-        tabIndex={-1}
-        onClick={() => {
-          onChange(activeSlideIndex - 1);
-        }}
-        className={cn(TEMPLATE_DETAIL_STAGE_ARROW, "left-3")}
-      >
-        <ChevronLeft size={16} />
-      </button>
-      <button
-        type="button"
-        aria-label={t(($) => {
-          return $.artifacts.templates.nextSlide;
-        })}
-        disabled={activeSlideIndex >= slideCount - 1}
-        tabIndex={-1}
-        onClick={() => {
-          onChange(activeSlideIndex + 1);
-        }}
-        className={cn(TEMPLATE_DETAIL_STAGE_ARROW, "right-3")}
-      >
-        <ChevronRight size={16} />
-      </button>
-      <span className="pointer-events-none absolute bottom-3 right-3 z-50 rounded-md bg-[rgb(0_0_0_/_0.55)] px-2 py-0.5 text-xs font-medium tabular-nums text-[#ffffff]">
-        {t(
-          ($) => {
-            return $.artifacts.templates.slideCounter;
-          },
-          { current: activeSlideIndex + 1, total: slideCount },
-        )}
-      </span>
-    </div>
-  );
-}
-
-// The filmstrip's edge fade, `SCROLL_FADE_X_WHEN_OVERFLOWING`; change together.
-const TEMPLATE_DETAIL_FILMSTRIP_FADE = 24;
-
-// Keep this ref stable: the strip follows the selection only when a different
-// thumbnail becomes the active one, not on every theme or HTML re-render. It
-// moves the strip alone, by just enough to clear the edge fade, so a short
-// dialog body is never scrolled to bring the filmstrip into view.
-function scrollActiveTemplateThumbnailIntoStrip(
-  thumbnail: HTMLButtonElement | null,
-): (() => void) | undefined {
-  if (!thumbnail) {
-    return;
-  }
-  const frame = window.requestAnimationFrame(() => {
-    // The thumbnail always renders inside the filmstrip's viewport.
-    const strip = thumbnail.closest<HTMLElement>(
-      '[data-slot="scroll-area-viewport"]',
-    )!;
-    const stripBox = strip.getBoundingClientRect();
-    const tileBox = thumbnail.getBoundingClientRect();
-    const hiddenBefore =
-      stripBox.left + TEMPLATE_DETAIL_FILMSTRIP_FADE - tileBox.left;
-    const hiddenAfter =
-      tileBox.right - (stripBox.right - TEMPLATE_DETAIL_FILMSTRIP_FADE);
-    if (hiddenBefore > 0) {
-      strip.scrollLeft -= hiddenBefore;
-    } else if (hiddenAfter > 0) {
-      strip.scrollLeft += hiddenAfter;
-    }
-  });
-  return () => {
-    window.cancelAnimationFrame(frame);
-  };
-}
-
-function TemplateDetailFilmstrip({
-  item,
-  slideCount,
-  activeSlideIndex,
-  theme,
-  htmlPreviewFailed,
-  thumbnails,
-  onChange,
-  onKeyDown,
-}: {
-  readonly item: PresentationTemplateItem;
-  readonly slideCount: number;
-  readonly activeSlideIndex: number;
-  readonly theme: PresentationTemplateThemeOption;
-  readonly htmlPreviewFailed: boolean;
-  readonly thumbnails: readonly string[] | null;
-  readonly onChange: (index: number) => void;
-  readonly onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <ScrollArea.Root className="group relative -mx-0.5 min-w-0 lg:col-span-2 lg:row-start-2">
-      <ScrollArea.Viewport
-        data-slot="scroll-area-viewport"
-        className={cn(
-          SCROLL_FADE_X_WHEN_OVERFLOWING,
-          "focus-visible:outline-none",
-        )}
-      >
-        <ScrollArea.Content
-          className="flex w-max gap-2 p-0.5"
-          onKeyDown={onKeyDown}
-        >
-          {Array.from({ length: slideCount }, (_, slideIndex) => {
-            const slideNumber = slideIndex + 1;
-            const active = slideIndex === activeSlideIndex;
-            return (
-              <button
-                key={slideNumber}
-                ref={
-                  active ? scrollActiveTemplateThumbnailIntoStrip : undefined
-                }
-                type="button"
-                aria-label={t(
-                  ($) => {
-                    return $.artifacts.templates.previewSlide;
-                  },
-                  { slideNumber },
-                )}
-                aria-pressed={active}
-                onClick={() => {
-                  onChange(slideIndex);
-                }}
-                className={cn(
-                  "relative aspect-video w-[124px] shrink-0 overflow-hidden rounded-lg border border-border bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  "after:pointer-events-none after:absolute after:inset-0 after:z-10 after:rounded-lg after:border-(length:--border-width-emphasis) after:border-transparent after:transition-colors",
-                  active
-                    ? "after:border-primary"
-                    : "hover:after:border-muted-foreground/40",
-                )}
-              >
-                <img
-                  src={r2ImageTransformUrl(
-                    presentationTemplateDetailSlideImageSource(
-                      item,
-                      slideIndex,
-                      theme,
-                      htmlPreviewFailed,
-                    ),
-                    TEMPLATE_DETAIL_THUMBNAIL_PREVIEW_SIZE,
-                  )}
-                  alt=""
-                  loading="lazy"
-                  className="absolute inset-0 h-full w-full object-cover"
-                />
-                <PresentationTemplateHtmlFrame
-                  html={thumbnails?.[slideIndex] ?? null}
-                  loading="lazy"
-                  title={t(
+      {/* Every slide stays loaded on the stage and only the active one shows,
+          so stepping through slides swaps frames that are already painted
+          rather than loading a new one over the default-theme image. */}
+      {documents?.map((slideDocument, slideIndex) => {
+        const active = slideIndex === activeSlideIndex;
+        return (
+          <PresentationTemplateHtmlFrame
+            key={slideDocument.id}
+            html={slideDocument.html}
+            frameRef={frameRef}
+            title={
+              active
+                ? t(
+                    ($) => {
+                      return $.artifacts.templates.htmlPreview;
+                    },
+                    { title },
+                  )
+                : t(
                     ($) => {
                       return $.artifacts.templates.slideThumbnail;
                     },
-                    { title: item.title, slideNumber },
-                  )}
-                />
-              </button>
-            );
-          })}
-        </ScrollArea.Content>
-      </ScrollArea.Viewport>
-      <ScrollBar orientation="horizontal" />
-    </ScrollArea.Root>
+                    { title, slideNumber: slideIndex + 1 },
+                  )
+            }
+            dataTestId={active ? `${title} detail HTML preview` : undefined}
+            className={cn("z-40", !active && "invisible")}
+          />
+        );
+      })}
+      <TemplateDetailStageControls
+        activeSlideIndex={activeSlideIndex}
+        slideCount={slideCount}
+        onChange={onChange}
+      />
+    </div>
   );
 }
 
@@ -2741,47 +2625,43 @@ function TemplateDetailThemeList({
       }),
     },
   ] as const;
-  // From lg the list sits beside the stage and must not add height to the row,
-  // so it is laid out against the stage's box and scrolls inside it.
   return (
-    <div className="relative min-w-0 pt-3 lg:col-start-2 lg:row-start-1 lg:pt-0">
-      <div className="flex flex-col lg:absolute lg:inset-0">
-        <p className="px-2 text-sm font-medium text-foreground">
-          {t(($) => {
-            return $.artifacts.templates.theme;
-          })}
-        </p>
-        <ScrollArea.Root className="group relative mt-2 min-h-0 flex-1">
-          <ScrollArea.Viewport
-            data-slot="scroll-area-viewport"
-            className={cn(
-              "h-full focus-visible:outline-none",
-              SCROLL_FADE_Y_WHEN_OVERFLOWING,
-            )}
-          >
-            <ScrollArea.Content className="flex flex-col gap-2 pb-1">
-              {groups.map(({ group, label }) => {
-                return (
-                  <TemplateDetailThemeOptions
-                    key={group}
-                    item={item}
-                    label={label}
-                    themes={PRESENTATION_TEMPLATE_THEME_OPTIONS.filter(
-                      (theme) => {
-                        return theme.group === group;
-                      },
-                    )}
-                    selectedTheme={selectedTheme}
-                    onSelect={onSelect}
-                  />
-                );
-              })}
-            </ScrollArea.Content>
-          </ScrollArea.Viewport>
-          <ScrollBar />
-        </ScrollArea.Root>
-      </div>
-    </div>
+    <>
+      <p className="px-2 text-sm font-medium text-foreground">
+        {t(($) => {
+          return $.artifacts.templates.theme;
+        })}
+      </p>
+      <ScrollArea.Root className="group relative mt-2 min-h-0 flex-1">
+        <ScrollArea.Viewport
+          data-slot="scroll-area-viewport"
+          className={cn(
+            "h-full focus-visible:outline-none",
+            SCROLL_FADE_Y_WHEN_OVERFLOWING,
+          )}
+        >
+          <ScrollArea.Content className="flex flex-col gap-2 pb-1">
+            {groups.map(({ group, label }) => {
+              return (
+                <TemplateDetailThemeOptions
+                  key={group}
+                  item={item}
+                  label={label}
+                  themes={PRESENTATION_TEMPLATE_THEME_OPTIONS.filter(
+                    (theme) => {
+                      return theme.group === group;
+                    },
+                  )}
+                  selectedTheme={selectedTheme}
+                  onSelect={onSelect}
+                />
+              );
+            })}
+          </ScrollArea.Content>
+        </ScrollArea.Viewport>
+        <ScrollBar />
+      </ScrollArea.Root>
+    </>
   );
 }
 
@@ -3337,7 +3217,7 @@ function IllustrationTemplateCard({
   return (
     <div
       className={cn(
-        "isolate mb-4 break-inside-avoid",
+        "isolate mb-4 break-inside-avoid supports-[display:grid-lanes]:mb-0 supports-[display:grid-lanes]:break-inside-auto",
         TEMPLATE_TILE_SELECTION_FRAME,
         selected && TEMPLATE_TILE_SELECTED,
       )}
@@ -3473,8 +3353,12 @@ function IllustrationTemplateCard({
 function resolveTemplatePickerCategory(
   category: string | null,
   customTemplatesEnabled: boolean,
+  documentTemplatesEnabled: boolean,
 ): string {
   switch (category) {
+    case "document": {
+      return documentTemplatesEnabled ? category : "slides";
+    }
     case "custom": {
       return customTemplatesEnabled ? category : "slides";
     }
@@ -3495,11 +3379,13 @@ function resolveTemplatePickerCategory(
 function TemplatePickerCategoryNav({
   selectedCategory,
   customTemplatesEnabled,
+  documentTemplatesEnabled,
   onChange,
   onReopenCustom,
 }: {
   selectedCategory: string;
   customTemplatesEnabled: boolean;
+  documentTemplatesEnabled: boolean;
   onChange: (value: string) => void;
   onReopenCustom: () => void;
 }) {
@@ -3530,6 +3416,17 @@ function TemplatePickerCategoryNav({
       }),
       Icon: Presentation,
     },
+    ...(documentTemplatesEnabled
+      ? [
+          {
+            value: "document",
+            label: t(($) => {
+              return $.documentTemplates.title;
+            }),
+            Icon: FileText,
+          },
+        ]
+      : []),
     {
       value: "website",
       label: t(($) => {
@@ -3727,11 +3624,10 @@ function IllustrationTemplateGrid({
   onSelect: (item: IllustrationTemplateItem) => void;
   onVariantChange: (slug: string, index: number) => void;
 }) {
-  // CSS multi-column masonry mirrors www.okou.ai/illustration: each tile renders
-  // the full illustration at its native aspect ratio (no cropping, letterbox,
-  // or fixed height), and the column count adapts to the dialog width.
+  // Grid Lanes keeps native-aspect cards out of multi-column fragmentation in
+  // Safari 26.4+. Other browsers retain the existing multi-column layout.
   return (
-    <div className="columns-[244px] gap-4">
+    <div className="columns-[244px] gap-4 supports-[display:grid-lanes]:shrink-0 supports-[display:grid-lanes]:columns-auto supports-[display:grid-lanes]:grid-cols-[repeat(auto-fill,minmax(min(244px,100%),1fr))] supports-[display:grid-lanes]:[display:grid-lanes]">
       {items.map((item, index) => {
         return (
           <IllustrationTemplateCard
@@ -4320,139 +4216,6 @@ function ImportedPptCard({
 }
 
 /** A name wraps across lines on screen but is stored as one. */
-function normalizeImportedTemplateTitle(value: string): string {
-  return value.replace(/\s+/gu, " ").trim();
-}
-
-/**
- * A template name is one line of meaning but not one line of layout: the panel
- * is 320px wide, so anything past a dozen or so characters has to go somewhere.
- * An `<input>` answers that by scrolling the overflow out of view without even
- * an ellipsis, which is how a name ends up cut mid-glyph. A textarea wraps
- * instead, and the mirrored `::after` grows the grid row to the wrapped text so
- * the field gains lines rather than a scrollbar. Enter still submits and
- * whitespace folds on the way out, so the value stays the single line it models.
- *
- * The check then keeps its column at every height but not its ink. Lit from
- * the moment the panel opens it reads as a state badge rather than an action,
- * so it waits for a reason to exist: pointing at the control, entering it, or
- * a draft that differs from the saved name. Hover and focus have to count
- * because the check is now the only thing that says the name is editable —
- * a hairline border alone reads as decoration. A dirty draft pins it on, so
- * the way back to the check is never to go find the field again.
- */
-function ImportedPresentationTemplateRenameControl({
-  title,
-  updating,
-  onRename,
-}: {
-  title: string;
-  updating: boolean;
-  onRename: (title: string) => void;
-}) {
-  const { t } = useTranslation();
-  const label = t(($) => {
-    return $.artifacts.templates.renameImportedTemplate;
-  });
-  return (
-    <form
-      className="group flex min-w-0 items-start gap-1.5"
-      data-rename-dirty="false"
-      onSubmit={(event) => {
-        event.preventDefault();
-        // One rename at a time, stated where every path that submits has to
-        // pass. The closed field and the disabled control each block one way
-        // in; this is the rule they are both enforcing.
-        if (updating) {
-          return;
-        }
-        const nextTitle = new FormData(event.currentTarget).get("title");
-        if (typeof nextTitle !== "string") {
-          return;
-        }
-        const normalized = normalizeImportedTemplateTitle(nextTitle);
-        if (normalized.length > 0 && normalized !== title) {
-          // Confirming ends this edit. Keeping the submit control focused pins
-          // the check visible through the form's focus-within affordance.
-          event.currentTarget.querySelector<HTMLElement>(":focus")?.blur();
-          onRename(normalized);
-        }
-      }}
-    >
-      <div
-        className="grid min-h-10 min-w-0 flex-1 rounded-lg border border-transparent px-1 py-[5px] text-xl font-semibold leading-7 text-foreground transition-colors after:col-start-1 after:row-start-1 after:invisible after:whitespace-pre-wrap after:break-words after:content-[attr(data-value)_'_'] hover:border-[hsl(var(--gray-400))] focus-within:border-primary focus-within:ring-[3px] focus-within:ring-primary/10"
-        data-value={title}
-      >
-        {/*
-         * Closed while its own rename is in flight. Disabling the submit
-         * control is not enough on its own: Enter reaches the form through
-         * `requestSubmit()`, which does not consult a submit button's disabled
-         * state, so a second rename could still leave here before the first
-         * came back — and nothing orders the two, so the earlier one could
-         * land last and take the name back. Confirming already gives up focus,
-         * so closing the field costs the member nothing.
-         */}
-        <textarea
-          name="title"
-          aria-label={label}
-          defaultValue={title}
-          required
-          rows={1}
-          maxLength={255}
-          disabled={updating}
-          className="col-start-1 row-start-1 resize-none overflow-hidden break-words bg-transparent p-0 outline-none"
-          onChange={(event) => {
-            const field = event.currentTarget;
-            const mirror = field.parentElement;
-            const form = field.form;
-            if (!mirror || !form) {
-              return;
-            }
-            const normalized = normalizeImportedTemplateTitle(field.value);
-            mirror.dataset.value = field.value;
-            form.dataset.renameDirty = String(
-              normalized.length > 0 && normalized !== title,
-            );
-          }}
-          onKeyDown={(event) => {
-            // Safari can end composition before the confirming Enter, while
-            // keyCode remains 229 for that IME-owned keystroke.
-            if (
-              event.key !== "Enter" ||
-              event.shiftKey ||
-              event.nativeEvent.isComposing ||
-              event.nativeEvent.keyCode === 229
-            ) {
-              return;
-            }
-            event.preventDefault();
-            event.currentTarget.form?.requestSubmit();
-          }}
-        />
-      </div>
-      <TooltipProvider delay={300}>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                type="submit"
-                variant="quiet"
-                size="icon-sm"
-                disabled={updating}
-                aria-label={label}
-                className="invisible mt-1 shrink-0 group-focus-within:visible group-hover:visible group-data-[rename-dirty=true]:visible"
-              >
-                {updating ? <Loader2 className="animate-spin" /> : <Check />}
-              </Button>
-            }
-          />
-          <TooltipContent side="bottom">{label}</TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    </form>
-  );
-}
-
 const IMPORTED_TEMPLATE_VISIBILITY_OPTIONS = [
   { value: "private", Icon: Lock },
   { value: "public", Icon: Users },
@@ -4496,85 +4259,69 @@ function ImportedPresentationTemplateVisibilityControl({
           return $.artifacts.templates.visibility.workspaceState;
         });
   };
-  const CurrentIcon = visibility === "private" ? Lock : Users;
   return (
-    <DropdownMenu>
-      <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
-        <CurrentIcon size={14} className="shrink-0" aria-hidden="true" />
-        <span>{optionState(visibility)}</span>
-        <span aria-hidden="true">·</span>
-        <DropdownMenuTrigger
-          disabled={updating}
-          className="font-medium text-foreground underline decoration-muted-foreground/40 underline-offset-2 transition-colors hover:decoration-foreground disabled:opacity-50"
-          aria-label={t(($) => {
-            return $.artifacts.templates.visibility.changeLabel;
-          })}
-        >
-          {t(($) => {
-            return $.artifacts.templates.visibility.change;
-          })}
-        </DropdownMenuTrigger>
-      </p>
-      <DropdownMenuContent
-        align="start"
-        side="bottom"
-        sideOffset={6}
-        className="w-[19rem] p-1.5"
+    <TemplateDetailAccess
+      icon={visibility === "private" ? Lock : Users}
+      level={optionLabel(visibility)}
+      consequence={optionState(visibility)}
+      disabled={updating}
+      triggerLabel={t(($) => {
+        return $.artifacts.templates.visibility.changeLabel;
+      })}
+    >
+      <DropdownMenuRadioGroup
+        value={visibility}
+        onValueChange={(next: PresentationTemplateSummary["visibility"]) => {
+          if (next !== visibility) {
+            onChange(next);
+          }
+        }}
+        aria-label={t(($) => {
+          return $.workflows.detail.metadata.visibility;
+        })}
       >
-        <DropdownMenuRadioGroup
-          value={visibility}
-          onValueChange={(next: PresentationTemplateSummary["visibility"]) => {
-            if (next !== visibility) {
-              onChange(next);
-            }
-          }}
-          aria-label={t(($) => {
-            return $.workflows.detail.metadata.visibility;
-          })}
-        >
-          {IMPORTED_TEMPLATE_VISIBILITY_OPTIONS.map(({ value, Icon }) => {
-            return (
-              <DropdownMenuRadioItem
-                key={value}
-                value={value}
-                label={optionLabel(value)}
-                aria-label={optionLabel(value)}
-                aria-describedby={`${descriptionId}-${value}`}
-                closeOnClick
-                className="w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left data-checked:bg-state-selected"
-              >
-                <Icon
-                  size={16}
-                  className="mt-0.5 shrink-0 text-muted-foreground"
-                  aria-hidden="true"
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm text-foreground">
-                    {optionLabel(value)}
-                  </span>
-                  <span
-                    id={`${descriptionId}-${value}`}
-                    className="block text-xs text-muted-foreground"
-                  >
-                    {optionState(value)}
-                  </span>
+        {IMPORTED_TEMPLATE_VISIBILITY_OPTIONS.map(({ value, Icon }) => {
+          return (
+            <DropdownMenuRadioItem
+              key={value}
+              value={value}
+              label={optionLabel(value)}
+              aria-label={optionLabel(value)}
+              aria-describedby={`${descriptionId}-${value}`}
+              closeOnClick
+              className="w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left data-checked:bg-state-selected"
+            >
+              <Icon
+                size={16}
+                className="mt-0.5 shrink-0 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm text-foreground">
+                  {optionLabel(value)}
                 </span>
-                {/* Reserve the check column so descriptions do not reflow. */}
-                <span className="mt-0.5 w-4 shrink-0">
-                  <DropdownMenuRadioItemIndicator>
-                    <Check
-                      size={16}
-                      className="text-foreground"
-                      aria-hidden="true"
-                    />
-                  </DropdownMenuRadioItemIndicator>
+                <span
+                  id={`${descriptionId}-${value}`}
+                  className="block text-xs text-muted-foreground"
+                >
+                  {optionState(value)}
                 </span>
-              </DropdownMenuRadioItem>
-            );
-          })}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+              </span>
+              {/* Reserve the check column so descriptions do not reflow. */}
+              <span className="mt-0.5 w-4 shrink-0">
+                <DropdownMenuRadioItemIndicator>
+                  <Check
+                    size={16}
+                    className="text-foreground"
+                    aria-hidden="true"
+                  />
+                </DropdownMenuRadioItemIndicator>
+              </span>
+            </DropdownMenuRadioItem>
+          );
+        })}
+      </DropdownMenuRadioGroup>
+    </TemplateDetailAccess>
   );
 }
 
@@ -4595,7 +4342,7 @@ function ImportedPresentationTemplateUseButton({
         },
         { title: template.title },
       )}
-      className="mt-5 h-12 w-full font-semibold shadow-sm"
+      size="lg"
       onClick={() => {
         onSelect(template);
       }}
@@ -4619,71 +4366,38 @@ function ImportedPresentationTemplateDeleteControl({
   const [deleteLoadable, deleteTemplate] = useLoadableSet(
     signals.template.deleteImportedPresentationTemplate$,
   );
-  const deleting = deleteLoadable.state === "loading";
   return (
-    <Button
-      type="button"
-      variant="quiet"
-      size="sm"
-      disabled={deleting}
-      className="mt-2 w-full text-destructive hover:text-destructive"
-      onClick={() => {
-        detach(deleteTemplate(summary.id, pageSignal), Reason.DomCallback);
-      }}
-    >
-      {deleting ? <Loader2 className="animate-spin" /> : null}
-      {t(($) => {
+    <TemplateDetailDeleteButton
+      label={t(($) => {
         return $.chat.actions.delete;
       })}
-    </Button>
+      pending={deleteLoadable.state === "loading"}
+      onDelete={() => {
+        detach(deleteTemplate(summary.id, pageSignal), Reason.DomCallback);
+      }}
+    />
   );
 }
 
 function ImportedPresentationTemplateSidebar({
   summary,
   detail,
-  title,
   slideCount,
-  onSelect,
-  signals,
+  updating,
+  onUpdate,
 }: {
   summary: PresentationTemplateSummary;
   detail: PresentationTemplateDetail | null;
-  title: string;
   slideCount: number;
-  onSelect: (template: PresentationTemplateSummary) => void;
-  signals: ComposerSignals;
+  updating: boolean;
+  onUpdate: (body: { visibility: "private" | "public" }) => void;
 }) {
   const { t } = useTranslation();
-  const pageSignal = useGet(pageSignal$);
-  const [updateLoadable, updateTemplate] = useLoadableSet(
-    signals.template.updateImportedPresentationTemplate$,
-  );
   const activeTemplate = detail === null ? summary : detail;
-  const updating = updateLoadable.state === "loading";
-  const update = (
-    body: { title: string } | { visibility: "private" | "public" },
-  ) => {
-    detach(updateTemplate(summary.id, body, pageSignal), Reason.DomCallback);
-  };
   return (
-    <div className="flex min-h-0 min-w-0 flex-col lg:sticky lg:top-0 lg:overflow-y-auto">
-      <div className="rounded-lg border border-border bg-background p-4 shadow-sm">
-        {activeTemplate.canManage ? (
-          <ImportedPresentationTemplateRenameControl
-            key={title}
-            title={title}
-            updating={updating}
-            onRename={(nextTitle) => {
-              update({ title: nextTitle });
-            }}
-          />
-        ) : (
-          <h3 className="break-words text-xl font-semibold text-foreground">
-            {title}
-          </h3>
-        )}
-        <p className="mt-1 text-xs text-muted-foreground">
+    <TemplateDetailSideColumn>
+      <div className="-mx-2 flex min-h-0 flex-col px-2 lg:overflow-y-auto">
+        <p className="text-sm text-muted-foreground">
           {t(
             ($) => {
               return $.artifacts.templates.importedSlides;
@@ -4692,56 +4406,70 @@ function ImportedPresentationTemplateSidebar({
           )}
         </p>
         {activeTemplate.canManage ? (
-          <>
-            <div className="my-5 border-t border-border" />
+          <div className="mt-5">
             <ImportedPresentationTemplateVisibilityControl
               templateId={activeTemplate.id}
               visibility={activeTemplate.visibility}
               updating={updating}
               onChange={(nextVisibility) => {
-                update({ visibility: nextVisibility });
+                onUpdate({ visibility: nextVisibility });
               }}
             />
-          </>
-        ) : null}
-        <ImportedPresentationTemplateUseButton
-          template={activeTemplate}
-          onSelect={onSelect}
-        />
-        {activeTemplate.canManage ? (
-          <ImportedPresentationTemplateDeleteControl
-            summary={summary}
-            signals={signals}
-          />
+          </div>
         ) : null}
       </div>
-    </div>
+    </TemplateDetailSideColumn>
   );
 }
 
+/**
+ * The detail's header: the way back, then the name. Where the member can
+ * rename the template, the editor sits beside the dialog's title rather than
+ * inside it, so the heading that names the dialog stays plain text.
+ */
 function ImportedPresentationTemplatePreviewHeader({
   title,
+  editor,
   onBack,
 }: {
   title: string;
+  editor: ReactNode;
   onBack: () => void;
 }) {
   const { t } = useTranslation();
   return (
-    <DialogHeader className="flex h-[68px] shrink-0 justify-center border-b border-border px-6 pr-14 text-left duration-200 motion-reduce:animate-none">
-      <DialogTitle className="flex min-w-0 max-w-full items-center justify-start gap-1.5 text-left text-base leading-none">
-        <button
-          type="button"
-          className="inline-flex shrink-0 items-center p-0 leading-none text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          onClick={onBack}
+    <DialogHeader className="flex h-[68px] shrink-0 justify-center px-6 pr-14 text-left duration-200 motion-reduce:animate-none">
+      <div className="flex min-w-0 max-w-full items-center gap-1.5">
+        <DialogTitle
+          className={cn(
+            "flex items-center justify-start gap-1.5 text-left text-base leading-none",
+            // Beside an editor the title holds only the way back, which must
+            // never be squeezed; alone, it is what truncates.
+            editor === null ? "min-w-0" : "shrink-0",
+          )}
         >
-          {t(($) => {
-            return $.artifacts.templates.template;
-          })}
-        </button>
-        <span className="shrink-0 text-muted-foreground">/</span>
-        <span className="block min-w-0 truncate leading-none">{title}</span>
-      </DialogTitle>
+          <button
+            type="button"
+            className="inline-flex shrink-0 items-center p-0 leading-none text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={onBack}
+          >
+            {t(($) => {
+              return $.artifacts.templates.template;
+            })}
+          </button>
+          <span className="shrink-0 text-muted-foreground">/</span>
+          <span
+            className={
+              editor === null
+                ? "block min-w-0 truncate leading-none"
+                : "sr-only"
+            }
+          >
+            {title}
+          </span>
+        </DialogTitle>
+        {editor}
+      </div>
     </DialogHeader>
   );
 }
@@ -4780,7 +4508,7 @@ function ImportedPresentationTemplateMainPreview({
       data-testid={`${title} imported detail image preview`}
       tabIndex={0}
       onKeyDown={onKeyDown}
-      className="relative aspect-[16/9] overflow-hidden rounded-lg bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className={TEMPLATE_DETAIL_STAGE}
     >
       <ImportedPptImage
         imageSignals={imageSignals}
@@ -4791,32 +4519,13 @@ function ImportedPresentationTemplateMainPreview({
         previewSize={TEMPLATE_CARD_PREVIEW_SIZE}
         className="pointer-events-none absolute inset-0 h-full w-full object-cover"
       />
-      <button
-        type="button"
-        aria-label={t(($) => {
-          return $.artifacts.templates.previousSlide;
-        })}
-        disabled={activeSlideIndex === 0}
-        tabIndex={-1}
-        onClick={() => {
-          onChange(activeSlideIndex - 1);
-        }}
-        className="absolute inset-y-0 left-0 w-1/2 cursor-w-resize bg-transparent focus:outline-none disabled:cursor-default"
-      />
-      <button
-        type="button"
-        aria-label={t(($) => {
-          return $.artifacts.templates.nextSlide;
-        })}
-        disabled={activeSlideIndex >= slideCount - 1}
-        tabIndex={-1}
-        onClick={() => {
-          onChange(activeSlideIndex + 1);
-        }}
-        className="absolute inset-y-0 right-0 w-1/2 cursor-e-resize bg-transparent focus:outline-none disabled:cursor-default"
+      <TemplateDetailStageControls
+        activeSlideIndex={activeSlideIndex}
+        slideCount={slideCount}
+        onChange={onChange}
       />
       {loading ? (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-muted">
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-50 h-0.5 overflow-hidden bg-muted">
           <div className="h-full w-1/3 animate-pulse bg-muted-foreground/40" />
         </div>
       ) : null}
@@ -4839,58 +4548,40 @@ function ImportedPresentationTemplateThumbnails({
 }) {
   const { t } = useTranslation();
   return (
-    <div
-      className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-1.5 lg:grid-cols-8"
+    <TemplateDetailFilmstrip
+      slideCount={pageUrls.length}
+      activeSlideIndex={activeSlideIndex}
+      onChange={onChange}
       onKeyDown={onKeyDown}
-    >
-      {pageUrls.map((_pageUrl, index) => {
+      renderThumbnail={(index) => {
         const slideNumber = index + 1;
-        const active = index === activeSlideIndex;
-        const eagerlyLoad =
-          index < IMPORTED_PRESENTATION_TEMPLATE_EAGER_THUMBNAIL_COUNT;
-        const previewLabel = t(
-          ($) => {
-            return $.artifacts.templates.previewSlide;
-          },
-          { slideNumber },
-        );
         const thumbnailImageSignals = imageSignals[index];
         if (thumbnailImageSignals === undefined) {
           throw new Error(
             `Imported presentation thumbnail image state is missing: ${slideNumber.toString()}`,
           );
         }
+        const eagerlyLoad =
+          index < IMPORTED_PRESENTATION_TEMPLATE_EAGER_THUMBNAIL_COUNT;
         return (
-          <button
-            key={slideNumber}
-            type="button"
-            aria-label={previewLabel}
-            aria-pressed={active}
-            onClick={() => {
-              onChange(index);
-            }}
-            className={cn(
-              "relative aspect-[16/9] overflow-hidden rounded-md border bg-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              active
-                ? "border-ring ring-1 ring-ring"
-                : "border-border hover:border-muted-foreground/50",
+          <ImportedPptImage
+            imageSignals={thumbnailImageSignals}
+            label={t(
+              ($) => {
+                return $.artifacts.templates.previewSlide;
+              },
+              { slideNumber },
             )}
-          >
-            <ImportedPptImage
-              imageSignals={thumbnailImageSignals}
-              label={previewLabel}
-              loading={eagerlyLoad ? "eager" : "lazy"}
-              fetchPriority={active ? "high" : eagerlyLoad ? "auto" : "low"}
-              size={TEMPLATE_DETAIL_THUMBNAIL_PREVIEW_SIZE}
-              className="pointer-events-none absolute inset-0 h-full w-full object-cover"
-            />
-            <span className="absolute bottom-1 right-1 rounded border border-border bg-background/90 px-1.5 py-0.5 text-[10px] font-semibold text-foreground shadow-sm backdrop-blur">
-              {slideNumber}
-            </span>
-          </button>
+            loading={eagerlyLoad ? "eager" : "lazy"}
+            fetchPriority={
+              index === activeSlideIndex ? "high" : eagerlyLoad ? "auto" : "low"
+            }
+            size={TEMPLATE_DETAIL_THUMBNAIL_PREVIEW_SIZE}
+            className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+          />
         );
-      })}
-    </div>
+      }}
+    />
   );
 }
 
@@ -4907,7 +4598,20 @@ function ImportedPresentationTemplatePreviewPage({
   onSelect: (template: PresentationTemplateSummary) => void;
   signals: ComposerSignals;
 }) {
+  const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
   const focusPreview = useSet(signals.template.focusTemplatePreviewRef$);
+  // One loadable for the name and the visibility: each save writes back the
+  // whole summary, so the two run one at a time rather than racing.
+  const [updateLoadable, updateTemplate] = useLoadableSet(
+    signals.template.updateImportedPresentationTemplate$,
+  );
+  const updating = updateLoadable.state === "loading";
+  const update = (
+    body: { title: string } | { visibility: "private" | "public" },
+  ) => {
+    detach(updateTemplate(summary.id, body, pageSignal), Reason.DomCallback);
+  };
   const detailLoadable = useLoadable(
     signals.template.importedPresentationTemplateDetail$,
   );
@@ -4965,10 +4669,26 @@ function ImportedPresentationTemplatePreviewPage({
     <>
       <ImportedPresentationTemplatePreviewHeader
         title={title}
+        editor={
+          activeTemplate.canManage ? (
+            <TemplateDetailTitle
+              key={title}
+              title={title}
+              label={t(($) => {
+                return $.artifacts.templates.renameImportedTemplate;
+              })}
+              canEdit
+              updating={updating}
+              onRename={(nextTitle) => {
+                update({ title: nextTitle });
+              }}
+            />
+          ) : null
+        }
         onBack={onBack}
       />
-      <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto bg-muted/20 p-3 duration-200 motion-reduce:animate-none sm:gap-4 sm:p-5 lg:max-h-[72vh] lg:grid-cols-[minmax(0,1fr)_320px] lg:overflow-hidden">
-        <div className="rounded-lg border border-border bg-background p-2.5 sm:p-3 lg:overflow-y-auto">
+      <div className={TEMPLATE_DETAIL_BODY}>
+        <div className={TEMPLATE_DETAIL_GRID}>
           <ImportedPresentationTemplateMainPreview
             previewRef={focusPreview}
             title={title}
@@ -4986,14 +4706,25 @@ function ImportedPresentationTemplatePreviewPage({
             onChange={changeSlide}
             onKeyDown={handleSlideKeyDown}
           />
+          <ImportedPresentationTemplateSidebar
+            summary={summary}
+            detail={detail}
+            slideCount={slideCount}
+            updating={updating}
+            onUpdate={update}
+          />
         </div>
-        <ImportedPresentationTemplateSidebar
-          summary={summary}
-          detail={detail}
-          title={title}
-          slideCount={slideCount}
+      </div>
+      <div className={TEMPLATE_DETAIL_FOOTER}>
+        {activeTemplate.canManage ? (
+          <ImportedPresentationTemplateDeleteControl
+            summary={summary}
+            signals={signals}
+          />
+        ) : null}
+        <ImportedPresentationTemplateUseButton
+          template={activeTemplate}
           onSelect={onSelect}
-          signals={signals}
         />
       </div>
     </>
@@ -5034,42 +4765,31 @@ function ImportedPresentationTemplateLibraryStatus({
   const templates = useLoadable(
     signals.template.importedPresentationTemplatePickerItems$,
   );
-  const lastResolvedTemplates = useLastResolved(
-    signals.template.importedPresentationTemplatePickerItems$,
-  );
   const realtime = useLoadable(
     signals.template.presentationTemplatesRealtimeReady$,
   );
   const retryCatalog = useSet(
     signals.template.retryImportedPresentationTemplates$,
   );
+  if (templates.state !== "hasError") {
+    return null;
+  }
   let message: string;
   let retry: (() => void) | undefined;
-  if (templates.state === "loading") {
-    if (lastResolvedTemplates?.length) {
-      return null;
-    }
+  if (realtime.state === "hasError") {
     message = t(($) => {
-      return $.chat.templates.importedLoading;
+      return $.chat.templates.importedUnavailable;
     });
-  } else if (templates.state === "hasError") {
-    if (realtime.state === "hasError") {
-      message = t(($) => {
-        return $.chat.templates.importedUnavailable;
-      });
-    } else {
-      message = t(($) => {
-        return $.chat.templates.importedLoadFailed;
-      });
-      retry = retryCatalog;
-    }
   } else {
-    return null;
+    message = t(($) => {
+      return $.chat.templates.importedLoadFailed;
+    });
+    retry = retryCatalog;
   }
   return (
     <div
       className="col-span-full flex flex-wrap items-center gap-2 text-sm text-muted-foreground"
-      role={templates.state === "hasError" ? "alert" : "status"}
+      role="alert"
     >
       <span>{message}</span>
       {retry ? (
@@ -5391,7 +5111,11 @@ function TemplatePickerDialog({
     importedTemplateItems.find((item) => {
       return item.template.id === importedPreviewId;
     }) ?? null;
-  const isPreviewing = Boolean(previewItem ?? importedPreviewItem);
+  const documentPreview = useGet(signals.template.documentPreview$);
+  const closeDocumentPreview = useSet(signals.template.closeDocumentPreview$);
+  const isPreviewing = Boolean(
+    previewItem ?? importedPreviewItem ?? documentPreview,
+  );
   const dialogContentClassName = cn(
     "gap-0 overflow-hidden p-0 focus:outline-none focus-visible:outline-none focus-visible:ring-0",
     "flex flex-col",
@@ -5416,6 +5140,7 @@ function TemplatePickerDialog({
   const selectedCategory = resolveTemplatePickerCategory(
     category,
     customTemplatesEnabled,
+    features[FeatureSwitchKey.BuiltinDocumentTemplates] === true,
   );
   const showTemplatePickerSearch = selectedCategory === "workflow";
 
@@ -5452,6 +5177,7 @@ function TemplatePickerDialog({
 
   const completeTemplatePickerClose = () => {
     clearPresentationPreviews();
+    closeDocumentPreview();
     resetImportedTemplatePicker();
     resetCustomTemplatePicker();
     setPresentationGridScrollTop(0);
@@ -5541,6 +5267,10 @@ function TemplatePickerDialog({
       open={open}
       onOpenChange={(nextOpen) => {
         if (!nextOpen) {
+          if (documentPreview !== undefined) {
+            closeDocumentPreview();
+            return;
+          }
           if (importedPreviewItem !== null) {
             closeImportedPreview();
             return;
@@ -5570,9 +5300,9 @@ function TemplatePickerDialog({
         height={760}
         contentClassName={dialogContentClassName}
         // Website and Custom open a template in a dialog of their own rather
-        // than in this frame, and it is narrower than the gallery. The gallery
-        // steps back while one is open, so a template is read against the page
-        // like every other preview instead of against the grid it came from.
+        // than in this frame, at this frame's size. The gallery steps back
+        // while one is open, so the detail reads as the same surface the
+        // built-in and imported decks open into, not as a panel over the grid.
         hideWhenNestedOpen
         aria-describedby={undefined}
       >
@@ -5598,6 +5328,9 @@ function TemplatePickerDialog({
               <TemplatePickerCategoryNav
                 selectedCategory={selectedCategory}
                 customTemplatesEnabled={customTemplatesEnabled}
+                documentTemplatesEnabled={
+                  features[FeatureSwitchKey.BuiltinDocumentTemplates] === true
+                }
                 onChange={handleCategoryChange}
                 onReopenCustom={resetCustomTemplatePickerView}
               />
@@ -5608,7 +5341,8 @@ function TemplatePickerDialog({
                 className="relative flex min-h-0 min-w-0 flex-1 flex-col focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               >
                 <TemplatePaidToolNotice category={selectedCategory} />
-                {selectedCategory !== "custom" ? (
+                {selectedCategory !== "custom" &&
+                selectedCategory !== "document" ? (
                   <div
                     className={cn(
                       "relative h-[68px] shrink-0 items-center px-6 pr-14",
@@ -5639,6 +5373,13 @@ function TemplatePickerDialog({
                   onSelectImportedPresentation={
                     handleSelectImportedPresentation
                   }
+                  onSelectDocument={(item) => {
+                    onChange({
+                      type: "document",
+                      selection: { documentTemplateId: item.id },
+                    });
+                    closeTemplatePicker();
+                  }}
                   onSelectCustom={handleSelectCustom}
                   onPreviewPresentation={handlePreview}
                   onPreviewImportedPresentation={handlePreviewImported}
@@ -5655,7 +5396,19 @@ function TemplatePickerDialog({
             </Tabs>
           </div>
         ) : null}
-        {previewItem ? (
+        {documentPreview ? (
+          <DocumentTemplatePreviewPage
+            signals={signals}
+            item={documentPreview}
+            onSelect={(item) => {
+              onChange({
+                type: "document",
+                selection: { documentTemplateId: item.id },
+              });
+              closeTemplatePicker();
+            }}
+          />
+        ) : previewItem ? (
           <TemplatePreviewPage
             item={previewItem}
             onBack={() => {
@@ -5694,6 +5447,7 @@ function TemplatePickerCategoryContent({
   onSelectPresentation,
   onSelectImportedPresentation,
   onSelectCustom,
+  onSelectDocument,
   onPreviewPresentation,
   onPreviewImportedPresentation,
   onImported,
@@ -5722,6 +5476,9 @@ function TemplatePickerCategoryContent({
   ) => void;
   onSelectImportedPresentation: (template: PresentationTemplateSummary) => void;
   onSelectCustom: (template: UserTemplateCatalogEntry) => void;
+  onSelectDocument: (
+    item: import("@okouai/core/document-template-items").DocumentTemplateItem,
+  ) => void;
   onPreviewPresentation: (
     item: PresentationTemplateItem,
     slideIndex?: number,
@@ -5740,6 +5497,14 @@ function TemplatePickerCategoryContent({
   onSelectWorkflow: (item: WorkflowTemplateItem) => void;
   runtime: TemplatePreviewRuntime;
 }) {
+  if (selectedCategory === "document") {
+    return (
+      <DocumentTemplatePickerPane
+        signals={signals}
+        onSelect={onSelectDocument}
+      />
+    );
+  }
   if (selectedCategory === "custom") {
     return (
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
@@ -5892,6 +5657,12 @@ function selectedComposerTemplateAttachment(
   importedTemplates: readonly PresentationTemplateSummary[] = [],
   customTemplates: readonly UserTemplateCatalogEntry[] = [],
 ): ComposerTemplateAttachment | undefined {
+  if (value?.type === "document") {
+    const item = findDocumentTemplateItem(value.selection.documentTemplateId);
+    return item
+      ? { type: "document", title: item.title, category: "document" }
+      : undefined;
+  }
   if (value?.type === "custom") {
     return customTemplateAttachment(
       value.selection.userTemplateId,
@@ -5986,6 +5757,7 @@ function useTemplatePickerTrigger(signals: ComposerSignals) {
   const selectedCategory = resolveTemplatePickerCategory(
     templateMode === "presentation" ? "slides" : (templateMode ?? category),
     customTemplatesEnabled,
+    pickerFeatures[FeatureSwitchKey.BuiltinDocumentTemplates] === true,
   );
   const prewarm = () => {
     prewarmTemplatePreviewImages(

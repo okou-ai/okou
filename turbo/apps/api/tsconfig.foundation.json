@@ -339,7 +339,13 @@
     "src/signals/services/ssh-creation.service.ts",
     "src/signals/services/ssh-runtime-wakeup.service.ts",
     "src/signals/services/remote-runtime-wakeup.service.ts",
-    "src/signals/services/uploaded-artifact.service.ts"
+    "src/signals/services/uploaded-artifact.service.ts",
+    "src/lib/event-consumer/verify.ts",
+    "src/signals/services/chat-event-row-read.service.ts",
+    "src/signals/services/chat-event-snapshot-body.service.ts",
+    "src/signals/services/pi-memory-chat-source.service.ts",
+    "src/signals/services/run-native-session.service.ts",
+    "src/signals/services/session-history-blobs.ts"
   ],
   "exclude": ["node_modules", "dist"],
   "references": [

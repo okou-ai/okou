@@ -1,6 +1,5 @@
-import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { expect, onTestFinished } from "vitest";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
@@ -184,47 +183,6 @@ export function createPublicAutomationRunApi(context: TestContext) {
         [200],
       );
     }
-    const history = Buffer.from(
-      `public automation run history ${runId}`,
-      "utf8",
-    );
-    const hash = createHash("sha256").update(history).digest("hex");
-    const previousStorage = context.mocks.s3.send.getMockImplementation();
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      if (
-        (command instanceof HeadObjectCommand ||
-          command instanceof GetObjectCommand) &&
-        command.input.Key === `blobs/${hash}.blob`
-      ) {
-        return Promise.resolve({
-          ContentLength: history.byteLength,
-          ...(command instanceof GetObjectCommand
-            ? {
-                Body: {
-                  async *[Symbol.asyncIterator]() {
-                    yield history;
-                  },
-                },
-              }
-            : {}),
-        });
-      }
-      if (!previousStorage) {
-        throw new Error("Expected the owned external object store");
-      }
-      return previousStorage(command);
-    });
-    await webhooks.requestAgentSessionHistoryPrepare(
-      {
-        runId,
-        hash,
-        rawSize: history.byteLength,
-        encodedSize: history.byteLength,
-        encoding: "identity",
-      },
-      sandboxHeaders,
-      [200],
-    );
     await webhooks.requestAgentComplete(
       {
         runId,
@@ -233,7 +191,7 @@ export function createPublicAutomationRunApi(context: TestContext) {
         completion: {
           cliAgentType: "claude-code",
           cliAgentSessionId: `public-automation-run-${runId}`,
-          cliAgentSessionHistoryHash: hash,
+          cliAgentSessionHistoryDisposition: "native_only",
         },
       },
       sandboxHeaders,
@@ -244,7 +202,9 @@ export function createPublicAutomationRunApi(context: TestContext) {
     const current = await runs.readRun(actor, runId);
     expect(current.status).toBe(args.exitCode === 1 ? "failed" : "completed");
     if (args.exitCode !== 1) {
-      expect(current.result?.conversationId).toStrictEqual(expect.any(String));
+      expect(current.result?.frameworkSessionId).toStrictEqual(
+        expect.any(String),
+      );
     }
   }
 

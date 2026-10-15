@@ -1,9 +1,6 @@
 import { computed, type Computed } from "ccstate";
 import type { McpConnector } from "@okouai/api-contracts/contracts/mcp-connectors";
-import {
-  agentRuns,
-  agentSessions,
-} from "@okouai/db/schema/agent-run-session-conversation";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { connectors } from "@okouai/db/schema/connector";
 import { and, eq, inArray } from "drizzle-orm";
@@ -42,14 +39,7 @@ function builtinMcpConnectors(args: {
         tokenExpiresAt: connectors.tokenExpiresAt,
       })
       .from(agentRuns)
-      .innerJoin(
-        agentSessions,
-        and(
-          eq(agentSessions.id, agentRuns.sessionId),
-          eq(agentSessions.orgId, args.orgId),
-          eq(agentSessions.userId, args.userId),
-        ),
-      )
+
       .innerJoin(
         connectors,
         and(
@@ -148,14 +138,7 @@ export function runMcpConnectorList(args: {
     const rows = await db
       .select({ connector: customConnectorDefinitionSelection() })
       .from(agentRuns)
-      .innerJoin(
-        agentSessions,
-        and(
-          eq(agentSessions.id, agentRuns.sessionId),
-          eq(agentSessions.orgId, args.orgId),
-          eq(agentSessions.userId, args.userId),
-        ),
-      )
+
       .innerJoin(
         orgCustomConnectors,
         and(

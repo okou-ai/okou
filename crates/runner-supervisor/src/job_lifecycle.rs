@@ -15,7 +15,7 @@ use runner_lifecycle::resource_budget::BudgetLease;
 use runner_lifecycle::status::StatusTracker;
 use runner_provider::{CompletionAuth, CompletionReportTiming, JobProvider};
 use runner_types::ids::RunId;
-use runner_types::types::{CompleteRequest, HomeReuseResult, SandboxReuseResult};
+use runner_types::types::CompleteRequest;
 
 use crate::idle_lifecycle::SharedIdlePool;
 use crate::orphan_reap::OrphanedActiveRuns;
@@ -195,8 +195,6 @@ pub struct CompletionPayload {
     failure_reason: Option<RequestFailureReason>,
     error: Option<String>,
     sandbox_id: SandboxId,
-    reuse_result: SandboxReuseResult,
-    home_reuse_result: Option<HomeReuseResult>,
     completion_auth: CompletionAuth,
 }
 
@@ -233,7 +231,6 @@ impl CompletionPayload {
         failure_reason: Option<RequestFailureReason>,
         error: Option<String>,
         sandbox_id: SandboxId,
-        reuse_result: SandboxReuseResult,
         completion_auth: CompletionAuth,
     ) -> Self {
         Self {
@@ -242,15 +239,8 @@ impl CompletionPayload {
             failure_reason,
             error,
             sandbox_id,
-            reuse_result,
-            home_reuse_result: None,
             completion_auth,
         }
-    }
-
-    pub fn with_home_reuse_result(mut self, home_reuse_result: Option<HomeReuseResult>) -> Self {
-        self.home_reuse_result = home_reuse_result;
-        self
     }
 
     /// Hold active status, budget and reuse ownership until both the provider
@@ -320,8 +310,6 @@ impl CompletionPayload {
             failure_reason,
             error,
             sandbox_id,
-            reuse_result,
-            home_reuse_result,
             completion_auth,
         } = self;
         let provider_completion_started = Instant::now();
@@ -333,8 +321,6 @@ impl CompletionPayload {
                     failure_reason,
                     error,
                     sandbox_id: Some(sandbox_id),
-                    sandbox_reuse_result: Some(reuse_result),
-                    home_reuse_result,
                 },
                 completion_auth,
             )
@@ -454,7 +440,7 @@ mod tests {
     use runner_lifecycle::status::StatusTracker;
     use runner_provider::{ClaimedJob, HttpClient, HttpClientConfig, JobCandidate, JobProvider};
     use runner_types::ids::RunId;
-    use runner_types::types::{HeartbeatState, SandboxReuseResult};
+    use runner_types::types::HeartbeatState;
 
     use crate::idle_lifecycle::SharedIdlePool;
     use crate::orphan_reap::OrphanedActiveRuns;
@@ -706,7 +692,6 @@ mod tests {
             None,
             None,
             sandbox_id,
-            SandboxReuseResult::PoolMiss,
             CompletionAuth::sandbox_token(run_id, "completion-token".to_owned()),
         );
         let completion = payload.report_with_finalization(&provider, finalize);
@@ -817,7 +802,6 @@ mod tests {
             None,
             None,
             sandbox_id,
-            SandboxReuseResult::PoolMiss,
             CompletionAuth::sandbox_token(run_id, "completion-token".to_owned()),
         )
         .complete_claimed_run(&provider, finalized, &status, active_run_guard, &cleanup);
@@ -908,7 +892,6 @@ mod tests {
                 None,
                 None,
                 sandbox_id,
-                SandboxReuseResult::PoolMiss,
                 CompletionAuth::sandbox_token(run_id, "completion-token".to_owned()),
             )
             .complete_claimed_run(
@@ -1033,7 +1016,6 @@ mod tests {
             Some(RequestFailureReason::InputTooLarge),
             Some("Codex input exceeded the app-server limit".to_string()),
             sandbox_id,
-            SandboxReuseResult::PoolMiss,
             CompletionAuth::sandbox_token(run_id, "completion-token".to_string()),
         )
         .report(&provider)

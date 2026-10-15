@@ -13,8 +13,9 @@ export function chatThreadRequestSelection() {
     codexServiceTier: chatThreads.codexServiceTier,
     computerUseHostId: chatThreads.computerUseHostId,
     cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
-    agentSessionId: chatThreads.agentSessionId,
-    agentSessionRunId: chatThreads.agentSessionRunId,
+    framework: chatThreads.framework,
+    frameworkSessionId: chatThreads.frameworkSessionId,
+    frameworkSessionRunId: chatThreads.frameworkSessionRunId,
   };
 }
 

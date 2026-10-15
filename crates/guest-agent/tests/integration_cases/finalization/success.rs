@@ -370,7 +370,6 @@ async fn pi_finalization_reports_full_combined_completion_payload() {
 
     let mut runtime = finalization_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Pi;
-    runtime.config.home_reuse_result = "sandboxReused".to_string();
     let _files_guard = SessionFinalizationFilesGuard::new();
     let session_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
     guest_agent::paths::write_private(session_id_file(), session_id).unwrap();
@@ -388,8 +387,6 @@ async fn pi_finalization_reports_full_combined_completion_payload() {
                     "exitCode": 0,
                     "lastEventSequence": 42,
                     "sandboxId": "00000000-0000-4000-8000-000000000abc",
-                    "sandboxReuseResult": "reused",
-                    "homeReuseResult": "sandboxReused",
                     "completion": {
                         "cliAgentType": "pi",
                         "cliAgentSessionId": session_id,

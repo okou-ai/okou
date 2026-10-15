@@ -10,6 +10,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { finished } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 import postgres from "postgres";
@@ -114,13 +115,53 @@ try {
     )
   ).rows;
   await frontier(validate.idx);
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0413; new non-billing transactions are prohibited.
-  await client.query("BEGIN");
-  await client.query("LOCK TABLE agent_runs IN ACCESS SHARE MODE");
+  // A native COPY reader owns the same implicit ACCESS SHARE resource. No
+  // bytes are consumed until the migration has exercised its real timeout.
+  const holder = postgres(url.toString(), { max: 1, onnotice: () => {} });
   try {
-    await assert.rejects(apply(), /lock timeout/);
+    const [{ pid }] = z
+      .tuple([z.object({ pid: z.int().positive() })])
+      .parse(await holder`SELECT pg_backend_pid() AS pid`);
+    const stream =
+      await holder`COPY (SELECT id FROM agent_runs) TO STDOUT`.readable();
+    const outcome = finished(stream).then(
+      () => {
+        return { kind: "completed" as const };
+      },
+      (error: unknown) => {
+        return { kind: "failed" as const, error };
+      },
+    );
+    try {
+      await assert.rejects(apply(), /lock timeout/);
+    } finally {
+      let cancelled;
+      try {
+        cancelled = await client.query(
+          "SELECT pg_cancel_backend($1) AS cancelled",
+          [pid],
+        );
+      } finally {
+        // Drain and await release even if cancellation itself failed. This
+        // finite reader never needs backend termination for cleanup.
+        stream.resume();
+        await outcome;
+        // This same-backend query follows the ReadyForQuery release ACK.
+        assert.deepEqual(
+          [...(await holder`SELECT pg_backend_pid() AS pid`)],
+          [{ pid }],
+        );
+      }
+      assert.deepEqual(cancelled.rows, [{ cancelled: true }]);
+      const terminal = await outcome;
+      assert.ok(terminal.kind === "failed", "COPY ended before cancellation");
+      z.object({ code: z.literal("57014") }).parse(terminal.error);
+      console.log(
+        "PASS native COPY readiness, cancellation and same-backend release ACK",
+      );
+    }
   } finally {
-    await client.query("ROLLBACK");
+    await holder.end();
   }
   assert.equal(
     (await client.query("SELECT to_regclass('agent_run_inference') AS name"))

@@ -189,16 +189,21 @@ const getBuiltinConnectorListInner$ = computed(async (get) => {
   return { status: 200 as const, body: result };
 });
 
-const getBuiltinConnectorBySlugInner$ = computed(async (get) => {
+const builtinConnectorBySlugScope$ = computed((get) => {
   const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(builtinConnectorsBySlugContract.get));
-  const connector = await get(
-    builtinConnectorBySlug({
-      orgId: auth.orgId,
-      userId: auth.userId,
-      connectorSlug: params.connectorSlug,
-    }),
-  );
+  return {
+    orgId: auth.orgId,
+    userId: auth.userId,
+    connectorSlug: params.connectorSlug,
+  };
+});
+const builtinConnectorBySlug$ = builtinConnectorBySlug(
+  builtinConnectorBySlugScope$,
+);
+
+const getBuiltinConnectorBySlugInner$ = computed(async (get) => {
+  const connector = await get(builtinConnectorBySlug$);
   if (!connector) {
     return notFound("Connector not found");
   }
@@ -206,19 +211,24 @@ const getBuiltinConnectorBySlugInner$ = computed(async (get) => {
   return { status: 200 as const, body: connector };
 });
 
-const getBuiltinConnectorScopeDiffInner$ = computed(async (get) => {
+const builtinConnectorScopeDiffScope$ = computed((get) => {
   const auth = get(organizationAuthContext$);
   const params = get(
     pathParamsOf(builtinConnectorScopeDiffContract.getScopeDiff),
   );
-  const diff = await get(
-    builtinConnectorScopeDiff({
-      orgId: auth.orgId,
-      userId: auth.userId,
-      connectorSlug: params.connectorSlug,
-      selection: { kind: "default" },
-    }),
-  );
+  return {
+    orgId: auth.orgId,
+    userId: auth.userId,
+    connectorSlug: params.connectorSlug,
+    selection: { kind: "default" as const },
+  };
+});
+const builtinConnectorScopeDiff$ = builtinConnectorScopeDiff(
+  builtinConnectorScopeDiffScope$,
+);
+
+const getBuiltinConnectorScopeDiffInner$ = computed(async (get) => {
+  const diff = await get(builtinConnectorScopeDiff$);
   if (!diff) {
     return notFound("Connector not found");
   }

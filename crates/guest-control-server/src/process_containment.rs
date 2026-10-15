@@ -995,6 +995,8 @@ fn log_resource_events(
                 .is_some_and(|evidence| evidence.proves_contained_resource_limit(&hard_limit));
         let classification = if contained {
             "contained_tool_oom"
+        } else if evidence.is_some_and(|evidence| evidence.agent_domain_oom_kill()) {
+            "agent_oom_kill"
         } else {
             "unproven_containment"
         };

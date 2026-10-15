@@ -2,7 +2,6 @@ import { agentDeletionError } from "@okouai/core/agent-protection";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunDeletionMembership } from "@okouai/db/operations/run-history-deletion";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { blobs } from "@okouai/db/schema/blob";
 import { storages } from "@okouai/db/schema/storage";
@@ -35,7 +34,6 @@ const agentRows = z.array(
   }),
 );
 const orgRows = z.array(z.object({ defaultAgentId: z.string().nullable() }));
-const sessionRows = z.array(z.object({ id: z.string(), orgId: z.string() }));
 const runRows = z.array(
   z.object({
     id: z.string(),
@@ -179,30 +177,6 @@ export function* agentDeletionAdmissionPlan(
   if ("kind" in agent) {
     return agent;
   }
-  const sessions = sessionRows.parse(
-    yield statement(
-      new QueryBuilder()
-        .select({
-          id: agentSessions.id,
-          orgId: sql`${agentSessions.orgId}`.as("orgId"),
-        })
-        .from(agentSessions)
-        .where(eq(agentSessions.agentId, args.agentId))
-        .orderBy(asc(agentSessions.id))
-        .for("update", { noWait: true })
-        .getSQL(),
-      sessionRows.element,
-    ),
-  );
-  if (
-    sessions.some((session) => {
-      return session.orgId !== args.orgId;
-    })
-  ) {
-    return { kind: "ownership-conflict" };
-  }
-  // Both ownership shapes remain reachable during the runtime cutover (#37970).
-  // Drop Session membership after historical backfill and outgoing API drain.
   const runs = runRows.parse(
     yield statement(
       new QueryBuilder()
@@ -285,7 +259,7 @@ export function conversationReferenceBatches(
   return {
     batches,
     receipt: {
-      deletedConversations: removed.deletedConversations,
+      deletedRuns: removed.deletedRuns,
       releasedReferences: references.reduce((total, entry) => {
         return total + entry.release_count;
       }, 0),

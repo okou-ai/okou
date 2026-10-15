@@ -792,7 +792,7 @@ function normalSendRequestFacts(
   previousBinding:
     | Pick<
         ChatThreadRequestFacts["thread"],
-        "agentSessionId" | "agentSessionRunId"
+        "framework" | "frameworkSessionId" | "frameworkSessionRunId"
       >
     | undefined,
   event: Pick<
@@ -808,8 +808,9 @@ function normalSendRequestFacts(
       agentId: args.body.agentId,
       ...thread.runSettings,
       ...thread.computerAccess,
-      agentSessionId: previousBinding?.agentSessionId ?? null,
-      agentSessionRunId: previousBinding?.agentSessionRunId ?? null,
+      framework: previousBinding?.framework ?? null,
+      frameworkSessionId: previousBinding?.frameworkSessionId ?? null,
+      frameworkSessionRunId: previousBinding?.frameworkSessionRunId ?? null,
     },
     input: {
       id: event.id,

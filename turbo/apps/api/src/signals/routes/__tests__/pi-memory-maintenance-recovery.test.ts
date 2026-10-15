@@ -33,7 +33,7 @@ describe("Pi maintenance recovery", () => {
         completion: {
           cliAgentType: "pi",
           cliAgentSessionId: run.runId,
-          cliAgentSessionHistoryDisposition: "unavailable",
+          cliAgentSessionHistoryDisposition: "native_only",
           artifactSnapshots: [
             {
               name: run.memory.name,

@@ -569,7 +569,7 @@ test("The muted filter is hidden when chat muting is disabled", async () => {
   expect(menuItemByText("All chats")).toBeInTheDocument();
 });
 
-test("Filter muted chats including archived chats and switch between filters", async () => {
+async function prepareMutedChatFilter() {
   prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
@@ -605,7 +605,11 @@ test("Filter muted chats including archived chats and switch between filters", a
     expect(pathname()).toBe(`/chats/${RESEARCH_THREAD_ID}`);
   });
   expect(within(sidebar()).getByText("Show all chats")).toBeInTheDocument();
+  return { titles };
+}
 
+test("Switch from muted chats to Archived without losing filter state", async () => {
+  const { titles } = await prepareMutedChatFilter();
   openChatListMenu();
   click(menuItemByText("Archived"));
   await waitFor(() => {
@@ -614,7 +618,6 @@ test("Filter muted chats including archived chats and switch between filters", a
       "Archived task",
     ]);
   });
-
   openChatListMenu();
   click(menuItemByText("Muted"));
   await waitFor(() => {
@@ -623,15 +626,33 @@ test("Filter muted chats including archived chats and switch between filters", a
       "Archived quiet task",
     ]);
   });
+});
+
+test("Switch from muted chats to Unmute without losing filter state", async () => {
+  const { titles } = await prepareMutedChatFilter();
   openThreadMenu("Quiet task");
   click(menuItemByText("Unmute chat"));
   await waitFor(() => {
     expect(visibleThreadTitles(titles)).toStrictEqual(["Archived quiet task"]);
   });
+});
 
+test("Switch from muted chats to Unread without losing filter state", async () => {
+  await prepareMutedChatFilter();
   openChatListMenu();
   click(menuItemByText("Unread"));
-  await within(sidebar()).findByText("No unread chats");
+  await expect(
+    within(sidebar()).findByText("No unread chats"),
+  ).resolves.toBeInTheDocument();
+});
+
+test("Switch from muted chats to Inbox without losing filter state", async () => {
+  const { titles } = await prepareMutedChatFilter();
+  openThreadMenu("Quiet task");
+  click(menuItemByText("Unmute chat"));
+  await waitFor(() => {
+    expect(visibleThreadTitles(titles)).toStrictEqual(["Archived quiet task"]);
+  });
   openChatListMenu();
   click(menuItemByText("Inbox"));
   await waitFor(() => {

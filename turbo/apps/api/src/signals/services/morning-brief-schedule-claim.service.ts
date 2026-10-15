@@ -13,8 +13,7 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
-import { and, asc, desc, eq, inArray, exists, gt } from "drizzle-orm";
-import { alias, QueryBuilder } from "drizzle-orm/pg-core";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
@@ -476,25 +475,3 @@ export const morningBriefScheduleClaimBound$ = command(
     return bound !== undefined;
   },
 );
-
-/** Pure predicate, evaluated by the post-commit owner after its existing lock. */
-export function morningBriefScheduleClaimSupersededCondition(runId: string) {
-  const own = alias(morningBriefScheduleClaims, "own_schedule_claim");
-  const successor = alias(
-    morningBriefScheduleClaims,
-    "successor_schedule_claim",
-  );
-  return exists(
-    new QueryBuilder()
-      .select({ id: successor.id })
-      .from(own)
-      .innerJoin(
-        successor,
-        and(
-          eq(successor.automationId, own.automationId),
-          gt(successor.claimSequence, own.claimSequence),
-        ),
-      )
-      .where(eq(own.runId, runId)),
-  );
-}

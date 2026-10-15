@@ -16,8 +16,6 @@ use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_provider::{
     ActiveRunnerPreference, RunnerPreference, RunnerPreferenceClaimState, RunnerPreferenceTier,
 };
-use runner_types::types::HomeReuseResult;
-use runner_types::types::SandboxReuseResult;
 
 const NON_SELECTED_RUNNER_ID: u128 = 1;
 const FINALIZING_TEST_PREFERENCE_LIFETIME: Duration = Duration::from_secs(30);
@@ -335,7 +333,7 @@ async fn exact_idle_reservation_is_restored_after_claim_conflict() {
     let idle_pool = Arc::clone(&env.idle_pool);
     let session_id = "sess-conflict-restore";
     let reserved_generation_run_id = RunId::new_v4();
-    seed_idle_pool_with_history_generation(
+    let reused_sandbox_id = seed_idle_pool_with_history_generation(
         &idle_pool,
         &budget,
         session_id,
@@ -395,7 +393,7 @@ async fn exact_idle_reservation_is_restored_after_claim_conflict() {
         .wait_completion(followup_run_id, Duration::from_secs(5))
         .await
         .expect("restored idle reservation should serve the next claim");
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::Reused));
+    assert_eq!(completion.sandbox_id, Some(reused_sandbox_id));
     shutdown(&env, run_handle).await;
 }
 
@@ -451,7 +449,8 @@ async fn unselected_reusable_sandbox_preempts_home_preference() {
     let (config, env) = mock_run_config(test_profiles(), 2, 4096, 1);
     let budget = Arc::clone(&config.capacity.budget);
     let reuse_key = "thread:reusable-preempts-home";
-    seed_idle_pool(&env.idle_pool, &budget, reuse_key, "vm0/default", 2, 4096).await;
+    let reused_sandbox_id =
+        seed_idle_pool(&env.idle_pool, &budget, reuse_key, "vm0/default", 2, 4096).await;
     let run_handle = tokio::spawn(run(config));
     wait_discover_entered(&env, Duration::from_secs(2)).await;
 
@@ -474,7 +473,7 @@ async fn unselected_reusable_sandbox_preempts_home_preference() {
         .wait_completion(run_id, Duration::from_secs(5))
         .await
         .expect("strictly better reusable sandbox should preempt home preference");
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::Reused));
+    assert_eq!(completion.sandbox_id, Some(reused_sandbox_id));
     assert!(env.handle.deferred_poll_deadlines().is_empty());
 
     shutdown(&env, run_handle).await;
@@ -521,7 +520,7 @@ async fn reusable_claim_without_generation_target_reuses_sandbox() {
     let budget = Arc::clone(&config.capacity.budget);
     let idle_pool = Arc::clone(&env.idle_pool);
     let session_id = "sess-missing-generation-target";
-    seed_idle_pool_with_history_generation(
+    let reused_sandbox_id = seed_idle_pool_with_history_generation(
         &idle_pool,
         &budget,
         session_id,
@@ -548,7 +547,7 @@ async fn reusable_claim_without_generation_target_reuses_sandbox() {
         .wait_completion(run_id, Duration::from_secs(5))
         .await
         .expect("missing-target reusable candidate should be claimed");
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::Reused));
+    assert_eq!(completion.sandbox_id, Some(reused_sandbox_id));
     let claim_candidates = env.handle.claim_candidates();
     let candidate = claim_candidates
         .iter()
@@ -589,10 +588,6 @@ async fn reserved_reuse_claim_without_reuse_key_preserves_no_reuse_attribution()
         .await
         .expect("claim without a reuse key should fall back to a fresh sandbox");
     assert_eq!(completion.exit_code, 0);
-    assert_eq!(
-        completion.reuse_result,
-        Some(SandboxReuseResult::NoReuseKey)
-    );
     assert_ne!(completion.sandbox_id, Some(reserved_sandbox_id));
     assert_eq!(idle_pool.lock().await.len(), 0);
 
@@ -678,7 +673,6 @@ async fn reserved_reuse_persists_preparing_before_unpark_without_post_unpark_poo
         .await
         .expect("reserved reuse should complete after running publication");
     assert_eq!(completion.sandbox_id, Some(sandbox_id));
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::Reused));
 
     shutdown(&env, run_handle).await;
 }
@@ -747,7 +741,6 @@ async fn reserved_reuse_running_status_timeout_recovers_claim_and_sandbox() {
             .is_some_and(|error| error.contains("timed out"))
     );
     assert_eq!(completion.sandbox_id, None);
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::Reused));
     wait_cancel_token_removed(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
     wait_budget_count(&budget, 0, Duration::from_secs(5)).await;
     wait_idle_pool_len(&env.idle_pool, 0, Duration::from_secs(5)).await;
@@ -901,7 +894,6 @@ async fn reserved_reuse_running_status_write_error_recovers_claim_and_sandbox() 
             .is_some_and(|error| error.contains("write runner status"))
     );
     assert_eq!(completion.sandbox_id, None);
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::Reused));
     wait_cancel_token_removed(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
     wait_budget_count(&budget, 0, Duration::from_secs(5)).await;
     wait_idle_pool_len(&env.idle_pool, 0, Duration::from_secs(5)).await;
@@ -1053,7 +1045,6 @@ async fn reserved_reuse_activation_task_abort_recovers_claim_and_sandbox() {
             .is_some_and(|error| error.contains("task dropped"))
     );
     assert_eq!(completion.sandbox_id, None);
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::Reused));
     wait_cancel_token_removed(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
     wait_budget_count(&budget, 0, Duration::from_secs(5)).await;
     wait_idle_pool_len(&env.idle_pool, 0, Duration::from_secs(5)).await;
@@ -1105,7 +1096,6 @@ async fn reserved_reuse_activation_panic_recovers_claim_and_sandbox() {
         Some("claimed activation setup panicked")
     );
     assert_eq!(completion.sandbox_id, None);
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::Reused));
     wait_cancel_token_removed(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
     wait_budget_count(&budget, 0, Duration::from_secs(5)).await;
     wait_idle_pool_len(&env.idle_pool, 0, Duration::from_secs(5)).await;
@@ -1394,7 +1384,6 @@ async fn finalizing_fallback_starts_fresh_sandbox_before_idle_destroy_finishes()
         .await
         .expect("finalizing fallback should complete while old destroy remains blocked");
     assert_eq!(completion.exit_code, 0);
-    assert_ne!(completion.reuse_result, Some(SandboxReuseResult::Reused));
     assert_eq!(destroy_gate.entered_count(), 1);
 
     destroy_gate.release_one();
@@ -1588,10 +1577,6 @@ async fn finalizing_immediate_handoff_reuses_matching_sandbox_past_preference_de
         .await
         .expect("successor should complete with the matching sandbox");
     assert_eq!(
-        successor_completion.reuse_result,
-        Some(SandboxReuseResult::Reused)
-    );
-    assert_eq!(
         successor_completion.sandbox_id, predecessor_completion.sandbox_id,
         "successor should reuse the predecessor sandbox without idle publication"
     );
@@ -1691,10 +1676,6 @@ async fn late_finalizing_successor_can_take_over_the_running_predecessor() {
         .expect("successor should complete with the transferred sandbox");
     assert_eq!(successor_completion.exit_code, 0);
     assert_eq!(
-        successor_completion.reuse_result,
-        Some(SandboxReuseResult::Reused)
-    );
-    assert_eq!(
         successor_completion.sandbox_id, predecessor_completion.sandbox_id,
         "late demand must reuse the predecessor instead of waiting for fresh capacity"
     );
@@ -1754,12 +1735,10 @@ async fn pre_finalization_wait_ends_at_preference_deadline() {
         .await
         .expect("fresh fallback should start when pre-finalization outlives the preference");
     wait_gate.release_one();
-    let completion = env
-        .handle
+    env.handle
         .wait_completion(run_id, Duration::from_secs(5))
         .await
         .expect("fallback run should complete after the preference deadline");
-    assert_ne!(completion.reuse_result, Some(SandboxReuseResult::Reused));
 
     drop(predecessor_guard);
     shutdown(&env, run_handle).await;
@@ -1827,12 +1806,10 @@ async fn finalizing_handoff_grace_starts_when_predecessor_enters_finalization() 
         .await
         .expect("fresh fallback should start after the finalization grace expires");
     wait_gate.release_one();
-    let completion = env
-        .handle
+    env.handle
         .wait_completion(run_id, Duration::from_secs(5))
         .await
         .expect("fallback run should complete after the finalization grace");
-    assert_ne!(completion.reuse_result, Some(SandboxReuseResult::Reused));
 
     drop(predecessor_guard);
     shutdown(&env, run_handle).await;
@@ -2058,12 +2035,10 @@ async fn selected_ranked_finalizing_candidate_falls_back_at_deadline() {
     assert_eq!(preference.deadline(), deadline);
 
     tokio::time::advance(FINALIZING_TEST_PREFERENCE_LIFETIME + Duration::from_millis(1)).await;
-    let completion = env
-        .handle
+    env.handle
         .wait_completion(run_id, Duration::from_secs(5))
         .await
         .expect("expired finalizing preference should enter ordinary admission");
-    assert_ne!(completion.reuse_result, Some(SandboxReuseResult::Reused));
 
     drop(predecessor_guard);
     shutdown(&env, run_handle).await;
@@ -2127,15 +2102,10 @@ async fn pending_finalizing_fallback_skips_home_cache_lock_retry() {
     );
 
     tokio::time::advance(FINALIZING_TEST_PREFERENCE_LIFETIME + Duration::from_millis(1)).await;
-    let completion = env
-        .handle
+    env.handle
         .wait_completion(run_id, Duration::from_secs(5))
         .await
         .expect("known long-lived home lock should not enter bounded retry");
-    assert_eq!(
-        completion.home_reuse_result,
-        Some(HomeReuseResult::LockBusy),
-    );
 
     drop(held_lock);
     drop(predecessor_guard);
@@ -2220,10 +2190,14 @@ async fn finalizing_handoff_starts_before_existing_idle_cleanup() {
         0,
         "predecessor handoff should not replace the existing idle sandbox"
     );
-    env.handle
+    let predecessor = env
+        .handle
         .wait_completion(history_generation_run_id, Duration::from_secs(5))
         .await
         .expect("predecessor should report completion after direct handoff");
+    let handoff_sandbox_id = predecessor
+        .sandbox_id
+        .expect("predecessor should report its sandbox");
     wait_status_idle_reuse_keys_and_active_runs(
         &status_path,
         &[reuse_key],
@@ -2240,12 +2214,12 @@ async fn finalizing_handoff_starts_before_existing_idle_cleanup() {
     );
 
     predecessor_gate.release_one();
-    let completion = env
+    let successor = env
         .handle
         .wait_completion(run_id, Duration::from_secs(5))
         .await
         .expect("sandbox publication should wake the claimed successor");
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::Reused));
+    assert_eq!(successor.sandbox_id, Some(handoff_sandbox_id));
     destroy_gate
         .wait_entered(1, Duration::from_secs(5))
         .await
@@ -2293,7 +2267,7 @@ async fn published_exact_remains_reusable_past_preference_deadline() {
         .unwrap();
     wait_discover_entered(&env, Duration::from_secs(5)).await;
 
-    seed_idle_pool_with_speculative_timezone(
+    let reused_sandbox_id = seed_idle_pool_with_speculative_timezone(
         &env.idle_pool,
         &budget,
         &overrides,
@@ -2321,7 +2295,7 @@ async fn published_exact_remains_reusable_past_preference_deadline() {
         .wait_completion(run_id, Duration::from_secs(5))
         .await
         .expect("published exact sandbox should remain reusable past the preference deadline");
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::Reused));
+    assert_eq!(completion.sandbox_id, Some(reused_sandbox_id));
     assert_eq!(
         env.handle
             .claim_candidates()
@@ -2366,12 +2340,10 @@ async fn no_exact_resolution_falls_back_before_predecessor_release() {
     wait_discover_entered(&env, Duration::from_secs(5)).await;
 
     assert!(predecessor_reuse.publish_no_exact_sandbox());
-    let completion = env
-        .handle
+    env.handle
         .wait_completion(run_id, Duration::from_secs(5))
         .await
         .expect("no-exact outcome should start fallback before predecessor release");
-    assert_ne!(completion.reuse_result, Some(SandboxReuseResult::Reused));
     assert_eq!(
         env.handle
             .claim_candidates()
@@ -2479,7 +2451,6 @@ async fn cancelled_finalizing_activation_restores_exact_over_refilled_blank() {
         .wait_completion(followup_run_id, Duration::from_secs(5))
         .await
         .expect("restored exact sandbox should serve the next run");
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::Reused));
     assert_eq!(completion.sandbox_id, Some(exact_id));
 
     drop(predecessor);
@@ -2520,7 +2491,7 @@ async fn competing_finalizing_successors_reserve_exact_generation_once() {
         wait_discover_entered(&env, Duration::from_secs(5)).await;
     }
 
-    seed_idle_pool_with_history_generation(
+    let exact_sandbox_id = seed_idle_pool_with_history_generation(
         &env.idle_pool,
         &budget,
         reuse_key,
@@ -2543,9 +2514,9 @@ async fn competing_finalizing_successors_reserve_exact_generation_once() {
         .await
         .expect("second finalizing successor should complete");
     assert_eq!(
-        [first.reuse_result, second.reuse_result]
+        [first.sandbox_id, second.sandbox_id]
             .into_iter()
-            .filter(|result| *result == Some(SandboxReuseResult::Reused))
+            .filter(|id| *id == Some(exact_sandbox_id))
             .count(),
         1,
         "an exact history generation must be reserved by at most one successor"
@@ -2676,7 +2647,7 @@ async fn unselected_exact_sandbox_preempts_finalizing_preference() {
     let budget = Arc::clone(&config.capacity.budget);
     let reuse_key = "thread:exact-preempts-finalizing";
     let history_generation_run_id = RunId::new_v4();
-    seed_idle_pool_with_history_generation(
+    let reused_sandbox_id = seed_idle_pool_with_history_generation(
         &env.idle_pool,
         &budget,
         reuse_key,
@@ -2711,7 +2682,7 @@ async fn unselected_exact_sandbox_preempts_finalizing_preference() {
         .wait_completion(run_id, Duration::from_secs(5))
         .await
         .expect("strictly better exact sandbox should preempt finalizing preference");
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::Reused));
+    assert_eq!(completion.sandbox_id, Some(reused_sandbox_id));
     assert!(env.handle.deferred_poll_deadlines().is_empty());
 
     shutdown(&env, run_handle).await;
@@ -3134,7 +3105,8 @@ async fn matching_preference_uses_actual_local_sandbox_without_resource_class() 
     let budget = Arc::clone(&config.capacity.budget);
     let idle_pool = Arc::clone(&env.idle_pool);
     let session_id = "sess-local-without-resource";
-    seed_idle_pool(&idle_pool, &budget, session_id, "vm0/default", 2, 4096).await;
+    let reused_sandbox_id =
+        seed_idle_pool(&idle_pool, &budget, session_id, "vm0/default", 2, 4096).await;
     let run_handle = tokio::spawn(run(config));
 
     wait_discover_entered(&env, Duration::from_secs(2)).await;
@@ -3152,7 +3124,7 @@ async fn matching_preference_uses_actual_local_sandbox_without_resource_class() 
         .wait_completion(run_id, Duration::from_secs(5))
         .await
         .expect("actual compatible sandbox should satisfy matching preference");
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::Reused));
+    assert_eq!(completion.sandbox_id, Some(reused_sandbox_id));
     assert!(env.handle.deferred_poll_deadlines().is_empty());
 
     shutdown(&env, run_handle).await;
@@ -3309,7 +3281,7 @@ async fn expired_generation_protection_preserves_local_session_claim() {
     let (config, env) = mock_run_config(test_profiles(), 2, 4096, 1);
     let budget = Arc::clone(&config.capacity.budget);
     let idle_pool = Arc::clone(&env.idle_pool);
-    seed_idle_pool(
+    let reused_sandbox_id = seed_idle_pool(
         &idle_pool,
         &budget,
         "sess-held-local",
@@ -3352,7 +3324,7 @@ async fn expired_generation_protection_preserves_local_session_claim() {
         .wait_completion(run_id, Duration::from_secs(5))
         .await
         .expect("runner holding the protected session should claim and execute the job");
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::Reused));
+    assert_eq!(completion.sandbox_id, Some(reused_sandbox_id));
 
     let claim_candidates = env.handle.claim_candidates();
     let claimed_candidate = claim_candidates
@@ -3761,4 +3733,205 @@ async fn duplicate_discovery_deduplicated() {
 
     shutdown(&env, run_handle).await;
     wait_budget_count(&budget, 0, Duration::from_secs(5)).await;
+}
+
+#[tokio::test]
+async fn pending_candidate_wakeup_survives_full_claim_slots() {
+    pending_wakeup_with_full_claim_slots(true).await;
+}
+
+#[tokio::test]
+async fn full_claim_slot_wakeup_survives_until_pending_candidate_arrives() {
+    pending_wakeup_with_full_claim_slots(false).await;
+}
+
+async fn drive_pending_wakeup_reactor<T>(
+    reactor: &mut (impl std::future::Future<Output = RunnerResult<()>> + Unpin),
+    observation: impl std::future::Future<Output = T>,
+) -> T {
+    // Poll the actual reactor first, through every ready turn, so a provider
+    // observation cannot leave a buffered reuse notification for the next step.
+    tokio::select! {
+        biased;
+        result = reactor => panic!("reactor exited before pending wakeup observation: {result:?}"),
+        value = observation => value,
+    }
+}
+
+async fn pending_wakeup_with_full_claim_slots(candidate_before_wakeup: bool) {
+    let process_gate = sandbox_mock::MockLifecycleGate::new();
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    overrides.set_wait_process_lifecycle_gate(process_gate.clone());
+    let (mut config, env) = mock_run_config_with_overrides(test_profiles(), 2, 4096, 1, overrides);
+    // One profile-sized budget disables blank preparation. Finalizing claims
+    // against the active source still fill all four remote admission slots.
+    let (_heartbeat_trigger, heartbeat_rx) = tokio::sync::mpsc::unbounded_channel();
+    config.test_hooks.manual_routine_heartbeat_rx = Some(heartbeat_rx);
+    let budget = Arc::clone(&config.capacity.budget);
+    let source_run = RunId::new_v4();
+    let source_key = "thread:pending-retry-notification-source";
+    let mut reactor = Box::pin(run(config));
+    push_job(
+        &env,
+        source_run,
+        "vm0/default",
+        Some(context_with_reuse_key(source_run, source_key)),
+    );
+    drive_pending_wakeup_reactor(
+        &mut reactor,
+        process_gate.wait_entered(1, Duration::from_secs(5)),
+    )
+    .await
+    .expect("notification source must enter the real executor before filling claim slots");
+
+    let pending_run = RunId::new_v4();
+    let pending_key = "thread:pending-retry-missing-proof";
+    let deadline = std::time::Instant::now() + FINALIZING_TEST_PREFERENCE_LIFETIME;
+    let pending = finalizing_candidate_until(
+        pending_run,
+        pending_key,
+        RunId::new_v4(),
+        TEST_RUNNER_ID,
+        TEST_HEARTBEAT_GENERATION,
+        deadline,
+    );
+    env.provider.set_claim_result(
+        pending_run,
+        Some(context_with_reuse_key(pending_run, pending_key)),
+    );
+    if candidate_before_wakeup {
+        env.handle.discover_tx.send(pending.clone()).unwrap();
+        assert!(
+            drive_pending_wakeup_reactor(
+                &mut reactor,
+                env.handle
+                    .wait_deferred_poll_count(1, Duration::from_secs(5)),
+            )
+            .await,
+            "missing predecessor proof should retain the candidate before remote claims fill"
+        );
+    }
+    let blockers: Vec<_> = (0..crate::reactor::claim_tasks::MAX_IN_FLIGHT_CLAIMS)
+        .map(|_| RunId::new_v4())
+        .collect();
+    for &run_id in &blockers {
+        env.handle.block_claim(run_id);
+        env.provider.set_claim_result(run_id, None);
+        env.handle
+            .discover_tx
+            .send(finalizing_candidate_until(
+                run_id,
+                source_key,
+                source_run,
+                TEST_RUNNER_ID,
+                TEST_HEARTBEAT_GENERATION,
+                deadline,
+            ))
+            .unwrap();
+    }
+    assert!(
+        drive_pending_wakeup_reactor(
+            &mut reactor,
+            env.handle
+                .wait_claim_in_flight(blockers.len(), Duration::from_secs(5)),
+        )
+        .await,
+        "all bounded admission slots must be occupied at the provider boundary"
+    );
+    let deferred_before_wakeup = env.handle.deferred_poll_deadlines().len();
+    process_gate.release_one();
+    let completion = drive_pending_wakeup_reactor(
+        &mut reactor,
+        env.handle
+            .wait_completion(source_run, Duration::from_secs(5)),
+    )
+    .await
+    .expect("the actual source job should complete while every claim remains blocked");
+    assert_eq!(completion.exit_code, 0);
+    assert!(completion.error.is_none());
+
+    // The heartbeat exposes both committed parking and retired active-run
+    // ownership. It can only be requested by reuse changes in this fixture.
+    drive_pending_wakeup_reactor(
+        &mut reactor,
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let (cursor, published) = {
+                    let heartbeats = env.handle.heartbeats.lock().unwrap();
+                    (
+                        heartbeats.len(),
+                        heartbeats.iter().any(|state| {
+                            state.active_reuse_producers.is_empty()
+                                && state
+                                    .held_sandbox_states
+                                    .iter()
+                                    .any(|held| held.reuse_key == source_key)
+                        }),
+                    )
+                };
+                if published {
+                    break;
+                }
+                assert!(
+                    env.handle
+                        .wait_heartbeat_past(cursor, Duration::from_secs(5))
+                        .await
+                );
+            }
+        }),
+    )
+    .await
+    .expect("reactor should consume the parking wakeup while admission slots are full");
+    assert_eq!(
+        env.handle.deferred_poll_deadlines().len(),
+        deferred_before_wakeup,
+        "a full admission set cannot consume the pending retry"
+    );
+
+    // Losing an unowned finalizing claim releases its cancellation registration
+    // without a second reuse event. The retained wakeup supplies the retry.
+    env.handle.unblock_claim(*blockers.first().unwrap());
+    if !candidate_before_wakeup {
+        env.handle.discover_tx.send(pending).unwrap();
+    }
+    let expected_deferrals = deferred_before_wakeup + if candidate_before_wakeup { 1 } else { 2 };
+    assert!(
+        drive_pending_wakeup_reactor(
+            &mut reactor,
+            env.handle
+                .wait_deferred_poll_count(expected_deferrals, Duration::from_secs(5)),
+        )
+        .await,
+        "retained wakeup should recheck the original candidate before its deadline"
+    );
+    assert!(
+        env.handle
+            .deferred_poll_deadlines()
+            .iter()
+            .all(|observed| *observed == deadline),
+        "retry must preserve the original preference deadline"
+    );
+    assert!(
+        env.handle
+            .claim_candidates()
+            .iter()
+            .all(|candidate| candidate.run_id() != pending_run),
+        "a recheck without predecessor proof must remain unclaimed"
+    );
+
+    env.drain();
+    for &run_id in &blockers {
+        env.handle.unblock_claim(run_id);
+    }
+    env.cancel.cancel();
+    tokio::time::timeout(Duration::from_secs(10), reactor)
+        .await
+        .expect("reactor should join all claims and shutdown")
+        .expect("reactor should shutdown successfully");
+    wait_budget_count(&budget, 0, Duration::from_secs(5)).await;
+    for run_id in blockers.into_iter().chain([source_run, pending_run]) {
+        wait_cancel_token_removed(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
+    }
+    assert_eq!(env.handle.completions.lock().unwrap().len(), 1);
+    assert!(!env.handle.shutdown_with_claim_in_flight());
 }

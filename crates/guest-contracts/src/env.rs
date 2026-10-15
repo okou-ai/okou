@@ -27,15 +27,6 @@ pub const CANONICAL_API_TOKEN_ENV: &str = "OKOU_API_TOKEN";
 /// Sandbox identifier assigned and written by the runner.
 pub const CANONICAL_SANDBOX_ID_ENV: &str = "OKOU_SANDBOX_ID";
 
-/// Wire value for the runner's sandbox-reuse decision.
-///
-/// `reused` means an idle sandbox was unparked. Other values describe why reuse did
-/// not happen, such as `poolMiss` or `noReuseKey`.
-pub const CANONICAL_SANDBOX_REUSE_RESULT_ENV: &str = "OKOU_SANDBOX_REUSE_RESULT";
-
-/// Wire value for the runner's final home-reuse decision.
-pub const CANONICAL_HOME_REUSE_RESULT_ENV: &str = "OKOU_HOME_REUSE_RESULT";
-
 /// Wire value for the actual sandbox startup resource after preparation settles.
 pub const CANONICAL_SANDBOX_STARTUP_PATH_ENV: &str = "OKOU_SANDBOX_STARTUP_PATH";
 
@@ -359,6 +350,18 @@ pub const PI_SESSION_ID_RUN_PAYLOAD_FIELD: &str = PI_SESSION_ID_ENV;
 /// Logical run-payload field name for the installed-CLI launch requirements.
 pub const PI_INSTALLED_CLI_REQUIREMENT_RUN_PAYLOAD_FIELD: &str = "piInstalledCliRequirement";
 
+/// API-owned native continuation intent. No remote history reference is carried.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct NativeContinuation {
+    /// Exact native identity to look for in the intended retained home.
+    pub session_id: Option<String>,
+    /// Existing Run that produced that retained generation.
+    pub generation_run_id: Option<String>,
+    /// Mandatory recovery item for a later round, enabled only after a miss.
+    pub recovery_prompt: Option<String>,
+}
+
 /// Runner-owned variable-length run payload sent through
 /// [`CANONICAL_RUN_PAYLOAD_FILE_ENV`].
 ///
@@ -371,6 +374,9 @@ pub struct RunPayload {
     /// Optional extra system prompt text.
     #[serde(default)]
     pub append_system_prompt: String,
+    /// Serialized native continuation intent; empty for captured legacy work.
+    #[serde(default)]
+    pub native_continuation: String,
     /// Sensitive values used by the guest-agent masker.
     #[serde(default)]
     pub secret_values: String,
@@ -417,10 +423,11 @@ pub struct RunPayloadField<'a> {
 
 impl RunPayload {
     /// Return all logical string fields carried by this run payload.
-    pub fn fields(&self) -> [RunPayloadField<'_>; 13] {
+    pub fn fields(&self) -> [RunPayloadField<'_>; 14] {
         let Self {
             prompt,
             append_system_prompt,
+            native_continuation,
             secret_values,
             disallowed_tools,
             tools,
@@ -435,6 +442,10 @@ impl RunPayload {
         } = self;
 
         [
+            RunPayloadField {
+                name: "nativeContinuation",
+                value: native_continuation,
+            },
             RunPayloadField {
                 name: PROMPT_RUN_PAYLOAD_FIELD,
                 value: prompt,
@@ -555,8 +566,6 @@ pub const CANONICAL_MOCK_CODEX_PATH_ENV: &str = "OKOU_MOCK_CODEX_PATH";
 const EXPLICIT_RUNNER_OWNED_ENV_KEYS: &[&str] = &[
     RUN_ID_ENV,
     CANONICAL_SANDBOX_ID_ENV,
-    CANONICAL_SANDBOX_REUSE_RESULT_ENV,
-    CANONICAL_HOME_REUSE_RESULT_ENV,
     CANONICAL_SANDBOX_STARTUP_PATH_ENV,
     CANONICAL_API_START_TIME_ENV,
     PI_SESSION_ID_ENV,
@@ -716,11 +725,6 @@ mod tests {
         assert_eq!(RUN_ID_ENV, "OKOU_RUN_ID");
         assert_eq!(CANONICAL_API_TOKEN_ENV, "OKOU_API_TOKEN");
         assert_eq!(CANONICAL_SANDBOX_ID_ENV, "OKOU_SANDBOX_ID");
-        assert_eq!(
-            CANONICAL_SANDBOX_REUSE_RESULT_ENV,
-            "OKOU_SANDBOX_REUSE_RESULT"
-        );
-        assert_eq!(CANONICAL_HOME_REUSE_RESULT_ENV, "OKOU_HOME_REUSE_RESULT");
         assert_eq!(CANONICAL_RESUME_SESSION_ID_ENV, "OKOU_RESUME_SESSION_ID");
         assert_eq!(CANONICAL_API_START_TIME_ENV, "OKOU_API_START_TIME");
         assert_eq!(PI_SESSION_ID_ENV, "OKOU_PI_SESSION_ID");
@@ -776,6 +780,7 @@ mod tests {
         let payload = RunPayload {
             prompt: "hello".to_string(),
             append_system_prompt: "system".to_string(),
+            native_continuation: "{}".to_string(),
             secret_values: "secret".to_string(),
             disallowed_tools: "WebFetch".to_string(),
             tools: "Bash".to_string(),
@@ -793,6 +798,7 @@ mod tests {
 
         assert_eq!(json["prompt"], "hello");
         assert_eq!(json["appendSystemPrompt"], "system");
+        assert_eq!(json["nativeContinuation"], "{}");
         assert_eq!(json["secretValues"], "secret");
         assert_eq!(json["disallowedTools"], "WebFetch");
         assert_eq!(json["featureFlags"], r#"{"flag":true}"#);
@@ -814,6 +820,7 @@ mod tests {
         let payload = RunPayload {
             prompt: "prompt".to_string(),
             append_system_prompt: "system".to_string(),
+            native_continuation: "{}".to_string(),
             secret_values: "secret".to_string(),
             disallowed_tools: "WebFetch".to_string(),
             tools: "Bash".to_string(),
@@ -832,6 +839,10 @@ mod tests {
         assert_eq!(
             fields,
             [
+                RunPayloadField {
+                    name: "nativeContinuation",
+                    value: "{}"
+                },
                 RunPayloadField {
                     name: PROMPT_RUN_PAYLOAD_FIELD,
                     value: "prompt"
@@ -961,8 +972,6 @@ mod tests {
             RUN_ID_ENV,
             CANONICAL_API_TOKEN_ENV,
             CANONICAL_SANDBOX_ID_ENV,
-            CANONICAL_SANDBOX_REUSE_RESULT_ENV,
-            CANONICAL_HOME_REUSE_RESULT_ENV,
             CANONICAL_RESUME_SESSION_ID_ENV,
             CANONICAL_API_START_TIME_ENV,
             PI_SESSION_ID_ENV,

@@ -520,29 +520,33 @@ export const deleteSshCredential$ = command(
     },
   ): Promise<SshResult<undefined>> => {
     const db = set(writeDb$);
-    const [current] = await db
-      .select({ revision: sshCredentials.revision })
-      .from(sshCredentials)
-      .where(ownedSshCredential(args.owner, args.credentialId));
-    if (!current) {
-      return sshCredentialFailure("notFound");
-    }
-    if (current.revision !== args.expectedRevision) {
-      return sshCredentialFailure("conflict");
-    }
     // DELETE owns the exclusive credential fence; the restrictive FK performs
     // the reference check without taking Host row locks. Late bindings fail the
     // statement rather than requiring an application-owned transaction.
     const deletion = await settle(
       db
         .delete(sshCredentials)
-        .where(ownedSshCredential(args.owner, args.credentialId)),
+        .where(
+          and(
+            ownedSshCredential(args.owner, args.credentialId),
+            eq(sshCredentials.revision, args.expectedRevision),
+          ),
+        )
+        .returning({ id: sshCredentials.id }),
     );
     if (!deletion.ok) {
       if (isSshCredentialReferenceViolation(deletion.error)) {
         return sshCredentialFailure("inUse");
       }
       throw deletion.error;
+    }
+    if (deletion.value.length === 0) {
+      const [remaining] = await db
+        .select({ id: sshCredentials.id })
+        .from(sshCredentials)
+        .where(ownedSshCredential(args.owner, args.credentialId))
+        .limit(1);
+      return sshCredentialFailure(remaining ? "conflict" : "notFound");
     }
     await publishSshClientInvalidation(args.owner);
     return { ok: true, value: undefined };

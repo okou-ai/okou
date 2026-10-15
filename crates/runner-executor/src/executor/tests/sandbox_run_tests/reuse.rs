@@ -148,7 +148,7 @@ async fn assert_reused_connector_projection(clear_accounts: bool) {
 #[tokio::test]
 async fn execute_job_reuse_bypasses_fresh_pre_spawn_admission() {
     let dir = tempfile::tempdir().unwrap();
-    let config = test_executor_config(dir.path()).await;
+    let (config, _startup_api) = test_executor_config_with_startup_api(dir.path()).await;
     let holder = config
         .pre_spawn_admission
         .acquire(2, &CancellationToken::new())

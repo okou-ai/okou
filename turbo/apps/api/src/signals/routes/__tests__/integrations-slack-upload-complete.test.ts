@@ -1,5 +1,5 @@
 import { deleteFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { HeadObjectCommand } from "@aws-sdk/client-s3";
 import {
   beforeEach,
@@ -115,9 +115,7 @@ async function completeRun(args: {
       [200],
     );
   }
-  const historyHash = createHash("sha256")
-    .update(`canonical Slack upload ${args.runId}`)
-    .digest("hex");
+
   await webhooks.requestAgentComplete(
     {
       runId: args.runId,
@@ -125,7 +123,7 @@ async function completeRun(args: {
       completion: {
         cliAgentType: "claude-code",
         cliAgentSessionId: `canonical-slack-${args.runId}`,
-        cliAgentSessionHistoryHash: historyHash,
+        cliAgentSessionHistoryDisposition: "native_only",
       },
       ...(args.lastEventSequence === undefined
         ? stagedOutputEvents.length === 0

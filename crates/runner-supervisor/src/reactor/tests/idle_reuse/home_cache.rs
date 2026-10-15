@@ -10,9 +10,7 @@ use super::super::support::{
 use crate::home_image_cache::HomeImageCache;
 use crate::idle_reuse_preparation::add_healthy_reuse_preparation_matcher;
 use runner_host::paths::{HomePaths, RunnerPaths};
-use runner_types::types::{
-    HOME_AFFINITY_VERSION, HeartbeatState, HomeCacheCapability, SandboxReuseResult,
-};
+use runner_types::types::{HOME_AFFINITY_VERSION, HeartbeatState, HomeCacheCapability};
 
 fn reusable_candidate(
     run_id: RunId,
@@ -800,7 +798,6 @@ async fn home_promotion_mismatch_destroys_stale_idle_sandbox_and_fresh_creates()
         .await
         .expect("job should complete");
     assert_eq!(completion.exit_code, 0);
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::PoolMiss));
     assert_ne!(
         completion.sandbox_id,
         Some(stale_sandbox_id),
@@ -841,7 +838,7 @@ async fn reuse_take_preserves_cached_home_snapshot_state() {
     );
     Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(home_cache.clone());
 
-    seed_idle_pool_with_overrides(
+    let reused_sandbox_id = seed_idle_pool_with_overrides(
         &idle_pool,
         &budget,
         &reuse_overrides,
@@ -949,7 +946,7 @@ async fn reuse_take_preserves_cached_home_snapshot_state() {
         .wait_completion(run_id, Duration::from_secs(5))
         .await
         .expect("job should complete");
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::Reused));
+    assert_eq!(completion.sandbox_id, Some(reused_sandbox_id));
     wait_idle_pool_reuse_keys(&idle_pool, &["sess-refresh"], Duration::from_secs(5)).await;
 
     shutdown(&env, run_handle).await;

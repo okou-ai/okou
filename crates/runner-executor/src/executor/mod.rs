@@ -43,6 +43,7 @@ mod session_history_download;
 mod session_history_restore_plan;
 mod session_id;
 mod session_restore;
+mod startup;
 mod storage;
 mod telemetry;
 
@@ -58,6 +59,7 @@ pub use session_history_restore_plan::{
     SessionHistoryRestoreFallback, SessionHistoryRestorePlan, SessionHistoryRestorePlanInput,
     build_session_history_restore_plan,
 };
+pub use startup::StartupReport;
 
 use agent_run::{PreparedRunInputs, ProcessCancelTimeouts, RunControls, RunStart};
 use env::validate_execution_context_before_sandbox;
@@ -390,6 +392,8 @@ pub struct ExecuteOutcome {
     pub home_image: Option<HomeImageLease>,
     /// Final home-reuse outcome, when execution reached `RunStart`.
     pub home_reuse_result: Option<HomeReuseResult>,
+    /// Owned startup-fact delivery. Join after finalization and resource release.
+    pub startup_report: Option<StartupReport>,
     /// CLI-generated session ID read from the guest after execution.
     /// Used for late session tracking and finalization when `resume_session`
     /// is absent.
@@ -407,6 +411,7 @@ impl ExecuteOutcome {
             network_log_session: None,
             home_image: None,
             home_reuse_result: None,
+            startup_report: None,
             discovered_cli_agent_session_id: None,
             restored_session_identity: None,
         }
@@ -426,6 +431,7 @@ impl ExecuteOutcome {
             network_log_session: None,
             home_image,
             home_reuse_result: None,
+            startup_report: None,
             discovered_cli_agent_session_id: None,
             restored_session_identity: None,
         }
@@ -663,61 +669,60 @@ pub async fn execute_job_with_prepared_notifier(
         context.sandbox_token.clone(),
         config.runner_hostname.clone(),
     );
+    telemetry.set_first_run(context.is_first_run);
     spawn_timing.record_claim_to_executor_start(&mut telemetry);
 
     record_reuse_result(&mut telemetry, dispatch.reuse_result);
     record_api_latency("api_to_sandbox_start", &context, &mut telemetry);
 
     let sandbox_id = dispatch.id.to_string();
-    let outcome = match validate_execution_context_before_sandbox(
-        &context,
-        &config.api_url,
-        &sandbox_id,
-        dispatch.reuse_result,
-    ) {
-        Err(error) => ExecuteOutcome {
-            failure: Some(ExecutionFailure::from_error(error)),
-            sandbox_reuse_disposition: SandboxReuseDisposition::default(),
-            sandbox: None,
-            source_ip: String::new(),
-            network_log_session: None,
-            home_image: None,
-            home_reuse_result: None,
-            discovered_cli_agent_session_id: None,
-            restored_session_identity: None,
-        },
-        Ok(prepared_run_payload) => match execute_new_sandbox_with_prepared_notifier(
-            factory,
-            &context,
-            dispatch,
-            config,
-            params,
-            &mut telemetry,
-            NewSandboxHooks {
-                preparation: FreshPreparation::Initial,
-                controls: RunControls::from_cancellation(cancellation, active_input_source)
-                    .with_spawn_timing(spawn_timing)
-                    .with_session_history_restore_plan(session_history_restore_plan),
-                prepared_run_payload,
-                sandbox_prepared: sandbox_prepared.as_ref(),
-            },
-        )
-        .await
-        {
-            Ok(outcome) => outcome,
-            Err(e) => ExecuteOutcome {
-                failure: Some(ExecutionFailure::from_error(e.to_string())),
+    let outcome =
+        match validate_execution_context_before_sandbox(&context, &config.api_url, &sandbox_id) {
+            Err(error) => ExecuteOutcome {
+                failure: Some(ExecutionFailure::from_error(error)),
                 sandbox_reuse_disposition: SandboxReuseDisposition::default(),
                 sandbox: None,
                 source_ip: String::new(),
                 network_log_session: None,
                 home_image: None,
                 home_reuse_result: None,
+                startup_report: None,
                 discovered_cli_agent_session_id: None,
                 restored_session_identity: None,
             },
-        },
-    };
+            Ok(prepared_run_payload) => match execute_new_sandbox_with_prepared_notifier(
+                factory,
+                &context,
+                dispatch,
+                config,
+                params,
+                &mut telemetry,
+                NewSandboxHooks {
+                    preparation: FreshPreparation::Initial,
+                    controls: RunControls::from_cancellation(cancellation, active_input_source)
+                        .with_spawn_timing(spawn_timing)
+                        .with_session_history_restore_plan(session_history_restore_plan),
+                    prepared_run_payload,
+                    sandbox_prepared: sandbox_prepared.as_ref(),
+                },
+            )
+            .await
+            {
+                Ok(outcome) => outcome,
+                Err(e) => ExecuteOutcome {
+                    failure: Some(ExecutionFailure::from_error(e.to_string())),
+                    sandbox_reuse_disposition: SandboxReuseDisposition::default(),
+                    sandbox: None,
+                    source_ip: String::new(),
+                    network_log_session: None,
+                    home_image: None,
+                    home_reuse_result: None,
+                    startup_report: None,
+                    discovered_cli_agent_session_id: None,
+                    restored_session_identity: None,
+                },
+            },
+        };
 
     (outcome, telemetry)
 }
@@ -785,6 +790,7 @@ pub async fn execute_job_reuse_with_hooks(
         context.sandbox_token.clone(),
         config.runner_hostname.clone(),
     );
+    telemetry.set_first_run(context.is_first_run);
     spawn_timing.record_claim_to_executor_start(&mut telemetry);
 
     let idle_kind = idle_sandbox.kind();
@@ -891,7 +897,6 @@ pub async fn execute_job_reuse_with_hooks(
         &context,
         &config.api_url,
         &sandbox_id_string,
-        reuse_result,
     ) {
         Err(error) => ExecuteOutcome::reused_sandbox_failure(
             ExecutionFailure::from_error(error),

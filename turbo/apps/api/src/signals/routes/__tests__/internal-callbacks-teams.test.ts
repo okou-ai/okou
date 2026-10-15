@@ -1,4 +1,3 @@
-import { prepareRunnerSessionHistory } from "./helpers/runner-session-history";
 import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 import { publicRunOwner } from "./helpers/public-run-owner";
 import { createPublicTeamsDispatchFixture } from "./helpers/public-teams-dispatch-fixture";
@@ -575,13 +574,7 @@ async function completeSandboxRun(args: {
   const sandboxHeaders = { authorization: `Bearer ${args.sandboxToken}` };
   if (args.exitCode === 0) {
     const cliAgentSessionId = `bdd-teams-cli-${args.runId}`;
-    const cliAgentSessionHistory = `bdd teams history ${args.runId}`;
-    const cliAgentSessionHistoryHash = await prepareRunnerSessionHistory(
-      context,
-      args.runId,
-      sandboxHeaders,
-      cliAgentSessionHistory,
-    );
+
     await webhooksApi.requestAgentComplete(
       {
         runId: args.runId,
@@ -589,7 +582,7 @@ async function completeSandboxRun(args: {
         completion: {
           cliAgentType: "claude-code",
           cliAgentSessionId,
-          cliAgentSessionHistoryHash,
+          cliAgentSessionHistoryDisposition: "native_only",
         },
       },
       sandboxHeaders,
@@ -934,12 +927,6 @@ describe("Teams chat callbacks", () => {
     ).update("canceled");
     clearTeamsApiCalls(teamsApi);
     const headers = { authorization: `Bearer ${firstClaim.sandboxToken}` };
-    const cliAgentSessionHistoryHash = await prepareRunnerSessionHistory(
-      context,
-      firstRunId,
-      headers,
-      `bdd teams history ${firstRunId}`,
-    );
     const completionRequest = {
       headers,
       body: {
@@ -948,7 +935,7 @@ describe("Teams chat callbacks", () => {
         completion: {
           cliAgentType: "claude-code" as const,
           cliAgentSessionId: `bdd-teams-cli-${firstRunId}`,
-          cliAgentSessionHistoryHash,
+          cliAgentSessionHistoryDisposition: "native_only" as const,
         },
       },
     };
@@ -1137,7 +1124,7 @@ describe("Teams chat callbacks", () => {
           runnerGroup: teams.runnerGroup,
           runId: threadFollowUpRunId,
         });
-        expect(threadFollowUpClaim.resumeSession?.sessionId).toBe(
+        expect(threadFollowUpClaim.nativeContinuation?.sessionId).toBe(
           threadSessionId,
         );
         clearTeamsApiCalls(teamsApi);
@@ -1161,7 +1148,9 @@ describe("Teams chat callbacks", () => {
         runnerGroup: teams.runnerGroup,
         runId: returnToMainRunId,
       });
-      expect(returnToMainClaim.resumeSession?.sessionId).toBe(mainSessionId);
+      expect(returnToMainClaim.nativeContinuation?.sessionId).toBe(
+        mainSessionId,
+      );
     },
   );
 
@@ -1470,7 +1459,9 @@ describe("Teams chat callbacks", () => {
           "activity-completed-follow-up",
         ),
       });
-      expect(followUpClaim.resumeSession?.sessionId).toBe(cliAgentSessionId);
+      expect(followUpClaim.nativeContinuation?.sessionId).toBe(
+        cliAgentSessionId,
+      );
     });
   });
 
@@ -1633,6 +1624,6 @@ describe("Teams chat callbacks", () => {
         "activity-teams-api-error-follow-up",
       ),
     });
-    expect(followUpClaim.resumeSession?.sessionId).toBe(cliAgentSessionId);
+    expect(followUpClaim.nativeContinuation?.sessionId).toBe(cliAgentSessionId);
   });
 });

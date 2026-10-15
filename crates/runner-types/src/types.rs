@@ -92,6 +92,9 @@ pub struct ExecutionContext {
     pub platform_environment: HashMap<String, String>,
     #[serde(default)]
     pub resume_session: Option<ResumeSession>,
+    /// Native-only continuation from the intended Thread's retained home.
+    #[serde(default)]
+    pub native_continuation: Option<guest_contracts::env::NativeContinuation>,
     // Plain secret values used only for redaction. These are values, not names.
     #[serde(default)]
     pub secret_values: Option<Vec<String>>,
@@ -117,6 +120,9 @@ pub struct ExecutionContext {
     pub real_agent_in_preview: Option<bool>,
     #[serde(default)]
     pub api_start_time: Option<u64>,
+    /// API-authored observation label, never a runtime decision predicate.
+    #[serde(default)]
+    pub is_first_run: Option<bool>,
     #[serde(default)]
     pub user_timezone: Option<String>,
     #[serde(default)]
@@ -1662,7 +1668,8 @@ impl ExecutionContext {
 
     /// Extract the framework-native session id.
     ///
-    /// Prefers `pi_session_id`, otherwise returns the resume-session id.
+    /// Prefers native continuation identity, then `pi_session_id`, then the
+    /// captured legacy resume-session id.
     /// Pi session ids are preassigned, including on first runs without a
     /// `resume_session`, so `Some` does not imply a continued session.
     ///
@@ -1670,11 +1677,15 @@ impl ExecutionContext {
     /// the executor reads the CLI-generated session id from the guest filesystem
     /// post-execution (see `read_guest_cli_agent_session_id`).
     pub fn cli_agent_session_id(&self) -> Option<&str> {
-        self.pi_session_id.as_deref().or_else(|| {
-            self.resume_session
-                .as_ref()
-                .map(|r| r.cli_agent_session_id.as_str())
-        })
+        self.native_continuation
+            .as_ref()
+            .and_then(|native| native.session_id.as_deref())
+            .or(self.pi_session_id.as_deref())
+            .or_else(|| {
+                self.resume_session
+                    .as_ref()
+                    .map(|r| r.cli_agent_session_id.as_str())
+            })
     }
 }
 
@@ -1825,19 +1836,11 @@ pub struct CompleteRequest {
     /// reuse status.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sandbox_id: Option<SandboxId>,
-    /// Outcome of the sandbox-reuse decision made before this run started.
-    /// `None` means the run failed before the runner reached that decision, or
-    /// that the caller could not determine it.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sandbox_reuse_result: Option<SandboxReuseResult>,
-    /// Final home reuse outcome; absent when no reliable decision was reached.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub home_reuse_result: Option<HomeReuseResult>,
 }
 
 /// Outcome of the sandbox-reuse decision made at job dispatch time. `Reused`
 /// means the sandbox was unparked from the idle pool; the other variants describe
-/// why reuse did not happen. Wire name: `sandboxReuseResult`.
+/// why reuse did not happen. Values also label sandbox reuse telemetry.
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum SandboxReuseResult {
@@ -1865,7 +1868,7 @@ impl SandboxReuseResult {
 }
 
 /// Final outcome of home reuse after sandbox preparation has settled.
-/// Reported as `homeReuseResult`; this type never reads old images.
+/// Used by settled startup selection and reuse telemetry; this type never reads old images.
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum HomeReuseResult {
@@ -2014,6 +2017,8 @@ mod tests {
 
         let context: ExecutionContext = serde_json::from_value(json).unwrap();
 
+        assert_eq!(context.is_first_run, None);
+
         assert_eq!(
             context.pi_session_id.as_deref(),
             Some("22222222-2222-4222-8222-222222222222")
@@ -2037,6 +2042,25 @@ mod tests {
                 .and_then(|config| config["model"].as_str()),
             Some("openai/gpt-6-luna")
         );
+    }
+
+    #[test]
+    fn execution_context_preserves_optional_first_run_context() {
+        for label in [None, Some(false), Some(true)] {
+            let mut claim = json!({
+                "runId": "11111111-1111-4111-8111-111111111111",
+                "prompt": "hello",
+                "sandboxToken": "tok",
+                "cliAgentType": "claude-code",
+                "platformEnvironment": {},
+                "connectorRuntimeTargets": []
+            });
+            if let Some(label) = label {
+                claim["isFirstRun"] = json!(label);
+            }
+            let context: ExecutionContext = serde_json::from_value(claim).unwrap();
+            assert_eq!(context.is_first_run, label);
+        }
     }
 
     #[test]
@@ -2289,8 +2313,6 @@ mod tests {
             failure_reason: None,
             error: None,
             sandbox_id: None,
-            sandbox_reuse_result: None,
-            home_reuse_result: None,
         };
         let json = serde_json::to_value(&req).unwrap();
         assert!(json.get("runId").is_some());
@@ -2299,8 +2321,6 @@ mod tests {
         assert!(json.get("error").is_none());
         assert!(json.get("failureReason").is_none());
         assert!(json.get("sandboxId").is_none());
-        assert!(json.get("sandboxReuseResult").is_none());
-        assert!(json.get("homeReuseResult").is_none());
     }
 
     #[test]
@@ -2313,15 +2333,11 @@ mod tests {
             failure_reason: Some(RequestFailureReason::ProviderRateLimited),
             error: Some("timeout".into()),
             sandbox_id: None,
-            sandbox_reuse_result: None,
-            home_reuse_result: None,
         };
         let json = serde_json::to_value(&req).unwrap();
         assert_eq!(json["error"], "timeout");
         assert_eq!(json["failureReason"], "provider_rate_limited");
         assert!(json.get("sandboxId").is_none());
-        assert!(json.get("sandboxReuseResult").is_none());
-        assert!(json.get("homeReuseResult").is_none());
     }
 
     #[test]
@@ -2337,8 +2353,6 @@ mod tests {
                     .into(),
             ),
             sandbox_id: None,
-            sandbox_reuse_result: None,
-            home_reuse_result: None,
         };
 
         let json = serde_json::to_value(&req).unwrap();
@@ -2347,7 +2361,7 @@ mod tests {
     }
 
     #[test]
-    fn complete_request_with_reuse_fields() {
+    fn complete_request_with_sandbox_identity() {
         let sid: SandboxId = "11111111-2222-3333-4444-555555555555".parse().unwrap();
         let req = CompleteRequest {
             run_id: "550e8400-e29b-41d4-a716-446655440000"
@@ -2357,13 +2371,9 @@ mod tests {
             failure_reason: None,
             error: None,
             sandbox_id: Some(sid),
-            sandbox_reuse_result: Some(SandboxReuseResult::Reused),
-            home_reuse_result: Some(HomeReuseResult::SandboxReused),
         };
         let json = serde_json::to_value(&req).unwrap();
         assert_eq!(json["sandboxId"], "11111111-2222-3333-4444-555555555555");
-        assert_eq!(json["sandboxReuseResult"], "reused");
-        assert_eq!(json["homeReuseResult"], "sandboxReused");
     }
 
     #[test]

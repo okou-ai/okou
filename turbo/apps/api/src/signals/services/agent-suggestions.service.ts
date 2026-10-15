@@ -6,7 +6,6 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { agentSuggestions } from "@okouai/db/schema/agent-suggestion";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/schema/agent-session";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
@@ -79,12 +78,11 @@ export const suggestionAccess$ = command(
       const [run] = await get(db$)
         .select({ id: agentRuns.id })
         .from(agentRuns)
-        .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
         .innerJoin(
           orgMetadata,
           and(
             eq(orgMetadata.orgId, auth.orgId),
-            eq(orgMetadata.defaultAgentId, agentSessions.agentId),
+            eq(orgMetadata.defaultAgentId, agentRuns.agentId),
           ),
         )
         .where(
@@ -93,8 +91,6 @@ export const suggestionAccess$ = command(
             eq(agentRuns.userId, auth.userId),
             eq(agentRuns.orgId, auth.orgId),
             eq(agentRuns.status, "running"),
-            eq(agentSessions.userId, auth.userId),
-            eq(agentSessions.orgId, auth.orgId),
           ),
         )
         .limit(1);

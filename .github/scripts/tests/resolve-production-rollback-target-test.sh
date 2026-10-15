@@ -120,6 +120,8 @@ case "${1:-}" in
       [ "${MOCK_OFFICIAL_RESULT_EMAIL_STORAGE_CONTRACTION_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "5151515151515151515151515151515151515151" ]; then
       [ "${MOCK_SSH_NEEDS_REBIND_INDEPENDENT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "5656565656565656565656565656565656565656" ]; then
+      [ "${MOCK_SESSION_CONVERSATION_RUNTIME_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "5252525252525252525252525252525252525252" ]; then
       [ "${MOCK_SESSION_STORAGE_MOUNT_RUNTIME_FLOOR_VALID:-1}" = "1" ]
     else
@@ -179,6 +181,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_OFFICIAL_RESULT_EMAIL_RUNTIME_COMMIT-4949494949494949494949494949494949494949}"
     elif [[ "$*" == *1386_drop_official_result_email_storage.sql* ]]; then
       printf '%s\n' "${MOCK_OFFICIAL_RESULT_EMAIL_STORAGE_CONTRACTION_COMMIT-5050505050505050505050505050505050505050}"
+    elif [[ "$*" == *.github/rollback-floors/session-conversation-runtime* ]]; then
+      printf '%s\n' "${MOCK_SESSION_CONVERSATION_RUNTIME_COMMIT-5656565656565656565656565656565656565656}"
     elif [[ "$*" == *runtime/agent-session.ts* ]]; then
       printf '%s\n' "${MOCK_SESSION_STORAGE_MOUNT_RUNTIME_COMMIT-5252525252525252525252525252525252525252}"
     elif [[ "$*" == *src/runtime/ssh-connection.ts* ]]; then
@@ -834,6 +838,17 @@ grep -Fq '5151515151515151515151515151515151515151' "${tmp_dir}/failure.err" || 
 [ ! -s "${tmp_dir}/ssh-preparation-floor.output" ] || fail "legacy-dependent SSH API must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "SSH preparation floor must fail before artifact or host access"
+fi
+
+# A native producer excludes Session-dependent rollback artifacts before any
+# deployment/artifact side effects are attempted.
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates native-only Session/Conversation retirement" \
+  run_resolver "${tmp_dir}/session-conversation-floor.output" MOCK_SESSION_CONVERSATION_RUNTIME_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/session-conversation-floor.output" ] || fail "Session-dependent API must not publish rollback outputs"
+grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- .github/rollback-floors/session-conversation-runtime" "${tmp_dir}/boundaries.log" || fail "Native cutover floor must use main's marker history"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Native cutover floor must fail before artifact or host access"
 fi
 
 for session_mount_commit in "" invalid; do

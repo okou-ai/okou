@@ -1,9 +1,7 @@
 import type { ComposerWorkflow } from "@okouai/api-contracts/contracts/workflows";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command, computed, type Computed } from "ccstate";
 import { z } from "zod";
 import { authenticatedIdentity$ } from "../auth.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { localStorageSignals } from "../external/local-storage.ts";
 import { jsonParseOr, tapError } from "../utils.ts";
 import {
@@ -35,10 +33,7 @@ export function createRecentWorkflowIds(
 ) {
   const snapshot$ = computed(async (get) => {
     const range = get(activeSlashRange$);
-    if (
-      range?.query !== "" ||
-      !get(featureSwitch$)[FeatureSwitchKey.ComposerAnchoredSuggestions]
-    ) {
+    if (range?.query !== "") {
       return [];
     }
     // Each open slash owns a read-only snapshot. A send from another composer
@@ -60,10 +55,7 @@ interface RecentWorkflowUse {
 }
 
 export const captureRecentWorkflowUse$ = command(
-  ({ get }, workflowIds: readonly string[]): RecentWorkflowUse | null => {
-    if (!get(featureSwitch$)[FeatureSwitchKey.ComposerAnchoredSuggestions]) {
-      return null;
-    }
+  ({ get }, workflowIds: readonly string[]): RecentWorkflowUse => {
     return { storage: get(recentWorkflowStorage$), workflowIds };
   },
 );
@@ -75,10 +67,7 @@ export const prepareRecentWorkflowUse$ = command(
     workflows$: Computed<Promise<readonly ComposerWorkflow[]> | null>,
     signal: AbortSignal,
   ): Promise<RecentWorkflowUse | null> => {
-    if (
-      !get(featureSwitch$)[FeatureSwitchKey.ComposerAnchoredSuggestions] ||
-      !prompt.includes("/")
-    ) {
+    if (!prompt.includes("/")) {
       return null;
     }
     // Recency is optional metadata: a failed lookup must not prevent sending.

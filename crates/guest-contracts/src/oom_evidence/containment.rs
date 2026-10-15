@@ -1,24 +1,88 @@
 //! Cgroup attribution shared by the existing diagnostic emitters.
 
-use super::{EvidenceStatus, OomEvidence};
+use super::{EvidenceStatus, MemorySnapshot, OomEvidence, evidence_has_proof};
 use crate::diagnostics::WorkloadResourceLimitDiagnostic;
 
+/// Domain attribution, separate from whether the operation itself failed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OomClassification {
+    /// An in-operation kernel victim or local counter identifies the agent domain.
+    AgentOomKill,
+    /// Reliable counters account for the workload's kills entirely within tools.
+    ContainedToolOom,
+    /// OOM occurred, but incomplete or inconsistent evidence cannot prove containment.
+    UnprovenContainment,
+}
+
+impl OomClassification {
+    /// Stable names shared by Guest and Runner diagnostics.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::AgentOomKill => "agent_oom_kill",
+            Self::ContainedToolOom => "contained_tool_oom",
+            Self::UnprovenContainment => "unproven_containment",
+        }
+    }
+}
+
+fn kill_delta(
+    group: &MemorySnapshot,
+    expected: &MemorySnapshot,
+    role: &str,
+    cgroup: &str,
+    local: bool,
+) -> Option<u64> {
+    if group.role != role
+        || group.cgroup != cgroup
+        || expected.role != role
+        || expected.cgroup != cgroup
+        || group.inode.is_none()
+        || group.inode != expected.inode
+        || !matches!(
+            group.status,
+            EvidenceStatus::Available | EvidenceStatus::Partial | EvidenceStatus::Truncated
+        )
+    {
+        return None;
+    }
+    let (baseline, events, delta, expected_baseline) = if local {
+        (
+            &group.local_baseline,
+            &group.local_events,
+            &group.local_delta,
+            &expected.local_baseline,
+        )
+    } else {
+        (
+            &group.baseline,
+            &group.events,
+            &group.delta,
+            &expected.baseline,
+        )
+    };
+    if baseline.oom_kill != expected_baseline.oom_kill {
+        return None;
+    }
+    let measured = events.oom_kill?.checked_sub(baseline.oom_kill?)?;
+    (delta.oom_kill == Some(measured)).then_some(measured)
+}
+
 impl OomEvidence {
-    /// Whether retained guest kernel records name a victim in the agent's own
-    /// containment domain.
+    /// Whether kernel victims or reliable local counters identify an OOM kill
+    /// in the agent's own containment domain during this operation.
     ///
     /// Shell tools run in separately contained `<workload>/tools/tool-*` leaves.
     /// The kernel routinely reclaims those without ending the run, so only the
     /// workload domain itself and its runtime leaf attribute a terminated agent.
-    /// Evidence whose identity could not be correlated cannot attribute anything.
-    ///
-    /// Runner derives the user-visible OOM failure from this, so its result must
-    /// stay decided by the kernel record alone. Every other consumer only chooses
-    /// how loudly to log.
+    /// Local counters have an independent cgroup identity and baseline, so they
+    /// remain proof when bounded kernel records omit the victim. They identify
+    /// the domain, not a specific victim PID. Hierarchical tool kills never
+    /// attribute a terminated agent.
     pub fn agent_domain_oom_kill(&self) -> bool {
         let workload = self.groups[0].cgroup.as_str();
         let runtime = format!("{workload}/runtime");
-        self.incidents
+        let kernel_victim = self
+            .incidents
             .iter()
             .filter(|incident| {
                 !matches!(
@@ -30,14 +94,55 @@ impl OomEvidence {
             .any(|event| {
                 event.boottime_us >= self.started_boottime_us
                     && (event.task_cgroup == workload || event.task_cgroup == runtime)
-            })
+            });
+        kernel_victim
+            || std::iter::once(&self.groups)
+                .chain(self.incidents.iter().map(|incident| &incident.groups))
+                .any(|groups| {
+                    kill_delta(&groups[0], &self.groups[0], "workload", workload, true)
+                        .is_some_and(|delta| delta > 0)
+                        || kill_delta(&groups[1], &self.groups[1], "runtime", &runtime, true)
+                            .is_some_and(|delta| delta > 0)
+                })
+    }
+
+    /// Classify only what retained evidence can prove. Missing agent records
+    /// alone are not evidence that every workload kill stayed inside tools.
+    pub fn classification(&self) -> Option<OomClassification> {
+        if !evidence_has_proof(self) {
+            return None;
+        }
+        if self.agent_domain_oom_kill() {
+            return Some(OomClassification::AgentOomKill);
+        }
+        let workload = self.groups[0].cgroup.as_str();
+        let runtime = format!("{workload}/runtime");
+        let tools = format!("{workload}/tools");
+        let workload_kills = kill_delta(
+            &self.groups[0],
+            &self.groups[0],
+            "workload",
+            workload,
+            false,
+        );
+        let tools_kills = kill_delta(&self.groups[2], &self.groups[2], "tools", &tools, false);
+        let contained = workload_kills.is_some_and(|kills| kills > 0)
+            && workload_kills == tools_kills
+            && kill_delta(&self.groups[0], &self.groups[0], "workload", workload, true) == Some(0)
+            && kill_delta(&self.groups[1], &self.groups[1], "runtime", &runtime, true) == Some(0)
+            && kill_delta(&self.groups[1], &self.groups[1], "runtime", &runtime, false) == Some(0);
+        Some(if contained {
+            OomClassification::ContainedToolOom
+        } else {
+            OomClassification::UnprovenContainment
+        })
     }
 
     /// Preserve PID exhaustion and any counters the kernel attributed to the
     /// agent's own containment domain.
     pub fn proves_contained_resource_limit(&self, limit: &WorkloadResourceLimitDiagnostic) -> bool {
         let events = &self.groups[0].events;
-        !self.agent_domain_oom_kill()
+        self.classification() == Some(OomClassification::ContainedToolOom)
             && limit.pids_max_events == 0
             && events.max == Some(limit.memory_max_events)
             && events.oom == Some(limit.memory_oom_events)
@@ -66,6 +171,13 @@ mod tests {
 
     fn agent_domain_fixture() -> OomEvidence {
         serde_json::from_str(include_str!("../../tests/fixtures/oom-evidence-v1.json")).unwrap()
+    }
+
+    fn runtime_counter_fixture() -> OomEvidence {
+        serde_json::from_str(include_str!(
+            "../../tests/fixtures/runtime-counter-oom.json"
+        ))
+        .unwrap()
     }
 
     fn with_victim(evidence: &OomEvidence, task_cgroup: &str) -> OomEvidence {
@@ -117,6 +229,194 @@ mod tests {
         );
         assert!(!contained.agent_domain_oom_kill());
         assert!(agent_domain_fixture().agent_domain_oom_kill());
+    }
+
+    #[test]
+    fn local_runtime_counter_attributes_a_victim_omitted_from_kernel_records() {
+        let evidence = runtime_counter_fixture();
+        assert_eq!(evidence.kernel_status, EvidenceStatus::Truncated);
+        assert!(evidence.incidents.iter().all(|incident| {
+            incident
+                .kernel_events
+                .iter()
+                .all(|event| event.task_cgroup.contains("/tools/"))
+        }));
+        assert!(evidence.agent_domain_oom_kill());
+        assert_eq!(
+            evidence.classification(),
+            Some(OomClassification::AgentOomKill)
+        );
+        let limit = WorkloadResourceLimitDiagnostic {
+            memory_max_events: 2,
+            memory_oom_events: 1,
+            memory_oom_kill_events: 2,
+            memory_oom_group_kill_events: 0,
+            pids_max_events: 0,
+        };
+        assert!(!evidence.proves_contained_resource_limit(&limit));
+    }
+
+    #[test]
+    fn reliable_domain_counters_remain_proof_without_kernel_access_or_incidents() {
+        let mut evidence = runtime_counter_fixture();
+        evidence.incidents.clear();
+        evidence.kernel_status = EvidenceStatus::Denied;
+        assert!(evidence_has_proof(&evidence));
+        assert!(evidence.agent_domain_oom_kill());
+        assert_eq!(
+            evidence.classification(),
+            Some(OomClassification::AgentOomKill)
+        );
+    }
+
+    #[test]
+    fn known_local_counters_survive_unrelated_partial_snapshot_reads() {
+        for status in [EvidenceStatus::Partial, EvidenceStatus::Truncated] {
+            let mut evidence = runtime_counter_fixture();
+            evidence.incidents.clear();
+            evidence.groups[1].status = status;
+            evidence.groups[1].peak = None;
+            assert!(evidence.agent_domain_oom_kill(), "{status:?}");
+        }
+    }
+
+    #[test]
+    fn prior_correlated_counter_proof_survives_an_unavailable_final_sample() {
+        let mut evidence = runtime_counter_fixture();
+        evidence.groups[1].status = EvidenceStatus::Unavailable;
+        assert!(evidence.agent_domain_oom_kill());
+    }
+
+    #[test]
+    fn incident_counter_identity_and_baseline_must_match_the_operation() {
+        for mismatch_inode in [true, false] {
+            let mut evidence = runtime_counter_fixture();
+            evidence.groups[1].status = EvidenceStatus::Unavailable;
+            let runtime = &mut evidence.incidents[0].groups[1];
+            if mismatch_inode {
+                runtime.inode = Some(99);
+            } else {
+                runtime.local_baseline.oom_kill = Some(1);
+                runtime.local_events.oom_kill = Some(2);
+            }
+            assert!(!evidence.agent_domain_oom_kill());
+        }
+    }
+
+    #[test]
+    fn unreliable_runtime_counters_never_attribute_an_agent_victim() {
+        type Mutation = (&'static str, fn(&mut MemorySnapshot));
+        let mutations: &[Mutation] = &[
+            ("missing inode", |group| group.inode = None),
+            ("recreated", |group| {
+                group.status = EvidenceStatus::Recreated
+            }),
+            ("uncorrelated", |group| {
+                group.status = EvidenceStatus::Uncorrelated
+            }),
+            ("unavailable", |group| {
+                group.status = EvidenceStatus::Unavailable
+            }),
+            ("denied", |group| group.status = EvidenceStatus::Denied),
+            ("wrong role", |group| group.role = "tools".into()),
+            ("wrong operation", |group| {
+                group.cgroup = "/vm0-exec/exec-9/workload/runtime".into()
+            }),
+            ("task runtime", |group| {
+                group.cgroup.push_str("/tools/task-1/runtime")
+            }),
+            ("missing baseline", |group| {
+                group.local_baseline.oom_kill = None
+            }),
+            ("missing current", |group| {
+                group.local_events.oom_kill = None
+            }),
+            ("regressing current", |group| {
+                group.local_baseline.oom_kill = Some(2)
+            }),
+            ("inconsistent delta", |group| {
+                group.local_delta.oom_kill = Some(99)
+            }),
+            ("unknown delta", |group| group.local_delta.oom_kill = None),
+            ("unchanged historical count", |group| {
+                group.local_baseline.oom_kill = Some(1);
+                group.local_delta.oom_kill = Some(0);
+            }),
+        ];
+        for (name, mutate) in mutations {
+            let mut evidence = runtime_counter_fixture();
+            mutate(&mut evidence.groups[1]);
+            for incident in &mut evidence.incidents {
+                mutate(&mut incident.groups[1]);
+            }
+            assert!(!evidence.agent_domain_oom_kill(), "{name}");
+            assert_eq!(
+                evidence.classification(),
+                Some(OomClassification::UnprovenContainment),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn root_local_kills_are_agent_proof_but_hierarchical_tool_kills_are_not() {
+        let mut evidence = fixture();
+        assert_eq!(
+            evidence.classification(),
+            Some(OomClassification::ContainedToolOom)
+        );
+        evidence.groups[0].local_events.oom_kill = Some(1);
+        evidence.groups[0].local_delta.oom_kill = Some(1);
+        assert!(evidence.agent_domain_oom_kill());
+        assert_eq!(
+            evidence.classification(),
+            Some(OomClassification::AgentOomKill)
+        );
+    }
+
+    #[test]
+    fn tool_records_do_not_prove_containment_with_unknown_or_unaccounted_kills() {
+        type Mutation = (&'static str, fn(&mut [MemorySnapshot; 3]));
+        let mutations: &[Mutation] = &[
+            ("missing runtime baseline", |groups| {
+                groups[1].local_baseline.oom_kill = None
+            }),
+            ("missing runtime current", |groups| {
+                groups[1].events.oom_kill = None
+            }),
+            ("recreated tools", |groups| {
+                groups[2].status = EvidenceStatus::Recreated
+            }),
+            ("unaccounted workload victim", |groups| {
+                groups[0].events.oom_kill = Some(2);
+                groups[0].delta.oom_kill = Some(2);
+            }),
+            ("inconsistent tools delta", |groups| {
+                groups[2].delta.oom_kill = Some(99)
+            }),
+        ];
+        for (name, mutate) in mutations {
+            let mut evidence = fixture();
+            evidence.kernel_status = EvidenceStatus::Truncated;
+            mutate(&mut evidence.groups);
+            assert_eq!(
+                evidence.classification(),
+                Some(OomClassification::UnprovenContainment),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn counters_can_prove_tool_containment_with_truncated_kernel_records() {
+        let mut evidence = fixture();
+        evidence.kernel_status = EvidenceStatus::Truncated;
+        evidence.incidents[0].kernel_status = EvidenceStatus::Truncated;
+        evidence.incidents[0].kernel_events.clear();
+        assert_eq!(
+            evidence.classification(),
+            Some(OomClassification::ContainedToolOom)
+        );
     }
 
     #[test]

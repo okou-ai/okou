@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
+  click,
   holdElementAnimations,
   queryAllByRoleFast,
   setupPage,
@@ -36,14 +37,14 @@ test("Preview a website template and return to its picker", async () => {
   if (!template) {
     throw new Error("Website template fixture not found");
   }
-  const user = userEvent.setup();
+  const user = userEvent.setup({ delay: null });
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     host: "app.okou.ai",
   });
   const picker = await openTemplatePicker(user, "Website");
-  await user.click(
+  click(
     within(picker).getByLabelText(`Preview website template ${template.title}`),
   );
   const frame = await screen.findByTitle(
@@ -59,19 +60,17 @@ test("Preview a website template and return to its picker", async () => {
   // gallery's tree would leave the two panels overlapping again.
   expect(picker).toHaveAttribute("data-nested-dialog-open");
   const finishCloseTransition = holdElementAnimations(previewDialog);
-  await user.click(buttonNamed("Website", previewDialog));
+  click(buttonNamed("Website", previewDialog));
   expect(previewDialog).toBeVisible();
   finishCloseTransition();
-  const returnedPicker = await waitFor(() => {
-    const currentPicker = screen.getByRole("dialog");
-    expect(
-      within(currentPicker).getByLabelText(
-        `Preview website template ${template.title}`,
-      ),
-    ).toBeVisible();
-    return currentPicker;
+  await waitFor(() => {
+    expect(previewDialog).not.toBeInTheDocument();
   });
-  expect(returnedPicker).not.toHaveAttribute("data-nested-dialog-open");
+  expect(picker).toBeVisible();
+  expect(
+    within(picker).getByLabelText(`Preview website template ${template.title}`),
+  ).toBeInTheDocument();
+  expect(picker).not.toHaveAttribute("data-nested-dialog-open");
 });
 
 test("Select and send a website template", async () => {
@@ -80,14 +79,14 @@ test("Select and send a website template", async () => {
   if (!template) {
     throw new Error("Website template fixture not found");
   }
-  const user = userEvent.setup();
+  const user = userEvent.setup({ delay: null });
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     host: "app.okou.ai",
   });
   const picker = await openTemplatePicker(user, "Website");
-  await user.click(
+  click(
     within(picker).getByLabelText(`Select website template ${template.title}`),
   );
   await expectInlineTemplate(template.title);

@@ -10,7 +10,7 @@ import {
   agentRunDeletionMembership,
   deletedRunHistorySchema,
   deleteRunHistoriesSql,
-} from "../src/operations/run-history-deletion";
+} from "./fixtures/run-history-deletion-prepared";
 
 const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "DATABASE_URL is required");

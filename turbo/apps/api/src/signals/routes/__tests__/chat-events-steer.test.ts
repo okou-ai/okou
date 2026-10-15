@@ -1,5 +1,6 @@
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { randomUUID } from "node:crypto";
 import {
   STEERED_INPUT_ALREADY_CONSUMED_ERROR_CODE,
@@ -9,7 +10,11 @@ import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { expectApiError } from "./helpers/api-bdd";
-import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import {
+  createChatEventsFixture,
+  userMessageWithTemplate,
+} from "./helpers/chat-events-fixture";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 /**
  * Steering without delivery IDs: a running sandbox run reads the next
@@ -55,6 +60,74 @@ async function sendQueuedPrompt(
 }
 
 describe("CHAT-02: steering input prompts into a running run", () => {
+  it("keeps disabled Document input queued and steers it only after enablement", async () => {
+    const {
+      actor: owner,
+      agentId,
+      runnerGroup,
+    } = await entitledNativeChatActor();
+    if (!owner.orgId) {
+      throw new Error("Expected an organization");
+    }
+    const actor = { ...owner, orgId: owner.orgId };
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    const active = await sendChatRun(actor, { agentId, prompt: "Start a run" });
+    const claimed = await claimChatRun(runnerGroup, active.runId);
+    const eventId = randomUUID();
+    const userMessage = userMessageWithTemplate("Prepare an invoice", {
+      type: "document",
+      selection: { documentTemplateId: "document-template:simple-invoice" },
+    });
+    await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: active.threadId,
+        clientEventId: eventId,
+        prompt: "Prepare an invoice",
+        userMessage,
+      },
+      [201],
+    );
+    const nextEventId = await sendQueuedPrompt(
+      actor,
+      agentId,
+      active.threadId,
+      "Then summarize the invoice",
+    );
+    await expect(
+      api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
+    ).resolves.toStrictEqual({ input: null });
+    const queued = await chat.listThreadEvents(actor, active.threadId);
+    expect(queued.events).toContainEqual(
+      expect.objectContaining({ id: eventId, userMessage }),
+    );
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.BuiltinDocumentTemplates]: true,
+    });
+    const next = await api.nextSteerableInput(
+      claimed.claim.sandboxToken,
+      active.runId,
+    );
+    expect(next.input?.eventId).toBe(eventId);
+    expect(next.input?.prompt).toContain("Prepare an invoice");
+    expect(next.input?.prompt).toContain(
+      "https://raw.githubusercontent.com/sparksuite/simple-html-invoice-template/7d74fe34c862b7712f1a23a3f12147a4a8bd53e1/invoice.html",
+    );
+    await api.requestDeclareSteeredInputAs(
+      `Bearer ${claimed.claim.sandboxToken}`,
+      active.runId,
+      eventId,
+      [200],
+    );
+    await expect(
+      api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
+    ).resolves.toStrictEqual({
+      input: { eventId: nextEventId, prompt: "Then summarize the invoice" },
+    });
+    await cancelChatRun(actor, active.runId);
+  });
+
   it("includes cover guidance for a template steered into an existing run", async () => {
     const {
       actor: owner,

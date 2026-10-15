@@ -51,10 +51,6 @@ exec tail -f /dev/null
             "00000000-0000-4000-8000-000000000abc",
         );
         std::env::set_var(
-            guest_contracts::env::CANONICAL_SANDBOX_REUSE_RESULT_ENV,
-            "reused",
-        );
-        std::env::set_var(
             guest_contracts::env::CANONICAL_POST_RESULT_SIGTERM_GRACE_SECS_ENV,
             "3",
         );

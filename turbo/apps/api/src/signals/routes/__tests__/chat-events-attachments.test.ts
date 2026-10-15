@@ -1440,6 +1440,177 @@ describe("CHAT-02: generation templates and attachments", () => {
     await cancelChatRun(actor, sent.runId);
   }, 60_000);
 
+  it("rejects Document templates while disabled and injects their pinned resource after enablement", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    if (!actor.orgId) {
+      throw new Error("Expected a chat organization");
+    }
+    const template: GenerationTemplateRequest = {
+      type: "document",
+      selection: { documentTemplateId: "document-template:simple-invoice" },
+    };
+    const clientEventId = randomUUID();
+    const response = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        clientEventId,
+        prompt: "Prepare my invoice",
+        userMessage: userMessageWithTemplate("Prepare my invoice", template),
+      },
+      [201],
+    );
+    if (response.status !== 201) {
+      throw new Error("Expected the input to enqueue before pick");
+    }
+    const rejected = await waitForThreadMessages(
+      actor,
+      response.body.threadId,
+      (events) => {
+        return events.some((event) => {
+          return (
+            event.eventType === "input.rejected" &&
+            event.revokesEventId === clientEventId
+          );
+        });
+      },
+    );
+    expect(rejected.events).toContainEqual(
+      expect.objectContaining({
+        eventType: "output.error",
+        error: "forbidden",
+      }),
+    );
+    expect(
+      rejected.events.some((event) => {
+        return event.runId !== undefined;
+      }),
+    ).toBeFalsy();
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: actor.userId, orgId: actor.orgId },
+      {
+        [FeatureSwitchKey.BuiltinDocumentTemplates]: true,
+      },
+    );
+    const sent = await sendChatRun(actor, {
+      agentId,
+      prompt: "Prepare my invoice",
+      template,
+    });
+    const run = await api.readRun(actor, sent.runId);
+    expect(run.appendSystemPrompt).toContain(
+      "https://raw.githubusercontent.com/sparksuite/simple-html-invoice-template/7d74fe34c862b7712f1a23a3f12147a4a8bd53e1/invoice.html",
+    );
+    await cancelChatRun(actor, sent.runId);
+  }, 60_000);
+
+  it("preserves multiple Document references and their pinned sources in the run", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    if (!actor.orgId) {
+      throw new Error("Expected a chat organization");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: actor.userId, orgId: actor.orgId },
+      { [FeatureSwitchKey.BuiltinDocumentTemplates]: true },
+    );
+    const references = [
+      {
+        id: "document-template:creative-brief",
+        source:
+          "rampstackco/claude-skills/482c9bf74697fc1e311bd4dca5ce301f046c4b76/skills/creative-brief/references/creative-brief-template.md",
+        license:
+          "rampstackco/claude-skills/482c9bf74697fc1e311bd4dca5ce301f046c4b76/LICENSE",
+      },
+      {
+        id: "document-template:fixed-price-contract",
+        source:
+          "Oak-Harbor-Kits/Contract-Templates/4e49c669fa1e856d583723f0a60175533645b680/Lump%20Sum%20Contract%20Template.docx",
+        license:
+          "Oak-Harbor-Kits/Contract-Templates/4e49c669fa1e856d583723f0a60175533645b680/LICENSE",
+      },
+      {
+        id: "document-template:design-services",
+        source:
+          "studionaeo/design-services-standard-agreement/df71218eb1d5c5a59efb1ceb80de56a9935d6420/%E5%8D%8F%E8%AE%AE/%E8%AE%BE%E8%AE%A1%E6%9C%8D%E5%8A%A1%E6%A0%87%E5%87%86%E5%8D%8F%E8%AE%AE%E4%B9%A6.md",
+        license:
+          "studionaeo/design-services-standard-agreement/df71218eb1d5c5a59efb1ceb80de56a9935d6420/LICENSE",
+      },
+      {
+        id: "document-template:department-newsletter",
+        source:
+          "typst/templates/71b01c6b0a828649c7a0a38e8167cd82aab76efc/dashing-dept-news/template/main.typ",
+        license:
+          "typst/templates/71b01c6b0a828649c7a0a38e8167cd82aab76efc/dashing-dept-news/LICENSE",
+      },
+    ];
+    const prompt = "Prepare these documents";
+    const userMessage: UserMessageInputDocument = {
+      version: 1,
+      parts: [
+        { type: "text", text: prompt },
+        ...references.map(
+          ({ id }): UserMessageInputDocument["parts"][number] => {
+            return {
+              type: "template",
+              titleSnapshot: id,
+              template: {
+                type: "document",
+                selection: { documentTemplateId: id },
+              },
+            };
+          },
+        ),
+      ],
+    };
+    const sent = await sendChatRun(actor, { agentId, prompt, userMessage });
+    const run = await api.readRun(actor, sent.runId);
+    const systemPrompt = run.appendSystemPrompt;
+    expect(systemPrompt).toBeDefined();
+    if (!systemPrompt) {
+      throw new Error("Expected document template guidance");
+    }
+    for (const [index, reference] of references.entries()) {
+      const section = `## Template #${index + 1} (document)`;
+      const source = `Template file: https://raw.githubusercontent.com/${reference.source}`;
+      expect(systemPrompt).toContain(section);
+      expect(systemPrompt).toContain(source);
+      expect(systemPrompt).toContain(
+        `License: https://raw.githubusercontent.com/${reference.license}`,
+      );
+      expect(systemPrompt.indexOf(section)).toBeLessThan(
+        systemPrompt.indexOf(source),
+      );
+      if (references[index + 1]) {
+        expect(systemPrompt.indexOf(source)).toBeLessThan(
+          systemPrompt.indexOf(`## Template #${index + 2} (document)`),
+        );
+      }
+    }
+    expect(systemPrompt).toContain("office-files");
+    expect(systemPrompt).toContain("Word or PDF");
+    const events = await chat.listThreadEvents(actor, sent.threadId);
+    const launched = events.events.find((event) => {
+      return event.eventType === "input.prompt" && event.runId === sent.runId;
+    });
+    if (launched?.eventType !== "input.prompt") {
+      throw new Error("Expected the launched input prompt");
+    }
+    expect(
+      launched.userMessage.parts.filter((part) => {
+        return part.type === "template";
+      }),
+    ).toStrictEqual(
+      userMessage.parts.filter((part) => {
+        return part.type === "template";
+      }),
+    );
+    await cancelChatRun(actor, sent.runId);
+  }, 60_000);
+
   it("rejects unknown generation template selections", async () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
@@ -1500,6 +1671,13 @@ describe("CHAT-02: generation templates and attachments", () => {
           selection: { websiteTemplateId: "website-template:missing" },
         },
         message: "Unknown website template",
+      },
+      {
+        template: {
+          type: "document",
+          selection: { documentTemplateId: "document-template:missing" },
+        },
+        message: "Unknown document template",
       },
     ];
     for (const arm of arms) {

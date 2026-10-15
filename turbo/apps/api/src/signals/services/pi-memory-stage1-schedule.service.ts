@@ -1,3 +1,6 @@
+import { QueryBuilder } from "drizzle-orm/pg-core";
+import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
+import { preparePiMemoryChatSource$ } from "./pi-memory-chat-source.service";
 import {
   piMemoryScheduleThreadLocks as threadLocks,
   piMemoryScheduleStorageLock as storageLock,
@@ -11,7 +14,6 @@ import {
   piMemoryScheduleLegacyEvidence as legacyEvidence,
   piMemoryScheduleProductThread as productThread,
   piMemoryScheduleAdmissionFeatures as admissionFeatures,
-  piMemoryScheduleAdmissionSource as sourcePlan,
   piMemoryScheduleExistingStorage as existingStorage,
   piMemoryScheduleConflictStorage as conflictStorage,
   piMemoryScheduleCurrentCandidate as currentCandidate,
@@ -37,7 +39,6 @@ import {
   selectedSource,
   orderedEvidence,
   admissionAllowed,
-  admissionHistoryBacked,
   storageCreation,
   replacementDecision as decideReplacement,
   watermarkPlan,
@@ -56,14 +57,12 @@ import {
   userFeatureSwitchRowCondition,
 } from "./feature-switch-scope";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
-import { and, asc, desc, eq, inArray, isNull, ne, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { conversations } from "@okouai/db/schema/conversation";
 import { piMemoryStage1Candidates as candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 import {
   piMemoryStage1Days as days,
@@ -90,7 +89,10 @@ const sourceRunColumns = Object.freeze({
   chatThreadId: agentRuns.chatThreadId,
   completedAt: agentRuns.completedAt,
   createdAt: agentRuns.createdAt,
-  sessionId: agentRuns.sessionId,
+  agentId: agentRuns.agentId,
+  framework: agentRuns.framework,
+  frameworkSessionId: agentRuns.frameworkSessionId,
+  legacyConversationHistoryHash: agentRuns.legacyConversationHistoryHash,
 });
 const candidateColumns = Object.freeze({
   memoryStorageId: candidates.memoryStorageId,
@@ -104,14 +106,22 @@ export function piMemoryStage1UtcDay(time: Date): string {
 
 const readThreadSource$ = command(
   async (
-    { get },
+    { get, set },
     owner: Pick<Day, "userId" | "orgId">,
     threadId: string,
     currentTime: Date,
+    signal: AbortSignal,
   ) => {
     const db = get(db$);
     const [thread] = await db
-      .select({ id: chatThreads.id, activityAt: threadActivity })
+      .select({
+        id: chatThreads.id,
+        activityAt: threadActivity,
+        lastChatEventSeqId:
+          sql`coalesce((${new QueryBuilder().select({ lastSeqId: chatEventSequences.lastSeqId }).from(chatEventSequences).where(eq(chatEventSequences.chatThreadId, chatThreads.id))}), 0)`
+            .mapWith(chatEventSequences.lastSeqId)
+            .as("last_chat_event_seq_id"),
+      })
       .from(chatThreads)
       .innerJoin(agents, eq(agents.id, chatThreads.agentId))
       .where(
@@ -122,6 +132,7 @@ const readThreadSource$ = command(
         ),
       )
       .limit(1);
+    signal.throwIfAborted();
     if (!thread) {
       return { reason: "stale_selection" as const };
     }
@@ -135,6 +146,7 @@ const readThreadSource$ = command(
         ),
       )
       .limit(1);
+    signal.throwIfAborted();
     if (active) {
       return { reason: "active_source" as const };
     }
@@ -158,6 +170,7 @@ const readThreadSource$ = command(
       .where(eq(agentRuns.chatThreadId, threadId))
       .orderBy(desc(runActivity), desc(agentRuns.id))
       .limit(1);
+    signal.throwIfAborted();
     if (
       !latest ||
       latest.userId !== owner.userId ||
@@ -173,30 +186,32 @@ const readThreadSource$ = command(
     ) {
       return { reason: "old_source" as const };
     }
+    if (latest.launchSnapshot?.schemaVersion === 5) {
+      const source = await set(
+        preparePiMemoryChatSource$,
+        {
+          runId: latest.id,
+          threadId,
+          orgId: owner.orgId,
+          userId: owner.userId,
+          lastSeqId: thread.lastChatEventSeqId,
+        },
+        signal,
+      );
+      return {
+        source: {
+          run: latest,
+          threadId,
+          activityAt: thread.activityAt,
+          ...source,
+        },
+      };
+    }
     const [source] = await db
-      .select({
-        piSessionId: conversations.cliAgentSessionId,
-        hash: conversations.cliAgentSessionHistoryHash,
-      })
-      .from(conversations)
-      .innerJoin(agentSessions, eq(agentSessions.id, latest.sessionId))
-      .innerJoin(
-        chatThreads,
-        and(
-          eq(chatThreads.id, threadId),
-          eq(chatThreads.agentId, agentSessions.agentId),
-        ),
-      )
-      .where(
-        and(
-          eq(conversations.runId, latest.id),
-          eq(conversations.cliAgentType, "pi"),
-          eq(agentSessions.userId, owner.userId),
-          eq(agentSessions.orgId, owner.orgId),
-        ),
-      )
-      .limit(1);
-    if (!source?.hash) {
+      .select()
+      .from(sourceConversation(owner, threadId, latest));
+    signal.throwIfAborted();
+    if (!historyBacked(source)) {
       return { reason: "invalid_source" as const };
     }
     return {
@@ -206,6 +221,8 @@ const readThreadSource$ = command(
         activityAt: thread.activityAt,
         piSessionId: source.piSessionId,
         hash: source.hash,
+        sourceFormat: "pi-jsonl" as const,
+        sourceChatEventSeqId: null,
       },
     };
   },
@@ -264,7 +281,11 @@ const successfulEvidence$ = command(
 );
 
 export const consumePiMemoryStage1Days$ = command(
-  async ({ get, set }, currentTime: Date): Promise<void> => {
+  async (
+    { get, set },
+    currentTime: Date,
+    signal: AbortSignal,
+  ): Promise<void> => {
     const db = get(db$);
     const writeDb = set(writeDb$);
     const requests = await db
@@ -278,6 +299,7 @@ export const consumePiMemoryStage1Days$ = command(
       )
       .orderBy(asc(days.userId))
       .limit(64);
+    signal.throwIfAborted();
     for (const request of requests) {
       const featureSwitchContextRows2 = await db
         .select({
@@ -286,6 +308,7 @@ export const consumePiMemoryStage1Days$ = command(
         })
         .from(userFeatureSwitches)
         .where(userFeatureSwitchRowCondition(request.orgId, request.userId));
+      signal.throwIfAborted();
       const ownerContext = featureSwitchContextFromRows(
         request.orgId,
         request.userId,
@@ -302,6 +325,7 @@ export const consumePiMemoryStage1Days$ = command(
               isNull(days.consumedAt),
             ),
           );
+        signal.throwIfAborted();
         log.debug("Pi memory Stage 1 decision", {
           userId: request.userId,
           orgId: request.orgId,
@@ -324,7 +348,9 @@ export const consumePiMemoryStage1Days$ = command(
         )
         .orderBy(desc(threadActivity), asc(chatThreads.id))
         .limit(THREAD_SCAN_LIMIT);
+      signal.throwIfAborted();
       const chosen: string[] = [];
+      const sources: PiMemoryStage1ThreadSource[] = [];
       const skips: Record<string, number> = {};
       for (const thread of threads) {
         const result = await set(
@@ -332,6 +358,7 @@ export const consumePiMemoryStage1Days$ = command(
           request,
           thread.id,
           currentTime,
+          signal,
         );
         if (result.source) {
           const evidence = await set(
@@ -339,6 +366,7 @@ export const consumePiMemoryStage1Days$ = command(
             request,
             result.source,
           );
+          signal.throwIfAborted();
           if (
             !evidence.some((row) => {
               return (
@@ -348,6 +376,7 @@ export const consumePiMemoryStage1Days$ = command(
             })
           ) {
             chosen.push(thread.id);
+            sources.push(result.source);
           } else {
             skips.unchanged_source = (skips.unchanged_source ?? 0) + 1;
           }
@@ -362,17 +391,51 @@ export const consumePiMemoryStage1Days$ = command(
         request,
         currentTime,
         chosen,
+        sources,
         skips,
       });
     }
   },
 );
 
+function unchangedPreparedSource(
+  source: PiMemoryStage1ThreadSource | undefined,
+  latest: Pick<PiMemoryStage1ThreadSource["run"], "id" | "launchSnapshot">,
+  thread: { readonly activityAt: Date; readonly lastChatEventSeqId: number },
+): source is PiMemoryStage1ThreadSource {
+  return (
+    !!source &&
+    source.run.id === latest.id &&
+    source.activityAt.getTime() === thread.activityAt.getTime() &&
+    (latest.launchSnapshot?.schemaVersion !== 5 ||
+      (source.sourceFormat === "chat-events-v1" &&
+        source.sourceChatEventSeqId === thread.lastChatEventSeqId))
+  );
+}
+
+function candidateEvidenceAllowsAdmission(
+  evidence: Parameters<typeof evidenceUnchanged>[0],
+  source: PiMemoryStage1ThreadSource,
+  args: Parameters<typeof admissionAllowed>[0],
+): args is Parameters<typeof admissionAllowed>[0] & {
+  readonly chatThreadId: string;
+} {
+  return !evidenceUnchanged(evidence, source) && admissionAllowed(args);
+}
+
+function candidateSource(source: PiMemoryStage1ThreadSource) {
+  return {
+    piSessionId: source.piSessionId,
+    sourceHistoryHash: source.hash,
+    sourceFormat: source.sourceFormat,
+    sourceChatEventSeqId: source.sourceChatEventSeqId,
+  };
+}
+
 const commitSelectedPiMemoryStage1Day$ = command(
   async ({ set }, input: SelectedDayInput): Promise<void> => {
-    const { request, currentTime, chosen, skips } = input;
-    // Day consumption, candidate/reference replacement, legacy watermarks and
-    // frozen slots form one atomic decision under the original lock order.
+    const { request, currentTime, chosen, sources, skips } = input;
+    // Keep day consumption, candidates, references, watermarks and slots atomic.
     // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0227; new non-billing transactions are prohibited.
     await set(writeDb$).transaction(async (tx) => {
       // Sorted source Threads -> Storage -> user/day -> candidates -> blobs.
@@ -399,22 +462,34 @@ const commitSelectedPiMemoryStage1Day$ = command(
         if (!eligibleRun(latest, day, currentTime)) {
           continue;
         }
-        const [conversation] = await tx
-          .select()
-          .from(sourceConversation(day, threadId, latest));
-        if (!historyBacked(conversation)) {
+        const preparedSource = sources.find((source) => {
+          return source.threadId === threadId;
+        });
+        if (!unchangedPreparedSource(preparedSource, latest, thread)) {
           continue;
         }
-        const source = selectedSource(latest, threadId, thread, conversation);
+        let source: PiMemoryStage1ThreadSource;
+        if (preparedSource.sourceFormat === "chat-events-v1") {
+          source = preparedSource;
+        } else {
+          const [conversation] = await tx
+            .select()
+            .from(sourceConversation(day, threadId, latest));
+          if (!historyBacked(conversation)) {
+            continue;
+          }
+          source = selectedSource(latest, threadId, thread, {
+            ...conversation,
+            sourceFormat: "pi-jsonl",
+            sourceChatEventSeqId: null,
+          });
+        }
         const wm = await tx.select().from(sourceWatermarks(day, source));
         // Retain the bounded legacy transition read until #33892 C / #34044.
         const legacy = await tx.select().from(legacyEvidence(day, source));
         const evidence = orderedEvidence(wm, legacy);
-        if (evidenceUnchanged(evidence, source)) {
-          continue;
-        }
         const args = sourceArgs(latest);
-        if (!admissionAllowed(args)) {
+        if (!candidateEvidenceAllowsAdmission(evidence, source, args)) {
           continue;
         }
         const [owned] = await tx.select().from(productThread(args));
@@ -425,25 +500,18 @@ const commitSelectedPiMemoryStage1Day$ = command(
         if (!ownerEnabled(args, featureRows)) {
           continue;
         }
-        const [admissionSource] = await tx.select().from(sourcePlan(args));
-        if (!admissionHistoryBacked(admissionSource)) {
-          continue;
-        }
+        const admissionSource = candidateSource(source);
         const [existing] = await tx.select().from(existingStorage(args));
         let storageId = storageIdOf(existing);
         if (!storageId) {
-          const storage = storageCreation(args);
           const [created] = await tx
             .insert(storages)
-            .values(storage)
+            .values(storageCreation(args))
             .onConflictDoNothing()
             .returning({ id: storages.id });
-          if (created) {
-            storageId = created.id;
-          } else {
-            const [winner] = await tx.select().from(conflictStorage(args));
-            storageId = requireStorage(winner);
-          }
+          const winner =
+            created ?? (await tx.select().from(conflictStorage(args)))[0];
+          storageId = requireStorage(winner);
         }
         const values = candidateValues(args, storageId, admissionSource);
         const [created] = await tx

@@ -95,6 +95,54 @@ describe("okou workflow list command", () => {
       expect(logCalls).toContain("deploy");
     });
 
+    it("should omit system-managed Official Workflows", async () => {
+      server.use(
+        http.get("http://localhost:3000/api/workflows", () => {
+          return HttpResponse.json([
+            {
+              id: "22222222-2222-2222-2222-222222222222",
+              agentId: AGENT_ID,
+              agentName: "my-agent",
+              agentDisplayName: "My Agent",
+              name: "code-review",
+              displayName: "Code Review",
+              description: "Reviews code",
+              visibility: "private",
+              ownerUserId: "user-123",
+              canManage: true,
+              canPublish: true,
+              official: null,
+            },
+            {
+              id: "44444444-4444-4444-4444-444444444444",
+              agentId: AGENT_ID,
+              agentName: "my-agent",
+              agentDisplayName: "My Agent",
+              name: "internal-test-morning-brief",
+              displayName: null,
+              description: null,
+              visibility: "private",
+              ownerUserId: "user-123",
+              canManage: false,
+              canPublish: false,
+              official: {
+                definitionName: "internal-test-morning-brief",
+                installationState: "installed",
+                definitionLifecycle: "active",
+                readOnly: true,
+              },
+            },
+          ]);
+        }),
+      );
+
+      await listCommand.parseAsync(["node", "cli"]);
+
+      const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
+      expect(logCalls).toContain("code-review");
+      expect(logCalls).not.toContain("internal-test-morning-brief");
+    });
+
     it("should pass agentId query when --agent is provided", async () => {
       let capturedUrl: string | undefined;
       server.use(

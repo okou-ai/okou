@@ -1,5 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
-import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
+import { randomUUID } from "node:crypto";
 import { logsListContract } from "@okouai/api-contracts/contracts/logs";
 import { runnersJobClaimContract } from "@okouai/api-contracts/contracts/runners";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
@@ -212,6 +211,7 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
         body: {
           runnerIdentity,
           capabilities: { piModelConfigGenerations: [1, 2, 3] },
+          nativeContinuationSupported: true,
         },
       }),
       [200],
@@ -247,44 +247,6 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
         headers,
         [200],
       );
-      const history = Buffer.from(`remote access session history ${run.runId}`);
-      const hash = createHash("sha256").update(history).digest("hex");
-      const previousStorage = context.mocks.s3.send.getMockImplementation();
-      context.mocks.s3.send.mockImplementation((command: unknown) => {
-        if (
-          (command instanceof HeadObjectCommand ||
-            command instanceof GetObjectCommand) &&
-          command.input.Key === `blobs/${hash}.blob`
-        ) {
-          return Promise.resolve({
-            ContentLength: history.byteLength,
-            ...(command instanceof GetObjectCommand
-              ? {
-                  Body: {
-                    async *[Symbol.asyncIterator]() {
-                      yield history;
-                    },
-                  },
-                }
-              : {}),
-          });
-        }
-        if (!previousStorage) {
-          throw new Error("Expected the owned external object store");
-        }
-        return previousStorage(command);
-      });
-      await webhooks.requestAgentSessionHistoryPrepare(
-        {
-          runId: run.runId,
-          hash,
-          rawSize: history.byteLength,
-          encodedSize: history.byteLength,
-          encoding: "identity",
-        },
-        headers,
-        [200],
-      );
       await webhooks.requestAgentComplete(
         {
           runId: run.runId,
@@ -293,7 +255,7 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
           completion: {
             cliAgentType: "claude-code",
             cliAgentSessionId: `remote-access-${run.runId}`,
-            cliAgentSessionHistoryHash: hash,
+            cliAgentSessionHistoryDisposition: "native_only",
           },
         },
         headers,
@@ -314,7 +276,9 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
     const result = await runs.readRun(run.actor, run.runId);
     expect(result.status).toBe(status);
     if (status === "completed") {
-      expect(result.result?.conversationId).toStrictEqual(expect.any(String));
+      expect(result.result?.frameworkSessionId).toStrictEqual(
+        expect.any(String),
+      );
     }
   }
 

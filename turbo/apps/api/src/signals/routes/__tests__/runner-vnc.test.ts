@@ -136,6 +136,7 @@ describe("private Runner VNC authority", () => {
         body: {
           runnerIdentity,
           capabilities: { piModelConfigGenerations: [1, 2, 3] },
+          nativeContinuationSupported: true,
         },
       }),
       [200],

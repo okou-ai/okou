@@ -1,7 +1,6 @@
 import { vncHostSchema } from "@okouai/api-contracts/contracts/vnc-access";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
 import {
   sshConnectionNeedsRebind,
   sshConnections,
@@ -55,18 +54,11 @@ export const listRunVncHosts$ = command(
           ),
       })
       .from(agentRuns)
-      .innerJoin(
-        agentSessions,
-        and(
-          eq(agentSessions.id, agentRuns.sessionId),
-          eq(agentSessions.orgId, agentRuns.orgId),
-          eq(agentSessions.userId, agentRuns.userId),
-        ),
-      )
+
       .innerJoin(
         agents,
         and(
-          eq(agents.id, agentSessions.agentId),
+          eq(agents.id, agentRuns.agentId),
           eq(agents.orgId, agentRuns.orgId),
           visibleJoinedAgentCondition(owner.userId),
         ),

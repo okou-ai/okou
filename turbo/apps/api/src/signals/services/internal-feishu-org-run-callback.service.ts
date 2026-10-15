@@ -1,7 +1,6 @@
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { agents } from "@okouai/db/schema/agent";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
@@ -49,8 +48,8 @@ async function loadRun(db: Db, runId: string): Promise<RunContext | undefined> {
       chatThreadId: agentRuns.chatThreadId,
     })
     .from(agentRuns)
-    .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
-    .innerJoin(agents, eq(agents.id, agentSessions.agentId))
+
+    .innerJoin(agents, eq(agents.id, agentRuns.agentId))
     .where(eq(agentRuns.id, runId))
     .limit(1);
   return run;
