@@ -416,27 +416,17 @@ impl Peers {
                 if patch.len() > MAX_PEERS || upsert.len() > MAX_PEERS || remove.len() > MAX_PEERS {
                     return Err(Failure::DomainFailed);
                 }
-                let mut changed = HashSet::new();
+                // Match the control client's removal, complete-change, then patch order.
                 for id in remove {
-                    if !changed.insert(id) {
-                        return Err(Failure::DomainFailed);
-                    }
                     nodes.remove(&id);
                 }
                 for node in upsert {
-                    if !changed.insert(node.id) {
-                        return Err(Failure::DomainFailed);
-                    }
                     nodes.insert(node.id, node);
                 }
                 for patch in patch {
-                    if !changed.insert(patch.id) {
-                        return Err(Failure::DomainFailed);
+                    if let Some(node) = nodes.get_mut(&patch.id) {
+                        node.apply_update(&patch);
                     }
-                    nodes
-                        .get_mut(&patch.id)
-                        .ok_or(Failure::DomainFailed)?
-                        .apply_update(&patch);
                 }
             }
         }
