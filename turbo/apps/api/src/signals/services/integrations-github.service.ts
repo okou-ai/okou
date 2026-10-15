@@ -17,7 +17,7 @@ import { env, optionalEnv } from "../../lib/env";
 import { getOAuthApiOrigin } from "../../lib/oauth-origin";
 import {
   buildGithubAppInstallUrl,
-  buildGithubUserConnectAuthorizationUrl,
+  startGithubUserOAuth$,
   findGithubInstallationByInstallationId,
   getGithubOAuthAuthMethod,
   linkGithubUser,
@@ -292,9 +292,9 @@ export const getGithubInstallation$ = command(
     signal.throwIfAborted();
     const connectUrl =
       link === null && resolvedMethod.ok
-        ? ((await buildGithubUserConnectAuthorizationUrl(
+        ? ((await set(
+            startGithubUserOAuth$,
             {
-              db,
               userId: auth.userId,
               orgId: auth.orgId,
               origin: callbackOrigin,

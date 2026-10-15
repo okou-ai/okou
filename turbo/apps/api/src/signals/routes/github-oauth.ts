@@ -26,7 +26,7 @@ import {
 import { isConnectorCatalogUnavailableError } from "../services/connector-catalog-reader.service";
 import {
   buildGithubAppInstallUrl,
-  buildGithubUserConnectAuthorizationUrl,
+  startGithubUserOAuth$,
   createOrActivateGithubInstallation,
   findGithubInstallationByInstallationId,
   getGithubInstallationAccessToken,
@@ -904,7 +904,8 @@ const connectGithubUserOauth$ = command(
     }
 
     const origin = githubApiOrigin(request);
-    const db = set(writeDb$);
+    // Preserve database availability preflight before catalog resolution.
+    set(writeDb$);
     const resolver = await get(
       connectorActionResolver([GITHUB_CONNECTOR_SLUG]),
     );
@@ -914,9 +915,9 @@ const connectGithubUserOauth$ = command(
     if (!resolvedMethod) {
       return worksErrorRedirect("GitHub OAuth is not available");
     }
-    const authorizationUrl = await buildGithubUserConnectAuthorizationUrl(
+    const authorizationUrl = await set(
+      startGithubUserOAuth$,
       {
-        db,
         userId: auth.userId,
         orgId,
         origin,
