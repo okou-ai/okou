@@ -5,7 +5,6 @@ import {
   type GoogleWorkspaceTarget,
 } from "@okouai/core/google-workspace-conversion";
 import { prepareGoogleWorkspaceImport } from "./google-workspace-import.service";
-import { prepareGoogleSlidesImport } from "./google-slides-import.service";
 import type {
   ChatThreadArtifactGoogleDriveRecovery,
   ChatThreadArtifactGoogleDriveSync,
@@ -2057,15 +2056,6 @@ const uploadResolvedArtifact$ = command(
       return { status: 200, body: previous.existing };
     }
 
-    let uploadContent = plan.content;
-    if (targetMimeType === GOOGLE_SLIDES_MIME_TYPE) {
-      const prepared = prepareGoogleSlidesImport(uploadContent.file);
-      if (!prepared.ok) {
-        return badRequestMessage(prepared.message);
-      }
-      uploadContent = { ...uploadContent, file: prepared.file };
-    }
-
     const upload = await set(
       uploadArtifactRefreshingToken$,
       {
@@ -2079,7 +2069,7 @@ const uploadResolvedArtifact$ = command(
                 fileId: artifact.externalId,
               }
             : args,
-        content: uploadContent,
+        content: plan.content,
         featureSwitchContext,
         targetMimeType,
         tokens: previous?.tokens ?? tokens,
