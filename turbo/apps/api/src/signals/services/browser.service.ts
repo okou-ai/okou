@@ -51,7 +51,7 @@ import { db$, writeDb$ } from "../external/db";
 import { publishBrowserSessionChangedSafely } from "../external/realtime";
 import { now, nowDate } from "../../lib/time";
 import { flushAxiom, getDatasetName, ingestToAxiom } from "../external/axiom";
-import { deleteS3Objects, putImmutableS3Object } from "../external/s3";
+import { putImmutableS3Object } from "../external/s3";
 import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
 import { settle, settleIncludingAbort } from "../utils";
 import {
@@ -84,10 +84,7 @@ import {
   totalConcurrencyLimit,
 } from "./org-concurrency-entitlements.service";
 import { loadOrgPlanCapabilities$ } from "./org-plan-entitlement-read.service";
-import {
-  reconcileBrowserUserActions,
-  temporaryBrowserFileKeys,
-} from "./browser-user-actions.service";
+import { reconcileBrowserUserActions$ } from "./browser-user-actions.service";
 
 const RECONCILE_BATCH_SIZE = 20;
 const PROVIDER_CLEANUP_TIMEOUT_MS = 30_000;
@@ -3772,10 +3769,7 @@ const reconcileBrowserInstance$ = command(
 );
 
 export const reconcileBrowsers$ = command(
-  async (
-    { get, set },
-    signal: AbortSignal,
-  ): Promise<BrowserReconcileResult> => {
+  async ({ set }, signal: AbortSignal): Promise<BrowserReconcileResult> => {
     const db = set(writeDb$);
     const rows = await db
       .select({
@@ -3812,19 +3806,10 @@ export const reconcileBrowsers$ = command(
       RECONCILE_BATCH_SIZE,
       signal,
     );
-    const checkedUserActions = await reconcileBrowserUserActions(
-      db,
+    const checkedUserActions = await set(
+      reconcileBrowserUserActions$,
       RECONCILE_BATCH_SIZE,
       signal,
-      async (requestTokenHash) => {
-        await get(
-          deleteS3Objects(
-            env("R2_USER_STORAGES_BUCKET_NAME"),
-            temporaryBrowserFileKeys(requestTokenHash),
-            signal,
-          ),
-        );
-      },
     );
     const expiredBrowserCleanup = await set(
       reconcileExpiredInactiveBrowsers$,
