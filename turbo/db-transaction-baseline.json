@@ -827,11 +827,6 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0392",
-      "file": "turbo/packages/db/scripts/test-hosted-publication-contraction.ts",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0393",
       "file": "turbo/packages/db/scripts/test-hosted-publication-runtime.ts",
       "owner": "<module>"
