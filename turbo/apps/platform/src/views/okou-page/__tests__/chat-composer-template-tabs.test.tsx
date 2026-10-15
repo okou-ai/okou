@@ -1,4 +1,7 @@
 import { userTemplatesContract } from "@okouai/api-contracts/contracts/user-templates";
+import { presentationTemplatesContract } from "@okouai/api-contracts/contracts/presentation-templates";
+import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
+import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -9,12 +12,57 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { mockNow } from "../../../__tests__/time.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
   AGENT_ID,
   context,
+  createUploadedTemplate,
+  expectInlineTemplate,
+  mockPresentationTemplateLibrary,
   mockTemplateChat,
   openTemplatePicker,
 } from "./chat-composer-template-gallery-test-helpers.ts";
+
+test("Illustration stays usable while uploaded presentations load after switching categories", async () => {
+  mockNow(1_785_542_400_000, context.signal);
+  mockTemplateChat();
+  const uploaded = createUploadedTemplate({
+    id: "82000000-0000-4000-a000-000000000001",
+    title: "Launch presentation",
+  });
+  mockPresentationTemplateLibrary([uploaded]);
+  const catalog = createDeferredPromise<void>(context.signal);
+  context.mocks.api(presentationTemplatesContract.list, async ({ respond }) => {
+    await catalog.promise;
+    return respond(200, [uploaded]);
+  });
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat?templatePicker=illustration`,
+    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
+  });
+  const dialog = await screen.findByRole("dialog");
+  const illustration = ILLUSTRATION_TEMPLATE_ITEMS[0]!;
+  const presentation = PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!;
+  expect(
+    within(selectedPanel(dialog, "Illustration")).getByLabelText(
+      `Select template ${illustration.title}`,
+    ),
+  ).toBeEnabled();
+  click(tabNamed(dialog, "Presentation"));
+  expect(
+    within(selectedPanel(dialog, "Presentation")).getByLabelText(
+      `Select template ${presentation.title}`,
+    ),
+  ).toBeEnabled();
+  catalog.resolve();
+  const uploadedChoice = await within(dialog).findByLabelText(
+    `Select template ${uploaded.title}`,
+  );
+  click(uploadedChoice);
+  await expectInlineTemplate(uploaded.title);
+});
 
 async function openPicker({
   customEnabled = true,
