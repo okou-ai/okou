@@ -68,6 +68,9 @@ pub async fn exercise(
     {
         return Err(io::Error::other("native recovery snapshot shape/identity is invalid").into());
     }
+    let growth_bytes = (u64::from(supplied.snapshot_memory_mb) * 1024 * 1024)
+        .checked_add(supplied.prefetch_overhead_bytes)
+        .ok_or_else(|| io::Error::other("native recovery read envelope overflow"))?;
     let copies = tempfile::tempdir_in(PathBuf::from(std::env::var("OKOU_TEST_RPC_BASE_DIR")?))?;
     let paths = [
         copies.path().join("recovery-a.bin"),
@@ -132,7 +135,6 @@ pub async fn exercise(
         let offered = tokio::time::Instant::now();
         source.pause();
         let operations = context.operations.clone();
-        let growth_bytes = u64::from(supplied.snapshot_memory_mb) * 1024 * 1024 + supplied.prefetch_overhead_bytes;
         admission = Some(tokio::spawn(async move {
             let mut request = operations.request(MemoryOperationPlan::HostIo { growth_bytes })?;
             request.try_grant().await

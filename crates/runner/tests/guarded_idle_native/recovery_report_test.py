@@ -195,6 +195,12 @@ class RecoveryReportTests(unittest.TestCase):
         self.artifacts["policy_sha256"] = hashlib.sha256(duplicate.encode()).hexdigest()
         with self.assertRaises(ValueError): self.validate()
 
+    def test_overflowing_read_envelope_is_refused_before_native_acceptance(self):
+        self.inputs["prefetch_overhead_bytes"] = 2**64-1
+        self.collector["metadata"]["native_recovery_inputs_json"] = json.dumps(self.inputs)
+        with self.assertRaisesRegex(ValueError, "cannot fit supplied bounds"):
+            self.validate()
+
 
 if __name__ == "__main__":
     unittest.main()
