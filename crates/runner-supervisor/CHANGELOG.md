@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.1](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.16.0...runner-supervisor-v0.16.1) (2026-10-15)
+
+
+### Refactoring
+
+* **runner-supervisor:** retain terminal heartbeat context ([#40199](https://github.com/okou-ai/okou/issues/40199)) ([14777d5](https://github.com/okou-ai/okou/commit/14777d5e9afee691183ca81cc6ea3dadee11e811))
+
 ## [0.16.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.15.0...runner-supervisor-v0.16.0) (2026-10-15)
 
 
