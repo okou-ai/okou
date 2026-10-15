@@ -29,7 +29,7 @@ async function prepareActor() {
     const flagsDeleted = await settleIncludingAbort(
       connectors.deleteFeatureSwitches(actor),
     );
-    await providerFixture.deleteWorkspace();
+    await providerFixture.restore();
     if (!flagsDeleted.ok) {
       throw flagsDeleted.error;
     }

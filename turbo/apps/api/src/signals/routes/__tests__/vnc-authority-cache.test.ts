@@ -1,15 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { Webhook } from "svix";
 
 import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { mockOptionalEnv } from "../../../lib/env";
-import { nowDate } from "../../../lib/time";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { webhooksClerkRoutes } from "../webhooks-clerk";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createClaimedVncApi } from "./helpers/claimed-vnc-runtime";
@@ -66,61 +59,6 @@ function notifications() {
 }
 
 describe("VNC authority and revocation", () => {
-  it.each(["user", "organization"] as const)(
-    "%s erasure notifies only matching VNC Runs and removes their authority",
-    async (kind) => {
-      const removed = await claimed.fixture();
-      const unrelated = await claimed.fixture();
-      const secret = `whsec_${Buffer.from("vnc-erasure-signing-key").toString("base64")}`;
-      mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", secret);
-      context.mocks.clerk.verifyWebhook.mockImplementation(async (request) => {
-        if (!(request instanceof Request)) {
-          throw new Error("Expected the Clerk webhook request");
-        }
-        const payload = await request.text();
-        new Webhook(secret).verify(
-          payload,
-          Object.fromEntries(request.headers),
-        );
-        const event: unknown = JSON.parse(payload);
-        return event;
-      });
-      const body = JSON.stringify({
-        type: kind === "user" ? "user.deleted" : "organization.deleted",
-        data: { id: kind === "user" ? removed.userId : removed.orgId },
-      });
-      const id = `msg_${randomUUID()}`;
-      const timestamp = nowDate();
-      context.mocks.ably.publish.mockClear();
-      await accept(
-        setupApp({ context, routes: webhooksClerkRoutes })(
-          webhookClerkContract,
-        ).post({
-          body,
-          extraHeaders: {
-            "svix-id": id,
-            "svix-timestamp": Math.floor(timestamp.getTime() / 1000).toString(),
-            "svix-signature": new Webhook(secret).sign(id, timestamp, body),
-          },
-        }),
-        [200],
-      );
-      await flushWaitUntilForTest();
-      expect(notifications()).toStrictEqual([
-        [
-          "vnc-authority-invalidated",
-          { runId: removed.runId, connectionId: null },
-        ],
-      ]);
-      expect((await check(removed)).body).toStrictEqual({
-        outcome: "unavailable",
-      });
-      expect((await check(unrelated)).body).toStrictEqual({
-        outcome: "valid",
-      });
-    },
-  );
-
   it.each(["configuration", "metadata"] as const)(
     "agent %s privacy changes revoke member Runs and preserve the owner's authority",
     async (entry) => {

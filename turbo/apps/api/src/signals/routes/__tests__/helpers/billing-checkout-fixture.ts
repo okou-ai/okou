@@ -20,7 +20,6 @@ import { createBddApi } from "./api-bdd";
 import { createAuthDeviceSupportApi } from "./api-bdd-auth-device-support";
 import { createRunsApi } from "./api-bdd-runs";
 import { publicRunOwner } from "./public-run-owner";
-import { deletePublicWorkspace } from "./public-workspace-cleanup";
 import { billingCheckoutRoutes } from "../../billing-checkout";
 import { billingStatusRoutes } from "../../billing-status";
 
@@ -272,9 +271,6 @@ export function createBillingCheckoutFixture() {
     const owner = publicRunOwner(context, actor, {
       restoreEnvironment: () => {
         restoreAccepted();
-      },
-      afterRuns: () => {
-        return deletePublicWorkspace(context, actor);
       },
     });
     return await owner.run(async () => {

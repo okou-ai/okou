@@ -25,7 +25,6 @@ import {
 import { captureConnectorExternalState } from "./public-connector-actor";
 import { publicRunOwner } from "./public-run-owner";
 import { purchaseToolCredits } from "./public-tool-actor";
-import { deletePublicWorkspace } from "./public-workspace-cleanup";
 
 export const tokenRequest = Object.freeze({
   keyName: "test-key",
@@ -323,9 +322,6 @@ export async function createClaimedImageRun(
       if (errors.length > 1) {
         throw new AggregateError(errors, "Image provider cleanup failed");
       }
-    },
-    afterRuns: () => {
-      return deletePublicWorkspace(context, actor);
     },
   });
   function run<T>(operation: () => Promise<T>): Promise<T> {

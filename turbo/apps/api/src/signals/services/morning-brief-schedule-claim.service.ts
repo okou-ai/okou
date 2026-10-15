@@ -13,7 +13,7 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
-import { and, asc, desc, eq, inArray, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
@@ -155,35 +155,15 @@ export const isCanonicalMorningBriefAutomation$ = command(
   },
 );
 
-type MorningBriefScheduleRevocationScope =
-  | {
-      readonly kind: "membership";
-      readonly orgId: string;
-      readonly userId: string;
-    }
-  | { readonly kind: "user"; readonly userId: string }
-  | { readonly kind: "organization"; readonly orgId: string };
-
-function revocationWhere(scope: MorningBriefScheduleRevocationScope): SQL {
-  if (scope.kind === "membership") {
-    return and(
-      eq(morningBriefScheduleClaims.orgId, scope.orgId),
-      eq(morningBriefScheduleClaims.ownerUserId, scope.userId),
-    ) as SQL;
-  }
-  return scope.kind === "user"
-    ? eq(morningBriefScheduleClaims.ownerUserId, scope.userId)
-    : eq(morningBriefScheduleClaims.orgId, scope.orgId);
+interface MorningBriefScheduleRevocationScope {
+  readonly kind: "membership";
+  readonly orgId: string;
+  readonly userId: string;
 }
 
 /**
- * Revoke this scope's legacy schedule occurrences inside a cleanup transaction.
- *
- * `workflows.owner_user_id` and `workflow_automations.owner_user_id` are plain
- * text with no users foreign key, and user cleanup retains every Agent, so a
- * departing member would keep this journal if an Agent cascade were the only
- * path. This runs at the same owner, organization and membership
- * revocation points the rest of Morning Brief already uses.
+ * Revoke a departing member's legacy schedule occurrences inside the existing
+ * membership cleanup transaction. Agent retention does not remove this journal.
  *
  * It scrubs owner identity rather than deleting the row. Deleting would make a
  * callback that is still in flight look like an execution this table never
@@ -207,7 +187,12 @@ export async function revokeMorningBriefScheduleOwnership(
       settledAt: revokedAt,
       updatedAt: revokedAt,
     })
-    .where(revocationWhere(scope));
+    .where(
+      and(
+        eq(morningBriefScheduleClaims.orgId, scope.orgId),
+        eq(morningBriefScheduleClaims.ownerUserId, scope.userId),
+      ),
+    );
 }
 
 /** How the caller identifies the occurrence it is settling. */

@@ -724,7 +724,6 @@ describe("CHAT-02: admission without spendable credits", () => {
       const agent = await bdd.createAgent(actor, {
         displayName: "Suspended chat agent",
       });
-      fixture.registerAgent(agent.agentId);
       await fixture.activateWithoutCredits();
       await fixture.suspend(0);
 

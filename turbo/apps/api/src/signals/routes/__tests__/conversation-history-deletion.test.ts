@@ -54,7 +54,7 @@ test("deletes a native-only completed Run with its Agent", async () => {
 });
 
 test.each(["user", "organization"] as const)(
-  "rejects a completed Runner callback after a verified Clerk %s deletion",
+  "preserves completed Run history and callback replay after Clerk %s deletion",
   async (kind) => {
     const actor = bdd.user();
     const run = await completedRun(actor);
@@ -65,14 +65,12 @@ test.each(["user", "organization"] as const)(
     });
     await webhooks.requestClerkWebhook("{}", {}, [200]);
     await flushWaitUntilForTest();
-    const late = await webhooks.requestAgentComplete(
+    const replay = await webhooks.requestAgentComplete(
       { runId: run.runId, exitCode: 0, completion: run.completion },
       run.headers,
-      [404],
+      [200],
     );
-    expect(late.body).toMatchObject({
-      error: { code: "NOT_FOUND", message: "Agent run not found" },
-    });
+    expect(replay.status).toBe(200);
   },
 );
 

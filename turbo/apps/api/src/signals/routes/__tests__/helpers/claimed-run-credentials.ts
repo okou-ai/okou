@@ -10,7 +10,6 @@ import { createChatFilesBddApi } from "./api-bdd-chat-files";
 import { createRunsApi } from "./api-bdd-runs";
 import { captureConnectorExternalState } from "./public-connector-actor";
 import { publicRunOwner } from "./public-run-owner";
-import { deletePublicWorkspace } from "./public-workspace-cleanup";
 
 /** Reuse one real, owned Runner claim per caller within the current case. */
 export function createClaimedRunCredentials(context: TestContext) {
@@ -25,10 +24,7 @@ export function createClaimedRunCredentials(context: TestContext) {
     }
   >();
   const owners = new Map<string, ReturnType<typeof publicRunOwner>[]>();
-  const workspaces = new Map<
-    string,
-    { actor: ApiTestUser; restore: () => void }
-  >();
+  const workspaces = new Map<string, { restore: () => void }>();
   beforeEach(() => {
     workspaces.clear();
     owners.clear();
@@ -55,14 +51,13 @@ export function createClaimedRunCredentials(context: TestContext) {
     let restoreAccepted = captureConnectorExternalState(context);
     let workspace = workspaces.get(identity.orgId);
     if (!workspace) {
-      const ownedWorkspace = { actor, restore: restoreAccepted };
+      const ownedWorkspace = { restore: restoreAccepted };
       workspaces.set(identity.orgId, ownedWorkspace);
       workspace = ownedWorkspace;
       // Registered before all Run owners: reverse-order teardown releases
-      // every actor's claims before deleting their shared organization.
-      onTestFinished(async () => {
+      // every actor's claims before restoring the shared external mocks.
+      onTestFinished(() => {
         ownedWorkspace.restore();
-        await deletePublicWorkspace(context, ownedWorkspace.actor);
       });
     }
     const ownedWorkspace = workspace;
@@ -152,7 +147,6 @@ export function createClaimedRunCredentials(context: TestContext) {
         throw new Error("Claim a Run before revoking its member");
       }
       // Release this actor's accepted work while its credentials still exist.
-      // The surviving administrator owns workspace cleanup after revocation.
       const auth = createAuthOrgAgentsBddApi(context);
       const actor = auth.user(identity);
       const admin =
@@ -162,7 +156,6 @@ export function createClaimedRunCredentials(context: TestContext) {
       if (!workspace) {
         throw new Error("Expected an owned workspace");
       }
-      workspace.actor = admin;
       let restoreAdmin = captureConnectorExternalState(context);
       const administrator = publicRunOwner(context, admin, {
         clockTime: now,

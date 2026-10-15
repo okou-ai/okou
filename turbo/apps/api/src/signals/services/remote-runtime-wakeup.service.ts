@@ -19,8 +19,6 @@ type Recipient = {
 };
 
 type VncLifecycleScope =
-  | { readonly kind: "user"; readonly userId: string }
-  | { readonly kind: "organization"; readonly orgId: string }
   | { readonly kind: "owner"; readonly orgId: string; readonly userId: string }
   | {
       readonly kind: "agent";
@@ -116,7 +114,7 @@ export const publishRemoteRunnerInvalidation$ = command(
   },
 );
 
-/** Owner erasure or loss of agent access retires only matching VNC Runs. */
+/** Membership removal or loss of agent access invalidates matching VNC Runs. */
 export const publishVncLifecycleInvalidation$ = command(
   async (
     { get },
@@ -132,10 +130,8 @@ export const publishVncLifecycleInvalidation$ = command(
           and(
             eq(agentRuns.status, "running"),
             isNotNull(agentRuns.runnerGroup),
-            scope.kind === "user"
-              ? undefined
-              : eq(agentRuns.orgId, scope.orgId),
-            scope.kind === "user" || scope.kind === "owner"
+            eq(agentRuns.orgId, scope.orgId),
+            scope.kind === "owner"
               ? eq(agentRuns.userId, scope.userId)
               : undefined,
             scope.kind === "agent"

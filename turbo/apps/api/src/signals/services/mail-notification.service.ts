@@ -389,18 +389,11 @@ export function mailNotification(owner: Owner, id: string) {
 }
 
 export const eraseMailNotifications$ = command(
-  async (
-    { set },
-    owner: { readonly userId?: string; readonly orgId?: string },
-    signal: AbortSignal,
-  ) => {
-    if (!owner.userId && !owner.orgId) {
-      throw new Error("Mail notification erasure requires an owner");
-    }
+  async ({ set }, owner: Owner, signal: AbortSignal) => {
     const db = set(writeDb$);
     const scope = and(
-      owner.userId ? eq(mailNotifications.userId, owner.userId) : undefined,
-      owner.orgId ? eq(mailNotifications.orgId, owner.orgId) : undefined,
+      eq(mailNotifications.userId, owner.userId),
+      eq(mailNotifications.orgId, owner.orgId),
     );
     const erasedOutbox = db.$with("erased_email_outbox").as(
       db

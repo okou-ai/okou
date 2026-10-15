@@ -297,8 +297,8 @@ export const readStoredBuiltinConnectorRuntimeSnapshot$ = command(
   async (
     { get },
     connectorSlugs: readonly ConnectorSlug[],
-    // Owner cleanup checks cancellation before classification; account deletion
-    // retains its enclosing post-read check by omitting this optional signal.
+    // Account deletion retains its enclosing post-read cancellation check
+    // by omitting this optional signal.
     signal?: AbortSignal,
   ): Promise<ConnectorRuntimeSelection | null> => {
     const result = await settle(
@@ -1103,7 +1103,6 @@ interface DeleteBuiltinConnectorLocalStateArgs {
   readonly userId: string;
   readonly connectorSlug: string;
   readonly sourceId: string;
-  readonly snapshot?: ConnectorRuntimeSelection | null;
 }
 
 interface PendingConnectorAutomationCleanup {
@@ -1345,10 +1344,9 @@ export const deleteBuiltinConnectorLocalState$ = command(
     signal: AbortSignal,
   ): Promise<DeleteBuiltinConnectorLocalStateResult> => {
     const writeDb = set(writeDb$);
-    // A caller-provided snapshot, including an unavailable `null`, is reused.
-    const snapshot = await (args.snapshot === undefined
-      ? set(readStoredBuiltinConnectorRuntimeSnapshot$, [args.connectorSlug])
-      : args.snapshot);
+    const snapshot = await set(readStoredBuiltinConnectorRuntimeSnapshot$, [
+      args.connectorSlug,
+    ]);
     signal.throwIfAborted();
     const featureSwitchOverrides =
       snapshot === null

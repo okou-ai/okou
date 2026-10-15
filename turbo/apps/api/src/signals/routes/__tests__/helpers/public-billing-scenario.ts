@@ -4,11 +4,8 @@ import { now, withMockNowForTest } from "../../../../lib/time";
 import { env, mockEnv } from "../../../../lib/env";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { settleIncludingAbort } from "../../../utils";
-import { createBddApi } from "./api-bdd";
 import { captureConnectorExternalState } from "./public-connector-actor";
 import { createFixtureOperationOwner } from "./fixture-operation-owner";
-import { deletePublicWorkspace } from "./public-workspace-cleanup";
-import type { BillingOrgFixture } from "./billing-checkout-fixture";
 
 /** Keep the same provider response cursor when an accepted request outlives afterEach. */
 export function retainBillingSequence<Result>(
@@ -107,7 +104,6 @@ function captureBillingState(context: TestContext) {
 
 /** Register a case before its first ordinary write; no business-row cleanup. */
 export function createPublicBillingScenario(context: TestContext) {
-  const workspaces = new Map<string, BillingOrgFixture>();
   const releases: (() => void)[] = [];
   const stripeEvents = new Map<string, { event: object; remaining: number }>();
   const clerkEvents = new Map<string, { event: object; remaining: number }>();
@@ -149,15 +145,6 @@ export function createPublicBillingScenario(context: TestContext) {
           }
         }
         await settle(flushWaitUntilForTest);
-        for (const fixture of workspaces.values()) {
-          await settle(() => {
-            return deletePublicWorkspace(
-              context,
-              createBddApi(context).user(fixture),
-            );
-          });
-        }
-        await settle(flushWaitUntilForTest);
         if (errors.length) {
           throw new AggregateError(errors, "Billing scenario cleanup failed");
         }
@@ -191,10 +178,6 @@ export function createPublicBillingScenario(context: TestContext) {
         }
         return consumeEvent(clerkEvents, await request.clone().text());
       });
-    },
-    own<T extends BillingOrgFixture>(fixture: T): T {
-      workspaces.set(fixture.orgId, fixture);
-      return fixture;
     },
     run<T>(operation: () => Promise<T>): Promise<T> {
       return owner.run(() => {

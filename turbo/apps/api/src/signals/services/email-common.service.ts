@@ -718,7 +718,7 @@ const completeOutboxItem$ = command(
                 db.select({ id: completedOutbox.id }).from(completedOutbox),
               ),
               // Finish the outbox winner before taking receipt row locks,
-              // matching cleanup and erasure order.
+              // matching expiry cleanup order.
               gte(db.select({ count: count() }).from(completedOutbox), 0),
             ),
           )
@@ -838,7 +838,7 @@ export const cleanupExpiredEmailOutbox$ = command(
               db.select({ id: expiredOutbox.id }).from(expiredOutbox),
             ),
             // Exhaust the outbox DELETE before locking receipts, matching
-            // completion and erasure order rather than relying on CTE order.
+            // completion order rather than relying on CTE order.
             gte(db.select({ count: count() }).from(expiredOutbox), 0),
           ),
         )

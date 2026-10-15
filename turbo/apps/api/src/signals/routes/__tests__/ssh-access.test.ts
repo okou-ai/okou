@@ -1,4 +1,3 @@
-import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
 import { createClaimedSshRuntimeApi } from "./helpers/claimed-ssh-runtime";
 import { inlineSshKey } from "./helpers/ssh-credential";
 import { randomUUID } from "node:crypto";
@@ -65,16 +64,11 @@ describe("live chat SSH Run inventory", () => {
     runnerHeaders: { authorization: `Bearer vm0_official_${"c".repeat(64)}` },
     authenticate,
   });
-  const selectedOwners = new Map<string, { userId: string; orgId: string }>();
   const claimedRunCleanups: (() => Promise<void>)[] = [];
 
   afterEach(async () => {
     await publicRuns.cleanup();
     await ordinary.cleanup();
-    for (const owner of selectedOwners.values()) {
-      await deletePublicWorkspace(context, createBddApi(context).user(owner));
-    }
-    selectedOwners.clear();
     for (const cleanup of claimedRunCleanups.splice(0)) {
       await cleanup();
       await flushWaitUntilForTest();
@@ -87,7 +81,6 @@ describe("live chat SSH Run inventory", () => {
       orgId: `org_ssh_${randomUUID()}`,
     },
   ) {
-    selectedOwners.set(owner.orgId, owner);
     mockEnv("OFFICIAL_RUNNER_SECRET", "c".repeat(64));
     const run = await publicRuns.start(owner);
     const claimed = await publicRuns.claim(run, {

@@ -1,4 +1,9 @@
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
+import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
+import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
+import { sharedThreadRoutes } from "../shared-threads";
+import { workflowAutomationsRoutes } from "../workflow-automations";
+import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { chatThreadRoutes } from "../chat-threads";
@@ -586,12 +591,17 @@ function concurrencySubscription(args: {
   };
 }
 
-function acceptGithubGrantRevocations(): void {
+function acceptGithubGrantRevocations() {
+  let revocations = 0;
   server.use(
     http.delete("https://api.github.com/applications/:clientId/grant", () => {
+      revocations += 1;
       return new HttpResponse(null, { status: 204 });
     }),
   );
+  return () => {
+    return revocations;
+  };
 }
 
 describe("WHCB-01: third-party webhook verification boundaries", () => {
@@ -6185,8 +6195,8 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
   });
 });
 
-describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
-  it("cleans up organization state after a verified organization.deleted event", async () => {
+describe("WHCB-08: Clerk deletion webhooks stop execution and retain account history", () => {
+  it("retains organization state and OAuth sessions after a verified organization.deleted event", async () => {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     const connectors = createConnectorBddApi(context);
@@ -6195,7 +6205,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-    runs.configureRunnerGroup();
+    const runnerGroup = runs.configureRunnerGroup();
     acceptGithubGrantRevocations();
     mockSlackConnectorOAuth();
     const customOAuthProvider = mockCustomConnectorOAuth2Provider(context);
@@ -6242,6 +6252,8 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       prompt: "survive until teardown",
     });
     expect(run.status).toBe("pending");
+    await runs.heartbeatRunner(runnerGroup);
+    const claim = await runs.claimRunnerJob(run.runId);
     await gh.installGithubApp(actor, agent.agentId, {
       oauthCode: {
         code: `whcb08a-${randomUUID().slice(0, 8)}`,
@@ -6258,8 +6270,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       runs.listUserPermissionGrants(actor, agent.agentId),
     ).resolves.toHaveLength(1);
 
-    // Billing cleanup completes before a failing org S3 listing aborts the
-    // remaining teardown without surfacing in the webhook response.
+    // Billing actions remain independent of historical data retention.
     context.mocks.stripe.subscriptions.list
       .mockResolvedValueOnce({
         data: [
@@ -6286,7 +6297,6 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       data: [],
       has_more: false,
     });
-    context.mocks.s3.send.mockRejectedValueOnce(new Error("R2 unavailable"));
     api.verifyNextClerkWebhook({
       type: "organization.deleted",
       data: { id: orgOf(actor) },
@@ -6303,44 +6313,26 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         },
       );
     });
-    await runs.requestReadRun(actor, run.runId, [404]);
-    await expect(bdd.listAgents(actor)).resolves.toStrictEqual([]);
-
-    await waitForExpectation(async () => {
-      const listed = await connectors.listBuiltinConnectors(actor);
-      expect(listed.connectors).not.toContainEqual(
-        expect.objectContaining({
-          type: "openai",
-          connectionStatus: "connected",
-        }),
-      );
-    });
-    await waitForExpectation(async () => {
-      await expect(
-        connectors.listCustomConnectors(actor),
-      ).resolves.toStrictEqual([]);
-    });
+    await expect(
+      runs.readRunnerCancellation(claim.sandboxToken, run.runId, runnerGroup),
+    ).resolves.toMatchObject({ state: "present", mode: "hard" });
+    // Org-private catalog reads require a live organization. The original
+    // Runner and provider callbacks remain legitimate retention observers.
     await expect(
       connectors.completeOauthCallbackResult("slack", {
-        code: "org-teardown-deleted-state",
+        code: "org-retained-state",
         state: builtinOauthState,
       }),
     ).resolves.toMatchObject({
-      body: {
-        status: "error",
-        message: "Invalid state - please try again",
-      },
+      body: { status: "success" },
     });
     await expect(
       connectors.completeCustomConnectorOAuth2CallbackResult({
-        code: "org-teardown-deleted-custom-state",
+        code: "org-retained-custom-state",
         state: customOauthState,
       }),
     ).resolves.toMatchObject({
-      body: {
-        status: "error",
-        message: "Invalid OAuth state - please try again",
-      },
+      body: { status: "success" },
     });
     // An org without a live subscription skips the Stripe update.
     const updateCalls =
@@ -6355,111 +6347,10 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
     });
     await api.requestClerkWebhook("{}", {}, [200]);
     await flushWaitUntilForTest();
-    await expect(
-      (async () => {
-        const agents = await bdd.listAgents(plainActor);
-        return agents.length;
-      })(),
-    ).resolves.toBe(0);
+    // Do not resurrect the deleted organization to observe its private data.
     expect(context.mocks.stripe.subscriptions.update.mock.calls).toHaveLength(
       updateCalls,
     );
-  });
-
-  it("cancels trialing Stripe subscriptions and deletes an empty org after a verified user.deleted event", async () => {
-    const bdd = createBddApi(context);
-    const runs = createRunsApi(context);
-    api.configureClerkWebhookSecret();
-    bdd.acceptAgentStorageWrites();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-
-    const actor = bdd.user();
-    const granted = await runs.grantProEntitlement(actor);
-    const suffix = randomUUID().slice(0, 8);
-    const extraSubscriptionId = `sub_bdd_extra_${suffix}`;
-    const nonRenewingSubscriptionId = `sub_bdd_nonrenewing_${suffix}`;
-    context.mocks.stripe.subscriptions.list
-      .mockResolvedValueOnce({
-        data: [
-          {
-            id: granted.subscriptionId,
-            status: "active",
-            cancel_at_period_end: false,
-          },
-          {
-            id: nonRenewingSubscriptionId,
-            status: "active",
-            cancel_at_period_end: true,
-          },
-        ],
-        has_more: true,
-      })
-      .mockResolvedValueOnce({
-        data: [
-          {
-            id: extraSubscriptionId,
-            status: "trialing",
-            cancel_at_period_end: true,
-          },
-        ],
-        has_more: false,
-      });
-    context.mocks.stripe.subscriptions.update.mockResolvedValue({});
-    context.mocks.s3.send.mockResolvedValue({});
-
-    api.verifyNextClerkWebhook({
-      type: "user.deleted",
-      data: { id: actor.userId },
-    });
-    const response = await api.requestClerkWebhook("{}", {}, [200]);
-    expect(response.body).toBe("OK");
-
-    await flushWaitUntilForTest();
-    await waitForExpectation(() => {
-      expect(context.mocks.stripe.subscriptions.list).toHaveBeenNthCalledWith(
-        1,
-        {
-          customer: granted.customerId,
-          status: "all",
-          limit: 100,
-        },
-      );
-      expect(context.mocks.stripe.subscriptions.list).toHaveBeenNthCalledWith(
-        2,
-        {
-          customer: granted.customerId,
-          status: "all",
-          limit: 100,
-          starting_after: nonRenewingSubscriptionId,
-        },
-      );
-      expect(context.mocks.stripe.subscriptions.update).toHaveBeenCalledTimes(
-        1,
-      );
-      expect(context.mocks.stripe.subscriptions.update).toHaveBeenNthCalledWith(
-        1,
-        granted.subscriptionId,
-        { cancel_at_period_end: true },
-      );
-      expect(context.mocks.stripe.subscriptions.cancel).toHaveBeenCalledTimes(
-        1,
-      );
-      expect(context.mocks.stripe.subscriptions.cancel).toHaveBeenCalledWith(
-        extraSubscriptionId,
-      );
-    });
-    // Once the empty org is deleted, its billing metadata is gone: the
-    // billing status read falls back to the unprovisioned defaults instead
-    // of the previously granted pro subscription.
-    const billing = createBillingMediaApi(context);
-    await flushWaitUntilForTest();
-    await expect(
-      (async () => {
-        const status = await billing.readBillingStatus(actor);
-        return [status.tier, status.subscriptionStatus, status.hasSubscription];
-      })(),
-    ).resolves.toStrictEqual(["limited-free-1", null, false]);
   });
 
   it("preserves org data when a deleted user leaves an uncached Clerk member", async () => {
@@ -6493,20 +6384,17 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
     expect(response.body).toBe("OK");
 
     await flushWaitUntilForTest();
-    await waitForExpectation(() => {
-      expect(
-        context.mocks.clerk.organizations.getOrganizationMembershipList,
-      ).toHaveBeenCalledWith({
-        organizationId: orgId,
-        limit: 100,
-        offset: 0,
-      });
-    });
+    expect(
+      context.mocks.clerk.organizations.getOrganizationMembershipList,
+    ).not.toHaveBeenCalled();
+    expect(
+      context.mocks.clerk.organizations.deleteOrganization,
+    ).not.toHaveBeenCalled();
     expect(context.mocks.stripe.subscriptions.list).not.toHaveBeenCalled();
     expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
     expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
-    // The org survives because the remaining Clerk member keeps it non-empty:
-    // its billing entitlement is still readable by the surviving member.
+    // No empty-org discovery is performed; the surviving member can still
+    // observe the unchanged organization billing entitlement.
     const billing = createBillingMediaApi(context);
     const preserved = await billing.readBillingStatus(peer);
     expect(preserved.tier).toBe("pro");
@@ -6514,59 +6402,182 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
     expect(preserved.subscriptionStatus).toBe("active");
   });
 
-  it("does not update a Stripe subscription already canceled upstream", async () => {
+  it("revokes deleted-user pending inputs without launching them when capacity returns and retains shared history", async () => {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
+    const chat = createChatFilesBddApi(context);
     api.configureClerkWebhookSecret();
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-
-    const actor = bdd.user();
-    const granted = await runs.grantProEntitlement(actor);
-    context.mocks.stripe.subscriptions.list.mockResolvedValueOnce({
-      data: [
-        {
-          id: granted.subscriptionId,
-          status: "canceled",
-          cancel_at_period_end: false,
-        },
-      ],
-      has_more: false,
+    runs.configureRunnerGroup();
+    mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
+    const doomed = bdd.user();
+    await runs.grantProEntitlement(doomed);
+    await runs.ensurePersonalSubscriptionModel(doomed);
+    const agent = await bdd.createAgent(doomed, {
+      displayName: "Retained queued history",
+      visibility: "public",
     });
-    context.mocks.stripe.subscriptions.update.mockResolvedValue({});
-    context.mocks.s3.send.mockResolvedValue({});
-
+    const active = [];
+    for (let index = 0; index < 3; index++) {
+      active.push(
+        await runs.createThreadRun(doomed, {
+          agentId: agent.agentId,
+          prompt: `Previously started input ${index}`,
+        }),
+      );
+    }
+    await sendChatInputAtCapacity(
+      doomed,
+      agent.agentId,
+      "Never execute after deletion",
+    );
+    const first = active[0];
+    if (!first) {
+      throw new Error("Expected a publicly started Run");
+    }
+    const { events } = await chat.listThreadEvents(doomed, first.threadId);
+    const prompt = events.find((event) => {
+      return event.eventType === "input.prompt" && event.runId === first.runId;
+    });
+    if (!prompt) {
+      throw new Error("Expected retained history to share");
+    }
+    createRouteMocks(context).clerk.session(
+      doomed.userId,
+      doomed.orgId,
+      doomed.orgRole,
+    );
+    const shares = setupApp({ context, routes: sharedThreadRoutes })(
+      sharedThreadsContract,
+    );
+    const shared = await accept(
+      shares.create({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { threadId: first.threadId },
+        body: { eventIds: [prompt.id] },
+      }),
+      [201],
+    );
+    const snapshot = await accept(
+      shares.get({ params: { id: shared.body.id } }),
+      [200],
+    );
+    const peer = bdd.user({ orgId: orgOf(doomed), orgRole: "org:member" });
+    await bdd.completeOnboarding(peer);
+    await runs.ensurePersonalSubscriptionModel(peer);
+    const peerThread = await sendChatInputAtCapacity(
+      peer,
+      agent.agentId,
+      "Surviving peer queued input",
+    );
     api.verifyNextClerkWebhook({
       type: "user.deleted",
-      data: { id: actor.userId },
+      data: { id: doomed.userId },
     });
-    const response = await api.requestClerkWebhook("{}", {}, [200]);
-    expect(response.body).toBe("OK");
-
-    await flushWaitUntilForTest();
-    await waitForExpectation(() => {
-      expect(context.mocks.stripe.subscriptions.list).toHaveBeenCalledWith({
-        customer: granted.customerId,
-        status: "all",
-        limit: 100,
-      });
-      expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
-      expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
+    await api.requestClerkWebhook("{}", {}, [200]);
+    const peerRunId = await waitForPickedThreadRun(peer, peerThread);
+    await runs.createThreadRun(peer, {
+      agentId: agent.agentId,
+      prompt: "New peer input after stop",
     });
-    // The empty org is still deleted: billing status falls back to the
-    // unprovisioned defaults once the org metadata is cleaned up.
-    const billing = createBillingMediaApi(context);
     await flushWaitUntilForTest();
-    await expect(
-      (async () => {
-        const status = await billing.readBillingStatus(actor);
-        return [status.tier, status.subscriptionStatus, status.hasSubscription];
-      })(),
-    ).resolves.toStrictEqual(["limited-free-1", null, false]);
+    const queue = await runs.readRunQueue(peer);
+    expect(queue.body.concurrency.active).toBe(2);
+    await expect(runs.readRun(peer, peerRunId)).resolves.toMatchObject({
+      status: "pending",
+    });
+    expect(queue.body.concurrency.memberUsage).toContainEqual(
+      expect.objectContaining({ userId: peer.userId, active: 2 }),
+    );
+    expect(
+      queue.body.concurrency.memberUsage
+        .filter((member) => {
+          return member.userId === doomed.userId;
+        })
+        .reduce((total, member) => {
+          return total + member.active;
+        }, 0),
+    ).toBe(0);
+    const retained = await accept(
+      shares.get({ params: { id: shared.body.id } }),
+      [200],
+    );
+    expect(retained.body).toStrictEqual(snapshot.body);
   });
 
-  describe("verified user.deleted cleanup", () => {
+  it("disarms only the deleted user's automations across organizations and preserves their configuration", async () => {
+    const bdd = createBddApi(context);
+    const runs = createRunsApi(context);
+    const workflows = createWorkflowsBddApi(context);
+    const mocks = createRouteMocks(context);
+    api.configureClerkWebhookSecret();
+    bdd.acceptAgentStorageWrites();
+    const doomed = bdd.user();
+    const otherWorkspace = bdd.user({ userId: doomed.userId });
+    const auditor = bdd.user({ orgId: orgOf(doomed), orgRole: "org:admin" });
+    const otherAuditor = bdd.user({
+      orgId: orgOf(otherWorkspace),
+      orgRole: "org:admin",
+    });
+    const automations = [];
+    for (const actor of [doomed, otherWorkspace, auditor]) {
+      await runs.grantProEntitlement(actor, { tier: "team" });
+      const agent = await workflows.createAgent(actor);
+      const workflowId = await workflows.createWorkflow(actor, {
+        agentId: agent.agentId,
+        name: `retained-automation-${randomUUID().slice(0, 8)}`,
+      });
+      mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+      for (const body of [
+        { schedule: { type: "loop", intervalSeconds: 3600 } },
+        { kind: "event", eventType: "webhook-received" },
+      ] as const) {
+        const created = await accept(
+          setupApp({ context, routes: workflowAutomationsRoutes })(
+            workflowAutomationsContract,
+          ).create({
+            headers: { authorization: "Bearer clerk-session" },
+            params: { workflowId },
+            body,
+          }),
+          [201],
+        );
+        expect(created.body.enabled).toBeTruthy();
+        automations.push({ actor, automation: created.body });
+      }
+    }
+    await flushWaitUntilForTest();
+    for (const entry of automations) {
+      mocks.clerk.session(
+        entry.actor.userId,
+        entry.actor.orgId,
+        entry.actor.orgRole,
+      );
+      entry.automation = await workflows.readAutomation(entry.automation.id);
+    }
+    api.verifyNextClerkWebhook({
+      type: "user.deleted",
+      data: { id: doomed.userId },
+    });
+    await api.requestClerkWebhook("{}", {}, [200]);
+    await flushWaitUntilForTest();
+    for (const { actor, automation } of automations) {
+      const observer = actor.orgId === auditor.orgId ? auditor : otherAuditor;
+      mocks.clerk.session(observer.userId, observer.orgId, observer.orgRole);
+      const retained = await workflows.readAutomation(automation.id);
+      expect(retained).toStrictEqual({
+        ...automation,
+        enabled: actor.userId !== doomed.userId,
+      });
+    }
+    expect(
+      context.mocks.clerk.organizations.deleteOrganization,
+    ).not.toHaveBeenCalled();
+  });
+
+  describe("verified user.deleted retention", () => {
     async function prepareUserDeletion() {
       const bdd = createBddApi(context);
       const runs = createRunsApi(context);
@@ -6586,7 +6597,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       });
       const doomedAgent = await bdd.createAgent(doomed, {
         displayName: "BDD Doomed Agent",
-        visibility: "private",
+        visibility: "public",
       });
       return { runs, runnerGroup, doomed, peer, sharedAgent, doomedAgent };
     }
@@ -6594,8 +6605,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
     async function startUserDeletion(
       fixture: Awaited<ReturnType<typeof prepareUserDeletion>>,
     ) {
-      // The external membership lookup must still see the surviving peer,
-      // independently of which actor made the last setup request.
+      // A peer remains a real observer; deletion must not discover empty orgs.
       context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
         {
           data: [{ publicUserData: { userId: fixture.peer.userId } }],
@@ -6614,7 +6624,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
     ) {
       // User deletion retains the Agents the deleted user owned.
       await createBddApi(context).requestReadAgent(
-        fixture.doomed,
+        fixture.peer,
         fixture.doomedAgent.agentId,
         [200],
       );
@@ -6896,7 +6906,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
 
     it("retains the deleted user's Agents and another member's thread and run on them", async () => {
       const fixture = await prepareUserDeletion();
-      const { runs, doomed, peer, doomedAgent } = fixture;
+      const { runs, runnerGroup, doomed, peer, doomedAgent } = fixture;
       const bdd = createBddApi(context);
       const chat = createChatFilesBddApi(context);
       const doomedPublicAgent = await bdd.createAgent(doomed, {
@@ -6917,23 +6927,12 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         prompt: "peer run on the deleted user's Agent",
         model: "claude-sonnet-5-5",
       });
-      const doomedThread = await chat.createThread(doomed, {
-        agentId: doomedAgent.agentId,
-        title: "BDD doomed private thread",
-      });
-      await chat.patchThread(doomed, doomedThread.id, {
-        draftUserMessage: {
-          version: 1,
-          parts: [{ type: "text", text: "unsent doomed draft" }],
-        },
-      });
-      await expect(chat.listThreadDrafts(doomed)).resolves.toContain(
-        doomedThread.id,
-      );
       const doomedRun = await runs.createThreadRun(doomed, {
         agentId: doomedAgent.agentId,
-        prompt: "doomed run on the private Agent",
+        prompt: "doomed run on the retained Agent",
       });
+      await runs.heartbeatRunner(runnerGroup);
+      const claim = await runs.claimRunnerJob(doomedRun.runId);
 
       await startUserDeletion(fixture);
       await flushWaitUntilForTest();
@@ -6952,19 +6951,23 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       });
       await chat.requestReadThread(peer, peerThread.id, [200]);
       await runs.requestReadRun(peer, peerRun.runId, [200]);
-      // The deleted user's own thread, draft and run are removed.
-      await chat.requestReadThread(doomed, doomedThread.id, [404]);
-      await runs.requestReadRun(doomed, doomedRun.runId, [404]);
-      await expect(chat.listThreadDrafts(doomed)).resolves.toStrictEqual([]);
+      // The original Runner remains a real observer after identity deletion.
+      await expect(
+        runs.readRunnerCancellation(
+          claim.sandboxToken,
+          doomedRun.runId,
+          runnerGroup,
+        ),
+      ).resolves.toMatchObject({ state: "present", mode: "hard" });
+      // Private drafts cannot be audited by resurrecting the deleted session.
     });
 
-    it("removes deleted-user integration links while preserving the shared organization", async () => {
+    it("does not revoke the deleted user's GitHub grant while preserving the shared organization", async () => {
       const fixture = await prepareUserDeletion();
       const { doomed, sharedAgent } = fixture;
       const gh = createGithubBddApi(context);
-      acceptGithubGrantRevocations();
-      // The peer's compose remains the installation's default agent; only the
-      // deleted user's link should disappear.
+      const revocations = acceptGithubGrantRevocations();
+      // The GitHub provider is a surviving observer of credential retention.
       await gh.installGithubApp(doomed, sharedAgent.agentId, {
         oauthCode: {
           code: `whcb08b-${randomUUID().slice(0, 8)}`,
@@ -6975,7 +6978,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
 
       await startUserDeletion(fixture);
       await flushWaitUntilForTest();
-      expect((await gh.readInstallation(doomed)).isConnected).toBeFalsy();
+      expect(revocations()).toBe(0);
       await expectSurvivingOrganization(fixture);
     });
   });

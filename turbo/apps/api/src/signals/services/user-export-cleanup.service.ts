@@ -237,7 +237,6 @@ const abortCleanupUpload$ = command(
 export const cleanupDurableUserExports$ = command(
   async (
     { set },
-    args: { readonly jobId?: string },
     signal: AbortSignal,
   ): Promise<{ readonly processed: number }> => {
     const db = set(writeDb$);
@@ -247,14 +246,7 @@ export const cleanupDurableUserExports$ = command(
       .select({ id: backgroundJobs.id })
       .from(backgroundJobs)
       .leftJoin(exportJobs, eq(exportJobs.id, backgroundJobs.id))
-      .where(
-        and(
-          cleanupEligibility(cutoff),
-          args.jobId === undefined
-            ? undefined
-            : eq(backgroundJobs.id, args.jobId),
-        ),
-      )
+      .where(cleanupEligibility(cutoff))
       .orderBy(asc(backgroundJobs.updatedAt), asc(backgroundJobs.id))
       .limit(CLEANUP_JOB_LIMIT);
     signal.throwIfAborted();
