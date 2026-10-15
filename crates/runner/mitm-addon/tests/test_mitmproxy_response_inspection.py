@@ -103,6 +103,9 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
     pulse = asyncio.Event()
     inspection_drained = asyncio.Event()
     release_hook = asyncio.Event()
+    hook_continued = asyncio.Event()
+    release_continuation = asyncio.Event()
+    inspection_completed = asyncio.Event()
     loop = asyncio.get_running_loop()
     heartbeat = loop.create_future()
     provider_done = loop.create_future()
@@ -145,6 +148,7 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
             if read_index == len(first_chunks):
                 # The heartbeat releases the second member during inspection.
                 # Its read must wait for all first-member work or cancellation.
+                assert inspection_completed.is_set()
                 if cancel_inspection:
                     if response_kind == "x":
                         assert flow.metadata[metadata_keys.X_JSON_STATE]["body_parsed"] is False
@@ -178,6 +182,16 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
         stream.server_state = stream.state_stream_response_body
 
         class Handler(ConnectionHandler):
+            async def server_event(self, event):
+                await super().server_event(event)
+                if (
+                    not cancel_inspection
+                    and isinstance(event, events.HookCompleted)
+                    and isinstance(event.command, mitmproxy_compat.ResponseInspectionHook)
+                ):
+                    hook_continued.set()
+                    await release_continuation.wait()
+
             async def handle_hook(self, hook):
                 if isinstance(hook, mitmproxy_compat.ResponseInspectionHook):
 
@@ -209,7 +223,11 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
                 task = asyncio.current_task()
                 assert task is not None
                 hook_tasks.append(task)
-                await super().hook_task(hook)
+                try:
+                    await super().hook_task(hook)
+                finally:
+                    if isinstance(hook, mitmproxy_compat.ResponseInspectionHook):
+                        inspection_completed.set()
 
         handler = Handler(context)
         handler.layer = _ResponsePeerLayer(context, stream)
@@ -245,6 +263,12 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
                     assert read_sizes == [65535] * len(first_chunks)
                     assert not reader_task.done()
                     release_hook.set()
+                    # HookCompleted dispatch has run, but its continuation has
+                    # not returned to the checkpoint owner yet.
+                    await hook_continued.wait()
+                    assert read_sizes == [65535] * len(first_chunks)
+                    assert not reader_task.done()
+                    release_continuation.set()
                 await asyncio.shield(reader_task)
 
             try:
@@ -262,6 +286,9 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
                         f"pending={response_streaming.has_pending_response_inspection(flow)}, "
                         f"parser_done={inspection_drained.is_set()}, "
                         f"hook_released={release_hook.is_set()}, reads={returned_sizes}, "
+                        f"hook_continued={hook_continued.is_set()}, "
+                        f"continuation_released={release_continuation.is_set()}, "
+                        f"inspection_completed={inspection_completed.is_set()}, "
                         f"hooks={[(task.get_name(), task.done()) for task in hook_tasks]}"
                     ) from error
                 await asyncio.wait_for(terminal_done, timeout=5)
@@ -271,6 +298,7 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
                 usage.flush_usage_events(trigger="test")
             finally:
                 release_hook.set()
+                release_continuation.set()
                 reader_task.cancel()
                 await asyncio.gather(reader_task, return_exceptions=True)
                 for task in hook_tasks:
