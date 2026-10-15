@@ -1214,25 +1214,46 @@ describe("Debug Morning Brief", () => {
             emailAddresses: [{ id: "primary", emailAddress: actor.email }],
           },
         ]);
+        const notifications = setupApp({
+          context,
+          routes: notificationsRoutes,
+        })(notificationsContract);
+        const notificationHeaders = {
+          authorization: `Bearer ${okouTokenFromClaim(claim)}`,
+        };
+        const brief = {
+          kind: "morning-brief" as const,
+          to: "me" as const,
+          subject: "Debug Morning Brief",
+          text: "Verified briefing.",
+        };
         const notification = await accept(
-          setupApp({ context, routes: notificationsRoutes })(
-            notificationsContract,
-          ).mail({
-            headers: { authorization: `Bearer ${okouTokenFromClaim(claim)}` },
-            body: {
-              kind: "morning-brief",
-              to: "me",
-              subject: "Debug Morning Brief",
-              text: "Verified briefing.",
-              idempotencyKey: `debug-brief:${requestId}`,
-            },
-          }),
+          notifications.mail({ headers: notificationHeaders, body: brief }),
           [200],
         );
         expect(notification.body).toMatchObject({
           status: "queued",
           deduplicated: false,
         });
+        // The automation event, not an agent-supplied key, identifies the email.
+        expect(
+          (
+            await accept(
+              notifications.mail({
+                headers: notificationHeaders,
+                body: { ...brief, idempotencyKey: `debug-brief:${requestId}` },
+              }),
+              [200],
+            )
+          ).body,
+        ).toStrictEqual({ ...notification.body, deduplicated: true });
+        await accept(
+          notifications.mail({
+            headers: notificationHeaders,
+            body: { ...brief, text: "A regenerated briefing." },
+          }),
+          [409],
+        );
         expect(claim.prompt.split("\n")[0]).toBe(`/${name}`);
         expect(claim.prompt).toContain("morning-brief-debug");
         expect(claim.appendSystemPrompt).not.toContain("okou suggestion");
@@ -1310,6 +1331,50 @@ describe("Debug Morning Brief", () => {
         throw new Error("Expected a debug run and daily anchor");
       }
       const debugClaim = await runs.claimRunnerJob(debugRunId);
+      mockEnv("RESEND_API_KEY", "test-key");
+      mockEnv("RESEND_FROM_DOMAIN", "okou.io");
+      mockClerkUsers(context, [
+        {
+          id: actor.userId,
+          primaryEmailAddressId: "primary",
+          emailAddresses: [{ id: "primary", emailAddress: actor.email }],
+        },
+      ]);
+      // Run-token requests re-read membership once the mocked schedule clock
+      // has outlived the cached member role.
+      context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
+        {
+          data: [
+            {
+              role: actor.orgRole ?? "org:member",
+              organization: { id: actor.orgId },
+            },
+          ],
+        },
+      );
+      const sendBrief = async (claim: typeof debugClaim) => {
+        return (
+          await accept(
+            setupApp({ context, routes: notificationsRoutes })(
+              notificationsContract,
+            ).mail({
+              headers: { authorization: `Bearer ${okouTokenFromClaim(claim)}` },
+              body: {
+                kind: "morning-brief",
+                to: "me",
+                subject: "Morning Brief",
+                text: "Verified briefing.",
+              },
+            }),
+            [200],
+          )
+        ).body;
+      };
+      const debugBrief = await sendBrief(debugClaim);
+      expect(debugBrief).toMatchObject({
+        status: "queued",
+        deduplicated: false,
+      });
       await withMockNowForTest(new Date(automation.nextRunAt), async () => {
         await executeAutomationCron();
         await flushWaitUntilForTest();
@@ -1339,6 +1404,15 @@ describe("Debug Morning Brief", () => {
           throw new Error("Expected the queued scheduled run");
         }
         const scheduledClaim = await runs.claimRunnerJob(scheduledRunId);
+        // Each automation event sends its own email, even with identical content.
+        const scheduledBrief = await sendBrief(scheduledClaim);
+        expect(scheduledBrief).toMatchObject({
+          status: "queued",
+          deduplicated: false,
+        });
+        expect(scheduledBrief.notificationId).not.toBe(
+          debugBrief.notificationId,
+        );
         await createChatEventsFixture(context).completeChatRunOk(
           scheduledRunId,
           { authorization: `Bearer ${scheduledClaim.sandboxToken}` },

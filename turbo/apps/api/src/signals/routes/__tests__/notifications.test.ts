@@ -129,7 +129,7 @@ describe("agent mail notifications", () => {
         headers: fixture.headers,
         body: { ...input, kind: "morning-brief" },
       }),
-      [409],
+      [403],
     );
   });
 

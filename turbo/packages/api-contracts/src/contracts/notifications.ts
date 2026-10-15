@@ -18,26 +18,45 @@ const nonblank = (limit: number) => {
   );
 };
 
-export const notifyMailBodySchema = z
-  .object({
-    to: z.literal("me").default("me"),
-    kind: z.enum(["notification", "morning-brief"]).default("notification"),
-    subject: nonblank(180).refine(
-      (value) => {
-        return !/[\r\n]/u.test(value);
-      },
-      {
-        message: "Subject must not contain line breaks",
-      },
-    ),
-    text: nonblank(8000),
-    idempotencyKey: z
-      .string()
-      .min(1)
-      .max(200)
-      .regex(/^[A-Za-z0-9._:/-]+$/u),
-  })
-  .strict();
+export const notifyMailSubjectSchema = nonblank(180).refine(
+  (value) => {
+    return !/[\r\n]/u.test(value);
+  },
+  {
+    message: "Subject must not contain line breaks",
+  },
+);
+export const notifyMailTextSchema = nonblank(8000);
+const idempotencyKeySchema = z
+  .string()
+  .min(1)
+  .max(200)
+  .regex(/^[A-Za-z0-9._:/-]+$/u);
+const notifyMailFields = {
+  to: z.literal("me").default("me"),
+  subject: notifyMailSubjectSchema,
+  text: notifyMailTextSchema,
+};
+
+export const notifyMailBodySchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      ...notifyMailFields,
+      kind: z.literal("notification").default("notification"),
+      idempotencyKey: idempotencyKeySchema,
+    })
+    .strict(),
+  // Okou derives a Morning Brief key from the Run's automation event. Runner
+  // rootfs CLIs and captured instructions from before that change still send a
+  // key, so it is accepted and ignored until those Runners and Runs have drained.
+  z
+    .object({
+      ...notifyMailFields,
+      kind: z.literal("morning-brief"),
+      idempotencyKey: idempotencyKeySchema.optional(),
+    })
+    .strict(),
+]);
 
 export const notificationReasonSchema = z.enum([
   "unsubscribed",
