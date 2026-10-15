@@ -234,7 +234,7 @@ async fn telemetry_flush_classifies_failed_finalization() {
 }
 
 #[tokio::test]
-async fn telemetry_flush_includes_reuse_hit_claim_phase_spans() {
+async fn telemetry_flush_preserves_claim_spans_and_publishes_settled_reuse() {
     use httpmock::prelude::*;
 
     let server = MockServer::start_async().await;
@@ -242,7 +242,6 @@ async fn telemetry_flush_includes_reuse_hit_claim_phase_spans() {
         .mock_async(|when, then| {
             when.method(POST)
                 .path("/api/webhooks/agent/telemetry")
-                .body_includes("sandbox_reuse_hit")
                 .body_includes("runner_claim_idle_reuse_lookup")
                 .body_includes("runner_claim_idle_unpark")
                 .body_includes("runner_claim_task_schedule_wait");
@@ -252,6 +251,17 @@ async fn telemetry_flush_includes_reuse_hit_claim_phase_spans() {
         })
         .await;
 
+    let startup_mock = server
+        .mock_async(|when, then| {
+            when.method(POST)
+                .path("/api/webhooks/agent/telemetry")
+                .body_includes("runner_sandbox_startup")
+                .body_includes(r#""runner_startup_path":"sandbox""#);
+            then.status(200)
+                .header("content-type", "application/json")
+                .body(r#"{"success":true,"id":"ok"}"#);
+        })
+        .await;
     let (config, env) =
         mock_run_config_with_api_url(test_profiles(), 8, 32768, 4, &server.base_url());
     let idle_pool = config.shared.idle_pool.clone();
@@ -287,10 +297,11 @@ async fn telemetry_flush_includes_reuse_hit_claim_phase_spans() {
     shutdown(&env, run_handle).await;
 
     telemetry_mock.assert_calls_async(1).await;
+    startup_mock.assert_calls_async(1).await;
 }
 
 #[tokio::test]
-async fn invalid_resume_session_flushes_blank_selection_without_reuse_telemetry() {
+async fn invalid_resume_session_flushes_blank_selection_without_startup_fact() {
     use httpmock::prelude::*;
 
     let server = MockServer::start_async().await;
@@ -298,7 +309,7 @@ async fn invalid_resume_session_flushes_blank_selection_without_reuse_telemetry(
         .mock_async(|when, then| {
             when.method(POST)
                 .path("/api/webhooks/agent/telemetry")
-                .body_includes("sandbox_reuse_");
+                .body_includes("runner_sandbox_startup");
             then.status(200)
                 .header("content-type", "application/json")
                 .body(r#"{"success":true,"id":"ok"}"#);

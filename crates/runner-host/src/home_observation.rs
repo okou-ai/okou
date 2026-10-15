@@ -38,6 +38,9 @@ impl fmt::Display for HomeObservationKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HomeObservationOutcome {
+    Selected,
+    Busy,
+    Unavailable,
     Retained,
     Published,
     PreservedExisting,
@@ -53,6 +56,9 @@ pub enum HomeObservationOutcome {
 impl fmt::Display for HomeObservationOutcome {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
+            Self::Selected => "selected",
+            Self::Busy => "busy",
+            Self::Unavailable => "unavailable",
             Self::Retained => "retained",
             Self::Published => "published",
             Self::PreservedExisting => "preserved_existing",

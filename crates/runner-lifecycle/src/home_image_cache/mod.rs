@@ -53,7 +53,7 @@ pub use types::{
     HomeImageCacheInspectionSummary, HomeImageLeaseIdentity, HomeImageLeaseRequest,
     HomeImagePrepareLockPolicy, HomeImagePrepareRequest, HomeImagePromotionIdentity,
     HomeImagePromotionIdentityMismatch, HomeImagePromotionIdentityRequest,
-    HomeImagePromotionRequest,
+    HomeImagePromotionRequest, HomeImageSourceIdentity,
 };
 pub use watcher::{HomeCacheChange, HomeCacheWatcher};
 

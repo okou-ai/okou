@@ -14,6 +14,15 @@ pub enum HomeCacheCheckoutResult {
     InvalidMetadata,
     DiskPressure,
 }
+
+/// Identity of the selected immutable source, borrowed without further IO.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HomeImageSourceIdentity<'a> {
+    pub cache_key: &'a str,
+    pub profile_name: &'a str,
+    pub image_generation: &'a str,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum HomeCacheLockOwner {
     Active,
@@ -33,20 +42,6 @@ impl HomeCacheLockOwner {
 pub(super) enum HomeCacheLockDecision {
     Busy(HomeCacheLockOwner),
     Unavailable,
-}
-impl HomeCacheLockDecision {
-    pub(super) const fn outcome(self) -> &'static str {
-        match self {
-            Self::Busy(_) => "busy",
-            Self::Unavailable => "unavailable",
-        }
-    }
-    pub(super) const fn reason(self) -> Option<&'static str> {
-        match self {
-            Self::Busy(owner) => Some(owner.as_str()),
-            Self::Unavailable => None,
-        }
-    }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
