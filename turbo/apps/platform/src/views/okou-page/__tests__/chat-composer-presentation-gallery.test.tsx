@@ -67,10 +67,14 @@ async function openPresentationThemePreview() {
     throw new Error("The saved presentation template has no edit control");
   }
   click(edit);
-  const dialog = await screen.findByRole("dialog");
-  click(
-    within(dialog).getByLabelText(`Preview ${template.title} at current slide`),
+  const preview = await screen.findByLabelText(
+    `Preview ${template.title} at current slide`,
   );
+  const dialog = preview.closest('[role="dialog"]');
+  if (!(dialog instanceof HTMLElement)) {
+    throw new Error("Expected the presentation template picker dialog");
+  }
+  click(preview);
   await waitFor(() => {
     expect(detailGroup(template.title)).toBeInTheDocument();
   });

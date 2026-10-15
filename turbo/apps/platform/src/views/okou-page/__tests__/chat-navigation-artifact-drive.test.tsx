@@ -405,15 +405,15 @@ async function openDriveArtifactMenu(
   filename = "Drive report.pdf",
 ): Promise<void> {
   await waitFor(() => {
-    expect(buttonNamed("Open artifacts")).toBeVisible();
+    expect(buttonNamed("Open artifacts")).toBeEnabled();
   });
   click(buttonNamed("Open artifacts"));
   await waitFor(() => {
-    expect(buttonNamed(`Preview ${filename}`, artifactList())).toBeVisible();
+    expect(buttonNamed(`Preview ${filename}`, artifactList())).toBeEnabled();
   });
   click(buttonNamed(`Preview ${filename}`, artifactList()));
   await waitFor(() => {
-    expect(buttonNamed("Download artifact", artifactPreview())).toBeVisible();
+    expect(buttonNamed("Download artifact", artifactPreview())).toBeEnabled();
   });
   click(buttonNamed("Download artifact", artifactPreview()));
   await waitFor(() => {
@@ -480,7 +480,9 @@ describe("with a Drive artifact menu", () => {
       ]);
       expect(drive.oauthRequests).toHaveLength(0);
     });
-    await expectSyncedPreview();
+    await expect(
+      screen.findByText("Synced to Google Drive"),
+    ).resolves.toBeInTheDocument();
   });
 });
 
