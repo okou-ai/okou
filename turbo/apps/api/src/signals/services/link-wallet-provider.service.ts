@@ -6,6 +6,7 @@ import {
   LinkWalletSdkResponseError,
   type LinkWalletSdkRequest,
   type LinkWalletSpendRequest,
+  type LinkWalletReadRequest,
 } from "../external/link-wallet-client";
 import {
   readBoundedResponseText,
@@ -20,9 +21,16 @@ import {
   type LinkRequestDiagnostic,
 } from "./link-wallet-diagnostics";
 import {
+  walletAuthorizationDetailsSchema,
   walletCardSchema,
   walletSpendStatusSchema,
 } from "@okouai/api-contracts/contracts/wallet";
+
+import {
+  linkPaymentMethodSchema,
+  linkTransactionsSchema,
+  linkUserInfoSchema,
+} from "./link-wallet-read-schemas";
 
 export class LinkWalletError extends Error {
   constructor(
@@ -57,6 +65,7 @@ export const linkTokenSchema = z.object({
   refresh_token: z.string().min(1),
   expires_in: z.number().int().min(1),
   scope: z.string(),
+  authorization_details: walletAuthorizationDetailsSchema.optional(),
   token_type: z.literal("Bearer"),
 });
 
@@ -64,6 +73,9 @@ export const linkCredentialsSchema = z.object({
   accessToken: z.string().min(1),
   refreshToken: z.string().min(1),
   expiresAt: z.number().int(),
+  scope: z.string().optional(),
+  authorizationDetails: walletAuthorizationDetailsSchema.optional(),
+  readOnly: z.boolean().optional(),
 });
 
 function isLinkActionUrl(value: string): boolean {
@@ -93,6 +105,36 @@ export function linkActionUrl(value: string): string {
   );
 }
 
+const linkPaymentSchema = z
+  .object({
+    outcome: z.string(),
+    amount: z.number().int().safe(),
+    currency: z.string(),
+    code: z.string().nullable().optional(),
+    decline_code: z.string().nullable().optional(),
+    created: z.number().nullable().optional(),
+    refund_details: z
+      .object({
+        amount: z.number().int().safe(),
+        currency: z.string(),
+        state: z.string(),
+        created: z.number(),
+      })
+      .nullable()
+      .optional(),
+  })
+  .transform((value) => {
+    return {
+      outcome: value.outcome,
+      amount: value.amount,
+      currency: value.currency,
+      code: value.code,
+      declineCode: value.decline_code,
+      created: value.created,
+      refund: value.refund_details,
+    };
+  });
+
 // Projection deliberately drops card details, tokens, billing addresses and unknown fields.
 export const linkSpendSchema = z.object({
   id: z.string().regex(/^[A-Za-z0-9_-]{1,256}$/),
@@ -102,6 +144,8 @@ export const linkSpendSchema = z.object({
   merchant_name: z.string(),
   merchant_url: z.string(),
   approval_url: z.string().optional(),
+  payment_status_details: linkPaymentSchema.nullable().optional(),
+  payment_history: z.array(linkPaymentSchema).optional(),
   status_details: z
     .object({
       requires_action: z
@@ -315,7 +359,15 @@ export async function linkTokenRequest(
     });
   }
   const scopes = parsed.data.scope.split(/[ ,]+/);
-  if (!scopes.includes("payment_methods.agentic")) {
+  if (
+    !scopes.some((scope) => {
+      return [
+        "payment_methods.agentic",
+        "userinfo:read",
+        "financial_insights.transactions.read",
+      ].includes(scope);
+    })
+  ) {
     const failure = linkFailureDiagnostic(diagnostic, {
       stage: "scope",
       response: link.response,
@@ -328,11 +380,11 @@ export async function linkTokenRequest(
     throw new LinkWalletError(
       403,
       "WALLET_SCOPE_REQUIRED",
-      `Link payment authorization was not granted ${linkDiagnosticMessage(failure)}`,
+      `Link wallet authorization was not granted ${linkDiagnosticMessage(failure)}`,
     );
   }
   linkSuccessDiagnostic(diagnostic, link.response, {
-    paymentScopeGranted: true,
+    paymentScopeGranted: scopes.includes("payment_methods.agentic"),
     userinfoScopeGranted: scopes.includes("userinfo:read"),
   });
   return parsed.data;
@@ -629,4 +681,67 @@ export async function requestLinkApproval(
   }
   linkSuccessDiagnostic(diagnostic, link.response);
   return parsed.data.approval_url;
+}
+
+export async function readLinkWallet(
+  token: string,
+  request: LinkWalletReadRequest,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const diagnostic = linkRequestDiagnostic(request.operation, [token]);
+  const { link, read, result } = await linkSdkRequest(
+    token,
+    request,
+    diagnostic,
+    signal,
+  );
+  if (link.response.status === 202) {
+    throw new LinkWalletError(
+      409,
+      "WALLET_DATA_PENDING",
+      "Link is still retrieving the requested data; try this read again later",
+    );
+  }
+  if (link.response.status === 403) {
+    throw new LinkWalletError(
+      403,
+      "WALLET_SCOPE_REQUIRED",
+      "Link denied access to this data; check wallet status and ask the user to update their consent",
+    );
+  }
+  if (
+    link.response.status === 404 &&
+    request.operation === "payment_method_read"
+  ) {
+    throw new LinkWalletError(
+      404,
+      "WALLET_PAYMENT_METHOD_NOT_FOUND",
+      "Link payment method not found",
+    );
+  }
+  const value = sdkResponseValue(link, read, result);
+  const parsed =
+    request.operation === "transactions_read"
+      ? linkTransactionsSchema.safeParse(value)
+      : request.operation === "user_info_read"
+        ? linkUserInfoSchema.safeParse(value)
+        : request.operation === "payment_methods_read"
+          ? z
+              .array(linkPaymentMethodSchema)
+              .transform((data) => {
+                return { data };
+              })
+              .safeParse(value)
+          : linkPaymentMethodSchema.safeParse(value);
+  if (!parsed.success) {
+    throw invalidResponse(link, "Link returned invalid wallet data", {
+      stage: "response_schema",
+      issues: parsed.error.issues,
+    });
+  }
+  if ("verification" in parsed.data && parsed.data.verification?.actionUrl) {
+    linkActionUrl(parsed.data.verification.actionUrl);
+  }
+  linkSuccessDiagnostic(diagnostic, link.response);
+  return parsed.data;
 }
