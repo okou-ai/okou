@@ -4,11 +4,7 @@ import { setSidebarExpanded$ } from "../okou-page/nav.ts";
 import { setPendingDeleteThreadId$ } from "../okou-page/sidebar-state.ts";
 import { threadMeta } from "./chat-thread-event-sourcing.ts";
 import { sidebarActiveThreadIds$ } from "./chat-thread-indicators-from-worker.ts";
-import {
-  pinChatThread$,
-  setChatThreadMuted$,
-  unpinChatThread$,
-} from "./chat-event.ts";
+import { pinChatThread$, unpinChatThread$ } from "./chat-event.ts";
 import {
   currentLeftThread$,
   currentRightThread$,
@@ -23,6 +19,7 @@ import {
 } from "./chat-thread-rename.ts";
 import { markChatThreadUnread$ } from "./chat-thread-mark-unread.ts";
 import { setChatThreadArchivedWithFeedback$ } from "./chat-thread-archive.ts";
+import { setChatThreadMutedWithFeedback$ } from "./chat-thread-mute.ts";
 import { sidebarDraftThreadIds$ } from "./sidebar-draft-threads.ts";
 import { sidebarUnreadThreadIds$ } from "./sidebar-unread-threads.ts";
 import { rootSignal$ } from "../root-signal.ts";
@@ -256,7 +253,11 @@ function createSidebarChatThreadItemSignals(
       );
     }),
     toggleMuted$: command(async ({ get, set }, signal: AbortSignal) => {
-      await set(setChatThreadMuted$, { threadId, muted: !get(muted$) }, signal);
+      await set(
+        setChatThreadMutedWithFeedback$,
+        { threadId, muted: !get(muted$) },
+        signal,
+      );
     }),
     markUnread$: command(async ({ set }, signal: AbortSignal) => {
       await set(markChatThreadUnread$, { threadId }, signal);

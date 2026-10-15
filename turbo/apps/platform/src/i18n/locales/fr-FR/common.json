@@ -2874,8 +2874,10 @@
       "archivedMuted": "Discussion archivée. Elle est en sourdine, les nouvelles réponses ne la ramèneront pas.",
       "copied": "Copié",
       "deleted": "Chat supprimé",
+      "muted": "Discussion en sourdine. Les nouvelles réponses n'apparaîtront pas comme non lues et n'enverront pas de notifications push.",
       "unarchived": "Discussion déplacée dans la boîte de réception",
-      "undo": "Annuler"
+      "undo": "Annuler",
+      "unmuted": "Notifications de la discussion réactivées"
     },
     "voice": {
       "checkingLimit": "Vérification de la limite d'entrée vocale",

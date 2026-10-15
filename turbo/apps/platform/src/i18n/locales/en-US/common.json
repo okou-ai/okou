@@ -2826,8 +2826,10 @@
       "archivedMuted": "Chat archived. It's muted, so new replies won't bring it back.",
       "copied": "Copied",
       "deleted": "Chat deleted",
+      "muted": "Chat muted. New replies won't show as unread or send push notifications.",
       "unarchived": "Chat moved to Inbox",
-      "undo": "Undo"
+      "undo": "Undo",
+      "unmuted": "Chat unmuted"
     },
     "voice": {
       "checkingLimit": "Checking voice input limit",
