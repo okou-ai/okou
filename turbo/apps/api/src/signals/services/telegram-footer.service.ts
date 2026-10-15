@@ -37,22 +37,6 @@ export async function resolveTelegramAgentReplyFooterText(args: {
   return modelLabel ? escapeHtml(modelLabel) : undefined;
 }
 
-async function resolveRunAgentLabel(
-  db: ReadonlyDb,
-  runId: string,
-): Promise<string | undefined> {
-  const [row] = await db
-    .select({
-      agentDisplayName: agents.displayName,
-      agentName: agents.name,
-    })
-    .from(agentRuns)
-    .innerJoin(agents, eq(agentRuns.agentId, agents.id))
-    .where(eq(agentRuns.id, runId))
-    .limit(1);
-  return row ? displayLabel(row) : undefined;
-}
-
 /**
  * Resolve the attribution footer text appended to user-initiated Telegram messages.
  *
@@ -70,9 +54,21 @@ export function telegramMessageSendFooterText(args: {
       return undefined;
     }
     const db = get(db$);
+    const runId = args.authRunId;
 
     const [agentLabel, runModel] = await Promise.all([
-      resolveRunAgentLabel(db, args.authRunId),
+      (async (): Promise<string | undefined> => {
+        const [row] = await db
+          .select({
+            agentDisplayName: agents.displayName,
+            agentName: agents.name,
+          })
+          .from(agentRuns)
+          .innerJoin(agents, eq(agentRuns.agentId, agents.id))
+          .where(eq(agentRuns.id, runId))
+          .limit(1);
+        return row ? displayLabel(row) : undefined;
+      })(),
       resolveRunModelSelection(db, args.authRunId),
     ]);
 
