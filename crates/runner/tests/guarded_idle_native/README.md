@@ -1,5 +1,39 @@
 # Guarded idle terminal fixture
 
+## Production startup reader completion
+
+`native_startup_records_complete_snapshot_reads_and_joined_owners` invokes the
+actual production `MemoryPrefetchTasks::spawn` entry on the original immutable
+4 GiB `memory.bin`, in fresh and matching-snapshot factories. A non-default
+Lifecycle test-support observer records the concrete reader outcomes. Exactly
+one complete read, all original bytes and a positive physical producer drain are
+required; joined failure, partial reads, task counts and logs cannot certify it.
+
+An actual guarded runtime reader shares the original P2 authority with required
+saving. Sampling is held at initial Unknown while startup finishes, and the
+runtime reader must accept zero operations or bytes. Both readers and the
+pressure/sampler owners join before required original saving and dependency
+teardown. The original full logical lease, positive backing wait, complete
+64 KiB home payload and durable 64 MiB tail remain required.
+
+Use the exact-source binary, manifest, packaged inputs and bounded P1 invocation
+below, selecting this test by its exact name. Metadata additionally requires
+`native_startup_policy_json`, `native_startup_inputs_json` (the exact UTF-8 policy
+and optional-input files) and `native_startup_snapshot_bytes` (4294967296).
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/startup_report.py "$P1_OUTPUT_DIRECTORY"
+```
+
+Ordinary Cargo/default Crates CI runs the real-file/CLI refusal regressions through
+`native_startup_report_requires_complete_bytes_and_joined_producers`. The KVM/NBD
+entry remains explicitly ignored. Startup retains its existing unguarded
+production behavior; no startup P2 admission or production policy is installed.
+Foreground/heartbeat/contention remains #40353, and accepted cancellation/late
+results and final parent reconciliation remain #40355 under delivery group #40297.
+Full cache residency, cold-cache behavior, numerical relief, calibrated envelopes,
+unknown template producer and production OOM protection remain unverified.
+
 ## Critical multiwave suppression
 
 `native_critical_records_bounded_waves_and_suppressed_snapshot_reads` runs fresh

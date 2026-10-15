@@ -14,6 +14,7 @@ mod pressure_condition;
 mod recovery;
 mod recovery_source;
 mod refusal;
+mod startup;
 mod tail;
 mod transitions;
 
@@ -131,6 +132,22 @@ fn native_critical_report_requires_bounded_waves_and_suppressed_reads() {
     assert!(
         output.status.success(),
         "native Critical report failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn native_startup_report_requires_complete_bytes_and_joined_producers() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/startup_report_test.py"
+        ))
+        .output()
+        .expect("native startup contract tests require Python 3");
+    assert!(
+        output.status.success(),
+        "native startup report failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 }
@@ -264,6 +281,7 @@ enum NativeScope {
     OptionalAged,
     Recovery,
     Critical,
+    Startup,
     CallerOwned,
     SpeculativeGuestFailure,
     FinalizingParked,
@@ -374,6 +392,12 @@ async fn native_recovery_records_stale_revocation_and_paced_snapshot_reads() -> 
 #[ignore = "requires owned KVM/NBD artifacts, real supplied-Critical samples and exact-source P1 proof"]
 async fn native_critical_records_bounded_waves_and_suppressed_snapshot_reads() -> TestResult<()> {
     measured_corpus(&[NativeScope::Critical]).await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD artifacts, original snapshot bytes and exact-source P1 proof"]
+async fn native_startup_records_complete_snapshot_reads_and_joined_owners() -> TestResult<()> {
+    measured_corpus(&[NativeScope::Startup]).await
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -605,8 +629,11 @@ async fn exercise_retirement(
     if rootfs_hash.is_empty() {
         return Err(io::Error::other("packaged rootfs hash must be supplied").into());
     }
-    let recovery_source = matches!(scope, NativeScope::Recovery | NativeScope::Critical)
-        .then(|| Arc::new(recovery_source::Source::new()));
+    let recovery_source = matches!(
+        scope,
+        NativeScope::Recovery | NativeScope::Critical | NativeScope::Startup
+    )
+    .then(|| Arc::new(recovery_source::Source::new()));
     let operations = match &recovery_source {
         Some(source) => inputs.operations_with_source(source.clone())?,
         None => inputs.operations()?,
@@ -784,7 +811,10 @@ async fn exercise_retirement(
     });
     let tracker = IdleDestroyTracker::new(Arc::new(Notify::new()));
     if (corpus == Corpus::Optional
-        || matches!(scope, NativeScope::Recovery | NativeScope::Critical))
+        || matches!(
+            scope,
+            NativeScope::Recovery | NativeScope::Critical | NativeScope::Startup
+        ))
         && let Some(proof) = proof
     {
         proof.bind_original_lease(&lease)?;
@@ -866,6 +896,14 @@ async fn exercise_retirement(
     }
     let retirement: TestResult<_> = async {
         match scope {
+            NativeScope::Startup => {
+                startup::exercise(transitions::Context {
+                    factory: factory.clone(), pool: pool.clone(), status: status.clone(),
+                    operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
+                    rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
+                }, inputs, recovery_source.as_ref().ok_or_else(|| io::Error::other("native startup source missing"))?, proof).await?;
+                Ok(None)
+            }
             NativeScope::Critical => {
                 critical::exercise(transitions::Context {
                     factory: factory.clone(), pool: pool.clone(), status: status.clone(),

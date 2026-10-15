@@ -21,7 +21,7 @@ struct Inputs {
     prefetch_overhead_bytes: u64,
 }
 
-fn no_reads(read: &GuardedPrefetchSnapshot, finished: bool) -> TestResult<()> {
+pub(super) fn no_reads(read: &GuardedPrefetchSnapshot, finished: bool) -> TestResult<()> {
     if read.accepted != 0
         || read.completed != 0
         || read.cancelled != 0
@@ -33,14 +33,14 @@ fn no_reads(read: &GuardedPrefetchSnapshot, finished: bool) -> TestResult<()> {
         || read.finished != finished
     {
         return Err(io::Error::other(format!(
-            "Critical optional reader was not suppressed: {read:?}"
+            "guarded optional reader was not suppressed: {read:?}"
         ))
         .into());
     }
     Ok(())
 }
 
-fn read_evidence(read: &GuardedPrefetchSnapshot) -> Value {
+pub(super) fn read_evidence(read: &GuardedPrefetchSnapshot) -> Value {
     json!({
         "accepted": read.accepted, "completed": read.completed,
         "cancelled": read.cancelled, "failed": read.failed,
