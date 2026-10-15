@@ -333,34 +333,37 @@ test.each([
   expect(sentry.reports).toStrictEqual([]);
 });
 
-test("The official connect page reports unavailable login configuration", async () => {
-  mockBot({
-    linked: false,
-    installation: {
-      id: BOT_ID,
-      botUsername: "support_bot",
-      loginBotId: BOT_ID,
-      domainConfigured: false,
-    },
-  });
+test.each(["/telegram/connect", "/settings/telegram"])(
+  "The official connect page at %s reports unavailable login configuration",
+  async (path) => {
+    mockBot({
+      linked: false,
+      installation: {
+        id: BOT_ID,
+        botUsername: "support_bot",
+        loginBotId: BOT_ID,
+        domainConfigured: false,
+      },
+    });
 
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: `/telegram/connect?bot=${BOT_ID}`,
-  });
+    await setupPage({
+      context,
+      locale: "en-US",
+      path: `${path}?bot=${BOT_ID}`,
+    });
 
-  await expect(
-    screen.findByRole("heading", { name: "Connection failed" }),
-  ).resolves.toBeInTheDocument();
-  expect(
-    screen.getByText(
-      "We couldn't verify Telegram login for this app. Try again, or contact support if the problem continues.",
-    ),
-  ).toBeInTheDocument();
-  expect(getAction("link", "Back to integrations")).toBeInTheDocument();
-  expect(queryAction("button", "Continue with Telegram")).toBeNull();
-});
+    await expect(
+      screen.findByRole("heading", { name: "Connection failed" }),
+    ).resolves.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "We couldn't verify Telegram login for this app. Try again, or contact support if the problem continues.",
+      ),
+    ).toBeInTheDocument();
+    expect(getAction("link", "Back to integrations")).toBeInTheDocument();
+    expect(queryAction("button", "Continue with Telegram")).toBeNull();
+  },
+);
 
 test("Closing the OAuth tab cancels the attempt and restores Connect", async () => {
   mockBot();
