@@ -941,23 +941,38 @@ describe("organization Cloudflare Access", () => {
       ]),
     );
     authenticate(first);
-    expect(
-      (await accept(connections().list({ headers }), [200])).body.connections[0]
-        ?.generation,
-    ).toBe(firstHost.generation + 1);
+    const firstHosts = (await accept(connections().list({ headers }), [200]))
+      .body.connections;
+    const reviewedFirst = firstHosts.find((host) => {
+      return host.id === firstHost.id;
+    });
+    expect(reviewedFirst?.generation).toBe(firstHost.generation + 1);
+    if (!reviewedFirst) {
+      throw new Error("Expected the first owner's SSH host");
+    }
     await accept(
-      connections().delete({ headers, params: { connectionId: firstHost.id } }),
+      connections().delete({
+        headers,
+        params: { connectionId: firstHost.id },
+        body: { expectedGeneration: reviewedFirst.generation },
+      }),
       [204],
     );
     authenticate(second);
-    expect(
-      (await accept(connections().list({ headers }), [200])).body.connections[0]
-        ?.generation,
-    ).toBe(secondHost.generation + 1);
+    const secondHosts = (await accept(connections().list({ headers }), [200]))
+      .body.connections;
+    const reviewedSecond = secondHosts.find((host) => {
+      return host.id === secondHost.id;
+    });
+    expect(reviewedSecond?.generation).toBe(secondHost.generation + 1);
+    if (!reviewedSecond) {
+      throw new Error("Expected the second owner's SSH host");
+    }
     await accept(
       connections().delete({
         headers,
         params: { connectionId: secondHost.id },
+        body: { expectedGeneration: reviewedSecond.generation },
       }),
       [204],
     );
@@ -1190,6 +1205,7 @@ describe("Cloudflare Access owner configuration", () => {
         connections().delete({
           headers,
           params: { connectionId: connection.id },
+          body: { expectedGeneration: connection.generation },
         }),
         [204],
       );
@@ -1397,6 +1413,7 @@ describe("protected SSH authority", () => {
       connections().delete({
         headers,
         params: { connectionId: readyHost.id },
+        body: { expectedGeneration: readyHost.generation },
       }),
       [204],
     );

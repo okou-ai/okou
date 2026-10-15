@@ -298,7 +298,11 @@ describe("live chat SSH Run inventory", () => {
       (await accept(inventory().list({ headers: f.token() }), [200])).body,
     ).toStrictEqual({ hosts: [] });
     await accept(
-      config().delete({ headers, params: { connectionId: first.body.id } }),
+      config().delete({
+        headers,
+        params: { connectionId: first.body.id },
+        body: { expectedGeneration: first.body.generation },
+      }),
       [204],
     );
     await createHost("replacement.example.com");
@@ -368,7 +372,11 @@ describe("live chat SSH Run inventory", () => {
     ]);
     expect(JSON.stringify(listed.body)).not.toContain("private-key");
     await accept(
-      config().delete({ headers, params: { connectionId: first.body.id } }),
+      config().delete({
+        headers,
+        params: { connectionId: first.body.id },
+        body: { expectedGeneration: first.body.generation },
+      }),
       [204],
     );
     expect(

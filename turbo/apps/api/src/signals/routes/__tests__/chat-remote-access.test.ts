@@ -222,8 +222,20 @@ describe("chat remote access owner API", () => {
       source: "override",
     });
 
+    const sshHosts = (await accept(sshClient().list({ headers }), [200])).body
+      .connections;
+    const reviewedSecond = sshHosts.find((host) => {
+      return host.id === second;
+    });
+    if (!reviewedSecond) {
+      throw new Error("Expected the second SSH host");
+    }
     await accept(
-      sshClient().delete({ headers, params: { connectionId: second } }),
+      sshClient().delete({
+        headers,
+        params: { connectionId: second },
+        body: { expectedGeneration: reviewedSecond.generation },
+      }),
       [204],
     );
     const afterDelete = await accept(

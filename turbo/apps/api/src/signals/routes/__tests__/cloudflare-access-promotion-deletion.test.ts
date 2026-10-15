@@ -503,7 +503,11 @@ test("a reviewed deletion is stale when a member removes the last reference", as
   ).body;
   session(member, "member");
   await accept(
-    hosts().delete({ headers, params: { connectionId: host.id } }),
+    hosts().delete({
+      headers,
+      params: { connectionId: host.id },
+      body: { expectedGeneration: host.generation },
+    }),
     [204],
   );
   session(admin, "admin");
@@ -548,7 +552,11 @@ test("removing one reviewed peer host rejects deletion without detaching the rem
   ).body;
   session(member, "member");
   await accept(
-    hosts().delete({ headers, params: { connectionId: removed.id } }),
+    hosts().delete({
+      headers,
+      params: { connectionId: removed.id },
+      body: { expectedGeneration: removed.generation },
+    }),
     [204],
   );
   const before = (await accept(hosts().list({ headers }), [200])).body;

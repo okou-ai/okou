@@ -130,7 +130,7 @@ export const resetSshConnectionHostKeyRequestSchema = z
 
 export const deleteSshConnectionRequestSchema = z
   .object({
-    expectedGeneration: z.int().positive().max(2_147_483_647).optional(),
+    expectedGeneration: z.int().positive().max(2_147_483_647),
   })
   .strict();
 

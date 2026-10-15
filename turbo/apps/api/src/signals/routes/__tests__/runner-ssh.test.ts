@@ -323,7 +323,7 @@ describe("SSH authority invalidation", () => {
       ]);
     }
     context.mocks.ably.publish.mockClear();
-    await accept(
+    const reset = await accept(
       config().resetHostKey({
         headers: sessionHeaders,
         params: { connectionId: f.connectionId },
@@ -343,6 +343,7 @@ describe("SSH authority invalidation", () => {
       config().delete({
         headers: sessionHeaders,
         params: { connectionId: f.connectionId },
+        body: { expectedGeneration: reset.body.generation },
       }),
       [204],
     );
@@ -478,6 +479,16 @@ async function list(f: Fixture) {
   authenticate(f);
   return (await accept(config().list({ headers: sessionHeaders }), [200])).body
     .connections;
+}
+
+async function reviewedConnection(f: Fixture) {
+  const connection = (await list(f)).find((host) => {
+    return host.id === f.connectionId;
+  });
+  if (!connection) {
+    throw new Error("Expected the fixture's SSH host");
+  }
+  return connection;
 }
 
 beforeEach(() => {
@@ -826,6 +837,7 @@ describe("SSH connection observations", () => {
       config().delete({
         headers: sessionHeaders,
         params: { connectionId: f.connectionId },
+        body: { expectedGeneration: (await reviewedConnection(f)).generation },
       }),
       [204],
     );
@@ -985,6 +997,9 @@ describe("SSH connection observations", () => {
         config().delete({
           headers: sessionHeaders,
           params: { connectionId: f.connectionId },
+          body: {
+            expectedGeneration: (await reviewedConnection(f)).generation,
+          },
         }),
         [204],
       );
@@ -1124,6 +1139,7 @@ describe("SSH connection observations", () => {
       config().delete({
         headers: sessionHeaders,
         params: { connectionId: f.connectionId },
+        body: { expectedGeneration: (await reviewedConnection(f)).generation },
       }),
       [204],
     );
@@ -1424,6 +1440,7 @@ describe("official Runner SSH authority", () => {
       config().delete({
         headers: sessionHeaders,
         params: { connectionId: f.connectionId },
+        body: { expectedGeneration: (await reviewedConnection(f)).generation },
       }),
       [204],
     );
@@ -1466,6 +1483,7 @@ describe("official Runner SSH authority", () => {
       config().delete({
         params: { connectionId: f.connectionId },
         headers: sessionHeaders,
+        body: { expectedGeneration: (await reviewedConnection(f)).generation },
       }),
       [204],
     );
