@@ -3,6 +3,7 @@ mod boundaries;
 mod delivery;
 mod diagnostics;
 mod harness;
+mod history;
 mod list;
 mod list_lifecycle;
 mod notifications;

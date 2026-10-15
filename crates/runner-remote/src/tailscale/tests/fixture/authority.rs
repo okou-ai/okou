@@ -24,7 +24,9 @@ impl Cache {
     }
 
     pub(crate) fn register(&self, run: RunId) -> Arc<Registration> {
-        let native = self.native.register(run, &CancellationToken::new());
+        let native = self
+            .native
+            .register_with_diagnostics(run, &CancellationToken::new(), false);
         Arc::new(Registration {
             authority: self.authority.register(run, Arc::clone(&native)),
             native,

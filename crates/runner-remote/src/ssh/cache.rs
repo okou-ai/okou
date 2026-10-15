@@ -10,6 +10,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::{FailureReason, authority::PreparedCredential};
 use runner_types::ids::RunId;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 const CAPACITY: usize = 256;
 
@@ -34,12 +35,14 @@ struct Entry {
     value: OnceCell<Arc<PreparedCredential>>,
     native: Mutex<Option<Arc<crate::tailscale::Node>>>,
     cancelled: CancellationToken,
+    diagnostic_active: Arc<AtomicBool>,
     // Retain the slot even when eviction leaves an in-flight reader owning the entry.
     _slot: Option<OwnedSemaphorePermit>,
 }
 
 impl Entry {
     fn invalidate(&self) {
+        self.diagnostic_active.store(false, Ordering::Release);
         let mut retained = self.native.lock().unwrap_or_else(|p| p.into_inner());
         self.cancelled.cancel();
         retained.take();
@@ -139,6 +142,9 @@ impl Cache {
 }
 
 impl Registration {
+    pub(crate) fn diagnostics(&self) -> crate::diagnostics::Handle {
+        self.native.diagnostics.clone()
+    }
     pub(crate) fn lookup(
         self: &Arc<Self>,
         connection: uuid::Uuid,
@@ -159,6 +165,7 @@ impl Registration {
             let entry = Arc::new(Entry {
                 value: OnceCell::new(),
                 native: Mutex::new(None),
+                diagnostic_active: Arc::new(AtomicBool::new(true)),
                 cancelled: CancellationToken::new(),
                 _slot: Some(slot),
             });
@@ -172,6 +179,7 @@ impl Registration {
             let entry = Arc::new(Entry {
                 value: OnceCell::new(),
                 native: Mutex::new(None),
+                diagnostic_active: Arc::new(AtomicBool::new(true)),
                 cancelled: CancellationToken::new(),
                 _slot: None,
             });
@@ -212,6 +220,24 @@ impl Drop for Registration {
 }
 
 impl Access {
+    pub(crate) fn native_source(&self) -> Option<crate::diagnostics::NativeSource> {
+        if !self.registration.native.diagnostics.enabled() {
+            return None;
+        }
+        let credential = self.entry.value.get()?;
+        let super::authority::Transport::Tailscale(configuration) = &credential.transport else {
+            return None;
+        };
+        // A failed retained node can reject adoption before this consumer owns it.
+        self.registration
+            .native
+            .registry
+            .diagnostic_source(configuration.key())
+    }
+
+    pub(crate) fn diagnostics(&self) -> crate::diagnostics::Handle {
+        self.registration.diagnostics()
+    }
     pub(crate) fn native_configured(
         &self,
         configuration: crate::tailscale::Configuration,
@@ -221,6 +247,7 @@ impl Access {
         ) -> crate::tailscale::Work,
     ) -> Result<Arc<crate::tailscale::Node>, FailureReason> {
         self.check()?;
+        let key = configuration.key();
         let node = self
             .registration
             .native
@@ -232,6 +259,26 @@ impl Access {
                 _ => FailureReason::AuthorityFailure,
             })?;
         self.check()?;
+        let identity = self
+            .entry
+            .value
+            .get()
+            .map(|credential| crate::diagnostics::Identity {
+                created_at: Some(credential.created_at),
+                generation: credential.trust.lock().ok().map(|trust| trust.generation),
+                session: None,
+            })
+            .unwrap_or_default();
+        let (configuration, generation) = key.diagnostic_identity();
+        if let Some(watch) = self.diagnostics().watch(
+            self.connection,
+            identity,
+            configuration,
+            generation,
+            &self.entry.diagnostic_active,
+        ) {
+            node.observe(watch);
+        }
         // The exact cached authority, rather than one transient SSH waiter,
         // owns the configuration node between physical connections. Other
         // host entries can share it without targeted invalidation retiring B.

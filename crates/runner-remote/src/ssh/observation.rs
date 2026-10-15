@@ -11,6 +11,7 @@ use super::FailureReason;
 
 #[derive(Default)]
 pub(super) struct Attempt {
+    pub(super) native: Option<crate::diagnostics::NativeSource>,
     pub(super) created_at: Option<DateTime<Utc>>,
     pub(super) generation: Option<i64>,
     pub(super) connecting: bool,
@@ -27,6 +28,30 @@ pub(super) struct Observation {
 }
 
 impl Attempt {
+    pub(super) fn record(
+        &self,
+        diagnostics: &crate::diagnostics::Handle,
+        connection: uuid::Uuid,
+        operation: crate::diagnostics::Operation,
+        session: Option<uuid::Uuid>,
+        failure: Option<FailureReason>,
+    ) {
+        if let Some(failure) = failure {
+            diagnostics.record(crate::diagnostics::Record {
+                protocol: crate::diagnostics::Protocol::Ssh,
+                connection,
+                operation,
+                identity: crate::diagnostics::Identity {
+                    created_at: self.created_at,
+                    generation: self.generation,
+                    session,
+                },
+                cause: crate::diagnostics::Cause::Ssh(failure),
+                dependency: None,
+                native: self.native.clone(),
+            });
+        }
+    }
     pub(super) fn finish(&self, failure: Option<FailureReason>) -> Option<Observation> {
         let generation = self.generation?;
         let created_at = self.created_at?;

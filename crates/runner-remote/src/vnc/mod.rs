@@ -33,7 +33,7 @@ pub(crate) use sessions::Run;
 /// Only these bounded categories may cross the guest boundary.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-enum Failure {
+pub(crate) enum Failure {
     Unavailable,
     #[serde(rename = "authority_failure")]
     Authority,
@@ -143,6 +143,9 @@ pub struct VncRuntime {
 }
 
 impl VncRuntime {
+    pub(crate) fn http_client(&self) -> HttpClient {
+        self.authority.http.clone()
+    }
     pub fn official(
         http: HttpClient,
         token: &str,

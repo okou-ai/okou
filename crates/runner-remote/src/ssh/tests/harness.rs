@@ -465,7 +465,7 @@ impl Harness {
         )
         .await
     }
-    pub(super) async fn raw(&self, json: String) -> Vec<Value> {
+    pub(crate) async fn raw(&self, json: String) -> Vec<Value> {
         request_frames(self.open().await, json).await
     }
     pub(super) async fn open(&self) -> DuplexStream {
@@ -516,6 +516,23 @@ impl Harness {
             "sandbox-authoritative".into(),
             run,
             &self.cancel,
+        ));
+    }
+
+    pub(crate) async fn enable_diagnostics(&mut self) {
+        self.shutdown().await;
+        let (incoming, receiver) = mpsc::channel(32);
+        self.incoming = incoming;
+        self.dispatcher = Some(self.rpc.start_with_diagnostics(
+            Arc::new(Acceptor(tokio::sync::Mutex::new(receiver))),
+            "sandbox-authoritative".into(),
+            self.run,
+            &self.cancel,
+            None,
+            Some(Arc::new(crate::diagnostics::Authority::new(
+                self.runtime.http_client(),
+                "diagnostic-agent-token",
+            ))),
         ));
     }
 }

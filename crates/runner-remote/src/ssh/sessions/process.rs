@@ -29,6 +29,18 @@ pub(super) async fn run(
         () = cancelled.cancelled() => Err(FailureReason::ConfigurationChanged),
         result = execute(&runtime, &pool, run, &entry, start, receiver, &mut observation) => result,
     };
+    // Explicit session/owner retirement is not a new operational failure.
+    // A cancelled input RPC has a separate scope and still retains its failure.
+    let failure = result.as_ref().err().copied().filter(|reason| {
+        *reason != FailureReason::Cancelled || !entry.scope.cancelled.is_cancelled()
+    });
+    observation.record(
+        &entry.access.diagnostics(),
+        entry.connection,
+        crate::diagnostics::Operation::Session,
+        Some(entry.id),
+        failure,
+    );
     {
         let mut data = entry.data.lock().unwrap_or_else(|p| p.into_inner());
         data.generation = observation.generation;

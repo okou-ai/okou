@@ -263,8 +263,11 @@ async fn invalidation_during_resolve_fences_the_late_result_before_authenticatio
         let mut registrations = Vec::new();
         for _ in 0..cache_entries {
             let run = RunId::new_v4();
-            let native = crate::native::Runtime::new()
-                .register(run, &tokio_util::sync::CancellationToken::new());
+            let native = crate::native::Runtime::new().register_with_diagnostics(
+                run,
+                &tokio_util::sync::CancellationToken::new(),
+                false,
+            );
             let registration = h.runtime.cache.register(run, native);
             let _access = registration.lookup(uuid::Uuid::new_v4()).unwrap();
             registrations.push(registration);

@@ -50,6 +50,7 @@ export enum FeatureSwitchKey {
   WechatIntegration = "wechatIntegration",
   DiscordIntegration = "discordIntegration",
   VncAccess = "vncAccess",
+  RemoteConnectionDiagnostics = "remoteConnectionDiagnostics",
   PiMemory = "piMemory",
   CodexExecution = "_codexExecution",
   ChatHomeCompliance = "chatHomeCompliance",

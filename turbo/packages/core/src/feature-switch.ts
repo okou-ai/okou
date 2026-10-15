@@ -83,6 +83,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.RemoteConnectionDiagnostics]: {
+    maintainer: "liangyou@okou.ai",
+    displayName: "Remote connection diagnostics",
+    description:
+      "Retain and query safe SSH and VNC failure evidence in the same Run.",
+    enabled: false,
+  },
   [FeatureSwitchKey.ArtifactSidebarPreview]: {
     maintainer: "ethan@okou.ai",
     displayName: "Artifact sidebar preview",

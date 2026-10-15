@@ -242,6 +242,62 @@ describe("live chat SSH Run inventory", () => {
     await expect(listIds()).resolves.toStrictEqual([]);
   });
 
+  it("returns opt-in creation identities from the same visible inventory and distinguishes recreated IDs", async () => {
+    const f = await publicInventoryRun();
+    const first = await createHost();
+    await enableChatDefault(first.body.id);
+    const ordinary = await accept(
+      inventory().list({ headers: f.token() }),
+      [200],
+    );
+    expect(ordinary.body).not.toHaveProperty("diagnostics");
+    const diagnostic = await accept(
+      inventory().list({ headers: f.token(), query: { diagnostics: "1" } }),
+      [200],
+    );
+    expect(diagnostic.body.diagnostics).toMatchObject({
+      version: 1,
+      identities: [{ id: first.body.id, generation: first.body.generation }],
+    });
+    const originalIdentity = diagnostic.body.diagnostics?.identities[0];
+    expect(originalIdentity?.createdAt).toMatch(/\.\d{6}Z$/);
+    expect(JSON.stringify(diagnostic.body)).not.toContain("test-private-key");
+    await accept(
+      config().delete({
+        headers,
+        params: { connectionId: first.body.id },
+        body: { expectedGeneration: first.body.generation },
+      }),
+      [204],
+    );
+    const replacement = await accept(
+      config().create({
+        headers,
+        body: {
+          id: first.body.id,
+          displayName: "Replacement",
+          host: "replacement.example.com",
+          credential: inlineSshKey("deploy", "replacement-private-key"),
+        },
+      }),
+      [201],
+    );
+    const hidden = await accept(
+      inventory().list({ headers: f.token(), query: { diagnostics: "1" } }),
+      [200],
+    );
+    expect(hidden.body.diagnostics?.identities).toStrictEqual([]);
+    await enableChatDefault(replacement.body.id);
+    const recreated = await accept(
+      inventory().list({ headers: f.token(), query: { diagnostics: "1" } }),
+      [200],
+    );
+    expect(recreated.body.diagnostics?.identities[0]?.createdAt).not.toBe(
+      originalIdentity?.createdAt,
+    );
+    expect(recreated.body.diagnostics?.identities[0]?.id).toBe(first.body.id);
+  });
+
   async function createAgent(visibility: "public" | "private") {
     context.mocks.s3.send.mockResolvedValue({});
     const result = await accept(
