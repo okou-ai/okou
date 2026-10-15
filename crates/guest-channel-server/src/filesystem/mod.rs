@@ -54,6 +54,7 @@ struct Owner {
 struct Hooks {
     before_job: Option<Box<dyn FnOnce() + Send>>,
     after_read: Option<Box<dyn FnOnce() + Send>>,
+    after_maintenance: Option<Box<dyn FnOnce() + Send>>,
 }
 
 impl Owner {
@@ -258,15 +259,24 @@ fn worker(receiver: mpsc::Receiver<Job>) {
             let Some(owner) = weak.upgrade() else {
                 return false;
             };
+            // Cleanup and registry removal must use the same cancellation snapshot.
+            let closed = owner.closed();
             #[cfg(target_os = "linux")]
             if let Ok(mut state) = owner.state.lock() {
-                if owner.closed() {
+                if closed {
                     *state = None;
                 } else if let Some(state) = state.as_mut() {
                     state.expire(Instant::now());
                 }
             }
-            !owner.closed()
+            #[cfg(test)]
+            {
+                let action = owner.hooks.lock().unwrap().after_maintenance.take();
+                if let Some(action) = action {
+                    action();
+                }
+            }
+            !closed
         });
         let job = match receiver.recv_timeout(MAINTENANCE_WAIT) {
             Ok(job) => job,
