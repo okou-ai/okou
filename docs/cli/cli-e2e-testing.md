@@ -150,28 +150,19 @@ payment, and verifies the resulting public entitlement before publishing tokens.
 Platform Vitest covers the video onboarding UI and checkout return flow.
 The deployed Playwright suite covers one chat send-and-reply happy path.
 
-Runner account preparation reads Clerk's Backend API
-`GET /v1/instance/organization_settings` once before creating its five identities.
-When the returned `creator_role` is `org:admin`, creation with `created_by`
-already assigns the required role. The preparation-scoped provisioner omits
-the five redundant membership PATCHes: successful setup uses 11 requests
-(one settings GET, five user POSTs, five organization POSTs), down from 15.
-This excludes authentication, onboarding, retries, and cleanup. Non-admin
-Creator Roles retain explicit admin PATCHes and their rollback behavior,
-using 16 setup requests. Unavailable settings, disabled organizations, or an
-invalid Creator Role response fail before creating identities. Single-organization
-callers retain explicit admin setup because an added settings read would not
-reduce their request count.
-
-Clerk's
-[organization settings contract](https://github.com/clerk/openapi-specs/blob/a91bd1815277a236107ef325be6e138db32762cb/bapi/2026-05-12.yml)
-defines Creator Role as the role assigned after organization creation; its
+Clerk's configured Creator Role determines the role granted by `created_by`,
+as defined by its
+[organization settings contract](https://github.com/clerk/openapi-specs/blob/a91bd1815277a236107ef325be6e138db32762cb/bapi/2026-05-12.yml).
+Account preparation must establish the required admin role; the provider's
 [roles documentation](https://clerk.com/docs/guides/organizations/control-access/roles-and-permissions)
-confirms that it is configurable. Every preparation must read current settings;
-do not cache them across batches or treat an earlier observation as a permanent
-configuration guarantee. A preparation-scoped read does not provide atomic
-isolation from administrator changes to Creator Roles or Role Sets during
-provisioning. Account preparation does not change those instance settings.
+confirms that Creator Role is configurable. When preparation relies on that
+configured role, read current organization settings within preparation and fail
+before creating identities when settings are unavailable, organizations are
+disabled, or Creator Role is invalid. Do not cache settings across batches or
+treat an earlier observation as a permanent guarantee. A preparation-scoped
+read does not provide atomic isolation from administrator changes to Creator
+Roles or Role Sets during provisioning. Account preparation does not change
+those instance settings.
 
 Clerk resource creation records exact IDs in `E2E_CLERK_RESOURCE_DIR`. Normal
 cleanup verifies those IDs' ownership against Clerk and deletes organizations

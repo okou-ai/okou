@@ -156,7 +156,7 @@ not wait for the old blank's exit. Rejected incoming ownership remains caller
 owned for an explicit retry or conversion to shared required cleanup. Accepted
 replacement/required cleanup is adopted before status publication. Production
 assembly must supply the same host authority and measured preparation/cleanup
-coverage; these component APIs do not enable the P4 production policy.
+coverage; these component APIs alone do not activate a production policy.
 
 The supplied-policy finalizing component preserves actual broker delivery
 bindings in `GuardedFinalizingOffer` and keeps the original provider
@@ -185,8 +185,8 @@ Callers must settle or drop their finalizing capsules before dependent teardown.
 claims afterward. Successful cleanup leases and accepted uncertainty remain in
 the separate activation registry. Recovery is an explicit reconciliation
 boundary, not completion proof or memory credit. The production root still
-uses its existing policy until P4 assembly; the native finalizing fixture and
-broader P3d corpus need separate execution and do not calibrate host limits.
+owns its admission policy. Native finalizing fixtures do not by themselves
+establish full session/history restoration or calibrate production host limits.
 
 ## Routine GC and promotion capacity
 

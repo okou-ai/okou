@@ -121,7 +121,8 @@ owning surface.
 - [Guest process lifecycle](runner/runner-guest-process-lifecycle.md): containment,
   process ownership, reuse, and operation lifetime.
 - [Runner host configuration](runner/runner-host-configuration.md): validated
-  host-local capacity and configuration ownership.
+  host-local capacity and configuration ownership. Local configuration and log
+  checks live in [Runner operating instructions](../crates/runner/README.md).
 - [Home history restore telemetry](runner/home-history-restore-telemetry.md):
   current-input reconciliation, consumption-time proof verification, fallback,
   cancellation, and transfer measurement semantics.

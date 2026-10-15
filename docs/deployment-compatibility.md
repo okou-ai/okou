@@ -213,11 +213,10 @@ Test each transform by copying
 Assert its output against an explicit JSON Schema of the old shape, taken from
 the route's `responses["<status>"].schema` in the production runtime API schema
 snapshot (`current.json` in the `runtime-api-schema-prod` release), and assert
-that the current body no longer satisfies it. The API runtime's selection and
-serialization path (2xx-only application, Desktop version gating,
-validate-before-transform, the server error on transform failure and size
-observation) has no API test: its synthetic-route fixture test was deleted as a
-framework self-test in #37440. Tests never edit the real registry.
+that the current body no longer satisfies it. These pure transform tests
+establish shape compatibility; they do not prove runtime version selection or
+response serialization. Tests must not register synthetic API routes or edit
+the real transform registry.
 
 ### Desktop Contract Gate
 

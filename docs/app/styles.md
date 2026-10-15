@@ -493,12 +493,9 @@ a scroller.
 Callers own the content, the icons and the horizontal rhythm — `px-*` and
 `gap-*` stay adjustable, and a wide menu with avatars legitimately runs `px-3`.
 Callers do not restate the height. `py-*` and `h-*` on one of those components
-fork the row, which is what left the composer's `+` menu at 32px, the account
-and workspace menus at 40px, the subscriptions reset action at 28px, and the
-model picker beside them at 36px. `ccstate/menu-row-height` fails the build on
-those utilities; `min-h-*` stays available to raise the floor for a deliberate
-touch target, and the chat thread header's actions keep `min-h-11` on that
-basis.
+fork the row. `ccstate/menu-row-height` fails the build on those utilities;
+`min-h-*` stays available to raise the floor for a deliberate touch target,
+and the chat thread header's actions keep `min-h-11` on that basis.
 
 Two-line rows are a different control, not a taller menu row. The model picker's
 type rail and its current-model rows pair a label with a summary line and state
