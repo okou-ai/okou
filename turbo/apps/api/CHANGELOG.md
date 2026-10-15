@@ -9,6 +9,29 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.741.2](https://github.com/okou-ai/okou/compare/api-v1.741.1...api-v1.741.2) (2026-10-15)
+
+
+### Bug Fixes
+
+* **api:** protect teams identity binding and prepare completion status ([#40308](https://github.com/okou-ai/okou/issues/40308)) ([182c50a](https://github.com/okou-ai/okou/commit/182c50abdb229c40c210199b7de2e4d948ade6ba))
+
+
+### Refactoring
+
+* **api:** inline connector storage cleanup ([#40323](https://github.com/okou-ai/okou/issues/40323)) ([f9f0aaf](https://github.com/okou-ai/okou/commit/f9f0aaff7b27c424ee3372024dccc0359423564c))
+* **api:** inline connector-owned credential upserts ([#40307](https://github.com/okou-ai/okou/issues/40307)) ([00019cb](https://github.com/okou-ai/okou/commit/00019cbcc88564429621d5e9fce757e394587d2b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.566.2
+    * @okouai/core bumped to 8.759.3
+    * @okouai/db bumped to 1.341.2
+    * @okouai/pi-agent-runtime bumped to 1.50.6
+
 ## [1.741.1](https://github.com/okou-ai/okou/compare/api-v1.741.0...api-v1.741.1) (2026-10-15)
 
 
