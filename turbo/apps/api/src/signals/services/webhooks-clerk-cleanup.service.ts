@@ -69,7 +69,7 @@ import {
 } from "./clerk-agent-lifecycle.service";
 import {
   deleteBuiltinConnectorLocalState$,
-  loadStoredBuiltinConnectorRuntimeSnapshot$,
+  readStoredBuiltinConnectorRuntimeSnapshot$,
 } from "./connector-data.service";
 import { deleteConnectorOwnerState } from "./connector-owner-cleanup.service";
 import {
@@ -370,8 +370,8 @@ async function cancelStripeSubscriptionsForDeletedOrg(
 }
 
 const revokeOrgConnectorTokens$ = command(
-  async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
-    const db = set(writeDb$);
+  async ({ get, set }, orgId: string, signal: AbortSignal): Promise<void> => {
+    const db = get(db$);
     const rows = await db
       .select({
         connectorId: connectors.id,
@@ -386,7 +386,7 @@ const revokeOrgConnectorTokens$ = command(
       );
     signal.throwIfAborted();
     const snapshot = await set(
-      loadStoredBuiltinConnectorRuntimeSnapshot$,
+      readStoredBuiltinConnectorRuntimeSnapshot$,
       rows.map((row) => {
         return row.connectorSlug;
       }),
@@ -411,8 +411,8 @@ const revokeOrgConnectorTokens$ = command(
 );
 
 const revokeUserConnectorTokens$ = command(
-  async ({ set }, userId: string, signal: AbortSignal): Promise<void> => {
-    const db = set(writeDb$);
+  async ({ get, set }, userId: string, signal: AbortSignal): Promise<void> => {
+    const db = get(db$);
     const rows = await db
       .select({
         connectorId: connectors.id,
@@ -427,7 +427,7 @@ const revokeUserConnectorTokens$ = command(
       );
     signal.throwIfAborted();
     const snapshot = await set(
-      loadStoredBuiltinConnectorRuntimeSnapshot$,
+      readStoredBuiltinConnectorRuntimeSnapshot$,
       rows.map((row) => {
         return row.connectorSlug;
       }),
