@@ -1,6 +1,10 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  chatThreadDraftContract,
+  type UserMessageDocument,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
 import { expect, test } from "vitest";
 
 import { setupPage } from "../../../__tests__/page-helper.ts";
@@ -15,6 +19,10 @@ import {
   buildRunModel,
   CLAUDE_SUBSCRIPTION_PROVIDER_ID,
 } from "./chat-composer-test-helpers.ts";
+import {
+  openSavedPresentationPicker,
+  savedPresentationDraft,
+} from "./presentation-draft-test-helpers.ts";
 
 const IMPORT_PROMPT =
   "Analyse this deck and save its visual language as a reusable presentation template.";
@@ -46,16 +54,24 @@ function uploadedFilePart(message: UserMessageDocument) {
 async function importDeck(
   user: ReturnType<typeof userEvent.setup>,
   file: File,
+  openPicker?: HTMLElement,
 ): Promise<void> {
-  const picker = await openTemplatePicker(user);
+  const picker = openPicker ?? (await openTemplatePicker(user));
   await user.upload(
     within(picker).getByLabelText("Import your own deck"),
     file,
   );
 }
 
-test("Import a presentation deck into chat", async () => {
+test("Import a presentation deck over a saved template in an existing chat", async () => {
   const capture = mockDeckImportChat();
+  const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0];
+  if (!template) {
+    throw new Error("Expected a saved presentation template");
+  }
+  context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
+    return respond(200, savedPresentationDraft(template));
+  });
   context.mocks.upload.success({
     id: "81000000-0000-4000-a000-000000000001",
     filename: "modern-deck.pptx",
@@ -64,7 +80,7 @@ test("Import a presentation deck into chat", async () => {
     size: 6,
     url: "https://cdn.example.test/modern-deck.pptx",
   });
-  const user = userEvent.setup({ delay: null });
+  const user = userEvent.setup({ delay: null, skipHover: true });
 
   await setupPage({
     context,
@@ -72,11 +88,13 @@ test("Import a presentation deck into chat", async () => {
     host: "app.okou.ai",
   });
 
+  const picker = await openSavedPresentationPicker(template.title);
   await importDeck(
     user,
     new File(["modern"], "modern-deck.pptx", {
       type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     }),
+    picker,
   );
   await waitFor(() => {
     expect(capture.sentMessages).toHaveLength(1);
@@ -86,6 +104,7 @@ test("Import a presentation deck into chat", async () => {
   );
   expect(capture.runPrompts).toStrictEqual([IMPORT_PROMPT]);
   expect(capture.runClientThreadIds).toStrictEqual([undefined]);
+  expect(capture.selectedTemplates).toStrictEqual([]);
   // This entry adds nothing the member cannot see. How to reach the guide is
   // already in every run's tools prompt, and the catalog needs no correction
   // here, so the deck is sent with the sentence and nothing behind it.

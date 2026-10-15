@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import { expect, test } from "vitest";
 
@@ -20,6 +21,10 @@ import {
   mockTemplateChat,
   openTemplatePicker,
 } from "./chat-composer-template-gallery-test-helpers.ts";
+import {
+  openSavedPresentationPicker,
+  savedPresentationDraft,
+} from "./presentation-draft-test-helpers.ts";
 
 const UPLOADED_TEMPLATE_NOW_MS = 1_785_542_400_000;
 
@@ -33,12 +38,15 @@ async function expectTitleHint(title: string): Promise<void> {
   });
 }
 
-test("A built-in title hint follows caption hover", async () => {
+async function openBuiltInTitleHint() {
   mockTemplateChat();
-  const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0];
-  if (!template) {
-    throw new Error("Expected a built-in presentation template");
+  const [template, selected] = PRESENTATION_TEMPLATE_PICKER_ITEMS;
+  if (!template || !selected) {
+    throw new Error("Expected presentation templates to preview and retain");
   }
+  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+    return respond(200, savedPresentationDraft(selected));
+  });
   mockPresentationHtml(template.embedUrl, ["Opening"]);
   const user = userEvent.setup({ delay: null });
   await setupPage({
@@ -47,15 +55,29 @@ test("A built-in title hint follows caption hover", async () => {
     host: "app.okou.ai",
     featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
   });
-  const picker = await openTemplatePicker(user, "Presentation");
+  const picker = await openSavedPresentationPicker(selected.title);
   const caption = within(picker).getByText(template.title);
+  return { template, selected, user, picker, caption };
+}
 
+test("Hovering a built-in caption shows its hint without changing the selection", async () => {
+  const { template, selected, user, picker, caption } =
+    await openBuiltInTitleHint();
   await user.hover(caption);
   await expectTitleHint(template.title);
-  expect(composerInlineTemplates()).toHaveLength(0);
+  expect(picker).toBeInTheDocument();
+  const inline = composerInlineTemplates();
+  expect(inline).toHaveLength(1);
+  expect(inline[0]).toHaveTextContent(selected.title);
   expect(
     within(picker).queryByLabelText(`${template.title} slide preview`),
   ).not.toBeInTheDocument();
+});
+
+test("Leaving a built-in caption dismisses its title hint", async () => {
+  const { template, user, caption } = await openBuiltInTitleHint();
+  await user.hover(caption);
+  await expectTitleHint(template.title);
   await user.unhover(caption);
   await waitFor(() => {
     expect(

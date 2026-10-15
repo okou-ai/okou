@@ -16,6 +16,8 @@ import { openTemplatePicker } from "./chat-composer-template-gallery-test-helper
 import { clickComposerAddMenuItem } from "./chat-composer-add-menu-test-helpers.ts";
 import {
   AGENT_ID,
+  buildRunModel,
+  CLAUDE_SUBSCRIPTION_PROVIDER_ID,
   THREAD_ID,
   composerInlineTemplates,
   context,
@@ -35,6 +37,14 @@ import { mockChatLifecycle } from "./chat-test-helpers.ts";
 function setupModels(): void {
   mockAgent();
   mockPersonalModelRoutes();
+  context.mocks.data.availableRunModels([
+    buildRunModel({
+      model: "claude-fable-5-1",
+      modelLabel: "Claude Fable 5.1",
+      providerType: "claude-code-oauth-token",
+      modelProviderId: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
+    }),
+  ]);
   mockBillingCapabilities({
     restrictedBuiltInModels: false,
   });
@@ -69,7 +79,9 @@ async function setupComposer(): Promise<HTMLElement> {
 
 /** The panel's rows act on mousedown, which only a full pointer sequence fires. */
 async function clickPanelRow(label: string, menu: HTMLElement): Promise<void> {
-  await userEvent.setup({ delay: null }).click(button(label, menu));
+  await userEvent
+    .setup({ delay: null, skipHover: true })
+    .click(button(label, menu));
   await closeTemplatePicker();
 }
 

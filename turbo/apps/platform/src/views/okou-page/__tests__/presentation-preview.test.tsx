@@ -1,6 +1,8 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
+import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
 
 import {
   click,
@@ -9,6 +11,10 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { clickComposerAddMenuItem } from "./chat-composer-add-menu-test-helpers.ts";
+import {
+  openSavedPresentationPicker,
+  savedPresentationDraft,
+} from "./presentation-draft-test-helpers.ts";
 
 const context = testContext();
 
@@ -75,8 +81,14 @@ function activePreviewFrame(): HTMLIFrameElement {
   return frame;
 }
 
-async function openPresentationDetail(): Promise<HTMLIFrameElement> {
-  await clickComposerAddMenuItem("Template");
+async function openPresentationDetail(
+  fromSavedDraft = false,
+): Promise<HTMLIFrameElement> {
+  if (fromSavedDraft) {
+    await openSavedPresentationPicker(TEMPLATE_NAME);
+  } else {
+    await clickComposerAddMenuItem("Template");
+  }
   const preview = await screen.findByLabelText(
     `Preview ${TEMPLATE_NAME} at current slide`,
   );
@@ -135,6 +147,15 @@ function computedStyle(element: Element): CSSStyleDeclaration {
 }
 
 test("Selecting a slide preserves its authored layout", async () => {
+  const template = PRESENTATION_TEMPLATE_PICKER_ITEMS.find((item) => {
+    return item.embedUrl === PRESENTATION_URL;
+  });
+  if (!template) {
+    throw new Error("Expected the authored presentation template");
+  }
+  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+    return respond(200, savedPresentationDraft(template));
+  });
   arrangePresentation(`<!doctype html>
     <html>
       <head>
@@ -165,7 +186,7 @@ test("Selecting a slide preserves its authored layout", async () => {
     path: `/agents/${AGENT_ID}/chat`,
   });
 
-  const initialFrame = await openPresentationDetail();
+  const initialFrame = await openPresentationDetail(true);
   const dialog = initialFrame.closest('[role="dialog"]');
   if (!(dialog instanceof HTMLElement)) {
     throw new Error("Presentation preview dialog not found");
