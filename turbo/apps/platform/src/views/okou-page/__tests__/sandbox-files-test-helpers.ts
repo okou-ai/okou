@@ -8,13 +8,7 @@ import {
 import { runnerWssTicketsContract } from "@okouai/api-contracts/contracts/runner-wss-tickets";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  act,
-  fireEvent,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import {
   click,
   queryAllByRoleFast,
@@ -133,6 +127,8 @@ export async function setupFilesPage(
   const sockets: Socket[] = [];
   const requests: FilesRequest[] = [];
   const bootstraps: string[] = [];
+  // Browsing an existing run's files does not need a model-switching catalog.
+  context.mocks.data.availableRunModels([]);
   context.mocks.api(browserContract.get, ({ respond }) => {
     return respond(404, {
       error: {
@@ -371,10 +367,7 @@ export async function loadMoreFiles(
     expectEnabled(control);
     return control;
   });
-  await act(() => {
-    click(more);
-    return Promise.resolve();
-  });
+  click(more);
   await waitFor(
     () => {
       expectEnabledOrRemoved(more);
