@@ -700,6 +700,10 @@ function accessCredentialsFromForm(form: HTMLFormElement) {
   };
 }
 
+export interface SshConflictReviewState extends SshDialogState {
+  readonly dialog: SshDialogState;
+}
+
 export const sshConflictReview$ = computed(async (get) => {
   const dialog = await get(sshDialog$);
   const conflict = get(conflict$);
@@ -715,27 +719,30 @@ export const sshConflictReview$ = computed(async (get) => {
     const credential = (await get(sshCredentials$))?.find((value) => {
       return value.id === dialog.credential?.id;
     });
-    return credential ? { ...dialog, credential } : null;
+    return credential ? { ...dialog, dialog, credential } : null;
   }
   if (dialog.connection) {
     const connection = (await get(sshConnections$))?.find((value) => {
       return value.id === dialog.connection?.id;
     });
-    return connection ? { ...dialog, connection } : null;
+    return connection ? { ...dialog, dialog, connection } : null;
   }
   return null;
 });
 
 export const acceptSshConflictReview$ = command(
-  async ({ get, set }, reviewed: SshDialogState, signal: AbortSignal) => {
+  async (
+    { get, set },
+    reviewed: SshConflictReviewState,
+    signal: AbortSignal,
+  ) => {
     const current = await get(sshDialog$);
     signal.throwIfAborted();
     if (
       !current ||
-      reviewed.identity !== current.identity ||
-      reviewed.kind !== current.kind ||
-      reviewed.credential?.id !== current.credential?.id ||
-      reviewed.connection?.id !== current.connection?.id ||
+      current !== reviewed.dialog ||
+      get(dialog$) !== current ||
+      reviewed.sessionKey !== get(authenticatedSessionKey$) ||
       (current.kind === "edit" &&
         reviewed.connection !== null &&
         "transport" in reviewed.connection &&
@@ -911,6 +918,31 @@ const invalidateAfterSshSave$ = command(
   },
 );
 
+const deleteSshHost$ = command(
+  async (
+    { get },
+    client: InitClientReturn<typeof sshConnectionsContract, InitClientArgs>,
+    connection: SshConnectionResponse,
+    signal: AbortSignal,
+  ) => {
+    if (get(conflict$)) {
+      return false;
+    }
+    const result = await accept(
+      client.delete({
+        params: { connectionId: connection.id },
+        body: {
+          expectedGeneration: get(reviewedVersion$) ?? connection.generation,
+        },
+        fetchOptions: { signal },
+      }),
+      [204, 404, 409],
+      signal,
+    );
+    return result.status === 204 ? null : result.body.error.code;
+  },
+);
+
 const saveSshHost$ = command(
   async (
     { get, set },
@@ -920,7 +952,11 @@ const saveSshHost$ = command(
   ) => {
     const clients = await get(sshClients$);
     signal.throwIfAborted();
-    if (clients.identity !== dialog.identity || get(dialog$) !== dialog) {
+    if (
+      clients.identity !== dialog.identity ||
+      get(dialog$) !== dialog ||
+      dialog.sessionKey !== get(authenticatedSessionKey$)
+    ) {
       return false;
     }
     const editor = get(credentialEditor$);
@@ -963,12 +999,7 @@ const saveSshHost$ = command(
       }
       const params = { connectionId: connection.id };
       if (dialog.kind === "delete") {
-        const result = await accept(
-          client.delete({ params, fetchOptions: { signal } }),
-          [204, 409],
-          signal,
-        );
-        conflicted = result.status === 409 ? result.body.error.code : null;
+        return await set(deleteSshHost$, client, connection, signal);
       } else if (dialog.kind === "reset") {
         const result = await accept(
           client.resetHostKey({
@@ -1059,6 +1090,9 @@ export const saveSsh$ = command(
     signal.throwIfAborted();
     if (get(dialog$) !== dialog) {
       return;
+    }
+    if (dialog.kind === "delete" && conflicted) {
+      set(reviewedVersion$, null);
     }
     if (!conflicted) {
       set(dialog$, null);

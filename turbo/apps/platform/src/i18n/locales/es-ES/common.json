@@ -5434,6 +5434,13 @@
     "credentialsHelp": "Las credenciales son de solo escritura y permanecen fuera del sandbox. Pega la clave completa; se conservan los espacios. Los campos se borran al cerrar el formulario.",
     "delete": "Eliminar host",
     "deleteHelp": "¿Eliminar este host? Sus credenciales se conservarán. Los Agents dejarán de verlo en el inventario.",
+    "deleteReview": {
+      "acknowledge": "Usar esta versión para eliminar",
+      "changed": "Este host ha cambiado. Revisa sus últimos ajustes guardados antes de eliminarlo.",
+      "help": "Revisa estos ajustes guardados y luego selecciona Eliminar host para eliminar esta versión.",
+      "unavailable": "Este host ya no está disponible. Cierra este diálogo y actualiza la configuración antes de volver a intentarlo.",
+      "version": "Versión {{version}}"
+    },
     "description": "Configura hosts SSH para que tus agentes ejecuten comandos remotos.",
     "displayName": "Nombre para mostrar",
     "edit": "Editar host",
