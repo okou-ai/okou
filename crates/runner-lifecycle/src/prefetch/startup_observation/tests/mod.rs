@@ -1,7 +1,14 @@
 use std::num::NonZeroUsize;
+use std::time::Duration;
+
+use runner_host::test_fixtures::ignored_child::{
+    ignored_child_test_env_guard_enabled, run_ignored_child_test,
+};
 
 use super::super::{MEMORY_PREFETCH_CHUNK_BYTES, MemoryPrefetchCandidate};
 use super::*;
+
+const FIFO_CHILD_PATH_ENV: &str = "OKOU_STARTUP_PREFETCH_FIFO_CHILD_PATH";
 
 #[tokio::test]
 async fn startup_entry_reports_complete_real_file_and_joins_its_workers() {
@@ -58,12 +65,33 @@ async fn joined_startup_open_and_read_failures_are_not_complete_reads() {
 
 #[tokio::test]
 async fn cancellation_after_external_open_is_observed_and_joined() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("memory.fifo");
+    // A reader regression can strand a thread in FIFO open/read. An async
+    // timeout alone cannot bound Tokio's blocking-thread shutdown.
+    run_ignored_child_test(
+        "prefetch::startup_observation::tests::cancellation_after_external_open_is_observed_and_joined_child",
+        (FIFO_CHILD_PATH_ENV, path.to_str().unwrap()),
+        &[],
+        Duration::from_secs(5),
+    )
+    .await;
+}
+
+#[tokio::test]
+#[ignore = "spawned by cancellation_after_external_open_is_observed_and_joined"]
+async fn cancellation_after_external_open_is_observed_and_joined_child() {
     use nix::sys::stat::Mode;
     use nix::unistd::mkfifo;
     use std::io::Write;
 
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("memory.fifo");
+    let Ok(path) = std::env::var(FIFO_CHILD_PATH_ENV) else {
+        return;
+    };
+    if !ignored_child_test_env_guard_enabled((FIFO_CHILD_PATH_ENV, &path)) {
+        return;
+    }
+    let path = std::path::PathBuf::from(path);
     mkfifo(&path, Mode::S_IRUSR | Mode::S_IWUSR).unwrap();
     let (opened, receiver) = tokio::sync::oneshot::channel();
     let (release, released) = std::sync::mpsc::channel();
