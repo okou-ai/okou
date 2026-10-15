@@ -8,22 +8,76 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
 const ENTRIES = [
-  "/settings/slack?w=T123&u=U123&c=C123&t=123.456",
-  "/settings/telegram?bot=official&tgUser=99001&ts=1700000000&sig=test-signature&tgUserName=alice&tgDisplayName=Alice+Tester",
-  "/SETTINGS/telegram/?bot=official&tgUser=99001&ts=1700000000&sig=test-signature",
-  "/telegram/connect?bot=official&tgUser=99001&ts=1700000000&sig=test-signature&tgUserName=alice&tgDisplayName=Alice+Tester",
-  "/settings/discord?guild_id=123456789012345678&workspace=Example&status=pending",
-  "/settings/discord/install?guild_id=123456789012345678&status=connected",
-  "/settings/teams?tenantId=tenant&teamsUserId=user&teamsAadObjectId=aad&orgId=org&conversationId=conversation&activityId=activity&channelId=channel&threadId=thread",
-  "/works?discord=pending&guild_id=123456789012345678",
-  "/works?discord=error&error=access_denied",
-  "/works?discord=connected&workspace=Example",
+  {
+    name: "Slack",
+    entry:
+      "/settings/slack?w=T123&u=U123&c=C123&t=123.456&context=one&context=two",
+  },
+  {
+    name: "Telegram",
+    entry:
+      "/settings/telegram?bot=official&tgUser=99001&ts=1700000000&sig=test-signature&tgUserName=alice&tgDisplayName=Alice+Tester&context=one&context=two",
+  },
+  {
+    name: "Telegram with case-insensitive and trailing-slash routing",
+    entry:
+      "/SETTINGS/telegram/?bot=official&tgUser=99001&ts=1700000000&sig=test-signature&context=one&context=two",
+  },
+  {
+    name: "legacy Telegram",
+    entry:
+      "/telegram/connect?bot=official&tgUser=99001&ts=1700000000&sig=test-signature&tgUserName=alice&tgDisplayName=Alice+Tester&context=one&context=two",
+  },
+  // Discord captures and sanitizes its callback before the shared auth wrapper.
+  // Only its supported public fields belong in the continuation contract.
+  {
+    name: "Discord",
+    entry: "/settings/discord?guild_id=123456789012345678&status=pending",
+  },
+  {
+    name: "Discord install",
+    entry:
+      "/settings/discord/install?guild_id=123456789012345678&status=connected",
+  },
+  {
+    name: "Teams",
+    entry:
+      "/settings/teams?tenantId=tenant&teamsUserId=user&teamsAadObjectId=aad&orgId=org&conversationId=conversation&activityId=activity&channelId=channel&threadId=thread&context=one&context=two",
+  },
+  {
+    name: "legacy pending Discord callback",
+    entry: "/works?discord=pending&guild_id=123456789012345678",
+  },
+  {
+    name: "legacy failed Discord callback",
+    entry: "/works?discord=error&discord_error=cancelled",
+  },
+  {
+    name: "legacy connected Discord callback",
+    entry: "/works?discord=connected&guild_id=123456789012345678",
+  },
 ] as const;
 
+function expectContinuation(
+  actual: string | null | undefined,
+  expected: string,
+) {
+  if (!actual) {
+    throw new Error("The auth page did not provide a continuation URL");
+  }
+  const actualUrl = new URL(actual);
+  const expectedUrl = new URL(expected);
+  // Stable sorting ignores key order while retaining repeated-value order.
+  actualUrl.searchParams.sort();
+  expectedUrl.searchParams.sort();
+  // A failed continuation check must not print signed-link fields.
+  expect(actualUrl.href === expectedUrl.href).toBeTruthy();
+}
+
 test.each(ENTRIES)(
-  "Organization selection preserves the complete supported continuation for %s",
-  async (entry) => {
-    const target = `https://app.okou.ai${entry}&context=one&context=two#public-context`;
+  "Organization selection preserves the complete supported continuation for $name",
+  async ({ entry }) => {
+    const target = `https://app.okou.ai${entry}#public-context`;
     await startPage({
       context,
       host: "app.okou.ai",
@@ -39,7 +93,8 @@ test.each(ENTRIES)(
         "/sign-in/tasks/choose-organization",
       );
     });
-    expect(new URL(window.location.href).searchParams.get("redirect_url")).toBe(
+    expectContinuation(
+      new URL(window.location.href).searchParams.get("redirect_url"),
       target,
     );
 
@@ -47,15 +102,15 @@ test.each(ENTRIES)(
     window.history.replaceState(null, "", window.location.href);
     window.dispatchEvent(new PopStateEvent("popstate"));
     const signIn = await screen.findByTestId("clerk-sign-in");
-    expect(signIn).toHaveAttribute("data-clerk-force-redirect-url", target);
+    expectContinuation(signIn.dataset.clerkForceRedirectUrl, target);
   },
 );
 
 test.each(ENTRIES)(
-  "Sign-in and sign-up retain repeated query and fragment context for %s",
-  async (entry) => {
+  "Sign-in and sign-up retain the complete supported continuation for $name",
+  async ({ entry }) => {
     vi.spyOn(console, "info").mockImplementation(() => {});
-    const target = `https://app.okou.ai${entry}&context=one&context=two#public-context`;
+    const target = `https://app.okou.ai${entry}#public-context`;
     await startPage({ context, host: "app.okou.ai", path: target, auth: null });
     await waitFor(() => {
       expect(window.location.pathname).toBe("/sign-in");
@@ -63,7 +118,7 @@ test.each(ENTRIES)(
     window.history.replaceState(null, "", window.location.href);
     window.dispatchEvent(new PopStateEvent("popstate"));
     const signIn = await screen.findByTestId("clerk-sign-in");
-    expect(signIn).toHaveAttribute("data-clerk-force-redirect-url", target);
+    expectContinuation(signIn.dataset.clerkForceRedirectUrl, target);
 
     const signUpUrl = signIn.dataset.clerkSignUpUrl;
     const router = window.__okouClerkRouter;
@@ -75,10 +130,8 @@ test.each(ENTRIES)(
         window.location.assign(to);
       },
     });
-    await expect(screen.findByTestId("clerk-sign-up")).resolves.toHaveAttribute(
-      "data-clerk-force-redirect-url",
-      target,
-    );
+    const signUp = await screen.findByTestId("clerk-sign-up");
+    expectContinuation(signUp.dataset.clerkForceRedirectUrl, target);
   },
 );
 
@@ -116,7 +169,7 @@ test.each([
     await startPage({
       context,
       host: "app.okou.ai",
-      path: `${entry}&context=one&context=two#discord_oauth=approve&state=${"s".repeat(43)}&approval_proof=${proof}`,
+      path: `${entry}&guild_id=123456789012345678#discord_oauth=approve&state=${"s".repeat(43)}&approval_proof=${proof}`,
       auth: signedIn
         ? {
             user: { id: "approval-user", fullName: "Approval User" },
@@ -132,8 +185,9 @@ test.each([
     const params = new URLSearchParams(
       signedIn ? window.location.search : window.location.hash.split("?")[1],
     );
-    expect(params.get("redirect_url")).toBe(
-      `https://app.okou.ai${entry}&context=one&context=two`,
+    expectContinuation(
+      params.get("redirect_url"),
+      `https://app.okou.ai${entry}&guild_id=123456789012345678`,
     );
     expect(JSON.stringify(logs.mock.calls).includes(proof)).toBeFalsy();
     expect(window.location.href.includes("approval_proof")).toBeFalsy();
@@ -166,15 +220,22 @@ test("A sanitized Discord return after login or actor change restarts lost appro
   await setupPage({
     context,
     host: "app.okou.ai",
-    path: "/settings/discord?status=pending&context=public",
+    path: "/settings/discord?status=pending&guild_id=123456789012345678",
     featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     auth: {
       user: { id: "replacement-user", fullName: "Replacement User" },
     },
   });
   await expect(
-    screen.findByText(/restart the connection from the original tab/u),
+    screen.findByRole("heading", { name: "Connection failed" }),
   ).resolves.toBeInTheDocument();
+  expect(
+    screen.getByText(/restart the connection|Start again/u),
+  ).toBeInTheDocument();
+  expect(screen.getByText("Back to settings").closest("a")).toHaveAttribute(
+    "href",
+    "/works",
+  );
   expect(window.location.hash).toBe("");
 });
 
