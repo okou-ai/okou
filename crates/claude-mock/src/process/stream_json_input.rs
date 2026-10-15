@@ -2,7 +2,7 @@ use crate::transcript::{
     JsonlTranscript, generate_session_id, init_event, replayed_user_event, result_event,
 };
 use serde_json::Value;
-use std::io::{BufRead, Write};
+use std::io::{BufRead, Read, Write};
 use std::process::ExitCode;
 
 const ACTIVE_INPUT_READY_RESULT: &str = "READY_FOR_ACTIVE_INPUT";
@@ -164,6 +164,17 @@ pub(super) fn run_active_input_smoke_scenario(
             frame,
             &mut follow_up_contents,
         );
+    }
+
+    // A channel fixture can keep the run active until its host has received
+    // every control ACK, even when the mock consumes the last input first.
+    if let Some(path) = std::env::var_os("MOCK_CLAUDE_ACTIVE_INPUT_COMPLETION_FIFO") {
+        let released =
+            std::fs::File::open(path).and_then(|mut fifo| fifo.read_exact(&mut [0_u8; 1]));
+        if let Err(error) = released {
+            eprintln!("active-input completion gate failed: {error}");
+            return ExitCode::from(1);
+        }
     }
 
     transcript.emit_value(result_event(
