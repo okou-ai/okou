@@ -428,6 +428,8 @@ named, hash-verified immutable copies of the original packaged snapshot. The
 source reopens before every shutdown, including failures, so accepted observation,
 admission and prefetch owners are joined before required original home saving.
 Original full-lease, positive backing wait and durable 64 MiB tail checks remain.
+Copies live inside the measured case directory: failures preserve them, and only
+full case success permits the outer owner to remove them with the other files.
 
 Use the same `OKOU_TEST_OPTIONAL_MEMORY_POLICY` JSON as the Ready corpus, and
 set a supplied optional interval longer than the actual stale admission wait plus

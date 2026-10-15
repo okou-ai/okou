@@ -822,7 +822,7 @@ async fn exercise_retirement(
                     factory: factory.clone(), pool: pool.clone(), status: status.clone(),
                     operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
                     rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
-                }, inputs, recovery_source.as_ref().ok_or_else(|| io::Error::other("native recovery source missing"))?, proof).await?;
+                }, inputs, paths.base_dir(), recovery_source.as_ref().ok_or_else(|| io::Error::other("native recovery source missing"))?, proof).await?;
                 Ok(None)
             }
             NativeScope::OptionalOrdinary | NativeScope::OptionalAged => {

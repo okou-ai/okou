@@ -51,6 +51,7 @@ fn no_reads(
 pub async fn exercise(
     context: transitions::Context,
     inputs: &fixture::Inputs,
+    case_directory: &std::path::Path,
     source: &Arc<recovery_source::Source>,
     proof: Option<&Arc<evidence::Case>>,
 ) -> TestResult<()> {
@@ -71,11 +72,11 @@ pub async fn exercise(
     let growth_bytes = (u64::from(supplied.snapshot_memory_mb) * 1024 * 1024)
         .checked_add(supplied.prefetch_overhead_bytes)
         .ok_or_else(|| io::Error::other("native recovery read envelope overflow"))?;
-    let copies = tempfile::tempdir_in(PathBuf::from(std::env::var("OKOU_TEST_RPC_BASE_DIR")?))?;
-    let paths = [
-        copies.path().join("recovery-a.bin"),
-        copies.path().join("recovery-b.bin"),
-    ];
+    // The outer measured case retains this directory on failure and removes it
+    // only after original data, backing, required tail and dependencies finish.
+    let copies = case_directory.join("recovery-snapshots");
+    std::fs::create_dir(&copies)?;
+    let paths = [copies.join("recovery-a.bin"), copies.join("recovery-b.bin")];
     let expected = proof.snapshot_memory_hash()?.to_owned();
     let copied_paths = paths.clone();
     let copied_hash = expected.clone();
