@@ -604,7 +604,11 @@ describe("Tailscale configuration and saved-host authority", () => {
     expect((await resources()).configs).toStrictEqual([]);
     authenticate(member);
     await accept(
-      hosts().delete({ headers, params: { connectionId: saved.id } }),
+      hosts().delete({
+        headers,
+        params: { connectionId: saved.id },
+        body: { expectedGeneration: saved.generation },
+      }),
       [204],
     );
     authenticate(admin, "org:admin");

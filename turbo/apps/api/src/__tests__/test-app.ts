@@ -90,13 +90,21 @@ export function setupRawAppRequestWithRoutes({
   return async (
     path: string,
     init: RequestInit,
-  ): Promise<{ readonly status: number; readonly body: unknown }> => {
+  ): Promise<{
+    readonly status: number;
+    readonly body: unknown;
+    readonly headers: Headers;
+  }> => {
     const app = createAppWithRoutes({
       signal: signal ?? context.signal,
       routes,
     });
     const response = await app.request(path, init);
-    return { status: response.status, body: await parseResponseBody(response) };
+    return {
+      status: response.status,
+      body: await parseResponseBody(response),
+      headers: response.headers,
+    };
   };
 }
 

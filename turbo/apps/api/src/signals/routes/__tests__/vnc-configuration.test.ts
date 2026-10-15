@@ -1097,6 +1097,7 @@ describe("VNC owner configuration", () => {
       sshConnectionsClient().delete({
         headers,
         params: { connectionId: ssh.body.id },
+        body: { expectedGeneration: ssh.body.generation },
       }),
       [409],
     );
@@ -1148,6 +1149,7 @@ describe("VNC owner configuration", () => {
       sshConnectionsClient().delete({
         headers,
         params: { connectionId: ssh.body.id },
+        body: { expectedGeneration: ssh.body.generation },
       }),
       [204],
     );

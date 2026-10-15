@@ -245,7 +245,7 @@ describe("POST /api/chat-threads", () => {
     vnc.authenticate({ orgId: fixture.orgId, userId: fixture.userId });
     const headers = { authorization: "Bearer clerk-session" };
     const hostId = randomUUID();
-    await accept(
+    const host = await accept(
       sshClient().create({
         headers,
         body: {
@@ -318,7 +318,11 @@ describe("POST /api/chat-threads", () => {
     expect(replayed.body.vnc[0]).toMatchObject({ overrideEnabled: true });
 
     await accept(
-      sshClient().delete({ headers, params: { connectionId: hostId } }),
+      sshClient().delete({
+        headers,
+        params: { connectionId: hostId },
+        body: { expectedGeneration: host.body.generation },
+      }),
       [204],
     );
     const afterDeletion = await accept(
