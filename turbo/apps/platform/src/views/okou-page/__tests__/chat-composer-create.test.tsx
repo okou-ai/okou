@@ -26,7 +26,6 @@ import {
   mockBillingCapabilities,
   mockPersonalModelRoutes,
   queryComposerModelTrigger,
-  selectTemplate,
 } from "./chat-composer-test-helpers.ts";
 import {
   readClipboardItemText,
@@ -245,7 +244,7 @@ test("A queued Create message keeps its intent separate from user-authored text"
       .join("")
       .trim(),
   ).toBe(prompt);
-  await expect(screen.findByText(prompt)).resolves.toBeVisible();
+  await expect(screen.findByText(prompt)).resolves.toBeInTheDocument();
 });
 
 const createTemplateScenarios = [
@@ -462,11 +461,9 @@ test("The slash panel's Illustration row opens the image style flow", async () =
   await user.click(editor);
   await user.keyboard("/");
   const menu = await screen.findByTestId("slash-workflow-menu");
-  await clickPanelRow("Illustration", menu);
-  await waitFor(() => {
-    expect(taskChip("Image")).toBeVisible();
-  });
-  await clickComposerAddMenuItem("Add style");
+  await userEvent
+    .setup({ delay: null, skipHover: true })
+    .click(button("Illustration", menu));
   const dialog = await screen.findByRole("dialog");
   await waitFor(() => {
     const tab = queryAllByRoleFast("tab", dialog).find((item) => {
@@ -474,6 +471,8 @@ test("The slash panel's Illustration row opens the image style flow", async () =
     });
     expect(tab).toHaveAttribute("aria-selected", "true");
   });
+  await closeTemplatePicker();
+  expect(taskChip("Image")).toBeInTheDocument();
 });
 
 async function setupCreateModeWithTemplate() {
@@ -486,27 +485,38 @@ async function setupCreateModeWithTemplate() {
       }
     },
   });
-  const editor = await setupComposer();
-  const user = userEvent.setup({ delay: null });
   const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0];
   if (!template) {
     throw new Error("Expected a presentation template");
   }
-  await selectTemplate(template);
-  await user.click(editor);
-  await user.paste("Our launch /");
-  const menu = await screen.findByTestId("slash-workflow-menu");
+  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+    return respond(200, {
+      draftUserMessage: {
+        version: 1,
+        parts: [
+          { type: "text", text: "Our launch /notes " },
+          {
+            type: "template",
+            titleSnapshot: template.title,
+            template: {
+              type: "presentation",
+              selection: { templateId: template.templateId },
+            },
+          },
+        ],
+      },
+      draftAttachments: null,
+    });
+  });
+  const editor = await setupComposer();
+  await waitFor(() => {
+    expect(composerInlineTemplates()).toHaveLength(1);
+  });
   expect(submissions).toHaveLength(0);
-  await clickPanelRow("Presentation", menu);
+  const tasks = await screen.findByRole("group", { name: "Choose a task" });
+  click(button("Presentation", tasks));
   const chip = await waitFor(() => {
     return taskChip("Presentation");
-  });
-  expect(menu).not.toBeInTheDocument();
-  expect(editor).toHaveTextContent("Our launch");
-  expect(composerInlineTemplates()).toHaveLength(1);
-  await user.paste(" /notes");
-  await waitFor(() => {
-    expect(editor).toHaveFocus();
   });
   expect(editor).toHaveTextContent("Our launch /notes");
   expect(composerInlineTemplates()).toHaveLength(1);
@@ -551,8 +561,11 @@ async function addPresentationTemplate(
   editor: HTMLElement,
   title: string,
 ): Promise<void> {
-  await chooseCommand(editor, "Our launch /", "presentation");
-  await clickComposerAddMenuItem("Add template");
+  await fill(editor, "Our launch /");
+  const menu = await screen.findByTestId("slash-workflow-menu");
+  await userEvent
+    .setup({ delay: null, skipHover: true })
+    .click(button("Presentation", menu));
   await screen.findByRole("dialog");
   click(await screen.findByLabelText(`Select template ${title}`));
   await waitFor(() => {

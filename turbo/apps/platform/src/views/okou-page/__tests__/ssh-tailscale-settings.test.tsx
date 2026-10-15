@@ -125,23 +125,7 @@ async function addHost() {
   return dialog;
 }
 
-test("Tailscale SSH reuses the selected network, preserves drafts and saves only an OS username", async () => {
-  const requests: unknown[] = [];
-  context.mocks.api(sshConnectionsContract.create, ({ body, respond }) => {
-    requests.push(body);
-    return respond(201, {
-      id: body.id,
-      displayName: body.displayName,
-      host: body.host,
-      port: 22,
-      username: "ubuntu",
-      transport: { type: "tailscale_ssh", configId: config.id },
-      generation: 1,
-      learnedHostKey: null,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    });
-  });
+test("Tailscale SSH reuses the selected network and preserves carrier drafts", async () => {
   await page();
   const dialog = await addHost();
   await chooseSshConnectionType(dialog, "Tailscale SSH");
@@ -164,6 +148,32 @@ test("Tailscale SSH reuses the selected network, preserves drafts and saves only
   expect(
     within(dialog).getByRole("textbox", { name: "System username" }),
   ).toHaveValue("ubuntu");
+});
+
+test("Saving Tailscale SSH sends only its OS username and selected network", async () => {
+  const requests: unknown[] = [];
+  context.mocks.api(sshConnectionsContract.create, ({ body, respond }) => {
+    requests.push(body);
+    return respond(201, {
+      id: body.id,
+      displayName: body.displayName,
+      host: body.host,
+      port: 22,
+      username: "ubuntu",
+      transport: { type: "tailscale_ssh", configId: config.id },
+      generation: 1,
+      learnedHostKey: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+  });
+  await page();
+  const dialog = await addHost();
+  await chooseSshConnectionType(dialog, "Tailscale SSH");
+  await fill(
+    within(dialog).getByRole("textbox", { name: "System username" }),
+    "ubuntu",
+  );
   click(getAction("button", "Save", dialog));
   await waitFor(() => {
     return expect(screen.queryByRole("dialog")).toBeNull();

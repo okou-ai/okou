@@ -30,6 +30,36 @@ afterEach(() => {
   clearMockNow();
 });
 
+async function prepareExportOwner() {
+  const bdd = createBddApi(context);
+  bdd.acceptAgentStorageWrites();
+  const runs = createRunsApi(context);
+  runs.acceptStorageDownloads();
+  runs.acceptTelemetryIngest();
+  installDurableUserExportStorage(context, { prefixes: [""] });
+  const actor = bdd.user();
+  if (!actor.orgId) {
+    throw new Error("Expected an organization for the export actor");
+  }
+  const runCleanups: (() => Promise<void>)[] = [];
+  const fixture = createPublicUnfundedProFixture(context, actor, {
+    beforeOrganizationCleanup: async () => {
+      for (const cleanup of runCleanups) {
+        await cleanup();
+      }
+    },
+  });
+  await fixture.initialize();
+  return {
+    actor,
+    bdd,
+    fixture,
+    registerRunCleanup(cleanup: () => Promise<void>) {
+      runCleanups.push(cleanup);
+    },
+  };
+}
+
 describe("OPS-01: user data export", () => {
   it("rejects unauthenticated and org-less export requests", async () => {
     const api = createOpsLogsApi(context);
@@ -85,33 +115,12 @@ describe("OPS-01: user data export", () => {
     });
   });
 
-  it("keeps public export-source resources and current memory separate from a peer", async () => {
-    const bdd = createBddApi(context);
-    bdd.acceptAgentStorageWrites();
+  it("keeps public export-source resources separate from a peer", async () => {
+    const { actor, bdd, fixture } = await prepareExportOwner();
     const chat = createChatFilesBddApi(context);
     const misc = createMiscRoutesApi(context);
     const events = createChatEventsFixture(context);
-    const runs = createRunsApi(context);
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    installDurableUserExportStorage(context, { prefixes: [""] });
-    const actor = bdd.user();
-    if (!actor.orgId) {
-      throw new Error("Expected an organization for the export actor");
-    }
-    const runCleanups: (() => Promise<void>)[] = [];
-    const fixture = createPublicUnfundedProFixture(context, actor, {
-      beforeOrganizationCleanup: async () => {
-        for (const cleanup of runCleanups) {
-          await cleanup();
-        }
-      },
-    });
-    await fixture.initialize();
     await fixture.run(async () => {
-      await runs.ensurePersonalSubscriptionModel(actor, {
-        model: "claude-fable-5-1",
-      });
       const agent = await bdd.createAgent(actor, {
         displayName: "BDD Export Agent",
         visibility: "private",
@@ -186,9 +195,19 @@ describe("OPS-01: user data export", () => {
         id: workflow.body.id,
         instruction: "Use the exported workflow instructions.",
       });
-      const registerRunCleanup = (cleanup: () => Promise<void>) => {
-        runCleanups.push(cleanup);
-      };
+      await bdd.deleteAgent(peer, peerAgent.agentId);
+      await bdd.deleteAgent(actor, agent.agentId);
+      await flushWaitUntilForTest();
+    });
+  });
+
+  it("keeps current memory and its retained version separate from a peer", async () => {
+    const { actor, bdd, fixture, registerRunCleanup } =
+      await prepareExportOwner();
+    await fixture.run(async () => {
+      const peer = bdd.user({ orgId: actor.orgId });
+      const peerOnboarded = await bdd.completeOnboarding(peer);
+      expect(peerOnboarded.status).toBe(200);
       const oldRun = await claimPublicToolRun(
         context,
         actor,
@@ -265,8 +284,6 @@ describe("OPS-01: user data export", () => {
         }),
       );
       await reader.cleanup();
-      await bdd.deleteAgent(peer, peerAgent.agentId);
-      await bdd.deleteAgent(actor, agent.agentId);
       await flushWaitUntilForTest();
     });
   });
