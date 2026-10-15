@@ -527,7 +527,7 @@ export async function validateConnectorCatalogColumnContract(
     );
     assert.equal(frontier.rows.length, args.expectedRows);
     assert.equal(frontier.pointers.length, 1);
-    assert.equal(client.getTransactionStatus(), "T");
+    assert.equal(client.getTransactionStatus(), "I");
     try {
       await validateRequiredColumnRejections({ ...args, hash, frontier });
     } catch (error: unknown) {
@@ -539,7 +539,7 @@ export async function validateConnectorCatalogColumnContract(
         await captureRequiredFrontier(client, args.phase, args.sourceSchema),
         frontier,
       );
-      assert.equal(client.getTransactionStatus(), "T");
+      assert.equal(client.getTransactionStatus(), "I");
     } catch (error: unknown) {
       errors.push(error);
     }
