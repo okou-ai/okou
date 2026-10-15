@@ -122,7 +122,7 @@ describe("Computer Use command retention", () => {
         actor,
         screenshotId,
       );
-      expect(screenshot.bytes).toEqual(bytes);
+      expect(screenshot.bytes).toStrictEqual(bytes);
 
       mockNow(COMPLETED_AT + RETENTION_MS);
       await scenario.cleanup();
@@ -136,7 +136,7 @@ describe("Computer Use command retention", () => {
         const audit = await computerUse.listComputerUseAuditEvents(actor, {
           commandId,
         });
-        expect(audit.auditEvents).toEqual([]);
+        expect(audit.auditEvents).toStrictEqual([]);
       }
       const removedScreenshot = await computerUse.requestComputerUseScreenshot(
         actor,
@@ -231,7 +231,7 @@ describe("Computer Use command retention", () => {
       const removedAudit = await computerUse.listComputerUseAuditEvents(actor, {
         commandId: created.commandId,
       });
-      expect(removedAudit.auditEvents).toEqual([]);
+      expect(removedAudit.auditEvents).toStrictEqual([]);
     });
   });
 });
