@@ -9,6 +9,30 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.739.0](https://github.com/okou-ai/okou/compare/api-v1.738.1...api-v1.739.0) (2026-10-15)
+
+
+### Features
+
+* **runner:** record cache routing and inventory outcomes ([#40171](https://github.com/okou-ai/okou/issues/40171)) ([8d94f8f](https://github.com/okou-ai/okou/commit/8d94f8f0b601173b3fe6cb5431f48cb916959226))
+
+
+### Refactoring
+
+* **api:** decide native continuation once in the thread context ([#40187](https://github.com/okou-ai/okou/issues/40187)) ([9fac915](https://github.com/okou-ai/okou/commit/9fac915cc2fcaa3abd70af4581a3e602437cb90c))
+* **api:** fold chat relation writes into atomic ctes ([#40174](https://github.com/okou-ai/okou/issues/40174)) ([378510b](https://github.com/okou-ai/okou/commit/378510be8524fe9b2f428f06a3786fb7523308c0))
+* **api:** own feishu installation configuration writes ([#40183](https://github.com/okou-ai/okou/issues/40183)) ([91f69b9](https://github.com/okou-ai/okou/commit/91f69b937d0d22a2d3c12dff7f47a27348a15c23))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.563.0
+    * @okouai/core bumped to 8.758.1
+    * @okouai/db bumped to 1.340.2
+    * @okouai/pi-agent-runtime bumped to 1.50.1
+
 ## [1.738.1](https://github.com/okou-ai/okou/compare/api-v1.738.0...api-v1.738.1) (2026-10-15)
 
 

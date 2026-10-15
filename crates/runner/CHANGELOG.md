@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.233.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.232.0...runner-rs-v0.233.0) (2026-10-15)
+
+
+### Features
+
+* **runner:** record cache routing and inventory outcomes ([#40171](https://github.com/okou-ai/okou/issues/40171)) ([8d94f8f](https://github.com/okou-ai/okou/commit/8d94f8f0b601173b3fe6cb5431f48cb916959226))
+
+
+### Documentation
+
+* remove task history and relocate runner operations ([#40176](https://github.com/okou-ai/okou/issues/40176)) ([4e3f9b8](https://github.com/okou-ai/okou/commit/4e3f9b8b36b17963b44f0265a0b3cdd7d3271842))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.232.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.12...runner-rs-v0.232.0) (2026-10-15)
 
 
