@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/okou-ai/okou/compare/runner-host-v0.8.0...runner-host-v0.9.0) (2026-10-15)
+
+
+### Features
+
+* **runner:** record cache routing and inventory outcomes ([#40171](https://github.com/okou-ai/okou/issues/40171)) ([8d94f8f](https://github.com/okou-ai/okou/commit/8d94f8f0b601173b3fe6cb5431f48cb916959226))
+
 ## [0.8.0](https://github.com/okou-ai/okou/compare/runner-host-v0.7.15...runner-host-v0.8.0) (2026-10-15)
 
 
