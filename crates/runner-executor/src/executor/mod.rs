@@ -1064,8 +1064,8 @@ fn home_promotion_identity_failure(
 /// Dispatch inputs for the fresh-create path. Holds the UUID for the new sandbox
 /// and the categorized reason no idle sandbox was reused. The id is selected in job
 /// discovery after the reuse decision, then forwarded by `job_spawn`; it becomes
-/// the sandbox's identity, and the reuse result is forwarded to the guest for
-/// /complete metadata.
+/// the sandbox's identity. The reuse result feeds executor startup telemetry;
+/// the settled `sandboxStartupPath` is sent by the separate startup report.
 pub struct NewSandboxDispatch {
     pub id: SandboxId,
     pub reuse_result: SandboxReuseResult,
