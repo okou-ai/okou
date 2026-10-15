@@ -86,6 +86,7 @@ export async function setupFilesPage(
     readonly queued?: boolean;
     readonly enabled?: boolean;
     readonly mobile?: boolean;
+    readonly viewportHeight?: number;
     readonly bootstrapUnavailable?: boolean;
     readonly twoThreads?: boolean;
     readonly helloError?: SandboxChannelWireError;
@@ -188,7 +189,9 @@ export async function setupFilesPage(
   vi.stubGlobal("WebSocket", Socket);
   vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(
     function (this: HTMLElement) {
-      return this.dataset.testid === "sandbox-files-viewport" ? 264 : 0;
+      return this.dataset.testid === "sandbox-files-viewport"
+        ? (options.viewportHeight ?? 264)
+        : 0;
     },
   );
   context.mocks.browser.matchMedia((query) => {
@@ -318,8 +321,13 @@ export function scrollFilesToEnd(panel: HTMLElement): void {
   });
 }
 
-export async function loadMoreFiles(panel: HTMLElement): Promise<void> {
-  scrollFilesToEnd(panel);
+export async function loadMoreFiles(
+  panel: HTMLElement,
+  { scrollToEnd = true }: { readonly scrollToEnd?: boolean } = {},
+): Promise<void> {
+  if (scrollToEnd) {
+    scrollFilesToEnd(panel);
+  }
   const more = await waitFor(() => {
     const control = filesButton("Load more", panel);
     expectEnabled(control);
