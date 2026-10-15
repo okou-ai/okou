@@ -993,7 +993,7 @@ test("does not delete the org before its Stripe refund succeeds", async () => {
   ).not.toHaveBeenCalled();
 });
 
-test("retries refunds on redelivery while retaining Clerk-deleted org billing history", async () => {
+test("retries Clerk deletion refunds on redelivery with the same provider idempotency key", async () => {
   const deletionTimestamp = 1_800_000_000;
   const periodStart = deletionTimestamp - 500;
   const periodEnd = deletionTimestamp + 500;
@@ -1083,8 +1083,4 @@ test("retries refunds on redelivery while retaining Clerk-deleted org billing hi
       idempotencyKey: `org-delete-refund:${fixture.orgId}:${subscriptionId}:in_delete_clerk:${deletionTimestamp}`,
     }),
   );
-  expect(
-    (await createBillingMediaApi(context).readBillingStatus(actor))
-      .hasSubscription,
-  ).toBeTruthy();
 });

@@ -188,7 +188,7 @@ async function syncDeployedCatalog() {
 }
 
 async function executeAutomationCron() {
-  await accept(
+  return await accept(
     setupApp({ context, routes: cronExecuteWorkflowAutomationsRoutes })(
       cronExecuteWorkflowAutomationsContract,
     ).execute({ headers: { authorization: `Bearer ${CRON_SECRET}` } }),
@@ -1698,87 +1698,476 @@ describe("Official schedule expiry", () => {
     return response.body;
   }
 
-  it("preserves a claimed Morning Brief occurrence across later ticks and duplicate Runner completion", async () => {
-    await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
-      installCatalogStorageFixture();
-      await syncDeployedCatalog();
-      const { actor } = await workflowBdd.setupWorkflowOrg({
-        timezone: "Asia/Shanghai",
+  it.each(["user.deleted", "organization.deleted"] as const)(
+    "stops claimed Morning Brief occurrences only in the deleted scope after %s",
+    async (type) => {
+      await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
+        // The authenticated catalog publisher and automation cron are explicitly
+        // in scope as production system/operator boundaries. Catalog publication
+        // is the first real request and owns this case's isolated database.
+        installCatalogStorageFixture();
+        await syncDeployedCatalog();
+        const { actor: doomed, ...entitlement } =
+          await workflowBdd.setupWorkflowOrg({
+            timezone: "Asia/Shanghai",
+            tier: "team",
+          });
+        const sameUserElsewhere = bdd.user({ userId: doomed.userId });
+        const peer = bdd.user({ orgId: doomed.orgId, orgRole: "org:admin" });
+        const { actor: foreign } = await workflowBdd.setupWorkflowOrg({
+          timezone: "Asia/Shanghai",
+          tier: "team",
+        });
+        await runs.grantProEntitlement(sameUserElsewhere, { tier: "team" });
+        // The model preference and personal subscription belong to this org's
+        // member, not every membership of the same Clerk user.
+        await selectPersonalDefaultModel(sameUserElsewhere);
+        await bdd.completeOnboarding(peer);
+        await selectPersonalDefaultModel(peer);
+        const otherAuditor = bdd.user({
+          orgId: sameUserElsewhere.orgId,
+          orgRole: "org:admin",
+        });
+        await bdd.completeOnboarding(otherAuditor);
+        const occurrences = [];
+        for (const actor of [doomed, sameUserElsewhere, peer, foreign]) {
+          await bdd.updateUserTimezone(actor, "Asia/Shanghai");
+          await connectBriefSource(actor);
+          await accept(
+            morningBriefPreferenceClient().update({
+              headers: authHeaders(actor),
+              body: { enabled: true },
+            }),
+            [200],
+          );
+          const [installation] = await listMorningBriefInstallations(actor);
+          if (!installation?.agentId) {
+            throw new Error("Expected the member's Morning Brief Agent");
+          }
+          const [automation] = await readMorningBriefAutomations(
+            actor,
+            installation.id,
+          );
+          if (!automation?.nextRunAt) {
+            throw new Error("Expected the Morning Brief anchor");
+          }
+          expect(automation).toMatchObject({
+            enabled: true,
+            official: { intendedEnabled: true },
+          });
+          occurrences.push({
+            actor,
+            agentId: installation.agentId,
+            automation,
+          });
+        }
+        const members = [
+          doomed,
+          sameUserElsewhere,
+          peer,
+          foreign,
+          otherAuditor,
+        ];
+        function mockCurrentMembers(currentMembers: readonly ApiTestUser[]) {
+          // BDD authentication helpers install a single-actor Clerk response.
+          // Restore the complete provider directory before background work and
+          // clock advances expire the ordinary member-role cache.
+          mockBriefMemberships(
+            currentMembers.map((actor) => {
+              return { actor, createdAt: new Date("2030-01-01T00:00:00Z") };
+            }),
+          );
+          context.mocks.clerk.users.getOrganizationMembershipList.mockImplementation(
+            (args: unknown) => {
+              const userId =
+                typeof args === "object" && args !== null && "userId" in args
+                  ? args.userId
+                  : undefined;
+              return Promise.resolve({
+                data: currentMembers
+                  .filter((actor) => {
+                    return actor.userId === userId;
+                  })
+                  .map((actor) => {
+                    return {
+                      id: `membership-${actor.userId}-${actor.orgId}`,
+                      role: actor.orgRole ?? "org:member",
+                      organization: { id: actor.orgId },
+                      publicUserData: { userId: actor.userId },
+                    };
+                  }),
+              });
+            },
+          );
+          mockClerkUsers(
+            context,
+            currentMembers.map((actor) => {
+              const emailId = `email_${actor.userId}`;
+              return {
+                id: actor.userId,
+                emailAddresses: [{ id: emailId, emailAddress: actor.email }],
+                primaryEmailAddressId: emailId,
+                firstName: "BDD",
+                lastName: "User",
+              };
+            }),
+          );
+        }
+        mockCurrentMembers(members);
+        // A Clerk session's orgRole bypasses member-role cache population.
+        // Existing-org joiners must enter through the real membership webhook
+        // before the scheduler can recognize them as present owners/admins.
+        webhooks.configureClerkWebhookSecret();
+        for (const actor of [peer, otherAuditor]) {
+          webhooks.verifyNextClerkWebhook({
+            type: "organizationMembership.created",
+            data: {
+              id: `membership-${actor.userId}-${actor.orgId}`,
+              organization: { id: actor.orgId },
+              publicUserData: { userId: actor.userId },
+              role: actor.orgRole ?? "org:member",
+            },
+          });
+          await webhooks.requestClerkWebhook("{}", {}, [200]);
+        }
+        await flushWaitUntilForTest();
+        const runnerGroup = runs.configureRunnerGroup();
+        runs.acceptStorageDownloads();
+        await runs.heartbeatRunner(runnerGroup);
+        mockNow(
+          Math.max(
+            ...occurrences.map(({ automation }) => {
+              return Date.parse(automation.nextRunAt ?? "");
+            }),
+          ) +
+            30 * 60_000,
+        );
+        expect((await runs.readRunQueue(doomed)).body.concurrency.limit).toBe(
+          10,
+        );
+        mockCurrentMembers(members);
+        expect((await executeAutomationCron()).body.executed).toBe(4);
+        await flushWaitUntilForTest();
+        const isStopped = (actor: ApiTestUser) => {
+          return type === "user.deleted"
+            ? actor.userId === doomed.userId
+            : actor.orgId === doomed.orgId;
+        };
+        const claimed: ((typeof occurrences)[number] & {
+          runId: string;
+          claim: Awaited<ReturnType<typeof runs.claimRunnerJob>>;
+          complete: () => Promise<void>;
+          inFlight: Awaited<ReturnType<typeof readAutomation>>;
+          stopped: boolean;
+        })[] = [];
+        for (const occurrence of occurrences) {
+          const runIds = await listAgentRunLogIds(
+            occurrence.actor,
+            occurrence.agentId,
+          );
+          expect(runIds).toHaveLength(1);
+          const runId = runIds[0];
+          if (!runId) {
+            throw new Error("Expected the scheduled Morning Brief Run");
+          }
+          const claim = await runs.claimRunnerJob(runId);
+          const headers = { authorization: `Bearer ${claim.sandboxToken}` };
+          let acknowledged = false;
+          const complete = async () => {
+            await webhooks.requestAgentComplete(
+              { runId, exitCode: 1, error: "Morning Brief Runner completion" },
+              headers,
+              [200],
+            );
+            acknowledged = true;
+          };
+          // Cleanup ACK uses the already-issued Runner credential, never an
+          // owner session which might have been deleted during the case.
+          onTestFinished(async () => {
+            if (!acknowledged) {
+              await complete();
+            }
+          });
+          const inFlight = await readAutomation(
+            occurrence.actor,
+            occurrence.automation.id,
+          );
+          expect(inFlight).toMatchObject({ enabled: true, nextRunAt: null });
+          claimed.push({
+            ...occurrence,
+            runId,
+            claim,
+            complete,
+            inFlight,
+            stopped: isStopped(occurrence.actor),
+          });
+        }
+
+        if (type === "organization.deleted") {
+          // Stripe is an external provider boundary, not the subject of this
+          // regression: the organization's subscription is already canceled.
+          context.mocks.stripe.subscriptions.list.mockResolvedValue({
+            data: [],
+            has_more: false,
+          });
+          context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+            id: entitlement.subscriptionId,
+            customer: entitlement.customerId,
+            status: "canceled",
+            metadata: {},
+            items: { data: [] },
+          });
+        }
+        webhooks.configureClerkWebhookSecret();
+        webhooks.verifyNextClerkWebhook({
+          type,
+          data: { id: type === "user.deleted" ? doomed.userId : doomed.orgId },
+        });
+        mockCurrentMembers(
+          members.filter((actor) => {
+            return type === "user.deleted"
+              ? actor.userId !== doomed.userId
+              : actor.orgId !== doomed.orgId;
+          }),
+        );
+        await webhooks.requestClerkWebhook("{}", {}, [200]);
+        await flushWaitUntilForTest();
+
+        async function assertStoppedOccurrences() {
+          for (const occurrence of claimed.filter((entry) => {
+            return entry.stopped;
+          })) {
+            await expect(
+              runs.readRunnerCancellation(
+                occurrence.claim.sandboxToken,
+                occurrence.runId,
+                runnerGroup,
+              ),
+            ).resolves.toMatchObject({ state: "present", mode: "hard" });
+          }
+          await assertPrivateAutomationsNotVisible();
+        }
+        async function assertPrivateAutomationsNotVisible() {
+          if (type !== "user.deleted") {
+            return;
+          }
+          // Morning Brief workflows remain private even to surviving admins.
+          // Observe the public visibility boundary, not private retained state;
+          // Runner cancellation and subsequent cron ticks prove revocation.
+          // Never authenticate the deleted user or a deleted organization.
+          for (const occurrence of claimed.filter((entry) => {
+            return entry.stopped;
+          })) {
+            const observer =
+              occurrence.actor.orgId === peer.orgId ? peer : otherAuditor;
+            await accept(
+              automationClient().get({
+                headers: authHeaders(observer),
+                params: { id: occurrence.automation.id },
+              }),
+              [404],
+            );
+          }
+        }
+        await assertStoppedOccurrences();
+        const unaffected = claimed.filter((entry) => {
+          return !entry.stopped;
+        });
+        expect(unaffected).toHaveLength(2);
+        for (const occurrence of unaffected) {
+          await expect(
+            runs.readRunnerCancellation(
+              occurrence.claim.sandboxToken,
+              occurrence.runId,
+              runnerGroup,
+            ),
+          ).resolves.toMatchObject({ state: "present", mode: null });
+        }
+
+        mockNow(now() + 60 * 60_000);
+        // A late callback and its replay must not revive a revoked occurrence
+        // or fall back to advancing the untracked legacy schedule.
+        for (const occurrence of claimed) {
+          await occurrence.complete();
+          await occurrence.complete();
+        }
+        await flushWaitUntilForTest();
+        await assertStoppedOccurrences();
+        expect((await executeAutomationCron()).body.executed).toBe(0);
+        await flushWaitUntilForTest();
+        await assertStoppedOccurrences();
+
+        const successors = [];
+        for (const occurrence of unaffected) {
+          const settled = await readAutomation(
+            occurrence.actor,
+            occurrence.automation.id,
+          );
+          expect(settled).toMatchObject({
+            enabled: true,
+            official: { intendedEnabled: true },
+          });
+          if (!settled.nextRunAt) {
+            throw new Error("Expected the unaffected successor anchor");
+          }
+          expect(Date.parse(settled.nextRunAt)).toBeGreaterThan(now());
+          successors.push(settled.nextRunAt);
+        }
+        mockNow(
+          Math.max(
+            ...successors.map((anchor) => {
+              return Date.parse(anchor);
+            }),
+          ) +
+            30 * 60_000,
+        );
+        await runs.heartbeatRunner(runnerGroup);
+        // The real scheduler reports only the two surviving owners dispatched.
+        // No private journal/queue reader is needed, including for a deleted
+        // organization whose private configuration has no surviving caller.
+        expect((await executeAutomationCron()).body.executed).toBe(2);
+        await flushWaitUntilForTest();
+        const polledRunIds = [];
+        for (const occurrence of unaffected) {
+          const runIds = await listAgentRunLogIds(
+            occurrence.actor,
+            occurrence.agentId,
+          );
+          expect(runIds).toHaveLength(2);
+          const nextRunId = runIds.find((id) => {
+            return id !== occurrence.runId;
+          });
+          if (!nextRunId) {
+            throw new Error(
+              "Expected the surviving owner's next Morning Brief",
+            );
+          }
+          polledRunIds.push(nextRunId);
+        }
+        while (polledRunIds.length > 0) {
+          const polled = await runs.pollRunner(runnerGroup);
+          const job = polled.body.job;
+          if (!job) {
+            throw new Error("Expected an unaffected Morning Brief Runner job");
+          }
+          expect(polledRunIds).toContain(job.runId);
+          polledRunIds.splice(polledRunIds.indexOf(job.runId), 1);
+          const claim = await runs.claimRunnerJob(job.runId);
+          const complete = () => {
+            return webhooks.requestAgentComplete(
+              { runId: job.runId, exitCode: 1, error: "Morning Brief cleanup" },
+              { authorization: `Bearer ${claim.sandboxToken}` },
+              [200],
+            );
+          };
+          onTestFinished(async () => {
+            await complete();
+          });
+          await complete();
+        }
+        expect(polledRunIds).toHaveLength(0);
+        await flushWaitUntilForTest();
+        // Original Runner credentials have their normal expiry by this next-day
+        // tick. Surviving admins still cannot read the deleted owner's private
+        // workflows; cron dispatch counts above establish non-revival.
+        await assertPrivateAutomationsNotVisible();
+        expect((await executeAutomationCron()).body.executed).toBe(0);
       });
-      await connectBriefSource(actor);
-      await accept(
-        morningBriefPreferenceClient().update({
-          headers: authHeaders(actor),
-          body: { enabled: true },
-        }),
-        [200],
-      );
-      const [installation] = await listMorningBriefInstallations(actor);
-      if (!installation?.agentId) {
-        throw new Error("Expected the member's Morning Brief Agent");
-      }
-      const [automation] = await readMorningBriefAutomations(
-        actor,
-        installation.id,
-      );
-      if (!automation?.nextRunAt) {
-        throw new Error("Expected the Morning Brief anchor");
-      }
-      const runnerGroup = runs.configureRunnerGroup();
-      runs.acceptStorageDownloads();
-      await runs.heartbeatRunner(runnerGroup);
-      mockNow(Date.parse(automation.nextRunAt) + 30 * 60_000);
-      await executeAutomationCron();
-      await flushWaitUntilForTest();
-      const runIds = await listAgentRunLogIds(actor, installation.agentId);
-      expect(runIds).toHaveLength(1);
-      const runId = runIds[0];
-      if (!runId) {
-        throw new Error("Expected the scheduled Morning Brief Run");
-      }
-      const claim = await runs.claimRunnerJob(runId);
-      const completion = () => {
-        return webhooks.requestAgentComplete(
-          { runId, exitCode: 1, error: "Morning Brief Runner completion" },
-          { authorization: `Bearer ${claim.sandboxToken}` },
+    },
+  );
+
+  it.each(["before", "after"] as const)(
+    "preserves a Morning Brief occurrence claimed %s a later tick and duplicate Runner completion",
+    async (claimTiming) => {
+      await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
+        installCatalogStorageFixture();
+        await syncDeployedCatalog();
+        const { actor } = await workflowBdd.setupWorkflowOrg({
+          timezone: "Asia/Shanghai",
+        });
+        await connectBriefSource(actor);
+        await accept(
+          morningBriefPreferenceClient().update({
+            headers: authHeaders(actor),
+            body: { enabled: true },
+          }),
           [200],
         );
-      };
-      onTestFinished(async () => {
-        await completion();
-      });
-      mockNow(now() + 60 * 60_000);
-      await executeAutomationCron();
-      await expect(readAutomation(actor, automation.id)).resolves.toMatchObject(
-        {
+        const [installation] = await listMorningBriefInstallations(actor);
+        if (!installation?.agentId) {
+          throw new Error("Expected the member's Morning Brief Agent");
+        }
+        const [automation] = await readMorningBriefAutomations(
+          actor,
+          installation.id,
+        );
+        if (!automation?.nextRunAt) {
+          throw new Error("Expected the Morning Brief anchor");
+        }
+        const runnerGroup = runs.configureRunnerGroup();
+        runs.acceptStorageDownloads();
+        await runs.heartbeatRunner(runnerGroup);
+        mockNow(Date.parse(automation.nextRunAt) + 30 * 60_000);
+        await executeAutomationCron();
+        await flushWaitUntilForTest();
+        const runIds = await listAgentRunLogIds(actor, installation.agentId);
+        expect(runIds).toHaveLength(1);
+        const runId = runIds[0];
+        if (!runId) {
+          throw new Error("Expected the scheduled Morning Brief Run");
+        }
+        if (claimTiming === "after") {
+          mockNow(now() + 60 * 60_000);
+          expect((await executeAutomationCron()).body.executed).toBe(0);
+          await flushWaitUntilForTest();
+          await expect(
+            listAgentRunLogIds(actor, installation.agentId),
+          ).resolves.toStrictEqual(runIds);
+        }
+        const claim = await runs.claimRunnerJob(runId);
+        const completion = () => {
+          return webhooks.requestAgentComplete(
+            { runId, exitCode: 1, error: "Morning Brief Runner completion" },
+            { authorization: `Bearer ${claim.sandboxToken}` },
+            [200],
+          );
+        };
+        onTestFinished(async () => {
+          await completion();
+        });
+        mockNow(now() + 60 * 60_000);
+        await executeAutomationCron();
+        await expect(
+          readAutomation(actor, automation.id),
+        ).resolves.toMatchObject({
           enabled: true,
           nextRunAt: null,
-        },
-      );
-      await expect(
-        listAgentRunLogIds(actor, installation.agentId),
-      ).resolves.toStrictEqual(runIds);
-      await expect(runs.readRun(actor, runId)).resolves.toMatchObject({
-        status: "running",
+        });
+        await expect(
+          listAgentRunLogIds(actor, installation.agentId),
+        ).resolves.toStrictEqual(runIds);
+        await expect(runs.readRun(actor, runId)).resolves.toMatchObject({
+          status: "running",
+        });
+        await completion();
+        await flushWaitUntilForTest();
+        const settled = await readAutomation(actor, automation.id);
+        expect(settled.nextRunAt).not.toBeNull();
+        if (!settled.nextRunAt) {
+          throw new Error("Expected the successor Morning Brief anchor");
+        }
+        expect(Date.parse(settled.nextRunAt)).toBeGreaterThan(now());
+        await completion();
+        await executeAutomationCron();
+        await expect(
+          readAutomation(actor, automation.id),
+        ).resolves.toStrictEqual(settled);
+        await expect(
+          listAgentRunLogIds(actor, installation.agentId),
+        ).resolves.toStrictEqual(runIds);
       });
-      await completion();
-      await flushWaitUntilForTest();
-      const settled = await readAutomation(actor, automation.id);
-      expect(settled.nextRunAt).not.toBeNull();
-      if (!settled.nextRunAt) {
-        throw new Error("Expected the successor Morning Brief anchor");
-      }
-      expect(Date.parse(settled.nextRunAt)).toBeGreaterThan(now());
-      await completion();
-      await executeAutomationCron();
-      await expect(readAutomation(actor, automation.id)).resolves.toStrictEqual(
-        settled,
-      );
-      await expect(
-        listAgentRunLogIds(actor, installation.agentId),
-      ).resolves.toStrictEqual(runIds);
-    });
-  });
+    },
+  );
 });
 
 describe("Official Workflow installations", () => {
