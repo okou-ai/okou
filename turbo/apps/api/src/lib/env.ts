@@ -116,6 +116,7 @@ const SCHEMA = {
   AXIOM_DATASET_SUFFIX: z.enum(["dev", "prod"]),
   STRIPE_SECRET_KEY: z.string().min(1),
   ATOM_URL: z.url().optional(),
+  ATOM_SUBSCRIPTION_GRANT_SECRET: z.string().min(32).optional(),
   ATOM_GRANT_PRICE: z.string().min(1).optional(),
   OKOU_PRICE_PRO: priceIdsSchema,
   OKOU_PRICE_TEAM: priceIdsSchema,

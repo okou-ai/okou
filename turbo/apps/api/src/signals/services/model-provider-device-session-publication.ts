@@ -1,11 +1,12 @@
 import { modelProviderAuthSessions } from "@okouai/db/schema/model-provider-auth-session";
 import { sql } from "drizzle-orm";
 
-/** Existing consent identity, supplied only by the device-auth command. */
+/** Consent or grant identity supplied by its credential-owning command. */
 export interface DeviceAuthSessionPublication {
   readonly id: string;
   readonly userId: string;
-  readonly source: "claude-code-device-auth" | "codex-device-auth";
+  readonly source:
+    "claude-code-device-auth" | "codex-device-auth" | "atom-subscription-grant";
 }
 
 /** Pure SQL; the credential-owning command executes this before committing. */
