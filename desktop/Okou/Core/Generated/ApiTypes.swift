@@ -63,6 +63,10 @@ public enum ComputerUseCommandClaim: Codable, Equatable, Sendable {
       public static let elementPerformAction = Self(rawValue: "element.perform_action")
       public static let keyboardTypeText = Self(rawValue: "keyboard.type_text")
       public static let keyboardPressKey = Self(rawValue: "keyboard.press_key")
+      public static let shellCmd = Self(rawValue: "shell.cmd")
+      public static let shellList = Self(rawValue: "shell.list")
+      public static let shellStatus = Self(rawValue: "shell.status")
+      public static let shellClose = Self(rawValue: "shell.close")
 
       /// Every value the contract declared when this file was generated.
       public static let knownValues: [Kind] = [
@@ -75,6 +79,10 @@ public enum ComputerUseCommandClaim: Codable, Equatable, Sendable {
         .elementPerformAction,
         .keyboardTypeText,
         .keyboardPressKey,
+        .shellCmd,
+        .shellList,
+        .shellStatus,
+        .shellClose,
       ]
     }
 
@@ -126,6 +134,8 @@ public enum ComputerUseCommandClaim: Codable, Equatable, Sendable {
         public static let commandTimeout = Self(rawValue: "command_timeout")
         public static let invalidArguments = Self(rawValue: "invalid_arguments")
         public static let resultTooLarge = Self(rawValue: "result_too_large")
+        public static let shellUnavailable = Self(rawValue: "shell_unavailable")
+        public static let shellBusy = Self(rawValue: "shell_busy")
 
         /// Every value the contract declared when this file was generated.
         public static let knownValues: [Code] = [
@@ -144,6 +154,8 @@ public enum ComputerUseCommandClaim: Codable, Equatable, Sendable {
           .commandTimeout,
           .invalidArguments,
           .resultTooLarge,
+          .shellUnavailable,
+          .shellBusy,
         ]
       }
 

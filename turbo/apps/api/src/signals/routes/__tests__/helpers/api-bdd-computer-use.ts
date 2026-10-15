@@ -1,3 +1,7 @@
+import {
+  desktopShellContract,
+  type DesktopShellRequest,
+} from "@okouai/api-contracts/contracts/desktop-shell";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -699,6 +703,21 @@ export function createComputerUseBddApi(
           [200],
         );
         return response.body;
+      });
+    },
+
+    async requestCreateDesktopShellCommand(
+      auth: ComputerUseAuth,
+      body: DesktopShellRequest,
+      statuses: readonly (200 | 400 | 401 | 403 | 404 | 409)[],
+    ) {
+      return await run(() => {
+        return accept(
+          setupApp({ context, routes: computerUseRoutes })(
+            desktopShellContract,
+          ).create({ headers: authenticate(auth), body }),
+          statuses,
+        );
       });
     },
 

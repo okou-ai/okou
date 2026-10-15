@@ -164,6 +164,7 @@ export function createPromptAndSkillVolumesSignals(
   const computerUsePrompt$ = createComputerUsePrompt(
     pickedEvent$,
     threadContext.computerUseHostGrant$,
+    featureSwitches$,
   );
   const rotatedPrompt$ = createRotatedPrompt(pickedEvent$);
   const connectors$ = createConnectorsContext(authorizedConnectors$);

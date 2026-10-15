@@ -44,6 +44,13 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.DesktopShell]: {
+    maintainer: "lancy@okou.ai",
+    displayName: "Desktop Shell",
+    description:
+      "Use interactive shells on an authorized computer with local opt-in.",
+    enabled: false,
+  },
   [FeatureSwitchKey.SandboxFilesSidebar]: {
     maintainer: "liangyou@okou.ai",
     displayName: "Sandbox files sidebar",
