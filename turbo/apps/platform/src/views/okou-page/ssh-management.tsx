@@ -654,8 +654,8 @@ function SshConflictDetails({
           </p>
           <p>
             {"transport" in current.connection
-              ? (current.connection.transport.type === "tailscale" ||
-                  current.connection.transport.type === "tailscale_ssh")
+              ? current.connection.transport.type === "tailscale" ||
+                current.connection.transport.type === "tailscale_ssh"
                 ? "Tailscale"
                 : t(($) => {
                     return $.ssh.cloudflare.title;
@@ -681,7 +681,11 @@ function SshConflictDetails({
         type="button"
         variant="outline"
         disabled={
-          tailscaleReviewBlocked(editingTailscale, enabled, connectionEditor.mode) ||
+          tailscaleReviewBlocked(
+            editingTailscale,
+            enabled,
+            connectionEditor.mode,
+          ) ||
           (current.kind === "delete-credential" &&
             (current.credential?.hosts.length ?? 0) > 0)
         }
