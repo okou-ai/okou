@@ -9,6 +9,32 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.743.1](https://github.com/okou-ai/okou/compare/api-v1.743.0...api-v1.743.1) (2026-10-15)
+
+
+### Refactoring
+
+* **api:** inline stripe ingress repair in its command owner ([#40473](https://github.com/okou-ai/okou/issues/40473)) ([e916b76](https://github.com/okou-ai/okou/commit/e916b760ab4f72205e5b5ac9059ee3893e5df356))
+* **api:** keep usage pack purchase snapshot reads in their command ([#40479](https://github.com/okou-ai/okou/issues/40479)) ([a76d111](https://github.com/okou-ai/okou/commit/a76d1117faccf84124fdaf727184f30c80044661))
+* **api:** own banking access authorization and audits ([#40463](https://github.com/okou-ai/okou/issues/40463)) ([80df87b](https://github.com/okou-ai/okou/commit/80df87b6aee35bfd35bbe3808c84852e16c56677))
+* **api:** own chat thread connector selection clearing ([#40431](https://github.com/okou-ai/okou/issues/40431)) ([2e03abb](https://github.com/okou-ai/okou/commit/2e03abbfda7f9223ee3119f10af6dad0ae4e0ae6))
+* **api:** own github installation id reads ([#40457](https://github.com/okou-ai/okou/issues/40457)) ([4932b2c](https://github.com/okou-ai/okou/commit/4932b2c99febbbcfc3f1905a28d636b5f871c7f3))
+* **api:** own scheduled package reads in invoice command ([#40465](https://github.com/okou-ai/okou/issues/40465)) ([bd00c60](https://github.com/okou-ai/okou/commit/bd00c60f347bf75cbae9c94605acf9ddc40bca5c)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** own telegram model read in computed ([#40478](https://github.com/okou-ai/okou/issues/40478)) ([d4b3517](https://github.com/okou-ai/okou/commit/d4b35175f0d24a3e1d6a797820026f2b29648046))
+* **api:** separate runtime catalog snapshot materialization ([#40372](https://github.com/okou-ai/okou/issues/40372)) ([d2d4fb1](https://github.com/okou-ai/okou/commit/d2d4fb19ec4aa1bd4cb9a606d9ba5b96a822c640))
+
+
+### Performance Improvements
+
+* trim composer rendering and connector fixture work ([#40474](https://github.com/okou-ai/okou/issues/40474)) ([6e989ed](https://github.com/okou-ai/okou/commit/6e989ed0aa8beffbf9969284545dedfbd5aaeabc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 1.342.2
+
 ## [1.743.0](https://github.com/okou-ai/okou/compare/api-v1.742.0...api-v1.743.0) (2026-10-15)
 
 
