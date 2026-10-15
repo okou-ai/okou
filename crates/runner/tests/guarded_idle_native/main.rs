@@ -8,6 +8,10 @@ mod critical;
 mod evidence;
 mod finalizing;
 mod fixture;
+mod foreground;
+mod foreground_growth;
+mod foreground_io;
+mod foreground_probe;
 mod optional;
 mod pressure;
 mod pressure_condition;
@@ -153,6 +157,22 @@ fn native_startup_report_requires_complete_bytes_and_joined_producers() {
 }
 
 #[test]
+fn native_foreground_report_requires_real_progress_and_original_custody() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/foreground_report_test.py"
+        ))
+        .output()
+        .expect("native foreground contract tests require Python 3");
+    assert!(
+        output.status.success(),
+        "native foreground report failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn native_continuation_report_consumer_validates_complete_session_receipts() {
     let output = std::process::Command::new("python3")
         .arg(concat!(
@@ -282,6 +302,8 @@ enum NativeScope {
     Recovery,
     Critical,
     Startup,
+    ForegroundFresh,
+    ForegroundReuse,
     CallerOwned,
     SpeculativeGuestFailure,
     FinalizingParked,
@@ -296,7 +318,9 @@ fn native_budget(scope: NativeScope) -> Arc<ResourceBudget> {
         // ResourceBudget's host CPU reservation. This is logical fixture
         // capacity, not a measurement of available physical host CPUs.
         NativeScope::Critical => (10, 16384),
-        NativeScope::Replacement | NativeScope::Restore => (6, 12288),
+        NativeScope::Replacement | NativeScope::Restore | NativeScope::ForegroundFresh => {
+            (6, 12288)
+        }
         NativeScope::Aged | NativeScope::OptionalOrdinary | NativeScope::OptionalAged => {
             (12, 24576)
         }
@@ -398,6 +422,12 @@ async fn native_critical_records_bounded_waves_and_suppressed_snapshot_reads() -
 #[ignore = "requires owned KVM/NBD artifacts, original snapshot bytes and exact-source P1 proof"]
 async fn native_startup_records_complete_snapshot_reads_and_joined_owners() -> TestResult<()> {
     measured_corpus(&[NativeScope::Startup]).await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD inputs and exact-source foreground P1 proof"]
+async fn native_foreground_records_fresh_and_exact_reuse_progress() -> TestResult<()> {
+    measured_corpus(&[NativeScope::ForegroundFresh, NativeScope::ForegroundReuse]).await
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -631,7 +661,11 @@ async fn exercise_retirement(
     }
     let recovery_source = matches!(
         scope,
-        NativeScope::Recovery | NativeScope::Critical | NativeScope::Startup
+        NativeScope::Recovery
+            | NativeScope::Critical
+            | NativeScope::Startup
+            | NativeScope::ForegroundFresh
+            | NativeScope::ForegroundReuse
     )
     .then(|| Arc::new(recovery_source::Source::new()));
     let operations = match &recovery_source {
@@ -813,7 +847,11 @@ async fn exercise_retirement(
     if (corpus == Corpus::Optional
         || matches!(
             scope,
-            NativeScope::Recovery | NativeScope::Critical | NativeScope::Startup
+            NativeScope::Recovery
+                | NativeScope::Critical
+                | NativeScope::Startup
+                | NativeScope::ForegroundFresh
+                | NativeScope::ForegroundReuse
         ))
         && let Some(proof) = proof
     {
@@ -896,6 +934,16 @@ async fn exercise_retirement(
     }
     let retirement: TestResult<_> = async {
         match scope {
+            NativeScope::ForegroundFresh | NativeScope::ForegroundReuse => {
+                foreground::exercise(foreground::Request { context: transitions::Context {
+                    factory: factory.clone(), pool: pool.clone(), status: status.clone(),
+                    operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
+                    rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
+                }, inputs, source: recovery_source.as_ref().ok_or_else(|| io::Error::other("native foreground source missing"))?,
+                proof, directory: paths.base_dir(), backing: backing.clone(), original_run: run_id,
+                fresh: matches!(scope, NativeScope::ForegroundFresh) }).await?;
+                Ok(None)
+            }
             NativeScope::Startup => {
                 startup::exercise(transitions::Context {
                     factory: factory.clone(), pool: pool.clone(), status: status.clone(),
