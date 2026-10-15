@@ -81,7 +81,7 @@ def reject():
     print("fixture provider lookup failed", file=sys.stderr)
     sys.exit(22)
 
-deployment = {"id":"22222222-2222-2222-2222-222222222222", "annotations":{"workers/message":"app artifact " + sha}, "versions":[{"version_id":version,"percentage":100}]}
+deployment = {"id":"22222222-2222-2222-2222-222222222222", "created_on":"2026-10-15T09:00:00.000Z" if case == "success-for-other-deployment" else "2026-10-15T08:50:54.283336Z", "annotations":{"workers/message":"app artifact " + sha}, "versions":[{"version_id":version,"percentage":100}]}
 if kind == "gh":
     assert args[0] == "api", args
     path = args[1]
@@ -90,10 +90,10 @@ if kind == "gh":
         if case == "unknown-release": reject()
         answer({"tag_name":path.split("/tags/")[1], "target_commitish":policy if case == "release-mismatch" else sha, "draft":False, "prerelease":False, "published_at":"2026-10-15T08:32:24Z"})
     if "/statuses?" in path:
-        answer([{"state":"failure" if case == "failed-only" else "success", "environment":"app/production", "log_url":"https://github.com/okou-ai/okou/commit/" + (policy if case == "moving-main-only" else sha) + "/checks"}])
+        answer([{"state":"failure" if case == "failed-only" else "success", "environment":"app/production", "created_at":None if case == "missing-success-time" else "2026-10-15T08:51:22Z", "log_url":"https://github.com/okou-ai/okou/commit/" + (policy if case == "moving-main-only" else sha) + "/checks"}])
     if "/deployments?" in path:
         # The deployment object's moving-main SHA must NOT supply identity.
-        answer([{"id":123,"sha":policy,"environment":"app/production"}])
+        answer([{"id":123,"sha":policy,"environment":"app/production","created_at":"2026-10-15T08:50:37Z"}])
     raise AssertionError(args)
 
 assert kind == "curl", kind
@@ -177,7 +177,7 @@ TARGET_COMMIT="$old_sha" run_case incompatible-0.1025 fail 0
 TARGET_COMMIT="$branch_sha" run_case non-main-release fail 0
 for scenario in missing-annotation bad-annotation annotation-mismatch unknown-release release-mismatch \
   moving-main-only failed-only no-cf-deployment cf-lookup-failure github-lookup-failure \
-  api-lookup-failure wrong-api-project api-changed version-disappeared; do
+  api-lookup-failure wrong-api-project api-changed version-disappeared success-for-other-deployment missing-success-time; do
   run_case "$scenario" fail 0
 done
 CONFIRMED_COMPATIBLE=no run_case unconfirmed fail 0

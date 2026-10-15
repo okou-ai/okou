@@ -91,32 +91,43 @@ verify_cf_version() {
 verify_cf_version
 
 # A stored version is not proof of a successful deployment. Require its exact
-# 100% CF deployment AND a successful GitHub App status for the artifact.
+# 100% CF deployment AND a successful GitHub App status for the artifact in
+# that deployment's creation/success interval. An earlier success for the same
+# artifact must not authorize a later failed deployment/version.
 # Searches are bounded; older/unavailable evidence must be resolved, not guessed.
-cf_deployment_id=
+cf_deployment=
 for page in {1..10}; do
   deployments=$(cf_get "deployments?per_page=100&page=$page")
-  cf_deployment_id=$(jq -r --arg id "$APP_VERSION_ID" --arg message "app artifact $TARGET_COMMIT" \
-    '[.deployments[] | select(.annotations["workers/message"] == $message and .versions == [{version_id: $id, percentage: 100}])][0].id // empty' <<< "$deployments")
-  [[ -z "$cf_deployment_id" ]] || break
+  cf_deployment=$(jq -c --arg id "$APP_VERSION_ID" --arg message "app artifact $TARGET_COMMIT" \
+    '[.deployments[] | select(.annotations["workers/message"] == $message and .versions == [{version_id: $id, percentage: 100}])][0] // empty' <<< "$deployments")
+  [[ -z "$cf_deployment" ]] || break
   [[ "$(jq '.deployments | length' <<< "$deployments")" == 100 ]] || break
 done
-[[ -n "$cf_deployment_id" ]] || fail "No historical 100% Cloudflare deployment for this exact App artifact/version."
+[[ -n "$cf_deployment" ]] || fail "No historical 100% Cloudflare deployment for this exact App artifact/version."
+cf_deployment_id=$(jq -er '.id' <<< "$cf_deployment")
+cf_deployed_at=$(jq -er '.created_on | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601' <<< "$cf_deployment") \
+  || fail "Historical Cloudflare deployment has no valid creation time."
 
 github_deployment_id=
 for page in {1..10}; do
   deployments=$(github_get "deployments?environment=app%2Fproduction&per_page=100&page=$page")
-  deployment_ids=$(jq -er 'if type == "array" then map(.id | tostring) | join("\n") else error("Invalid GitHub deployments") end' <<< "$deployments")
-  while IFS= read -r deployment_id; do
+  deployment_rows=$(jq -r 'if type == "array" then .[] | [.id, .created_at] | @tsv else error("Invalid GitHub deployments") end' <<< "$deployments")
+  while IFS=$'\t' read -r deployment_id created_at; do
     [[ -n "$deployment_id" ]] || continue
     [[ "$deployment_id" =~ ^[0-9]+$ ]] || fail "Invalid GitHub deployment identity."
+    started_at=$(jq -enr --arg date "$created_at" '$date | fromdateiso8601') \
+      || fail "GitHub deployment has no valid creation time."
+    (( started_at <= cf_deployed_at )) || continue
     statuses=$(github_get "deployments/$deployment_id/statuses?per_page=100")
-    if jq -e --arg url "https://github.com/$GITHUB_REPOSITORY/commit/$TARGET_COMMIT/checks" \
-      'any(.[]; .state == "success" and .environment == "app/production" and .log_url == $url)' <<< "$statuses" >/dev/null; then
+    successful=$(jq -r --arg url "https://github.com/$GITHUB_REPOSITORY/commit/$TARGET_COMMIT/checks" \
+      --argjson deployed_at "$cf_deployed_at" \
+      'any(.[]; .state == "success" and .environment == "app/production" and .log_url == $url and
+        (.created_at | fromdateiso8601) >= $deployed_at)' <<< "$statuses")
+    if [[ "$successful" == true ]]; then
       github_deployment_id=$deployment_id
       break
     fi
-  done <<< "$deployment_ids"
+  done <<< "$deployment_rows"
   [[ -z "$github_deployment_id" ]] || break
   [[ "$(jq length <<< "$deployments")" == 100 ]] || break
 done
