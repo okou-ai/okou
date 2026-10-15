@@ -158,6 +158,7 @@ export function createWorkflowsBddApi(context: TestContext) {
       readonly customerId: string;
       readonly subscriptionId: string;
       readonly invoiceId: string;
+      readonly defaultAgentId: string;
     }> {
       if (options.maxAutonomyBudget !== undefined) {
         createStore().set(

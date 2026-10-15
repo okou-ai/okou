@@ -684,12 +684,19 @@ async function connectBriefSource(actor: ApiTestUser): Promise<void> {
   if (!onboarding.defaultAgentId) {
     throw new Error("Expected default Agent");
   }
+  await connectBriefSourceForAgent(actor, onboarding.defaultAgentId);
+}
+
+async function connectBriefSourceForAgent(
+  actor: ApiTestUser,
+  defaultAgentId: string,
+): Promise<void> {
   mockGmailConnectorOAuth();
   const start = await connectors.startOauth(
     actor,
     "gmail",
     "oauth",
-    onboarding.defaultAgentId,
+    defaultAgentId,
   );
   const state = new URL(start.authorizationUrl).searchParams.get("state");
   if (!state) {
@@ -701,7 +708,7 @@ async function connectBriefSource(actor: ApiTestUser): Promise<void> {
   });
   const membershipRead =
     context.mocks.clerk.organizations.getOrganizationMembershipList.getMockImplementation();
-  await runs.enableAgentConnectors(actor, onboarding.defaultAgentId, ["gmail"]);
+  await runs.enableAgentConnectors(actor, defaultAgentId, ["gmail"]);
   if (membershipRead) {
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
       membershipRead,
@@ -1798,15 +1805,28 @@ describe("Official schedule expiry", () => {
       });
     const sameUserElsewhere = bdd.user({ userId: doomed.userId });
     const peer = bdd.user({ orgId: doomed.orgId, orgRole: "org:admin" });
-    const foreign = selectedOwnerKeys.has("foreign")
-      ? (
-          await workflowBdd.setupWorkflowOrg({
-            tier: "team",
-          })
-        ).actor
-      : bdd.user();
+    // These IDs came from real onboarding responses. Members of the same org
+    // share its default Agent; reconnecting a source need not reread onboarding.
+    const defaultAgentIds = new Map<ApiTestUser, string>([
+      [doomed, entitlement.defaultAgentId],
+      [peer, entitlement.defaultAgentId],
+    ]);
+    const foreignSetup = selectedOwnerKeys.has("foreign")
+      ? await workflowBdd.setupWorkflowOrg({ tier: "team" })
+      : null;
+    const foreign = foreignSetup?.actor ?? bdd.user();
+    if (foreignSetup) {
+      defaultAgentIds.set(foreign, foreignSetup.defaultAgentId);
+    }
     if (selectedOwnerKeys.has("sameUserElsewhere")) {
-      await runs.grantProEntitlement(sameUserElsewhere, { tier: "team" });
+      const sameUserEntitlement = await runs.grantProEntitlement(
+        sameUserElsewhere,
+        { tier: "team" },
+      );
+      defaultAgentIds.set(
+        sameUserElsewhere,
+        sameUserEntitlement.defaultAgentId,
+      );
       // Personal subscriptions belong to this membership, not every org
       // of the same Clerk user.
       await selectPersonalDefaultModel(sameUserElsewhere);
@@ -1829,8 +1849,16 @@ describe("Official schedule expiry", () => {
       existingOrgMembers.push(otherAuditor);
     }
     const owners = { doomed, sameUserElsewhere, peer, foreign };
-    const occurrenceActors = [...selectedOwnerKeys].map((key) => {
-      return owners[key];
+    const occurrenceOwners = [...selectedOwnerKeys].map((key) => {
+      const actor = owners[key];
+      const defaultAgentId = defaultAgentIds.get(actor);
+      if (!defaultAgentId) {
+        throw new Error("Expected the owner's public onboarding Agent");
+      }
+      return { actor, defaultAgentId };
+    });
+    const occurrenceActors = occurrenceOwners.map(({ actor }) => {
+      return actor;
     });
     const members = [...new Set([...occurrenceActors, ...existingOrgMembers])];
     return {
@@ -1838,7 +1866,7 @@ describe("Official schedule expiry", () => {
       entitlement,
       peer,
       otherAuditor,
-      occurrenceActors,
+      occurrenceOwners,
       members,
       existingOrgMembers,
       stoppedCount: bulk === "revoked" ? 2 : 1,
@@ -1877,7 +1905,7 @@ describe("Official schedule expiry", () => {
           entitlement,
           peer,
           otherAuditor,
-          occurrenceActors,
+          occurrenceOwners,
           members,
           existingOrgMembers,
           stoppedCount,
@@ -1889,9 +1917,9 @@ describe("Official schedule expiry", () => {
         const occurrences = [];
         // Both bulk revocation and bulk continuation retain mixed live owners;
         // neither first-match-only nor overly broad cancellation may pass.
-        for (const actor of occurrenceActors) {
+        for (const { actor, defaultAgentId } of occurrenceOwners) {
           await bdd.updateUserTimezone(actor, "Asia/Shanghai");
-          await connectBriefSource(actor);
+          await connectBriefSourceForAgent(actor, defaultAgentId);
           await accept(
             morningBriefPreferenceClient().update({
               headers: authHeaders(actor),
