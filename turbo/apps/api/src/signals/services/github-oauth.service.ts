@@ -26,7 +26,7 @@ import { githubUserLinks } from "@okouai/db/schema/github-user-link";
 import { z } from "zod";
 import { command } from "ccstate";
 
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { safeJsonParse, tapError } from "../utils";
 import {
   connectorOAuthStateExpiresAt,
@@ -1082,30 +1082,35 @@ export async function tryLinkGithubFromRemoteInstallations(
   return true;
 }
 
-export async function findGithubInstallationByInstallationId(
-  args: {
-    readonly db: Db;
-    readonly installationId: string;
-    readonly orgId: string | null;
+export const findGithubInstallationByInstallationId$ = command(
+  async (
+    { get },
+    args: {
+      readonly installationId: string;
+      readonly orgId: string | null;
+    },
+    signal: AbortSignal,
+  ): Promise<{ readonly id: string } | null> => {
+    const db = get(db$);
+    const filters = [
+      eq(githubInstallations.installationId, args.installationId),
+    ];
+    if (args.orgId) {
+      filters.push(eq(githubInstallations.orgId, args.orgId));
+    }
+
+    const [existing] = await db
+      .select({
+        id: githubInstallations.id,
+      })
+      .from(githubInstallations)
+      .where(and(...filters))
+      .limit(1);
+    signal.throwIfAborted();
+
+    return existing ?? null;
   },
-  signal: AbortSignal,
-): Promise<{ readonly id: string } | null> {
-  const filters = [eq(githubInstallations.installationId, args.installationId)];
-  if (args.orgId) {
-    filters.push(eq(githubInstallations.orgId, args.orgId));
-  }
-
-  const [existing] = await args.db
-    .select({
-      id: githubInstallations.id,
-    })
-    .from(githubInstallations)
-    .where(and(...filters))
-    .limit(1);
-  signal.throwIfAborted();
-
-  return existing ?? null;
-}
+);
 
 export async function createOrActivateGithubInstallation(
   args: {
