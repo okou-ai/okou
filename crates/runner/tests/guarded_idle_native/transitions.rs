@@ -16,6 +16,7 @@ use sandbox::{ResourceLimits, SandboxConfig};
 
 use super::*;
 
+#[derive(Clone)]
 pub struct Context {
     pub factory: Arc<Box<dyn SandboxFactory>>,
     pub pool: SharedIdlePool,

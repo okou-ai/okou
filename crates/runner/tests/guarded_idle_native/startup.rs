@@ -20,7 +20,7 @@ struct Inputs {
     prefetch_overhead_bytes: u64,
 }
 
-fn completed(read: &StartupPrefetchSnapshot, bytes: u64) -> TestResult<()> {
+pub(super) fn completed(read: &StartupPrefetchSnapshot, bytes: u64) -> TestResult<()> {
     if read.accepted != 1
         || read.completed != 1
         || read.cancelled != 0
@@ -36,19 +36,24 @@ fn completed(read: &StartupPrefetchSnapshot, bytes: u64) -> TestResult<()> {
     Ok(())
 }
 
-fn read_evidence(read: &StartupPrefetchSnapshot) -> Value {
+pub(super) fn read_evidence(read: &StartupPrefetchSnapshot) -> Value {
     json!({"accepted": read.accepted, "completed": read.completed,
         "cancelled": read.cancelled, "failed": read.failed,
         "read_bytes": read.read_bytes, "last_error": read.last_error})
 }
 
-pub async fn exercise(
-    context: transitions::Context,
+pub(super) struct Original {
+    pub path: PathBuf,
+    pub bytes: u64,
+    pub overhead: u64,
+    pub raw: Vec<u8>,
+}
+
+pub(super) async fn original(
+    budget: &ResourceBudget,
     inputs: &fixture::Inputs,
-    source: &Arc<recovery_source::Source>,
-    proof: Option<&Arc<evidence::Case>>,
-) -> TestResult<()> {
-    let proof = proof.ok_or_else(|| io::Error::other("startup requires measured owners"))?;
+    proof: &evidence::Case,
+) -> TestResult<Original> {
     let raw = std::fs::read(std::env::var("OKOU_TEST_OPTIONAL_MEMORY_POLICY")?)?;
     let supplied: Inputs = serde_json::from_slice(&raw)?;
     let original = PathBuf::from(std::env::var("OKOU_TEST_RPC_SNAPSHOT_DIR")?).join("memory.bin");
@@ -62,7 +67,7 @@ pub async fn exercise(
         || supplied.snapshot_memory_mb != 4096
         || bytes != 4096 * 1024 * 1024
         || supplied.prefetch_overhead_bytes < 1024 * 1024
-        || context.budget.allocated() != (2, 4096, 1)
+        || budget.allocated() != (2, 4096, 1)
     {
         return Err(
             io::Error::other("startup original snapshot shape/identity/lease is invalid").into(),
@@ -71,13 +76,35 @@ pub async fn exercise(
     let checked = original.clone();
     let hash = proof.snapshot_memory_hash()?.to_owned();
     tokio::task::spawn_blocking(move || evidence::verify_file(&checked, &hash)).await??;
+    Ok(Original {
+        path: original,
+        bytes,
+        overhead: supplied.prefetch_overhead_bytes,
+        raw,
+    })
+}
+
+pub async fn exercise(
+    context: transitions::Context,
+    inputs: &fixture::Inputs,
+    source: &Arc<recovery_source::Source>,
+    proof: Option<&Arc<evidence::Case>>,
+) -> TestResult<()> {
+    let proof = proof.ok_or_else(|| io::Error::other("startup requires measured owners"))?;
+    let Original {
+        path: original,
+        bytes,
+        overhead,
+        raw,
+    } = original(&context.budget, inputs, proof).await?;
+    let policy = inputs.pressure_policy()?;
     proof.startup_witness(
         "inputs_verified",
         json!({
             "policy": serde_json::to_value(inputs)?, "inputs_sha256": continuation::digest(&raw),
             "snapshot_sha256": proof.snapshot_memory_hash()?, "snapshot_bytes": bytes,
-            "snapshot_memory_mb": supplied.snapshot_memory_mb,
-            "prefetch_overhead_bytes": supplied.prefetch_overhead_bytes,
+            "snapshot_memory_mb": 4096,
+            "prefetch_overhead_bytes": overhead,
             "allocated": context.budget.allocated(), "startup_pressure_guarded": false,
         }),
     )?;
@@ -101,7 +128,7 @@ pub async fn exercise(
         4096,
         GuardedPrefetchConfig {
             pressure: control.clone(),
-            overhead_bytes: supplied.prefetch_overhead_bytes,
+            overhead_bytes: overhead,
         },
     );
     let (mut runtime, reads) = match guarded {

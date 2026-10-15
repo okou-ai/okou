@@ -1,5 +1,41 @@
 # Guarded idle terminal fixture
 
+## Native foreground progress
+
+`native_foreground_records_fresh_and_exact_reuse_progress` composes the actual
+startup and guarded runtime readers with real foreground Fresh preparation or
+exact original reuse, production heartbeat delivery and host observation. It
+runs both paths in fresh and matching-snapshot factories. Startup must complete
+all original 4 GiB under held Unknown; runtime completes all bytes under actual
+sustained Ready using the original shared P2 authority.
+
+The real pool and status ownership waits and an invocation-owned blocking Unix
+read preserve their dependencies. Independent observer and API-backed heartbeat
+work must complete at the applicable held boundaries. Foreground completion
+records a positively polled real pool/status wait before measuring progress and
+requires actual Guest RPC and P2 phase settlement. Required original saving
+retains its full lease through positive backing exit and the blocked kernel
+read, then still writes and verifies the complete durable 64 MiB tail. The
+ordinary bounded-child and HTTP tests run without KVM; default Cargo also runs
+the real-file/CLI refusal contract. No fixed sleep certifies progress.
+
+Use the exact-source bounded P1 invocation below, selecting the foreground test.
+Metadata additionally requires `native_foreground_policy_json`,
+`native_foreground_inputs_json` and `native_foreground_snapshot_bytes` (4294967296),
+binding the exact supplied policy and optional-input files.
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/foreground_report.py "$P1_OUTPUT_DIRECTORY"
+```
+
+This proves component composition with synthetic foreground commands, not full
+production Reactor/P2 installation or inference. Exact reuse returns its original
+home-promotion owner to required saving. Inventory/logical/replacement/restore/aged
+growth, Critical/stale and post-wait fences remain #40412 under #40353; accepted
+cancellation/late results and final parent reconciliation remain #40355. Startup
+stays unguarded; cold/full residency, calibrated envelopes, numerical relief,
+unknown template producer and production OOM protection remain unverified.
+
 ## Production startup reader completion
 
 `native_startup_records_complete_snapshot_reads_and_joined_owners` invokes the

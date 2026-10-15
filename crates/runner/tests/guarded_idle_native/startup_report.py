@@ -27,13 +27,10 @@ def complete(read):
                  "read_bytes": BYTES, "last_error": None}, "startup complete original read missing")
 
 
-def validate(directory):
-    directory = pathlib.Path(directory)
-    result, collector, terminals = report._validate_cases(directory, CASES, report.PHASES)
-    metadata = collector["metadata"]
-    raw_policy, raw_inputs = metadata["native_startup_policy_json"], metadata["native_startup_inputs_json"]
+def original_inputs(metadata, artifacts, prefix):
+    raw_policy, raw_inputs = metadata[prefix+"_policy_json"], metadata[prefix+"_inputs_json"]
     if (not isinstance(raw_policy, str) or not isinstance(raw_inputs, str)
-            or hashlib.sha256(raw_policy.encode()).hexdigest() != result["artifacts"]["policy_sha256"]):
+            or hashlib.sha256(raw_policy.encode()).hexdigest() != artifacts["policy_sha256"]):
         raise ValueError("startup raw policy/hash mismatch")
     policy = json.loads(raw_policy, object_pairs_hook=pressure_report.unique_object)
     inputs = json.loads(raw_inputs, object_pairs_hook=pressure_report.unique_object)
@@ -54,9 +51,16 @@ def validate(directory):
             or type(inputs["snapshot_memory_mb"]) is not int or inputs["snapshot_memory_mb"] != 4096
             or not pressure_report.integer(inputs["prefetch_overhead_bytes"], 1024**2)
             or protected + BYTES + inputs["prefetch_overhead_bytes"] > policy["host_total_bytes"]
-            or type(metadata["native_startup_snapshot_bytes"]) is not int
-            or metadata["native_startup_snapshot_bytes"] != BYTES):
+            or type(metadata[prefix+"_snapshot_bytes"]) is not int
+            or metadata[prefix+"_snapshot_bytes"] != BYTES):
         raise ValueError("invalid startup original input/shape/bounds")
+    return policy, inputs, raw_inputs
+
+
+def validate(directory):
+    directory = pathlib.Path(directory)
+    result, collector, terminals = report._validate_cases(directory, CASES, report.PHASES)
+    policy, inputs, raw_inputs = original_inputs(collector["metadata"], result["artifacts"], "native_startup")
     witnesses = {case: [] for case in CASES}
     for line in (directory / "stdout.log").read_text().splitlines():
         if not line.startswith(PREFIX):

@@ -98,6 +98,12 @@ impl HostMemoryObserver {
             .available_bytes_at(Instant::now(), DIAGNOSTIC_MAX_AGE)
     }
 
+    /// Observe actual reader completions without replacing the production reader.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn subscribe_for_test(&self) -> watch::Receiver<HostMemoryObservation> {
+        self.latest.clone()
+    }
+
     /// Every ordinary startup/reactor return cancels and positively joins this owner.
     pub async fn shutdown(self) -> Result<(), tokio::task::JoinError> {
         self.cancel.cancel();
