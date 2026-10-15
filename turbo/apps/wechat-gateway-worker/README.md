@@ -10,7 +10,9 @@ The API owns provider credentials and canonical Chat/Run processing.
    `WECHAT_GATEWAY_SECRET` (worker-to-API HMAC) and
    `WECHAT_GATEWAY_CONTROL_SECRET` (API-to-worker control authorization).
 3. Configure the API with those secrets and `WECHAT_GATEWAY_URL` pointing to the
-   receiver origin. Keep the values in the normal secret-management system.
+   receiver origin. The API deployment reads the URL from GitHub variables and
+   both credentials from GitHub secrets, matching the gateway deployment below.
+   Use a receiver whose `WECHAT_API_ORIGIN` targets that same API environment.
 4. The **Deploy WeChat Gateway** workflow reads the matching GitHub environment's
    two secrets, `CF_API_WORKER_DEPLOY_API_TOKEN`, `CF_ACCOUNT_ID`, and the
    `WECHAT_API_ORIGIN` variable (canonical HTTPS API origin). It deploys only

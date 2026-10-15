@@ -152,6 +152,10 @@ on:
         required: false
       VERCEL_TOKEN:
         required: false
+      WECHAT_GATEWAY_CONTROL_SECRET:
+        required: false
+      WECHAT_GATEWAY_SECRET:
+        required: false
 
 # The staging caller holds its lock through E2E and cleanup. This per-run group
 # must not contend with that caller lock. PR/merge-group behavior is unchanged.

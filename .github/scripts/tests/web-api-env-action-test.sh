@@ -834,6 +834,39 @@ for kms_secret in PREVIEW_KMS_KEY_ID PREVIEW_KMS_ACCESS_KEY_ID PREVIEW_KMS_SECRE
   assert_no_fixture_secret_values "$missing_kms_output"
 done
 
+wechat_vars_json='{"WECHAT_GATEWAY_URL":"https://wechat-gateway.example.test"}'
+wechat_secrets_json='{"WECHAT_GATEWAY_SECRET":"wechat-hmac-fixture","WECHAT_GATEWAY_CONTROL_SECRET":"wechat-control-fixture"}'
+for wechat_environment in preview production; do
+  for wechat_app in api web; do
+    wechat_dir="$(mktemp -d)"
+    TEMP_DIRS+=("$wechat_dir")
+    wechat_output="$(
+      run_action \
+        "$(build_doppler_secrets_json)" \
+        "$wechat_dir" \
+        "$wechat_app" \
+        "$wechat_environment" \
+        "https://static.okou.io/okou-cli/test-sha/package.tgz" \
+        canonical \
+        "$wechat_vars_json" \
+        "$wechat_secrets_json" \
+        2>&1
+    )"
+    wechat_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${wechat_dir}/github-output")"
+    assert_not_contains "$wechat_output" "wechat-hmac-fixture"
+    assert_not_contains "$wechat_output" "wechat-control-fixture"
+    if [[ "$wechat_app" == "api" ]]; then
+      assert_env_value "$wechat_env_file" WECHAT_GATEWAY_URL "https://wechat-gateway.example.test"
+      assert_env_value "$wechat_env_file" WECHAT_GATEWAY_SECRET "wechat-hmac-fixture"
+      assert_env_value "$wechat_env_file" WECHAT_GATEWAY_CONTROL_SECRET "wechat-control-fixture"
+    else
+      assert_env_key_absent "$wechat_env_file" WECHAT_GATEWAY_URL
+      assert_env_key_absent "$wechat_env_file" WECHAT_GATEWAY_SECRET
+      assert_env_key_absent "$wechat_env_file" WECHAT_GATEWAY_CONTROL_SECRET
+    fi
+  done
+done
+
 discord_vars_json='{"DISCORD_APPLICATION_ID":"123456789012345678","DISCORD_PUBLIC_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","DISCORD_OAUTH_CLIENT_ID":"github-discord-legacy-client-id","DISCORD_GATEWAY_ENABLED":"true"}'
 discord_secrets_json='{"DISCORD_BOT_TOKEN":"github-discord-bot-token","DISCORD_GATEWAY_SECRET":"github-discord-hmac-secret-1234567890","DISCORD_OAUTH_CLIENT_SECRET":"github-discord-legacy-oauth-secret","DISCORD_GATEWAY_CONTROL_SECRET":"github-discord-control-secret"}'
 discord_doppler_json="$(
