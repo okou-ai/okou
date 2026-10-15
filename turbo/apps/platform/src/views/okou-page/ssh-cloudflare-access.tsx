@@ -13,7 +13,7 @@ import type { ScopedCloudflareAccessConfig } from "@okouai/api-contracts/contrac
 
 import {
   chooseSshAccessConfig$,
-  sshTransportEditor$,
+  sshConnectionModeEditor$,
 } from "../../signals/ssh.ts";
 import { cloudflareAccessConfigs$ } from "../../signals/cloudflare-access.ts";
 import {
@@ -73,7 +73,7 @@ function AccessConfigOptions({
 export function AccessSelection({ disabled }: { readonly disabled: boolean }) {
   const { t } = useTranslation();
   const configs = useLoadable(cloudflareAccessConfigs$);
-  const editor = useGet(sshTransportEditor$);
+  const editor = useGet(sshConnectionModeEditor$);
   const choose = useSet(chooseSshAccessConfig$);
   const personal =
     configs.state === "hasData"

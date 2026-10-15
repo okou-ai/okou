@@ -243,6 +243,9 @@ export const sshTypeBindings = [
           resolved_tailscale: [
             "Authorized SSH/network handoff; requires qualified native carrier.",
           ],
+          resolved_tailscale_ssh: [
+            "Tailscale identity authentication over the native carrier on port 22.",
+          ],
           resolved: ["Authorized current credential handoff."],
           resolved_password: [
             "Authorized current password credential handoff.",

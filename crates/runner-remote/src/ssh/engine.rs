@@ -138,6 +138,10 @@ impl Execution {
         };
         let session = &mut connected.session;
         let authentication = match &self.credential.auth {
+            PreparedAuth::Tailscale => scope
+                .wait(session.authenticate_none(self.credential.username.clone()))
+                .await?
+                .map_err(|_| FailureReason::AuthenticationFailed)?,
             PreparedAuth::Password(password) => scope
                 .wait(
                     session

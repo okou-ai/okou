@@ -2,6 +2,35 @@ use api_contracts::generated::types::runners::ssh::ResolveResponse;
 use serde_json::json;
 
 #[test]
+fn tailscale_ssh_handoff_contains_network_identity_without_ssh_secrets() {
+    let body = json!({
+        "outcome": "resolved_tailscale_ssh", "host": "peer", "port": 22,
+        "username": "ubuntu", "generation": 1, "learnedHostKey": null,
+        "tailscale": { "configId": "00000000-0000-4000-8000-000000000001", "generation": 2,
+            "tags": ["tag:okou"], "clientId": "oauth-id-canary", "clientSecret": "oauth-secret-canary" }
+    });
+    assert!(matches!(
+        serde_json::from_value::<ResolveResponse>(body.clone()).unwrap(),
+        ResolveResponse::ResolvedTailscaleSsh { .. }
+    ));
+    for (field, value) in [
+        (
+            "authentication",
+            json!({"method":"password", "password":"ssh-secret-canary"}),
+        ),
+        ("privateKey", json!("ssh-secret-canary")),
+        ("password", json!("ssh-secret-canary")),
+    ] {
+        let mut mixed = body.clone();
+        mixed[field] = value;
+        let error = serde_json::from_value::<ResolveResponse>(mixed)
+            .err()
+            .unwrap();
+        assert!(!error.to_string().contains("secret-canary"));
+    }
+}
+
+#[test]
 fn access_handoff_separates_and_bounds_both_credentials() {
     use api_contracts::generated::types::runners::ssh::ResolveResponseResolvedAccessAuthentication;
     let body = json!({

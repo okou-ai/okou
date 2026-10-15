@@ -1263,7 +1263,9 @@ test("Changing owner closes the credential form and clears its fields", async ()
     }),
   );
   const editDialog = await screen.findByRole("dialog");
-  await userEvent.click(within(editDialog).getByRole("combobox"));
+  await userEvent.click(
+    within(editDialog).getByRole("combobox", { name: "Credential" }),
+  );
   await userEvent.click(
     await screen.findByRole("option", { name: "Create new credential" }),
   );

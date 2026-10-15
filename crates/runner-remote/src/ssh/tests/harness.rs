@@ -78,6 +78,8 @@ impl Default for Reply {
 #[derive(Default)]
 pub(crate) struct Observed {
     pub(crate) auth: AtomicUsize,
+    pub(crate) none_auth: AtomicUsize,
+    pub(crate) allow_none_auth: AtomicBool,
     pub(crate) commands: Mutex<Vec<Vec<u8>>>,
     pub(super) attempts: Mutex<Vec<SocketAddr>>,
     pub(crate) queries: Mutex<Vec<(String, u16)>>,
@@ -770,6 +772,20 @@ impl Peer {
 }
 impl server::Handler for Peer {
     type Error = russh::Error;
+    async fn auth_none(&mut self, user: &str) -> Result<server::Auth, Self::Error> {
+        self.observed.none_auth.fetch_add(1, Ordering::SeqCst);
+        self.observed.auth.fetch_add(1, Ordering::SeqCst);
+        Ok(
+            if self.observed.allow_none_auth.load(Ordering::SeqCst) && user == "test-user" {
+                server::Auth::Accept
+            } else {
+                server::Auth::Reject {
+                    proceed_with_methods: None,
+                    partial_success: false,
+                }
+            },
+        )
+    }
     async fn auth_password(
         &mut self,
         user: &str,

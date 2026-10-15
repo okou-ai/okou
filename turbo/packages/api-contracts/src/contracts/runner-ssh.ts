@@ -111,6 +111,19 @@ const resolveResponseSchema = z.discriminatedUnion("outcome", [
     .strict(),
   runnerSshAccessResolvedSchema,
   runnerSshTailscaleResolvedSchema,
+  runnerSshTailscaleResolvedSchema
+    .omit({ authentication: true })
+    .extend({
+      outcome: z.literal("resolved_tailscale_ssh"),
+    })
+    .refine(
+      (body) => {
+        return body.port === 22;
+      },
+      {
+        message: "Tailscale SSH uses port 22",
+      },
+    ),
 ]);
 
 const pinRequestSchema = resolveRequestSchema

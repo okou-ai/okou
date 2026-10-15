@@ -1,3 +1,4 @@
+import type { SshConnectionMode } from "@okouai/api-contracts/contracts/ssh-connections";
 import {
   boolean,
   integer,
@@ -15,11 +16,17 @@ export function sshConnectionColumns() {
     displayName: varchar("display_name", { length: 128 }).notNull(),
     host: varchar("host", { length: 253 }).notNull(),
     port: integer("port").notNull().default(22),
-    credentialId: uuid("credential_id").notNull(),
+    credentialId: uuid("credential_id"),
     cloudflareAccessId: uuid("cloudflare_access_id"),
     tailscaleId: uuid("tailscale_id"),
-    transport: text("transport", {
-      enum: ["direct", "cloudflare_access", "tailscale"],
+    // Keep the existing SQL column name for the complete connection mode.
+    connectionMode: text("transport", {
+      enum: [
+        "direct",
+        "cloudflare_access",
+        "tailscale",
+        "tailscale_ssh",
+      ] as const satisfies readonly SshConnectionMode[],
     }).notNull(),
     learnedHostKeyAlgorithm: varchar("learned_host_key_algorithm", {
       length: 64,
@@ -33,5 +40,6 @@ export function sshConnectionColumns() {
       .default(false),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    tailscaleSshUsername: varchar("tailscale_ssh_username", { length: 255 }),
   };
 }
