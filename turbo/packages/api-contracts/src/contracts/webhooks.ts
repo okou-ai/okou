@@ -1130,6 +1130,13 @@ const sandboxOperationSchema = z.object({
   image_generation: z.string().max(4096).optional(),
   allocated_bytes: z.number().int().nonnegative().optional(),
   handoff_path: z.string().max(64).optional(),
+  runner_id: z.uuid().optional(),
+  runner_heartbeat_generation: z.number().int().nonnegative().optional(),
+  history_generation_run_id: z.uuid().optional(),
+  inventory_loaded: z.boolean().optional(),
+  inventory_observed_states: z.number().int().nonnegative().optional(),
+  inventory_output_states: z.number().int().nonnegative().optional(),
+  inventory_omitted_states: z.number().int().nonnegative().optional(),
   home_reuse_result: homeReuseResultSchema.optional(),
   sandbox_reuse_result: sandboxReuseResultSchema.optional(),
   runner_pre_spawn_concurrency_bucket:

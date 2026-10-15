@@ -1484,6 +1484,91 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn home_inventory_and_admission_fields_survive_the_existing_host_http_path() {
+        use runner_host::home_observation::{
+            HomeObservationKind as Kind, HomeObservationOutcome as Outcome,
+        };
+        let server = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(json_response(
+            "200 OK",
+            r#"{"success":true}"#,
+        ))])
+        .await;
+        let telemetry = JobTelemetry::new_runner(
+            http_client_for_api_url(&server.url()),
+            "host-operation-token".into(),
+            None,
+        );
+        let reporter = telemetry.reporter();
+        let runner_id = uuid::Uuid::new_v4().to_string();
+        let run_id = RunId::new_v4();
+        let generation = RunId::new_v4();
+        let mut loading = HomeObservation::new(Kind::Inventory, Outcome::Loading);
+        loading.runner_id = Some(runner_id.clone());
+        loading.runner_heartbeat_generation = Some(7);
+        loading.inventory_loaded = Some(false);
+        let mut record = SandboxOpRecord::new("runner_home_inventory", Duration::ZERO, true, None);
+        record.home = Some(loading);
+        reporter.record(record);
+        let mut inventory = HomeObservation::new(Kind::Inventory, Outcome::Assembled);
+        inventory.runner_id = Some(runner_id.clone());
+        inventory.runner_heartbeat_generation = Some(7);
+        inventory.inventory_loaded = Some(true);
+        inventory.inventory_observed_states = Some(0);
+        inventory.inventory_output_states = Some(0);
+        inventory.inventory_omitted_states = Some(0);
+        let mut record = SandboxOpRecord::new("runner_home_inventory", Duration::ZERO, true, None);
+        record.home = Some(inventory);
+        reporter.record(record);
+        let mut admission = HomeObservation::new(Kind::Admission, Outcome::Deferred);
+        admission.runner_id = Some(runner_id.clone());
+        admission.runner_heartbeat_generation = Some(7);
+        admission.run_id = Some(run_id);
+        admission.history_generation_run_id = Some(generation);
+        admission.reuse_key = Some("thread:known".into());
+        admission.profile_name = Some("vm0/default".into());
+        admission.reason = Some("capacity_exhausted".into());
+        let mut record = SandboxOpRecord::new("runner_home_admission", Duration::ZERO, true, None);
+        record.home = Some(admission);
+        reporter.record(record);
+        telemetry.flush().await;
+        let requests = server.assert_finished_with_requests().await;
+        assert_eq!(requests.len(), 1);
+        let body: serde_json::Value =
+            serde_json::from_str(requests[0].split_once("\r\n\r\n").unwrap().1).unwrap();
+        assert!(body.get("runId").is_none());
+        let ops = body["sandboxOperations"].as_array().unwrap();
+        assert_eq!(ops.len(), 3);
+        assert_eq!(ops[0]["action_type"], "runner_home_inventory");
+        assert_eq!(ops[0]["outcome"], "loading");
+        assert_eq!(ops[0]["inventory_loaded"], false);
+        assert_eq!(ops[1]["action_type"], "runner_home_inventory");
+        assert_eq!(ops[1]["outcome"], "assembled");
+        assert_eq!(ops[1]["inventory_loaded"], true);
+        for field in [
+            "inventory_observed_states",
+            "inventory_output_states",
+            "inventory_omitted_states",
+        ] {
+            assert!(ops[0].get(field).is_none());
+            assert_eq!(ops[1][field], 0);
+        }
+        assert_eq!(ops[2]["action_type"], "runner_home_admission");
+        assert_eq!(ops[2]["outcome"], "deferred");
+        assert_eq!(ops[2]["reason"], "capacity_exhausted");
+        assert_eq!(ops[2]["run_id"], run_id.to_string());
+        assert_eq!(ops[2]["history_generation_run_id"], generation.to_string());
+        assert_eq!(ops[2]["reuse_key"], "thread:known");
+        for op in ops {
+            assert_eq!(op["runner_id"], runner_id);
+            assert_eq!(op["runner_heartbeat_generation"], 7);
+            assert!(op.get("is_first_run").is_none());
+        }
+        assert!(ops[0].get("run_id").is_none());
+        assert!(ops[1].get("run_id").is_none());
+        assert!(ops[2].get("inventory_loaded").is_none());
+    }
+
+    #[tokio::test]
     async fn home_operations_buffer_while_the_existing_api_transport_is_held() {
         use runner_host::home_observation::{
             HomeObservationKind as Kind, HomeObservationOutcome as Outcome,

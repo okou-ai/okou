@@ -41,6 +41,7 @@ pub struct HomeCacheSnapshotRefresh {
 pub struct HomeCacheRefreshOutcome {
     pub states: Vec<HeldHomeState>,
     pub changed: bool,
+    pub loaded: bool,
 }
 
 impl HomeCacheStateSnapshot {
@@ -86,6 +87,7 @@ impl HomeCacheStateSnapshot {
         HomeCacheRefreshOutcome {
             changed,
             states: inner.home_cache_states.clone(),
+            loaded: inner.home_cache_loaded,
         }
     }
 
@@ -126,9 +128,14 @@ impl HomeCacheStateSnapshot {
         filter_current_held_home_states(home_cache_states, active_runs, extra_active_reuse_key)
     }
 
-    /// Returns the stored view for a sender that did not request a refresh.
-    pub fn loaded_home_cache_states(&self) -> Vec<HeldHomeState> {
-        self.lock_inner().home_cache_states.clone()
+    /// Capture availability and the existing bounded view under the same lock.
+    pub fn loaded_home_cache_snapshot(&self) -> HomeCacheRefreshOutcome {
+        let inner = self.lock_inner();
+        HomeCacheRefreshOutcome {
+            states: inner.home_cache_states.clone(),
+            changed: false,
+            loaded: inner.home_cache_loaded,
+        }
     }
 
     fn lock_inner(&self) -> MutexGuard<'_, HomeCacheStateSnapshotInner> {
@@ -353,7 +360,7 @@ mod tests {
         }
 
         // Observe stored state directly; the current view applies its own cap.
-        let states = snapshot.loaded_home_cache_states();
+        let states = snapshot.loaded_home_cache_snapshot().states;
 
         assert_eq!(states.len(), MAX_HELD_HOME_STATES);
         assert!(!states.iter().any(|state| state.reuse_key == "sess-0000"));

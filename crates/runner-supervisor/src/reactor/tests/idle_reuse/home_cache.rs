@@ -345,6 +345,8 @@ async fn non_empty_initial_home_cache_is_heartbeated_before_the_routine_tick() {
     let mut profiles = test_profiles();
     profiles.get_mut("vm0/default").unwrap().home_disk_mb = 16;
     let (mut config, env) = mock_run_config(profiles, 8, 32768, 4);
+    let observations = runner_storage::operation_test_support::RecordedHomeObservations::default();
+    config.sandbox_op_reporter = Some(observations.handle());
     let runner_paths = RunnerPaths::new(config.paths.base_dir.clone());
     let home_cache = HomeImageCache::shared(
         runner_paths.clone(),
@@ -371,6 +373,23 @@ async fn non_empty_initial_home_cache_is_heartbeated_before_the_routine_tick() {
         })
         .await,
         "non-empty initial cache should be published before the deferred routine tick",
+    );
+
+    let events = observations.events();
+    let loading = events.first().unwrap();
+    assert_eq!(
+        loading.outcome,
+        runner_host::home_observation::HomeObservationOutcome::Loading
+    );
+    assert_eq!(loading.inventory_loaded, Some(false));
+    assert!(loading.inventory_observed_states.is_none());
+    assert!(loading.inventory_output_states.is_none());
+    assert!(loading.inventory_omitted_states.is_none());
+    assert!(
+        events
+            .iter()
+            .any(|event| event.inventory_loaded == Some(true)
+                && event.inventory_output_states == Some(1))
     );
 
     home_cache.reset_held_state_root_scan_count();

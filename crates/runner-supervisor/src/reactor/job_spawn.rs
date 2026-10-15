@@ -95,6 +95,7 @@ pub(super) struct SpawnContext {
     pub(super) blank_pool_diagnostics: BlankPoolDiagnostics,
     pub(super) budget: Arc<ResourceBudget>,
     pub(super) home_cache_snapshot: HomeCacheStateSnapshot,
+    pub(super) sandbox_op_reporter: Option<runner_storage::SandboxOpReporter>,
     pub(super) device_rate_limits: Option<sandbox::DeviceRateLimits>,
     #[cfg(test)]
     pub(super) outer_job_panic: Option<OuterJobPanicPoint>,

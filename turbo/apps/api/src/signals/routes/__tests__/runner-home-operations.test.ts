@@ -129,6 +129,75 @@ describe("Runner sandbox operations without a Run", () => {
     }
   });
 
+  it("accepts unloaded inventory and Run-correlated admission through the normal Runner path", async () => {
+    mockEnv("OFFICIAL_RUNNER_SECRET", runnerSecret);
+    const runnerId = randomUUID();
+    const response = await accept(
+      client().send({
+        headers: { authorization: `Bearer vm0_official_${runnerSecret}` },
+        body: {
+          sandboxOperations: [
+            {
+              ts: nowDate().toISOString(),
+              action_type: "runner_home_inventory",
+              duration_ms: 0,
+              success: true,
+              outcome: "loading",
+              runner_id: runnerId,
+              runner_heartbeat_generation: 7,
+              inventory_loaded: false,
+            },
+            {
+              ts: nowDate().toISOString(),
+              action_type: "runner_home_inventory",
+              duration_ms: 0,
+              success: true,
+              outcome: "assembled",
+              runner_id: runnerId,
+              runner_heartbeat_generation: 7,
+              inventory_loaded: true,
+              inventory_observed_states: 0,
+              inventory_output_states: 0,
+              inventory_omitted_states: 0,
+            },
+            {
+              ts: nowDate().toISOString(),
+              action_type: "runner_home_admission",
+              duration_ms: 0,
+              success: true,
+              outcome: "deferred",
+              reason: "capacity_exhausted",
+              runner_id: runnerId,
+              runner_heartbeat_generation: 7,
+              run_id: randomUUID(),
+              history_generation_run_id: randomUUID(),
+              profile_name: "vm0/default",
+              reuse_key: "thread:known",
+            },
+          ],
+        },
+      }),
+      [200],
+    );
+    expect(response.body).toStrictEqual({ success: true });
+  });
+
+  it("rejects invalid inventory counts at the existing telemetry boundary", async () => {
+    mockEnv("OFFICIAL_RUNNER_SECRET", runnerSecret);
+    const response = await accept(
+      client().send({
+        headers: { authorization: `Bearer vm0_official_${runnerSecret}` },
+        body: {
+          sandboxOperations: [
+            { ...removalOperation(), inventory_output_states: -1 },
+          ],
+        },
+      }),
+      [400],
+    );
+    expect(response.body.error.code).toBe("BAD_REQUEST");
+  });
+
   it("requires Run attribution for metrics and system logs", async () => {
     mockEnv("OFFICIAL_RUNNER_SECRET", runnerSecret);
     for (const fields of [

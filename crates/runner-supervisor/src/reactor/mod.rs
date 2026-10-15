@@ -63,6 +63,7 @@ use crate::proxy;
 use crate::resource_budget::ResourceBudget;
 use crate::status::StatusTracker;
 use error::{ReactorError as RunnerError, ReactorResult as RunnerResult};
+use runner_host::home_observation::{HomeObservation, HomeObservationKind, HomeObservationOutcome};
 use runner_host::paths::HomePaths;
 #[cfg(test)]
 use runner_host::paths::RunnerPaths;
@@ -271,6 +272,7 @@ pub struct RunConfig {
     pub shared: RunnerSharedState,
     pub provider: ProviderState,
     pub wss_ingress_service_probe: WssIngressServiceProbe,
+    pub sandbox_op_reporter: Option<runner_storage::SandboxOpReporter>,
     pub proxy: ProxyState,
     pub exec_config: Arc<ExecutorConfig>,
     pub shutdown: ShutdownHandles,
@@ -988,6 +990,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         shared,
         provider: provider_state,
         wss_ingress_service_probe,
+        sandbox_op_reporter,
         proxy,
         exec_config,
         shutdown,
@@ -1132,7 +1135,28 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         active_runs: &active_runs,
         home_cache_snapshot: home_cache_snapshot.clone(),
         wss_ingress_service_probe,
+        sandbox_op_reporter: sandbox_op_reporter.clone(),
     });
+    if exec_config.home_cache.is_some()
+        && let Some(reporter) = &sandbox_op_reporter
+    {
+        let mut observation = HomeObservation::new(
+            HomeObservationKind::Inventory,
+            HomeObservationOutcome::Loading,
+        );
+        observation.runner_id = Some(runner.identity.runner_id().to_string());
+        observation.runner_heartbeat_generation = Some(runner.identity.heartbeat_generation());
+        observation.inventory_loaded = Some(false);
+        observation.reason = Some("initial_scan".into());
+        let mut record = runner_storage::SandboxOpRecord::new(
+            "runner_home_inventory",
+            Duration::ZERO,
+            true,
+            None,
+        );
+        record.home = Some(observation);
+        reporter.record(record);
+    }
     let initial_home_cache = refresh_initial_home_cache_snapshot(
         &home_cache_snapshot,
         exec_config.home_cache.as_ref(),
@@ -1235,6 +1259,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         budget: Arc::clone(&capacity.budget),
         home_cache_snapshot,
         device_rate_limits: capacity.device_rate_limits.clone(),
+        sandbox_op_reporter,
         #[cfg(test)]
         outer_job_panic: test_hooks.outer_job_panic,
         #[cfg(test)]

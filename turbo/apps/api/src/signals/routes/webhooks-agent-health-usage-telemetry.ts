@@ -113,6 +113,13 @@ interface SandboxOperationDimensionInput extends Readonly<SessionHistoryDownload
   readonly image_generation?: string;
   readonly allocated_bytes?: number;
   readonly handoff_path?: string;
+  readonly runner_id?: string;
+  readonly runner_heartbeat_generation?: number;
+  readonly history_generation_run_id?: string;
+  readonly inventory_loaded?: boolean;
+  readonly inventory_observed_states?: number;
+  readonly inventory_output_states?: number;
+  readonly inventory_omitted_states?: number;
   readonly home_reuse_result?: HomeReuseResult;
   readonly sandbox_reuse_result?: SandboxReuseResult;
   readonly runner_pre_spawn_concurrency_bucket?: RunnerPreSpawnConcurrencyBucket;
@@ -347,9 +354,9 @@ function archiveConnectionAttemptDimensions(
   };
 }
 
-function homeImageDimensions(
+function homeObservationDimensions(
   op: SandboxOperationDimensionInput,
-): Record<string, string | number> {
+): Record<string, string | number | boolean> {
   return {
     ...(op.cache_key === undefined ? {} : { cache_key: op.cache_key }),
     ...(op.profile_name === undefined ? {} : { profile_name: op.profile_name }),
@@ -360,6 +367,27 @@ function homeImageDimensions(
       ? {}
       : { allocated_bytes: op.allocated_bytes }),
     ...(op.handoff_path === undefined ? {} : { handoff_path: op.handoff_path }),
+    ...(op.runner_id === undefined ? {} : { runner_id: op.runner_id }),
+    ...(op.runner_heartbeat_generation === undefined
+      ? {}
+      : {
+          runner_heartbeat_generation: String(op.runner_heartbeat_generation),
+        }),
+    ...(op.history_generation_run_id === undefined
+      ? {}
+      : { history_generation_run_id: op.history_generation_run_id }),
+    ...(op.inventory_loaded === undefined
+      ? {}
+      : { inventory_loaded: op.inventory_loaded }),
+    ...(op.inventory_observed_states === undefined
+      ? {}
+      : { inventory_observed_states: op.inventory_observed_states }),
+    ...(op.inventory_output_states === undefined
+      ? {}
+      : { inventory_output_states: op.inventory_output_states }),
+    ...(op.inventory_omitted_states === undefined
+      ? {}
+      : { inventory_omitted_states: op.inventory_omitted_states }),
   };
 }
 
@@ -376,7 +404,7 @@ function sandboxOperationDimensions(
     ...(op.error ? { error: op.error } : {}),
     ...(op.outcome ? { outcome: op.outcome } : {}),
     ...(op.reason ? { reason: op.reason } : {}),
-    ...homeImageDimensions(op),
+    ...homeObservationDimensions(op),
     ...(op.archive_size_mismatch
       ? {
           archive_size_mismatch_expected_bytes:
