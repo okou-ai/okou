@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.233.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.233.3...runner-rs-v0.233.4) (2026-10-15)
+
+
+### Refactoring
+
+* **pi:** always use the runner-bundled cli ([#40232](https://github.com/okou-ai/okou/issues/40232)) ([dfff160](https://github.com/okou-ai/okou/commit/dfff1605013103371cd90962ee5b54c80fc93140))
+
+
+### Performance Improvements
+
+* **python:** yield within x ndjson row inspection ([#40291](https://github.com/okou-ai/okou/issues/40291)) ([53c2f6f](https://github.com/okou-ai/okou/commit/53c2f6fe9bf5728a87a948a620bdf3f2ea4fd8d8))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.233.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.233.2...runner-rs-v0.233.3) (2026-10-15)
 
 
