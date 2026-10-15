@@ -3,7 +3,7 @@
 //! # Test executable boundaries
 //!
 //! Many CLI tests mutate process env, current directory, and guest runtime path
-//! overrides as setup input. Keep those scenarios, process-global log sinks and
+//! overrides as setup input. Keep those scenarios, process-global telemetry/log sinks and
 //! signal/resource-limit fixtures in separate binaries: ordinary Cargo can run
 //! cases concurrently within one executable. Nextest's per-case isolation does
 //! not make an unsafe shared executable valid for ordinary Cargo.

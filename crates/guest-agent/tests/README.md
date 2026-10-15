@@ -5,7 +5,7 @@ target imports `common` once; its case modules import `crate::common`.
 
 | Target                   | Ownership                                                                          |
 | ------------------------ | ---------------------------------------------------------------------------------- |
-| `api_contracts`          | API configuration, active input, search policy, artifact hashes and public surface |
+| `api_contracts`          | API configuration, active input, search policy and public surface                  |
 | `bootstrap_contracts`    | Runtime/control endpoint capture, startup helpers and session-history identity     |
 | `codex_client_contracts` | App-server client transport, initialization, input bounds and session resume       |
 | `codex_setup_contracts`  | Codex auth, model catalog, fail-closed setup and startup telemetry                 |
@@ -17,8 +17,9 @@ target imports `common` once; its case modules import `crate::common`.
 
 The existing `integration` target owns `integration_cases/`. Other top-level
 roots remain separate when they change process environment, cwd, the shared
-system-log sink, signal disposition or resource limits. Follow transitive setup
-calls: the fast/standard Codex startup roots delegate environment mutation to
+system-log or sandbox-ops telemetry sink, signal disposition or resource limits.
+For example, `artifact_finalization_content_hash` owns a global telemetry sink.
+Follow transitive setup calls: the fast/standard Codex startup roots delegate environment mutation to
 `codex_app_server_startup`. A mutex cannot make environment mutation safe against
 unrelated readers. Retain these executable boundaries for ordinary Cargo even
 though nextest runs each case in a separate process.

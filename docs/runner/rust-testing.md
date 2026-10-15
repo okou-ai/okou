@@ -331,8 +331,9 @@ crates/guest-agent/
 
 Guest-agent's [integration layout](../../crates/guest-agent/tests/README.md)
 groups cases with explicit configuration and independent resources into domain
-targets. Retain separate executables for process environment/cwd, global log
-sinks, signals and resource-limit fixtures, including transitive setup helpers.
+targets. Retain separate executables for process environment/cwd, global
+telemetry/log sinks, signals and resource-limit fixtures, including transitive
+setup helpers.
 Ordinary Cargo can execute cases concurrently in one binary; nextest's separate
 case processes do not replace that isolation contract. Existing guarded-child
 parents may share a target only when their child remains exact, ignored and
