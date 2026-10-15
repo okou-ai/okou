@@ -1,4 +1,4 @@
-//! Fixed control HTTP through actual Cache-owned production IO; TLS/Noise is a
+//! Fixed control HTTP through assignment-owned production IO; TLS/Noise is a
 //! separate gate. All endpoint responses and keys are synthetic loopback data.
 
 use super::{
@@ -6,7 +6,7 @@ use super::{
     registration::Measured,
 };
 use crate::{
-    ssh::cache::Cache,
+    tailscale::tests::fixture::Cache,
     tailscale::{Control, Failure, Key, Work, control_key},
 };
 use runner_types::ids::RunId;

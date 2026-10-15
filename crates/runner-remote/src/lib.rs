@@ -1,7 +1,9 @@
 //! Assignment-bound guest RPC, remote usage, SSH, Tailscale, and VNC services.
 
+mod cloudflare;
 pub mod guest_duplex;
 pub mod guest_rpc;
+mod native;
 pub mod run_usage;
 pub mod ssh;
 pub mod tailscale;

@@ -17,7 +17,6 @@ const CAPACITY: usize = 256;
 pub(crate) struct Cache {
     state: Arc<Mutex<State>>,
     capacity: Arc<Semaphore>,
-    native: Arc<crate::tailscale::Pool>,
 }
 
 #[derive(Default)]
@@ -29,7 +28,6 @@ struct RunEntries {
     identity: Arc<()>,
     entries: HashMap<uuid::Uuid, Arc<Entry>>,
     sessions: Vec<(uuid::Uuid, Weak<Entry>)>,
-    native: Arc<crate::tailscale::Registry>,
 }
 
 struct Entry {
@@ -40,6 +38,14 @@ struct Entry {
     _slot: Option<OwnedSemaphorePermit>,
 }
 
+impl Entry {
+    fn invalidate(&self) {
+        let mut retained = self.native.lock().unwrap_or_else(|p| p.into_inner());
+        self.cancelled.cancel();
+        retained.take();
+    }
+}
+
 impl RunEntries {
     fn invalidate(&mut self, connection: Option<uuid::Uuid>) {
         self.sessions.retain(|(id, weak)| {
@@ -47,7 +53,7 @@ impl RunEntries {
                 return false;
             };
             if connection.is_none_or(|connection| connection == *id) {
-                entry.cancelled.cancel();
+                entry.invalidate();
                 false
             } else {
                 true
@@ -55,12 +61,11 @@ impl RunEntries {
         });
         if let Some(connection) = connection {
             if let Some(entry) = self.entries.remove(&connection) {
-                entry.cancelled.cancel();
+                entry.invalidate();
             }
         } else {
-            self.native.invalidate();
             for (_, entry) in self.entries.drain() {
-                entry.cancelled.cancel();
+                entry.invalidate();
             }
         }
     }
@@ -69,7 +74,6 @@ impl RunEntries {
 impl Drop for RunEntries {
     fn drop(&mut self) {
         self.invalidate(None);
-        self.native.close();
     }
 }
 
@@ -77,7 +81,7 @@ pub(crate) struct Registration {
     cache: Cache,
     run: RunId,
     identity: Arc<()>,
-    native: Arc<crate::tailscale::Registry>,
+    native: Arc<crate::native::Run>,
 }
 
 #[derive(Clone)]
@@ -93,29 +97,25 @@ impl Cache {
         Self {
             state: Arc::new(Mutex::new(State::default())),
             capacity: Arc::new(Semaphore::new(CAPACITY)),
-            native: Arc::new(crate::tailscale::Pool::new()),
         }
     }
 
-    pub(crate) fn register(&self, run: RunId) -> Arc<Registration> {
+    pub(crate) fn register(
+        &self,
+        run: RunId,
+        native: Arc<crate::native::Run>,
+    ) -> Arc<Registration> {
         let identity = Arc::new(());
         let mut state = self
             .state
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
-        let native = Arc::new(match state.runs.get(&run) {
-            Some(previous) => {
-                crate::tailscale::Registry::replacement(Arc::clone(&self.native), &previous.native)
-            }
-            None => crate::tailscale::Registry::new(Arc::clone(&self.native)),
-        });
         state.runs.insert(
             run,
             RunEntries {
                 identity: Arc::clone(&identity),
                 entries: HashMap::new(),
                 sessions: Vec::new(),
-                native: Arc::clone(&native),
             },
         );
         Arc::new(Registration {
@@ -203,17 +203,6 @@ impl Registration {
             state.runs.remove(&self.run);
         }
     }
-
-    pub(crate) async fn shutdown_native(&self) -> Result<(), crate::tailscale::Failure> {
-        self.native.shutdown().await
-    }
-
-    pub(super) fn retain_cleanup(
-        &self,
-        task: tokio::task::JoinHandle<()>,
-    ) -> tokio::sync::oneshot::Receiver<bool> {
-        self.cache.native.retain_cleanup(task)
-    }
 }
 
 impl Drop for Registration {
@@ -235,6 +224,7 @@ impl Access {
         let node = self
             .registration
             .native
+            .registry
             .acquire_configured(configuration, factory)
             .map_err(|failure| match failure {
                 crate::tailscale::Failure::ResourceExhausted => FailureReason::ResourceExhausted,
@@ -245,8 +235,16 @@ impl Access {
         // The exact cached authority, rather than one transient SSH waiter,
         // owns the configuration node between physical connections. Other
         // host entries can share it without targeted invalidation retiring B.
-        *self.entry.native.lock().unwrap_or_else(|p| p.into_inner()) = Some(Arc::clone(&node));
-        node.start();
+        {
+            let mut retained = self.entry.native.lock().unwrap_or_else(|p| p.into_inner());
+            // Serialize startup with eviction so a concurrent fill cannot
+            // restore a lease or start native work after authority retirement.
+            if self.entry.cancelled.is_cancelled() {
+                return Err(FailureReason::ConfigurationChanged);
+            }
+            *retained = Some(Arc::clone(&node));
+            node.start();
+        }
         Ok(node)
     }
 
@@ -257,17 +255,16 @@ impl Access {
         work: crate::tailscale::Work,
     ) -> Result<Arc<crate::tailscale::Node>, FailureReason> {
         self.check()?;
-        let node =
-            self.registration
-                .native
-                .acquire(key, work)
-                .map_err(|failure| match failure {
-                    crate::tailscale::Failure::ResourceExhausted => {
-                        FailureReason::ResourceExhausted
-                    }
-                    crate::tailscale::Failure::Cancelled => FailureReason::Cancelled,
-                    _ => FailureReason::AuthorityFailure,
-                })?;
+        let node = self
+            .registration
+            .native
+            .registry
+            .acquire(key, work)
+            .map_err(|failure| match failure {
+                crate::tailscale::Failure::ResourceExhausted => FailureReason::ResourceExhausted,
+                crate::tailscale::Failure::Cancelled => FailureReason::Cancelled,
+                _ => FailureReason::AuthorityFailure,
+            })?;
         self.check()?;
         // No registration or registry lock is held across the first SDK await.
         node.start();
@@ -321,6 +318,9 @@ impl Access {
     }
 
     pub(crate) fn check(&self) -> Result<(), FailureReason> {
+        if self.registration.native.is_cancelled() {
+            return Err(FailureReason::Cancelled);
+        }
         let state = self
             .registration
             .cache
