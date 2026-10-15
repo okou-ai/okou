@@ -187,6 +187,9 @@ async function changeLanguage(next: LanguageChoice): Promise<void> {
   await waitFor(() => {
     expect(document.documentElement).toHaveAttribute("lang", next.locale);
   });
+}
+
+async function closeSettings(): Promise<void> {
   click(
     await findAction(
       "button",
@@ -224,28 +227,37 @@ async function openLocalizedChatWithDraft() {
     context,
     path: `/chats/${THREAD_ID}?settings=preference`,
   });
+  await waitFor(() => {
+    expect(document.documentElement).toHaveAttribute("lang", portuguese.locale);
+  });
 
   return { title, draft };
 }
 
-test("Changing language preserves the open conversation", async () => {
+test("Changing language preserves the conversation while Settings stays open", async () => {
   const { title } = await openLocalizedChatWithDraft();
   await screen.findByText(title, { selector: "header *" });
-  const originalUrl = pathname();
+  const originalUrl = `${pathname()}${search()}`;
 
   await changeLanguage(english);
 
   expect(`${pathname()}${search()}`).toBe(originalUrl);
+  expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
   expect(screen.getByText(title, { selector: "header *" })).toBeInTheDocument();
 });
 
-test("Changing language preserves an unsent draft", async () => {
-  const { draft } = await openLocalizedChatWithDraft();
+test("Closing translated Settings preserves the conversation and unsent draft", async () => {
+  const { title, draft } = await openLocalizedChatWithDraft();
+  await screen.findByText(title, { selector: "header *" });
+  const originalPath = pathname();
   await waitFor(() => {
     expect(composerEditor()).toHaveTextContent(draft);
   });
 
   await changeLanguage(english);
+  await closeSettings();
 
+  expect(`${pathname()}${search()}`).toBe(originalPath);
+  expect(screen.getByText(title, { selector: "header *" })).toBeInTheDocument();
   expect(composerEditor()).toHaveTextContent(draft);
 });
