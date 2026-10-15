@@ -300,6 +300,9 @@ test("Closing a reviewed deletion discards its acknowledgement for the next dial
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
+  await waitFor(() => {
+    expect(context.mocks.ably.hasSubscription("ssh:changed")).toBeTruthy();
+  });
   data.connections = [
     { ...host, displayName: "Reopened version", generation: 6 },
   ];
