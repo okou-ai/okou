@@ -1,9 +1,12 @@
 #!/usr/bin/env tsx
 
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { z } from "zod";
 import postgres from "postgres";
 import { Client, DatabaseError, Query } from "pg";
 import {
@@ -153,6 +156,93 @@ async function validateMigrationRunnerTimeouts(): Promise<void> {
     "-c lock_timeout=7s -c statement_timeout=70s",
   );
 
+  async function expectCliFailure(
+    expected: {
+      file: string;
+      phase: string;
+      statement: number | null;
+      batch: number | null;
+      sqlstate: string;
+    },
+    message: RegExp,
+  ): Promise<void> {
+    const child = spawn(
+      process.execPath,
+      [
+        "--import",
+        import.meta.resolve("tsx"),
+        fileURLToPath(new URL("migrate.ts", import.meta.url)),
+      ],
+      {
+        cwd: fixtureDirectory,
+        env: { ...process.env, DATABASE_URL: testDatabaseUrl.toString() },
+      },
+    );
+    child.stdout.resume();
+    let stderr = "";
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString("utf8");
+    });
+    const code = await new Promise<number | null>((resolve, reject) => {
+      child.once("error", reject);
+      child.once("close", resolve);
+    });
+    assert.equal(code, 1, stderr);
+    assert.match(stderr, message);
+    const records = stderr
+      .split("\n")
+      .filter((line) => {
+        return line.startsWith('{"event":');
+      })
+      .map((line) => {
+        return z
+          .object({
+            event: z.string(),
+            file: z.string(),
+            phase: z.string().optional(),
+            statement: z.number().nullable().optional(),
+            statementCount: z.number().optional(),
+            batch: z.number().nullable().optional(),
+            elapsedMs: z.number().optional(),
+            sqlstate: z.string().nullable().optional(),
+          })
+          .parse(JSON.parse(line));
+      });
+    const failures = records.filter((record) => {
+      return record.event === "migration_failed";
+    });
+    assert.equal(failures.length, 1, stderr);
+    const failure = failures[0];
+    assert.ok(failure);
+    assert.deepEqual(
+      {
+        file: failure.file,
+        phase: failure.phase,
+        statement: failure.statement,
+        batch: failure.batch,
+        sqlstate: failure.sqlstate,
+      },
+      expected,
+      stderr,
+    );
+    assert.ok(failure.elapsedMs !== undefined && failure.elapsedMs >= 0);
+    assert.ok(
+      records.some((record) => {
+        return (
+          record.event === "migration_started" && record.file === expected.file
+        );
+      }),
+    );
+    assert.ok(
+      !records.some((record) => {
+        return (
+          record.event === "migration_completed" &&
+          record.file === expected.file
+        );
+      }),
+    );
+  }
+
   const originalDirectory = process.cwd();
   const sql = postgres(testDatabaseUrl.toString(), { max: 1 });
   process.chdir(fixtureDirectory);
@@ -190,8 +280,14 @@ UPDATE migration_probe SET value = 1, annotation = 'applied';`,
       );
     };
     const before = await state();
-    await assert.rejects(
-      applyPendingMigrations(sql),
+    await expectCliFailure(
+      {
+        file: "0002_journal_atomicity.sql",
+        phase: "journal",
+        statement: null,
+        batch: null,
+        sqlstate: "P0001",
+      },
       /injected journal failure/,
     );
     assert.deepEqual(await state(), before);
@@ -361,7 +457,16 @@ ${batchBody}`,
     const beforeBatches = Array.from(
       await sql`SELECT * FROM batch_probe ORDER BY id`,
     );
-    await assert.rejects(applyPendingMigrations(sql), /division by zero/);
+    await expectCliFailure(
+      {
+        file: `${failureTag}.sql`,
+        phase: "execute",
+        statement: 2,
+        batch: 3,
+        sqlstate: "22012",
+      },
+      /division by zero/,
+    );
     assert.deepEqual(
       Array.from(await sql`SELECT * FROM batch_probe ORDER BY id`),
       beforeBatches,
@@ -407,6 +512,117 @@ SELECT COALESCE($1::uuid, '00000000-0000-0000-0000-000000000001'::uuid) AS next_
         await sql`SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations`
       )[0]?.count,
       6,
+    );
+    await fs.writeFile(
+      path.join(fixtureDirectory, "src/migrations/0006_stuck_batch_cursor.sql"),
+      `${UUID_BATCH_MIGRATION_MARKER}\nSELECT NULLIF($1::uuid, $1::uuid) AS next_cursor;`,
+    );
+    await applyPendingMigrations(sql);
+
+    await appendMigrationFixture(
+      7,
+      "0007_statement_timeout",
+      `
+CREATE TABLE timeout_probe (id integer);
+--> statement-breakpoint
+
+--> statement-breakpoint
+SET LOCAL statement_timeout = '20ms';
+--> statement-breakpoint
+SELECT pg_sleep(1);`,
+    );
+    await expectCliFailure(
+      {
+        file: "0007_statement_timeout.sql",
+        phase: "execute",
+        statement: 4,
+        batch: null,
+        sqlstate: "57014",
+      },
+      /statement timeout/,
+    );
+    assert.equal(
+      (await sql`SELECT to_regclass('timeout_probe') AS relation`)[0]?.relation,
+      null,
+    );
+    assert.equal(
+      (
+        await sql`SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations`
+      )[0]?.count,
+      7,
+    );
+    await fs.writeFile(
+      path.join(fixtureDirectory, "src/migrations/0007_statement_timeout.sql"),
+      "SELECT 1;",
+    );
+    await applyPendingMigrations(sql);
+
+    await appendMigrationFixture(
+      8,
+      "0008_non_transactional_failure",
+      `${NON_TRANSACTIONAL_MIGRATION_MARKER}
+CREATE TABLE partial_probe (id integer);
+--> statement-breakpoint
+SELECT 1 / 0;`,
+    );
+    await expectCliFailure(
+      {
+        file: "0008_non_transactional_failure.sql",
+        phase: "execute",
+        statement: 2,
+        batch: null,
+        sqlstate: "22012",
+      },
+      /division by zero/,
+    );
+    assert.equal(
+      (await sql`SELECT to_regclass('partial_probe')::text AS relation`)[0]
+        ?.relation,
+      "partial_probe",
+    );
+    assert.equal(
+      (
+        await sql`SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations`
+      )[0]?.count,
+      8,
+    );
+    await fs.writeFile(
+      path.join(
+        fixtureDirectory,
+        "src/migrations/0008_non_transactional_failure.sql",
+      ),
+      `${NON_TRANSACTIONAL_MIGRATION_MARKER}\nSELECT 1;`,
+    );
+    await applyPendingMigrations(sql);
+
+    await appendMigrationFixture(
+      9,
+      "0009_commit_failure",
+      `
+CREATE TABLE deferred_parent (id integer PRIMARY KEY);
+CREATE TABLE deferred_child (id integer REFERENCES deferred_parent DEFERRABLE INITIALLY DEFERRED);
+INSERT INTO deferred_child VALUES (1);`,
+    );
+    await expectCliFailure(
+      {
+        file: "0009_commit_failure.sql",
+        phase: "commit",
+        statement: null,
+        batch: null,
+        sqlstate: "23503",
+      },
+      /violates foreign key constraint/,
+    );
+    assert.equal(
+      (await sql`SELECT to_regclass('deferred_child') AS relation`)[0]
+        ?.relation,
+      null,
+    );
+    assert.equal(
+      (
+        await sql`SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations`
+      )[0]?.count,
+      9,
     );
   } finally {
     process.chdir(originalDirectory);
