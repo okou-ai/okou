@@ -820,28 +820,30 @@ function replacementScheduleId(
   return scheduleId;
 }
 
-async function pendingPlanReplacementScheduleId(
-  db: Pick<Db, "select">,
-  root: UsagePackSubscriptionChangeRow,
-): Promise<string | null> {
-  if (!planIsDowngrade(root.sourceTier, root.targetTier)) {
-    return null;
-  }
-  const [org] = await db
-    .select({
-      tier: orgMetadata.tier,
-      scheduleId: orgMetadata.pendingSubscriptionScheduleId,
-      targetTier: orgMetadata.pendingSubscriptionTargetTier,
-    })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, root.orgId))
-    .limit(1);
-  if (!org) {
-    throw new Error("Usage pack subscription lost its organization");
-  }
-  return org.tier === root.sourceTier && org.targetTier === root.targetTier
-    ? org.scheduleId
-    : null;
+function scheduledAllocationCondition(subscriptionId: string) {
+  return and(
+    eq(usagePackAllocationChanges.usagePackSubscriptionId, subscriptionId),
+    eq(usagePackAllocationChanges.status, "scheduled"),
+  );
+}
+
+function supersededAllocationCondition(
+  subscriptionId: string,
+  scheduleId: string,
+) {
+  return and(
+    eq(usagePackAllocationChanges.usagePackSubscriptionId, subscriptionId),
+    eq(usagePackAllocationChanges.status, "scheduled"),
+    eq(usagePackAllocationChanges.stripeScheduleId, scheduleId),
+  );
+}
+
+function deferredAllocationCondition(changeId: string) {
+  return and(
+    eq(usagePackAllocationChanges.subscriptionChangeId, changeId),
+    inArray(usagePackAllocationChanges.kind, ["downgrade", "removal"]),
+    inArray(usagePackAllocationChanges.status, ["applying", "pending_payment"]),
+  );
 }
 
 type ExistingSchedulePreparation =
@@ -2113,25 +2115,35 @@ async function persistDeferredSubscriptionChangeSchedule(
     ) {
       return;
     }
-    const planReplacementScheduleId = await pendingPlanReplacementScheduleId(
-      tx,
-      stored.root,
-    );
+    const planRoot = stored.root;
+    const planReplacementScheduleId = await (async () => {
+      if (!planIsDowngrade(planRoot.sourceTier, planRoot.targetTier)) {
+        return null;
+      }
+      const [org] = await tx
+        .select({
+          tier: orgMetadata.tier,
+          scheduleId: orgMetadata.pendingSubscriptionScheduleId,
+          targetTier: orgMetadata.pendingSubscriptionTargetTier,
+        })
+        .from(orgMetadata)
+        .where(eq(orgMetadata.orgId, planRoot.orgId))
+        .limit(1);
+      if (!org) {
+        throw new Error("Usage pack subscription lost its organization");
+      }
+      return org.tier === planRoot.sourceTier &&
+        org.targetTier === planRoot.targetTier
+        ? org.scheduleId
+        : null;
+    })();
     const unrecordedReplacementScheduleId =
       stored.allocationChanges.length === 0
         ? restorableScheduleId(
             await tx
               .select()
               .from(usagePackAllocationChanges)
-              .where(
-                and(
-                  eq(
-                    usagePackAllocationChanges.usagePackSubscriptionId,
-                    stored.subscription.id,
-                  ),
-                  eq(usagePackAllocationChanges.status, "scheduled"),
-                ),
-              ),
+              .where(scheduledAllocationCondition(stored.subscription.id)),
           )
         : null;
     if (
@@ -2157,16 +2169,9 @@ async function persistDeferredSubscriptionChangeSchedule(
           updatedAt,
         })
         .where(
-          and(
-            eq(
-              usagePackAllocationChanges.usagePackSubscriptionId,
-              stored.subscription.id,
-            ),
-            eq(usagePackAllocationChanges.status, "scheduled"),
-            eq(
-              usagePackAllocationChanges.stripeScheduleId,
-              supersededScheduleId,
-            ),
+          supersededAllocationCondition(
+            stored.subscription.id,
+            supersededScheduleId,
           ),
         );
     }
@@ -2178,16 +2183,7 @@ async function persistDeferredSubscriptionChangeSchedule(
         effectiveAt,
         updatedAt,
       })
-      .where(
-        and(
-          eq(usagePackAllocationChanges.subscriptionChangeId, stored.root.id),
-          inArray(usagePackAllocationChanges.kind, ["downgrade", "removal"]),
-          inArray(usagePackAllocationChanges.status, [
-            "applying",
-            "pending_payment",
-          ]),
-        ),
-      );
+      .where(deferredAllocationCondition(stored.root.id));
     if (planIsDowngrade(stored.root.sourceTier, stored.root.targetTier)) {
       await tx
         .update(orgMetadata)
