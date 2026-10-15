@@ -3606,56 +3606,15 @@ const publishConcurrencySubscription$ = command(
     // renewal and schedule can change independently. Read Stripe for every
     // projection and publish only against the database snapshot it started from.
     const state = await retrieveConcurrencySubscriptionState(subscription.id);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0328; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      if (!state) {
-        const rows = await tx
-          .update(orgConcurrencySubscriptions)
-          .set({
-            subscriptionStatus: "canceled",
-            cancelAtPeriodEnd: false,
-            scheduledSlots: null,
-            scheduledChangeAt: null,
-            currentPeriodEnd: nowDate(),
-            updatedAt: concurrencySubscriptionUpdatedAt(nowDate()),
-          })
-          .where(
-            and(
-              eq(
-                orgConcurrencySubscriptions.stripeSubscriptionId,
-                subscription.id,
-              ),
-              eq(
-                orgConcurrencySubscriptions.updatedAt,
-                sql`${existing.updatedAtText}::timestamp`,
-              ),
-              sql`${orgConcurrencySubscriptions}.xmin::text = ${existing.rowVersion}`,
-            ),
-          )
-          .returning({ orgId: orgConcurrencySubscriptions.orgId });
-        if (rows.length === 0) {
-          throw new Error(
-            "Concurrency subscription changed during Stripe reconciliation",
-          );
-        }
-        return rows.map((row) => {
-          return row.orgId;
-        });
-      }
-
-      const rows = await tx
+    if (!state) {
+      const rows = await db
         .update(orgConcurrencySubscriptions)
         .set({
-          stripePriceId: state.stripePriceId,
-          slots: state.slots,
-          subscriptionStatus: state.subscriptionStatus,
-          currentPeriodEnd: state.currentPeriodEnd,
-          cancelAtPeriodEnd:
-            state.cancelAtPeriodEnd ||
-            (existing.cancelAtPeriodEnd && state.hasSchedule),
-          ...(existing.scheduledSlots === state.slots
-            ? { scheduledSlots: null, scheduledChangeAt: null }
-            : {}),
+          subscriptionStatus: "canceled",
+          cancelAtPeriodEnd: false,
+          scheduledSlots: null,
+          scheduledChangeAt: null,
+          currentPeriodEnd: nowDate(),
           updatedAt: concurrencySubscriptionUpdatedAt(nowDate()),
         })
         .where(
@@ -3672,7 +3631,6 @@ const publishConcurrencySubscription$ = command(
           ),
         )
         .returning({ orgId: orgConcurrencySubscriptions.orgId });
-
       if (rows.length === 0) {
         throw new Error(
           "Concurrency subscription changed during Stripe reconciliation",
@@ -3681,6 +3639,42 @@ const publishConcurrencySubscription$ = command(
       return rows.map((row) => {
         return row.orgId;
       });
+    }
+
+    const rows = await db
+      .update(orgConcurrencySubscriptions)
+      .set({
+        stripePriceId: state.stripePriceId,
+        slots: state.slots,
+        subscriptionStatus: state.subscriptionStatus,
+        currentPeriodEnd: state.currentPeriodEnd,
+        cancelAtPeriodEnd:
+          state.cancelAtPeriodEnd ||
+          (existing.cancelAtPeriodEnd && state.hasSchedule),
+        ...(existing.scheduledSlots === state.slots
+          ? { scheduledSlots: null, scheduledChangeAt: null }
+          : {}),
+        updatedAt: concurrencySubscriptionUpdatedAt(nowDate()),
+      })
+      .where(
+        and(
+          eq(orgConcurrencySubscriptions.stripeSubscriptionId, subscription.id),
+          eq(
+            orgConcurrencySubscriptions.updatedAt,
+            sql`${existing.updatedAtText}::timestamp`,
+          ),
+          sql`${orgConcurrencySubscriptions}.xmin::text = ${existing.rowVersion}`,
+        ),
+      )
+      .returning({ orgId: orgConcurrencySubscriptions.orgId });
+
+    if (rows.length === 0) {
+      throw new Error(
+        "Concurrency subscription changed during Stripe reconciliation",
+      );
+    }
+    return rows.map((row) => {
+      return row.orgId;
     });
   },
 );
