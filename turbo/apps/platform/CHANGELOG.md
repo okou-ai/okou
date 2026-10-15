@@ -12,6 +12,21 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1029.1](https://github.com/okou-ai/okou/compare/app-v0.1029.0...app-v0.1029.1) (2026-10-15)
+
+
+### Bug Fixes
+
+* **app:** fix sandbox files layout and fullscreen ([#40269](https://github.com/okou-ai/okou/issues/40269)) ([45fcb41](https://github.com/okou-ai/okou/commit/45fcb41e207e67d1867a778e862f5dffa6bfc8ed))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.566.1
+    * @okouai/core bumped to 8.759.2
+
 ## [0.1029.0](https://github.com/okou-ai/okou/compare/app-v0.1028.0...app-v0.1029.0) (2026-10-15)
 
 

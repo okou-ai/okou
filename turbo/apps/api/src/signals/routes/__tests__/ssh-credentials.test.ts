@@ -130,7 +130,11 @@ describe("reusable SSH credential owner routes", () => {
     ).toBe("SSH_CREDENTIAL_IN_USE");
     for (const host of hosts) {
       await accept(
-        connections().delete({ headers, params: { connectionId: host.id } }),
+        connections().delete({
+          headers,
+          params: { connectionId: host.id },
+          body: { expectedGeneration: host.generation },
+        }),
         [204],
       );
     }
@@ -613,7 +617,14 @@ describe("reusable SSH credential owner routes", () => {
       await entered.promise;
       const params = { connectionId: host.body.id };
       if (hostChange === "deleted") {
-        await accept(connections().delete({ headers, params }), [204]);
+        await accept(
+          connections().delete({
+            headers,
+            params,
+            body: { expectedGeneration: host.body.generation },
+          }),
+          [204],
+        );
       } else {
         await accept(
           connections().update({

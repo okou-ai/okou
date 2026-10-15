@@ -114,8 +114,8 @@ import {
   type ConnectorCredentialStatus,
 } from "./connector-credential-status.service";
 import {
-  upsertConnectorOwnedSecret,
-  upsertConnectorOwnedVariable,
+  connectorOwnedSecretWrite,
+  connectorOwnedVariableWrite,
 } from "./connector-credential-storage-write.service";
 import {
   decryptPersistentSecretsMap,
@@ -2093,7 +2093,8 @@ async function persistRefreshOutputValues(
             value,
             args.featureSwitchContext,
           );
-          await upsertConnectorOwnedSecret(args.db, {
+          const db = args.db;
+          const credential = {
             connectorId: prepared.connectorId,
             storage: prepared.runtimeMethod.method.storage,
             orgId: args.orgId,
@@ -2101,7 +2102,18 @@ async function persistRefreshOutputValues(
             name: target.name,
             encryptedValue,
             description: `Connector secret: ${target.name}`,
-          });
+          };
+          const write = connectorOwnedSecretWrite(credential);
+          const [row] = await db
+            .insert(secretsTable)
+            .values(write.values)
+            .onConflictDoUpdate(write.conflict)
+            .returning({ id: secretsTable.id });
+          if (!row) {
+            throw new Error(
+              `Connector secret ${credential.name} is owned by another row`,
+            );
+          }
         }
         returnedSecretValues.set(target.name, value);
         break;
@@ -2112,7 +2124,8 @@ async function persistRefreshOutputValues(
             "Model provider refresh cannot write connector variables",
           );
         }
-        await upsertConnectorOwnedVariable(args.db, {
+        const db = args.db;
+        const credential = {
           connectorId: prepared.connectorId,
           storage: prepared.runtimeMethod.method.storage,
           orgId: args.orgId,
@@ -2121,7 +2134,18 @@ async function persistRefreshOutputValues(
           value,
           description: null,
           updatedDescription: null,
-        });
+        };
+        const write = connectorOwnedVariableWrite(credential);
+        const [row] = await db
+          .insert(variablesTable)
+          .values(write.values)
+          .onConflictDoUpdate(write.conflict)
+          .returning({ id: variablesTable.id });
+        if (!row) {
+          throw new Error(
+            `Connector variable ${credential.name} is owned by another row`,
+          );
+        }
         break;
       }
     }

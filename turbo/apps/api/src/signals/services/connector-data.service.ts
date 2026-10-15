@@ -97,8 +97,8 @@ import {
 } from "./connector-credential-status.service";
 import {
   deleteConnectorCredentialStorageConnection,
-  upsertConnectorOwnedSecret,
-  upsertConnectorOwnedVariable,
+  connectorOwnedSecretWrite,
+  connectorOwnedVariableWrite,
 } from "./connector-credential-storage-write.service";
 import {
   decryptStoredSecretValue,
@@ -1574,7 +1574,7 @@ async function writeManualGrantCredentials(
   signal: AbortSignal,
 ): Promise<void> {
   for (const field of args.encryptedSecrets) {
-    await upsertConnectorOwnedSecret(db, {
+    const credential = {
       connectorId: args.connectorId,
       storage: args.method.storage,
       orgId: args.orgId,
@@ -1583,12 +1583,23 @@ async function writeManualGrantCredentials(
       encryptedValue: field.encryptedValue,
       description: null,
       updatedDescription: null,
-    });
+    };
+    const write = connectorOwnedSecretWrite(credential);
+    const [row] = await db
+      .insert(secrets)
+      .values(write.values)
+      .onConflictDoUpdate(write.conflict)
+      .returning({ id: secrets.id });
+    if (!row) {
+      throw new Error(
+        `Connector secret ${credential.name} is owned by another row`,
+      );
+    }
     signal.throwIfAborted();
   }
 
   for (const field of args.variableValues) {
-    await upsertConnectorOwnedVariable(db, {
+    const credential = {
       connectorId: args.connectorId,
       storage: args.method.storage,
       orgId: args.orgId,
@@ -1597,7 +1608,18 @@ async function writeManualGrantCredentials(
       value: field.value,
       description: null,
       updatedDescription: null,
-    });
+    };
+    const write = connectorOwnedVariableWrite(credential);
+    const [row] = await db
+      .insert(variables)
+      .values(write.values)
+      .onConflictDoUpdate(write.conflict)
+      .returning({ id: variables.id });
+    if (!row) {
+      throw new Error(
+        `Connector variable ${credential.name} is owned by another row`,
+      );
+    }
     signal.throwIfAborted();
   }
 }
@@ -2218,7 +2240,8 @@ async function upsertConnectorTokenSecrets(
   }
 
   for (const secret of args.secrets) {
-    await upsertConnectorOwnedSecret(args.db, {
+    const db = args.db;
+    const credential = {
       connectorId: args.connectorId,
       storage: args.method.storage,
       orgId: args.orgId,
@@ -2227,7 +2250,18 @@ async function upsertConnectorTokenSecrets(
       encryptedValue: secret.encryptedValue,
       description: secret.description,
       updatedDescription: secret.description,
-    });
+    };
+    const write = connectorOwnedSecretWrite(credential);
+    const [row] = await db
+      .insert(secrets)
+      .values(write.values)
+      .onConflictDoUpdate(write.conflict)
+      .returning({ id: secrets.id });
+    if (!row) {
+      throw new Error(
+        `Connector secret ${credential.name} is owned by another row`,
+      );
+    }
     signal.throwIfAborted();
   }
 }
@@ -2244,7 +2278,8 @@ async function upsertConnectorTokenVariables(
   signal: AbortSignal,
 ): Promise<void> {
   for (const variable of args.variables) {
-    await upsertConnectorOwnedVariable(args.db, {
+    const db = args.db;
+    const credential = {
       connectorId: args.connectorId,
       storage: args.method.storage,
       orgId: args.orgId,
@@ -2253,7 +2288,18 @@ async function upsertConnectorTokenVariables(
       value: variable.value,
       description: null,
       updatedDescription: null,
-    });
+    };
+    const write = connectorOwnedVariableWrite(credential);
+    const [row] = await db
+      .insert(variables)
+      .values(write.values)
+      .onConflictDoUpdate(write.conflict)
+      .returning({ id: variables.id });
+    if (!row) {
+      throw new Error(
+        `Connector variable ${credential.name} is owned by another row`,
+      );
+    }
     signal.throwIfAborted();
   }
 }

@@ -10,7 +10,7 @@ import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-conn
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
+import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { cliAuthRoutes } from "../cli-auth";
 import { sshConnectionsRoutes } from "../ssh-connections";
@@ -174,14 +174,21 @@ describe("remote control CLI management authorization", () => {
       [201],
     );
     expect(host.body).toMatchObject({ credentialId: created.body.id });
-    const omittedVersion = await accept(
-      connections().delete({
+    const request = setupRawAppRequest({
+      context,
+      routes: sshConnectionsRoutes,
+    });
+    const omittedVersion = await request(
+      `/api/ssh/connections/${host.body.id}`,
+      {
+        method: "DELETE",
         headers,
-        params: { connectionId: host.body.id },
-      }),
-      [400],
+      },
     );
-    expect(omittedVersion.body.error.code).toBe("SSH_INVALID_INPUT");
+    expect(omittedVersion.status).toBe(400);
+    expect(omittedVersion.body).toMatchObject({
+      error: { code: "SSH_INVALID_INPUT" },
+    });
     expect(
       (await accept(connections().list({ headers }), [200])).body.connections,
     ).toStrictEqual([host.body]);
@@ -282,17 +289,23 @@ describe("remote control CLI management authorization", () => {
       [201],
     );
     const params = { connectionId: host.body.id };
-    const omitted = await accept(
-      connections().delete({ headers, params }),
-      [400],
-    );
-    expect(omitted.body.error.code).toBe("SSH_INVALID_INPUT");
+    const request = setupRawAppRequest({
+      context,
+      routes: sshConnectionsRoutes,
+    });
+    const path = `/api/ssh/connections/${host.body.id}`;
+    const omitted = await request(path, { method: "DELETE", headers });
+    expect(omitted.status).toBe(400);
+    expect(omitted.body).toMatchObject({
+      error: { code: "SSH_INVALID_INPUT" },
+    });
     expect(
       (await accept(connections().list({ headers }), [200])).body.connections,
     ).toStrictEqual([host.body]);
 
     await management(actor, false);
-    await accept(connections().delete({ headers, params }), [403]);
+    const denied = await request(path, { method: "DELETE", headers });
+    expect(denied.status).toBe(403);
     expect(
       (await accept(connections().list({ headers: sessionHeaders }), [200]))
         .body.connections,

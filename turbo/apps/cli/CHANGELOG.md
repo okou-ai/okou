@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.393.1](https://github.com/okou-ai/okou/compare/cli-v9.393.0...cli-v9.393.1) (2026-10-15)
+
+
+### Refactoring
+
+* **pi:** always use the runner-bundled cli ([#40232](https://github.com/okou-ai/okou/issues/40232)) ([dfff160](https://github.com/okou-ai/okou/commit/dfff1605013103371cd90962ee5b54c80fc93140))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.566.1
+    * @okouai/core bumped to 8.759.2
+    * @okouai/pi-agent-runtime bumped to 1.50.5
+
 ## [9.393.0](https://github.com/okou-ai/okou/compare/cli-v9.392.5...cli-v9.393.0) (2026-10-15)
 
 

@@ -76,24 +76,6 @@ export function connectorOwnedSecretWrite(
   };
 }
 
-export async function upsertConnectorOwnedSecret(
-  db: Db,
-  args: ConnectorOwnedCredentialWrite &
-    ConnectorOwnedCredentialDescription & {
-      readonly encryptedValue: string;
-    },
-): Promise<void> {
-  const write = connectorOwnedSecretWrite(args);
-  const [row] = await db
-    .insert(secrets)
-    .values(write.values)
-    .onConflictDoUpdate(write.conflict)
-    .returning({ id: secrets.id });
-  if (!row) {
-    throw new Error(`Connector secret ${args.name} is owned by another row`);
-  }
-}
-
 export function connectorOwnedVariableWrite(
   args: ConnectorOwnedCredentialWrite &
     ConnectorOwnedCredentialDescription & {
@@ -127,24 +109,6 @@ export function connectorOwnedVariableWrite(
       },
     },
   };
-}
-
-export async function upsertConnectorOwnedVariable(
-  db: Db,
-  args: ConnectorOwnedCredentialWrite &
-    ConnectorOwnedCredentialDescription & {
-      readonly value: string;
-    },
-): Promise<void> {
-  const write = connectorOwnedVariableWrite(args);
-  const [row] = await db
-    .insert(variables)
-    .values(write.values)
-    .onConflictDoUpdate(write.conflict)
-    .returning({ id: variables.id });
-  if (!row) {
-    throw new Error(`Connector variable ${args.name} is owned by another row`);
-  }
 }
 
 /**

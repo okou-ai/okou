@@ -11,6 +11,7 @@ use runner_provider::local_queue::{self, ActiveInputEntry, LocalQueue};
 use runner_provider::{ActiveInputSource, local_active_input_event_id};
 use runner_types::ids::RunId;
 
+mod local;
 mod shutdown;
 
 const TEST_TIMEOUT: Duration = Duration::from_secs(5);

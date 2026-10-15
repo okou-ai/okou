@@ -1,6 +1,6 @@
 {
-  "id": "35b53d05-a344-45f5-af19-bc0b045fb8d9",
-  "prevId": "26ed7bbc-28fd-4025-95de-14d01418d965",
+  "id": "48f296a6-0565-41dd-bed3-23d0828a3344",
+  "prevId": "29497b8e-8e6b-4d54-be21-4b31e41bdda2",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -17107,12 +17107,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "oauth_requested_scopes": {
-          "name": "oauth_requested_scopes",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "encrypted_credentials": {
           "name": "encrypted_credentials",
           "type": "text",
@@ -17259,12 +17253,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'agent'"
-        },
-        "oauth_requested_scopes": {
-          "name": "oauth_requested_scopes",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "encrypted_verifier": {
           "name": "encrypted_verifier",

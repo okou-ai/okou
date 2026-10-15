@@ -39,6 +39,7 @@ interface OAuthState {
   readonly userId: string | null;
   readonly prompt: string | null;
   readonly redirectUri: string;
+  readonly completion?: "settings";
 }
 
 interface MicrosoftTeamsUserInfo {
@@ -106,7 +107,13 @@ function settingsSuccessRedirect(args: {
   return redirectResponse(appUrl(`/settings/teams?${params.toString()}`));
 }
 
-function teamsInstallRedirect(tenantId: string): Response {
+function teamsInstallRedirect(tenantId: string, state: OAuthState): Response {
+  // Old App tabs and in-flight states retain the install redirect. Remove this
+  // bridge only after those readers and retained rollback APIs drain (#40196).
+  if (state.completion === "settings") {
+    const params = new URLSearchParams({ status: "pending", tenantId });
+    return noStoreRedirect(appUrl(`/settings/teams?${params.toString()}`));
+  }
   const installUrl = buildTeamsInstallUrl(tenantId);
   if (!installUrl) {
     return settingsErrorRedirect(
@@ -144,6 +151,9 @@ function parseOAuthState(state: string | undefined): OAuthState | null {
     userId: optionalString(record.userId),
     prompt: optionalString(record.prompt),
     redirectUri,
+    ...(record.completion === "settings"
+      ? { completion: "settings" as const }
+      : {}),
   };
 }
 
@@ -320,11 +330,15 @@ const connectOauth$ = command(({ get }) => {
     userId: string;
     prompt?: string;
     redirectUri: string;
+    completion?: "settings";
   } = {
     orgId: query.orgId,
     userId,
     redirectUri,
   };
+  if (query.completion) {
+    stateObj.completion = query.completion;
+  }
   if (query.prompt) {
     stateObj.prompt = truncatePrompt(query.prompt);
   }
@@ -418,7 +432,7 @@ const callbackOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
     signal.throwIfAborted();
 
-    return teamsInstallRedirect(exchange.tenantId);
+    return teamsInstallRedirect(exchange.tenantId, state);
   }
 
   if (result.kind === "forbidden") {
@@ -433,7 +447,7 @@ const callbackOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
 
   if (!isTeamsInstallationActive(result.installation)) {
-    return teamsInstallRedirect(result.installation.teamsTenantId);
+    return teamsInstallRedirect(result.installation.teamsTenantId, state);
   }
 
   return settingsSuccessRedirect({

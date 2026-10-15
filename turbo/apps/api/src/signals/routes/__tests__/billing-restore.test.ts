@@ -138,13 +138,11 @@ describe("POST /api/billing/restore", () => {
       "/api/billing/restore",
       malformedRequest,
     );
-    expect(unconfigured).toStrictEqual({
-      status: 503,
-      body: {
-        error: {
-          message: "Billing not configured",
-          code: "PROVIDER_UNAVAILABLE",
-        },
+    expect(unconfigured.status).toBe(503);
+    expect(unconfigured.body).toStrictEqual({
+      error: {
+        message: "Billing not configured",
+        code: "PROVIDER_UNAVAILABLE",
       },
     });
 
@@ -163,20 +161,16 @@ describe("POST /api/billing/restore", () => {
       },
     };
     const member = await request("/api/billing/restore", authenticatedRequest);
-    expect(member).toStrictEqual({
-      status: 403,
-      body: adminRequiredResponse,
-    });
+    expect(member.status).toBe(403);
+    expect(member.body).toStrictEqual(adminRequiredResponse);
 
     mocks.clerk.session(userId, orgId, "org:admin");
     const admin = await request("/api/billing/restore", authenticatedRequest);
-    expect(admin).toStrictEqual({
-      status: 400,
-      body: {
-        error: {
-          message: "Invalid JSON in request body",
-          code: "BAD_REQUEST",
-        },
+    expect(admin.status).toBe(400);
+    expect(admin.body).toStrictEqual({
+      error: {
+        message: "Invalid JSON in request body",
+        code: "BAD_REQUEST",
       },
     });
 

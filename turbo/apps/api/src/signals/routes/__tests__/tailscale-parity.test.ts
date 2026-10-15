@@ -576,7 +576,11 @@ test("refuses own-reference deletion and requires a current impact snapshot befo
     [409],
   );
   await accept(
-    hosts().delete({ headers, params: { connectionId: own.id } }),
+    hosts().delete({
+      headers,
+      params: { connectionId: own.id },
+      body: { expectedGeneration: own.generation },
+    }),
     [204],
   );
   const member = owner(admin.orgId);

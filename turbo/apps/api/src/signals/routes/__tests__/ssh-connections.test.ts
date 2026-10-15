@@ -372,6 +372,7 @@ describe("SSH connection routes", () => {
       client().delete({
         headers: authHeaders(),
         params: { connectionId: created.body.id },
+        body: { expectedGeneration: resetAgain.body.generation },
       }),
       [204],
     );

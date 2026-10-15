@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.20.3](https://github.com/okou-ai/okou/compare/guest-init-v0.20.2...guest-init-v0.20.3) (2026-10-15)
+
 ## [0.20.2](https://github.com/okou-ai/okou/compare/guest-init-v0.20.1...guest-init-v0.20.2) (2026-10-15)
 
 ## [0.20.1](https://github.com/okou-ai/okou/compare/guest-init-v0.20.0...guest-init-v0.20.1) (2026-10-15)

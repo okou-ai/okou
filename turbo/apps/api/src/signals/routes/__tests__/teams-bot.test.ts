@@ -3885,6 +3885,8 @@ describe("POST /api/webhooks/teams/bot", () => {
     expect(status.body).toStrictEqual({
       isInstalled: false,
       isConnected: false,
+      linkedAccounts: [],
+      pendingInstallation: false,
       isAdmin: true,
       installUrl: teamsInstallUrl(),
       connectUrl: teamsOauthConnectUrl(fixture),

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.1](https://github.com/okou-ai/okou/compare/runner-remote-v0.18.0...runner-remote-v0.18.1) (2026-10-15)
+
+
+### Refactoring
+
+* **pi:** always use the runner-bundled cli ([#40232](https://github.com/okou-ai/okou/issues/40232)) ([dfff160](https://github.com/okou-ai/okou/commit/dfff1605013103371cd90962ee5b54c80fc93140))
+
 ## [0.18.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.17.2...runner-remote-v0.18.0) (2026-10-15)
 
 
