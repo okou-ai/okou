@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.398.0](https://github.com/okou-ai/okou/compare/cli-v9.397.0...cli-v9.398.0) (2026-10-16)
+
+
+### Features
+
+* add wechat cli history and file delivery ([#40385](https://github.com/okou-ai/okou/issues/40385)) ([a1f8a0e](https://github.com/okou-ai/okou/commit/a1f8a0e02166de9dae893adbd2ce60e01704b633))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.572.0
+    * @okouai/core bumped to 8.764.1
+    * @okouai/pi-agent-runtime bumped to 1.50.12
+
 ## [9.397.0](https://github.com/okou-ai/okou/compare/cli-v9.396.1...cli-v9.397.0) (2026-10-16)
 
 

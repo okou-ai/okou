@@ -12,6 +12,22 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1034.0](https://github.com/okou-ai/okou/compare/app-v0.1033.0...app-v0.1034.0) (2026-10-16)
+
+
+### Features
+
+* **app:** add document composer entry points ([#40569](https://github.com/okou-ai/okou/issues/40569)) ([84e34c2](https://github.com/okou-ai/okou/commit/84e34c2c5e171d157c7b2c791205934ff3eda816))
+* **app:** reveal slash workflows in place and open menus above the composer ([#40543](https://github.com/okou-ai/okou/issues/40543)) ([80170c0](https://github.com/okou-ai/okou/commit/80170c019f38b318b1d7e69144d9ab7800800604))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.0
+    * @okouai/core bumped to 8.764.1
+
 ## [0.1033.0](https://github.com/okou-ai/okou/compare/app-v0.1032.0...app-v0.1033.0) (2026-10-16)
 
 

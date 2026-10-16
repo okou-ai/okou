@@ -2950,7 +2950,7 @@ dependencies = [
 
 [[package]]
 name = "kerberos-worker"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "kerberos-credentials",
  "rustix",
@@ -3988,7 +3988,7 @@ dependencies = [
 
 [[package]]
 name = "rfb-client"
-version = "0.23.6"
+version = "0.23.7"
 dependencies = [
  "aes",
  "base64 0.23.1",
@@ -4130,7 +4130,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.233.11"
+version = "0.233.12"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4201,7 +4201,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.13.10"
+version = "0.13.11"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4273,7 +4273,7 @@ dependencies = [
 
 [[package]]
 name = "runner-lifecycle"
-version = "0.14.8"
+version = "0.14.9"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4371,7 +4371,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.21.0"
+version = "0.21.1"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4515,7 +4515,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.16.11"
+version = "0.16.12"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4838,7 +4838,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.51.7"
+version = "0.51.8"
 dependencies = [
  "api-contracts",
  "async-trait",

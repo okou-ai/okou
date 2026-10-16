@@ -1,6 +1,6 @@
 [package]
 name = "kerberos-worker"
-version = "0.3.4"
+version = "0.3.5"
 edition.workspace = true
 publish = false
 description = "Private bounded MIT Kerberos worker and caller-owned KDC exchange"
