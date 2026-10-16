@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.16.13...runner-supervisor-v0.17.0) (2026-10-16)
+
+
+### Features
+
+* **runner:** retain home cache by filesystem pressure ([#40658](https://github.com/okou-ai/okou/issues/40658)) ([713e66c](https://github.com/okou-ai/okou/commit/713e66cc7d558d4626834ea5186cfa0f2517e207))
+
 ## [0.16.13](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.16.12...runner-supervisor-v0.16.13) (2026-10-16)
 
 ## [0.16.12](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.16.11...runner-supervisor-v0.16.12) (2026-10-16)

@@ -12,6 +12,34 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1035.0](https://github.com/okou-ai/okou/compare/app-v0.1034.1...app-v0.1035.0) (2026-10-16)
+
+
+### Features
+
+* **app:** include custom templates in slash commands ([#40685](https://github.com/okou-ai/okou/issues/40685)) ([5c673b4](https://github.com/okou-ai/okou/commit/5c673b4757de42b7bbba75eceb972be3c7a71c20))
+* **app:** simplify chat resource popover ([#40584](https://github.com/okou-ai/okou/issues/40584)) ([b54cef2](https://github.com/okou-ai/okou/commit/b54cef25d6b2e4b60802acfbb3aa3dba92ade024))
+
+
+### Bug Fixes
+
+* **app:** align integration connection pages and restore slack auto-open ([#40641](https://github.com/okou-ai/okou/issues/40641)) ([9913258](https://github.com/okou-ai/okou/commit/9913258f0024e12dd8c078d40da60e1a87d5eb86))
+* **app:** hide home task chips after selection ([#40680](https://github.com/okou-ai/okou/issues/40680)) ([9c53c73](https://github.com/okou-ai/okou/commit/9c53c73fd5f7a0c6abe7ea5ec6c16aaf7881ca87))
+* **app:** separate google workspace and drive upload progress ([#40691](https://github.com/okou-ai/okou/issues/40691)) ([8ee7a21](https://github.com/okou-ai/okou/commit/8ee7a21eb727e84bcec34cab9798da4126dfc872))
+
+
+### Refactoring
+
+* **wallet:** migrate and require link grant metadata ([#40627](https://github.com/okou-ai/okou/issues/40627)) ([86adc57](https://github.com/okou-ai/okou/commit/86adc578e06477316a04b479d7c30043264f3e9c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.2
+    * @okouai/core bumped to 8.765.0
+
 ## [0.1034.1](https://github.com/okou-ai/okou/compare/app-v0.1034.0...app-v0.1034.1) (2026-10-16)
 
 

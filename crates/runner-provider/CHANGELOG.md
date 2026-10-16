@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.8](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.7...runner-provider-v0.8.8) (2026-10-16)
+
+
+### Refactoring
+
+* **runner-provider:** own abandoned local result marker custody ([#40667](https://github.com/okou-ai/okou/issues/40667)) ([a9a257c](https://github.com/okou-ai/okou/commit/a9a257c329ed81cf41582e1900443c4af35a5798))
+
 ## [0.8.7](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.6...runner-provider-v0.8.7) (2026-10-16)
 
 

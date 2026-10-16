@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.107.9](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.8...guest-agent-v0.107.9) (2026-10-16)
+
+
+### Performance Improvements
+
+* **guest-agent:** count json string bytes without decoding ([#40684](https://github.com/okou-ai/okou/issues/40684)) ([1778654](https://github.com/okou-ai/okou/commit/177865407bad3b0e7c42f2ca0c6b9190f37d4f47))
+
 ## [0.107.8](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.7...guest-agent-v0.107.8) (2026-10-16)
 
 

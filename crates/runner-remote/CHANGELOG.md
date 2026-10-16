@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.23.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.22.0...runner-remote-v0.23.0) (2026-10-16)
+
+
+### Features
+
+* **remote:** explain vnc failures with retained source evidence ([#40669](https://github.com/okou-ai/okou/issues/40669)) ([07b1a90](https://github.com/okou-ai/okou/commit/07b1a902af74b7a3ebde6434b86e4efb35b1de7e))
+
+
+### Refactoring
+
+* **runner-remote:** converge ssh credential preparation completion ([#40666](https://github.com/okou-ai/okou/issues/40666)) ([218e28c](https://github.com/okou-ai/okou/commit/218e28cc7d5f970e18b9a9943f63a1b383f17d71))
+
 ## [0.22.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.21.1...runner-remote-v0.22.0) (2026-10-16)
 
 
