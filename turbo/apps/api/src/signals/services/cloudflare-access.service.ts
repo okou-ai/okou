@@ -303,8 +303,8 @@ function referenceSetExpanded(
   }
   // READ COMMITTED locking readers recheck changed tuples before returning them.
   // Every returned host remains a matching, unchanged member under its retained
-  // lock. After the config fence, SHARE admission blocks further additions. The
-  // locked set is therefore a subset of this fresh count's set: equal cardinality
+  // lock. After the config fence, entering publication blocks further additions.
+  // The locked set is a subset of this fresh count's set: equal cardinality
   // proves equal identities here, not for arbitrary sets. Reuse its metadata.
   if (current.count < lockedCount) {
     throw new Error("Locked Cloudflare Access references disappeared");
