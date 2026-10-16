@@ -74,52 +74,48 @@ fn private_write_timeout_stage(error: &RunnerError) -> Option<&'static str> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum SessionHistoryIdentityReason {
-    FinalizeMetadataPathUnresolved,
-    FinalizeRuntimeDirUnresolved,
-    FinalizeMissingMetadata,
-    FinalizeMetadataReadFailed,
-    FinalizeInvalidMetadata,
-    FinalizeUnverifiableMetadata,
+enum FinalIdentityReason {
+    MetadataPathUnresolved,
+    RuntimeDirUnresolved,
+    MissingMetadata,
+    MetadataReadFailed,
+    InvalidMetadata,
+    UnverifiableMetadata,
 }
 
-impl SessionHistoryIdentityReason {
+impl FinalIdentityReason {
     const fn action_type(self) -> &'static str {
         match self {
-            Self::FinalizeMetadataPathUnresolved => {
+            Self::MetadataPathUnresolved => {
                 "session_history_identity_finalize_metadata_path_unresolved"
             }
-            Self::FinalizeRuntimeDirUnresolved => {
+            Self::RuntimeDirUnresolved => {
                 "session_history_identity_finalize_runtime_dir_unresolved"
             }
-            Self::FinalizeMissingMetadata => "session_history_identity_finalize_missing_metadata",
-            Self::FinalizeMetadataReadFailed => {
-                "session_history_identity_finalize_metadata_read_failed"
-            }
-            Self::FinalizeInvalidMetadata => "session_history_identity_finalize_invalid_metadata",
-            Self::FinalizeUnverifiableMetadata => {
-                "session_history_identity_finalize_unverifiable_metadata"
-            }
+            Self::MissingMetadata => "session_history_identity_finalize_missing_metadata",
+            Self::MetadataReadFailed => "session_history_identity_finalize_metadata_read_failed",
+            Self::InvalidMetadata => "session_history_identity_finalize_invalid_metadata",
+            Self::UnverifiableMetadata => "session_history_identity_finalize_unverifiable_metadata",
         }
     }
 
     const fn from_final_metadata_error(error: SessionHistoryIdentityError) -> Self {
         match error {
-            SessionHistoryIdentityError::MetadataTooLarge => Self::FinalizeUnverifiableMetadata,
+            SessionHistoryIdentityError::MetadataTooLarge => Self::UnverifiableMetadata,
             SessionHistoryIdentityError::InvalidJson
             | SessionHistoryIdentityError::InvalidFramework
             | SessionHistoryIdentityError::InvalidHistoryRefKind
             | SessionHistoryIdentityError::InvalidSessionIdHash
             | SessionHistoryIdentityError::InvalidHistoryHash
             | SessionHistoryIdentityError::InvalidHistorySize
-            | SessionHistoryIdentityError::InvalidHistorySource => Self::FinalizeInvalidMetadata,
+            | SessionHistoryIdentityError::InvalidHistorySource => Self::InvalidMetadata,
         }
     }
 }
 
 fn record_session_history_identity_reason(
     telemetry: &mut JobTelemetry,
-    reason: SessionHistoryIdentityReason,
+    reason: FinalIdentityReason,
 ) {
     telemetry.record(reason.action_type(), Duration::ZERO, true, None);
 }
@@ -144,20 +140,20 @@ fn validate_agent_bootstrap_exec_boundary(env_pairs: &[(String, String)]) -> Run
 async fn read_final_session_history_identity(
     sandbox: &dyn Sandbox,
     context: &ExecutionContext,
-) -> Result<RestoredSessionIdentity, SessionHistoryIdentityReason> {
+) -> Result<RestoredSessionIdentity, FinalIdentityReason> {
     let metadata_path = match guest_runtime_path(
         context.run_id,
         guest_contracts::runtime_paths::final_session_history_identity_file,
     ) {
         Ok(path) => path,
         Err(_) => {
-            return Err(SessionHistoryIdentityReason::FinalizeMetadataPathUnresolved);
+            return Err(FinalIdentityReason::MetadataPathUnresolved);
         }
     };
     let runtime_dir = match guest_runtime_dir(context.run_id) {
         Ok(path) => path,
         Err(_) => {
-            return Err(SessionHistoryIdentityReason::FinalizeRuntimeDirUnresolved);
+            return Err(FinalIdentityReason::RuntimeDirUnresolved);
         }
     };
     let bytes = match sandbox
@@ -165,19 +161,17 @@ async fn read_final_session_history_identity(
         .await
     {
         Ok(Some(bytes)) => bytes,
-        Ok(None) => return Err(SessionHistoryIdentityReason::FinalizeMissingMetadata),
-        Err(_) => return Err(SessionHistoryIdentityReason::FinalizeMetadataReadFailed),
+        Ok(None) => return Err(FinalIdentityReason::MissingMetadata),
+        Err(_) => return Err(FinalIdentityReason::MetadataReadFailed),
     };
     let metadata = match SessionHistoryIdentity::from_json_slice(&bytes) {
         Ok(metadata) => metadata,
         Err(error) => {
-            return Err(SessionHistoryIdentityReason::from_final_metadata_error(
-                error,
-            ));
+            return Err(FinalIdentityReason::from_final_metadata_error(error));
         }
     };
     RestoredSessionIdentity::from_final_metadata(metadata, metadata_path, runtime_dir)
-        .ok_or(SessionHistoryIdentityReason::FinalizeUnverifiableMetadata)
+        .ok_or(FinalIdentityReason::UnverifiableMetadata)
 }
 
 #[derive(Clone, Copy)]

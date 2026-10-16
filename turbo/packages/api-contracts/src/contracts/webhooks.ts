@@ -41,8 +41,7 @@ export {
 
 const c = initContract();
 
-// Hash-backed resume history is keyed and verified as lowercase SHA-256 hex.
-// Accepting other 64-character strings would defer bad input until runner claim.
+// Memory publication identities use lowercase SHA-256 hex.
 const sha256HexSchema = z
   .string()
   .regex(

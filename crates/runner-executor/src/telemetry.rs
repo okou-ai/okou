@@ -710,9 +710,6 @@ impl JobTelemetry {
         self.push_operation(op);
     }
 
-    /// Record a timed operation with low-cardinality session-history transport
-    /// dimensions derived from the hash-backed resume history ref.
-
     pub(crate) fn reporter(&self) -> SandboxOpReporter {
         SandboxOpReporter {
             http: self.http.clone(),
@@ -723,9 +720,6 @@ impl JobTelemetry {
             is_first_run: self.is_first_run,
         }
     }
-
-    /// Record the existing local restore interval with validated payload
-    /// measurements. Only successful restores report completed guest bytes.
 
     pub(crate) async fn upload_oom_evidence(
         &self,
