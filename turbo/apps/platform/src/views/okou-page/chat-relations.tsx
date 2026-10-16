@@ -27,6 +27,7 @@ import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signal
 import type {
   ChatRelationList,
   ChatRelationSignals,
+  ResourceChat,
   RelationPage,
 } from "../../signals/chat-page/chat-relations.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
@@ -35,6 +36,10 @@ import { ROUTES } from "../../signals/route-paths.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { messageDocumentToDisplayText } from "../../signals/okou-page/user-message-document-codec.ts";
 import { Link } from "../router/link.tsx";
+import {
+  ChatResourceSectionHeading,
+  RESOURCE_PREVIEW_LIMIT,
+} from "./chat-resource-section.tsx";
 import { ExternalSourceMessageAnnotation } from "./external-source-message-annotation.tsx";
 
 function RelationsLoading() {
@@ -126,6 +131,11 @@ function RelationList<T>({
   );
 }
 
+export function ChatOrigin({ thread }: { readonly thread: ChatPanelSignals }) {
+  const enabled = useGet(featureSwitch$)[FeatureSwitchKey.ChatRelations];
+  return enabled ? <Origin signals={thread.relations} /> : null;
+}
+
 function Origin({ signals }: { readonly signals: ChatRelationSignals }) {
   const { t } = useTranslation();
   const origin = useGet(signals.origin$);
@@ -138,9 +148,9 @@ function Origin({ signals }: { readonly signals: ChatRelationSignals }) {
       aria-label={t(($) => {
         return $.chat.relations.origin;
       })}
-      className="space-y-1"
+      className="flex shrink-0 items-center gap-2 border-b border-border/60 px-5 py-3"
     >
-      <h4 className="px-2 text-xs text-muted-foreground">
+      <h4 className="shrink-0 text-xs text-muted-foreground">
         {t(($) => {
           return $.chat.relations.origin;
         })}
@@ -152,7 +162,7 @@ function Origin({ signals }: { readonly signals: ChatRelationSignals }) {
             pathParams: { threadId: part.threadId },
             hash: `run-${part.runId}`,
           }}
-          className="flex min-w-0 items-center gap-2 rounded-lg px-2 py-2 text-sm transition-colors hover:bg-state-hover"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-2 text-sm transition-colors hover:bg-state-hover"
           title={part.titleSnapshot}
         >
           <MessageCircle size={16} className="shrink-0 text-muted-foreground" />
@@ -170,7 +180,7 @@ function Origin({ signals }: { readonly signals: ChatRelationSignals }) {
         <ExternalSourceMessageAnnotation
           part={part}
           compact
-          className="flex min-w-0 items-center gap-2 rounded-lg px-2 py-2 text-sm"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-2 text-sm"
         />
       )}
     </section>
@@ -210,21 +220,28 @@ function RelatedChatLink({ chat }: { readonly chat: RelatedChat }) {
       className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-2 text-sm transition-colors hover:bg-state-hover"
       title={title}
     >
-      <MessageCircle size={16} className="shrink-0 text-muted-foreground" />
       <span className="min-w-0 flex-1 truncate">{title}</span>
       <span
         role="img"
         aria-label={status}
         title={status}
         className={cn(
-          "size-1.5 shrink-0 rounded-full",
+          "flex shrink-0 items-center gap-1.5 text-xs",
           chat.status === "running"
-            ? "bg-emerald-500"
+            ? "text-emerald-600"
             : chat.status === "queued"
-              ? "border border-amber-500"
-              : "bg-muted-foreground/40",
+              ? "text-amber-600"
+              : "text-muted-foreground/40",
         )}
-      />
+      >
+        <span
+          className={cn(
+            "size-1.5 rounded-full",
+            chat.status === "queued" ? "border border-current" : "bg-current",
+          )}
+        />
+        {chat.status !== "idle" && <span aria-hidden>{status}</span>}
+      </span>
     </Link>
   );
 }
@@ -259,27 +276,31 @@ function MessageRow({
     });
   const content = (
     <>
-      {message.direction === "sent" ? (
-        <ArrowUpRight size={14} className="shrink-0 text-muted-foreground" />
-      ) : (
-        <ArrowDownLeft size={14} className="shrink-0 text-muted-foreground" />
-      )}
-      <span className="sr-only">
-        {t(($) => {
-          return message.direction === "sent"
-            ? $.chat.relations.sent
-            : $.chat.relations.received;
-        })}
+      <span className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1">
+          {message.direction === "sent" ? (
+            <ArrowUpRight size={14} aria-hidden />
+          ) : (
+            <ArrowDownLeft size={14} aria-hidden />
+          )}
+          {t(($) => {
+            return message.direction === "sent"
+              ? $.chat.relations.sent
+              : $.chat.relations.received;
+          })}
+        </span>
+        <MessageTime value={message.createdAt} />
       </span>
-      <span className="min-w-0 flex-1 truncate">{preview}</span>
-      <MessageTime value={message.createdAt} />
+      <span className="block whitespace-pre-wrap break-words text-sm leading-relaxed">
+        {preview}
+      </span>
     </>
   );
   return (
     <li>
       {unavailable && message.direction === "sent" ? (
         <div
-          className="flex min-w-0 items-center gap-2 px-2 py-2 text-xs text-muted-foreground"
+          className="block min-w-0 space-y-1 px-2 py-2 text-muted-foreground"
           title={preview}
         >
           {content}
@@ -293,7 +314,7 @@ function MessageRow({
               ? `run-${message.targetRunId}`
               : undefined,
           }}
-          className="flex min-w-0 items-center gap-2 rounded-lg px-2 py-2 text-xs transition-colors hover:bg-state-hover"
+          className="block min-w-0 space-y-1 rounded-lg px-2 py-2 transition-colors hover:bg-state-hover"
           title={preview}
         >
           {content}
@@ -306,7 +327,7 @@ function MessageRow({
 function CommunicationSummary({ chat }: { readonly chat: ChatCommunication }) {
   const { t } = useTranslation();
   return (
-    <div className="flex items-center gap-3 pb-2 pl-8 pr-10 text-xs text-muted-foreground">
+    <div className="flex items-center gap-3 px-2 py-2 text-xs text-muted-foreground">
       {chat.sentCount > 0 && (
         <span
           className="flex items-center gap-1"
@@ -346,77 +367,63 @@ function CommunicationSummary({ chat }: { readonly chat: ChatCommunication }) {
   );
 }
 
-function Communications({
+function ResourceChatRow({
+  chat,
   signals,
-  data,
 }: {
+  readonly chat: ResourceChat;
   readonly signals: ChatRelationSignals;
-  readonly data: Loadable<RelationPage<ChatCommunication>>;
 }) {
   const { t } = useTranslation();
   const reload = useSet(signals.reload$);
   const toggle = useSet(signals.togglePeer$);
   const selectedPeer = useGet(signals.selectedPeer$);
   const messages = useGet(signals.messages$);
+  const expanded = selectedPeer === chat.threadId;
   return (
-    <RelationList
-      title={t(($) => {
-        return $.chat.relations.communications;
-      })}
-      list={signals.communications}
-      data={data}
-      reload={reload}
-      renderItem={(chat) => {
-        const expanded = selectedPeer === chat.threadId;
-        return (
-          <li key={chat.threadId} className="py-0.5">
-            <div className="flex items-center">
-              <RelatedChatLink chat={chat} />
-              <Button
-                variant="quiet"
-                size="icon-sm"
-                aria-expanded={expanded}
-                aria-label={t(
-                  ($) => {
-                    return $.chat.relations.toggleMessages;
-                  },
-                  {
-                    title:
-                      chat.status === "unavailable"
-                        ? t(($) => {
-                            return $.chat.relations.unavailable;
-                          })
-                        : (chat.title ??
-                          t(($) => {
-                            return $.chat.relations.untitled;
-                          })),
-                  },
-                )}
-                onClick={() => {
-                  toggle(chat.threadId);
-                }}
-              >
-                {expanded ? (
-                  <ChevronDown size={14} />
-                ) : (
-                  <ChevronRight size={14} />
-                )}
-              </Button>
-            </div>
-            {!expanded && <CommunicationSummary chat={chat} />}
-            {expanded && messages && (
-              <div className="ml-6 pb-1">
-                <Messages
-                  list={messages}
-                  reload={reload}
-                  unavailable={chat.status === "unavailable"}
-                />
-              </div>
-            )}
-          </li>
-        );
-      }}
-    />
+    <li>
+      <div className="flex items-center">
+        <RelatedChatLink chat={chat} />
+        <Button
+          variant="quiet"
+          size="icon-sm"
+          aria-expanded={expanded}
+          aria-label={t(
+            ($) => {
+              return $.chat.relations.toggleMessages;
+            },
+            {
+              title:
+                chat.status === "unavailable"
+                  ? t(($) => {
+                      return $.chat.relations.unavailable;
+                    })
+                  : (chat.title ??
+                    t(($) => {
+                      return $.chat.relations.untitled;
+                    })),
+            },
+          )}
+          onClick={() => {
+            toggle(chat.threadId);
+          }}
+        >
+          {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </Button>
+      </div>
+      {expanded && messages && (
+        <div className="mb-2 max-h-64 overflow-y-auto overscroll-contain rounded-2xl border border-surface-border bg-gray-50 p-2">
+          {chat.communication && (
+            <CommunicationSummary chat={chat.communication} />
+          )}
+          <Messages
+            list={messages}
+            reload={reload}
+            unavailable={chat.status === "unavailable"}
+          />
+        </div>
+      )}
+    </li>
   );
 }
 
@@ -429,7 +436,17 @@ function Messages({
   readonly reload: () => void;
   readonly unavailable: boolean;
 }) {
+  const { t } = useTranslation();
   const data = useLastLoadable(list.data$);
+  if (data.state === "hasData" && data.data.items.length === 0) {
+    return (
+      <p className="px-2 py-3 text-xs text-muted-foreground">
+        {t(($) => {
+          return $.chat.relations.noMessages;
+        })}
+      </p>
+    );
+  }
   return (
     <RelationList
       list={list}
@@ -452,30 +469,45 @@ function RelationshipsInner({ thread }: { readonly thread: ChatPanelSignals }) {
   const { t } = useTranslation();
   const signals = thread.relations;
   const reload = useSet(signals.reload$);
-  const children = useLastLoadable(signals.children.data$);
-  const communications = useLastLoadable(signals.communications.data$);
-  const origin = useGet(signals.origin$);
-  const loading =
-    origin === null ||
-    children.state === "loading" ||
-    communications.state === "loading";
+  const chats = useLastLoadable(signals.chats.data$);
+  const expanded = useGet(thread.resources.expandedSections$).messages;
+  const toggleSection = useSet(thread.resources.toggleSection$);
+  const [loadingMore, more] = useLoadableSet(signals.chats.more$);
+  const signal = useGet(pageSignal$);
+  if (chats.state === "loading") {
+    return <RelationsLoading />;
+  }
+  const data = chats.state === "hasData" ? chats.data : null;
+  if (data && data.items.length === 0 && !data.failed) {
+    return null;
+  }
   return (
     <section
-      className="space-y-4"
       aria-label={t(($) => {
-        return $.chat.relations.title;
+        return $.chat.relations.communications;
       })}
     >
-      <div className="flex items-center justify-between px-2">
-        <h3 className="text-xs font-medium text-muted-foreground">
-          {t(($) => {
-            return $.chat.relations.title;
-          })}
-        </h3>
+      <ChatResourceSectionHeading
+        icon={MessageCircle}
+        title={t(($) => {
+          return $.chat.relations.communications;
+        })}
+        count={data?.items.length}
+        hasMore={data?.hasMore || data?.failed}
+        preview={
+          data && (data.items.length > RESOURCE_PREVIEW_LIMIT || data.hasMore)
+            ? {
+                expanded,
+                onToggle: () => {
+                  toggleSection("messages");
+                },
+              }
+            : undefined
+        }
+      >
         <Button
           variant="quiet"
           size="icon-sm"
-          disabled={loading}
           aria-label={t(($) => {
             return $.chat.relations.refresh;
           })}
@@ -483,31 +515,61 @@ function RelationshipsInner({ thread }: { readonly thread: ChatPanelSignals }) {
         >
           <RefreshCw size={14} />
         </Button>
-      </div>
-      {loading ? (
-        <RelationsLoading />
-      ) : (
-        <>
-          <Origin signals={signals} />
-          <RelationList
-            title={t(($) => {
-              return $.chat.relations.created;
+      </ChatResourceSectionHeading>
+      {(!data || data.failed) && (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-2 px-2 py-1 text-xs text-muted-foreground"
+        >
+          <p>
+            {t(($) => {
+              return $.chat.relations.loadFailed;
             })}
-            list={signals.children}
-            data={children}
-            reload={reload}
-            renderItem={(chat) => {
-              return (
-                <li
-                  key={chat.id}
-                  className="relative pl-5 before:absolute before:inset-y-0 before:left-2 before:border-l before:border-border after:absolute after:left-2 after:top-1/2 after:w-3 after:border-t after:border-border last:before:bottom-1/2"
-                >
-                  <RelatedChatLink chat={chat} />
-                </li>
-              );
-            }}
-          />
-          <Communications signals={signals} data={communications} />
+          </p>
+          <Button variant="quiet" size="sm" onClick={reload}>
+            {t(($) => {
+              return $.chat.resources.retry;
+            })}
+          </Button>
+        </div>
+      )}
+      {data && (
+        <>
+          <ul className="m-0 list-none p-0">
+            {data.items
+              .slice(0, expanded ? undefined : RESOURCE_PREVIEW_LIMIT)
+              .map((chat) => {
+                return (
+                  <ResourceChatRow
+                    key={chat.threadId}
+                    chat={chat}
+                    signals={signals}
+                  />
+                );
+              })}
+          </ul>
+          {expanded && data.hasMore && (
+            <Button
+              variant="quiet"
+              size="sm"
+              className="mt-1 w-full justify-start text-muted-foreground"
+              disabled={loadingMore.state === "loading"}
+              onClick={() => {
+                detach(more(signal), Reason.DomCallback);
+              }}
+            >
+              {t(($) => {
+                return $.chat.relations.more;
+              })}
+            </Button>
+          )}
+          {loadingMore.state === "hasError" && (
+            <p role="alert" className="px-2 text-xs text-muted-foreground">
+              {t(($) => {
+                return $.chat.relations.loadFailed;
+              })}
+            </p>
+          )}
         </>
       )}
     </section>

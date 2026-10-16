@@ -6,7 +6,7 @@ import {
   type Loadable,
 } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Package } from "lucide-react";
+import { Files, Package } from "lucide-react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   Button,
@@ -26,16 +26,14 @@ import { openArtifactSidebar$ } from "../../signals/chat-page/thread-sidebar-coo
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import {
-  ChatResourceLinks,
-  ChatResourcePreviewToggle,
-  CopyResourceLink,
-} from "./chat-resource-links.tsx";
+import { ChatResourceLinks, CopyResourceLink } from "./chat-resource-links.tsx";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import { useOpenThreadArtifacts } from "./thread-sidebar.tsx";
-import { ChatRelationships } from "./chat-relations.tsx";
-
-const RESOURCE_PREVIEW_LIMIT = 3;
+import { ChatOrigin, ChatRelationships } from "./chat-relations.tsx";
+import {
+  ChatResourceSectionHeading,
+  RESOURCE_PREVIEW_LIMIT,
+} from "./chat-resource-section.tsx";
 
 export function ChatResourcesButton({
   thread,
@@ -77,14 +75,14 @@ function ChatResourcesButtonInner({
     useGet(featureSwitch$)[FeatureSwitchKey.ChatRelations];
   const hasRelations = useLastResolved(thread.relations.hasContent$);
   const ready =
-    (!relationsEnabled ||
+    (relationsEnabled && hasRelations === true) ||
+    ((!relationsEnabled ||
       (hasRelations !== undefined && hasRelations !== null)) &&
-    (content.state === "hasError" ||
-      (content.state === "hasData" &&
-        content.data !== null &&
-        ((relationsEnabled && hasRelations) ||
-          content.data.artifacts.length > 0 ||
-          content.data.links.length > 0)));
+      (content.state === "hasError" ||
+        (content.state === "hasData" &&
+          content.data !== null &&
+          (content.data.artifacts.length > 0 ||
+            content.data.links.length > 0))));
   const open = requestedOpen && ready;
   const wide = useGet(resources.wide$);
   const saving = useGet(resources.saving$);
@@ -178,7 +176,7 @@ function ChatResourcesButtonInner({
         })}
         className={surfaceVariants({
           className:
-            "flex max-h-[min(480px,var(--available-height))] w-[376px] max-w-[var(--available-width)] flex-col overflow-hidden p-0",
+            "flex h-[min(720px,var(--available-height))] w-[376px] max-w-[var(--available-width)] flex-col overflow-hidden p-0",
         })}
       >
         <ChatResourcesBody
@@ -246,7 +244,9 @@ function ChatResourcesBody({
   const data = content.state === "hasData" ? content.data : null;
   return (
     <>
-      <div className="min-h-0 space-y-4 overflow-y-auto p-3">
+      {hasRelations && <ChatOrigin thread={thread} />}
+      {/* Sticky category controls only overlap rows inside this scroll area. */}
+      <div className="isolate min-h-0 flex-1 space-y-3 divide-y divide-border/60 overflow-y-auto overscroll-contain p-3 [overflow-anchor:none]">
         {hasRelations && <ChatRelationships thread={thread} />}
         {content.state === "hasError" ? (
           <div className="flex flex-col items-center gap-2 py-4 text-sm text-muted-foreground">
@@ -262,18 +262,30 @@ function ChatResourcesBody({
             </Button>
           </div>
         ) : data && (data.artifacts.length > 0 || data.links.length > 0) ? (
-          <div className="space-y-4">
+          <>
             {data.artifacts.length > 0 && (
               <section
                 aria-label={t(($) => {
                   return $.artifacts.sidebar.panelTitle;
                 })}
               >
-                <h3 className="px-2 pb-2 text-xs font-medium text-muted-foreground">
-                  {t(($) => {
+                <ChatResourceSectionHeading
+                  icon={Files}
+                  title={t(($) => {
                     return $.artifacts.sidebar.panelTitle;
                   })}
-                </h3>
+                  count={data.artifacts.length}
+                  preview={
+                    data.artifacts.length > RESOURCE_PREVIEW_LIMIT
+                      ? {
+                          expanded: expanded.artifacts,
+                          onToggle: () => {
+                            toggleSection("artifacts");
+                          },
+                        }
+                      : undefined
+                  }
+                />
                 <ul className="m-0 list-none p-0">
                   {data.artifacts
                     .slice(
@@ -290,14 +302,6 @@ function ChatResourcesBody({
                       );
                     })}
                 </ul>
-                {data.artifacts.length > RESOURCE_PREVIEW_LIMIT && (
-                  <ChatResourcePreviewToggle
-                    expanded={expanded.artifacts}
-                    onToggle={() => {
-                      toggleSection("artifacts");
-                    }}
-                  />
-                )}
               </section>
             )}
             <ChatResourceLinks
@@ -310,7 +314,7 @@ function ChatResourcesBody({
                 },
               }}
             />
-          </div>
+          </>
         ) : null}
       </div>
       {(content.state === "hasError" ||
