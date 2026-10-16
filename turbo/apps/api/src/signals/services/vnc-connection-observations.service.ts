@@ -1,7 +1,4 @@
-import {
-  vncConnectionObservationSchema,
-  VNC_NATIVE_CONNECTION_FAILURE_REASONS,
-} from "@okouai/api-contracts/contracts/vnc-connection-observations";
+import { vncConnectionObservationSchema } from "@okouai/api-contracts/contracts/vnc-connection-observations";
 import type { RunnerVncObservationRequest } from "@okouai/api-contracts/contracts/runner-vnc";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -9,13 +6,26 @@ import { sshConnections } from "@okouai/db/runtime/ssh-connection";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
 import { vncConnectionObservations } from "@okouai/db/schema/vnc-connection-observation";
-import { and, asc, eq, exists, isNull, lt, lte, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  exists,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import { command, computed, type Computed } from "ccstate";
 import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { vncCreationTimestamp } from "./remote-connection-creation-timestamp.utils";
 import { db$, writeDb$ } from "../external/db";
+import { nativeVncSnapshotCondition } from "./vnc-network-authority";
 import {
   runThreadSshAccess,
   runThreadVncAccess,
@@ -75,7 +85,11 @@ export function createVncConnectionObservations(owner$: Computed<Owner>) {
           eq(vncConnections.userId, owner.userId),
           or(
             and(
-              eq(vncConnections.transportType, "direct"),
+              inArray(vncConnections.transportType, [
+                "direct",
+                "cloudflare_access",
+                "tailscale",
+              ]),
               isNull(vncConnectionObservations.sshGeneration),
             ),
             and(
@@ -183,22 +197,41 @@ function observationWriteSource(
     );
 }
 
+function nativeFailureAuthority(input: ObservationInput) {
+  switch (input.failureReason) {
+    case "origin_tls_failure": {
+      return and(
+        eq(vncConnections.transportType, "cloudflare_access"),
+        isNotNull(vncConnections.originTlsServerName),
+      );
+    }
+    case "access_rejected":
+    case "access_tls_failure":
+    case "access_protocol_failure": {
+      return or(
+        eq(vncConnections.transportType, "cloudflare_access"),
+        eq(vncConnections.kdcTransportType, "cloudflare_access"),
+      );
+    }
+    case "tailscale_unavailable": {
+      return or(
+        eq(vncConnections.transportType, "tailscale"),
+        eq(vncConnections.kdcTransportType, "tailscale"),
+      );
+    }
+    default: {
+      return undefined;
+    }
+  }
+}
+
 function transportObservationAuthority(input: ObservationInput, owner: Owner) {
   const query = new QueryBuilder();
   const transport = input.expectedTransport;
   const kdc = input.expectedKdcTransport;
-  // B accepts prepared protocol snapshots before C (#40224) adds native storage/authority.
-  if (
-    VNC_NATIVE_CONNECTION_FAILURE_REASONS.some((reason) => {
-      return reason === input.failureReason;
-    }) ||
-    (transport.type !== "direct" && transport.type !== "ssh") ||
-    (kdc !== undefined && kdc.type !== "direct" && kdc.type !== "ssh")
-  ) {
-    return sql`false`;
-  }
   return and(
-    eq(vncConnections.transportType, transport.type),
+    nativeVncSnapshotCondition("rfb", transport),
+    nativeFailureAuthority(input),
     transport.type === "ssh"
       ? exists(
           query
@@ -231,9 +264,7 @@ function transportObservationAuthority(input: ObservationInput, owner: Owner) {
             ),
         )
       : undefined,
-    kdc !== undefined
-      ? eq(vncConnections.kdcTransportType, kdc.type)
-      : undefined,
+    kdc !== undefined ? nativeVncSnapshotCondition("kdc", kdc) : undefined,
     kdc?.type === "ssh"
       ? exists(
           query

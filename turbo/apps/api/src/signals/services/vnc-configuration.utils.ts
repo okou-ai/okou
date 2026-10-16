@@ -445,7 +445,7 @@ export function validateVncProfileRoute(
   return { ok: true, value: undefined };
 }
 
-function prepareVncTrust(trust: VncTrust): VncResult<{
+export function prepareVncTrust(trust: VncTrust): VncResult<{
   readonly trustMode: "system" | "custom_ca";
   readonly caBundle: string | null;
 }> {

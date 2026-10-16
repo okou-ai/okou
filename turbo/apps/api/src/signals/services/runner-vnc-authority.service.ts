@@ -19,7 +19,10 @@ import {
 import { db$ } from "../external/db";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { vncCreationTimestamp } from "./remote-connection-creation-timestamp.utils";
-import { preparedVncRoutePredicate } from "./vnc-prepared-route";
+import {
+  vncNetworkAliases,
+  visibleVncNetworkConfig,
+} from "./vnc-network-authority";
 import {
   runThreadSshAccess,
   runThreadVncAccess,
@@ -30,60 +33,95 @@ type RunnerVncInput = Pick<
   "connectionId" | "runnerIdentity"
 > & { readonly runId: string };
 const kdcSsh = alias(sshConnections, "vnc_kdc_ssh");
+const { rfbAccess, rfbTailscale, kdcAccess, kdcTailscale } = vncNetworkAliases;
 const kdcSshNeedsRebind =
   sql`(${kdcSsh.connectionMode} = 'cloudflare_access' AND ${kdcSsh.cloudflareAccessId} IS NULL) OR
           (${kdcSsh.connectionMode} IN ('tailscale', 'tailscale_ssh') AND ${kdcSsh.tailscaleId} IS NULL)`.mapWith(
     nullableDriverValueDecoder(pgBooleanDecoder),
   );
 
+const currentVncSelection = Object.freeze({
+  generation: vncConnections.generation,
+  createdAt: vncCreationTimestamp,
+  orgId: agentRuns.orgId,
+  userId: agentRuns.userId,
+  host: vncConnections.host,
+  port: vncConnections.port,
+  transportType: vncConnections.transportType,
+  sshConnectionId: vncConnections.sshConnectionId,
+  cloudflareAccessId: vncConnections.cloudflareAccessId,
+  tailscaleId: vncConnections.tailscaleId,
+  originTlsServerName: vncConnections.originTlsServerName,
+  originTlsTrustMode: vncConnections.originTlsTrustMode,
+  originTlsCaBundle: vncConnections.originTlsCaBundle,
+  kdcCloudflareAccessId: vncConnections.kdcCloudflareAccessId,
+  kdcTailscaleId: vncConnections.kdcTailscaleId,
+  rfbAccess: {
+    id: rfbAccess.id,
+    generation: rfbAccess.generation,
+    encryptedClientId: rfbAccess.encryptedClientId,
+    encryptedClientSecret: rfbAccess.encryptedClientSecret,
+  },
+  rfbTailscale: {
+    id: rfbTailscale.id,
+    generation: rfbTailscale.generation,
+    encryptedClientId: rfbTailscale.encryptedClientId,
+    encryptedClientSecret: rfbTailscale.encryptedClientSecret,
+    tags: rfbTailscale.tags,
+  },
+  kdcAccess: {
+    id: kdcAccess.id,
+    generation: kdcAccess.generation,
+    encryptedClientId: kdcAccess.encryptedClientId,
+    encryptedClientSecret: kdcAccess.encryptedClientSecret,
+  },
+  kdcTailscale: {
+    id: kdcTailscale.id,
+    generation: kdcTailscale.generation,
+    encryptedClientId: kdcTailscale.encryptedClientId,
+    encryptedClientSecret: kdcTailscale.encryptedClientSecret,
+    tags: kdcTailscale.tags,
+  },
+  sshGeneration: sshConnections.generation,
+  sshNeedsRebind: sql`${sshConnectionNeedsRebind}`.mapWith(
+    nullableDriverValueDecoder(pgBooleanDecoder),
+  ),
+  sshAllowed: runThreadSshAccess(),
+  x509ServerName: vncConnections.x509ServerName,
+  securityType: vncConnections.securityType,
+  trustMode: vncConnections.trustMode,
+  caBundle: vncConnections.caBundle,
+  rsaServerKeySha256: vncConnections.rsaServerKeySha256,
+  authMethod: vncConnections.authMethod,
+  credentialId: vncConnections.credentialId,
+  joinedCredentialId: vncCredentials.id,
+  username: vncCredentials.username,
+  encryptedPassword: vncCredentials.encryptedPassword,
+  encryptedClientIdentity: vncCredentials.encryptedClientIdentity,
+  credentialRevision: vncCredentials.revision,
+  encryptedKerberosCredential: vncCredentials.encryptedKerberosCredential,
+  kerberosInitiator: vncCredentials.kerberosInitiator,
+  kerberosCredentialService: vncCredentials.kerberosService,
+  kerberosDeclaredExpiresAt: vncCredentials.kerberosDeclaredExpiresAt,
+  kerberosService: vncConnections.kerberosService,
+  kdcHost: vncConnections.kdcHost,
+  kdcPort: vncConnections.kdcPort,
+  kdcTransportType: vncConnections.kdcTransportType,
+  kdcSshConnectionId: vncConnections.kdcSshConnectionId,
+  kerberosTicketLifetimeSeconds: vncConnections.kerberosTicketLifetimeSeconds,
+  kerberosRenewableLifetimeSeconds:
+    vncConnections.kerberosRenewableLifetimeSeconds,
+  kdcSshGeneration: kdcSsh.generation,
+  kdcSshAllowed: runThreadSshAccess(kdcSsh),
+  kdcSshNeedsRebind,
+});
+
 /** Always read current authorization from the primary database. */
 export const currentRunnerVncAuthority$ = command(
   async ({ get, set }, input: RunnerVncInput, signal: AbortSignal) => {
     const db = get(db$);
     const [row] = await db
-      .select({
-        generation: vncConnections.generation,
-        createdAt: vncCreationTimestamp,
-        orgId: agentRuns.orgId,
-        userId: agentRuns.userId,
-        host: vncConnections.host,
-        port: vncConnections.port,
-        transportType: vncConnections.transportType,
-        sshConnectionId: vncConnections.sshConnectionId,
-        sshGeneration: sshConnections.generation,
-        sshNeedsRebind: sql`${sshConnectionNeedsRebind}`.mapWith(
-          nullableDriverValueDecoder(pgBooleanDecoder),
-        ),
-        sshAllowed: runThreadSshAccess(),
-        x509ServerName: vncConnections.x509ServerName,
-        securityType: vncConnections.securityType,
-        trustMode: vncConnections.trustMode,
-        caBundle: vncConnections.caBundle,
-        rsaServerKeySha256: vncConnections.rsaServerKeySha256,
-        authMethod: vncConnections.authMethod,
-        credentialId: vncConnections.credentialId,
-        joinedCredentialId: vncCredentials.id,
-        username: vncCredentials.username,
-        encryptedPassword: vncCredentials.encryptedPassword,
-        encryptedClientIdentity: vncCredentials.encryptedClientIdentity,
-        credentialRevision: vncCredentials.revision,
-        encryptedKerberosCredential: vncCredentials.encryptedKerberosCredential,
-        kerberosInitiator: vncCredentials.kerberosInitiator,
-        kerberosCredentialService: vncCredentials.kerberosService,
-        kerberosDeclaredExpiresAt: vncCredentials.kerberosDeclaredExpiresAt,
-        kerberosService: vncConnections.kerberosService,
-        kdcHost: vncConnections.kdcHost,
-        kdcPort: vncConnections.kdcPort,
-        kdcTransportType: vncConnections.kdcTransportType,
-        kdcSshConnectionId: vncConnections.kdcSshConnectionId,
-        kerberosTicketLifetimeSeconds:
-          vncConnections.kerberosTicketLifetimeSeconds,
-        kerberosRenewableLifetimeSeconds:
-          vncConnections.kerberosRenewableLifetimeSeconds,
-        kdcSshGeneration: kdcSsh.generation,
-        kdcSshAllowed: runThreadSshAccess(kdcSsh),
-        kdcSshNeedsRebind,
-      })
+      .select(currentVncSelection)
       .from(agentRuns)
 
       .innerJoin(
@@ -129,6 +167,25 @@ export const currentRunnerVncAuthority$ = command(
           eq(kdcSsh.userId, agentRuns.userId),
         ),
       )
+      .leftJoin(
+        rfbAccess,
+        visibleVncNetworkConfig(rfbAccess, vncConnections.cloudflareAccessId),
+      )
+      .leftJoin(
+        rfbTailscale,
+        visibleVncNetworkConfig(rfbTailscale, vncConnections.tailscaleId),
+      )
+      .leftJoin(
+        kdcAccess,
+        visibleVncNetworkConfig(
+          kdcAccess,
+          vncConnections.kdcCloudflareAccessId,
+        ),
+      )
+      .leftJoin(
+        kdcTailscale,
+        visibleVncNetworkConfig(kdcTailscale, vncConnections.kdcTailscaleId),
+      )
       .where(
         and(
           eq(agentRuns.id, input.runId),
@@ -139,7 +196,6 @@ export const currentRunnerVncAuthority$ = command(
             input.runnerIdentity.heartbeatGeneration,
           ),
           runThreadVncAccess(),
-          preparedVncRoutePredicate,
         ),
       );
     signal.throwIfAborted();
@@ -158,3 +214,7 @@ export const currentRunnerVncAuthority$ = command(
       : null;
   },
 );
+
+export type CurrentVncAuthority = NonNullable<
+  Awaited<ReturnType<(typeof currentRunnerVncAuthority$)["write"]>>
+>;

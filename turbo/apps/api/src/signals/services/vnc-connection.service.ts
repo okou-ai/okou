@@ -1,6 +1,5 @@
 import {
   vncConnectionResponseSchema,
-  vncSecuritySchema,
   type CreateVncConnectionRequest,
   type UpdateVncConnectionRequest,
   type VncConnectionResponse,
@@ -37,10 +36,13 @@ import {
   validVncClientAuthentication,
 } from "./vnc-credential.service";
 import type { VncOwner } from "./vnc-owner-lifecycle.service";
-import { preparedVncRoutePredicate } from "./vnc-prepared-route";
+import { legacyVncOwnerWritePredicate } from "./vnc-prepared-route";
+import {
+  storedVncSecurity,
+  storedVncTransportMetadata,
+} from "./vnc-stored-route";
 import { vncCreationTimestamp } from "./remote-connection-creation-timestamp.utils";
 import { publishRemoteRunnerInvalidation$ } from "./remote-runtime-wakeup.service";
-import { isVncRsaAesSecurityType } from "@okouai/api-contracts/contracts/vnc-rsa-aes";
 import {
   isVncKerberosMethod,
   sameKerberosPrincipal,
@@ -81,6 +83,13 @@ const metadata = Object.freeze({
   port: vncConnections.port,
   transportType: vncConnections.transportType,
   sshConnectionId: vncConnections.sshConnectionId,
+  cloudflareAccessId: vncConnections.cloudflareAccessId,
+  tailscaleId: vncConnections.tailscaleId,
+  originTlsServerName: vncConnections.originTlsServerName,
+  originTlsTrustMode: vncConnections.originTlsTrustMode,
+  originTlsCaBundle: vncConnections.originTlsCaBundle,
+  kdcCloudflareAccessId: vncConnections.kdcCloudflareAccessId,
+  kdcTailscaleId: vncConnections.kdcTailscaleId,
   x509ServerName: vncConnections.x509ServerName,
   credentialId: vncConnections.credentialId,
   authMethod: vncConnections.authMethod,
@@ -113,7 +122,6 @@ function ownedConnections(owner: VncOwner) {
   return and(
     eq(vncConnections.orgId, owner.orgId),
     eq(vncConnections.userId, owner.userId),
-    preparedVncRoutePredicate,
   );
 }
 
@@ -121,112 +129,20 @@ function ownedConnection(owner: VncOwner, connectionId: string) {
   return and(ownedConnections(owner), eq(vncConnections.id, connectionId));
 }
 
-function validateStoredRsaTrust(row: Metadata): void {
-  if (
-    row.trustMode !== "none" ||
-    row.caBundle !== null ||
-    row.x509ServerName !== null ||
-    row.rsaServerKeySha256 === null ||
-    !/^[a-f0-9]{64}$/u.test(row.rsaServerKeySha256)
-  ) {
-    throw new Error("VNC connection has an invalid RSA trust configuration");
-  }
-}
-
-function validateStoredTrust(row: Metadata): void {
-  if (isVncRsaAesSecurityType(row.securityType)) {
-    validateStoredRsaTrust(row);
-    return;
-  }
-  if (row.rsaServerKeySha256 !== null) {
-    throw new Error("VNC connection has unexpected RSA trust");
-  }
-  if (
-    ((row.securityType === "apple_vnc_password" ||
-      row.securityType === "apple_dh" ||
-      row.securityType === "apple_srp" ||
-      row.securityType === "apple_rsa_srp") &&
-      (row.trustMode !== "none" ||
-        row.caBundle !== null ||
-        row.x509ServerName !== null)) ||
-    (row.securityType !== "apple_vnc_password" &&
-      row.securityType !== "apple_dh" &&
-      row.securityType !== "apple_srp" &&
-      row.securityType !== "apple_rsa_srp" &&
-      ((row.trustMode === "system" && row.caBundle !== null) ||
-        (row.trustMode === "custom_ca" && row.caBundle === null) ||
-        row.trustMode === "none"))
-  ) {
-    throw new Error("VNC connection has an invalid trust configuration");
-  }
-}
-
-function responseSecurity(row: Metadata): VncConnectionResponse["security"] {
-  if (isVncRsaAesSecurityType(row.securityType)) {
-    if (row.rsaServerKeySha256 === null) {
-      throw new Error("VNC connection is missing RSA trust");
-    }
-    return { type: row.securityType, serverKeySha256: row.rsaServerKeySha256 };
-  }
-  const trust =
-    row.trustMode === "custom_ca" && row.caBundle !== null
-      ? ({ mode: "custom_ca", caBundle: row.caBundle } as const)
-      : ({ mode: "system" } as const);
-  if (row.securityType === "qemu_x509_gssapi") {
-    return vncSecuritySchema.parse({
-      type: row.securityType,
-      trust,
-      service: row.kerberosService,
-      ...(row.x509ServerName === null
-        ? {}
-        : { serverName: row.x509ServerName }),
-      ...(row.kdcHost === null
-        ? {}
-        : {
-            kdc: {
-              host: row.kdcHost,
-              port: row.kdcPort,
-              transport:
-                row.kdcTransportType === "direct"
-                  ? { type: "direct" }
-                  : {
-                      type: "ssh",
-                      connectionId: row.kdcSshConnectionId,
-                    },
-              ticketLifetimeSeconds: row.kerberosTicketLifetimeSeconds,
-              renewableLifetimeSeconds: row.kerberosRenewableLifetimeSeconds,
-            },
-          }),
-    });
-  }
-  if (
-    row.securityType === "apple_vnc_password" ||
-    row.securityType === "apple_dh" ||
-    row.securityType === "apple_srp" ||
-    row.securityType === "apple_rsa_srp"
-  ) {
-    return { type: row.securityType };
-  }
-  return {
-    type: row.securityType,
-    trust,
-    ...(row.x509ServerName === null ? {} : { serverName: row.x509ServerName }),
-  };
+function ownedWritableConnection(owner: VncOwner, connectionId: string) {
+  return and(
+    ownedConnection(owner, connectionId),
+    legacyVncOwnerWritePredicate,
+  );
 }
 
 function response(
   row: Metadata,
   credential: { readonly name: string } | null,
 ): VncConnectionResponse {
-  validateStoredTrust(row);
+  const transport = storedVncTransportMetadata(row);
   if (!isVncProfileCompatible(row.authMethod, row.securityType)) {
     throw new Error("VNC connection has an invalid stored profile");
-  }
-  if (
-    (row.transportType === "direct" && row.sshConnectionId !== null) ||
-    (row.transportType === "ssh" && row.sshConnectionId === null)
-  ) {
-    throw new Error("VNC connection has an invalid stored transport");
   }
   const credentialless = row.authMethod === "none";
   if (credentialless !== (row.credentialId === null && credential === null)) {
@@ -235,14 +151,7 @@ function response(
     );
   }
   return vncConnectionResponseSchema.parse({
-    ...(row.transportType === "ssh" && row.sshConnectionId !== null
-      ? {
-          transport: {
-            type: "ssh" as const,
-            connectionId: row.sshConnectionId,
-          },
-        }
-      : {}),
+    ...(transport.type === "direct" ? {} : { transport }),
     ...(row.authMethod === "rsa_aes_password" ||
     row.authMethod === "rsa_aes_username_password"
       ? { rsaAesAuthentication: row.authMethod }
@@ -264,7 +173,7 @@ function response(
             ? { clientCertificateAuthentication: row.authMethod }
             : {}),
         }),
-    security: responseSecurity(row),
+    security: storedVncSecurity(row),
     generation: row.generation,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt.toISOString(),
@@ -767,7 +676,7 @@ const prepareUpdateVncConnection$ = command(
     const [initial] = await db
       .select(metadata)
       .from(vncConnections)
-      .where(ownedConnection(args.owner, args.connectionId));
+      .where(ownedWritableConnection(args.owner, args.connectionId));
     signal.throwIfAborted();
     if (!initial) {
       return vncFailure("connectionNotFound");
@@ -967,6 +876,13 @@ function inlineVncCredentialParts(
         port: updated.port,
         transportType: updated.transportType,
         sshConnectionId: updated.sshConnectionId,
+        cloudflareAccessId: updated.cloudflareAccessId,
+        tailscaleId: updated.tailscaleId,
+        originTlsServerName: updated.originTlsServerName,
+        originTlsTrustMode: updated.originTlsTrustMode,
+        originTlsCaBundle: updated.originTlsCaBundle,
+        kdcCloudflareAccessId: updated.kdcCloudflareAccessId,
+        kdcTailscaleId: updated.kdcTailscaleId,
         x509ServerName: updated.x509ServerName,
         credentialId: updated.credentialId,
         authMethod: updated.authMethod,
@@ -1022,13 +938,13 @@ const writeVncConnectionUpdate$ = command(
     const { host, security, preparedCredential } = prepared;
     const owner = args.owner;
     const expectedConnection = and(
-      ownedConnection(owner, args.connectionId),
+      ownedWritableConnection(owner, args.connectionId),
       eq(vncConnections.generation, args.body.expectedGeneration),
     );
     const [current] = await db
       .select(metadata)
       .from(vncConnections)
-      .where(ownedConnection(owner, args.connectionId));
+      .where(ownedWritableConnection(owner, args.connectionId));
     signal.throwIfAborted();
     if (!current) {
       return vncFailure("connectionNotFound");
