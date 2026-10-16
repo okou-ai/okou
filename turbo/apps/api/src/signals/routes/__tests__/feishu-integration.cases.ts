@@ -3699,6 +3699,15 @@ export function registerFeishuIntegrationTests(
         await expect(plaintextResponse.json()).resolves.toStrictEqual({
           challenge: "challenge-value",
         });
+        const verifiedStatus = await own(() => {
+          return accept(
+            client.getStatus({
+              headers: { authorization: "Bearer clerk-session" },
+            }),
+            [200],
+          );
+        });
+        expect(verifiedStatus.body.callbackVerified).toBeTruthy();
 
         const response = await own(() => {
           return postEvent(callbackUrl, payload, {
@@ -3820,6 +3829,7 @@ export function registerFeishuIntegrationTests(
           );
         });
         expect(status.body.installations?.[0]?.botName).toBe("Okou Feishu");
+        expect(status.body.callbackVerified).toBeTruthy();
 
         await own(() => {
           return accept(
