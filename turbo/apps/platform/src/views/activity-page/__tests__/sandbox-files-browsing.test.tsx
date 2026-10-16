@@ -115,14 +115,14 @@ test("Files connects on demand, preserves browsing through fullscreen and releas
   expect(fixture.sockets[0]?.readyState).toBe(WebSocket.CLOSED);
 });
 
-test("The mobile menu opens the same readonly panel", async () => {
+test("The mobile Activity Files tab opens the readonly browser", async () => {
   const fixture = await setupFilesPage(context, {
     mobile: true,
     handler: () => {
       return listing([]);
     },
   });
-  const panel = await openFiles(true);
+  const panel = await openFiles();
   await expect(
     within(panel).findByText("This folder is empty."),
   ).resolves.toBeInTheDocument();

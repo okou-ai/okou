@@ -116,7 +116,6 @@ export async function setupFilesPage(
     readonly mobile?: boolean;
     readonly viewportHeight?: number;
     readonly bootstrapUnavailable?: boolean;
-    readonly runId?: string;
     readonly initialTab?: string;
     readonly statusHandler?: (runId: string) => RunStatus | Promise<RunStatus>;
     readonly helloError?: SandboxChannelWireError;
@@ -313,7 +312,7 @@ export async function setupFilesPage(
   );
   await setupPage({
     context,
-    path: `/activities/${options.runId ?? FILES_RUN_ID}${options.initialTab ? `?tab=${options.initialTab}` : ""}`,
+    path: `/activities/${FILES_RUN_ID}${options.initialTab ? `?tab=${options.initialTab}` : ""}`,
     host: "app.okou.ai",
     featureSwitches: {
       [FeatureSwitchKey.OkouDebug]: options.enabled ?? true,
@@ -344,7 +343,7 @@ export function filesTab(name: string): HTMLElement {
   return tab;
 }
 
-export function openFiles(_mobile = false): Promise<HTMLElement> {
+export function openFiles(): Promise<HTMLElement> {
   click(filesTab("Files"));
   return screen.findByRole("region", { name: "Files" });
 }
