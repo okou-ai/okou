@@ -272,6 +272,9 @@ printf '%s\n' "$*" >> "$FAKE_TIMEOUT_INVOCATIONS"
 if [ "${FAKE_TIMEOUT_MODE:-passthrough}" = "real" ]; then
   exec "$SYSTEM_TIMEOUT" "$@"
 fi
+if [ "${1:-}" = --verbose ]; then
+  shift
+fi
 if [[ "${1:-}" == --kill-after=* ]]; then
   shift
 fi
@@ -520,6 +523,7 @@ assert_line_count "$actual_timeout/actual-ssh.log" 1 \
   "metal@dev-1.aws.vm3.ai run-once-and-hang"
 assert_contains "$actual_timeout/timeout.log" \
   "--kill-after=5s 1s ${fake_ssh} metal@dev-1.aws.vm3.ai run-once-and-hang"
+assert_contains "$actual_timeout/stderr" 'sending signal TERM to command'
 assert_process_gone "$actual_timeout/actual-ssh.pid" "timed-out SSH caller"
 assert_process_gone \
   "$actual_timeout/actual-ssh-child.pid" \
@@ -555,6 +559,8 @@ wait "$actual_cancel_invocation_pid" || actual_cancel_status=$?
 if [ "$actual_cancel_status" -ne 143 ]; then
   fail "cancelled caller returned ${actual_cancel_status}, expected 143"
 fi
+assert_contains "$actual_cancel/stderr" 'Cloudflare SSH caller signal:'
+assert_contains "$actual_cancel/stderr" 'signal=TERM'
 assert_line_count "$actual_cancel/actual-ssh.log" 1 \
   "metal@dev-1.aws.vm3.ai run-once-until-cancelled"
 assert_process_gone "$actual_cancel/actual-ssh.pid" "cancelled SSH caller"

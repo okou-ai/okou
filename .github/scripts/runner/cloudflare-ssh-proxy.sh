@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=.github/scripts/runner/cloudflare-ssh-diagnostics.sh
+. "$SCRIPT_DIR/cloudflare-ssh-diagnostics.sh"
+
 HOST="${1:-}"
 if [ -z "$HOST" ]; then
   echo "Usage: $0 <host>" >&2
@@ -27,9 +31,48 @@ TUNNEL_HOST="${SUB//./-}-ssh.${DOMAIN}"
 CLOUDFLARED_BIN="${CLOUDFLARED_BIN:-cloudflared}"
 LOG_DIR="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
 mkdir -p "$LOG_DIR"
+umask 077
 
 safe_host=$(printf '%s' "$HOST" | tr -c 'A-Za-z0-9_.-' '_')
-LOG_FILE=$(mktemp "${LOG_DIR%/}/cloudflared-ssh-${safe_host}.XXXXXX.log")
+proxy_root="${OKOU_CLOUDFLARE_SSH_PROXY_DIAGNOSTICS_DIR:-}"
+RETAIN_DIAGNOSTICS=false
+PROXY_DIR=""
+if [[ "$proxy_root" == /* ]]; then
+  if [ ! -L "$proxy_root" ] \
+    && mkdir -p -- "$proxy_root" \
+    && chmod 700 "$proxy_root"; then
+    PROXY_DIR=$(mktemp -d "${proxy_root}/proxy.XXXXXX") || true
+    if [ -n "$PROXY_DIR" ]; then
+      RETAIN_DIAGNOSTICS=true
+    fi
+  fi
+fi
+if [ -z "$PROXY_DIR" ]; then
+  PROXY_DIR=$(mktemp -d "${LOG_DIR%/}/cloudflared-ssh-${safe_host}.XXXXXX.log")
+fi
+LOG_FILE="${PROXY_DIR}/stderr.log"
+EVENTS_FILE="${PROXY_DIR}/events.log"
+: > "$LOG_FILE"
+: > "$EVENTS_FILE"
+native_log_args=()
+if mkdir -m 700 "${PROXY_DIR}/application" \
+  && touch "${PROXY_DIR}/application/cloudflared.log"; then
+  native_log_args=(--log-level debug --log-directory "${PROXY_DIR}/application")
+fi
+
+proxy_event() {
+  local event=$1 status=${2:-unknown} signal=${3:-none}
+  local uptime=unavailable utc
+  if [ -r /proc/uptime ]; then
+    read -r uptime _ < /proc/uptime || uptime=unavailable
+  fi
+  utc=$(date -u +%Y-%m-%dT%H:%M:%SZ) || utc=unavailable
+  printf 'event=%s utc=%s epoch=%s uptime_seconds=%s transport=%s proxy_pid=%s parent_pid=%s child_pid=%s status=%s signal=%s host=%s\n' \
+    "$event" "$utc" "${EPOCHREALTIME:-unavailable}" "$uptime" "${PROXY_DIR##*/}" \
+    "$$" "$PPID" "${cloudflared_pid:-none}" "$status" "$signal" "$safe_host" \
+    >> "$EVENTS_FILE" || true
+}
+proxy_event proxy-start
 
 github_escape() {
   local value="$1"
@@ -39,24 +82,10 @@ github_escape() {
   printf '%s' "$value"
 }
 
-redact_cloudflared_log() {
-  sed -E \
-    -e 's/(--secret(=|[[:space:]]+))[^[:space:]]+/\1[redacted]/g' \
-    -e 's/(--id(=|[[:space:]]+))[^[:space:]]+/\1[redacted]/g' \
-    -e 's/(CF_ACCESS_CLIENT_SECRET=)[^[:space:]]+/\1[redacted]/g' \
-    -e 's/(CF_ACCESS_CLIENT_ID=)[^[:space:]]+/\1[redacted]/g' \
-    -e 's/(TUNNEL_SERVICE_TOKEN_SECRET=)[^[:space:]]+/\1[redacted]/g' \
-    -e 's/(TUNNEL_SERVICE_TOKEN_ID=)[^[:space:]]+/\1[redacted]/g' \
-    -e 's/(Authorization:[[:space:]]*Bearer[[:space:]]+)[^[:space:]]+/\1[redacted]/Ig' \
-    "$LOG_FILE"
-}
-
 emit_redacted_cloudflared_log() {
   local header="$1"
-  if [ -s "$LOG_FILE" ]; then
-    echo "$header" >&2
-    redact_cloudflared_log | tail -n 20 >&2
-  fi
+  echo "$header" >&2
+  cloudflare_ssh_render_diagnostics proxy "$PROXY_DIR" >&2 || true
 }
 
 failure_title() {
@@ -137,8 +166,11 @@ cloudflared_pid=""
 
 terminate_cloudflared() {
   if [ -n "$cloudflared_pid" ]; then
-    kill -TERM "$cloudflared_pid" 2>/dev/null || true
-    wait "$cloudflared_pid" 2>/dev/null || true
+    local signal_status=0 child_status=0
+    kill -TERM "$cloudflared_pid" 2>/dev/null || signal_status=$?
+    proxy_event signal-forwarded "$signal_status" TERM
+    wait "$cloudflared_pid" 2>/dev/null || child_status=$?
+    proxy_event child-exit "$child_status"
     cloudflared_pid=""
   fi
 }
@@ -147,15 +179,19 @@ cleanup() {
   local status="$1"
   trap - EXIT
   terminate_cloudflared
-  rm -f "$LOG_FILE"
+  proxy_event proxy-exit "$status"
+  if [ "$RETAIN_DIAGNOSTICS" = "false" ]; then
+    rm -rf -- "$PROXY_DIR"
+  fi
   exit "$status"
 }
 
 handle_hup() {
   trap - HUP INT TERM
+  proxy_event signal-received 129 HUP
   terminate_cloudflared
   emit_redacted_cloudflared_log \
-    "----- cloudflared stderr before ProxyCommand teardown (last 20 lines, redacted) -----"
+    "----- cloudflared stderr before ProxyCommand teardown (last 20 lines, redacted) -----" || true
   exit 129
 }
 
@@ -163,8 +199,9 @@ handle_signal() {
   local signal="$1"
   local status="$2"
   trap - HUP INT TERM
+  proxy_event signal-received "$status" "$signal"
   terminate_cloudflared
-  emit_interrupted_marker "$signal" "$status"
+  emit_interrupted_marker "$signal" "$status" || true
   exit "$status"
 }
 
@@ -178,13 +215,16 @@ TUNNEL_SERVICE_TOKEN_ID="$CF_ACCESS_CLIENT_ID" \
   TUNNEL_SERVICE_TOKEN_SECRET="$CF_ACCESS_CLIENT_SECRET" \
   "$CLOUDFLARED_BIN" access ssh \
   --hostname "$TUNNEL_HOST" \
+  "${native_log_args[@]}" \
   <&0 2> "$LOG_FILE" &
 cloudflared_pid=$!
+proxy_event child-start
 wait "$cloudflared_pid" || status=$?
+proxy_event child-exit "$status"
 cloudflared_pid=""
 
 if [ "$status" -ne 0 ]; then
-  emit_failure_marker "$status"
+  emit_failure_marker "$status" || true
 fi
 
 exit "$status"

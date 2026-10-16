@@ -16,33 +16,27 @@ cloudflare_ssh_master_diagnostics_file() {
 
 cloudflare_ssh_emit_master_diagnostics() {
   local file=$1
-  if [ -s "$file" ]; then
-    echo "----- SSH master stderr (including probes; last 100 lines, at most 64 KiB, redacted) -----" >&2
-    tail -n 100 "$file" \
-      | cloudflare_ssh_sanitize_diagnostics - \
-      | tail -c 65536 >&2
+  if [ -s "$file" ] || [ -d "${file}.proxies" ]; then
+    cloudflare_ssh_render_diagnostics master "$file" >&2
   else
     echo "SSH master diagnostics unavailable." >&2
   fi
 }
 
 cloudflare_ssh_redact_diagnostics() {
-  local file="$1"
-  sed -E \
-    -e 's/(--secret(=|[[:space:]]+))[^[:space:]]+/\1[redacted]/g' \
-    -e 's/(--id(=|[[:space:]]+))[^[:space:]]+/\1[redacted]/g' \
-    -e 's/(CF_ACCESS_CLIENT_SECRET=)[^[:space:]]+/\1[redacted]/g' \
-    -e 's/(CF_ACCESS_CLIENT_ID=)[^[:space:]]+/\1[redacted]/g' \
-    -e 's/(TUNNEL_SERVICE_TOKEN_SECRET=)[^[:space:]]+/\1[redacted]/g' \
-    -e 's/(TUNNEL_SERVICE_TOKEN_ID=)[^[:space:]]+/\1[redacted]/g' \
-    -e 's/(Authorization:[[:space:]]*Bearer[[:space:]]+)[^[:space:]]+/\1[redacted]/Ig' \
-    "$file"
+  cloudflare_ssh_render_diagnostics sanitize "$1"
 }
 
 cloudflare_ssh_sanitize_diagnostics() {
-  local file="$1"
-  cloudflare_ssh_redact_diagnostics "$file" \
-    | sed -E 's/^::(error|warning)( title=[^:]*)?:://'
+  cloudflare_ssh_redact_diagnostics "$1"
+}
+
+cloudflare_ssh_render_diagnostics() {
+  local script_dir
+  script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd) || return
+  # Missing optional diagnostics must fail closed, never expose raw debug data.
+  python3 "$script_dir/cloudflare-ssh-log.py" "$@" \
+    || echo "SSH diagnostics could not be rendered; raw evidence omitted."
 }
 
 cloudflare_ssh_is_permanent_failure() {

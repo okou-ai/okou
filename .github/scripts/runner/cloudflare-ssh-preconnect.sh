@@ -150,7 +150,8 @@ preconnect_host() {
 
     # -v also keeps stderr open after OpenSSH forks into the background;
     # setting LogLevel alone would discard post-authentication diagnostics.
-    GITHUB_STEP_SUMMARY="" \
+    OKOU_CLOUDFLARE_SSH_PROXY_DIAGNOSTICS_DIR="${stderr_file}.proxies" \
+      GITHUB_STEP_SUMMARY="" \
       timeout \
         --kill-after="${MASTER_START_KILL_AFTER_SECONDS}s" \
         "${MASTER_START_TIMEOUT_SECONDS}s" \

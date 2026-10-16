@@ -453,7 +453,8 @@ probe_transport() {
     # A probe can create a detached master. Give every invocation the same
     # append-only stderr destination so later callers can read that master's
     # messages too. Classify only bytes added during this probe.
-    GITHUB_STEP_SUMMARY="" \
+    OKOU_CLOUDFLARE_SSH_PROXY_DIAGNOSTICS_DIR="${master_diagnostics_file}.proxies" \
+      GITHUB_STEP_SUMMARY="" \
       timeout \
         --kill-after="${PROBE_KILL_AFTER_SECONDS}s" \
         "${PROBE_TIMEOUT_SECONDS}s" \
@@ -537,7 +538,11 @@ if [ "$probe_status" -ne 0 ]; then
     "$TARGET_USER" "$TARGET_HOST" \
     >&2 || recovery_status=$?
   if [ "$recovery_status" -ne 0 ]; then
-    rm -rf "$probe_dir" "$recovery_dir"
+    rm -rf "$probe_dir"
+    # A failed/closed proxy's native evidence still belongs to this job.
+    if [ ! -d "${recovery_control_path}.stderr.proxies" ]; then
+      rm -rf "$recovery_dir"
+    fi
     release_transport_lock
     exit "$recovery_status"
   fi
@@ -554,7 +559,8 @@ if [ "$probe_status" -ne 0 ]; then
     close_transport "$recovery_control_path" \
       > /dev/null 2>&1 || close_status=$?
     rm -rf "$probe_dir"
-    if [ "$close_status" -eq 0 ]; then
+    if [ "$close_status" -eq 0 ] \
+      && [ ! -d "${recovery_control_path}.stderr.proxies" ]; then
       rm -rf "$recovery_dir"
     fi
     release_transport_lock
@@ -587,6 +593,8 @@ fi
 
 operation_pid=""
 cleanup_pid=""
+operation_signal=none
+operation_signal_epoch=unavailable
 operation_started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 # GNU timeout creates a separate process group for the caller. Keep this shell
 # alive so GitHub cancellation can terminate that group and its ProxyCommand.
@@ -594,6 +602,11 @@ trap '
   trap - EXIT
   trap "" HUP INT TERM
 
+  if [ "$operation_signal" != none ]; then
+    printf "Cloudflare SSH caller signal: tool=%s host=%s signal=%s epoch=%s utc=%s\n" \
+      "$TOOL" "$TARGET_HOST" "$operation_signal" "$operation_signal_epoch" \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >&2 || true
+  fi
   cleanup_pid=$operation_pid
   if [ -z "$cleanup_pid" ]; then
     cleanup_pid=$!
@@ -604,12 +617,17 @@ trap '
     kill -KILL -- "-${cleanup_pid}" 2>/dev/null || true
     wait "$cleanup_pid" 2>/dev/null || true
   fi
+  if [ "$operation_signal" != none ]; then
+    cloudflare_ssh_emit_master_diagnostics "$master_diagnostics_file" || true
+  fi
 ' EXIT
-trap 'exit 129' HUP
-trap 'exit 130' INT
-trap 'exit 143' TERM
+trap 'operation_signal=HUP; operation_signal_epoch=${EPOCHREALTIME:-unavailable}; exit 129' HUP
+trap 'operation_signal=INT; operation_signal_epoch=${EPOCHREALTIME:-unavailable}; exit 130' INT
+trap 'operation_signal=TERM; operation_signal_epoch=${EPOCHREALTIME:-unavailable}; exit 143' TERM
 
-timeout \
+OKOU_CLOUDFLARE_SSH_PROXY_DIAGNOSTICS_DIR="${master_diagnostics_file}.proxies" \
+  timeout \
+  --verbose \
   --kill-after="${OPERATION_KILL_AFTER_SECONDS}s" \
   "${OPERATION_TIMEOUT_SECONDS}s" \
   "$REAL_BINARY" "${connection_args[@]}" "${ORIGINAL_ARGS[@]}" <&0 &
