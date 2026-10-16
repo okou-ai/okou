@@ -201,7 +201,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     });
   }
 
-  function createUploadFixture() {
+  function createUploadFixture(options: { readonly isolatePg?: true } = {}) {
     const actors = new Map<string, ApiTestUser>();
     const claimed = new Map<
       string,
@@ -302,6 +302,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
           orgId: base.orgId,
           installer: scenario.user({ orgId: base.orgId, orgRole: "org:admin" }),
           run: scenario.run,
+          isolatePg: options.isolatePg,
         });
       });
       await restoreMembership(base);
@@ -436,6 +437,200 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       url: initialized.body.url,
     };
   }
+
+  it("returns canonical not found for missing Slack delivery identities", async () => {
+    const fixture = createUploadFixture({ isolatePg: true });
+    const upload = await pendingCanonicalUpload(fixture);
+    const materialized = await fixture.run(() => {
+      return accept(
+        setupApp({ context, routes: integrationsSlackUploadMaterializeRoutes })(
+          integrationsSlackUploadMaterializeContract,
+        ).materialize(upload.request),
+        [200],
+      );
+    });
+    const delivery = materialized.body.delivery;
+    expect(delivery.status).toBe("pending");
+    if (delivery.status !== "pending") {
+      throw new Error("Expected the owned pending Slack delivery");
+    }
+    const client = setupApp({
+      context,
+      routes: integrationsSlackUploadCompleteRoutes,
+    })(integrationsSlackUploadCompleteContract);
+    for (const identities of [
+      {
+        canonicalAssetId: randomUUID(),
+        operationId: upload.request.body.operationId,
+      },
+      {
+        canonicalAssetId: upload.request.body.assetId,
+        operationId: randomUUID(),
+      },
+    ]) {
+      const response = await fixture.run(() => {
+        return accept(
+          client.complete({
+            headers: upload.request.headers,
+            body: { ...identities, fileId: delivery.fileId, channel: "C123" },
+          }),
+          [404],
+        );
+      });
+      expect(response.body.error).toStrictEqual({
+        code: "NOT_FOUND",
+        message: "Canonical Slack delivery was not found",
+      });
+      expect(
+        context.mocks.slack.files.completeUploadExternal,
+      ).not.toHaveBeenCalled();
+      expect(context.mocks.slack.files.info).not.toHaveBeenCalled();
+    }
+  });
+
+  it("rejects another run's canonical Slack delivery and preserves its owner's receipt", async () => {
+    const fixture = createUploadFixture({ isolatePg: true });
+    const first = await pendingCanonicalUpload(fixture);
+    const materializeClient = setupApp({
+      context,
+      routes: integrationsSlackUploadMaterializeRoutes,
+    })(integrationsSlackUploadMaterializeContract);
+    const firstMaterialized = await fixture.run(() => {
+      return accept(materializeClient.materialize(first.request), [200]);
+    });
+    expect(firstMaterialized.body.delivery.status).toBe("pending");
+    const second = await pendingCanonicalUpload(fixture);
+    expect(second.actor.userId).not.toBe(first.actor.userId);
+    expect(second.actor.orgId).not.toBe(first.actor.orgId);
+    expect(second.actor.runId).not.toBe(first.actor.runId);
+    const secondMaterialized = await fixture.run(() => {
+      return accept(materializeClient.materialize(second.request), [200]);
+    });
+    const delivery = secondMaterialized.body.delivery;
+    expect(delivery.status).toBe("pending");
+    if (delivery.status !== "pending") {
+      throw new Error("Expected the second owner's pending Slack delivery");
+    }
+    const body = {
+      canonicalAssetId: second.request.body.assetId,
+      operationId: second.request.body.operationId,
+      fileId: delivery.fileId,
+      channel: "C123",
+    };
+    const client = setupApp({
+      context,
+      routes: integrationsSlackUploadCompleteRoutes,
+    })(integrationsSlackUploadCompleteContract);
+    await fixture.restoreMembership(first.actor);
+    mockSlackFileInfo(delivery.fileId);
+    const rejected = await fixture.run(() => {
+      return accept(
+        client.complete({ headers: first.request.headers, body }),
+        [404],
+      );
+    });
+    expect(rejected.body.error).toStrictEqual({
+      code: "NOT_FOUND",
+      message: "Canonical Slack delivery was not found",
+    });
+    expect(
+      context.mocks.slack.files.completeUploadExternal,
+    ).not.toHaveBeenCalled();
+    expect(context.mocks.slack.files.info).not.toHaveBeenCalled();
+    const expected = {
+      fileId: delivery.fileId,
+      permalink: `https://slack.example/files/${delivery.fileId}`,
+      channel: "C123",
+      assetId: second.request.body.assetId,
+      deliveryStatus: "delivered",
+    };
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await fixture.restoreMembership(second.actor);
+      mockSlackFileInfo(delivery.fileId);
+      const completed = await fixture.run(() => {
+        return accept(
+          client.complete({ headers: second.request.headers, body }),
+          [200],
+        );
+      });
+      expect(completed.body).toStrictEqual(expected);
+      expect(
+        context.mocks.slack.files.completeUploadExternal,
+      ).toHaveBeenCalledTimes(1);
+      expect(context.mocks.slack.files.info).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("records an authoritative Slack upload error before successful completion and replay", async () => {
+    const fixture = createUploadFixture({ isolatePg: true });
+    const upload = await pendingCanonicalUpload(fixture);
+    const materialized = await fixture.run(() => {
+      return accept(
+        setupApp({ context, routes: integrationsSlackUploadMaterializeRoutes })(
+          integrationsSlackUploadMaterializeContract,
+        ).materialize(upload.request),
+        [200],
+      );
+    });
+    const delivery = materialized.body.delivery;
+    expect(delivery.status).toBe("pending");
+    if (delivery.status !== "pending") {
+      throw new Error("Expected the authoritative pending Slack delivery");
+    }
+    const client = setupApp({
+      context,
+      routes: integrationsSlackUploadCompleteRoutes,
+    })(integrationsSlackUploadCompleteContract);
+    const body = {
+      canonicalAssetId: upload.request.body.assetId,
+      operationId: upload.request.body.operationId,
+      fileId: delivery.fileId,
+      channel: "C_IGNORED_COMPLETION_TARGET",
+    };
+    const uploadError = "The prepared Slack upload failed";
+    const failed = await fixture.run(() => {
+      return accept(
+        client.complete({
+          headers: upload.request.headers,
+          body: { ...body, uploadError },
+        }),
+        [200],
+      );
+    });
+    expect(failed.body).toStrictEqual({
+      fileId: delivery.fileId,
+      permalink: "",
+      channel: "C123",
+      assetId: upload.request.body.assetId,
+      deliveryStatus: "failed",
+      deliveryError: uploadError,
+    });
+    expect(
+      context.mocks.slack.files.completeUploadExternal,
+    ).not.toHaveBeenCalled();
+    expect(context.mocks.slack.files.info).not.toHaveBeenCalled();
+    mockSlackFileInfo(delivery.fileId);
+    const expected = {
+      fileId: delivery.fileId,
+      permalink: `https://slack.example/files/${delivery.fileId}`,
+      channel: "C123",
+      assetId: upload.request.body.assetId,
+      deliveryStatus: "delivered",
+    };
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const completed = await fixture.run(() => {
+        return accept(
+          client.complete({ headers: upload.request.headers, body }),
+          [200],
+        );
+      });
+      expect(completed.body).toStrictEqual(expected);
+      expect(
+        context.mocks.slack.files.completeUploadExternal,
+      ).toHaveBeenCalledTimes(1);
+      expect(context.mocks.slack.files.info).toHaveBeenCalledTimes(1);
+    }
+  });
 
   it("selects each request's installation across users and organizations", async () => {
     const fixture = createUploadFixture();
