@@ -228,6 +228,10 @@ impl Case {
         self.write_event("NATIVE_CRITICAL_PROGRESS_WITNESS ", phase, evidence)
     }
 
+    pub fn read_cancellation_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_READ_CANCELLATION_WITNESS ", phase, evidence)
+    }
+
     pub fn startup_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
         self.write_event("NATIVE_STARTUP_WITNESS ", phase, evidence)
     }

@@ -21,6 +21,7 @@ mod logical_work;
 mod optional;
 mod pressure;
 mod pressure_condition;
+mod read_cancellation;
 mod recovery;
 mod recovery_source;
 mod refusal;
@@ -66,6 +67,7 @@ enum Corpus {
     LogicalProgress,
     IncomingProgress,
     CriticalProgress,
+    ReadCancellation,
 }
 
 const MISSING_GUEST_TIMEZONE: &str = "Etc/okou-test-missing-zone";
@@ -505,6 +507,28 @@ async fn native_critical_records_independent_contention_progress() -> TestResult
     measured_selected_corpus(&[NativeScope::Critical], Corpus::CriticalProgress).await
 }
 
+#[test]
+fn native_read_cancellation_report_requires_actual_bytes_and_retained_custody() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/read_cancellation_report_test.py"
+        ))
+        .output()
+        .expect("native read cancellation report requires Python3");
+    assert!(
+        output.status.success(),
+        "read cancellation report failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD inputs and exact-source accepted read cancellation P1 proof"]
+async fn native_read_cancellation_retains_actual_io_through_drain() -> TestResult<()> {
+    measured_selected_corpus(&[NativeScope::Startup], Corpus::ReadCancellation).await
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires owned KVM/NBD artifacts, synthetic native API, mock Codex and exact-source P1 proof"]
 async fn native_continuation_records_complete_session_history_and_required_saving() -> TestResult<()>
@@ -639,6 +663,8 @@ async fn exercise_selected_factories(
                                 format!("Incoming{scope:?}")
                             } else if corpus == Corpus::CriticalProgress {
                                 "CriticalProgress".into()
+                            } else if corpus == Corpus::ReadCancellation {
+                                "ReadCancellation".into()
                             } else if corpus == Corpus::Continuation {
                                 if matches!(scope, NativeScope::Batch(_)) {
                                     "ContinuationNonzero".into()
@@ -1029,6 +1055,14 @@ async fn exercise_retirement(
                 Ok(None)
             }
             NativeScope::Startup => {
+                if corpus == Corpus::ReadCancellation {
+                    read_cancellation::exercise(transitions::Context {
+                        factory: factory.clone(), pool: pool.clone(), status: status.clone(),
+                        operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
+                        rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
+                    }, inputs, recovery_source.as_ref().ok_or_else(|| io::Error::other("read cancellation source missing"))?, proof, paths.base_dir()).await?;
+                    return Ok(None);
+                }
                 startup::exercise(transitions::Context {
                     factory: factory.clone(), pool: pool.clone(), status: status.clone(),
                     operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),

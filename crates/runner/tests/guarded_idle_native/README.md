@@ -1,5 +1,46 @@
 # Guarded idle terminal fixture
 
+## Accepted actual snapshot-read cancellation
+
+`native_read_cancellation_retains_actual_io_through_drain` runs the production
+startup and guarded runtime readers on the immutable original 4 GiB `memory.bin`,
+in fresh and matching-snapshot Guest factories. A non-default test-support
+checkpoint runs after the actual File reader returns its first 1 MiB. It holds
+that same physical producer on an invocation-owned blocking Unix read; the
+storage File read itself is not claimed to be stalled.
+
+Startup remains unguarded under held Unknown. Runtime is admitted under actual
+sustained Ready using the original P2 authority. Cancellation must leave both a
+first drain observer Pending and, after dropping it, a second drain Pending.
+Actual independent host observation and acknowledged API heartbeat finish while
+the release byte remains withheld. The original full lease/data remain owned;
+the guarded operation retains its original registration, declared full growth
+and tracked physical owner. Only actual checkpoint release, positive physical
+drain and fresh phase settlement permit the cancelled exact-byte outcome and
+zero remaining P2 custody. Cancellation supplies no numerical memory credit.
+
+All readers, sampler, heartbeat/provider and peer join before required original
+saving. The inherited complete immutable snapshot hash, original home bytes,
+full lease, exact backing wait, durable 64 MiB tail and factory/runtime dependency
+joins remain mandatory. Every failure also releases owned gates and positively
+joins accepted work; timeout remains failure.
+
+Select the ignored test with the exact-source bounded P1 invocation below.
+Metadata additionally requires `native_read_cancellation_policy_json`,
+`native_read_cancellation_inputs_json` and
+`native_read_cancellation_snapshot_bytes` (4294967296). Validate both cases:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/read_cancellation_report.py "$P1_OUTPUT_DIRECTORY"
+```
+
+Ordinary Cargo runs actual-file checkpoint/ownership regressions and the
+real-file/CLI refusal consumer without KVM. Accepted Guest/provider creation,
+rollback and late results plus final ancestor reconciliation remain #40760
+under #40355. Full production Reactor/P2 installation, stalled-storage progress,
+numerical relief, full/cold residency, calibrated envelopes, unknown original
+template provenance and OOM protection remain unverified.
+
 ## Native Critical contention progress
 
 `native_critical_records_independent_contention_progress` supplements the actual
