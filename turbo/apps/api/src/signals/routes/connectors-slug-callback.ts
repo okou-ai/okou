@@ -24,7 +24,7 @@ import {
 
 import { request$, setResHeader$ } from "../context/hono";
 import { pathParamsOf, queryOf } from "../context/request";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import { env, optionalEnv } from "../../lib/env";
 import {
@@ -57,7 +57,7 @@ import {
 import { resolveOAuthRequestedScopeSnapshot } from "../services/connector-oauth-scope-snapshot.service";
 import {
   linkGithubUser,
-  loadActiveGithubInstallationForOrg,
+  loadActiveGithubInstallationForOrg$,
 } from "../services/github-oauth.service";
 import { safeJsonParse, tapError } from "../utils";
 import { SLACK_CONNECTOR_OAUTH_STATE_PREFIX } from "../services/slack-connector-oauth-state";
@@ -476,45 +476,49 @@ async function resolveStoredCallbackMethod(args: {
   };
 }
 
-async function linkGithubIntegrationAfterConnectorConnect(
-  args: {
-    readonly db: Db;
-    readonly connectorSlug: ConnectorSlug;
-    readonly identity: CallbackIdentity;
-    readonly token: ConnectorAuthProviderGrantResult;
+const linkGithubIntegrationAfterConnectorConnect$ = command(
+  async (
+    { set },
+    args: {
+      readonly connectorSlug: ConnectorSlug;
+      readonly identity: CallbackIdentity;
+      readonly token: ConnectorAuthProviderGrantResult;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    if (args.connectorSlug !== "github") {
+      return;
+    }
+
+    const installation = await set(
+      loadActiveGithubInstallationForOrg$,
+      {
+        orgId: args.identity.orgId,
+      },
+      signal,
+    );
+    if (!installation) {
+      return;
+    }
+
+    const githubUserId = await linkGithubUser(
+      {
+        db,
+        installRecordId: installation.id,
+        userId: args.identity.userId,
+        knownGithubUserId: args.token.userInfo.id,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+
+    if (githubUserId) {
+      await publishUserSignal([args.identity.userId], "github:changed");
+      signal.throwIfAborted();
+    }
   },
-  signal: AbortSignal,
-): Promise<void> {
-  if (args.connectorSlug !== "github") {
-    return;
-  }
-
-  const installation = await loadActiveGithubInstallationForOrg(
-    {
-      db: args.db,
-      orgId: args.identity.orgId,
-    },
-    signal,
-  );
-  if (!installation) {
-    return;
-  }
-
-  const githubUserId = await linkGithubUser(
-    {
-      db: args.db,
-      installRecordId: installation.id,
-      userId: args.identity.userId,
-      knownGithubUserId: args.token.userInfo.id,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-
-  if (githubUserId) {
-    await publishUserSignal([args.identity.userId], "github:changed");
-  }
-}
+);
 
 function successRedirectResponse(args: {
   readonly origin: string;
@@ -640,9 +644,9 @@ const completeOAuthCallback$ = command(
       }
     }
 
-    await linkGithubIntegrationAfterConnectorConnect(
+    await set(
+      linkGithubIntegrationAfterConnectorConnect$,
       {
-        db: set(writeDb$),
         connectorSlug: args.resolvedMethod.connectorSlug,
         identity: args.identity,
         token,

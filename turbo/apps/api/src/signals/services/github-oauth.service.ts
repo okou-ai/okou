@@ -753,27 +753,28 @@ export async function linkGithubUser(
   return link?.githubUserId ?? null;
 }
 
-export async function loadActiveGithubInstallationForOrg(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-  },
-  signal: AbortSignal,
-): Promise<{ readonly id: string } | null> {
-  const [installation] = await args.db
-    .select({ id: githubInstallations.id })
-    .from(githubInstallations)
-    .where(
-      and(
-        eq(githubInstallations.orgId, args.orgId),
-        eq(githubInstallations.status, "active"),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
+export const loadActiveGithubInstallationForOrg$ = command(
+  async (
+    { get },
+    args: { readonly orgId: string },
+    signal: AbortSignal,
+  ): Promise<{ readonly id: string } | null> => {
+    const db = get(db$);
+    const [installation] = await db
+      .select({ id: githubInstallations.id })
+      .from(githubInstallations)
+      .where(
+        and(
+          eq(githubInstallations.orgId, args.orgId),
+          eq(githubInstallations.status, "active"),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
 
-  return installation ?? null;
-}
+    return installation ?? null;
+  },
+);
 
 export async function tryLinkGithubFromLocalRecord(
   args: {
