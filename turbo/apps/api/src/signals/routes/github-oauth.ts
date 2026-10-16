@@ -34,7 +34,7 @@ import {
   getGithubOAuthAuthMethod,
   isGithubOauthStateSignatureValid,
   linkGithubUser,
-  loadActiveGithubInstallationForOrg,
+  loadActiveGithubInstallationForOrg$,
   loadComposeFeatureSwitchContext,
   parseGithubOauthState,
   resolveGithubOauthOrgId,
@@ -327,10 +327,10 @@ const isGithubInstallOrgAdmin$ = command(
 
 const hasActiveGithubInstallationForOrg$ = command(
   async ({ set }, orgId: string, signal: AbortSignal): Promise<boolean> => {
-    const db = set(writeDb$);
-    const installation = await loadActiveGithubInstallationForOrg(
+    set(writeDb$);
+    const installation = await set(
+      loadActiveGithubInstallationForOrg$,
       {
-        db,
         orgId,
       },
       signal,

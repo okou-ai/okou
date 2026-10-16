@@ -48,6 +48,71 @@ async function connectGithubAdd(
 }
 
 describe("GitHub OAuth account mutation selection", () => {
+  it("links connector callbacks only to their organization's active installation", async () => {
+    const first = bdd.user();
+    const firstAgent = await bdd.createAgent(first, {
+      displayName: `First GitHub organization ${randomUUID()}`,
+    });
+    const firstInstallation = await github.installGithubApp(
+      first,
+      firstAgent.agentId,
+    );
+    const second = bdd.user();
+    const secondAgent = await bdd.createAgent(second, {
+      displayName: `Second GitHub organization ${randomUUID()}`,
+    });
+    const secondInstallation = await github.installGithubApp(
+      second,
+      secondAgent.agentId,
+    );
+
+    await connectGithubAdd(first, {
+      code: "github-first-organization-link",
+      displayName: "First organization",
+      userId: 901,
+      login: "github-first-organization",
+    });
+    await expect(github.readInstallation(first)).resolves.toMatchObject({
+      connectedGithubUserId: "901",
+      isConnected: true,
+      installation: {
+        installationId: firstInstallation.remoteInstallationId,
+        status: "active",
+      },
+    });
+    await expect(github.readInstallation(second)).resolves.toMatchObject({
+      connectedGithubUserId: null,
+      isConnected: false,
+      installation: {
+        installationId: secondInstallation.remoteInstallationId,
+        status: "active",
+      },
+    });
+
+    await connectGithubAdd(second, {
+      code: "github-second-organization-link",
+      displayName: "Second organization",
+      userId: 902,
+      login: "github-second-organization",
+    });
+    await expect(github.readInstallation(second)).resolves.toMatchObject({
+      connectedGithubUserId: "902",
+      isConnected: true,
+      installation: {
+        installationId: secondInstallation.remoteInstallationId,
+        status: "active",
+      },
+    });
+    await expect(github.readInstallation(first)).resolves.toMatchObject({
+      connectedGithubUserId: "901",
+      isConnected: true,
+      installation: {
+        installationId: firstInstallation.remoteInstallationId,
+        status: "active",
+      },
+    });
+  });
+
   it("redirects state-less GitHub App updates to the configured Okou app", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
