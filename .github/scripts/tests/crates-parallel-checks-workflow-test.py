@@ -104,11 +104,12 @@ def selected(name, values):
         expression(job["if"], values))
 
 
-def context(event, changed, ci, guest, ably):
+def context(event, changed, ci, guest, ably, coverage=None):
     values = {"github.event_name": event,
               "needs.detect-release.outputs.skip": "false",
               "needs.detect.outputs.any-changed": str(changed).lower(),
               "needs.detect.outputs.ci-changed": str(ci).lower(),
+              "needs.detect.outputs.coverage-needed": str(changed if coverage is None else coverage).lower(),
               "needs.detect.outputs.guest-control-tests-changed": str(guest).lower(),
               "needs.detect.outputs.ably-subscriber-changed": str(ably).lower(),
               "needs.detect.outputs.native-kerberos-needed": "false",
@@ -135,15 +136,25 @@ def assert_gate(values, expected, label):
 
 
 for event in ("pull_request", "push", "merge_group"):
-    for changed, ci, guest, ably in itertools.product((False, True), repeat=4):
-        values = context(event, changed, ci, guest, ably)
+    for changed, ci, guest, ably, coverage in itertools.product((False, True), repeat=5):
+        values = context(event, changed, ci, guest, ably, coverage)
         wanted = {"check": changed, "check-docs": changed,
                   "check-guest-production": changed and (guest or ci),
                   "check-ably-smoke": changed and (ably or ci)}
         for name in lanes:
             assert selected(name, values) == wanted[name], (event, name, changed, ci, guest, ably)
             values[f"needs.{name}.result"] = "success" if wanted[name] else "skipped"
+        assert selected("coverage", values) == coverage
+        values["needs.coverage.result"] = "success" if coverage else "skipped"
         assert_gate(values, True, f"{event}: valid selection")
+
+    # Generic/native CI work can remain selected independently of coverage.
+    for coverage in (False, True):
+        values = context(event, True, True, False, False, coverage)
+        for result in ("failure", "cancelled", "", "skipped"):
+            assert_gate(values | {"needs.coverage.result": result},
+                        result == "skipped" and not coverage,
+                        f"{event}: coverage={coverage}, result={result!r}")
 
     # Exercise each independent selection path without crossing failures with
     # every flag combination: outer skip, each inner selector, and CI-only work.
@@ -165,7 +176,7 @@ for event in ("pull_request", "push", "merge_group"):
             for result in ("failure", "cancelled", "") + (("skipped",) if wanted[name] else ()):
                 assert_gate(values | {f"needs.{name}.result": result}, False, f"{event}: {name}={result!r}")
     values = context(event, True, True, True, True)
-    for output in ("any-changed", "ci-changed", "guest-control-tests-changed", "ably-subscriber-changed"):
+    for output in ("any-changed", "ci-changed", "guest-control-tests-changed", "ably-subscriber-changed", "coverage-needed"):
         for invalid in ("", "TRUE", "unknown"):
             assert_gate(values | {f"needs.detect.outputs.{output}": invalid}, False,
                         f"{event}: invalid {output}={invalid!r}")
