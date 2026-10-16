@@ -247,10 +247,18 @@ impl Pool {
             return Ok(lease);
         }
 
-        let physical = scope
-            .wait(Arc::clone(&self.capacity).acquire_owned())
-            .await?
-            .map_err(|_| FailureReason::ResourceExhausted)?;
+        let physical = if request.access.diagnostics().is_check() {
+            // A check reports its local admission boundary immediately and
+            // leaves existing physical work and idle transports in place.
+            Arc::clone(&self.capacity)
+                .try_acquire_owned()
+                .map_err(|_| FailureReason::ResourceExhausted)?
+        } else {
+            scope
+                .wait(Arc::clone(&self.capacity).acquire_owned())
+                .await?
+                .map_err(|_| FailureReason::ResourceExhausted)?
+        };
         let host_lease = HostLease::new(request.operation, physical);
         let transport_scope = Scope {
             cancelled: self.cancel.child_token(),

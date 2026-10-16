@@ -173,3 +173,139 @@ async fn active_vnc_check_nested_ssh_failure_keeps_an_existing_shell_alive() {
     changed_peer.shutdown().await;
     observation.assert_calls_async(1).await;
 }
+
+#[tokio::test]
+async fn active_check_full_physical_capacity_is_blocked_and_preserves_foreground_work() {
+    use super::{harness::frames, sessions};
+    use crate::{
+        test_fixtures::http::{HttpClientConfig, http_client},
+        vnc::VncRuntime,
+    };
+    use std::time::Duration;
+    use tokio::{io::AsyncWriteExt, time::Instant};
+    use tokio_util::sync::CancellationToken;
+    let mut h = Harness::new(Reply::Process).await;
+    let vnc = VncRuntime::official(
+        http_client(HttpClientConfig {
+            api_url: h.api.base_url(),
+            vercel_bypass: None,
+            client_session_id: "check-capacity".into(),
+        }),
+        super::harness::TOKEN,
+        h.identity,
+    )
+    .unwrap()
+    .unwrap();
+    h.restart_with_vnc(vnc).await;
+    h.enable_checks(&["ssh:write", "vnc:write"]).await;
+    let _resolve = h
+        .api
+        .mock_async(|when, then| {
+            when.method("POST")
+                .path(format!("/api/runners/runs/{}/ssh/resolve", h.run));
+            then.status(200)
+                .header("X-SSH-Connection-Created-At", CREATED_AT)
+                .json_body(h.credential(true));
+        })
+        .await;
+    // Different subjects leave eight ordinary idle transports without reusing them.
+    for _ in 0..8 {
+        assert_eq!(
+            terminal(
+                &h.request(json!({"sshConnectionId":uuid::Uuid::new_v4(),"command":"true"}))
+                    .await
+            )["type"],
+            "finished"
+        );
+    }
+    for _ in 0..8 {
+        let session = sessions::start(&h, json!({"type":"shell"}), false).await;
+        sessions::state(&h, &session, "running").await;
+    }
+    let mut forwards = Vec::new();
+    for _ in 0..2 {
+        let stream = h
+            .ssh()
+            .open_direct_tcpip(
+                CONNECTION.parse().unwrap(),
+                7,
+                "desktop.internal",
+                5900,
+                CancellationToken::new(),
+                Instant::now() + Duration::from_secs(10),
+            )
+            .await
+            .unwrap();
+        forwards.push((stream, h.accept_forwarded().await));
+    }
+    // Six actual remote processes occupy the remaining physical slots while
+    // two RPC admission slots remain available. Shutdown cancels these processes.
+    let request = json!({"version":1,"method":"ssh.exec","remaining_ms":60000,
+        "params":{"sshConnectionId":CONNECTION,"command":"exec sleep 3600"}})
+    .to_string();
+    let mut active = Vec::new();
+    for _ in 0..6 {
+        let mut guest = h.open().await;
+        guest.write_u32(request.len() as u32).await.unwrap();
+        guest.write_all(request.as_bytes()).await.unwrap();
+        guest.shutdown().await.unwrap();
+        active.push(guest);
+    }
+    wait_for(|| h.observed.commands.lock().unwrap().len() == 14).await;
+    assert_eq!(h.observed.auth.load(Ordering::SeqCst), 24);
+    let result = h
+        .raw(
+            json!({"version":1,"method":"ssh.check","remaining_ms":2000,
+        "params":{"connectionId":CONNECTION}})
+            .to_string(),
+        )
+        .await;
+    let result = terminal(&result);
+    assert_eq!(result["status"], "blocked", "{result}");
+    assert!(diagnostic_text(result).contains("resource exhausted"));
+    assert_eq!(h.observed.auth.load(Ordering::SeqCst), 24);
+    assert_eq!(h.observed.closed.load(Ordering::SeqCst), 0);
+    // Leave one forwarding slot available while filling its freed physical
+    // slot with another ordinary RPC. Nested VNC checks must report the same
+    // physical boundary even when healthy SSH setup is allowed to be reused.
+    drop(forwards.pop());
+    wait_for(|| h.observed.closed.load(Ordering::SeqCst) == 1).await;
+    let mut guest = h.open().await;
+    guest.write_u32(request.len() as u32).await.unwrap();
+    guest.write_all(request.as_bytes()).await.unwrap();
+    guest.shutdown().await.unwrap();
+    active.push(guest);
+    wait_for(|| h.observed.commands.lock().unwrap().len() == 15).await;
+    let _vnc_resolve=h.api.mock_async(|when,then| {
+        when.method("POST").path(format!("/api/runners/runs/{}/vnc/resolve",h.run));
+        then.status(200).header("X-VNC-Connection-Created-At",CREATED_AT).json_body(json!({
+            "outcome":"resolved_apple_dh","host":"127.0.0.1","port":5900,"generation":11,
+            "transport":{"type":"ssh","connectionId":CONNECTION,"generation":7},
+            "authentication":{"method":"apple_dh_username_password","username":"user-canary","password":"password-canary"},
+            "security":{"type":"apple_dh"}
+        }));
+    }).await;
+    let vnc = rpc(
+        &h,
+        "vnc.check",
+        json!({"connectionId":"ec71882f-380f-49d5-bcbd-5d08a76fa412","mode":"shared"}),
+    )
+    .await;
+    assert_eq!(vnc["status"], "blocked", "{vnc}");
+    assert!(diagnostic_text(&vnc).contains("SSH resource exhausted"));
+    assert_eq!(h.observed.auth.load(Ordering::SeqCst), 25);
+    assert_eq!(h.observed.closed.load(Ordering::SeqCst), 1);
+    let listed = sessions::rpc(&h, "list", json!({})).await;
+    assert_eq!(listed["sessions"].as_array().unwrap().len(), 8);
+    for session in listed["sessions"].as_array().unwrap() {
+        assert_eq!(session["state"]["type"], "running");
+    }
+    drop(forwards);
+    h.shutdown().await;
+    for guest in active {
+        assert_eq!(
+            terminal(&frames(guest).await)["failure_reason"],
+            "cancelled"
+        );
+    }
+}

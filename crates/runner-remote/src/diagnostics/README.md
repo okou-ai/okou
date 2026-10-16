@@ -83,6 +83,8 @@ through the normal Direct, Cloudflare Access or Tailscale SSH path, performs
 server proof/trust and authentication, and closes only that connection. It sends
 no command, shell, file operation or forwarding channel. Existing host-key TOFU
 and initial native provisioning policy still apply.
+If all physical connection slots are occupied, the check returns blocked and
+keeps existing connections.
 
 `okou vnc check <connection-id> --mode shared|exclusive [--json]` uses the
 existing session admission/capacity policy, configured security/authentication,
