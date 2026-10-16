@@ -43,7 +43,7 @@ import { command } from "ccstate";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   deleteS3Objects,
   downloadS3BufferWithMaxBytes,
@@ -370,41 +370,6 @@ const loadExactBrowserUserActionRequest$ = command(
     return current ?? null;
   },
 );
-
-async function loadLiveBrowser(
-  db: Db,
-  args: {
-    readonly chatThreadId: string;
-    readonly orgId: string;
-    readonly userId: string;
-  },
-) {
-  const now = nowDate();
-  const [row] = await db
-    .select({
-      runId: browserSessions.runId,
-      providerSessionId: browserSessionInstances.providerSessionId,
-    })
-    .from(browserSessions)
-    .innerJoin(
-      browserSessionInstances,
-      eq(browserSessionInstances.chatThreadId, browserSessions.chatThreadId),
-    )
-    .where(
-      and(
-        eq(browserSessions.chatThreadId, args.chatThreadId),
-        eq(browserSessions.orgId, args.orgId),
-        eq(browserSessions.userId, args.userId),
-        eq(browserSessions.status, "active"),
-        eq(browserSessionInstances.status, "active"),
-        gt(browserSessionInstances.timeoutAt, now),
-        gt(browserSessionInstances.idleExpiresAt, now),
-      ),
-    )
-    .limit(1)
-    .for("share");
-  return row ?? null;
-}
 
 const requestHasLiveBrowser$ = command(
   async ({ get }, row: RequestRow): Promise<boolean> => {
@@ -994,90 +959,116 @@ function buildBrowserUserActionPayload(
   };
 }
 
-async function persistBrowserUserAction(
-  db: Db,
-  input: {
-    readonly args: CreateBrowserUserActionArgs;
-    readonly prepared: PreparedBrowserUserAction;
-    readonly requestToken: string;
-    readonly payload: BrowserUserActionPayload;
-  },
-): Promise<RequestRow | null> {
-  const { args, payload, prepared, requestToken } = input;
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0066; new non-billing transactions are prohibited.
-  return await db.transaction(async (tx): Promise<RequestRow | null> => {
-    const [currentRun] = await tx
-      .select({ agentId: chatThreads.agentId })
-      .from(agentRuns)
-      .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
-      .where(
-        and(
-          eq(agentRuns.id, args.runId),
-          eq(agentRuns.orgId, args.orgId),
-          eq(agentRuns.userId, args.userId),
-          eq(agentRuns.chatThreadId, prepared.chatThreadId),
-          inArray(agentRuns.status, ["pending", "running"]),
-          eq(chatThreads.userId, args.userId),
-        ),
-      )
-      .limit(1)
-      .for("share", { of: agentRuns });
-    if (!currentRun?.agentId) {
-      return null;
-    }
-    const currentLive = await loadLiveBrowser(tx as Db, {
-      chatThreadId: prepared.chatThreadId,
-      orgId: args.orgId,
-      userId: args.userId,
-    });
-    if (
-      currentLive?.runId !== args.runId ||
-      currentLive.providerSessionId !== prepared.providerSessionId
-    ) {
-      return null;
-    }
-    const now = nowDate();
-    const [leased] = await tx
-      .update(browserSessionInstances)
-      .set({
-        lastTouchedAt: now,
-        idleExpiresAt: new Date(now.getTime() + IDLE_LEASE_MS),
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(
-            browserSessionInstances.providerSessionId,
-            prepared.providerSessionId,
+const persistBrowserUserAction = command(
+  async (
+    { set },
+    input: {
+      readonly args: CreateBrowserUserActionArgs;
+      readonly prepared: PreparedBrowserUserAction;
+      readonly requestToken: string;
+      readonly payload: BrowserUserActionPayload;
+    },
+  ): Promise<RequestRow | null> => {
+    const db = set(writeDb$);
+    const { args, payload, prepared, requestToken } = input;
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0066; new non-billing transactions are prohibited.
+    return await db.transaction(async (tx): Promise<RequestRow | null> => {
+      const [currentRun] = await tx
+        .select({ agentId: chatThreads.agentId })
+        .from(agentRuns)
+        .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
+        .where(
+          and(
+            eq(agentRuns.id, args.runId),
+            eq(agentRuns.orgId, args.orgId),
+            eq(agentRuns.userId, args.userId),
+            eq(agentRuns.chatThreadId, prepared.chatThreadId),
+            inArray(agentRuns.status, ["pending", "running"]),
+            eq(chatThreads.userId, args.userId),
           ),
-          eq(browserSessionInstances.chatThreadId, prepared.chatThreadId),
-          eq(browserSessionInstances.status, "active"),
-          gt(browserSessionInstances.timeoutAt, now),
-          gt(browserSessionInstances.idleExpiresAt, now),
-        ),
-      )
-      .returning({
-        providerSessionId: browserSessionInstances.providerSessionId,
-      });
-    if (!leased) {
-      return null;
-    }
-    const [created] = await tx
-      .insert(browserUserActionRequests)
-      .values({
-        requestTokenHash: hash(requestToken),
-        orgId: args.orgId,
-        userId: args.userId,
-        agentId: currentRun.agentId,
-        chatThreadId: prepared.chatThreadId,
-        status: "pending",
-        providerSessionId: prepared.providerSessionId,
-        payload,
-      })
-      .returning();
-    return created ?? null;
-  });
-}
+        )
+        .limit(1)
+        .for("share", { of: agentRuns });
+      if (!currentRun?.agentId) {
+        return null;
+      }
+      const liveNow = nowDate();
+      const [liveBrowser] = await tx
+        .select({
+          runId: browserSessions.runId,
+          providerSessionId: browserSessionInstances.providerSessionId,
+        })
+        .from(browserSessions)
+        .innerJoin(
+          browserSessionInstances,
+          eq(
+            browserSessionInstances.chatThreadId,
+            browserSessions.chatThreadId,
+          ),
+        )
+        .where(
+          and(
+            eq(browserSessions.chatThreadId, prepared.chatThreadId),
+            eq(browserSessions.orgId, args.orgId),
+            eq(browserSessions.userId, args.userId),
+            eq(browserSessions.status, "active"),
+            eq(browserSessionInstances.status, "active"),
+            gt(browserSessionInstances.timeoutAt, liveNow),
+            gt(browserSessionInstances.idleExpiresAt, liveNow),
+          ),
+        )
+        .limit(1)
+        .for("share");
+      const currentLive = liveBrowser ?? null;
+      if (
+        currentLive?.runId !== args.runId ||
+        currentLive.providerSessionId !== prepared.providerSessionId
+      ) {
+        return null;
+      }
+      const now = nowDate();
+      const [leased] = await tx
+        .update(browserSessionInstances)
+        .set({
+          lastTouchedAt: now,
+          idleExpiresAt: new Date(now.getTime() + IDLE_LEASE_MS),
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(
+              browserSessionInstances.providerSessionId,
+              prepared.providerSessionId,
+            ),
+            eq(browserSessionInstances.chatThreadId, prepared.chatThreadId),
+            eq(browserSessionInstances.status, "active"),
+            gt(browserSessionInstances.timeoutAt, now),
+            gt(browserSessionInstances.idleExpiresAt, now),
+          ),
+        )
+        .returning({
+          providerSessionId: browserSessionInstances.providerSessionId,
+        });
+      if (!leased) {
+        return null;
+      }
+      const [created] = await tx
+        .insert(browserUserActionRequests)
+        .values({
+          requestTokenHash: hash(requestToken),
+          orgId: args.orgId,
+          userId: args.userId,
+          agentId: currentRun.agentId,
+          chatThreadId: prepared.chatThreadId,
+          status: "pending",
+          providerSessionId: prepared.providerSessionId,
+          payload,
+        })
+        .returning();
+      return created ?? null;
+    });
+  },
+);
 
 export const createBrowserUserAction$ = command(
   async (
@@ -1090,7 +1081,7 @@ export const createBrowserUserAction$ = command(
       readonly action: BrowserUserActionResponse;
     }>
   > => {
-    const db = set(writeDb$);
+    set(writeDb$);
     const prepared = await set(prepareBrowserUserAction$, args, signal);
     if (prepared.kind === "error") {
       return prepared;
@@ -1111,7 +1102,7 @@ export const createBrowserUserAction$ = command(
       prepared.value.validation,
       callbackIds,
     );
-    const created = await persistBrowserUserAction(db, {
+    const created = await set(persistBrowserUserAction, {
       args,
       prepared: prepared.value,
       requestToken,
