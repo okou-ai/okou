@@ -46,6 +46,39 @@ impl JournalIdentity {
     }
 }
 
+struct Journal {
+    record: Record,
+    identity: JournalIdentity,
+    // Pin the journal inode for as long as its ownership evidence is retained.
+    // Otherwise unlink/write can reuse it before a pathname identity check.
+    _file: File,
+}
+
+impl Journal {
+    fn read(mut file: File) -> io::Result<Self> {
+        let metadata = file.metadata()?;
+        validate_private(&metadata)?;
+        let identity = JournalIdentity::of(&metadata);
+        let mut bytes = Vec::new();
+        (&mut file).take(1025).read_to_end(&mut bytes)?;
+        if bytes.len() > 1024 {
+            return Err(changed());
+        }
+        let record: Record = serde_json::from_slice(&bytes).map_err(io::Error::other)?;
+        let Some(suffix) = record.temporary_name.strip_prefix(".wss-") else {
+            return Err(changed());
+        };
+        if suffix.len() != 32 || Uuid::parse_str(suffix).is_err() || record.inode == 0 {
+            return Err(changed());
+        }
+        Ok(Self {
+            record,
+            identity,
+            _file: file,
+        })
+    }
+}
+
 pub(super) struct Owner {
     parent: File,
     #[cfg(not(target_os = "linux"))]
@@ -54,11 +87,7 @@ pub(super) struct Owner {
     id: Uuid,
     lock_name: String,
     journal_name: String,
-    journal_identity: Option<JournalIdentity>,
-    // Pin the journal inode while this owner is alive. Otherwise unlink/write
-    // can reuse the inode before teardown's pathname identity check.
-    journal_file: Option<File>,
-    record: Option<Record>,
+    journal: Option<Journal>,
 }
 
 impl Owner {
@@ -107,9 +136,7 @@ impl Owner {
             id,
             lock_name: lock_name.clone(),
             journal_name: format!("{id}.owner"),
-            journal_identity: None,
-            journal_file: None,
-            record: None,
+            journal: None,
         };
         let current = std::fs::symlink_metadata(owner.path(&lock_name))?;
         validate_private(&current)?;
@@ -127,25 +154,7 @@ impl Owner {
             Err(nix::errno::Errno::ENOENT) => None,
             Err(error) => return Err(error.into()),
         };
-        if let Some(mut file) = file {
-            let metadata = file.metadata()?;
-            validate_private(&metadata)?;
-            owner.journal_identity = Some(JournalIdentity::of(&metadata));
-            let mut bytes = Vec::new();
-            (&mut file).take(1025).read_to_end(&mut bytes)?;
-            if bytes.len() > 1024 {
-                return Err(changed());
-            }
-            let record: Record = serde_json::from_slice(&bytes).map_err(io::Error::other)?;
-            let Some(suffix) = record.temporary_name.strip_prefix(".wss-") else {
-                return Err(changed());
-            };
-            if suffix.len() != 32 || Uuid::parse_str(suffix).is_err() || record.inode == 0 {
-                return Err(changed());
-            }
-            owner.record = Some(record);
-            owner.journal_file = Some(file);
-        }
+        owner.journal = file.map(Journal::read).transpose()?;
         Ok(owner)
     }
 
@@ -172,7 +181,11 @@ impl Owner {
         for (name, expected) in &stale {
             let current = std::fs::symlink_metadata(self.path(name))?;
             if identity(&current) != *expected
-                || !matches(self.record.as_ref().ok_or_else(changed)?, &current, group)
+                || !matches(
+                    &self.journal.as_ref().ok_or_else(changed)?.record,
+                    &current,
+                    group,
+                )
             {
                 return Err(changed());
             }
@@ -189,7 +202,8 @@ impl Owner {
         group: Gid,
     ) -> io::Result<Vec<(String, (u64, u64))>> {
         self.validate_metadata()?;
-        let anchor = match &self.record {
+        let record = self.journal.as_ref().map(|journal| &journal.record);
+        let anchor = match record {
             Some(record) => match std::fs::symlink_metadata(self.path(&record.temporary_name)) {
                 Ok(metadata) if matches(record, &metadata, group) => Some(identity(&metadata)),
                 Ok(_) => return Err(changed()),
@@ -199,7 +213,7 @@ impl Owner {
             None => None,
         };
         let mut stale = Vec::new();
-        let names = match &self.record {
+        let names = match record {
             Some(record) => vec![final_name, record.temporary_name.as_str()],
             None => vec![final_name],
         };
@@ -209,7 +223,7 @@ impl Owner {
                 Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
                 Err(error) => return Err(error),
             };
-            let Some(record) = &self.record else {
+            let Some(record) = record else {
                 return Err(io::Error::new(
                     io::ErrorKind::AddrInUse,
                     "unowned WSS endpoint exists",
@@ -259,7 +273,7 @@ impl Owner {
             Err(error) if error.kind() == io::ErrorKind::NotFound => None,
             Err(error) => return Err(error),
         };
-        if journal != self.journal_identity {
+        if journal.as_ref() != self.journal.as_ref().map(|journal| &journal.identity) {
             return Err(changed());
         }
         Ok(())
@@ -274,8 +288,8 @@ impl Owner {
         self.validate_metadata()?;
         let final_name = format!("{}.sock", self.id);
         let mut names = vec![final_name.as_str()];
-        if let Some(record) = &self.record {
-            names.push(&record.temporary_name);
+        if let Some(journal) = &self.journal {
+            names.push(&journal.record.temporary_name);
         }
         for name in names {
             match std::fs::symlink_metadata(self.path(name)) {
@@ -284,7 +298,7 @@ impl Owner {
                 Ok(_) => return Err(changed()),
             }
         }
-        if self.journal_identity.is_some() {
+        if self.journal.is_some() {
             unlinkat(
                 &self.parent,
                 self.journal_name.as_str(),
@@ -354,9 +368,12 @@ impl Owner {
                 self.journal_name.as_str(),
             )?;
             self.parent.sync_all()?;
-            self.journal_identity = Some(JournalIdentity::of(&file.metadata()?));
-            self.record = Some(record);
-            self.journal_file = Some(file);
+            let journal = Journal {
+                identity: JournalIdentity::of(&file.metadata()?),
+                record,
+                _file: file,
+            };
+            self.journal = Some(journal);
             Ok(())
         })();
         if result.is_err() {
