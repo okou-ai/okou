@@ -4,10 +4,8 @@ import { chatDiscordContext } from "@okouai/db/schema/chat-discord-context";
 import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { db$ } from "../external/db";
-import {
-  discordConversationAccess,
-  type DiscordConversationAccess,
-} from "./discord-access.service";
+import { discordPromptAccess } from "./discord-access.service";
+import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import {
   discordDeliveryTargetSchema,
   type DiscordDeliveryTarget,
@@ -20,25 +18,6 @@ interface DiscordThreadContext {
   readonly conversationContext: string | null;
   readonly conversationContextAllowed: boolean;
   readonly messageContentEnabled: boolean;
-}
-
-function checkedAccess(
-  access: DiscordConversationAccess | null,
-  target: DiscordDeliveryTarget,
-) {
-  if (!access) {
-    return null;
-  }
-  if (access.kind === "denied") {
-    if (access.response.status === 403 || access.response.status === 404) {
-      return null;
-    }
-    throw new Error(`Discord access check failed: ${access.response.status}`);
-  }
-  return access.binding.connectionId === target.connectionId &&
-    access.binding.discordUserId === target.discordUserId
-    ? access
-    : null;
 }
 
 function createDiscordStoredContext(
@@ -138,10 +117,11 @@ function createDiscordThreadTarget(
 export function createDiscordThreadContext(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   orgId: string,
+  timing$: Computed<ApiDispatchTimingCollector>,
 ): Computed<Promise<DiscordThreadContext | null>> {
   const context$ = createDiscordStoredContext(pickedEvent$);
   const target$ = createDiscordThreadTarget(pickedEvent$, context$);
-  const sourceAccessInput$ = computed(async (get) => {
+  const accessInput$ = computed(async (get) => {
     const [pickedEvent, context, target] = await Promise.all([
       get(pickedEvent$),
       get(context$),
@@ -152,95 +132,31 @@ export function createDiscordThreadContext(
           orgId,
           userId: pickedEvent.userId,
           guildId: target.guildId ?? undefined,
-          channelId: context.sourceChannelId,
-          mode: "view" as const,
+          connectionId: target.connectionId,
+          discordUserId: target.discordUserId,
+          sourceChannelId: context.sourceChannelId,
+          destinationChannelId:
+            context.destinationChannelId ?? context.routeChannelId,
+          hasConversationContext: context.conversationContext !== null,
         }
       : null;
   });
-  const sourceAccess$ = discordConversationAccess(sourceAccessInput$);
-  const historyAccessInput$ = computed(async (get) => {
-    const [input, context, target] = await Promise.all([
-      get(sourceAccessInput$),
-      get(context$),
-      get(target$),
-    ]);
-    if (!input || !context || !target) {
-      return null;
-    }
-    const sourceAccess = checkedAccess(await get(sourceAccess$), target);
-    return sourceAccess &&
-      sourceAccess.channel.type !== 1 &&
-      sourceAccess.messageContentEnabled &&
-      context.conversationContext !== null
-      ? { ...input, mode: "read" as const }
-      : null;
-  });
-  const historyAccess$ = discordConversationAccess(historyAccessInput$);
-  const conversationAccess$ = computed(async (get) => {
-    const [context, target] = await Promise.all([get(context$), get(target$)]);
-    if (!context || !target) {
-      return null;
-    }
-    const sourceAccess = checkedAccess(await get(sourceAccess$), target);
-    if (!sourceAccess) {
-      return null;
-    }
-    // DM history is shared across orgs and must never reach a run.
-    let messageContentEnabled = sourceAccess.messageContentEnabled;
-    let conversationContextAllowed =
-      sourceAccess.channel.type !== 1 && messageContentEnabled;
-    if (context.conversationContext !== null && conversationContextAllowed) {
-      const historyAccess = checkedAccess(await get(historyAccess$), target);
-      if (historyAccess) {
-        messageContentEnabled = historyAccess.messageContentEnabled;
-      }
-      conversationContextAllowed =
-        historyAccess !== null && messageContentEnabled;
-    }
-    return { conversationContextAllowed, messageContentEnabled };
-  });
-  const destinationAccessInput$ = computed(async (get) => {
-    const conversation = await get(conversationAccess$);
-    if (!conversation) {
-      return null;
-    }
-    const [input, target, context] = await Promise.all([
-      get(sourceAccessInput$),
-      get(target$),
-      get(context$),
-    ]);
-    return input && target && context
-      ? {
-          ...input,
-          channelId: context.destinationChannelId ?? context.routeChannelId,
-          mode: "write" as const,
-        }
-      : null;
-  });
-  const destinationAccess$ = discordConversationAccess(destinationAccessInput$);
+  const access$ = discordPromptAccess(accessInput$, timing$);
   return computed(async (get) => {
-    const [context, target, conversation] = await Promise.all([
+    const [context, target, access] = await Promise.all([
       get(context$),
       get(target$),
-      get(conversationAccess$),
+      get(access$),
     ]);
-    if (!context || !target || !conversation) {
-      return null;
-    }
-    // Reading this node preserves source view -> optional history -> write.
-    const destinationAccess = checkedAccess(
-      await get(destinationAccess$),
-      target,
-    );
-    if (!destinationAccess) {
+    if (!context || !target || !access) {
       return null;
     }
     return {
       target,
       botUserId: context.botUserId,
       conversationContext: context.conversationContext,
-      conversationContextAllowed: conversation.conversationContextAllowed,
-      messageContentEnabled: conversation.messageContentEnabled,
+      conversationContextAllowed: access.conversationContextAllowed,
+      messageContentEnabled: access.messageContentEnabled,
     };
   });
 }

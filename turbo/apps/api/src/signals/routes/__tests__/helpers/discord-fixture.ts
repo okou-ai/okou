@@ -221,6 +221,7 @@ export function mockDiscordProvider(
   const deniedMembers = new Set<string>();
   const state: {
     everyonePermissions?: string;
+    botPermissions?: string;
     afterThreadCreated?: (
       channel: DiscordChannel,
     ) => Response | undefined | Promise<Response | undefined>;
@@ -287,7 +288,11 @@ export function mockDiscordProvider(
           name: "@everyone",
           permissions: state.everyonePermissions ?? "8",
         },
-        { id: botRoleId, name: "Okou bot", permissions: "8" },
+        {
+          id: botRoleId,
+          name: "Okou bot",
+          permissions: state.botPermissions ?? "8",
+        },
       ]);
     }),
     http.get(`${base}/channels/:channelId`, async ({ params }) => {
