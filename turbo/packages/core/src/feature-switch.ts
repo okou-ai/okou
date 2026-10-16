@@ -132,6 +132,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
+  [FeatureSwitchKey.ComposerSlashCustomTemplates]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Custom templates in slash commands",
+    description:
+      "Include accessible image, presentation, and document templates in the composer slash menu. Requires customTemplates.",
+    enabled: false,
+  },
   [FeatureSwitchKey.PresentationConvert]: {
     maintainer: "bingjie@okou.ai",
     description:
