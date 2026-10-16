@@ -37,7 +37,9 @@ export function DocumentTemplatePickerPane({ signals, onSelect }: Props) {
         label={t(($) => {
           return $.documentTemplates.filter;
         })}
-        pills={DOCUMENT_TEMPLATE_CATEGORIES.map((id) => {
+        pills={DOCUMENT_TEMPLATE_CATEGORIES.filter((id) => {
+          return id !== "resume";
+        }).map((id) => {
           return {
             id,
             label: t(($) => {
