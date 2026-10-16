@@ -621,6 +621,11 @@ const BASE_URL_TEMPLATE_HOST_LABEL_DELIMITERS: &[char] = &[
     '.', ':', '/', '?', '#', '@', '[', ']', '\u{3002}', '\u{ff0e}', '\u{ff61}',
 ];
 
+enum BaseUrlTemplateSyntaxComponent {
+    Fixed(&'static str),
+    HostnameFragment,
+}
+
 // Precompute fixed URL delimiters once; a catalog base can contain many templates.
 struct BaseUrlTemplateComponentBoundaries {
     authority_start: Option<usize>,
@@ -728,11 +733,10 @@ fn validate_firewall_base_for_cache(base: &str) -> Result<(), String> {
 
 fn base_url_template_syntax_target_for_cache(base: &str) -> Result<Option<String>, String> {
     let mut search_start = 0;
-    let mut result = String::new();
-    let mut found = false;
+    let mut literal_parts = Vec::new();
+    let mut components = Vec::new();
     let boundaries = BaseUrlTemplateComponentBoundaries::new(base);
     while let Some(relative_start) = base[search_start..].find("${{") {
-        found = true;
         let start = search_start + relative_start;
         let content_start = start + "${{".len();
         let Some(relative_end) = base[content_start..].find("}}") else {
@@ -740,21 +744,49 @@ fn base_url_template_syntax_target_for_cache(base: &str) -> Result<Option<String
         };
         let end = content_start + relative_end;
         validate_base_url_var_reference(&base[content_start..end])?;
-        result.push_str(&base[search_start..start]);
+        literal_parts.push(base[search_start..start].to_string());
         let template_end = end + "}}".len();
-        result.push_str(base_url_template_syntax_placeholder_for_cache(
+        components.push(base_url_template_syntax_component_for_cache(
             base,
-            search_start,
             start,
             template_end,
             &boundaries,
         )?);
         search_start = template_end;
     }
-    if !found {
+    if components.is_empty() {
         return Ok(None);
     }
-    result.push_str(&base[search_start..]);
+    literal_parts.push(base[search_start..].to_string());
+
+    for (component, literal) in components.iter().zip(&mut literal_parts) {
+        if matches!(component, BaseUrlTemplateSyntaxComponent::HostnameFragment) {
+            *literal = base_url_template_hostname_literal_syntax_target(literal, true);
+        }
+    }
+    for (component, literal) in components.iter().zip(literal_parts.iter_mut().skip(1)) {
+        if matches!(component, BaseUrlTemplateSyntaxComponent::HostnameFragment) {
+            *literal = base_url_template_hostname_literal_syntax_target(literal, false);
+        }
+    }
+
+    let mut result = String::with_capacity(base.len());
+    for ((component, prefix), suffix) in components
+        .iter()
+        .zip(&literal_parts)
+        .zip(literal_parts.iter().skip(1))
+    {
+        result.push_str(prefix);
+        result.push_str(match component {
+            BaseUrlTemplateSyntaxComponent::Fixed(placeholder) => placeholder,
+            BaseUrlTemplateSyntaxComponent::HostnameFragment => {
+                base_url_template_hostname_placeholder(prefix, suffix)
+            }
+        });
+    }
+    if let Some(tail) = literal_parts.last() {
+        result.push_str(tail);
+    }
     Ok(Some(result))
 }
 
@@ -783,37 +815,76 @@ fn is_ecmascript_whitespace(ch: char) -> bool {
     )
 }
 
-fn base_url_template_syntax_placeholder_for_cache(
+fn base_url_template_syntax_component_for_cache(
     base: &str,
-    literal_start: usize,
     start: usize,
     template_end: usize,
     boundaries: &BaseUrlTemplateComponentBoundaries,
-) -> Result<&'static str, String> {
+) -> Result<BaseUrlTemplateSyntaxComponent, String> {
     let ends_base_or_starts_path =
         template_end == base.len() || base[template_end..].starts_with('/');
 
     if start == 0 && ends_base_or_starts_path {
-        return Ok(BASE_URL_TEMPLATE_WHOLE_BASE_PLACEHOLDER);
+        return Ok(BaseUrlTemplateSyntaxComponent::Fixed(
+            BASE_URL_TEMPLATE_WHOLE_BASE_PLACEHOLDER,
+        ));
     }
     if base[..start].ends_with("://") && ends_base_or_starts_path {
-        return Ok(BASE_URL_TEMPLATE_HOST_PLACEHOLDER);
+        return Ok(BaseUrlTemplateSyntaxComponent::Fixed(
+            BASE_URL_TEMPLATE_HOST_PLACEHOLDER,
+        ));
     }
     if boundaries.prefix_is_inside_authority(start) {
         if base[..start].ends_with(':') && ends_base_or_starts_path {
-            return Ok(BASE_URL_TEMPLATE_PORT_PLACEHOLDER);
+            return Ok(BaseUrlTemplateSyntaxComponent::Fixed(
+                BASE_URL_TEMPLATE_PORT_PLACEHOLDER,
+            ));
         }
-        let prefix = &base[literal_start..start];
-        let remaining = &base[template_end..];
-        let suffix = remaining
-            .split_once("${{")
-            .map_or(remaining, |(literal, _)| literal);
-        return Ok(base_url_template_hostname_placeholder(prefix, suffix));
+        return Ok(BaseUrlTemplateSyntaxComponent::HostnameFragment);
     }
     if boundaries.prefix_is_inside_path(start) {
-        return Ok(BASE_URL_TEMPLATE_PATH_PLACEHOLDER);
+        return Ok(BaseUrlTemplateSyntaxComponent::Fixed(
+            BASE_URL_TEMPLATE_PATH_PLACEHOLDER,
+        ));
     }
     Err("base URL template variable is used in an unsupported position".to_string())
+}
+
+fn base_url_template_hostname_literal_syntax_target(literal: &str, trailing: bool) -> String {
+    let label = if trailing {
+        literal
+            .rsplit_once(BASE_URL_TEMPLATE_HOST_LABEL_DELIMITERS)
+            .map_or(literal, |(_, label)| label)
+    } else {
+        literal
+            .split_once(BASE_URL_TEMPLATE_HOST_LABEL_DELIMITERS)
+            .map_or(literal, |(label, _)| label)
+    };
+    let Some(decoded) = percent_decode_segment(label) else {
+        return literal.to_string();
+    };
+    if !decoded.is_ascii()
+        || !decoded
+            .get(.."xn--".len())
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("xn--"))
+        || decoded.contains(BASE_URL_TEMPLATE_HOST_LABEL_DELIMITERS)
+        || decoded.contains(['\\', '%', '{', '}', '*'])
+    {
+        return literal.to_string();
+    }
+    let syntax_label = format!("idna{}", &decoded["xn--".len()..]);
+    if !base_url_template_literal_label_is_valid(&syntax_label) {
+        return literal.to_string();
+    }
+
+    // This same-length ASCII projection checks literal syntax, not whether an
+    // arbitrary placeholder completes a valid A-label. It never replaces the
+    // original catalog template or the final resolved URL/host-policy checks.
+    if trailing {
+        format!("{}{syntax_label}", &literal[..literal.len() - label.len()])
+    } else {
+        format!("{syntax_label}{}", &literal[label.len()..])
+    }
 }
 
 fn base_url_template_hostname_placeholder(prefix: &str, suffix: &str) -> &'static str {
