@@ -8,6 +8,7 @@ from pathlib import Path
 import select
 import shlex
 import signal
+import shutil
 import subprocess
 import tarfile
 import tempfile
@@ -54,6 +55,7 @@ cp "$CACHE_TEST_ROOT/$name" "$2"
         self.command("make", f"#!/bin/bash\nfixture_root={shlex.quote(str(self.root))}\n" + """
 set -eu
 if [[ -f "${PWD%/build}.fixture-env" ]]; then source "${PWD%/build}.fixture-env"; fi
+if [[ -f "${PWD%/dependencies/build}.fixture-env" ]]; then source "${PWD%/dependencies/build}.fixture-env"; fi
 env > make.env
 echo "$*" >> "$fixture_root/makes"
 if [[ $4 == util/et && -n ${CACHE_TEST_READY:-} ]]; then
@@ -104,10 +106,11 @@ exec /usr/bin/flock "$@"
         output = self.root / f"context-{self.count}"
         # External make owns its controls outside the production environment.
         controls = {key: value for key, value in (extra or {}).items()
-                    if key in {"CACHE_TEST_READY", "CACHE_TEST_RELEASE", "CACHE_TEST_FAIL"}}
+                    if key in {"CACHE_TEST_READY", "CACHE_TEST_RELEASE", "CACHE_TEST_FAIL",
+                               "CACHE_TEST_COMPILE_FAIL"}}
         (self.root / f"context-{self.count}.fixture-env").write_text(
             "".join(f"{key}={shlex.quote(str(value))}\n" for key, value in controls.items()))
-        process = subprocess.Popen(["bash", str(self.recipe), str(output), arch],
+        process = subprocess.Popen(["bash", str(getattr(self, "entrypoint", self.recipe)), str(output), arch],
                                    env={**self.env, **(extra or {})}, stdout=subprocess.PIPE,
                                    stderr=subprocess.STDOUT, text=True, start_new_session=True)
         self.addCleanup(self.stop, process)
@@ -334,6 +337,217 @@ exit 73
         self.ready(ready_fd)
         self.stop(killed)
         self.run_build(False)
+
+    def helper_fixture(self):
+        # Exercise the unmodified final-product recipe with the existing tiny
+        # upstream fixtures. The external compiler emits actual ELF files; real
+        # Kerberos compilation and execution remain the native CI matrix's job.
+        self.native = self.root / "native"
+        shutil.copytree(RECIPE.parent, self.native)
+        binary = self.root / "fixture-helper"
+        subprocess.run(["cc", "-static", "-x", "c", "-o", str(binary), "-"],
+                       input=b"int main(void) { return 0; }\n", check=True,
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        zig = f"#!/bin/bash\nfixture_root={shlex.quote(str(self.root))}\n" + """
+set -eu
+context=$(cd -- "$(dirname -- "$0")/../.." && pwd -P)
+source "$context.fixture-env"
+env > "$fixture_root/compiler.env"
+if [[ ${CACHE_TEST_COMPILE_FAIL:-} == true ]]; then exit 24; fi
+echo compile >> "$fixture_root/compiles"
+while [[ $1 != -o ]]; do shift; done
+cp "$fixture_root/fixture-helper" "$2"
+"""
+        sdk = {}
+        for host in ("x86_64", "aarch64"):
+            prefix = f"zig-{host}-linux-0.15.2"
+            sdk[f"{prefix}/zig"] = zig.encode()
+            sdk[f"{prefix}/LICENSE"] = (self.native / "NOTICE-Zig").read_bytes()
+            sdk[f"{prefix}/lib/libc/musl/COPYRIGHT"] = (self.native / "NOTICE-musl").read_bytes()
+        self.archive("zig.tar.xz", "w:xz", sdk)
+        with tarfile.open(self.root / "krb5.tar.gz") as archive:
+            with archive.extractfile("krb5-1.22.2/src/configure") as source:
+                configure = source.read()
+        self.archive("krb5.tar.gz", "w:gz", {
+            "krb5-1.22.2/src/configure": configure,
+            "krb5-1.22.2/NOTICE": (self.native / "NOTICE-MIT").read_bytes(),
+        })
+        self.pin_recipe()
+        shutil.copyfile(self.recipe, self.native / "build-dependencies.sh")
+        self.entrypoint = self.native / "build.sh"
+
+    def run_helper(self, hit, extra=None):
+        process, output = self.start(extra=extra)
+        log, _ = process.communicate(timeout=15)
+        self.assertEqual(process.returncode, 0, log)
+        self.assertIn(f"native package: hit={str(hit).lower()}", log)
+        self.assertEqual((output / "kerberos-worker").read_bytes(),
+                         (self.root / "fixture-helper").read_bytes())
+        if hit:
+            self.assertFalse((output / "dependencies").exists())
+        entry = next(path for path in self.cache.glob("helper-*") if path.is_dir() and path.name[7:] in log)
+        return entry
+
+    @staticmethod
+    def helper_receipt(entry):
+        names = ("kerberos-worker", "NOTICE-MIT", "NOTICE-musl", "NOTICE-Zig")
+        (entry / "complete").write_text(entry.name[7:] + "\n" + "".join(
+            f"{sha(entry / name)}  {name}\n" for name in names))
+
+    def test_helper_cross_output_and_transported_hit_avoids_native_work(self):
+        self.helper_fixture()
+        self.run_helper(False)
+        restored = self.root / "restored-cache"
+        shutil.copytree(self.cache, restored)
+        self.cache = restored
+        self.env["KERBEROS_NATIVE_CACHE_DIR"] = str(restored)
+        self.command("curl", "#!/bin/sh\nexit 87\n")
+        self.command("make", "#!/bin/sh\nexit 88\n")
+        self.run_helper(True)
+        self.assertEqual((self.root / "compiles").read_text(), "compile\n")
+
+    def test_helper_source_recipe_notice_and_environment_invalidation(self):
+        self.helper_fixture()
+        keys = {self.run_helper(False).name}
+        for name in ("worker.c", "isolation.h", "build.sh", "build-dependencies.sh"):
+            path = self.native / name
+            with path.open("a") as file:
+                file.write("\n" if path.suffix == ".sh" else "\n/* changed native input */\n")
+            keys.add(self.run_helper(False).name)
+        keys.add(self.run_helper(False, extra={"KERBEROS_NATIVE_BUILD_ENV": "other-image"}).name)
+        self.assertEqual(len(keys), 6)
+        for name in ("NOTICE-MIT", "NOTICE-musl", "NOTICE-Zig"):
+            original = (self.native / name).read_bytes()
+            (self.native / name).write_bytes(original + b"changed notice\n")
+            process, _ = self.start()
+            log, _ = process.communicate(timeout=15)
+            self.assertNotEqual(process.returncode, 0, log)
+            self.assertNotIn("native package: hit=true", log)
+            (self.native / name).write_bytes(original)
+        self.run_helper(True)
+
+    def test_helper_rejects_corrupt_partial_and_unsafe_products(self):
+        self.helper_fixture()
+        entry = self.run_helper(False)
+        lock = entry.with_suffix(".lock")
+        inode = lock.stat().st_ino
+        for kind in ("digest", "receipt", "missing", "symlink", "hardlink", "directory",
+                     "notice", "architecture", "dynamic", "relocatable", "oversize"):
+            with self.subTest(kind=kind):
+                helper = entry / "kerberos-worker"
+                if kind == "digest":
+                    data = bytearray(helper.read_bytes()); data[-1] ^= 1; helper.write_bytes(data)
+                elif kind == "receipt":
+                    (entry / "complete").write_text("stale identity\n")
+                elif kind == "missing":
+                    (entry / "NOTICE-Zig").unlink()
+                elif kind in {"symlink", "hardlink", "directory"}:
+                    helper.unlink()
+                    if kind == "symlink": helper.symlink_to(self.root / "fixture-helper")
+                    elif kind == "hardlink": os.link(self.root / "fixture-helper", helper)
+                    else: helper.mkdir()
+                elif kind == "notice":
+                    (entry / "NOTICE-MIT").write_text("wrong license")
+                    self.helper_receipt(entry)
+                elif kind == "architecture":
+                    data = bytearray(helper.read_bytes()); data[18:20] = (183).to_bytes(2, "little")
+                    helper.write_bytes(data); self.helper_receipt(entry)
+                elif kind in {"dynamic", "relocatable"}:
+                    subprocess.run(["cc", *(["-c"] if kind == "relocatable" else []),
+                                    "-x", "c", "-o", str(helper), "-"],
+                                   input=b"int main(void) { return 0; }\n", check=True)
+                    self.helper_receipt(entry)
+                else:
+                    with helper.open("r+b") as file: file.truncate(16777217)
+                    self.helper_receipt(entry)
+                self.run_helper(False)
+                self.assertEqual(lock.stat().st_ino, inode)
+        self.run_helper(True)
+
+    def test_helper_compile_failure_and_ambient_options(self):
+        self.helper_fixture()
+        process, _ = self.start(extra={"CACHE_TEST_COMPILE_FAIL": "true"})
+        log, _ = process.communicate(timeout=15)
+        self.assertEqual(process.returncode, 24, log)
+        self.assertFalse(list(self.cache.glob("helper-*/complete")))
+        self.run_helper(False, extra={"CPATH": "foreign", "ZIG_LIB_DIR": "foreign",
+                                      "SOURCE_DATE_EPOCH": "1", "CFLAGS": "foreign"})
+        observed = dict(line.split("=", 1) for line in (self.root / "compiler.env").read_text().splitlines())
+        self.assertTrue({"CPATH", "ZIG_LIB_DIR", "SOURCE_DATE_EPOCH", "CFLAGS"}.isdisjoint(observed))
+        self.run_helper(True)
+
+    def test_helper_host_and_target_identity(self):
+        self.helper_fixture()
+        first = self.run_helper(False)
+        process, _ = self.start(arch="aarch64")
+        log, _ = process.communicate(timeout=15)
+        # The external fixture still emits x86 ELF: a target change must miss
+        # and fail architecture validation, never accept the old x86 helper.
+        self.assertNotEqual(process.returncode, 0, log)
+        self.assertNotIn("native package: hit=true", log)
+        self.command("uname", "#!/bin/sh\necho aarch64\n")
+        second = self.run_helper(False)
+        self.assertNotEqual(first, second)
+        self.run_helper(True)
+
+    def test_helper_entry_and_lock_symlinks_are_refused(self):
+        self.helper_fixture()
+        entry = self.run_helper(False)
+        other = self.root / "outside"
+        entry.rename(other)
+        entry.symlink_to(other, target_is_directory=True)
+        process, _ = self.start()
+        log, _ = process.communicate(timeout=15)
+        self.assertNotEqual(process.returncode, 0, log)
+        entry.unlink()
+        other.rename(entry)
+        lock = entry.with_suffix(".lock")
+        lock.unlink()
+        outside = self.root / "outside-lock"
+        outside.write_text("unchanged")
+        lock.symlink_to(outside)
+        process, _ = self.start()
+        log, _ = process.communicate(timeout=15)
+        self.assertNotEqual(process.returncode, 0, log)
+        self.assertEqual(outside.read_text(), "unchanged")
+
+    def test_helper_concurrent_and_interrupted_owners(self):
+        self.helper_fixture()
+        ready, ready_fd = self.fifo("helper-ready")
+        release, release_fd = self.fifo("helper-release")
+        first, _ = self.start(extra={"CACHE_TEST_READY": ready, "CACHE_TEST_RELEASE": release})
+        self.ready(ready_fd)
+        lock_ready, lock_fd = self.fifo("helper-lock-ready")
+        second, _ = self.start(extra={"CACHE_TEST_LOCK_READY": lock_ready})
+        self.ready(lock_fd)
+        lock = next(self.cache.glob("helper-*.lock"))
+        with lock.open("r") as file:
+            with self.assertRaises(BlockingIOError): fcntl.flock(file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        self.assertFalse(list(self.cache.glob("helper-*/complete")))
+        os.write(release_fd, b"continue\n")
+        first_log, _ = first.communicate(timeout=15)
+        second_log, _ = second.communicate(timeout=15)
+        self.assertEqual((first.returncode, second.returncode), (0, 0), first_log + second_log)
+        self.assertIn("native package: hit=false", first_log)
+        self.assertIn("native package: hit=true", second_log)
+        self.assertEqual((self.root / "compiles").read_text(), "compile\n")
+        next(self.cache.glob("helper-*/complete")).unlink()
+        self.command("cp", """#!/bin/bash
+set -eu
+/bin/cp "$@"
+if [[ ${@: -1} == */helper-*/kerberos-worker.part ]]; then
+  echo ready > "$CACHE_TEST_PUBLISH_READY"
+  read -r release < "$CACHE_TEST_PUBLISH_RELEASE"
+fi
+""")
+        killed, _ = self.start(extra={"CACHE_TEST_PUBLISH_READY": ready,
+                                    "CACHE_TEST_PUBLISH_RELEASE": release})
+        self.ready(ready_fd)
+        self.stop(killed)
+        self.assertFalse(list(self.cache.glob("helper-*/complete")))
+        self.command("cp", '#!/bin/bash\nexec /bin/cp "$@"\n')
+        self.run_helper(False)
+        self.run_helper(True)
 
 
 if __name__ == "__main__":

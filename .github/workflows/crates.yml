@@ -369,7 +369,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
-          key: kerberos-native-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/build-dependencies.sh') }}
+          key: kerberos-native-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/*') }}
 
       - name: Check Rust module paths
         run: |
@@ -428,7 +428,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
-          key: kerberos-native-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/build-dependencies.sh') }}
+          key: kerberos-native-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/*') }}
 
       - name: Build documentation
         run: |
@@ -597,7 +597,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
-          key: kerberos-native-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/build-dependencies.sh') }}
+          key: kerberos-native-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/*') }}
 
       - name: Report coverage disk usage after cache restore
         continue-on-error: true
@@ -865,7 +865,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
-          key: kerberos-native-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/build-dependencies.sh') }}
+          key: kerberos-native-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/*') }}
       - name: Compile sealed package and run real native containment/lifecycle conformance
         shell: bash
         env:
@@ -914,7 +914,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
-          key: kerberos-native-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/build-dependencies.sh') }}
+          key: kerberos-native-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/*') }}
       - name: Verify native mutual GSS and RFB controls against signed independent MIT
         shell: bash
         env:
@@ -1052,7 +1052,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
-          key: kerberos-native-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/build-dependencies.sh') }}-${{ env.TARGET_TRIPLE }}
+          key: kerberos-native-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/*') }}-${{ env.TARGET_TRIPLE }}
 
       - name: Cross-compile rootfs process tests for ${{ matrix.label }}
         working-directory: crates
@@ -1366,7 +1366,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
-          key: kerberos-native-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/build-dependencies.sh') }}-${{ env.TARGET_TRIPLE }}
+          key: kerberos-native-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/*') }}-${{ env.TARGET_TRIPLE }}
 
       - name: Cross-compile host CPU fairness test
         id: build
@@ -1489,7 +1489,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
-          key: kerberos-native-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/build-dependencies.sh') }}-${{ env.TARGET_TRIPLE }}
+          key: kerberos-native-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/*') }}-${{ env.TARGET_TRIPLE }}
 
       - name: Cross-compile native Guest RPC and duplex test
         id: build
