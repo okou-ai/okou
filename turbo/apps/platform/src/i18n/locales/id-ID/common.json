@@ -1771,6 +1771,7 @@
       "selectModel": "Pilih model",
       "slashPanel": {
         "browseAll": "Jelajahi semua templat",
+        "make": "Buat",
         "useTemplate": "Gunakan templat {{title}}"
       },
       "temporarilySwitchTo": "Beralih sementara ke",
@@ -1780,7 +1781,8 @@
         "loading": "Memuat alur kerja...",
         "manage": "Kelola alur kerja",
         "newWorkflow": "Alur kerja baru",
-        "showMore": "Tampilkan {{total}} lagi"
+        "showMore": "Tampilkan {{total}} lagi",
+        "title": "Alur kerja"
       }
     },
     "computerUse": {

@@ -1774,6 +1774,7 @@
       "selectModel": "Modell auswählen",
       "slashPanel": {
         "browseAll": "Alle Vorlagen durchsuchen",
+        "make": "Erstellen",
         "useTemplate": "Vorlage {{title}} verwenden"
       },
       "temporarilySwitchTo": "Vorübergehend wechseln zu",
@@ -1783,7 +1784,8 @@
         "loading": "Workflows werden geladen...",
         "manage": "Workflows verwalten",
         "newWorkflow": "Neuer Workflow",
-        "showMore": "{{total}} weitere anzeigen"
+        "showMore": "{{total}} weitere anzeigen",
+        "title": "Workflows"
       }
     },
     "computerUse": {

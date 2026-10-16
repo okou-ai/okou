@@ -1803,6 +1803,7 @@
       "selectModel": "Sélectionner le modèle",
       "slashPanel": {
         "browseAll": "Parcourir tous les modèles",
+        "make": "Créer",
         "useTemplate": "Utiliser le modèle {{title}}"
       },
       "temporarilySwitchTo": "Passer temporairement à",
@@ -1812,7 +1813,8 @@
         "loading": "Chargement des workflows...",
         "manage": "Gérer les workflows",
         "newWorkflow": "Nouveau workflow",
-        "showMore": "Afficher {{total}} de plus"
+        "showMore": "Afficher {{total}} de plus",
+        "title": "Workflows"
       }
     },
     "computerUse": {

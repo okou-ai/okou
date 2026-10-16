@@ -137,6 +137,14 @@ export function slashTemplateCategoryLabel(
   }
 }
 
+function SectionLabel({ children }: { readonly children: string }) {
+  return (
+    <div className="px-2.5 pt-2.5 pb-1 text-xs font-medium text-muted-foreground">
+      {children}
+    </div>
+  );
+}
+
 /**
  * One cover. `aspect` is present only for categories that show the artwork
  * uncropped, and then it drives an inline ratio rather than the shared tile —
@@ -531,6 +539,7 @@ function SlashPanelWorkflowSection({
     | "onNewWorkflow"
     | "onManageWorkflows"
   >) {
+  const { t } = useTranslation();
   if (!listProps.loading && workflows.length === 0) {
     return null;
   }
@@ -542,6 +551,11 @@ function SlashPanelWorkflowSection({
     : workflows;
   return (
     <div>
+      <SectionLabel>
+        {t(($) => {
+          return $.chat.composer.workflows.title;
+        })}
+      </SectionLabel>
       <SlashPanelWorkflowList {...listProps} workflows={visibleWorkflows} />
       {/*
         The control sits directly beneath the rows it continues, in the
@@ -596,11 +610,17 @@ function SlashPanelCategoryList({
   | "onSelectCategory"
   | "categoryOptionId"
 > & { readonly markedIndex: number }) {
+  const { t } = useTranslation();
   if (categories.length === 0) {
     return null;
   }
   return (
     <div>
+      <SectionLabel>
+        {t(($) => {
+          return $.chat.composer.slashPanel.make;
+        })}
+      </SectionLabel>
       <div className="px-1">
         {(reversed ? [...categories].reverse() : categories).map(
           (category, visualIndex) => {
@@ -770,11 +790,11 @@ export function SlashTemplatePanel({
     >
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/*
-          No section labels: the rows name themselves. Every row shares one
+          Each section's label carries the space above it. Every row shares one
           scroller, so revealing the rest of the workflows adds no nested
           scrolling region.
         */}
-        <div className="min-h-0 flex-1 overflow-y-auto py-1">
+        <div className="min-h-0 flex-1 overflow-y-auto pb-1">
           {reversed
             ? [workflowSection, makeSection]
             : [makeSection, workflowSection]}
