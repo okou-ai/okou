@@ -1,5 +1,26 @@
 # Changelog
 
+## [9.397.0](https://github.com/okou-ai/okou/compare/cli-v9.396.1...cli-v9.397.0) (2026-10-16)
+
+
+### Features
+
+* **cli:** explain ssh failures with runner-authored text ([#40458](https://github.com/okou-ai/okou/issues/40458)) ([bbe622b](https://github.com/okou-ai/okou/commit/bbe622bafeb596d96eb7009e21954d649c279377))
+
+
+### Refactoring
+
+* **ci:** decouple api from cli package publication ([#40530](https://github.com/okou-ai/okou/issues/40530)) ([47a09bd](https://github.com/okou-ai/okou/commit/47a09bdbceef594fc874636b73c6b0446153677c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.571.0
+    * @okouai/core bumped to 8.764.0
+    * @okouai/pi-agent-runtime bumped to 1.50.11
+
 ## [9.396.1](https://github.com/okou-ai/okou/compare/cli-v9.396.0...cli-v9.396.1) (2026-10-16)
 
 

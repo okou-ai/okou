@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.20.2...runner-remote-v0.21.0) (2026-10-16)
+
+
+### Features
+
+* **cli:** explain ssh failures with runner-authored text ([#40458](https://github.com/okou-ai/okou/issues/40458)) ([bbe622b](https://github.com/okou-ai/okou/commit/bbe622bafeb596d96eb7009e21954d649c279377))
+
 ## [0.20.2](https://github.com/okou-ai/okou/compare/runner-remote-v0.20.1...runner-remote-v0.20.2) (2026-10-16)
 
 

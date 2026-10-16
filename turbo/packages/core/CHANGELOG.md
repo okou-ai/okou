@@ -1,5 +1,24 @@
 # Changelog
 
+## [8.764.0](https://github.com/okou-ai/okou/compare/core-v8.763.0...core-v8.764.0) (2026-10-16)
+
+
+### Features
+
+* **app:** move sandbox files to debug activity details ([#40544](https://github.com/okou-ai/okou/issues/40544)) ([8a386e7](https://github.com/okou-ai/okou/commit/8a386e7d16d3659f76b9959a0fee5c4c3d0c3a6e))
+
+
+### Refactoring
+
+* remove copper connector feature switch ([#40571](https://github.com/okou-ai/okou/issues/40571)) ([15c0034](https://github.com/okou-ai/okou/commit/15c003404a43e8a84da32110368cb89172f397e4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.571.0
+
 ## [8.763.0](https://github.com/okou-ai/okou/compare/core-v8.762.0...core-v8.763.0) (2026-10-16)
 
 

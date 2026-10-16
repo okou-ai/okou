@@ -9,6 +9,32 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.746.0](https://github.com/okou-ai/okou/compare/api-v1.745.0...api-v1.746.0) (2026-10-16)
+
+
+### Features
+
+* **api-contracts:** compare non-2xx desktop response bodies in the contract gate ([#40556](https://github.com/okou-ai/okou/issues/40556)) ([57cee1c](https://github.com/okou-ai/okou/commit/57cee1ccc9fc950fae97e75664362d5539273ee0)) [#40554](https://github.com/okou-ai/okou/issues/40554)
+* **cli:** explain ssh failures with runner-authored text ([#40458](https://github.com/okou-ai/okou/issues/40458)) ([bbe622b](https://github.com/okou-ai/okou/commit/bbe622bafeb596d96eb7009e21954d649c279377))
+
+
+### Refactoring
+
+* **api:** own github app installation activation ([#40558](https://github.com/okou-ai/okou/issues/40558)) ([bfe7a23](https://github.com/okou-ai/okou/commit/bfe7a23852dacdb20b2c73a1a564f8d4f9de6172))
+* **api:** own subscription confirmation billing read ([#40567](https://github.com/okou-ai/okou/issues/40567)) ([5e621e4](https://github.com/okou-ai/okou/commit/5e621e4f1eee9e80c5c9a8b65281733a1cedd7cc)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **ci:** decouple api from cli package publication ([#40530](https://github.com/okou-ai/okou/issues/40530)) ([47a09bd](https://github.com/okou-ai/okou/commit/47a09bdbceef594fc874636b73c6b0446153677c))
+* remove copper connector feature switch ([#40571](https://github.com/okou-ai/okou/issues/40571)) ([15c0034](https://github.com/okou-ai/okou/commit/15c003404a43e8a84da32110368cb89172f397e4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.571.0
+    * @okouai/core bumped to 8.764.0
+    * @okouai/db bumped to 1.343.1
+    * @okouai/pi-agent-runtime bumped to 1.50.11
+
 ## [1.745.0](https://github.com/okou-ai/okou/compare/api-v1.744.0...api-v1.745.0) (2026-10-16)
 
 

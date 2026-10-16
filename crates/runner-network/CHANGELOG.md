@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.49](https://github.com/okou-ai/okou/compare/runner-network-v0.2.48...runner-network-v0.2.49) (2026-10-16)
+
+
+### Refactoring
+
+* **runner-network:** encode network-log child cleanup custody ([#40565](https://github.com/okou-ai/okou/issues/40565)) ([c9fb69a](https://github.com/okou-ai/okou/commit/c9fb69a3b8172dc2bacb04425a83c74fde07f216))
+* **runner-network:** pair managed mitmdump launch custody ([#40564](https://github.com/okou-ai/okou/issues/40564)) ([0df02a3](https://github.com/okou-ai/okou/commit/0df02a3fdcabb0ad8a9cd33e3da9701f396ce371))
+
 ## [0.2.48](https://github.com/okou-ai/okou/compare/runner-network-v0.2.47...runner-network-v0.2.48) (2026-10-16)
 
 ## [0.2.47](https://github.com/okou-ai/okou/compare/runner-network-v0.2.46...runner-network-v0.2.47) (2026-10-15)

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.10](https://github.com/okou-ai/okou/compare/runner-executor-v0.13.9...runner-executor-v0.13.10) (2026-10-16)
+
+
+### Refactoring
+
+* **runner-executor:** pair codex prefetch process custody ([#40562](https://github.com/okou-ai/okou/issues/40562)) ([c2d2847](https://github.com/okou-ai/okou/commit/c2d2847f99c7b8427b2df5b66fd61a7debb0dffd))
+
 ## [0.13.9](https://github.com/okou-ai/okou/compare/runner-executor-v0.13.8...runner-executor-v0.13.9) (2026-10-16)
 
 
