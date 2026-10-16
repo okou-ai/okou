@@ -29,9 +29,7 @@ import { processOrgUsageEvents$ } from "./credit-usage.service";
 import {
   type AgentRunOutputErrorResponse,
   type AgentRunOutputInput,
-  type PreparedAgentRunOutput,
   persistAgentRunOutputsInTransaction,
-  createAgentRunOutputOperations,
 } from "./agent-run-output.service";
 import { lockPiMemoryPhase2CompletionStorage } from "./pi-memory-phase2-maintenance.service";
 import {
@@ -371,7 +369,6 @@ function noActiveInputFinalization(): ActiveInputFinalization {
 
 interface CompletionTransitionContext {
   readonly outputInput: AgentRunOutputInput | null;
-  readonly outputPreparation: PreparedAgentRunOutput | null;
   readonly expectedChatThreadId: string | null;
 }
 
@@ -423,7 +420,7 @@ async function completeAgentRunTransition(
   context: CompletionTransitionContext,
   signal: AbortSignal,
 ): Promise<CompletionTransactionResult> {
-  const { outputInput, outputPreparation, expectedChatThreadId } = context;
+  const { outputInput, expectedChatThreadId } = context;
   // Thread admission is the active run row, which the terminal transition
   // releases; the run row lock serializes completion against other writers.
   const run = await lockCompletionRun(tx, input);
@@ -448,13 +445,9 @@ async function completeAgentRunTransition(
   signal.throwIfAborted();
   let runResult: RunResult | undefined;
   if (outputInput) {
-    if (!outputPreparation) {
-      throw new Error("Included Run output was not prepared");
-    }
     const outputResult = await persistAgentRunOutputsInTransaction(
       tx,
       outputInput,
-      outputPreparation,
       signal,
     );
     if (outputResult.status !== 200) {
@@ -744,7 +737,6 @@ function createCompletionTerminalRedrive(runId: string) {
 /** One validated completion request owns this graph and its lazy post-commit read. */
 export function createAgentRunCompletion(runId: string, userId: string) {
   const initialRun$ = createInitialCompletionRun(runId, userId);
-  const outputOperations = createAgentRunOutputOperations(runId, userId);
   const undeliveredTerminalChatCallback$ =
     createCompletionTerminalRedrive(runId);
   const complete$ = command(
@@ -763,18 +755,6 @@ export function createAgentRunCompletion(runId: string, userId: string) {
         return settledRunCompletionResponse(initialRun);
       }
       const outputInput = runOutputInputForCompletion(input);
-      let outputPreparation: PreparedAgentRunOutput | null = null;
-      if (outputInput) {
-        const preparation = await set(
-          outputOperations.prepare$,
-          outputInput,
-          signal,
-        );
-        if (!preparation.ok) {
-          return preparation.response;
-        }
-        outputPreparation = preparation.prepared;
-      }
       let expectedChatThreadId = initialRun.chatThreadId;
       let commit: ReleasedCompletionCommit;
       while (true) {
@@ -785,7 +765,6 @@ export function createAgentRunCompletion(runId: string, userId: string) {
             input,
             {
               outputInput,
-              outputPreparation,
               expectedChatThreadId,
             },
             signal,

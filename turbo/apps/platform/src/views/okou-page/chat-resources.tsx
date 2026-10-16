@@ -75,12 +75,16 @@ function ChatResourcesButtonInner({
   const content = useLastLoadable(resources.content$);
   const relationsEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ChatRelations];
+  const hasRelations = useLastResolved(thread.relations.hasContent$);
   const ready =
-    relationsEnabled ||
-    content.state === "hasError" ||
-    (content.state === "hasData" &&
-      content.data !== null &&
-      (content.data.artifacts.length > 0 || content.data.links.length > 0));
+    (!relationsEnabled ||
+      (hasRelations !== undefined && hasRelations !== null)) &&
+    (content.state === "hasError" ||
+      (content.state === "hasData" &&
+        content.data !== null &&
+        ((relationsEnabled && hasRelations) ||
+          content.data.artifacts.length > 0 ||
+          content.data.links.length > 0)));
   const open = requestedOpen && ready;
   const wide = useGet(resources.wide$);
   const saving = useGet(resources.saving$);
@@ -177,7 +181,11 @@ function ChatResourcesButtonInner({
             "flex max-h-[min(480px,var(--available-height))] w-[376px] max-w-[var(--available-width)] flex-col overflow-hidden p-0",
         })}
       >
-        <ChatResourcesBody thread={thread} content={content} />
+        <ChatResourcesBody
+          thread={thread}
+          content={content}
+          hasRelations={relationsEnabled && hasRelations === true}
+        />
       </PopoverContent>
     </Popover>
   );
@@ -223,9 +231,11 @@ function ResourceOutputRow({
 function ChatResourcesBody({
   thread,
   content,
+  hasRelations,
 }: {
   readonly thread: ChatPanelSignals;
   readonly content: Loadable<ChatResourceContent | null>;
+  readonly hasRelations: boolean;
 }) {
   const { t } = useTranslation();
   const retry = useSet(thread.reloadArtifacts$);
@@ -233,13 +243,11 @@ function ChatResourcesBody({
   const expanded = useGet(thread.resources.expandedSections$);
   const toggleSection = useSet(thread.resources.toggleSection$);
   const setOpen = useSet(thread.resources.setOpen$);
-  const relationsEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatRelations];
   const data = content.state === "hasData" ? content.data : null;
   return (
     <>
       <div className="min-h-0 space-y-4 overflow-y-auto p-3">
-        <ChatRelationships thread={thread} />
+        {hasRelations && <ChatRelationships thread={thread} />}
         {content.state === "hasError" ? (
           <div className="flex flex-col items-center gap-2 py-4 text-sm text-muted-foreground">
             <p>
@@ -253,10 +261,7 @@ function ChatResourcesBody({
               })}
             </Button>
           </div>
-        ) : data &&
-          (!relationsEnabled ||
-            data.artifacts.length > 0 ||
-            data.links.length > 0) ? (
+        ) : data && (data.artifacts.length > 0 || data.links.length > 0) ? (
           <div className="space-y-4">
             {data.artifacts.length > 0 && (
               <section
@@ -305,15 +310,6 @@ function ChatResourcesBody({
                 },
               }}
             />
-            {!relationsEnabled &&
-              data.artifacts.length === 0 &&
-              data.links.length === 0 && (
-                <p className="px-2 py-4 text-sm text-muted-foreground">
-                  {t(($) => {
-                    return $.chat.resources.empty;
-                  })}
-                </p>
-              )}
           </div>
         ) : null}
       </div>

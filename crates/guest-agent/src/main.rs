@@ -1928,16 +1928,11 @@ mod tests {
             let _ = std::fs::remove_file(path);
         }
 
-        let prepare_mock = server.mock(|when, then| {
-            when.method(POST)
-                .path("/api/webhooks/agent/session-history/prepare");
-            then.status(500);
-        });
         let complete_mock = server.mock(|when, then| {
             when.method(POST)
                 .path("/api/webhooks/agent/complete")
                 .json_body_includes(
-                    r#"{"exitCode":0,"completion":{"cliAgentSessionHistoryDisposition":"unavailable"}}"#,
+                    r#"{"exitCode":0,"completion":{"cliAgentSessionHistoryDisposition":"native_only"}}"#,
                 );
             then.status(200)
                 .header("Content-Type", "application/json")
@@ -1975,7 +1970,6 @@ mod tests {
         telemetry.shutdown().await;
 
         assert_eq!(exit_code, 0);
-        assert_eq!(prepare_mock.calls_async().await, 0);
         assert_eq!(complete_mock.calls_async().await, 1);
 
         for path in cleanup_paths {
@@ -2021,23 +2015,6 @@ mod tests {
             ),
         );
 
-        let prepare_mock = server.mock(|when, then| {
-            when.method(POST)
-                .path("/api/webhooks/agent/session-history/prepare")
-                .json_body_includes(r#"{"runId":"main-recovery-finalization"}"#);
-            then.status(200)
-                .header("Content-Type", "application/json")
-                .json_body(json!({
-                    "presignedUrl": server.url("/test/main-recovery-history-upload"),
-                    "existing": false
-                }));
-        });
-        let upload_mock = server.mock(|when, then| {
-            when.method(PUT)
-                .path("/test/main-recovery-history-upload")
-                .body(history.as_str());
-            then.status(200);
-        });
         let complete_mock = server.mock(|when, then| {
             when.method(POST)
                 .path("/api/webhooks/agent/complete")
@@ -2102,8 +2079,7 @@ mod tests {
             serde_json::from_slice(&std::fs::read(guest_paths.failure_diagnostic_file()).unwrap())
                 .unwrap();
         assert_eq!(diagnostic, failure_diagnostic);
-        prepare_mock.assert_calls_async(1).await;
-        upload_mock.assert_calls_async(1).await;
+
         complete_mock
             .assert_calls_async(expected_completion_calls)
             .await;

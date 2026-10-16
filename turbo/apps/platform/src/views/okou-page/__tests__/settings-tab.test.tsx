@@ -801,12 +801,25 @@ async function chooseWorkflowCopy(
 
 async function chooseBothWorkflowCopies(dialog: HTMLElement) {
   for (const title of ["Daily research", "Weekly research"]) {
-    click(
-      within(dialog).getByRole("combobox", {
-        name: `Handle workflow ${title}`,
-      }),
-    );
-    click(await screen.findByRole("option", { name: "Copy to Nova" }));
+    const selects = queryAllByRoleFast("combobox", dialog).filter((select) => {
+      return select.getAttribute("aria-label") === `Handle workflow ${title}`;
+    });
+    const [select] = selects;
+    if (selects.length !== 1 || !select) {
+      throw new Error(`Expected one workflow destination for ${title}`);
+    }
+    click(select);
+    const option = await waitFor(() => {
+      const options = queryAllByRoleFast("option").filter((option) => {
+        return option.textContent?.trim() === "Copy to Nova";
+      });
+      const [option] = options;
+      if (options.length !== 1 || !option) {
+        throw new Error("Expected one Copy to Nova option");
+      }
+      return option;
+    });
+    click(option);
   }
 }
 

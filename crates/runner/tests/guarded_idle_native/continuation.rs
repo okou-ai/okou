@@ -34,10 +34,7 @@ use runner_supervisor::idle_lifecycle::{IdleDestroyTracker, IdlePoolRetirementRe
 use runner_types::{
     ids::RunId,
     storage_manifest::{ArtifactEntry, StorageManifest},
-    types::{
-        ExecutionContext, ResumeSession, ResumeSessionHistory, ResumeSessionHistoryEncoding,
-        ResumeSessionHistoryRef, ResumeSessionHistoryRefKind, SandboxReuseResult,
-    },
+    types::{ExecutionContext, SandboxReuseResult},
 };
 use sandbox::{Sandbox, SandboxFactory, SandboxId, SandboxParkOutcome};
 use serde_json::{Value, json};
@@ -51,9 +48,7 @@ use super::{
     evidence, fixture, io,
 };
 
-pub const THREAD: &str = "019e9154-c304-70f0-adde-36efb1be1701";
-pub const SEED: &[u8] = include_bytes!("continuation_history.jsonl");
-const HISTORY_PATH: &str = "/home/user/.codex/sessions/2026/06/04/rollout-2026-06-04T07-18-08-019e9154-c304-70f0-adde-36efb1be1701.jsonl";
+pub const SEED: &[u8] = b"";
 
 pub struct Prepared {
     pub sandbox: Box<dyn Sandbox>,
@@ -136,8 +131,6 @@ impl Fixture {
             connector_runtime_sync: None,
             guest_rpc: None,
             guest_duplex: runner_remote::guest_duplex::RunGuestChannels::default(),
-            session_history_cpu: executor::SessionHistoryCpuPool::with_capacity(1),
-            session_history_probe: executor::SessionHistoryProbe::default(),
             fresh_archive_delivery: FreshArchiveDeliveryAdmission::new(),
             background_fill: StorageCacheBackgroundFillCoordinator::new()?,
             decoded_cache: DecodedCache::new(home.clone()),
@@ -188,19 +181,15 @@ impl Fixture {
                 "2026-06-04T07:18:08.000Z".into(),
             ),
         ]));
-        context.resume_session = Some(ResumeSession {
-            cli_agent_session_id: THREAD.into(),
-            history: ResumeSessionHistory::Ref {
-                history_ref: ResumeSessionHistoryRef {
-                    kind: ResumeSessionHistoryRefKind::Blob,
-                    hash: digest(history),
-                    url: self.api.history_url(history)?,
-                    encoding: ResumeSessionHistoryEncoding::Identity,
-                    raw_size: history.len() as u64,
-                    encoded_size: history.len() as u64,
-                    download_source: None,
-                },
-            },
+        let previous = if continued {
+            Some(self.api.session(None)?)
+        } else {
+            None
+        };
+        context.native_continuation = Some(guest_contracts::env::NativeContinuation {
+            session_id: previous.as_ref().map(|(id, _)| id.clone()),
+            generation_run_id: previous.map(|(_, run)| run),
+            recovery_prompt: None,
         });
         context.storage_manifest = Some(StorageManifest {
             storages: Vec::new(),
@@ -217,8 +206,7 @@ impl Fixture {
         });
         let observation = format!("/home/user/native-continuation-{run}.json");
         let source = format!(
-            "import hashlib,json,pathlib,subprocess; p=pathlib.Path({path:?}); z=pathlib.Path(str(p)+'.zst'); assert p.is_file()!=z.is_file(); data=p.read_bytes() if p.is_file() else subprocess.check_output(['zstd','-d','--stdout',str(z)]); prefix=data[:{size}]; assert hashlib.sha256(prefix).hexdigest()=={hash:?}; home=pathlib.Path('/home/user/guarded-idle-payload'); expected=({original:?}.encode()*2048)[:65536]; {home_action}; pathlib.Path({observation:?}).write_text(json.dumps({{'thread':{thread:?},'prefix_sha256':hashlib.sha256(prefix).hexdigest(),'prefix_bytes':len(prefix),'home_sha256':hashlib.sha256(home.read_bytes()).hexdigest()}}))",
-            path = HISTORY_PATH,
+            "import hashlib,json,pathlib,subprocess; files=list(pathlib.Path('/home/user/.codex/sessions/2026/06/04').glob('rollout-*.jsonl*')); assert len(files)==1; p=files[0]; thread=p.name.removesuffix('.zst').removesuffix('.jsonl')[-36:]; z=pathlib.Path(str(p)+'.zst'); data=p.read_bytes() if p.suffix!='.zst' else subprocess.check_output(['zstd','-d','--stdout',str(p)]); prefix=data[:{size}]; assert hashlib.sha256(prefix).hexdigest()=={hash:?}; home=pathlib.Path('/home/user/guarded-idle-payload'); expected=({original:?}.encode()*2048)[:65536]; {home_action}; pathlib.Path({observation:?}).write_text(json.dumps({{'thread':thread,'prefix_sha256':hashlib.sha256(prefix).hexdigest(),'prefix_bytes':len(prefix),'home_sha256':hashlib.sha256(home.read_bytes()).hexdigest()}}))",
             size = history.len(),
             hash = digest(history),
             original = original.to_string(),
@@ -227,7 +215,6 @@ impl Fixture {
             } else {
                 "home.write_bytes(expected)"
             },
-            thread = THREAD,
         );
         context.prompt = format!(
             "@shell@\npython3 -I -c {}\n@end-shell@",
@@ -267,7 +254,6 @@ impl Fixture {
                 runner_provider::RunCancellationSignals::from_hard_token(CancellationToken::new()),
                 executor::ExecutionHooks {
                     sandbox_prepared: None, active_input_source: None, pre_spawn_timing: None,
-                    session_history_restore_plan: executor::SessionHistoryRestorePlan::Default,
                 },
             ).await;
             let checked: TestResult<(Vec<u8>, Option<RestoredSessionIdentity>)> = async {
@@ -285,7 +271,9 @@ impl Fixture {
                         Err(error) => return Err(error.into()),
                     }
                 }
-                let complete = this.api.finalized_history(&run.to_string(), THREAD)?;
+                let (thread,_) = this.api.session(Some(&run.to_string()))?;
+                let command = format!("python3 -I -c {}", quote_shell_arg(&format!("import pathlib,subprocess,sys; files=list(pathlib.Path('/home/user/.codex/sessions/2026/06/04').glob('*{thread}.jsonl*')); assert len(files)==1; p=files[0]; sys.stdout.buffer.write(p.read_bytes() if p.suffix!='.zst' else subprocess.check_output(['zstd','-d','--stdout',str(p)]))")));
+                let complete = fixture::exec(&**sandbox, &command).await?;
                 if !complete.starts_with(&history) {
                     return Err(io::Error::other("native continuation lost complete original history bytes").into());
                 }
@@ -294,7 +282,7 @@ impl Fixture {
                     let identity = identity.ok_or_else(|| io::Error::other("native final verified session identity missing"))?;
                     let verification = identity.final_metadata_verification().ok_or_else(|| io::Error::other("native final identity has no verifier provenance"))?;
                     if verification.history_hash!=digest(&complete) || verification.history_size_bytes!=complete.len() as u64
-                        || verification.session_id_hash!=digest(THREAD.as_bytes()) {
+                        || verification.session_id_hash!=digest(thread.as_bytes()) {
                         return Err(io::Error::other("native final identity does not bind complete bytes/thread").into());
                     }
                 } else if identity.is_some() {
@@ -304,7 +292,7 @@ impl Fixture {
                 let probe = fixture::exec(&**sandbox, &format!("cat {}", quote_shell_arg(&probe_path))).await?;
                 let probe: Value = serde_json::from_slice(&probe)?;
                 let home = fixture::home_payload(original);
-                if probe != json!({"thread":THREAD,"prefix_sha256":digest(&history),"prefix_bytes":history.len(),"home_sha256":digest(&home)}) {
+                if probe != json!({"thread":thread,"prefix_sha256":digest(&history),"prefix_bytes":history.len(),"home_sha256":digest(&home)}) {
                     return Err(io::Error::other("native process did not observe original full prepared data").into());
                 }
                 Ok((complete, identity.cloned()))
@@ -335,7 +323,7 @@ impl Fixture {
 
     pub fn record_original(&self, run: RunId, prepared: &Prepared) -> TestResult<()> {
         self.case.continuation_witness("original_executor_completed", json!({
-            "original_run_id":run.to_string(),"thread_id":THREAD,
+            "original_run_id":run.to_string(),"thread_id":self.api.session(None)?.0,
             "seed_history_sha256":digest(SEED),"seed_history_bytes":SEED.len(),
             "original_history_sha256":digest(&prepared.history),"original_history_bytes":prepared.history.len(),
             "original_home_sha256":digest(&fixture::home_payload(run)),"original_home_bytes":fixture::PAYLOAD_BYTES,
@@ -385,7 +373,7 @@ impl Fixture {
                 if generation == 0 {
                     self.case.continuation_witness("continued_executor_completed", json!({
                         "continued_run_id":run.to_string(),"continued_sandbox_id":id.to_string(),
-                        "thread_id":THREAD,"restored_history_sha256":digest(&history),"restored_history_bytes":history.len(),
+                        "thread_id":self.api.session(None)?.0,"restored_history_sha256":digest(&history),"restored_history_bytes":history.len(),
                         "continued_history_sha256":digest(&prepared.history),"continued_history_bytes":prepared.history.len(),
                         "original_home_sha256":digest(&fixture::home_payload(request.original)),"original_home_bytes":fixture::PAYLOAD_BYTES,
                         "exit_code":prepared.exit_code,"final_identity_verified":true,"full_original_prefix_verified":true,

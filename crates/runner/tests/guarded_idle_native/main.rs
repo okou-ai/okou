@@ -203,52 +203,17 @@ async fn native_continuation_peer_keeps_complete_history_across_both_listeners()
             .is_err()
     );
     let http = reqwest::Client::new();
-    let url = api.history_url(continuation::SEED)?;
-    let original = http
-        .get(url)
-        .send()
-        .await?
-        .error_for_status()?
-        .bytes()
-        .await?;
-    assert_eq!(original.as_ref(), continuation::SEED);
-    let mut complete = original.to_vec();
-    complete.extend_from_slice(b"\ncomplete original native fixture boundary\n");
-    let hash = continuation::digest(&complete);
     let run = RunId::new_v4().to_string();
-    let prepared: serde_json::Value = http
-        .post(format!(
-            "{}/api/webhooks/agent/session-history/prepare",
-            api.host_url
-        ))
-        .bearer_auth(continuation_api::TOKEN)
-        .json(&serde_json::json!({
-            "runId":run,"hash":hash,"rawSize":complete.len(),
-            "encodedSize":complete.len(),"encoding":"identity"
-        }))
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
-    let upload = prepared
-        .get("presignedUrl")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| io::Error::other("native fixture upload preparation missing"))?;
-    http.put(upload)
-        .body(complete.clone())
-        .send()
-        .await?
-        .error_for_status()?;
+    let thread = uuid::Uuid::new_v4().to_string();
     http.post(format!("{}/api/webhooks/agent/complete", api.host_url))
         .bearer_auth(continuation_api::TOKEN)
         .json(&serde_json::json!({"runId":run,"exitCode":0,"completion":{
-            "cliAgentSessionId":continuation::THREAD,"cliAgentSessionHistoryHash":hash
+            "cliAgentSessionId":thread,"cliAgentSessionHistoryDisposition":"native_only"
         }}))
         .send()
         .await?
         .error_for_status()?;
-    assert_eq!(api.finalized_history(&run, continuation::THREAD)?, complete);
+    assert_eq!(api.session(Some(&run))?, (thread, run));
     api.finish().await
 }
 

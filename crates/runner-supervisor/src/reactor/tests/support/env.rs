@@ -336,8 +336,6 @@ fn build_mock_run_config_with_runtime(
             connector_runtime_sync: None,
             guest_rpc: None,
             guest_duplex: runner_remote::guest_duplex::RunGuestChannels::default(),
-            session_history_cpu: executor::SessionHistoryCpuPool::with_capacity(1),
-            session_history_probe: executor::SessionHistoryProbe::default(),
             fresh_archive_delivery: crate::storage_cache::FreshArchiveDeliveryAdmission::new(),
             decoded_cache: crate::storage_cache::decoded::DecodedCache::new(home.clone()),
             background_fill: crate::storage_cache::StorageCacheBackgroundFillCoordinator::new()

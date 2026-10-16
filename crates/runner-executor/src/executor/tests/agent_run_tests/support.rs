@@ -3,9 +3,6 @@ use guest_contracts::session_history_identity::{
     SessionHistoryFramework, SessionHistoryIdentity, SessionHistoryRefKind, SessionHistorySourceRef,
 };
 use sha2::{Digest, Sha256};
-pub(super) fn claude_history_path(session_id: &str) -> String {
-    format!("/home/user/.claude/projects/-home-user-workspace/{session_id}.jsonl")
-}
 
 pub(super) fn claude_history_source(session_id: &str) -> SessionHistorySourceRef {
     SessionHistorySourceRef::ClaudeCode {
@@ -34,7 +31,7 @@ pub(super) fn final_identity_metadata_bytes(session_id: &str, history: &[u8]) ->
     SessionHistoryIdentity::new(
         SessionHistoryFramework::ClaudeCode,
         hex::encode(Sha256::digest(session_id.as_bytes())),
-        SessionHistoryRefKind::Blob,
+        SessionHistoryRefKind::LocalHome,
         hex::encode(Sha256::digest(history)),
         history.len() as u64,
         claude_history_source(session_id),

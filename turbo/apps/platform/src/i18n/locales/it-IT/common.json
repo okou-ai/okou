@@ -2106,7 +2106,6 @@
       "messageUnavailable": "Messaggio non disponibile",
       "more": "Altro",
       "origin": "Da",
-      "parallelHint": "Prova chat in parallelo. Meno attese.",
       "queued": "In coda",
       "received": "Ricevuto",
       "refresh": "Aggiorna",
@@ -2137,7 +2136,6 @@
     "resources": {
       "collapse": "Comprimi",
       "copyLink": "Copia link",
-      "empty": "Questa chat non contiene ancora artefatti o link",
       "emptyLinks": "Non ci sono ancora link in questa chat",
       "expand": "Espandi",
       "links": "Link",
@@ -3942,7 +3940,6 @@
       "invoice": "Fattura",
       "letter": "Lettere",
       "report": "Rapporti",
-      "resume": "Curriculum",
       "service-agreement": "Accordo di servizi"
     },
     "contents": {
@@ -5208,6 +5205,41 @@
       "save": "Salva",
       "saveChanges": "Salva modifiche",
       "saving": "Salvataggio..."
+    },
+    "wallet": {
+      "actionError": "Impossibile completare l’azione. Controlla la connessione, consenti i popup e riprova.",
+      "connect": "Collega",
+      "description": "I tuoi agenti possono richiedere acquisti tramite Link. Approvi tu ogni acquisto.",
+      "disconnect": "Scollega",
+      "loadError": "Impossibile caricare il tuo portafoglio.",
+      "permissionsUnknown": "Ricollega Link per esaminare e confermare le autorizzazioni attuali.",
+      "retry": "Riprova",
+      "scope": "Lascia che Okou faccia acquisti per te con Link.",
+      "title": "Portafoglio",
+      "transactions": {
+        "description": "Le tue richieste di acquisto recenti con Link in Okou.",
+        "empty": "Nessuna transazione Link",
+        "loadError": "Impossibile caricare le transazioni. Riprova.",
+        "loading": "Caricamento delle transazioni",
+        "merchant": "Commerciante",
+        "status": {
+          "approved": "Approvata, in attesa di pagamento",
+          "canceled": "Annullata",
+          "created": "Creata",
+          "creating": "Creazione in corso",
+          "denied": "Rifiutata",
+          "expired": "Scaduta",
+          "failed": "Non riuscita",
+          "pending_approval": "In attesa di approvazione",
+          "requires_action": "Azione richiesta",
+          "submitted": "Pagamento in corso",
+          "succeeded": "Pagamento riuscito"
+        },
+        "statusLabel": "Stato",
+        "test": "Test",
+        "title": "Transazioni Link"
+      },
+      "workspaceScopeChanged": "Ora il tuo portafoglio Link può essere usato da tutti i tuoi agenti in questo spazio di lavoro. Ricollegalo per approvare la modifica."
     },
     "workspace": {
       "danger": {

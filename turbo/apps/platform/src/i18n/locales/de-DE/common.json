@@ -2066,7 +2066,6 @@
       "messageUnavailable": "Nachricht nicht verfügbar",
       "more": "Mehr",
       "origin": "Von",
-      "parallelHint": "Chats parallel nutzen. Weniger warten.",
       "queued": "In Warteschlange",
       "received": "Empfangen",
       "refresh": "Aktualisieren",
@@ -2096,7 +2095,6 @@
     "resources": {
       "collapse": "Einklappen",
       "copyLink": "Link kopieren",
-      "empty": "Dieser Chat enthält noch keine Artefakte oder Links",
       "emptyLinks": "Noch keine Links in diesem Chat",
       "expand": "Ausklappen",
       "links": "Links",
@@ -3883,7 +3881,6 @@
       "invoice": "Rechnung",
       "letter": "Briefe",
       "report": "Berichte",
-      "resume": "Lebensläufe",
       "service-agreement": "Dienstleistungsvertrag"
     },
     "contents": {
@@ -5141,6 +5138,41 @@
       "save": "Speichern",
       "saveChanges": "Änderungen speichern",
       "saving": "Speichern..."
+    },
+    "wallet": {
+      "actionError": "Die Aktion konnte nicht abgeschlossen werden. Prüfe deine Verbindung, erlaube Pop-ups und versuche es erneut.",
+      "connect": "Verbinden",
+      "description": "Deine Agenten können über Link Einkäufe anfragen. Du bestätigst jeden Einkauf.",
+      "disconnect": "Trennen",
+      "loadError": "Dein Wallet konnte nicht geladen werden.",
+      "permissionsUnknown": "Verbinde Link erneut, um die aktuellen Berechtigungen zu prüfen und zu bestätigen.",
+      "retry": "Erneut versuchen",
+      "scope": "Lass Okou mit Link für dich einkaufen.",
+      "title": "Wallet",
+      "transactions": {
+        "description": "Deine letzten Link-Kaufanfragen in Okou.",
+        "empty": "Noch keine Link-Transaktionen",
+        "loadError": "Transaktionen konnten nicht geladen werden. Versuche es erneut.",
+        "loading": "Transaktionen werden geladen",
+        "merchant": "Händler",
+        "status": {
+          "approved": "Genehmigt, Zahlung ausstehend",
+          "canceled": "Storniert",
+          "created": "Erstellt",
+          "creating": "Wird erstellt",
+          "denied": "Abgelehnt",
+          "expired": "Abgelaufen",
+          "failed": "Fehlgeschlagen",
+          "pending_approval": "Genehmigung ausstehend",
+          "requires_action": "Aktion erforderlich",
+          "submitted": "Zahlung wird verarbeitet",
+          "succeeded": "Zahlung erfolgreich"
+        },
+        "statusLabel": "Status",
+        "test": "Test",
+        "title": "Link-Transaktionen"
+      },
+      "workspaceScopeChanged": "Dein Link-Wallet kann jetzt von all deinen Agenten in diesem Workspace genutzt werden. Verbinde es erneut, um diese Änderung zu bestätigen."
     },
     "workspace": {
       "danger": {

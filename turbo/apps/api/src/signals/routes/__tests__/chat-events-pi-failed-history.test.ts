@@ -131,7 +131,7 @@ describe("Pi failed native continuation", () => {
         model,
       });
       const nextClaim = await claimChatRun(runnerGroup, next.runId);
-      expect(nextClaim.claim.resumeSession).toBeNull();
+
       expect(nextClaim.claim.nativeContinuation).toMatchObject({
         sessionId: first.threadId,
         generationRunId: failed.runId,

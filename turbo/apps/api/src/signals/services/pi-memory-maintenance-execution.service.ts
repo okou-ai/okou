@@ -1257,7 +1257,6 @@ function buildMaintenanceExecutionContext(
       return key === undefined ? [] : [key];
     }),
     vars: null,
-    resumeSession: null,
     nativeContinuation: {
       sessionId: null,
       generationRunId: null,
@@ -1537,7 +1536,7 @@ function maintenanceRunContextSnapshot(
     userId: record.userId,
     prompt: record.prompt,
     appendSystemPrompt: record.appendSystemPrompt,
-    sessionId: context.piSessionId ?? context.resumeSession?.sessionId ?? null,
+    sessionId: context.piSessionId ?? context.nativeContinuation.sessionId,
     cliAgentType: context.cliAgentType,
     ...piModelConfigObservation(context.cliAgentType, context.piModelConfig),
     secretNames: [...launch.secretNames],

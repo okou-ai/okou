@@ -15,11 +15,6 @@ export type SessionHistoryBlobEncoding =
   | typeof SESSION_HISTORY_ENCODING_GZIP
   | typeof SESSION_HISTORY_ENCODING_ZSTD;
 
-export type CompressedSessionHistoryBlobEncoding = Exclude<
-  SessionHistoryBlobEncoding,
-  typeof SESSION_HISTORY_ENCODING_IDENTITY
->;
-
 export function tryNormalizeSessionHistoryBlobEncoding(
   encoding: string | null,
 ): SessionHistoryBlobEncoding | undefined {
@@ -33,16 +28,6 @@ export function tryNormalizeSessionHistoryBlobEncoding(
     return SESSION_HISTORY_ENCODING_ZSTD;
   }
   return undefined;
-}
-
-export function normalizeSessionHistoryBlobEncoding(
-  encoding: string | null,
-): SessionHistoryBlobEncoding {
-  const normalized = tryNormalizeSessionHistoryBlobEncoding(encoding);
-  if (normalized !== undefined) {
-    return normalized;
-  }
-  throw new Error(`invalid session history blob encoding: ${encoding}`);
 }
 
 export function resumeSessionHistoryRawBlobKey(hash: string): string {

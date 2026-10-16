@@ -2301,15 +2301,29 @@
     {
       "idx": 1406,
       "version": "7",
-      "when": 1792121210331,
-      "tag": "1406_wechat_message_archive",
+      "when": 1792120606435,
+      "tag": "1406_link_wallet_workspace_owner",
       "breakpoints": true
     },
     {
       "idx": 1407,
       "version": "7",
-      "when": 1792121237840,
-      "tag": "1407_canonical_delivery_operation_identity",
+      "when": 1792120619099,
+      "tag": "1407_link_wallet_scope_snapshots",
+      "breakpoints": true
+    },
+    {
+      "idx": 1408,
+      "version": "7",
+      "when": 1792122867954,
+      "tag": "1408_wechat_message_archive",
+      "breakpoints": true
+    },
+    {
+      "idx": 1409,
+      "version": "7",
+      "when": 1792122887680,
+      "tag": "1409_canonical_delivery_operation_identity",
       "breakpoints": true
     }
   ]

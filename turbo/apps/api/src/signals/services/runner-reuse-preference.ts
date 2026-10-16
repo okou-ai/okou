@@ -197,7 +197,7 @@ export function runnerReusePreferencePollPriority(args: {
     args.currentDate.getTime() - RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
   );
   const freshAfter = runnerReuseHolderFreshAfter(args.currentDate);
-  const targetGenerationRunId = sql`${runnerJobQueue.executionContext}->'resumeSession'->>'historyGenerationRunId'`;
+  const targetGenerationRunId = sql`${runnerJobQueue.executionContext}->'nativeContinuation'->>'generationRunId'`;
   const reuseKey = runnerJobQueue.reuseKey;
   const profile = runnerJobQueue.profile;
   const exactCondition = reusableSandboxCondition({

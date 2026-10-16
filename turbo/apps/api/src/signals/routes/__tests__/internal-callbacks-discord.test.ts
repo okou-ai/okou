@@ -913,6 +913,155 @@ describe("canonical Discord terminal replies", () => {
     },
   );
 
+  it.each(["thread", "dm"] as const)(
+    "reads each provider resource once per active input in a %s",
+    async (kind) => {
+      const started = await startDiscordRun({ channelType: kind });
+      const claim = await claimRun(started.actor, started.runId);
+      mockDiscordApplication(1 << 19);
+      const followup = discordMessageForTest(started.actor, {
+        channelId: started.sourceChannelId,
+        guild: kind !== "dm",
+        content: `<@${started.actor.botUserId}> Continue this task.`,
+      });
+      const history = discordMessageForTest(started.actor, {
+        id: (BigInt(followup.id) - 1n).toString(),
+        channelId: started.sourceChannelId,
+        guild: kind !== "dm",
+        content: "History for the active follow-up.",
+      });
+      started.provider.messages.set(history.id, history);
+      started.provider.messages.set(followup.id, followup);
+      await postDiscordMessage(context, followup);
+      await flushWaitUntilForTest();
+      const reads: string[] = [];
+      const observe = ({ request }: { request: Request }) => {
+        if (
+          request.method === "GET" &&
+          request.url.startsWith("https://discord.com/api/v10/")
+        ) {
+          reads.push(request.url);
+        }
+      };
+      server.events.on("request:start", observe);
+      onTestFinished(() => {
+        server.events.removeListener("request:start", observe);
+      });
+      const memberships =
+        context.mocks.clerk.organizations.getOrganizationMembershipList;
+      memberships.mockClear();
+      const { input } = await runs.nextSteerableInput(
+        claim.sandboxToken,
+        started.runId,
+      );
+      expect(input?.prompt).toContain("Continue this task.");
+      if (kind === "dm") {
+        expect(input?.prompt).not.toContain(history.content);
+      } else {
+        expect(input?.prompt).toContain(history.content);
+      }
+      expect(reads).toHaveLength(kind === "dm" ? 2 : 8);
+      expect(new Set(reads).size).toBe(reads.length);
+      expect(memberships).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each([403, 404, 429, 502])(
+    "handles a current MESSAGE_CONTENT lookup returning %s without losing the queued input",
+    async (status) => {
+      const started = await startDiscordRun();
+      const claim = await claimRun(started.actor, started.runId);
+      mockDiscordApplication(1 << 19);
+      const followup = discordMessageForTest(started.actor, {
+        channelId: started.channelId,
+        content: `<@${started.actor.botUserId}> Keep this current input.`,
+      });
+      const history = discordMessageForTest(started.actor, {
+        id: (BigInt(followup.id) - 1n).toString(),
+        channelId: started.channelId,
+        content: "Context retained for recovery.",
+      });
+      started.provider.messages.set(history.id, history);
+      started.provider.messages.set(followup.id, followup);
+      await postDiscordMessage(context, followup);
+      await flushWaitUntilForTest();
+      server.use(
+        http.get("https://discord.com/api/v10/applications/@me", () => {
+          return HttpResponse.json(
+            { message: "Unavailable", retry_after: 1 },
+            { status },
+          );
+        }),
+      );
+      // A failed application lookup is not evidence of a disabled intent.
+      // Keep the provider failure retryable instead of consuming the input.
+      await runs.requestNextSteerableInputAs(
+        `Bearer ${claim.sandboxToken}`,
+        started.runId,
+        [500],
+      );
+      mockDiscordApplication(1 << 19);
+      const { input } = await runs.nextSteerableInput(
+        claim.sandboxToken,
+        started.runId,
+      );
+      expect(input?.prompt).toContain("Keep this current input.");
+      expect(input?.prompt).toContain(history.content);
+    },
+  );
+
+  it.each([
+    "organization membership",
+    "guild membership",
+    "source view",
+    "private thread membership",
+  ] as const)("rechecks %s on each active-input delivery", async (revoked) => {
+    const started = await startDiscordRun();
+    const claim = await claimRun(started.actor, started.runId);
+    if (revoked === "private thread membership") {
+      const channel = started.provider.channels.get(started.channelId);
+      if (!channel) {
+        throw new Error("Expected the native Discord thread");
+      }
+      channel.type = 12;
+      started.provider.state.everyonePermissions = MEMBER_PERMISSIONS;
+    }
+    const followup = discordMessageForTest(started.actor, {
+      channelId: started.channelId,
+      content: `<@${started.actor.botUserId}> Revalidate this follow-up.`,
+    });
+    started.provider.messages.set(followup.id, followup);
+    await postDiscordMessage(context, followup);
+    await flushWaitUntilForTest();
+    const initial = await runs.nextSteerableInput(
+      claim.sandboxToken,
+      started.runId,
+    );
+    expect(initial.input?.prompt).toContain("Revalidate this follow-up.");
+    if (revoked === "organization membership") {
+      mockDiscordMemberships(context, []);
+    } else if (revoked === "guild membership") {
+      started.provider.deniedMembers.add(started.actor.discordUserId);
+    } else if (revoked === "source view") {
+      started.provider.state.everyonePermissions = "0";
+    } else {
+      server.use(
+        http.get(
+          `https://discord.com/api/v10/channels/${started.channelId}/thread-members/${started.actor.discordUserId}`,
+          () => {
+            return HttpResponse.json(
+              { message: "Unknown member" },
+              { status: 404 },
+            );
+          },
+        ),
+      );
+    }
+    await expect(
+      runs.nextSteerableInput(claim.sandboxToken, started.runId),
+    ).resolves.toStrictEqual({ input: null });
+  });
+
   it.each(["history permission", "message-content grant"])(
     "drops previously read history when the current %s is revoked",
     async (revoked) => {

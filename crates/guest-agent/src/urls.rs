@@ -22,10 +22,6 @@ pub(crate) fn telemetry_url(base_url: &str) -> String {
     routes::webhooks::agent::telemetry::SEND.url(base_url)
 }
 
-pub(crate) fn session_history_prepare_url(base_url: &str) -> String {
-    routes::webhooks::agent::session_history::prepare::PREPARE.url(base_url)
-}
-
 pub(crate) fn storage_prepare_url(base_url: &str) -> String {
     routes::webhooks::agent::storages::prepare::PREPARE.url(base_url)
 }

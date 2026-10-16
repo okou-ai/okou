@@ -126,6 +126,12 @@ pub(super) async fn report_startup_path(
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        future::{Future, poll_fn},
+        pin::Pin,
+        task::Poll,
+    };
+
     use super::*;
     use httpmock::prelude::*;
     use runner_provider::http::HttpClientConfig;
@@ -143,6 +149,52 @@ mod tests {
             runner_version: env!("CARGO_PKG_VERSION"),
         })
         .unwrap()
+    }
+
+    async fn wait_for_retry(
+        mut report: Pin<&mut impl Future<Output = ()>>,
+        captured: &CapturedEvents,
+        attempt: usize,
+    ) {
+        let attempt = attempt.to_string();
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            poll_fn(|cx| {
+                assert!(
+                    report.as_mut().poll(cx).is_pending(),
+                    "startup report finished before retry {attempt}"
+                );
+                if captured.entries().iter().any(|entry| {
+                    entry
+                        .fields
+                        .get("message")
+                        .is_some_and(|message| message.starts_with("sandbox startup report"))
+                        && entry.fields.get("attempt") == Some(&attempt)
+                        && entry.fields.get("will_retry").map(String::as_str) == Some("true")
+                }) {
+                    // No await separates the retry event from the sleep select.
+                    // This Pending poll has established the owned sleep's deadline.
+                    Poll::Ready(())
+                } else {
+                    Poll::Pending
+                }
+            }),
+        )
+        .await
+        .expect("startup report should reach its retry wait");
+    }
+
+    async fn advance_retry(
+        report: Pin<&mut impl Future<Output = ()>>,
+        captured: &CapturedEvents,
+        attempt: usize,
+    ) {
+        wait_for_retry(report, captured, attempt).await;
+        // Keep the report unpolled while time is paused. Real HTTP and peer
+        // cleanup run only after resuming, with the production timeout intact.
+        tokio::time::pause();
+        tokio::time::advance(STARTUP_REPORT_RETRY_DELAY).await;
+        tokio::time::resume();
     }
 
     #[tokio::test]
@@ -198,23 +250,33 @@ mod tests {
             let run_id = RunId::new_v4();
             let captured = CapturedEvents::default();
             let subscriber = tracing_subscriber::registry().with(captured.clone());
-            let task = AbortOnDropHandle::new(tokio::spawn(async move {
-                report_startup_path(
-                    &http,
-                    run_id,
-                    "startup-run-token",
-                    SandboxStartupPath::Blank,
-                    &CancellationToken::new(),
-                )
-                .with_subscriber(subscriber)
-                .await;
-            }));
-            for description in ["initial startup report", "second attempt", "third attempt"] {
-                let request = server.next_request(description).await;
+            let cancel = CancellationToken::new();
+            let report = report_startup_path(
+                &http,
+                run_id,
+                "startup-run-token",
+                SandboxStartupPath::Blank,
+                &cancel,
+            )
+            .with_subscriber(subscriber);
+            tokio::pin!(report);
+            for (attempt, description) in [
+                (1, "initial startup report"),
+                (2, "second attempt"),
+                (3, "third attempt"),
+            ] {
+                let request = tokio::select! {
+                    biased;
+                    request = server.next_request(description) => request,
+                    () = &mut report => panic!("startup report finished before {description}"),
+                };
                 assert!(request.starts_with(&format!("PUT /api/runners/runs/{run_id}/startup ")));
                 assert!(request.contains(r#"{"sandboxStartupPath":"blank"}"#));
+                if attempt < STARTUP_REPORT_MAX_ATTEMPTS {
+                    advance_retry(report.as_mut(), &captured, attempt).await;
+                }
             }
-            task.await.unwrap();
+            report.await;
             server.assert_finished().await;
             let reports: Vec<_> = captured
                 .entries()
@@ -271,15 +333,21 @@ mod tests {
         });
         let captured = CapturedEvents::default();
         let subscriber = tracing_subscriber::registry().with(captured.clone());
-        report_startup_path(
-            &client(server.base_url()),
+        let http = client(server.base_url());
+        let cancel = CancellationToken::new();
+        let report = report_startup_path(
+            &http,
             RunId::new_v4(),
             "startup-run-token",
             SandboxStartupPath::Cold,
-            &CancellationToken::new(),
+            &cancel,
         )
-        .with_subscriber(subscriber)
-        .await;
+        .with_subscriber(subscriber);
+        tokio::pin!(report);
+        for attempt in 1..STARTUP_REPORT_MAX_ATTEMPTS {
+            advance_retry(report.as_mut(), &captured, attempt).await;
+        }
+        report.await;
         mock.assert_calls_async(3).await;
         // Retry severity is an explicit Runner operational contract requested
         // by the user; the real HTTP requests also prove the bounded attempts.
@@ -303,6 +371,34 @@ mod tests {
             last.fields.get("will_retry").map(String::as_str),
             Some("false")
         );
+    }
+
+    #[tokio::test]
+    async fn cancellation_during_retry_wait_does_not_send_another_request() {
+        let server = MockServer::start_async().await;
+        let mock = server.mock(|when, then| {
+            when.method(PUT);
+            then.status(503);
+        });
+        let http = client(server.base_url());
+        let cancel = CancellationToken::new();
+        let captured = CapturedEvents::default();
+        let subscriber = tracing_subscriber::registry().with(captured.clone());
+        let report = report_startup_path(
+            &http,
+            RunId::new_v4(),
+            "startup-run-token",
+            SandboxStartupPath::Home,
+            &cancel,
+        )
+        .with_subscriber(subscriber);
+        tokio::pin!(report);
+        wait_for_retry(report.as_mut(), &captured, 1).await;
+        cancel.cancel();
+        tokio::time::timeout(Duration::from_secs(5), report)
+            .await
+            .expect("cancellation should finish the pending retry");
+        mock.assert_calls_async(1).await;
     }
 
     #[tokio::test]

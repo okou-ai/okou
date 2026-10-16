@@ -5354,63 +5354,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn api_client_claim_rejects_resume_history_ref_without_encoding() {
-        let server = MockServer::start_async().await;
-        let run_id = RunId::from(uuid::Uuid::nil());
-        let path = format!("/api/runners/jobs/{run_id}/claim");
-        let mock = server
-            .mock_async(|when, then| {
-                when.method(POST).path(path.as_str());
-                then.status(200).json_body(serde_json::json!({
-                    "runId": run_id,
-                    "prompt": "continue",
-                    "sandboxToken": "claim-sandbox-token",
-                    "cliAgentType": "claude_code",
-                    "resumeSession": {
-                        "sessionId": "session-id",
-                        "historyRef": {
-                            "kind": "blob",
-                            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                            "url": "https://storage.example/history?secret=presigned-value",
-                            "rawSize": 42,
-                            "encodedSize": 42
-                        }
-                    },
-                    "billableFirewalls": [],
-                    "platformEnvironment": {},
-                    "connectorRuntimeTargets": []
-                }));
-            })
-            .await;
-        let api = api_client_for_server(&server);
-
-        let err = api
-            .claim_for_test(&JobCandidate::new(
-                run_id,
-                crate::profile::DEFAULT_PROFILE.to_string(),
-            ))
-            .await
-            .unwrap_err();
-
-        let ClaimApiError::ResponseDecode(message) = err else {
-            panic!("expected ClaimApiError::ResponseDecode");
-        };
-        assert!(
-            message.contains("failed at resumeSession"),
-            "decode error should identify the resume session, got: {message}"
-        );
-        assert!(
-            !message.contains("claim-sandbox-token"),
-            "decode error must not include response body values, got: {message}"
-        );
-        assert!(
-            !message.contains("presigned-value"),
-            "decode error must not include response body values, got: {message}"
-        );
-        mock.assert_async().await;
-    }
-
-    #[tokio::test]
     async fn api_client_claim_decode_error_redacts_dynamic_map_keys() {
         let server = MockServer::start_async().await;
         let run_id = RunId::from(uuid::Uuid::nil());
@@ -5821,7 +5764,14 @@ mod tests {
             "test-region"
         );
         assert_eq!(context.storage_manifest.as_ref().unwrap().storages.len(), 1);
-        assert_eq!(context.cli_agent_session_id(), Some("fixture-session-id"));
+        let native = context
+            .native_continuation
+            .as_ref()
+            .expect("current API claims include native continuation intent");
+        assert!(native.session_id.is_none());
+        assert!(native.generation_run_id.is_none());
+        assert!(native.recovery_prompt.is_none());
+        assert!(context.cli_agent_session_id().is_none());
         assert_eq!(
             context.environment.as_ref().unwrap()["FIXTURE_MODEL"],
             "fixture-model"

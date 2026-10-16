@@ -2059,7 +2059,6 @@
       "messageUnavailable": "消息不可用",
       "more": "更多",
       "origin": "发起自",
-      "parallelHint": "试试多会话并行，少些等待。",
       "queued": "排队中",
       "received": "收到",
       "refresh": "刷新",
@@ -2088,7 +2087,6 @@
     "resources": {
       "collapse": "收起",
       "copyLink": "复制链接",
-      "empty": "此聊天中还没有成果或链接",
       "emptyLinks": "此聊天中暂无链接",
       "expand": "展开",
       "links": "链接",
@@ -3865,7 +3863,6 @@
       "invoice": "发票",
       "letter": "商务信函",
       "report": "报告",
-      "resume": "简历",
       "service-agreement": "服务协议"
     },
     "contents": {
@@ -5121,6 +5118,41 @@
       "save": "保存",
       "saveChanges": "保存更改",
       "saving": "保存中…"
+    },
+    "wallet": {
+      "actionError": "操作未完成。请检查网络、允许弹出窗口后重试。",
+      "connect": "连接",
+      "description": "让 Agent 通过 Link 发起购买请求。每笔购买都由你确认。",
+      "disconnect": "断开连接",
+      "loadError": "无法加载钱包。",
+      "permissionsUnknown": "请重新连接 Link，查看并确认当前授权权限。",
+      "retry": "重试",
+      "scope": "让 Okou 通过 Link 为你完成购买。",
+      "title": "钱包",
+      "transactions": {
+        "description": "你最近通过 Okou 发起的 Link 购买请求。",
+        "empty": "暂无 Link 交易记录",
+        "loadError": "无法加载交易记录，请重试。",
+        "loading": "正在加载交易记录",
+        "merchant": "商家",
+        "status": {
+          "approved": "已批准，待支付",
+          "canceled": "已取消",
+          "created": "已创建",
+          "creating": "创建中",
+          "denied": "已拒绝",
+          "expired": "已过期",
+          "failed": "失败",
+          "pending_approval": "等待批准",
+          "requires_action": "需要操作",
+          "submitted": "支付处理中",
+          "succeeded": "支付成功"
+        },
+        "statusLabel": "状态",
+        "test": "测试",
+        "title": "Link 交易记录"
+      },
+      "workspaceScopeChanged": "你的 Link 钱包现在可供此工作区内你的所有 Agent 使用。请重新连接以确认此变更。"
     },
     "workspace": {
       "danger": {

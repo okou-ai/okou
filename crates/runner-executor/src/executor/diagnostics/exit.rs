@@ -4,7 +4,6 @@ use guest_contracts::diagnostics::{
 use sandbox::ExecTermination;
 use tracing::info;
 
-use super::super::session_restore::SessionRestoreDiagnostics;
 use super::super::{EXIT_SIGKILL, EXIT_SIGNAL_KILL, ResourceFailureKind, SandboxReuseResult};
 use super::environment::{AgentEnvDiagnostics, AgentEnvKeyDiagnostics};
 use super::stdout_stream::AgentStdoutStreamDiagnostics;
@@ -198,25 +197,12 @@ pub(in crate::executor) struct AgentBootstrapAbnormalExitLogContext<'a> {
     pub(in crate::executor) env_diagnostics: &'a AgentEnvDiagnostics,
     pub(in crate::executor) env_key_diagnostics: &'a AgentEnvKeyDiagnostics,
     pub(in crate::executor) stdout_stream_diagnostics: AgentStdoutStreamDiagnostics,
-    pub(in crate::executor) session_restore_diagnostics: Option<&'a SessionRestoreDiagnostics>,
     pub(in crate::executor) resource_failure_kind: Option<ResourceFailureKind>,
 }
 
 pub(in crate::executor) fn log_agent_bootstrap_abnormal_exit_diagnostics(
     context: AgentBootstrapAbnormalExitLogContext<'_>,
 ) {
-    let resume_session_framework = context
-        .session_restore_diagnostics
-        .map(|diagnostics| diagnostics.framework)
-        .unwrap_or("none");
-    let resume_session_id = context
-        .session_restore_diagnostics
-        .map(|diagnostics| diagnostics.session_id.as_str())
-        .unwrap_or("");
-    let resume_session_bytes_in = context
-        .session_restore_diagnostics
-        .map(|diagnostics| diagnostics.bytes_in);
-
     macro_rules! emit_diagnostics {
         ($level:expr) => {
             tracing::event!(
@@ -244,9 +230,6 @@ pub(in crate::executor) fn log_agent_bootstrap_abnormal_exit_diagnostics(
                 suspicious_env_keys = %context.env_diagnostics.suspicious_keys_csv(),
                 env_keys = %context.env_key_diagnostics.logged_keys_csv(),
                 omitted_env_key_count = context.env_key_diagnostics.omitted_key_count,
-                resume_session_framework = %resume_session_framework,
-                resume_session_id = %resume_session_id,
-                resume_session_bytes_in = ?resume_session_bytes_in,
                 resource_failure_kind = context.resource_failure_kind.map(ResourceFailureKind::as_str),
                 "agent bootstrap abnormal exit diagnostics"
             );

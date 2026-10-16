@@ -125,7 +125,12 @@ export function createThreadContext(
     orgId,
     sourceFeatureSwitches$,
   );
-  const discordContext$ = createDiscordThreadContext(pickedEvent$, orgId);
+  const model = createThreadModelSignals(bootstrap, pickedEvent$);
+  const discordContext$ = createDiscordThreadContext(
+    pickedEvent$,
+    orgId,
+    model.dispatchTiming$,
+  );
   const automationContext$ = createThreadAutomationContext(pickedEvent$);
   const automationTarget$ = createAutomationTarget(automationContext$);
   const workflowContext = createThreadWorkflowContext(
@@ -140,7 +145,6 @@ export function createThreadContext(
     sourceFeatureSwitches$,
   );
   const computerUseHostGrant$ = createThreadHostGrant(bootstrap, thread$);
-  const model = createThreadModelSignals(bootstrap, pickedEvent$);
   const threadContinuation$ = createThreadContinuation(
     bootstrap,
     pickedEvent$,

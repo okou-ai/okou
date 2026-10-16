@@ -154,7 +154,7 @@ describe("CHAT-02: model-first routing", () => {
       model: "gpt-6-luna",
     });
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
-    expect(firstClaim.claim.resumeSession).toBeNull();
+
     const initialMemory = expectCanonicalStorageManifest(
       firstClaim.claim.storageManifest,
     )?.storageMounts.find((mount) => {

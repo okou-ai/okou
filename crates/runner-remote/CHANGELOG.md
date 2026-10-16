@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.2](https://github.com/okou-ai/okou/compare/runner-remote-v0.20.1...runner-remote-v0.20.2) (2026-10-16)
+
+
+### Refactoring
+
+* retire session history archive protocol ([#40528](https://github.com/okou-ai/okou/issues/40528)) ([1e9a4cf](https://github.com/okou-ai/okou/commit/1e9a4cf4fa6fb43dad8fad1caedc480df0ef7a41))
+
 ## [0.20.1](https://github.com/okou-ai/okou/compare/runner-remote-v0.20.0...runner-remote-v0.20.1) (2026-10-15)
 
 ## [0.20.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.19.0...runner-remote-v0.20.0) (2026-10-15)

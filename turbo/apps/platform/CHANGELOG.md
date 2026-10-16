@@ -12,6 +12,28 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1032.0](https://github.com/okou-ai/okou/compare/app-v0.1031.3...app-v0.1032.0) (2026-10-16)
+
+
+### Features
+
+* add workspace-scoped link wallets and transaction history ([#40192](https://github.com/okou-ai/okou/issues/40192)) ([12a55d1](https://github.com/okou-ai/okou/commit/12a55d1c8892076fbb608eb3116573e7011c060a))
+
+
+### Bug Fixes
+
+* **app:** align document template details and remove resume templates ([#40526](https://github.com/okou-ai/okou/issues/40526)) ([abed2a5](https://github.com/okou-ai/okou/commit/abed2a5f9f2036552cce2ca3cd27950e14b2c4b4))
+* **app:** hide loading and empty chat resource popups ([#40532](https://github.com/okou-ai/okou/issues/40532)) ([34c7a0e](https://github.com/okou-ai/okou/commit/34c7a0ebe93225209424934c8c48a11da51bb4e4))
+* **app:** sync composer task with selected template ([#40535](https://github.com/okou-ai/okou/issues/40535)) ([64612b8](https://github.com/okou-ai/okou/commit/64612b8d2b527c38eaa3bb12febfd99a15454972))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.570.0
+    * @okouai/core bumped to 8.763.0
+
 ## [0.1031.3](https://github.com/okou-ai/okou/compare/app-v0.1031.2...app-v0.1031.3) (2026-10-16)
 
 

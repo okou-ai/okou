@@ -205,7 +205,6 @@ export {
   webhookStripeContract,
   webhookBuiltInGenerationFalContract,
   webhookCompleteContract,
-  webhookSessionHistoryPrepareContract,
   webhookHeartbeatContract,
   webhookTelemetryContract,
   // Direct upload contracts (Webhook endpoints for sandbox)
@@ -488,7 +487,6 @@ export {
   storedStorageMountEntrySchema,
   sessionHistoryDownloadSourceSchema,
   storageManifestSchema,
-  resumeSessionSchema,
   type RunnersPollContract,
   type RunnersJobClaimContract,
   type RunnersConnectorRuntimeSyncContract,
@@ -508,7 +506,6 @@ export {
   type StorageMountEntry,
   type StoredStorageMountEntry,
   type StorageManifest,
-  type ResumeSession,
   type SessionHistoryDownloadSource,
   type RunnerBuiltinFirewallsResolveBody,
   type RunnerBuiltinFirewallsResolveResponse,

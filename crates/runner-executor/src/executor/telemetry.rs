@@ -83,7 +83,6 @@ impl Drop for RunnerPreSpawnConcurrencyGuard {
 pub enum RunnerPreSpawnPhase {
     ResumeSessionValidation,
     FinalizingWait,
-    SessionHistoryMaterializerStart,
     DeviceRateLimits,
     IdleReuseLookup,
     HomeCacheStateLookup,
@@ -266,10 +265,9 @@ impl FinalizingDiagnostics {
 }
 
 impl RunnerPreSpawnPhase {
-    const ALL: [Self; 10] = [
+    const ALL: [Self; 9] = [
         Self::ResumeSessionValidation,
         Self::FinalizingWait,
-        Self::SessionHistoryMaterializerStart,
         Self::DeviceRateLimits,
         Self::IdleReuseLookup,
         Self::HomeCacheStateLookup,
@@ -283,9 +281,6 @@ impl RunnerPreSpawnPhase {
         match self {
             Self::ResumeSessionValidation => "runner_claim_resume_session_validation",
             Self::FinalizingWait => "runner_claim_finalizing_wait",
-            Self::SessionHistoryMaterializerStart => {
-                "runner_claim_session_history_materializer_start"
-            }
             Self::DeviceRateLimits => "runner_claim_device_rate_limits",
             Self::IdleReuseLookup => "runner_claim_idle_reuse_lookup",
             Self::HomeCacheStateLookup => "runner_claim_home_cache_state_lookup",
@@ -301,7 +296,6 @@ impl RunnerPreSpawnPhase {
 struct RunnerPreSpawnPhaseDurations {
     resume_session_validation: Option<Duration>,
     finalizing_wait: Option<Duration>,
-    session_history_materializer_start: Option<Duration>,
     device_rate_limits: Option<Duration>,
     idle_reuse_lookup: Option<Duration>,
     home_cache_state_lookup: Option<Duration>,
@@ -316,9 +310,6 @@ impl RunnerPreSpawnPhaseDurations {
         match phase {
             RunnerPreSpawnPhase::ResumeSessionValidation => &mut self.resume_session_validation,
             RunnerPreSpawnPhase::FinalizingWait => &mut self.finalizing_wait,
-            RunnerPreSpawnPhase::SessionHistoryMaterializerStart => {
-                &mut self.session_history_materializer_start
-            }
             RunnerPreSpawnPhase::DeviceRateLimits => &mut self.device_rate_limits,
             RunnerPreSpawnPhase::IdleReuseLookup => &mut self.idle_reuse_lookup,
             RunnerPreSpawnPhase::HomeCacheStateLookup => &mut self.home_cache_state_lookup,
@@ -333,9 +324,6 @@ impl RunnerPreSpawnPhaseDurations {
         match phase {
             RunnerPreSpawnPhase::ResumeSessionValidation => self.resume_session_validation,
             RunnerPreSpawnPhase::FinalizingWait => self.finalizing_wait,
-            RunnerPreSpawnPhase::SessionHistoryMaterializerStart => {
-                self.session_history_materializer_start
-            }
             RunnerPreSpawnPhase::DeviceRateLimits => self.device_rate_limits,
             RunnerPreSpawnPhase::IdleReuseLookup => self.idle_reuse_lookup,
             RunnerPreSpawnPhase::HomeCacheStateLookup => self.home_cache_state_lookup,

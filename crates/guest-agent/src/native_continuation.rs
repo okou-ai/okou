@@ -2,7 +2,7 @@
 
 use crate::env::Framework;
 use crate::error::AgentError;
-use crate::session_history::{SessionHistoryUploadSource, resolve_session_history_from_source};
+use crate::session_history::{SessionHistoryContent, resolve_session_history_from_source};
 use guest_contracts::session_history_identity::SessionHistorySourceRef;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -87,13 +87,13 @@ pub(crate) fn retained_session_is_usable(
         Ok(file) => file,
         Err(error) => return unavailable_native_source(error),
     };
-    let bytes = match file.into_upload_source_bounded(MAX_NATIVE_BYTES) {
+    let bytes = match file.into_content_bounded(MAX_NATIVE_BYTES) {
         Ok(bytes) => bytes,
         Err(error) => return unavailable_native_source(error),
     };
     let bytes = match bytes {
-        SessionHistoryUploadSource::Decoded(bytes) => bytes,
-        SessionHistoryUploadSource::CodexZstd { encoded } => {
+        SessionHistoryContent::Decoded(bytes) => bytes,
+        SessionHistoryContent::CodexZstd { encoded } => {
             let Ok(decoder) = zstd::stream::read::Decoder::new(encoded.as_slice()) else {
                 return Ok(false);
             };

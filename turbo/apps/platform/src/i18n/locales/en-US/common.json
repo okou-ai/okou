@@ -2066,7 +2066,6 @@
       "messageUnavailable": "Message unavailable",
       "more": "More",
       "origin": "From",
-      "parallelHint": "Try parallel chats. Wait less.",
       "queued": "Queued",
       "received": "Received",
       "refresh": "Refresh",
@@ -2096,7 +2095,6 @@
     "resources": {
       "collapse": "Collapse",
       "copyLink": "Copy link",
-      "empty": "No artifacts or links in this chat yet",
       "emptyLinks": "No links in this chat yet",
       "expand": "Expand",
       "links": "Links",
@@ -3875,7 +3873,6 @@
       "invoice": "Invoice",
       "letter": "Letters",
       "report": "Reports",
-      "resume": "Resumes",
       "service-agreement": "Service agreement"
     },
     "contents": {
@@ -5133,6 +5130,41 @@
       "save": "Save",
       "saveChanges": "Save changes",
       "saving": "Saving..."
+    },
+    "wallet": {
+      "actionError": "Couldn’t complete the action. Check your connection, allow pop-ups, and try again.",
+      "connect": "Connect",
+      "description": "Let your agents request purchases through Link. You approve each purchase.",
+      "disconnect": "Disconnect",
+      "loadError": "Couldn’t load your wallet.",
+      "permissionsUnknown": "Reconnect Link to review and confirm its current permissions.",
+      "retry": "Retry",
+      "scope": "Let Okou make purchases for you with Link.",
+      "title": "Wallet",
+      "transactions": {
+        "description": "Your recent Link purchase requests in Okou.",
+        "empty": "No Link transactions yet",
+        "loadError": "Couldn’t load transactions. Try again.",
+        "loading": "Loading transactions",
+        "merchant": "Merchant",
+        "status": {
+          "approved": "Approved, awaiting payment",
+          "canceled": "Canceled",
+          "created": "Created",
+          "creating": "Creating",
+          "denied": "Declined",
+          "expired": "Expired",
+          "failed": "Failed",
+          "pending_approval": "Awaiting approval",
+          "requires_action": "Action required",
+          "submitted": "Payment processing",
+          "succeeded": "Payment succeeded"
+        },
+        "statusLabel": "Status",
+        "test": "Test",
+        "title": "Link transactions"
+      },
+      "workspaceScopeChanged": "Your Link wallet now works across your agents in this workspace. Reconnect to approve this change."
     },
     "workspace": {
       "danger": {

@@ -2106,7 +2106,6 @@
       "messageUnavailable": "Mensaje no disponible",
       "more": "Más",
       "origin": "Desde",
-      "parallelHint": "Prueba chats en paralelo. Espera menos.",
       "queued": "En cola",
       "received": "Recibido",
       "refresh": "Actualizar",
@@ -2137,7 +2136,6 @@
     "resources": {
       "collapse": "Contraer",
       "copyLink": "Copiar enlace",
-      "empty": "Este chat aún no tiene artefactos ni enlaces",
       "emptyLinks": "Aún no hay enlaces en este chat",
       "expand": "Expandir",
       "links": "Enlaces",
@@ -3942,7 +3940,6 @@
       "invoice": "Factura",
       "letter": "Cartas",
       "report": "Informes",
-      "resume": "Currículums",
       "service-agreement": "Acuerdo de servicios"
     },
     "contents": {
@@ -5208,6 +5205,41 @@
       "save": "Guardar",
       "saveChanges": "Guardar cambios",
       "saving": "Guardando..."
+    },
+    "wallet": {
+      "actionError": "No se pudo completar la acción. Comprueba la conexión, permite las ventanas emergentes e inténtalo de nuevo.",
+      "connect": "Conectar",
+      "description": "Tus agentes pueden solicitar compras a través de Link. Tú apruebas cada compra.",
+      "disconnect": "Desconectar",
+      "loadError": "No se pudo cargar tu cartera.",
+      "permissionsUnknown": "Vuelve a conectar Link para revisar y confirmar sus permisos actuales.",
+      "retry": "Reintentar",
+      "scope": "Deja que Okou compre por ti con Link.",
+      "title": "Cartera",
+      "transactions": {
+        "description": "Tus solicitudes de compra recientes con Link en Okou.",
+        "empty": "Aún no hay transacciones de Link",
+        "loadError": "No se pudieron cargar las transacciones. Inténtalo de nuevo.",
+        "loading": "Cargando transacciones",
+        "merchant": "Comercio",
+        "status": {
+          "approved": "Aprobada, pendiente de pago",
+          "canceled": "Cancelada",
+          "created": "Creada",
+          "creating": "Creando",
+          "denied": "Rechazada",
+          "expired": "Vencida",
+          "failed": "Fallida",
+          "pending_approval": "Pendiente de aprobación",
+          "requires_action": "Acción necesaria",
+          "submitted": "Procesando pago",
+          "succeeded": "Pago completado"
+        },
+        "statusLabel": "Estado",
+        "test": "Prueba",
+        "title": "Transacciones de Link"
+      },
+      "workspaceScopeChanged": "Tu cartera de Link ahora puede usarse con todos tus agentes de este espacio de trabajo. Vuelve a conectarla para aprobar este cambio."
     },
     "workspace": {
       "danger": {

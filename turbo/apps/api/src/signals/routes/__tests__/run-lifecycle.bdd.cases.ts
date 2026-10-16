@@ -2159,7 +2159,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "continue canonical storage session",
         });
         const sessionClaim = await api.claimRunnerJob(sessionRun.runId);
-        expect(sessionClaim.resumeSession).toBeNull();
+
         const sessionManifest = sessionClaim.storageManifest;
         if (!sessionManifest || !("storageMounts" in sessionManifest)) {
           throw new Error("Expected canonical mounts from session persistence");
@@ -3128,7 +3128,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(changedRuntimeClaim.cliAgentType).not.toBe(
           firstClaim.cliAgentType,
         );
-        expect(changedRuntimeClaim.resumeSession).toBeNull();
+
         await api.requestCancelRun(actor, changedRuntime.runId, [200]);
       });
 
@@ -10902,7 +10902,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           sessionId: `bdd-combined-cli-${first.runId}`,
           generationRunId: expect.any(String),
         });
-        expect(resumedClaim.resumeSession).toBeNull();
+
         expect(resumedClaim.networkPolicies?.slack).toBeDefined();
 
         await api.requestCancelRun(actor, resumed.runId, [200]);

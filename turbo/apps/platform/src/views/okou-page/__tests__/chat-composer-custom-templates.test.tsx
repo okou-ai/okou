@@ -15,6 +15,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
+import { findComposerEditor } from "./chat-composer-test-helpers.ts";
 import {
   AGENT_ID,
   THREAD_ID,
@@ -635,12 +636,15 @@ test("Using a custom template sends the row id and nothing about its kind", asyn
   // The chip carries the template's own title. Before the attachment resolver
   // knew `custom`, Use resolved to nothing and this never appeared; before the
   // node guard knew it, rendering the chip threw.
-  await expect(screen.findByText("Q3 board review")).resolves.toBeVisible();
+  const editor = await findComposerEditor();
+  await expect(
+    within(editor).findByText("Q3 board review"),
+  ).resolves.toBeInTheDocument();
   // A deck's cover reaches the chip, which is what makes the document case
   // below a difference rather than a chip that never draws covers at all.
   await waitFor(() => {
     expect(
-      document.querySelector('img[src="https://example.test/cover.png"]'),
+      editor.querySelector('img[src="https://example.test/cover.png"]'),
     ).not.toBeNull();
   });
 });

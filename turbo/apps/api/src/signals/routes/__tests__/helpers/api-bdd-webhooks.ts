@@ -4,7 +4,6 @@ import { emailInboundContract } from "@okouai/api-contracts/contracts/email";
 import {
   webhookBuiltInGenerationFalContract,
   runCompletionMetadataSchema,
-  webhookSessionHistoryPrepareContract,
   webhookClerkContract,
   webhookCompleteContract,
   webhookEventsContract,
@@ -26,8 +25,7 @@ import { mockStripeClient } from "../../../external/stripe-client";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
-import { registerKnownSessionHistoryBlob } from "./api-bdd-session-history";
-import { webhooksAgentSessionHistoryRoutes } from "../../webhooks-agent-session-history";
+
 import { webhooksAgentCompleteRoutes } from "../../webhooks-agent-complete";
 import { webhooksAgentEventsRoutes } from "../../webhooks-agent-events";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../../webhooks-agent-health-usage-telemetry";
@@ -39,7 +37,6 @@ import { webhooksStripeRoutes } from "../../webhooks-stripe";
 import { emailInboundRoutes } from "../../email-inbound";
 
 const TEST_APP_ROUTES = Object.freeze([
-  ...webhooksAgentSessionHistoryRoutes,
   ...webhooksAgentCompleteRoutes,
   ...webhooksAgentEventsRoutes,
   ...webhooksAgentHealthUsageTelemetryRoutes,
@@ -58,9 +55,6 @@ type AgentCompleteBody = z.infer<
 type AgentRunOutputsBody = z.infer<typeof runCompletionMetadataSchema> & {
   readonly runId: string;
 };
-type AgentSessionHistoryPrepareBody = z.infer<
-  (typeof webhookSessionHistoryPrepareContract.prepare)["body"]
->;
 type AgentHeartbeatBody = z.infer<
   (typeof webhookHeartbeatContract.send)["body"]
 >;
@@ -483,31 +477,6 @@ export function createWebhookCallbackApi(context: TestContext) {
       statuses: readonly (200 | 400 | 401 | 404 | 500)[],
       signal?: AbortSignal,
     ) {
-      const historyHash = body.completion?.cliAgentSessionHistoryHash;
-      if (historyHash !== undefined) {
-        const sessionHistoryBlob = registerKnownSessionHistoryBlob(
-          context,
-          body.runId,
-          historyHash,
-        );
-        if (sessionHistoryBlob && statuses.includes(200)) {
-          await accept(
-            setupApp({ context, routes: webhooksAgentSessionHistoryRoutes })(
-              webhookSessionHistoryPrepareContract,
-            ).prepare({
-              headers,
-              body: {
-                runId: body.runId,
-                hash: historyHash,
-                rawSize: sessionHistoryBlob.byteLength,
-                encodedSize: sessionHistoryBlob.byteLength,
-                encoding: "identity",
-              },
-            }),
-            [200],
-          );
-        }
-      }
       const client = setupAppWithRoutes({
         context,
         routes: webhooksAgentCompleteRoutes,
@@ -561,38 +530,6 @@ export function createWebhookCallbackApi(context: TestContext) {
       return await this.requestAgentCompleteUnchecked(
         { runId, exitCode: 0, completion },
         headers,
-        statuses,
-      );
-    },
-
-    async requestAgentSessionHistoryPrepare(
-      body: AgentSessionHistoryPrepareBody,
-      headers: SandboxWebhookHeaders,
-      statuses: readonly (200 | 400 | 401 | 404 | 500)[],
-    ) {
-      return await accept(
-        setupApp({ context, routes: webhooksAgentSessionHistoryRoutes })(
-          webhookSessionHistoryPrepareContract,
-        ).prepare({
-          headers,
-          body,
-        }),
-        statuses,
-      );
-    },
-
-    async requestAgentSessionHistoryPrepareUnchecked(
-      body: unknown,
-      headers: SandboxWebhookHeaders,
-      statuses: readonly (400 | 401 | 404 | 500)[],
-    ) {
-      return await accept(
-        setupApp({ context, routes: webhooksAgentSessionHistoryRoutes })(
-          webhookSessionHistoryPrepareContract,
-        ).prepare({
-          headers,
-          body: body as AgentSessionHistoryPrepareBody,
-        }),
         statuses,
       );
     },

@@ -108,23 +108,7 @@ async fn run_scenario(scenario: Scenario) -> Result<(), Box<dyn std::error::Erro
             .header("Content-Type", "application/json")
             .json_body(json!({}));
     });
-    let prepare = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/agent/session-history/prepare")
-            .json_body_includes(format!(r#"{{"runId":"{}"}}"#, scenario.run_id));
-        then.status(200)
-            .header("Content-Type", "application/json")
-            .json_body(json!({
-                "presignedUrl": server.url("/test/user-cancellation-history"),
-                "existing": false
-            }));
-    });
-    let upload = server.mock(|when, then| {
-        when.method(PUT)
-            .path("/test/user-cancellation-history")
-            .header("Content-Type", "application/octet-stream");
-        then.status(200);
-    });
+
     let combined_complete_order = Arc::clone(&request_order);
     let combined_complete = server.mock(move |when, then| {
         when.method(POST)
@@ -284,8 +268,7 @@ async fn run_scenario(scenario: Scenario) -> Result<(), Box<dyn std::error::Erro
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    prepare.assert_calls_async(1).await;
-    upload.assert_calls_async(1).await;
+
     combined_complete
         .assert_calls_async(scenario.combined_completion_attempts)
         .await;

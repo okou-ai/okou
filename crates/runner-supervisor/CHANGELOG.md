@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.10](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.16.9...runner-supervisor-v0.16.10) (2026-10-16)
+
+
+### Refactoring
+
+* retire session history archive protocol ([#40528](https://github.com/okou-ai/okou/issues/40528)) ([1e9a4cf](https://github.com/okou-ai/okou/commit/1e9a4cf4fa6fb43dad8fad1caedc480df0ef7a41))
+
 ## [0.16.9](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.16.8...runner-supervisor-v0.16.9) (2026-10-16)
 
 

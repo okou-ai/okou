@@ -50,6 +50,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Use interactive shells on an authorized computer with local opt-in.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.SandboxFilesSidebar]: {
     maintainer: "liangyou@okou.ai",
@@ -293,6 +294,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Enable hosted Link wallet consent, per-purchase approval, and one-time payment credential retrieval.",
     enabled: true,
+  },
+  [FeatureSwitchKey.WalletSettings]: {
+    maintainer: "yuma@okou.ai",
+    description:
+      "Show Wallet in Settings > Billing & pricing for personal Link wallet connections in the current workspace.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.Banking]: {
     maintainer: "yuma@okou.ai",

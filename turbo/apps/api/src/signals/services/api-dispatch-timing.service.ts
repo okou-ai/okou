@@ -72,6 +72,9 @@ function claimApiProcessDispatchOrdinal(): ApiProcessDispatchOrdinalBucket {
 }
 
 export type ApiDispatchTimingActionType =
+  | "api_dispatch_discord_prompt_binding"
+  | "api_dispatch_discord_prompt_provider"
+  | "api_dispatch_discord_prompt_capability"
   | "api_dispatch_pre_create_agent_run"
   | "api_dispatch_pre_create_direct_parse_body"
   | "api_dispatch_pre_create_direct_prepare_args"

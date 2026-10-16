@@ -46,7 +46,7 @@ describe("CHAT-02: model-first routing", () => {
     });
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
     // The first turn has no stored history, so the Sandbox starts fresh.
-    expect(firstClaim.claim.resumeSession).toBeNull();
+
     expect(firstClaim.claim.piSessionId).toBe(first.threadId);
     await own(async () => {
       return await completeSandboxFirstPiRun({
@@ -66,7 +66,7 @@ describe("CHAT-02: model-first routing", () => {
       prompt: "continue the preserved canonical session with tools",
     });
     const claimed = await claimChatRun(runnerGroup, resumed.runId);
-    expect(claimed.claim.resumeSession).toBeNull();
+
     expect(claimed.claim.nativeContinuation).toMatchObject({
       sessionId: first.threadId,
       generationRunId: first.runId,
@@ -142,7 +142,7 @@ describe("CHAT-02: model-first routing", () => {
       },
     });
     expect(claim.prompt).toBe(prompt);
-    expect(claim.resumeSession).toBeNull();
+
     expect(claim.nativeContinuation).toMatchObject({
       sessionId: first.threadId,
       generationRunId: first.runId,

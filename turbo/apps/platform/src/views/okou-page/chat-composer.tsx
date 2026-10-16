@@ -7790,7 +7790,7 @@ function useComposerDraftChange(signals: ComposerSignals): () => void {
 function useComposerTemplatePicker(
   signals: ComposerSignals,
 ): ComposerTemplatePicker {
-  const insertTemplate = useSet(signals.template.insertTemplate$);
+  const selectTemplate = useSet(signals.taskChips.selectTemplate$);
   const loadImportedTemplates = useSet(
     signals.template.loadImportedPresentationTemplates$,
   );
@@ -7800,11 +7800,12 @@ function useComposerTemplatePicker(
   const insert = (
     value: GenerationTemplateRequest,
     attachment: ComposerTemplateAttachment | undefined,
+    type: GenerationTemplateRequest["type"] = value.type,
   ) => {
     if (!attachment) {
       return;
     }
-    insertTemplate(value, attachment);
+    selectTemplate(value, attachment, type);
     notifyDraftChanged();
   };
   return {
@@ -7824,18 +7825,26 @@ function useComposerTemplatePicker(
       }
       detach(
         (async () => {
-          const attachment =
+          const customTemplates =
             value.type === "custom"
-              ? selectedComposerTemplateAttachment(
-                  value,
-                  [],
-                  await loadCustomTemplates(pageSignal),
-                )
-              : selectedComposerTemplateAttachment(
-                  value,
-                  await loadImportedTemplates(pageSignal),
-                );
-          insert(value, attachment);
+              ? await loadCustomTemplates(pageSignal)
+              : [];
+          const importedTemplates =
+            value.type === "presentation"
+              ? await loadImportedTemplates(pageSignal)
+              : [];
+          const attachment = selectedComposerTemplateAttachment(
+            value,
+            importedTemplates,
+            customTemplates,
+          );
+          const type =
+            value.type === "custom"
+              ? customTemplates.find((template) => {
+                  return template.id === value.selection.userTemplateId;
+                })?.kind
+              : value.type;
+          insert(value, attachment, type);
         })(),
         Reason.DomCallback,
       );

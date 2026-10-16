@@ -702,53 +702,29 @@ describe("Run completion metadata", () => {
   const completion = {
     cliAgentType: "codex",
     cliAgentSessionId: "native-session",
-    cliAgentSessionHistoryHash: manifestHash,
+    cliAgentSessionHistoryDisposition: "native_only",
   };
   const body = { runId: "run", exitCode: 0 };
-  it("accepts Guest finalization and metadata-free Runner fallback", () => {
-    for (const metadata of [
-      { completion },
-      {
-        completion: {
-          cliAgentType: "codex",
-          cliAgentSessionId: "native-session",
-          cliAgentSessionHistoryDisposition: "unavailable",
-        },
-      },
-      {
-        completion: {
-          cliAgentType: "codex",
-          cliAgentSessionId: "native-session",
-          cliAgentSessionHistoryDisposition: "discarded_oversized",
-        },
-      },
-      {},
-    ]) {
+  it("accepts native Guest finalization and metadata-free Runner fallback", () => {
+    for (const metadata of [{ completion }, {}]) {
       expect(
         webhookCompleteContract.complete.body.parse({ ...body, ...metadata }),
       ).toStrictEqual({ ...body, ...metadata });
     }
   });
-  it("preserves native history authority", () => {
-    for (const field of ["completion"]) {
-      for (const invalid of [
-        { ...completion, cliAgentSessionHistoryHash: undefined },
-        {
-          ...completion,
-          cliAgentSessionHistoryHash: undefined,
-          cliAgentSessionHistoryDisposition: "unknown",
-        },
-        { ...completion, runId: "other-run" },
-        { ...completion, cliAgentSessionHistoryDisposition: "unavailable" },
-        { ...completion, cliAgentSessionHistoryHash: "A".repeat(64) },
-      ]) {
-        expect(
-          webhookCompleteContract.complete.body.safeParse({
-            ...body,
-            [field]: invalid,
-          }).success,
-        ).toBe(false);
-      }
+  it("requires complete native identity metadata", () => {
+    for (const invalid of [
+      { ...completion, cliAgentSessionId: "" },
+      { ...completion, cliAgentType: "" },
+      { ...completion, cliAgentSessionHistoryDisposition: undefined },
+      { ...completion, cliAgentSessionHistoryDisposition: "unknown" },
+    ]) {
+      expect(
+        webhookCompleteContract.complete.body.safeParse({
+          ...body,
+          completion: invalid,
+        }).success,
+      ).toBe(false);
     }
   });
 });

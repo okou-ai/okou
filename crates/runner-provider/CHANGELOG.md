@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.8.6](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.5...runner-provider-v0.8.6) (2026-10-16)
+
+
+### Refactoring
+
+* retire session history archive protocol ([#40528](https://github.com/okou-ai/okou/issues/40528)) ([1e9a4cf](https://github.com/okou-ai/okou/commit/1e9a4cf4fa6fb43dad8fad1caedc480df0ef7a41))
+* **runner-provider:** keep sync timers with registered targets ([#40525](https://github.com/okou-ai/okou/issues/40525)) ([87b5ab0](https://github.com/okou-ai/okou/commit/87b5ab058e03bd9c49b6efff75c3502f3d347e46))
+* **runner-provider:** own capped deferred poll windows ([#40529](https://github.com/okou-ai/okou/issues/40529)) ([d4ad4ca](https://github.com/okou-ai/okou/commit/d4ad4caae19506ab0ca998f31d48c0dfc954df77))
+
 ## [0.8.5](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.4...runner-provider-v0.8.5) (2026-10-15)
 
 ## [0.8.4](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.3...runner-provider-v0.8.4) (2026-10-15)

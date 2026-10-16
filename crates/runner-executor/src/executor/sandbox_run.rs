@@ -33,8 +33,7 @@ use super::session_id::invalid_session_id_diagnostic_preview;
 use super::{
     ExecuteOutcome, ExecutionFailure, ExecutorConfig, JobParams, NewSandboxDispatch,
     PROCESS_CANCEL_TIMEOUTS, RunnerError, RunnerResult, SandboxPreparedNotifier,
-    SandboxReuseDisposition, SandboxReuseRejection, SandboxReuseResult, SessionHistoryMaterializer,
-    SessionHistoryRestorePlan,
+    SandboxReuseDisposition, SandboxReuseRejection, SandboxReuseResult,
 };
 use crate::dns::{DnsReadinessLogObservation, inspect_readiness_log_segment};
 use crate::duration::duration_ms;
@@ -542,9 +541,6 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                 false,
                 Some(&error.to_string()),
             );
-            std::mem::take(&mut controls.session_history_restore_plan)
-                .cancel_and_drain(telemetry)
-                .await;
             return Err(error);
         }
     };
@@ -570,21 +566,13 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                 false,
                 Some(&error.to_string()),
             );
-            std::mem::take(&mut controls.session_history_restore_plan)
-                .cancel_and_drain(telemetry)
-                .await;
             return Err(error);
         }
     }
-    controls.session_history_restore_plan = resolve_fresh_session_history_restore_plan(
-        std::mem::take(&mut controls.session_history_restore_plan),
-        home_image.as_ref(),
-        context,
-        config,
-        controls.cancel.clone(),
-        telemetry,
-    )
-    .await;
+    controls.home_history_proof = home_image
+        .as_ref()
+        .filter(|image| image.is_cache_hit())
+        .and_then(|image| image.history_proof_binding().cloned());
     let mut used_retry = preparation == FreshPreparation::WithoutCodexPrefetchReplacement;
     let mut used_home_fallback = false;
     let mut codex_model_catalog_prefetch = preparation == FreshPreparation::Initial;
@@ -593,9 +581,6 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
         let error = loop {
             if controls.cancel.is_cancelled() {
                 cancel_prepared_storage(&mut controls, telemetry).await;
-                std::mem::take(&mut controls.session_history_restore_plan)
-                    .cancel_and_drain(telemetry)
-                    .await;
                 return Err(RunnerError::Cancelled);
             }
             let result = create_started_sandbox(
@@ -645,10 +630,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                 ));
             }
             if failure.invalidate_consumed_home_cache && cache_hit {
-                controls.session_history_restore_plan = discard_home_candidate_restore_plan(
-                    std::mem::take(&mut controls.session_history_restore_plan),
-                )
-                .await;
+                controls.home_history_proof = None;
                 invalidate_home_cache_hit(
                     home_image.as_ref(),
                     context.run_id,
@@ -743,15 +725,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                     ));
                 }
                 used_home_fallback = true;
-                controls.session_history_restore_plan =
-                    replace_home_candidate_restore_plan_for_home_retry(
-                        std::mem::take(&mut controls.session_history_restore_plan),
-                        context,
-                        config,
-                        controls.cancel.clone(),
-                        telemetry,
-                    )
-                    .await;
+                controls.home_history_proof = None;
                 cancel_prepared_storage(&mut controls, telemetry).await;
                 invalidate_home_cache_hit(
                     home_image.as_ref(),
@@ -778,9 +752,6 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                             false,
                             Some(&error.to_string()),
                         );
-                        std::mem::take(&mut controls.session_history_restore_plan)
-                            .cancel_and_drain(telemetry)
-                            .await;
                         return Err(error);
                     }
                 }
@@ -794,9 +765,6 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
             Some(&error.to_string()),
         );
         cancel_prepared_storage(&mut controls, telemetry).await;
-        std::mem::take(&mut controls.session_history_restore_plan)
-            .cancel_and_drain(telemetry)
-            .await;
         return Err(error);
     };
     telemetry.record(
@@ -988,97 +956,6 @@ pub(super) async fn prepare_home_image(
         telemetry.observe_home(observation);
     }
     Some(lease)
-}
-
-async fn resolve_fresh_session_history_restore_plan(
-    plan: SessionHistoryRestorePlan,
-    home_image: Option<&HomeImageLease>,
-    context: &ExecutionContext,
-    config: &ExecutorConfig,
-    cancel: CancellationToken,
-    telemetry: &mut JobTelemetry,
-) -> SessionHistoryRestorePlan {
-    let fallback = match plan {
-        SessionHistoryRestorePlan::DeferredHashBacked { fallback } => fallback,
-        other => return other,
-    };
-    let Some(home_image) = home_image else {
-        return start_fresh_session_history_materializer(
-            context, config, cancel, telemetry, fallback,
-        );
-    };
-    if !home_image.is_cache_hit() {
-        return start_fresh_session_history_materializer(
-            context, config, cancel, telemetry, fallback,
-        );
-    }
-    if let Some(binding) = home_image.history_proof_binding() {
-        return SessionHistoryRestorePlan::HomeCacheCandidate {
-            binding: binding.clone(),
-            fallback,
-        };
-    }
-    start_fresh_session_history_materializer(context, config, cancel, telemetry, fallback)
-}
-
-async fn discard_home_candidate_restore_plan(
-    plan: SessionHistoryRestorePlan,
-) -> SessionHistoryRestorePlan {
-    match plan {
-        SessionHistoryRestorePlan::HomeCacheCandidate { fallback, .. } => {
-            SessionHistoryRestorePlan::DeferredHashBacked { fallback }
-        }
-        other => other,
-    }
-}
-
-async fn replace_home_candidate_restore_plan_for_home_retry(
-    plan: SessionHistoryRestorePlan,
-    context: &ExecutionContext,
-    config: &ExecutorConfig,
-    cancel: CancellationToken,
-    telemetry: &mut JobTelemetry,
-) -> SessionHistoryRestorePlan {
-    let fallback = match plan {
-        SessionHistoryRestorePlan::HomeCacheCandidate { fallback, .. }
-        | SessionHistoryRestorePlan::DeferredHashBacked { fallback } => fallback,
-        other => return other,
-    };
-    telemetry.record(
-        "session_history_home_cache_miss",
-        Duration::ZERO,
-        true,
-        Some("sandbox_retry_without_home_image"),
-    );
-    start_fresh_session_history_materializer(context, config, cancel, telemetry, fallback)
-}
-
-fn start_fresh_session_history_materializer(
-    context: &ExecutionContext,
-    config: &ExecutorConfig,
-    cancel: CancellationToken,
-    telemetry: &mut JobTelemetry,
-    fallback: Option<super::SessionHistoryRestoreFallback>,
-) -> SessionHistoryRestorePlan {
-    let started = Instant::now();
-    let materializer = SessionHistoryMaterializer::start_cancellable(
-        &config.http,
-        &config.session_history_cpu,
-        context.resume_session.as_ref(),
-        effective_cli_framework(&context.cli_agent_type),
-        cancel,
-        Some(&config.session_history_probe),
-    );
-    telemetry.record(
-        "runner_fresh_session_history_materializer_start",
-        started.elapsed(),
-        true,
-        None,
-    );
-    SessionHistoryRestorePlan::Prestarted {
-        materializer,
-        fallback,
-    }
 }
 
 fn home_image_prepare_error(result: HomeCacheCheckoutResult) -> Option<&'static str> {

@@ -33,10 +33,6 @@
   "platformEnvironment": {
     "OKOU_AGENT_ID": "fixture-agent-id"
   },
-  "resumeSession": {
-    "sessionId": "fixture-session-id",
-    "sessionHistory": "{}"
-  },
   "secretValues": ["fixture-secret-value-not-real"],
   "encryptedSecrets": "fixture-encrypted-secrets-not-real",
   "secretConnectorMap": {
@@ -100,5 +96,10 @@
         }
       ]
     }
+  },
+  "nativeContinuation": {
+    "sessionId": null,
+    "generationRunId": null,
+    "recoveryPrompt": null
   }
 }

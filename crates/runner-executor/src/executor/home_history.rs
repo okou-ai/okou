@@ -11,8 +11,7 @@ use guest_contracts::home_cache_history::{
     HomeCacheHistoryProofBinding, HomeCacheHistoryVerifyReport, HomeCacheHistoryVerifyRequest,
 };
 use guest_contracts::session_history_identity::{
-    SessionHistoryFramework, SessionHistoryIdentityExpectation, SessionHistoryRefKind,
-    SessionHistorySourceRef,
+    SessionHistoryFramework, SessionHistoryIdentityExpectation, SessionHistorySourceRef,
 };
 use sandbox::{EXEC_OUTPUT_LIMIT_64_KIB, ExecRequest, ExecTermination, Sandbox};
 use sha2::{Digest, Sha256};
@@ -22,33 +21,6 @@ use super::cli_framework::{EffectiveCliFramework, effective_cli_framework};
 use super::{RunnerError, RunnerResult};
 use runner_types::types::ExecutionContext;
 
-pub(super) fn expected_history(
-    context: &ExecutionContext,
-) -> Option<SessionHistoryIdentityExpectation> {
-    super::env::validate_resume_session_id(context).ok()?;
-    let resume = context.resume_session.as_ref()?;
-    let history = resume.history_ref()?;
-    let framework = effective_cli_framework(&context.cli_agent_type);
-    let session_id = match framework {
-        EffectiveCliFramework::Codex => {
-            guest_contracts::codex_thread_id::canonical_codex_thread_id(
-                &resume.cli_agent_session_id,
-            )?
-        }
-        EffectiveCliFramework::ClaudeCode | EffectiveCliFramework::Pi => {
-            resume.cli_agent_session_id.clone()
-        }
-    };
-    SessionHistoryIdentityExpectation::new(
-        SessionHistoryFramework::from(guest_contracts::env::CliFramework::from(framework)),
-        hex::encode(Sha256::digest(session_id.as_bytes())),
-        SessionHistoryRefKind::Blob,
-        history.hash.clone(),
-        history.raw_size,
-    )
-    .ok()
-}
-
 /// Mirror the finalized child launch, including managed overrides. User HOME,
 /// CLAUDE_CONFIG_DIR and CODEX_HOME do not override the managed framework homes.
 /// Pi resumes by id in its fixed directory; the guest proves unique selection.
@@ -56,16 +28,7 @@ pub(super) fn current_source(
     context: &ExecutionContext,
     retained: &SessionHistorySourceRef,
 ) -> Option<SessionHistorySourceRef> {
-    let session_id = context
-        .native_continuation
-        .as_ref()
-        .and_then(|native| native.session_id.as_ref())
-        .or_else(|| {
-            context
-                .resume_session
-                .as_ref()
-                .map(|resume| &resume.cli_agent_session_id)
-        })?;
+    let session_id = context.native_continuation.as_ref()?.session_id.as_ref()?;
     match effective_cli_framework(&context.cli_agent_type) {
         EffectiveCliFramework::ClaudeCode => Some(SessionHistorySourceRef::ClaudeCode {
             config_dir: CANONICAL_CLAUDE_CONFIG_DIR.into(),
@@ -144,7 +107,7 @@ pub(super) async fn verify_home_candidate(
         )
         .ok()
     } else {
-        expected_history(context)
+        return Ok(false);
     };
     let Some(expected) = expected else {
         return Ok(false);
@@ -209,27 +172,15 @@ pub(super) async fn verify_home_candidate(
 mod tests {
     use super::*;
     use crate::test_fixtures::execution_context::execution_context_for_test;
+    use guest_contracts::session_history_identity::SessionHistoryRefKind;
     use runner_types::ids::RunId;
-    use runner_types::types::{
-        ResumeSession, ResumeSessionHistory, ResumeSessionHistoryEncoding, ResumeSessionHistoryRef,
-        ResumeSessionHistoryRefKind,
-    };
 
     fn context() -> ExecutionContext {
         let mut context = execution_context_for_test(RunId::new_v4());
-        context.resume_session = Some(ResumeSession {
-            cli_agent_session_id: "session-1".into(),
-            history: ResumeSessionHistory::Ref {
-                history_ref: ResumeSessionHistoryRef {
-                    kind: ResumeSessionHistoryRefKind::Blob,
-                    hash: hex::encode(Sha256::digest(b"history")),
-                    raw_size: 7,
-                    encoded_size: 7,
-                    url: "http://localhost/history".into(),
-                    download_source: None,
-                    encoding: ResumeSessionHistoryEncoding::Identity,
-                },
-            },
+        context.native_continuation = Some(guest_contracts::env::NativeContinuation {
+            session_id: Some("session-1".into()),
+            generation_run_id: Some(uuid::Uuid::new_v4().to_string()),
+            recovery_prompt: None,
         });
         context
     }
@@ -254,18 +205,11 @@ mod tests {
                 session_id: "session-1".into()
             })
         );
-        let expected = expected_history(&context).unwrap();
-        assert_eq!(expected.history_size_bytes, 7);
-        assert_eq!(
-            expected.session_id_hash,
-            hex::encode(Sha256::digest(b"session-1"))
-        );
     }
 
     #[tokio::test]
     async fn cancellation_is_not_a_successful_history_miss() {
         let context = context();
-        let expected = expected_history(&context).unwrap();
         let source = current_source(
             &context,
             &SessionHistorySourceRef::ClaudeCode {
@@ -276,10 +220,10 @@ mod tests {
         )
         .unwrap();
         let identity = guest_contracts::session_history_identity::SessionHistoryIdentity::new(
-            expected.framework,
-            expected.session_id_hash,
-            expected.history_ref_kind,
-            expected.history_hash,
+            SessionHistoryFramework::ClaudeCode,
+            hex::encode(Sha256::digest(b"session-1")),
+            SessionHistoryRefKind::LocalHome,
+            hex::encode(Sha256::digest(b"history")),
             7,
             source,
         )
@@ -287,7 +231,13 @@ mod tests {
         let binding = HomeCacheHistoryProofBinding {
             proof: guest_contracts::home_cache_history::HomeCacheHistoryProof {
                 format_version: 1,
-                generation: uuid::Uuid::new_v4().to_string(),
+                generation: context
+                    .native_continuation
+                    .as_ref()
+                    .unwrap()
+                    .generation_run_id
+                    .clone()
+                    .unwrap(),
                 identity,
             },
             sha256: "a".repeat(64),

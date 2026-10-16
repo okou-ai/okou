@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { gunzipSync, zstdDecompressSync } from "node:zlib";
+
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
-import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
 import {
   chatEventsContract,
   chatThreadsContract,
@@ -17,7 +16,6 @@ import {
 } from "@okouai/api-contracts/contracts/model-providers";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
-import { createPiSessionJsonl } from "@okouai/pi-agent-runtime/api";
 
 import { http, HttpResponse } from "msw";
 import { expect } from "vitest";
@@ -54,7 +52,6 @@ import { createRunsApi } from "./api-bdd-runs";
 import { mockPiHistoryUploads } from "./api-bdd-pi-history-uploads";
 import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 import { chatEventDisplayText } from "./chat-event";
-import { nowDate } from "../../../../lib/time";
 import { createRouteMocks } from "./route-test";
 const TEST_APP_ROUTES = Object.freeze([
   ...chatEventsRoutes,
@@ -995,49 +992,6 @@ export function createChatEventsFixture(context: TestContext) {
     return objects;
   }
 
-  /**
-   * Rebuild the session a claimed Pi Sandbox starts from, as the CLI does: the
-   * claim's inline or blob-referenced resume history, else a fresh session.
-   */
-  function piSandboxBaseSession(
-    claim: RunnerClaim,
-    objects: ReadonlyMap<string, Buffer>,
-  ): Buffer {
-    const resume = claim.resumeSession;
-    if (!resume) {
-      if (!claim.piSessionId) {
-        throw new Error("Expected a claimed Pi session id");
-      }
-      return Buffer.from(
-        createPiSessionJsonl({
-          cwd: CANONICAL_WORKING_DIR,
-          sessionId: claim.piSessionId,
-          timestamp: nowDate().toISOString(),
-        }),
-        "utf8",
-      );
-    }
-    if (!("historyRef" in resume)) {
-      return Buffer.from(resume.sessionHistory, "utf8");
-    }
-    const objectKey = new URL(resume.historyRef.url).searchParams.get("object");
-    const encoded = objectKey ? objects.get(objectKey) : undefined;
-    if (!encoded) {
-      throw new Error("Expected the referenced Pi resume history bytes");
-    }
-    switch (resume.historyRef.encoding) {
-      case "gzip": {
-        return gunzipSync(encoded);
-      }
-      case "zstd": {
-        return zstdDecompressSync(encoded);
-      }
-      case "identity": {
-        return encoded;
-      }
-    }
-  }
-
   function uploadedPiS3Object(objectKey: string): Buffer | undefined {
     for (const [command] of [...context.mocks.s3.send.mock.calls].reverse()) {
       const candidate = command as PiObjectStoreCommand;
@@ -1185,8 +1139,6 @@ export function createChatEventsFixture(context: TestContext) {
       requestAgentComplete: webhooks.requestAgentComplete,
       requestAgentEvents: webhooks.requestAgentEvents,
       requestAgentRunOutputs: webhooks.requestAgentRunOutputs,
-      requestAgentSessionHistoryPrepare:
-        webhooks.requestAgentSessionHistoryPrepare,
       requestAgentStorageCommit: webhooks.requestAgentStorageCommit,
       requestAgentStoragePrepare: webhooks.requestAgentStoragePrepare,
       requestAgentUsageEvent: webhooks.requestAgentUsageEvent,
@@ -1228,7 +1180,6 @@ export function createChatEventsFixture(context: TestContext) {
     expectThreadPiTerminal,
     claimGptPiSandbox,
     mockPiObjectStore,
-    piSandboxBaseSession,
     uploadedPiS3Object,
     piS3Object,
     mockPiResourceArchiveDownloads,

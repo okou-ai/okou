@@ -21,7 +21,7 @@ import { readFileSync } from "node:fs";
 import homeStartupTelemetry from "../../../../../../packages/api-contracts/src/contracts/__tests__/fixtures/runner-home-startup-telemetry.json";
 
 import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
-import { RESUME_SESSION_HISTORY_MAX_BYTES } from "@okouai/api-contracts/contracts/runners";
+
 import { MAX_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/storages";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -2523,8 +2523,8 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
       {
         runId,
         cliAgentType: "claude-code",
-        cliAgentSessionId: "session-bdd",
-        cliAgentSessionHistoryHash: "not-a-sha",
+        cliAgentSessionId: "",
+        cliAgentSessionHistoryDisposition: "native_only",
       },
       headers,
       [400],
@@ -2532,72 +2532,18 @@ describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
     expectApiError(malformedOutputs.body);
     expect(malformedOutputs.body.error.code).toBe("BAD_REQUEST");
 
-    const uppercaseHistoryHash = await api.requestAgentRunOutputsUnchecked(
-      {
-        runId,
-        cliAgentType: "claude-code",
-        cliAgentSessionId: "session-bdd",
-        cliAgentSessionHistoryHash: "A".repeat(64),
-      },
-      headers,
-      [400],
-    );
-    expectApiError(uppercaseHistoryHash.body);
-    expect(uppercaseHistoryHash.body.error.code).toBe("BAD_REQUEST");
-
     const mismatchedOutputs = await api.requestAgentRunOutputs(
       {
         runId,
         cliAgentType: "claude-code",
         cliAgentSessionId: "session-bdd",
-        cliAgentSessionHistoryHash: hash,
+        cliAgentSessionHistoryDisposition: "native_only",
       },
       mismatchedHeaders,
       [401],
     );
     expectApiError(mismatchedOutputs.body);
     expect(mismatchedOutputs.body.error.code).toBe("UNAUTHORIZED");
-
-    const mismatchedHistoryPrepare =
-      await api.requestAgentSessionHistoryPrepare(
-        { runId, hash, rawSize: 128, encodedSize: 128 },
-        mismatchedHeaders,
-        [401],
-      );
-    expectApiError(mismatchedHistoryPrepare.body);
-    expect(mismatchedHistoryPrepare.body.error.code).toBe("UNAUTHORIZED");
-
-    const malformedHistoryPrepare =
-      await api.requestAgentSessionHistoryPrepareUnchecked(
-        { runId, hash, rawSize: 0, encodedSize: 0 },
-        headers,
-        [400],
-      );
-    expectApiError(malformedHistoryPrepare.body);
-    expect(malformedHistoryPrepare.body.error.code).toBe("BAD_REQUEST");
-
-    const uppercaseHistoryPrepare =
-      await api.requestAgentSessionHistoryPrepareUnchecked(
-        { runId, hash: "A".repeat(64), rawSize: 128, encodedSize: 128 },
-        headers,
-        [400],
-      );
-    expectApiError(uppercaseHistoryPrepare.body);
-    expect(uppercaseHistoryPrepare.body.error.code).toBe("BAD_REQUEST");
-
-    const oversizedHistoryPrepare =
-      await api.requestAgentSessionHistoryPrepareUnchecked(
-        {
-          runId,
-          hash,
-          rawSize: RESUME_SESSION_HISTORY_MAX_BYTES + 1,
-          encodedSize: 128,
-        },
-        headers,
-        [400],
-      );
-    expectApiError(oversizedHistoryPrepare.body);
-    expect(oversizedHistoryPrepare.body.error.code).toBe("BAD_REQUEST");
 
     const mismatchedStoragePrepare = await api.requestAgentStoragePrepare(
       {

@@ -186,8 +186,9 @@ async function discordStatus(
 
 describe("canonical Discord ingress", () => {
   it.each(["channel", "thread", "private thread", "dm"] as const)(
-    "reads each provider resource once and starts typing before importing %s context",
+    "deduplicates each %s admission and launch, with typing before context and concurrent launch reads",
     async (kind) => {
+      mockNow(now());
       const actor = await connected();
       const provider = mockDiscordProvider(actor);
       mockDiscordApplication(1 << 19);
@@ -296,6 +297,92 @@ describe("canonical Discord ingress", () => {
         expect(typing).toBeGreaterThanOrEqual(0);
         expect(typing).toBeLessThan(contextRead);
       });
+      const independentPaths =
+        kind === "dm"
+          ? []
+          : [
+              `/api/v10/channels/${channelId}`,
+              `/api/v10/guilds/${actor.guildId}`,
+              `/api/v10/guilds/${actor.guildId}/roles`,
+              `/api/v10/guilds/${actor.guildId}/members/${actor.discordUserId}`,
+              `/api/v10/guilds/${actor.guildId}/members/${actor.botUserId}`,
+              "/api/v10/users/@me",
+              "/api/v10/applications/@me",
+            ];
+      const privateMemberPaths =
+        kind === "private thread"
+          ? [
+              `/api/v10/channels/${channelId}/thread-members/${actor.discordUserId}`,
+              `/api/v10/channels/${channelId}/thread-members/${actor.botUserId}`,
+            ]
+          : [];
+      const independentReads = createDeferredPromise<void>(context.signal);
+      const privateReads = createDeferredPromise<void>(context.signal);
+      onTestFinished(() => {
+        if (!independentReads.settled()) {
+          independentReads.resolve(undefined);
+        }
+        if (!privateReads.settled()) {
+          privateReads.resolve(undefined);
+        }
+      });
+      const observeLaunch = () => {
+        const paths = new Set(
+          requests.map((request) => {
+            return request.url.pathname;
+          }),
+        );
+        if (
+          !independentReads.settled() &&
+          independentPaths.every((path) => {
+            return paths.has(path);
+          })
+        ) {
+          independentReads.resolve(undefined);
+        }
+        if (
+          !privateReads.settled() &&
+          privateMemberPaths.every((path) => {
+            return paths.has(path);
+          })
+        ) {
+          privateReads.resolve(undefined);
+        }
+      };
+      server.events.on("request:start", observeLaunch);
+      onTestFinished(() => {
+        server.events.removeListener("request:start", observeLaunch);
+      });
+      if (checked.ok) {
+        // Admission and launch must each read fresh facts, but only once within
+        // each boundary. Hold the launch channel response until every unrelated
+        // provider read starts: serial fetches cannot complete this handshake.
+        requests.length = 0;
+        memberships.mockClear();
+        if (kind !== "dm") {
+          provider.state.channelResponse = async () => {
+            await independentReads.promise;
+            return undefined;
+          };
+        }
+        if (kind === "private thread") {
+          provider.state.botPermissions = "274877975552";
+          server.use(
+            http.get(
+              `https://discord.com/api/v10/channels/${channelId}/thread-members/:userId`,
+              async ({ params }) => {
+                await privateReads.promise;
+                return HttpResponse.json({
+                  id: channelId,
+                  user_id: String(params.userId),
+                  join_timestamp: "2026-09-24T00:00:00.000Z",
+                  flags: 0,
+                });
+              },
+            ),
+          );
+        }
+      }
       if (!release.settled()) {
         release.resolve(undefined);
       }
@@ -303,6 +390,27 @@ describe("canonical Discord ingress", () => {
       if (!checked.ok) {
         throw checked.error;
       }
+      const expectedPaths =
+        kind === "dm"
+          ? [`/api/v10/channels/${channelId}`, "/api/v10/users/@me"]
+          : [
+              ...independentPaths,
+              ...(kind === "channel"
+                ? []
+                : [`/api/v10/channels/${provider.guildChannelId}`]),
+              ...privateMemberPaths,
+            ];
+      expect(
+        requests
+          .filter((request) => {
+            return request.method === "GET";
+          })
+          .map((request) => {
+            return request.url.pathname;
+          })
+          .sort(),
+      ).toStrictEqual(expectedPaths.sort());
+      expect(memberships).toHaveBeenCalledTimes(1);
       const [thread] = await discordChatThreads(context, actor);
       expect(thread).toBeDefined();
       await expect(launchedRun(actor, thread!.id)).resolves.toMatchObject({

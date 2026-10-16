@@ -24,7 +24,7 @@ use super::support::{
 use crate::error::{RunnerError, RunnerResult};
 use runner_types::ids::RunId;
 use runner_types::storage_manifest::StorageManifest;
-use runner_types::types::{ExecutionContext, ResumeSession};
+use runner_types::types::ExecutionContext;
 
 fn validate_context_for_test(ctx: &ExecutionContext) -> Result<(), String> {
     let sandbox_id = SandboxId::new_v4().to_string();
@@ -374,7 +374,7 @@ fn execution_context_validation_rejects_tool_nul_before_sandbox() {
 fn execution_context_validation_rejects_invalid_codex_resume_before_sandbox() {
     let mut ctx = minimal_context();
     ctx.cli_agent_type = "codex".into();
-    ctx.resume_session = Some(ResumeSession::inline("not-a-thread-id".into(), "{}".into()));
+    ctx.local_resume_session_id = Some("not-a-thread-id".into());
 
     let error = validate_context_for_test(&ctx).unwrap_err();
 
@@ -602,7 +602,7 @@ fn platform_environment_claim_filters_reserved_keys_and_applies_trusted_last() {
 fn emitted_bootstrap_env_keys_classify_as_runner_owned() {
     let mut ctx = minimal_context();
     ctx.append_system_prompt = Some("Use terse answers.".into());
-    ctx.resume_session = Some(ResumeSession::inline("sess-123".into(), "{}".into()));
+    ctx.local_resume_session_id = Some("sess-123".into());
     ctx.disallowed_tools = Some(vec!["CronCreate".into()]);
     ctx.tools = Some(vec!["Bash".into()]);
     ctx.settings = Some(r#"{"hooks":{}}"#.into());
@@ -683,10 +683,7 @@ fn build_env_json_codex_keeps_shared_runner_env() {
     let mut ctx = minimal_context();
     ctx.cli_agent_type = "codex".into();
     ctx.append_system_prompt = Some("Use terse answers.".into());
-    ctx.resume_session = Some(ResumeSession::inline(
-        "019E9154C30470F0ADDE36EFB1BE1701".into(),
-        "{}".into(),
-    ));
+    ctx.local_resume_session_id = Some("019E9154C30470F0ADDE36EFB1BE1701".into());
 
     let env = build_env_for_test(&ctx, "http://localhost");
     let payload = build_run_payload_for_run(&ctx).unwrap();
@@ -704,7 +701,7 @@ fn build_env_json_rejects_invalid_codex_resume_session_id() {
     for session_id in ["abc", "urn:uuid:019e9154-c304-70f0-adde-36efb1be1701"] {
         let mut ctx = minimal_context();
         ctx.cli_agent_type = "codex".into();
-        ctx.resume_session = Some(ResumeSession::inline(session_id.into(), "{}".into()));
+        ctx.local_resume_session_id = Some(session_id.into());
 
         let error = build_env_for_test_result(&ctx, "http://localhost").unwrap_err();
         let message = error.to_string();
@@ -856,7 +853,7 @@ fn build_env_json_with_secrets() {
 #[test]
 fn build_env_json_with_resume_session() {
     let mut ctx = minimal_context();
-    ctx.resume_session = Some(ResumeSession::inline("sess-123".into(), "{}".into()));
+    ctx.local_resume_session_id = Some("sess-123".into());
 
     let env = build_env_for_test(&ctx, "http://localhost");
     assert_eq!(

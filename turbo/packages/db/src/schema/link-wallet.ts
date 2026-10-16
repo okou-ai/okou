@@ -1,3 +1,5 @@
+import { sql } from "drizzle-orm";
+
 import {
   boolean,
   index,
@@ -18,16 +20,17 @@ export const linkWalletConnections = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     orgId: text("org_id").notNull(),
     userId: text("user_id").notNull(),
-    agentId: uuid("agent_id")
-      .notNull()
-      .references(
-        () => {
-          return agents.id;
-        },
-        { onDelete: "cascade" },
-      ),
+    // Legacy grants only. Workspace/user grants have no agent dependency.
+    agentId: uuid("agent_id").references(
+      () => {
+        return agents.id;
+      },
+      { onDelete: "cascade" },
+    ),
     // Identifies the actual OAuth authorization, not a refresh coordination lease.
     authorizationId: uuid("authorization_id").notNull(),
+    // The authorization request snapshot, preserved across token refreshes.
+    oauthRequestedScopes: text("oauth_requested_scopes"),
     encryptedCredentials: text("encrypted_credentials"),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     revocationConfirmedAt: timestamp("revocation_confirmed_at", {
@@ -44,6 +47,9 @@ export const linkWalletConnections = pgTable(
         table.userId,
         table.agentId,
       ),
+      uniqueIndex("idx_link_wallet_connections_owner")
+        .on(table.orgId, table.userId)
+        .where(sql`${table.agentId} IS NULL`),
     ];
   },
 );
@@ -59,14 +65,19 @@ export const linkWalletOAuthAttempts = pgTable(
       .default("pending"),
     orgId: text("org_id").notNull(),
     userId: text("user_id").notNull(),
-    agentId: uuid("agent_id")
+    // Legacy scope, or optional initiating-agent provenance for shared consent.
+    agentId: uuid("agent_id").references(
+      () => {
+        return agents.id;
+      },
+      { onDelete: "cascade" },
+    ),
+    // Old API writers retain agent consent during a rolling deployment.
+    scope: varchar("scope", { length: 16 })
+      .$type<"agent" | "workspace_user">()
       .notNull()
-      .references(
-        () => {
-          return agents.id;
-        },
-        { onDelete: "cascade" },
-      ),
+      .default("agent"),
+    oauthRequestedScopes: text("oauth_requested_scopes"),
     encryptedVerifier: text("encrypted_verifier").notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },

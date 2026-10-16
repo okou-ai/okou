@@ -14,7 +14,6 @@ pub mod execution_context;
 pub mod guest_control;
 pub use raw_http_test_support::raw_http;
 pub use runner_host::test_fixtures::ignored_child;
-pub mod session_history;
 
 pub use runner_network::ReapGate;
 

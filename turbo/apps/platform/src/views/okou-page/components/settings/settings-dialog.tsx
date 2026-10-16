@@ -25,6 +25,7 @@ import {
   SlidersHorizontal,
   Users,
   Wrench,
+  Wallet,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -41,6 +42,7 @@ import {
   type SettingsSection,
 } from "../../../../signals/okou-page/settings/settings-dialog.ts";
 import { billingPlansStandalone$ } from "../../../../signals/okou-page/settings/workspace-settings-state.ts";
+import { walletSettingsEnabled$ } from "../../../../signals/okou-page/settings/wallet.ts";
 import { isOrgAdmin$ } from "../../../../signals/org.ts";
 import { BillingSection } from "./sections/billing-section.tsx";
 import { ChatSection } from "./sections/chat-section.tsx";
@@ -52,6 +54,7 @@ import { ModelSection } from "./sections/model-section.tsx";
 import { ToolsSection } from "./sections/paid-tools-section.tsx";
 import { PeopleSection } from "./sections/people-section.tsx";
 import { PreferenceSection } from "./sections/preference-section.tsx";
+import { WalletSection } from "./sections/wallet-section.tsx";
 import { UsageRecordsSection } from "./sections/usage-records-section.tsx";
 
 type NavIcon = (props: { size?: number; className?: string }) => ReactNode;
@@ -87,6 +90,7 @@ const SECTION_COMPONENTS = {
   usage: CreditBalanceSection,
   "usage-records": UsageRecordsSection,
   invoices: InvoicesSection,
+  wallet: WalletSection,
 } as const satisfies Record<SettingsSection, () => ReactNode>;
 
 function SectionContent({ section }: { section: SettingsSection }) {
@@ -151,6 +155,7 @@ function SettingsDialog({
   const isAdminLoadable = useLoadable(isOrgAdmin$);
   const isAdmin =
     isAdminLoadable.state === "hasData" ? isAdminLoadable.data : false;
+  const showWallet = useGet(walletSettingsEnabled$);
   const showDebug = features[FeatureSwitchKey.OkouDebug] ?? false;
 
   const sectionMeta = {
@@ -232,6 +237,14 @@ function SettingsDialog({
       }),
       description: t(($) => {
         return $.settings.dialog.sections.usage.usageDescription;
+      }),
+    },
+    wallet: {
+      title: t(($) => {
+        return $.settings.wallet.title;
+      }),
+      description: t(($) => {
+        return $.settings.wallet.scope;
       }),
     },
     invoices: {
@@ -317,6 +330,15 @@ function SettingsDialog({
             },
           ]
         : []),
+      ...(showWallet
+        ? [
+            {
+              id: "wallet" as const,
+              label: sectionMeta.wallet.title,
+              icon: Wallet,
+            },
+          ]
+        : []),
     ],
   };
   const sidebarGroups: readonly SidebarGroup[] = [
@@ -337,7 +359,8 @@ function SettingsDialog({
     isAdmin,
   });
   const resolvedSection: SettingsSection =
-    !showDebug && availableSection === "debug"
+    (!showDebug && availableSection === "debug") ||
+    (!showWallet && availableSection === "wallet")
       ? "preference"
       : availableSection;
   const meta = sectionMeta[resolvedSection];
@@ -473,7 +496,8 @@ function SettingsDialog({
               className={cn(
                 "flex-1 overflow-y-auto px-4 sm:px-10 pt-4 sm:pt-6 pb-10 [scrollbar-gutter:stable]",
                 resolvedSection === "model" && "pt-6 sm:pt-8",
-                (resolvedSection === "invoices" ||
+                (resolvedSection === "wallet" ||
+                  resolvedSection === "invoices" ||
                   resolvedSection === "people") &&
                   "flex min-h-0 flex-col overflow-hidden",
               )}
