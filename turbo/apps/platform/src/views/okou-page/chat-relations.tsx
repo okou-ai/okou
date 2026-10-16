@@ -148,7 +148,7 @@ function Origin({ signals }: { readonly signals: ChatRelationSignals }) {
       aria-label={t(($) => {
         return $.chat.relations.origin;
       })}
-      className="flex shrink-0 items-center gap-2 border-b border-border/60 px-5 py-3"
+      className="flex shrink-0 items-center gap-2 border-b border-border/60 px-5 py-2"
     >
       <h4 className="shrink-0 text-xs text-muted-foreground">
         {t(($) => {
@@ -162,7 +162,7 @@ function Origin({ signals }: { readonly signals: ChatRelationSignals }) {
             pathParams: { threadId: part.threadId },
             hash: `run-${part.runId}`,
           }}
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-2 text-sm transition-colors hover:bg-state-hover"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-state-hover"
           title={part.titleSnapshot}
         >
           <MessageCircle size={16} className="shrink-0 text-muted-foreground" />
@@ -170,7 +170,7 @@ function Origin({ signals }: { readonly signals: ChatRelationSignals }) {
           <ArrowUpRight size={14} className="shrink-0 text-muted-foreground" />
         </Link>
       ) : part.kind === "mcp" ? (
-        <p className="px-2 py-2 text-sm">
+        <p className="px-2 py-1.5 text-sm">
           {part.clientName ??
             t(($) => {
               return $.chat.origins.mcp;
@@ -180,7 +180,7 @@ function Origin({ signals }: { readonly signals: ChatRelationSignals }) {
         <ExternalSourceMessageAnnotation
           part={part}
           compact
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-2 text-sm"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-sm"
         />
       )}
     </section>

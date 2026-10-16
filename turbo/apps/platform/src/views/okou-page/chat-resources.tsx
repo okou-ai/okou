@@ -88,6 +88,7 @@ function ChatResourcesButtonInner({
   const saving = useGet(resources.saving$);
   const anchor = useGet(resources.anchor$);
   const boundary = useGet(resources.boundary$);
+  const collisionBoundary = useGet(resources.collisionBoundary$);
   const popupAnchor = useGet(resources.popupAnchor$);
   const anchorRef = useSet(resources.anchorOnRef$);
   const setOpen = useSet(resources.setOpen$);
@@ -159,7 +160,7 @@ function ChatResourcesButtonInner({
         // Persistent resources share the chat's keyboard context.
         role="region"
         anchor={popupAnchor ?? undefined}
-        collisionBoundary={boundary ?? undefined}
+        collisionBoundary={collisionBoundary ?? undefined}
         collisionPadding={16}
         collisionAvoidance={{
           side: "none",

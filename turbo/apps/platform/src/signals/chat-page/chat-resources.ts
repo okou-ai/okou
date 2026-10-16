@@ -234,6 +234,7 @@ function createChatResourcePanelSignals() {
   const anchor = createResourceElementRef();
   const popup = createResourceElementRef();
   const boundary$ = state<HTMLElement | null>(null);
+  const collisionBoundary$ = state<HTMLElement | null>(null);
   const messageColumn$ = state<HTMLElement | null>(null);
   const temporary$ = state<{
     readonly open: boolean;
@@ -295,6 +296,8 @@ function createChatResourcePanelSignals() {
         return;
       }
       set(boundary$, viewport);
+      // Use the whole pane so the composer does not shorten the resource list.
+      set(collisionBoundary$, element);
       set(messageColumn$, column);
       set(temporary$, null);
       const measure = () => {
@@ -309,6 +312,7 @@ function createChatResourcePanelSignals() {
         "abort",
         () => {
           set(boundary$, null);
+          set(collisionBoundary$, null);
           set(messageColumn$, null);
           set(temporary$, null);
         },
@@ -343,6 +347,9 @@ function createChatResourcePanelSignals() {
     anchor$: anchor.element$,
     boundary$: computed((get) => {
       return get(boundary$);
+    }),
+    collisionBoundary$: computed((get) => {
+      return get(collisionBoundary$);
     }),
     popupAnchor$: computed((get) => {
       return resourcePopupAnchor(get(boundary$));
