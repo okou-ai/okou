@@ -23,6 +23,8 @@ complete workload in separate jobs, without changing required Crates coverage
 or deploying a cross-run cache. Native nextest extraction restores the original
 target pathname so compiled `CARGO_BIN_EXE` and build-output paths keep working;
 the consumer starts without producer targets and cleans only profile counters.
+It fetches locked Rust sources for offline compile-contract tests; the archive
+does not contain the Cargo build cache.
 Job steps expose control, export, transfer, extraction, execution and reporting
 costs; matching inventories alone do not prove a speedup.
 

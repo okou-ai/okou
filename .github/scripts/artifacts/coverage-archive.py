@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """Seal/verify a current-run coverage archive and compare fresh test/report inventories.
 
-Run from the repository root with Python 3 and the pinned coverage tools on PATH.
+Run from a clean repository root with Python 3.11+, Git, rustc and the pinned
+coverage tools on PATH. seal/verify require COVERAGE_ARCHIVE_IMAGE,
+CARGO_PROFILE_TEST_DEBUG, LLVM_PROFILE_FILE_NAME, GITHUB_RUN_ID and
+COVERAGE_ARCHIVE_PRODUCER_ATTEMPT, supplied by the owning workflow.
 Usage: coverage-archive.py seal|verify ARTIFACT_DIR
        coverage-archive.py compare ARTIFACT_DIR RESTORED_TESTS RESTORED_LCOV
 No cache lookup, extraction, test execution or successful-result fallback is owned
 here. A mismatch exits nonzero; callers must preserve that failure.
+seal/compare print JSON; verify prints a confirmation on success (exit status 0).
 """
 
 import argparse
