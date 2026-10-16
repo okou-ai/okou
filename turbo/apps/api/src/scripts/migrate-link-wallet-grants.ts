@@ -16,9 +16,9 @@ import {
   revokeLinkToken,
 } from "../signals/services/link-wallet-provider.service";
 
-// The only legacy shape accepted by this one-time operator came from the
-// payment-only writer. Partial metadata is corruption, not evidence of consent.
-const migrationCredentialsSchema = linkCredentialsSchema.partial({
+// The live reader retains legacy compatibility until this independent operator
+// converges. Every migrated credential must contain the provider's grant metadata.
+const migratedCredentialsSchema = linkCredentialsSchema.required({
   scope: true,
   readOnly: true,
 });
@@ -50,7 +50,7 @@ async function* connections() {
       if (!row.encryptedCredentials) {
         throw new Error("Invalid wallet credential envelope");
       }
-      const credentials = migrationCredentialsSchema.parse(
+      const credentials = linkCredentialsSchema.parse(
         JSON.parse(await decryptStoredSecretValue(row.encryptedCredentials)),
       );
       if (
@@ -141,7 +141,7 @@ async function migrate(counts: {
       },
       AbortSignal.timeout(15_000),
     );
-    const credentials = linkCredentialsSchema.parse({
+    const credentials = migratedCredentialsSchema.parse({
       accessToken: refreshed.access_token,
       refreshToken: refreshed.refresh_token,
       expiresAt: now() + refreshed.expires_in * 1000,
@@ -255,7 +255,7 @@ if (!result.ok || !closed.ok) {
   // Database/provider/validation errors can contain tokens or row contents.
   // The operator emits only aggregates and this fixed failure diagnostic.
   process.stderr.write(
-    "Link wallet grant migration failed; API promotion must stop. Consumed refresh tokens must not be retried; affected wallets may require reconnection.\n",
+    "Link wallet grant migration failed. Consumed refresh tokens must not be retried; affected wallets may require reconnection.\n",
   );
   process.exitCode = 1;
 }

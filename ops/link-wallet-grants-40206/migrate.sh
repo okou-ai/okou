@@ -2,8 +2,10 @@
 set -euo pipefail
 umask 077
 
-# Run from the repository root after resolving the production API environment.
-# Only aggregate migration evidence is written to stdout and WALLET_GRANT_REPORT.
+# Run from the repository root with the resolved production API environment.
+# Requires Bash, curl, jq, git and pnpm. Defaults to inventory-only; set
+# WALLET_GRANT_MIGRATE=true to apply. Nonzero exit means the operation or its
+# serving-identity checks failed. Only aggregate evidence is published.
 : "${VERCEL_TOKEN:?}"
 : "${VERCEL_ORG_ID:?}"
 : "${VERCEL_PROJECT_ID:?}"
@@ -11,6 +13,12 @@ umask 077
 : "${GITHUB_REPOSITORY:?}"
 : "${WEB_API_ENV_FILE:?}"
 : "${WALLET_GRANT_REPORT:?}"
+
+apply=${WALLET_GRANT_MIGRATE:-false}
+if [[ "$apply" != "true" && "$apply" != "false" ]]; then
+  echo "::error::WALLET_GRANT_MIGRATE must be true or false."
+  exit 1
+fi
 
 readonly grant_writer_commit=37e6bb51029f05ff1d7a7a6c28b03f139dfd067c
 read_serving() {
@@ -28,7 +36,11 @@ read_serving() {
 }
 serving=$(read_serving)
 serving_commit=$(jq -r '.commit' <<< "$serving")
-comparison=$(gh api "repos/${GITHUB_REPOSITORY}/compare/${grant_writer_commit}...${serving_commit}" --jq '.status')
+comparison=$(curl --fail --silent --show-error --max-time 30 \
+  "https://api.github.com/repos/${GITHUB_REPOSITORY}/compare/${grant_writer_commit}...${serving_commit}" \
+  -H "Authorization: Bearer ${GH_TOKEN}" \
+  -H "Accept: application/vnd.github+json" \
+  | jq -er '.status')
 if [[ "$comparison" != "ahead" && "$comparison" != "identical" ]]; then
   echo "::error::Serving API predates the Link grant metadata writer; migration must not run."
   exit 1
@@ -46,28 +58,32 @@ while IFS= read -r line || [[ -n "$line" ]]; do
   export "${line?}"
 done < "$WEB_API_ENV_FILE"
 if [[ "$ENV" != "production" ]]; then
-  echo "::error::Link grant release migration requires the production API environment."
+  echo "::error::Link grant migration requires the production API environment."
   exit 1
 fi
 
 migration_status=0
+args=(--report "$WALLET_GRANT_REPORT")
+if [[ "$apply" == "true" ]]; then
+  args+=(--migrate)
+fi
 pnpm --dir turbo/apps/api exec tsx src/scripts/migrate-link-wallet-grants.ts \
-  --migrate --report "$WALLET_GRANT_REPORT" || migration_status=$?
+  "${args[@]}" || migration_status=$?
 serving_unchanged=false
 if [[ "$migration_status" -eq 0 ]]; then
   current_serving=$(read_serving)
   if [[ "$current_serving" == "$serving" ]]; then
     serving_unchanged=true
   else
-    echo "::error::Serving API changed during Link grant migration; promotion must stop."
+    echo "::error::Serving API changed during Link grant migration; recheck convergence."
     migration_status=1
   fi
 fi
 if [[ -f "$WALLET_GRANT_REPORT" ]]; then
   jq --argjson serving "$serving" \
     --argjson servingUnchanged "$serving_unchanged" \
-    --arg releaseCommit "$(git rev-parse HEAD)" \
-    '. + {serving: $serving, servingUnchanged: $servingUnchanged, releaseCommit: $releaseCommit}' \
+    --arg operatorCommit "$(git rev-parse HEAD)" \
+    '. + {serving: $serving, servingUnchanged: $servingUnchanged, operatorCommit: $operatorCommit}' \
     "$WALLET_GRANT_REPORT" > "${WALLET_GRANT_REPORT}.tmp"
   mv "${WALLET_GRANT_REPORT}.tmp" "$WALLET_GRANT_REPORT"
 fi
