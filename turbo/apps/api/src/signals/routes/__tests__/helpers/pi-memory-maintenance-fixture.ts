@@ -358,6 +358,7 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
       runnerIdentity,
       peerActor,
       source,
+      sourceClaim,
       peerSource,
       stage1,
       stage2,
