@@ -1657,6 +1657,170 @@ async fn execute_job_reuse_records_runner_pre_spawn_and_reuse_path_timing() {
 }
 
 #[tokio::test]
+async fn execution_entries_preserve_start_telemetry_on_session_rejection() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut config = test_executor_config(dir.path()).await;
+    let factory = MockSandboxFactory::new();
+    let (mut seed, seed_telemetry) = execute_job(
+        &factory,
+        minimal_context(),
+        NewSandboxDispatch {
+            id: SandboxId::new_v4(),
+            reuse_result: SandboxReuseResult::NoReuseKey,
+        },
+        &config,
+        &default_params(),
+        tokio_util::sync::CancellationToken::new(),
+    )
+    .await;
+    assert!(seed.failure.is_none());
+    seed.startup_report.take().unwrap().finish().await;
+    seed_telemetry.flush().await;
+    let mut sandbox = seed.sandbox.take().unwrap();
+    let mut source_ip = seed.source_ip;
+    let api_epoch_ms = chrono::Utc::now().timestamp_millis().max(0) as u64;
+
+    for (api_start_time, with_hooks, is_first_run) in [
+        (Some(api_epoch_ms), true, Some(true)),
+        (Some(api_epoch_ms), false, Some(false)),
+        (None, true, Some(false)),
+        (Some(1_700_000_000), true, None),
+    ] {
+        let response = b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+        let mut server = RawHttpTestServer::spawn(vec![
+            RawHttpAction::Respond(response.to_vec()),
+            RawHttpAction::Respond(response.to_vec()),
+        ])
+        .await;
+        config.http = startup_telemetry_client(&server);
+        config.runner_hostname = Some("entry-parity-host".into());
+        let run_id = RunId::new_v4();
+        let execution_context = || {
+            let mut context = minimal_context();
+            context.run_id = run_id;
+            context.sandbox_token = "entry-parity-token".into();
+            context.local_resume_session_id = Some("../invalid-session".into());
+            context.api_start_time = api_start_time;
+            context.is_first_run = is_first_run;
+            context
+        };
+        let hooks = || ExecutionHooks {
+            sandbox_prepared: None,
+            active_input_source: None,
+            pre_spawn_timing: with_hooks.then(pre_spawn_timing_with_phases),
+        };
+        let (fresh, fresh_telemetry) = execute_job_with_prepared_notifier(
+            &factory,
+            execution_context(),
+            NewSandboxDispatch {
+                id: SandboxId::new_v4(),
+                reuse_result: SandboxReuseResult::PoolMiss,
+            },
+            &config,
+            &default_params(),
+            RunCancellationSignals::from_hard_token(tokio_util::sync::CancellationToken::new()),
+            hooks(),
+        )
+        .await;
+        let (idle_sandbox, _lease) =
+            make_reusable_idle_sandbox(sandbox, source_ip, "test-session").await;
+        let (reused, reused_telemetry) = execute_job_reuse_with_hooks(
+            crate::executor::ReusedSandboxDispatch {
+                factory: &factory,
+                idle_sandbox,
+                reuse_result: SandboxReuseResult::Reused,
+            },
+            execution_context(),
+            &config,
+            &default_params(),
+            RunCancellationSignals::from_hard_token(tokio_util::sync::CancellationToken::new()),
+            hooks(),
+        )
+        .await;
+        assert_eq!(fresh.error(), Some("invalid session_id"));
+        assert_eq!(reused.error(), Some("invalid session_id"));
+        assert!(fresh.sandbox.is_none());
+        sandbox = reused
+            .sandbox
+            .expect("rejected reuse retains the live sandbox");
+        source_ip = reused.source_ip;
+        assert!(matches!(
+            server.try_next_request(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
+
+        fresh_telemetry.flush().await;
+        reused_telemetry.flush().await;
+        let requests = server.assert_finished_with_requests().await;
+        assert_eq!(requests.len(), 2);
+        let mut expected_actions = Vec::new();
+        if with_hooks {
+            expected_actions.extend([
+                "runner_claim_to_executor_start",
+                "runner_claim_http_request",
+                "runner_claim_request_to_response_headers",
+                "runner_claim_response_body_read",
+                "runner_claim_response_first_body_chunk_wait",
+                "runner_claim_response_body_after_first_chunk",
+                "runner_claim_response_body_attribution",
+                "runner_claim_response_decode",
+            ]);
+            expected_actions.extend(
+                RUNNER_PRE_SPAWN_PHASE_CASES
+                    .iter()
+                    .map(|(_, action, _)| *action),
+            );
+            expected_actions.extend([
+                "runner_claim_task_schedule_wait",
+                "runner_claim_finalizing_handoff",
+            ]);
+        }
+        if api_start_time == Some(api_epoch_ms) {
+            expected_actions.push("api_to_sandbox_start");
+        }
+        let mut payloads = Vec::new();
+        for request in requests {
+            assert!(request.starts_with("POST /api/webhooks/agent/telemetry "));
+            let (headers, body) = request.split_once("\r\n\r\n").unwrap();
+            assert!(headers.lines().any(|line| {
+                line.eq_ignore_ascii_case("authorization: Bearer entry-parity-token")
+            }));
+            let mut payload: serde_json::Value = serde_json::from_str(body).unwrap();
+            assert_eq!(payload["runId"], run_id.to_string());
+            assert_eq!(payload["runnerHostname"], "entry-parity-host");
+            assert_eq!(payload["runnerVersion"], "test");
+            let operations = payload["sandboxOperations"].as_array_mut().unwrap();
+            assert_eq!(
+                operations
+                    .iter()
+                    .map(|op| op["action_type"].as_str().unwrap())
+                    .collect::<Vec<_>>(),
+                expected_actions
+            );
+            for operation in operations {
+                assert_eq!(
+                    operation.get("is_first_run"),
+                    is_first_run.map(serde_json::Value::Bool).as_ref()
+                );
+                assert_eq!(
+                    operation.get("runner_pre_spawn_concurrency_bucket"),
+                    with_hooks.then(|| serde_json::json!("1")).as_ref()
+                );
+                assert_eq!(operation["success"], true);
+                // Observation time and elapsed durations differ between real entries.
+                let fields = operation.as_object_mut().unwrap();
+                fields.remove("ts").unwrap();
+                fields.remove("duration_ms").unwrap();
+            }
+            payloads.push(payload);
+        }
+        assert_eq!(payloads[0], payloads[1]);
+    }
+    sandbox.stop().await.unwrap();
+    factory.destroy(sandbox).await;
+}
+
+#[tokio::test]
 async fn execute_job_publishes_first_run_startup_without_api_start_time() {
     let dir = tempfile::tempdir().unwrap();
     let mut config = test_executor_config(dir.path()).await;
