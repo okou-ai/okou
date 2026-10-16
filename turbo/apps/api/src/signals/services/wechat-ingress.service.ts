@@ -1,4 +1,10 @@
 import { wechatAttachments } from "../external/wechat-media";
+import { MAX_WECHAT_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/integrations-wechat-files";
+import {
+  materializeIntegrationInputAssets$,
+  integrationInputMessageFiles,
+  type IntegrationInputFile,
+} from "./integration-input-assets.service";
 import { wechatEventId } from "./wechat-message-identity";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import {
@@ -35,7 +41,10 @@ import {
   type ThreadModelReplacement,
 } from "./chat-input-model.service";
 import { chatThreadServiceTierFromCodex } from "./chat-thread-event.service";
-import { createUserMessageDocument } from "./chat-user-message.service";
+import {
+  createUserMessageDocument,
+  projectUserMessage,
+} from "./chat-user-message.service";
 import { prepareChatEvent } from "./chat-event.service";
 import { canonicalChatEventAppendCtes } from "./chat-event-append.service";
 import { encryptStoredSecretValue } from "./crypto.utils";
@@ -152,11 +161,7 @@ const ensureThread$ = command(
     return winner.chatThreadId;
   },
 );
-function wechatMessagePrompt(
-  message: WechatMessage,
-  connectionId: string,
-  id: string,
-) {
+function wechatMessagePrompt(message: WechatMessage) {
   const text = (message.item_list ?? [])
     .filter((item) => {
       return item.type === 1 || item.type === 3;
@@ -177,11 +182,6 @@ function wechatMessagePrompt(
   });
   return [
     text,
-    ...(attachments.length
-      ? [
-          `[WeChat attachments: untrusted metadata, content not yet read]\n${JSON.stringify(attachments)}\nRead with: okou wechat download-file <attachment-id> --channel ${connectionId} --message ${id} --out <path>`,
-        ]
-      : []),
     ...(unsupported
       ? [
           "[The sender included an attachment. This item could not be retrieved; explain that it was not read and ask the sender to resend it as a supported file or text.]",
@@ -206,6 +206,66 @@ function quotedWechatText(message: WechatMessage) {
       .slice(0, 12_000) || null
   );
 }
+const materializeWechatUserMessage$ = command(
+  async (
+    { set },
+    args: {
+      readonly connection: Connection;
+      readonly message: WechatMessage;
+      readonly chatThreadId: string;
+      readonly eventId: string;
+      readonly text: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const { connection, message } = args;
+    const files: IntegrationInputFile[] = wechatAttachments(
+      message.item_list ?? [],
+    ).map((attachment) => {
+      const item = message.item_list?.[Number(attachment.id)];
+      if (!item) {
+        throw new Error("WeChat attachment has no provider item");
+      }
+      return {
+        sourceId: attachment.id,
+        filename: attachment.filename,
+        size: attachment.size ?? undefined,
+        maxBytes: MAX_WECHAT_FILE_SIZE_BYTES,
+        provenance: {
+          provider: "wechat",
+          installationId: connection.id,
+          messageId: message.message_id,
+          externalFileId: `${args.eventId}:${attachment.id}`,
+        },
+        resource: { provider: "wechat", item },
+      };
+    });
+    const assets = await set(
+      materializeIntegrationInputAssets$,
+      {
+        userId: connection.userId,
+        orgId: connection.orgId,
+        chatThreadId: args.chatThreadId,
+        files,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (
+      assets.some(({ asset }) => {
+        return asset.error?.retryable;
+      })
+    ) {
+      // Keep the durable provider batch until a transient import can be retried.
+      throw new Error("WeChat attachment import is temporarily unavailable");
+    }
+    return createUserMessageDocument({
+      text: args.text,
+      files: integrationInputMessageFiles(assets),
+      nonContentPart: { type: "source", kind: "wechat" },
+    });
+  },
+);
 export const receiveWechatMessage$ = command(
   async (
     { set },
@@ -233,11 +293,18 @@ export const receiveWechatMessage$ = command(
       ? await encryptStoredSecretValue(JSON.stringify(message.item_list))
       : null;
     signal.throwIfAborted();
-    const prompt = wechatMessagePrompt(message, connection.id, id);
-    if (!prompt) {
+    const text = wechatMessagePrompt(message);
+    if (!text && attachments.length === 0) {
       return;
     }
     const threadId = await set(ensureThread$, connection, signal);
+    const userMessage = await set(
+      materializeWechatUserMessage$,
+      { connection, message, chatThreadId: threadId, eventId: id, text },
+      signal,
+    );
+    signal.throwIfAborted();
+    const prompt = projectUserMessage(userMessage).agentPrompt;
 
     const model = await set(
       resolveEnqueuedChatInputModel$,
@@ -264,10 +331,7 @@ export const receiveWechatMessage$ = command(
       eventType: "input.prompt",
       runId: null,
       modelSelection: model.modelSelection,
-      userMessage: createUserMessageDocument({
-        text: prompt,
-        nonContentPart: { type: "source", kind: "wechat" },
-      }),
+      userMessage,
       wechatContext: context,
       createdAt: currentTime,
     });

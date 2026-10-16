@@ -28,6 +28,20 @@ const resultSchema = z.object({
   errcode: z.number().optional(),
 });
 export class WechatSessionExpiredError extends Error {}
+export class WechatRequestError extends Error {
+  constructor(
+    readonly statusCode: number,
+    readonly ret?: number,
+    readonly errcode?: number,
+  ) {
+    super(
+      ret === undefined && errcode === undefined
+        ? `WeChat request failed (${statusCode})`
+        : `WeChat rejected the request (ret=${ret ?? 0}, errcode=${errcode ?? 0})`,
+    );
+    this.name = "WechatRequestError";
+  }
+}
 export async function wechatRequest(
   baseUrl: string,
   path: string,
@@ -57,7 +71,7 @@ export async function wechatRequest(
     signal: AbortSignal.any([signal, AbortSignal.timeout(40_000)]),
   });
   if (!response.ok) {
-    throw new Error(`WeChat request failed (${response.status})`);
+    throw new WechatRequestError(response.status);
   }
   const text = await response.text();
   if (text.length > 2_000_000) {
@@ -69,7 +83,7 @@ export async function wechatRequest(
     throw new WechatSessionExpiredError("WeChat session expired");
   }
   if ((result.ret ?? 0) !== 0 || (result.errcode ?? 0) !== 0) {
-    throw new Error("WeChat rejected the request");
+    throw new WechatRequestError(response.status, result.ret, result.errcode);
   }
   return data;
 }

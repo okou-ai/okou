@@ -20,6 +20,8 @@ import { isAllowedTeamsDownloadUrl } from "../../lib/teams-file-url";
 import { fetchTeamsFile } from "../external/teams-bot-client";
 import { buildFileDownloadUrl, getFile } from "../external/telegram-client";
 import type { TeamsFileTokenPayload } from "./teams-file-token";
+import type { WechatMessage } from "../external/wechat-client";
+import { downloadWechatInputMedia } from "../external/wechat-input-media";
 
 type IntegrationInputResource =
   | {
@@ -36,6 +38,10 @@ type IntegrationInputResource =
       readonly maxBytes: number;
     }
   | { readonly provider: "teams"; readonly payload: TeamsFileTokenPayload }
+  | {
+      readonly provider: "wechat";
+      readonly item: NonNullable<WechatMessage["item_list"]>[number];
+    }
   | { readonly provider: "agentphone"; readonly url: string };
 
 type IntegrationProvenance = Extract<
@@ -65,6 +71,9 @@ const downloadIntegrationInputResource$ = command(
     signal: AbortSignal,
   ): Promise<Response> => {
     switch (resource.provider) {
+      case "wechat": {
+        return await downloadWechatInputMedia(resource.item, signal);
+      }
       case "feishu":
       case "lark": {
         return await set(downloadFeishuMessageResource$, resource, signal);
