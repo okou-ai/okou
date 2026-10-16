@@ -219,16 +219,14 @@ function RelatedChatLink({ chat }: { readonly chat: RelatedChat }) {
         aria-label={status}
         title={status}
         className={cn(
-          "shrink-0 text-xs",
+          "shrink-0 rounded-full",
           chat.status === "idle"
             ? "sr-only"
             : chat.status === "running"
-              ? "text-emerald-600"
-              : "text-muted-foreground",
+              ? "size-1.5 bg-emerald-500"
+              : "size-1.5 border border-amber-500",
         )}
-      >
-        <span aria-hidden>{status}</span>
-      </span>
+      />
     </Link>
   );
 }
