@@ -9,7 +9,6 @@ export const DOCUMENT_TEMPLATE_CATEGORIES = [
   "guide",
   "letter",
   "business-record",
-  "resume",
 ] as const;
 export type DocumentTemplateCategory = Exclude<
   (typeof DOCUMENT_TEMPLATE_CATEGORIES)[number],
@@ -904,120 +903,6 @@ export const DOCUMENT_TEMPLATE_ITEMS: readonly DocumentTemplateItem[] = [
       "https://static.vm0.io/vm0/artifact-templates/document/document-builtins-v1-20261014-622033b490b8/document-timesheet/cover.webp",
     previewPages: [
       "https://static.vm0.io/vm0/artifact-templates/document/document-builtins-v1-20261014-622033b490b8/document-timesheet/page-01.webp",
-    ],
-  },
-  {
-    id: "document-template:awesome-resume",
-    slug: "document-awesome-resume",
-    source: {
-      repo: "posquit0/Awesome-CV",
-      ref: "6701180c71479588dae5d895c4a10a6a572a40a0",
-      path: "examples/resume.tex",
-      licensePath: "LICENCE",
-    },
-    title: "Awesome resume",
-    description:
-      "An editable career document with clear experience and qualification sections.",
-    category: "resume",
-    previewImageUrl:
-      "https://static.vm0.io/vm0/artifact-templates/document/document-builtins-v1-20261014-622033b490b8/document-awesome-resume/cover.webp",
-    previewPages: [
-      "https://static.vm0.io/vm0/artifact-templates/document/document-builtins-v1-20261014-622033b490b8/document-awesome-resume/page-01.webp",
-    ],
-  },
-  {
-    id: "document-template:matching-cover-letter",
-    slug: "document-matching-cover-letter",
-    source: {
-      repo: "posquit0/Awesome-CV",
-      ref: "6701180c71479588dae5d895c4a10a6a572a40a0",
-      path: "examples/coverletter.tex",
-      licensePath: "LICENCE",
-    },
-    title: "Matching cover letter",
-    description:
-      "An editable career document with clear experience and qualification sections.",
-    category: "resume",
-    previewImageUrl:
-      "https://static.vm0.io/vm0/artifact-templates/document/document-builtins-v1-20261014-622033b490b8/document-matching-cover-letter/cover.webp",
-    previewPages: [
-      "https://static.vm0.io/vm0/artifact-templates/document/document-builtins-v1-20261014-622033b490b8/document-matching-cover-letter/page-01.webp",
-    ],
-  },
-  {
-    id: "document-template:minimal-resume",
-    slug: "document-minimal-resume",
-    source: {
-      repo: "billryan/resume",
-      ref: "eadc3955cf006254dc8f2419e971fbe3f5bab413",
-      path: "resume.tex",
-      licensePath: "LICENSE",
-    },
-    title: "Minimal resume",
-    description:
-      "An editable career document with clear experience and qualification sections.",
-    category: "resume",
-    previewImageUrl:
-      "https://static.vm0.io/vm0/artifact-templates/document/document-builtins-v1-20261014-622033b490b8/document-minimal-resume/cover.webp",
-    previewPages: [
-      "https://static.vm0.io/vm0/artifact-templates/document/document-builtins-v1-20261014-622033b490b8/document-minimal-resume/page-01.webp",
-    ],
-  },
-  {
-    id: "document-template:two-column-resume",
-    slug: "document-two-column-resume",
-    source: {
-      repo: "deedy/Deedy-Resume",
-      ref: "6d06ba7d8eee5fb8870bb00cb13a777f2083aa18",
-      path: "OpenFonts/deedy_resume-openfont.xtx",
-      licensePath: "LICENSE",
-    },
-    title: "Two-column resume",
-    description:
-      "An editable career document with clear experience and qualification sections.",
-    category: "resume",
-    previewImageUrl:
-      "https://static.vm0.io/vm0/artifact-templates/document/document-builtins-v1-20261014-622033b490b8/document-two-column-resume/cover.webp",
-    previewPages: [
-      "https://static.vm0.io/vm0/artifact-templates/document/document-builtins-v1-20261014-622033b490b8/document-two-column-resume/page-01.webp",
-    ],
-  },
-  {
-    id: "document-template:sidebar-resume",
-    slug: "document-sidebar-resume",
-    source: {
-      repo: "jankapunkt/latexcv",
-      ref: "1fc7a2033ddda0fa77003444cafcf96117ad58dd",
-      path: "sidebar/main.tex",
-      licensePath: "LICENSE",
-    },
-    title: "Sidebar resume",
-    description:
-      "An editable career document with clear experience and qualification sections.",
-    category: "resume",
-    previewImageUrl:
-      "https://static.vm0.io/vm0/artifact-templates/document/document-builtins-v1-20261014-622033b490b8/document-sidebar-resume/cover.webp",
-    previewPages: [
-      "https://static.vm0.io/vm0/artifact-templates/document/document-builtins-v1-20261014-622033b490b8/document-sidebar-resume/page-01.webp",
-    ],
-  },
-  {
-    id: "document-template:classic-resume",
-    slug: "document-classic-resume",
-    source: {
-      repo: "dnl-blkv/mcdowell-cv",
-      ref: "b7e2d271c64814ee02b3505b191389c8df614035",
-      path: "McDowell_CV_Template.tex",
-      licensePath: "LICENSE",
-    },
-    title: "Classic resume",
-    description:
-      "An editable career document with clear experience and qualification sections.",
-    category: "resume",
-    previewImageUrl:
-      "https://static.vm0.io/vm0/artifact-templates/document/document-builtins-v1-20261014-622033b490b8/document-classic-resume/cover.webp",
-    previewPages: [
-      "https://static.vm0.io/vm0/artifact-templates/document/document-builtins-v1-20261014-622033b490b8/document-classic-resume/page-01.webp",
     ],
   },
 ];

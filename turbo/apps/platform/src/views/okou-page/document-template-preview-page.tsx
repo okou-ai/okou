@@ -1,7 +1,6 @@
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
-  ArrowLeft,
   ArrowRight,
   ArrowUpRight,
   Check,
@@ -9,7 +8,13 @@ import {
   ChevronRight,
   FileText,
 } from "lucide-react";
-import { Badge, Button, DialogTitle, IconButton } from "@okouai/ui";
+import {
+  Badge,
+  Button,
+  DialogHeader,
+  DialogTitle,
+  IconButton,
+} from "@okouai/ui";
 import type { DocumentTemplateItem } from "@okouai/core/document-template-items";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
@@ -36,27 +41,29 @@ export function DocumentTemplatePreviewPage({
   }
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex h-[68px] shrink-0 items-center gap-4 border-b border-border px-6 pr-14">
-        <Button
-          ref={focusBack}
-          variant="ghost"
-          className="shrink-0 text-muted-foreground"
-          aria-label={t(($) => {
-            return $.documentTemplates.back;
-          })}
-          onClick={() => {
-            close();
-          }}
-        >
-          <ArrowLeft className="size-4" />
-          {t(($) => {
-            return $.documentTemplates.title;
-          })}
-        </Button>
-        <DialogTitle className="sr-only sm:not-sr-only sm:min-w-0 sm:truncate sm:text-sm sm:font-medium">
-          {item.title}
+      <DialogHeader className="h-[68px] shrink-0 justify-center px-6 pr-14 text-left">
+        <DialogTitle className="flex min-w-0 max-w-full items-center justify-start gap-1.5 text-left text-base leading-none">
+          <button
+            ref={focusBack}
+            type="button"
+            className="inline-flex shrink-0 items-center p-0 leading-none text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label={t(($) => {
+              return $.documentTemplates.back;
+            })}
+            onClick={() => {
+              close();
+            }}
+          >
+            {t(($) => {
+              return $.documentTemplates.title;
+            })}
+          </button>
+          <span className="shrink-0 text-muted-foreground">/</span>
+          <span className="block min-w-0 truncate leading-none">
+            {item.title}
+          </span>
         </DialogTitle>
-      </header>
+      </DialogHeader>
       <div className="min-h-0 flex-1 overflow-y-auto sm:grid sm:grid-cols-[minmax(0,1fr)_320px] sm:overflow-hidden">
         <DocumentPreviewImage signals={signals} url={url} page={page} />
         <DocumentPreviewDetails item={item} onSelect={onSelect} />
