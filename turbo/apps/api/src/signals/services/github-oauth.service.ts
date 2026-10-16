@@ -1112,71 +1112,74 @@ export const findGithubInstallationByInstallationId$ = command(
   },
 );
 
-export async function createOrActivateGithubInstallation(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly installationId: string;
-    readonly installInfo: GitHubInstallationInfo;
-    readonly encryptedAccessToken: string;
-    readonly adminGithubUserId: string | null;
-    readonly composeId: string;
-  },
-  signal: AbortSignal,
-): Promise<string> {
-  const [pendingRecord] = await args.db
-    .select({ id: githubInstallations.id })
-    .from(githubInstallations)
-    .where(
-      and(
-        eq(githubInstallations.orgId, args.orgId),
-        eq(githubInstallations.targetId, args.installInfo.targetId),
-        eq(githubInstallations.status, "pending"),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
+export const createOrActivateGithubInstallation$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly installationId: string;
+      readonly installInfo: GitHubInstallationInfo;
+      readonly encryptedAccessToken: string;
+      readonly adminGithubUserId: string | null;
+      readonly composeId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<string> => {
+    const db = set(writeDb$);
+    const [pendingRecord] = await db
+      .select({ id: githubInstallations.id })
+      .from(githubInstallations)
+      .where(
+        and(
+          eq(githubInstallations.orgId, args.orgId),
+          eq(githubInstallations.targetId, args.installInfo.targetId),
+          eq(githubInstallations.status, "pending"),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
 
-  if (pendingRecord) {
-    await args.db
-      .update(githubInstallations)
-      .set({
-        status: "active",
+    if (pendingRecord) {
+      await db
+        .update(githubInstallations)
+        .set({
+          status: "active",
+          installationId: args.installationId,
+          appId: args.installInfo.appId,
+          appSlug: args.installInfo.appSlug,
+          encryptedAccessToken: args.encryptedAccessToken,
+          targetType: args.installInfo.targetType,
+          targetName: args.installInfo.targetName,
+          adminGithubUserId: args.adminGithubUserId,
+          updatedAt: new Date(now()),
+        })
+        .where(eq(githubInstallations.id, pendingRecord.id));
+      signal.throwIfAborted();
+
+      return pendingRecord.id;
+    }
+
+    const [newInstall] = await db
+      .insert(githubInstallations)
+      .values({
         installationId: args.installationId,
         appId: args.installInfo.appId,
         appSlug: args.installInfo.appSlug,
         encryptedAccessToken: args.encryptedAccessToken,
+        status: "active",
+        orgId: args.orgId,
         targetType: args.installInfo.targetType,
+        targetId: args.installInfo.targetId,
         targetName: args.installInfo.targetName,
         adminGithubUserId: args.adminGithubUserId,
-        updatedAt: new Date(now()),
       })
-      .where(eq(githubInstallations.id, pendingRecord.id));
+      .returning({ id: githubInstallations.id });
     signal.throwIfAborted();
 
-    return pendingRecord.id;
-  }
+    if (!newInstall) {
+      throw new Error("Expected GitHub installation insert to return a row");
+    }
 
-  const [newInstall] = await args.db
-    .insert(githubInstallations)
-    .values({
-      installationId: args.installationId,
-      appId: args.installInfo.appId,
-      appSlug: args.installInfo.appSlug,
-      encryptedAccessToken: args.encryptedAccessToken,
-      status: "active",
-      orgId: args.orgId,
-      targetType: args.installInfo.targetType,
-      targetId: args.installInfo.targetId,
-      targetName: args.installInfo.targetName,
-      adminGithubUserId: args.adminGithubUserId,
-    })
-    .returning({ id: githubInstallations.id });
-  signal.throwIfAborted();
-
-  if (!newInstall) {
-    throw new Error("Expected GitHub installation insert to return a row");
-  }
-
-  return newInstall.id;
-}
+    return newInstall.id;
+  },
+);

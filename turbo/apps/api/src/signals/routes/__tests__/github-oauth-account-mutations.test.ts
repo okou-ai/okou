@@ -58,6 +58,14 @@ describe("GitHub OAuth account mutation selection", () => {
       displayName: `Okou GitHub setup ${randomUUID()}`,
     });
     const installation = await github.installGithubApp(actor, agent.agentId);
+    await expect(github.readInstallation(actor)).resolves.toMatchObject({
+      installation: {
+        installationId: installation.remoteInstallationId,
+        status: "active",
+        targetType: "Organization",
+        targetName: "bdd-org",
+      },
+    });
     const update = await github.requestSetupCallback(
       new URLSearchParams({
         installation_id: installation.remoteInstallationId,
