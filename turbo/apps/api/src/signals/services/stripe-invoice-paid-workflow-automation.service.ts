@@ -7,9 +7,11 @@ import {
   connectorCatalog,
   connectorCatalogEntries,
 } from "@okouai/db/runtime/connector-catalog";
+import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { connectors } from "@okouai/db/schema/connector";
 import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
+import { workflowUserAutomationThreads } from "@okouai/db/schema/workflow";
 import { and, eq, isNull } from "drizzle-orm";
 
 import type { Db } from "../external/db";
@@ -21,7 +23,6 @@ import {
   type BuiltinConnectorCredentialConnection,
   type BuiltinConnectorCredentialConnectionResult,
 } from "./builtin-connector-credential-runtime.service";
-import { resolveWorkflowAutomationConnectorId } from "./workflow-automation-account.service";
 import {
   connectorCatalogCurrentWhere,
   connectorRuntimeAuthSelectionReadPlan,
@@ -143,6 +144,80 @@ interface StripeAutomationProjectionRow {
   readonly eventConnectorId: string | null;
 }
 
+interface StripeAutomationProjectionArgs {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly automation: StripeAutomationProjectionRow;
+  readonly readinessByConnectorId: Map<
+    string,
+    StripeInvoicePaidAutomationReadinessResult
+  >;
+  /**
+   * Repair publishes only while the automation is still unbound, so a
+   * reprojection that bound it after the read below is never overwritten.
+   */
+  readonly onlyIfUnbound?: boolean;
+}
+
+function stripeAutomationProjectionTarget(
+  args: StripeAutomationProjectionArgs,
+) {
+  return and(
+    eq(workflowAutomations.id, args.automation.id),
+    args.onlyIfUnbound === true
+      ? isNull(workflowAutomations.eventConnectorId)
+      : undefined,
+  );
+}
+
+function stripeAutomationConnectorInput(args: StripeAutomationProjectionArgs) {
+  return {
+    orgId: args.orgId,
+    userId: args.userId,
+    workflowId: args.automation.workflowId,
+    connectorSlug: STRIPE_CONNECTOR_SLUG,
+  };
+}
+
+function stripeAutomationSelectionJoin(
+  input: ReturnType<typeof stripeAutomationConnectorInput>,
+) {
+  return and(
+    eq(
+      chatThreadConnectorSelections.chatThreadId,
+      workflowUserAutomationThreads.chatThreadId,
+    ),
+    eq(chatThreadConnectorSelections.connectorSlug, input.connectorSlug),
+  );
+}
+
+function stripeAutomationSelectionThreadCondition(
+  input: ReturnType<typeof stripeAutomationConnectorInput>,
+) {
+  return and(
+    eq(workflowUserAutomationThreads.orgId, input.orgId),
+    eq(workflowUserAutomationThreads.userId, input.userId),
+    eq(workflowUserAutomationThreads.workflowId, input.workflowId),
+  );
+}
+
+function stripeAutomationDefaultAccountCondition(
+  input: ReturnType<typeof stripeAutomationConnectorInput>,
+) {
+  return and(
+    eq(connectors.orgId, input.orgId),
+    eq(connectors.userId, input.userId),
+    eq(connectors.connectorSlug, input.connectorSlug),
+    eq(connectors.isDefault, true),
+  );
+}
+
+function stripeAutomationCatalogPlan() {
+  return connectorRuntimeAuthSelectionReadPlan({
+    connectorSlugs: [STRIPE_CONNECTOR_SLUG],
+  });
+}
+
 function stripeAutomationReadinessFromConnection(
   ready: ReadyStripeConnectionResult,
 ): StripeInvoicePaidAutomationReadinessResult {
@@ -190,34 +265,32 @@ function stripeAutomationProjectionUpdate(
 
 async function reprojectStripeAutomation(
   db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly automation: StripeAutomationProjectionRow;
-    readonly readinessByConnectorId: Map<
-      string,
-      StripeInvoicePaidAutomationReadinessResult
-    >;
-    /**
-     * Repair publishes only while the automation is still unbound, so a
-     * reprojection that bound it after the read below is never overwritten.
-     */
-    readonly onlyIfUnbound?: boolean;
-  },
+  args: StripeAutomationProjectionArgs,
   signal: AbortSignal,
 ): Promise<void> {
-  const target = and(
-    eq(workflowAutomations.id, args.automation.id),
-    args.onlyIfUnbound === true
-      ? isNull(workflowAutomations.eventConnectorId)
-      : undefined,
-  );
-  const connectorId = await resolveWorkflowAutomationConnectorId(db, {
-    orgId: args.orgId,
-    userId: args.userId,
-    workflowId: args.automation.workflowId,
-    connectorSlug: STRIPE_CONNECTOR_SLUG,
-  });
+  const target = stripeAutomationProjectionTarget(args);
+  const selectionDb = db;
+  const selectionInput = stripeAutomationConnectorInput(args);
+  const connectorId = await (async (): Promise<string | null> => {
+    const [selection] = await selectionDb
+      .select({ connectorId: chatThreadConnectorSelections.connectorId })
+      .from(workflowUserAutomationThreads)
+      .innerJoin(
+        chatThreadConnectorSelections,
+        stripeAutomationSelectionJoin(selectionInput),
+      )
+      .where(stripeAutomationSelectionThreadCondition(selectionInput))
+      .limit(1);
+    if (selection) {
+      return selection.connectorId;
+    }
+    const [defaultAccount] = await selectionDb
+      .select({ connectorId: connectors.id })
+      .from(connectors)
+      .where(stripeAutomationDefaultAccountCondition(selectionInput))
+      .limit(1);
+    return defaultAccount?.connectorId ?? null;
+  })();
   signal.throwIfAborted();
 
   if (connectorId === null) {
@@ -242,9 +315,7 @@ async function reprojectStripeAutomation(
         connectorId,
         missingMessage: STRIPE_SELECTION_CHANGED_MESSAGE,
       };
-      const catalogPlan = connectorRuntimeAuthSelectionReadPlan({
-        connectorSlugs: [STRIPE_CONNECTOR_SLUG],
-      });
+      const catalogPlan = stripeAutomationCatalogPlan();
       const snapshot = connectorRuntimeAuthSelectionFromRows(
         await catalogDb
           .select(catalogPlan.columns)

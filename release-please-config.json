@@ -88,9 +88,6 @@
     "crates/guest-contracts": {
       "release-type": "rust"
     },
-    "crates/session-history-selector": {
-      "release-type": "rust"
-    },
     "crates/guest-tool-exec": {
       "release-type": "rust"
     },

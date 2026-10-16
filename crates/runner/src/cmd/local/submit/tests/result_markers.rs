@@ -1,7 +1,7 @@
 use std::os::unix::fs::{MetadataExt, symlink};
 
-use super::super::{result_file_is_empty, try_read_result, write_abandoned_result_marker};
-use super::support::{mode, submit_queue_entry};
+use super::super::{result_file_is_empty, try_read_result};
+use super::support::submit_queue_entry;
 use runner_provider::local_queue;
 use runner_types::ids::RunId;
 
@@ -56,90 +56,6 @@ fn result_file_is_empty_ignores_result_file_symlink() {
 }
 
 #[test]
-fn abandoned_marker_write_publishes_without_tmp_residue() {
-    let dir = tempfile::tempdir().unwrap();
-    let group_dir = dir.path();
-    let job_id = RunId::new_v4();
-    let result_path = local_queue::result_path(group_dir, job_id);
-
-    let marker =
-        write_abandoned_result_marker(&result_path, job_id, "local submit abandoned").unwrap();
-
-    assert_eq!(std::fs::read(&result_path).unwrap(), marker.bytes);
-    assert_eq!(mode(&result_path), 0o600);
-    let result_dir = local_queue::results_dir(group_dir);
-    assert_eq!(mode(&result_dir), 0o700);
-    let tmp_files: Vec<_> = std::fs::read_dir(result_dir)
-        .unwrap()
-        .filter_map(Result::ok)
-        .filter(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("tmp"))
-        .collect();
-    assert!(tmp_files.is_empty(), "tmp files left behind: {tmp_files:?}");
-}
-
-#[test]
-fn abandoned_marker_write_creates_missing_group_dir_as_shared_trusted() {
-    let dir = tempfile::tempdir().unwrap();
-    let group_dir = dir.path().join("groups").join("org").join("group");
-    let job_id = RunId::new_v4();
-    let result_path = local_queue::result_path(&group_dir, job_id);
-
-    let marker =
-        write_abandoned_result_marker(&result_path, job_id, "local submit abandoned").unwrap();
-
-    assert_eq!(std::fs::read(&result_path).unwrap(), marker.bytes);
-    assert_eq!(
-        mode(&group_dir),
-        runner_host::host_file::SHARED_TRUSTED_DIR_MODE
-    );
-    assert_eq!(mode(&local_queue::results_dir(&group_dir)), 0o700);
-    assert_eq!(mode(&result_path), 0o600);
-}
-
-#[test]
-fn abandoned_marker_write_cleans_tmp_when_publish_fails() {
-    let dir = tempfile::tempdir().unwrap();
-    let group_dir = dir.path();
-    let job_id = RunId::new_v4();
-    let result_path = local_queue::result_path(group_dir, job_id);
-    std::fs::create_dir_all(&result_path).unwrap();
-
-    let marker = write_abandoned_result_marker(&result_path, job_id, "local submit abandoned");
-
-    assert!(marker.is_none());
-    assert!(result_path.is_dir());
-    let result_dir = local_queue::results_dir(group_dir);
-    let tmp_files: Vec<_> = std::fs::read_dir(result_dir)
-        .unwrap()
-        .filter_map(Result::ok)
-        .filter(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("tmp"))
-        .collect();
-    assert!(tmp_files.is_empty(), "tmp files left behind: {tmp_files:?}");
-}
-
-#[test]
-fn abandoned_marker_write_preserves_existing_empty_result() {
-    let dir = tempfile::tempdir().unwrap();
-    let group_dir = dir.path();
-    let job_id = RunId::new_v4();
-    let result_path = local_queue::result_path(group_dir, job_id);
-    std::fs::create_dir_all(result_path.parent().unwrap()).unwrap();
-    std::fs::write(&result_path, b"").unwrap();
-
-    let marker = write_abandoned_result_marker(&result_path, job_id, "local submit abandoned");
-
-    assert!(marker.is_none());
-    assert!(result_file_is_empty(&result_path));
-    let result_dir = local_queue::results_dir(group_dir);
-    let tmp_files: Vec<_> = std::fs::read_dir(result_dir)
-        .unwrap()
-        .filter_map(Result::ok)
-        .filter(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("tmp"))
-        .collect();
-    assert!(tmp_files.is_empty(), "tmp files left behind: {tmp_files:?}");
-}
-
-#[test]
 fn abandoned_cleanup_keeps_replaced_result_with_same_content() {
     let dir = tempfile::tempdir().unwrap();
     let group_dir = dir.path();
@@ -150,10 +66,11 @@ fn abandoned_cleanup_keeps_replaced_result_with_same_content() {
 
     std::fs::write(&queue.job, b"{}").unwrap();
     std::fs::write(&queue.cancel, b"").unwrap();
-    let marker =
-        write_abandoned_result_marker(&queue.result, job_id, "local submit abandoned").unwrap();
+    let marker = local_queue::LocalQueue::new(group_dir.to_path_buf())
+        .write_abandoned_result_marker_sync(job_id, "local submit abandoned")
+        .unwrap();
     let replacement_path = queue.result.with_extension("replacement");
-    std::fs::write(&replacement_path, &marker.bytes).unwrap();
+    std::fs::write(&replacement_path, std::fs::read(&queue.result).unwrap()).unwrap();
     std::fs::rename(&replacement_path, &queue.result).unwrap();
 
     queue.cleanup_abandoned(Some(&marker));
@@ -175,8 +92,9 @@ fn abandoned_cleanup_keeps_mutated_result_with_same_marker_inode() {
 
     std::fs::write(&queue.job, b"{}").unwrap();
     std::fs::write(&queue.cancel, b"").unwrap();
-    let marker =
-        write_abandoned_result_marker(&queue.result, job_id, "local submit abandoned").unwrap();
+    let marker = local_queue::LocalQueue::new(group_dir.to_path_buf())
+        .write_abandoned_result_marker_sync(job_id, "local submit abandoned")
+        .unwrap();
     let marker_metadata = std::fs::metadata(&queue.result).unwrap();
     let runner_result = b"runner result";
     let mut result_file = std::fs::OpenOptions::new()

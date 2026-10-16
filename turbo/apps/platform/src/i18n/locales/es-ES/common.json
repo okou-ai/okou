@@ -126,7 +126,7 @@
         "other": "Otro",
         "parentFolders": "Carpetas superiores",
         "pending": "Los archivos estarán disponibles cuando comience la ejecución en cola.",
-        "readonly": "Archivos de solo lectura de la ejecución actual. Cerrar el panel libera la conexión.",
+        "readonly": "Archivos de solo lectura de la ejecución actual.",
         "refresh": "Actualizar",
         "retry": "Reintentar",
         "root": "Carpeta raíz",
@@ -4097,6 +4097,7 @@
   "onboarding": {
     "common": {
       "next": "Siguiente",
+      "skip": "Omitir",
       "stepProgress": "Paso {{current}} de {{total}}"
     },
     "documentTitles": {
@@ -5231,21 +5232,25 @@
     "wallet": {
       "actionError": "No se pudo completar la acción. Comprueba la conexión, permite las ventanas emergentes e inténtalo de nuevo.",
       "connect": "Conectar",
-      "description": "Tus agentes pueden solicitar compras a través de Link. Tú apruebas cada compra.",
+      "description": "Tus agentes pueden solicitar compras y consultar transacciones de Link. Tú apruebas cada compra.",
       "disconnect": "Desconectar",
       "loadError": "No se pudo cargar tu cartera.",
       "permissionsUnknown": "Vuelve a conectar Link para revisar y confirmar sus permisos actuales.",
       "retry": "Reintentar",
-      "scope": "Deja que Okou compre por ti con Link.",
+      "scope": "Permite que Okou compre por ti y consulte tu actividad en Link.",
       "title": "Cartera",
       "transactions": {
-        "description": "Tus solicitudes de compra recientes con Link en Okou.",
+        "description": "Transacciones recientes de tu cuenta de Link conectada.",
         "empty": "Aún no hay transacciones de Link",
         "loadError": "No se pudieron cargar las transacciones. Inténtalo de nuevo.",
         "loading": "Cargando transacciones",
         "merchant": "Comercio",
+        "refunded": "Reembolsado",
+        "requestsDescription": "Solicitudes registradas en este espacio de trabajo. Conecta Link o actualiza los permisos para ver las transacciones reales.",
+        "requestsEmpty": "Aún no hay solicitudes de compra",
+        "requestsTitle": "Solicitudes de compra",
         "status": {
-          "approved": "Aprobada, pendiente de pago",
+          "approved": "Aprobado, pago sin confirmar",
           "canceled": "Cancelada",
           "created": "Creada",
           "creating": "Creando",
@@ -5258,8 +5263,8 @@
           "succeeded": "Pago completado"
         },
         "statusLabel": "Estado",
-        "test": "Prueba",
-        "title": "Transacciones de Link"
+        "title": "Transacciones de Link",
+        "unknownStatus": "Estado no disponible"
       },
       "workspaceScopeChanged": "Tu cartera de Link ahora puede usarse con todos tus agentes de este espacio de trabajo. Vuelve a conectarla para aprobar este cambio."
     },

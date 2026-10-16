@@ -1,7 +1,7 @@
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { MessagesSquare, CircleCheck, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { Button, surfaceVariants } from "@okouai/ui";
 import { Input } from "@okouai/ui/components/ui/input";
@@ -24,6 +24,11 @@ import {
 } from "../../signals/okou-page/wechat.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { ConnectedIndicator } from "./components/connected-indicator.tsx";
+import { ProviderCardMenu } from "./components/provider-card-menu.tsx";
+import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
+
+const wechatIconImg = settingsIconAssetUrl("wechat");
 
 export function WechatCard() {
   const { t } = useTranslation();
@@ -55,7 +60,7 @@ export function WechatCard() {
         className={surfaceVariants({ className: "flex flex-col" })}
       >
         <div className="flex items-center gap-4 p-4">
-          <MessagesSquare className="size-7 shrink-0" aria-hidden="true" />
+          <img src={wechatIconImg} alt="" className="size-7 shrink-0" />
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <div className="text-sm font-medium text-foreground">
               {t(($) => {
@@ -77,15 +82,16 @@ export function WechatCard() {
             </p>
           </div>
           {connected ? (
-            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-              <CircleCheck className="size-3 text-green-600" />
-              {t(($) => {
-                return $.works.wechat.connected;
-              })}
-            </span>
+            <ConnectedIndicator />
           ) : (
             <DialogTrigger
-              render={<Button variant="outline" size="sm" />}
+              render={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 shrink-0 gap-1.5 rounded-lg"
+                />
+              }
               disabled={!status?.configured}
             >
               {status?.status === "reconnect_required"
@@ -98,18 +104,18 @@ export function WechatCard() {
             </DialogTrigger>
           )}
           {status && status.status !== "disconnected" ? (
-            <Button
-              variant="quiet"
-              size="sm"
-              disabled={disconnecting.state === "loading"}
-              onClick={() => {
-                return detach(disconnect(signal), Reason.DomCallback);
-              }}
-            >
-              {t(($) => {
+            <ProviderCardMenu
+              moreOptionsLabel={t(($) => {
+                return $.works.actions.moreOptions;
+              })}
+              disconnectLabel={t(($) => {
                 return $.works.wechat.disconnect;
               })}
-            </Button>
+              disconnecting={disconnecting.state === "loading"}
+              onDisconnect={() => {
+                return detach(disconnect(signal), Reason.DomCallback);
+              }}
+            />
           ) : null}
         </div>
       </div>

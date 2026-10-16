@@ -124,7 +124,7 @@
         "other": "其他",
         "parentFolders": "上層資料夾",
         "pending": "排隊中的執行開始後即可瀏覽檔案。",
-        "readonly": "僅瀏覽目前執行的檔案。關閉面板會釋放連線。",
+        "readonly": "僅瀏覽目前執行的檔案。",
         "refresh": "重新整理",
         "retry": "重試",
         "root": "根目錄",
@@ -4020,6 +4020,7 @@
   "onboarding": {
     "common": {
       "next": "下一步",
+      "skip": "跳過",
       "stepProgress": "第 {{current}} 步，共 {{total}} 步"
     },
     "documentTitles": {
@@ -5144,21 +5145,25 @@
     "wallet": {
       "actionError": "操作未完成。請檢查網路、允許彈出視窗後重試。",
       "connect": "連線",
-      "description": "讓 Agent 透過 Link 發起購買請求。每筆購買都由你確認。",
+      "description": "讓代理程式提出購買請求並查看 Link 交易。每筆購買均由你核准。",
       "disconnect": "中斷連線",
       "loadError": "無法載入錢包。",
       "permissionsUnknown": "請重新連線 Link，查看並確認目前的授權權限。",
       "retry": "重試",
-      "scope": "讓 Okou 透過 Link 為你完成購買。",
+      "scope": "讓 Okou 代你購買並查看 Link 交易。",
       "title": "錢包",
       "transactions": {
-        "description": "你最近透過 Okou 發起的 Link 購買請求。",
+        "description": "已連接 Link 帳戶的最近交易。",
         "empty": "尚無 Link 交易紀錄",
         "loadError": "無法載入交易紀錄，請重試。",
         "loading": "正在載入交易紀錄",
         "merchant": "商家",
+        "refunded": "已退款",
+        "requestsDescription": "此工作區內的請求紀錄。連接 Link 或更新權限以查看實際交易。",
+        "requestsEmpty": "尚無付款請求",
+        "requestsTitle": "付款請求",
         "status": {
-          "approved": "已核准，待付款",
+          "approved": "已核准，付款狀態未確認",
           "canceled": "已取消",
           "created": "已建立",
           "creating": "建立中",
@@ -5171,8 +5176,8 @@
           "succeeded": "付款成功"
         },
         "statusLabel": "狀態",
-        "test": "測試",
-        "title": "Link 交易紀錄"
+        "title": "Link 交易紀錄",
+        "unknownStatus": "狀態無法取得"
       },
       "workspaceScopeChanged": "你的 Link 錢包現在可供此工作區內你的所有 Agent 使用。請重新連線以確認此變更。"
     },

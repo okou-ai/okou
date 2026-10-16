@@ -304,6 +304,10 @@ impl Case {
         self.write_event("NATIVE_FENCE_WITNESS ", phase, evidence)
     }
 
+    pub fn logical_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_LOGICAL_PROGRESS_WITNESS ", phase, evidence)
+    }
+
     pub fn bind(
         self: &Arc<Self>,
         id: String,

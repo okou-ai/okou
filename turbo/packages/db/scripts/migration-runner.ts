@@ -114,7 +114,37 @@ export async function applyPendingMigrations(
             startedAt: performance.now(),
           };
           if (statement.includes(UUID_BATCH_MIGRATION_MARKER)) {
-            throw new Error("UUID batches require a transactional migration");
+            let batch = 0;
+            let cursor: string | null = null;
+            while (true) {
+              progress.batch = ++batch;
+              progress.startedAt = performance.now();
+              // Each query commits independently. A failed migration restarts
+              // at NULL, so the statement must make already-committed work a
+              // no-op, including after a lost response or journal failure.
+              const [{ next_cursor: nextCursor }] = batchCursorSchema.parse(
+                await sql.unsafe(statement, [cursor]),
+              );
+              console.error(
+                JSON.stringify({
+                  event: "migration_batch_completed",
+                  file,
+                  statement: index + 1,
+                  batch,
+                  elapsedMs: Math.round(performance.now() - progress.startedAt),
+                }),
+              );
+              if (nextCursor === null) {
+                break;
+              }
+              if (cursor !== null && nextCursor <= cursor) {
+                throw new Error(
+                  `Batch cursor did not advance in migration ${migration.folderMillis}`,
+                );
+              }
+              cursor = nextCursor;
+            }
+            continue;
           }
           await sql.unsafe(statement);
         }

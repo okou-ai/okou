@@ -208,6 +208,103 @@ describe("POST /api/me/model-providers (upsert)", () => {
     });
   });
 
+  it.each(["uuid", "email-workspace"] as const)(
+    "reuses a legacy Claude account after recovering its %s identity",
+    async (identityKind) => {
+      mockNow(new Date("2026-10-16T06:00:00Z"));
+      const fixture = uniqueOrgUser("zmmp-claude-identity");
+      mocks.clerk.session(fixture.userId, fixture.orgId);
+      server.use(
+        http.get("https://api.anthropic.com/api/oauth/profile", () => {
+          return new HttpResponse(null, { status: 503 });
+        }),
+      );
+      const client = setupApp({
+        context,
+        routes: personalModelProvidersMainTestRoutes,
+      })(personalModelProvidersMainContract);
+      const original = await accept(
+        client.upsert({
+          body: {
+            type: "claude-code-oauth-token",
+            secret: "sk-ant-oat-legacy-identity",
+          },
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [201],
+      );
+      expect(original.body.provider).toMatchObject({
+        accountEmail: null,
+        workspaceName: null,
+      });
+
+      server.use(
+        http.get(
+          "https://api.anthropic.com/api/oauth/profile",
+          ({ request }) => {
+            const previousProfile =
+              identityKind === "uuid" &&
+              request.headers.get("authorization") ===
+                "Bearer sk-ant-oat-legacy-identity";
+            return HttpResponse.json({
+              account: {
+                uuid: identityKind === "uuid" ? "legacy-claude-account" : null,
+                email: previousProfile
+                  ? "previous.claude@example.com"
+                  : "legacy.claude@example.com",
+              },
+              organization: {
+                uuid: identityKind === "uuid" ? "legacy-claude-org" : null,
+                name: previousProfile
+                  ? "Previous Claude Workspace"
+                  : "Legacy Claude Workspace",
+                organization_type: "claude_pro",
+              },
+            });
+          },
+        ),
+        http.get("https://api.anthropic.com/api/oauth/usage", () => {
+          return HttpResponse.json({});
+        }),
+      );
+      const changedAt = new Date("2026-10-16T06:01:00Z");
+      mockNow(changedAt);
+      const replaced = await accept(
+        client.upsert({
+          body: {
+            type: "claude-code-oauth-token",
+            secret: "sk-ant-oat-recovered-identity",
+          },
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+      expect(replaced.body).toMatchObject({
+        created: false,
+        provider: {
+          id: original.body.provider.id,
+          modelProviderId: original.body.provider.modelProviderId,
+          createdAt: original.body.provider.createdAt,
+          updatedAt: changedAt.toISOString(),
+          accountEmail: "legacy.claude@example.com",
+          workspaceName: "Legacy Claude Workspace",
+          planType: "pro",
+          isActive: true,
+        },
+      });
+      const listed = await accept(
+        client.list({ headers: { authorization: "Bearer clerk-session" } }),
+        [200],
+      );
+      expect(listed.body.modelProviders).toHaveLength(1);
+      expect(listed.body.modelProviders[0]).toMatchObject({
+        id: original.body.provider.id,
+        accountEmail: "legacy.claude@example.com",
+        workspaceName: "Legacy Claude Workspace",
+      });
+    },
+  );
+
   it("returns 400 when single-secret provider is missing the secret", async () => {
     const fixture = uniqueOrgUser("zmmp-missing-secret");
     mocks.clerk.session(fixture.userId, fixture.orgId);

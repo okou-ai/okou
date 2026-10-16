@@ -64,7 +64,17 @@ export async function signInWithClerkEmailCode(
   await expect(emailAddress).toBeVisible({
     timeout: Math.max(1, signInFormDeadline - performance.now()),
   });
-  await emailAddress.fill(email);
+  // A visible form can still be inert during app startup. Clicking waits for
+  // real interaction and focus before fill can silently miss the input.
+  await emailAddress.click({
+    timeout: Math.max(1, signInFormDeadline - performance.now()),
+  });
+  await emailAddress.fill(email, {
+    timeout: Math.max(1, signInFormDeadline - performance.now()),
+  });
+  await expect(emailAddress).toHaveValue(email, {
+    timeout: Math.max(1, signInFormDeadline - performance.now()),
+  });
   await page.getByRole("button", { exact: true, name: "Continue" }).click();
   await submitClerkEmailCode(page);
   await page.waitForURL(

@@ -1,10 +1,12 @@
 //! Shared local file-queue protocol for `runner local` commands and provider.
 
+mod abandoned_result;
 mod fs;
 mod paths;
 mod state;
 mod types;
 
+pub use abandoned_result::AbandonedResultMarker;
 pub use fs::{
     create_private_marker, ensure_cancels_dir, ensure_claims_dir, ensure_group_dir,
     ensure_profile_jobs_dir, ensure_results_dir, ensure_run_inputs_dir, marker_file_exists,

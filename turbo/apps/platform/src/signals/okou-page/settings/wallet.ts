@@ -49,13 +49,27 @@ export const walletTransactions$ = computed(async (get) => {
   if (!get(walletSettingsEnabled$)) {
     return null;
   }
+  const connection = await get(walletConnection$);
+  if (
+    connection.connected &&
+    connection.authorization?.capabilities.transactions
+  ) {
+    const result = await accept(
+      get(apiClient$)(walletUserContract).activity({ query: { limit: 24 } }),
+      [200],
+    );
+    return { source: "link" as const, transactions: result.body.data };
+  }
   const result = await accept(
     get(apiClient$)(walletUserContract).transactions({
       query: { limit: 24 },
     }),
     [200],
   );
-  return result.body;
+  return {
+    source: "requests" as const,
+    transactions: result.body.transactions,
+  };
 });
 export const refreshWalletTransactions$ = command(({ set }) => {
   set(transactionsVersion$, (version) => {

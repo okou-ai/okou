@@ -124,7 +124,7 @@
         "other": "Sonstige",
         "parentFolders": "Übergeordnete Ordner",
         "pending": "Dateien sind verfügbar, sobald der wartende Lauf startet.",
-        "readonly": "Schreibgeschützte Dateien des aktuellen Laufs. Beim Schließen wird die Verbindung freigegeben.",
+        "readonly": "Schreibgeschützte Dateien des aktuellen Laufs.",
         "refresh": "Aktualisieren",
         "retry": "Erneut versuchen",
         "root": "Stammordner",
@@ -4038,6 +4038,7 @@
   "onboarding": {
     "common": {
       "next": "Nächste",
+      "skip": "Überspringen",
       "stepProgress": "Schritt {{current}} von {{total}}"
     },
     "documentTitles": {
@@ -5164,21 +5165,25 @@
     "wallet": {
       "actionError": "Die Aktion konnte nicht abgeschlossen werden. Prüfe deine Verbindung, erlaube Pop-ups und versuche es erneut.",
       "connect": "Verbinden",
-      "description": "Deine Agenten können über Link Einkäufe anfragen. Du bestätigst jeden Einkauf.",
+      "description": "Deine Agenten können Käufe anfragen und Link-Transaktionen einsehen. Du genehmigst jeden Kauf.",
       "disconnect": "Trennen",
       "loadError": "Dein Wallet konnte nicht geladen werden.",
       "permissionsUnknown": "Verbinde Link erneut, um die aktuellen Berechtigungen zu prüfen und zu bestätigen.",
       "retry": "Erneut versuchen",
-      "scope": "Lass Okou mit Link für dich einkaufen.",
+      "scope": "Lass Okou für dich einkaufen und deine Link-Transaktionen einsehen.",
       "title": "Wallet",
       "transactions": {
-        "description": "Deine letzten Link-Kaufanfragen in Okou.",
+        "description": "Letzte Transaktionen deines verbundenen Link-Kontos.",
         "empty": "Noch keine Link-Transaktionen",
         "loadError": "Transaktionen konnten nicht geladen werden. Versuche es erneut.",
         "loading": "Transaktionen werden geladen",
         "merchant": "Händler",
+        "refunded": "Erstattet",
+        "requestsDescription": "Gespeicherte Anfragen in diesem Workspace. Verbinde Link oder aktualisiere die Berechtigungen, um tatsächliche Transaktionen zu sehen.",
+        "requestsEmpty": "Noch keine Kaufanfragen",
+        "requestsTitle": "Kaufanfragen",
         "status": {
-          "approved": "Genehmigt, Zahlung ausstehend",
+          "approved": "Genehmigt, Zahlung unbestätigt",
           "canceled": "Storniert",
           "created": "Erstellt",
           "creating": "Wird erstellt",
@@ -5191,8 +5196,8 @@
           "succeeded": "Zahlung erfolgreich"
         },
         "statusLabel": "Status",
-        "test": "Test",
-        "title": "Link-Transaktionen"
+        "title": "Link-Transaktionen",
+        "unknownStatus": "Status nicht verfügbar"
       },
       "workspaceScopeChanged": "Dein Link-Wallet kann jetzt von all deinen Agenten in diesem Workspace genutzt werden. Verbinde es erneut, um diese Änderung zu bestätigen."
     },

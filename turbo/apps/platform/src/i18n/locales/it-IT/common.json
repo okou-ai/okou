@@ -126,7 +126,7 @@
         "other": "Altro",
         "parentFolders": "Cartelle superiori",
         "pending": "I file saranno disponibili all’avvio dell’esecuzione in coda.",
-        "readonly": "File di sola lettura dell’esecuzione corrente. Chiudendo il pannello si libera la connessione.",
+        "readonly": "File di sola lettura dell’esecuzione corrente.",
         "refresh": "Aggiorna",
         "retry": "Riprova",
         "root": "Cartella radice",
@@ -4097,6 +4097,7 @@
   "onboarding": {
     "common": {
       "next": "Avanti",
+      "skip": "Salta",
       "stepProgress": "Passaggio {{current}} di {{total}}"
     },
     "documentTitles": {
@@ -5231,21 +5232,25 @@
     "wallet": {
       "actionError": "Impossibile completare l’azione. Controlla la connessione, consenti i popup e riprova.",
       "connect": "Collega",
-      "description": "I tuoi agenti possono richiedere acquisti tramite Link. Approvi tu ogni acquisto.",
+      "description": "I tuoi agenti possono richiedere acquisti e consultare le transazioni Link. Tu approvi ogni acquisto.",
       "disconnect": "Scollega",
       "loadError": "Impossibile caricare il tuo portafoglio.",
       "permissionsUnknown": "Ricollega Link per esaminare e confermare le autorizzazioni attuali.",
       "retry": "Riprova",
-      "scope": "Lascia che Okou faccia acquisti per te con Link.",
+      "scope": "Consenti a Okou di fare acquisti e consultare la tua attività Link.",
       "title": "Portafoglio",
       "transactions": {
-        "description": "Le tue richieste di acquisto recenti con Link in Okou.",
+        "description": "Transazioni recenti del tuo account Link collegato.",
         "empty": "Nessuna transazione Link",
         "loadError": "Impossibile caricare le transazioni. Riprova.",
         "loading": "Caricamento delle transazioni",
         "merchant": "Commerciante",
+        "refunded": "Rimborsato",
+        "requestsDescription": "Richieste registrate in questo spazio di lavoro. Collega Link o aggiorna le autorizzazioni per vedere le transazioni effettive.",
+        "requestsEmpty": "Nessuna richiesta di acquisto",
+        "requestsTitle": "Richieste di acquisto",
         "status": {
-          "approved": "Approvata, in attesa di pagamento",
+          "approved": "Approvato, pagamento non confermato",
           "canceled": "Annullata",
           "created": "Creata",
           "creating": "Creazione in corso",
@@ -5258,8 +5263,8 @@
           "succeeded": "Pagamento riuscito"
         },
         "statusLabel": "Stato",
-        "test": "Test",
-        "title": "Transazioni Link"
+        "title": "Transazioni Link",
+        "unknownStatus": "Stato non disponibile"
       },
       "workspaceScopeChanged": "Ora il tuo portafoglio Link può essere usato da tutti i tuoi agenti in questo spazio di lavoro. Ricollegalo per approvare la modifica."
     },

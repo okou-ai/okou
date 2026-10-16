@@ -348,6 +348,175 @@ class TestRegistryBuiltinCatalogValidation:
         assert static_firewalls is not None
         assert static_info["firewalls"][0]["apis"][0]["base"] == "https://api.static.example.com"
 
+    @pytest.mark.parametrize(
+        ("base", "vars_map", "expected_base", "expected_error"),
+        [
+            pytest.param(
+                "https://xn--${{ vars.SUFFIX }}.example.com",
+                {"SUFFIX": "bcher-kva"},
+                "https://xn--bcher-kva.example.com",
+                None,
+                id="alabel-prefix",
+            ),
+            pytest.param(
+                "https://xn--b${{ vars.SUFFIX }}.example.com",
+                {"SUFFIX": "cher-kva"},
+                "https://xn--bcher-kva.example.com",
+                None,
+                id="split-punycode-payload",
+            ),
+            pytest.param(
+                "https://xn--b_${{ vars.SUFFIX }}.example.com",
+                {"SUFFIX": "cher-3ya"},
+                "https://xn--b_cher-3ya.example.com",
+                None,
+                id="basic-ascii-underscore",
+            ),
+            pytest.param(
+                "https://xn--b!${{ vars.SUFFIX }}.example.com",
+                {"SUFFIX": "cher-3ya"},
+                "https://xn--b!cher-3ya.example.com",
+                None,
+                id="basic-ascii-punctuation",
+            ),
+            pytest.param(
+                "https://%78%6E--${{ vars.SUFFIX }}.example.com",
+                {"SUFFIX": "bcher-kva"},
+                "https://%78%6E--bcher-kva.example.com",
+                None,
+                id="encoded-alabel-prefix",
+            ),
+            pytest.param(
+                "https://xn--${{ vars.FIRST }}${{ vars.SECOND }}.example.com",
+                {"FIRST": "bcher", "SECOND": "-kva"},
+                "https://xn--bcher-kva.example.com",
+                None,
+                id="adjacent-variables",
+            ),
+            pytest.param(
+                "https://xn--${{ vars.SUFFIX }}.xn--${{ vars.SUFFIX }}.example.com",
+                {"SUFFIX": "bcher-kva"},
+                "https://xn--bcher-kva.xn--bcher-kva.example.com",
+                None,
+                id="repeated-variable",
+            ),
+            pytest.param(
+                "https://${{ vars.PREFIX }}xn--${{ vars.SUFFIX }}.example.com",
+                {"PREFIX": "a", "SUFFIX": "bcher-kva"},
+                "https://axn--bcher-kva.example.com",
+                None,
+                id="literal-between-variables",
+            ),
+            pytest.param(
+                "https://xn--${{ vars.SUFFIX }}.example.com",
+                {"SUFFIX": "a"},
+                None,
+                "resolved base URL is invalid",
+                id="invalid-resolved-alabel",
+            ),
+            pytest.param(
+                "https://xn--${{ vars.SUFFIX }}.example.com",
+                {"SUFFIX": "caf-dma"},
+                None,
+                "host policy does not allow resolved host",
+                id="unowned-resolved-alabel",
+            ),
+        ],
+    )
+    def test_partial_alabel_template_preserves_unrelated_catalog_connector(
+        self, tmp_path, mitm_ctx, base, vars_map, expected_base, expected_error
+    ):
+        registry_path, cache_path = write_registry_with_cache(
+            tmp_path,
+            {
+                "10.200.0.1": builtin_sandbox("run-template", "templated", vars_map),
+                "10.200.0.2": builtin_sandbox("run-static", "static"),
+            },
+            {
+                "templated": {
+                    "name": "templated",
+                    "apis": [
+                        {
+                            "base": base,
+                            "hostPolicy": {
+                                "kind": "providerOwned",
+                                "exactHosts": [
+                                    "xn--bcher-kva.example.com",
+                                    "axn--bcher-kva.example.com",
+                                    "xn--bcher-kva.xn--bcher-kva.example.com",
+                                    "xn--b_cher-3ya.example.com",
+                                    "xn--b!cher-3ya.example.com",
+                                ],
+                            },
+                            "auth": {"headers": {"Authorization": "Bearer ${{ secrets.TOKEN }}"}},
+                            "permissions": [{"name": "read", "rules": ["GET /items"]}],
+                        }
+                    ],
+                },
+                "static": cache_firewall("static", "https://api.static.example.com"),
+            },
+        )
+
+        with mitm_ctx(
+            registry_path=str(registry_path),
+            builtin_firewall_catalog_cache_path=str(cache_path),
+        ):
+            snapshot = builtin_firewall_cache.load_catalog_snapshot(str(cache_path))
+            state = registry.load_registry_state(str(registry_path))
+            template_context = registry.get_sandbox_context("10.200.0.1", str(registry_path))
+            static_context = registry.get_sandbox_context("10.200.0.2", str(registry_path))
+
+        assert snapshot.catalog is not None
+        assert snapshot.unavailable_reason is None
+        assert not isinstance(state, registry.RegistryUnavailable)
+        assert static_context is not None
+        static_info, static_firewalls, _ = static_context
+        assert static_firewalls is not None
+        assert static_info["firewalls"][0]["apis"][0]["base"] == "https://api.static.example.com"
+
+        if expected_error is not None:
+            assert template_context is None
+            assert set(state.sandboxes) == {"10.200.0.2"}
+            assert set(state.invalid_sandboxes) == {"10.200.0.1"}
+            invalid_sandbox = state.invalid_sandboxes["10.200.0.1"]
+            assert invalid_sandbox.reason == "invalid_firewalls"
+            assert expected_error in invalid_sandbox.message
+            return
+
+        assert state.invalid_sandboxes == {}
+        assert set(state.sandboxes) == {"10.200.0.1", "10.200.0.2"}
+        assert template_context is not None
+        template_info, template_firewalls, _ = template_context
+        assert template_firewalls is not None
+        assert template_info["firewalls"][0]["apis"][0]["base"] == expected_base
+
+    @pytest.mark.parametrize(
+        "base",
+        [
+            pytest.param(
+                "https://xn--${{ vars.SUFFIX }}.xn--a.example.com", id="invalid-fixed-alabel"
+            ),
+            pytest.param("https://xn--%2e${{ vars.SUFFIX }}.example.com", id="encoded-dot"),
+            pytest.param("https://xn--%2f${{ vars.SUFFIX }}.example.com", id="encoded-slash"),
+            pytest.param("https://xn--%zz${{ vars.SUFFIX }}.example.com", id="malformed-escape"),
+            pytest.param("https://xn--%ff${{ vars.SUFFIX }}.example.com", id="invalid-utf8"),
+            pytest.param("https://xn--b%2561${{ vars.SUFFIX }}.example.com", id="encoded-percent"),
+            pytest.param(
+                "https://xn--%7Btenant%7D${{ vars.SUFFIX }}.example.com", id="encoded-parameter"
+            ),
+            pytest.param(
+                "https://xn--" + "a" * 60 + "${{ vars.SUFFIX }}.example.com",
+                id="overlong-literal-alabel",
+            ),
+        ],
+    )
+    def test_partial_alabel_template_keeps_literal_authority_validation(
+        self, tmp_path, mitm_ctx, base
+    ):
+        _assert_cache_firewall_is_invalid(
+            tmp_path, mitm_ctx, {"name": "fallback", "apis": [{"base": base, "auth": {}}]}
+        )
+
     def test_runner_catalog_cache_resolves_whole_host_template_with_path_parameter(
         self, tmp_path, mitm_ctx
     ):

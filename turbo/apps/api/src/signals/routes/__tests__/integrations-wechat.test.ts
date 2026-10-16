@@ -88,6 +88,7 @@ async function fixture() {
     status: { status: "wait" } as Record<string, unknown>,
     starts: [] as string[],
     verificationCodes: [] as (string | null)[],
+    typingStatuses: [] as number[],
   };
   server.use(
     http.post(`${origin}/ilink/bot/get_bot_qrcode`, async ({ request }) => {
@@ -112,6 +113,33 @@ async function fixture() {
       provider.starts.push(body.connectionId);
       return HttpResponse.json({ ok: true });
     }),
+    http.post(`${origin}/ilink/bot/getconfig`, async ({ request }) => {
+      expect(request.headers.get("authorization")).toBe(
+        "Bearer test-private-bot-token",
+      );
+      await expect(request.json()).resolves.toMatchObject({
+        ilink_user_id: `scanner-${actor.userId}`,
+        context_token: expect.any(String),
+      });
+      return HttpResponse.json({
+        ret: 0,
+        typing_ticket: "private-typing-ticket",
+      });
+    }),
+    http.post(`${origin}/ilink/bot/sendtyping`, async ({ request }) => {
+      expect(request.headers.get("authorization")).toBe(
+        "Bearer test-private-bot-token",
+      );
+      const body = z
+        .object({
+          ilink_user_id: z.literal(`scanner-${actor.userId}`),
+          typing_ticket: z.literal("private-typing-ticket"),
+          status: z.union([z.literal(1), z.literal(2)]),
+        })
+        .parse(await request.json());
+      provider.typingStatuses.push(body.status);
+      return HttpResponse.json({ ret: 0 });
+    }),
   );
   onTestFinished(async () => {
     createRouteMocks(context).clerk.session(
@@ -133,6 +161,302 @@ async function fixture() {
   };
   return { actor, provider, confirm };
 }
+
+async function responseFixture() {
+  const connected = await fixture();
+  const { actor, provider, confirm } = connected;
+  const bdd = createBddApi(context);
+  const runs = createRunsApi(context);
+  const webhooks = createWebhookCallbackApi(context);
+  bdd.acceptAgentStorageWrites();
+  runs.acceptStorageDownloads();
+  runs.acceptTelemetryIngest();
+  context.mocks.ably.publish.mockResolvedValue(undefined);
+  const runnerGroup = runs.configureRunnerGroup();
+  await runs.grantProEntitlement(actor);
+  await runs.ensurePersonalSubscriptionModel(actor);
+  await runs.updateUserModelPreference(actor, "claude-fable-5-1");
+  await bdd.readOnboardingStatus(actor);
+  const attempt = await accept(client().connect({ headers }), [200]);
+  confirm();
+  await accept(
+    client().poll({ headers, body: { id: attempt.body.id } }),
+    [200],
+  );
+  const connectionId = z.uuid().parse(provider.starts[0]);
+  const sentTexts: string[] = [];
+  server.use(
+    http.post(`${origin}/ilink/bot/sendmessage`, async ({ request }) => {
+      const body = z
+        .object({
+          msg: z.object({
+            item_list: z.array(
+              z.object({ text_item: z.object({ text: z.string() }) }),
+            ),
+          }),
+        })
+        .parse(await request.json());
+      sentTexts.push(
+        ...body.msg.item_list.map((item) => {
+          return item.text_item.text;
+        }),
+      );
+      return HttpResponse.json({ ret: 0 });
+    }),
+  );
+  return {
+    ...connected,
+    runs,
+    webhooks,
+    sentTexts,
+    async receive(text: string) {
+      server.use(
+        http.post(`${origin}/ilink/bot/getupdates`, () => {
+          return HttpResponse.json({
+            msgs: [
+              {
+                message_id: randomUUID(),
+                from_user_id: `scanner-${actor.userId}`,
+                to_user_id: "test-bot",
+                message_type: 1,
+                context_token: "private-reply-context",
+                item_list: [{ type: 1, text_item: { text } }],
+              },
+            ],
+          });
+        }),
+      );
+      const body = { connectionId };
+      const timestamp = String(Math.floor(now() / 1000));
+      const signature = createHmac("sha256", secret)
+        .update(`${timestamp}.${JSON.stringify(body)}`)
+        .digest("hex");
+      await accept(
+        setupApp({ context, routes: wechatGatewayRoutes })(
+          wechatGatewayContract,
+        ).poll({
+          body,
+          headers: {
+            "x-wechat-timestamp": timestamp,
+            "x-wechat-signature": signature,
+          },
+        }),
+        [200],
+      );
+    },
+    async claim() {
+      let runId: string | undefined;
+      await expect
+        .poll(
+          async () => {
+            await runs.heartbeatRunner(runnerGroup);
+            runId = (await runs.pollRunner(runnerGroup)).body.job?.runId;
+            return runId;
+          },
+          { timeout: 10_000 },
+        )
+        .toBeDefined();
+      return await runs.claimRunnerJob(z.uuid().parse(runId));
+    },
+    async finish(
+      run: { readonly runId: string; readonly sandboxToken: string },
+      text: string,
+      exitCode = 0,
+      completionStatus: 200 | 500 = 200,
+    ) {
+      const callbackHeaders = { authorization: `Bearer ${run.sandboxToken}` };
+      await webhooks.requestAgentEvents(
+        {
+          runId: run.runId,
+          events: [{ type: "result", sequenceNumber: 0, result: text }],
+        },
+        callbackHeaders,
+        [200],
+      );
+      await webhooks.requestAgentComplete(
+        {
+          runId: run.runId,
+          exitCode,
+          completion: {
+            cliAgentType: "claude-code",
+            cliAgentSessionId: randomUUID(),
+            cliAgentSessionHistoryDisposition: "native_only",
+          },
+          lastEventSequence: 0,
+        },
+        callbackHeaders,
+        [completionStatus],
+      );
+    },
+  };
+}
+
+describe("WeChat reply presentation and processing status", () => {
+  it("adds one model footer across long Unicode replies and keeps typing for queued follow-ups", async () => {
+    const fixture = await responseFixture();
+    await fixture.receive("First task");
+    const first = await fixture.claim();
+    await fixture.receive("A queued follow-up");
+    await flushWaitUntilForTest();
+    const statusBeforeCompletion = fixture.provider.typingStatuses.length;
+    const text = "🌿".repeat(2050);
+    await fixture.finish(first, text);
+    await flushWaitUntilForTest();
+    expect(fixture.sentTexts).toHaveLength(2);
+    expect(fixture.sentTexts.join("")).toBe(`${text}\n\nClaude Fable 5.1`);
+    expect(
+      fixture.sentTexts.every((part) => {
+        return Array.from(part).length <= 2000;
+      }),
+    ).toBeTruthy();
+    expect(
+      fixture.provider.typingStatuses.slice(statusBeforeCompletion),
+    ).not.toContain(2);
+    const second = await fixture.claim();
+    await fixture.finish(second, "Follow-up complete");
+    await flushWaitUntilForTest();
+    expect(fixture.provider.typingStatuses.at(-1)).toBe(2);
+  });
+
+  it.each(["failed", "cancelled"] as const)(
+    "clears typing when a run is %s",
+    async (outcome) => {
+      const fixture = await responseFixture();
+      await fixture.receive("Start a task");
+      const run = await fixture.claim();
+      await flushWaitUntilForTest();
+      expect(fixture.provider.typingStatuses.at(-1)).toBe(1);
+      if (outcome === "cancelled") {
+        await fixture.runs.requestCancelRun(fixture.actor, run.runId, [200]);
+      } else {
+        await fixture.finish(run, "", 1);
+      }
+      await flushWaitUntilForTest();
+      expect(fixture.provider.typingStatuses.at(-1)).toBe(2);
+      expect(fixture.sentTexts.join("")).toContain("Claude Fable 5.1");
+    },
+  );
+
+  it.each(["missing ticket", "config unavailable", "typing rejected"])(
+    "still delivers replies when typing has %s",
+    async (failure) => {
+      const fixture = await responseFixture();
+      if (failure === "typing rejected") {
+        server.use(
+          http.post(`${origin}/ilink/bot/sendtyping`, () => {
+            return HttpResponse.json({ ret: -1, errmsg: "typing unavailable" });
+          }),
+        );
+      } else {
+        server.use(
+          http.post(`${origin}/ilink/bot/getconfig`, () => {
+            return failure === "missing ticket"
+              ? HttpResponse.json({ ret: 0 })
+              : new HttpResponse(null, { status: 503 });
+          }),
+        );
+      }
+      await fixture.receive("Hello");
+      const run = await fixture.claim();
+      await fixture.finish(run, "Still delivered");
+      await flushWaitUntilForTest();
+      expect(fixture.sentTexts).toStrictEqual([
+        "Still delivered\n\nClaude Fable 5.1",
+      ]);
+    },
+  );
+
+  it("clears typing even when the reply cannot be delivered", async () => {
+    const fixture = await responseFixture();
+    await fixture.receive("Hello");
+    const run = await fixture.claim();
+    await flushWaitUntilForTest();
+    expect(fixture.provider.typingStatuses.at(-1)).toBe(1);
+    server.use(
+      http.post(`${origin}/ilink/bot/sendmessage`, () => {
+        return new HttpResponse(null, { status: 503 });
+      }),
+    );
+    // Preserve the callback failure so delivery can be retried, but clear status.
+    await fixture.finish(run, "Done", 0, 500);
+    await flushWaitUntilForTest();
+    expect(fixture.sentTexts).toHaveLength(0);
+    expect(fixture.provider.typingStatuses.at(-1)).toBe(2);
+  });
+
+  it("does not restore typing when a delayed config read outlives completion", async () => {
+    const fixture = await responseFixture();
+    await fixture.receive("Hello");
+    const run = await fixture.claim();
+    await flushWaitUntilForTest();
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    let holdNextRead = true;
+    server.use(
+      http.post(`${origin}/ilink/bot/getconfig`, async () => {
+        if (holdNextRead) {
+          holdNextRead = false;
+          entered.resolve();
+          await release.promise;
+        }
+        return HttpResponse.json({
+          ret: 0,
+          typing_ticket: "private-typing-ticket",
+        });
+      }),
+    );
+    await fixture.webhooks.requestAgentHeartbeat(
+      { runId: run.runId },
+      {
+        authorization: `Bearer ${run.sandboxToken}`,
+      },
+      [200],
+    );
+    await entered.promise;
+    await fixture.finish(run, "Done");
+    const completedStatus = fixture.provider.typingStatuses.length;
+    release.resolve();
+    await flushWaitUntilForTest();
+    expect(fixture.sentTexts).toStrictEqual(["Done\n\nClaude Fable 5.1"]);
+    expect(
+      fixture.provider.typingStatuses.slice(completedStatus),
+    ).not.toContain(1);
+    expect(fixture.provider.typingStatuses.at(-1)).toBe(2);
+  });
+
+  it("does not send typing after the connection is disconnected during a config read", async () => {
+    const fixture = await responseFixture();
+    await fixture.receive("Hello");
+    const run = await fixture.claim();
+    await flushWaitUntilForTest();
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    server.use(
+      http.post(`${origin}/ilink/bot/getconfig`, async () => {
+        entered.resolve();
+        await release.promise;
+        return HttpResponse.json({
+          ret: 0,
+          typing_ticket: "private-typing-ticket",
+        });
+      }),
+    );
+    await fixture.webhooks.requestAgentHeartbeat(
+      { runId: run.runId },
+      {
+        authorization: `Bearer ${run.sandboxToken}`,
+      },
+      [200],
+    );
+    await entered.promise;
+    await accept(client().disconnect({ headers }), [204]);
+    const beforeDisconnect = [...fixture.provider.typingStatuses];
+    release.resolve();
+    await flushWaitUntilForTest();
+    expect(fixture.provider.typingStatuses).toStrictEqual(beforeDisconnect);
+  });
+});
+
 describe("WeChat QR owner binding", () => {
   it("handles verification and publishes only a sanitized connection status", async () => {
     const { provider, confirm } = await fixture();
@@ -479,6 +803,8 @@ test("receives an owner DM once, resumes its native session and delivers the can
   await receive();
 
   const first = await claim();
+  await flushWaitUntilForTest();
+  expect(provider.typingStatuses.at(-1)).toBe(1);
 
   expect(first.prompt).toContain(messageText);
   expect(first.appendSystemPrompt).toContain(
@@ -537,6 +863,19 @@ test("receives an owner DM once, resumes its native session and delivers the can
 
   const webhooks = createWebhookCallbackApi(context);
   const callbackHeaders = { authorization: `Bearer ${first.sandboxToken}` };
+  const beforeRefresh = provider.typingStatuses.length;
+  const heartbeat = await webhooks.requestAgentHeartbeat(
+    { runId: first.runId },
+    callbackHeaders,
+    [200],
+  );
+  expect(heartbeat.body).toStrictEqual({
+    ok: true,
+    typingRefreshIntervalSeconds: 5,
+  });
+  await flushWaitUntilForTest();
+  expect(provider.typingStatuses.length).toBeGreaterThan(beforeRefresh);
+  expect(provider.typingStatuses.at(-1)).toBe(1);
   await webhooks.requestAgentEvents(
     {
       runId: first.runId,
@@ -573,7 +912,12 @@ test("receives an owner DM once, resumes its native session and delivers the can
     msg: {
       to_user_id: `scanner-${actor.userId}`,
       context_token: "private-reply-context",
-      item_list: [{ type: 1, text_item: { text: "I will remember Orchid." } }],
+      item_list: [
+        {
+          type: 1,
+          text_item: { text: "I will remember Orchid.\n\nClaude Fable 5.1" },
+        },
+      ],
     },
   });
   const messages = setupApp({
@@ -595,6 +939,7 @@ test("receives an owner DM once, resumes its native session and delivers the can
     },
   ]);
   await flushWaitUntilForTest();
+  expect(provider.typingStatuses.at(-1)).toBe(2);
   const history = await accept(
     messages.history({
       headers: agentHeaders,
@@ -605,7 +950,7 @@ test("receives an owner DM once, resumes its native session and delivers the can
   expect(history.body.messages[0]).toMatchObject({
     direction: "outbound",
     status: "sent",
-    content: "I will remember Orchid.",
+    content: "I will remember Orchid.\n\nClaude Fable 5.1",
   });
   const older = await accept(
     messages.history({

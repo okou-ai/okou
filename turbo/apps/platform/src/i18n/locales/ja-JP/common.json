@@ -124,7 +124,7 @@
         "other": "その他",
         "parentFolders": "親フォルダー",
         "pending": "待機中の実行が開始するとファイルを閲覧できます。",
-        "readonly": "現在の実行のファイルを読み取り専用で表示します。パネルを閉じると接続が解放されます。",
+        "readonly": "現在の実行のファイルを読み取り専用で表示します。",
         "refresh": "更新",
         "retry": "再試行",
         "root": "ルートフォルダー",
@@ -4020,6 +4020,7 @@
   "onboarding": {
     "common": {
       "next": "次へ",
+      "skip": "スキップ",
       "stepProgress": "ステップ {{current}}/{{total}}"
     },
     "documentTitles": {
@@ -5144,21 +5145,25 @@
     "wallet": {
       "actionError": "操作を完了できませんでした。接続を確認し、ポップアップを許可して再試行してください。",
       "connect": "接続",
-      "description": "エージェントが Link を通じて購入をリクエストできます。購入ごとにあなたの承認が必要です。",
+      "description": "エージェントが購入をリクエストし、Link の取引を確認できます。購入ごとにあなたの承認が必要です。",
       "disconnect": "接続を解除",
       "loadError": "ウォレットを読み込めませんでした。",
       "permissionsUnknown": "Link に再接続して、現在の権限を確認し承認してください。",
       "retry": "再試行",
-      "scope": "Link を使って、Okou に買い物を任せましょう。",
+      "scope": "Okou が購入を代行し、Link の取引を確認します。",
       "title": "ウォレット",
       "transactions": {
-        "description": "Okou で最近リクエストした Link での購入。",
+        "description": "接続した Link アカウントの最近の取引。",
         "empty": "Link の取引履歴はまだありません",
         "loadError": "取引履歴を読み込めませんでした。もう一度お試しください。",
         "loading": "取引履歴を読み込み中",
         "merchant": "販売店",
+        "refunded": "返金済み",
+        "requestsDescription": "このワークスペースのリクエスト履歴です。実際の取引を表示するには、Link に接続するか権限を更新してください。",
+        "requestsEmpty": "購入リクエストはまだありません",
+        "requestsTitle": "購入リクエスト",
         "status": {
-          "approved": "承認済み・支払い待ち",
+          "approved": "承認済み・支払い未確認",
           "canceled": "キャンセル済み",
           "created": "作成済み",
           "creating": "作成中",
@@ -5171,8 +5176,8 @@
           "succeeded": "支払い成功"
         },
         "statusLabel": "ステータス",
-        "test": "テスト",
-        "title": "Link の取引履歴"
+        "title": "Link の取引履歴",
+        "unknownStatus": "ステータスを取得できません"
       },
       "workspaceScopeChanged": "Link ウォレットが、このワークスペース内のすべてのエージェントで使えるようになります。再接続して、この変更を承認してください。"
     },

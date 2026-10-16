@@ -597,7 +597,78 @@ SELECT 1 / 0;`,
 
     await appendMigrationFixture(
       9,
-      "0009_commit_failure",
+      "0009_non_transactional_uuid_batches",
+      `${NON_TRANSACTIONAL_MIGRATION_MARKER}
+${UUID_BATCH_MIGRATION_MARKER}
+WITH batch AS MATERIALIZED (
+  SELECT id FROM autocommit_probe
+  WHERE ($1::uuid IS NULL OR id > $1::uuid) AND NOT processed
+  ORDER BY id LIMIT 2
+), updated AS (
+  UPDATE autocommit_probe p
+  SET processed = true, value = value + 1 / CASE WHEN reject THEN 0 ELSE 1 END
+  FROM batch b WHERE p.id = b.id AND NOT p.processed RETURNING p.id
+)
+SELECT (SELECT id FROM batch ORDER BY id DESC LIMIT 1) AS next_cursor;`,
+    );
+    await sql.unsafe(`
+      CREATE TABLE autocommit_probe (
+        id uuid PRIMARY KEY, processed boolean NOT NULL DEFAULT false,
+        value integer NOT NULL DEFAULT 0, reject boolean NOT NULL
+      );
+      INSERT INTO autocommit_probe (id, reject)
+      SELECT ('00000000-0000-0000-0000-' || lpad(i::text, 12, '0'))::uuid, i = 5
+      FROM generate_series(1, 6) i;
+    `);
+    await expectCliFailure(
+      {
+        file: "0009_non_transactional_uuid_batches.sql",
+        phase: "execute",
+        statement: 1,
+        batch: 3,
+        sqlstate: "22012",
+      },
+      /division by zero/,
+    );
+    assert.deepEqual(
+      Array.from(await sql`SELECT value FROM autocommit_probe ORDER BY id`),
+      [1, 1, 1, 1, 0, 0].map((value) => {
+        return { value };
+      }),
+    );
+    assert.equal(
+      (
+        await sql`SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations`
+      )[0]?.count,
+      9,
+    );
+    // A second full attempt must not reapply any committed batch.
+    await assert.rejects(applyPendingMigrations(sql), /division by zero/);
+    assert.deepEqual(
+      Array.from(await sql`SELECT value FROM autocommit_probe ORDER BY id`),
+      [1, 1, 1, 1, 0, 0].map((value) => {
+        return { value };
+      }),
+    );
+    await sql`UPDATE autocommit_probe SET reject = false`;
+    await applyPendingMigrations(sql);
+    assert.deepEqual(
+      Array.from(await sql`SELECT value FROM autocommit_probe ORDER BY id`),
+      [1, 1, 1, 1, 1, 1].map((value) => {
+        return { value };
+      }),
+    );
+    await applyPendingMigrations(sql);
+    assert.deepEqual(
+      Array.from(await sql`SELECT value FROM autocommit_probe ORDER BY id`),
+      [1, 1, 1, 1, 1, 1].map((value) => {
+        return { value };
+      }),
+    );
+
+    await appendMigrationFixture(
+      10,
+      "0010_commit_failure",
       `
 CREATE TABLE deferred_parent (id integer PRIMARY KEY);
 CREATE TABLE deferred_child (id integer REFERENCES deferred_parent DEFERRABLE INITIALLY DEFERRED);
@@ -605,7 +676,7 @@ INSERT INTO deferred_child VALUES (1);`,
     );
     await expectCliFailure(
       {
-        file: "0009_commit_failure.sql",
+        file: "0010_commit_failure.sql",
         phase: "commit",
         statement: null,
         batch: null,
@@ -622,7 +693,7 @@ INSERT INTO deferred_child VALUES (1);`,
       (
         await sql`SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations`
       )[0]?.count,
-      9,
+      10,
     );
   } finally {
     process.chdir(originalDirectory);

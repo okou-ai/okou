@@ -42,6 +42,8 @@ export const walletCreateSpendSchema = z.object({
   test: z.boolean().default(false),
 });
 
+// Retain explicit modes for captured older CLI builds until their Runner and
+// rollback artifacts are retired (#40206). Current clients use unified consent.
 export const walletConnectSchema = z
   .object({
     readOnly: z.boolean().optional(),
@@ -120,6 +122,7 @@ export const walletTransactionSchema = z.object({
   category: z.string().nullable(),
   status: z.string(),
 });
+export type WalletTransaction = z.infer<typeof walletTransactionSchema>;
 
 export const walletPaymentMethodSchema = z.object({
   id: walletProviderIdSchema,
@@ -523,6 +526,10 @@ export const walletCallbackContract = c.router({
 });
 
 export const walletUserContract = c.router({
+  activity: {
+    ...walletContract.transactions,
+    path: "/api/wallet/connection/transactions",
+  },
   transactions: {
     method: "GET",
     path: "/api/wallet/purchases",

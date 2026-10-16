@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.233.13](https://github.com/okou-ai/okou/compare/runner-rs-v0.233.12...runner-rs-v0.233.13) (2026-10-16)
+
+
+### Bug Fixes
+
+* **runner:** accept numeric dns labels in parameterized firewall hosts ([#40639](https://github.com/okou-ai/okou/issues/40639)) ([3cb77fa](https://github.com/okou-ai/okou/commit/3cb77fa3561e260cc2aecc30ce51f9349eaee5a3))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.233.12](https://github.com/okou-ai/okou/compare/runner-rs-v0.233.11...runner-rs-v0.233.12) (2026-10-16)
 
 

@@ -80,7 +80,7 @@ where
                 return Err(BoundedLineError::TooLong);
             }
 
-            partial_line.extend(available.iter().take(available_line_bytes).copied());
+            partial_line.extend_from_slice(available.split_at(available_line_bytes).0);
             match newline_index {
                 Some(index) => (index + 1, true),
                 None => (available.len(), false),
@@ -113,11 +113,85 @@ fn decode_line(line: Vec<u8>) -> Result<String, BoundedLineError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::AsyncWriteExt as _;
 
     const LIMIT: usize = 8;
 
     fn reader(bytes: &'static str) -> tokio::io::BufReader<&'static [u8]> {
         tokio::io::BufReader::new(bytes.as_bytes())
+    }
+
+    #[tokio::test]
+    async fn fragmented_records_preserve_utf8_crlf_and_eof_bytes() {
+        for capacity in [1, 2, 7] {
+            let mut reader =
+                tokio::io::BufReader::with_capacity(capacity, "aé🙂\r\n\nlast\r".as_bytes());
+            let mut partial = Vec::new();
+
+            // The first record reaches the eight-byte limit including CR.
+            for expected in [Some("aé🙂"), Some(""), Some("last\r"), None] {
+                let line = read_bounded_utf8_line(&mut reader, &mut partial, LIMIT)
+                    .await
+                    .expect("bounded fragmented record");
+                assert_eq!(line.as_deref(), expected);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelled_read_resumes_partial_utf8_without_repeating_bytes() {
+        let (mut writer, reader) = tokio::io::duplex(32);
+        let mut reader = tokio::io::BufReader::with_capacity(3, reader);
+        let mut partial = Vec::new();
+        writer.write_all(b"a\xc3").await.expect("write prefix");
+
+        // Read the available prefix, then cancel while waiting for its tail.
+        tokio::select! {
+            biased;
+            result = read_bounded_utf8_line(&mut reader, &mut partial, LIMIT) => {
+                panic!("incomplete record unexpectedly completed: {result:?}");
+            }
+            () = std::future::ready(()) => {}
+        }
+
+        writer
+            .write_all(b"\xa9\xf0\x9f\x99\x82\r\nnext")
+            .await
+            .expect("write remaining records");
+        writer.shutdown().await.expect("close writer");
+
+        for expected in [Some("aé🙂"), Some("next"), None] {
+            let line = read_bounded_utf8_line(&mut reader, &mut partial, LIMIT)
+                .await
+                .expect("resumed bounded record");
+            assert_eq!(line.as_deref(), expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn fragmented_invalid_utf8_preserves_diagnostics_and_following_record() {
+        for (bytes, error_len, following) in [
+            (b"a\xff\nnext\n".as_slice(), Some(1), Some("next")),
+            (b"a\xc3".as_slice(), None, None),
+        ] {
+            let mut reader = tokio::io::BufReader::with_capacity(1, bytes);
+            let mut partial = Vec::new();
+            let error = read_bounded_utf8_line(&mut reader, &mut partial, LIMIT)
+                .await
+                .expect_err("invalid UTF-8");
+            assert!(matches!(
+                error,
+                BoundedLineError::InvalidUtf8 {
+                    valid_up_to: 1,
+                    error_len: actual_error_len,
+                    line_bytes: 2,
+                } if actual_error_len == error_len
+            ));
+            let line = read_bounded_utf8_line(&mut reader, &mut partial, LIMIT)
+                .await
+                .expect("record after invalid UTF-8");
+            assert_eq!(line.as_deref(), following);
+        }
     }
 
     #[tokio::test]

@@ -1,5 +1,4 @@
 import { command, computed, state, type Command } from "ccstate";
-import { animationFrame } from "signal-timers";
 import { runsByIdContract } from "@okouai/api-contracts/contracts/run-routes";
 import type { RunStatus } from "@okouai/api-contracts/contracts/runs";
 import type { z } from "zod";
@@ -33,7 +32,6 @@ import {
   tapError,
   withCleanup,
 } from "../utils.ts";
-import { searchParams$, updateSearchParams$ } from "../route.ts";
 import { activityDetail$, currentRunId$ } from "./activity-signals.ts";
 import {
   createSandboxFilesVirtualListSignals,
@@ -1747,7 +1745,6 @@ function createFilesActions(
 /** Construct the Activity graph without network work; its visible ref owns demand. */
 function createSandboxFilesSignals() {
   const graph = createFilesGraph();
-  const stepsTab$ = state<HTMLElement | null>(null);
   const cursors = createCursorCommands(graph);
   const listing = createListingCommands(graph, cursors);
   const navigation = createNavigationCommands(graph, listing, cursors);
@@ -1755,35 +1752,6 @@ function createSandboxFilesSignals() {
   return {
     ...createDemandCommands(graph, connection.startRun$, navigation.remember$),
     ...createFilesActions(graph, listing, navigation),
-    stepsTabRef$: onRef(
-      command(({ get, set }, element: HTMLElement, signal: AbortSignal) => {
-        set(stepsTab$, element);
-        signal.addEventListener(
-          "abort",
-          () => {
-            if (get(stepsTab$) === element) {
-              set(stepsTab$, null);
-            }
-          },
-          { once: true },
-        );
-      }),
-    ),
-    close$: command(({ get, set }, signal: AbortSignal) => {
-      signal.throwIfAborted();
-      const runId = get(currentRunId$);
-      const params = new URLSearchParams(get(searchParams$));
-      params.delete("tab");
-      set(updateSearchParams$, params);
-      animationFrame(
-        () => {
-          if (get(currentRunId$) === runId && !get(searchParams$).has("tab")) {
-            get(stepsTab$)?.focus({ preventScroll: true });
-          }
-        },
-        { signal },
-      );
-    }),
     enter$: navigation.enter$,
     navigate$: navigation.navigate$,
     location$: computed((get) => {

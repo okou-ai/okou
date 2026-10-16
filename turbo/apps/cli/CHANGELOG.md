@@ -1,5 +1,22 @@
 # Changelog
 
+## [9.398.1](https://github.com/okou-ai/okou/compare/cli-v9.398.0...cli-v9.398.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **wallet:** unify link consent and show actual transactions ([#40650](https://github.com/okou-ai/okou/issues/40650)) ([16fa1cc](https://github.com/okou-ai/okou/commit/16fa1cc1386dd8fcb6f32c789693b98af25f0d13))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.572.1
+    * @okouai/connectors bumped to 3.16.9
+    * @okouai/core bumped to 8.764.2
+    * @okouai/pi-agent-runtime bumped to 1.50.13
+
 ## [9.398.0](https://github.com/okou-ai/okou/compare/cli-v9.397.0...cli-v9.398.0) (2026-10-16)
 
 

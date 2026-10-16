@@ -6,6 +6,57 @@ import matching
 from tests.firewall_helpers import compile_firewalls_or_fail, wrap_firewalls
 
 
+@pytest.mark.parametrize(
+    ("base", "url", "expected_host_params"),
+    [
+        ("https://{sub}.123.example.com", "https://api.123.example.com", {"sub": "api"}),
+        ("https://{sub}.0123.example.com", "https://api.0123.example.com", {"sub": "api"}),
+        ("https://{sub}.0XABC.example.com", "https://api.0xabc.example.com", {"sub": "api"}),
+        (
+            "https://api-{region}.123.example.com",
+            "https://api-us.123.example.com",
+            {"region": "us"},
+        ),
+        ("https://{sub+}.0123.example.com", "https://a.b.0123.example.com", {"sub": "a.b"}),
+        ("https://{sub*}.0xabc.example.com", "https://0xabc.example.com", {"sub": ""}),
+    ],
+)
+def test_compiled_numeric_dns_labels_in_parameterized_hosts(base, url, expected_host_params):
+    base = f"{base}/v1/{{org}}"
+    url = f"{url}/v1/acme/items/42"
+    fws = wrap_firewalls(
+        [
+            {
+                "base": base,
+                "auth": {"headers": {}},
+                "permissions": [{"name": "read", "rules": ["GET /items/{id}"]}],
+            }
+        ],
+        name="example",
+    )
+    policies = {"example": {"allow": ["read"], "deny": [], "unknownPolicy": "deny"}}
+    compiled_firewalls = compile_firewalls_or_fail(fws)
+
+    assert matching.firewall_base_config_is_valid(base)
+    assert matching.match_base_url(url, base) == (
+        "/items/42",
+        {**expected_host_params, "org": "acme"},
+    )
+
+    result = matching.match_compiled_firewall_request(url, "GET", compiled_firewalls, policies)
+
+    assert isinstance(result, matching.FirewallAllow)
+    assert result.permission == "read"
+    assert result.rel_path == "/items/42"
+    assert result.params == {**expected_host_params, "org": "acme", "id": "42"}
+    assert (
+        matching.match_compiled_firewall_request(
+            url.replace(".example.com", ".example.org"), "GET", compiled_firewalls, policies
+        )
+        is None
+    )
+
+
 def test_compiled_matches_mixed_base_and_greedy_rule():
     fws = wrap_firewalls(
         [

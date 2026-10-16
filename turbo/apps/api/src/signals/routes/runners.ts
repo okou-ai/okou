@@ -97,7 +97,7 @@ import {
 } from "../external/sandbox-op-log";
 import type { RouteEntry } from "../route-entry";
 import {
-  declareSteeredInput,
+  declareSteeredInput$,
   loadNextSteerableInput$,
 } from "../services/active-input-delivery.service";
 import { dispatchCompleteSideEffects$ } from "../services/agent-run-lifecycle.service";
@@ -2460,8 +2460,8 @@ const declareSteeredInputInner$ = command(
     if (!body.ok) {
       return body.response;
     }
-    const result = await declareSteeredInput(
-      set(writeDb$),
+    const result = await set(
+      declareSteeredInput$,
       { runId, eventId, userId: auth.userId, orgId: auth.orgId },
       signal,
     );
