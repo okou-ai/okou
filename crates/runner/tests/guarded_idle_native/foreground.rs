@@ -12,7 +12,7 @@ use serde_json::json;
 
 use super::*;
 
-fn runtime_complete(
+pub(super) fn runtime_complete(
     read: &runner_lifecycle::prefetch::GuardedPrefetchSnapshot,
     bytes: u64,
 ) -> TestResult<()> {
