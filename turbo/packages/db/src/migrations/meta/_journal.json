@@ -2325,6 +2325,13 @@
       "when": 1792122887680,
       "tag": "1409_canonical_delivery_operation_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 1410,
+      "version": "7",
+      "when": 1792132881490,
+      "tag": "1410_release_legacy_run_history_retains",
+      "breakpoints": true
     }
   ]
 }
