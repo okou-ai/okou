@@ -180,8 +180,51 @@ pub(super) async fn prepare_incoming(
     inputs: &fixture::Inputs,
     blank: bool,
 ) -> TestResult<ParkedIdleCandidate> {
+    Ok(prepare_incoming_details(context, inputs, blank, false)
+        .await?
+        .candidate)
+}
+
+pub(super) struct PreparedIncoming {
+    pub candidate: ParkedIdleCandidate,
+    pub backing: Arc<dyn sandbox::SandboxBackingProcess>,
+    pub receipt: IncomingPreparation,
+}
+
+#[derive(serde::Serialize)]
+pub(super) struct IncomingPreparation {
+    pub sandbox_id: String,
+    pub backing_generation: String,
+    pub operation_id: String,
+    pub grant_started_ns: u64,
+    pub grant_finished_ns: u64,
+    pub prepared_ns: u64,
+    pub guest_rpc_completed: bool,
+    pub phase_settled: bool,
+    pub separate_incoming_lease: bool,
+}
+
+pub(super) async fn prepare_observed_incoming(
+    context: &Context,
+    inputs: &fixture::Inputs,
+    blank: bool,
+) -> TestResult<PreparedIncoming> {
+    prepare_incoming_details(context, inputs, blank, true).await
+}
+
+async fn prepare_incoming_details(
+    context: &Context,
+    inputs: &fixture::Inputs,
+    blank: bool,
+    verify_rpc: bool,
+) -> TestResult<PreparedIncoming> {
+    let grant_started = evidence::clocks()?.0;
     let mut request = context.operations.request(inputs.replacement_plan()?)?;
     let permit = request.try_grant().await?;
+    let grant_finished = evidence::clocks()?.0;
+    let operation_id = permit
+        .id()
+        .ok_or_else(|| io::Error::other("incoming Fresh permit missing"))?;
     let lease = ResourceBudget::try_reserve_lease(&context.budget, 2, 4096)
         .ok_or_else(|| io::Error::other("native incoming full logical lease unavailable"))?;
     let factory = context.factory.clone();
@@ -213,6 +256,12 @@ pub(super) async fn prepare_incoming(
                     .backing_process()
                     .ok_or_else(|| io::Error::other("native incoming backing unavailable"))?,
             )?;
+            if verify_rpc
+                && fixture::exec(&*sandbox, "printf native-incoming-ready").await?
+                    != b"native-incoming-ready"
+            {
+                return Err(io::Error::other("native incoming RPC incomplete").into());
+            }
             if sandbox.park_for_blank_pool().await? != SandboxParkOutcome::Reusable {
                 return Err(io::Error::other("native incoming could not physically park").into());
             }
@@ -223,6 +272,9 @@ pub(super) async fn prepare_incoming(
             factory.destroy(sandbox).await;
             return Err(error);
         }
+        let backing = sandbox
+            .backing_process()
+            .ok_or_else(|| io::Error::other("native incoming backing missing"))?;
         let mut candidate = if blank {
             ParkedIdleCandidate::blank(
                 sandbox,
@@ -243,7 +295,21 @@ pub(super) async fn prepare_incoming(
                 .build()
         };
         candidate.capture_retirement_backing()?;
-        Ok::<_, Box<dyn Error + Send + Sync>>(candidate)
+        Ok::<_, Box<dyn Error + Send + Sync>>(PreparedIncoming {
+            candidate,
+            backing: backing.clone(),
+            receipt: IncomingPreparation {
+                sandbox_id: id.to_string(),
+                backing_generation: backing.identity().generation().to_string(),
+                operation_id: operation_id.generation().to_string(),
+                grant_started_ns: grant_started,
+                grant_finished_ns: grant_finished,
+                prepared_ns: evidence::clocks()?.0,
+                guest_rpc_completed: verify_rpc,
+                phase_settled: true,
+                separate_incoming_lease: true,
+            },
+        })
     })?;
     work.join().await?
 }
