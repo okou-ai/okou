@@ -38,8 +38,12 @@ EOF
 
 tmp=$(mktemp -d)
 proxy_pid=""
+clock_pid=""
 
 cleanup() {
+  if [ -n "$clock_pid" ]; then
+    kill -TERM "$clock_pid" 2>/dev/null || true
+  fi
   if [ -n "$proxy_pid" ]; then
     kill -TERM "$proxy_pid" 2>/dev/null || true
     wait "$proxy_pid" 2>/dev/null || true
@@ -81,6 +85,53 @@ assert_contains "$env_file" "TUNNEL_SERVICE_TOKEN_ID=client-id"
 assert_contains "$env_file" "TUNNEL_SERVICE_TOKEN_SECRET=super-secret"
 assert_contains "$tmp/success.out" "proxied: SSH-2.0-test-client"
 assert_not_contains "$tmp/success.err" "::error"
+
+# Pause the first external clock read after directory creation, then deliver a
+# real signal before any Cloudflare child starts. Filesystem operations stay real.
+early_logs="$tmp/early-logs"
+clock_bin="$tmp/clock-bin"
+mkdir -p "$early_logs" "$clock_bin"
+mkfifo "$tmp/clock-ready" "$tmp/clock-release"
+real_date=$(command -v date)
+cat > "$clock_bin/date" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [ ! -e "$PROXY_TEST_CLOCK_ONCE" ]; then
+  touch "$PROXY_TEST_CLOCK_ONCE"
+  printf '%s\n' "$$" > "$PROXY_TEST_CLOCK_PID"
+  printf 'ready\n' > "$PROXY_TEST_CLOCK_READY"
+  IFS= read -r _ < "$PROXY_TEST_CLOCK_RELEASE"
+fi
+exec "$PROXY_TEST_REAL_DATE" "$@"
+EOF
+chmod +x "$clock_bin/date"
+PATH="$clock_bin:$PATH" \
+CF_ACCESS_ENV_FILE="$home_success/.ssh/cf-access.env" \
+CLOUDFLARED_BIN="$success_cloudflared" \
+FAKE_ARGS_FILE="$tmp/early-child.args" \
+FAKE_ENV_FILE="$tmp/early-child.env" \
+RUNNER_TEMP="$early_logs" \
+PROXY_TEST_CLOCK_ONCE="$tmp/clock-once" \
+PROXY_TEST_CLOCK_PID="$tmp/clock.pid" \
+PROXY_TEST_CLOCK_READY="$tmp/clock-ready" \
+PROXY_TEST_CLOCK_RELEASE="$tmp/clock-release" \
+PROXY_TEST_REAL_DATE="$real_date" \
+"$PROXY" dev-1.aws.vm3.ai > "$tmp/early.out" 2> "$tmp/early.err" &
+proxy_pid=$!
+timeout 5s cat "$tmp/clock-ready" > /dev/null
+clock_pid=$(< "$tmp/clock.pid")
+kill -HUP "$proxy_pid"
+printf 'continue\n' > "$tmp/clock-release"
+early_status=0
+wait "$proxy_pid" || early_status=$?
+proxy_pid=""
+clock_pid=""
+test "$early_status" -eq 129
+test ! -e "$tmp/early-child.args"
+if compgen -G "$early_logs/cloudflared-ssh-*.log" > /dev/null; then
+  echo 'pre-child cancellation left standalone diagnostic resources behind' >&2
+  exit 1
+fi
 
 home_failure="$tmp/home-failure"
 make_home "$home_failure"

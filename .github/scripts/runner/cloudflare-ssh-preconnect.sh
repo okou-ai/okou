@@ -102,17 +102,17 @@ emit_failure() {
   fi
 
   echo "::${annotation} title=Cloudflare SSH preconnection failed::Unable to establish replay-safe SSH transport to ${host}: ${reason}" >&2
-  if [ -s "$diagnostics_file" ]; then
-    echo "----- SSH preconnection stderr (last 20 lines, redacted) -----" >&2
-    cloudflare_ssh_sanitize_diagnostics "$diagnostics_file" | tail -n 20 >&2
+  if [ -s "$diagnostics_file" ] || [ -d "${diagnostics_file}.proxies" ]; then
+    echo "----- SSH preconnection diagnostics (bounded, redacted) -----" >&2
+    cloudflare_ssh_emit_master_diagnostics "$diagnostics_file" || true
   fi
 }
 
 emit_retry_diagnostics() {
   local diagnostics_file="$1"
-  if [ -s "$diagnostics_file" ]; then
-    echo "----- transient SSH preconnection stderr (last 20 lines, redacted) -----" >&2
-    cloudflare_ssh_sanitize_diagnostics "$diagnostics_file" | tail -n 20 >&2
+  if [ -s "$diagnostics_file" ] || [ -d "${diagnostics_file}.proxies" ]; then
+    echo "----- transient SSH preconnection diagnostics (bounded, redacted) -----" >&2
+    cloudflare_ssh_emit_master_diagnostics "$diagnostics_file" || true
   fi
 }
 
@@ -150,7 +150,8 @@ preconnect_host() {
 
     # -v also keeps stderr open after OpenSSH forks into the background;
     # setting LogLevel alone would discard post-authentication diagnostics.
-    GITHUB_STEP_SUMMARY="" \
+    OKOU_CLOUDFLARE_SSH_PROXY_DIAGNOSTICS_DIR="${stderr_file}.proxies" \
+      GITHUB_STEP_SUMMARY="" \
       timeout \
         --kill-after="${MASTER_START_KILL_AFTER_SECONDS}s" \
         "${MASTER_START_TIMEOUT_SECONDS}s" \

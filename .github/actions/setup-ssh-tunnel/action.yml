@@ -81,6 +81,8 @@ runs:
         chmod 600 "$HOME/.ssh/cf-access.env"
 
         install -m 755 "$GITHUB_WORKSPACE/.github/scripts/runner/cloudflare-ssh-proxy.sh" "$HOME/.ssh/cf-proxy.sh"
+        install -m 644 "$GITHUB_WORKSPACE/.github/scripts/runner/cloudflare-ssh-diagnostics.sh" "$HOME/.ssh/cloudflare-ssh-diagnostics.sh"
+        install -m 644 "$GITHUB_WORKSPACE/.github/scripts/runner/cloudflare-ssh-log.py" "$HOME/.ssh/cloudflare-ssh-log.py"
 
         # Cloudflare Access setup and the origin SSH banner share this timeout.
         # ConnectionAttempts does not restart an active ProxyCommand.

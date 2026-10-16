@@ -68,13 +68,82 @@ then discard the temporary snapshot.
 Verbose output from a multiplexed caller alone cannot explain the master's
 connection failure.
 
+Preconnection, probes and actual guarded callers pass the selected master's
+`<master-log>.proxies` namespace to any proxy they create. Each proxy owns a
+unique `proxy.*` directory containing `events.log`, `stderr.log` and native
+`application/cloudflared*.log` files. Directories are private (0700); an inherited
+077 umask restricts files, including native rotations. The setup action installs
+the proxy's diagnostic helper and Python renderer together. Raw managed evidence
+remains local for the job lifetime, including after a proxy exits 0. Standalone
+proxies remove their own temporary directory on exit. Outside an ephemeral CI
+job, the preconnection owner must remove its namespace after retiring all masters.
+
+The access client runs with native `--log-level debug --log-directory` logging.
+In stdin/stdout proxy mode its application logger does not write to stderr, and
+an established stream failure can still return 0. Neither empty stderr nor that
+status proves a successful SSH operation. Native application logs retain copy
+direction and WebSocket close/error details without enabling payload logging.
+The native logger rotates at 1 MB with five backups. Lifecycle records identify
+the proxy instance, proxy/parent/child PIDs, observed/forwarded signals, child
+status and proxy status. UTC/epoch times are recorded at the event; Linux uptime
+provides a local monotonic reference when available. GitHub's later dump time is
+not the original event time of timestamp-free SSH lines.
+
 When a guarded SSH, SCP, or SFTP operation fails, its wrapper prints the target,
-original exit status, UTC start/end times, and a folded, redacted master/probe tail
-limited to a combined 100 lines and 64 KiB. Probe failures also include the selected master's
-log. Successful operations keep diagnostics out of their output. These diagnostic
-reads preserve caller stdout and status and do not reconnect or replay the caller.
-Keep raw logs local; apply the existing credential redaction before exposing them.
-Use `DEBUG1` for routine collection to avoid packet-level logging during transfers.
+original exit status, UTC start/end times, and folded, sanitized proxy/master
+evidence limited to 100 lines and 64 KiB. Reads are capped at 64 KiB per file;
+the collector considers four recent proxy instances and two native log files per
+instance, with explicit truncation/unavailable markers. Different instances are
+shown separately, not automatically declared the cause of an operation. A missing
+final lifecycle event means no final status was observed in that snapshot; it
+does not prove whether the process remains alive or was killed. Preconnection
+failure/retry reports and probe failures also include the selected master's
+evidence. Successful operations keep added diagnostics out of their output.
+Reads preserve caller stdout/status and never
+reconnect, replay a caller, or close a live master to flush logs.
+The operation deadline's native `timeout --verbose` message records when it
+actually forwards a termination signal. The wrapper records handled HUP/INT/TERM
+with source time before cancellation cleanup, then takes a local evidence
+snapshot; status 124/137 alone is not used to invent a deadline or OOM diagnosis.
+
+The renderer requires Python 3's standard library and fails closed if optional
+diagnostics cannot be rendered. It removes native request/header dumps, omits
+malformed structured records, allowlists native event fields, and redacts
+authentication headers, cookies, token query parameters and legacy secret forms.
+Do not print/upload raw native DEBUG logs: they contain authentication headers.
+Keep SSH at `DEBUG1`; do not enable packet-level or `--debug-stream` payload logs.
+
+### Correlating Origin Events
+
+Client close codes identify a termination boundary, not its underlying network
+hop. For a failed operation, preserve its run/attempt, target, original UTC window,
+proxy instance/PIDs and native error. Expand the query window for measured clock
+uncertainty. A later successful operation does not explain the earlier failure.
+
+Through an independent authorized log path, or a separate explicit investigation
+after access returns, verify the origin's deployed tunnel version, actual SSH and
+tunnel service names, journal retention and clock synchronization first. Do not
+add another SSH connection to the failed-caller wrapper. For confirmed units,
+read retained events for the original window, for example:
+
+```bash
+journalctl --utc --since "$incident_start" --until "$incident_end" --output=json \
+  -u "$origin_tunnel_unit" -u "$origin_ssh_unit"
+journalctl --utc --since "$incident_start" --until "$incident_end" --output=json -k
+```
+
+Preserve source timestamps, host/boot ID and process/session identity. Look for
+tunnel stream/connection errors, service restarts, SSH session termination, and
+matching kernel/cgroup OOM or kill events. Exit 137 alone does not prove OOM.
+Apply the same credential publication boundary before sharing origin DEBUG logs.
+For public-hostname WebSocket SSH, origin request logs may expose `cfRay`,
+`connIndex` and `originService`; verify the deployed path instead of assuming
+private-network `flowID` or session-log fields apply. The stock access client does
+not expose its handshake response CF-Ray, so host/time matching may remain
+ambiguous when jobs share a host. A missing journal or a close-1006/EOF event alone
+must remain an explicit evidence gap. Live `cloudflared tail`, current tunnel
+health, metrics and later diagnostic snapshots cannot reconstruct missing history
+or establish a particular failed stream's cause.
 
 ## Tests
 
