@@ -1,5 +1,5 @@
 import { wechatAttachments } from "../external/wechat-media";
-import { wechatEventId } from "./wechat-message-identity";
+import { isWechatOwnerMessage, wechatEventId } from "./wechat-message-identity";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import {
   publishChatThreadMessageCreatedSafely,
@@ -46,6 +46,14 @@ import {
 
 type Connection = typeof wechatConnections.$inferSelect;
 
+function activeBinding(connection: Connection) {
+  return and(
+    eq(wechatConnections.id, connection.id),
+    eq(wechatConnections.generation, connection.generation),
+    eq(wechatConnections.status, "active"),
+  );
+}
+
 /** Keep model replacement and its lifecycle records in the input's statement. */
 function modelReplacementCtes(replacement: ThreadModelReplacement | null) {
   if (!replacement) {
@@ -83,11 +91,18 @@ const ensureThread$ = command(
     const db = set(writeDb$);
     const [existing] = await db
       .select({ chatThreadId: wechatChatThreadRoutes.chatThreadId })
-      .from(wechatChatThreadRoutes)
-      .where(eq(wechatChatThreadRoutes.connectionId, connection.id))
+      .from(wechatConnections)
+      .leftJoin(
+        wechatChatThreadRoutes,
+        eq(wechatChatThreadRoutes.connectionId, wechatConnections.id),
+      )
+      .where(activeBinding(connection))
       .limit(1);
     signal.throwIfAborted();
-    if (existing) {
+    if (!existing) {
+      return;
+    }
+    if (existing.chatThreadId) {
       return existing.chatThreadId;
     }
     const [agent] = await db
@@ -120,7 +135,23 @@ const ensureThread$ = command(
     );
     const routeInsert = db
       .insert(wechatChatThreadRoutes)
-      .values({ connectionId: connection.id, chatThreadId: thread.id })
+      .select(
+        db
+          .select({
+            id: sql`gen_random_uuid()`
+              .mapWith(wechatChatThreadRoutes.id)
+              .as("id"),
+            connectionId: wechatConnections.id,
+            chatThreadId: sql`${thread.id}::uuid`
+              .mapWith(wechatChatThreadRoutes.chatThreadId)
+              .as("chat_thread_id"),
+            createdAt: sql`now()`
+              .mapWith(wechatChatThreadRoutes.createdAt)
+              .as("created_at"),
+          })
+          .from(wechatConnections)
+          .where(activeBinding(connection)),
+      )
       .onConflictDoNothing({ target: wechatChatThreadRoutes.connectionId })
       .returning({ chatThreadId: wechatChatThreadRoutes.chatThreadId });
     const route = db.$with("wechat_route").as(routeInsert);
@@ -142,11 +173,18 @@ const ensureThread$ = command(
     }
     const [winner] = await db
       .select({ chatThreadId: wechatChatThreadRoutes.chatThreadId })
-      .from(wechatChatThreadRoutes)
-      .where(eq(wechatChatThreadRoutes.connectionId, connection.id))
+      .from(wechatConnections)
+      .leftJoin(
+        wechatChatThreadRoutes,
+        eq(wechatChatThreadRoutes.connectionId, wechatConnections.id),
+      )
+      .where(activeBinding(connection))
       .limit(1);
     signal.throwIfAborted();
     if (!winner) {
+      return;
+    }
+    if (!winner.chatThreadId) {
       throw new Error("WeChat route publication did not succeed");
     }
     return winner.chatThreadId;
@@ -215,11 +253,8 @@ export const receiveWechatMessage$ = command(
     const { connection, message } = args;
     // Only the verified scanner's direct messages can become an Okou input.
     if (
-      message.message_type !== 1 ||
-      message.from_user_id !== connection.senderId ||
-      message.group_id ||
-      (message.to_user_id && message.to_user_id !== connection.botId) ||
-      !message.context_token
+      connection.status !== "active" ||
+      !isWechatOwnerMessage(connection, message)
     ) {
       return;
     }
@@ -238,6 +273,9 @@ export const receiveWechatMessage$ = command(
       return;
     }
     const threadId = await set(ensureThread$, connection, signal);
+    if (!threadId) {
+      return;
+    }
 
     const model = await set(
       resolveEnqueuedChatInputModel$,
@@ -274,20 +312,15 @@ export const receiveWechatMessage$ = command(
     const db = set(writeDb$);
     // Context, receipt (the deterministic canonical event ID), and queue commit
     // together. Replays do not enqueue again; a concurrent disconnect fails closed.
-    const contextInsert = db
-      .insert(chatWechatContext)
-      .values({
-        ...context,
-        id,
-        chatThreadId: threadId,
-        createdAt: currentTime,
-      })
-      .onConflictDoNothing()
-      .returning({ id: chatWechatContext.id });
+    const contextInsert = sql`INSERT INTO chat_wechat_context
+      (id,chat_thread_id,connection_id,generation,sender_id,bot_id,message_id,context_token_ciphertext,quoted_text,created_at)
+      SELECT ${id}::uuid,${threadId}::uuid,id,generation,sender_id,bot_id,${message.message_id},${context.contextTokenCiphertext},${quotedText},${sql.param(currentTime, chatWechatContext.createdAt)}
+      FROM ${wechatConnections} WHERE ${activeBinding(connection)}
+      ON CONFLICT DO NOTHING RETURNING id`;
     // Queue compare-and-delete uses JS Dates; preserve millisecond precision.
     const inserted = parseRawRows(
       z.object({ id: z.uuid() }),
-      await db.execute(sql`WITH context_insert AS (${contextInsert.getSQL()}), ${canonicalChatEventAppendCtes([prepared.row], "id", sql`EXISTS(SELECT 1 FROM ${wechatConnections} WHERE id=${connection.id}::uuid AND generation=${connection.generation}::uuid AND status='active') AND EXISTS(SELECT 1 FROM context_insert)`)}
+      await db.execute(sql`WITH context_insert AS (${contextInsert}), ${canonicalChatEventAppendCtes([prepared.row], "id", sql`EXISTS(SELECT 1 FROM ${wechatConnections} WHERE ${activeBinding(connection)}) AND EXISTS(SELECT 1 FROM context_insert)`)}
  ${modelReplacementCtes(model.threadModelReplacement)}, archived AS (
  INSERT INTO wechat_messages(id,connection_id,generation,provider_message_id,direction,status,content,quoted_text,attachments,media_ciphertext,created_at)
  SELECT ${id}::uuid,${connection.id}::uuid,${connection.generation}::uuid,${message.message_id},'inbound','received',${prompt},${quotedText},${sql.param(attachments, wechatMessages.attachments)},${mediaCiphertext},${sql.param(currentTime, wechatMessages.createdAt)} FROM inserted

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { command } from "ccstate";
-import { and, desc, eq, lt } from "drizzle-orm";
+import { and, desc, eq, lt, ne } from "drizzle-orm";
 import {
   integrationsWechatMessagesContract as contract,
   type WechatReceipt,
@@ -37,11 +37,17 @@ const channels$ = command(async ({ get, set }, signal: AbortSignal) => {
   return {
     status: 200,
     body: {
-      channels: channels.map((channel) => {
-        return {
-          ...channel,
-          name: "Your WeChat direct conversation",
-        };
+      channels: channels.flatMap((channel) => {
+        if (channel.status === "disconnected") {
+          return [];
+        }
+        return [
+          {
+            ...channel,
+            status: channel.status,
+            name: "Your WeChat direct conversation",
+          },
+        ];
       }),
     },
   } as const;
@@ -100,6 +106,7 @@ const history$ = command(async ({ get, set }, signal: AbortSignal) => {
         eq(wechatMessages.connectionId, query.channelId),
         eq(wechatConnections.userId, auth.userId),
         eq(wechatConnections.orgId, auth.orgId),
+        ne(wechatConnections.status, "disconnected"),
         before === undefined ? undefined : lt(wechatMessages.sequence, before),
       ),
     )
