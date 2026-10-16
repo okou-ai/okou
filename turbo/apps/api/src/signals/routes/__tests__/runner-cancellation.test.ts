@@ -246,7 +246,7 @@ describe("Run cancellation reconciliation", () => {
   ])(
     "isolates PAT credentials and cancellation in $scope",
     async ({ runCounts }) => {
-      const { target, peers, readTarget, query, runs, webhooks } =
+      const { target, peers, headers, readTarget, query, runs, webhooks } =
         await patFixture(runCounts);
       const [peer] = peers;
       if (!peer?.sandboxToken) {
@@ -275,12 +275,23 @@ describe("Run cancellation reconciliation", () => {
 
       await runs.requestCancelRun(target.actor, target.runId, [200]);
       await flushWaitUntilForTest();
-      expect((await readTarget()).body).toStrictEqual({
+      const cancelled = {
         protocolVersion: 1,
         runId: target.runId,
         state: "present",
         mode: "cooperative",
-      });
+      };
+      expect((await readTarget()).body).toStrictEqual(cancelled);
+      await webhooks.requestAgentComplete(
+        { runId: target.runId, exitCode: 1, error: "Run cancelled" },
+        headers,
+        [200],
+      );
+      target.acknowledged = true;
+      await expect(
+        runs.readRun(target.actor, target.runId),
+      ).resolves.toMatchObject({ status: "cancelled" });
+      expect((await readTarget()).body).toStrictEqual(cancelled);
       await webhooks.requestAgentComplete(
         { runId: peer.runId, exitCode: 1, error: "test execution failed" },
         { authorization: `Bearer ${peer.sandboxToken}` },
