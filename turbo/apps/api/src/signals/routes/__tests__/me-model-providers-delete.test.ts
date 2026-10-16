@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import { HttpResponse, http } from "msw";
 
 import {
   personalModelProvidersByTypeContract,
@@ -8,6 +9,7 @@ import {
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { server } from "../../../mocks/server";
 import { createRouteMocks } from "./helpers/route-test";
 import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
 import { meModelProvidersListRoutes } from "../me-model-providers-list";
@@ -117,6 +119,72 @@ describe("DELETE /api/me/model-providers/:type", () => {
       error: { message: "Resource not found", code: "NOT_FOUND" },
     });
   });
+
+  it.each([200, 503])(
+    "disconnects a legacy Claude account when profile preparation returns %s",
+    async (profileStatus) => {
+      const fixture = uniqueOrgUser("zmmp-delete-legacy-identity");
+      mocks.clerk.session(fixture.userId, fixture.orgId);
+      server.use(
+        http.get("https://api.anthropic.com/api/oauth/profile", () => {
+          return new HttpResponse(null, { status: 503 });
+        }),
+      );
+      const main = setupApp({
+        context,
+        routes: personalModelProvidersMainTestRoutes,
+      })(personalModelProvidersMainContract);
+      const connected = await accept(
+        main.upsert({
+          body: {
+            type: "claude-code-oauth-token",
+            secret: "sk-ant-oat-delete-legacy-identity",
+          },
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [201],
+      );
+      expect(connected.body.provider).toMatchObject({
+        accountEmail: null,
+        workspaceName: null,
+      });
+      server.use(
+        http.get("https://api.anthropic.com/api/oauth/profile", () => {
+          return HttpResponse.json(
+            {
+              account: { email: "legacy.delete@example.com" },
+              organization: { name: "Legacy Delete Workspace" },
+            },
+            { status: profileStatus },
+          );
+        }),
+      );
+      const byType = setupApp({
+        context,
+        routes: personalModelProvidersByTypeTestRoutes,
+      })(personalModelProvidersByTypeContract);
+      const deleted = await byType.delete({
+        params: { type: "claude-code-oauth-token" },
+        headers: { authorization: "Bearer clerk-session" },
+      });
+      expect(deleted.status).toBe(204);
+      const listed = await accept(
+        main.list({ headers: { authorization: "Bearer clerk-session" } }),
+        [200],
+      );
+      expect(listed.body.modelProviders).toStrictEqual([]);
+      const repeated = await accept(
+        byType.delete({
+          params: { type: "claude-code-oauth-token" },
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [404],
+      );
+      expect(repeated.body).toStrictEqual({
+        error: { message: "Resource not found", code: "NOT_FOUND" },
+      });
+    },
+  );
 
   it("returns 404 with 'Resource not found' when deleting a nonexistent provider", async () => {
     const fixture = uniqueOrgUser("zmmp-missing");
