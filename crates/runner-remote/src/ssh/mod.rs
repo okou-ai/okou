@@ -393,84 +393,61 @@ impl SshRuntime {
             authority::Transport::Tailscale(_) => crate::diagnostics::trace::Route::Tailscale,
         });
         observation.trace.set(Stage::Credential, Progress::Running);
-        let (private_key, passphrase) = match credential.auth {
+        let tailscale_transport =
+            matches!(&credential.transport, authority::Transport::Tailscale(_));
+        let generation = credential.generation;
+        // Move common fields with the key worker so its secrets outlive cancelled waiters.
+        let prepared = move |auth| PreparedCredential {
+            created_at: credential.created_at,
+            host: credential.host,
+            port: credential.port,
+            username: credential.username,
+            trust: Mutex::new(Trust {
+                generation,
+                pin: credential.pin,
+            }),
+            auth,
+            transport: credential.transport,
+        };
+        let result = match credential.auth {
             CredentialAuth::Tailscale => {
-                if credential.port != 22
-                    || !matches!(&credential.transport, authority::Transport::Tailscale(_))
-                {
+                if credential.port != 22 || !tailscale_transport {
                     return Err(FailureReason::AuthorityFailure);
                 }
                 scope.check()?;
-                observation.generation = Some(credential.generation);
-                observation.trace.set(Stage::Credential, Progress::Passed);
-                return Ok(PreparedCredential {
-                    created_at: credential.created_at,
-                    host: credential.host,
-                    port: credential.port,
-                    username: credential.username,
-                    trust: Mutex::new(Trust {
-                        generation: credential.generation,
-                        pin: credential.pin,
-                    }),
-                    auth: PreparedAuth::Tailscale,
-                    transport: credential.transport,
-                });
+                Ok(prepared(PreparedAuth::Tailscale))
             }
             CredentialAuth::PrivateKey {
                 private_key,
                 passphrase,
-            } => (private_key, passphrase),
+            } => {
+                let cpu = scope
+                    .wait(Arc::clone(&self.cpu).acquire_owned())
+                    .await?
+                    .map_err(|_| FailureReason::ResourceExhausted)?;
+                let worker_scope = scope.clone();
+                let worker_lease = Arc::clone(&lease);
+                let worker = tokio::task::spawn_blocking(move || {
+                    let _permit = cpu;
+                    let _lease = worker_lease;
+                    worker_scope.check()?;
+                    let key = keys::decode(
+                        private_key.expose(),
+                        passphrase.as_ref().map(|value| value.expose()),
+                    )?;
+                    worker_scope.check()?;
+                    Ok::<_, FailureReason>(prepared(PreparedAuth::PrivateKey(key)))
+                });
+                scope
+                    .wait(worker)
+                    .await?
+                    .map_err(|_| FailureReason::InvalidCredential)?
+            }
             CredentialAuth::Password(password) => {
                 scope.check()?;
-                observation.generation = Some(credential.generation);
-                observation.trace.set(Stage::Credential, Progress::Passed);
-                return Ok(PreparedCredential {
-                    created_at: credential.created_at,
-                    host: credential.host,
-                    port: credential.port,
-                    username: credential.username,
-                    trust: Mutex::new(Trust {
-                        generation: credential.generation,
-                        pin: credential.pin,
-                    }),
-                    auth: PreparedAuth::Password(password),
-                    transport: credential.transport,
-                });
+                Ok(prepared(PreparedAuth::Password(password)))
             }
         };
-        let cpu = scope
-            .wait(Arc::clone(&self.cpu).acquire_owned())
-            .await?
-            .map_err(|_| FailureReason::ResourceExhausted)?;
-        let worker_scope = scope.clone();
-        let generation = credential.generation;
-        let worker_lease = Arc::clone(&lease);
-        let worker = tokio::task::spawn_blocking(move || {
-            let _permit = cpu;
-            let _lease = worker_lease;
-            worker_scope.check()?;
-            let key = keys::decode(
-                private_key.expose(),
-                passphrase.as_ref().map(|value| value.expose()),
-            )?;
-            worker_scope.check()?;
-            Ok::<_, FailureReason>(PreparedCredential {
-                created_at: credential.created_at,
-                host: credential.host,
-                port: credential.port,
-                username: credential.username,
-                trust: Mutex::new(Trust {
-                    generation: credential.generation,
-                    pin: credential.pin,
-                }),
-                auth: PreparedAuth::PrivateKey(key),
-                transport: credential.transport,
-            })
-        });
-        let result = scope
-            .wait(worker)
-            .await?
-            .map_err(|_| FailureReason::InvalidCredential)?;
         observation.generation = Some(generation);
         observation.trace.set(
             Stage::Credential,
