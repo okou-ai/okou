@@ -934,9 +934,20 @@ async function openSlackIntro(): Promise<HTMLElement> {
   });
 }
 
-test.each(["https://slack.com/oauth/v2/authorize?state=quest", null])(
-  "The Slack step opens canonical settings at click time with install URL %s and retains the chat draft",
-  async (installUrl) => {
+test.each([
+  {
+    label: "starts OAuth directly",
+    installUrl: "https://slack.com/oauth/v2/authorize?state=quest",
+    destination: "https://slack.com/oauth/v2/authorize?state=quest&",
+  },
+  {
+    label: "opens settings when the install URL is unavailable",
+    installUrl: null,
+    destination: "http://localhost/settings/slack?",
+  },
+])(
+  "The Slack step $label at click time and retains the chat draft",
+  async ({ installUrl, destination }) => {
     configureQuestPage(context, "admin", { slackClaimed: false });
     context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
       return respond(200, { ...slackNotInstalled(), installUrl });
@@ -955,7 +966,7 @@ test.each(["https://slack.com/oauth/v2/authorize?state=quest", null])(
     // No await: window creation must happen inside the user gesture.
     expect(opened.calls).toStrictEqual([
       {
-        url: `http://localhost/settings/slack?_t=${timestamp.getTime()}`,
+        url: `${destination}_t=${timestamp.getTime()}`,
         target: "_blank",
         features: null,
       },
@@ -1019,7 +1030,7 @@ test("The Slack entry forwards an existing prompt and retains same-origin previe
   ).resolves.toHaveTextContent("Retain my work");
 });
 
-test("The Slack action remains usable while a status refresh is pending", async () => {
+test("The Slack action retains its OAuth URL while a status refresh is pending", async () => {
   configureQuestPage(context, "admin", { slackClaimed: false });
   const requested = context.mocks.deferred<void>();
   const release = context.mocks.deferred<void>();
@@ -1031,7 +1042,10 @@ test("The Slack action remains usable while a status refresh is pending", async 
         requested.resolve();
         await release.promise;
       }
-      return respond(200, slackNotInstalled());
+      return respond(200, {
+        ...slackNotInstalled(),
+        installUrl: "https://slack.com/oauth/v2/authorize?state=quest",
+      });
     },
   );
   const opened = context.mocks.browser.open();
@@ -1044,7 +1058,10 @@ test("The Slack action remains usable while a status refresh is pending", async 
   context.mocks.ably.trigger("slack:changed");
   await requested.promise;
   click(buttonNamed("Add to Slack", dialog));
-  expect(new URL(opened.calls[0]?.url ?? "").pathname).toBe("/settings/slack");
+  const url = new URL(opened.calls[0]?.url ?? "");
+  expect(url.origin).toBe("https://slack.com");
+  expect(url.pathname).toBe("/oauth/v2/authorize");
+  expect(url.searchParams.get("state")).toBe("quest");
   expect(opened.calls[0]?.target).toBe("_blank");
   expect(pathname()).toBe(questChatPath());
   release.resolve();
