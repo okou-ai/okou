@@ -93,6 +93,7 @@ function walletResponse<T>(
 const connectBody$ = bodyResultOf(walletContract.connect);
 const spendListQuery$ = queryOf(walletContract.listSpends);
 const transactionsQuery$ = queryOf(walletContract.transactions);
+const userActivityQuery$ = queryOf(walletUserContract.activity);
 const paymentMethodParams$ = pathParamsOf(walletContract.paymentMethod);
 const createBody$ = bodyResultOf(walletContract.createSpend);
 const getParams$ = pathParamsOf(walletContract.getSpend);
@@ -155,7 +156,7 @@ const connect$ = command(async ({ get, set }, signal: AbortSignal) => {
       new LinkWalletError(
         403,
         "MISSING_CAPABILITY",
-        "Use okou wallet connect --read-only with wallet:read; payment consent requires wallet:write",
+        "Connecting Link requires wallet:write; wallet:read only permits reads using existing consent",
       ),
     );
   }
@@ -200,6 +201,42 @@ const userTransactions$ = command(async ({ get, set }, signal: AbortSignal) => {
   const body = await get(walletTransactions$);
   signal.throwIfAborted();
   return { status: 200 as const, body };
+});
+const userActivity$ = command(async ({ get, set }, signal: AbortSignal) => {
+  set(setResHeader$, "Cache-Control", "no-store");
+  const enabled = await settle(get(walletEnabled$), signal);
+  signal.throwIfAborted();
+  if (!enabled.ok) {
+    return walletError(enabled.error);
+  }
+  const { orgId, userId } = get(organizationAuthContext$);
+  const query = get(userActivityQuery$);
+  const result = await settle(
+    set(
+      readWallet$,
+      { orgId, userId },
+      {
+        operation: "transactions_read",
+        query: {
+          limit: query.limit ?? 20,
+          starting_after: query.startingAfter,
+          start_date: query.startDate,
+          end_date: query.endDate,
+          category: query.category,
+        },
+      },
+      signal,
+    ),
+    signal,
+  );
+  signal.throwIfAborted();
+  if (!result.ok) {
+    return walletError(result.error);
+  }
+  return {
+    status: 200 as const,
+    body: walletUserContract.activity.responses[200].parse(result.value),
+  };
 });
 const userConnect$ = command(async ({ get, set }, signal: AbortSignal) => {
   const enabled = await settle(get(walletEnabled$), signal);
@@ -475,6 +512,10 @@ const userAuth = {
 } as const;
 
 export const walletRoutes: readonly RouteEntry[] = [
+  {
+    route: walletUserContract.activity,
+    handler: authRoute(userAuth, userActivity$),
+  },
   {
     route: walletUserContract.transactions,
     handler: authRoute(userAuth, userTransactions$),

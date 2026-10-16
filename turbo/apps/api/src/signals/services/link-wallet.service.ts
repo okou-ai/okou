@@ -46,6 +46,7 @@ import {
 import {
   LinkWalletError,
   LINK_WALLET_OAUTH_SCOPES,
+  LINK_WALLET_SOURCE_ACTIONS,
   linkActionUrl,
   linkCredentialsSchema,
   linkSpendRequest,
@@ -185,14 +186,26 @@ function walletScopeChange(
   storedScopes: string | null,
   workspaceScopeChanged = false,
   grantedScopes: readonly string[] = [],
+  grantedSourceActions: readonly string[] = [],
 ): WalletConnectionStatus["scopeChange"] {
   const current = [
-    ...new Set([...LINK_WALLET_OAUTH_SCOPES, ...grantedScopes]),
+    ...new Set([
+      ...LINK_WALLET_OAUTH_SCOPES,
+      ...grantedScopes,
+      ...LINK_WALLET_SOURCE_ACTIONS,
+      ...grantedSourceActions,
+    ]),
   ].sort();
   const stored =
     storedScopes === null
       ? null
-      : z.array(z.string()).parse(JSON.parse(storedScopes));
+      : [
+          ...new Set([
+            ...z.array(z.string()).parse(JSON.parse(storedScopes)),
+            ...grantedScopes,
+            ...grantedSourceActions,
+          ]),
+        ].sort();
   const addedScopes = stored
     ? current.filter((scope) => {
         return !stored.includes(scope);
@@ -263,6 +276,7 @@ export const walletSettingsStatus$ = computed(
               row.oauthRequestedScopes,
               false,
               status.authorization.scopes,
+              status.authorization.sourceActions,
             )
           : null
         : legacy
@@ -367,10 +381,10 @@ export const startWalletOAuth$ = command(
     } else if (!input.transactions || granted.capabilities.payments) {
       scopes.add("payment_methods.agentic");
     }
-    const actions = new Set(granted.sourceActions);
-    if (input.transactions || input.readOnly) {
-      actions.add("read_link_transactions");
-    }
+    const actions = new Set([
+      ...granted.sourceActions,
+      ...LINK_WALLET_SOURCE_ACTIONS,
+    ]);
     const readOnly = !scopes.has("payment_methods.agentic");
     // The prefix is authenticated by the stored hash of the full one-time state.
     // Legacy base64url states cannot contain a dot; their PKCE format is unchanged.

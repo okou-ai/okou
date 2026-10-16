@@ -4,7 +4,6 @@ import { resolve } from "node:path";
 import {
   walletCreateSpendSchema,
   type WalletSpend,
-  type WalletConnect,
 } from "@okouai/api-contracts/contracts/wallet";
 import { LINK_WALLET_GUIDE } from "@okouai/core/link-wallet-guide";
 
@@ -246,21 +245,10 @@ export const walletCommand = new Command("wallet")
   )
   .addCommand(
     new Command("connect")
-      .option(
-        "--read-only",
-        "Authorize Link transaction and profile reads without payment access",
-      )
-      .option(
-        "--transactions",
-        "Add Link transaction reads while retaining existing granted access",
-      )
       .option("--json", "Print the hosted consent URL as JSON")
       .action(
-        withErrorHandler(async (options: JsonOptions & WalletConnect) => {
-          const value = await walletConnect({
-            ...(options.readOnly ? { readOnly: true } : {}),
-            ...(options.transactions ? { transactions: true } : {}),
-          });
+        withErrorHandler(async (options: JsonOptions) => {
+          const value = await walletConnect();
           if (options.json) {
             console.log(JSON.stringify(value));
             return;
@@ -300,5 +288,5 @@ export const walletCommand = new Command("wallet")
   .addCommand(walletUserInfoCommand)
   .addHelpText(
     "after",
-    "\nOAuth credentials stay on the backend. Payment credentials are written only to a new private file. No polling or checkout commands are provided. Reads require wallet:read (existing wallet:write tokens are also accepted). Spending requires wallet:write and Link payment consent. All operations require the linkWallet feature switch. Use connect --read-only for financial queries, or connect --transactions to add transaction access.",
+    "\nOAuth credentials stay on the backend. Payment credentials are written only to a new private file. No polling or checkout commands are provided. Reads require wallet:read (existing wallet:write tokens are also accepted). Spending requires wallet:write and Link payment consent. All operations require the linkWallet feature switch. Connect requests payment, profile and Link transaction access together. Each purchase still requires separate approval.",
   );
