@@ -227,7 +227,7 @@ test.each([
     const editor = await findComposerEditor();
     await fill(editor, "Keep my launch brief /");
     const menu = await screen.findByTestId("slash-workflow-menu");
-    await userEvent.setup({ delay: null }).click(button(entry, menu));
+    click(button(entry, menu));
     const dialog = await screen.findByRole("dialog");
     click(tabByText("Custom"));
     await within(dialog).findByText(own.title);
