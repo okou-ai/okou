@@ -67,18 +67,26 @@ pub(super) struct UnusableCodexModelCatalogPrefetchStart {
     outcome: &'static str,
 }
 
-pub(super) struct StartedCodexModelCatalogPrefetch {
-    handle: Option<GuestProcessHandle>,
+struct StartedPrefetchProcess {
+    handle: GuestProcessHandle,
+    wait_deadline: Instant,
     cancel: Option<GuestProcessCancelHandle>,
-    wait_deadline: Option<Instant>,
+}
+
+struct SupervisedPrefetchProcess<'a> {
+    wait: PrefetchWait<'a>,
+    cancel: Option<GuestProcessCancelHandle>,
+}
+
+pub(super) struct StartedCodexModelCatalogPrefetch {
+    process: Option<StartedPrefetchProcess>,
     started_at: Instant,
     outcome: Option<PrefetchOutcome>,
     recorded: bool,
 }
 
 pub(super) struct CodexModelCatalogPrefetch<'a> {
-    wait: Option<PrefetchWait<'a>>,
-    cancel: Option<GuestProcessCancelHandle>,
+    process: Option<SupervisedPrefetchProcess<'a>>,
     started_at: Instant,
     outcome: Option<PrefetchOutcome>,
     recorded: bool,
@@ -129,9 +137,11 @@ impl StartedCodexModelCatalogPrefetch {
                     error: Some("start_cancelled"),
                 });
                 CodexModelCatalogPrefetchStart::Usable(Self {
-                    handle: Some(handle),
-                    cancel: process_cancel,
-                    wait_deadline: Some(Instant::now() + PREFETCH_HOST_WAIT_TIMEOUT),
+                    process: Some(StartedPrefetchProcess {
+                        handle,
+                        wait_deadline: Instant::now() + PREFETCH_HOST_WAIT_TIMEOUT,
+                        cancel: process_cancel,
+                    }),
                     started_at,
                     outcome,
                     recorded: false,
@@ -193,16 +203,17 @@ impl StartedCodexModelCatalogPrefetch {
     }
 
     pub(super) fn supervise(self, sandbox: &dyn Sandbox) -> CodexModelCatalogPrefetch<'_> {
-        let wait = self.handle.map(|handle| {
-            let timeout = self
+        let process = self.process.map(|process| {
+            let timeout = process
                 .wait_deadline
-                .map(|deadline| deadline.saturating_duration_since(Instant::now()))
-                .unwrap_or(Duration::ZERO);
-            Box::pin(sandbox.wait_process(handle, timeout)) as PrefetchWait<'_>
+                .saturating_duration_since(Instant::now());
+            SupervisedPrefetchProcess {
+                wait: Box::pin(sandbox.wait_process(process.handle, timeout)),
+                cancel: process.cancel,
+            }
         });
         CodexModelCatalogPrefetch {
-            wait,
-            cancel: self.cancel,
+            process,
             started_at: self.started_at,
             outcome: self.outcome,
             recorded: self.recorded,
@@ -215,9 +226,7 @@ impl StartedCodexModelCatalogPrefetch {
 
     fn without_process(started_at: Instant, outcome: Option<PrefetchOutcome>) -> Self {
         Self {
-            handle: None,
-            cancel: None,
-            wait_deadline: None,
+            process: None,
             started_at,
             outcome,
             recorded: false,
@@ -266,14 +275,13 @@ fn is_unusable_sandbox_start_timeout(error: &SandboxError) -> bool {
 
 impl<'a> CodexModelCatalogPrefetch<'a> {
     pub(super) async fn race<T>(&mut self, phase: impl Future<Output = T>) -> T {
-        let Some(wait) = self.wait.as_mut() else {
+        let Some(process) = self.process.as_mut() else {
             return phase.await;
         };
         tokio::pin!(phase);
         tokio::select! {
-            result = wait => {
-                self.wait = None;
-                self.cancel = None;
+            result = &mut process.wait => {
+                self.process = None;
                 self.complete(result);
                 phase.await
             }
@@ -299,23 +307,20 @@ impl<'a> CodexModelCatalogPrefetch<'a> {
 
     pub(super) async fn finish(mut self, telemetry: &mut JobTelemetry) {
         if let Some(result) = self
-            .wait
+            .process
             .as_mut()
-            .and_then(|wait| wait.as_mut().now_or_never())
+            .and_then(|process| process.wait.as_mut().now_or_never())
         {
-            self.wait = None;
-            self.cancel = None;
+            self.process = None;
             self.complete(result);
         }
-        if self.wait.is_some() {
-            if let Some(cancel) = self.cancel.take()
+        if let Some(process) = self.process.take() {
+            if let Some(cancel) = process.cancel
                 && let Err(error) = cancel.cancel(PREFETCH_CANCEL_WRITE_TIMEOUT).await
             {
                 warn!(error = %error, "failed to cancel Codex model catalog prefetch");
             }
-            if let Some(wait) = self.wait.take() {
-                self.complete(wait.await);
-            }
+            self.complete(process.wait.await);
         }
         self.record_outcome(telemetry);
     }
