@@ -193,6 +193,33 @@ async fn pooled_transport_retains_selected_address_without_fabricating_new_setup
 }
 
 #[tokio::test]
+async fn key_decode_rejection_reports_credential_failure_before_network() {
+    let mut h = Harness::new(Reply::default()).await;
+    h.enable_diagnostics().await;
+    let mut credential = h.credential(true);
+    credential["privateKey"] = "invalid-key-canary".into();
+    let resolve = h.resolve(credential).await;
+    let result = rpc(&h, "ssh.exec", params()).await;
+    assert_eq!(result["failure_reason"], "unsupported_credential");
+    assert_eq!(result["effects"], "not_started");
+    let text = diagnostic_text(&result);
+    assert!(text.contains(&format!("Configuration: created at {CREATED_AT};")));
+    assert!(text.contains("generation 7."));
+    assert_stage(text, "authority", "passed");
+    assert_stage(text, "credential", "failed");
+    for stage in ["dns", "tcp", "ssh_proof", "ssh_trust", "authentication"] {
+        assert_stage(text, stage, "not_reached");
+    }
+    assert!(h.observed.queries.lock().unwrap().is_empty());
+    assert!(h.observed.attempts.lock().unwrap().is_empty());
+    assert_eq!(h.observed.auth.load(Ordering::SeqCst), 0);
+    assert!(h.observed.commands.lock().unwrap().is_empty());
+    assert!(!result.to_string().contains("canary"));
+    resolve.assert_calls_async(1).await;
+    h.shutdown().await;
+}
+
+#[tokio::test]
 async fn trust_rejection_precedes_authentication_and_credential_rejection_keeps_proven_trust() {
     use base64::Engine;
     for trust_failure in [true, false] {
