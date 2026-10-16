@@ -15,6 +15,7 @@ export type QueuedUserMessageTriggerSource =
   | "agent"
   | "slack"
   | "discord"
+  | "wechat"
   | "feishu"
   | "lark"
   | "teams"

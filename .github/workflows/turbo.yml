@@ -20,13 +20,9 @@ on:
         required: false
       AGENTPHONE_WEBHOOK_SECRET:
         required: false
-      AWS_ACCESS_KEY_ID:
-        required: false
       AWS_METAL_RUNNER_HOSTS:
         required: false
       AWS_METAL_RUNNER_SSH_KEY:
-        required: false
-      AWS_SECRET_ACCESS_KEY:
         required: false
       AXIOM_TOKEN_SESSIONS:
         required: false
@@ -96,6 +92,12 @@ on:
         required: false
       OPENROUTER_API_KEY:
         required: false
+      PREVIEW_KMS_ACCESS_KEY_ID:
+        required: true
+      PREVIEW_KMS_KEY_ID:
+        required: true
+      PREVIEW_KMS_SECRET_ACCESS_KEY:
+        required: true
       R2_ACCESS_KEY_ID:
         required: false
       R2_HOSTED_SITES_ACCESS_KEY_ID:
@@ -121,8 +123,6 @@ on:
       RESEND_WEBHOOK_SECRET:
         required: false
       SECRETS_ENCRYPTION_KEY:
-        required: false
-      SECRETS_KMS_KEY_ID:
         required: false
       SENTRY_AUTH_TOKEN:
         required: false
@@ -1042,6 +1042,43 @@ jobs:
           files: turbo/junit.xml
           report_type: test_results
 
+  test-wechat-gateway:
+    needs: [detect-turbo-ts-checks]
+    if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/toolchain-init
+      - name: Build WeChat Gateway relay for runtime tests
+        working-directory: turbo
+        run: pnpm --filter @okouai/wechat-gateway-worker run build
+      # Miniflare runs a real workerd process and SQLite Durable Object per file.
+      - name: Test WeChat Gateway worker
+        working-directory: turbo
+        run: pnpm vitest run --project=@okouai/wechat-gateway-worker --no-file-parallelism --coverage.enabled --coverage.reporter=json
+      - name: Upload coverage to Codecov
+        if: success() || failure()
+        continue-on-error: true
+        timeout-minutes: 1
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: wechat-gateway
+          files: turbo/coverage/coverage-final.json
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        timeout-minutes: 1
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: wechat-gateway
+          files: turbo/junit.xml
+          report_type: test_results
+
   test-other:
     needs: [detect-turbo-ts-checks]
     if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
@@ -1192,23 +1229,6 @@ jobs:
             exit 1
           fi
 
-          # On pushes to main, migrate the test project's default (parent) branch
-          # BEFORE creating/resetting the preview branch off it. Neon branches are
-          # copy-on-write, so a preview branched from an already-migrated parent
-          # inherits the up-to-date schema and its own db:migrate below becomes a
-          # near no-op -- this is what keeps preview migrate (and deploy-api) fast.
-          # Safe by construction: this job has no `environment: production`, so
-          # NEON_PROJECT_ID resolves to the Neon TEST project, never production.
-          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF" = "refs/heads/main" ]; then
-            echo "main push: pre-migrating test project default (parent) branch"
-            PARENT_DATABASE_URL=$(.github/scripts/neon-preview-branch.sh parent)
-            WORKFLOW_COMMAND_DATA="${PARENT_DATABASE_URL//%/%25}"
-            WORKFLOW_COMMAND_DATA="${WORKFLOW_COMMAND_DATA//$'\r'/%0D}"
-            WORKFLOW_COMMAND_DATA="${WORKFLOW_COMMAND_DATA//$'\n'/%0A}"
-            printf '::add-mask::%s\n' "$WORKFLOW_COMMAND_DATA"
-            (cd turbo && DATABASE_URL="$PARENT_DATABASE_URL" pnpm -F @okouai/db db:migrate)
-          fi
-
           DATABASE_URL=$(.github/scripts/neon-preview-branch.sh branch "preview/${{ needs.prepare.outputs.job-ref }}")
           WORKFLOW_COMMAND_DATA="${DATABASE_URL//%/%25}"
           WORKFLOW_COMMAND_DATA="${WORKFLOW_COMMAND_DATA//$'\r'/%0D}"
@@ -1216,7 +1236,10 @@ jobs:
           printf '::add-mask::%s\n' "$WORKFLOW_COMMAND_DATA"
 
           cd turbo
-          DATABASE_URL="$DATABASE_URL" pnpm -F @okouai/db db:migrate
+          # Recreate this disposable preview branch so parent data cannot retain
+          # ciphertext encrypted with the retired test KMS key. This job has no
+          # production environment; NEON_PROJECT_ID is the test project.
+          DATABASE_URL="$DATABASE_URL" pnpm -F @okouai/db db:reset
           ENV=preview DATABASE_URL="$DATABASE_URL" pnpm -F api db:dev-seed --preview-onboarding-catalog
 
           echo "database-url=$DATABASE_URL" >> "$GITHUB_OUTPUT"
@@ -2991,6 +3014,7 @@ jobs:
       - test-api
       - test-other
       - test-discord-gateway
+      - test-wechat-gateway
       - deploy-api
       - deploy-app
       - deploy-stripe-listener
@@ -3118,6 +3142,7 @@ jobs:
           check_result "test-api" "${{ needs.test-api.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-other" "${{ needs.test-other.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-discord-gateway" "${{ needs.test-discord-gateway.result }}" "$TS_CHECK_SKIP_ALLOWED"
+          check_result "test-wechat-gateway" "${{ needs.test-wechat-gateway.result }}" "$TS_CHECK_SKIP_ALLOWED"
           # Same skip conditions as the job: pure iOS change sets and staging.
           check_result "lint-runtime-api-compat" "${{ needs.lint-runtime-api-compat.result }}" "$RUNTIME_API_COMPAT_SKIP_ALLOWED"
 

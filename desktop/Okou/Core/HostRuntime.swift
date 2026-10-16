@@ -99,12 +99,13 @@ public actor HostRuntime {
     self.onChange = onChange
   }
   public func updatePermissions(_ value: JSONValue) { permissions = value }
-  private func body() -> JSONValue {
+  private func body() async -> JSONValue {
     .object([
       "installationId": .string(installationId), "hostName": .string(hostName),
       "appVersion": .string(version),
       "osVersion": .string(ProcessInfo.processInfo.operatingSystemVersionString),
-      "supportedCapabilities": .strings(CommandExecutor.capabilities), "permissions": permissions,
+      "supportedCapabilities": .strings(await executor.supportedCapabilities()),
+      "permissions": permissions,
     ])
   }
   private func parsedConnection(_ response: APIResponse) -> Connection? {
@@ -161,7 +162,8 @@ public actor HostRuntime {
   }
   private func register(generation current: Int) async throws {
     let response = try await api.authenticatedRequest(
-      ApiRoutes.computerUseHostRegister, body: body(), timeout: 10, tokenProvider: tokenProvider)
+      ApiRoutes.computerUseHostRegister, body: await body(), timeout: 10,
+      tokenProvider: tokenProvider)
     guard running, current == generation else {
       if let lateConnection = parsedConnection(response) {
         _ = try? await api.authenticatedRequest(
@@ -231,6 +233,7 @@ public actor HostRuntime {
   private func stopRuntime() async {
     acceptingCommands = false
     state.status = "stopping"
+    await executor.retireShellSessions()
     await publish()
     await stopNotifications()
     // Keep heartbeats alive while an existing command drains; its Clerk
@@ -290,7 +293,7 @@ public actor HostRuntime {
         try Task.checkCancellation()
         guard running, generation == current else { return }
         let response = try await request(
-          connection.heartbeat, connection: connection, body: body(), timeout: 10,
+          connection.heartbeat, connection: connection, body: await body(), timeout: 10,
           generation: current)
         guard running, generation == current else { return }
         if await rejectAuthority(response) { return }
@@ -324,6 +327,7 @@ public actor HostRuntime {
     }
     running = false
     acceptingCommands = false
+    await executor.stop()
     await stopNotifications()
     state.status = "error"
     state.authorityFailure = .authentication
@@ -336,6 +340,7 @@ public actor HostRuntime {
     if response.status == 426 {
       // Close admission without invalidating completion reports for claimed work.
       acceptingCommands = false
+      await executor.retireShellSessions()
       await stopNotifications()
       recordUpgradeRequirement(response)
       await publish()
@@ -343,6 +348,7 @@ public actor HostRuntime {
     }
     running = false
     acceptingCommands = false
+    await executor.stop()
     await stopNotifications()
     state.status = "error"
     state.authorityFailure =
@@ -428,7 +434,8 @@ public actor HostRuntime {
         let claimStarted = ContinuousClock.now
         let response = try await request(
           connection.nextCommand, connection: connection,
-          body: .object(["supportedCapabilities": .strings(CommandExecutor.capabilities)]),
+          body: .object(["supportedCapabilities": .strings(await executor.supportedCapabilities())]
+          ),
           timeout: 5, generation: current)
         if await rejectAuthority(response) { return }
         guard (200..<300).contains(response.status) else {

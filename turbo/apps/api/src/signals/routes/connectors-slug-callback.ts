@@ -1,5 +1,9 @@
 import { command } from "ccstate";
 import {
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/runtime/connector-catalog";
+import {
   builtinConnectorsSlugCallbackContract,
   type ConnectorOauthCallbackResult,
 } from "@okouai/api-contracts/contracts/connectors-slug-callback";
@@ -41,7 +45,11 @@ import {
   type ConnectorRuntimeConnector,
   type ConnectorRuntimeSelection,
 } from "../services/connector-catalog-runtime.service";
-import { loadConnectorRuntimeSlugSelection } from "../services/connector-catalog-slug-source.service";
+import {
+  connectorCatalogCurrentWhere,
+  connectorRuntimeSlugSelectionReadPlan,
+  connectorRuntimeSlugSelectionFromRows,
+} from "../services/connector-catalog-slug-source.service";
 import {
   connectorConnectionWriteFailureMessage,
   upsertBuiltinConnectorTokenConnection$,
@@ -1240,9 +1248,18 @@ const callbackBuiltinConnectorInner$ = command(
     const query = get(queryOf(builtinConnectorsSlugCallbackContract.callback));
     const request = get(request$).raw;
     const origin = getBuiltinConnectorOAuthOrigin(request);
-    const snapshot = await loadConnectorRuntimeSlugSelection(get(db$), {
+    const catalogDb = get(db$);
+    const catalogPlan = connectorRuntimeSlugSelectionReadPlan({
       connectorSlugs: [connectorSlug],
     });
+    const snapshot = connectorRuntimeSlugSelectionFromRows(
+      catalogPlan.selection,
+      await catalogDb
+        .select(catalogPlan.columns)
+        .from(connectorCatalog)
+        .leftJoin(connectorCatalogEntries, catalogPlan.join)
+        .where(connectorCatalogCurrentWhere()),
+    );
     signal.throwIfAborted();
 
     const response = hasOpenIdCallbackFields(query)

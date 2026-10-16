@@ -1674,7 +1674,7 @@ mod tests {
         sandbox_id: SandboxId,
         reuse_key: &str,
     ) -> HomeImageLease {
-        let lease = cache
+        let mut lease = cache
             .prepare(HomeImagePrepareRequest {
                 identity: HomeImageLeaseIdentity {
                     working_dir: CANONICAL_WORKING_DIR,
@@ -1691,12 +1691,23 @@ mod tests {
         tokio::fs::create_dir_all(paths.workspace_dir(&sandbox_id))
             .await
             .unwrap();
-        tokio::fs::write(
-            paths.active_home_image(&sandbox_id),
-            test_home_image(b"image"),
-        )
-        .await
-        .unwrap();
+        let drive = lease.home_drive_config().await.unwrap().unwrap();
+        match drive.seed_image {
+            Some(sandbox::HomeDriveSeedImage::Move(source)) => {
+                tokio::fs::rename(source, paths.active_home_image(&sandbox_id))
+                    .await
+                    .unwrap();
+            }
+            Some(sandbox::HomeDriveSeedImage::Copy(_)) => panic!("checkout must use Move"),
+            None => {
+                tokio::fs::write(
+                    paths.active_home_image(&sandbox_id),
+                    test_home_image(b"image"),
+                )
+                .await
+                .unwrap();
+            }
+        }
         lease
     }
 
@@ -1740,8 +1751,12 @@ mod tests {
         .unwrap()
     }
 
-    fn home_seed_path(lease: &mut HomeImageLease) -> std::path::PathBuf {
-        let drive = lease.home_drive_config().expect("home drive configured");
+    async fn home_seed_path(lease: &mut HomeImageLease) -> std::path::PathBuf {
+        let drive = lease
+            .home_drive_config()
+            .await
+            .unwrap()
+            .expect("home drive configured");
         match drive.seed_image.expect("cache hit has a pinned seed") {
             sandbox::HomeDriveSeedImage::Move(path) | sandbox::HomeDriveSeedImage::Copy(path) => {
                 path
@@ -2620,7 +2635,7 @@ mod tests {
             .await;
         assert!(home_image.is_cache_hit());
         assert!(home_image.history_proof_binding().is_none());
-        let seed = home_seed_path(&mut home_image);
+        let seed = home_seed_path(&mut home_image).await;
         assert_eq!(tokio::fs::read(&seed).await.unwrap(), home_bytes);
         let active_image = paths.active_home_image(&sandbox_id);
         tokio::fs::create_dir_all(active_image.parent().unwrap())
@@ -2679,7 +2694,7 @@ mod tests {
             .await;
         assert!(checkout.is_cache_hit());
         assert_eq!(
-            tokio::fs::read(home_seed_path(&mut checkout))
+            tokio::fs::read(home_seed_path(&mut checkout).await)
                 .await
                 .unwrap(),
             home_bytes
@@ -2722,7 +2737,7 @@ mod tests {
             .await;
         assert!(home_image.is_cache_hit());
         assert_eq!(
-            tokio::fs::read(home_seed_path(&mut home_image))
+            tokio::fs::read(home_seed_path(&mut home_image).await)
                 .await
                 .unwrap(),
             previous_home
@@ -2731,7 +2746,7 @@ mod tests {
         tokio::fs::create_dir_all(active_image.parent().unwrap())
             .await
             .unwrap();
-        tokio::fs::rename(home_seed_path(&mut home_image), &active_image)
+        tokio::fs::rename(home_seed_path(&mut home_image).await, &active_image)
             .await
             .unwrap();
         tokio::fs::write(&active_image, &next_home).await.unwrap();
@@ -2778,7 +2793,7 @@ mod tests {
             .await;
         assert!(checkout.is_cache_hit());
         assert_eq!(
-            tokio::fs::read(home_seed_path(&mut checkout))
+            tokio::fs::read(home_seed_path(&mut checkout).await)
                 .await
                 .unwrap(),
             next_home
@@ -2951,7 +2966,7 @@ mod tests {
             .await;
         assert!(checkout.is_cache_hit());
         assert_eq!(
-            tokio::fs::read(home_seed_path(&mut checkout))
+            tokio::fs::read(home_seed_path(&mut checkout).await)
                 .await
                 .unwrap(),
             test_home_image(b"image")
@@ -3053,7 +3068,7 @@ mod tests {
             .await;
         assert!(checkout.is_cache_hit());
         assert_eq!(
-            tokio::fs::read(home_seed_path(&mut checkout))
+            tokio::fs::read(home_seed_path(&mut checkout).await)
                 .await
                 .unwrap(),
             test_home_image(b"image")

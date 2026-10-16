@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { setTimeout as delay } from "node:timers/promises";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { Client } from "pg";
+import { Client, DatabaseError, Query } from "pg";
 import postgres from "postgres";
 import { z } from "zod";
 
@@ -74,6 +76,81 @@ async function retainedState() {
   };
 }
 
+async function withPausedCopy(
+  text: string,
+  check: () => Promise<void>,
+): Promise<void> {
+  const blocker = new Client({ connectionString: url.toString() });
+  await blocker.connect();
+  try {
+    const backend = await blocker.query<{ pid: unknown }>(
+      "SELECT pg_backend_pid() AS pid",
+    );
+    const pid = backend.rows[0]?.pid;
+    assert.ok(typeof pid === "number" && Number.isSafeInteger(pid) && pid > 0);
+
+    class PausedCopy extends Query<Record<string, unknown>, []> {
+      paused = false;
+
+      handleCopyData(message: { chunk: unknown }): void {
+        if (!this.paused) {
+          this.paused = true;
+          blocker.connection.stream.pause();
+          this.emit("firstCopyData", message.chunk);
+        }
+      }
+    }
+
+    const resource = new PausedCopy(text);
+    let ended = false;
+    const outcome = new Promise<unknown>((resolve) => {
+      resource.once("error", (error: unknown) => {
+        ended = true;
+        resolve(error);
+      });
+      resource.once("end", () => {
+        ended = true;
+        resolve(new Error("COPY completed before cancellation"));
+      });
+    });
+    const ready = Promise.race([
+      new Promise<unknown>((resolve) => {
+        resource.once("firstCopyData", resolve);
+      }),
+      outcome.then((error) => {
+        throw error;
+      }),
+    ]);
+    try {
+      blocker.query(resource);
+      assert.ok(Buffer.isBuffer(await ready));
+      assert.equal(ended, false);
+      await check();
+    } finally {
+      let cancelled = false;
+      try {
+        if (!ended) {
+          const result = await client.query<{ cancelled: unknown }>(
+            "SELECT pg_cancel_backend($1) AS cancelled",
+            [pid],
+          );
+          assert.equal(result.rows[0]?.cancelled, true);
+          cancelled = true;
+        }
+      } finally {
+        blocker.connection.stream.resume();
+      }
+      const error = await outcome;
+      if (cancelled) {
+        assert.ok(error instanceof DatabaseError);
+        assert.equal(error.code, "57014");
+      }
+    }
+  } finally {
+    await blocker.end();
+  }
+}
+
 try {
   await applyPendingMigrations(sql, { beforeMillis: contraction.when });
   await client.connect();
@@ -107,8 +184,7 @@ try {
   const journalBefore = Array.from(
     await sql`SELECT * FROM drizzle.__drizzle_migrations ORDER BY id`,
   );
-  const rejectWithoutMutation = async (expected: RegExp) => {
-    await assert.rejects(applyPendingMigrations(sql), expected);
+  const assertUnchanged = async () => {
     assert.deepEqual(await retainedState(), baseline);
     assert.deepEqual(
       Array.from(
@@ -120,6 +196,23 @@ try {
       (await sql`SELECT count(*)::int AS count FROM conversations`)[0]?.count,
       1,
     );
+    assert.equal(
+      (await sql`SELECT count(*)::int AS count FROM agent_sessions`)[0]?.count,
+      1,
+    );
+    assert.equal(
+      (
+        await sql`SELECT count(*)::int AS count FROM information_schema.columns WHERE table_schema = 'public' AND (
+          (table_name = 'agent_runs' AND column_name IN ('session_id', 'continued_from_session_id')) OR
+          (table_name = 'chat_threads' AND column_name IN ('agent_session_id', 'agent_session_run_id'))
+        )`
+      )[0]?.count,
+      4,
+    );
+  };
+  const rejectWithoutMutation = async (expected: RegExp) => {
+    await assert.rejects(applyPendingMigrations(sql), expected);
+    await assertUnchanged();
   };
 
   await sql`UPDATE agent_runs SET launch_snapshot = ${sql.json({ ...snapshot, schemaVersion: 3 })} WHERE id = ${activeRunId}`;
@@ -154,6 +247,97 @@ try {
   await sql`CREATE VIEW unexpected_session_reader AS SELECT session_id FROM agent_runs`;
   await rejectWithoutMutation(/depend on it/);
   await sql`DROP VIEW unexpected_session_reader`;
+
+  await sql`SET transaction_timeout = '30s'`;
+  try {
+    await rejectWithoutMutation(/transaction_timeout initially disabled/);
+  } finally {
+    await sql`RESET transaction_timeout`;
+  }
+
+  // A streaming SELECT holds Thread's normal read lock without an explicit
+  // transaction. Run's earlier DDL must roll back when the later lock is busy.
+  await withPausedCopy(
+    `COPY (
+      SELECT id, ordinal, repeat('x', 8192)
+      FROM chat_threads CROSS JOIN generate_series(1, 8192) AS ordinal
+      WHERE id = '${threadId}'
+    ) TO STDOUT`,
+    async () => {
+      await rejectWithoutMutation(/lock timeout/);
+    },
+  );
+
+  // Inject execution latency only into future journal writes. This is not lock
+  // waiting (which has its own shorter deadline), so it proves the server's
+  // whole-transaction timer covers the runner after the final DDL statement.
+  await sql`ALTER TABLE drizzle.__drizzle_migrations
+    ADD CONSTRAINT slow_journal_write CHECK (pg_sleep(3) IS NOT NULL) NOT VALID`;
+  try {
+    // A transaction timeout terminates the connection. Exercise the real CLI
+    // in its own process, then verify rollback from a surviving connection.
+    const migration = spawn(
+      process.execPath,
+      ["--import", "tsx", "scripts/migrate.ts"],
+      { env: { ...process.env, DATABASE_URL: url.toString() } },
+    );
+    let stderr = "";
+    migration.stdout.resume();
+    migration.stderr.on("data", (chunk: Buffer) => {
+      stderr = (stderr + chunk.toString("utf8")).slice(-16_384);
+    });
+    let finished = false;
+    const completion = new Promise<number | null>((resolve) => {
+      migration.once("error", (error) => {
+        finished = true;
+        stderr += error.message;
+        resolve(null);
+      });
+      migration.once("close", (code) => {
+        finished = true;
+        resolve(code);
+      });
+    });
+    try {
+      const deadline = performance.now() + 15_000;
+      while (true) {
+        const observed = await client.query<{ sleeping: unknown }>(
+          `SELECT EXISTS (
+            SELECT 1 FROM pg_stat_activity
+            WHERE datname = $1 AND wait_event = 'PgSleep'
+              AND query ILIKE '%INSERT INTO%__drizzle_migrations%'
+          ) AS sleeping`,
+          [databaseName],
+        );
+        if (observed.rows[0]?.sleeping === true) {
+          break;
+        }
+        assert.equal(
+          finished,
+          false,
+          `Migration exited before journal write: ${stderr}`,
+        );
+        assert.ok(
+          performance.now() < deadline,
+          "Migration did not reach journal write",
+        );
+        await delay(10);
+      }
+      assert.notEqual(
+        await completion,
+        0,
+        "Slow journal write must fail migration",
+      );
+    } finally {
+      if (!finished) {
+        migration.kill("SIGKILL");
+        await completion;
+      }
+    }
+    await assertUnchanged();
+  } finally {
+    await sql`ALTER TABLE drizzle.__drizzle_migrations DROP CONSTRAINT slow_journal_write`;
+  }
 
   const startedAt = performance.now();
   await applyPendingMigrations(sql);
@@ -210,7 +394,7 @@ try {
     acceptedJournal,
   );
   console.log(
-    `Session/Conversation contraction passed: preserved Run/Thread/Chat/Memory/blob ownership, rejected live legacy Runs and catalog drift, runtime ORM survived; contraction ${Math.round(elapsedMs)}ms`,
+    `Session/Conversation contraction passed: preserved Run/Thread/Chat/Memory/blob ownership, rejected live legacy Runs and catalog drift, rolled back busy locks and journal timeout, runtime ORM survived; contraction ${Math.round(elapsedMs)}ms`,
   );
 } finally {
   await client.end();

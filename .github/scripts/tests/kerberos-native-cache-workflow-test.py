@@ -12,6 +12,7 @@ consumers = (
     ("crates", "check", "cargo clippy"),
     ("crates", "check-docs", "cargo doc"),
     ("crates", "coverage", "cargo llvm-cov nextest"),
+    ("crates", "runner-rootfs-process-test", "cargo test --no-run --profile local"),
     ("crates", "host-cpu-fairness-build", "runner-native-test-artifact.sh build"),
     ("crates", "guest-rpc-firecracker-build", "runner-native-test-artifact.sh build"),
     ("crates", "native-kerberos-runtime", "check-native-kerberos.sh"),
@@ -32,7 +33,7 @@ for workflow, name, compiler in consumers:
         expected_key = expected_key.replace("kerberos-native-v2-", "kerberos-native-runner-v1-", 1)
         expected_key += "-${{ env.TARGET_TRIPLE }}"
         assert job["env"]["TARGET_TRIPLE"] == "${{ matrix.target }}"
-    elif name.endswith("-build"):
+    elif "TARGET_TRIPLE" in job.get("env", {}):
         expected_key += "-${{ env.TARGET_TRIPLE }}"
     assert restore["with"]["key"] == expected_key
     assert "build-dependencies.sh" in restore["with"]["key"]

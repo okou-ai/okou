@@ -12,6 +12,88 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1031.3](https://github.com/okou-ai/okou/compare/app-v0.1031.2...app-v0.1031.3) (2026-10-16)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.569.0
+    * @okouai/core bumped to 8.762.0
+
+## [0.1031.2](https://github.com/okou-ai/okou/compare/app-v0.1031.1...app-v0.1031.2) (2026-10-15)
+
+
+### Performance Improvements
+
+* **app:** isolate sidebar menus from navigation updates ([#40476](https://github.com/okou-ai/okou/issues/40476)) ([4bca21e](https://github.com/okou-ai/okou/commit/4bca21e8c3b333c06b102bd14f0af110585a5eaa))
+* isolate uploaded template catalog renders ([#40462](https://github.com/okou-ai/okou/issues/40462)) ([c13a5c5](https://github.com/okou-ai/okou/commit/c13a5c5e298c4ad1f6d62bd2e5bcddbaa1870bc7))
+* trim composer rendering and connector fixture work ([#40474](https://github.com/okou-ai/okou/issues/40474)) ([6e989ed](https://github.com/okou-ai/okou/commit/6e989ed0aa8beffbf9969284545dedfbd5aaeabc))
+
+## [0.1031.1](https://github.com/okou-ai/okou/compare/app-v0.1031.0...app-v0.1031.1) (2026-10-15)
+
+
+### Bug Fixes
+
+* **slack:** preserve get started chat during connection ([#40403](https://github.com/okou-ai/okou/issues/40403)) ([43f72b9](https://github.com/okou-ai/okou/commit/43f72b9e960115e0da83f55e362cbbf9202415c9))
+
+
+### Performance Improvements
+
+* avoid unrelated template catalog subscriptions ([#40430](https://github.com/okou-ai/okou/issues/40430)) ([55bd1ca](https://github.com/okou-ai/okou/commit/55bd1ca95d5c23ffad9ff6965880279adf4bc2ce))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.568.0
+    * @okouai/core bumped to 8.761.0
+
+## [0.1031.0](https://github.com/okou-ai/okou/compare/app-v0.1030.0...app-v0.1031.0) (2026-10-15)
+
+
+### Features
+
+* connect wechat from works with qr pairing ([#40373](https://github.com/okou-ai/okou/issues/40373)) ([116a68f](https://github.com/okou-ai/okou/commit/116a68fc8f66048e7d80593c3bf303a7475f409a))
+* **vnc:** prepare native network contracts and readers ([#40316](https://github.com/okou-ai/okou/issues/40316)) ([ea3aa10](https://github.com/okou-ai/okou/commit/ea3aa10c7fa4fce02f776752a904c4cca8b43f7e))
+
+
+### Bug Fixes
+
+* **app:** let slash preview covers scroll to the panel top edge ([#40324](https://github.com/okou-ai/okou/issues/40324)) ([6902a74](https://github.com/okou-ai/okou/commit/6902a7431d799b6b6d31d0ebb7289106a220beb3))
+* **app:** reconcile teams connection completion and entry flows ([#40366](https://github.com/okou-ai/okou/issues/40366)) ([6c2075b](https://github.com/okou-ai/okou/commit/6c2075b4f81a94c1ee22f4b67bbb25aff1d6bbe6)) [#40196](https://github.com/okou-ai/okou/issues/40196)
+* **slack:** reconcile canonical connection journeys ([#40347](https://github.com/okou-ai/okou/issues/40347)) ([d521a3b](https://github.com/okou-ai/okou/commit/d521a3b4b5843220237c5676529904fb4f1c5c49))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.567.0
+    * @okouai/core bumped to 8.760.0
+
+## [0.1030.0](https://github.com/okou-ai/okou/compare/app-v0.1029.1...app-v0.1030.0) (2026-10-15)
+
+
+### Features
+
+* **app:** adopt telegram connection settings and callback protocol ([#40330](https://github.com/okou-ai/okou/issues/40330)) ([84f0f66](https://github.com/okou-ai/okou/commit/84f0f6685d8755e9f006590fa2f4acb86c32b845)) [#40196](https://github.com/okou-ai/okou/issues/40196)
+
+
+### Performance Improvements
+
+* isolate chat sidebar, panel, and composer subscriptions ([#40261](https://github.com/okou-ai/okou/issues/40261)) ([c145bd1](https://github.com/okou-ai/okou/commit/c145bd12252817b0a684cf6f535f13e204898f8e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.566.2
+    * @okouai/core bumped to 8.759.3
+
 ## [0.1029.1](https://github.com/okou-ai/okou/compare/app-v0.1029.0...app-v0.1029.1) (2026-10-15)
 
 

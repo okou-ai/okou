@@ -27,7 +27,7 @@ export function PrivateNetworkAffectedMembers({
       <p role="alert">
         {t(
           ($) => {
-            return $.cloudflareAccess.impactSummary;
+            return $.vnc.native.impactSummary;
           },
           {
             members: t(
@@ -38,7 +38,7 @@ export function PrivateNetworkAffectedMembers({
             ),
             hosts: t(
               ($) => {
-                return $.cloudflareAccess.hostCount;
+                return $.vnc.native.hostCount;
               },
               { count: preview.otherHostCount },
             ),

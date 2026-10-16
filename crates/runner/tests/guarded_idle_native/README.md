@@ -1,5 +1,118 @@
 # Guarded idle terminal fixture
 
+## Native foreground progress
+
+`native_foreground_records_fresh_and_exact_reuse_progress` composes the actual
+startup and guarded runtime readers with real foreground Fresh preparation or
+exact original reuse, production heartbeat delivery and host observation. It
+runs both paths in fresh and matching-snapshot factories. Startup must complete
+all original 4 GiB under held Unknown; runtime completes all bytes under actual
+sustained Ready using the original shared P2 authority.
+
+The real pool and status ownership waits and an invocation-owned blocking Unix
+read preserve their dependencies. Independent observer and API-backed heartbeat
+work must complete at the applicable held boundaries. Foreground completion
+records a positively polled real pool/status wait before measuring progress and
+requires actual Guest RPC and P2 phase settlement. Heartbeat delivery and readiness
+reads start only after the foreground status wait has positively polled Pending.
+Required original saving
+retains its full lease through positive backing exit and the blocked kernel
+read, then still writes and verifies the complete durable 64 MiB tail. The
+ordinary bounded-child and HTTP tests run without KVM; default Cargo also runs
+the real-file/CLI refusal contract. No fixed sleep certifies progress.
+
+Use the exact-source bounded P1 invocation below, selecting the foreground test.
+Metadata additionally requires `native_foreground_policy_json`,
+`native_foreground_inputs_json` and `native_foreground_snapshot_bytes` (4294967296),
+binding the exact supplied policy and optional-input files.
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/foreground_report.py "$P1_OUTPUT_DIRECTORY"
+```
+
+This proves component composition with synthetic foreground commands, not full
+production Reactor/P2 installation or inference. Exact reuse returns its original
+home-promotion owner to required saving. Inventory/logical/replacement/restore/aged
+growth, Critical/stale and post-wait fences remain #40412 under #40353; accepted
+cancellation/late results and final parent reconciliation remain #40355. Startup
+stays unguarded; cold/full residency, calibrated envelopes, numerical relief,
+unknown template producer and production OOM protection remain unverified.
+
+## Production startup reader completion
+
+`native_startup_records_complete_snapshot_reads_and_joined_owners` invokes the
+actual production `MemoryPrefetchTasks::spawn` entry on the original immutable
+4 GiB `memory.bin`, in fresh and matching-snapshot factories. A non-default
+Lifecycle test-support observer records the concrete reader outcomes. Exactly
+one complete read, all original bytes and a positive physical producer drain are
+required; joined failure, partial reads, task counts and logs cannot certify it.
+
+An actual guarded runtime reader shares the original P2 authority with required
+saving. Sampling is held at initial Unknown while startup finishes, and the
+runtime reader must accept zero operations or bytes. Both readers and the
+pressure/sampler owners join before required original saving and dependency
+teardown. The original full logical lease, positive backing wait, complete
+64 KiB home payload and durable 64 MiB tail remain required.
+
+Use the exact-source binary, manifest, packaged inputs and bounded P1 invocation
+below, selecting this test by its exact name. Metadata additionally requires
+`native_startup_policy_json`, `native_startup_inputs_json` (the exact UTF-8 policy
+and optional-input files) and `native_startup_snapshot_bytes` (4294967296).
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/startup_report.py "$P1_OUTPUT_DIRECTORY"
+```
+
+Ordinary Cargo/default Crates CI runs the real-file/CLI refusal regressions through
+`native_startup_report_requires_complete_bytes_and_joined_producers`. The KVM/NBD
+entry remains explicitly ignored. Startup retains its existing unguarded
+production behavior; no startup P2 admission or production policy is installed.
+Foreground/heartbeat/contention remains #40353, and accepted cancellation/late
+results and final parent reconciliation remain #40355 under delivery group #40297.
+Full cache residency, cold-cache behavior, numerical relief, calibrated envelopes,
+unknown template producer and production OOM protection remain unverified.
+
+## Critical multiwave suppression
+
+`native_critical_records_bounded_waves_and_suppressed_snapshot_reads` runs fresh
+and matching snapshot factories with one original exact Guest and two newly
+prepared tenant-free blanks. All share the original P2 authority and full logical
+leases, with capacity for a fitting spare profile. Set the supplied policy's
+`pressure_max_wave_entries` to one and provide actual host headroom classified
+Critical by its explicit watermark; the fixture never changes host availability.
+Supply the optional JSON input described below with the original immutable
+4 GiB `memory.bin` and a positive overhead covering its retained read buffer.
+
+The real guarded runtime reader is armed under initial Unknown. Three distinct
+single-entry pressure waves must finish without refusal, skip or uncertainty,
+while the pending reader reports zero accepted operations or bytes throughout.
+Each wave must receive a new actual Critical read after its completion is
+observed; the controller's deliberate post-wave Unknown state cannot supply it.
+The independent sampler records actual `/proc` clocks and availability. Both
+additional original backing generations must positively exit; the original exact
+home retains its full lease through the required durable 64 MiB tail and restores
+every byte of its 64 KiB payload. Cancellation drains the pending reader, then
+joins the controller and sampler before P2/tracker/factory teardown. All failed
+case directories and raw evidence remain available for diagnosis.
+
+Use the exact-source binary, manifest, packaged inputs and bounded P1 invocation
+below, selecting this test by its exact name. Metadata additionally requires
+`native_critical_policy_json`, `native_critical_inputs_json` (the exact UTF-8 input
+files) and `native_critical_snapshot_bytes` (4294967296). Then validate:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/critical_report.py "$P1_OUTPUT_DIRECTORY"
+```
+
+Ordinary Cargo/default Crates CI runs the real-file/CLI refusal regressions through
+`native_critical_report_requires_bounded_waves_and_suppressed_reads`; the actual
+KVM/NBD entry remains explicitly ignored. The report proves supplied Critical
+classification and bounded cleanup, not numerical host shortage, physical RAM
+relief, cold-cache behavior or OOM protection. Startup/foreground/heartbeat and
+accepted provider/read cancellation or late-result composition remain separate
+acceptance; unknown template producer, complete residency and calibrated envelopes
+are still unverified.
+
 ## Ordinary verification
 
 ```sh

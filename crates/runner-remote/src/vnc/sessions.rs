@@ -24,6 +24,7 @@ use super::{
 };
 use crate::ssh::DirectTcpIpStream;
 use runner_types::ids::RunId;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub(super) enum DirectOrSshStream {
     Direct(TcpStream),
@@ -111,6 +112,62 @@ pub(super) struct Session {
     pub(super) cancel: CancellationToken,
     pub(super) closed: CancellationToken,
     pub(super) engine: tokio::sync::Mutex<Engine>,
+    diagnostics: Option<crate::diagnostics::Handle>,
+    identity: crate::diagnostics::Identity,
+    diagnostic_terminal: Mutex<bool>,
+    dependency: Option<crate::diagnostics::Dependency>,
+    native: Option<crate::diagnostics::NativeSource>,
+    diagnostic_active: Arc<AtomicBool>,
+}
+
+impl Session {
+    pub(super) fn close(&self) {
+        // Latch intentional close before its cancellation can become failure evidence.
+        *self
+            .diagnostic_terminal
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = true;
+        self.retire();
+    }
+    pub(super) fn retire(&self) {
+        self.diagnostic_active.store(false, Ordering::Release);
+        self.cancel.cancel();
+    }
+    pub(super) fn failed(&self, operation: crate::diagnostics::Operation, failure: Failure) {
+        if matches!(
+            failure,
+            Failure::InvalidInput | Failure::StaleGeometry | Failure::SessionNotFound
+        ) {
+            return;
+        }
+        self.diagnostic_active.store(false, Ordering::Release);
+        let mut terminal = self
+            .diagnostic_terminal
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        if *terminal {
+            return;
+        }
+        *terminal = true;
+        if let Some(diagnostics) = &self.diagnostics {
+            diagnostics.record(crate::diagnostics::Record {
+                protocol: crate::diagnostics::Protocol::Vnc,
+                connection: self.info.connection_id,
+                operation,
+                identity: self.identity.clone(),
+                cause: crate::diagnostics::Cause::Vnc(failure),
+                dependency: self.dependency.clone().map(|mut dependency| {
+                    dependency.cause = self
+                        .native
+                        .as_ref()
+                        .and_then(|native| native.evidence.terminal())
+                        .map(crate::diagnostics::Cause::Native);
+                    dependency
+                }),
+                native: self.native.clone(),
+            });
+        }
+    }
 }
 
 pub(crate) struct Run {
@@ -121,6 +178,31 @@ pub(crate) struct Run {
     capacity: Arc<Semaphore>,
     sessions: Registry,
     tasks: TaskTracker,
+    diagnostics: std::sync::OnceLock<crate::diagnostics::Handle>,
+}
+
+#[derive(Default)]
+pub(super) struct StartEvidence {
+    identity: crate::diagnostics::Identity,
+    dependency: Option<crate::diagnostics::Dependency>,
+    native: Option<crate::diagnostics::NativeSource>,
+}
+
+impl StartEvidence {
+    pub(super) fn retain_ssh_failure(
+        &mut self,
+        connection: Uuid,
+        failure: crate::ssh::ForwardingFailure,
+    ) {
+        self.native = failure.native;
+        self.dependency = Some(crate::diagnostics::Dependency {
+            protocol: crate::diagnostics::Protocol::Ssh,
+            connection_id: connection,
+            cause: Some(crate::diagnostics::Cause::Ssh(failure.reason)),
+            configuration_created_at: failure.identity.created_at,
+            configuration_generation: failure.identity.generation,
+        });
+    }
 }
 
 impl Run {
@@ -138,11 +220,16 @@ impl Run {
             capacity: Arc::new(Semaphore::new(2)),
             sessions: Arc::new(Mutex::new(Entries::default())),
             tasks: TaskTracker::new(),
+            diagnostics: std::sync::OnceLock::new(),
         }
     }
 
     pub(crate) fn close(&self) {
         self.cancel.cancel();
+    }
+
+    pub(crate) fn set_diagnostics(&self, diagnostics: crate::diagnostics::Handle) {
+        let _ = self.diagnostics.set(diagnostics);
     }
 
     pub(super) fn invalidate(&self, connection: Option<Uuid>, ssh: bool) {
@@ -185,6 +272,34 @@ impl Run {
         request: Start,
         scope: &Scope,
         operation: Arc<OwnedSemaphorePermit>,
+    ) -> Result<Arc<Session>, Failure> {
+        let connection = request.connection_id;
+        let mut evidence = StartEvidence::default();
+        let result = self
+            .start_inner(request, scope, operation, &mut evidence)
+            .await;
+        if let Err(failure) = &result
+            && let Some(diagnostics) = self.diagnostics.get()
+        {
+            diagnostics.record(crate::diagnostics::Record {
+                protocol: crate::diagnostics::Protocol::Vnc,
+                connection,
+                operation: crate::diagnostics::Operation::Start,
+                identity: evidence.identity,
+                cause: crate::diagnostics::Cause::Vnc(*failure),
+                dependency: evidence.dependency,
+                native: evidence.native,
+            });
+        }
+        result
+    }
+
+    async fn start_inner(
+        &self,
+        request: Start,
+        scope: &Scope,
+        operation: Arc<OwnedSemaphorePermit>,
+        evidence: &mut StartEvidence,
     ) -> Result<Arc<Session>, Failure> {
         let started = Instant::now();
         scope.check()?;
@@ -233,6 +348,7 @@ impl Run {
                 request.connection_id,
                 self.ssh.is_some(),
                 Some((&private_root, Arc::clone(&native_owner), scope.deadline)),
+                &mut evidence.identity,
             ))
             .await??;
         admission.bind(
@@ -286,7 +402,7 @@ impl Run {
                 } => {
                     let ssh = self.ssh.as_ref().ok_or(Failure::UnsupportedProfile)?;
                     let stream = scope
-                        .wait(ssh.open_direct_tcpip(
+                        .wait(ssh.open_direct_tcpip_diagnosed(
                             connection,
                             generation,
                             &credential.host,
@@ -295,11 +411,24 @@ impl Run {
                             scope.deadline,
                         ))
                         .await?
-                        .map_err(Failure::from)?;
+                        .map_err(|failure| {
+                            let reason = Failure::from(failure.reason);
+                            evidence.retain_ssh_failure(connection, failure);
+                            reason
+                        })?;
                     transport = Transport::Ssh {
                         connection,
                         generation: stream.generation(),
                     };
+                    evidence.native = stream.diagnostic_source();
+                    let identity = stream.diagnostic_identity();
+                    evidence.dependency = Some(crate::diagnostics::Dependency {
+                        protocol: crate::diagnostics::Protocol::Ssh,
+                        connection_id: connection,
+                        cause: None,
+                        configuration_created_at: identity.created_at,
+                        configuration_generation: identity.generation,
+                    });
                     DirectOrSshStream::Ssh(Box::new(stream))
                 }
             };
@@ -341,6 +470,7 @@ impl Run {
                                 exchanges: 0,
                                 total: 0,
                                 awaiting_kdc_reply: false,
+                                diagnostics: evidence,
                             };
                             let result = Box::pin(rfb_client::authenticate_qemu_gssapi(
                                 stream,
@@ -461,9 +591,26 @@ impl Run {
                 return Err(Failure::Cancelled);
             }
             diagnostic.stage = "session_admission";
+            let session_id = Uuid::new_v4();
+            evidence.identity.session = Some(session_id);
+            let ssh_dependency = evidence.dependency.clone();
+            let native = evidence.native.clone();
+            let diagnostic_active = Arc::new(AtomicBool::new(true));
+            if let (Some(ssh), Some(source), Some(handle)) =
+                (ssh_dependency.clone(), &native, self.diagnostics.get())
+                && let Some(watch) = handle.watch_vnc(
+                    request.connection_id,
+                    evidence.identity.clone(),
+                    source,
+                    ssh,
+                    &diagnostic_active,
+                )
+            {
+                source.evidence.observe(watch);
+            }
             let session = Arc::new(Session {
                 info: Info {
-                    session_id: Uuid::new_v4(),
+                    session_id,
                     connection_id: request.connection_id,
                     mode: request.mode,
                 },
@@ -473,6 +620,12 @@ impl Run {
                 cancel: session_cancel,
                 closed: CancellationToken::new(),
                 engine: tokio::sync::Mutex::new(engine),
+                diagnostics: self.diagnostics.get().cloned(),
+                identity: evidence.identity.clone(),
+                diagnostic_terminal: Mutex::new(false),
+                dependency: ssh_dependency,
+                native,
+                diagnostic_active,
             });
             admission.admit(Arc::clone(&session))?;
             self.tasks.spawn(cleanup(
@@ -508,7 +661,8 @@ impl Run {
             return Err(Failure::Cancelled);
         }
         if Instant::now() >= session.expires {
-            session.cancel.cancel();
+            session.failed(crate::diagnostics::Operation::Retirement, Failure::TimedOut);
+            session.retire();
             return Err(Failure::TimedOut);
         }
         // Notifications only cancel this exact authority. Subscription outages
@@ -541,9 +695,9 @@ async fn cleanup(
     tokio::select! { biased;
         () = session.cancel.cancelled() => {},
         () = sandbox.cancelled() => {},
-        () = tokio::time::sleep_until(expires) => {},
+        () = tokio::time::sleep_until(expires) => { session.failed(crate::diagnostics::Operation::Retirement, Failure::TimedOut); },
     }
-    session.cancel.cancel();
+    session.retire();
     // Active operations observe the same cancellation before releasing this
     // mutex. Taking it proves no RFB operation still owns the socket.
     session.engine.lock().await.close();

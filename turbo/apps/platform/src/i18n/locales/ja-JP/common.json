@@ -335,7 +335,8 @@
       "telegram": "Telegram",
       "test": "テスト",
       "web": "ウェブ",
-      "webhook": "Webhook"
+      "webhook": "Webhook",
+      "wechat": "WeChat"
     },
     "statuses": {
       "cancelled": "キャンセルされました",
@@ -2005,7 +2006,8 @@
       "openTelegramMessage": "Telegram で元のメッセージを開く",
       "slack": "Slack",
       "teams": "Microsoft Teams",
-      "telegram": "Telegram"
+      "telegram": "Telegram",
+      "wechat": "WeChat"
     },
     "permissions": {
       "actionDescription": "{{action}} {{permissionName}}",
@@ -2890,12 +2892,8 @@
     "edit": "Cloudflare Access を編集",
     "failed": "Cloudflare Accessの変更を保存できませんでした。再試行してください。",
     "forbidden": "共有 Cloudflare Access を変更できるのは組織の管理者だけです。",
-    "hostCount_other": "SSH ホスト {{count}} 台",
     "impactChanged": "この変更で影響を受けるホストが変わりました。再度確認する前に最新の影響を確認してください。",
-    "impactConfirm": "これらのメンバーの SSH ホストは保存されたままですが、所有者が再設定するか明示的に直接接続を選ぶまで接続できないことを理解しました。",
-    "impactSummary": "影響範囲：{{members}}、{{hosts}}。SSH ホストは保存されますが、所有者が再設定するか明示的に直接接続を選ぶまで接続できません。自動的に直接接続には切り替わりません。",
     "inUse": "SSH ホストがこの Cloudflare Access を使用しています。ホストの所有者が先に別の設定へ再接続するか、ホストを削除する必要があります。",
-    "inUseHelp": "自分の SSH ホストがまだこの設定を使用しています。別の設定に再バインドするか、明示的に直接接続を選択するか、先にホストを削除してください。",
     "invalidInput": "一部のCloudflare Access設定が無効です。入力内容を確認して再試行してください。",
     "keepChanges": "このバージョンに自分の変更を適用",
     "latest": "最後に保存された設定",
@@ -3443,29 +3441,50 @@
         "accountMismatchDescription": "現在、このOkouアカウントではSlackアカウント{{currentAccount}}を使用しています。このリンクを開いた{{requestedAccount}}に切り替えますか？",
         "accountMismatchDescriptionWorkspace": "現在、このOkouアカウントでは{{workspace}}でSlackアカウント{{currentAccount}}を使用しています。このリンクを開いた{{requestedAccount}}に切り替えますか？",
         "accountMismatchTitle": "Slackアカウントを切り替えますか？",
+        "authorizationFailed": "Slack の認証は完了していません。現在の接続状態を以下に表示しています。もう一度お試しください。",
+        "authorizationReturned": "認証から戻りました。以下は現在の接続状態です。",
         "connectDescription": "アカウントをこの Slack ワークスペースにリンクすると、Slack からエージェントと直接対話できるようになります。",
+        "connectedAccount": "Slack アカウント: {{account}}",
         "connectTitle": "Slack に接続します",
+        "currentConnection": "Slack に接続済み",
         "errorFallback": "Slack接続を確認または開始できませんでした。もう一度お試しください。",
         "invalidDescription": "このページは、Slack 接続リンクから開かれるように設計されています。",
         "keepAccount": "{{account}}を維持",
         "open": "Slack を開く",
+        "reauthorize": "Slack の権限を更新",
+        "retryStatus": "再確認",
+        "startAgain": "やり直す",
         "successDescription": "チャットを開始するには、任意のチャンネルでインストール済みのボットにメンションするか、DM を送信してください。",
         "successDescriptionWorkspace": "{{workspace}} に接続しています。チャットを開始するには、任意のチャンネルでインストール済みのボットにメンションするか、DM を送信してください。",
-        "successTitle": "Slack に接続しました!",
         "switchAccount": "{{account}}に切り替える",
+        "unavailable": "現在 Slack に接続できません。後でもう一度お試しください。",
         "workspaceMismatchDescription": "このSlackワークスペースは現在のOkou組織では利用できません。組織を切り替えるか、管理者にお問い合わせください。",
         "workspaceMismatchDescriptionNamed": "現在のOkou組織は{{workspace}}に接続されています。組織を切り替えるか、管理者にアンインストールを依頼してから、このSlackワークスペースに接続してください。",
         "workspaceMismatchTitle": "Slackワークスペースが一致しません"
       },
       "teams": {
+        "authorize": "Microsoft Teams を承認",
         "connectDescription": "Teams アカウントをリンクすると、Microsoft Teams からエージェントと直接対話できるようになります。",
-        "connectDescriptionNamed": "{{displayName}} の場合は、Teams アカウントをリンクして、Microsoft Teams からエージェントと直接やり取りできるようにします。",
+        "connectedDescription": "Teams アカウントは接続されています。",
         "connectTitle": "Microsoft Teams を接続します",
-        "invalidDescription": "このページは、Microsoft Teams 接続リンクから開かれるように設計されています。",
+        "currentState": "現在の Teams の状態",
+        "existingConnection": "既存の Teams 接続がありますが、このリンクが指定するアカウントの確認にはなりません。",
+        "identityMismatch": "指定された Teams アカウントまたはワークスペースは現在の接続と一致しません。",
+        "identityUnknown": "このリンクの Teams アカウントを確認できません。ページを更新するか、Teams を開いてアカウントを確認してください。",
+        "install": "Teams にインストール",
+        "invalidContext": "このリンクには Teams アカウント情報が不足しています。Teams から新しい接続リンクを開いてください。",
         "open": "オープンチーム",
+        "orgMismatch": "このリンクは別の組織用です。その組織に切り替えて再試行してください。",
+        "pendingDescription": "アカウントの準備ができました。Teams にアプリをインストールし、このページを更新して接続を確認してください。",
+        "pendingTitle": "Teams にインストールして完了",
         "providerName": "Microsoft Teams",
+        "refresh": "Teams の状態を更新",
+        "reinstall": "Teams に再インストール",
+        "requestedAccount": "リンクに記載されたアカウント: {{name}}",
+        "statusFailed": "Teams の接続を確認できません。再試行してください。",
         "successDescription": "{{team}} に接続されています。チャットを開始するには、Teams で @{{botName}} にメンションします。",
-        "successTitle": "Microsoft Teams に接続されました"
+        "successTitle": "Microsoft Teams に接続されました",
+        "unavailable": "Teams の設定は利用できません。組織の管理者にお問い合わせください。"
       },
       "telegram": {
         "alreadyTitle": "すでに Telegram に接続されています",
@@ -5577,6 +5596,9 @@
       "attention_other": "{{count}} 個の VNC ホストで対応が必要です",
       "observedAt": "記録日時 {{time}}",
       "reasons": {
+        "access_protocol_failure": "Cloudflare 接続プロトコルでエラーが発生しました。",
+        "access_rejected": "Cloudflare Access がサービストークンを拒否しました。",
+        "access_tls_failure": "Cloudflare ゲートウェイの証明書検証に失敗しました。",
         "authentication_failed": "認証またはサーバーの識別情報の検証に失敗しました。",
         "disconnected": "接続試行中にサーバーが切断しました。",
         "invalid_credential": "保存済みの認証情報を使用できませんでした。",
@@ -5584,7 +5606,9 @@
         "kerberos_non_renewable": "Kerberos 認証情報を更新できません。",
         "kerberos_renewal_exhausted": "Kerberos 認証情報の更新上限に達しました。",
         "network_failure": "接続の通信に失敗しました。",
+        "origin_tls_failure": "オリジン TLS の証明書検証に失敗しました。",
         "protocol": "サーバーが選択した接続プロトコルを完了しませんでした。",
+        "tailscale_unavailable": "選択した Tailscale ピアを利用できません。",
         "timed_out": "接続試行がタイムアウトしました。",
         "unsafe_destination": "ネットワークポリシーにより接続先が拒否されました。",
         "unsupported_profile": "サーバーは選択したセキュリティ設定に対応していません。"
@@ -5676,6 +5700,18 @@
     "loadFailed": "VNC 設定を読み込めませんでした。",
     "loading": "VNC 設定を読み込み中…",
     "manage": "VNC を管理",
+    "native": {
+      "editPending": "このプライベートネットワーク経路の編集はまだ利用できません。",
+      "hostCount_other": "{{count}} 台のホスト",
+      "impactConfirm": "これらのメンバーのホストは保存されたままですが、所有者が再関連付けするまで接続できないことを理解しています。",
+      "impactSummary": "影響対象: {{members}}、{{hosts}}。ホストは保存されたままですが、所有者が再関連付けするまで接続できません。直接接続に自動で切り替わるホストはありません。",
+      "inUse": "SSH または VNC ホストがこのネットワークを使用しています。先にホストを再関連付けするか削除してください。",
+      "kdcRole": "認証サーバー",
+      "needsRebind": "このプライベートネットワーク経路には新しい設定が必要です。再関連付けするまで接続できません。",
+      "originTls": "オリジン TLS",
+      "protectionHelp": "この認証モードはデスクトップの通信を暗号化しません。選択したプライベートネットワーク経路で、このサーバーまでの接続全体を保護する必要があります。",
+      "rfbRole": "デスクトップ"
+    },
     "port": "ポート",
     "retry": "再試行",
     "rsaAes": {
@@ -6520,6 +6556,30 @@
     "telegram": {
       "description": "Telegram メッセージをエージェントにルーティングする",
       "title": "Telegram"
+    },
+    "wechat": {
+      "code": "確認コード",
+      "connect": "接続",
+      "connected": "接続済み",
+      "creating": "QRコードを作成中…",
+      "description": "WeChatでエージェントとチャットできます。",
+      "disconnect": "接続解除",
+      "expired": "このQRコードは期限切れです。新しく作成してください。",
+      "failed": "WeChatに接続できませんでした。もう一度お試しください。",
+      "instructions": "WeChatでこのQRコードをスキャンし、スマートフォンで確認してください。",
+      "name": "WeChat",
+      "reconnect": "再接続",
+      "reconnect_required": "もう一度スキャンして再接続してください。",
+      "restart_required": "このWeChatアカウントはすでに連携されています。再接続するには新しいQRコードを作成してください。",
+      "retry": "新しいQRコードを作成",
+      "scanned": "スキャンしました。スマートフォンで確認してください。",
+      "scope": "このエージェントへのダイレクトメッセージのみが連携されます。テキストメッセージに対応しています。",
+      "title": "WeChatに接続",
+      "unavailable": "接続はまだ設定されていません。",
+      "verification_blocked": "試行回数が多すぎます。新しいQRコードを作成してください。",
+      "verification_required": "WeChatに表示された確認コードを入力してください。",
+      "verify": "確認",
+      "waiting": "スキャンを待っています…"
     }
   }
 }

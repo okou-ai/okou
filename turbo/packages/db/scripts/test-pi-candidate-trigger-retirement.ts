@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { Client } from "pg";
+import { Client, DatabaseError, Query } from "pg";
 import postgres from "postgres";
 import { applyPendingMigrations } from "./migration-runner";
 
@@ -492,26 +492,191 @@ SELECT 1 / 0;`,
   await scenario(
     "migration waits then audits a fresh writer commit",
     async (client, url) => {
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0411; new non-billing transactions are prohibited.
-      await client.query("BEGIN");
-      await client.query(
-        "LOCK TABLE pi_memory_stage1_candidates IN ROW EXCLUSIVE MODE",
-      );
-      // An unexplained excess is invisible to the migration's earlier snapshot.
-      await client.query("UPDATE blobs SET ref_count = 3");
-      const attempt = apply(url, {
-        connection: { application_name: "pi-retirement-wait" },
-      });
-      const rejected = assert.rejects(
-        attempt,
-        /Pi candidate retirement ownership audit failed/,
-      );
-      try {
-        await waitForLock(client, "pi-retirement-wait");
-      } finally {
-        await client.query("COMMIT");
+      const writer = new Client({ connectionString: url });
+      const observer = new Client({ connectionString: url });
+      class PausedCopy extends Query<Record<string, unknown>, []> {
+        paused = false;
+
+        handleCopyData(message: { chunk: unknown }): void {
+          if (!this.paused) {
+            this.paused = true;
+            writer.connection.stream.pause();
+            this.emit("firstCopyData", message.chunk);
+          }
+        }
       }
-      await rejected;
+
+      // The real writer stays uncommitted while its ordinary candidate read
+      // conflicts with the migration. COPY bounds streamed output to ~64 MiB.
+      const resource = new PausedCopy(`COPY (
+        WITH changed AS (
+          UPDATE blobs SET ref_count = 3 RETURNING hash, ref_count
+        )
+        SELECT c.pi_session_id, c.source_history_hash, changed.ref_count,
+          ordinal, repeat('x', 8192)
+        FROM pi_memory_stage1_candidates c
+        JOIN changed ON changed.hash = c.source_history_hash
+        CROSS JOIN generate_series(1, 8192) AS ordinal
+      ) TO STDOUT`);
+      let resourceEnded = false;
+      const outcome = new Promise<
+        { error: unknown } | { rowCount: number | null }
+      >((resolveOutcome) => {
+        resource.once("error", (error: unknown) => {
+          resourceEnded = true;
+          resolveOutcome({ error });
+        });
+        resource.once("end", (result: { rowCount: number | null }) => {
+          resourceEnded = true;
+          resolveOutcome({ rowCount: result.rowCount });
+        });
+      });
+      const firstData = new Promise<unknown>((resolveFirst) => {
+        resource.once("firstCopyData", resolveFirst);
+      });
+      // Own early error/end before submission without an unhandled rejection.
+      const ready = Promise.race([firstData, outcome]);
+      const errors: unknown[] = [];
+      const onClientError = (error: unknown) => {
+        errors.push(error);
+      };
+      writer.on("error", onClientError);
+      observer.on("error", onClientError);
+      let pid: number | undefined;
+      let submitted = false;
+      let waiting: Promise<void> | undefined;
+      let attemptOutcome:
+        Promise<{ error: unknown } | { completed: true }> | undefined;
+      try {
+        await writer.connect();
+        await observer.connect();
+        const backend = await writer.query<{ pid: unknown }>(
+          "SELECT pg_backend_pid() AS pid",
+        );
+        assert.equal(backend.rowCount, 1);
+        const value = backend.rows[0]?.pid;
+        assert.ok(
+          typeof value === "number" && Number.isSafeInteger(value) && value > 0,
+        );
+        pid = value;
+        writer.query(resource);
+        submitted = true;
+        const first = await ready;
+        assert.ok(Buffer.isBuffer(first), "COPY ended before writer readiness");
+        assert.equal(
+          first.toString("utf8"),
+          `session\t${hash}\t3\t1\t${"x".repeat(8192)}\n`,
+        );
+        assert.equal(writer.connection.stream.isPaused(), true);
+        assert.equal(resourceEnded, false);
+        const attempt = apply(url, {
+          connection: { application_name: "pi-retirement-wait" },
+        });
+        attemptOutcome = attempt.then(
+          () => {
+            return { completed: true as const };
+          },
+          (error: unknown) => {
+            return { error };
+          },
+        );
+        // The COPY client is busy. Observe the original actual migration wait
+        // from this scenario's separate connection and own early termination.
+        waiting = waitForLock(observer, "pi-retirement-wait");
+        await Promise.race([
+          waiting,
+          attemptOutcome.then((result) => {
+            if ("error" in result) throw result.error;
+            assert.fail("Migration completed before writer release");
+          }),
+          outcome.then((result) => {
+            if ("error" in result) throw result.error;
+            assert.fail("COPY completed before the migration wait");
+          }),
+        ]);
+        writer.connection.stream.resume();
+        const result = await outcome;
+        if ("error" in result) throw result.error;
+        assert.equal(result.rowCount, 8192);
+        // Normal COPY end commits the unrestricted UPDATE. This query waits
+        // for ReadyForQuery and obtains its own idle acknowledgement.
+        assert.deepEqual(
+          (await writer.query("SELECT ref_count FROM blobs")).rows,
+          [{ ref_count: 3 }],
+        );
+        assert.equal(writer.getTransactionStatus(), "I");
+        await assert.rejects(
+          attempt,
+          /Pi candidate retirement ownership audit failed/,
+        );
+      } catch (error) {
+        errors.push(error);
+      } finally {
+        if (submitted) {
+          let cancellationRequested = false;
+          try {
+            if (!resourceEnded) {
+              assert.ok(pid !== undefined);
+              const cancelled = await observer.query(
+                "SELECT pg_cancel_backend($1) AS cancelled",
+                [pid],
+              );
+              assert.deepEqual(cancelled.rows, [{ cancelled: true }]);
+              cancellationRequested = true;
+            }
+          } catch (error) {
+            errors.push(error);
+          }
+          // Attempt every release step independently and retain all failures.
+          try {
+            writer.connection.stream.resume();
+          } catch (error) {
+            errors.push(error);
+          }
+          try {
+            const result = await outcome;
+            if (cancellationRequested) {
+              assert.ok("error" in result);
+              assert.ok(result.error instanceof DatabaseError);
+              assert.equal(result.error.code, "57014");
+            } else if ("error" in result) {
+              errors.push(result.error);
+            }
+          } catch (error) {
+            errors.push(error);
+          }
+          try {
+            const releaseACK = await writer.query(
+              "SELECT pg_backend_pid() AS pid",
+            );
+            assert.deepEqual(releaseACK.rows, [{ pid }]);
+            assert.equal(writer.getTransactionStatus(), "I");
+          } catch (error) {
+            errors.push(error);
+          }
+        }
+        if (attemptOutcome) await attemptOutcome;
+        if (waiting) {
+          try {
+            await waiting;
+          } catch (error) {
+            errors.push(error);
+          }
+        }
+        try {
+          await writer.end();
+        } catch (error) {
+          errors.push(error);
+        }
+        try {
+          await observer.end();
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+      if (errors.length) {
+        throw new AggregateError(errors, "Fresh writer COPY fixture failed");
+      }
       assert.deepEqual(
         (
           await client.query(`SELECT ref_count, (SELECT count(*)::int FROM pg_trigger
@@ -525,17 +690,141 @@ SELECT 1 / 0;`,
     "one-second relation lock timeout preserves B",
     async (client, url) => {
       const before = await snapshot(client);
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0412; new non-billing transactions are prohibited.
-      await client.query("BEGIN");
-      await client.query(
-        "LOCK TABLE pi_memory_stage1_candidates IN ROW EXCLUSIVE MODE",
-      );
-      try {
-        await assert.rejects(apply(url), /lock timeout/);
-      } finally {
-        await client.query("ROLLBACK");
+      const blocker = new Client({ connectionString: url });
+      class PausedCopy extends Query<Record<string, unknown>, []> {
+        paused = false;
+
+        handleCopyData(message: { chunk: unknown }): void {
+          if (!this.paused) {
+            this.paused = true;
+            blocker.connection.stream.pause();
+            this.emit("firstCopyData", message.chunk);
+          }
+        }
       }
-      assert.deepEqual(await snapshot(client), before);
+
+      // An ordinary in-flight read holds ACCESS SHARE against the migration's
+      // ACCESS EXCLUSIVE. COPY emits during execution; bound output to ~64 MiB.
+      const resource = new PausedCopy(`COPY (
+        SELECT pi_session_id, source_history_hash, ordinal, repeat('x', 8192)
+        FROM public.pi_memory_stage1_candidates
+        CROSS JOIN generate_series(1, 8192) AS ordinal
+      ) TO STDOUT`);
+      let resourceEnded = false;
+      const outcome = new Promise<unknown>((resolveOutcome) => {
+        resource.once("error", (error: unknown) => {
+          resourceEnded = true;
+          resolveOutcome(error);
+        });
+        resource.once("end", () => {
+          resourceEnded = true;
+          resolveOutcome(new Error("COPY completed before cancellation"));
+        });
+      });
+      const firstData = new Promise<unknown>((resolveFirst) => {
+        resource.once("firstCopyData", resolveFirst);
+      });
+      // Install every observer before submission. Early failure or normal
+      // completion cannot stand in for a live, conflicting read.
+      const ready = Promise.race([
+        firstData,
+        outcome.then((error) => {
+          throw error;
+        }),
+      ]);
+      const errors: unknown[] = [];
+      blocker.on("error", (error: unknown) => {
+        errors.push(error);
+      });
+      let pid: number | undefined;
+      let submitted = false;
+      try {
+        await blocker.connect();
+        const backend = await blocker.query<{ pid: unknown }>(
+          "SELECT pg_backend_pid() AS pid",
+        );
+        assert.equal(backend.rowCount, 1);
+        const value = backend.rows[0]?.pid;
+        assert.ok(
+          typeof value === "number" && Number.isSafeInteger(value) && value > 0,
+        );
+        pid = value;
+        blocker.query(resource);
+        submitted = true;
+        const first = await ready;
+        assert.ok(Buffer.isBuffer(first));
+        assert.equal(
+          first.toString("utf8"),
+          `session\t${hash}\t1\t${"x".repeat(8192)}\n`,
+        );
+        assert.equal(blocker.connection.stream.isPaused(), true);
+        assert.equal(resourceEnded, false);
+        await assert.rejects(apply(url), (error: unknown) => {
+          assert.ok(error instanceof postgres.PostgresError);
+          assert.equal(error.code, "55P03");
+          assert.match(error.message, /lock timeout/);
+          return true;
+        });
+      } catch (error) {
+        errors.push(error);
+      } finally {
+        if (submitted) {
+          let cancellationRequested = false;
+          try {
+            if (!resourceEnded) {
+              const cancelled = await client.query<{ cancelled: unknown }>(
+                "SELECT pg_cancel_backend($1) AS cancelled",
+                [pid],
+              );
+              assert.deepEqual(cancelled.rows, [{ cancelled: true }]);
+              cancellationRequested = true;
+            }
+          } catch (error) {
+            errors.push(error);
+          }
+          // Each release step is attempted even if an earlier assertion fails.
+          try {
+            blocker.connection.stream.resume();
+          } catch (error) {
+            errors.push(error);
+          }
+          try {
+            const error = await outcome;
+            assert.ok(error instanceof DatabaseError);
+            assert.equal(error.code, "57014");
+            assert.equal(cancellationRequested, true);
+          } catch (error) {
+            errors.push(error);
+          }
+          try {
+            // Wait for the target ReadyForQuery and this query's own idle ACK.
+            // A successful cancel request alone does not establish release.
+            const releaseACK = await blocker.query<{ pid: unknown }>(
+              "SELECT pg_backend_pid() AS pid",
+            );
+            assert.deepEqual(releaseACK.rows, [{ pid }]);
+            assert.equal(blocker.getTransactionStatus(), "I");
+          } catch (error) {
+            errors.push(error);
+          }
+        }
+        try {
+          await blocker.end();
+        } catch (error) {
+          errors.push(error);
+        }
+        try {
+          assert.deepEqual(await snapshot(client), before);
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+      if (errors.length > 0) {
+        throw new AggregateError(errors, "Relation-timeout resource failed");
+      }
+      console.log(
+        "Read-only COPY: exact first row; migration 55P03; exact-PID cancel, 57014, drained, same-client idle I; complete snapshot unchanged.",
+      );
     },
   );
 

@@ -1,11 +1,27 @@
 use super::super::super::*;
 use super::super::support::{
-    minimal_context, mock_run_config_with_overrides_and_api_url, push_job, test_profiles,
-    wait_budget_count,
+    minimal_context, mock_run_config, mock_run_config_with_overrides_and_api_url, push_job,
+    shutdown, test_profiles, wait_budget_count,
 };
 use crate::test_fixtures::raw_http::{json_response, read_http_request};
 use futures_util::FutureExt;
 use tokio::io::AsyncWriteExt;
+
+#[tokio::test(start_paused = true)]
+async fn ordinary_fixture_acknowledges_startup_report_without_retries() {
+    let (config, env) = mock_run_config(test_profiles(), 8, 32_768, 4);
+    let runner = tokio::spawn(run(config));
+    let run_id = RunId::new_v4();
+    push_job(&env, run_id, "vm0/default", Some(minimal_context(run_id)));
+    let completion = env
+        .handle
+        .wait_completion(run_id, Duration::from_secs(5))
+        .await
+        .expect("ordinary run should complete with its startup API available");
+    assert_eq!(completion.exit_code, 0);
+    shutdown(&env, runner).await;
+    env.assert_startup_report_calls(1);
+}
 
 #[tokio::test]
 async fn startup_report_drains_after_completion_and_resource_release() {

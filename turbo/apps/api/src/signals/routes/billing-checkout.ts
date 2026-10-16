@@ -10,7 +10,8 @@ import {
   type UsagePackSubscriptionChangePreviewResponse,
 } from "@okouai/api-contracts/contracts/billing";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { eq } from "drizzle-orm";
+import { usagePackSubscriptions } from "@okouai/db/schema/usage-pack-subscription";
+import { and, desc, eq, isNotNull, notInArray } from "drizzle-orm";
 
 import { optionalEnv } from "../../lib/env";
 import { billingRedirectAllowed } from "../../lib/billing-redirect";
@@ -48,6 +49,7 @@ import {
   activeUsagePackBillingContext,
   loadUsagePackCatalog,
   startUsagePackPurchase$,
+  TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES,
   type UsagePackCheckoutAllocation,
 } from "../services/usage-pack-subscription.service";
 import { parseBillingPaymentMethodPreviewToken } from "../services/billing-purchase-preview-token.service";
@@ -57,7 +59,7 @@ import {
   type BillingPurchasePaymentMethod,
 } from "../services/billing-payment-method.service";
 import {
-  confirmUsagePackAllocationChange,
+  confirmUsagePackAllocationChange$,
   prepareUsagePackChangeConfirmation$,
   repairUsagePackConfigurationBeforeConfirmation$,
   getUsagePackManagement,
@@ -888,10 +890,38 @@ const usagePackChangePreviewAuthed$ = command(
       previewEnabled &&
       bodyResult.data.returnUrl
     ) {
-      const billing = await activeUsagePackBillingContext(
-        db,
-        access.auth.orgId,
-      );
+      const orgId = access.auth.orgId;
+      const billing = await (async (): Promise<{
+        readonly usagePackSubscriptionId: string;
+        readonly stripeCustomerId: string;
+        readonly stripeSubscriptionId: string;
+      } | null> => {
+        const [subscription] = await db
+          .select({
+            usagePackSubscriptionId: usagePackSubscriptions.id,
+            stripeCustomerId: usagePackSubscriptions.stripeCustomerId,
+            stripeSubscriptionId: usagePackSubscriptions.stripeSubscriptionId,
+          })
+          .from(usagePackSubscriptions)
+          .where(
+            and(
+              eq(usagePackSubscriptions.orgId, orgId),
+              isNotNull(usagePackSubscriptions.stripeSubscriptionId),
+              notInArray(usagePackSubscriptions.subscriptionStatus, [
+                ...TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES,
+              ]),
+            ),
+          )
+          .orderBy(desc(usagePackSubscriptions.updatedAt))
+          .limit(1);
+        return subscription?.stripeSubscriptionId
+          ? {
+              usagePackSubscriptionId: subscription.usagePackSubscriptionId,
+              stripeCustomerId: subscription.stripeCustomerId,
+              stripeSubscriptionId: subscription.stripeSubscriptionId,
+            }
+          : null;
+      })();
       signal.throwIfAborted();
       if (!billing) {
         return notFound("Usage pack subscription not found");
@@ -991,8 +1021,8 @@ const usagePackChangeConfirmAuthed$ = command(
       { orgId: access.auth.orgId, changeId },
       signal,
     );
-    const result = await confirmUsagePackAllocationChange(
-      db,
+    const result = await set(
+      confirmUsagePackAllocationChange$,
       {
         orgId: access.auth.orgId,
         changeId,

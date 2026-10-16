@@ -93,6 +93,7 @@ impl HomeCacheObservation {
                     Some(HomeCacheChange {
                         observed_at: tokio::time::Instant::now(),
                         committed_cache_keys: BTreeSet::new(),
+                        selection_release_only: false,
                     })
                 }
             },
@@ -102,6 +103,7 @@ impl HomeCacheObservation {
             let locked_change = HomeCacheChange {
                 observed_at: tokio::time::Instant::now(),
                 committed_cache_keys: initial.locked_commit_keys,
+                selection_release_only: false,
             };
             match change.as_mut() {
                 Some(change) => change.merge(locked_change),

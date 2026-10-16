@@ -335,7 +335,8 @@
       "telegram": "Telegram",
       "test": "測試",
       "web": "網頁",
-      "webhook": "Webhook"
+      "webhook": "Webhook",
+      "wechat": "微信"
     },
     "statuses": {
       "cancelled": "已取消",
@@ -2005,7 +2006,8 @@
       "openTelegramMessage": "在 Telegram 中開啟原訊息",
       "slack": "Slack",
       "teams": "Microsoft Teams",
-      "telegram": "Telegram"
+      "telegram": "Telegram",
+      "wechat": "微信"
     },
     "permissions": {
       "actionDescription": "{{action}}{{permissionName}}",
@@ -2890,12 +2892,8 @@
     "edit": "編輯 Cloudflare Access",
     "failed": "無法儲存 Cloudflare Access 更改，請重試。",
     "forbidden": "只有組織管理員可以修改共用的 Cloudflare Access。",
-    "hostCount_other": "{{count}} 台 SSH 主機",
     "impactChanged": "受影響的主機發生了變化。請查看最新影響範圍後再確認。",
-    "impactConfirm": "我了解這些成員的 SSH 主機會保留，但在其擁有者重新綁定或明確選擇直接連線前無法連線。",
-    "impactSummary": "將影響其他 {{members}}的共 {{hosts}}。主機會保留，但在擁有者重新綁定或明確選擇直接連線前無法連線；不會自動改為直接連線。",
     "inUse": "有 SSH 主機正在使用此 Cloudflare Access。主機擁有者須先重新綁定或刪除該主機。",
-    "inUseHelp": "你的 SSH 主機仍在使用此設定。請先將它們重新綁定至其他設定、明確改為直連，或刪除這些主機。",
     "invalidInput": "部分 Cloudflare Access 設定無效，請檢查各欄位後重試。",
     "keepChanges": "在該版本上保留我的更改",
     "latest": "最新儲存的設定",
@@ -3443,29 +3441,50 @@
         "accountMismatchDescription": "你的 Okou 帳號目前在這裡使用 Slack 帳號{{currentAccount}}。要切換到開啟此連結的{{requestedAccount}}嗎？",
         "accountMismatchDescriptionWorkspace": "你的 Okou 帳號目前在{{workspace}}使用 Slack 帳號{{currentAccount}}。要切換到開啟此連結的{{requestedAccount}}嗎？",
         "accountMismatchTitle": "切換 Slack 帳號？",
+        "authorizationFailed": "Slack 授權未完成。下方顯示目前連線狀態，你可以重試。",
+        "authorizationReturned": "已返回授權結果。下方顯示目前的實際連線狀態。",
         "connectDescription": "把你的帳號關聯到這個 Slack 工作區，就可以直接在 Slack 裡與你的智能體交流。",
+        "connectedAccount": "Slack 帳號：{{account}}",
         "connectTitle": "連線到 Slack",
+        "currentConnection": "Slack 已連線",
         "errorFallback": "無法檢查或開始 Slack 連線，請重試。",
         "invalidDescription": "此頁面需要從 Slack 連線連結開啟。",
         "keepAccount": "保留{{account}}",
         "open": "開啟 Slack",
+        "reauthorize": "更新 Slack 權限",
+        "retryStatus": "重新檢查",
+        "startAgain": "重新開始",
         "successDescription": "在任意頻道@已安裝的機器人，或給它發私信，即可開始對話。",
         "successDescriptionWorkspace": "你已連線到{{workspace}}。在任意頻道@已安裝的機器人，或給它發私信，即可開始對話。",
-        "successTitle": "已連線到 Slack！",
         "switchAccount": "切換到{{account}}",
+        "unavailable": "暫時無法連線 Slack，請稍後重試。",
         "workspaceMismatchDescription": "此 Slack 工作區不屬於你目前的 Okou 組織。請切換組織，或聯絡管理員處理。",
         "workspaceMismatchDescriptionNamed": "你目前的 Okou 組織已連線到{{workspace}}。請切換組織，或請管理員先解除安裝，再連線此 Slack 工作區。",
         "workspaceMismatchTitle": "Slack 工作區不相符"
       },
       "teams": {
+        "authorize": "授權 Microsoft Teams",
         "connectDescription": "關聯你的 Teams 帳號，就可以直接在 Microsoft Teams 裡與你的智能體交流。",
-        "connectDescriptionNamed": "{{displayName}}，關聯你的 Teams 帳號，就可以直接在 Microsoft Teams 裡與你的智能體交流。",
+        "connectedDescription": "你的 Teams 帳號已連線。",
         "connectTitle": "連線 Microsoft Teams",
-        "invalidDescription": "此頁面需要從 Microsoft Teams 連線連結開啟。",
+        "currentState": "目前 Teams 狀態",
+        "existingConnection": "已有 Teams 連線可用，但這不代表已連線此連結指定的帳號。",
+        "identityMismatch": "此連結指定的 Teams 帳號或工作區與目前連線不一致。",
+        "identityUnknown": "無法確認此連結中的 Teams 帳號。請重新整理頁面，或開啟 Teams 檢查你的帳號。",
+        "install": "在 Teams 中安裝",
+        "invalidContext": "此連結缺少 Teams 帳號資訊。請從 Teams 取得新的連線連結。",
         "open": "開啟 Teams",
+        "orgMismatch": "此連結屬於其他組織。請切換到該組織後重試此連結。",
+        "pendingDescription": "帳號已準備就緒。請在 Teams 中安裝應用程式，然後重新整理此頁面確認連線。",
+        "pendingTitle": "在 Teams 中安裝以完成連線",
         "providerName": "Microsoft Teams",
+        "refresh": "重新整理 Teams 狀態",
+        "reinstall": "在 Teams 中重新安裝",
+        "requestedAccount": "連結中的帳號名稱：{{name}}",
+        "statusFailed": "無法檢查 Teams 連線，請重試。",
         "successDescription": "你已連線到{{team}}。在 Teams 中@{{botName}}，即可開始對話。",
-        "successTitle": "已連線到 Microsoft Teams"
+        "successTitle": "已連線到 Microsoft Teams",
+        "unavailable": "Teams 設定暫不可用，請聯絡組織管理員。"
       },
       "telegram": {
         "alreadyTitle": "已連線到 Telegram",
@@ -5577,6 +5596,9 @@
       "attention_other": "{{count}} 臺 VNC 主機需要處理",
       "observedAt": "記錄於 {{time}}",
       "reasons": {
+        "access_protocol_failure": "Cloudflare 連線協定失敗。",
+        "access_rejected": "Cloudflare Access 拒絕了服務權杖。",
+        "access_tls_failure": "Cloudflare 閘道憑證驗證失敗。",
         "authentication_failed": "身分驗證或伺服器身分校驗失敗。",
         "disconnected": "伺服器在連線嘗試期間中斷。",
         "invalid_credential": "無法使用已儲存的憑證。",
@@ -5584,7 +5606,9 @@
         "kerberos_non_renewable": "Kerberos 憑證無法續期。",
         "kerberos_renewal_exhausted": "Kerberos 憑證已達續期上限。",
         "network_failure": "連線傳輸失敗。",
+        "origin_tls_failure": "來源站台 TLS 憑證驗證失敗。",
         "protocol": "伺服器未完成所選連線協定。",
+        "tailscale_unavailable": "所選 Tailscale 節點無法使用。",
         "timed_out": "連線嘗試逾時。",
         "unsafe_destination": "網路原則拒絕了目標位址。",
         "unsupported_profile": "伺服器不支援所選安全設定。"
@@ -5676,6 +5700,18 @@
     "loadFailed": "無法載入 VNC 配置。",
     "loading": "正在載入 VNC 配置…",
     "manage": "管理 VNC",
+    "native": {
+      "editPending": "目前尚不支援編輯此私有網路路由。",
+      "hostCount_other": "{{count}} 台主機",
+      "impactConfirm": "我了解這些成員的主機會保留，但在其擁有者重新綁定之前無法連線。",
+      "impactSummary": "受影響：{{members}}和{{hosts}}。主機會保留，但在其擁有者重新綁定之前無法連線。任何主機都不會自動切換為直接連線。",
+      "inUse": "你的 SSH 或 VNC 主機仍在使用此網路。請先重新綁定或刪除這些主機。",
+      "kdcRole": "驗證伺服器",
+      "needsRebind": "此私有網路路由需要新的設定，重新綁定後才能連線。",
+      "originTls": "來源站台 TLS",
+      "protectionHelp": "此驗證模式不會加密桌面流量。所選私有網路路由必須保護到此伺服器的完整連線。",
+      "rfbRole": "桌面"
+    },
     "port": "埠",
     "retry": "重試",
     "rsaAes": {
@@ -6520,6 +6556,30 @@
     "telegram": {
       "description": "把 Telegram 訊息轉給智能體",
       "title": "Telegram"
+    },
+    "wechat": {
+      "code": "驗證碼",
+      "connect": "連接",
+      "connected": "已連接",
+      "creating": "正在產生 QR code…",
+      "description": "在微信中與智能體對話。",
+      "disconnect": "中斷連接",
+      "expired": "QR code 已過期，請重新產生。",
+      "failed": "連接微信失敗，請重試。",
+      "instructions": "使用微信掃描 QR code，然後在手機上確認。",
+      "name": "微信",
+      "reconnect": "重新連接",
+      "reconnect_required": "請重新掃碼連接。",
+      "restart_required": "此微信已綁定，請重新產生 QR code 以連接。",
+      "retry": "重新產生 QR code",
+      "scanned": "已掃碼，請在手機上確認。",
+      "scope": "只連接你與此智能體的單聊，目前支援文字訊息。",
+      "title": "連接微信",
+      "unavailable": "連接服務尚未配置。",
+      "verification_blocked": "驗證碼嘗試次數過多，請重新產生 QR code。",
+      "verification_required": "輸入微信中顯示的驗證碼。",
+      "verify": "驗證",
+      "waiting": "等待掃碼…"
     }
   }
 }

@@ -172,6 +172,7 @@ impl Manager {
     }
 
     fn start(&self, params: protocol::Start, scope: &Scope) -> Response {
+        let connection = params.ssh_connection_id;
         let result = (|| {
             scope.check()?;
             let permit = Arc::clone(&self.capacity)
@@ -216,7 +217,16 @@ impl Manager {
         })();
         match result {
             Ok(session_id) => Response::Started { session_id },
-            Err(reason) => Response::failed(reason, Effects::NotStarted),
+            Err(reason) => {
+                super::observation::Attempt::default().record(
+                    &self.registration.diagnostics(),
+                    connection,
+                    crate::diagnostics::Operation::Session,
+                    None,
+                    Some(reason),
+                );
+                Response::failed(reason, Effects::NotStarted)
+            }
         }
     }
 

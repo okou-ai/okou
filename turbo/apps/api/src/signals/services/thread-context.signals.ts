@@ -1,3 +1,4 @@
+import { createWechatThreadContext } from "./wechat-context.service";
 import { randomUUID } from "node:crypto";
 import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
 import { workflows } from "@okouai/db/schema/workflow";
@@ -70,6 +71,7 @@ export interface ThreadContext extends ThreadWorkflowContext {
   readonly teamsContext$: ReturnType<typeof createTeamsThreadContext>;
   readonly telegramContext$: ReturnType<typeof createTelegramThreadContext>;
   readonly agentPhoneContext$: ReturnType<typeof createAgentPhoneThreadContext>;
+  readonly wechatContext$: ReturnType<typeof createWechatThreadContext>;
   readonly discordContext$: ReturnType<typeof createDiscordThreadContext>;
   readonly automationContext$: ReturnType<typeof createThreadAutomationContext>;
   readonly automationTarget$: Computed<Promise<ThreadAutomationTarget | null>>;
@@ -118,6 +120,11 @@ export function createThreadContext(
   const teamsContext$ = createTeamsThreadContext(pickedEvent$, orgId);
   const telegramContext$ = createTelegramThreadContext(pickedEvent$, orgId);
   const agentPhoneContext$ = createAgentPhoneThreadContext(pickedEvent$, orgId);
+  const wechatContext$ = createWechatThreadContext(
+    pickedEvent$,
+    orgId,
+    sourceFeatureSwitches$,
+  );
   const model = createThreadModelSignals(bootstrap, pickedEvent$);
   const discordContext$ = createDiscordThreadContext(
     pickedEvent$,
@@ -164,6 +171,7 @@ export function createThreadContext(
     teamsContext$,
     telegramContext$,
     agentPhoneContext$,
+    wechatContext$,
     discordContext$,
     automationContext$,
     automationTarget$,

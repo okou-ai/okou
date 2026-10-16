@@ -196,7 +196,7 @@ pub async fn exercise(
         fixture::checkout(&cache, restore_run, restore_id, &reuse_key, &rootfs_hash).await;
     assert!(restored_home.is_cache_hit());
     let mut restored = factory
-        .create(fixture::sandbox_config(restore_id, &mut restored_home))
+        .create(fixture::sandbox_config(restore_id, &mut restored_home).await?)
         .await?;
     let result = async {
         restored.bind_run_control(&restore_run.to_string())?;

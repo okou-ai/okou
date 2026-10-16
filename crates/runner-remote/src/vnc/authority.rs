@@ -62,7 +62,7 @@ fn client_identity(
 }
 
 pub(super) struct Authority {
-    http: HttpClient,
+    pub(super) http: HttpClient,
     transport: reqwest::Client,
     token: Zeroizing<String>,
     identity: RunnerProcessIdentity,
@@ -251,6 +251,9 @@ pub(super) fn parse_transport(
                 generation,
             })
         }
+        // B prepares the private contract before E implements/advertises native RFB.
+        ResolveResponseResolvedTransportTransport::CloudflareAccess { .. }
+        | ResolveResponseResolvedTransportTransport::Tailscale { .. } => Err(Failure::Authority),
     }
 }
 
@@ -956,6 +959,7 @@ impl Authority {
             std::sync::Arc<dyn kerberos_worker::WorkOwner>,
             tokio::time::Instant,
         )>,
+        diagnostic_identity: &mut crate::diagnostics::Identity,
     ) -> Result<Credential, Failure> {
         let mut supported_profiles = vec![
             ResolveRequestSupportedProfile {
@@ -1088,6 +1092,21 @@ impl Authority {
                 &request,
             )
             .await?;
+        // Credential parsing can fail after the API has identified the exact
+        // configuration. Preserve that identity for the passive failure report.
+        diagnostic_identity.created_at = created_at;
+        diagnostic_identity.generation = match &response {
+            ResolveResponse::ResolvedKerberos { generation, .. }
+            | ResolveResponse::ResolvedRsaAes { generation, .. }
+            | ResolveResponse::ResolvedAppleVncPassword { generation, .. }
+            | ResolveResponse::ResolvedAppleDh { generation, .. }
+            | ResolveResponse::ResolvedAppleSrp { generation, .. }
+            | ResolveResponse::ResolvedAppleRsaSrp { generation, .. }
+            | ResolveResponse::ResolvedTransport { generation, .. } => (1..=i64::from(i32::MAX))
+                .contains(generation)
+                .then_some(*generation),
+            ResolveResponse::Unavailable | ResolveResponse::UnsupportedProfile => None,
+        };
         let (host, port, generation, server_name, transport, authentication, security) =
             match response {
                 ResolveResponse::Unavailable => return Err(Failure::Unavailable),
@@ -1473,6 +1492,10 @@ mod rsa_aes_tests {
                 }
                 ResolveRequestSupportedProfileTransportType::Ssh => {
                     json!({"type":"ssh","connectionId":"10000000-0000-4000-8000-000000000001","generation":1})
+                }
+                ResolveRequestSupportedProfileTransportType::CloudflareAccess
+                | ResolveRequestSupportedProfileTransportType::Tailscale => {
+                    panic!("native profiles must not be advertised before implementation")
                 }
             };
             let response: ResolveResponse = serde_json::from_value(json!({"outcome":"resolved_rsa_aes","host":"127.0.0.1","port":5900,"generation":1,"transport":transport,"authentication":authentication,"security":{"type":mode,"serverKeySha256":"ab".repeat(32)}})).unwrap();

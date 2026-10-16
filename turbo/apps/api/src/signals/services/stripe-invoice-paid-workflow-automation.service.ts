@@ -3,18 +3,30 @@ import {
   type StripeInvoicePaidEventConfig,
 } from "@okouai/api-contracts/contracts/workflows";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
+import {
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/runtime/connector-catalog";
+import { connectors } from "@okouai/db/schema/connector";
+import { secrets } from "@okouai/db/schema/secret";
+import { variables } from "@okouai/db/schema/variable";
 import { and, eq, isNull } from "drizzle-orm";
 
-import type { Db, ReadonlyDb } from "../external/db";
+import type { Db } from "../external/db";
 import {
-  loadBuiltinConnectorCredentialConnection,
-  loadBuiltinConnectorCredentialValues,
+  builtinConnectorCredentialConnectionReadPlan,
+  builtinConnectorCredentialConnectionFromRow,
   builtinConnectorCredentialValuesReadPlan,
+  builtinConnectorCredentialValuesFromRows,
   type BuiltinConnectorCredentialConnection,
   type BuiltinConnectorCredentialConnectionResult,
 } from "./builtin-connector-credential-runtime.service";
 import { resolveWorkflowAutomationConnectorId } from "./workflow-automation-account.service";
-import { loadConnectorRuntimeAuthSelection } from "./connector-catalog-slug-source.service";
+import {
+  connectorCatalogCurrentWhere,
+  connectorRuntimeAuthSelectionReadPlan,
+  connectorRuntimeAuthSelectionFromRows,
+} from "./connector-catalog-slug-source.service";
 
 const STRIPE_CONNECTOR_SLUG = "stripe";
 const STRIPE_LIVEMODE_VALUE_REF = "$vars.STRIPE_LIVEMODE";
@@ -124,54 +136,56 @@ export function stripeLiveBindingMatches(
   );
 }
 
-async function loadReadyStripeConnection(
-  args: {
-    readonly connectorId: string;
-    readonly db: ReadonlyDb;
-    readonly missingMessage: string;
-    readonly orgId: string;
-    readonly userId: string;
-  },
-  signal: AbortSignal,
-): Promise<ReadyStripeConnectionResult> {
-  const snapshot = await loadConnectorRuntimeAuthSelection(args.db, {
-    connectorSlugs: [STRIPE_CONNECTOR_SLUG],
-  });
-  signal.throwIfAborted();
-  const loaded = await loadBuiltinConnectorCredentialConnection({
-    db: args.db,
-    snapshot,
-    orgId: args.orgId,
-    userId: args.userId,
-    connectorSlug: STRIPE_CONNECTOR_SLUG,
-    connectorId: args.connectorId,
-  });
-  signal.throwIfAborted();
-  const ready = stripeConnectionReadiness(loaded, args.missingMessage);
-  if (ready.kind === "bad_request") {
-    return ready;
-  }
-  const { connection, stripeAccountId } = ready;
-  const values = await loadBuiltinConnectorCredentialValues({
-    connection,
-    db: args.db,
-    valueRefs: [STRIPE_LIVEMODE_VALUE_REF],
-  });
-  signal.throwIfAborted();
-  const livemode = values.get(STRIPE_LIVEMODE_VALUE_REF);
-  const modeError = stripeLiveModeReadinessMessage(livemode);
-  if (modeError !== null) {
-    return badRequest(modeError);
-  }
-
-  return { kind: "ok", connection, stripeAccountId };
-}
-
 interface StripeAutomationProjectionRow {
   readonly id: string;
   readonly workflowId: string;
   readonly eventConfig: unknown;
   readonly eventConnectorId: string | null;
+}
+
+function stripeAutomationReadinessFromConnection(
+  ready: ReadyStripeConnectionResult,
+): StripeInvoicePaidAutomationReadinessResult {
+  return ready.kind === "ok"
+    ? {
+        kind: "ok",
+        binding: {
+          connectorId: ready.connection.connectorId,
+          stripeAccountId: ready.stripeAccountId,
+          mode: "live",
+        },
+      }
+    : ready;
+}
+
+function stripeAutomationProjectionUpdate(
+  automation: StripeAutomationProjectionRow,
+  connectorId: string,
+  readiness: StripeInvoicePaidAutomationReadinessResult,
+) {
+  if (readiness.kind !== "ok") {
+    if (automation.eventConnectorId !== connectorId) {
+      return { eventConnectorId: connectorId };
+    }
+    return null;
+  }
+
+  const config = stripeInvoicePaidEventConfigSchema.parse(
+    automation.eventConfig,
+  );
+  const binding = readiness.binding;
+  if (
+    automation.eventConnectorId === connectorId &&
+    config.connectorId === binding.connectorId &&
+    config.stripeAccountId === binding.stripeAccountId &&
+    config.mode === binding.mode
+  ) {
+    return null;
+  }
+  return {
+    eventConnectorId: connectorId,
+    eventConfig: { ...config, ...binding },
+  };
 }
 
 async function reprojectStripeAutomation(
@@ -218,59 +232,96 @@ async function reprojectStripeAutomation(
 
   let readiness = args.readinessByConnectorId.get(connectorId);
   if (readiness === undefined) {
-    const ready = await loadReadyStripeConnection(
-      {
-        db,
+    const ready = await (async (
+      readSignal: AbortSignal,
+    ): Promise<ReadyStripeConnectionResult> => {
+      const catalogDb = db;
+      const input = {
         orgId: args.orgId,
         userId: args.userId,
         connectorId,
         missingMessage: STRIPE_SELECTION_CHANGED_MESSAGE,
-      },
-      signal,
-    );
-    readiness =
-      ready.kind === "ok"
-        ? {
-            kind: "ok",
-            binding: {
-              connectorId: ready.connection.connectorId,
-              stripeAccountId: ready.stripeAccountId,
-              mode: "live",
-            },
-          }
-        : ready;
+      };
+      const catalogPlan = connectorRuntimeAuthSelectionReadPlan({
+        connectorSlugs: [STRIPE_CONNECTOR_SLUG],
+      });
+      const snapshot = connectorRuntimeAuthSelectionFromRows(
+        await catalogDb
+          .select(catalogPlan.columns)
+          .from(connectorCatalog)
+          .leftJoin(connectorCatalogEntries, catalogPlan.join)
+          .where(connectorCatalogCurrentWhere()),
+        catalogPlan.requestedConnectorSlugs,
+        catalogPlan.firewallConnectorSlugs,
+      );
+      readSignal.throwIfAborted();
+      const connectionInput = {
+        snapshot,
+        orgId: input.orgId,
+        userId: input.userId,
+        connectorSlug: STRIPE_CONNECTOR_SLUG,
+        connectorId: input.connectorId,
+      };
+      const connectionPlan =
+        builtinConnectorCredentialConnectionReadPlan(connectionInput);
+      const loaded = builtinConnectorCredentialConnectionFromRow(
+        connectionInput,
+        (
+          await catalogDb
+            .select(connectionPlan.columns)
+            .from(connectors)
+            .where(connectionPlan.condition)
+            .limit(1)
+        )[0],
+      );
+      readSignal.throwIfAborted();
+      const ready = stripeConnectionReadiness(loaded, input.missingMessage);
+      if (ready.kind === "bad_request") {
+        return ready;
+      }
+      const { connection, stripeAccountId } = ready;
+      const valuesInput = {
+        connection,
+        valueRefs: [STRIPE_LIVEMODE_VALUE_REF],
+      };
+      const valuesPlan = builtinConnectorCredentialValuesReadPlan(valuesInput);
+      const values =
+        valuesPlan === null
+          ? new Map<string, string>()
+          : await builtinConnectorCredentialValuesFromRows(
+              valuesInput,
+              await catalogDb
+                .select(valuesPlan.secretColumns)
+                .from(secrets)
+                .where(valuesPlan.secretCondition)
+                .unionAll(
+                  catalogDb
+                    .select(valuesPlan.variableColumns)
+                    .from(variables)
+                    .where(valuesPlan.variableCondition),
+                ),
+            );
+      readSignal.throwIfAborted();
+      const livemode = values.get(STRIPE_LIVEMODE_VALUE_REF);
+      const modeError = stripeLiveModeReadinessMessage(livemode);
+      if (modeError !== null) {
+        return badRequest(modeError);
+      }
+
+      return { kind: "ok", connection, stripeAccountId };
+    })(signal);
+    readiness = stripeAutomationReadinessFromConnection(ready);
     args.readinessByConnectorId.set(connectorId, readiness);
   }
 
-  if (readiness.kind !== "ok") {
-    if (args.automation.eventConnectorId !== connectorId) {
-      await db
-        .update(workflowAutomations)
-        .set({ eventConnectorId: connectorId })
-        .where(target);
-    }
-    return;
-  }
-
-  const config = stripeInvoicePaidEventConfigSchema.parse(
-    args.automation.eventConfig,
+  const update = stripeAutomationProjectionUpdate(
+    args.automation,
+    connectorId,
+    readiness,
   );
-  const binding = readiness.binding;
-  if (
-    args.automation.eventConnectorId === connectorId &&
-    config.connectorId === binding.connectorId &&
-    config.stripeAccountId === binding.stripeAccountId &&
-    config.mode === binding.mode
-  ) {
-    return;
+  if (update !== null) {
+    await db.update(workflowAutomations).set(update).where(target);
   }
-  await db
-    .update(workflowAutomations)
-    .set({
-      eventConnectorId: connectorId,
-      eventConfig: { ...config, ...binding },
-    })
-    .where(target);
 }
 
 export async function reprojectStripeInvoicePaidAutomationsForOwner(

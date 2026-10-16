@@ -26,9 +26,9 @@ import {
 import { isConnectorCatalogUnavailableError } from "../services/connector-catalog-reader.service";
 import {
   buildGithubAppInstallUrl,
-  buildGithubUserConnectAuthorizationUrl,
+  startGithubUserOAuth$,
   createOrActivateGithubInstallation,
-  findGithubInstallationByInstallationId,
+  findGithubInstallationByInstallationId$,
   getGithubInstallationAccessToken,
   getGithubInstallationInfo,
   getGithubOAuthAuthMethod,
@@ -389,39 +389,41 @@ function signedGithubCallbackReplayResponse(args: {
   return replayUrl ? noStoreRedirect(replayUrl) : null;
 }
 
-async function githubAppUpdateCallbackResponse(
-  args: {
-    readonly db: Db;
-    readonly request: Request;
-    readonly installationId: string | undefined;
-    readonly replayPersistedSetup: boolean;
-  },
-  signal: AbortSignal,
-): Promise<Response> {
-  if (!args.replayPersistedSetup || !args.installationId) {
-    return redirectResponse(appUrl("/workflows"));
-  }
-
-  const installation = await findGithubInstallationByInstallationId(
-    {
-      db: args.db,
-      installationId: args.installationId,
-      orgId: null,
+const githubAppUpdateCallbackResponse$ = command(
+  async (
+    { set },
+    args: {
+      readonly request: Request;
+      readonly installationId: string | undefined;
+      readonly replayPersistedSetup: boolean;
     },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (!installation) {
-    return redirectResponse(appUrl("/workflows"));
-  }
+    signal: AbortSignal,
+  ): Promise<Response> => {
+    if (!args.replayPersistedSetup || !args.installationId) {
+      return redirectResponse(appUrl("/workflows"));
+    }
 
-  const replayUrl = replayPersistedGithubAppSetupCallback({
-    request: args.request,
-  });
-  return replayUrl
-    ? noStoreRedirect(replayUrl)
-    : redirectResponse(appUrl("/workflows"));
-}
+    const installation = await set(
+      findGithubInstallationByInstallationId$,
+      {
+        installationId: args.installationId,
+        orgId: null,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!installation) {
+      return redirectResponse(appUrl("/workflows"));
+    }
+
+    const replayUrl = replayPersistedGithubAppSetupCallback({
+      request: args.request,
+    });
+    return replayUrl
+      ? noStoreRedirect(replayUrl)
+      : redirectResponse(appUrl("/workflows"));
+  },
+);
 
 const resolveGithubCallbackAccess$ = command(
   async (
@@ -631,9 +633,9 @@ const connectExistingGithubInstallation$ = command(
     },
     signal: AbortSignal,
   ): Promise<Response | null> => {
-    const existing = await findGithubInstallationByInstallationId(
+    const existing = await set(
+      findGithubInstallationByInstallationId$,
       {
-        db: args.db,
         installationId: args.installationId,
         orgId: args.orgId,
       },
@@ -864,9 +866,9 @@ const connectGithubUserOauth$ = command(
       }
 
       const db = set(writeDb$);
-      const installation = await findGithubInstallationByInstallationId(
+      const installation = await set(
+        findGithubInstallationByInstallationId$,
         {
-          db,
           installationId: query.installation,
           orgId,
         },
@@ -904,7 +906,8 @@ const connectGithubUserOauth$ = command(
     }
 
     const origin = githubApiOrigin(request);
-    const db = set(writeDb$);
+    // Preserve database availability preflight before catalog resolution.
+    set(writeDb$);
     const resolver = await get(
       connectorActionResolver([GITHUB_CONNECTOR_SLUG]),
     );
@@ -914,9 +917,9 @@ const connectGithubUserOauth$ = command(
     if (!resolvedMethod) {
       return worksErrorRedirect("GitHub OAuth is not available");
     }
-    const authorizationUrl = await buildGithubUserConnectAuthorizationUrl(
+    const authorizationUrl = await set(
+      startGithubUserOAuth$,
       {
-        db,
         userId: auth.userId,
         orgId,
         origin,
@@ -1061,9 +1064,10 @@ const callbackGithubOauth$ = command(
       );
     }
     if (query.setup_action === "update") {
-      return await githubAppUpdateCallbackResponse(
+      set(writeDb$);
+      return await set(
+        githubAppUpdateCallbackResponse$,
         {
-          db: set(writeDb$),
           request,
           installationId: query.installation_id,
           replayPersistedSetup: !query.state || !stateResolution.ok,

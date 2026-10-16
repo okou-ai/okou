@@ -16,6 +16,7 @@ use sandbox::{ResourceLimits, SandboxConfig};
 
 use super::*;
 
+#[derive(Clone)]
 pub struct Context {
     pub factory: Arc<Box<dyn SandboxFactory>>,
     pub pool: SharedIdlePool,
@@ -174,7 +175,7 @@ pub async fn exercise(
     Ok(())
 }
 
-async fn prepare_incoming(
+pub(super) async fn prepare_incoming(
     context: &Context,
     inputs: &fixture::Inputs,
     blank: bool,

@@ -457,3 +457,72 @@ test("Uninstalling Microsoft Teams requires confirmation", async () => {
     }),
   ).resolves.toBeInTheDocument();
 });
+
+test.each([false, true])(
+  "Slack opens its canonical page and refreshes the original Works page (installed: %s)",
+  async (isInstalled) => {
+    let connected = false;
+    context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
+      return respond(200, {
+        isConnected: connected,
+        isInstalled: isInstalled || connected,
+        isAdmin: true,
+        installUrl: "https://slack.example.test/install",
+        connectUrl: "https://slack.example.test/connect",
+        workspaceName: connected ? "Verified workspace" : null,
+      });
+    });
+    const opened = context.mocks.browser.open();
+    await setupIntegrationsPage(context);
+    const card = getIntegrationCard("Slack");
+    click(
+      getAction("button", isInstalled ? "Connect" : "Install to Slack", card),
+    );
+    expect(new URL(opened.calls[0]!.url!).pathname).toBe("/settings/slack");
+    expect(opened.calls[0]!.target).toBe("_blank");
+    expect(pathname()).toBe("/works");
+    await waitFor(() => {
+      expect(context.mocks.ably.hasSubscription("slack:changed")).toBeTruthy();
+    });
+    connected = true;
+    context.mocks.ably.trigger("slack:changed");
+    await expect(
+      within(card).findByText("Connected (Verified workspace)"),
+    ).resolves.toBeInTheDocument();
+    expect(pathname()).toBe("/works");
+  },
+);
+
+test("Slack permission refresh reports actual scope recovery on the original Works page", async () => {
+  let scopeMismatch = true;
+  context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
+    return respond(200, {
+      isConnected: true,
+      isInstalled: true,
+      isAdmin: true,
+      scopeMismatch,
+      reinstallUrl: scopeMismatch
+        ? "https://slack.example.test/reinstall"
+        : null,
+      workspaceName: "Verified workspace",
+    });
+  });
+  const opened = context.mocks.browser.open();
+  await setupIntegrationsPage(context);
+  const card = getIntegrationCard("Slack");
+  click(getAction("button", "Update Permissions", card));
+  expect(new URL(opened.calls[0]!.url!).pathname).toBe("/settings/slack");
+  expect(opened.calls[0]!.target).toBe("_blank");
+  await waitFor(() => {
+    expect(context.mocks.ably.hasSubscription("slack:changed")).toBeTruthy();
+  });
+  scopeMismatch = false;
+  context.mocks.ably.trigger("slack:changed");
+  await expect(
+    screen.findByText("Permissions updated"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    queryAction("button", "Update Permissions", card),
+  ).not.toBeInTheDocument();
+  expect(pathname()).toBe("/works");
+});

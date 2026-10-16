@@ -1,6 +1,5 @@
 # Manual production rollback — converges Runner and API to one release commit
-# recorded by release-please.yml in the rollback dashboard issue. App Worker
-# versions are rolled back directly in Cloudflare when needed.
+# recorded by release-please.yml, or validates and rolls back only the App Worker.
 
 name: Rollback Production
 
@@ -10,8 +9,20 @@ env:
 on:
   workflow_dispatch:
     inputs:
+      component:
+        description: "Rollback scope (App never changes API or Runner)"
+        required: true
+        type: choice
+        options:
+          - api-runner
+          - app
+        default: api-runner
+      app_version_id:
+        description: "App only: exact Cloudflare version UUID (must match target_commit artifact)"
+        required: false
+        type: string
       target_commit:
-        description: "Full release commit SHA to roll back to"
+        description: "Full release artifact commit SHA to roll back to"
         required: true
         type: string
       rollback_mode:
@@ -23,7 +34,7 @@ on:
           - emergency
         default: graceful
       confirmed_compatible:
-        description: "I confirm the target Runner is compatible with current API, guest, and on-disk state"
+        description: "I confirm target compatibility: Runner/API/guest/on-disk state, or App/serving API/retained signed Telegram and bare Slack links"
         required: true
         type: choice
         options:
@@ -48,6 +59,7 @@ jobs:
         run: bash .github/scripts/wait-production-deploy-queue.sh
 
   resolve-target:
+    if: inputs.component != 'app'
     needs: queue-production-deploy
     runs-on: ubuntu-latest
     permissions:
@@ -286,3 +298,32 @@ jobs:
           ref: main
       - name: Verify production App and API domains
         run: bash .github/scripts/verify-okou-production-domains.sh
+
+  rollback-app:
+    name: Validate and roll back App only
+    if: inputs.component == 'app'
+    needs: queue-production-deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      deployments: read
+    environment: production
+    steps:
+      # Checkout and all validation happen AFTER the production queue.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          ref: main
+      - name: Validate, roll back, and verify App version at 100%
+        env:
+          TARGET_COMMIT: ${{ inputs.target_commit }}
+          APP_VERSION_ID: ${{ inputs.app_version_id }}
+          CONFIRMED_COMPATIBLE: ${{ inputs.confirmed_compatible }}
+          GH_TOKEN: ${{ github.token }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CF_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_WORKER_DEPLOY_API_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_TEAM_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID_API }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: bash .github/scripts/release/rollback-app-production.sh

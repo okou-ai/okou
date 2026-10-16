@@ -22,6 +22,7 @@ import {
 import { mockNow } from "../../../__tests__/time.ts";
 import { pathname } from "../../../signals/location.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
+import { localStorageSignals } from "../../../signals/external/local-storage.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   connectedGmailSource,
@@ -29,6 +30,7 @@ import {
 } from "./onboarding-catalog-test-helpers.ts";
 
 const context = testContext();
+const teamsDraftStorage = localStorageSignals("onboarding:sources-first-draft");
 
 const NOW = Date.parse("2026-09-21T10:00:00.000Z");
 const SLACK_INSTALL_URL = "https://slack.example.test/oauth/install";
@@ -151,13 +153,16 @@ test("The step sends an admin to Slack's own install and turns connected once th
 
   click(getButtonByName(SLACK_ADD));
 
-  expect(open).toHaveBeenCalledWith(`${SLACK_INSTALL_URL}?_t=${NOW}`, "_blank");
+  expect(open).toHaveBeenCalledWith(
+    `${window.location.origin}/settings/slack?_t=${NOW}`,
+    "_blank",
+  );
 
   click(getChannelTile("Teams"));
 
-  // Teams' own OAuth installs while it connects, so the tile opens that URL.
+  // New Teams actions opt into the canonical completion page.
   expect(open).toHaveBeenCalledWith(
-    `${window.location.origin}${TEAMS_CONNECT_URL}&_t=${NOW}`,
+    `${window.location.origin}${TEAMS_CONNECT_URL}&completion=settings&_t=${NOW}`,
     "_blank",
   );
 
@@ -212,7 +217,7 @@ test("A protected worker preview keeps access on its matching OAuth start URL", 
   click(getButtonByName(SLACK_ADD));
 
   expect(open).toHaveBeenCalledWith(
-    `${installUrl}&_t=${NOW}&x-vercel-protection-bypass=preview-secret`,
+    `${window.location.origin}/settings/slack?_t=${NOW}`,
     "_blank",
   );
 });
@@ -250,7 +255,7 @@ test("An installed workspace offers the account connect rather than the install"
   click(getButtonByName("Connect Slack"));
 
   expect(open).toHaveBeenCalledWith(
-    `https://slack.example.test/oauth/connect?_t=${NOW}`,
+    `${window.location.origin}/settings/slack?_t=${NOW}`,
     "_blank",
   );
 });
@@ -499,4 +504,73 @@ test("Telegram authorizes the official bot in a new tab and keeps onboarding ope
     "target",
     "_blank",
   );
+});
+
+test("A pending Teams installation keeps onboarding in place until real status is connected", async () => {
+  mockOnboardingNeeded();
+  mockConnectedSource();
+  const draft = JSON.stringify({
+    version: 2,
+    orgId: "org_default",
+    userId: "test-user-123",
+    industry: "marketing",
+    experienced: false,
+    provider: null,
+    startingPromptDraft: "Keep my launch plan",
+    startingPromptKey: "marketing:gmail",
+    recommendationJobId: null,
+    recommendationStartedAt: null,
+  });
+  context.store.set(teamsDraftStorage.set$, draft);
+  mockSlack({
+    isConnected: false,
+    isInstalled: false,
+    isAdmin: false,
+    installUrl: null,
+    connectUrl: null,
+  });
+  let teams: TeamsConnectStatus = {
+    isInstalled: false,
+    isConnected: false,
+    isAdmin: true,
+    pendingInstallation: true,
+    connectUrl: TEAMS_CONNECT_URL,
+    installUrl: "https://teams.microsoft.com/l/app/app-id",
+    linkedAccounts: [],
+  };
+  context.mocks.api(teamsConnectContract.getStatus, ({ respond }) => {
+    return respond(200, teams);
+  });
+  const open = context.mocks.browser.open();
+  const visibility = context.mocks.browser.visibilityState("visible");
+  await openChatChannelStep();
+  await waitFor(() => {
+    return expect(getChannelTile("Teams")).toBeEnabled();
+  });
+  expect(getButtonByName("Continue")).toBeDisabled();
+  click(getChannelTile("Teams"));
+  expect(new URL(open.calls[0]?.url ?? "").pathname).toBe("/settings/teams");
+  expect(getButtonByName("Continue")).toBeDisabled();
+  teams = {
+    ...teams,
+    isInstalled: true,
+    isConnected: true,
+    pendingInstallation: false,
+  };
+  act(() => {
+    return visibility.changeTo("hidden");
+  });
+  act(() => {
+    return visibility.changeTo("visible");
+  });
+  await waitFor(() => {
+    return expect(getChannelTile("Teams")).toHaveTextContent("Added");
+  });
+  expect(getButtonByName("Continue")).toBeEnabled();
+  expect(pathname()).toBe(ROUTES.onboardingSlack);
+  click(getButtonByName("Continue"));
+  await expect(
+    screen.findByLabelText("Your starting prompt"),
+  ).resolves.toHaveValue("Keep my launch plan");
+  expect(pathname()).toBe(ROUTES.onboardingReady);
 });

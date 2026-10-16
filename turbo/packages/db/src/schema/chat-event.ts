@@ -113,6 +113,7 @@ export const chatEvents = pgTable(
       | "web"
       | "slack"
       | "discord"
+      | "wechat"
       | "feishu"
       | "teams"
       | "telegram"
@@ -240,7 +241,7 @@ export const chatEvents = pgTable(
         sql`${table.contextType} IN (
           'web',
           'slack',
-          'discord',
+          'discord', 'wechat',
           'feishu',
           'teams',
           'telegram',

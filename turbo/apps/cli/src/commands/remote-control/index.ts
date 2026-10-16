@@ -22,6 +22,20 @@ const metadataSchema = z.object({
   revision: z.int().positive().optional(),
   generation: z.int().positive().optional(),
   sshHosts: z.array(referenceSchema).optional(),
+  // B reader preparation. H (#40229) removes omission support after G's drain gate.
+  vncHosts: z
+    .array(
+      referenceSchema.extend({
+        roles: z
+          .array(z.enum(["rfb", "kdc"]))
+          .min(1)
+          .max(2)
+          .refine((roles) => {
+            return new Set(roles).size === roles.length;
+          }),
+      }),
+    )
+    .optional(),
 });
 const impactSchema = z.object({
   expectedRevision: z.int().positive(),
@@ -114,7 +128,9 @@ Feature availability and organization administrator checks are enforced by the b
 
   group.addCommand(
     new Command("list")
-      .description("List safe configuration metadata and SSH host references")
+      .description(
+        "List safe configuration metadata and SSH/VNC host references",
+      )
       .addOption(scopeOption())
       .option("--json", "Print JSON only")
       .action(
@@ -366,7 +382,7 @@ Feature availability and organization administrator checks are enforced by the b
             print(
               metadata(result),
               options.json,
-              "Scope changed. Refresh the configuration and SSH host inventories.",
+              "Scope changed. Refresh the configuration and SSH/VNC host inventories.",
             );
           },
         ),

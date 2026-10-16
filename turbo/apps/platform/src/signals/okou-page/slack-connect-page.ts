@@ -9,6 +9,7 @@ import { hideAppSkeleton$ } from "../app-skeleton.ts";
 
 export const setupSlackConnectPage$ = command(
   async ({ set }, signal: AbortSignal) => {
+    set(initSlackConnectPage$, signal);
     set(updatePage$, createElement(SlackConnectPage));
     set(
       updateDocumentTitle$,
@@ -16,9 +17,6 @@ export const setupSlackConnectPage$ = command(
         return $.connectors.providerConnect.slack.connectTitle;
       }),
     );
-    await Promise.all([
-      set(hideAppSkeleton$, signal),
-      set(initSlackConnectPage$, signal),
-    ]);
+    await set(hideAppSkeleton$, signal);
   },
 );

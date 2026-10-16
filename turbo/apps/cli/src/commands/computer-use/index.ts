@@ -1,5 +1,7 @@
+import { createShellCommand } from "./shell";
+import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
+import { waitForComputerUseCommand } from "./wait-for-command";
 import { join } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
 import { Command } from "commander";
 import type {
   ComputerUseCommandResponse,
@@ -12,13 +14,8 @@ import {
   createComputerUseReadCommand,
   createComputerUseWriteCommand,
   fetchComputerUseScreenshot,
-  getComputerUseCommand,
 } from "../../lib/api/domains/computer-use";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
-import {
-  createRealtimeNotifier,
-  type RealtimeNotifier,
-} from "../../lib/realtime-notifier";
 import {
   computerUseOutputDir,
   writeComputerUseArtifact,
@@ -405,65 +402,7 @@ async function waitForCommand(
   created: ComputerUseCommandCreateResponse,
   timeoutSeconds: number,
 ): Promise<void> {
-  const commandId = created.commandId;
-  const deadline = Date.now() + timeoutSeconds * 1000;
-  const owner = new AbortController();
-  const deadlineTimer = setTimeout(() => {
-    return owner.abort();
-  }, timeoutSeconds * 1000);
-  const signal = owner.signal;
-  let notifier: RealtimeNotifier | undefined;
-  try {
-    while (Date.now() <= deadline) {
-      const command = await getComputerUseCommand(commandId, signal);
-      if (command.status === "queued" || command.status === "running") {
-        if (process.stdout.isTTY) {
-          process.stdout.write(".");
-        }
-        // #38733: old serving/rollback APIs and unavailable token issuance omit metadata.
-        // Retire the old-API obligation after those targets drain; delivery recovery remains.
-        if (!notifier && created.realtime) {
-          notifier = createRealtimeNotifier(created.realtime, signal);
-        }
-        const waitMs = Math.min(
-          notifier?.active ? 2_000 : 500,
-          deadline - Date.now(),
-        );
-        if (notifier && !notifier.closed) {
-          // Setup or a disconnected transport must not block fast HTTP completions.
-          await notifier.wait(waitMs);
-        } else {
-          await delay(waitMs, undefined, { signal });
-        }
-        continue;
-      }
-
-      if (process.stdout.isTTY) {
-        process.stdout.write("\n");
-      }
-
-      if (command.status === "failed") {
-        throw new Error(
-          command.error
-            ? `${command.error.code}: ${command.error.message}`
-            : "Computer-use command failed",
-        );
-      }
-
-      const text = await commandOutputText(command, signal);
-      if (text) {
-        console.log(text);
-      }
-      return;
-    }
-  } catch (error) {
-    if (!signal.aborted) throw error;
-  } finally {
-    clearTimeout(deadlineTimer);
-    owner.abort();
-    await notifier?.close();
-  }
-  throw new Error(`Computer-use command timed out: ${commandId}`);
+  await waitForComputerUseCommand(created, timeoutSeconds, commandOutputText);
 }
 
 async function runReadCommand(
@@ -728,4 +667,12 @@ export const computerUseCommand = new Command()
   .addCommand(typeTextCommand)
   .addCommand(pressKeyCommand)
   .addCommand(performActionCommand)
-  .addCommand(openAppCommand);
+  .addCommand(openAppCommand)
+  .addCommand(createShellCommand(), {
+    hidden: Boolean(
+      decodeSandboxTokenPayload() &&
+      !decodeSandboxTokenPayload()?.capabilities.includes(
+        "computer-use:shell:write",
+      ),
+    ),
+  });

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.54.0](https://github.com/okou-ai/okou/compare/desktop-v0.53.4...desktop-v0.54.0) (2026-10-16)
+
+
+### Features
+
+* add interactive desktop shell sessions ([#40349](https://github.com/okou-ai/okou/issues/40349)) ([6dda0aa](https://github.com/okou-ai/okou/commit/6dda0aad6903feb490f88cd11db2145b140dfd1d))
+
 ## [0.53.4](https://github.com/okou-ai/okou/compare/desktop-v0.53.3...desktop-v0.53.4) (2026-10-13)
 
 

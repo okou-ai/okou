@@ -1,20 +1,27 @@
 use std::io::{self, IoSlice, Write};
 use std::path::Path;
 
-pub(super) fn append_lines(path: &Path, lines: &[String]) -> io::Result<()> {
+pub(super) fn append_lines<'a>(
+    path: &Path,
+    mut lines: impl Iterator<Item = &'a str>,
+) -> io::Result<()> {
     let mut file = runner_host::log_file::open_append(path, false)?;
 
-    match lines {
-        [] => Ok(()),
-        [line] => file.write_all(line.as_bytes()),
-        _ => write_lines_vectored(&mut file, lines),
-    }
+    let Some(first) = lines.next() else {
+        return Ok(());
+    };
+    let Some(second) = lines.next() else {
+        return file.write_all(first.as_bytes());
+    };
+    write_lines_vectored(&mut file, [first, second].into_iter().chain(lines))
 }
 
-fn write_lines_vectored(writer: &mut impl Write, lines: &[String]) -> io::Result<()> {
+fn write_lines_vectored<'a>(
+    writer: &mut impl Write,
+    lines: impl Iterator<Item = &'a str>,
+) -> io::Result<()> {
     let mut bufs: Vec<IoSlice<'_>> = lines
-        .iter()
-        .map(String::as_bytes)
+        .map(str::as_bytes)
         .filter(|bytes| !bytes.is_empty())
         .map(IoSlice::new)
         .collect();
@@ -92,32 +99,28 @@ mod tests {
 
     #[test]
     fn write_lines_vectored_completes_partial_and_interrupted_writes() {
-        let lines = vec![
-            "first\n".to_string(),
-            "second\n".to_string(),
-            "third\n".to_string(),
-        ];
+        let lines = ["first\n", "second\n", "third\n"];
         let mut writer = FragmentedWriter {
             max_chunk: 3,
             interrupt_once: true,
             ..Default::default()
         };
 
-        write_lines_vectored(&mut writer, &lines).unwrap();
+        write_lines_vectored(&mut writer, lines.into_iter()).unwrap();
 
         assert_eq!(writer.bytes, b"first\nsecond\nthird\n");
     }
 
     #[test]
     fn write_lines_vectored_returns_write_zero() {
-        let lines = vec!["first\n".to_string(), "second\n".to_string()];
+        let lines = ["first\n", "second\n"];
         let mut writer = FragmentedWriter {
             max_chunk: 3,
             zero_once: true,
             ..Default::default()
         };
 
-        let error = write_lines_vectored(&mut writer, &lines).unwrap_err();
+        let error = write_lines_vectored(&mut writer, lines.into_iter()).unwrap_err();
 
         assert_eq!(error.kind(), io::ErrorKind::WriteZero);
         assert!(writer.bytes.is_empty());
@@ -125,14 +128,14 @@ mod tests {
 
     #[test]
     fn write_lines_vectored_accepts_empty_lines() {
-        let lines = vec!["".to_string(), "".to_string()];
+        let lines = ["", ""];
         let mut writer = FragmentedWriter {
             max_chunk: 3,
             zero_once: true,
             ..Default::default()
         };
 
-        write_lines_vectored(&mut writer, &lines).unwrap();
+        write_lines_vectored(&mut writer, lines.into_iter()).unwrap();
 
         assert!(writer.bytes.is_empty());
         assert!(writer.zero_once);

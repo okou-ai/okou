@@ -301,6 +301,14 @@ run_action() {
   repo_vars_json='{"GH_OAUTH_CLIENT_ID":"github-gh-client-id","SLACK_OAUTH_CLIENT_ID":"github-slack-client-id","GOOGLE_ADS_DEVELOPER_TOKEN":"github-google-ads-var","FINICITY_PARTNER_ID":"github-finicity-partner-id","LINK_STRIPE_PUBLISHABLE_KEY":"pk_live_github_link_fixture","POSTHOG_KEY":"github-posthog-key","POSTHOG_HOST":"https://posthog.github.test","ATOM_URL":"https://atom.github.test","STRIPE_OAUTH_CLIENT_ID":"ca_test_connect_client","STRIPE_CONCURRENCY_PORTAL_CONFIGURATION_ID":"bpc_test_concurrency","MICROSOFT_TEAMS_BOT_APP_ID":"github-teams-bot-app-id","MICROSOFT_TEAMS_APP_TENANT_ID":"github-teams-app-tenant-id","OKOU_PRICE_PRO":"price_test_pro","OKOU_PRICE_TEAM":"price_test_team","OKOU_PRICE_USAGE_PACK_PLAN_PRO":"price_test_usage_pack_plan_pro","OKOU_PRICE_USAGE_PACK_PLAN_TEAM":"price_test_usage_pack_plan_team","OKOU_PRICE_USAGE_PACK_20":"price_test_usage_pack_20","OKOU_PRICE_USAGE_PACK_50":"price_test_usage_pack_50","OKOU_PRICE_USAGE_PACK_100":"price_test_usage_pack_100","OKOU_PRICE_USAGE_PACK_200":"price_test_usage_pack_200","ATOM_GRANT_PRICE":"price_test_atom_grant","OKOU_PRICE_CUSTOM_CREDITS":"price_test_custom_credits","OKOU_PRICE_CUSTOM_CREDIT_UNIT":"price_test_custom_credit_unit","OKOU_PRICE_CONCURRENCY":"price_test_concurrency","GMAIL_PUBSUB_TOPIC_NAME":"projects/github/topics/gmail","GMAIL_PUBSUB_PUSH_AUDIENCE":"https://api.github.test/api/webhooks/gmail","GMAIL_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL":"gmail-push@github.test","GOOGLE_WORKSPACE_EVENTS_PUBSUB_TOPIC_NAME":"projects/github/topics/google-workspace-events","GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_AUDIENCE":"https://api.github.test/api/webhooks/google-workspace-events","GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL":"workspace-events-push@github.test"}'
   repo_vars_json="$(jq -c '. + {OKOU_PUBLIC_ARTIFACTS_BASE_URL: "https://cdn.okou.test", OKOU_PUBLIC_HOST_DOMAIN: "okou.app", OKOU_HOST_SCHEME: "https", OKOU_ONE_TIME_CAMPAIGN: "test-campaign"}' <<< "$repo_vars_json")"
   repo_secrets_json='{"R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID":"private-prod-key","R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY":"private-prod-secret","R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID_DEV":"private-dev-key","R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY_DEV":"private-dev-secret","GH_OAUTH_CLIENT_SECRET":"github-gh-client-secret","SLACK_OAUTH_CLIENT_SECRET":"github-slack-client-secret","GOOGLE_ADS_DEVELOPER_TOKEN":"github-google-ads-secret","OKOU_WEATHER_GOOGLE_WEATHER_TOKEN":"github-google-weather-token","OKOU_FINANCE_APIDOJO_TOKEN":"github-apidojo-token","OKOU_SEO_DATAFORSEO_LOGIN":"github-dataforseo-login","OKOU_SEO_DATAFORSEO_PASSWORD":"github-dataforseo-password","OKOU_BROWSER_USE_API_KEY":"github-browser-use-api-key","OKOU_SCRAPE_FIRECRAWL_TOKEN":"github-firecrawl-token","OKOU_WEB_SEARCH_PERPLEXITY_TOKEN":"github-perplexity-token","OKOU_SOCIAL_MONID_API_KEY":"github-monid-api-key","OKOU_SOCIAL_SOCIALKIT_TOKEN":"github-socialkit-token","STEAM_WEB_API_KEY":"github-steam-web-api-key","LINK_OAUTH_CLIENT_ID":"github-link-client-id","LINK_OAUTH_CLIENT_SECRET":"github-link-client-secret","FINICITY_APP_KEY":"github-finicity-app-key","FINICITY_APP_SECRET":"github-finicity-app-secret","OKOU_MACHINE_SECRET_KEY":"github-atom-machine-secret","MICROSOFT_TEAMS_BOT_APP_PASSWORD":"github-teams-bot-app-password","VERCEL_AUTOMATION_BYPASS_SECRET":"github-vercel-bypass-secret","STRIPE_WEBHOOK_SECRET":"github-stripe-billing-webhook-secret","STRIPE_AUTOMATION_WEBHOOK_SECRET":"github-stripe-automation-webhook-secret"}'
+  repo_secrets_json="$(jq -c '. + {
+    PREVIEW_KMS_KEY_ID: "github-preview-kms-key",
+    PREVIEW_KMS_ACCESS_KEY_ID: "github-preview-kms-access-key",
+    PREVIEW_KMS_SECRET_ACCESS_KEY: "github-preview-kms-secret",
+    SECRETS_KMS_KEY_ID: "github-production-kms-key",
+    AWS_ACCESS_KEY_ID: "github-production-kms-access-key",
+    AWS_SECRET_ACCESS_KEY: "github-production-kms-secret"
+  }' <<< "$repo_secrets_json")"
   if [[ "$branded_config" == "empty" ]]; then
     repo_vars_json="$(jq -c 'with_entries(select(.key | startswith("OKOU_") | not))' <<< "$repo_vars_json")"
     repo_secrets_json="$(jq -c 'with_entries(select(.key | startswith("OKOU_") | not))' <<< "$repo_secrets_json")"
@@ -581,6 +589,10 @@ success_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${succ
 assert_contains "$success_output" "Rendered"
 assert_no_fixture_secret_values "$success_output"
 assert_machine_secret_values_absent_from_output "$success_output" "github-atom-machine-secret"
+assert_env_value "$success_env_file" SECRETS_KMS_KEY_ID "github-preview-kms-key"
+assert_env_value "$success_env_file" AWS_ACCESS_KEY_ID "github-preview-kms-access-key"
+assert_env_value "$success_env_file" AWS_SECRET_ACCESS_KEY "github-preview-kms-secret"
+assert_env_absent_value "$success_env_file" "github-production-kms"
 assert_debug_canonical "$success_env_file"
 assert_env_value "$success_env_file" R2_PRIVATE_ARTIFACTS_BUCKET_NAME "user-artifact-private-dev"
 assert_env_value "$success_env_file" R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID "private-dev-key"
@@ -760,11 +772,15 @@ assert_env_absent_value "$production_web_env_file" "github-artifact-preview-waf-
 
 production_api_dir="$(mktemp -d)"
 TEMP_DIRS+=("$production_api_dir")
-production_api_output="$(run_action "$(build_doppler_secrets_json)" "$production_api_dir" api production "https://static.okou.io/okou-cli/test-sha/package.tgz" canonical '{"GCP_LLM_SERVICE_ACCOUNT_EMAIL":"llm-prod@vm0-ai-488909.iam.gserviceaccount.com"}' 2>&1)"
+production_api_output="$(run_action "$(build_doppler_secrets_json)" "$production_api_dir" api production "https://static.okou.io/okou-cli/test-sha/package.tgz" canonical '{"GCP_LLM_SERVICE_ACCOUNT_EMAIL":"llm-prod@vm0-ai-488909.iam.gserviceaccount.com"}' '{"PREVIEW_KMS_KEY_ID":null,"PREVIEW_KMS_ACCESS_KEY_ID":null,"PREVIEW_KMS_SECRET_ACCESS_KEY":null}' 2>&1)"
 production_api_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${production_api_dir}/github-output")"
 assert_contains "$production_api_output" "Rendered"
 assert_no_fixture_secret_values "$production_api_output"
 assert_machine_secret_values_absent_from_output "$production_api_output" "github-atom-machine-secret"
+assert_env_value "$production_api_env_file" SECRETS_KMS_KEY_ID "github-production-kms-key"
+assert_env_value "$production_api_env_file" AWS_ACCESS_KEY_ID "github-production-kms-access-key"
+assert_env_value "$production_api_env_file" AWS_SECRET_ACCESS_KEY "github-production-kms-secret"
+assert_env_absent_value "$production_api_env_file" "github-preview-kms"
 assert_env_value "$production_api_env_file" OKOU_HOST_SCHEME "https"
 assert_debug_absent "$production_api_env_file"
 assert_google_llm_config "$production_api_env_file" "llm-prod@vm0-ai-488909.iam.gserviceaccount.com"
@@ -804,6 +820,19 @@ assert_env_absent_value "$production_api_env_file" "doppler-stripe-automation-we
 assert_preview_job_ref_absent "$production_api_env_file"
 assert_env_key_count "$production_api_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED 1
 assert_env_value "$production_api_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED "false"
+
+for kms_secret in PREVIEW_KMS_KEY_ID PREVIEW_KMS_ACCESS_KEY_ID PREVIEW_KMS_SECRET_ACCESS_KEY; do
+  missing_kms_dir="$(mktemp -d)"
+  TEMP_DIRS+=("$missing_kms_dir")
+  missing_kms_secret="$(jq -cn --arg key "$kms_secret" '{($key): null}')"
+  status=0
+  missing_kms_output="$(run_action "$(build_doppler_secrets_json)" "$missing_kms_dir" api preview "https://static.okou.io/okou-cli/test-sha/package.tgz" canonical "" "$missing_kms_secret" 2>&1)" || status=$?
+  if [[ "$status" -eq 0 ]]; then
+    fail "preview must reject incomplete KMS credentials instead of using production credentials"
+  fi
+  assert_contains "$missing_kms_output" "${kms_secret} is missing from GitHub secrets"
+  assert_no_fixture_secret_values "$missing_kms_output"
+done
 
 discord_vars_json='{"DISCORD_APPLICATION_ID":"123456789012345678","DISCORD_PUBLIC_KEY":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","DISCORD_OAUTH_CLIENT_ID":"github-discord-legacy-client-id","DISCORD_GATEWAY_ENABLED":"true"}'
 discord_secrets_json='{"DISCORD_BOT_TOKEN":"github-discord-bot-token","DISCORD_GATEWAY_SECRET":"github-discord-hmac-secret-1234567890","DISCORD_OAUTH_CLIENT_SECRET":"github-discord-legacy-oauth-secret","DISCORD_GATEWAY_CONTROL_SECRET":"github-discord-control-secret"}'

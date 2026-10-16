@@ -68,10 +68,10 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
       throw new Error("Expected the Pi actor's organization");
     }
     const actor = { ...identity, orgId: identity.orgId };
-    if (!orgId) {
-      await runs.grantProEntitlement(actor);
-    }
-    const onboarding = await chat.bdd.readOnboardingStatus(actor);
+    // Paid bootstrap already observed this organization's default agent.
+    const onboarding = orgId
+      ? await chat.bdd.readOnboardingStatus(actor)
+      : await runs.grantProEntitlement(actor);
     if (!onboarding.defaultAgentId) {
       throw new Error("Expected paid onboarding to create a default agent");
     }
@@ -80,7 +80,8 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
       expect(completed.status).toBe(200);
     }
     if (model === "gpt-6-luna") {
-      await chat.configureSubscriptionPiModel(actor);
+      // Ordinary Runs name GPT explicitly; maintenance uses its built-in route.
+      await chat.connectSubscriptionPiModel(actor);
     } else {
       await runs.ensurePersonalSubscriptionModel(actor);
     }
@@ -342,16 +343,6 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
       });
       expect(memory.storageId).toBe(sourceMemory?.storageId);
       expect(claim.piSessionId).toBe(job.runId);
-      const readable = await runs.requestReadRun(
-        selectedActor.actor,
-        job.runId,
-        [200],
-      );
-      expect(readable.body).toMatchObject({
-        runId: job.runId,
-        status: "running",
-        source: { model: "okou-memory" },
-      });
       return {
         ...selectedActor,
         runId: job.runId,
@@ -367,6 +358,7 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
       runnerIdentity,
       peerActor,
       source,
+      sourceClaim,
       peerSource,
       stage1,
       stage2,

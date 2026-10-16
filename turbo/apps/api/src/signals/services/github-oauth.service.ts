@@ -24,8 +24,9 @@ import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
 import { githubInstallations } from "@okouai/db/schema/github-installation";
 import { githubUserLinks } from "@okouai/db/schema/github-user-link";
 import { z } from "zod";
+import { command } from "ccstate";
 
-import type { Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { safeJsonParse, tapError } from "../utils";
 import {
   connectorOAuthStateExpiresAt,
@@ -511,61 +512,64 @@ function parseGithubOauthCallbackRedirectUriState(args: {
   };
 }
 
-export async function buildGithubUserConnectAuthorizationUrl(
-  args: {
-    readonly db: Db;
-    readonly userId: string;
-    readonly orgId: string;
-    readonly origin: string;
-    readonly authMethodId: ConnectorAuthMethodId;
-    readonly method: ConnectorAuthMethodRuntimeConfig;
-    readonly readEnv: ConnectorEnvReader;
-  },
-  signal: AbortSignal,
-): Promise<string | null> {
-  if (args.method.grant.kind !== "auth-code" || !args.method.client) {
-    return null;
-  }
-  const authClient = resolveConnectorAuthClient(
-    args.method.client,
-    args.readEnv,
-  );
-  if (!authClient || !isStaticConfidentialConnectorAuthClient(authClient)) {
-    return null;
-  }
+export const startGithubUserOAuth$ = command(
+  async (
+    { set },
+    args: {
+      readonly userId: string;
+      readonly orgId: string;
+      readonly origin: string;
+      readonly authMethodId: ConnectorAuthMethodId;
+      readonly method: ConnectorAuthMethodRuntimeConfig;
+      readonly readEnv: ConnectorEnvReader;
+    },
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    const db = set(writeDb$);
+    if (args.method.grant.kind !== "auth-code" || !args.method.client) {
+      return null;
+    }
+    const authClient = resolveConnectorAuthClient(
+      args.method.client,
+      args.readEnv,
+    );
+    if (!authClient || !isStaticConfidentialConnectorAuthClient(authClient)) {
+      return null;
+    }
 
-  const state = generateConnectorOAuthState();
-  const redirectUri = `${args.origin}/api/connectors/github/callback`;
-  const authResult = normalizeAuthUrlResult(
-    await buildConnectorAuthCodeAuthorizationUrlWithMethod({
-      connectorSlug: "github",
-      authMethodId: args.authMethodId,
-      method: args.method,
-      authClient,
-      redirectUri,
+    const state = generateConnectorOAuthState();
+    const redirectUri = `${args.origin}/api/connectors/github/callback`;
+    const authResult = normalizeAuthUrlResult(
+      await buildConnectorAuthCodeAuthorizationUrlWithMethod({
+        connectorSlug: "github",
+        authMethodId: args.authMethodId,
+        method: args.method,
+        authClient,
+        redirectUri,
+        state,
+      }),
+    );
+
+    await db.insert(connectorOauthStates).values({
       state,
-    }),
-  );
+      connectorSlug: "github",
+      authMethod: args.authMethodId,
+      userId: args.userId,
+      orgId: args.orgId,
+      redirectUri,
+      oauthRequestedScopes: JSON.stringify(
+        connectorGrantScopes(args.method.grant),
+      ),
+      codeVerifier: authResult.codeVerifier,
+      oauthContext: authResult.oauthContext,
+      accountMutation: { intent: "add" },
+      expiresAt: connectorOAuthStateExpiresAt(),
+    });
+    signal.throwIfAborted();
 
-  await args.db.insert(connectorOauthStates).values({
-    state,
-    connectorSlug: "github",
-    authMethod: args.authMethodId,
-    userId: args.userId,
-    orgId: args.orgId,
-    redirectUri,
-    oauthRequestedScopes: JSON.stringify(
-      connectorGrantScopes(args.method.grant),
-    ),
-    codeVerifier: authResult.codeVerifier,
-    oauthContext: authResult.oauthContext,
-    accountMutation: { intent: "add" },
-    expiresAt: connectorOAuthStateExpiresAt(),
-  });
-  signal.throwIfAborted();
-
-  return authResult.url;
-}
+    return authResult.url;
+  },
+);
 
 export function parseGithubOauthState(
   state: string | undefined,
@@ -1078,30 +1082,35 @@ export async function tryLinkGithubFromRemoteInstallations(
   return true;
 }
 
-export async function findGithubInstallationByInstallationId(
-  args: {
-    readonly db: Db;
-    readonly installationId: string;
-    readonly orgId: string | null;
+export const findGithubInstallationByInstallationId$ = command(
+  async (
+    { get },
+    args: {
+      readonly installationId: string;
+      readonly orgId: string | null;
+    },
+    signal: AbortSignal,
+  ): Promise<{ readonly id: string } | null> => {
+    const db = get(db$);
+    const filters = [
+      eq(githubInstallations.installationId, args.installationId),
+    ];
+    if (args.orgId) {
+      filters.push(eq(githubInstallations.orgId, args.orgId));
+    }
+
+    const [existing] = await db
+      .select({
+        id: githubInstallations.id,
+      })
+      .from(githubInstallations)
+      .where(and(...filters))
+      .limit(1);
+    signal.throwIfAborted();
+
+    return existing ?? null;
   },
-  signal: AbortSignal,
-): Promise<{ readonly id: string } | null> {
-  const filters = [eq(githubInstallations.installationId, args.installationId)];
-  if (args.orgId) {
-    filters.push(eq(githubInstallations.orgId, args.orgId));
-  }
-
-  const [existing] = await args.db
-    .select({
-      id: githubInstallations.id,
-    })
-    .from(githubInstallations)
-    .where(and(...filters))
-    .limit(1);
-  signal.throwIfAborted();
-
-  return existing ?? null;
-}
+);
 
 export async function createOrActivateGithubInstallation(
   args: {

@@ -1,5 +1,56 @@
 # Changelog
 
+## [8.762.0](https://github.com/okou-ai/okou/compare/core-v8.761.0...core-v8.762.0) (2026-10-16)
+
+
+### Features
+
+* add interactive desktop shell sessions ([#40349](https://github.com/okou-ai/okou/issues/40349)) ([6dda0aa](https://github.com/okou-ai/okou/commit/6dda0aad6903feb490f88cd11db2145b140dfd1d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.569.0
+
+## [8.761.0](https://github.com/okou-ai/okou/compare/core-v8.760.0...core-v8.761.0) (2026-10-15)
+
+
+### Features
+
+* **cli:** retain same-run ssh and vnc failure diagnostics ([#40358](https://github.com/okou-ai/okou/issues/40358)) ([4e5cd58](https://github.com/okou-ai/okou/commit/4e5cd5836d1f051a85ca076d170cc2e30e3a8177))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.568.0
+
+## [8.760.0](https://github.com/okou-ai/okou/compare/core-v8.759.3...core-v8.760.0) (2026-10-15)
+
+
+### Features
+
+* connect wechat from works with qr pairing ([#40373](https://github.com/okou-ai/okou/issues/40373)) ([116a68f](https://github.com/okou-ai/okou/commit/116a68fc8f66048e7d80593c3bf303a7475f409a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.567.0
+
+## [8.759.3](https://github.com/okou-ai/okou/compare/core-v8.759.2...core-v8.759.3) (2026-10-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.566.2
+
 ## [8.759.2](https://github.com/okou-ai/okou/compare/core-v8.759.1...core-v8.759.2) (2026-10-15)
 
 

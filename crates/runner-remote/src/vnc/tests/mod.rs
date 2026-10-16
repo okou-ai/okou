@@ -3,6 +3,7 @@ mod boundaries;
 mod delivery;
 mod diagnostics;
 mod harness;
+mod history;
 mod list;
 mod list_lifecycle;
 mod notifications;
@@ -309,6 +310,62 @@ async fn malformed_or_cross_paired_credentials_fail_before_dns_or_connect() {
         let reply = h.start("shared").await;
         assert_eq!(reply.result(), &json!({"outcome":"failed","reason":reason}));
         assert!(h.network.attempts.lock().unwrap().is_empty());
+        resolve.assert_calls_async(1).await;
+        h.run.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn prepared_native_routes_fail_before_network_or_session_admission() {
+    for (kind, kdc) in [
+        ("cloudflare_access", false),
+        ("tailscale", false),
+        ("cloudflare_access", true),
+        ("tailscale", true),
+    ] {
+        let mut h = Harness::new().await;
+        let mut transport = json!({
+            "type":kind, "configId":CONNECTION, "generation":7,
+            "credentials":{"clientId":"private-client","clientSecret":"private-secret"}
+        });
+        if kind == "tailscale" {
+            transport["tags"] = json!(["tag:okou"]);
+        } else if !kdc {
+            transport["originTls"] = serde_json::Value::Null;
+        }
+        let mut response = json!({
+            "outcome":"resolved_transport", "host":"vnc.example.test", "port":5900,
+            "generation":7, "serverName":"vnc.example.test", "transport":transport,
+            "authentication":{"method":"vnc_password","password":" secret "},
+            "security":{"type":"x509_vnc","trust":{"mode":"custom_ca","caBundle":h.peer.ca}}
+        });
+        if kdc {
+            let transport = response["transport"].take();
+            response["outcome"] = json!("resolved_kerberos");
+            response["credentialRevision"] = json!(3);
+            response["transport"] = json!({"type":"direct"});
+            response["authentication"] = json!({
+                "method":"qemu_kerberos_password", "password":"private-password",
+                "initiator":{"realm":"EXAMPLE.COM","components":["operator"]}
+            });
+            response["security"] = json!({
+                "type":"qemu_x509_gssapi","trust":{"mode":"custom_ca","caBundle":h.peer.ca},
+                "service":{"realm":"EXAMPLE.COM","components":["vnc","desktop"]},
+                "kdc":{"host":"kdc.example.test","port":88,"transport":transport,
+                    "ticketLifetimeSeconds":1200,"renewableLifetimeSeconds":7200}
+            });
+        }
+        // The mock also verifies that only installed Direct/SSH profiles were advertised.
+        let resolve = h.resolve_response(response).await;
+        assert_eq!(
+            h.start("shared").await.result(),
+            &json!({"outcome":"failed","reason":"authority_failure"})
+        );
+        assert!(h.network.attempts.lock().unwrap().is_empty());
+        assert_eq!(
+            h.run.request("vnc.session.list", json!({})).await.result()["sessions"],
+            json!([])
+        );
         resolve.assert_calls_async(1).await;
         h.run.shutdown().await;
     }

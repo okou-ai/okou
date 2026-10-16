@@ -27,29 +27,38 @@ describe("Clerk deletion revokes active Pi memory authority", () => {
       return { type, peerScope };
     });
   });
+  const survivorCases = activeCases.filter(({ type, peerScope }) => {
+    return type === "user.deleted"
+      ? peerScope !== "same-user-other-org"
+      : peerScope !== "same-org";
+  });
+
+  async function activeOwners(peerScope: (typeof scopes)[number]) {
+    const first = await prepareMaintenance({
+      independentOwner: true,
+      peerScope,
+    });
+    await dispatch(first);
+    const second = await first.claimMaintenance(1);
+    expect(second.runId).not.toBe(first.runId);
+    const active = [first, second];
+    expect(
+      active.flatMap((run) => {
+        return run.maintenance.selected.map((selected) => {
+          return selected.sourceRunId;
+        });
+      }),
+    ).toStrictEqual(
+      expect.arrayContaining([first.source.runId, first.peerSource?.runId]),
+    );
+    expect(second.memory.storageId).not.toBe(first.memory.storageId);
+    return { first, active, target: first.sourceActor.actor };
+  }
 
   it.each(activeCases)(
-    "$type removes active maintenance authority with $peerScope isolation",
+    "$type revokes active uploads with $peerScope isolation",
     async ({ type, peerScope }) => {
-      const first = await prepareMaintenance({
-        independentOwner: true,
-        peerScope,
-      });
-      await dispatch(first);
-      const second = await first.claimMaintenance(1);
-      expect(second.runId).not.toBe(first.runId);
-      const active = [first, second];
-      expect(
-        active.flatMap((run) => {
-          return run.maintenance.selected.map((selected) => {
-            return selected.sourceRunId;
-          });
-        }),
-      ).toStrictEqual(
-        expect.arrayContaining([first.source.runId, first.peerSource?.runId]),
-      );
-      expect(second.memory.storageId).not.toBe(first.memory.storageId);
-      const target = first.sourceActor.actor;
+      const { first, active, target } = await activeOwners(peerScope);
       const pending = await Promise.all(
         active.map(async (run) => {
           const stopped =
@@ -85,18 +94,51 @@ describe("Clerk deletion revokes active Pi memory authority", () => {
             run.headers,
             [404],
           );
-        } else {
-          // A surviving user, not a resurrected deleted identity, observes HEAD.
+        }
+      }
+    },
+  );
+
+  it.each(survivorCases)(
+    "$type preserves active publication with $peerScope isolation",
+    async ({ type, peerScope }) => {
+      const { first, active, target } = await activeOwners(peerScope);
+      await deleteOwner(type, target);
+      const survivor = active.find((run) => {
+        return type === "user.deleted"
+          ? run.actor.userId !== target.userId
+          : run.actor.orgId !== target.orgId;
+      });
+      if (!survivor) {
+        throw new Error("Expected a genuinely surviving maintenance owner");
+      }
+      // A surviving user, not a resurrected deleted identity, observes HEAD.
+      const content = `Surviving ${survivor.runId}.\n`;
+      const output = await publish(survivor, content);
+      await completeMaintenance(survivor, output.versionId);
+      expect(
+        (await observeMemory({ ...first, ...survivor }, content)).memory
+          .versionId,
+      ).toBe(output.versionId);
+    },
+  );
+
+  it.each(activeCases)(
+    "$type consumes active selections with $peerScope isolation",
+    async ({ type, peerScope }) => {
+      const { first, active, target } = await activeOwners(peerScope);
+      await deleteOwner(type, target);
+      for (const run of active) {
+        const stopped =
+          type === "user.deleted"
+            ? run.actor.userId === target.userId
+            : run.actor.orgId === target.orgId;
+        if (!stopped) {
+          // Finish a changed-byte result before asserting no work. Its ordinary
+          // Runner readback is the independent publication contract above.
           const output = await publish(run, `Surviving ${run.runId}.\n`);
+          expect(output.versionId).not.toBe(run.memory.versionId);
           await completeMaintenance(run, output.versionId);
-          expect(
-            (
-              await observeMemory(
-                { ...first, ...run },
-                `Surviving ${run.runId}.\n`,
-              )
-            ).memory.versionId,
-          ).toBe(output.versionId);
         }
       }
       await extract(first, 0);

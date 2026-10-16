@@ -1,3 +1,4 @@
+import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { connectSlackWorkspace$ } from "./slack-workspace-write.service";
 import { randomBytes } from "node:crypto";
 
@@ -56,9 +57,24 @@ function redirect(url: string): Response {
   });
 }
 
-function failed(message: string): Response {
-  const url = new URL("/settings/slack", env("APP_URL"));
+function failed(
+  message: string,
+  context?: SlackConnectorOAuthContext,
+): Response {
+  const url = new URL(INTEGRATION_SETTINGS_PATHS.slack, env("APP_URL"));
   url.searchParams.set("error", message);
+  if (context?.workspaceId) {
+    url.searchParams.set("w", context.workspaceId);
+  }
+  if (context?.slackUserId) {
+    url.searchParams.set("u", context.slackUserId);
+  }
+  if (context?.channelId) {
+    url.searchParams.set("c", context.channelId);
+  }
+  if (context?.threadTs) {
+    url.searchParams.set("t", context.threadTs);
+  }
   return redirect(url.toString());
 }
 
@@ -121,6 +137,7 @@ export const startSlackConnectorOAuth$ = command(
     ) {
       return failed(
         "You do not have permission to connect this Slack workspace.",
+        context,
       );
     }
     const { resolved, client, scopes } = await set(
@@ -232,9 +249,6 @@ const resolveSlackConnectorCallback$ = command(
         "This Slack authorization has expired or was already used. Please start again.",
       );
     }
-    if (args.error || !args.code) {
-      return failed("Slack authorization was not completed. Please try again.");
-    }
     const stored = claimed.state;
     const parsed = slackConnectorOAuthContextSchema.safeParse(
       safeJsonParse(stored.oauthContext ?? ""),
@@ -248,6 +262,12 @@ const resolveSlackConnectorCallback$ = command(
       return failed("Invalid Slack authorization context.");
     }
     const context = parsed.data;
+    if (args.error || !args.code) {
+      return failed(
+        "Slack authorization was not completed. Please try again.",
+        context,
+      );
+    }
     const member = await set(
       getMemberRoleAndUpdateCache$,
       context.orgId,
@@ -260,6 +280,7 @@ const resolveSlackConnectorCallback$ = command(
     ) {
       return failed(
         "You do not have permission to connect this Slack workspace.",
+        context,
       );
     }
     const { resolved, client, scopes } = await set(
@@ -276,10 +297,16 @@ const resolveSlackConnectorCallback$ = command(
     );
     signal.throwIfAborted();
     if (context.workspaceId && context.workspaceId !== oauth.teamId) {
-      return failed("Use the Slack workspace that opened this connection.");
+      return failed(
+        "Use the Slack workspace that opened this connection.",
+        context,
+      );
     }
     if (context.slackUserId && context.slackUserId !== oauth.userId) {
-      return failed("Use the Slack account that opened this connection.");
+      return failed(
+        "Use the Slack account that opened this connection.",
+        context,
+      );
     }
     const requestedScopes = resolveOAuthRequestedScopeSnapshot(
       stored.oauthRequestedScopes,
@@ -292,6 +319,7 @@ const resolveSlackConnectorCallback$ = command(
     ) {
       return failed(
         "Slack did not grant all requested connector permissions. Please authorize again.",
+        context,
       );
     }
     return {
@@ -332,6 +360,7 @@ const validateSlackWorkspace$ = command(
     ) {
       return failed(
         "This Slack workspace is unavailable for your organization.",
+        context,
       );
     }
     const [otherInstallation] = await db
@@ -343,6 +372,7 @@ const validateSlackWorkspace$ = command(
     if (otherInstallation && otherInstallation.id !== args.workspaceId) {
       return failed(
         "Your organization is connected to a different Slack workspace.",
+        context,
       );
     }
     const [connection] = await db
@@ -357,7 +387,10 @@ const validateSlackWorkspace$ = command(
       .limit(1);
     signal.throwIfAborted();
     if (connection && connection.userId !== context.userId) {
-      return failed("This Slack account is already connected to another user.");
+      return failed(
+        "This Slack account is already connected to another user.",
+        context,
+      );
     }
     const [currentConnection] = await db
       .select({ slackUserId: slackOrgConnections.slackUserId })
@@ -377,6 +410,7 @@ const validateSlackWorkspace$ = command(
     ) {
       return failed(
         "Your Okou account is connected to a different Slack account in this workspace.",
+        context,
       );
     }
     return null;
@@ -442,7 +476,10 @@ const finishSlackConnectorOAuth$ = command(
       signal,
     );
     if (connector.status !== "connected") {
-      return failed(connectorConnectionWriteFailureMessage(connector.status));
+      return failed(
+        connectorConnectionWriteFailureMessage(connector.status),
+        context,
+      );
     }
     const connection = await set(
       connectSlackWorkspace$,
@@ -460,7 +497,7 @@ const finishSlackConnectorOAuth$ = command(
       signal,
     );
     if (connection.kind !== "ok") {
-      return failed(connection.message);
+      return failed(connection.message, context);
     }
     await set(
       publishSlackAdminSignal$,
@@ -488,14 +525,20 @@ const finishSlackConnectorOAuth$ = command(
         },
       ),
     );
-    if (context.reinstall) {
-      return redirect(
-        new URL("/?tab=works&updated=1", env("APP_URL")).toString(),
-      );
-    }
-    const url = new URL("/settings/slack", env("APP_URL"));
+    const url = new URL(INTEGRATION_SETTINGS_PATHS.slack, env("APP_URL"));
     url.searchParams.set("status", "connected");
     url.searchParams.set("workspace", oauth.teamName);
+    url.searchParams.set("w", oauth.teamId);
+    url.searchParams.set("u", oauth.userId);
+    if (context.channelId) {
+      url.searchParams.set("c", context.channelId);
+    }
+    if (context.threadTs) {
+      url.searchParams.set("t", context.threadTs);
+    }
+    if (context.reinstall) {
+      url.searchParams.set("updated", "1");
+    }
     return redirect(url.toString());
   },
 );

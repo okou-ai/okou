@@ -1,3 +1,4 @@
+import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { command, computed, type Computed } from "ccstate";
 import { z } from "zod";
 import {
@@ -88,7 +89,7 @@ function contractErrorResponse(
 
 function buildConnectUrl(workspaceId: string, slackUserId: string): string {
   const params = new URLSearchParams({ w: workspaceId, u: slackUserId });
-  return `${env("APP_URL")}/settings/slack?${params.toString()}`;
+  return `${env("APP_URL")}${INTEGRATION_SETTINGS_PATHS.slack}?${params.toString()}`;
 }
 
 function buildDisconnectedAppHomeView(args: {
@@ -167,6 +168,7 @@ function buildUninstalledAppHomeView(): SlackView {
           {
             type: "button",
             text: { type: "plain_text", text: `Open ${brandName} Settings` },
+            // Keep /works until serving and rollback Apps support bare /settings/slack (#40196).
             url: `${env("APP_URL")}/works`,
             action_id: "home_open_settings",
             style: "primary",

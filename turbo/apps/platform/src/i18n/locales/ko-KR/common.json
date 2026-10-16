@@ -335,7 +335,8 @@
       "telegram": "Telegram",
       "test": "테스트",
       "web": "웹",
-      "webhook": "Webhook"
+      "webhook": "Webhook",
+      "wechat": "WeChat"
     },
     "statuses": {
       "cancelled": "취소됨",
@@ -2005,7 +2006,8 @@
       "openTelegramMessage": "Telegram에서 원본 메시지 열기",
       "slack": "Slack",
       "teams": "Microsoft Teams",
-      "telegram": "Telegram"
+      "telegram": "Telegram",
+      "wechat": "WeChat"
     },
     "permissions": {
       "actionDescription": "{{action}} {{permissionName}}",
@@ -2890,12 +2892,8 @@
     "edit": "Cloudflare Access 편집",
     "failed": "Cloudflare Access 변경 사항을 저장하지 못했습니다. 다시 시도하세요.",
     "forbidden": "조직 관리자만 공유 Cloudflare Access를 변경할 수 있습니다.",
-    "hostCount_other": "SSH 호스트 {{count}}개",
     "impactChanged": "영향을 받는 호스트가 변경되었습니다. 다시 확인하기 전에 최신 영향을 검토하세요.",
-    "impactConfirm": "이 구성원들의 SSH 호스트는 저장된 상태로 유지되지만 소유자가 다시 연결하거나 직접 연결을 명시적으로 선택하기 전까지 연결할 수 없음을 이해했습니다.",
-    "impactSummary": "영향 범위: {{members}}, {{hosts}}. SSH 호스트는 저장된 상태로 유지되지만 소유자가 다시 연결하거나 직접 연결을 명시적으로 선택하기 전까지 연결할 수 없습니다. 자동으로 직접 연결로 바뀌지 않습니다.",
     "inUse": "SSH 호스트가 이 Cloudflare Access를 사용 중입니다. 호스트 소유자가 먼저 다시 연결하거나 호스트를 삭제해야 합니다.",
-    "inUseHelp": "내 SSH 호스트가 아직 이 구성을 사용합니다. 다른 구성에 다시 연결하거나 직접 연결을 명시적으로 선택하거나 호스트를 먼저 삭제하세요.",
     "invalidInput": "일부 Cloudflare Access 설정이 올바르지 않습니다. 입력 내용을 확인하고 다시 시도하세요.",
     "keepChanges": "이 버전에 내 변경 사항 적용",
     "latest": "최근 저장된 설정",
@@ -3443,29 +3441,50 @@
         "accountMismatchDescription": "현재 Okou 계정은 여기에서 Slack 계정 {{currentAccount}}을(를) 사용합니다. 이 링크를 연 계정 {{requestedAccount}}(으)로 전환할까요?",
         "accountMismatchDescriptionWorkspace": "현재 Okou 계정은 {{workspace}}에서 Slack 계정 {{currentAccount}}을(를) 사용합니다. 이 링크를 연 계정 {{requestedAccount}}(으)로 전환할까요?",
         "accountMismatchTitle": "Slack 계정을 전환할까요?",
+        "authorizationFailed": "Slack 인증이 완료되지 않았습니다. 현재 연결 상태가 아래에 표시됩니다. 다시 시도할 수 있습니다.",
+        "authorizationReturned": "인증에서 돌아왔습니다. 아래 상태는 현재 연결을 나타냅니다.",
         "connectDescription": "이 Slack 워크스페이스에 계정을 연결하여 Slack에서 직접 에이전트와 상호작용하세요.",
+        "connectedAccount": "Slack 계정: {{account}}",
         "connectTitle": "Slack에 연결하기",
+        "currentConnection": "Slack에 연결됨",
         "errorFallback": "Slack 연결을 확인하거나 시작할 수 없습니다. 다시 시도하세요.",
         "invalidDescription": "이 페이지는 Slack 연결 링크에서 열어야 합니다.",
         "keepAccount": "{{account}} 유지",
         "open": "Slack 열기",
+        "reauthorize": "Slack 권한 업데이트",
+        "retryStatus": "다시 확인",
+        "startAgain": "다시 시작",
         "successDescription": "어느 채널에서든 설치된 봇을 언급하거나 DM을 보내 대화를 시작하세요.",
         "successDescriptionWorkspace": "{{workspace}}에 연결되었습니다. 어느 채널에서든 설치된 봇을 언급하거나 DM을 보내 대화를 시작하세요.",
-        "successTitle": "Slack에 연결되었습니다!",
         "switchAccount": "{{account}}(으)로 전환",
+        "unavailable": "현재 Slack에 연결할 수 없습니다. 나중에 다시 시도하세요.",
         "workspaceMismatchDescription": "이 Slack 워크스페이스는 현재 Okou 조직에서 사용할 수 없습니다. 조직을 전환하거나 관리자에게 도움을 요청하세요.",
         "workspaceMismatchDescriptionNamed": "현재 Okou 조직은 {{workspace}}에 연결되어 있습니다. 조직을 전환하거나 관리자에게 제거를 요청한 후 이 Slack 워크스페이스를 연결하세요.",
         "workspaceMismatchTitle": "Slack 워크스페이스가 일치하지 않음"
       },
       "teams": {
+        "authorize": "Microsoft Teams 승인",
         "connectDescription": "Teams 계정을 연결하여 Microsoft Teams에서 직접 에이전트와 상호작용하세요.",
-        "connectDescriptionNamed": "{{displayName}}님, Teams 계정을 연결하여 Microsoft Teams에서 직접 에이전트와 상호작용하세요.",
+        "connectedDescription": "Teams 계정이 연결되었습니다.",
         "connectTitle": "Microsoft Teams 연결하기",
-        "invalidDescription": "이 페이지는 Microsoft Teams 연결 링크에서 열어야 합니다.",
+        "currentState": "현재 Teams 상태",
+        "existingConnection": "기존 Teams 연결이 있습니다. 이 링크에서 요청한 계정이 확인된 것은 아닙니다.",
+        "identityMismatch": "요청한 Teams 계정 또는 작업 공간이 현재 연결과 일치하지 않습니다.",
+        "identityUnknown": "이 링크의 Teams 계정을 확인할 수 없습니다. 페이지를 새로고침하거나 Teams를 열어 계정을 확인하세요.",
+        "install": "Teams에 설치",
+        "invalidContext": "이 링크에 Teams 계정 정보가 부족합니다. Teams에서 새 연결 링크를 여세요.",
         "open": "Teams 열기",
+        "orgMismatch": "다른 조직의 링크입니다. 해당 조직으로 전환한 후 다시 시도하세요.",
+        "pendingDescription": "계정이 준비되었습니다. Teams에 앱을 설치한 다음 이 페이지를 새로 고쳐 연결을 확인하세요.",
+        "pendingTitle": "Teams에 설치하여 완료",
         "providerName": "Microsoft Teams",
+        "refresh": "Teams 상태 새로 고침",
+        "reinstall": "Teams에 다시 설치",
+        "requestedAccount": "링크에 표시된 계정: {{name}}",
+        "statusFailed": "Teams 연결을 확인할 수 없습니다. 다시 시도하세요.",
         "successDescription": "{{team}}에 연결되었습니다. Teams에서 @{{botName}}를 언급하여 대화를 시작하세요.",
-        "successTitle": "Microsoft Teams에 연결되었습니다"
+        "successTitle": "Microsoft Teams에 연결되었습니다",
+        "unavailable": "Teams 설정을 사용할 수 없습니다. 조직 관리자에게 문의하세요."
       },
       "telegram": {
         "alreadyTitle": "Telegram에 이미 연결됨",
@@ -5577,6 +5596,9 @@
       "attention_other": "VNC 호스트 {{count}}개에 확인이 필요합니다",
       "observedAt": "기록 시각 {{time}}",
       "reasons": {
+        "access_protocol_failure": "Cloudflare 연결 프로토콜에 오류가 발생했습니다.",
+        "access_rejected": "Cloudflare Access가 서비스 토큰을 거부했습니다.",
+        "access_tls_failure": "Cloudflare 게이트웨이 인증서 확인에 실패했습니다.",
         "authentication_failed": "인증 또는 서버 신원 확인에 실패했습니다.",
         "disconnected": "연결 시도 중 서버가 연결을 끊었습니다.",
         "invalid_credential": "저장된 자격 증명을 사용할 수 없습니다.",
@@ -5584,7 +5606,9 @@
         "kerberos_non_renewable": "Kerberos 자격 증명을 갱신할 수 없습니다.",
         "kerberos_renewal_exhausted": "Kerberos 자격 증명의 갱신 한도에 도달했습니다.",
         "network_failure": "연결 전송에 실패했습니다.",
+        "origin_tls_failure": "원본 서버 TLS 인증서 확인에 실패했습니다.",
         "protocol": "서버가 선택한 연결 프로토콜을 완료하지 못했습니다.",
+        "tailscale_unavailable": "선택한 Tailscale 피어를 사용할 수 없습니다.",
         "timed_out": "연결 시도 시간이 초과되었습니다.",
         "unsafe_destination": "네트워크 정책에 의해 대상이 거부되었습니다.",
         "unsupported_profile": "서버가 선택한 보안 프로필을 지원하지 않습니다."
@@ -5676,6 +5700,18 @@
     "loadFailed": "VNC 설정을 불러오지 못했습니다.",
     "loading": "VNC 설정을 불러오는 중…",
     "manage": "VNC 관리",
+    "native": {
+      "editPending": "이 사설 네트워크 경로는 아직 편집할 수 없습니다.",
+      "hostCount_other": "호스트 {{count}}개",
+      "impactConfirm": "이 멤버들의 호스트는 저장된 상태로 유지되지만 소유자가 다시 연결 설정을 할 때까지 접속할 수 없음을 이해합니다.",
+      "impactSummary": "영향 대상: {{members}}, {{hosts}}. 호스트는 저장된 상태로 유지되지만 소유자가 다시 연결 설정을 할 때까지 접속할 수 없습니다. 어떤 호스트도 자동으로 직접 연결로 전환되지 않습니다.",
+      "inUse": "SSH 또는 VNC 호스트가 아직 이 네트워크를 사용하고 있습니다. 먼저 해당 호스트를 다시 연결 설정하거나 삭제하세요.",
+      "kdcRole": "인증 서버",
+      "needsRebind": "이 사설 네트워크 경로에는 새 설정이 필요합니다. 다시 연결 설정을 할 때까지 접속할 수 없습니다.",
+      "originTls": "원본 서버 TLS",
+      "protectionHelp": "이 인증 모드는 데스크톱 트래픽을 암호화하지 않습니다. 선택한 사설 네트워크 경로가 이 서버까지의 전체 연결을 보호해야 합니다.",
+      "rfbRole": "데스크톱"
+    },
     "port": "포트",
     "retry": "다시 시도",
     "rsaAes": {
@@ -6520,6 +6556,30 @@
     "telegram": {
       "description": "Telegram 메시지를 에이전트로 라우팅",
       "title": "Telegram"
+    },
+    "wechat": {
+      "code": "인증 코드",
+      "connect": "연결",
+      "connected": "연결됨",
+      "creating": "QR 코드 생성 중…",
+      "description": "WeChat에서 에이전트와 대화하세요.",
+      "disconnect": "연결 해제",
+      "expired": "이 QR 코드는 만료되었습니다. 새로 만드세요.",
+      "failed": "WeChat에 연결하지 못했습니다. 다시 시도하세요.",
+      "instructions": "WeChat으로 이 QR 코드를 스캔한 다음 휴대전화에서 확인하세요.",
+      "name": "WeChat",
+      "reconnect": "다시 연결",
+      "reconnect_required": "다시 스캔하여 연결하세요.",
+      "restart_required": "이 WeChat 계정은 이미 연결되어 있습니다. 다시 연결하려면 새 QR 코드를 만드세요.",
+      "retry": "새 QR 코드 만들기",
+      "scanned": "스캔되었습니다. 휴대전화에서 확인하세요.",
+      "scope": "이 에이전트에게 보내는 다이렉트 메시지만 연결됩니다. 텍스트 메시지를 지원합니다.",
+      "title": "WeChat 연결",
+      "unavailable": "아직 연결이 설정되지 않았습니다.",
+      "verification_blocked": "시도 횟수가 너무 많습니다. 새 QR 코드를 만드세요.",
+      "verification_required": "WeChat에 표시된 인증 코드를 입력하세요.",
+      "verify": "인증",
+      "waiting": "스캔을 기다리는 중…"
     }
   }
 }

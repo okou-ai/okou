@@ -2,7 +2,7 @@ import { cronComputerUseScreenshotCleanupContract } from "@okouai/api-contracts/
 import { command } from "ccstate";
 
 import type { RouteEntry } from "../route-entry";
-import { cleanupComputerUseScreenshots$ } from "../services/cron-computer-use-screenshot-cleanup.service";
+import { cleanupComputerUseCommands$ } from "../services/cron-computer-use-screenshot-cleanup.service";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 
 const computerUseScreenshotCleanup$ = command(
@@ -11,7 +11,7 @@ const computerUseScreenshotCleanup$ = command(
       return cronUnauthorized();
     }
 
-    const cleaned = await set(cleanupComputerUseScreenshots$, signal);
+    const cleaned = await set(cleanupComputerUseCommands$, signal);
     signal.throwIfAborted();
     return {
       status: 200 as const,

@@ -245,6 +245,29 @@ try {
     billingId: 10023,
     context: "missing_run",
   });
+  // Stable billing identity remains usable without the nullable content link.
+  // Exercise each ledger independently so either evidence probe can capture it.
+  for (const [ledger, id] of [
+    ["usage_event", 10024],
+    ["usage_event_hourly_rollup", 10025],
+  ] as const) {
+    await run(id);
+    await usage(ledger, id, null, {
+      billingId: id,
+      anchorAt: anchor,
+      context: "run",
+    });
+  }
+  // A stable billing identity cannot override a conflicting retained Run link.
+  await run(10026);
+  await run(10027);
+  for (const ledger of ledgers) {
+    await usage(ledger, 10112, 10027, {
+      billingId: 10026,
+      anchorAt: anchor,
+      context: "run",
+    });
+  }
 
   const conflicts = [
     10100, 10101, 10102, 10103, 10104, 10105, 10106, 10107, 10108, 10109,
@@ -325,7 +348,7 @@ try {
     `SELECT (to_jsonb(a) - ARRAY['thread_id', 'thread_context', 'usage_observed'])::text AS fact FROM billing_run_attribution a ORDER BY run_id`,
   );
   const conflictPredicate =
-    "'00000000-0000-4000-8000-000000010100'::uuid AND '00000000-0000-4000-8000-000000010111'::uuid";
+    "'00000000-0000-4000-8000-000000010100'::uuid AND '00000000-0000-4000-8000-000000010112'::uuid";
   const conflictQuery = `SELECT to_jsonb(a)::text AS fact FROM billing_run_attribution a WHERE run_id BETWEEN ${conflictPredicate}
     UNION ALL SELECT to_jsonb(u)::text FROM usage_event u WHERE id BETWEEN ${conflictPredicate}
     UNION ALL SELECT to_jsonb(h)::text FROM usage_event_hourly_rollup h WHERE id BETWEEN ${conflictPredicate} ORDER BY fact`;
@@ -363,7 +386,7 @@ try {
     rows.rows,
     [
       10010, 10011, 10012, 10013, 10014, 10015, 10016, 10018, 10019, 10022,
-      10023,
+      10023, 10024, 10025,
     ].map((id) => {
       return {
         run_id: uuid(id),

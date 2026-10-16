@@ -26,9 +26,17 @@ export const computerUseWriteCommandKindSchema = z.enum([
   "keyboard.press_key",
 ]);
 
+export const desktopShellKindSchema = z.enum([
+  "shell.cmd",
+  "shell.list",
+  "shell.status",
+  "shell.close",
+]);
+
 export const computerUseCommandKindSchema = z.enum([
   ...computerUseReadCommandKindSchema.options,
   ...computerUseWriteCommandKindSchema.options,
+  ...desktopShellKindSchema.options,
 ]);
 
 export const computerUseCommandStatusSchema = z.enum([
@@ -54,6 +62,8 @@ export const computerUseCommandErrorCodeSchema = z.enum([
   "command_timeout",
   "invalid_arguments",
   "result_too_large",
+  "shell_unavailable",
+  "shell_busy",
 ]);
 
 const hostNameSchema = z.string().trim().min(1).max(253);
@@ -325,8 +335,9 @@ const computerUseCommandResultSchema = z.record(z.string(), z.unknown());
  * only a private object pointer. Unrecognized strings can still be persisted
  * but are not downloadable as screenshots. The stored pointer carries
  * `bucket`/`key`; the client-facing pointer omits
- * them so internal storage layout never leaves the API. After retention
- * deletes the object the pointer is rewritten to `{ type: "expired" }`.
+ * them so internal storage layout never leaves the API. Retention deletes
+ * commands together with their objects. Existing `{ type: "expired" }`
+ * pointers from screenshot-only retention remain readable until command cleanup.
  */
 export interface StoredScreenshotPointer {
   readonly type: "s3";

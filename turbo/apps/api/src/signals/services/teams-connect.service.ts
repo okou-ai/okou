@@ -1,3 +1,4 @@
+import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { randomUUID } from "node:crypto";
 import type { TeamsConnectStatus } from "@okouai/api-contracts/contracts/teams-connect";
 import { command, computed, type Computed } from "ccstate";
@@ -136,7 +137,7 @@ function buildTeamsBrowserConnectUrl(args: {
   setOptionalParam(params, "threadId", args.threadId);
   setOptionalParam(params, "orgId", args.orgId);
   setOptionalParam(params, "botName", args.botName);
-  return `${env("APP_URL")}/settings/teams?${params.toString()}`;
+  return `${env("APP_URL")}${INTEGRATION_SETTINGS_PATHS.teams}?${params.toString()}`;
 }
 
 function buildTeamsOauthConnectUrl(args: {

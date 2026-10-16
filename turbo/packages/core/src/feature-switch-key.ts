@@ -4,6 +4,7 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  DesktopShell = "desktopShell",
   RemoteControlCliManagement = "remoteControlCliManagement",
   TailscaleAccess = "tailscaleAccess",
   Dummy = "_dummy",
@@ -47,8 +48,10 @@ export enum FeatureSwitchKey {
   PwaNavigation = "pwaNavigation",
   FeishuIntegration = "_feishuIntegration",
   LarkIntegration = "larkIntegration",
+  WechatIntegration = "wechatIntegration",
   DiscordIntegration = "discordIntegration",
   VncAccess = "vncAccess",
+  RemoteConnectionDiagnostics = "remoteConnectionDiagnostics",
   PiMemory = "piMemory",
   CodexExecution = "_codexExecution",
   ChatHomeCompliance = "chatHomeCompliance",

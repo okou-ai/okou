@@ -168,7 +168,7 @@ test.each(
     await act(() => {
       return context.mocks.ably.trigger(topic, { orgId });
     });
-    await within(dialog).findByText(/1 member and 3 SSH hosts/u);
+    await within(dialog).findByText(/1 member and 3 hosts/u);
     expect(within(dialog).getByRole("checkbox")).not.toBeChecked();
     expect(getAction("button", action, dialog)).toBeDisabled();
   },

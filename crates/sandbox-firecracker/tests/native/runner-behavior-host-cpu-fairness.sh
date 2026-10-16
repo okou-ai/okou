@@ -11,6 +11,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 : "${GITHUB_RUN_ID:?GITHUB_RUN_ID is required}"
 : "${GITHUB_RUN_ATTEMPT:?GITHUB_RUN_ATTEMPT is required}"
 
+HOST_CPU_TEST_MODE=${HOST_CPU_TEST_MODE:-placement}
+case "$HOST_CPU_TEST_MODE" in
+  placement|measurement) ;;
+  *)
+    echo "HOST_CPU_TEST_MODE must be placement or measurement" >&2
+    exit 2
+    ;;
+esac
+
 case "$JOB_REF" in
   ''|*[!a-zA-Z0-9._-]*)
     echo "JOB_REF contains unsupported characters" >&2
@@ -49,4 +58,4 @@ scp "$TEST_BIN" "${REMOTE}:${REMOTE_BIN}"
 # The durable worker receives the full run/attempt key as its job reference.
 BIN_DIR=/tmp JOB_REF="$EXECUTION_KEY" \
   "${SCRIPT_DIR}/../../../runner/tests/behavior/runner-behavior-durable.sh" host-cpu-fairness \
-  "${SCRIPT_DIR}/runner-behavior-host-cpu-fairness-remote.sh" "$DEFAULT_ROOTFS_HASH"
+  "${SCRIPT_DIR}/runner-behavior-host-cpu-fairness-remote.sh" "$DEFAULT_ROOTFS_HASH" "$HOST_CPU_TEST_MODE"

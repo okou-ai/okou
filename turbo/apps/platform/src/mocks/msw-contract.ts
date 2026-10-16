@@ -19,7 +19,14 @@ import type {
   ServerInferResponseBody,
   ServerInferResponses,
 } from "@okouai/api-contracts/contracts/trpc-contract";
-import { http, HttpResponse, type HttpHandler, type PathParams } from "msw";
+import {
+  http,
+  HttpResponse,
+  HttpHandler,
+  matchRequestUrl,
+  type HttpResponseResolver,
+  type PathParams,
+} from "msw";
 import { delay } from "signal-timers";
 import { createDeferredPromise } from "../signals/utils.ts";
 
@@ -109,13 +116,34 @@ export type MockHandler<R extends AppRoute> = (ctx: {
   respond: Respond<R>;
 }) => AnyResponse<R> | Promise<AnyResponse<R>>;
 
-const methodMap = {
-  GET: http.get,
-  POST: http.post,
-  PUT: http.put,
-  PATCH: http.patch,
-  DELETE: http.delete,
-} as const;
+class ContractHttpHandler extends HttpHandler {
+  readonly #pattern: string | RegExp;
+
+  constructor(route: AppRoute, resolver: HttpResponseResolver<PathParams>) {
+    const pattern = routePattern(route);
+    super(route.method, pattern, resolver);
+    this.#pattern = pattern;
+  }
+
+  override async parse(
+    args: Parameters<HttpHandler["parse"]>[0],
+  ): ReturnType<HttpHandler["parse"]> {
+    // MSW parses cookies for every candidate before checking its method/path.
+    // Only a matching contract needs that work; keep MSW's full parsing there.
+    if (args.request.method !== this.info.method) {
+      return { match: { matches: false, params: {} }, cookies: {} };
+    }
+    const match = matchRequestUrl(
+      new URL(args.request.url),
+      this.#pattern,
+      args.resolutionContext?.baseUrl,
+    );
+    if (!match.matches) {
+      return { match, cookies: {} };
+    }
+    return await super.parse(args);
+  }
+}
 
 function routePattern(route: AppRoute): string | RegExp {
   if (route.path === "/api/chat-threads/:id") {
@@ -172,13 +200,11 @@ function createBoundMockApi(context?: SignalContextLike) {
     route: R,
     handler: MockHandler<R>,
   ): HttpHandler {
-    const register = methodMap[route.method];
-    const pattern = routePattern(route);
     const respond: Respond<R> = (...args) => {
       const [status, body] = args;
       return { status, body } as AnyResponse<R>;
     };
-    return register(pattern, async ({ params, request }) => {
+    return new ContractHttpHandler(route, async ({ params, request }) => {
       const signal = createSignal(request.signal, context);
       const helpers = createHelpers(signal);
       const url = new URL(request.url);

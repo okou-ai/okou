@@ -33,6 +33,7 @@ struct Ledger {
     uploads: HashMap<String, Vec<u8>>,
     completions: HashMap<String, Value>,
     history_reads: usize,
+    runner_heartbeats: Vec<Value>,
     errors: Vec<String>,
 }
 
@@ -47,6 +48,7 @@ pub struct Api {
     pub host_url: String,
     ledger: Arc<Mutex<Ledger>>,
     cancel: CancellationToken,
+    _stop_on_drop: tokio_util::sync::DropGuard,
     connections: TaskTracker,
     listener: tokio::task::JoinHandle<io::Result<()>>,
 }
@@ -102,6 +104,7 @@ impl Api {
             url,
             host_url,
             ledger,
+            _stop_on_drop: cancel.clone().drop_guard(),
             cancel,
             connections,
             listener,
@@ -116,6 +119,17 @@ impl Api {
             .histories
             .insert(hash.clone(), bytes.to_vec());
         Ok(format!("{}/history/{hash}", self.url))
+    }
+
+    pub fn runner_heartbeats(&self) -> TestResult<Vec<Value>> {
+        let state = self
+            .ledger
+            .lock()
+            .map_err(|_| io::Error::other("native API ledger poisoned"))?;
+        if !state.errors.is_empty() {
+            return Err(io::Error::other("native heartbeat peer has errors").into());
+        }
+        Ok(state.runner_heartbeats.clone())
     }
 
     pub fn finalized_history(&self, run: &str, thread: &str) -> TestResult<Vec<u8>> {
@@ -207,11 +221,29 @@ async fn respond(
             return Ok(Reply::Empty);
         }
         let value: Value = serde_json::from_slice(&bytes)?;
-        let run = value.get("runId").and_then(Value::as_str).ok_or_else(|| io::Error::other("native request has no original run"))?.to_string();
-        uuid::Uuid::parse_str(&run)?;
         if parts.method != Method::POST || parts.headers.get("authorization").and_then(|h| h.to_str().ok()) != Some(format!("Bearer {TOKEN}").as_str()) {
             return Err(io::Error::other("native synthetic peer rejected method or token").into());
         }
+        if path == "/api/runners/heartbeat" {
+            if state.runner_heartbeats.len() >= 8 {
+                return Err(io::Error::other("native heartbeat receipt limit exceeded").into());
+            }
+            let runner = value.get("runnerId").and_then(Value::as_str)
+                .ok_or_else(|| io::Error::other("native heartbeat has no runner identity"))?;
+            uuid::Uuid::parse_str(runner)?;
+            if !value.get("snapshotGeneration").and_then(Value::as_u64).is_some_and(|n| n > 0)
+                || !value.get("snapshotSequence").and_then(Value::as_u64).is_some_and(|n| n > 0)
+            {
+                return Err(io::Error::other("native heartbeat has no generation/sequence").into());
+            }
+            state.runner_heartbeats.push(json!({
+                "received_ns": super::evidence::clocks()?.0,
+                "acknowledgement_status": 204, "state": value,
+            }));
+            return Ok(Reply::Empty);
+        }
+        let run = value.get("runId").and_then(Value::as_str).ok_or_else(|| io::Error::other("native request has no original run"))?.to_string();
+        uuid::Uuid::parse_str(&run)?;
         match path {
             "/api/webhooks/agent/session-history/prepare" => {
                 let typed: history::Request = serde_json::from_value(value)?;

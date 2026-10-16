@@ -106,34 +106,28 @@ pub(super) struct AcceptedAppend {
 }
 
 impl AcceptedAppend {
+    pub(super) fn path(&self) -> &Arc<Path> {
+        &self.path
+    }
+
+    pub(super) fn line(&self) -> &str {
+        &self.line
+    }
+
     pub(super) fn line_len(&self) -> usize {
         self.line.len()
     }
 
-    pub(super) fn into_parts(self) -> (Arc<Path>, String, PendingWriteCompletion) {
-        (self.path, self.line, self.completion)
-    }
-}
-
-/// Follows an accepted row through the queue and into the blocking append.
-/// Drop records failure, never successful persistence.
-pub(super) struct PendingWriteCompletion {
-    state: Weak<NetworkLogState>,
-    path: Arc<Path>,
-    writer_failed: Arc<AtomicBool>,
-    settled: bool,
-}
-
-impl PendingWriteCompletion {
     /// Preserve one accounting lock per normal path batch.
-    pub(super) fn complete_batch(mut completions: Vec<Self>, success: bool) {
-        let Some(first) = completions.first() else {
+    pub(super) fn complete_batch(mut rows: Vec<Self>, success: bool) {
+        let Some(first) = rows.first() else {
             return;
         };
-        let state = first.state.upgrade();
-        let path = Arc::clone(&first.path);
-        let count = completions.len();
-        for completion in &mut completions {
+        let state = first.completion.state.upgrade();
+        let path = Arc::clone(&first.completion.path);
+        let count = rows.len();
+        for row in &mut rows {
+            let completion = &mut row.completion;
             if !success {
                 completion.writer_failed.store(true, Ordering::Release);
             }
@@ -143,6 +137,15 @@ impl PendingWriteCompletion {
             state.complete_path(path, count);
         }
     }
+}
+
+/// Follows an accepted row through the queue and into the blocking append.
+/// Drop records failure, never successful persistence.
+struct PendingWriteCompletion {
+    state: Weak<NetworkLogState>,
+    path: Arc<Path>,
+    writer_failed: Arc<AtomicBool>,
+    settled: bool,
 }
 
 impl Drop for PendingWriteCompletion {

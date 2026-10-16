@@ -124,6 +124,36 @@ export function piMemoryStage1SelectionLockPlans(
   };
 }
 
+/** Result reconciliation observes ordinary snapshots; other consumers retain their lock plan. */
+export function piMemoryStage1SelectionReadPlans(
+  selection: PiMemoryStage1Selection,
+) {
+  const conditions = piMemoryStage1SelectionLockConditions(selection);
+  const builder = new QueryBuilder();
+  return {
+    thread: builder
+      .select({ id: chatThreads.id })
+      .from(chatThreads)
+      .where(conditions.thread)
+      .as("selection_thread"),
+    day: builder
+      .select()
+      .from(piMemoryStage1Days)
+      .where(conditions.day)
+      .as("selection_day"),
+    frozen: builder
+      .select()
+      .from(piMemoryStage1Selections)
+      .where(conditions.frozen)
+      .as("selection_frozen_slot"),
+    features: builder
+      .select(piMemoryStage1FeatureColumns)
+      .from(userFeatureSwitches)
+      .where(conditions.features)
+      .as("selection_owner_features"),
+  };
+}
+
 export function piMemoryStage1DayConsumedByAnotherThread(
   selection: PiMemoryStage1Selection,
   day: typeof piMemoryStage1Days.$inferSelect | undefined,

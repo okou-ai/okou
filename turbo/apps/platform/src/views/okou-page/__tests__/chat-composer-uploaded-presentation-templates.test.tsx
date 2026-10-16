@@ -16,6 +16,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../__tests__/time.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import {
   buttonContainingText,
@@ -27,6 +28,7 @@ import {
   THREAD_ID,
   context,
   createUploadedTemplate,
+  expectInlineTemplate,
   mockPresentationTemplateLibrary,
   mockTemplateChat,
   openTemplatePicker,
@@ -476,6 +478,56 @@ test("Keep workspace templates current when a new deck is published", async () =
       screen.getByLabelText(`Select template ${published.title}`),
     ).toBeEnabled();
   });
+});
+
+test("Keep an uploaded template preview usable during a catalog refresh", async () => {
+  mockTemplateChat();
+  const uploaded = createUploadedTemplate({
+    id: UPLOADED_TEMPLATE_ID,
+    title: "Retained workspace deck",
+  });
+  mockPresentationTemplateLibrary([uploaded]);
+  const refreshStarted = createDeferredPromise<void>(context.signal);
+  const refreshed = createDeferredPromise<void>(context.signal);
+  let refreshing = false;
+  context.mocks.api(presentationTemplatesContract.list, async ({ respond }) => {
+    if (refreshing) {
+      refreshStarted.resolve();
+      await refreshed.promise;
+    }
+    return respond(200, [uploaded]);
+  });
+  const user = userEvent.setup({ delay: null });
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    host: "app.okou.ai",
+  });
+  await openTemplatePicker(user, "Presentation");
+  const preview = await waitFor(() => {
+    return buttonNamed(`Preview ${uploaded.title} at current slide`);
+  });
+  refreshing = true;
+  context.mocks.ably.triggerOnChannel(
+    "org:org_default",
+    "presentationTemplatesChanged",
+    uploaded.id,
+  );
+  // The page deliberately retains its rows during refetch. The request only
+  // synchronizes when the provider is pending; the assertions use the page.
+  await refreshStarted.promise;
+  try {
+    click(preview);
+    await expect(
+      screen.findByLabelText(`${uploaded.title} slide preview`),
+    ).resolves.toBeInTheDocument();
+    const select = buttonNamed(`Select template ${uploaded.title}`);
+    expect(select).toBeEnabled();
+    click(select);
+  } finally {
+    refreshed.resolve();
+  }
+  await expectInlineTemplate(uploaded.title);
 });
 
 test("Remove a withdrawn workspace template after its preview", async () => {

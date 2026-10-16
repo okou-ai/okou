@@ -1,3 +1,7 @@
+import { desktopShellContract } from "@okouai/api-contracts/contracts/desktop-shell";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import { command, computed } from "ccstate";
 import {
   computerUseAuditEventsContract,
@@ -206,6 +210,89 @@ const writeCommandCreateInner$ = command(
   },
 );
 
+const shellCreateBody$ = bodyResultOf(desktopShellContract.create);
+const shellCreateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
+  const parsed = await get(shellCreateBody$);
+  signal.throwIfAborted();
+  if (!parsed.ok) {
+    return parsed.response;
+  }
+  const context = await set(
+    loadUserFeatureSwitchContext$,
+    auth.orgId,
+    auth.userId,
+    signal,
+  );
+  if (!isFeatureEnabled(FeatureSwitchKey.DesktopShell, context)) {
+    return {
+      status: 403 as const,
+      body: {
+        error: { code: "FORBIDDEN", message: "Desktop Shell is disabled" },
+      },
+    };
+  }
+  const targetHostId =
+    auth.tokenType === "agent" ? auth.computerUseHostId : undefined;
+  if (auth.tokenType === "agent" && !targetHostId) {
+    return computerUseHostNotAuthorized;
+  }
+  const body = parsed.data;
+  // The command queue owns only this bounded observation, never the PTY lifetime.
+  const timeoutMs = body.waitMs + 15_000;
+  const result = await set(
+    createComputerUseCommand$,
+    {
+      orgId: auth.orgId,
+      userId: auth.userId,
+      kind: body.kind,
+      payload: body,
+      timeoutMs,
+      ...(auth.tokenType === "agent"
+        ? { runId: auth.runId, targetHostId }
+        : {}),
+    },
+    signal,
+  );
+  signal.throwIfAborted();
+  if (result.status === "no_host") {
+    return notFound("No linked computer-use host found");
+  }
+  if (result.status === "host_ambiguous") {
+    return conflict(
+      "Multiple computers are online; authorize the intended computer for this run",
+    );
+  }
+  if (result.status === "host_offline") {
+    return conflict("The authorized computer is offline");
+  }
+  if (result.status === "host_unsupported") {
+    return conflict(
+      "Enable Shell Access in Developer Tools on an updated Desktop",
+    );
+  }
+  const realtime = body.realtime
+    ? await createComputerUseResultSubscription(
+        {
+          userId: auth.userId,
+          orgId: auth.orgId,
+          commandId: result.commandId,
+          timeoutMs,
+        },
+        signal,
+      )
+    : undefined;
+  signal.throwIfAborted();
+  return {
+    status: 200 as const,
+    body: {
+      commandId: result.commandId,
+      status: result.commandStatus,
+      ...(realtime ? { realtime } : {}),
+    },
+  };
+});
+
 const commandGetParams$ = pathParamsOf(computerUseCommandContract.get);
 const commandGetInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
@@ -309,6 +396,16 @@ const computerUseHostListAuthOptions = {
 
 export const computerUseRoutes: readonly RouteEntry[] = [
   ...computerUseSessionHostRoutes,
+  {
+    route: desktopShellContract.create,
+    handler: authRoute(
+      {
+        ...computerUseAuthOptions,
+        requiredCapability: "computer-use:shell:write",
+      },
+      shellCreateInner$,
+    ),
+  },
   {
     route: computerUseHostsContract.list,
     handler: authRoute(computerUseHostListAuthOptions, hostsListInner$),

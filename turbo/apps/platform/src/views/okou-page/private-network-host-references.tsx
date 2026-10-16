@@ -1,0 +1,68 @@
+import { useTranslation } from "react-i18next";
+import type { CloudflareAccessConfig } from "@okouai/api-contracts/contracts/cloudflare-access";
+import {
+  privateNetworkHostCount,
+  privateNetworkVncHosts,
+} from "../../lib/private-network-references.ts";
+
+export function PrivateNetworkHostReferences({
+  config,
+}: {
+  readonly config: Pick<CloudflareAccessConfig, "sshHosts" | "vncHosts">;
+}) {
+  const { t } = useTranslation();
+  const count = privateNetworkHostCount(config);
+  const vncHosts = privateNetworkVncHosts(config);
+  return (
+    <div className="grid gap-1 text-sm text-muted-foreground">
+      <p>
+        {count
+          ? t(
+              ($) => {
+                return $.cloudflareAccess.usedBy;
+              },
+              { count },
+            )
+          : t(($) => {
+              return $.cloudflareAccess.unused;
+            })}
+      </p>
+      {count > 0 && (
+        <ul className="list-inside list-disc">
+          {config.sshHosts.map((host) => {
+            return (
+              <li key={`ssh:${host.id}`}>
+                <span>{host.displayName}</span> ·{" "}
+                {t(($) => {
+                  return $.ssh.label;
+                })}
+              </li>
+            );
+          })}
+          {vncHosts.map((host) => {
+            return (
+              <li key={`vnc:${host.id}`}>
+                <span>{host.displayName}</span> ·{" "}
+                {t(($) => {
+                  return $.vnc.label;
+                })}{" "}
+                ·{" "}
+                {host.roles
+                  .map((role) => {
+                    return role === "rfb"
+                      ? t(($) => {
+                          return $.vnc.native.rfbRole;
+                        })
+                      : t(($) => {
+                          return $.vnc.native.kdcRole;
+                        });
+                  })
+                  .join(", ")}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}

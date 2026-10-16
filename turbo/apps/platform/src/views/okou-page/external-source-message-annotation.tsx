@@ -1,6 +1,6 @@
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
-import { ArrowUpRight } from "lucide-react";
+import { MessagesSquare, ArrowUpRight } from "lucide-react";
 import { BrandSlack, cn } from "@okouai/ui";
 import type { UserMessageRenderPart } from "../../signals/chat-page/chat-event.ts";
 import { DiscordMark } from "./components/discord-mark.tsx";
@@ -69,6 +69,11 @@ function sourceMessageLabel(
   >["part"]["kind"],
 ): string {
   switch (kind) {
+    case "wechat": {
+      return t(($) => {
+        return $.chat.origins.wechat;
+      });
+    }
     case "discord": {
       return t(($) => {
         return $.chat.origins.discord;
@@ -110,6 +115,34 @@ function sourceMessageLabel(
       });
     }
   }
+}
+
+function SourceMessageIcon({
+  sourceKind,
+}: {
+  readonly sourceKind: Extract<
+    UserMessageRenderPart,
+    { type: "source"; kind: "external" }
+  >["part"]["kind"];
+}) {
+  return (
+    <>
+      {" "}
+      {sourceKind === "slack" ? (
+        <BrandSlack size={15} className="shrink-0" />
+      ) : sourceKind === "wechat" ? (
+        <MessagesSquare size={15} className="shrink-0" />
+      ) : sourceKind === "discord" ? (
+        <DiscordMark size={15} />
+      ) : (
+        <img
+          src={annotationIconImgs[sourceKind]}
+          alt=""
+          className="size-[15px] shrink-0 object-contain"
+        />
+      )}
+    </>
+  );
 }
 
 export function ExternalSourceMessageAnnotation({
@@ -172,17 +205,7 @@ export function ExternalSourceMessageAnnotation({
                   : openLabel;
   const content = (
     <>
-      {sourceKind === "slack" ? (
-        <BrandSlack size={15} className="shrink-0" />
-      ) : sourceKind === "discord" ? (
-        <DiscordMark size={15} />
-      ) : (
-        <img
-          src={annotationIconImgs[sourceKind]}
-          alt=""
-          className="size-[15px] shrink-0 object-contain"
-        />
-      )}
+      <SourceMessageIcon sourceKind={sourceKind} />
       <span
         className={cn("min-w-0 truncate", {
           "flex-1": compact,

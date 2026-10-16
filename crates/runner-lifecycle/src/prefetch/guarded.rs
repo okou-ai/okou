@@ -91,6 +91,8 @@ impl MemoryPrefetchTasks {
                 cancel,
                 handles,
                 physical_io,
+                #[cfg(any(test, feature = "test-support"))]
+                startup_observer: None,
             },
             latest,
         ))

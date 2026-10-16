@@ -100,6 +100,7 @@ function currentIntegration(
     case "slack":
     case "teams":
     case "telegram":
+    case "wechat":
     case "discord": {
       return contextType;
     }

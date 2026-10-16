@@ -11,6 +11,7 @@ import {
   vncSshConnectionId,
   retryVnc$,
   isVncReviewableConflict,
+  hasNativeVncRoute,
   type VncConflictReviewState,
   type VncDialogState,
 } from "../../signals/vnc.ts";
@@ -23,6 +24,7 @@ import {
   VncHostProfileDetails,
 } from "./vnc-management.tsx";
 import { VncLoadError } from "./vnc-load-error.tsx";
+import { VncNativeRoute } from "./vnc-native-route.tsx";
 
 function SavedSshDetails({ id }: { readonly id: string | null }) {
   const connections = useLoadable(sshConnections$);
@@ -76,7 +78,13 @@ function ConnectionDetails({
         {t(($) => {
           return $.vnc.transport.title;
         })}
-        : <SavedSshDetails id={vncSshConnectionId(connection)} />
+        :{" "}
+        {connection.transport?.type === "cloudflare_access" ||
+        connection.transport?.type === "tailscale" ? (
+          <VncNativeRoute transport={connection.transport} />
+        ) : (
+          <SavedSshDetails id={vncSshConnectionId(connection)} />
+        )}
       </p>
       {"credentialName" in connection && <p>{connection.credentialName}</p>}
       <VncHostProfileDetails connection={connection} />
@@ -140,13 +148,18 @@ function ConnectionDetails({
                   return $.vnc.kerberos.kdcRoute;
                 })}
                 :{" "}
-                <SavedSshDetails
-                  id={
-                    security.kdc.transport.type === "ssh"
-                      ? security.kdc.transport.connectionId
-                      : null
-                  }
-                />
+                {security.kdc.transport.type === "cloudflare_access" ||
+                security.kdc.transport.type === "tailscale" ? (
+                  <VncNativeRoute transport={security.kdc.transport} />
+                ) : (
+                  <SavedSshDetails
+                    id={
+                      security.kdc.transport.type === "ssh"
+                        ? security.kdc.transport.connectionId
+                        : null
+                    }
+                  />
+                )}
               </p>
               <p>
                 {t(($) => {
@@ -212,20 +225,24 @@ function VncConflictReviewActions({
   const incompatible =
     dialog.kind === "edit-credential" &&
     reviewed.credential?.authMethod !== dialog.credential?.authMethod;
+  const nativeRoute =
+    reviewed.kind === "edit" && hasNativeVncRoute(reviewed.connection);
   const inUse =
     reviewed.kind === "delete-credential" &&
     reviewed.credential.hosts.length > 0;
   return (
     <>
-      <p role={incompatible || inUse ? "alert" : undefined}>
+      <p role={incompatible || inUse || nativeRoute ? "alert" : undefined}>
         {t(($) => {
-          return inUse
-            ? $.vnc.credential.inUse
-            : incompatible
-              ? $.vnc.saveRecovery.incompatible
-              : destructive
-                ? $.vnc.saveRecovery.deleteHelp
-                : $.vnc.saveRecovery.keepHelp;
+          return nativeRoute
+            ? $.vnc.native.editPending
+            : inUse
+              ? $.vnc.credential.inUse
+              : incompatible
+                ? $.vnc.saveRecovery.incompatible
+                : destructive
+                  ? $.vnc.saveRecovery.deleteHelp
+                  : $.vnc.saveRecovery.keepHelp;
         })}
       </p>
       {inUse && (
@@ -238,7 +255,7 @@ function VncConflictReviewActions({
       <Button
         type="button"
         variant="outline"
-        disabled={incompatible || inUse}
+        disabled={incompatible || inUse || nativeRoute}
         onClick={() => {
           detach(accept(reviewed, signal), Reason.DomCallback);
         }}

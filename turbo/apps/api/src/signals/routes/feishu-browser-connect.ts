@@ -19,7 +19,8 @@ import { startCustomConnectorOAuth2$ } from "../services/custom-connector-oauth2
 import {
   ensureFeishuCustomConnector$,
   hasFeishuCustomConnectorOAuthConnection,
-  resolveFeishuConnectorAccountMutation,
+  feishuConnectorAccountMutationReadPlan,
+  feishuConnectorAccountMutationFromRows,
 } from "../services/feishu-custom-connector.service";
 import {
   isFeishuInstallationEnabled,
@@ -119,10 +120,17 @@ const startFeishuAccountOAuth$ = command(
     if (!connectorId) {
       return { kind: "installation_not_found" };
     }
-    const account = await resolveFeishuConnectorAccountMutation(db, {
+    const accountPlan = feishuConnectorAccountMutationReadPlan({
       installationId: args.installationId,
       userId: args.userId,
     });
+    const account = feishuConnectorAccountMutationFromRows(
+      await db
+        .select(accountPlan.columns)
+        .from(feishuOrgConnections)
+        .where(accountPlan.condition)
+        .limit(2),
+    );
     signal.throwIfAborted();
     const oauth = await set(
       startCustomConnectorOAuth2$,

@@ -22,7 +22,7 @@ import {
 const context = testContext();
 const orgId = "org_cloudflare_access";
 const impactAcknowledgement =
-  "I understand these members' SSH hosts will remain saved but cannot connect until their owners rebind them or explicitly choose Direct.";
+  "I understand these members' hosts will remain saved but cannot connect until their owners rebind them.";
 const timestamp = "2026-09-22T00:00:00.000Z";
 const config: ScopedCloudflareAccessConfig = Object.freeze({
   id: "a0000000-0000-4000-8000-000000000001",
@@ -69,6 +69,35 @@ function expectConversionActionsInOrder(dialog: HTMLElement) {
     });
   expect(actions).toStrictEqual(["Cancel", "Make personal"]);
 }
+
+test("Prepared VNC references retain both roles and prevent personal network deletion", async () => {
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, {
+      configs: [
+        {
+          ...config,
+          sshHosts: [{ id: config.id, displayName: "SSH reference" }],
+          vncHosts: [
+            {
+              id: config.id,
+              displayName: "VNC reference",
+              roles: ["rfb", "kdc"],
+            },
+          ],
+        },
+      ],
+    });
+  });
+  await page();
+  expect(
+    (await screen.findByText("VNC reference")).closest("li"),
+  ).toHaveTextContent("VNC reference · VNC · Desktop, Authentication server");
+  expect(screen.getByText("SSH reference").closest("li")).toHaveTextContent(
+    "SSH reference · SSH",
+  );
+  expect(screen.getByText("Used by 2 of your hosts:")).toBeInTheDocument();
+  expect(getAction("button", "Delete Cloudflare Access")).toBeDisabled();
+});
 
 test("The scoped page shows shared configurations to members without management or other users' metadata", async () => {
   const shared = {
@@ -607,7 +636,7 @@ test("admin conversion lists affected members and only the aggregate host count 
     ),
   ).toBeInTheDocument();
   const warning = await within(dialog).findByRole("alert");
-  expect(warning).toHaveTextContent("2 members and 3 SSH hosts");
+  expect(warning).toHaveTextContent("2 members and 3 hosts");
   expect(dialog).toHaveTextContent("Member One");
   expect(dialog).toHaveTextContent("Member Two");
   expect(dialog.textContent).not.toContain("user-member-1");
@@ -709,7 +738,7 @@ test("changed conversion impact requires a fresh warning and confirmation", asyn
   await within(organization).findByText(shared.name);
   click(getAction("button", "Make personal", organization));
   const dialog = await screen.findByRole("dialog", { name: "Make personal" });
-  await within(dialog).findByText(/1 member and 1 SSH host/u);
+  await within(dialog).findByText(/1 member and 1 host/u);
   const acknowledge = within(dialog).getByRole("checkbox", {
     name: impactAcknowledgement,
   });
@@ -721,7 +750,7 @@ test("changed conversion impact requires a fresh warning and confirmation", asyn
   ]);
   expect(queryAction("button", "Make personal", dialog)).toBeNull();
   click(getAction("button", "Review latest impact", dialog));
-  await within(dialog).findByText(/1 member and 2 SSH hosts/u);
+  await within(dialog).findByText(/1 member and 2 hosts/u);
   expect(getAction("button", "Make personal", dialog)).toBeDisabled();
   expect(within(dialog).getByRole("checkbox")).not.toBeChecked();
 });
@@ -766,7 +795,7 @@ test("uncertain conversion result requires a fresh named impact review", async (
   await within(organization).findByText(shared.name);
   click(getAction("button", "Make personal", organization));
   const dialog = await screen.findByRole("dialog", { name: "Make personal" });
-  await within(dialog).findByText(/1 member and 1 SSH host/u);
+  await within(dialog).findByText(/1 member and 1 host/u);
   expect(dialog).toHaveTextContent("Member One");
   await userEvent.click(within(dialog).getByRole("checkbox"));
   click(getAction("button", "Make personal", dialog));
@@ -873,7 +902,7 @@ test("equal member names are disambiguated without showing per-person host count
   });
   click(getAction("button", "Make personal", organization));
   const dialog = await screen.findByRole("dialog", { name: "Make personal" });
-  await within(dialog).findByText(/2 members and 5 SSH hosts/u);
+  await within(dialog).findByText(/2 members and 5 hosts/u);
   expect(dialog).toHaveTextContent("Same Name (ID …aaaaaaaa)");
   expect(dialog).toHaveTextContent("Same Name (ID …bbbbbbbb)");
   expect(dialog.textContent).not.toContain("user_aaaaaaaa");
@@ -947,7 +976,7 @@ test("reviewed shared deletion names affected owners and requires re-review when
   const dialog = await screen.findByRole("dialog", {
     name: "Delete Cloudflare Access",
   });
-  await within(dialog).findByText(/2 members and 3 SSH hosts/u);
+  await within(dialog).findByText(/2 members and 3 hosts/u);
   expect(dialog).toHaveTextContent("Member One");
   expect(dialog).toHaveTextContent("Name unavailable (ID …former-2)");
   expect(dialog.textContent).not.toContain("user-former-2");
@@ -965,7 +994,7 @@ test("reviewed shared deletion names affected owners and requires re-review when
     { expectedRevision: 1, impactSnapshot: "a".repeat(64) },
   ]);
   click(getAction("button", "Review latest impact", dialog));
-  await within(dialog).findByText(/2 members and 4 SSH hosts/u);
+  await within(dialog).findByText(/2 members and 4 hosts/u);
   expect(
     getAction("button", "Delete Cloudflare Access", dialog),
   ).toBeDisabled();

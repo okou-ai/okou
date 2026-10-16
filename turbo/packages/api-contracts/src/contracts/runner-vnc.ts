@@ -4,6 +4,9 @@ import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { runnerHeartbeatGenerationSchema } from "./runner-primitives";
 import { VNC_HOST_MAX_LENGTH, vncTrustSchema } from "./vnc-connections";
+import { vncOriginTlsSchema } from "./vnc-transport";
+import { cloudflareAccessCredentialsSchema } from "./cloudflare-access";
+import { tailscaleCredentialsSchema, tailscaleTagsSchema } from "./tailscale";
 import {
   kerberosServicePrincipalSchema,
   vncKerberosAuthenticationSchema,
@@ -41,15 +44,58 @@ const sshTransportSnapshotSchema = z
     generation: generationSchema,
   })
   .strict();
+const directTransportSnapshotSchema = z
+  .object({ type: z.literal("direct") })
+  .strict();
+const accessTransportSnapshotSchema = z
+  .object({
+    type: z.literal("cloudflare_access"),
+    configId: z.uuid(),
+    generation: generationSchema,
+  })
+  .strict();
+const tailscaleTransportSnapshotSchema = z
+  .object({
+    type: z.literal("tailscale"),
+    configId: z.uuid(),
+    generation: generationSchema,
+  })
+  .strict();
 const transportSnapshotSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("direct") }).strict(),
+  directTransportSnapshotSchema,
   sshTransportSnapshotSchema,
+  accessTransportSnapshotSchema,
+  tailscaleTransportSnapshotSchema,
+]);
+// Provider secrets belong only in the winning Runner resolution, never in
+// public metadata or the generation-bound check/observation snapshots.
+const resolvedAccessKdcTransportSchema = accessTransportSnapshotSchema.extend({
+  credentials: cloudflareAccessCredentialsSchema,
+});
+const resolvedTailscaleTransportSchema =
+  tailscaleTransportSnapshotSchema.extend({
+    credentials: tailscaleCredentialsSchema,
+    tags: tailscaleTagsSchema,
+  });
+const resolvedKdcTransportSchema = z.discriminatedUnion("type", [
+  directTransportSnapshotSchema,
+  sshTransportSnapshotSchema,
+  resolvedAccessKdcTransportSchema,
+  resolvedTailscaleTransportSchema,
+]);
+const resolvedTransportSchema = z.discriminatedUnion("type", [
+  directTransportSnapshotSchema,
+  sshTransportSnapshotSchema,
+  resolvedAccessKdcTransportSchema.extend({
+    originTls: vncOriginTlsSchema.nullable(),
+  }),
+  resolvedTailscaleTransportSchema,
 ]);
 const kdcSnapshotSchema = z
   .object({
     host: z.string().min(1).max(253),
     port: z.int().min(1).max(65_535),
-    transport: transportSnapshotSchema,
+    transport: resolvedKdcTransportSchema,
     ticketLifetimeSeconds: z.int().min(1).max(7200),
     renewableLifetimeSeconds: z.int().min(0).max(7200),
   })
@@ -169,8 +215,10 @@ const supportedProfileFieldsSchema = z
       "apple_srp",
       "apple_rsa_srp",
     ]),
-    transportType: z.enum(["direct", "ssh"]),
-    kdcTransportType: z.enum(["none", "direct", "ssh"]).optional(),
+    transportType: z.enum(["direct", "ssh", "cloudflare_access", "tailscale"]),
+    kdcTransportType: z
+      .enum(["none", "direct", "ssh", "cloudflare_access", "tailscale"])
+      .optional(),
   })
   .strict();
 
@@ -203,7 +251,9 @@ function matchesSupportedVncProfile(
       (profile.authMethod === "qemu_kerberos_ticket"
         ? profile.kdcTransportType === "none"
         : profile.kdcTransportType === "direct" ||
-          profile.kdcTransportType === "ssh")
+          profile.kdcTransportType === "ssh" ||
+          profile.kdcTransportType === "cloudflare_access" ||
+          profile.kdcTransportType === "tailscale")
     );
   }
   if (profile.kdcTransportType !== undefined) {
@@ -214,18 +264,19 @@ function matchesSupportedVncProfile(
       (profile.authMethod === "rsa_aes_password" ||
         profile.authMethod === "rsa_aes_username_password") &&
       (!isVncRsaAesAuthenticationOnly(profile.securityType) ||
-        profile.transportType === "ssh")
+        profile.transportType !== "direct")
     );
   }
   if (profile.securityType === "apple_vnc_password") {
     return (
-      profile.authMethod === "vnc_password" && profile.transportType === "ssh"
+      profile.authMethod === "vnc_password" &&
+      profile.transportType !== "direct"
     );
   }
   return (
     profile.securityType === exactSecurityByAuth[profile.authMethod] &&
     (!profile.authMethod.startsWith("apple_") ||
-      profile.transportType === "ssh")
+      profile.transportType !== "direct")
   );
 }
 
@@ -235,7 +286,7 @@ const supportedProfileSchema = supportedProfileFieldsSchema.refine(
 );
 
 const resolveRequestSchema = commonRequestSchema.extend({
-  supportedProfiles: z.array(supportedProfileSchema).max(48),
+  supportedProfiles: z.array(supportedProfileSchema).max(128),
 });
 const unavailableSchema = z
   .object({ outcome: z.literal("unavailable") })
@@ -254,7 +305,7 @@ const resolveResponseSchema = z.discriminatedUnion("outcome", [
       port: z.int().min(1).max(65_535),
       generation: generationSchema,
       serverName: z.string().min(1).max(VNC_HOST_MAX_LENGTH),
-      transport: transportSnapshotSchema,
+      transport: resolvedTransportSchema,
       authentication: runnerX509AuthenticationSchema,
       security: runnerVncSecuritySchema,
     })
@@ -265,7 +316,7 @@ const resolveResponseSchema = z.discriminatedUnion("outcome", [
       host: z.string().min(1).max(VNC_HOST_MAX_LENGTH),
       port: z.int().min(1).max(65_535),
       generation: generationSchema,
-      transport: transportSnapshotSchema,
+      transport: resolvedTransportSchema,
       authentication: runnerX509AuthenticationSchema,
       security: runnerVncSecuritySchema,
     })
@@ -276,7 +327,7 @@ const resolveResponseSchema = z.discriminatedUnion("outcome", [
       host: z.string().min(1).max(VNC_HOST_MAX_LENGTH),
       port: z.int().min(1).max(65_535),
       generation: generationSchema,
-      transport: transportSnapshotSchema,
+      transport: resolvedTransportSchema,
       authentication: runnerX509AuthenticationSchema,
       security: runnerVncSecuritySchema,
     })
@@ -287,7 +338,7 @@ const resolveResponseSchema = z.discriminatedUnion("outcome", [
       host: z.string().min(1).max(VNC_HOST_MAX_LENGTH),
       port: z.int().min(1).max(65_535),
       generation: generationSchema,
-      transport: transportSnapshotSchema,
+      transport: resolvedTransportSchema,
       authentication: runnerX509AuthenticationSchema,
       security: runnerVncSecuritySchema,
     })
@@ -298,7 +349,7 @@ const resolveResponseSchema = z.discriminatedUnion("outcome", [
       host: z.string().min(1).max(VNC_HOST_MAX_LENGTH),
       port: z.int().min(1).max(65_535),
       generation: generationSchema,
-      transport: transportSnapshotSchema,
+      transport: resolvedTransportSchema,
       authentication: runnerX509AuthenticationSchema,
       security: runnerVncSecuritySchema,
     })
@@ -309,7 +360,7 @@ const resolveResponseSchema = z.discriminatedUnion("outcome", [
       host: z.string().min(1).max(VNC_HOST_MAX_LENGTH),
       port: z.int().min(1).max(65_535),
       generation: generationSchema,
-      transport: transportSnapshotSchema,
+      transport: resolvedTransportSchema,
       authentication: runnerX509AuthenticationSchema,
       security: runnerVncSecuritySchema,
     })
@@ -322,7 +373,7 @@ const resolveResponseSchema = z.discriminatedUnion("outcome", [
       generation: generationSchema,
       credentialRevision: generationSchema,
       serverName: z.string().min(1).max(VNC_HOST_MAX_LENGTH),
-      transport: transportSnapshotSchema,
+      transport: resolvedTransportSchema,
       authentication: runnerX509AuthenticationSchema,
       security: runnerVncSecuritySchema,
     })

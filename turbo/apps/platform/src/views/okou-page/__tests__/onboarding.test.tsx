@@ -44,7 +44,7 @@ test("A Slack success return remains visible before onboarding", async () => {
   });
 
   await expect(
-    screen.findByRole("heading", { name: "Connected to Slack!" }),
+    screen.findByRole("heading", { name: "Slack is connected" }),
   ).resolves.toBeInTheDocument();
   expect(pathname()).not.toBe("/onboarding");
 });
@@ -76,7 +76,9 @@ test("An unsuccessful Slack return remains visible before onboarding", async () 
   await setupPage({ context, path: "/settings/slack?error=access_denied" });
 
   await expect(
-    screen.findByRole("heading", { name: "Connection failed" }),
+    screen.findByText(
+      "Slack authorization was not completed. Your current connection is shown below. You can try again.",
+    ),
   ).resolves.toBeInTheDocument();
   expect(pathname()).toBe("/settings/slack");
 });

@@ -1,3 +1,4 @@
+import { chatWechatContext } from "@okouai/db/schema/wechat";
 import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
@@ -25,6 +26,7 @@ const MONITORED_CONTEXT_TYPES = [
   "feishu",
   "teams",
   "discord",
+  "wechat",
   "telegram",
   "agentphone",
   "automation",
@@ -101,6 +103,15 @@ async function loadExistingContextRows(
         })
         .from(chatDiscordContext)
         .where(inArray(chatDiscordContext.id, [...contextIds]));
+    }
+    case "wechat": {
+      return await db
+        .select({
+          id: chatWechatContext.id,
+          chatThreadId: chatWechatContext.chatThreadId,
+        })
+        .from(chatWechatContext)
+        .where(inArray(chatWechatContext.id, [...contextIds]));
     }
     case "telegram": {
       return await db

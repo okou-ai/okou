@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { cronExecuteWorkflowAutomationsContract } from "@okouai/api-contracts/contracts/cron";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   connectorAccountsContract,
@@ -11,7 +12,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
-import { mockOptionalEnv } from "../../../lib/env";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { mockStripeWebhookEventConstructor } from "../../external/stripe-client";
 import type { ApiTestUser } from "./helpers/api-bdd";
@@ -27,6 +28,7 @@ import { webhooksStripeAutomationEventsRoutes } from "../webhooks-stripe-automat
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorAccountRoutes } from "../connector-accounts";
+import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";
 
 const context = testContext();
 const connectors = createConnectorBddApi(context);
@@ -544,6 +546,72 @@ describe("Stripe automation event webhook", () => {
       JSON.stringify(unmapped),
       "t=1,v1=stripe-automation",
       AUTOMATION_WEBHOOK_SECRET,
+    );
+  });
+
+  it("skips a queued Stripe delivery after its owner disables the automation", async () => {
+    const receivedAt = "2026-08-07T08:00:00.000Z";
+    mockNow(Date.parse(receivedAt));
+    const cronSecret = "test-cron-secret";
+    mockEnv("CRON_SECRET", cronSecret);
+    const cron = (
+      await setupApp({
+        context,
+        routes: cronExecuteWorkflowAutomationsRoutes,
+        isolatePg: true,
+      })
+    )(cronExecuteWorkflowAutomationsContract);
+    const headers = { authorization: `Bearer ${cronSecret}` };
+    const baseline = await accept(cron.execute({ headers }), [200]);
+    expect(baseline.body).toStrictEqual({
+      success: true,
+      executed: 0,
+      skipped: 0,
+    });
+
+    const scenario = await setupScenario({
+      billingReasons: ["subscription_cycle"],
+    });
+    await postStripeAutomationEvent(invoicePaidEvent());
+    const pendingHealth = {
+      lastMatchingEventReceivedAt: receivedAt,
+      lastDeliveryStatus: "pending",
+      lastDeliveryStatusAt: receivedAt,
+      warning: null,
+    };
+    const pending = await readStripeAutomation(scenario);
+    expect(pending).toMatchObject({ enabled: true });
+    expect(pending.health).toStrictEqual(pendingHealth);
+
+    await setAutomationEnabled(scenario, false);
+    const disabled = await readStripeAutomation(scenario);
+    expect(disabled).toMatchObject({ enabled: false });
+    expect(disabled.health).toStrictEqual(pendingHealth);
+
+    const due = await accept(cron.execute({ headers }), [200]);
+    expect(due.body).toStrictEqual({
+      success: true,
+      executed: 0,
+      skipped: 1,
+    });
+    const skippedHealth = {
+      lastMatchingEventReceivedAt: receivedAt,
+      lastDeliveryStatus: "skipped",
+      lastDeliveryStatusAt: receivedAt,
+      warning: null,
+    };
+    expect((await readStripeAutomation(scenario)).health).toStrictEqual(
+      skippedHealth,
+    );
+
+    const replay = await accept(cron.execute({ headers }), [200]);
+    expect(replay.body).toStrictEqual({
+      success: true,
+      executed: 0,
+      skipped: 0,
+    });
+    expect((await readStripeAutomation(scenario)).health).toStrictEqual(
+      skippedHealth,
     );
   });
 

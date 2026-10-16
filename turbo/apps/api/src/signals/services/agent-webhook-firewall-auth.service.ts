@@ -73,6 +73,10 @@ import {
 } from "@okouai/connectors/firewall-types";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import {
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/runtime/connector-catalog";
 import { connectors } from "@okouai/db/schema/connector";
 import {
   modelProviderAccounts,
@@ -101,12 +105,15 @@ import {
 } from "./builtin-connector-credential-access.service";
 import {
   connectorAccountTargetKey,
-  resolveConnectorAccounts,
+  connectorAccountResolutionReadPlan,
+  connectorAccountResolutionsFromRows,
   type ConnectorAccountResolutionRequest,
 } from "./connector-account-resolution.service";
 import type { ConnectorRuntimeMethod } from "./connector-catalog-runtime.service";
 import {
-  loadConnectorRuntimeAuthSelection,
+  connectorCatalogCurrentWhere,
+  connectorRuntimeAuthSelectionReadPlan,
+  connectorRuntimeAuthSelectionFromRows,
   type ConnectorRuntimeAuthSelection,
 } from "./connector-catalog-slug-source.service";
 import {
@@ -1375,10 +1382,23 @@ async function loadBuiltinConnectorAccessStates(
     return result;
   }
 
-  const accountResolutions = await resolveConnectorAccounts(db, {
+  const plan = connectorAccountResolutionReadPlan({
     orgId,
     userId,
     requests,
+  });
+  const [exactRows, defaultRows] = await Promise.all([
+    plan.exactWhere
+      ? db.select(plan.columns).from(connectors).where(plan.exactWhere)
+      : [],
+    plan.defaultWhere
+      ? db.select(plan.columns).from(connectors).where(plan.defaultWhere)
+      : [],
+  ]);
+  const accountResolutions = connectorAccountResolutionsFromRows({
+    requests: plan.requests,
+    exactRows,
+    defaultRows,
   });
   const connectorIds = requests.flatMap((request) => {
     const resolution = accountResolutions.get(
@@ -4895,7 +4915,8 @@ async function resolveCurrentCustomConnectorMemberId(args: {
     kind: "custom" as const,
     customConnectorId: args.customConnectorId,
   };
-  const accountResolutions = await resolveConnectorAccounts(args.db, {
+  const db = args.db;
+  const plan = connectorAccountResolutionReadPlan({
     orgId: args.orgId,
     userId: args.userId,
     requests: [
@@ -4904,6 +4925,19 @@ async function resolveCurrentCustomConnectorMemberId(args: {
         selection: { kind: "exact", sourceId: args.sourceId },
       },
     ],
+  });
+  const [exactRows, defaultRows] = await Promise.all([
+    plan.exactWhere
+      ? db.select(plan.columns).from(connectors).where(plan.exactWhere)
+      : [],
+    plan.defaultWhere
+      ? db.select(plan.columns).from(connectors).where(plan.defaultWhere)
+      : [],
+  ]);
+  const accountResolutions = connectorAccountResolutionsFromRows({
+    requests: plan.requests,
+    exactRows,
+    defaultRows,
   });
   const accountResolution = accountResolutions.get(
     connectorAccountTargetKey(target),
@@ -5312,10 +5346,19 @@ async function loadFirewallAuthConnectorCatalog(
   body: FirewallAuthBody,
 ): Promise<ConnectorRuntimeAuthSelection> {
   const connectorSlug = body.matchedFirewall?.connectorSlug;
-  return await loadConnectorRuntimeAuthSelection(db, {
+  const catalogPlan = connectorRuntimeAuthSelectionReadPlan({
     connectorSlugs: Object.values(body.secretConnectorMap ?? {}),
     firewallConnectorSlugs: connectorSlug === undefined ? [] : [connectorSlug],
   });
+  return connectorRuntimeAuthSelectionFromRows(
+    await db
+      .select(catalogPlan.columns)
+      .from(connectorCatalog)
+      .leftJoin(connectorCatalogEntries, catalogPlan.join)
+      .where(connectorCatalogCurrentWhere()),
+    catalogPlan.requestedConnectorSlugs,
+    catalogPlan.firewallConnectorSlugs,
+  );
 }
 
 async function prepareNonCustomFirewallAuth(args: {

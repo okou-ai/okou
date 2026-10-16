@@ -186,7 +186,13 @@
     "src/signals/services/workflow-automation.service.ts",
     "src/signals/services/workflow-delete.service.ts",
     "src/signals/services/workflow-webhook-automation-config.service.ts",
-    "src/signals/services/workflow-webhook-automation-entitlement.service.ts"
+    "src/signals/services/workflow-webhook-automation-entitlement.service.ts",
+    "src/signals/external/wechat-client.ts",
+    "src/signals/external/wechat-json.ts",
+    "src/signals/services/wechat-chat-callback-payload.ts",
+    "src/signals/services/wechat-config.ts",
+    "src/signals/services/wechat-context.service.ts",
+    "src/signals/services/wechat-delivery.service.ts"
   ],
   "references": [
     {

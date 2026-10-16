@@ -1,4 +1,5 @@
 import { command, computed, state } from "ccstate";
+import { privateNetworkHostCount } from "../lib/private-network-references.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   tailscaleChangedPayloadSchema,
@@ -571,7 +572,10 @@ function canConfirmTailscaleChange(
       (dialog.kind !== "delete" || preview.ownHostCount === 0)
     );
   }
-  return dialog.kind !== "delete" || dialog.config?.sshHosts.length === 0;
+  return (
+    dialog.kind !== "delete" ||
+    (!!dialog.config && privateNetworkHostCount(dialog.config) === 0)
+  );
 }
 
 const confirmTailscaleChange$ = command(

@@ -282,16 +282,9 @@ async fn dispatch_large_then_small_requests_keep_stream_aligned() {
     let alignment_data = read_payload(&mut reader, crate::BLOCK_SIZE).await;
     assert!(alignment_data.iter().all(|&byte| byte == 0x33));
 
-    let disc = NbdRequest {
-        command: Command::Disconnect,
-        handle: 7,
-        offset: 0,
-        length: 0,
-    };
-    must(
-        writer.write_all(&serialize_request(&disc)).await,
-        "write disconnect request",
-    );
+    // End the alignment scenario at EOF so its exit bound does not include file
+    // persistence. Disconnect and shutdown durability have dedicated tests.
+    must(writer.shutdown().await, "close client write half");
     wait_for_dispatch(task).await;
 }
 

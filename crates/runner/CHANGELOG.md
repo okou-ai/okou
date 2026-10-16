@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.233.9](https://github.com/okou-ai/okou/compare/runner-rs-v0.233.8...runner-rs-v0.233.9) (2026-10-16)
+
+
+### Bug Fixes
+
+* **runner:** preserve unused home cache until seed handoff ([#40467](https://github.com/okou-ai/okou/issues/40467)) ([3af329d](https://github.com/okou-ai/okou/commit/3af329d2001560a53ec2525e6c4cc9e9c375c6ae))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.233.8](https://github.com/okou-ai/okou/compare/runner-rs-v0.233.7...runner-rs-v0.233.8) (2026-10-15)
+
+## [0.233.7](https://github.com/okou-ai/okou/compare/runner-rs-v0.233.6...runner-rs-v0.233.7) (2026-10-15)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.233.6](https://github.com/okou-ai/okou/compare/runner-rs-v0.233.5...runner-rs-v0.233.6) (2026-10-15)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.233.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.233.4...runner-rs-v0.233.5) (2026-10-15)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.233.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.233.3...runner-rs-v0.233.4) (2026-10-15)
 
 

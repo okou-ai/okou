@@ -337,7 +337,10 @@ describe("DELETE /api/integrations/slack", () => {
               expect.objectContaining({
                 type: "actions",
                 elements: expect.arrayContaining([
-                  expect.objectContaining({ action_id: "home_login_prompt" }),
+                  expect.objectContaining({
+                    action_id: "home_login_prompt",
+                    url: expect.stringContaining("/settings/slack?w="),
+                  }),
                 ]),
               }),
             ]),
@@ -473,6 +476,7 @@ describe("DELETE /api/integrations/slack?action=uninstall", () => {
                   elements: expect.arrayContaining([
                     expect.objectContaining({
                       action_id: "home_open_settings",
+                      url: expect.stringMatching(/\/works$/u),
                     }),
                   ]),
                 }),

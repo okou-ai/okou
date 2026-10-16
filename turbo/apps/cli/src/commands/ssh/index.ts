@@ -20,6 +20,7 @@ import { executeSsh } from "./rpc";
 import { createSessionCommand } from "./sessions";
 import { createFileCommand } from "./files";
 import { FILE_LIMIT_HELP } from "./file-protocol";
+import { createDiagnoseCommand } from "../../lib/remote-diagnostics";
 
 function requireCapability(capability: "ssh:read" | "ssh:write") {
   if (!decodeSandboxTokenPayload()?.capabilities.includes(capability)) {
@@ -163,6 +164,7 @@ Safety:
   );
 
 export const sshCommand = new Command("ssh")
+  .addCommand(createDiagnoseCommand("ssh"))
   .description("Access owner-configured SSH hosts from an authorized Run")
   .addHelpText(
     "after",

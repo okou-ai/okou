@@ -4,6 +4,14 @@ set -euo pipefail
 BIN_DIR=$1
 EXECUTION_KEY=$2
 ROOTFS_HASH=$3
+case "${4:-}" in
+  placement) SELECTED_TEST=real_firecracker_guests_have_managed_host_cpu_placement ;;
+  measurement) SELECTED_TEST=real_firecracker_guests_receive_weighted_host_cpu_service ;;
+  *)
+    echo "host CPU test mode must be placement or measurement" >&2
+    exit 2
+    ;;
+esac
 : "${RUNNER_BEHAVIOR_DURABLE_UNIT:?durable owner unit is required}"
 TEST_BIN="${BIN_DIR}/runner-host-cpu-fairness-${EXECUTION_KEY}"
 BASE_DIR="/var/lib/vm0-runner/host-cpu-fairness/${EXECUTION_KEY}"
@@ -115,10 +123,16 @@ for fixture in "$TEST_BIN" "$FIRECRACKER" "$KERNEL" "$ROOTFS"; do
   fi
 done
 
+test_listing=$("$TEST_BIN" --list --ignored --exact "$SELECTED_TEST")
+if ! grep -Fx -- "$SELECTED_TEST: test" <<<"$test_listing" >/dev/null; then
+  echo "selected host CPU test is missing: $SELECTED_TEST" >&2
+  exit 1
+fi
+
 sudo modprobe nbd nbds_max=4096
 sudo mkdir -p "$BASE_DIR"
 
-echo "=== Managed weighted host CPU proof ==="
+echo "=== Host CPU test: $SELECTED_TEST ==="
 # Stop the delegated child before its durable owner releases the CPU locks.
 # Bound the native workload even when the CI observer cannot reconnect.
 sudo systemd-run \
@@ -138,4 +152,4 @@ sudo systemd-run \
   "--setenv=OKOU_TEST_HOST_CPU_KERNEL=${KERNEL}" \
   "--setenv=OKOU_TEST_HOST_CPU_ROOTFS=${ROOTFS}" \
   "--setenv=OKOU_TEST_HOST_CPU_BASE_DIR=${BASE_DIR}" \
-  "$TEST_BIN" --ignored --test-threads=1 --nocapture
+  "$TEST_BIN" --ignored --exact "$SELECTED_TEST" --test-threads=1 --nocapture

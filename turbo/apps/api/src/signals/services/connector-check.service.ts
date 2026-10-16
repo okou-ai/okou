@@ -53,10 +53,11 @@ import { userFeatureSwitchOverrides } from "./feature-switches.service";
 import {
   getConnectorRuntimeConnector,
   listConnectorRuntimeVisibleSlugs,
-  loadConnectorRuntimeSnapshot,
+  materializeConnectorRuntimeSnapshot,
   type ConnectorRuntimeSnapshot,
   type ConnectorRuntimeMethod,
 } from "./connector-catalog-runtime.service";
+import { loadAcceptedConnectorCatalogSnapshot } from "./connector-catalog-external-reader.service";
 import {
   resolveConnectorRuntimeDiagnosticTargets$,
   type ConnectorRuntimeDiagnosticResult,
@@ -1733,7 +1734,9 @@ export const resolveConnectorCheck$ = command(
       runRegistration = registration.registration;
     }
 
-    const snapshot = await loadConnectorRuntimeSnapshot(db);
+    const snapshot = materializeConnectorRuntimeSnapshot(
+      await loadAcceptedConnectorCatalogSnapshot(db),
+    );
     signal.throwIfAborted();
     let timeline: ConnectorCheckTimeline;
     if (runRegistration) {

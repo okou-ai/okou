@@ -68,7 +68,7 @@ use runner_host::paths::RunnerPaths;
 use runner_host::runner_process_identity::RunnerProcessIdentity;
 #[cfg(test)]
 use runner_provider::JobCandidate;
-use runner_provider::{JobProvider, RunCancellationRegistration, RunCancellationRegistry};
+use runner_provider::{JobProvider, RunCancellationRegistry};
 #[cfg(test)]
 use runner_types::ids::RunId;
 
@@ -105,7 +105,7 @@ use home_cache_observation::{
     HomeCacheObservation, HomeCacheObservationEvent, InitialHomeCacheObservation,
 };
 use job_discovery::{AdmissionContext, DiscoveredJob};
-use job_spawn::{SpawnContext, handle_job_result};
+use job_spawn::{JobResult, SpawnContext, handle_job_result};
 use maintenance::{MaintenanceCompletion, MaintenanceTasks};
 use pending_candidate::PendingCandidate;
 use runner_lifecycle::active_runs::ActiveRuns;
@@ -954,6 +954,28 @@ async fn handle_required_network_log_completion(
     }
 }
 
+fn handle_mitm_crash(recovery: &mut MitmRecovery) {
+    error!(
+        r#type = "usage_underbilling",
+        reason = "mitm_restart_in_memory_usage_risk",
+        underbilling_class = "risk",
+        component = "runner",
+        "mitmproxy exited unexpectedly, scheduling restart"
+    );
+    recovery.on_crash();
+}
+
+async fn handle_mitm_recovery_failure(
+    recovery: &mut MitmRecovery,
+    crash_rx: &mut mpsc::Receiver<()>,
+    cancel: &CancellationToken,
+    cancel_tokens: &RunCancellationRegistry,
+    lifecycle: &LifecycleController,
+) {
+    recovery.stop_retries(crash_rx);
+    handle_stopping_signal("mitm-recovery", cancel, cancel_tokens, lifecycle).await;
+}
+
 /// Run the concrete retained reactor and perform its ordered resource teardown.
 pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     let RunConfig {
@@ -1026,7 +1048,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         startup_mode,
     } = started;
 
-    let mut jobs: JoinSet<RunCancellationRegistration> = JoinSet::new();
+    let mut jobs: JoinSet<JobResult> = JoinSet::new();
 
     if startup_mode == RunnerMode::Running {
         info!(
@@ -1476,6 +1498,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                         HomeCacheChange {
                             observed_at: tokio::time::Instant::now(),
                             committed_cache_keys: std::collections::BTreeSet::new(),
+                            selection_release_only: false,
                         },
                     )?;
                 }
@@ -1576,21 +1599,15 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             }
             // Mitmproxy crash detection
             Some(()) = mitm_crash_rx.recv() => {
-                error!(
-                    r#type = "usage_underbilling",
-                    reason = "mitm_restart_in_memory_usage_risk",
-                    underbilling_class = "risk",
-                    component = "runner",
-                    "mitmproxy exited unexpectedly, scheduling restart"
-                );
-                mitm_recovery.on_crash();
+                handle_mitm_crash(&mut mitm_recovery);
             }
             // Mitmproxy restart result (background task)
             result = mitm_recovery.wait(&mut mitm) => {
                 if let Err(error) = result {
-                    mitm_recovery.stop_retries(&mut mitm_crash_rx);
-                    handle_stopping_signal("mitm-recovery", &provider_state.cancel,
-                        &provider_state.cancel_tokens, &lifecycle).await;
+                    handle_mitm_recovery_failure(
+                        &mut mitm_recovery, &mut mitm_crash_rx, &provider_state.cancel,
+                        &provider_state.cancel_tokens, &lifecycle,
+                    ).await;
                     terminal_error = Some(error.into());
                 }
             }
@@ -1768,20 +1785,14 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                     mitm.request_usage_flush();
                 }
                 Some(()) = mitm_crash_rx.recv() => {
-                    error!(
-                        r#type = "usage_underbilling",
-                        reason = "mitm_restart_in_memory_usage_risk",
-                        underbilling_class = "risk",
-                        component = "runner",
-                        "mitmproxy exited unexpectedly, scheduling restart"
-                    );
-                    mitm_recovery.on_crash();
+                    handle_mitm_crash(&mut mitm_recovery);
                 }
                 result = mitm_recovery.wait(&mut mitm) => {
                     if let Err(error) = result {
-                        mitm_recovery.stop_retries(&mut mitm_crash_rx);
-                        handle_stopping_signal("mitm-recovery", &provider_state.cancel,
-                            &provider_state.cancel_tokens, &lifecycle).await;
+                        handle_mitm_recovery_failure(
+                            &mut mitm_recovery, &mut mitm_crash_rx, &provider_state.cancel,
+                            &provider_state.cancel_tokens, &lifecycle,
+                        ).await;
                         terminal_error.get_or_insert(error.into());
                     }
                 }
@@ -1790,6 +1801,11 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         }
     }
     teardown.phase_complete("running_jobs_drain", phase);
+    if let Some(cache) = &exec_config.home_cache {
+        let phase = teardown.phase_start("home_checkout_handoffs_drain");
+        cache.drain_checkout_handoffs().await;
+        teardown.phase_complete("home_checkout_handoffs_drain", phase);
+    }
     if !orphaned_active_runs.is_empty() {
         let phase = teardown.phase_start("orphan_reap_shutdown_final");
         orphan_reap

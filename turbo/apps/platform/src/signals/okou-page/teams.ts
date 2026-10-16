@@ -6,29 +6,127 @@ import {
 } from "@okouai/api-contracts/contracts/teams-connect";
 import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
+import { authenticatedSessionKey$, clerk$ } from "../auth.ts";
+import { pageVersion$ } from "../page-signal.ts";
+import {
+  bestEffort,
+  NEVER_RESOLVED_PROMISE,
+  onDomEventFn,
+  resetSignal,
+} from "../utils.ts";
 import { setAblyLoop$ } from "../realtime.ts";
 import { i18n } from "../../i18n/index.ts";
 
-const internalReload$ = state(0);
-const internalTeamsStatus$ = state<TeamsConnectStatus | null>(null);
+type TeamsConnectionState = Pick<
+  TeamsConnectStatus,
+  "isInstalled" | "isConnected"
+>;
 
-export const teamsOrgData$ = computed(async (get) => {
-  get(internalReload$);
-  const client = get(apiClient$)(teamsConnectContract);
-  const result = await accept(client.getStatus(), [200]);
-  return result.body;
-});
-
-const reloadTeamsOrg$ = command(({ set }) => {
-  set(internalReload$, (prev) => {
-    return prev + 1;
+// Status requests belong to the page and authenticated actor. Keeping the
+// request promise in this graph gives views a loadable without retaining a
+// previous actor's result. Requests inherit their caller's route lifetime;
+// actor guards reject replaced sessions, and only the latest refresh publishes.
+function createTeamsStatus(owner: string | null) {
+  const request$ = state<Promise<TeamsConnectStatus>>(NEVER_RESOLVED_PROMISE);
+  const previous$ = state<TeamsConnectionState | null>(null);
+  const read$ = command(async ({ get }, signal: AbortSignal) => {
+    const { client, assertCurrent, identity } = await get(teamsClient$);
+    signal.throwIfAborted();
+    assertCurrent();
+    if (identity !== owner) {
+      throw new DOMException("Teams owner changed", "AbortError");
+    }
+    const result = await accept(
+      client.getStatus({ fetchOptions: { signal } }),
+      [200],
+      signal,
+    );
+    assertCurrent();
+    return result.body;
   });
+  const refresh$ = command(async ({ get, set }, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const request = set(read$, signal);
+    set(request$, request);
+    const next = await request;
+    signal.throwIfAborted();
+    if (get(request$) !== request) {
+      return false;
+    }
+    const previous = get(previous$);
+    const current = {
+      isInstalled: next.isInstalled,
+      isConnected:
+        next.isInstalled &&
+        next.isConnected &&
+        next.pendingInstallation !== true,
+    };
+    set(previous$, current);
+    if (hasTeamsStatusChanged(previous, current)) {
+      toastTeamsStatusChange(previous, current);
+    }
+    return false;
+  });
+  return { request$, refresh$ };
+}
+
+export const teamsClient$ = computed(async (get) => {
+  const identity = get(authenticatedSessionKey$);
+  const createClient = get(apiClient$);
+  const clerk = await get(clerk$);
+  const orgId = clerk.organization?.id;
+  if (!orgId) {
+    throw new DOMException("Teams owner changed", "AbortError");
+  }
+  const assertCurrent = () => {
+    if (
+      !identity ||
+      !clerk.user ||
+      !clerk.organization ||
+      !clerk.session ||
+      JSON.stringify([
+        clerk.organization.id,
+        clerk.user.id,
+        clerk.session.id,
+      ]) !== identity
+    ) {
+      throw new DOMException("Teams owner changed", "AbortError");
+    }
+  };
+  assertCurrent();
+  return {
+    assertCurrent,
+    identity,
+    orgId,
+    client: createClient(teamsConnectContract, {
+      getTokenGuard: () => {
+        assertCurrent();
+        return assertCurrent;
+      },
+    }),
+  };
 });
+
+const teamsStatus$ = computed((get) => {
+  const owner = get(authenticatedSessionKey$);
+  get(pageVersion$);
+  return createTeamsStatus(owner);
+});
+
+export const teamsOrgData$ = computed((get) => {
+  return get(get(teamsStatus$).request$);
+});
+
+export const refreshTeamsOrg$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    await set(get(teamsStatus$).refresh$, signal);
+  },
+);
 
 function hasTeamsStatusChanged(
-  previous: TeamsConnectStatus | null,
-  next: TeamsConnectStatus,
-): previous is TeamsConnectStatus {
+  previous: TeamsConnectionState | null,
+  next: TeamsConnectionState,
+): previous is TeamsConnectionState {
   return (
     previous !== null &&
     (previous.isInstalled !== next.isInstalled ||
@@ -37,8 +135,8 @@ function hasTeamsStatusChanged(
 }
 
 function toastTeamsStatusChange(
-  previous: TeamsConnectStatus,
-  next: TeamsConnectStatus,
+  previous: TeamsConnectionState,
+  next: TeamsConnectionState,
 ): void {
   if (next.isConnected && !previous.isConnected) {
     toast.success(
@@ -93,46 +191,84 @@ export const setShowTeamsUninstallDialog$ = command(
 
 export const disconnectTeamsOrg$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const client = get(apiClient$)(teamsConnectContract);
-    await accept(client.disconnect(), [200]);
+    const { client, assertCurrent } = await get(teamsClient$);
     signal.throwIfAborted();
-    set(reloadTeamsOrg$);
+    assertCurrent();
+    await accept(
+      client.disconnect({ fetchOptions: { signal } }),
+      [200],
+      signal,
+    );
+    signal.throwIfAborted();
+    await set(refreshTeamsOrg$, signal);
   },
 );
 
 export const uninstallTeamsOrg$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const client = get(apiClient$)(teamsConnectContract);
-    await accept(client.disconnect({ query: { action: "uninstall" } }), [200]);
+    const { client, assertCurrent } = await get(teamsClient$);
     signal.throwIfAborted();
-    set(reloadTeamsOrg$);
+    assertCurrent();
+    await accept(
+      client.disconnect({
+        query: { action: "uninstall" },
+        fetchOptions: { signal },
+      }),
+      [200],
+      signal,
+    );
+    signal.throwIfAborted();
+    await set(refreshTeamsOrg$, signal);
   },
 );
 
-const onTeamsChanged$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const previous = get(internalTeamsStatus$);
-  set(reloadTeamsOrg$);
-  const next = await get(teamsOrgData$);
-  signal.throwIfAborted();
-  set(internalTeamsStatus$, next);
+const restartTeamsWatch$ = resetSignal();
 
-  if (hasTeamsStatusChanged(previous, next)) {
-    toastTeamsStatusChange(previous, next);
-  }
-
-  return false;
-});
-
-export const watchTeamsConnection$ = command(
+const watchCurrentTeamsConnection$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const current = await get(teamsOrgData$);
+    signal = set(restartTeamsWatch$, signal);
+    const status = get(teamsStatus$);
+    const refresh = onDomEventFn(async () => {
+      if (document.visibilityState === "visible") {
+        await set(status.refresh$, signal);
+      }
+    });
+    window.addEventListener("focus", refresh, { signal });
+    document.addEventListener("visibilitychange", refresh, { signal });
+    // The view renders this promise's failure and provides retry. Attach the
+    // subscription even after failure; runOnSubscribe closes the read/attach gap.
+    await bestEffort(set(status.refresh$, signal), signal);
     signal.throwIfAborted();
-    set(internalTeamsStatus$, current);
-
     set(
       setAblyLoop$,
-      { topic: "teams:changed", loopCommand$: onTeamsChanged$ },
+      {
+        topic: "teams:changed",
+        loopCommand$: status.refresh$,
+        options: { runOnSubscribe: true },
+      },
       signal,
     );
+  },
+);
+
+// Auth changes can happen without navigation. Cancel the old owner's HTTP,
+// DOM listeners and realtime subscription before starting a new status graph.
+export const watchTeamsConnection$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const clerk = await get(clerk$);
+    signal.throwIfAborted();
+    let owner = get(authenticatedSessionKey$);
+    const unsubscribe = clerk.addListener(
+      onDomEventFn(async () => {
+        signal.throwIfAborted();
+        const next = get(authenticatedSessionKey$);
+        if (next !== owner) {
+          owner = next;
+          await set(watchCurrentTeamsConnection$, signal);
+        }
+      }),
+    );
+    signal.addEventListener("abort", unsubscribe, { once: true });
+    await set(watchCurrentTeamsConnection$, signal);
   },
 );
