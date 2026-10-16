@@ -974,10 +974,38 @@ const usagePackChangeConfirmAuthed$ = command(
       const preview = parseBillingPaymentMethodPreviewToken(
         bodyResult.data.paymentMethodPreviewToken,
       );
-      const billing = await activeUsagePackBillingContext(
-        db,
-        access.auth.orgId,
-      );
+      const orgId = access.auth.orgId;
+      const billing = await (async (): Promise<{
+        readonly usagePackSubscriptionId: string;
+        readonly stripeCustomerId: string;
+        readonly stripeSubscriptionId: string;
+      } | null> => {
+        const [subscription] = await db
+          .select({
+            usagePackSubscriptionId: usagePackSubscriptions.id,
+            stripeCustomerId: usagePackSubscriptions.stripeCustomerId,
+            stripeSubscriptionId: usagePackSubscriptions.stripeSubscriptionId,
+          })
+          .from(usagePackSubscriptions)
+          .where(
+            and(
+              eq(usagePackSubscriptions.orgId, orgId),
+              isNotNull(usagePackSubscriptions.stripeSubscriptionId),
+              notInArray(usagePackSubscriptions.subscriptionStatus, [
+                ...TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES,
+              ]),
+            ),
+          )
+          .orderBy(desc(usagePackSubscriptions.updatedAt))
+          .limit(1);
+        return subscription?.stripeSubscriptionId
+          ? {
+              usagePackSubscriptionId: subscription.usagePackSubscriptionId,
+              stripeCustomerId: subscription.stripeCustomerId,
+              stripeSubscriptionId: subscription.stripeSubscriptionId,
+            }
+          : null;
+      })();
       signal.throwIfAborted();
       if (
         !preview ||
