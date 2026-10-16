@@ -204,8 +204,7 @@ export const pickEnqueuedChatThread$ = command(
     const receipt = input.enqueueCommit;
     if (receipt) {
       set(chatInputEnqueueCommits$, (previous) => {
-        const { eventId, ...observation } = receipt;
-        return new Map(previous).set(eventId, observation);
+        return new Map(previous).set(receipt.eventId, receipt.committedAt);
       });
     }
     const { result } = await set(pickChatThread$, input, signal);

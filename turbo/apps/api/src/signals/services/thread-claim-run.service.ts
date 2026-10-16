@@ -1167,9 +1167,12 @@ export function createThreadClaimRunObjects(
       signal: AbortSignal,
     ) => {
       const apiStartTime = head.apiStartTime;
-      const receipt = get(chatInputEnqueueCommits$).get(head.id);
-      if (receipt !== undefined) {
-        const { committedAt, requestReceivedAt } = receipt;
+      const committedAt = get(chatInputEnqueueCommits$).get(head.id);
+      if (committedAt !== undefined) {
+        const requestReceivedAt =
+          requestFacts?.input.id === head.id
+            ? requestFacts.input.requestReceivedAt
+            : undefined;
         if (requestReceivedAt !== undefined) {
           timing.recordDuration(
             "api_dispatch_request_received_to_enqueue_commit",
@@ -1324,10 +1327,9 @@ export function createThreadClaimRunObjects(
   // carries no API start time, so those rows are not emitted for it.
   const runnerApiStartTime$ = computed(async (get) => {
     const event = await get(pickedEvent$);
-    if (!event) {
-      return undefined;
-    }
-    return get(chatInputEnqueueCommits$).get(event.id)?.requestReceivedAt;
+    return event && requestFacts?.input.id === event.id
+      ? requestFacts.input.requestReceivedAt
+      : undefined;
   });
   // Generated once per claim graph; read after authorization admits the head.
   const runIds$ = threadContext.runIds$;

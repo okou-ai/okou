@@ -826,6 +826,9 @@ function normalSendRequestFacts(
       modelSelection: event.modelSelection,
       requiredOfficialWorkflowIds: args.requiredOfficialWorkflowIds,
       captureNetworkBodies: Boolean(args.body.captureNetworkBodies),
+      ...(args.requestReceivedAt === undefined
+        ? {}
+        : { requestReceivedAt: args.requestReceivedAt }),
     },
   };
 }
@@ -1435,20 +1438,6 @@ function missingNormalSendInput(thread: SendThread): null {
   return null;
 }
 
-/** The request-local receipt observed right after the input commit resolves. */
-function normalSendEnqueueCommit(
-  args: Pick<NormalSendArgs, "requestReceivedAt">,
-  eventId: string,
-): ChatInputEnqueueCommit {
-  return {
-    eventId,
-    committedAt: now(),
-    ...(args.requestReceivedAt === undefined
-      ? {}
-      : { requestReceivedAt: args.requestReceivedAt }),
-  };
-}
-
 const appendNormalSendInput$ = command(
   async (
     { set },
@@ -1575,7 +1564,7 @@ const appendNormalSendInput$ = command(
       ? null
       : {
           inserted,
-          enqueueCommit: normalSendEnqueueCommit(args, inserted.id),
+          enqueueCommit: { eventId: inserted.id, committedAt: now() },
         };
   },
 );
