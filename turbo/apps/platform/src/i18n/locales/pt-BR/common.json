@@ -126,7 +126,7 @@
         "other": "Outro",
         "parentFolders": "Pastas superiores",
         "pending": "Os arquivos estarão disponíveis quando a execução na fila começar.",
-        "readonly": "Arquivos somente para leitura da execução atual. Fechar o painel libera a conexão.",
+        "readonly": "Arquivos somente para leitura da execução atual.",
         "refresh": "Atualizar",
         "retry": "Tentar novamente",
         "root": "Pasta raiz",
@@ -5232,21 +5232,25 @@
     "wallet": {
       "actionError": "Não foi possível concluir a ação. Verifique sua conexão, permita pop-ups e tente novamente.",
       "connect": "Conectar",
-      "description": "Seus agentes podem solicitar compras pelo Link. Você aprova cada compra.",
+      "description": "Seus agentes podem solicitar compras e consultar transações do Link. Você aprova cada compra.",
       "disconnect": "Desconectar",
       "loadError": "Não foi possível carregar sua carteira.",
       "permissionsUnknown": "Reconecte o Link para revisar e confirmar as permissões atuais.",
       "retry": "Tentar novamente",
-      "scope": "Deixe o Okou fazer compras por você com o Link.",
+      "scope": "Permita que o Okou faça compras e consulte sua atividade no Link.",
       "title": "Carteira",
       "transactions": {
-        "description": "Suas solicitações de compra recentes com o Link no Okou.",
+        "description": "Transações recentes da sua conta Link conectada.",
         "empty": "Nenhuma transação do Link ainda",
         "loadError": "Não foi possível carregar as transações. Tente novamente.",
         "loading": "Carregando transações",
         "merchant": "Estabelecimento",
+        "refunded": "Reembolsado",
+        "requestsDescription": "Solicitações registradas neste espaço de trabalho. Conecte o Link ou atualize as permissões para ver as transações reais.",
+        "requestsEmpty": "Nenhuma solicitação de compra ainda",
+        "requestsTitle": "Solicitações de compra",
         "status": {
-          "approved": "Aprovada, aguardando pagamento",
+          "approved": "Aprovado, pagamento não confirmado",
           "canceled": "Cancelada",
           "created": "Criada",
           "creating": "Criando",
@@ -5259,8 +5263,8 @@
           "succeeded": "Pagamento concluído"
         },
         "statusLabel": "Status",
-        "test": "Teste",
-        "title": "Transações do Link"
+        "title": "Transações do Link",
+        "unknownStatus": "Status indisponível"
       },
       "workspaceScopeChanged": "Sua carteira Link agora pode ser usada por todos os seus agentes neste espaço de trabalho. Reconecte para aprovar essa mudança."
     },

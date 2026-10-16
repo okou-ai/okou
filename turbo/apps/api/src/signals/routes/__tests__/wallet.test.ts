@@ -124,10 +124,13 @@ function tokenHandler(
       refresh_token: "wallet-refresh-fixture",
       token_type: "Bearer",
       expires_in: options.expiresIn ?? 3600,
-      scope: options.scope ?? "payment_methods.agentic",
-      authorization_details: options.actions
-        ? [{ type: "source", actions: options.actions }]
-        : undefined,
+      scope: options.scope ?? "payment_methods.agentic userinfo:read",
+      authorization_details: [
+        {
+          type: "source",
+          actions: options.actions ?? ["read_link_transactions"],
+        },
+      ],
     });
   });
 }
@@ -791,7 +794,7 @@ test("refreshes rotating credentials only on the backend and isolates requests f
   const fixture = await carrier();
   server.use(tokenHandler({ expiresIn: 30 }));
   await connect(fixture);
-  server.use(tokenHandler());
+  server.use(tokenHandler({ scope: "payment_methods.agentic" }));
   const input = purchase();
   spendProvider(input);
   const created = await accept(
@@ -932,7 +935,7 @@ test("shares a workspace wallet across agents while isolating purchase approvals
     }),
   );
   await connect(fixture);
-  const input = purchase();
+  const input = { ...purchase(), test: false };
   const provider = spendProvider(input);
   const created = await accept(
     client().createSpend({ headers: fixture.headers, body: input }),
@@ -966,12 +969,29 @@ test("shares a workspace wallet across agents while isolating purchase approvals
     }),
     [404],
   );
-  const secondPurchase = purchase();
+  const secondPurchase = { ...purchase(), test: false };
   spendProvider(secondPurchase);
   const second = await accept(
     client().createSpend({ headers: otherAgent.headers, body: secondPurchase }),
     [200],
   );
+  const testPurchase = purchase();
+  spendProvider(testPurchase);
+  const testRequest = await accept(
+    client().createSpend({ headers: fixture.headers, body: testPurchase }),
+    [200],
+  );
+  const hiddenCursor = await accept(
+    userClient().transactions({
+      headers: sessionHeaders,
+      query: { cursor: testRequest.body.id },
+    }),
+    [200],
+  );
+  expect(hiddenCursor.body).toStrictEqual({
+    transactions: [],
+    nextCursor: null,
+  });
   const firstPage = await accept(
     userClient().transactions({ headers: sessionHeaders, query: { limit: 1 } }),
     [200],
@@ -984,13 +1004,13 @@ test("shares a workspace wallet across agents while isolating purchase approvals
       amount: secondPurchase.amount,
       currency: "usd",
       status: "pending_approval",
-      test: true,
+      test: false,
       createdAt: expect.any(String),
     },
   ]);
   expect(firstPage.body.nextCursor).toBe(second.body.id);
   // A new request between pages must not duplicate or displace earlier entries.
-  const newestPurchase = purchase();
+  const newestPurchase = { ...purchase(), test: false };
   spendProvider(newestPurchase);
   await accept(
     client().createSpend({ headers: otherAgent.headers, body: newestPurchase }),
@@ -1010,7 +1030,7 @@ test("shares a workspace wallet across agents while isolating purchase approvals
       amount: input.amount,
       currency: "usd",
       status: "approved",
-      test: true,
+      test: false,
       createdAt: expect.any(String),
     },
   ]);
@@ -2238,7 +2258,10 @@ test("reads Link transactions with explicit financial consent and keeps a read-o
       .scopeChange,
   ).toMatchObject({
     reason: "permissions_changed",
-    storedScopes: ["userinfo:read"],
+    storedScopes: expect.arrayContaining([
+      "userinfo:read",
+      "read_link_transactions",
+    ]),
     addedScopes: expect.arrayContaining(["payment_methods.agentic"]),
   });
   expect(
@@ -2334,6 +2357,33 @@ test("reads Link transactions with explicit financial consent and keeps a read-o
     nextCursor: "txn_first",
   });
   expect(result.headers.get("cache-control")).toBe("no-store");
+  const sessionActivity = await accept(
+    userClient().activity({
+      headers: sessionHeaders,
+      query: {
+        startDate: "2026-10-01",
+        endDate: "2026-10-15",
+        limit: 1,
+        startingAfter: "txn_previous",
+        category: "shopping",
+      },
+    }),
+    [200],
+  );
+  expect(sessionActivity.body).toStrictEqual(result.body);
+  expect(sessionActivity.headers.get("cache-control")).toBe("no-store");
+  await accept(
+    userClient().activity({ headers: fixture.headers, query: {} }),
+    [403],
+  );
+  const peer = createBddApi(context).user({ orgId: fixture.actor.orgId });
+  mocks.clerk.session(peer.userId, peer.orgId, peer.orgRole);
+  await accept(
+    userClient().activity({ headers: sessionHeaders, query: {} }),
+    [409],
+  );
+  mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
+
   server.use(
     http.get("https://api.link.com/transactions", () => {
       return HttpResponse.json([]);
@@ -2372,6 +2422,7 @@ test("does not infer financial actions from a scope or from a pending consent up
     tokenHandler({
       scope:
         "payment_methods.agentic userinfo:read financial_insights.transactions.read",
+      actions: [],
     }),
   );
   await connect(fixture);
@@ -2379,6 +2430,18 @@ test("does not infer financial actions from a scope or from a pending consent up
     client().transactions({ headers: fixture.headers, query: {} }),
     [403],
   );
+  await accept(
+    userClient().activity({ headers: sessionHeaders, query: {} }),
+    [403],
+  );
+  expect(
+    (await accept(userClient().status({ headers: sessionHeaders }), [200]))
+      .body,
+  ).toMatchObject({
+    connected: true,
+    connectionStatus: "scope-mismatch",
+    scopeChange: { addedScopes: ["read_link_transactions"] },
+  });
   const upgrade = await accept(
     client().connect({
       headers: fixture.headers,
@@ -2824,4 +2887,53 @@ test("reading a recorded request never sends an approval request; retrying its o
   expect(resumed.body.id).toBe(requestId);
   expect(resumed.body.approvalUrl).toBe(approvalUrl);
   expect(approvalRequests).toBe(1);
+});
+
+test("requests payment, profile and transaction consent from both CLI and settings", async () => {
+  const fixture = await carrier();
+  server.use(
+    tokenHandler({
+      scope:
+        "payment_methods.agentic userinfo:read financial_insights.transactions.read",
+    }),
+  );
+  for (const request of [
+    () => {
+      return client().connect({ headers: fixture.headers, body: {} });
+    },
+    () => {
+      return userClient().connect({ headers: sessionHeaders, body: {} });
+    },
+  ]) {
+    const started = await accept(request(), [200]);
+    const url = new URL(started.body.url);
+    const scopes = url.searchParams.get("scope")?.split(" ");
+    expect(scopes).toStrictEqual(
+      expect.arrayContaining(["payment_methods.agentic", "userinfo:read"]),
+    );
+    expect(
+      JSON.parse(url.searchParams.get("authorization_details") ?? "null"),
+    ).toStrictEqual([{ type: "source", actions: ["read_link_transactions"] }]);
+    await accept(
+      callbackClient().callback({
+        headers: sessionHeaders,
+        query: {
+          state: url.searchParams.get("state") ?? "",
+          code: "wallet-code-fixture",
+          responseMode: "json",
+        },
+      }),
+      [200],
+    );
+    expect(
+      (await accept(userClient().status({ headers: sessionHeaders }), [200]))
+        .body,
+    ).toMatchObject({
+      connectionStatus: "connected",
+      scopeChange: null,
+      authorization: {
+        capabilities: { payments: true, userInfo: true, transactions: true },
+      },
+    });
+  }
 });

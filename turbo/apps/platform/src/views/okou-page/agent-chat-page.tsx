@@ -535,14 +535,13 @@ function AgentComposerPage() {
               above the scroller: that band is empty and reads as part of the
               page's top margin, so the margin under the row has to match it.
 
-              `min-h-0` stops the box from growing with what it holds. Picking a
-              type swaps the row for a panel several times its height, and if
-              the box grew, the space above it would shrink to make room and
-              lift the composer the click came from. The panel hangs below the
-              row's slot instead and the page scrolls to it. */}
-          <div className="contents sm:flex sm:min-h-0 sm:grow sm:basis-14 sm:flex-col sm:gap-10 sm:pt-5 md:basis-28">
-            {/* The bottom padding is the end of the page once a panel has
-                overflowed the box and the page scrolls. */}
+              Keep the content-based minimum height: taller panels, such as
+              Document's portrait covers, use the free space above the greeting
+              before the page needs to scroll. Allowing this box to shrink
+              below its contents creates overflow even when the whole panel
+              could fit in the viewport. */}
+          <div className="contents sm:flex sm:grow sm:basis-14 sm:flex-col sm:gap-10 sm:pt-5 md:basis-28">
+            {/* Keep the final row clear of the scrollport's bottom edge. */}
             <div className="order-2 sm:order-none sm:pb-10">
               <ComposerTaskChips signals={composerSignals} />
             </div>

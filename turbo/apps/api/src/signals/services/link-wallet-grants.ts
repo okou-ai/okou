@@ -56,16 +56,10 @@ export function requireWalletPermission(
 ) {
   const authorization = walletAuthorization(credentials);
   if (!authorization.capabilities[permission]) {
-    const next =
-      permission === "transactions"
-        ? "okou wallet connect --transactions --json"
-        : permission === "userInfo" && !authorization.capabilities.payments
-          ? "okou wallet connect --read-only --json"
-          : "okou wallet connect --json";
     throw new LinkWalletError(
       403,
       "WALLET_SCOPE_REQUIRED",
-      `Link has not granted ${permission} access. Request user consent with: ${next}`,
+      `Link has not granted ${permission} access. Request user consent with: okou wallet connect --json`,
     );
   }
 }

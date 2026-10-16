@@ -20,30 +20,21 @@ import type {
   PreparedSshConnectionUpdate,
 } from "./ssh-connection.service";
 
-// Keep the current entering protocols while removing redundant retained fences.
-// Cloudflare config writes must follow the API authority-reader drain in #40577.
-// Drizzle's sessionless builder needs a schema-owned DML leaf for Tailscale.
+// Publish new reference-set members without changing logical config metadata.
+// Retained members publish through their actual Host update instead.
+// Drizzle's sessionless builder needs a schema-owned DML leaf.
 export function enteringSshNetworkConfig(
   qb: QueryBuilder,
   alias: string,
   provider: "cloudflare_access" | "tailscale",
   predicate: SQL,
 ) {
-  if (provider === "cloudflare_access") {
-    return qb
-      .$with(alias)
-      .as(
-        qb
-          .select({ id: cloudflareAccessConfigs.id })
-          .from(cloudflareAccessConfigs)
-          .where(predicate)
-          .for("share"),
-      );
-  }
+  const config =
+    provider === "tailscale" ? tailscaleConfigs : cloudflareAccessConfigs;
   return qb
-    .$with(alias, { id: tailscaleConfigs.id })
+    .$with(alias, { id: config.id })
     .as(
-      sql`UPDATE ${tailscaleConfigs} SET ${sql.identifier(tailscaleConfigs.name.name)} = ${tailscaleConfigs.name} WHERE ${predicate} RETURNING ${tailscaleConfigs.id}`,
+      sql`UPDATE ${config} SET ${sql.identifier(config.name.name)} = ${config.name} WHERE ${predicate} RETURNING ${config.id}`,
     );
 }
 

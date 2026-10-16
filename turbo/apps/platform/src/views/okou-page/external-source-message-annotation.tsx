@@ -1,12 +1,13 @@
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
-import { MessagesSquare, ArrowUpRight } from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
 import { BrandSlack, cn } from "@okouai/ui";
 import type { UserMessageRenderPart } from "../../signals/chat-page/chat-event.ts";
 import { DiscordMark } from "./components/discord-mark.tsx";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
 
 const annotationIconImgs = {
+  wechat: settingsIconAssetUrl("wechat"),
   feishu: settingsIconAssetUrl("lark"),
   lark: settingsIconAssetUrl("lark"),
   teams: settingsIconAssetUrl("teams"),
@@ -130,8 +131,6 @@ function SourceMessageIcon({
       {" "}
       {sourceKind === "slack" ? (
         <BrandSlack size={15} className="shrink-0" />
-      ) : sourceKind === "wechat" ? (
-        <MessagesSquare size={15} className="shrink-0" />
       ) : sourceKind === "discord" ? (
         <DiscordMark size={15} />
       ) : (

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { usageRecordContract } from "@okouai/api-contracts/contracts/usage-record";
 import { usageMembersContract } from "@okouai/api-contracts/contracts/usage";
+import { chatThreadUsageContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { cronCompactUsageEventsContract } from "@okouai/api-contracts/contracts/cron";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -10,6 +11,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { usageRecordRoutes } from "../usage-record";
 import { usageMembersRoutes } from "../usage-members";
 import { cronCompactUsageEventsRoutes } from "../cron-compact-usage-events";
+import { chatThreadRoutes } from "../chat-threads";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { createBddApi } from "./helpers/api-bdd";
@@ -44,6 +46,23 @@ describe("Billing model reporting", () => {
       await flushWaitUntilForTest();
       const claim = await claimChatRun(runnerGroup, run.runId);
       expect(claim.claim.modelUsageProvider).toBe("@preset/okou-1-0");
+      const chatUsage = () => {
+        createRouteMocks(context).clerk.session(
+          actor.userId,
+          actor.orgId,
+          actor.orgRole,
+        );
+        return accept(
+          setupApp({ context, routes: chatThreadRoutes })(
+            chatThreadUsageContract,
+          ).read({
+            headers: { authorization: "Bearer clerk-session" },
+            params: { id: run.threadId },
+            body: { runIds: [run.runId] },
+          }),
+          [200],
+        );
+      };
       await fixture.webhooks.requestAgentUsageEvent(
         {
           runId: run.runId,
@@ -67,6 +86,10 @@ describe("Billing model reporting", () => {
         claim.sandboxHeaders,
         [200],
       );
+      await flushWaitUntilForTest();
+      expect((await chatUsage()).body.runs).toStrictEqual([]);
+      const completedAt = at + 60_000;
+      mockNow(completedAt);
       await fixture.completeSandboxFirstPiRun({
         actor,
         run,
@@ -136,6 +159,40 @@ describe("Billing model reporting", () => {
         outputTokens: 10_000,
         breakdown: expectedBreakdown,
       });
+      const rawChatUsage = await chatUsage();
+      expect(rawChatUsage.body.runs).toStrictEqual([
+        {
+          runId: run.runId,
+          usage: {
+            version: 1,
+            totalCredits: 36,
+            settledAt: new Date(completedAt).toISOString(),
+            breakdown: [
+              {
+                kind: "image",
+                credits: 26,
+                providers: [{ provider: "gpt-image-1", credits: 26 }],
+              },
+              {
+                kind: "model",
+                credits: 10,
+                providers: [{ provider: "@preset/okou-1-0", credits: 10 }],
+              },
+            ],
+          },
+        },
+      ]);
+      const messages = await createChatFilesBddApi(context).listThreadEvents(
+        actor,
+        run.threadId,
+      );
+      expect(messages.events).toContainEqual(
+        expect.objectContaining({
+          eventType: "usage.recorded",
+          runId: run.runId,
+          usage: rawChatUsage.body.runs[0]?.usage,
+        }),
+      );
 
       // The real operator endpoint is in scope for raw/hourly reporting equivalence.
       // Usage was constructed only through authenticated Sandbox requests.
@@ -149,6 +206,7 @@ describe("Billing model reporting", () => {
       expect(compaction.body.hourlyRowsInserted).toBeGreaterThan(0);
       const compacted = await report();
       expect(compacted).toStrictEqual(raw);
+      expect((await chatUsage()).body).toStrictEqual(rawChatUsage.body);
 
       await createChatFilesBddApi(context).deleteThread(actor, run.threadId);
       const withoutThread = await report();

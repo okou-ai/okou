@@ -1933,6 +1933,111 @@ describe("protected host writes with authorized Runner authority", () => {
     });
   });
 
+  it.each(["create", "rebind"] as const)(
+    "publishes a %s binding with a shared login while another host records Runner authority",
+    async (operation) => {
+      const { owner, shared, host, runner, request } = await claimedHost();
+      const credentialId = credentialBackedSshHost(host).credentialId;
+      const body = {
+        id: randomUUID(),
+        displayName: "Entering host",
+        host: "another.example.com",
+        port: 443,
+        credential: { id: credentialId },
+      };
+      const direct =
+        operation === "rebind"
+          ? (
+              await accept(
+                hosts().create({ headers: owner.headers, body }),
+                [201],
+              )
+            ).body
+          : undefined;
+      const transport = {
+        type: "cloudflare_access" as const,
+        configId: shared.id,
+      };
+      const [entered, pinned, observed] = await Promise.all([
+        direct
+          ? accept(
+              hosts().update({
+                headers: owner.headers,
+                params: { connectionId: direct.id },
+                body: { expectedGeneration: direct.generation, transport },
+              }),
+              [200],
+            )
+          : accept(
+              hosts().create({
+                headers: owner.headers,
+                body: { ...body, transport },
+              }),
+              [201],
+            ),
+        accept(
+          runner.pin({
+            ...request,
+            body: {
+              ...request.body,
+              expectedGeneration: host.generation,
+              observedHostKey: hostKey,
+            },
+          }),
+          [200],
+        ),
+        accept(
+          runner.observe({
+            ...request,
+            body: {
+              ...request.body,
+              expectedGeneration: host.generation,
+              expectedCreatedAt: host.createdAt,
+              observedAt: nowDate().toISOString(),
+              failureReason: null,
+            },
+          }),
+          [200],
+        ),
+      ]);
+      expect(entered.body).toMatchObject({ credentialId, transport });
+      expect(pinned.body).toMatchObject({
+        outcome: "pinned",
+        generation: host.generation + 1,
+      });
+      expect(["recorded", "ignored"]).toContain(observed.body.outcome);
+      expect((await accept(runner.resolve(request), [200])).body).toMatchObject(
+        {
+          outcome: "resolved_access",
+          generation: host.generation + 1,
+          learnedHostKey: hostKey,
+          authentication: login.authentication,
+          access: { configId: shared.id, generation: shared.generation },
+        },
+      );
+      expect(
+        (await accept(hosts().list({ headers: owner.headers }), [200])).body
+          .connections,
+      ).toContainEqual(entered.body);
+      expect(
+        (await accept(configs().list({ headers: owner.headers, query }), [200]))
+          .body.configs,
+      ).toStrictEqual([
+        {
+          ...shared,
+          sshHosts: expect.arrayContaining([
+            { id: host.id, displayName: host.displayName },
+            { id: entered.body.id, displayName: entered.body.displayName },
+          ]),
+        },
+      ]);
+      expect(
+        (await accept(credentials().list({ headers: owner.headers }), [200]))
+          .body.credentials,
+      ).toHaveLength(1);
+    },
+  );
+
   it.each(["network", "login"] as const)(
     "serializes %s rotation with pin and observation, retaining current authority",
     async (resource) => {

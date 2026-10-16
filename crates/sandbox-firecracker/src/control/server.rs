@@ -36,6 +36,8 @@ const MAX_CONTROL_CONNECTIONS: usize = 32;
 const CONTROL_REQUEST_BYTE_BUDGET: usize = 64 * 1024 * 1024;
 // One deadline from accept through the entire prefix and body, excluding exec.
 const CONTROL_REQUEST_RECEIVE_TIMEOUT: Duration = Duration::from_secs(5);
+// One absolute budget for the entire completed exec response, excluding execution.
+const CONTROL_RESPONSE_WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 const RUN_CONTROL_MISMATCH_ERROR: &str = "run control target is no longer assigned to this sandbox";
 
 /// Cloneable handle used by the control server to ask the process monitor to
@@ -455,9 +457,13 @@ async fn handle_connection(
         },
     };
 
+    let response_deadline = Instant::now() + CONTROL_RESPONSE_WRITE_TIMEOUT;
     tokio::select! {
         biased;
         () = shutdown.cancelled() => return Ok(()),
+        () = tokio::time::sleep_until(response_deadline) => {
+            return Err(io::Error::new(io::ErrorKind::TimedOut, "control exec response write timed out"));
+        }
         result = write_raw_exec_response(&mut stream, &response) => result?,
     }
 

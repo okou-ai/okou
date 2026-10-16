@@ -6,7 +6,6 @@
 
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
-use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
@@ -17,7 +16,7 @@ use uuid::Uuid;
 
 use crate::error::{RunnerError, RunnerResult};
 use runner_host::paths::HomePaths;
-use runner_provider::local_queue::{self, JobRequest, JobResponse};
+use runner_provider::local_queue::{self, AbandonedResultMarker, JobRequest, JobResponse};
 use runner_provider::{
     ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES, identified_active_input_payload_len,
 };
@@ -102,12 +101,6 @@ fn remove_file_if_exists(path: &std::path::Path) -> bool {
     }
 }
 
-struct PublishedMarker {
-    bytes: Vec<u8>,
-    dev: u64,
-    ino: u64,
-}
-
 #[derive(Clone)]
 struct SubmitQueueEntry {
     job_id: RunId,
@@ -145,7 +138,7 @@ impl SubmitQueueEntry {
     }
 
     /// Clean up submit-owned queue files after abandoning the wait for a result.
-    fn cleanup_abandoned(&self, marker: Option<&PublishedMarker>) {
+    fn cleanup_abandoned(&self, marker: Option<&AbandonedResultMarker>) {
         let jobs_removed = local_queue::LocalQueue::new(self.group_dir.clone())
             .remove_job_files_if_present(self.job_id);
         let has_claim =
@@ -154,8 +147,8 @@ impl SubmitQueueEntry {
             self.cleanup_active_inputs();
             let _ = remove_file_if_exists(&self.claim);
             let _ = remove_file_if_exists(&self.cancel);
-            if marker.is_some() {
-                remove_marker_if_unchanged(&self.result, marker);
+            if let Some(marker) = marker {
+                marker.remove_if_unchanged();
             } else if result_file_is_empty(&self.result) {
                 let _ = remove_file_if_exists(&self.result);
             }
@@ -163,7 +156,8 @@ impl SubmitQueueEntry {
     }
 
     fn abandon(&self, error: &str) {
-        let marker = write_abandoned_result_marker(&self.result, self.job_id, error);
+        let marker = local_queue::LocalQueue::new(self.group_dir.clone())
+            .write_abandoned_result_marker_sync(self.job_id, error);
         self.cleanup_abandoned(marker.as_ref());
     }
 
@@ -188,94 +182,11 @@ impl SubmitQueueEntry {
     }
 }
 
-fn write_abandoned_result_marker(
-    result_path: &std::path::Path,
-    run_id: RunId,
-    error: &str,
-) -> Option<PublishedMarker> {
-    // The result file is the durable terminal marker observed by local
-    // runners.  Use it to prevent an abandoned job from being rediscovered
-    // without creating a fake claim that could strand the job if submit exits.
-    if try_read_result(result_path).is_some() {
-        return None;
-    }
-
-    let response = JobResponse {
-        run_id,
-        exit_code: 1,
-        error: Some(error.to_owned()),
-    };
-    let Ok(json) = serde_json::to_vec(&response) else {
-        return None;
-    };
-    let result_dir = result_path.parent()?;
-    let group_dir = result_dir.parent()?;
-    if local_queue::ensure_results_dir(group_dir).is_err() {
-        return None;
-    }
-
-    let tmp_path = result_dir.join(format!("{run_id}.{}.result.tmp", RunId::new_v4()));
-    let mut file = match local_queue::open_private_new_file(
-        &tmp_path,
-        "local abandoned result marker temporary file",
-    ) {
-        Ok(file) => file,
-        Err(_) => return None,
-    };
-    if std::io::Write::write_all(&mut file, &json).is_err() {
-        let _ = remove_file_if_exists(&tmp_path);
-        return None;
-    }
-    let metadata = match file.metadata() {
-        Ok(metadata) => metadata,
-        Err(_) => {
-            let _ = remove_file_if_exists(&tmp_path);
-            return None;
-        }
-    };
-    drop(file);
-
-    // Publish with a no-clobber hard link so a runner result that wins the
-    // race is never overwritten, and crashes before publish cannot leave a
-    // partial terminal marker at the final result path.
-    if std::fs::hard_link(&tmp_path, result_path).is_err() {
-        let _ = remove_file_if_exists(&tmp_path);
-        return None;
-    }
-    let _ = remove_file_if_exists(&tmp_path);
-    Some(PublishedMarker {
-        bytes: json,
-        dev: metadata.dev(),
-        ino: metadata.ino(),
-    })
-}
-
 fn result_file_is_empty(result_path: &std::path::Path) -> bool {
     let is_file =
         local_queue::marker_file_exists(result_path, "local result file").unwrap_or(false);
     is_file
         && !local_queue::private_file_has_content(result_path, "local result file").unwrap_or(true)
-}
-
-fn remove_marker_if_unchanged(result_path: &std::path::Path, marker: Option<&PublishedMarker>) {
-    let Some(marker) = marker else {
-        return;
-    };
-    let Ok(metadata) = std::fs::symlink_metadata(result_path) else {
-        return;
-    };
-    if !metadata.file_type().is_file() {
-        return;
-    }
-    if metadata.dev() != marker.dev || metadata.ino() != marker.ino {
-        return;
-    }
-    if local_queue::read_private_file(result_path, "local result file")
-        .map(|current| current == marker.bytes)
-        .unwrap_or(false)
-    {
-        let _ = remove_file_if_exists(result_path);
-    }
 }
 
 struct SubmitPlan {

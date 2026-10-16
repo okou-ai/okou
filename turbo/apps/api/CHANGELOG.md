@@ -9,6 +9,34 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.747.1](https://github.com/okou-ai/okou/compare/api-v1.747.0...api-v1.747.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **wallet:** unify link consent and show actual transactions ([#40650](https://github.com/okou-ai/okou/issues/40650)) ([16fa1cc](https://github.com/okou-ai/okou/commit/16fa1cc1386dd8fcb6f32c789693b98af25f0d13))
+
+
+### Refactoring
+
+* **api:** own canonical slack completion read ([#40640](https://github.com/okou-ai/okou/issues/40640)) ([1b1f028](https://github.com/okou-ai/okou/commit/1b1f0288c221933d8057f4ec080dcaa7ecbc44ef)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** own claude legacy account identity preparation ([#40635](https://github.com/okou-ai/okou/issues/40635)) ([99d1afb](https://github.com/okou-ai/okou/commit/99d1afb86781b6987be45c77fd90182872c8564a))
+* **api:** own remote github installation association ([#40608](https://github.com/okou-ai/okou/issues/40608)) ([4207276](https://github.com/okou-ai/okou/commit/4207276a7292b3ad5a53d97d435f3dec44822324))
+* **api:** own stripe projection account reads ([#40636](https://github.com/okou-ai/okou/issues/40636)) ([9ef7111](https://github.com/okou-ai/okou/commit/9ef71111d1ba7e0c094fc93fb36f95ed3d974de2)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** retire canceled plan projection transaction ([#40631](https://github.com/okou-ai/okou/issues/40631)) ([0c8b8be](https://github.com/okou-ai/okou/commit/0c8b8be01eb85e319241da270c1927d30713d302))
+* **db:** release legacy history retains in committed batches ([#40632](https://github.com/okou-ai/okou/issues/40632)) ([f1b08e9](https://github.com/okou-ai/okou/commit/f1b08e9f97994ee535e7ab6e5d4d887889dce65b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.1
+    * @okouai/connectors bumped to 3.16.9
+    * @okouai/core bumped to 8.764.2
+    * @okouai/db bumped to 1.344.1
+    * @okouai/pi-agent-runtime bumped to 1.50.13
+
 ## [1.747.0](https://github.com/okou-ai/okou/compare/api-v1.746.0...api-v1.747.0) (2026-10-16)
 
 

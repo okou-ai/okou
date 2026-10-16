@@ -43,17 +43,16 @@ Agent and active web-run boundaries apply to reads.
   requirements. Missing values mean unavailable, not zero. Share any returned
   verification action URL exactly; the user must complete it personally.
 
-Saved-method metadata currently requires payment_methods.agentic in Link;
-do not request that permission solely for a financial-data question.
+Saved-method metadata requires payment_methods.agentic in Link.
 
-For financial reads only, use okou wallet connect --read-only --json. This asks
-for profile access and read_link_transactions without payment_methods.agentic.
-To add Link activity to an existing connection, use connect --transactions
---json. Existing grants remain usable while consent is pending or declined;
-completed reauthorization replaces the grant and old purchase intents cannot be
-reused. Share the exact consent URL and end the turn. Inspect granted access
-again after the callback; requesting a permission does not mean it was granted.
-Do not request payment access merely to answer a financial-data question.
+Use okou wallet connect --json to request payment, profile and Link transaction
+access together. It includes payment_methods.agentic, userinfo:read and the
+read_link_transactions source action. Existing grants remain usable while
+consent is pending or declined; completed reauthorization replaces the grant
+and old purchase intents cannot be reused. Share the exact consent URL and end
+the turn. Inspect granted access again after the callback; requesting a
+permission does not mean it was granted. Each purchase still needs separate
+approval. Existing read-only authorizations remain usable for permitted reads.
 
 ## Purchase approval
 

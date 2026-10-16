@@ -5,7 +5,6 @@ import {
   walletSpendSchema,
   walletSpendCredentialsSchema,
   type WalletCreateSpend,
-  type WalletConnect,
   type WalletSpendListQuery,
   type WalletTransactionsQuery,
   walletAuthorizationDetailsSchema,
@@ -52,45 +51,43 @@ export async function walletStatus() {
   }
   return walletContract.status.responses[200].parse(response.body);
 }
-export async function walletConnect(body: WalletConnect = {}) {
-  const response = await (await client()).connect({ body });
+export async function walletConnect() {
+  const response = await (await client()).connect({ body: {} });
   if (response.status !== 200) {
     walletError(response, "Could not connect the Link wallet", "connect");
   }
   const value = walletContract.connect.responses[200].parse(response.body);
-  if (body.readOnly || body.transactions) {
-    // Older API deployments ignore the newly introduced body fields. Never
-    // show a payment-consent URL as though it were read-only authorization.
-    const url = new URL(value.url);
-    const scopes = url.searchParams.get("scope")?.split(/[ ,]+/) ?? [];
-    let details: unknown;
-    try {
-      details = JSON.parse(
-        url.searchParams.get("authorization_details") ?? "null",
-      );
-    } catch {
-      details = null;
-    }
-    const parsed = walletAuthorizationDetailsSchema.safeParse(details);
-    const hasTransactions =
-      parsed.success &&
-      parsed.data.some((detail) => {
-        return (
-          detail.type === "source" &&
-          detail.actions.includes("read_link_transactions")
-        );
-      });
-    if (
-      !hasTransactions ||
-      (body.readOnly &&
-        (scopes.includes("payment_methods.agentic") ||
-          !scopes.includes("userinfo:read")))
-    ) {
-      throw new Error(
-        "The wallet server does not support the requested read authorization yet; update the server before reconnecting",
-      );
-    }
+  // An older API may still request payment-only consent. Do not advertise
+  // unified access until the server includes every required permission.
+  const url = new URL(value.url);
+  const scopes = url.searchParams.get("scope")?.split(/[ ,]+/) ?? [];
+  let details: unknown;
+  try {
+    details = JSON.parse(
+      url.searchParams.get("authorization_details") ?? "null",
+    );
+  } catch {
+    details = null;
   }
+  const parsed = walletAuthorizationDetailsSchema.safeParse(details);
+  const hasTransactions =
+    parsed.success &&
+    parsed.data.some((detail) => {
+      return (
+        detail.type === "source" &&
+        detail.actions.includes("read_link_transactions")
+      );
+    });
+  if (
+    !hasTransactions ||
+    !scopes.includes("payment_methods.agentic") ||
+    !scopes.includes("userinfo:read")
+  ) {
+    throw new Error(
+      "The wallet server does not support unified payment, profile and transaction consent yet; update the server before reconnecting",
+    );
+  }
+
   return value;
 }
 export async function walletDisconnect() {

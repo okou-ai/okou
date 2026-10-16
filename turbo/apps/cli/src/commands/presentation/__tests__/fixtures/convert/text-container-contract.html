@@ -1,0 +1,555 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Text container export contracts</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      .slide {
+        position: relative;
+        width: 1600px;
+        height: 900px;
+        background: #fff;
+        color: #172235;
+        font:
+          32px Arial,
+          sans-serif;
+        line-height: 1.2;
+      }
+      .slide h1 {
+        position: absolute;
+        left: 48px;
+        top: 22px;
+        font-size: 30px;
+        margin: 0;
+      }
+      .case {
+        position: absolute;
+        width: 560px;
+        height: 90px;
+        padding: 0 24px;
+      }
+      .label {
+        position: absolute;
+        font:
+          18px Arial,
+          sans-serif;
+        color: #52647f;
+      }
+    </style>
+  </head>
+  <body>
+    <section class="slide" data-okou-slide>
+      <h1>T01 / Decoration must preserve text capacity</h1>
+      <div class="label" style="left: 48px; top: 102px">plain</div>
+      <div
+        class="case"
+        data-case="plain"
+        data-fragmented="false"
+        id="plain"
+        style="left: 48px; top: 130px"
+      >
+        Same Team
+      </div>
+      <div class="label" style="left: 48px; top: 252px">background</div>
+      <div
+        class="case"
+        data-case="background"
+        data-fragmented="false"
+        id="background"
+        style="left: 48px; top: 280px; background: #e8f0fc"
+      >
+        Same Team
+      </div>
+      <div class="label" style="left: 48px; top: 402px">top-border</div>
+      <div
+        class="case"
+        data-case="top-border"
+        data-fragmented="false"
+        id="top-border"
+        style="left: 48px; top: 430px; border-top: 1px solid #315b9e"
+      >
+        Same Team
+      </div>
+      <div class="label" style="left: 48px; top: 552px">bottom-border</div>
+      <div
+        class="case"
+        data-case="bottom-border"
+        data-fragmented="false"
+        id="bottom-border"
+        style="left: 48px; top: 580px; border-bottom: 1px solid #315b9e"
+      >
+        Same Team
+      </div>
+      <div class="label" style="left: 48px; top: 702px">left-border</div>
+      <div
+        class="case"
+        data-case="left-border"
+        data-fragmented="false"
+        id="left-border"
+        style="left: 48px; top: 730px; border-left: 1px solid #315b9e"
+      >
+        Same Team
+      </div>
+      <div class="label" style="left: 848px; top: 102px">right-border</div>
+      <div
+        class="case"
+        data-case="right-border"
+        data-fragmented="false"
+        id="right-border"
+        style="left: 848px; top: 130px; border-right: 1px solid #315b9e"
+      >
+        Same Team
+      </div>
+      <div class="label" style="left: 848px; top: 252px">
+        transparent-border
+      </div>
+      <div
+        class="case"
+        data-case="transparent-border"
+        data-fragmented="false"
+        id="transparent-border"
+        style="left: 848px; top: 280px; border-top: 1px solid transparent"
+      >
+        Same Team
+      </div>
+      <div class="label" style="left: 848px; top: 402px">shadow</div>
+      <div
+        class="case"
+        data-case="shadow"
+        data-fragmented="false"
+        id="shadow"
+        style="left: 848px; top: 430px; box-shadow: 0 2px 8px #aec1de"
+      >
+        Same Team
+      </div>
+      <div class="label" style="left: 848px; top: 552px">rounded</div>
+      <div
+        class="case"
+        data-case="rounded"
+        data-fragmented="false"
+        id="rounded"
+        style="
+          left: 848px;
+          top: 580px;
+          background: #e8f0fc;
+          border: 2px solid #315b9e;
+          border-radius: 32px;
+        "
+      >
+        Same Team
+      </div>
+      <div class="label" style="left: 848px; top: 702px">gradient</div>
+      <div
+        class="case"
+        data-case="gradient"
+        data-fragmented="false"
+        id="gradient"
+        style="
+          left: 848px;
+          top: 730px;
+          background: linear-gradient(90deg, #e8f0fc, #f1e9fc);
+        "
+      >
+        Same Team
+      </div>
+    </section>
+    <section class="slide" data-okou-slide>
+      <h1>T02 / Anchors, lines and neighboring fragments</h1>
+      <div class="label" style="left: 48px; top: 102px">left-lines</div>
+      <div
+        class="case"
+        data-case="left-lines"
+        data-fragmented="true"
+        id="left-lines"
+        style="left: 48px; top: 130px; text-align: left"
+      >
+        Same Team<br />Second line
+      </div>
+      <div class="label" style="left: 48px; top: 252px">center-lines</div>
+      <div
+        class="case"
+        data-case="center-lines"
+        data-fragmented="true"
+        id="center-lines"
+        style="left: 48px; top: 280px; text-align: center"
+      >
+        Same Team<br />Second line
+      </div>
+      <div class="label" style="left: 48px; top: 402px">right-lines</div>
+      <div
+        class="case"
+        data-case="right-lines"
+        data-fragmented="true"
+        id="right-lines"
+        style="left: 48px; top: 430px; text-align: right"
+      >
+        Same Team<br />Second line
+      </div>
+      <div class="label" style="left: 48px; top: 552px">rich-left</div>
+      <div
+        class="case"
+        data-case="rich-left"
+        data-fragmented="true"
+        id="rich-left"
+        style="left: 48px; top: 580px"
+      >
+        Same <strong>Team</strong>
+      </div>
+      <div class="label" style="left: 48px; top: 702px">rich-center</div>
+      <div
+        class="case"
+        data-case="rich-center"
+        data-fragmented="true"
+        id="rich-center"
+        style="left: 48px; top: 730px; text-align: center"
+      >
+        Same <strong>Team</strong>
+      </div>
+      <div class="label" style="left: 848px; top: 102px">rich-right</div>
+      <div
+        class="case"
+        data-case="rich-right"
+        data-fragmented="true"
+        id="rich-right"
+        style="left: 848px; top: 130px; text-align: right"
+      >
+        Same <strong>Team</strong>
+      </div>
+      <div class="label" style="left: 848px; top: 252px">inline-box</div>
+      <div
+        class="case"
+        data-case="inline-box"
+        data-fragmented="true"
+        id="inline-box"
+        style="left: 848px; top: 280px"
+      >
+        <span
+          style="
+            display: inline-block;
+            width: 220px;
+            padding: 0 12px;
+            background: #e8f0fc;
+          "
+          >Same Team</span
+        >
+      </div>
+      <div class="label" style="left: 848px; top: 402px">cjk</div>
+      <div
+        class="case"
+        data-case="cjk"
+        data-fragmented="true"
+        id="cjk"
+        style="left: 848px; top: 430px"
+      >
+        中文标题
+      </div>
+      <div class="label" style="left: 848px; top: 552px">clipped</div>
+      <div
+        class="case"
+        data-case="clipped"
+        data-fragmented="true"
+        id="clipped"
+        style="
+          left: 848px;
+          top: 580px;
+          width: 220px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        "
+      >
+        Same Team Same Team Same Team
+      </div>
+      <div class="label" style="left: 848px; top: 702px">wrapped</div>
+      <div
+        class="case"
+        data-case="wrapped"
+        data-fragmented="true"
+        id="wrapped"
+        style="left: 848px; top: 730px; width: 240px"
+      >
+        Same Team Same Team
+      </div>
+    </section>
+    <section class="slide" data-okou-slide>
+      <h1>T03 / Decoration and layout boundaries</h1>
+      <div class="label" style="left: 48px; top: 102px">inline-side-border</div>
+      <div
+        class="case"
+        data-case="inline-side-border"
+        data-fragmented="true"
+        id="inline-side-border"
+        style="left: 48px; top: 130px"
+      >
+        <span style="border-left: 2px solid #315b9e">Same Team</span>
+      </div>
+      <div class="label" style="left: 48px; top: 252px">badge-neighbor</div>
+      <div
+        class="case"
+        data-case="badge-neighbor"
+        data-fragmented="true"
+        id="badge-neighbor"
+        style="left: 48px; top: 280px"
+      >
+        Same
+        <span style="display: inline-block; width: 100px; background: #e8f0fc"
+          >05</span
+        >
+        Team
+      </div>
+      <div class="label" style="left: 48px; top: 402px">subscript</div>
+      <div
+        class="case"
+        data-case="subscript"
+        data-fragmented="true"
+        id="subscript"
+        style="left: 48px; top: 430px"
+      >
+        H<sub>2</sub>O
+      </div>
+      <div class="label" style="left: 48px; top: 552px">underline</div>
+      <div
+        class="case"
+        data-case="underline"
+        data-fragmented="true"
+        id="underline"
+        style="left: 48px; top: 580px; text-decoration: underline"
+      >
+        Same Team
+      </div>
+      <div class="label" style="left: 48px; top: 702px">pre</div>
+      <pre
+        class="case"
+        data-case="pre"
+        data-fragmented="true"
+        id="pre"
+        style="
+          left: 48px;
+          top: 730px;
+          margin: 0;
+          font: inherit;
+          white-space: pre;
+        "
+      >
+Same Team</pre>
+      <div class="label" style="left: 848px; top: 102px">rtl</div>
+      <div
+        class="case"
+        data-case="rtl"
+        data-fragmented="true"
+        id="rtl"
+        style="left: 848px; top: 130px; direction: rtl"
+      >
+        مرحبا بالعالم
+      </div>
+      <div class="label" style="left: 848px; top: 252px">indented</div>
+      <div
+        class="case"
+        data-case="indented"
+        data-fragmented="true"
+        id="indented"
+        style="left: 848px; top: 280px; text-indent: 40px"
+      >
+        Same Team<br />Second line
+      </div>
+      <div class="label" style="left: 848px; top: 402px">empty-decoration</div>
+      <div
+        class="case"
+        data-case="empty-decoration"
+        data-fragmented="true"
+        id="empty-decoration"
+        style="left: 848px; top: 430px"
+      >
+        Same Team
+        <span
+          style="
+            display: inline-block;
+            width: 100px;
+            height: 30px;
+            background: #e8f0fc;
+          "
+        ></span>
+      </div>
+      <div class="label" style="left: 848px; top: 552px">center-plain</div>
+      <div
+        class="case"
+        data-case="center-plain"
+        data-fragmented="false"
+        id="center-plain"
+        style="left: 848px; top: 580px; text-align: center; background: #e8f0fc"
+      >
+        Same Team
+      </div>
+      <div class="label" style="left: 848px; top: 702px">right-plain</div>
+      <div
+        class="case"
+        data-case="right-plain"
+        data-fragmented="false"
+        id="right-plain"
+        style="left: 848px; top: 730px; text-align: right; background: #e8f0fc"
+      >
+        Same Team
+      </div>
+    </section>
+    <section class="slide" data-okou-slide>
+      <h1>T04 / Spacing, transforms and the CSS box model</h1>
+      <div class="label" style="left: 48px; top: 102px">
+        word-spacing-center
+      </div>
+      <div
+        class="case"
+        data-case="word-spacing-center"
+        data-fragmented="true"
+        id="word-spacing-center"
+        style="left: 48px; top: 130px; text-align: center; word-spacing: 16px"
+      >
+        Same Team Again
+      </div>
+      <div class="label" style="left: 48px; top: 252px">word-spacing-right</div>
+      <div
+        class="case"
+        data-case="word-spacing-right"
+        data-fragmented="true"
+        id="word-spacing-right"
+        style="left: 48px; top: 280px; text-align: right; word-spacing: 16px"
+      >
+        Same Team Again
+      </div>
+      <div class="label" style="left: 48px; top: 402px">
+        spaced-inline-center
+      </div>
+      <div
+        class="case"
+        data-case="spaced-inline-center"
+        data-fragmented="true"
+        id="spaced-inline-center"
+        style="left: 48px; top: 430px; text-align: center"
+      >
+        Same
+        <strong style="margin-left: 24px; margin-right: 24px">Team</strong>
+        Again
+      </div>
+      <div class="label" style="left: 48px; top: 552px">nested-rtl</div>
+      <div
+        class="case"
+        data-case="nested-rtl"
+        data-fragmented="true"
+        id="nested-rtl"
+        style="left: 48px; top: 580px"
+      >
+        Same <span dir="rtl">مرحبا</span> Team
+      </div>
+      <div class="label" style="left: 48px; top: 702px">rtl-end</div>
+      <div
+        class="case"
+        data-case="rtl-end"
+        data-fragmented="true"
+        id="rtl-end"
+        style="left: 48px; top: 730px; direction: rtl; text-align: end"
+      >
+        مرحبا بالعالم
+      </div>
+      <div class="label" style="left: 848px; top: 102px">scaled</div>
+      <div
+        class="case"
+        data-case="scaled"
+        data-fragmented="false"
+        id="scaled"
+        style="
+          left: 848px;
+          top: 130px;
+          background: #e8f0fc;
+          border: 2px solid #315b9e;
+          border-radius: 32px;
+          transform: scale(0.8);
+          transform-origin: left top;
+        "
+      >
+        Same Team
+      </div>
+      <div class="label" style="left: 848px; top: 252px">rotated</div>
+      <div
+        class="case"
+        data-case="rotated"
+        data-fragmented="false"
+        id="rotated"
+        style="
+          left: 848px;
+          top: 280px;
+          background: #e8f0fc;
+          border: 2px solid #315b9e;
+          border-radius: 32px;
+          transform: rotate(5deg);
+        "
+      >
+        Same Team
+      </div>
+      <div class="label" style="left: 848px; top: 402px">
+        asymmetric-padding
+      </div>
+      <div
+        class="case"
+        data-case="asymmetric-padding"
+        data-fragmented="false"
+        id="asymmetric-padding"
+        style="
+          left: 848px;
+          top: 430px;
+          background: #e8f0fc;
+          padding: 6px 32px 10px 12px;
+          border-width: 2px 4px 6px 8px;
+          border-style: solid;
+          border-color: #315b9e;
+        "
+      >
+        Same Team
+      </div>
+      <div class="label" style="left: 848px; top: 552px">content-box</div>
+      <div
+        class="case"
+        data-case="content-box"
+        data-fragmented="false"
+        id="content-box"
+        style="
+          left: 848px;
+          top: 580px;
+          box-sizing: content-box;
+          width: 500px;
+          background: #e8f0fc;
+          border: 2px solid #315b9e;
+        "
+      >
+        Same Team
+      </div>
+      <div class="label" style="left: 848px; top: 702px">inline-clipped</div>
+      <div
+        class="case"
+        data-case="inline-clipped"
+        data-fragmented="true"
+        id="inline-clipped"
+        style="left: 848px; top: 730px"
+      >
+        <span
+          style="
+            display: inline-block;
+            width: 220px;
+            padding: 0 12px;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            background: #e8f0fc;
+          "
+          >Same Team Same Team Same Team</span
+        >
+      </div>
+    </section>
+  </body>
+</html>

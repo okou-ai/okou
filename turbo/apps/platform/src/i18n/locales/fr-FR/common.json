@@ -126,7 +126,7 @@
         "other": "Autre",
         "parentFolders": "Dossiers parents",
         "pending": "Les fichiers seront disponibles au démarrage de l’exécution en attente.",
-        "readonly": "Fichiers en lecture seule de l’exécution actuelle. Fermer ce panneau libère la connexion.",
+        "readonly": "Fichiers en lecture seule de l’exécution actuelle.",
         "refresh": "Actualiser",
         "retry": "Réessayer",
         "root": "Dossier racine",
@@ -5232,21 +5232,25 @@
     "wallet": {
       "actionError": "Impossible de terminer cette action. Vérifie ta connexion, autorise les fenêtres pop-up et réessaie.",
       "connect": "Connecter",
-      "description": "Tes agents peuvent demander des achats via Link. Tu approuves chaque achat.",
+      "description": "Vos agents peuvent demander des achats et consulter les transactions Link. Vous approuvez chaque achat.",
       "disconnect": "Déconnecter",
       "loadError": "Impossible de charger ton portefeuille.",
       "permissionsUnknown": "Reconnectez Link pour examiner et confirmer ses autorisations actuelles.",
       "retry": "Réessayer",
-      "scope": "Laissez Okou effectuer vos achats avec Link.",
+      "scope": "Laissez Okou effectuer des achats et consulter votre activité Link.",
       "title": "Portefeuille",
       "transactions": {
-        "description": "Vos demandes d’achat récentes avec Link dans Okou.",
+        "description": "Transactions récentes de votre compte Link connecté.",
         "empty": "Aucune transaction Link pour le moment",
         "loadError": "Impossible de charger les transactions. Réessayez.",
         "loading": "Chargement des transactions",
         "merchant": "Commerçant",
+        "refunded": "Remboursé",
+        "requestsDescription": "Demandes enregistrées dans cet espace de travail. Connectez Link ou mettez à jour les autorisations pour consulter les transactions réelles.",
+        "requestsEmpty": "Aucune demande d’achat pour le moment",
+        "requestsTitle": "Demandes d’achat",
         "status": {
-          "approved": "Approuvée, paiement en attente",
+          "approved": "Approuvé, paiement non confirmé",
           "canceled": "Annulée",
           "created": "Créée",
           "creating": "Création en cours",
@@ -5259,8 +5263,8 @@
           "succeeded": "Paiement réussi"
         },
         "statusLabel": "Statut",
-        "test": "Test",
-        "title": "Transactions Link"
+        "title": "Transactions Link",
+        "unknownStatus": "Statut indisponible"
       },
       "workspaceScopeChanged": "Votre portefeuille Link peut désormais être utilisé par tous vos agents dans cet espace de travail. Reconnectez-le pour approuver ce changement."
     },
