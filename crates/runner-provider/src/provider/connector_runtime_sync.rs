@@ -114,14 +114,22 @@ struct ActiveRunConnectorRuntimeState {
     registry: ConnectorRuntimeRegistryHandle,
     connectors: HashMap<ConnectorRuntimeTarget, ActiveConnectorSyncState>,
     cancel: CancellationToken,
-    sync_tasks: HashMap<ConnectorRuntimeTarget, ScheduledSyncTask>,
     next_sync_task_id: u64,
+}
+
+impl ActiveRunConnectorRuntimeState {
+    fn take_sync_tasks(&mut self) -> impl Iterator<Item = ScheduledSyncTask> + '_ {
+        self.connectors
+            .values_mut()
+            .filter_map(|connector| connector.scheduled_sync.take())
+    }
 }
 
 struct ActiveConnectorSyncState {
     registration: ConnectorRuntimeTargetRegistration,
     generation: u64,
     consecutive_failures: u32,
+    scheduled_sync: Option<ScheduledSyncTask>,
     #[cfg(test)]
     successful_generation: tokio::sync::watch::Sender<Option<u64>>,
 }
@@ -448,9 +456,9 @@ impl ConnectorRuntimeSyncCore {
     async fn shutdown_active_runs(&self) {
         self.inner.cancel.cancel();
         let old_runs = std::mem::take(&mut *self.inner.active_runs.lock().await);
-        for old in old_runs.into_values() {
+        for mut old in old_runs.into_values() {
             old.cancel.cancel();
-            abort_tasks(old.sync_tasks.into_values().map(|task| task.handle));
+            abort_tasks(old.take_sync_tasks().map(|task| task.handle));
         }
     }
 
@@ -470,9 +478,9 @@ impl ConnectorRuntimeSyncCore {
             if self.inner.cancel.is_cancelled() {
                 return;
             }
-            if let Some(old) = active_runs.remove(&registration.run_id) {
+            if let Some(mut old) = active_runs.remove(&registration.run_id) {
                 old.cancel.cancel();
-                old_tasks.extend(old.sync_tasks.into_values().map(|task| task.handle));
+                old_tasks.extend(old.take_sync_tasks().map(|task| task.handle));
             }
 
             let connectors = runtime_targets
@@ -484,6 +492,7 @@ impl ConnectorRuntimeSyncCore {
                             registration: registration.clone(),
                             generation: 0,
                             consecutive_failures: 0,
+                            scheduled_sync: None,
                             #[cfg(test)]
                             successful_generation: tokio::sync::watch::channel(None).0,
                         },
@@ -497,7 +506,6 @@ impl ConnectorRuntimeSyncCore {
                     registry: registration.registry,
                     connectors,
                     cancel: run_cancel.clone(),
-                    sync_tasks: HashMap::new(),
                     next_sync_task_id: 0,
                 },
             );
@@ -566,11 +574,7 @@ impl ConnectorRuntimeSyncCore {
     async fn take_active_run(&self, run_id: RunId) -> Option<ActiveRunConnectorRuntimeState> {
         let mut old = self.inner.active_runs.lock().await.remove(&run_id)?;
         old.cancel.cancel();
-        abort_tasks(
-            std::mem::take(&mut old.sync_tasks)
-                .into_values()
-                .map(|task| task.handle),
-        );
+        abort_tasks(old.take_sync_tasks().map(|task| task.handle));
         Some(old)
     }
 
@@ -591,11 +595,7 @@ impl ConnectorRuntimeSyncCore {
             }
             active_runs.remove(&run_id)?
         };
-        abort_tasks(
-            std::mem::take(&mut old.sync_tasks)
-                .into_values()
-                .map(|task| task.handle),
-        );
+        abort_tasks(old.take_sync_tasks().map(|task| task.handle));
         Some(old)
     }
 
@@ -1700,15 +1700,14 @@ impl ConnectorRuntimeSyncCore {
         target: &ConnectorSyncTarget,
         deadline: Option<tokio::time::Instant>,
     ) -> bool {
-        if active
-            .connectors
-            .get(&target.target)
-            .is_none_or(|connector| connector.generation != target.generation)
-        {
+        let Some(connector) = active.connectors.get_mut(&target.target) else {
+            return false;
+        };
+        if connector.generation != target.generation {
             return false;
         }
 
-        if let Some(old) = active.sync_tasks.remove(&target.target) {
+        if let Some(old) = connector.scheduled_sync.take() {
             old.handle.abort();
         }
         let Some(deadline) = deadline else {
@@ -1719,10 +1718,9 @@ impl ConnectorRuntimeSyncCore {
         active.next_sync_task_id += 1;
         let cancel = active.cancel.clone();
         let global_cancel = self.inner.cancel.clone();
-        let runtime_target = target.target.clone();
+        let task_target = target.target.clone();
         let generation = target.generation;
         let handle = self.clone();
-        let task_target = runtime_target.clone();
         let task = tokio::spawn(async move {
             tokio::select! {
                 () = global_cancel.cancelled() => {}
@@ -1751,15 +1749,12 @@ impl ConnectorRuntimeSyncCore {
                 }
             }
         });
-        active.sync_tasks.insert(
-            runtime_target,
-            ScheduledSyncTask {
-                id: task_id,
-                generation,
-                deadline,
-                handle: task,
-            },
-        );
+        connector.scheduled_sync = Some(ScheduledSyncTask {
+            id: task_id,
+            generation,
+            deadline,
+            handle: task,
+        });
         true
     }
 
@@ -1778,8 +1773,9 @@ impl ConnectorRuntimeSyncCore {
                 return None;
             }
             if active
-                .sync_tasks
+                .connectors
                 .get(target)
+                .and_then(|connector| connector.scheduled_sync.as_ref())
                 .is_none_or(|task| task.id != task_id)
             {
                 return None;
@@ -1787,16 +1783,25 @@ impl ConnectorRuntimeSyncCore {
 
             let coalesce_deadline = tokio::time::Instant::now() + SCHEDULED_SYNC_COALESCE_WINDOW;
             let mut due_targets = active
-                .sync_tasks
+                .connectors
                 .iter()
-                .filter(|(_, task)| task.deadline <= coalesce_deadline)
+                .filter(|(_, connector)| {
+                    connector
+                        .scheduled_sync
+                        .as_ref()
+                        .is_some_and(|task| task.deadline <= coalesce_deadline)
+                })
                 .map(|(target, _)| target.clone())
                 .collect::<Vec<_>>();
             due_targets.sort_by_key(ConnectorRuntimeTarget::log_identity);
 
             let mut targets = Vec::with_capacity(due_targets.len());
             for due_target in due_targets {
-                if let Some(task) = active.sync_tasks.remove(&due_target) {
+                if let Some(task) = active
+                    .connectors
+                    .get_mut(&due_target)
+                    .and_then(|connector| connector.scheduled_sync.take())
+                {
                     if due_target != *target {
                         handles_to_abort.push(task.handle);
                     }
@@ -2341,7 +2346,12 @@ mod tests {
                     .lock()
                     .await
                     .get(&run_id)
-                    .is_some_and(|active| active.sync_tasks.is_empty())
+                    .is_some_and(|active| {
+                        active
+                            .connectors
+                            .values()
+                            .all(|connector| connector.scheduled_sync.is_none())
+                    })
                 {
                     return;
                 }
@@ -2533,11 +2543,9 @@ mod tests {
             })
             .expect("connector should remain active while refresh retries");
         assert_eq!(connector.consecutive_failures, expected_attempt);
-        let task = active
-            .sync_tasks
-            .get(&ConnectorRuntimeTarget::Builtin {
-                connector_slug: connector_slug.to_string(),
-            })
+        let task = connector
+            .scheduled_sync
+            .as_ref()
             .expect("connector should retain a scheduled sync retry");
         assert_eq!(task.generation, connector.generation);
         assert!(task.deadline > tokio::time::Instant::now());
@@ -2559,9 +2567,9 @@ mod tests {
             .get(&target)
             .expect("connector should remain active while refresh retries");
         assert_eq!(connector.consecutive_failures, expected_attempt);
-        let task = active
-            .sync_tasks
-            .get(&target)
+        let task = connector
+            .scheduled_sync
+            .as_ref()
             .expect("connector should retain a scheduled sync retry");
         assert_eq!(task.generation, connector.generation);
         assert!(task.deadline > tokio::time::Instant::now());
@@ -2716,13 +2724,13 @@ mod tests {
                             registration,
                             generation: 0,
                             consecutive_failures: 0,
+                            scheduled_sync: None,
                             successful_generation: tokio::sync::watch::channel(None).0,
                         },
                     )
                 })
                 .collect(),
             cancel: CancellationToken::new(),
-            sync_tasks: HashMap::new(),
             next_sync_task_id: 0,
         }
     }
@@ -3302,7 +3310,12 @@ mod tests {
             let active_runs = handle.core.inner.active_runs.lock().await;
             let replacement = &active_runs[&run_id];
             assert!(!replacement.cancel.is_cancelled());
-            assert!(replacement.sync_tasks.is_empty());
+            assert!(
+                replacement
+                    .connectors
+                    .values()
+                    .all(|connector| connector.scheduled_sync.is_none())
+            );
             assert_eq!(
                 replacement.connectors[&builtin_target("slack")].consecutive_failures,
                 0
@@ -3777,7 +3790,12 @@ mod tests {
             replacement.connectors[&builtin_target("slack")].consecutive_failures,
             0
         );
-        assert!(replacement.sync_tasks.is_empty());
+        assert!(
+            replacement
+                .connectors
+                .values()
+                .all(|connector| connector.scheduled_sync.is_none())
+        );
         drop(active_runs);
 
         handle.shutdown().await;
@@ -4037,9 +4055,9 @@ mod tests {
             Err(tokio::sync::mpsc::error::TryRecvError::Empty)
         ));
         assert!(
-            core.inner.active_runs.lock().await[&run_id]
-                .sync_tasks
-                .contains_key(&target)
+            core.inner.active_runs.lock().await[&run_id].connectors[&target]
+                .scheduled_sync
+                .is_some()
         );
 
         core.notify_connector_runtime_sync(run_id, target.clone())
@@ -4083,7 +4101,11 @@ mod tests {
                 active_runs[&run_id].connectors[&target].registration,
                 registration
             );
-            assert!(active_runs[&run_id].sync_tasks.contains_key(&target));
+            assert!(
+                active_runs[&run_id].connectors[&target]
+                    .scheduled_sync
+                    .is_some()
+            );
         }
 
         unresolved_sync.delete_async().await;
@@ -4146,7 +4168,11 @@ mod tests {
             active_runs[&run_id].connectors[&target].consecutive_failures,
             0
         );
-        assert!(active_runs[&run_id].sync_tasks.contains_key(&target));
+        assert!(
+            active_runs[&run_id].connectors[&target]
+                .scheduled_sync
+                .is_some()
+        );
         drop(active_runs);
         core.unregister_run(run_id).await;
     }
@@ -4234,9 +4260,9 @@ mod tests {
         );
         assert!(absent_sandbox["networkPolicies"].get("slack").is_none());
         assert!(
-            !core.inner.active_runs.lock().await[&run_id]
-                .sync_tasks
-                .contains_key(&target)
+            core.inner.active_runs.lock().await[&run_id].connectors[&target]
+                .scheduled_sync
+                .is_none()
         );
         assert!(matches!(
             requests.try_recv(),
@@ -4286,9 +4312,9 @@ mod tests {
             json!(["chat:write", "files:write"])
         );
         assert!(
-            core.inner.active_runs.lock().await[&run_id]
-                .sync_tasks
-                .contains_key(&target)
+            core.inner.active_runs.lock().await[&run_id].connectors[&target]
+                .scheduled_sync
+                .is_some()
         );
         core.unregister_run(run_id).await;
     }
@@ -4387,9 +4413,9 @@ mod tests {
         assert_eq!(active.connectors[&targets[0]].consecutive_failures, 0);
         assert_eq!(active.connectors[&targets[1]].consecutive_failures, 1);
         assert_eq!(active.connectors[&targets[2]].consecutive_failures, 1);
-        assert!(active.sync_tasks.contains_key(&targets[0]));
-        assert!(active.sync_tasks.contains_key(&targets[1]));
-        assert!(active.sync_tasks.contains_key(&targets[2]));
+        assert!(active.connectors[&targets[0]].scheduled_sync.is_some());
+        assert!(active.connectors[&targets[1]].scheduled_sync.is_some());
+        assert!(active.connectors[&targets[2]].scheduled_sync.is_some());
         drop(active_runs);
         core.unregister_run(run_id).await;
     }
@@ -4608,9 +4634,9 @@ mod tests {
             json!([custom_connector_id])
         );
         assert!(
-            !core.inner.active_runs.lock().await[&run_id]
-                .sync_tasks
-                .contains_key(&target)
+            core.inner.active_runs.lock().await[&run_id].connectors[&target]
+                .scheduled_sync
+                .is_none()
         );
 
         absent_sync.delete_async().await;
@@ -4662,9 +4688,9 @@ mod tests {
         );
         assert!(sandbox.get("omittedCustomConnectorIds").is_none());
         assert!(
-            core.inner.active_runs.lock().await[&run_id]
-                .sync_tasks
-                .contains_key(&target)
+            core.inner.active_runs.lock().await[&run_id].connectors[&target]
+                .scheduled_sync
+                .is_some()
         );
         core.unregister_run(run_id).await;
     }
@@ -4737,7 +4763,7 @@ mod tests {
         let active_runs = core.inner.active_runs.lock().await;
         let active = &active_runs[&run_id];
         assert_eq!(active.connectors[&target].consecutive_failures, 1);
-        assert!(active.sync_tasks.contains_key(&target));
+        assert!(active.connectors[&target].scheduled_sync.is_some());
         drop(active_runs);
         core.unregister_run(run_id).await;
     }
@@ -4894,7 +4920,7 @@ mod tests {
                 active.connectors[&target].consecutive_failures,
                 (index + 1) as u32
             );
-            assert!(active.sync_tasks.contains_key(&target));
+            assert!(active.connectors[&target].scheduled_sync.is_some());
             drop(active_runs);
             unresolved_sync.delete_async().await;
         }
@@ -4982,7 +5008,7 @@ mod tests {
         let active = &active_runs[&run_id];
         assert_eq!(active.connectors[&target].registration, registration);
         assert_eq!(active.connectors[&target].consecutive_failures, 1);
-        assert!(active.sync_tasks.contains_key(&target));
+        assert!(active.connectors[&target].scheduled_sync.is_some());
         drop(active_runs);
         core.unregister_run(run_id).await;
     }
@@ -5055,7 +5081,7 @@ mod tests {
         let active_runs = core.inner.active_runs.lock().await;
         let active = &active_runs[&run_id];
         assert_eq!(active.connectors[&target].consecutive_failures, 1);
-        assert!(active.sync_tasks.contains_key(&target));
+        assert!(active.connectors[&target].scheduled_sync.is_some());
         drop(active_runs);
         core.unregister_run(run_id).await;
     }
@@ -5187,7 +5213,7 @@ mod tests {
         let active_runs = core.inner.active_runs.lock().await;
         let active = &active_runs[&run_id];
         assert_eq!(active.connectors[&target].consecutive_failures, 1);
-        assert!(active.sync_tasks.contains_key(&target));
+        assert!(active.connectors[&target].scheduled_sync.is_some());
         drop(active_runs);
         core.unregister_run(run_id).await;
     }
@@ -5246,7 +5272,7 @@ mod tests {
         let active_runs = core.inner.active_runs.lock().await;
         let active = &active_runs[&run_id];
         assert_eq!(active.connectors[&target].consecutive_failures, 1);
-        assert!(active.sync_tasks.contains_key(&target));
+        assert!(active.connectors[&target].scheduled_sync.is_some());
         drop(active_runs);
         core.unregister_run(run_id).await;
     }
@@ -5405,7 +5431,12 @@ mod tests {
         let active_runs = core.inner.active_runs.lock().await;
         let active = active_runs.get(&run_id).expect("run should remain active");
         assert_eq!(active.connectors[&builtin_target("slack")].generation, 0);
-        assert!(active.sync_tasks.is_empty());
+        assert!(
+            active
+                .connectors
+                .values()
+                .all(|connector| connector.scheduled_sync.is_none())
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -5450,7 +5481,9 @@ mod tests {
                     .get(&run_id)
                     .is_some_and(|active| {
                         active.connectors[&builtin_target("slack")].consecutive_failures == 1
-                            && active.sync_tasks.contains_key(&builtin_target("slack"))
+                            && active.connectors[&builtin_target("slack")]
+                                .scheduled_sync
+                                .is_some()
                     })
                 {
                     return;
@@ -5530,7 +5563,12 @@ mod tests {
         let active = active_runs
             .get(&run_id)
             .expect("run should remain active after scheduled sync fires");
-        assert!(active.sync_tasks.is_empty());
+        assert!(
+            active
+                .connectors
+                .values()
+                .all(|connector| connector.scheduled_sync.is_none())
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -5572,6 +5610,85 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn scheduled_sync_retains_tasks_beyond_coalescing_window() {
+        let server = MockServer::start();
+        let (core, mut requests) = core_without_worker(&server);
+        let run_id = RunId::from(uuid::Uuid::nil());
+        let dir = tempfile::tempdir().expect("tempdir should be created");
+        let registry = TestProxyRegistry::new(
+            dir.path().join("proxy-registry.json"),
+            dir.path().join("proxy-registry.lock"),
+        );
+        let registrations =
+            ["slack", "github", "notion", "linear"].map(builtin_runtime_target_registration);
+        core.register_run(ConnectorRuntimeSyncRegistration {
+            run_id,
+            source_ip: "10.200.0.2",
+            registry,
+            targets: &registrations,
+            refreshes: None,
+        })
+        .await;
+
+        let initial_delay = Duration::from_secs(1);
+        let first_deadline = tokio::time::Instant::now() + initial_delay;
+        let later_delay = SCHEDULED_SYNC_COALESCE_WINDOW + Duration::from_millis(1);
+        for (slug, deadline) in [
+            ("slack", first_deadline),
+            ("github", first_deadline + SCHEDULED_SYNC_COALESCE_WINDOW),
+            ("notion", first_deadline + later_delay),
+        ] {
+            let target = core
+                .current_sync_target(run_id, slug)
+                .await
+                .expect("registered target should exist");
+            assert!(
+                core.replace_sync_deadline_if_current(run_id, &target, Some(deadline))
+                    .await
+            );
+        }
+
+        tokio::time::advance(initial_delay).await;
+        let request = recv_sync_request(&mut requests).await;
+        assert_eq!(request.run_id, run_id);
+        assert_eq!(
+            request.targets,
+            vec![
+                ConnectorSyncTarget {
+                    target: builtin_target("github"),
+                    generation: 0,
+                },
+                ConnectorSyncTarget {
+                    target: builtin_target("slack"),
+                    generation: 0,
+                },
+            ]
+        );
+        tokio::task::yield_now().await;
+        assert!(matches!(
+            requests.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
+
+        tokio::time::advance(later_delay).await;
+        let request = recv_sync_request(&mut requests).await;
+        assert_eq!(request.run_id, run_id);
+        assert_eq!(
+            request.targets,
+            vec![ConnectorSyncTarget {
+                target: builtin_target("notion"),
+                generation: 0,
+            }]
+        );
+        tokio::task::yield_now().await;
+        assert!(matches!(
+            requests.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
+        core.unregister_run(run_id).await;
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn retry_backoff_preserves_same_run_coalescing_and_caps_delay() {
         let server = MockServer::start();
         let (core, _requests) = core_without_worker(&server);
@@ -5605,11 +5722,24 @@ mod tests {
             let active_runs = core.inner.active_runs.lock().await;
             let active = &active_runs[&run_id];
             assert_eq!(
-                active.sync_tasks[&builtin_target("slack")].deadline,
-                active.sync_tasks[&builtin_target("github")].deadline,
+                active.connectors[&builtin_target("slack")]
+                    .scheduled_sync
+                    .as_ref()
+                    .expect("connector should have a scheduled sync")
+                    .deadline,
+                active.connectors[&builtin_target("github")]
+                    .scheduled_sync
+                    .as_ref()
+                    .expect("connector should have a scheduled sync")
+                    .deadline,
                 "same-run connectors at the same attempt should remain coalescible"
             );
-            let first_delay = active.sync_tasks[&builtin_target("slack")].deadline - first_base;
+            let first_delay = active.connectors[&builtin_target("slack")]
+                .scheduled_sync
+                .as_ref()
+                .expect("connector should have a scheduled sync")
+                .deadline
+                - first_base;
             assert!(first_delay >= Duration::from_millis(800));
             assert!(first_delay <= SYNC_RETRY_INITIAL_DELAY);
         }
@@ -5635,7 +5765,12 @@ mod tests {
                 expected_attempt
             );
             if expected_attempt >= 6 {
-                let delay = active.sync_tasks[&builtin_target("slack")].deadline - scheduling_base;
+                let delay = active.connectors[&builtin_target("slack")]
+                    .scheduled_sync
+                    .as_ref()
+                    .expect("connector should have a scheduled sync")
+                    .deadline
+                    - scheduling_base;
                 assert!(delay >= Duration::from_secs(24));
                 assert!(delay <= SYNC_RETRY_MAX_DELAY);
             }
@@ -5678,7 +5813,12 @@ mod tests {
                 .lock()
                 .await
                 .get(&run_id)
-                .is_some_and(|active| active.sync_tasks.len() == 1),
+                .is_some_and(|active| active
+                    .connectors
+                    .values()
+                    .filter(|connector| connector.scheduled_sync.is_some())
+                    .count()
+                    == 1),
             "scheduled task should remain tracked while waiting on the full runtime sync queue"
         );
 
@@ -5730,7 +5870,9 @@ mod tests {
                     .get(&run_id)
                     .is_some_and(|active| {
                         active.connectors[&builtin_target("slack")].consecutive_failures == 1
-                            && active.sync_tasks.contains_key(&builtin_target("slack"))
+                            && active.connectors[&builtin_target("slack")]
+                                .scheduled_sync
+                                .is_some()
                     })
                 {
                     return;
@@ -5914,7 +6056,10 @@ mod tests {
         );
         let scheduled_task = {
             let active_runs = core.inner.active_runs.lock().await;
-            active_runs[&run_id].sync_tasks[&builtin_target("github")]
+            active_runs[&run_id].connectors[&builtin_target("github")]
+                .scheduled_sync
+                .as_ref()
+                .expect("connector should have a scheduled sync")
                 .handle
                 .abort_handle()
         };
@@ -6136,7 +6281,11 @@ mod tests {
             active.connectors[&builtin_target("slack")].consecutive_failures,
             0
         );
-        assert!(!active.sync_tasks.contains_key(&builtin_target("slack")));
+        assert!(
+            active.connectors[&builtin_target("slack")]
+                .scheduled_sync
+                .is_none()
+        );
         drop(active_runs);
         harness.shutdown().await;
     }
@@ -6226,7 +6375,9 @@ mod tests {
                 .lock()
                 .await
                 .get(&run_id)
-                .is_some_and(|active| active.sync_tasks.contains_key(&builtin_target("slack"))),
+                .is_some_and(|active| active.connectors[&builtin_target("slack")]
+                    .scheduled_sync
+                    .is_some()),
             "successful retry should install the returned refresh schedule"
         );
         let retry = captured_event(&events, "connector runtime sync transport failed, retrying");
@@ -6303,7 +6454,9 @@ mod tests {
                     0
                 );
                 assert!(
-                    !active.sync_tasks.contains_key(&builtin_target("slack")),
+                    active.connectors[&builtin_target("slack")]
+                        .scheduled_sync
+                        .is_none(),
                     "successful recovery without nextSyncAt should clear the retry schedule"
                 );
                 drop(active_runs);
