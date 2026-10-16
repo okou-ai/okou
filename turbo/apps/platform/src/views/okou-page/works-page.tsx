@@ -1,3 +1,4 @@
+import { ConnectedIndicator } from "./components/connected-indicator.tsx";
 import { ROUTES } from "../../signals/route-paths.ts";
 import type { ReactNode } from "react";
 import {
@@ -9,12 +10,7 @@ import {
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import {
-  AlertTriangle,
-  CircleCheck,
-  EllipsisVertical,
-  Download,
-} from "lucide-react";
+import { AlertTriangle, EllipsisVertical, Download } from "lucide-react";
 import { surfaceVariants, Button, buttonVariants, cn } from "@okouai/ui";
 import {
   OFFICIAL_TELEGRAM_BOT_ID,
@@ -95,37 +91,6 @@ const slackIconImg = settingsIconAssetUrl("slack");
 const teamsIconImg = settingsIconAssetUrl("teams");
 const githubIconImg = settingsIconAssetUrl("github");
 const telegramIconImg = settingsIconAssetUrl("telegram");
-
-function ConnectedIndicator({
-  testId,
-  connectedDetail,
-}: {
-  testId: string;
-  connectedDetail?: string | null;
-}) {
-  const { t } = useTranslation();
-
-  return (
-    <span
-      data-testid={testId}
-      className="inline-flex min-w-0 max-w-52 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-1.5 py-1 text-xs font-medium text-secondary-foreground"
-    >
-      <CircleCheck className="h-3 w-3 text-green-600" />
-      <span className="min-w-0 truncate" title={connectedDetail ?? ""}>
-        {connectedDetail
-          ? t(
-              ($) => {
-                return $.works.connectedWithDetail;
-              },
-              { detail: connectedDetail },
-            )
-          : t(($) => {
-              return $.works.connected;
-            })}
-      </span>
-    </span>
-  );
-}
 
 function ProviderCardMenu({
   children,

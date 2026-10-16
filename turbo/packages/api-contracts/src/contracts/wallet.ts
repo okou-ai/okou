@@ -3,6 +3,7 @@ import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { connectorOauthCallbackResultSchema } from "./connectors-slug-callback";
+import { scopeDiffResponseSchema } from "./connector-schemas";
 
 const c = initContract();
 
@@ -13,21 +14,6 @@ export const walletConnectStatusSchema = z.discriminatedUnion("status", [
   }),
 ]);
 export type WalletConnectStatus = z.infer<typeof walletConnectStatusSchema>;
-
-export const walletUserContract = c.router({
-  connectStatus: {
-    method: "POST",
-    path: "/api/wallet/connect/status",
-    headers: authHeadersSchema,
-    body: z.object({ agentId: z.uuid(), state: z.string().min(43).max(128) }),
-    responses: {
-      200: walletConnectStatusSchema,
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-    },
-  },
-});
 
 export const walletSpendStatusSchema = z.enum([
   "creating",
@@ -235,6 +221,21 @@ export const walletSpendSchema = z.object({
 
 export type WalletCreateSpend = z.infer<typeof walletCreateSpendSchema>;
 export type WalletSpend = z.infer<typeof walletSpendSchema>;
+
+// A history entry deliberately excludes approval links and payment credentials.
+export const walletPurchaseHistoryEntrySchema = walletSpendSchema
+  .pick({
+    id: true,
+    status: true,
+    amount: true,
+    currency: true,
+    merchantName: true,
+    test: true,
+  })
+  .extend({ createdAt: z.iso.datetime() });
+export type WalletPurchaseHistoryEntry = z.infer<
+  typeof walletPurchaseHistoryEntrySchema
+>;
 
 export const walletCardSchema = z.object({
   brand: z.string().regex(/^[a-zA-Z_-]{1,32}$/),
@@ -520,3 +521,76 @@ export const walletCallbackContract = c.router({
     },
   },
 });
+
+export const walletUserContract = c.router({
+  transactions: {
+    method: "GET",
+    path: "/api/wallet/purchases",
+    headers: authHeadersSchema,
+    query: z.object({
+      cursor: z.uuid().optional(),
+      limit: z.coerce.number().int().min(1).max(100).default(20),
+    }),
+    responses: {
+      200: z.object({
+        transactions: z.array(walletPurchaseHistoryEntrySchema),
+        nextCursor: z.uuid().nullable(),
+      }),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+    },
+  },
+  status: {
+    ...walletContract.status,
+    path: "/api/wallet/connection",
+    responses: {
+      ...walletContract.status.responses,
+      200: walletContract.status.responses[200].extend({
+        revocationPending: z.boolean(),
+        connectionStatus: z.enum([
+          "not-connected",
+          "connected",
+          "reconnect-required",
+          "scope-mismatch",
+        ]),
+        scopeChange: scopeDiffResponseSchema
+          .extend({
+            reason: z.enum([
+              "permissions_changed",
+              "permissions_unknown",
+              "workspace_scope_changed",
+            ]),
+          })
+          .nullable(),
+      }),
+    },
+  },
+  connect: {
+    ...walletContract.connect,
+    path: "/api/wallet/connection/connect",
+  },
+  disconnect: {
+    ...walletContract.disconnect,
+    path: "/api/wallet/connection/disconnect",
+  },
+  connectStatus: {
+    method: "POST",
+    path: "/api/wallet/connect/status",
+    headers: authHeadersSchema,
+    body: z.object({
+      agentId: z.uuid().optional(),
+      state: z.string().min(43).max(128),
+    }),
+    responses: {
+      200: walletConnectStatusSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+    },
+  },
+});
+
+export type WalletConnectionStatus = z.infer<
+  (typeof walletUserContract.status.responses)[200]
+>;

@@ -72,7 +72,13 @@ export type ConnectorChangedPayload = z.infer<
   typeof connectorChangedPayloadSchema
 >;
 
-export const walletChangedPayloadSchema = z.object({ agentId: z.uuid() });
+// Outgoing/rollback APIs still publish agent-only payloads. Remove that shape
+// once those publishers retire; removing agent provenance also needs the App
+// client floor and captured-consent contexts to drain. Cleanup: #40206.
+export const walletChangedPayloadSchema = z.union([
+  z.object({ orgId: z.string().min(1), agentId: z.uuid().optional() }),
+  z.object({ agentId: z.uuid() }),
+]);
 
 export type WalletChangedPayload = z.infer<typeof walletChangedPayloadSchema>;
 

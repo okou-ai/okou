@@ -2297,6 +2297,20 @@
       "when": 1792116652011,
       "tag": "1405_vnc_native_network_storage",
       "breakpoints": true
+    },
+    {
+      "idx": 1406,
+      "version": "7",
+      "when": 1792120606435,
+      "tag": "1406_link_wallet_workspace_owner",
+      "breakpoints": true
+    },
+    {
+      "idx": 1407,
+      "version": "7",
+      "when": 1792120619099,
+      "tag": "1407_link_wallet_scope_snapshots",
+      "breakpoints": true
     }
   ]
 }

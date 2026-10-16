@@ -5206,6 +5206,41 @@
       "saveChanges": "Salva modifiche",
       "saving": "Salvataggio..."
     },
+    "wallet": {
+      "actionError": "Impossibile completare l’azione. Controlla la connessione, consenti i popup e riprova.",
+      "connect": "Collega",
+      "description": "I tuoi agenti possono richiedere acquisti tramite Link. Approvi tu ogni acquisto.",
+      "disconnect": "Scollega",
+      "loadError": "Impossibile caricare il tuo portafoglio.",
+      "permissionsUnknown": "Ricollega Link per esaminare e confermare le autorizzazioni attuali.",
+      "retry": "Riprova",
+      "scope": "Lascia che Okou faccia acquisti per te con Link.",
+      "title": "Portafoglio",
+      "transactions": {
+        "description": "Le tue richieste di acquisto recenti con Link in Okou.",
+        "empty": "Nessuna transazione Link",
+        "loadError": "Impossibile caricare le transazioni. Riprova.",
+        "loading": "Caricamento delle transazioni",
+        "merchant": "Commerciante",
+        "status": {
+          "approved": "Approvata, in attesa di pagamento",
+          "canceled": "Annullata",
+          "created": "Creata",
+          "creating": "Creazione in corso",
+          "denied": "Rifiutata",
+          "expired": "Scaduta",
+          "failed": "Non riuscita",
+          "pending_approval": "In attesa di approvazione",
+          "requires_action": "Azione richiesta",
+          "submitted": "Pagamento in corso",
+          "succeeded": "Pagamento riuscito"
+        },
+        "statusLabel": "Stato",
+        "test": "Test",
+        "title": "Transazioni Link"
+      },
+      "workspaceScopeChanged": "Ora il tuo portafoglio Link può essere usato da tutti i tuoi agenti in questo spazio di lavoro. Ricollegalo per approvare la modifica."
+    },
     "workspace": {
       "danger": {
         "delete": {

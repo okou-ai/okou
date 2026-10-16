@@ -5206,6 +5206,41 @@
       "saveChanges": "Enregistrer les modifications",
       "saving": "Enregistrement..."
     },
+    "wallet": {
+      "actionError": "Impossible de terminer cette action. Vérifie ta connexion, autorise les fenêtres pop-up et réessaie.",
+      "connect": "Connecter",
+      "description": "Tes agents peuvent demander des achats via Link. Tu approuves chaque achat.",
+      "disconnect": "Déconnecter",
+      "loadError": "Impossible de charger ton portefeuille.",
+      "permissionsUnknown": "Reconnectez Link pour examiner et confirmer ses autorisations actuelles.",
+      "retry": "Réessayer",
+      "scope": "Laissez Okou effectuer vos achats avec Link.",
+      "title": "Portefeuille",
+      "transactions": {
+        "description": "Vos demandes d’achat récentes avec Link dans Okou.",
+        "empty": "Aucune transaction Link pour le moment",
+        "loadError": "Impossible de charger les transactions. Réessayez.",
+        "loading": "Chargement des transactions",
+        "merchant": "Commerçant",
+        "status": {
+          "approved": "Approuvée, paiement en attente",
+          "canceled": "Annulée",
+          "created": "Créée",
+          "creating": "Création en cours",
+          "denied": "Refusée",
+          "expired": "Expirée",
+          "failed": "Échec",
+          "pending_approval": "En attente d’approbation",
+          "requires_action": "Action requise",
+          "submitted": "Paiement en cours",
+          "succeeded": "Paiement réussi"
+        },
+        "statusLabel": "Statut",
+        "test": "Test",
+        "title": "Transactions Link"
+      },
+      "workspaceScopeChanged": "Votre portefeuille Link peut désormais être utilisé par tous vos agents dans cet espace de travail. Reconnectez-le pour approuver ce changement."
+    },
     "workspace": {
       "danger": {
         "delete": {

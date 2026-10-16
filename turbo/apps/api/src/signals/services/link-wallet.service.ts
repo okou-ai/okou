@@ -6,6 +6,7 @@ import {
   type WalletConnect,
   type WalletSpendListQuery,
   type WalletConnectStatus,
+  type WalletConnectionStatus,
   type WalletSpend,
   type WalletSpendCredentials,
   walletSpendSchema,
@@ -44,6 +45,7 @@ import {
 } from "./crypto.utils";
 import {
   LinkWalletError,
+  LINK_WALLET_OAUTH_SCOPES,
   linkActionUrl,
   linkCredentialsSchema,
   linkSpendRequest,
@@ -75,6 +77,10 @@ const READ_ONLY_CONSENT_MARKER = "read-only.";
 export interface WalletOwner {
   readonly orgId: string;
   readonly userId: string;
+  // Initiating-agent provenance for existing chat clients, never wallet ownership.
+  readonly agentId?: string | null;
+}
+interface WalletRunOwner extends WalletOwner {
   readonly agentId: string;
 }
 type Connection = typeof linkWalletConnections.$inferSelect;
@@ -87,10 +93,10 @@ function connectionOwner(owner: WalletOwner) {
   return and(
     eq(linkWalletConnections.orgId, owner.orgId),
     eq(linkWalletConnections.userId, owner.userId),
-    eq(linkWalletConnections.agentId, owner.agentId),
+    isNull(linkWalletConnections.agentId),
   );
 }
-function spendOwner(owner: WalletOwner) {
+function spendOwner(owner: WalletRunOwner) {
   return and(
     eq(linkWalletSpends.orgId, owner.orgId),
     eq(linkWalletSpends.userId, owner.userId),
@@ -98,48 +104,50 @@ function spendOwner(owner: WalletOwner) {
   );
 }
 
-export const walletRunOwner$ = computed(async (get): Promise<WalletOwner> => {
-  const auth = get(organizationAuthContext$);
-  if (auth.tokenType !== "agent") {
-    throw new LinkWalletError(
-      403,
-      "FORBIDDEN",
-      "Wallet access requires an agent run",
-    );
-  }
-  const db = get(db$);
-  const [run] = await db
-    .select({
-      agentId: agentRuns.agentId,
-      triggerSource: agentRuns.triggerSource,
-      status: agentRuns.status,
-    })
-    .from(agentRuns)
+export const walletRunOwner$ = computed(
+  async (get): Promise<WalletRunOwner> => {
+    const auth = get(organizationAuthContext$);
+    if (auth.tokenType !== "agent") {
+      throw new LinkWalletError(
+        403,
+        "FORBIDDEN",
+        "Wallet access requires an agent run",
+      );
+    }
+    const db = get(db$);
+    const [run] = await db
+      .select({
+        agentId: agentRuns.agentId,
+        triggerSource: agentRuns.triggerSource,
+        status: agentRuns.status,
+      })
+      .from(agentRuns)
 
-    .where(
-      and(
-        eq(agentRuns.id, auth.runId),
-        eq(agentRuns.orgId, auth.orgId),
-        eq(agentRuns.userId, auth.userId),
-      ),
-    )
-    .limit(1);
-  if (
-    !run?.agentId ||
-    run.triggerSource !== "web" ||
-    run.status !== "running"
-  ) {
-    throw new LinkWalletError(
-      403,
-      "WALLET_INTERACTIVE_RUN_REQUIRED",
-      "Wallet access is limited to a running, user-initiated web chat; automations cannot use it",
-    );
-  }
-  return { orgId: auth.orgId, userId: auth.userId, agentId: run.agentId };
-});
+      .where(
+        and(
+          eq(agentRuns.id, auth.runId),
+          eq(agentRuns.orgId, auth.orgId),
+          eq(agentRuns.userId, auth.userId),
+        ),
+      )
+      .limit(1);
+    if (
+      !run?.agentId ||
+      run.triggerSource !== "web" ||
+      run.status !== "running"
+    ) {
+      throw new LinkWalletError(
+        403,
+        "WALLET_INTERACTIVE_RUN_REQUIRED",
+        "Wallet access is limited to a running, user-initiated web chat; automations cannot use it",
+      );
+    }
+    return { orgId: auth.orgId, userId: auth.userId, agentId: run.agentId };
+  },
+);
 
 const connection$ = computed(async (get): Promise<Connection | undefined> => {
-  const owner = await get(walletRunOwner$);
+  const owner = get(organizationAuthContext$);
   const db = get(db$);
   const [row] = await db
     .select()
@@ -171,6 +179,111 @@ export const walletStatus$ = computed(async (get) => {
   };
 });
 
+// Historical consent has no requested-scope snapshot. Keep it unknown until
+// reauthorization; refresh cannot establish consent. Convergence gate: #40206.
+function walletScopeChange(
+  storedScopes: string | null,
+  workspaceScopeChanged = false,
+  grantedScopes: readonly string[] = [],
+): WalletConnectionStatus["scopeChange"] {
+  const current = [
+    ...new Set([...LINK_WALLET_OAUTH_SCOPES, ...grantedScopes]),
+  ].sort();
+  const stored =
+    storedScopes === null
+      ? null
+      : z.array(z.string()).parse(JSON.parse(storedScopes));
+  const addedScopes = stored
+    ? current.filter((scope) => {
+        return !stored.includes(scope);
+      })
+    : [];
+  const removedScopes = (stored ?? []).filter((scope) => {
+    return !current.some((requested) => {
+      return requested === scope;
+    });
+  });
+  if (
+    !workspaceScopeChanged &&
+    stored !== null &&
+    addedScopes.length === 0 &&
+    removedScopes.length === 0
+  ) {
+    return null;
+  }
+  return {
+    reason: workspaceScopeChanged
+      ? "workspace_scope_changed"
+      : stored === null
+        ? "permissions_unknown"
+        : "permissions_changed",
+    addedScopes,
+    removedScopes,
+    currentScopes: current,
+    storedScopes: stored ?? [],
+  };
+}
+
+export const walletSettingsStatus$ = computed(
+  async (get): Promise<WalletConnectionStatus> => {
+    const status = await get(walletStatus$);
+    const row = await get(connection$);
+    const owner = get(organizationAuthContext$);
+    const db = get(db$);
+    const [pending] = await db
+      .select({ id: linkWalletConnections.id })
+      .from(linkWalletConnections)
+      .where(
+        and(
+          eq(linkWalletConnections.orgId, owner.orgId),
+          eq(linkWalletConnections.userId, owner.userId),
+          isNotNull(linkWalletConnections.revokedAt),
+          isNull(linkWalletConnections.revocationConfirmedAt),
+        ),
+      )
+      .limit(1);
+    // Retire this bridge only after old writers/rollback targets are gone and
+    // their grants are explicitly reauthorized or revoked; see #40206.
+    const [legacy] = await db
+      .select({ id: linkWalletConnections.id })
+      .from(linkWalletConnections)
+      .where(
+        and(
+          eq(linkWalletConnections.orgId, owner.orgId),
+          eq(linkWalletConnections.userId, owner.userId),
+          isNotNull(linkWalletConnections.agentId),
+          isNull(linkWalletConnections.revokedAt),
+        ),
+      )
+      .limit(1);
+    const scopeChange =
+      row && !row.revokedAt
+        ? status.connected
+          ? walletScopeChange(
+              row.oauthRequestedScopes,
+              false,
+              status.authorization.scopes,
+            )
+          : null
+        : legacy
+          ? walletScopeChange(null, true)
+          : null;
+    const connectionStatus = scopeChange
+      ? "scope-mismatch"
+      : status.connected
+        ? "connected"
+        : row && !row.revokedAt
+          ? "reconnect-required"
+          : "not-connected";
+    return {
+      ...status,
+      revocationPending: Boolean(pending),
+      connectionStatus,
+      scopeChange,
+    };
+  },
+);
+
 export const walletConnectStatus$ = command(
   async (
     { get },
@@ -190,7 +303,9 @@ export const walletConnectStatus$ = command(
       .leftJoin(
         linkWalletConnections,
         and(
-          connectionOwner(owner),
+          eq(linkWalletConnections.orgId, owner.orgId),
+          eq(linkWalletConnections.userId, owner.userId),
+          eq(linkWalletConnections.authorizationId, linkWalletOAuthAttempts.id),
           isNotNull(linkWalletConnections.encryptedCredentials),
         ),
       )
@@ -199,7 +314,12 @@ export const walletConnectStatus$ = command(
           eq(linkWalletOAuthAttempts.stateHash, hash(state)),
           eq(linkWalletOAuthAttempts.orgId, owner.orgId),
           eq(linkWalletOAuthAttempts.userId, owner.userId),
-          eq(linkWalletOAuthAttempts.agentId, owner.agentId),
+          or(
+            eq(linkWalletOAuthAttempts.scope, "workspace_user"),
+            owner.agentId
+              ? eq(linkWalletOAuthAttempts.agentId, owner.agentId)
+              : undefined,
+          ),
         ),
       )
       .limit(1);
@@ -264,6 +384,8 @@ export const startWalletOAuth$ = command(
     await db.insert(linkWalletOAuthAttempts).values({
       id: authorizationId,
       ...owner,
+      scope: "workspace_user",
+      oauthRequestedScopes: JSON.stringify([...scopes].sort()),
       stateHash: hash(state),
       encryptedVerifier,
       expiresAt,
@@ -383,7 +505,8 @@ export const completeWalletOAuth$ = command(
 
 async function publishWalletChanged(owner: WalletOwner): Promise<void> {
   await publishUserSignal([owner.userId], "wallet:changed", {
-    agentId: owner.agentId,
+    orgId: owner.orgId,
+    ...(owner.agentId ? { agentId: owner.agentId } : {}),
   } satisfies WalletChangedPayload);
 }
 
@@ -431,6 +554,12 @@ const publishWalletOAuth$ = command(
     // Consuming the still-live OAuth attempt and publishing the grant is atomic.
     // Disconnect deletes attempts before revoking connections, so an in-flight
     // callback cannot resurrect a grant after the user has disconnected it.
+    // Outgoing API attempts must retain their original consent scope. Remove
+    // this branch only after those writers and pending attempts drain (#40206).
+    const grantAgentId = attempt.scope === "agent" ? attempt.agentId : null;
+    const conflictTarget = grantAgentId
+      ? sql`(org_id, user_id, agent_id)`
+      : sql`(org_id, user_id) WHERE agent_id IS NULL`;
     const result = parseRawRows(
       z.object({ id: z.uuid() }),
       await db.execute(sql`
@@ -442,11 +571,12 @@ const publishWalletOAuth$ = command(
         RETURNING org_id, user_id, agent_id, id
       )
       INSERT INTO ${linkWalletConnections}
-        (org_id, user_id, agent_id, authorization_id, encrypted_credentials)
-      SELECT org_id, user_id, agent_id, id, ${encryptedCredentials} FROM authorized
-      ON CONFLICT (org_id, user_id, agent_id) DO UPDATE
+        (org_id, user_id, agent_id, authorization_id, encrypted_credentials, oauth_requested_scopes)
+      SELECT org_id, user_id, ${grantAgentId}::uuid, id, ${encryptedCredentials}, ${attempt.oauthRequestedScopes} FROM authorized
+      ON CONFLICT ${conflictTarget} DO UPDATE
       SET authorization_id = EXCLUDED.authorization_id,
           encrypted_credentials = EXCLUDED.encrypted_credentials, revoked_at = NULL,
+          oauth_requested_scopes = EXCLUDED.oauth_requested_scopes,
           revocation_confirmed_at = NULL
       RETURNING id
     `),
@@ -509,9 +639,14 @@ const refreshWalletConnection$ = command(
         "Wallet authorization changed; check status or reconnect",
       );
     }
-    const refreshed = await linkTokenRequest(
-      { grant_type: "refresh_token", refresh_token: input.refreshToken },
-      AbortSignal.timeout(15_000),
+    const refreshed = await onRejection(
+      linkTokenRequest(
+        { grant_type: "refresh_token", refresh_token: input.refreshToken },
+        AbortSignal.timeout(15_000),
+      ),
+      () => {
+        return publishWalletChanged(owner);
+      },
     );
     if (
       input.readOnly &&
@@ -675,38 +810,65 @@ const revokeWalletConnection$ = command(
         "Wallet authorization changed during revocation; check status before continuing",
       );
     }
+    await publishWalletChanged(connection);
   },
 );
 
 const cancelWalletOAuthAttempts$ = command(
   async ({ set }, owner: WalletOwner) => {
-    await set(writeDb$)
+    return await set(writeDb$)
       .delete(linkWalletOAuthAttempts)
       .where(
         and(
           eq(linkWalletOAuthAttempts.orgId, owner.orgId),
           eq(linkWalletOAuthAttempts.userId, owner.userId),
-          eq(linkWalletOAuthAttempts.agentId, owner.agentId),
         ),
-      );
-    await publishWalletChanged(owner);
+      )
+      .returning({ agentId: linkWalletOAuthAttempts.agentId });
   },
 );
 
 export const disconnectWallet$ = command(
   async ({ set }, owner: WalletOwner, signal: AbortSignal) => {
     const db = set(writeDb$);
-    await set(cancelWalletOAuthAttempts$, owner);
+    const canceled = await set(cancelWalletOAuthAttempts$, owner);
     signal.throwIfAborted();
     // Disable locally before provider I/O, retaining encrypted material solely so
     // a failed provider revocation can be retried through this same endpoint.
-    const [connection] = await db
+    const connections = await db
       .update(linkWalletConnections)
       .set({ revokedAt: nowDate() })
-      .where(connectionOwner(owner))
+      .where(
+        and(
+          eq(linkWalletConnections.orgId, owner.orgId),
+          eq(linkWalletConnections.userId, owner.userId),
+        ),
+      )
       .returning();
     signal.throwIfAborted();
-    if (connection && !connection.revocationConfirmedAt) {
+    // Old chat clients only understand agentId. Notify each affected origin as
+    // well as carrying the workspace identity understood by current clients.
+    const origins = new Set(
+      canceled.flatMap(({ agentId }) => {
+        return agentId ? [agentId] : [];
+      }),
+    );
+    if (owner.agentId) {
+      origins.add(owner.agentId);
+    }
+    if (origins.size === 0) {
+      await publishWalletChanged(owner);
+      signal.throwIfAborted();
+    } else {
+      for (const agentId of origins) {
+        await publishWalletChanged({ ...owner, agentId });
+        signal.throwIfAborted();
+      }
+    }
+    for (const connection of connections) {
+      if (connection.revocationConfirmedAt) {
+        continue;
+      }
       if (!connection.encryptedCredentials) {
         throw new LinkWalletError(
           503,
@@ -818,7 +980,7 @@ const saveProviderSpend$ = command(
 export const createWalletSpend$ = command(
   async (
     { set },
-    owner: WalletOwner,
+    owner: WalletRunOwner,
     input: WalletCreateSpend,
     signal: AbortSignal,
   ): Promise<WalletSpend> => {
@@ -940,7 +1102,7 @@ export const createWalletSpend$ = command(
 );
 
 const walletSpendAccess$ = command(
-  async ({ set }, owner: WalletOwner, id: string, signal: AbortSignal) => {
+  async ({ set }, owner: WalletRunOwner, id: string, signal: AbortSignal) => {
     const db = set(writeDb$);
     const [row] = await db
       .select()
@@ -971,7 +1133,7 @@ const walletSpendAccess$ = command(
 export const getWalletSpend$ = command(
   async (
     { set },
-    owner: WalletOwner,
+    owner: WalletRunOwner,
     id: string,
     cancel: boolean,
     signal: AbortSignal,
@@ -1000,7 +1162,7 @@ export const getWalletSpend$ = command(
 export const getWalletSpendCredentials$ = command(
   async (
     { set },
-    owner: WalletOwner,
+    owner: WalletRunOwner,
     id: string,
     signal: AbortSignal,
   ): Promise<WalletSpendCredentials> => {
@@ -1231,7 +1393,7 @@ export const readWallet$ = command(
 export const listWalletSpends$ = command(
   async (
     { get, set },
-    owner: WalletOwner,
+    owner: WalletRunOwner,
     query: WalletSpendListQuery,
     signal: AbortSignal,
   ) => {

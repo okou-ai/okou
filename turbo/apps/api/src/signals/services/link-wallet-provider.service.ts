@@ -69,6 +69,11 @@ export const linkTokenSchema = z.object({
   token_type: z.literal("Bearer"),
 });
 
+export const LINK_WALLET_OAUTH_SCOPES = [
+  "payment_methods.agentic",
+  "userinfo:read",
+] as const;
+
 // Persisted credentials from the preceding API omit scope/readOnly. Require
 // them after old writers are neither serving nor rollback targets AND existing
 // credentials have refreshed, reauthorized or been invalidated; cleanup #40206.
