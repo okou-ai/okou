@@ -1,7 +1,5 @@
-import { createHash } from "node:crypto";
 import { command } from "ccstate";
 import type {
-  CloudflareAccessConfig,
   ScopedCloudflareAccessConfig,
   CreateCloudflareAccessConfigRequest,
   CreateCloudflareAccessRequest,
@@ -12,35 +10,28 @@ import type {
 import { CLOUDFLARE_ACCESS_ERROR_CODES } from "@okouai/api-contracts/contracts/cloudflare-access-errors";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
-import { sshConnections } from "@okouai/db/runtime/ssh-connection";
-import {
-  and,
-  asc,
-  count,
-  eq,
-  exists,
-  gte,
-  inArray,
-  lt,
-  ne,
-  or,
-  sql,
-} from "drizzle-orm";
-import { QueryBuilder } from "drizzle-orm/pg-core";
-import { z } from "zod";
+import { and, asc, eq, lt, or, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
-import { isForeignKeyViolation, isUniqueViolation } from "../../lib/pg-errors";
-import {
-  pgBooleanDecoder,
-  pgTextDecoder,
-  zodEnumDriverValueDecoder,
-} from "../../lib/db-structured-result";
+import { isUniqueViolation } from "../../lib/pg-errors";
 import { settle } from "../utils";
 import { encryptStoredSecretValue } from "./crypto.utils";
 import { publishCloudflareAccessClientInvalidation } from "./cloudflare-access-client-invalidation.service";
 import { sshCreationResult } from "./ssh-creation.service";
-import { publishSshRuntimeInvalidation$ } from "./ssh-runtime-wakeup.service";
+import { commitNetworkConfigMutation$ } from "./network-config-mutation.service";
+import {
+  networkConfigListReads,
+  networkReferencesQuery,
+} from "./network-config-references";
+import {
+  cloudflareNetworkMetadata,
+  networkHostMetadata,
+  networkImpactSnapshot,
+  ownNetworkReferences,
+  presentNetworkReference,
+  type NetworkReference,
+} from "./network-config-model";
+import { publishNetworkHostInvalidation$ } from "./network-config-invalidation.service";
 
 interface Owner {
   readonly orgId: string;
@@ -131,53 +122,50 @@ function organizationConfig(owner: Owner, id: string) {
 
 function response(
   row: Metadata,
-  sshHosts: CloudflareAccessConfig["sshHosts"],
+  references: readonly NetworkReference[],
 ): ScopedCloudflareAccessConfig {
   return {
     ...row,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
-    sshHosts,
+    ...networkHostMetadata(references),
   };
 }
 export const listCloudflareAccessConfigs$ = command(
   async ({ set }, owner: Owner): Promise<ScopedCloudflareAccessConfig[]> => {
-    const db = set(writeDb$);
-    const rows = await db
-      .select({
-        config: metadata,
-        host: {
-          id: sshConnections.id,
-          displayName: sshConnections.displayName,
-        },
-      })
-      .from(cloudflareAccessConfigs)
-      .leftJoin(
-        sshConnections,
-        and(
-          eq(sshConnections.cloudflareAccessId, cloudflareAccessConfigs.id),
-          eq(sshConnections.orgId, owner.orgId),
-          eq(sshConnections.userId, owner.userId),
-        ),
-      )
-      .where(visibleConfig(owner))
+    const { table, refs, predicate } = networkConfigListReads(
+      "cloudflare_access",
+      owner,
+    );
+    const rows = await set(writeDb$)
+      .select({ config: metadata, host: { ...refs._.selectedFields } })
+      .from(table)
+      .leftJoinLateral(refs, eq(refs.userId, owner.userId))
+      .where(predicate)
       .orderBy(
-        asc(cloudflareAccessConfigs.createdAt),
-        asc(cloudflareAccessConfigs.id),
-        asc(sshConnections.id),
+        asc(table.createdAt),
+        asc(table.id),
+        asc(refs.protocol),
+        asc(refs.id),
       );
-    const configs = new Map<string, ScopedCloudflareAccessConfig>();
+    const configs = new Map<
+      string,
+      { config: Metadata; hosts: NetworkReference[] }
+    >();
     for (const row of rows) {
-      let config = configs.get(row.config.id);
-      if (!config) {
-        config = response(row.config, []);
-        configs.set(config.id, config);
+      let entry = configs.get(row.config.id);
+      if (!entry) {
+        entry = { config: row.config, hosts: [] };
+        configs.set(row.config.id, entry);
       }
-      if (row.host) {
-        config.sshHosts.push(row.host);
+      const host = presentNetworkReference(row.host);
+      if (host) {
+        entry.hosts.push(host);
       }
     }
-    return [...configs.values()];
+    return [...configs.values()].map(({ config, hosts }) => {
+      return response(config, hosts);
+    });
   },
 );
 async function encryptCredentials(
@@ -272,98 +260,41 @@ export const createCloudflareAccessConfig$ = command(
     return { ok: true as const, value: response(created, []) };
   },
 );
-function referencingHosts(owner: Owner, configId: string) {
-  return and(
-    eq(sshConnections.orgId, owner.orgId),
-    eq(sshConnections.cloudflareAccessId, configId),
-  );
-}
-function referencingHostsQuery(owner: Owner, configId: string) {
-  // Parent-login RESTRICT checks take KEY SHARE on hosts. Do not conflict with
-  // those implicit locks while holding hosts and waiting for configuration.
-  return new QueryBuilder()
-    .select({
-      id: sshConnections.id,
-      userId: sshConnections.userId,
-      displayName: sshConnections.displayName,
-      generation: sshConnections.generation,
-    })
-    .from(sshConnections)
-    .where(referencingHosts(owner, configId))
-    .orderBy(asc(sshConnections.id))
-    .for("no key update")
-    .as("cloudflare_referencing_hosts");
-}
-function referenceSetExpanded(
-  lockedCount: number,
-  current: { readonly count: number } | undefined,
-) {
-  if (!current) {
-    throw new Error("Cloudflare Access reference count returned no row");
-  }
-  // READ COMMITTED locking readers recheck changed tuples before returning them.
-  // Every returned host remains a matching, unchanged member under its retained
-  // lock. After the config fence, entering publication blocks further additions.
-  // The locked set is a subset of this fresh count's set: equal cardinality
-  // proves equal identities here, not for arbitrary sets. Reuse its metadata.
-  if (current.count < lockedCount) {
-    throw new Error("Locked Cloudflare Access references disappeared");
-  }
-  return current.count > lockedCount;
-}
-function managementFailure(config: Metadata, actor: Actor) {
-  return config.scope === "organization" && actor.orgRole !== "admin"
-    ? cloudflareAccessFailure("forbidden")
-    : null;
-}
-function affectedByOwner(
-  hosts: readonly { readonly id: string; readonly userId: string }[],
-) {
-  const groups = new Map<string, string[]>();
-  for (const host of hosts) {
-    const ids = groups.get(host.userId) ?? [];
-    ids.push(host.id);
-    groups.set(host.userId, ids);
-  }
-  return groups;
-}
-interface CloudflareInvalidationArgs {
-  readonly actor: Owner;
-  readonly scope: AccessScope;
-  readonly affectedHosts: readonly {
-    readonly id: string;
-    readonly userId: string;
-  }[];
-}
-const publishUpdateInvalidation$ = command(
-  async ({ set }, args: CloudflareInvalidationArgs) => {
-    await publishCloudflareAccessClientInvalidation(args.actor, args.scope);
-    const owners = [...affectedByOwner(args.affectedHosts).entries()];
-    for (let offset = 0; offset < owners.length; offset += 16) {
-      await Promise.all(
-        owners
-          .slice(offset, offset + 16)
-          .map(async ([userId, connectionIds]) => {
-            await set(publishSshRuntimeInvalidation$, {
-              orgId: args.actor.orgId,
-              userId,
-              connectionIds,
-            });
-          }),
-      );
-    }
-  },
-);
-interface RenameCloudflareAccessConfigArgs {
+
+interface ConfigArgs {
   readonly owner: Actor;
   readonly configId: string;
-  readonly body: Pick<
-    UpdateCloudflareAccessRequest,
-    "name" | "expectedRevision"
-  >;
 }
+function ownReferences(hosts: readonly NetworkReference[], owner: Owner) {
+  return ownNetworkReferences(hosts, owner.userId);
+}
+const publishUpdateInvalidation$ = command(
+  async (
+    { set },
+    args: {
+      readonly actor: Actor;
+      readonly scope: AccessScope;
+      readonly affectedHosts: readonly NetworkReference[];
+    },
+  ) => {
+    await publishCloudflareAccessClientInvalidation(args.actor, args.scope);
+    await set(publishNetworkHostInvalidation$, {
+      orgId: args.actor.orgId,
+      hosts: args.affectedHosts,
+    });
+  },
+);
+
 const renameCloudflareAccessConfig$ = command(
-  async ({ set }, args: RenameCloudflareAccessConfigArgs) => {
+  async (
+    { set },
+    args: ConfigArgs & {
+      readonly body: Pick<
+        UpdateCloudflareAccessRequest,
+        "name" | "expectedRevision"
+      >;
+    },
+  ) => {
     const db = set(writeDb$);
     const renamed = db.$with("renamed_cloudflare_access_config").as(
       db
@@ -385,37 +316,22 @@ const renameCloudflareAccessConfig$ = command(
         )
         .returning({ ...metadata }),
     );
-    // Keep the write and response read atomic, without an explicit transaction.
-    // Hosts are a nonlocking statement-snapshot observation, not authority.
+    const hosts = networkReferencesQuery(
+      "cloudflare_access",
+      args.owner.orgId,
+      args.configId,
+    ).as("renamed_cloudflare_hosts");
     const rows = await db
       .with(renamed)
       .select({
-        config: {
-          id: renamed.id,
-          name: renamed.name,
-          revision: renamed.revision,
-          generation: renamed.generation,
-          scope: renamed.scope,
-          createdAt: renamed.createdAt,
-          updatedAt: renamed.updatedAt,
-        },
-        host: {
-          id: sshConnections.id,
-          displayName: sshConnections.displayName,
-        },
+        config: { ...renamed._.selectedFields },
+        host: { ...hosts._.selectedFields },
       })
       .from(renamed)
-      .leftJoin(
-        sshConnections,
-        and(
-          referencingHosts(args.owner, args.configId),
-          eq(sshConnections.userId, args.owner.userId),
-        ),
-      )
-      .orderBy(asc(sshConnections.id));
-    const [first] = rows;
+      .leftJoin(hosts, eq(hosts.userId, args.owner.userId))
+      .orderBy(asc(hosts.protocol), asc(hosts.id));
+    const first = rows[0];
     if (!first) {
-      // Classify the rejected write; this read never authorizes or retries it.
       const [current] = await db
         .select(metadata)
         .from(cloudflareAccessConfigs)
@@ -423,9 +339,8 @@ const renameCloudflareAccessConfig$ = command(
       if (!current) {
         return cloudflareAccessFailure("notFound");
       }
-      const denied = managementFailure(current, args.owner);
-      if (denied) {
-        return denied;
+      if (current.scope === "organization" && args.owner.orgRole !== "admin") {
+        return cloudflareAccessFailure("forbidden");
       }
       return cloudflareAccessFailure(
         current.revision === args.body.expectedRevision &&
@@ -434,47 +349,43 @@ const renameCloudflareAccessConfig$ = command(
           : "conflict",
       );
     }
-    const hosts = rows.flatMap(({ host }) => {
-      return host ? [host] : [];
-    });
     await publishCloudflareAccessClientInvalidation(
       args.owner,
       first.config.scope,
     );
     return {
       ok: true as const,
-      value: response(first.config, hosts),
+      value: response(
+        first.config,
+        rows.flatMap(({ host }) => {
+          return host ? [host] : [];
+        }),
+      ),
       scope: first.config.scope,
     };
   },
 );
-interface UpdateCloudflareAccessConfigArgs {
-  readonly owner: Actor;
-  readonly configId: string;
-  readonly body: UpdateCloudflareAccessRequest;
-  readonly featureContext: FeatureSwitchContext;
-}
-export const updateCloudflareAccessConfig$ = command(
-  async ({ set }, args: UpdateCloudflareAccessConfigArgs) => {
-    if (args.body.credentials === undefined) {
-      return await set(renameCloudflareAccessConfig$, {
-        owner: args.owner,
-        configId: args.configId,
-        body: args.body,
-      });
-    }
-    const db = set(writeDb$);
 
-    const [current] = await db
+export const updateCloudflareAccessConfig$ = command(
+  async (
+    { set },
+    args: ConfigArgs & {
+      readonly body: UpdateCloudflareAccessRequest;
+      readonly featureContext: FeatureSwitchContext;
+    },
+  ) => {
+    if (args.body.credentials === undefined) {
+      return await set(renameCloudflareAccessConfig$, args);
+    }
+    const [current] = await set(writeDb$)
       .select(metadata)
       .from(cloudflareAccessConfigs)
       .where(visibleConfig(args.owner, args.configId));
     if (!current) {
       return cloudflareAccessFailure("notFound");
     }
-    const denied = managementFailure(current, args.owner);
-    if (denied) {
-      return denied;
+    if (current.scope === "organization" && args.owner.orgRole !== "admin") {
+      return cloudflareAccessFailure("forbidden");
     }
     if (current.revision !== args.body.expectedRevision) {
       return cloudflareAccessFailure("conflict");
@@ -483,469 +394,104 @@ export const updateCloudflareAccessConfig$ = command(
       args.body.credentials,
       args.featureContext,
     );
-    // Credentials and all bound-host generations must commit together. The
-    // reference count needs a fresh statement snapshot after the config fence.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0104; new non-billing transactions are prohibited.
-    const result = await db.transaction(async (tx) => {
-      const hosts = await tx
-        .select()
-        .from(referencingHostsQuery(args.owner, args.configId));
-      const [config] = await tx
-        .select(metadata)
-        .from(cloudflareAccessConfigs)
-        .where(visibleConfig(args.owner, args.configId))
-        .for("update");
-      if (!config) {
-        return cloudflareAccessFailure("notFound");
-      }
-      const denied = managementFailure(config, args.owner);
-      if (denied) {
-        return denied;
-      }
-      const [references] = await tx
-        .select({ count: count() })
-        .from(sshConnections)
-        .where(referencingHosts(args.owner, args.configId));
-      if (referenceSetExpanded(hosts.length, references)) {
-        return cloudflareAccessFailure("conflict");
-      }
-      if (config.revision !== args.body.expectedRevision) {
-        return cloudflareAccessFailure("conflict");
-      }
-      if (
-        config.revision === 2_147_483_647 ||
-        config.generation === 2_147_483_647 ||
-        hosts.some((host) => {
-          return host.generation === 2_147_483_647;
-        })
-      ) {
-        return cloudflareAccessFailure("exhausted");
-      }
-      const [updated] = await tx
-        .update(cloudflareAccessConfigs)
-        .set({
-          name: args.body.name,
-          ...encrypted,
-          revision: config.revision + 1,
-          generation: config.generation + 1,
-          updatedAt: nowDate(),
-        })
-        .where(visibleConfig(args.owner, args.configId))
-        .returning(metadata);
-      if (!updated) {
-        throw new Error("Cloudflare Access update returned no row");
-      }
-      if (hosts.length > 0) {
-        await tx
-          .update(sshConnections)
-          .set({
-            generation: sql`${sshConnections.generation} + 1`,
-            updatedAt: nowDate(),
-          })
-          .where(
-            and(
-              eq(sshConnections.orgId, args.owner.orgId),
-              eq(sshConnections.cloudflareAccessId, args.configId),
-              config.scope === "personal"
-                ? eq(sshConnections.userId, args.owner.userId)
-                : undefined,
-            ),
-          );
-      }
-      return {
-        ok: true as const,
-        value: response(
-          updated,
-          hosts
-            .filter((host) => {
-              return host.userId === args.owner.userId;
-            })
-            .map(({ id, displayName }) => {
-              return { id, displayName };
-            }),
-        ),
-        affectedHosts: hosts,
-        scope: config.scope,
-      };
+    const result = await set(commitNetworkConfigMutation$, {
+      provider: "cloudflare_access",
+      ...args,
+      operation: "update",
+      expectedRevision: args.body.expectedRevision,
+      name: args.body.name,
+      encrypted,
     });
-    if (result.ok) {
-      await set(publishUpdateInvalidation$, {
-        actor: args.owner,
-        scope: result.scope,
-        affectedHosts: result.affectedHosts,
-      });
-    }
-    return result;
-  },
-);
-interface DeleteCloudflareAccessConfigArgs {
-  readonly owner: Actor;
-  readonly configId: string;
-  readonly body: DeleteCloudflareAccessRequest;
-}
-const deletionOutcomeDecoder = zodEnumDriverValueDecoder(
-  z.enum([
-    "forbidden",
-    "conflict",
-    "inUse",
-    "impactConflict",
-    "exhausted",
-    "ready",
-  ]),
-);
-function createCloudflareDeletionReads(args: DeleteCloudflareAccessConfigArgs) {
-  const qb = new QueryBuilder();
-  const hosts = qb
-    .$with("cloudflare_deletion_hosts")
-    .as(qb.select().from(referencingHostsQuery(args.owner, args.configId)));
-  const impact = qb.$with("cloudflare_deletion_impact").as(
-    qb
-      .select({
-        hostCount: count().as("host_count"),
-        ownHost:
-          sql`coalesce(bool_or(${eq(hosts.userId, args.owner.userId)}), false)`
-            .mapWith(pgBooleanDecoder)
-            .as("own_host"),
-        exhausted:
-          sql`coalesce(bool_or(${eq(hosts.generation, 2_147_483_647)}), false)`
-            .mapWith(pgBooleanDecoder)
-            .as("exhausted"),
-        // Preserve JSON.stringify's compact separators and escape each opaque ID.
-        serializedHosts: sql`coalesce(string_agg(
-        '[' || to_json(${hosts.id})::text || ',' || to_json(${hosts.userId})::text || ',' ||
-        ${hosts.generation}::text || ']', ',' ORDER BY ${hosts.id}), '')`
-          .mapWith(pgTextDecoder)
-          .as("serialized_hosts"),
-      })
-      .from(hosts),
-  );
-  // Consuming the complete impact aggregate retains the existing Host -> config
-  // lock order and modes. A wait does not refresh this statement's snapshot.
-  const current = qb.$with("cloudflare_deletion_config").as(
-    qb
-      .select({
-        id: cloudflareAccessConfigs.id,
-        scope: cloudflareAccessConfigs.scope,
-        revision: cloudflareAccessConfigs.revision,
-        hostCount: impact.hostCount,
-        ownHost: impact.ownHost,
-        exhausted: impact.exhausted,
-        serializedHosts: impact.serializedHosts,
-      })
-      .from(cloudflareAccessConfigs)
-      .crossJoin(impact)
-      .where(visibleConfig(args.owner, args.configId))
-      .for("update", { of: cloudflareAccessConfigs }),
-  );
-  const digest = sql`encode(sha256(convert_to(
-    '[' || to_json(${current.id})::text || ',' || ${current.revision}::text || ',[' ||
-    ${current.serializedHosts} || ']]', 'UTF8')), 'hex')`;
-  const snapshot = args.body.impactSnapshot;
-  const denied =
-    args.owner.orgRole === "admin"
-      ? sql`false`
-      : eq(current.scope, "organization");
-  const staleImpact =
-    snapshot === undefined
-      ? ne(current.hostCount, 0)
-      : sql`${ne(digest, snapshot)} OR
-        (${ne(current.hostCount, 0)} AND ${ne(current.scope, "organization")})`;
-  const checked = qb.$with("cloudflare_deletion_checked").as(
-    qb
-      .select({
-        id: current.id,
-        scope: current.scope,
-        outcome: sql`CASE
-        WHEN ${denied} THEN 'forbidden'
-        WHEN ${ne(current.revision, args.body.expectedRevision)} THEN 'conflict'
-        WHEN ${current.ownHost} THEN 'inUse'
-        WHEN ${staleImpact} THEN 'impactConflict'
-        WHEN ${current.exhausted} THEN 'exhausted'
-        ELSE 'ready' END`
-          .mapWith(deletionOutcomeDecoder)
-          .as("outcome"),
-      })
-      .from(current),
-  );
-  return { hosts, impact, current, checked };
-}
-export const deleteCloudflareAccessConfig$ = command(
-  async ({ set }, args: DeleteCloudflareAccessConfigArgs) => {
-    const db = set(writeDb$);
-    const { hosts, impact, current, checked } =
-      createCloudflareDeletionReads(args);
-    const detached = db.$with("cloudflare_deletion_detached").as(
-      db
-        .update(sshConnections)
-        .set({
-          cloudflareAccessId: null,
-          connectionMode: "cloudflare_access",
-          generation: sql`${sshConnections.generation} + 1`,
-          updatedAt: nowDate(),
-        })
-        .from(checked)
-        .where(
-          and(
-            eq(checked.outcome, "ready"),
-            eq(sshConnections.orgId, args.owner.orgId),
-            eq(sshConnections.cloudflareAccessId, checked.id),
-            ne(sshConnections.userId, args.owner.userId),
-            inArray(sshConnections.id, db.select({ id: hosts.id }).from(hosts)),
-          ),
-        )
-        .returning({ id: sshConnections.id }),
-    );
-    const deleted = db.$with("cloudflare_deletion_deleted").as(
-      db
-        .delete(cloudflareAccessConfigs)
-        .where(
-          and(
-            visibleConfig(args.owner, args.configId),
-            exists(
-              db
-                .select({ id: checked.id })
-                .from(checked)
-                .where(eq(checked.outcome, "ready")),
-            ),
-            // Consume detachment before the parent DELETE's restrictive FK check.
-            gte(db.select({ count: count() }).from(detached), 0),
-          ),
-        )
-        .returning({ id: cloudflareAccessConfigs.id }),
-    );
-    // Only reviewed, locked identities can be detached. An unseen new binding
-    // stays bound: RESTRICT rejects deletion and rolls back all detachments.
-    const result = await settle(
-      db
-        .with(hosts, impact, current, checked, detached, deleted)
-        .select({
-          scope: checked.scope,
-          outcome: checked.outcome,
-          deletedId: deleted.id,
-        })
-        .from(checked)
-        .leftJoin(deleted, eq(deleted.id, checked.id)),
-    );
     if (!result.ok) {
-      if (
-        isForeignKeyViolation(result.error) &&
-        result.error instanceof Error &&
-        typeof result.error.cause === "object" &&
-        result.error.cause !== null &&
-        "constraint" in result.error.cause &&
-        result.error.cause.constraint ===
-          "ssh_connections_cloudflare_access_org_fk"
-      ) {
-        return cloudflareAccessFailure("conflict");
-      }
-      throw result.error;
+      return cloudflareAccessFailure(result.reason);
     }
-    const [row] = result.value;
-    if (!row) {
-      return cloudflareAccessFailure("notFound");
-    }
-    if (row.outcome !== "ready") {
-      return cloudflareAccessFailure(row.outcome);
-    }
-    if (!row.deletedId) {
-      throw new Error("Cloudflare Access deletion returned no row");
-    }
-    await publishCloudflareAccessClientInvalidation(args.owner, row.scope);
-    return { ok: true as const, value: undefined, scope: row.scope };
-  },
-);
-
-type ReferencingHost = Pick<
-  typeof sshConnections.$inferSelect,
-  "id" | "userId" | "displayName" | "generation"
->;
-
-function impactSnapshot(
-  config: Metadata,
-  hosts: readonly Pick<ReferencingHost, "id" | "userId" | "generation">[],
-) {
-  return createHash("sha256")
-    .update(
-      JSON.stringify([
-        config.id,
-        config.revision,
-        hosts.map((host) => {
-          return [host.id, host.userId, host.generation];
-        }),
-      ]),
-    )
-    .digest("hex");
-}
-
-interface PreviewCloudflareAccessDeletionArgs {
-  readonly owner: Actor;
-  readonly configId: string;
-}
-export const previewCloudflareAccessDeletion$ = command(
-  async ({ set }, args: PreviewCloudflareAccessDeletionArgs) => {
-    const db = set(writeDb$);
-
-    if (args.owner.orgRole !== "admin") {
-      return cloudflareAccessFailure("forbidden");
-    }
-    const [config] = await db
-      .select(metadata)
-      .from(cloudflareAccessConfigs)
-      .where(organizationConfig(args.owner, args.configId));
-    if (!config) {
-      return cloudflareAccessFailure("notFound");
-    }
-    const hosts = await db
-      .select({
-        id: sshConnections.id,
-        userId: sshConnections.userId,
-        generation: sshConnections.generation,
-      })
-      .from(sshConnections)
-      .where(
-        and(
-          eq(sshConnections.orgId, args.owner.orgId),
-          eq(sshConnections.cloudflareAccessId, args.configId),
-        ),
-      )
-      .orderBy(asc(sshConnections.id));
-    const affectedOwnerIds = new Set<string>();
-    let otherHostCount = 0;
-    for (const host of hosts) {
-      if (host.userId !== args.owner.userId) {
-        otherHostCount += 1;
-        affectedOwnerIds.add(host.userId);
-      }
-    }
+    await set(publishUpdateInvalidation$, {
+      actor: args.owner,
+      scope: result.scope,
+      affectedHosts: result.invalidatedHosts,
+    });
     return {
       ok: true as const,
-      value: {
-        expectedRevision: config.revision,
-        ownHostCount: hosts.length - otherHostCount,
-        otherHostCount,
-        affectedOwnerIds: [...affectedOwnerIds].sort((a, b) => {
-          return a.localeCompare(b);
-        }),
-        impactSnapshot: impactSnapshot(config, hosts),
-      },
+      value: response(
+        cloudflareNetworkMetadata(result.config),
+        ownReferences(result.references, args.owner),
+      ),
+      scope: result.scope,
+      affectedHosts: result.invalidatedHosts,
     };
   },
 );
 
-interface ConvertCloudflareAccessToOrganizationArgs {
-  readonly owner: Actor;
-  readonly configId: string;
-  readonly expectedRevision: number;
-}
-export const convertCloudflareAccessToOrganization$ = command(
-  async ({ set }, args: ConvertCloudflareAccessToOrganizationArgs) => {
-    const db = set(writeDb$);
-
-    if (args.owner.orgRole !== "admin") {
-      return cloudflareAccessFailure("forbidden");
-    }
-    // Scope/owner and bound-host generations must commit together. Validate
-    // the complete reference set in a fresh snapshot after the config fence.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0106; new non-billing transactions are prohibited.
-    const result = await db.transaction(async (tx) => {
-      const hosts = await tx
-        .select()
-        .from(referencingHostsQuery(args.owner, args.configId));
-      const [config] = await tx
-        .select(metadata)
-        .from(cloudflareAccessConfigs)
-        .where(ownedConfig(args.owner, args.configId))
-        .for("update");
-      if (!config) {
-        return cloudflareAccessFailure("notFound");
-      }
-      const [references] = await tx
-        .select({ count: count() })
-        .from(sshConnections)
-        .where(referencingHosts(args.owner, args.configId));
-      if (referenceSetExpanded(hosts.length, references)) {
-        return cloudflareAccessFailure("conflict");
-      }
-      if (config.revision !== args.expectedRevision) {
-        return cloudflareAccessFailure("conflict");
-      }
-      if (
-        config.revision === 2_147_483_647 ||
-        config.generation === 2_147_483_647 ||
-        hosts.some((host) => {
-          return host.generation === 2_147_483_647;
-        })
-      ) {
-        return cloudflareAccessFailure("exhausted");
-      }
-      // The count fence proved these locked records are the complete set.
-      // Reject retained incompatible bindings before changing scope.
-      if (
-        hosts.some((host) => {
-          return host.userId !== args.owner.userId;
-        })
-      ) {
-        return cloudflareAccessFailure("inUse");
-      }
-      const [converted] = await tx
-        .update(cloudflareAccessConfigs)
-        .set({
-          scope: "organization",
-          userId: null,
-          revision: config.revision + 1,
-          generation: config.generation + 1,
-          updatedAt: nowDate(),
-        })
-        .where(ownedConfig(args.owner, args.configId))
-        .returning(metadata);
-      if (!converted) {
-        throw new Error("Cloudflare Access promotion returned no row");
-      }
-      if (hosts.length > 0) {
-        await tx
-          .update(sshConnections)
-          .set({
-            generation: sql`${sshConnections.generation} + 1`,
-            updatedAt: nowDate(),
-          })
-          .where(
-            and(
-              eq(sshConnections.orgId, args.owner.orgId),
-              eq(sshConnections.cloudflareAccessId, args.configId),
-              eq(sshConnections.userId, args.owner.userId),
-            ),
-          );
-      }
-      return {
-        ok: true as const,
-        value: response(
-          converted,
-          hosts.map(({ id, displayName }) => {
-            return { id, displayName };
-          }),
-        ),
-        affectedHosts: hosts,
-      };
+export const deleteCloudflareAccessConfig$ = command(
+  async (
+    { set },
+    args: ConfigArgs & {
+      readonly body: DeleteCloudflareAccessRequest;
+    },
+  ) => {
+    const result = await set(commitNetworkConfigMutation$, {
+      provider: "cloudflare_access",
+      ...args,
+      operation: "delete",
+      ...args.body,
     });
-    if (result.ok) {
-      await set(publishUpdateInvalidation$, {
-        actor: args.owner,
-        scope: "organization",
-        affectedHosts: result.affectedHosts,
-      });
+    if (!result.ok) {
+      return cloudflareAccessFailure(result.reason);
     }
-    return result;
+    await set(publishUpdateInvalidation$, {
+      actor: args.owner,
+      scope: result.scope,
+      affectedHosts: result.invalidatedHosts,
+    });
+    return { ok: true as const, scope: result.scope };
   },
 );
 
-interface PreviewCloudflareAccessConversionArgs {
-  readonly owner: Actor;
-  readonly configId: string;
-}
-export const previewCloudflareAccessConversion$ = command(
-  async ({ set }, args: PreviewCloudflareAccessConversionArgs) => {
-    const db = set(writeDb$);
+export const convertCloudflareAccessToOrganization$ = command(
+  async (
+    { set },
+    args: ConfigArgs & {
+      readonly expectedRevision: number;
+    },
+  ) => {
+    if (args.owner.orgRole !== "admin") {
+      return cloudflareAccessFailure("forbidden");
+    }
+    const result = await set(commitNetworkConfigMutation$, {
+      provider: "cloudflare_access",
+      ...args,
+      operation: "promote",
+    });
+    if (!result.ok) {
+      return cloudflareAccessFailure(result.reason);
+    }
+    await set(publishUpdateInvalidation$, {
+      actor: args.owner,
+      scope: "organization",
+      affectedHosts: result.invalidatedHosts,
+    });
+    return {
+      ok: true as const,
+      value: response(
+        cloudflareNetworkMetadata(result.config),
+        ownReferences(result.references, args.owner),
+      ),
+      affectedHosts: result.invalidatedHosts,
+    };
+  },
+);
 
+const previewCloudflareAccessImpact$ = command(
+  async (
+    { set },
+    args: ConfigArgs & {
+      readonly operation: "convert" | "delete";
+    },
+  ) => {
+    if (args.operation === "delete" && args.owner.orgRole !== "admin") {
+      return cloudflareAccessFailure("forbidden");
+    }
+    const db = set(writeDb$);
     const [config] = await db
       .select(metadata)
       .from(cloudflareAccessConfigs)
@@ -956,169 +502,82 @@ export const previewCloudflareAccessConversion$ = command(
     if (args.owner.orgRole !== "admin") {
       return cloudflareAccessFailure("forbidden");
     }
-    const hosts = await db
-      .select({
-        id: sshConnections.id,
-        userId: sshConnections.userId,
-        displayName: sshConnections.displayName,
-        generation: sshConnections.generation,
-      })
-      .from(sshConnections)
-      .where(
-        and(
-          eq(sshConnections.orgId, args.owner.orgId),
-          eq(sshConnections.cloudflareAccessId, args.configId),
-        ),
-      )
-      .orderBy(asc(sshConnections.id));
+    const query = networkReferencesQuery(
+      "cloudflare_access",
+      args.owner.orgId,
+      args.configId,
+    ).as("cloudflare_impact_hosts");
+    const hosts = await db.select().from(query);
+    const others = hosts.filter((host) => {
+      return host.userId !== args.owner.userId;
+    });
     return {
       ok: true as const,
       value: {
         expectedRevision: config.revision,
-        otherHostCount: hosts.filter((host) => {
-          return host.userId !== args.owner.userId;
-        }).length,
-        ownHostCount: hosts.filter((host) => {
-          return host.userId === args.owner.userId;
-        }).length,
+        ownHostCount: hosts.length - others.length,
+        otherHostCount: others.length,
         affectedOwnerIds: [
           ...new Set(
-            hosts
-              .filter((host) => {
-                return host.userId !== args.owner.userId;
-              })
-              .map((host) => {
-                return host.userId;
-              }),
+            others.map((host) => {
+              return host.userId;
+            }),
           ),
         ].sort((a, b) => {
           return a.localeCompare(b);
         }),
-        impactSnapshot: impactSnapshot(config, hosts),
+        impactSnapshot: networkImpactSnapshot(config, hosts),
       },
     };
   },
 );
-
-interface ConvertCloudflareAccessToPersonalArgs {
-  readonly owner: Actor;
-  readonly configId: string;
-  readonly body: ConvertCloudflareAccessRequest;
-}
+export const previewCloudflareAccessDeletion$ = command(
+  async ({ set }, args: ConfigArgs) => {
+    return await set(previewCloudflareAccessImpact$, {
+      ...args,
+      operation: "delete",
+    });
+  },
+);
+export const previewCloudflareAccessConversion$ = command(
+  async ({ set }, args: ConfigArgs) => {
+    return await set(previewCloudflareAccessImpact$, {
+      ...args,
+      operation: "convert",
+    });
+  },
+);
 export const convertCloudflareAccessToPersonal$ = command(
-  async ({ set }, args: ConvertCloudflareAccessToPersonalArgs) => {
-    const db = set(writeDb$);
-
+  async (
+    { set },
+    args: ConfigArgs & {
+      readonly body: ConvertCloudflareAccessRequest;
+    },
+  ) => {
     if (args.owner.orgRole !== "admin") {
       return cloudflareAccessFailure("forbidden");
     }
-    // Other-owner detachment, own-host generations and adoption must commit
-    // together, using a fresh post-fence count for the reviewed impact.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0107; new non-billing transactions are prohibited.
-    const result = await db.transaction(async (tx) => {
-      const hosts = await tx
-        .select()
-        .from(referencingHostsQuery(args.owner, args.configId));
-      const [config] = await tx
-        .select(metadata)
-        .from(cloudflareAccessConfigs)
-        .where(organizationConfig(args.owner, args.configId))
-        .for("update");
-      if (!config) {
-        return cloudflareAccessFailure("notFound");
-      }
-      const [references] = await tx
-        .select({ count: count() })
-        .from(sshConnections)
-        .where(referencingHosts(args.owner, args.configId));
-      if (referenceSetExpanded(hosts.length, references)) {
-        return cloudflareAccessFailure("conflict");
-      }
-      if (config.revision !== args.body.expectedRevision) {
-        return cloudflareAccessFailure("conflict");
-      }
-      if (impactSnapshot(config, hosts) !== args.body.impactSnapshot) {
-        return cloudflareAccessFailure("impactConflict");
-      }
-      if (
-        config.revision === 2_147_483_647 ||
-        config.generation === 2_147_483_647 ||
-        hosts.some((host) => {
-          return host.generation === 2_147_483_647;
-        })
-      ) {
-        return cloudflareAccessFailure("exhausted");
-      }
-      if (
-        hosts.some((host) => {
-          return host.userId !== args.owner.userId;
-        })
-      ) {
-        await tx
-          .update(sshConnections)
-          .set({
-            cloudflareAccessId: null,
-            connectionMode: "cloudflare_access",
-            generation: sql`${sshConnections.generation} + 1`,
-            updatedAt: nowDate(),
-          })
-          .where(
-            and(
-              eq(sshConnections.orgId, args.owner.orgId),
-              eq(sshConnections.cloudflareAccessId, args.configId),
-              ne(sshConnections.userId, args.owner.userId),
-            ),
-          );
-      }
-      await tx
-        .update(sshConnections)
-        .set({
-          generation: sql`${sshConnections.generation} + 1`,
-          updatedAt: nowDate(),
-        })
-        .where(
-          and(
-            eq(sshConnections.orgId, args.owner.orgId),
-            eq(sshConnections.cloudflareAccessId, args.configId),
-            eq(sshConnections.userId, args.owner.userId),
-          ),
-        );
-      const [converted] = await tx
-        .update(cloudflareAccessConfigs)
-        .set({
-          scope: "personal",
-          userId: args.owner.userId,
-          revision: config.revision + 1,
-          generation: config.generation + 1,
-          updatedAt: nowDate(),
-        })
-        .where(organizationConfig(args.owner, args.configId))
-        .returning(metadata);
-      if (!converted) {
-        throw new Error("Cloudflare Access conversion returned no row");
-      }
-      return {
-        ok: true as const,
-        value: response(
-          converted,
-          hosts
-            .filter((host) => {
-              return host.userId === args.owner.userId;
-            })
-            .map(({ id, displayName }) => {
-              return { id, displayName };
-            }),
-        ),
-        affectedHosts: hosts,
-      };
+    const result = await set(commitNetworkConfigMutation$, {
+      provider: "cloudflare_access",
+      ...args,
+      operation: "adopt",
+      ...args.body,
     });
-    if (result.ok) {
-      await set(publishUpdateInvalidation$, {
-        actor: args.owner,
-        scope: "organization",
-        affectedHosts: result.affectedHosts,
-      });
+    if (!result.ok) {
+      return cloudflareAccessFailure(result.reason);
     }
-    return result;
+    await set(publishUpdateInvalidation$, {
+      actor: args.owner,
+      scope: "organization",
+      affectedHosts: result.invalidatedHosts,
+    });
+    return {
+      ok: true as const,
+      value: response(
+        cloudflareNetworkMetadata(result.config),
+        ownReferences(result.references, args.owner),
+      ),
+      affectedHosts: result.invalidatedHosts,
+    };
   },
 );

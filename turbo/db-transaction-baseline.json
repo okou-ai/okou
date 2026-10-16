@@ -162,21 +162,6 @@
       "owner": "deleteChatThreadContent$"
     },
     {
-      "id": "TX-0104",
-      "file": "turbo/apps/api/src/signals/services/cloudflare-access.service.ts",
-      "owner": "updateCloudflareAccessConfig$"
-    },
-    {
-      "id": "TX-0106",
-      "file": "turbo/apps/api/src/signals/services/cloudflare-access.service.ts",
-      "owner": "convertCloudflareAccessToOrganization$"
-    },
-    {
-      "id": "TX-0107",
-      "file": "turbo/apps/api/src/signals/services/cloudflare-access.service.ts",
-      "owner": "convertCloudflareAccessToPersonal$"
-    },
-    {
       "id": "TX-0111",
       "file": "turbo/apps/api/src/signals/services/connector-account-lifecycle.service.ts",
       "owner": "setDefaultGoogleFormsAccount$"

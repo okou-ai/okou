@@ -184,7 +184,7 @@ async function membershipWebhook(actor: {
 }
 
 test.each(["self-leave", "administrator", "Clerk webhook"] as const)(
-  "%s erases only the departing member's SSH login resources after VNC dependencies",
+  "%s erases the departing member's private remote resources after VNC dependencies",
   async (entry) => {
     useSecretKmsProbe();
     const departing = await owner({ orgRole: "org:member" });
@@ -202,6 +202,24 @@ test.each(["self-leave", "administrator", "Clerk webhook"] as const)(
               clientId: "personal-id",
               clientSecret: "personal-secret",
             },
+          },
+        }),
+        [201],
+      )
+    ).body;
+    const personalTailscale = (
+      await accept(
+        tailscale().create({
+          headers,
+          body: {
+            id: randomUUID(),
+            scope: "personal",
+            name: "Departing private network",
+            credentials: {
+              clientId: "private-id",
+              clientSecret: "private-secret",
+            },
+            tags: ["tag:okou"],
           },
         }),
         [201],
@@ -403,7 +421,51 @@ test.each(["self-leave", "administrator", "Clerk webhook"] as const)(
           [200],
         )
       ).body.configs,
-    ).toContainEqual({ ...personalAccess, sshHosts: [] });
+    ).not.toContainEqual(expect.objectContaining({ id: personalAccess.id }));
+    expect(
+      (await accept(tailscale().list({ headers }), [200])).body.configs,
+    ).not.toContainEqual(expect.objectContaining({ id: personalTailscale.id }));
+    // Rejoining is a real surviving caller. Recreate the caller-known private
+    // identities and verify their old Host references cannot reappear.
+    expect(
+      (
+        await accept(
+          access().create({
+            headers,
+            body: {
+              id: personalAccess.id,
+              scope: "personal",
+              name: "Rejoined gateway",
+              credentials: {
+                clientId: "rejoined-id",
+                clientSecret: "rejoined-secret",
+              },
+            },
+          }),
+          [201],
+        )
+      ).body.sshHosts,
+    ).toStrictEqual([]);
+    expect(
+      (
+        await accept(
+          tailscale().create({
+            headers,
+            body: {
+              id: personalTailscale.id,
+              scope: "personal",
+              name: "Rejoined network",
+              credentials: {
+                clientId: "rejoined-id",
+                clientSecret: "rejoined-secret",
+              },
+              tags: ["tag:okou"],
+            },
+          }),
+          [201],
+        )
+      ).body.sshHosts,
+    ).toStrictEqual([]);
 
     mocks.clerk.session(peer.userId, peer.orgId, peer.orgRole);
     const survivingHosts = (
