@@ -128,10 +128,11 @@ The implementation now separates three contracts:
 
 1. Browser preparation activates explicitly selected inactive pages, waits for
    fonts and eager image loading, and retains inherited solid backgrounds.
-2. Wrapped or painted text containers become measured, styled native line
-   fragments plus independent paint. A multi-line inline bounding rectangle is
-   a union, not the origin/width of one text frame. Transformed containers are
-   excluded until affine composition can be implemented correctly.
+2. Wrapped or mixed inline text becomes measured, styled native line fragments
+   plus independent paint. An owner's background, border or shadow alone must
+   not fragment its text. A multi-line inline bounding rectangle is a union,
+   not the origin/width of one text frame. Transformed containers are excluded
+   from fragmentation and retain the native adapter's affine geometry.
 3. PPTX boxes do not autofit. Table row heights and cell fills come from browser
    measurements; replacing a cell fill must preserve nested border paint.
    Per-frame script font slots come from the source stack, not an OS-wide guess.
@@ -223,6 +224,36 @@ Run the ordinary authorized source-built CLI and compare every page with the
 browser reference. The new fixture is not a screenshot-only deck, and its
 native text must not be duplicated invisibly to make verification pass.
 Native PowerPoint/Keynote remain separate acceptance targets.
+
+## Text container capacity
+
+`text-container-contract.html` adds 40 cases across four pages:
+
+- T01 compares the same 560px text box with no paint, a background, each border
+  side, a transparent border, a shadow, rounded corners and a gradient. With
+  24px horizontal padding, the background-only case must retain 512px of usable
+  text space; the measured glyph width is not the container width.
+- T02 checks left, center and right alignment, explicit and natural line breaks,
+  mixed styles, a fixed-width inline box, CJK and ellipsis. Materialized lines
+  retain available content space while preserving their measured anchor.
+- T03 checks inline side borders, neighboring badges, scripts, underline,
+  preformatted text, RTL, first-line indentation and empty painted neighbors.
+  Each fragment must stay within its own inline box and avoid adjacent content.
+- T04 checks word spacing, margins between inline runs, mixed direction,
+  logical alignment, scale, rotation, asymmetric padding and `content-box`.
+  Text insets include CSS padding and border widths, scaled with the text.
+
+Run the authorized conversion and screenshot commands above with this fixture
+and `--selector .slide`. Compare source and exported text frame widths, usable
+width after insets, line count, font size, glyph anchors and independent paint.
+Rounded backgrounds remain rounded; their editable text frames are rectangular.
+The `data-case` and `data-fragmented` attributes identify each browser case and
+whether preparation should materialize its text.
+
+Adjacent runs can leave no spare space, and direction changes or split words
+with contextual trailing-space advances retain their measured frames. This
+does not provide a general viewer-specific font-fitting policy. Browser
+geometry checks do not establish PowerPoint or Google Slides acceptance.
 
 ## Selected page background boundary
 

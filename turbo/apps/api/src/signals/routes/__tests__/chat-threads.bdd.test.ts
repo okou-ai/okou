@@ -60,6 +60,11 @@ import { createPublicComputerUseHosts } from "./helpers/public-computer-use-host
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import { createPublicFirewallFixture } from "./helpers/public-firewall-fixture";
 import { createRouteMocks } from "./helpers/route-test";
+import {
+  mockSlidesImportFonts,
+  slidesImportFixture,
+  uploadedSlidesText,
+} from "./helpers/slides-import-fixture";
 const TEST_APP_ROUTES = Object.freeze([...chatThreadRoutes]);
 
 /**
@@ -3087,6 +3092,181 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     },
     120_000,
   );
+
+  it.each(["google", "legacy", "original"] as const)(
+    "prepares editable presentation text only for Slides conversion (%s)",
+    async (mode) => {
+      const bytes = slidesImportFixture();
+      const fixture = await workspaceSource("deck.pptx", bytes, false, true);
+      mockSlidesImportFonts();
+      const native = {
+        id: "prepared-deck",
+        name: "deck",
+        mimeType:
+          mode === "original"
+            ? "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            : GOOGLE_WORKSPACE_MIME_TYPES.presentation,
+      };
+      const uploaded = mockGoogleDriveArtifactUpload(native);
+      if (mode !== "original") {
+        mockGoogleWorkspaceReadback(native);
+        mockGoogleSlidesReadback([{ pageElementCount: 12 }]);
+      }
+      const response =
+        mode === "legacy"
+          ? await chat.requestSyncThreadArtifact(
+              fixture.actor,
+              fixture.run.threadId,
+              { runId: fixture.run.runId, fileId: fixture.deckId },
+              [200],
+            )
+          : await fixture.upload(mode);
+      expect(response.status).toBe(200);
+      if (mode === "original") {
+        expect(Buffer.from(uploaded.bodies[0]!)).toStrictEqual(bytes);
+      } else {
+        const text = uploadedSlidesText(uploaded.bodies[0]!);
+        expect(text).toHaveLength(12);
+        expect(
+          text.find((item) => {
+            return item.id === "2";
+          }),
+        ).toMatchObject({ text: "05", sizes: [192] });
+        // The 259.2pt glyph advance needs spare capacity in the editor;
+        // preserving only that exact width is not a successful reservation.
+        const numberWidth = text.find((item) => {
+          return item.id === "2";
+        })!.width;
+        expect(numberWidth).toBeGreaterThanOrEqual(259.2 + 0.75);
+        expect(numberWidth).toBeLessThanOrEqual(259.2 + 2);
+        expect(
+          text.find((item) => {
+            return item.id === "3";
+          })?.width,
+        ).toBeCloseTo(300.52, 4);
+        expect(
+          text.find((item) => {
+            return item.id === "4";
+          }),
+        ).toMatchObject({
+          text: "White Green",
+          colors: ["FFFFFF", "00FF00"],
+          sizes: [20, 20],
+        });
+        expect(
+          text.filter((item) => {
+            return item.text.startsWith("Column");
+          }),
+        ).toHaveLength(2);
+        expect(
+          text.find((item) => {
+            return item.id === "8";
+          })?.width,
+        ).toBe(251);
+        expect(
+          text.find((item) => {
+            return item.id === "10";
+          })?.width,
+        ).toBe(235);
+        expect(
+          text.find((item) => {
+            return item.id === "11";
+          }),
+        ).toMatchObject({ text: "Unknown font", width: 100 });
+        expect(
+          text.find((item) => {
+            return item.id === "12";
+          }),
+        ).toMatchObject({ text: "05", width: 27, sizes: [20] });
+        expect(
+          text.find((item) => {
+            return item.id === "14";
+          }),
+        ).toMatchObject({ text: "05", width: 27, sizes: [20] });
+      }
+      await fixture.finish();
+    },
+    120_000,
+  );
+
+  it.each([false, true])(
+    "reserves positive font kerning for editable Slides text (split runs: %s)",
+    async (splitTopicNumber) => {
+      const bytes = slidesImportFixture({
+        topicNumber: "06",
+        splitTopicNumber,
+      });
+      const fixture = await workspaceSource("deck.pptx", bytes, false, true);
+      mockSlidesImportFonts();
+      const native = {
+        id: "kerned-deck",
+        name: "deck",
+        mimeType: GOOGLE_WORKSPACE_MIME_TYPES.presentation,
+      };
+      const uploaded = mockGoogleDriveArtifactUpload(native);
+      mockGoogleWorkspaceReadback(native);
+      mockGoogleSlidesReadback([{ pageElementCount: 12 }]);
+      const response = await fixture.upload("google");
+      expect(response.status).toBe(200);
+      const number = uploadedSlidesText(uploaded.bodies[0]!).find((item) => {
+        return item.id === "2";
+      });
+      expect(number).toMatchObject({
+        text: "06",
+        sizes: splitTopicNumber ? [192, 192] : [192],
+        colors: splitTopicNumber ? ["242121", "00FF00"] : ["242121"],
+      });
+      // The fixture's 0/6 pair adds 30 units to its 1300-unit advance.
+      // A color boundary must not hide that positive kerning adjustment.
+      expect(number!.width).toBeGreaterThanOrEqual(255.36 + 0.75);
+      expect(number!.width).toBeLessThanOrEqual(255.36 + 2);
+      await fixture.finish();
+    },
+    120_000,
+  );
+
+  it("preserves a slide with transformed obstacles instead of guessing text clearance", async () => {
+    const archive = new AdmZip(slidesImportFixture());
+    const slide = archive.readAsText("ppt/slides/slide1.xml");
+    archive.addFile(
+      "ppt/slides/slide1.xml",
+      Buffer.from(slide.replace("<a:xfrm>", '<a:xfrm rot="5400000">')),
+    );
+    const bytes = archive.toBuffer();
+    const fixture = await workspaceSource("deck.pptx", bytes, false, true);
+    const native = {
+      id: "transformed-deck",
+      name: "deck",
+      mimeType: GOOGLE_WORKSPACE_MIME_TYPES.presentation,
+    };
+    const uploaded = mockGoogleDriveArtifactUpload(native);
+    mockGoogleWorkspaceReadback(native);
+    mockGoogleSlidesReadback([{ pageElementCount: 13 }]);
+    const response = await fixture.upload("google");
+    expect(response.status).toBe(200);
+    expect(Buffer.from(uploaded.bodies[0]!)).toStrictEqual(bytes);
+    await fixture.finish();
+  }, 120_000);
+
+  it("reports a font provider outage before uploading a partly prepared deck", async () => {
+    const fixture = await workspaceSource(
+      "deck.pptx",
+      slidesImportFixture(),
+      false,
+      true,
+    );
+    mockSlidesImportFonts(503);
+    const uploaded = mockGoogleDriveArtifactUpload({
+      id: "unexpected",
+      name: "deck",
+    });
+    const response = await fixture.upload("google");
+    expect(response.status).toBe(400);
+    expectApiError(response.body);
+    expect(response.body.error.message).toContain("Could not load the fonts");
+    expect(uploaded.bodies).toHaveLength(0);
+    await fixture.finish();
+  }, 120_000);
 
   it("explicit Google conversion still rejects and removes an empty Slides deck", async () => {
     const fixture = await workspaceSource(
