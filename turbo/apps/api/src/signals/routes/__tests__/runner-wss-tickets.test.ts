@@ -37,17 +37,12 @@ describe("direct Runner WSS ticket boundary", () => {
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();
     const group = api.configureRunnerGroup();
-    await api.grantProEntitlement(actor);
+    const { defaultAgentId: agentId } = await api.grantProEntitlement(actor);
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    const agent = await bdd.createAgent(actor, {
-      displayName: "WSS ticket fixture",
-      description: "Tests a one-use ticket on an official Runner",
-      visibility: "private",
-    });
     const run = await api.createThreadRun(actor, {
-      agentId: agent.agentId,
+      agentId,
       prompt: "Connect directly",
     });
     await api.heartbeatRunner(group);
@@ -69,7 +64,7 @@ describe("direct Runner WSS ticket boundary", () => {
       actor,
       runId: run.runId,
       runnerId,
-      agentId: agent.agentId,
+      agentId,
       group,
     };
   }
@@ -181,17 +176,20 @@ describe("direct Runner WSS ticket boundary", () => {
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
   });
 
-  it("accepts an owner CLI token for issuance and requires official Runner auth for redemption", async () => {
-    const f = await setup();
+  it("requires authentication for ticket issuance without caching the rejection", async () => {
     const missingSession = await accept(
       client().bootstrap({
-        params: { runId: f.runId },
+        params: { runId: randomUUID() },
         headers: {},
         body: undefined,
       }),
       [401],
     );
     expect(missingSession.headers.get("Cache-Control")).toBe("no-store");
+  });
+
+  it("accepts an owner CLI token for issuance and requires official Runner auth for redemption", async () => {
+    const f = await setup();
     const pat = await f.api.createCliToken(f.actor);
     const issued = await accept(
       client().bootstrap({
