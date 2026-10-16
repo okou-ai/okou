@@ -224,21 +224,25 @@ read_run_status() {
 }
 
 await_phase() {
-  local records=$1 phase_label=$2 run_record run_id cancel_error current_status
+  local records=$1 phase_label=$2 run_record run_id cancel_error cancel_status current_status
   local run_ids=() pending_runs=()
   [ -n "$records" ] || return 0
 
   while IFS= read -r run_record; do
     run_id=${run_record%%$'\t'*}
     if $cancel_selected_runs; then
-      # Stop always()-guarded jobs as well as ordinary steps. A cancellation
-      # conflict is safe only when a fresh read proves this owner is terminal.
+      # Stop always()-guarded jobs as well as ordinary steps. A 409 may race
+      # with cancellation elsewhere; keep this owner in the completion barrier.
       if ! cancel_error=$(gh api --method POST \
-        "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/force-cancel" 2>&1); then
+        "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/force-cancel" --include 2>&1); then
         current_status=$(read_run_status "$run_id")
+        cancel_status=$(awk '/^HTTP\// { print $2; exit }' <<<"$cancel_error")
         if [ "$current_status" != "completed" ]; then
-          echo "failed to cancel active ${selected_run_label} ${run_id}: ${cancel_error}" >&2
-          return 1
+          if [ "$cancel_status" != "409" ]; then
+            echo "failed to cancel active ${selected_run_label} ${run_id}: ${cancel_error}" >&2
+            return 1
+          fi
+          echo "Cancellation conflict for ${selected_run_label} ${run_id}; awaiting completion (status: ${current_status})."
         fi
       fi
     fi
