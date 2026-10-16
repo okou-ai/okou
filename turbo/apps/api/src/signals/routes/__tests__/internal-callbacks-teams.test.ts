@@ -1437,8 +1437,12 @@ describe("Teams chat callbacks", () => {
       }
     });
 
-    it("starts a separate session for the new participant", async () => {
+    it("starts a fresh native context for the new participant", async () => {
       const { claim } = await claimParticipantRun();
+      expect(claim.nativeContinuation).toMatchObject({
+        sessionId: null,
+        generationRunId: null,
+      });
     });
 
     it("resumes the original session after another participant completes", async () => {
@@ -1504,7 +1508,7 @@ describe("Teams chat callbacks", () => {
       },
     ]);
 
-    const followUpClaim = await claimFollowUpInThread({
+    await claimFollowUpInThread({
       fixture: teams.fixture,
       runnerGroup: teams.runnerGroup,
       threadId,
@@ -1554,7 +1558,7 @@ describe("Teams chat callbacks", () => {
     await flushWaitUntilForTest();
     clearTeamsApiCalls(teamsApi);
 
-    const followUpClaim = await claimFollowUpInThread({
+    await claimFollowUpInThread({
       fixture: teams.fixture,
       runnerGroup: teams.runnerGroup,
       threadId,

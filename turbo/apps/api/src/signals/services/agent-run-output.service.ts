@@ -32,7 +32,7 @@ import { badRequestMessage, notFound } from "../../lib/error";
 
 import type { Tx } from "../../lib/db-types";
 import type { SandboxAuth } from "../../types/auth";
-import { type Db } from "../external/db";
+import type { Db } from "../external/db";
 
 import { projectRunStorage } from "./storage-legacy-projection.service";
 

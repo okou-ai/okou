@@ -127,9 +127,6 @@ pub async fn prepare_finalization_for_runtime(
     prepare_finalization_with_inputs(&runtime.http, &inputs).await
 }
 
-/// Prepare finalization with bounded session-history limits for integration tests.
-#[doc(hidden)]
-
 /// Prepare best-effort recovery finalization using the explicit runtime snapshot.
 pub async fn prepare_recovery_finalization_for_runtime(
     runtime: &GuestRuntime,
@@ -138,9 +135,6 @@ pub async fn prepare_recovery_finalization_for_runtime(
     let inputs = FinalizationInputs::from_runtime(runtime, session_metadata);
     prepare_recovery_finalization_with_inputs(&runtime.http, &inputs).await
 }
-
-/// Prepare recovery finalization with bounded session-history limits for integration tests.
-#[doc(hidden)]
 
 async fn prepare_finalization_with_inputs(
     http: &HttpClient,

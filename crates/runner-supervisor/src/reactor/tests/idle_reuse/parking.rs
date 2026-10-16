@@ -515,7 +515,7 @@ async fn discovered_cli_session_does_not_substitute_for_reuse_key() {
 
     let run_handle = tokio::spawn(run(config));
 
-    // Push job WITHOUT resume_session — first run, no session context.
+    // Push job without a native session identity — first run, no session context.
     // read_guest_cli_agent_session_id() will be called and return "sess-evict"
     // via the exec matcher.
     let run_id = RunId::new_v4();

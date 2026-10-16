@@ -39,7 +39,7 @@ pub(in super::super) async fn shutdown(
     env.shutdown_startup_api().await;
 }
 
-/// ExecutionContext with a resume_session for idle pool testing.
+/// ExecutionContext with a native session identity for idle pool testing.
 pub(in super::super) fn context_with_session(
     run_id: RunId,
     session_id: &str,

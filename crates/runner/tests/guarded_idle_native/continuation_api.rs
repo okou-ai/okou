@@ -1,4 +1,4 @@
-//! Invocation-owned synthetic history/storage/finalization peer for real Guests.
+//! Invocation-owned storage and native completion peer for real Guests.
 
 use std::{
     collections::HashMap,

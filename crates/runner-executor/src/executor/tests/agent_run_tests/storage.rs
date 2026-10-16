@@ -99,13 +99,6 @@ async fn run_in_sandbox_runs_guest_storage_apply_for_cached_instruction_normaliz
     assert_successful_action_once(&ops, "runner_storage_manifest_cache_populate");
     assert_successful_action_once(&ops, "runner_storage_manifest_guest_storage_apply");
     assert_successful_action_once(&ops, "runner_storage_manifest_apply");
-    let samples = telemetry.pending_ops_with_outcome_snapshot();
-    let readiness: Vec<_> = samples
-        .iter()
-        .filter(|op| op.0 == "session_history_readiness_at_guest_storage_start")
-        .collect();
-    assert_eq!(readiness.len(), 1);
-    assert_eq!(readiness[0].2.as_deref(), Some("no_history"));
     assert!(
         ops.iter()
             .all(|(action, _, _)| action != "storage_download"),
@@ -526,7 +519,6 @@ async fn run_in_sandbox_records_storage_manifest_no_work_timing_without_guest_st
     assert_successful_action_once(&ops, "runner_storage_manifest_apply");
     assert_no_action(&ops, "runner_storage_manifest_cache_populate");
     assert_no_action(&ops, "runner_storage_manifest_guest_storage_apply");
-    assert_no_action(&ops, "session_history_readiness_at_guest_storage_start");
 }
 
 #[tokio::test]
@@ -661,5 +653,4 @@ async fn run_in_sandbox_rejects_non_empty_artifact_without_archive_url() {
     );
     assert_no_action(&ops, "runner_storage_manifest_has_work");
     assert_no_action(&ops, "runner_storage_manifest_guest_storage_apply");
-    assert_no_action(&ops, "session_history_readiness_at_guest_storage_start");
 }

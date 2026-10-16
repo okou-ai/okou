@@ -4209,7 +4209,6 @@ dependencies = [
  "base64 0.23.1",
  "bytes",
  "chrono",
- "crc32fast",
  "flate2",
  "futures-util",
  "guest-contracts",
@@ -4246,7 +4245,6 @@ dependencies = [
  "tracing-test-support",
  "url",
  "uuid",
- "zstd",
 ]
 
 [[package]]

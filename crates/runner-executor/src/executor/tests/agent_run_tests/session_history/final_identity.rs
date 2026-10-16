@@ -286,7 +286,7 @@ async fn unusable_home_proof_starts_fresh_with_the_required_chat_recovery_instru
     .unwrap();
     let proof = HomeCacheHistoryProof {
         format_version: 1,
-        generation: "different-generation".into(),
+        generation: runner_types::ids::RunId::new_v4().to_string(),
         identity,
     };
     let binding = HomeCacheHistoryProofBinding {

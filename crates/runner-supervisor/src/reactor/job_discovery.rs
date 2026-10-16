@@ -49,8 +49,8 @@
 //!    [`finalizing_claim.rs`](https://github.com/okou-ai/okou/blob/main/crates/runner-supervisor/src/reactor/finalizing_claim.rs#L1-L72).
 //! 6. **Transfer to the executor.** The supervisor's `ClaimedActivationGuard` owns the claimed
 //!    setup while active status and the spawn request are prepared. It publishes the active status
-//!    using the matching idle snapshot; Runner builds the session-history restore plan and takes
-//!    the setup only after status publication and request preparation. Dropping the guard before
+//!    using the matching idle snapshot and takes the setup only after status publication and
+//!    request preparation. Dropping the guard before
 //!    transfer schedules recovery instead of losing the provider claim or sandbox ownership.
 //! 7. **Complete and reconcile.** After handoff, `job_spawn` owns executor completion, provider
 //!    reporting, and the post-executor park-or-destroy decision. If cleanup proves destruction or

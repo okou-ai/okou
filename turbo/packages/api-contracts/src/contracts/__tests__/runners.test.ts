@@ -1026,11 +1026,7 @@ describe("runner storage manifest contract", () => {
   });
 });
 
-describe("runner resume session contract", () => {
-  const historyHash =
-    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-  const historyGenerationRunId = "11111111-1111-4111-8111-111111111111";
-
+describe("runner reuse preference contract", () => {
   it("requires a canonical runner preference", () => {
     const jobInput = {
       runId: "22222222-2222-4222-8222-222222222222",

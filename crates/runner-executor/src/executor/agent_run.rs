@@ -1333,11 +1333,11 @@ pub(super) async fn run_in_sandbox(
 /// Runs the inner guest-agent lifecycle with configurable cancellation timeouts.
 ///
 /// Guest runtime state may already be prepared, while storage delivery or
-/// session-history materialization may already be in flight. This function:
+/// model-catalog prefetch may already be in flight. This function:
 ///
 /// - completes cancellation-aware guest runtime and storage preparation while
 ///   taking ownership of model-catalog prefetch supervision;
-/// - consumes the session-history restore plan, finalizes and writes private
+/// - verifies retained-home evidence, finalizes and writes private
 ///   guest inputs, and spawns guest-agent;
 /// - starts locally owned active-input and stdout-drain work, releases deferred
 ///   cache fill, and supervises normal exit or cancellation;

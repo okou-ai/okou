@@ -231,7 +231,7 @@ async fn reuse_enabled_empty_pool_creates_fresh_sandbox() {
 
     let run_handle = tokio::spawn(run(config));
 
-    // Empty pool + resume_session set + feature on → PoolMiss branch.
+    // Empty pool + native session identity set + feature on → PoolMiss branch.
     let run_id = RunId::new_v4();
     push_job(
         &env,

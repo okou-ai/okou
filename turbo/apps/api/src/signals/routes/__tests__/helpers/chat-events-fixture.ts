@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
-import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
 import {
   chatEventsContract,
   chatThreadsContract,
@@ -17,7 +16,6 @@ import {
 } from "@okouai/api-contracts/contracts/model-providers";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
-import { createPiSessionJsonl } from "@okouai/pi-agent-runtime/api";
 
 import { http, HttpResponse } from "msw";
 import { expect } from "vitest";
@@ -54,7 +52,6 @@ import { createRunsApi } from "./api-bdd-runs";
 import { mockPiHistoryUploads } from "./api-bdd-pi-history-uploads";
 import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 import { chatEventDisplayText } from "./chat-event";
-import { nowDate } from "../../../../lib/time";
 import { createRouteMocks } from "./route-test";
 const TEST_APP_ROUTES = Object.freeze([
   ...chatEventsRoutes,

@@ -1609,7 +1609,7 @@ mod tests {
     }
 
     #[test]
-    fn sandbox_op_omits_optional_fields_without_session_history() {
+    fn sandbox_op_serializes_base_observations() {
         let op = SandboxOp {
             ts: "2026-01-15T10:00:00+00:00".to_string(),
             action_type: "sandbox_create".to_string(),
