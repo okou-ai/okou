@@ -73,6 +73,19 @@ fn firewall_base_url_validation_matches_shared_contract() {
     );
 }
 
+#[test]
+fn firewall_cache_validation_accepts_encoded_partial_alabels() {
+    for base in [
+        "https://%78%6E--${{ vars.SUFFIX }}.example.com/v1/{resource}",
+        "https://xn--b%5F${{ vars.SUFFIX }}.example.com/v1/{resource}",
+        "https://例子\u{3002}%78%6E--${{ vars.SUFFIX }}.example.com/v1/{resource}",
+    ] {
+        firewall(base.to_string())
+            .validate_for_cache()
+            .unwrap_or_else(|error| panic!("valid encoded partial A-label {base:?}: {error}"));
+    }
+}
+
 fn firewall(base: String) -> Firewall {
     Firewall {
         name: "contract-test".to_string(),

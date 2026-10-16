@@ -154,6 +154,86 @@
   ],
   "catalogBaseUrlValidationCases": [
     {
+      "category": "authority",
+      "name": "partial alabel preserves rejection of an invalid fixed alabel",
+      "base": "https://xn--${{ vars.SUFFIX }}.xn--a.example.com/v1/{resource}",
+      "vars": {
+        "SUFFIX": "bcher-kva"
+      },
+      "expectedValid": false,
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "authority",
+      "name": "partial alabel rejects an encoded literal dot",
+      "base": "https://xn--%2e${{ vars.SUFFIX }}.example.com/v1/{resource}",
+      "vars": {
+        "SUFFIX": "bcher-kva"
+      },
+      "expectedValid": false,
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "authority",
+      "name": "partial alabel rejects an encoded literal slash",
+      "base": "https://xn--%2f${{ vars.SUFFIX }}.example.com/v1/{resource}",
+      "vars": {
+        "SUFFIX": "bcher-kva"
+      },
+      "expectedValid": false,
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "authority",
+      "name": "partial alabel rejects a malformed literal escape",
+      "base": "https://xn--%zz${{ vars.SUFFIX }}.example.com/v1/{resource}",
+      "vars": {
+        "SUFFIX": "bcher-kva"
+      },
+      "expectedValid": false,
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "authority",
+      "name": "partial alabel rejects invalid literal utf8",
+      "base": "https://xn--%ff${{ vars.SUFFIX }}.example.com/v1/{resource}",
+      "vars": {
+        "SUFFIX": "bcher-kva"
+      },
+      "expectedValid": false,
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "authority",
+      "name": "partial alabel rejects an encoded literal percent",
+      "base": "https://xn--b%2561${{ vars.SUFFIX }}.example.com/v1/{resource}",
+      "vars": {
+        "SUFFIX": "bcher-kva"
+      },
+      "expectedValid": false,
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "authority",
+      "name": "partial alabel rejects encoded literal parameter syntax",
+      "base": "https://xn--%7Btenant%7D${{ vars.SUFFIX }}.example.com/v1/{resource}",
+      "vars": {
+        "SUFFIX": "bcher-kva"
+      },
+      "expectedValid": false,
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "authority",
+      "name": "partial alabel rejects an overlong literal fragment",
+      "base": "https://xn--aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa${{ vars.SUFFIX }}.example.com/v1/{resource}",
+      "vars": {
+        "SUFFIX": "bcher-kva"
+      },
+      "expectedValid": false,
+      "expectedResolvedBase": null
+    },
+    {
       "category": "valid",
       "name": "whole host template with parameterized path",
       "base": "https://${{ vars.WORKSPACE_HOST }}/v1/{resource}",
