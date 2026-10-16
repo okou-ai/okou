@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.1](https://github.com/okou-ai/okou/compare/runner-remote-v0.24.0...runner-remote-v0.24.1) (2026-10-16)
+
+
+### Refactoring
+
+* **runner-remote:** encode acknowledged sftp staging ownership ([#40749](https://github.com/okou-ai/okou/issues/40749)) ([dde8df1](https://github.com/okou-ai/okou/commit/dde8df1da3508f9fee62b98e8ee64fb5316acd1e))
+
 ## [0.24.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.23.1...runner-remote-v0.24.0) (2026-10-16)
 
 
