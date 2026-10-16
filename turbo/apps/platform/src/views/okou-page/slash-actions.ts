@@ -1,7 +1,12 @@
 // The chat actions the slash menu offers when the slash-actions switch is on.
 // Each one consumes the slash token, closes the menu, and then hands over to
 // the control that already owns the action elsewhere in the product.
-import { useGet, useSet } from "ccstate-react";
+import {
+  useGet,
+  useLastLoadable,
+  useLastResolved,
+  useSet,
+} from "ccstate-react";
 import {
   Archive,
   Box,
@@ -28,6 +33,7 @@ import { setChatThreadArchivedWithFeedback$ } from "../../signals/chat-page/chat
 import { openRenameChatThreadDialogForThreadId$ } from "../../signals/chat-page/chat-thread-rename.ts";
 import { startComposerThreadSharing$ } from "../../signals/okou-page/slash-actions.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { availableRunModels$ } from "../../signals/external/run-models.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
@@ -47,6 +53,23 @@ export function useSlashActionsEnabled(): boolean {
   return useGet(featureSwitch$)[FeatureSwitchKey.SlashActions] === true;
 }
 
+/**
+ * Whether the composer shows its model picker: the same rule its toolbar
+ * slot follows, so Model and Effort never point at a control that is absent.
+ */
+function useModelPickerShown(composer: ComposerSignals): boolean {
+  const models = useLastResolved(availableRunModels$);
+  const selection = useLastLoadable(composer.model.modelSelection$);
+  return (
+    models !== undefined &&
+    models.models.some((runModel) => {
+      return runModel.model !== null;
+    }) &&
+    selection.state === "hasData" &&
+    selection.data !== null
+  );
+}
+
 /** The actions that change how this chat runs. */
 function useComposerActions(
   composer: ComposerSignals,
@@ -56,7 +79,7 @@ function useComposerActions(
   const openModelPicker = useSet(composer.model.setModelPickerOpen$);
   const openConnectors = useSet(composer.connector.openAddConnectorsDialog$);
   const insertText = useSet(composer.editor.insertText$);
-  return [
+  const modelActions: SlashAction[] = [
     {
       id: "model",
       Icon: Box,
@@ -86,6 +109,9 @@ function useComposerActions(
         openModelPicker(true);
       },
     },
+  ];
+  return [
+    ...(useModelPickerShown(composer) ? modelActions : []),
     {
       id: "connect",
       Icon: Plug,

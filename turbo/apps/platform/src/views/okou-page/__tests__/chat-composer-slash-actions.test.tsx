@@ -28,7 +28,12 @@ const WORKFLOWS = ["axiom-red", "axiom-status", "axiom-traces"] as const;
 async function openSlashActions({
   path = `/agents/${AGENT_ID}/chat`,
   enabled = true,
-}: { readonly path?: string; readonly enabled?: boolean } = {}) {
+  noModelChoice = false,
+}: {
+  readonly path?: string;
+  readonly enabled?: boolean;
+  readonly noModelChoice?: boolean;
+} = {}) {
   mockAgent();
   mockPersonalModelRoutes();
   mockBillingCapabilities({ restrictedBuiltInModels: false });
@@ -48,6 +53,9 @@ async function openSlashActions({
     );
   });
   mockChatLifecycle(context, { threadId: THREAD_ID });
+  if (noModelChoice) {
+    context.mocks.data.availableRunModels([]);
+  }
   await setupPage({
     context,
     path,
@@ -223,6 +231,19 @@ test("With the switch off the overview keeps its workflow rows", async () => {
   expect(
     firstLevelNames().find((name) => {
       return name.startsWith("Model");
+    }),
+  ).toBeUndefined();
+});
+
+test("Model and Effort stay out when the composer offers no model choice", async () => {
+  await openSlashActions({ noModelChoice: true });
+  await waitFor(() => {
+    expect(menuButton("Schedule")).toBeInTheDocument();
+  });
+  // The toolbar shows no model picker then, so there is nothing to open.
+  expect(
+    firstLevelNames().find((name) => {
+      return name.startsWith("Model") || name.startsWith("Effort");
     }),
   ).toBeUndefined();
 });
