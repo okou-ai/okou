@@ -6,11 +6,13 @@
 
 use std::sync::Arc;
 
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tracing::{Instrument, error, info, warn};
 
 use super::{HOME_CACHE_GC_PERIOD, RunnerError, RunnerResult};
 use crate::home_image_cache::HomeImageCache;
+use crate::lifecycle::RunnerMode;
 use crate::status::StatusTracker;
 
 pub(super) struct MaintenanceTasks {
@@ -34,11 +36,18 @@ impl MaintenanceTasks {
         }
     }
 
-    pub(super) fn request_home_cache_gc(&mut self, cache: Option<&HomeImageCache>) {
+    pub(super) fn request_home_cache_gc(
+        &mut self,
+        cache: Option<&HomeImageCache>,
+        mode: &watch::Receiver<RunnerMode>,
+    ) {
         if self.home_cache_gc.is_none()
+            && *mode.borrow() == RunnerMode::Running
             && let Some(cache) = cache
         {
-            self.home_cache_gc = Some(home_cache_gc_task(cache.clone()));
+            self.home_cache_gc = Some(home_cache_gc_task(
+                cache.clone().with_background_gc_lifecycle(mode.clone()),
+            ));
         }
     }
 
@@ -48,11 +57,16 @@ impl MaintenanceTasks {
         }
     }
 
-    pub(super) fn request_home_cache_pressure(&mut self, cache: Option<&HomeImageCache>) {
+    pub(super) fn request_home_cache_pressure(
+        &mut self,
+        cache: Option<&HomeImageCache>,
+        mode: &watch::Receiver<RunnerMode>,
+    ) {
         if self.home_cache_pressure.is_none()
+            && *mode.borrow() == RunnerMode::Running
             && let Some(cache) = cache
         {
-            let cache = cache.clone();
+            let cache = cache.clone().with_background_gc_lifecycle(mode.clone());
             self.home_cache_pressure = Some(tokio::spawn(
                 async move {
                     if let Err(error) = cache.probe_home_cache_pressure().await {

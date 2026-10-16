@@ -1,14 +1,16 @@
 //! Single accepted pressure worker with bounded observers and joined physical IO.
 
 use std::os::unix::fs::MetadataExt;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tokio::sync::watch;
 use tokio_util::task::TaskTracker;
 
-use super::gc_pressure::{GcContinuation, HomeCacheReclaimOutcome, HomeCacheReclaimStatus};
+use super::background::BackgroundGcActivity;
+use super::gc_pressure::{
+    GcContinuation, GcTarget, HomeCacheReclaimOutcome, HomeCacheReclaimStatus,
+};
 use super::{FsStats, HomeCachePressureThresholds, HomeImageCache};
 use crate::error::{LifecycleError, LifecycleResult};
 
@@ -17,8 +19,50 @@ const DEMAND_OBSERVATION: Duration = Duration::from_millis(250);
 type ReclaimResult = Result<HomeCacheReclaimOutcome, String>;
 
 struct PressureWork {
-    required: AtomicU64,
+    demand: Mutex<PressureDemand>,
     completion: watch::Receiver<Option<ReclaimResult>>,
+}
+
+#[derive(Default)]
+struct PressureDemand {
+    foreground: Option<u64>,
+    background: Option<(u64, BackgroundGcActivity)>,
+}
+
+impl PressureDemand {
+    fn merge(&mut self, required: u64, background: Option<BackgroundGcActivity>) {
+        if let Some(activity) = background {
+            if !activity.is_active() {
+                return;
+            }
+            let required = self
+                .background
+                .as_ref()
+                .filter(|(_, previous)| previous.is_active())
+                .map_or(required, |(previous, _)| required.max(*previous));
+            self.background = Some((required, activity));
+        } else {
+            self.foreground = Some(self.foreground.map_or(required, |old| old.max(required)));
+        }
+    }
+
+    fn required(&self) -> Option<u64> {
+        self.foreground.max(
+            self.background
+                .as_ref()
+                .filter(|(_, activity)| activity.is_active())
+                .map(|(required, _)| *required),
+        )
+    }
+}
+
+impl PressureWork {
+    fn required(&self) -> Option<u64> {
+        self.demand
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .required()
+    }
 }
 
 pub(super) struct PressureReclamation {
@@ -102,7 +146,9 @@ impl HomeImageCache {
                     self.fs_stats().await?.available_bytes,
                 ));
             }
-            let mut completion = self.accept_pressure(required);
+            let mut completion = self.accept_pressure(required, None);
+            #[cfg(test)]
+            self.inner.pressure_demand_accepted.notify_one();
             Self::observe_pressure(&mut completion).await
         })
         .await
@@ -120,6 +166,9 @@ impl HomeImageCache {
 
     /// A cheap background probe. It never marks invalid/temp maintenance done.
     pub async fn probe_home_cache_pressure(&self) -> LifecycleResult<()> {
+        if !self.background_gc.is_active() {
+            return Ok(());
+        }
         let stats = self.fs_stats().await?;
         let policy = self.pressure_thresholds(stats);
         if !policy.reserve_feasible {
@@ -131,14 +180,19 @@ impl HomeImageCache {
             );
             return Ok(());
         }
-        if stats.available_bytes < policy.low_free_bytes {
-            let mut completion = self.accept_pressure(policy.high_free_bytes);
+        if stats.available_bytes < policy.low_free_bytes && self.background_gc.is_active() {
+            let mut completion =
+                self.accept_pressure(policy.high_free_bytes, Some(self.background_gc.clone()));
             Self::observe_pressure(&mut completion).await?;
         }
         Ok(())
     }
 
-    fn accept_pressure(&self, required: u64) -> watch::Receiver<Option<ReclaimResult>> {
+    fn accept_pressure(
+        &self,
+        required: u64,
+        background: Option<BackgroundGcActivity>,
+    ) -> watch::Receiver<Option<ReclaimResult>> {
         let owner = &self.inner.pressure_reclamation;
         let mut accepted = owner
             .accepted
@@ -148,12 +202,17 @@ impl HomeImageCache {
             && work.completion.borrow().is_none()
             && work.completion.has_changed().is_ok()
         {
-            work.required.fetch_max(required, Ordering::Relaxed);
+            work.demand
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .merge(required, background);
             return work.completion.clone();
         }
         let (sender, completion) = watch::channel(None);
+        let mut demand = PressureDemand::default();
+        demand.merge(required, background);
         let work = Arc::new(PressureWork {
-            required: AtomicU64::new(required),
+            demand: Mutex::new(demand),
             completion: completion.clone(),
         });
         *accepted = Some(work.clone());
@@ -161,13 +220,20 @@ impl HomeImageCache {
         owner.io.spawn(async move {
             loop {
                 let result = cache.run_pressure_reclamation(&work).await;
+                #[cfg(test)]
+                if let Some(gate) = &cache.pressure_completion_test_gate {
+                    gate.enter_and_wait().await;
+                }
                 // Admission and completion share this short lock. A request
                 // cannot merge a higher target into work already being retired.
                 let accepted = cache.inner.pressure_reclamation.accepted.lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
                 if result.as_ref().is_ok_and(|outcome| {
-                    outcome.status == HomeCacheReclaimStatus::TargetSatisfied
-                        && outcome.available_after.is_some_and(|available| available < work.required.load(Ordering::Relaxed))
+                    work.required().is_some_and(|required| {
+                        outcome.status == HomeCacheReclaimStatus::BackgroundStopped
+                            || (outcome.status == HomeCacheReclaimStatus::TargetSatisfied
+                                && outcome.available_after.is_some_and(|available| available < required))
+                    })
                 }) {
                     drop(accepted);
                     continue;
@@ -208,6 +274,15 @@ impl HomeImageCache {
         let mut attempts = 0;
         let mut initial_available = None;
         loop {
+            let Some(required) = work.required() else {
+                return Ok(HomeCacheReclaimOutcome {
+                    status: HomeCacheReclaimStatus::BackgroundStopped,
+                    available_before: initial_available,
+                    available_after: None,
+                    removed_allocated_bytes: removed,
+                    victim_attempts: attempts,
+                });
+            };
             // Never wait for capacity while retaining the routine owner. Inline
             // publication owns capacity and must not await this worker.
             let routine = match runner_host::lock::try_acquire_or_busy(self.routine_gc_lock_path())
@@ -241,7 +316,6 @@ impl HomeImageCache {
                 Some(cursor) => cursor,
                 empty @ None => {
                     let stats = self.fs_stats().await?;
-                    let required = work.required.load(Ordering::Relaxed);
                     if stats.available_bytes >= required || required > stats.total_bytes {
                         return Ok(HomeCacheReclaimOutcome::observed(
                             if required > stats.total_bytes {
@@ -255,7 +329,13 @@ impl HomeImageCache {
                     // Discovery owns no mutation authority. Keep only the routine
                     // owner while reading, then try capacity again before eviction.
                     drop(capacity);
-                    let candidates = self.gc_candidates().await?;
+                    let Some(candidates) = self.gc_candidates(|| work.required().is_some()).await?
+                    else {
+                        // Expiry can race a new foreground request. A partial
+                        // inventory cannot establish complete LRU/no-progress;
+                        // release the owner and restart discovery if still needed.
+                        continue;
+                    };
                     capacity =
                         match runner_host::lock::try_acquire_or_busy(self.capacity_lock_path())
                             .await?
@@ -278,7 +358,10 @@ impl HomeImageCache {
             let mut outcome = self
                 .reclaim_gc_turn(
                     current_continuation,
-                    Some(work.required.load(Ordering::Relaxed)),
+                    || {
+                        work.required()
+                            .map_or(GcTarget::Inactive, GcTarget::FreeBytes)
+                    },
                     false,
                     "filesystem_pressure",
                 )
@@ -299,9 +382,9 @@ impl HomeImageCache {
                 continue;
             }
             if outcome.status == HomeCacheReclaimStatus::TargetSatisfied
-                && outcome
-                    .available_after
-                    .is_some_and(|available| available < work.required.load(Ordering::Relaxed))
+                && outcome.available_after.is_some_and(|available| {
+                    work.required().is_some_and(|required| available < required)
+                })
             {
                 continue;
             }

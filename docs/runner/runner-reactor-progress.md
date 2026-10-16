@@ -224,6 +224,21 @@ inode and last-use authority, and retains its LRU continuation between turns.
 Only actual available space establishes recovery: an unlinked image can remain
 allocated while another descriptor is open.
 
+Background maintenance and pressure requests bind to the current Running
+lifecycle generation. Drain stops new admission and expires queued work and
+continuations, even when a rapid drain/resume leaves the latest mode Running.
+Resume admits fresh requests. A selected entry cleanup or victim operation keeps
+its physical I/O and locks until completion; later units stop cooperatively.
+Interrupted maintenance does not advance its completion marker, and teardown
+still joins accepted work.
+
+Shared pressure work retains foreground demand separately from background
+watermarks. An interrupted pressure inventory is discarded; later accepted
+demand restarts complete discovery. Expiring a background request removes only that target; accepted
+foreground demand keeps its own required free-space target and physical owner.
+Explicit manual and publication collection retain their caller authority. These
+are per-Runner lifecycle boundaries; other host collectors remain independent.
+
 Stopped publishers share one fair process-local publication permit, separate
 from Guest reclamation admission. They retain entry ownership while queued for
 up to 30 seconds before staging. Admission timeout leaves the original context

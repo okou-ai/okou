@@ -1,4 +1,5 @@
 pub(super) mod allocation_scan;
+mod background;
 mod fs;
 mod gc;
 mod inspection;

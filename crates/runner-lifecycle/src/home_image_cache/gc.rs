@@ -21,7 +21,7 @@ use super::fs::{
     remove_home_cache_path_if_exists,
 };
 use super::gc_metadata::read_gc_metadata_file;
-use super::gc_pressure::{GcContinuation, HomeCacheReclaimStatus};
+use super::gc_pressure::{GcContinuation, GcTarget, HomeCacheReclaimStatus};
 use super::io_context::with_path;
 
 pub(super) struct GcCandidate {
@@ -124,6 +124,9 @@ impl HomeImageCache {
     }
 
     pub async fn try_routine_gc(&self, minimum_interval: Duration) -> LifecycleResult<Option<u64>> {
+        if !self.background_gc.is_active() {
+            return Ok(None);
+        }
         let mut routine_lock =
             match runner_host::lock::try_acquire_or_busy(self.routine_gc_lock_path()).await? {
                 runner_host::lock::TryLock::Acquired(lock) => lock,
@@ -154,7 +157,12 @@ impl HomeImageCache {
         // disk space. The routine lock, not capacity, owns this potentially slow
         // inventory so finalizers can publish while unrelated entries scan.
         let inventory_started = Instant::now();
-        let inventory = self.gc_inventory(false).await?;
+        let inventory = self
+            .gc_inventory(false, || self.background_gc.is_active())
+            .await?;
+        if !self.background_gc.is_active() {
+            return Ok(None);
+        }
         let inventory_duration = inventory_started.elapsed();
         let entry_count = inventory.candidates.len();
         let mut freed_bytes = inventory.pre_cleanup_freed_bytes;
@@ -201,8 +209,22 @@ impl HomeImageCache {
                 // Inventory remains a hint. Every mutation revalidates current
                 // generation/inode/last-use after try-only entry acquisition.
                 let outcome = self
-                    .reclaim_gc_turn(&mut continuation, required, false, reason)
+                    .reclaim_gc_turn(
+                        &mut continuation,
+                        || {
+                            if self.background_gc.is_active() {
+                                required.map_or(GcTarget::CountOnly, GcTarget::FreeBytes)
+                            } else {
+                                GcTarget::Inactive
+                            }
+                        },
+                        false,
+                        reason,
+                    )
                     .await?;
+                if outcome.status == HomeCacheReclaimStatus::BackgroundStopped {
+                    return Ok(None);
+                }
                 freed_bytes = freed_bytes.saturating_add(outcome.removed_allocated_bytes);
                 info!(reason, status = ?outcome.status,
                     available_before = outcome.available_before, available_after = outcome.available_after,
@@ -218,6 +240,9 @@ impl HomeImageCache {
                     gate.enter_and_wait().await;
                 }
                 tokio::task::yield_now().await;
+                if !self.background_gc.is_active() {
+                    return Ok(None);
+                }
                 routine_lock =
                     match runner_host::lock::try_acquire_or_busy(self.routine_gc_lock_path())
                         .await?
@@ -238,6 +263,9 @@ impl HomeImageCache {
                     return Ok(None);
                 }
             }
+        }
+        if !self.background_gc.is_active() {
+            return Ok(None);
         }
         capacity_lock.write_all(b"\0")?;
         capacity_duration += capacity_started.elapsed();
@@ -274,7 +302,7 @@ impl HomeImageCache {
         dry_run: bool,
         additional_peak_bytes: u64,
     ) -> LifecycleResult<u64> {
-        let inventory = self.gc_inventory(dry_run).await?;
+        let inventory = self.gc_inventory(dry_run, || true).await?;
         let stats = self.fs_stats().await?;
         let pressure = self.pressure_thresholds(stats);
         let prospective = if dry_run {
@@ -306,7 +334,12 @@ impl HomeImageCache {
         let mut removed = inventory.pre_cleanup_freed_bytes;
         loop {
             let outcome = self
-                .reclaim_gc_turn(&mut continuation, required, dry_run, reason)
+                .reclaim_gc_turn(
+                    &mut continuation,
+                    || required.map_or(GcTarget::CountOnly, GcTarget::FreeBytes),
+                    dry_run,
+                    reason,
+                )
                 .await?;
             removed = removed.saturating_add(outcome.removed_allocated_bytes);
             if required.is_some() || outcome.victim_attempts > 0 {
@@ -338,7 +371,14 @@ impl HomeImageCache {
         }
     }
 
-    async fn gc_inventory(&self, dry_run: bool) -> LifecycleResult<GcInventory> {
+    async fn gc_inventory(
+        &self,
+        dry_run: bool,
+        active: impl Fn() -> bool,
+    ) -> LifecycleResult<GcInventory> {
+        if !active() {
+            return Ok(GcInventory::default());
+        }
         let Some(mut entries) = self.gc_cache_entry_reader().await? else {
             return Ok(GcInventory::default());
         };
@@ -348,8 +388,14 @@ impl HomeImageCache {
         while let Some(entry) =
             Self::next_gc_cache_entry(&mut entries, self.home_image_cache_dir()).await?
         {
+            if !active() {
+                break;
+            }
             let entry_inventory = match self.try_lock_gc_cache_entry(&entry).await? {
                 Some(lock) => {
+                    if !active() {
+                        break;
+                    }
                     let result = self.gc_locked_cache_entry(&entry, dry_run).await;
                     drop(lock);
                     result?
@@ -694,9 +740,15 @@ impl HomeImageCache {
         Ok(freed)
     }
 
-    pub(super) async fn gc_candidates(&self) -> LifecycleResult<Vec<GcCandidate>> {
+    pub(super) async fn gc_candidates(
+        &self,
+        active: impl Fn() -> bool,
+    ) -> LifecycleResult<Option<Vec<GcCandidate>>> {
+        if !active() {
+            return Ok(None);
+        }
         let Some(mut entries) = self.gc_cache_entry_reader().await? else {
-            return Ok(Vec::new());
+            return Ok(Some(Vec::new()));
         };
         let mut candidates = Vec::new();
         #[cfg(test)]
@@ -704,6 +756,13 @@ impl HomeImageCache {
         while let Some(entry) =
             Self::next_gc_cache_entry(&mut entries, self.home_image_cache_dir()).await?
         {
+            if !active() {
+                #[cfg(test)]
+                if let Some(gate) = &self.pressure_inventory_stopped_test_gate {
+                    gate.enter_and_wait().await;
+                }
+                return Ok(None);
+            }
             if let Some(candidate) = self.gc_candidate_for_entry(&entry).await {
                 candidates.push(candidate);
             }
@@ -713,7 +772,7 @@ impl HomeImageCache {
                 self.pause_gc_inventory_for_test(entries_seen).await;
             }
         }
-        Ok(candidates)
+        Ok(Some(candidates))
     }
 
     async fn gc_candidate_from_observation(
