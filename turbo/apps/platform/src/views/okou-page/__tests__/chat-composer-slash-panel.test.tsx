@@ -29,7 +29,7 @@ import {
 } from "./chat-composer-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
-import { START_PAGE_CENTRED_MEDIA_QUERY } from "../start-page-breakpoint.ts";
+import { CREATE_WORKFLOW_WITH_CHAT_PROMPT } from "../../../signals/chat-page/workflow-prompt-action.ts";
 
 const WORKFLOW_NAME = "axiom-red";
 const SECOND_WORKFLOW_NAME = "axiom-status";
@@ -171,8 +171,9 @@ test("Arrowing to a type opens its preview too", async () => {
   const user = userEvent.setup();
   await openSlashMenu();
 
-  // The overview starts unselected; keyboard selection opens the preview.
-  await user.keyboard("{ArrowDown>2/}");
+  // The overview starts unselected; keyboard selection opens the preview. The
+  // menu opens above the composer, so the types read upward from it.
+  await user.keyboard("{ArrowUp>2/}");
 
   await waitFor(() => {
     expect(detailPane()).toHaveAttribute("data-category", "illustration");
@@ -187,7 +188,8 @@ test("Enter keeps the keyboard selection while another workflow is hovered", asy
     return slashButton(`/${WORKFLOW_NAME}`);
   });
 
-  await user.keyboard("{ArrowDown}");
+  // The best match sits nearest the composer, so the next one is above it.
+  await user.keyboard("{ArrowUp}");
   await user.pointer({
     target: workflow,
     coords: { clientX: 10, clientY: 10 },
@@ -313,7 +315,7 @@ test("The panel emphasizes the typed query inside a workflow name", async () => 
   );
 });
 
-test("The workflow section is hidden when no workflows match", async () => {
+test("Workflow rows are dropped when no workflows match", async () => {
   await openSlashMenu("axi");
   await waitFor(() => {
     return slashButton(`/${WORKFLOW_NAME}`);
@@ -323,26 +325,25 @@ test("The workflow section is hidden when no workflows match", async () => {
 
   const menu = screen.getByTestId("slash-workflow-menu");
   await waitFor(() => {
-    expect(within(menu).queryByText("Workflows")).not.toBeInTheDocument();
+    expect(querySlashButton(`/${WORKFLOW_NAME}`)).toBeNull();
   });
   expect(
     within(menu).queryByText("No matching workflows"),
   ).not.toBeInTheDocument();
-  expect(querySlashButton(`/${WORKFLOW_NAME}`)).toBeNull();
   expect(slashButton("Browse all templates")).toBeInTheDocument();
 
   await fill(await findComposerEditor(), "Draft /axi");
-  const matchingMenu = await screen.findByTestId("slash-workflow-menu");
-  await expect(
-    within(matchingMenu).findByText("Workflows"),
-  ).resolves.toBeInTheDocument();
-  expect(slashButton(`/${WORKFLOW_NAME}`)).toBeInTheDocument();
+  await waitFor(() => {
+    expect(slashButton(`/${WORKFLOW_NAME}`)).toBeInTheDocument();
+  });
+  // The rows name themselves; the panel draws no section labels.
+  expect(within(menu).queryByText("Workflows")).toBeNull();
 });
 
 test("Choosing a cover in the pane attaches that template without opening the picker", async () => {
   const user = userEvent.setup();
   await openSlashMenu();
-  await user.keyboard("{ArrowDown}");
+  await user.keyboard("{ArrowUp}");
   const [first] = PRESENTATION_TEMPLATE_PICKER_ITEMS;
   if (!first) {
     throw new Error("Expected a presentation template");
@@ -380,7 +381,8 @@ function slashMenuButtonNames(): (string | undefined)[] {
 test.each(COMPOSER_PATHS)(
   "Mobile slash suggestions at %s show Make before Workflows and navigate in visual order",
   async (path) => {
-    // Below `sm` the start page docks its composer to the floor like a thread.
+    // Mobile keyboards leave little room above the composer, so Make stays
+    // first even though the menu opens above it.
     context.mocks.browser.matchMedia(false);
     const user = userEvent.setup();
     await openSlashMenu("", path);
@@ -434,56 +436,31 @@ test.each(COMPOSER_PATHS)(
   },
 );
 
-test.each([
-  {
-    path: `/agents/${AGENT_ID}/chat`,
-    side: "bottom",
-    names: [
-      "Presentation",
-      "Illustration",
-      "Website",
-      `/${WORKFLOW_NAME}`,
-      `/${SECOND_WORKFLOW_NAME}`,
-      `/${THIRD_WORKFLOW_NAME}`,
-      "Browse all templates",
-    ],
-    awayFromComposer: "{ArrowDown}",
-  },
-  {
-    path: `/chats/${THREAD_ID}`,
-    side: "top",
-    names: [
-      `/${WORKFLOW_NAME}`,
-      `/${SECOND_WORKFLOW_NAME}`,
-      `/${THIRD_WORKFLOW_NAME}`,
-      "Website",
-      "Illustration",
-      "Presentation",
-      "Browse all templates",
-    ],
-    awayFromComposer: "{ArrowUp}",
-  },
-])(
-  "Desktop slash suggestions at $path open on the $side side and retain their visual order",
-  async ({ path, side, names, awayFromComposer }) => {
-    context.mocks.browser.matchMedia((query) => {
-      return (
-        query === START_PAGE_CENTRED_MEDIA_QUERY ||
-        query === SIDEBAR_DESKTOP_MEDIA_QUERY
-      );
-    });
+test.each(COMPOSER_PATHS)(
+  "Desktop slash suggestions at %s open above the composer with the most relevant rows nearest it",
+  async (path) => {
+    context.mocks.browser.matchMedia(true);
     const user = userEvent.setup();
     await openSlashMenu("", path);
     await waitFor(() => {
-      expect(slashMenuButtonNames()).toStrictEqual(names);
+      expect(slashMenuButtonNames()).toStrictEqual([
+        `/${WORKFLOW_NAME}`,
+        `/${SECOND_WORKFLOW_NAME}`,
+        `/${THIRD_WORKFLOW_NAME}`,
+        "Website",
+        "Illustration",
+        "Presentation",
+        "Browse all templates",
+      ]);
     });
+    // The start page centres its composer, and the menu still opens above it.
     expect(screen.getByTestId("slash-workflow-menu")).toHaveAttribute(
       "data-side",
-      side,
+      "top",
     );
-    await user.keyboard(awayFromComposer);
+    await user.keyboard("{ArrowUp}");
     expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
-    await user.keyboard(awayFromComposer);
+    await user.keyboard("{ArrowUp}");
     expect(slashButton("Illustration")).toHaveAttribute("data-active", "true");
   },
 );
@@ -527,9 +504,18 @@ async function openManyWorkflows(): Promise<HTMLElement> {
   const editor = await findComposerEditor();
   await fill(editor, "Draft /");
   await waitFor(() => {
-    expect(slashButton("Show all 12")).toBeInTheDocument();
+    expect(slashButton("Show 8 more")).toBeInTheDocument();
   });
   return editor;
+}
+
+function manageWorkflowsLink(): HTMLElement | undefined {
+  return queryAllByRoleFast(
+    "link",
+    screen.getByTestId("slash-workflow-menu"),
+  ).find((candidate) => {
+    return candidate.textContent?.trim() === "Manage workflows";
+  });
 }
 
 test.each([true, false])(
@@ -541,12 +527,24 @@ test.each([true, false])(
     expect(querySlashButton("/daily-9")).toBeNull();
     expect(slashButton("Website")).toBeInTheDocument();
     expect(slashButton("Browse all templates")).toBeInTheDocument();
+    expect(querySlashButton("New workflow")).toBeNull();
+    // The control sits directly beneath the last visible workflow.
+    const collapsed = slashMenuButtonNames();
+    const showMoreAt = collapsed.indexOf("Show 8 more");
+    expect(collapsed[showMoreAt - 1]).toBe("/daily-12");
 
-    await user.click(slashButton("Show all 12"));
+    await user.click(slashButton("Show 8 more"));
 
     expect(editor).toHaveFocus();
     expect(editor).toHaveTextContent("Draft /");
-    expect(querySlashButton("Show all 12")).toBeNull();
+    expect(querySlashButton("Show 8 more")).toBeNull();
+    // The rest take the control's place, followed by the list's own actions.
+    const expanded = slashMenuButtonNames();
+    expect(expanded[showMoreAt]).toBe("/daily-2");
+    expect(expanded.indexOf("New workflow")).toBe(
+      expanded.indexOf("/daily-9") + 1,
+    );
+    expect(manageWorkflowsLink()).toBeInTheDocument();
     await user.click(slashButton("/daily-12"));
     expect(editor).toHaveTextContent("Draft /daily-12");
     expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
@@ -562,10 +560,10 @@ test("Keyboard navigation reveals the hidden workflows instead of stopping on th
   expect(querySlashButton("/daily-2")).toBeNull();
 
   // Passing the last visible workflow reveals the rest and lands on the first
-  // one revealed; the overview has no row of its own to stop on.
+  // one revealed, in Show more's place; the keyboard never stops on it.
   await user.keyboard("{ArrowDown}");
   expect(slashButton("/daily-2")).toHaveAttribute("data-active", "true");
-  expect(querySlashButton("Show all 12")).toBeNull();
+  expect(querySlashButton("Show 8 more")).toBeNull();
   expect(editor).toHaveFocus();
   expect(editor).toHaveTextContent(/^Draft \/$/);
   await user.keyboard("{ArrowDown}");
@@ -574,27 +572,66 @@ test("Keyboard navigation reveals the hidden workflows instead of stopping on th
   expect(editor).toHaveTextContent("Draft /daily-3");
   expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
 
-  // Coming up from the categories lands on the last workflow, the row just
+  // Coming up from the categories lands on Manage workflows, the row just
   // above them once the rest are revealed.
   await fill(editor, "Draft /");
-  expect(slashButton("Show all 12")).toBeInTheDocument();
+  expect(slashButton("Show 8 more")).toBeInTheDocument();
   await user.keyboard("{ArrowUp>3/}");
   expect(slashButton("Website")).toHaveAttribute("data-active", "true");
   expect(querySlashButton("/daily-9")).toBeNull();
   await user.keyboard("{ArrowUp}");
+  expect(manageWorkflowsLink()).toHaveAttribute("data-active", "true");
+  await user.keyboard("{ArrowUp}");
+  expect(slashButton("New workflow")).toHaveAttribute("data-active", "true");
+  await user.keyboard("{ArrowUp}");
   expect(slashButton("/daily-9")).toHaveAttribute("data-active", "true");
-  expect(querySlashButton("Show all 12")).toBeNull();
+  expect(querySlashButton("Show 8 more")).toBeNull();
 
   await fill(editor, "Draft /");
   await user.keyboard("{Escape}");
   expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
   await fill(editor, "Draft /");
-  expect(slashButton("Show all 12")).toBeInTheDocument();
+  expect(slashButton("Show 8 more")).toBeInTheDocument();
   expect(querySlashButton("/daily-9")).toBeNull();
 
   await fill(editor, "Draft /daily");
-  expect(querySlashButton("Show all 12")).toBeNull();
+  expect(querySlashButton("Show 8 more")).toBeNull();
+  expect(querySlashButton("New workflow")).toBeNull();
   expect(slashButton("/daily-12")).toBeInTheDocument();
+});
+
+test("New workflow writes the create-workflow request where the slash was", async () => {
+  const user = userEvent.setup();
+  const editor = await openManyWorkflows();
+  await user.click(slashButton("Show 8 more"));
+
+  await user.click(slashButton("New workflow"));
+
+  await waitFor(() => {
+    expect(editor).toHaveTextContent(
+      `Draft ${CREATE_WORKFLOW_WITH_CHAT_PROMPT}`,
+    );
+  });
+  expect(editor).not.toHaveTextContent("/");
+  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+});
+
+test("Manage workflows opens the Workflows page", async () => {
+  const user = userEvent.setup();
+  await openManyWorkflows();
+  await user.click(slashButton("Show 8 more"));
+  const manage = manageWorkflowsLink();
+  if (!manage) {
+    throw new Error("Expected the Manage workflows link");
+  }
+  expect(manage).toHaveAttribute("href", "/workflows");
+
+  await user.click(manage);
+
+  await waitFor(() => {
+    expect(window.location.pathname).toBe("/workflows");
+  });
+  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
 });
 
 test.each(COMPOSER_PATHS)(

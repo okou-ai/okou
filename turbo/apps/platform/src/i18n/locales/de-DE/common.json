@@ -1773,7 +1773,6 @@
       "selectModel": "Modell auswählen",
       "slashPanel": {
         "browseAll": "Alle Vorlagen durchsuchen",
-        "make": "Erstellen",
         "useTemplate": "Vorlage {{title}} verwenden"
       },
       "temporarilySwitchTo": "Vorübergehend wechseln zu",
@@ -1781,8 +1780,9 @@
       "useForFutureChats": "Dieses Modell für zukünftige Chats verwenden",
       "workflows": {
         "loading": "Workflows werden geladen...",
-        "showAllCount": "Alle {{total}} anzeigen",
-        "title": "Workflows"
+        "manage": "Workflows verwalten",
+        "newWorkflow": "Neuer Workflow",
+        "showMore": "{{total}} weitere anzeigen"
       }
     },
     "computerUse": {

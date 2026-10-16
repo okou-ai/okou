@@ -1770,7 +1770,6 @@
       "selectModel": "Pilih model",
       "slashPanel": {
         "browseAll": "Jelajahi semua templat",
-        "make": "Buat",
         "useTemplate": "Gunakan templat {{title}}"
       },
       "temporarilySwitchTo": "Beralih sementara ke",
@@ -1778,8 +1777,9 @@
       "useForFutureChats": "Gunakan ini untuk chat berikutnya",
       "workflows": {
         "loading": "Memuat alur kerja...",
-        "showAllCount": "Tampilkan semua {{total}}",
-        "title": "Alur kerja"
+        "manage": "Kelola alur kerja",
+        "newWorkflow": "Alur kerja baru",
+        "showMore": "Tampilkan {{total}} lagi"
       }
     },
     "computerUse": {

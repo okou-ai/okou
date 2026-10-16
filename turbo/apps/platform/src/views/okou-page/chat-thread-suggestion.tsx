@@ -54,7 +54,6 @@ function ComposerMentionSuggestionItem({
 export function ComposerMentionSuggestionMenu({
   menuRef,
   anchor,
-  side,
   reversed,
   agents,
   chatThreads,
@@ -64,7 +63,6 @@ export function ComposerMentionSuggestionMenu({
 }: {
   readonly menuRef: Ref<HTMLDivElement>;
   readonly anchor?: ComponentProps<typeof PopoverContent>["anchor"];
-  readonly side: "top" | "bottom";
   /** The menu opens above the composer, so its most relevant row is last. */
   readonly reversed: boolean;
   readonly agents: readonly ComposerAgentSuggestion[];
@@ -135,7 +133,9 @@ export function ComposerMentionSuggestionMenu({
     <PopoverContent
       ref={menuRef}
       anchor={anchor}
-      side={side}
+      // Composer-anchored menus always open above the composer, on the home
+      // page as in a chat, and never flip below it.
+      side="top"
       align="start"
       sideOffset={8}
       collisionAvoidance={{ side: "none" }}

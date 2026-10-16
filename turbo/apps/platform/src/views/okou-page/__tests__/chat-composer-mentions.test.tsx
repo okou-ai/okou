@@ -22,7 +22,6 @@ import {
   installContinuityWorkspace,
 } from "./chat-continuity-test-helpers.ts";
 import { AGENT_ID, context } from "./chat-composer-test-helpers.ts";
-import { START_PAGE_CENTRED_MEDIA_QUERY } from "../start-page-breakpoint.ts";
 
 const REVIEWER_ID = "e1000000-0000-4000-a000-000000000201";
 const ZETA_ID = "e1000000-0000-4000-a000-000000000202";
@@ -257,7 +256,6 @@ async function openAgentMentionWorkspace(newChat = false) {
 test.each([false, true])(
   "Composer-anchored mentions reverse groups and select the bottom candidate by default (new chat: %s)",
   async (newChat) => {
-    // Below `sm` the start page docks its composer to the floor like a thread.
     context.mocks.browser.matchMedia(false);
     await openAgentMentionWorkspace(newChat);
     const composer = await screen.findByRole("textbox", { name: "Message" });
@@ -294,28 +292,28 @@ test.each([false, true])(
   },
 );
 
-test("Composer-anchored mentions open below the centred start page composer in relevance order", async () => {
-  context.mocks.browser.matchMedia((query) => {
-    return query === START_PAGE_CENTRED_MEDIA_QUERY;
-  });
+test("Composer-anchored mentions open above the centred start page composer too", async () => {
+  // A wide window centres the start page's composer; the menu still opens
+  // above it, with the most relevant row nearest the composer.
+  context.mocks.browser.matchMedia(true);
   await openAgentMentionWorkspace(true);
   const composer = await screen.findByRole("textbox", { name: "Message" });
   const user = userEvent.setup({ delay: null });
   await user.click(composer);
   await user.keyboard("@");
   const menu = await screen.findByTestId("chat-thread-suggestion-menu");
-  expect(menu).toHaveAttribute("data-side", "bottom");
+  expect(menu).toHaveAttribute("data-side", "top");
   expect(
     queryAllByRoleFast("button", menu)
-      .slice(0, 3)
+      .slice(-3)
       .map((button) => {
         return button.textContent?.trim();
       }),
-  ).toStrictEqual(["Reviewer", "Private Ops", "Zeta Agent"]);
-  expect(menuButton("Reviewer")).toHaveAttribute("data-active", "true");
-  await user.keyboard("{ArrowUp}");
+  ).toStrictEqual(["Zeta Agent", "Private Ops", "Reviewer"]);
   expect(menuButton("Reviewer")).toHaveAttribute("data-active", "true");
   await user.keyboard("{ArrowDown}");
+  expect(menuButton("Reviewer")).toHaveAttribute("data-active", "true");
+  await user.keyboard("{ArrowUp}");
   expect(menuButton("Private Ops")).toHaveAttribute("data-active", "true");
 });
 
@@ -346,7 +344,6 @@ test("Composer-anchored mentions navigate upward across groups and insert the vi
 test.each([false, true])(
   "Composer-anchored mentions reset after filtering and preserve IME confirmation and Escape (new chat: %s)",
   async (newChat) => {
-    // Below `sm` the start page docks its composer to the floor like a thread.
     context.mocks.browser.matchMedia(false);
     await openAgentMentionWorkspace(newChat);
     const composer = await screen.findByRole("textbox", { name: "Message" });

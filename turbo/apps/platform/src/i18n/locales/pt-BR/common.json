@@ -1802,7 +1802,6 @@
       "selectModel": "Selecionar modelo",
       "slashPanel": {
         "browseAll": "Ver todos os modelos",
-        "make": "Criar",
         "useTemplate": "Usar o modelo {{title}}"
       },
       "temporarilySwitchTo": "Mudar temporariamente para",
@@ -1810,8 +1809,9 @@
       "useForFutureChats": "Usar este modelo em chats futuros",
       "workflows": {
         "loading": "Carregando fluxos de trabalho...",
-        "showAllCount": "Mostrar todos os {{total}}",
-        "title": "Fluxos de trabalho"
+        "manage": "Gerenciar fluxos de trabalho",
+        "newWorkflow": "Novo fluxo de trabalho",
+        "showMore": "Mostrar mais {{total}}"
       }
     },
     "computerUse": {
