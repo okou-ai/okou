@@ -268,7 +268,6 @@ impl HomeImageCache {
             && (progress.copy_target.is_some() || source.identity().dev != device);
         let deadline = Instant::now() + HOME_IMAGE_PUBLICATION_ADMISSION_TIMEOUT;
         let metadata_peak = runner_host::state_file::HOME_METADATA_MAX_BYTES.saturating_add(8192);
-        let mut reclaimed = false;
         let mut io_slots = 1;
         loop {
             let admission = match self.publication_admission(deadline, io_slots).await {
@@ -358,9 +357,9 @@ impl HomeImageCache {
             }
             if !has_copy_headroom(stats, pressure, additional) {
                 drop(admission);
-                if !reclaimed && pressure.reserve_feasible {
-                    reclaimed = true;
-                    self.gc_for_publication(additional, deadline).await?;
+                if pressure.reserve_feasible
+                    && self.gc_for_publication(additional, deadline).await?
+                {
                     continue;
                 }
                 self.observe_publication(
@@ -451,7 +450,6 @@ impl HomeImageCache {
                                 drop(admission);
                                 source.validate_path(input.active_image)?;
                                 copy_required = true;
-                                reclaimed = false;
                                 continue;
                             }
                             Err(error) => {

@@ -124,23 +124,6 @@ impl HomeImageCache {
         })?
     }
 
-    pub(super) async fn gc_for_publication(
-        &self,
-        additional_peak_bytes: u64,
-        deadline: tokio::time::Instant,
-    ) -> LifecycleResult<()> {
-        let work = self.accept_collection(false, additional_peak_bytes);
-        // Expiring publication observation cannot abandon already accepted GC.
-        if let Ok(result) = tokio::time::timeout_at(deadline, work).await {
-            result.map_err(|error| {
-                crate::error::LifecycleError::Internal(format!(
-                    "publication collection task failed: {error}"
-                ))
-            })??;
-        }
-        Ok(())
-    }
-
     fn accept_collection(
         &self,
         dry_run: bool,

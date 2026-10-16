@@ -1,5 +1,64 @@
 use super::*;
 
+#[tokio::test]
+async fn pressured_publishers_join_one_accepted_reclaim_before_retrying() {
+    let (mut f, _destination) = fixture().await;
+    f.commit("reclaim-victim", b"old", "2026-10-16T10:00:00Z")
+        .await;
+    let entered = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(tokio::sync::Semaphore::new(0));
+    f.cache = f
+        .cache
+        .clone()
+        .with_gc_inventory_test_gate(1, entered.clone(), release.clone());
+    f.cache.set_fs_stats_for_test(FsStats {
+        total_bytes: 100 * GIB,
+        available_bytes: 1,
+        ..FsStats::default()
+    });
+    let first = context(&f, "reclaim-first").await;
+    let first_bytes = tokio::fs::read(f.paths.active_home_image(&first.sandbox_id()))
+        .await
+        .unwrap();
+    let first = tokio::spawn(async move { first.promote().await });
+    tokio::time::timeout(Duration::from_secs(5), entered.notified())
+        .await
+        .unwrap();
+    f.cache.inner.pressure_demand_accepted.notified().await;
+    let second = context(&f, "reclaim-second").await;
+    let second_bytes = tokio::fs::read(f.paths.active_home_image(&second.sandbox_id()))
+        .await
+        .unwrap();
+    let second = tokio::spawn(async move { second.promote().await });
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        f.cache.inner.pressure_demand_accepted.notified(),
+    )
+    .await
+    .unwrap();
+    assert!(!first.is_finished() && !second.is_finished());
+    f.cache.set_fs_stats_for_test(FsStats {
+        total_bytes: 100 * GIB,
+        available_bytes: 50 * GIB + 3 * SIZE,
+        ..FsStats::default()
+    });
+    release.add_permits(1);
+    for task in [first, second] {
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(5), task)
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap(),
+            HomeImagePromotionOutcome::Promoted
+        );
+    }
+    published_bytes(&f, "reclaim-first", &first_bytes).await;
+    published_bytes(&f, "reclaim-second", &second_bytes).await;
+    f.cache.drain_checkout_handoffs().await;
+    f.cache.drain_pressure_reclamation().await;
+}
+
 async fn fixture() -> (Fixture, tempfile::TempDir) {
     let mut f = Fixture::new().await;
     let destination = tempfile::tempdir_in("/dev/shm").unwrap();

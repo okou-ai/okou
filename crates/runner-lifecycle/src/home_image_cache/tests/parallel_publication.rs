@@ -93,7 +93,10 @@ async fn observer_loss_keeps_physical_locks_and_shutdown_joins_publication() {
         runner_host::lock::TryLock::Busy
     ));
     f.cache.gc(false).await.unwrap();
-    let mut shutdown = Box::pin(f.cache.drain_checkout_handoffs());
+    let mut shutdown = Box::pin(async {
+        f.cache.drain_checkout_handoffs().await;
+        f.cache.drain_pressure_reclamation().await;
+    });
     poll_fn(|cx| {
         assert!(shutdown.as_mut().poll(cx).is_pending());
         std::task::Poll::Ready(())
@@ -526,7 +529,10 @@ async fn publication_deadline_stops_gc_observation_without_abandoning_the_collec
         HomeImagePromotionOutcome::Promoted
     );
     drop(independent);
-    let mut shutdown = Box::pin(f.cache.drain_checkout_handoffs());
+    let mut shutdown = Box::pin(async {
+        f.cache.drain_checkout_handoffs().await;
+        f.cache.drain_pressure_reclamation().await;
+    });
     poll_fn(|cx| {
         assert!(shutdown.as_mut().poll(cx).is_pending());
         std::task::Poll::Ready(())

@@ -164,6 +164,30 @@ impl HomeImageCache {
         }
     }
 
+    pub(super) async fn gc_for_publication(
+        &self,
+        additional_peak_bytes: u64,
+        deadline: tokio::time::Instant,
+    ) -> LifecycleResult<bool> {
+        let stats = self.fs_stats().await?;
+        let required = self
+            .pressure_thresholds(stats)
+            .reserve_bytes
+            .saturating_add(additional_peak_bytes);
+        let mut completion = self.accept_pressure(required, None);
+        #[cfg(test)]
+        self.inner.pressure_demand_accepted.notify_one();
+        // Share accepted demand instead of losing a try-only collector race.
+        // Another publisher may consume its result before our IO reentry.
+        match tokio::time::timeout_at(deadline, Self::observe_pressure(&mut completion)).await {
+            Ok(result) => {
+                result.map(|outcome| outcome.status == HomeCacheReclaimStatus::TargetSatisfied)
+            }
+            // Record expiry through ordinary admission; accepted IO stays owned.
+            Err(_) => Ok(true),
+        }
+    }
+
     /// A cheap background probe. It never marks invalid/temp maintenance done.
     pub async fn probe_home_cache_pressure(&self) -> LifecycleResult<()> {
         if !self.background_gc.is_active() {

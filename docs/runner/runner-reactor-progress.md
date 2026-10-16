@@ -247,7 +247,10 @@ semaphore; other Runner owners still share the canonical capacity barrier.
 Concurrent allocation by other publishers or processes can race those observations.
 Unexpected EXDEV and pressure reclamation release IO/barrier admission before
 retrying with Copy demand or waiting for GC; the original 30-second pre-IO budget
-covers those retries within an attempt. Legacy flock contention retains its
+covers coalesced foreground reclaim observation and admission reentry after a
+successful result. No-progress/contention refuses safely; accepted reclamation
+remains joined by the existing pressure owner even if an observer expires.
+Legacy flock contention retains its
 250 ms observed retry budget.
 These admission deadlines never abort accepted transfer or sync. Sync runs in
 owned blocking work, while the accepted parent retains the relevant guards.
