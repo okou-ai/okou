@@ -60,7 +60,7 @@ function expectedWakeup(
 }
 
 describe("default connector account runtime wakeups", () => {
-  it("notifies only the account owner and excludes their cancelled run from later switches", async () => {
+  it("notifies only the account owner's running run, excluding pending and cancelled states", async () => {
     mockEnv("ABLY_API_KEY", "test.key:secret");
     const owned = await publicChatActor(context, {
       tier: "team",
@@ -91,7 +91,6 @@ describe("default connector account runtime wakeups", () => {
         agentId: owned.agentId,
         prompt: "Observe my account default",
       });
-      await owned.claimRunnerRun(run.runId);
       const otherRun = await memberRuns.run(async () => {
         await runs.ensurePersonalSubscriptionModel(member);
         const agent = await bdd.createAgent(member);
@@ -126,8 +125,11 @@ describe("default connector account runtime wakeups", () => {
         [200],
       );
       expect(changed.body).toMatchObject({ id: second.id, isDefault: true });
-      expect(context.mocks.ably.batchPublish).toHaveBeenCalledExactlyOnceWith(
-        expectedWakeup(owned.runnerGroup, run.runId, target),
+      expect(context.mocks.ably.batchPublish).not.toHaveBeenCalled();
+      await expect(runs.readRun(owned.actor, run.runId)).resolves.toMatchObject(
+        {
+          status: "pending",
+        },
       );
       await expect(
         connectors.listBuiltinConnectorAccounts(owned.actor, "openai"),
@@ -138,9 +140,23 @@ describe("default connector account runtime wakeups", () => {
         ]),
       );
 
+      await owned.claimRunnerRun(run.runId);
+      await accept(requestDefault(owned.actor, target, first.id), [200]);
+      expect(context.mocks.ably.batchPublish).toHaveBeenCalledExactlyOnceWith(
+        expectedWakeup(owned.runnerGroup, run.runId, target),
+      );
+      await expect(
+        connectors.listBuiltinConnectorAccounts(owned.actor, "openai"),
+      ).resolves.toStrictEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: first.id, isDefault: true }),
+          expect.objectContaining({ id: second.id, isDefault: false }),
+        ]),
+      );
+
       await runs.requestCancelRun(owned.actor, run.runId, [200]);
       context.mocks.ably.batchPublish.mockClear();
-      await accept(requestDefault(owned.actor, target, first.id), [200]);
+      await accept(requestDefault(owned.actor, target, second.id), [200]);
       expect(context.mocks.ably.batchPublish).not.toHaveBeenCalled();
       await expect(runs.readRun(member, otherRun.runId)).resolves.toMatchObject(
         {
