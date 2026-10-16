@@ -49,6 +49,11 @@ final class DesktopModel: ObservableObject {
   @Published var busy = false
   @Published var developerToolsAvailable = false
   @Published var developerToolsEnabled = false
+  @Published var shellAvailable = false
+  @Published var shellEnabled = false
+  @Published var shellSessionCount = 0
+  private var shellScope: String?
+  private var shellPolicyRevision = 0
   @Published var keepAwake = false
   @Published var showDiagnostics = false
   @Published var browserPermissions: [String: JSONValue] = [:]
@@ -72,7 +77,8 @@ final class DesktopModel: ObservableObject {
   }
   var ready: Bool {
     sessionCoordinator?.state.canAuthenticateHost == true
-      && signedIn && organization != nil && permissionsReady && !compatibility.required
+      && signedIn && organization != nil && (permissionsReady || shellEnabled)
+      && !compatibility.required
   }
   var online: Bool { ["online", "connecting", "recovering", "stopping"].contains(runtime.status) }
   var statusLabel: String {
@@ -146,6 +152,17 @@ final class DesktopModel: ObservableObject {
         self.organizationID = state.identity?.organizationId
         self.organization = state.organizationName
         self.developerToolsAvailable = state.developerToolsAvailable
+        let scope = state.identity.flatMap { identity in
+          identity.organizationId.map { "shellAccess:\(identity.userId):\($0)" }
+        }
+        self.shellScope = scope
+        self.shellAvailable =
+          state.shellAvailable && state.developerToolsAvailable && state.canAuthenticateHost
+        self.shellEnabled = self.shellAvailable && scope.map(self.preferences.bool) == true
+        self.shellPolicyRevision += 1
+        let revision = self.shellPolicyRevision
+        let enabled = self.shellEnabled
+        Task { await self.executor.configureShell(enabled: enabled, policyRevision: revision) }
         if !state.developerToolsAvailable { self.developerToolsEnabled = false }
         self.error = state.error
         if state.updateRequired {
@@ -189,10 +206,14 @@ final class DesktopModel: ObservableObject {
       didChange?()
       if ready { Task { await startHostIfSupported() } }
       refreshTask = Task {
+        var ticks = 0
         while !Task.isCancelled {
           do {
             try await Task.sleep(for: .seconds(5))
             if !runtime.busy && !busy { try await refreshPermissions() }
+            shellSessionCount = await executor.shells.count()
+            ticks += 1
+            if ticks % 6 == 0 { await sessionCoordinator.synchronize() }
           } catch is CancellationError { return } catch { self.error = error.localizedDescription }
         }
       }
@@ -249,6 +270,8 @@ final class DesktopModel: ObservableObject {
     guard !preparing, wantsOnline, ready, !online else { return }
     await drainTask?.value
     drainTask = nil
+    guard !preparing, wantsOnline, ready, !online else { return }
+    await executor.configureShell(enabled: shellEnabled, policyRevision: shellPolicyRevision)
     guard !preparing, wantsOnline, ready, !online else { return }
     await host.start()
   }
@@ -352,7 +375,7 @@ final class DesktopModel: ObservableObject {
     permissions = value
     await host.updatePermissions(value)
     didChange?()
-    if online && !permissionsReady { await host.stop() }
+    if online && !permissionsReady && !shellEnabled { await host.stop() }
   }
   func requestPermission(screenRecording: Bool) {
     perform {
@@ -383,6 +406,25 @@ final class DesktopModel: ObservableObject {
       string: "x-apple.systempreferences:com.apple.preference.security?Privacy_\(pane)")
     {
       NSWorkspace.shared.open(url)
+    }
+  }
+  func setShellAccess(_ enabled: Bool) {
+    guard shellAvailable, let scope = shellScope else { return }
+    perform {
+      guard self.shellScope == scope, self.shellAvailable else { return }
+      try self.preferences.set(scope, .bool(enabled))
+      self.shellEnabled = enabled
+      self.shellPolicyRevision += 1
+      await self.executor.configureShell(enabled: enabled, policyRevision: self.shellPolicyRevision)
+      self.shellSessionCount = await self.executor.shells.count()
+      if !enabled && !self.permissionsReady { await self.host.stop() }
+    }
+  }
+  func stopShellSessions() {
+    perform {
+      // Rotate the permission as well: queued input must not reopen a session.
+      await self.executor.retireShellSessions()
+      self.shellSessionCount = 0
     }
   }
   func setKeepAwake(_ enabled: Bool) {

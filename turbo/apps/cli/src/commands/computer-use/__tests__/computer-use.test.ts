@@ -183,7 +183,8 @@ describe("computer-use command visibility", () => {
       const longOptions = subCommand.options.map((option) => {
         return option.long;
       });
-      expect(longOptions).toContain("--timeout");
+      if (subCommand.name() !== "shell")
+        expect(longOptions).toContain("--timeout");
       expect(longOptions).not.toContain("--host");
       expect(longOptions).not.toContain("--host-id");
     }

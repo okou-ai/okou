@@ -1,3 +1,7 @@
+import {
+  desktopShellContract,
+  type DesktopShellRequest,
+} from "@okouai/api-contracts/contracts/desktop-shell";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import type {
   ComputerUseAuthorizationRequestCreateResponse,
@@ -181,4 +185,16 @@ export async function fetchComputerUseScreenshot(
   const mimeType =
     response.headers.get("content-type") ?? "application/octet-stream";
   return { buffer: Buffer.from(arrayBuffer), mimeType };
+}
+
+export async function createDesktopShellCommand(
+  body: DesktopShellRequest,
+): Promise<ComputerUseCommandCreateResponse> {
+  const client = initClient(
+    desktopShellContract,
+    await getComputerUseClientConfig(),
+  );
+  const result = await client.create({ body });
+  if (result.status === 200) return result.body;
+  handleError(result, "Failed to submit Shell operation");
 }

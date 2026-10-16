@@ -4,6 +4,7 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  DesktopShell = "desktopShell",
   RemoteControlCliManagement = "remoteControlCliManagement",
   TailscaleAccess = "tailscaleAccess",
   Dummy = "_dummy",

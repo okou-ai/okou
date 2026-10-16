@@ -26,9 +26,17 @@ export const computerUseWriteCommandKindSchema = z.enum([
   "keyboard.press_key",
 ]);
 
+export const desktopShellKindSchema = z.enum([
+  "shell.cmd",
+  "shell.list",
+  "shell.status",
+  "shell.close",
+]);
+
 export const computerUseCommandKindSchema = z.enum([
   ...computerUseReadCommandKindSchema.options,
   ...computerUseWriteCommandKindSchema.options,
+  ...desktopShellKindSchema.options,
 ]);
 
 export const computerUseCommandStatusSchema = z.enum([
@@ -54,6 +62,8 @@ export const computerUseCommandErrorCodeSchema = z.enum([
   "command_timeout",
   "invalid_arguments",
   "result_too_large",
+  "shell_unavailable",
+  "shell_busy",
 ]);
 
 const hostNameSchema = z.string().trim().min(1).max(253);

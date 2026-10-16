@@ -1,3 +1,7 @@
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import type { DesktopShellRequest } from "@okouai/api-contracts/contracts/desktop-shell";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { desktopVersionIsSupported } from "../../lib/desktop-version";
 
 import { command, computed, type Computed } from "ccstate";
@@ -13,6 +17,7 @@ import {
   sql,
 } from "drizzle-orm";
 import {
+  desktopShellKindSchema,
   isExpiredScreenshotPointer,
   isStoredScreenshotPointer,
   type ClientScreenshotPointer,
@@ -73,6 +78,7 @@ const COMPUTER_USE_WRITE_COMMANDS = [
 const COMPUTER_USE_COMMANDS = [
   ...COMPUTER_USE_READ_COMMANDS,
   ...COMPUTER_USE_WRITE_COMMANDS,
+  ...desktopShellKindSchema.options,
 ] as const satisfies readonly ComputerUseCommandKind[];
 const DEFAULT_COMPUTER_USE_AUTOMATION_PERMISSIONS = {
   chrome: {
@@ -91,7 +97,9 @@ type ComputerUseHostRow = typeof computerUseHosts.$inferSelect;
 type ComputerUseHostOwner = Pick<ComputerUseHostRow, "orgId" | "userId">;
 type ComputerUseCommandRow = typeof computerUseCommands.$inferSelect;
 
-interface ComputerUseCommandPayload {
+interface ComputerUseCommandPayload extends Partial<
+  Omit<DesktopShellRequest, "kind" | "key">
+> {
   readonly app?: string;
   readonly snapshotId?: string;
   readonly elementId?: string;
@@ -289,11 +297,33 @@ function hostSupportsCommand(params: {
   readonly host: Pick<ComputerUseHostRow, "supportedCapabilities">;
   readonly kind: ComputerUseCommandKind;
 }): boolean {
+  if (params.kind.startsWith("shell.")) {
+    return (
+      params.host.supportedCapabilities.includes(params.kind) &&
+      shellPermissionId(params.host) !== undefined
+    );
+  }
   // Older hosts advertise no capabilities and support the native commands.
   return (
     params.host.supportedCapabilities.length === 0 ||
     params.host.supportedCapabilities.includes(params.kind)
   );
+}
+
+function candidateShellSupport(capabilities: readonly string[]): boolean {
+  return capabilities.some((kind) => {
+    return kind.startsWith("shell.");
+  });
+}
+
+function shellPermissionId(
+  host: Pick<ComputerUseHostRow, "supportedCapabilities">,
+): string | undefined {
+  return host.supportedCapabilities
+    .find((value) => {
+      return /^shell\.permission:[0-9a-f-]{36}$/.test(value);
+    })
+    ?.slice("shell.permission:".length);
 }
 
 function commandPayload(
@@ -341,6 +371,20 @@ function commandPayload(
   }
   if (params.action) {
     payload.action = params.action.trim();
+  }
+  for (const key of [
+    "sessionId",
+    "command",
+    "input",
+    "newSession",
+    "cwd",
+    "cursor",
+    "waitMs",
+    "all",
+  ] as const) {
+    if (params[key] !== undefined) {
+      payload[key] = params[key];
+    }
   }
   return payload;
 }
@@ -1019,10 +1063,7 @@ export const heartbeatComputerUseHost$ = command(
     }
 
     const claimableKinds = COMPUTER_USE_COMMANDS.filter((kind) => {
-      return (
-        supportedCapabilities.length === 0 ||
-        supportedCapabilities.includes(kind)
-      );
+      return hostSupportsCommand({ host: { supportedCapabilities }, kind });
     });
     const [pendingCommand] =
       claimableKinds.length === 0
@@ -1170,6 +1211,17 @@ export const createComputerUseCommand$ = command(
       return { status: "host_unsupported" };
     }
 
+    if (params.kind.startsWith("shell.")) {
+      const context = await set(
+        loadUserFeatureSwitchContext$,
+        params.orgId,
+        params.userId,
+        signal,
+      );
+      if (!isFeatureEnabled(FeatureSwitchKey.DesktopShell, context)) {
+        return { status: "host_unsupported" };
+      }
+    }
     const db = set(writeDb$);
     const now = nowDate();
     const hosts = await get(db$)
@@ -1201,6 +1253,16 @@ export const createComputerUseCommand$ = command(
       return target;
     }
 
+    if (params.kind.startsWith("shell.")) {
+      const host = onlineHosts.find((candidate) => {
+        return candidate.id === target.targetHostId;
+      });
+      const permission = host && shellPermissionId(host);
+      if (!permission) {
+        return { status: "host_unsupported" };
+      }
+      payload.shellPermissionId = permission;
+    }
     const [row] = await db
       .insert(computerUseCommands)
       .values({
@@ -1442,6 +1504,19 @@ export const claimNextComputerUseHostCommand$ = command(
 
     const effectiveCapabilities =
       capabilities.length > 0 ? capabilities : host.supportedCapabilities;
+    // Shell requires this request's explicit advertisement; the GUI-only
+    // compatibility path above must never grant Shell access to an old client.
+    const shellEnabled = candidateShellSupport(capabilities)
+      ? isFeatureEnabled(
+          FeatureSwitchKey.DesktopShell,
+          await set(
+            loadUserFeatureSwitchContext$,
+            host.orgId,
+            host.userId,
+            signal,
+          ),
+        )
+      : false;
     const candidateRows = await get(db$)
       .select()
       .from(computerUseCommands)
@@ -1463,10 +1538,13 @@ export const claimNextComputerUseHostCommand$ = command(
       supportedCapabilities: effectiveCapabilities,
     };
     const row = candidateRows.find((candidate) => {
-      return hostSupportsCommand({
-        host: hostWithEffectiveCapabilities,
-        kind: candidate.kind as ComputerUseCommandKind,
-      });
+      return (
+        (!candidate.kind.startsWith("shell.") || shellEnabled) &&
+        hostSupportsCommand({
+          host: hostWithEffectiveCapabilities,
+          kind: candidate.kind as ComputerUseCommandKind,
+        })
+      );
     });
     if (!row) {
       return { status: "idle" };
