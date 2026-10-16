@@ -4018,6 +4018,7 @@
   "onboarding": {
     "common": {
       "next": "下一步",
+      "skip": "跳過",
       "stepProgress": "第 {{current}} 步，共 {{total}} 步"
     },
     "documentTitles": {

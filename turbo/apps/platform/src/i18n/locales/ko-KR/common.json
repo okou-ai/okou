@@ -4018,6 +4018,7 @@
   "onboarding": {
     "common": {
       "next": "다음",
+      "skip": "건너뛰기",
       "stepProgress": "{{current}}단계 / {{total}}단계"
     },
     "documentTitles": {

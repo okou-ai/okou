@@ -4028,6 +4028,7 @@
   "onboarding": {
     "common": {
       "next": "Next",
+      "skip": "Skip",
       "stepProgress": "Step {{current}} of {{total}}"
     },
     "documentTitles": {

@@ -3,7 +3,7 @@ import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onbo
 import { orgContract } from "@okouai/api-contracts/contracts/org-routes";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import { accept } from "../../lib/accept.ts";
 import { reloadAgents$ } from "../agent.ts";
 import { discardApiBootstrapResponse } from "../api-client-base.ts";
@@ -13,8 +13,11 @@ import { reloadUserModelPreference$ } from "../external/user-model-preference.ts
 import { reloadOnboardingStatus$ } from "../okou-page/onboarding.ts";
 import { refreshOrg$ } from "../org.ts";
 import { ROUTES } from "../route-paths.ts";
-import { detachedNavigateTo$, searchParams$ } from "../route.ts";
-import { sourcesFirstDraft$ } from "./onboarding-sources-first-state.ts";
+import { detachedNavigateTo$, pathname$, searchParams$ } from "../route.ts";
+import {
+  clearSourcesFirstDraft$,
+  sourcesFirstDraft$,
+} from "./onboarding-sources-first-state.ts";
 import { onboardingDraft$ } from "./onboarding-state.ts";
 
 const ONBOARDING_TRANSIENT_PARAMS = [
@@ -94,6 +97,27 @@ export const completeOnboarding$ = command(
     set(reloadOnboardingStatus$);
     // The answers stay until the first chat replaces the step showing them. A
     // later onboarding visit or app start clears them for an onboarded user.
+  },
+);
+
+/** Preview QA can enter the app without answering the onboarding questions. */
+export const canSkipPreviewOnboarding$ = computed((get) => {
+  return (
+    get(pathname$) === ROUTES.onboarding &&
+    /^(?:(?:pr-[1-9]\d*|staging)-)?app-okou-app-preview\.vm0\.workers\.dev$/u.test(
+      window.location.hostname,
+    )
+  );
+});
+
+export const skipPreviewOnboarding$ = command(
+  async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    if (!get(canSkipPreviewOnboarding$)) {
+      return;
+    }
+    await set(completeOnboarding$, null, signal);
+    set(clearSourcesFirstDraft$);
+    set(detachedNavigateTo$, ROUTES.home, { replace: true });
   },
 );
 
