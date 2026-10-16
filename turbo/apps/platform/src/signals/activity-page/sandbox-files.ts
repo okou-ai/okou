@@ -1380,13 +1380,6 @@ function createConnectionCommands(
       ) {
         return;
       }
-      const owner = `${get(graph.ownerKey$)}:${runId}`;
-      if (get(graph.locationOwner$) !== owner) {
-        set(graph.locationOwner$, owner);
-        set(graph.location$, FILES_HOME_LOCATION);
-        set(graph.preferences$, new Map());
-        set(graph.navigationFailure$, null);
-      }
       const peer = createBrowserSandboxChannelPeer(runId, get(apiClient$), {
         categories: [sandboxFsCategory],
         onStateChange: (state, error) => {
@@ -1590,6 +1583,13 @@ function createDemandCommands(
         return;
       }
       set(graph.ownerKey$, sessionKey);
+      const locationOwner = `${sessionKey}:${runId}`;
+      if (get(graph.locationOwner$) !== locationOwner) {
+        set(graph.locationOwner$, locationOwner);
+        set(graph.location$, FILES_HOME_LOCATION);
+        set(graph.preferences$, new Map());
+        set(graph.navigationFailure$, null);
+      }
       set(graph.targetRunId$, runId);
       set(graph.status$, null);
       set(graph.phase$, "connecting");

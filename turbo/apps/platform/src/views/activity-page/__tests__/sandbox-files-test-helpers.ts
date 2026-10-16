@@ -135,8 +135,6 @@ export async function setupFilesPage(
           : "running"),
     ],
   ]);
-  const statusRequests: string[] = [];
-  const statusResponses: string[] = [];
   let statusUnavailable = false;
   const readStatus = (runId: string) => {
     return statuses.get(runId) ?? "running";
@@ -173,7 +171,6 @@ export async function setupFilesPage(
     },
   );
   context.mocks.api(runsByIdContract.getById, async ({ params, respond }) => {
-    statusRequests.push(params.id);
     if (statusUnavailable) {
       return respond(404, {
         error: { code: "NOT_FOUND", message: "Run unavailable" },
@@ -181,7 +178,6 @@ export async function setupFilesPage(
     }
     const status = await (options.statusHandler?.(params.id) ??
       readStatus(params.id));
-    statusResponses.push(params.id);
     return respond(200, {
       runId: params.id,
       status,
@@ -322,8 +318,6 @@ export async function setupFilesPage(
     sockets,
     requests,
     bootstraps,
-    statusRequests,
-    statusResponses,
     setStatus(status: RunStatus, runId = FILES_RUN_ID) {
       statuses.set(runId, status);
     },

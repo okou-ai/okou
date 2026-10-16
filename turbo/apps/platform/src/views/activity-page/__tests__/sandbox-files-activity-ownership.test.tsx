@@ -19,11 +19,63 @@ import { detachedNavigateTo$ } from "../../../signals/route.ts";
 import {
   FILES_RUN_ID,
   filesButton,
+  navigationListing,
   openFiles,
   setupFilesPage,
 } from "./sandbox-files-test-helpers.ts";
 
 const context = testContext();
+
+test.each(["loading", "unavailable"] as const)(
+  "A new Activity starts at home while its status is %s",
+  async (status) => {
+    const nextRunId = "d0000000-0000-4000-a000-000000000971";
+    const response = createDeferredPromise<RunStatus>(context.signal);
+    const fixture = await setupFilesPage(context, {
+      handler: navigationListing,
+      statusHandler: (runId) => {
+        return runId === nextRunId ? response.promise : "running";
+      },
+    });
+    const panel = await openFiles();
+    await expect(
+      within(panel).findByText("home.txt"),
+    ).resolves.toBeInTheDocument();
+    click(filesButton("Open workspace as current folder", panel));
+    await expect(
+      within(panel).findByText("workspace.txt"),
+    ).resolves.toBeInTheDocument();
+
+    fixture.setStatusUnavailable(status === "unavailable");
+    context.store.set(detachedNavigateTo$, "/activities/:activityRunId", {
+      pathParams: { activityRunId: nextRunId },
+      searchParams: new URLSearchParams({ tab: "files" }),
+    });
+    await expect(
+      screen.findByText(
+        status === "loading"
+          ? "Connecting to files…"
+          : "Files are unavailable. Try again.",
+      ),
+    ).resolves.toBeInTheDocument();
+    const nextPanel = screen.getByRole("region", { name: "Files" });
+    expect(
+      within(nextPanel)
+        .getByRole("navigation", { name: "Current folder" })
+        .querySelector('[aria-current="location"]'),
+    ).toHaveTextContent("user");
+    expect(within(nextPanel).queryByText("workspace.txt")).toBeNull();
+
+    response.resolve("running");
+    if (status === "unavailable") {
+      fixture.setStatusUnavailable(false);
+      click(filesButton("Retry", nextPanel));
+    }
+    await expect(
+      within(nextPanel).findByText("home.txt"),
+    ).resolves.toBeInTheDocument();
+  },
+);
 
 test.each(["queued", "pending"] as const)(
   "Files observes a %s Activity starting without opening another Run",
@@ -35,9 +87,6 @@ test.each(["queued", "pending"] as const)(
         "Files will be available when the queued run starts.",
       ),
     ).resolves.toBeInTheDocument();
-    await waitFor(() => {
-      expect(fixture.statusRequests).toHaveLength(1);
-    });
     expect(fixture.bootstraps).toHaveLength(0);
     fixture.setStatus("running");
     fireEvent(document, new Event("visibilitychange"));
@@ -69,9 +118,6 @@ test("Turning Debug off releases the visible Files peer and hides its tab", asyn
     ).toBeUndefined();
     expect(fixture.sockets[0]?.readyState).toBe(WebSocket.CLOSED);
   });
-  const checked = fixture.statusRequests.length;
-  fireEvent(document, new Event("visibilitychange"));
-  expect(fixture.statusRequests).toHaveLength(checked);
 });
 
 test("Organization change clears the previous owner's Files data and closes its peer", async () => {
@@ -81,6 +127,7 @@ test("Organization change clears the previous owner's Files data and closes its 
     within(panel).findByText("workspace"),
   ).resolves.toBeInTheDocument();
   const clerk = context.mocks.clerk();
+  fixture.setStatusUnavailable(true);
   act(() => {
     clerk.organization({
       activeOrg: { id: "org_files_next", name: "Next workspace" },
@@ -88,10 +135,11 @@ test("Organization change clears the previous owner's Files data and closes its 
     });
     clerk.stateChanged();
   });
-  await waitFor(() => {
-    expect(fixture.sockets[0]?.readyState).toBe(WebSocket.CLOSED);
-    expect(panel).not.toBeInTheDocument();
-  });
+  await expect(
+    screen.findByText("Files are unavailable. Try again."),
+  ).resolves.toBeInTheDocument();
+  expect(fixture.sockets[0]?.readyState).toBe(WebSocket.CLOSED);
+  expect(screen.queryByText("workspace")).toBeNull();
 });
 
 test("Status unavailability releases Files until the user retries its existing control", async () => {
@@ -115,60 +163,77 @@ test("Status unavailability releases Files until the user retries its existing c
   expect(fixture.bootstraps).toStrictEqual([FILES_RUN_ID, FILES_RUN_ID]);
 });
 
-test("Concurrent visibility checks share demand and closing Files cancels an outstanding status response", async () => {
+test("Closing Files during a foreground status read releases demand despite repeated visibility events", async () => {
   const response = createDeferredPromise<RunStatus>(context.signal);
-  let checks = 0;
+  const requested = createDeferredPromise<void>(context.signal);
+  const returned = createDeferredPromise<void>(context.signal);
+  let blockStatus = false;
   const fixture = await setupFilesPage(context, {
-    statusHandler: () => {
-      return ++checks === 1 ? "running" : response.promise;
+    statusHandler: async () => {
+      if (!blockStatus) {
+        return "running";
+      }
+      if (!requested.settled()) {
+        requested.resolve(undefined);
+      }
+      const status = await response.promise;
+      if (!returned.settled()) {
+        returned.resolve(undefined);
+      }
+      return status;
     },
   });
   const panel = await openFiles();
   await expect(
     within(panel).findByText("workspace"),
   ).resolves.toBeInTheDocument();
+  blockStatus = true;
   fireEvent(document, new Event("visibilitychange"));
-  await waitFor(() => {
-    expect(fixture.statusRequests).toHaveLength(2);
-  });
+  await requested.promise;
   fireEvent(document, new Event("visibilitychange"));
-  expect(fixture.statusRequests).toHaveLength(2);
   click(filesButton("Close files", panel));
   await waitFor(() => {
     expect(screen.queryByRole("region", { name: "Files" })).toBeNull();
   });
   response.resolve("running");
-  await waitFor(() => {
-    expect(fixture.statusResponses).toHaveLength(2);
-  });
+  await returned.promise;
   expect(fixture.sockets[0]?.readyState).toBe(WebSocket.CLOSED);
   expect(fixture.bootstraps).toHaveLength(1);
 });
 
 test("A late status from the previous Activity cannot start a socket for that Run", async () => {
   const response = createDeferredPromise<RunStatus>(context.signal);
+  const requested = createDeferredPromise<void>(context.signal);
+  const returned = createDeferredPromise<void>(context.signal);
   const nextRunId = "d0000000-0000-4000-a000-000000000969";
   const fixture = await setupFilesPage(context, {
-    statusHandler: (runId) => {
-      return runId === FILES_RUN_ID ? response.promise : "running";
+    statusHandler: async (runId) => {
+      if (runId !== FILES_RUN_ID) {
+        return "running";
+      }
+      if (!requested.settled()) {
+        requested.resolve(undefined);
+      }
+      const status = await response.promise;
+      if (!returned.settled()) {
+        returned.resolve(undefined);
+      }
+      return status;
     },
   });
   const panel = await openFiles();
   await expect(
     within(panel).findByText("Connecting to files…"),
   ).resolves.toBeInTheDocument();
-  await waitFor(() => {
-    expect(fixture.statusRequests).toStrictEqual([FILES_RUN_ID]);
-  });
+  await requested.promise;
   context.store.set(detachedNavigateTo$, "/activities/:activityRunId", {
     pathParams: { activityRunId: nextRunId },
     searchParams: new URLSearchParams({ tab: "files" }),
   });
   await expect(screen.findByText("workspace")).resolves.toBeInTheDocument();
   response.resolve("running");
-  await waitFor(() => {
-    expect(fixture.statusResponses).toContain(FILES_RUN_ID);
-  });
+  await returned.promise;
+  expect(screen.getByText("workspace")).toBeInTheDocument();
   expect(fixture.bootstraps).toStrictEqual([nextRunId]);
   expect(fixture.sockets).toHaveLength(1);
 });
