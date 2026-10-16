@@ -14,14 +14,18 @@ use crate::error::{RunnerError, RunnerResult};
 /// ten-second model-provider report drain, final JSONL flush, and process exit.
 const STOP_TIMEOUT: Duration = Duration::from_secs(15);
 
+struct ManagedLaunch {
+    directory: tempfile::TempDir,
+    runtime: Arc<MitmdumpRuntime>,
+}
+
 /// Owns the direct PyInstaller bootloader, its process group, and the private
 /// directory containing its one-file extraction.
 pub struct ManagedMitmdump {
     child: Option<tokio::process::Child>,
     process_group: Option<nix::unistd::Pid>,
     leader_reaped: bool,
-    launch: Option<tempfile::TempDir>,
-    runtime: Option<Arc<MitmdumpRuntime>>,
+    launch: Option<ManagedLaunch>,
     #[cfg(any(test, feature = "test-support"))]
     reap_gate: Option<crate::test_fixtures::ReapGate>,
 }
@@ -42,8 +46,10 @@ impl ManagedMitmdump {
             child: Some(child),
             process_group: Some(nix::unistd::Pid::from_raw(pid)),
             leader_reaped: false,
-            launch: Some(launch),
-            runtime: Some(runtime),
+            launch: Some(ManagedLaunch {
+                directory: launch,
+                runtime,
+            }),
             #[cfg(any(test, feature = "test-support"))]
             reap_gate: None,
         })
@@ -56,7 +62,6 @@ impl ManagedMitmdump {
             process_group: None,
             leader_reaped: false,
             launch: None,
-            runtime: None,
             reap_gate: None,
         }
     }
@@ -66,7 +71,7 @@ impl ManagedMitmdump {
     }
 
     pub(super) fn control_directory(&self) -> Option<&std::path::Path> {
-        self.launch.as_ref().map(|launch| launch.path())
+        self.launch.as_ref().map(|launch| launch.directory.path())
     }
 
     pub(super) fn child_mut(&mut self) -> Option<&mut tokio::process::Child> {
@@ -173,16 +178,10 @@ impl ManagedMitmdump {
     }
 
     async fn close_launch(&mut self) -> RunnerResult<()> {
-        let Some(launch) = self.launch.take() else {
+        let Some(ManagedLaunch { directory, runtime }) = self.launch.take() else {
             return Ok(());
         };
-        let Some(runtime) = self.runtime.as_ref() else {
-            preserve_launch(launch, &"missing mitmdump runtime owner");
-            return Err(RunnerError::Internal(
-                "missing mitmdump runtime owner".to_string(),
-            ));
-        };
-        runtime.close_launch(launch).await
+        runtime.close_launch(directory).await
     }
 }
 
@@ -204,23 +203,18 @@ impl Drop for ManagedMitmdump {
         {
             warn!(error = %error, "failed to kill direct mitmdump child during drop cleanup");
         }
-        let Some(launch) = self.launch.take() else {
-            runner_host::child_cleanup::kill_and_reap_child_on_drop("mitmdump", &mut child);
-            return;
-        };
-        let Some(runtime) = self.runtime.take() else {
-            preserve_launch(launch, &"missing mitmdump runtime owner during drop");
+        let Some(ManagedLaunch { directory, runtime }) = self.launch.take() else {
             runner_host::child_cleanup::kill_and_reap_child_on_drop("mitmdump", &mut child);
             return;
         };
         let Ok(handle) = tokio::runtime::Handle::try_current() else {
-            preserve_launch(launch, &"no active tokio runtime during mitmdump drop");
+            preserve_launch(directory, &"no active tokio runtime during mitmdump drop");
             runner_host::child_cleanup::kill_and_reap_child_on_drop("mitmdump", &mut child);
             return;
         };
         // Persist before handing ownership to the task. If runtime shutdown
         // cancels it, startup reconciliation can still recover the directory.
-        let launch_path = launch.keep();
+        let launch_path = directory.keep();
         handle.spawn(async move {
             if let Some(mut child) = child
                 && let Err(error) = child.wait().await
