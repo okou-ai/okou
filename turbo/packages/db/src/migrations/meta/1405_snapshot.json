@@ -1,5 +1,5 @@
 {
-  "id": "3e051a2d-c51c-4d0d-887e-a41ccab8acfb",
+  "id": "98d4e91c-774f-4724-bd91-6ae8a434fed0",
   "prevId": "c9c1eb76-5c88-484c-8385-f3cdbe7ccb69",
   "version": "7",
   "dialect": "postgresql",
@@ -17099,7 +17099,7 @@
           "name": "agent_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "authorization_id": {
           "name": "authorization_id",
@@ -17157,28 +17157,6 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_link_wallet_connections_owner": {
-          "name": "idx_link_wallet_connections_owner",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"link_wallet_connections\".\"agent_id\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -17245,14 +17223,7 @@
           "name": "agent_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
-        },
-        "scope": {
-          "name": "scope",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'agent'"
+          "notNull": true
         },
         "encrypted_verifier": {
           "name": "encrypted_verifier",
@@ -33604,7 +33575,7 @@
         },
         "chk_vnc_connection_observation_failure": {
           "name": "chk_vnc_connection_observation_failure",
-          "value": "\"vnc_connection_observations\".\"failure_reason\" IS NULL OR \"vnc_connection_observations\".\"failure_reason\" IN ('invalid_credential', 'unsafe_destination', 'network_failure', 'protocol', 'timed_out', 'disconnected', 'authentication_failed', 'unsupported_profile', 'kerberos_expired', 'kerberos_non_renewable', 'kerberos_renewal_exhausted')"
+          "value": "\"vnc_connection_observations\".\"failure_reason\" IS NULL OR \"vnc_connection_observations\".\"failure_reason\" IN ('invalid_credential', 'unsafe_destination', 'network_failure', 'protocol', 'timed_out', 'disconnected', 'authentication_failed', 'unsupported_profile', 'kerberos_expired', 'kerberos_non_renewable', 'kerberos_renewal_exhausted', 'access_rejected', 'access_tls_failure', 'access_protocol_failure', 'origin_tls_failure', 'tailscale_unavailable')"
         }
       },
       "isRLSEnabled": false
@@ -33653,7 +33624,7 @@
         },
         "transport_type": {
           "name": "transport_type",
-          "type": "varchar(16)",
+          "type": "varchar(32)",
           "primaryKey": false,
           "notNull": true,
           "default": "'direct'"
@@ -33661,6 +33632,36 @@
         "ssh_connection_id": {
           "name": "ssh_connection_id",
           "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cloudflare_access_id": {
+          "name": "cloudflare_access_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tailscale_id": {
+          "name": "tailscale_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "origin_tls_server_name": {
+          "name": "origin_tls_server_name",
+          "type": "varchar(253)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "origin_tls_trust_mode": {
+          "name": "origin_tls_trust_mode",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "origin_tls_ca_bundle": {
+          "name": "origin_tls_ca_bundle",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -33714,7 +33715,7 @@
         },
         "kdc_transport_type": {
           "name": "kdc_transport_type",
-          "type": "varchar(16)",
+          "type": "varchar(32)",
           "primaryKey": false,
           "notNull": false
         },
@@ -33732,6 +33733,18 @@
         },
         "kdc_ssh_connection_id": {
           "name": "kdc_ssh_connection_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "kdc_cloudflare_access_id": {
+          "name": "kdc_cloudflare_access_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "kdc_tailscale_id": {
+          "name": "kdc_tailscale_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
@@ -33778,6 +33791,90 @@
         }
       },
       "indexes": {
+        "idx_vnc_connections_cloudflare": {
+          "name": "idx_vnc_connections_cloudflare",
+          "columns": [
+            {
+              "expression": "cloudflare_access_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_vnc_connections_tailscale": {
+          "name": "idx_vnc_connections_tailscale",
+          "columns": [
+            {
+              "expression": "tailscale_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_vnc_connections_kdc_cloudflare": {
+          "name": "idx_vnc_connections_kdc_cloudflare",
+          "columns": [
+            {
+              "expression": "kdc_cloudflare_access_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_vnc_connections_kdc_tailscale": {
+          "name": "idx_vnc_connections_kdc_tailscale",
+          "columns": [
+            {
+              "expression": "kdc_tailscale_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_vnc_connections_credential": {
           "name": "idx_vnc_connections_credential",
           "columns": [
@@ -33876,6 +33973,66 @@
         }
       },
       "foreignKeys": {
+        "vnc_connections_cloudflare_org_fk": {
+          "name": "vnc_connections_cloudflare_org_fk",
+          "tableFrom": "vnc_connections",
+          "tableTo": "cloudflare_access_configs",
+          "columnsFrom": [
+            "cloudflare_access_id",
+            "org_id"
+          ],
+          "columnsTo": [
+            "id",
+            "org_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "vnc_connections_tailscale_org_fk": {
+          "name": "vnc_connections_tailscale_org_fk",
+          "tableFrom": "vnc_connections",
+          "tableTo": "tailscale_configs",
+          "columnsFrom": [
+            "tailscale_id",
+            "org_id"
+          ],
+          "columnsTo": [
+            "id",
+            "org_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "vnc_connections_kdc_cloudflare_org_fk": {
+          "name": "vnc_connections_kdc_cloudflare_org_fk",
+          "tableFrom": "vnc_connections",
+          "tableTo": "cloudflare_access_configs",
+          "columnsFrom": [
+            "kdc_cloudflare_access_id",
+            "org_id"
+          ],
+          "columnsTo": [
+            "id",
+            "org_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "vnc_connections_kdc_tailscale_org_fk": {
+          "name": "vnc_connections_kdc_tailscale_org_fk",
+          "tableFrom": "vnc_connections",
+          "tableTo": "tailscale_configs",
+          "columnsFrom": [
+            "kdc_tailscale_id",
+            "org_id"
+          ],
+          "columnsTo": [
+            "id",
+            "org_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
         "vnc_connections_ssh_owner_fk": {
           "name": "vnc_connections_ssh_owner_fk",
           "tableFrom": "vnc_connections",
@@ -33965,7 +34122,11 @@
         },
         "chk_vnc_connections_transport": {
           "name": "chk_vnc_connections_transport",
-          "value": "(\"vnc_connections\".\"transport_type\" = 'direct' AND \"vnc_connections\".\"ssh_connection_id\" IS NULL) OR (\"vnc_connections\".\"transport_type\" = 'ssh' AND \"vnc_connections\".\"ssh_connection_id\" IS NOT NULL)"
+          "value": "(\"vnc_connections\".\"transport_type\" = 'direct' AND \"vnc_connections\".\"ssh_connection_id\" IS NULL AND \"vnc_connections\".\"cloudflare_access_id\" IS NULL AND \"vnc_connections\".\"tailscale_id\" IS NULL)\n          OR (\"vnc_connections\".\"transport_type\" = 'ssh' AND \"vnc_connections\".\"ssh_connection_id\" IS NOT NULL AND \"vnc_connections\".\"cloudflare_access_id\" IS NULL AND \"vnc_connections\".\"tailscale_id\" IS NULL)\n          OR (\"vnc_connections\".\"transport_type\" = 'cloudflare_access' AND \"vnc_connections\".\"ssh_connection_id\" IS NULL AND \"vnc_connections\".\"tailscale_id\" IS NULL AND \"vnc_connections\".\"port\" = 443)\n          OR (\"vnc_connections\".\"transport_type\" = 'tailscale' AND \"vnc_connections\".\"ssh_connection_id\" IS NULL AND \"vnc_connections\".\"cloudflare_access_id\" IS NULL)"
+        },
+        "chk_vnc_connections_origin_tls": {
+          "name": "chk_vnc_connections_origin_tls",
+          "value": "(\"vnc_connections\".\"origin_tls_server_name\" IS NULL AND \"vnc_connections\".\"origin_tls_trust_mode\" IS NULL AND \"vnc_connections\".\"origin_tls_ca_bundle\" IS NULL)\n          OR (\"vnc_connections\".\"transport_type\" = 'cloudflare_access'\n            AND \"vnc_connections\".\"origin_tls_server_name\" IS NOT NULL AND char_length(\"vnc_connections\".\"origin_tls_server_name\") BETWEEN 1 AND 253\n            AND \"vnc_connections\".\"origin_tls_server_name\" = lower(\"vnc_connections\".\"origin_tls_server_name\")\n            AND \"vnc_connections\".\"origin_tls_server_name\" !~ '[[:space:][:cntrl:]/@?#%\\[\\]\\\\]'\n            AND \"vnc_connections\".\"origin_tls_trust_mode\" IS NOT NULL\n            AND ((\"vnc_connections\".\"origin_tls_trust_mode\" = 'system' AND \"vnc_connections\".\"origin_tls_ca_bundle\" IS NULL)\n              OR (\"vnc_connections\".\"origin_tls_trust_mode\" = 'custom_ca' AND \"vnc_connections\".\"origin_tls_ca_bundle\" IS NOT NULL AND octet_length(\"vnc_connections\".\"origin_tls_ca_bundle\") BETWEEN 1 AND 65536)))"
         },
         "chk_vnc_connections_x509_server_name": {
           "name": "chk_vnc_connections_x509_server_name",
@@ -33977,7 +34138,7 @@
         },
         "chk_vnc_connections_profile": {
           "name": "chk_vnc_connections_profile",
-          "value": "(\"vnc_connections\".\"credential_id\" IS NOT NULL AND \"vnc_connections\".\"auth_method\" IN ('rsa_aes_password', 'rsa_aes_username_password') AND ((\"vnc_connections\".\"security_type\" IN ('rsa_aes_ra2', 'rsa_aes_ra2_256')) OR (\"vnc_connections\".\"security_type\" IN ('rsa_aes_ra2ne', 'rsa_aes_ra2ne_256') AND \"vnc_connections\".\"transport_type\" = 'ssh' AND \"vnc_connections\".\"host\" IN ('127.0.0.1', '::1')))) OR (\"vnc_connections\".\"auth_method\" = 'none' AND \"vnc_connections\".\"security_type\" = 'x509_none' AND \"vnc_connections\".\"credential_id\" IS NULL) OR (\"vnc_connections\".\"credential_id\" IS NOT NULL AND ((\"vnc_connections\".\"auth_method\" = 'client_certificate' AND \"vnc_connections\".\"security_type\" = 'x509_none') OR (\"vnc_connections\".\"auth_method\" = 'client_certificate_vnc_password' AND \"vnc_connections\".\"security_type\" = 'x509_vnc') OR (\"vnc_connections\".\"auth_method\" = 'vnc_password' AND \"vnc_connections\".\"security_type\" = 'x509_vnc') OR (\"vnc_connections\".\"auth_method\" = 'vnc_password' AND \"vnc_connections\".\"security_type\" = 'apple_vnc_password' AND \"vnc_connections\".\"transport_type\" = 'ssh' AND \"vnc_connections\".\"host\" IN ('127.0.0.1', '::1') AND \"vnc_connections\".\"x509_server_name\" IS NULL) OR (\"vnc_connections\".\"auth_method\" = 'username_password' AND \"vnc_connections\".\"security_type\" = 'x509_plain') OR (\"vnc_connections\".\"auth_method\" = 'qemu_scram_sha256' AND \"vnc_connections\".\"security_type\" = 'qemu_x509_sasl') OR (\"vnc_connections\".\"auth_method\" = 'apple_dh_username_password' AND \"vnc_connections\".\"security_type\" = 'apple_dh' AND \"vnc_connections\".\"transport_type\" = 'ssh' AND \"vnc_connections\".\"host\" IN ('127.0.0.1', '::1') AND \"vnc_connections\".\"x509_server_name\" IS NULL) OR (\"vnc_connections\".\"auth_method\" = 'apple_srp_username_password' AND \"vnc_connections\".\"security_type\" = 'apple_srp' AND \"vnc_connections\".\"transport_type\" = 'ssh' AND \"vnc_connections\".\"host\" IN ('127.0.0.1', '::1') AND \"vnc_connections\".\"x509_server_name\" IS NULL) OR (\"vnc_connections\".\"auth_method\" = 'apple_rsa_srp_username_password' AND \"vnc_connections\".\"security_type\" = 'apple_rsa_srp' AND \"vnc_connections\".\"transport_type\" = 'ssh' AND \"vnc_connections\".\"host\" IN ('127.0.0.1', '::1') AND \"vnc_connections\".\"x509_server_name\" IS NULL))) OR (\"vnc_connections\".\"auth_method\" IN ('qemu_kerberos_ticket', 'qemu_kerberos_keytab', 'qemu_kerberos_password') AND \"vnc_connections\".\"security_type\" = 'qemu_x509_gssapi' AND \"vnc_connections\".\"credential_id\" IS NOT NULL)"
+          "value": "(\"vnc_connections\".\"credential_id\" IS NOT NULL AND \"vnc_connections\".\"auth_method\" IN ('rsa_aes_password', 'rsa_aes_username_password') AND ((\"vnc_connections\".\"security_type\" IN ('rsa_aes_ra2', 'rsa_aes_ra2_256')) OR (\"vnc_connections\".\"security_type\" IN ('rsa_aes_ra2ne', 'rsa_aes_ra2ne_256') AND ((\"vnc_connections\".\"transport_type\" = 'ssh' AND \"vnc_connections\".\"host\" IN ('127.0.0.1', '::1'))\n      OR \"vnc_connections\".\"transport_type\" = 'tailscale'\n      OR (\"vnc_connections\".\"transport_type\" = 'cloudflare_access' AND \"vnc_connections\".\"origin_tls_server_name\" IS NOT NULL))))) OR (\"vnc_connections\".\"auth_method\" = 'none' AND \"vnc_connections\".\"security_type\" = 'x509_none' AND \"vnc_connections\".\"credential_id\" IS NULL) OR (\"vnc_connections\".\"credential_id\" IS NOT NULL AND ((\"vnc_connections\".\"auth_method\" = 'client_certificate' AND \"vnc_connections\".\"security_type\" = 'x509_none') OR (\"vnc_connections\".\"auth_method\" = 'client_certificate_vnc_password' AND \"vnc_connections\".\"security_type\" = 'x509_vnc') OR (\"vnc_connections\".\"auth_method\" = 'vnc_password' AND \"vnc_connections\".\"security_type\" = 'x509_vnc') OR (\"vnc_connections\".\"auth_method\" = 'vnc_password' AND \"vnc_connections\".\"security_type\" = 'apple_vnc_password' AND ((\"vnc_connections\".\"transport_type\" = 'ssh' AND \"vnc_connections\".\"host\" IN ('127.0.0.1', '::1'))\n      OR \"vnc_connections\".\"transport_type\" = 'tailscale'\n      OR (\"vnc_connections\".\"transport_type\" = 'cloudflare_access' AND \"vnc_connections\".\"origin_tls_server_name\" IS NOT NULL)) AND \"vnc_connections\".\"x509_server_name\" IS NULL) OR (\"vnc_connections\".\"auth_method\" = 'username_password' AND \"vnc_connections\".\"security_type\" = 'x509_plain') OR (\"vnc_connections\".\"auth_method\" = 'qemu_scram_sha256' AND \"vnc_connections\".\"security_type\" = 'qemu_x509_sasl') OR (\"vnc_connections\".\"auth_method\" = 'apple_dh_username_password' AND \"vnc_connections\".\"security_type\" = 'apple_dh' AND ((\"vnc_connections\".\"transport_type\" = 'ssh' AND \"vnc_connections\".\"host\" IN ('127.0.0.1', '::1'))\n      OR \"vnc_connections\".\"transport_type\" = 'tailscale'\n      OR (\"vnc_connections\".\"transport_type\" = 'cloudflare_access' AND \"vnc_connections\".\"origin_tls_server_name\" IS NOT NULL)) AND \"vnc_connections\".\"x509_server_name\" IS NULL) OR (\"vnc_connections\".\"auth_method\" = 'apple_srp_username_password' AND \"vnc_connections\".\"security_type\" = 'apple_srp' AND ((\"vnc_connections\".\"transport_type\" = 'ssh' AND \"vnc_connections\".\"host\" IN ('127.0.0.1', '::1'))\n      OR \"vnc_connections\".\"transport_type\" = 'tailscale'\n      OR (\"vnc_connections\".\"transport_type\" = 'cloudflare_access' AND \"vnc_connections\".\"origin_tls_server_name\" IS NOT NULL)) AND \"vnc_connections\".\"x509_server_name\" IS NULL) OR (\"vnc_connections\".\"auth_method\" = 'apple_rsa_srp_username_password' AND \"vnc_connections\".\"security_type\" = 'apple_rsa_srp' AND ((\"vnc_connections\".\"transport_type\" = 'ssh' AND \"vnc_connections\".\"host\" IN ('127.0.0.1', '::1'))\n      OR \"vnc_connections\".\"transport_type\" = 'tailscale'\n      OR (\"vnc_connections\".\"transport_type\" = 'cloudflare_access' AND \"vnc_connections\".\"origin_tls_server_name\" IS NOT NULL)) AND \"vnc_connections\".\"x509_server_name\" IS NULL))) OR (\"vnc_connections\".\"auth_method\" IN ('qemu_kerberos_ticket', 'qemu_kerberos_keytab', 'qemu_kerberos_password') AND \"vnc_connections\".\"security_type\" = 'qemu_x509_gssapi' AND \"vnc_connections\".\"credential_id\" IS NOT NULL)"
         },
         "chk_vnc_connections_kerberos_service": {
           "name": "chk_vnc_connections_kerberos_service",
@@ -33989,7 +34150,7 @@
         },
         "chk_vnc_connections_kdc": {
           "name": "chk_vnc_connections_kdc",
-          "value": "CASE\n        WHEN \"vnc_connections\".\"auth_method\" IN ('qemu_kerberos_keytab', 'qemu_kerberos_password') THEN\n          \"vnc_connections\".\"kdc_transport_type\" IS NOT NULL AND \"vnc_connections\".\"kdc_host\" IS NOT NULL\n          AND octet_length(\"vnc_connections\".\"kdc_host\") BETWEEN 1 AND 253\n          AND \"vnc_connections\".\"kdc_port\" IS NOT NULL AND \"vnc_connections\".\"kdc_port\" BETWEEN 1 AND 65535\n          AND \"vnc_connections\".\"kerberos_ticket_lifetime_seconds\" IS NOT NULL AND \"vnc_connections\".\"kerberos_ticket_lifetime_seconds\" BETWEEN 1 AND 7200\n          AND \"vnc_connections\".\"kerberos_renewable_lifetime_seconds\" IS NOT NULL AND \"vnc_connections\".\"kerberos_renewable_lifetime_seconds\" BETWEEN 0 AND 7200\n          AND ((\"vnc_connections\".\"kdc_transport_type\" = 'direct' AND \"vnc_connections\".\"kdc_ssh_connection_id\" IS NULL)\n            OR (\"vnc_connections\".\"kdc_transport_type\" = 'ssh' AND \"vnc_connections\".\"kdc_ssh_connection_id\" IS NOT NULL AND \"vnc_connections\".\"kdc_host\" IN ('127.0.0.1', '::1')))\n        ELSE \"vnc_connections\".\"kdc_transport_type\" IS NULL AND \"vnc_connections\".\"kdc_host\" IS NULL AND \"vnc_connections\".\"kdc_port\" IS NULL\n          AND \"vnc_connections\".\"kdc_ssh_connection_id\" IS NULL AND \"vnc_connections\".\"kerberos_ticket_lifetime_seconds\" IS NULL\n          AND \"vnc_connections\".\"kerberos_renewable_lifetime_seconds\" IS NULL END"
+          "value": "CASE\n        WHEN \"vnc_connections\".\"auth_method\" IN ('qemu_kerberos_keytab', 'qemu_kerberos_password') THEN\n          \"vnc_connections\".\"kdc_transport_type\" IS NOT NULL AND \"vnc_connections\".\"kdc_host\" IS NOT NULL\n          AND octet_length(\"vnc_connections\".\"kdc_host\") BETWEEN 1 AND 253\n          AND \"vnc_connections\".\"kdc_port\" IS NOT NULL AND \"vnc_connections\".\"kdc_port\" BETWEEN 1 AND 65535\n          AND \"vnc_connections\".\"kerberos_ticket_lifetime_seconds\" IS NOT NULL AND \"vnc_connections\".\"kerberos_ticket_lifetime_seconds\" BETWEEN 1 AND 7200\n          AND \"vnc_connections\".\"kerberos_renewable_lifetime_seconds\" IS NOT NULL AND \"vnc_connections\".\"kerberos_renewable_lifetime_seconds\" BETWEEN 0 AND 7200\n          AND ((\"vnc_connections\".\"kdc_transport_type\" = 'direct' AND \"vnc_connections\".\"kdc_ssh_connection_id\" IS NULL AND \"vnc_connections\".\"kdc_cloudflare_access_id\" IS NULL AND \"vnc_connections\".\"kdc_tailscale_id\" IS NULL)\n            OR (\"vnc_connections\".\"kdc_transport_type\" = 'ssh' AND \"vnc_connections\".\"kdc_ssh_connection_id\" IS NOT NULL AND \"vnc_connections\".\"kdc_cloudflare_access_id\" IS NULL AND \"vnc_connections\".\"kdc_tailscale_id\" IS NULL AND \"vnc_connections\".\"kdc_host\" IN ('127.0.0.1', '::1'))\n            OR (\"vnc_connections\".\"kdc_transport_type\" = 'cloudflare_access' AND \"vnc_connections\".\"kdc_ssh_connection_id\" IS NULL AND \"vnc_connections\".\"kdc_tailscale_id\" IS NULL AND \"vnc_connections\".\"kdc_port\" = 443)\n            OR (\"vnc_connections\".\"kdc_transport_type\" = 'tailscale' AND \"vnc_connections\".\"kdc_ssh_connection_id\" IS NULL AND \"vnc_connections\".\"kdc_cloudflare_access_id\" IS NULL))\n        ELSE \"vnc_connections\".\"kdc_transport_type\" IS NULL AND \"vnc_connections\".\"kdc_host\" IS NULL AND \"vnc_connections\".\"kdc_port\" IS NULL\n          AND \"vnc_connections\".\"kdc_ssh_connection_id\" IS NULL AND \"vnc_connections\".\"kdc_cloudflare_access_id\" IS NULL AND \"vnc_connections\".\"kdc_tailscale_id\" IS NULL AND \"vnc_connections\".\"kerberos_ticket_lifetime_seconds\" IS NULL\n          AND \"vnc_connections\".\"kerberos_renewable_lifetime_seconds\" IS NULL END"
         },
         "chk_vnc_connections_rsa_pin": {
           "name": "chk_vnc_connections_rsa_pin",

@@ -20,6 +20,7 @@ import { writeDb$ } from "../external/db";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { vncCreationTimestamp } from "./remote-connection-creation-timestamp.utils";
 import type { VncOwner } from "./vnc-owner-lifecycle.service";
+import { preparedVncRoutePredicate } from "./vnc-prepared-route";
 import {
   runThreadExists,
   runThreadSshAccess,
@@ -74,6 +75,7 @@ const loadRunVncHostRows$ = command(
           eq(vncConnections.orgId, agentRuns.orgId),
           eq(vncConnections.userId, agentRuns.userId),
           runThreadVncAccess(),
+          preparedVncRoutePredicate,
         ),
       )
       .leftJoin(

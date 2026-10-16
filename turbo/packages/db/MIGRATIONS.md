@@ -47,6 +47,15 @@ to the last migration in the most recent production release. When that removes a
 referenced migration tag from the journal, the consistency suite fails and the
 expired transition validator must be deleted.
 
+- `scripts/test-vnc-native-network-storage.ts` preserves existing VNC rows,
+  credentials, chat choices and observation identity across additive native
+  network storage. Its frozen outgoing ORM statements cover the preceding API's
+  complete INSERT, SELECT and RETURNING column lists. Retain it until the
+  preparation migration ships and preceding API serving/rollback targets are
+  excluded. `test-vnc-native-storage-permanent.ts` owns the surviving provider,
+  detached-route, profile-protection and independent-trust constraints on both
+  replayed and freshly generated schemas.
+
 - `scripts/test-computer-use-host-token-retirement-preparation.ts` protects the
   session-only Computer Use mapping and its preparation migration: retired
   hashes are cleared, session-less hosts become offline, and device identities,

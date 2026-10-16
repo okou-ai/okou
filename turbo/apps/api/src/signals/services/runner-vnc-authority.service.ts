@@ -19,6 +19,7 @@ import {
 import { db$ } from "../external/db";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { vncCreationTimestamp } from "./remote-connection-creation-timestamp.utils";
+import { preparedVncRoutePredicate } from "./vnc-prepared-route";
 import {
   runThreadSshAccess,
   runThreadVncAccess,
@@ -138,6 +139,7 @@ export const currentRunnerVncAuthority$ = command(
             input.runnerIdentity.heartbeatGeneration,
           ),
           runThreadVncAccess(),
+          preparedVncRoutePredicate,
         ),
       );
     signal.throwIfAborted();
