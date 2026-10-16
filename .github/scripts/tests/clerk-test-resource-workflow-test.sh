@@ -79,12 +79,11 @@ for required_state in \
   fi
 done
 
-browser_page_call_log="$(mktemp)"
 otp_call_log="$(mktemp)"
 consent_call_log="$(mktemp)"
 next_step_call_log="$(mktemp)"
 api_url_side_effect_log="$(mktemp)"
-trap 'rm -f "$browser_page_call_log" "$otp_call_log" "$consent_call_log" "$next_step_call_log" "$api_url_side_effect_log"' EXIT
+trap 'rm -f "$otp_call_log" "$consent_call_log" "$next_step_call_log" "$api_url_side_effect_log"' EXIT
 
 api_url_status=0
 # The child shell, not this test process, expands the quoted side-effect log.
@@ -132,52 +131,95 @@ if [[ -s "$api_url_side_effect_log" ]]; then
   exit 1
 fi
 
+# Exercise the navigation caller and observe page URLs, without coupling page
+# ownership to the polling clock or the helper's internal command sequence.
 OKOU_API_BACKEND_URL="https://api.example.com" \
-  BROWSER_PAGE_CALL_LOG="$browser_page_call_log" \
-  bash -c '
-    source "$1"
-    active_page="blank"
-    tab_listing="initial"
-    agent-browser() {
-      printf "%s\n" "$*" >> "$BROWSER_PAGE_CALL_LOG"
-      case "$*" in
-        "--json tab")
-          case "$tab_listing" in
-            initial)
-              printf "%s\n" '\''{"success":true,"data":{"tabs":[{"active":true,"index":7,"url":"about:blank"}]}}'\''
-              ;;
-            stolen)
-              printf "%s\n" '\''{"success":true,"data":{"tabs":[{"active":false,"index":7,"url":"https://app.example.com/sign-up"},{"active":true,"index":8,"url":"about:blank"}]}}'\''
-              ;;
-            missing)
-              printf "%s\n" '\''{"success":true,"data":{"tabs":[{"active":true,"index":8,"url":"about:blank"}]}}'\''
-              ;;
-          esac
-          ;;
-        "tab 7")
-          active_page="owned"
-          ;;
-        "eval "*)
-          [[ "$active_page" == "owned" ]] && printf "true\n" || printf "false\n"
-          ;;
-      esac
-    }
-    browser_setup
-    BROWSER_PAGE_URL="https://app.example.com/sign-up"
-    active_page="blank"
-    tab_listing="stolen"
-    wait_for_browser_target --timeout-seconds 1 --fn "window.__ready"
-    tab_listing="missing"
-    if agent_browser_on_page eval "window.__ready" 2>/dev/null; then
-      echo "browser helper accepted a missing owned page" >&2
-      exit 1
-    fi
-  ' _ "$browser_helper"
-expected_browser_page_calls=$'set viewport 1920 1080\n--json tab\n--json tab\ntab 7\neval Boolean(window.__ready)\n--json tab'
-if [[ "$(<"$browser_page_call_log")" != "$expected_browser_page_calls" ]]; then
-  echo "browser helper must restore its captured page before inspection" >&2
+  bash -s -- "$browser_helper" <<'BASH'
+set -euo pipefail
+source "$1"
+active_page=7
+owned_page_exists=true
+auxiliary_page_exists=false
+owned_page_url="about:blank"
+auxiliary_page_url="about:blank"
+agent-browser() {
+  case "$*" in
+    "set viewport 1920 1080") ;;
+    "--json tab")
+      jq -nc \
+        --argjson active "$active_page" \
+        --argjson owned "$owned_page_exists" \
+        --argjson auxiliary "$auxiliary_page_exists" \
+        --arg owned_url "$owned_page_url" \
+        --arg auxiliary_url "$auxiliary_page_url" \
+        '{success:true,data:{tabs:[
+          if $owned then {active:($active == 7),index:7,url:$owned_url} else empty end,
+          if $auxiliary then {active:($active == 8),index:8,url:$auxiliary_url} else empty end
+        ]}}'
+      ;;
+    "tab new about:blank")
+      auxiliary_page_exists=true
+      active_page=8
+      ;;
+    "tab close 7")
+      [[ "$owned_page_exists" == true && "$auxiliary_page_exists" == true ]] || return 1
+      owned_page_exists=false
+      active_page=8
+      ;;
+    "tab 7")
+      [[ "$owned_page_exists" == true ]] || return 1
+      active_page=7
+      ;;
+    "tab 8")
+      [[ "$auxiliary_page_exists" == true ]] || return 1
+      active_page=8
+      ;;
+    "open "*)
+      if [[ "$active_page" == 7 ]]; then
+        owned_page_url="$2"
+      else
+        auxiliary_page_url="$2"
+      fi
+      ;;
+    "get url")
+      if [[ "$active_page" == 7 ]]; then
+        printf '%s\n' "$owned_page_url"
+      else
+        printf '%s\n' "$auxiliary_page_url"
+      fi
+      ;;
+    *)
+      echo "unexpected browser command: $*" >&2
+      return 1
+      ;;
+  esac
+}
+
+browser_setup
+open_browser_page "https://app.example.com/sign-up"
+agent-browser tab new about:blank
+open_browser_page "https://app.example.com/sign-in"
+agent-browser tab 7
+if [[ "$(agent-browser get url)" != "https://app.example.com/sign-in" ]]; then
+  echo "browser navigation did not reach the owned page" >&2
   exit 1
 fi
+agent-browser tab 8
+if [[ "$(agent-browser get url)" != "about:blank" ]]; then
+  echo "browser navigation changed the auxiliary page" >&2
+  exit 1
+fi
+
+agent-browser tab close 7
+if open_browser_page "https://app.example.com/account" 2>/dev/null; then
+  echo "browser navigation accepted a missing owned page" >&2
+  exit 1
+fi
+if [[ "$(agent-browser get url)" != "about:blank" ]]; then
+  echo "failed browser navigation changed the auxiliary page" >&2
+  exit 1
+fi
+BASH
 
 OTP_CALL_LOG="$otp_call_log" bash -c '
   source "$1"
