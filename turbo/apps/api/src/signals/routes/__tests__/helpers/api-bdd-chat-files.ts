@@ -1559,9 +1559,9 @@ export function createChatFilesBddApi(context: TestContext) {
     },
 
     /**
-     * Resolve the catalog artifact id behind a thread-listed file id. The
-     * thread listing exposes the upload's external id for noncanonical files,
-     * while the Google Drive upload route addresses artifacts by catalog id.
+     * Resolve the catalog artifact id behind an uploaded file's external id.
+     * The upload URL contains that id as its object-key segment. Hosted
+     * publications use the catalog id returned by their thread listing instead.
      * Only catalog routes are used so no Drive status lookup is triggered.
      */
     async resolveCatalogArtifactId(
@@ -1577,22 +1577,14 @@ export function createChatFilesBddApi(context: TestContext) {
       for (const summary of catalog.artifacts) {
         const entry = await this.getArtifactCatalogEntry(actor, summary.id);
         const matched =
-          entry.kind === "hosted-site" || entry.kind === "presentation"
-            ? entry.site.id === listedFileId ||
-              listedFileId.includes(entry.site.id)
-            : "file" in entry
-              ? entry.file.url.includes(`/${listedFileId}/`) ||
-                entry.file.url.endsWith(`/${listedFileId}`)
-              : false;
+          "file" in entry &&
+          new URL(entry.file.url).pathname.split("/").includes(listedFileId);
         if (matched) {
           matches.push(summary.id);
         }
       }
       if (matches.length === 1) {
         return matches[0]!;
-      }
-      if (matches.length === 0 && catalog.artifacts.length === 1) {
-        return catalog.artifacts[0]!.id;
       }
       throw new Error(
         `Expected one catalog artifact in thread ${threadId} for ${listedFileId}, found ${matches.length} of ${catalog.artifacts.length}`,

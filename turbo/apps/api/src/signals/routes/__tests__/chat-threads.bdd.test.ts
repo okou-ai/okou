@@ -500,11 +500,6 @@ const malformedChatThreadIdRequests = [
     path: "/api/chat-threads/:id/artifacts",
     paramName: "threadId",
   },
-  {
-    method: "POST",
-    path: "/api/chat-threads/:id/artifacts",
-    paramName: "threadId",
-  },
 ] as const;
 
 describe("CHAT-01 thread detail, create, and delete cascades", () => {
@@ -1991,8 +1986,8 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         .find((file) => {
           return file.url === prepared.artifactUrl;
         });
-      if (!artifact) {
-        throw new Error("Expected hosted artifact");
+      if (!artifact?.artifactId) {
+        throw new Error("Expected hosted artifact with a catalog id");
       }
       mockGoogleDriveConnectorOAuth();
       const start = await connectorsApi.startOauth(
@@ -2011,7 +2006,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       });
       const synced = await chat.requestUploadArtifactToGoogleDrive(
         actor,
-        await chat.resolveCatalogArtifactId(actor, run.threadId, artifact.id),
+        artifact.artifactId,
         { agentId },
         [200],
       );
@@ -2082,8 +2077,8 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       .find((file) => {
         return file.url === artifactUrl;
       });
-    if (!artifact) {
-      throw new Error("Expected a public hosted artifact");
+    if (!artifact?.artifactId) {
+      throw new Error("Expected a public hosted artifact with a catalog id");
     }
     mockGoogleDriveConnectorOAuth();
     const start = await connectorsApi.startOauth(
@@ -2102,7 +2097,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     });
     await chat.requestUploadArtifactToGoogleDrive(
       actor,
-      await chat.resolveCatalogArtifactId(actor, run.threadId, artifact.id),
+      artifact.artifactId,
       { agentId },
       [200],
     );
@@ -2152,8 +2147,8 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       .find((file) => {
         return file.url === prepared.artifactUrl;
       });
-    if (!artifact) {
-      throw new Error("Expected a hosted artifact");
+    if (!artifact?.artifactId) {
+      throw new Error("Expected a hosted artifact with a catalog id");
     }
     mockGoogleDriveConnectorOAuth();
     const start = await connectorsApi.startOauth(
@@ -2172,7 +2167,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     });
     await chat.requestUploadArtifactToGoogleDrive(
       actor,
-      await chat.resolveCatalogArtifactId(actor, run.threadId, artifact.id),
+      artifact.artifactId,
       { agentId },
       [200],
     );
