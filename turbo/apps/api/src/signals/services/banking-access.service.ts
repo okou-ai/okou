@@ -98,80 +98,58 @@ export const recordBankingAudit$ = command(
   },
 );
 
-const findBankingRun$ = command(
-  async ({ get }, auth: BankingAuth): Promise<BankingRunContext | null> => {
-    const db = get(db$);
+function bankingRunColumns() {
+  return {
+    runId: agentRuns.id,
+    agentId: agentRuns.agentId,
+    triggerSource: agentRuns.triggerSource,
+  };
+}
 
-    const [run] = await db
-      .select({
-        runId: agentRuns.id,
-        agentId: agentRuns.agentId,
-        triggerSource: agentRuns.triggerSource,
-      })
-      .from(agentRuns)
+function bankingRunPredicate(auth: BankingAuth) {
+  return and(
+    eq(agentRuns.id, auth.runId),
+    eq(agentRuns.orgId, auth.orgId),
+    eq(agentRuns.userId, auth.userId),
+  );
+}
 
-      .where(
-        and(
-          eq(agentRuns.id, auth.runId),
-          eq(agentRuns.orgId, auth.orgId),
-          eq(agentRuns.userId, auth.userId),
-        ),
-      )
-      .limit(1);
+function bankingGrantColumns() {
+  return {
+    connectionId: bankingConnections.id,
+    providerCustomerId: bankingConnections.providerCustomerId,
+    accountProviderIds: bankingAgentEnablements.accountProviderIds,
+    operationScopes: bankingAgentEnablements.operationScopes,
+    allowAutomationRuns: bankingAgentEnablements.allowAutomationRuns,
+  };
+}
 
-    return run?.agentId ? { ...run, agentId: run.agentId } : null;
-  },
-);
-
-const findBankingGrant$ = command(
-  async (
-    { get },
-    auth: BankingAuth,
-    agentId: string,
-  ): Promise<BankingGrantContext | null> => {
-    const db = get(db$);
-
-    const nowValue = nowDate();
-    const [grant] = await db
-      .select({
-        connectionId: bankingConnections.id,
-        providerCustomerId: bankingConnections.providerCustomerId,
-        accountProviderIds: bankingAgentEnablements.accountProviderIds,
-        operationScopes: bankingAgentEnablements.operationScopes,
-        allowAutomationRuns: bankingAgentEnablements.allowAutomationRuns,
-      })
-      .from(bankingConnections)
-      .innerJoin(
-        bankingAgentEnablements,
-        eq(bankingAgentEnablements.connectionId, bankingConnections.id),
-      )
-      .where(
-        and(
-          eq(bankingConnections.orgId, auth.orgId),
-          eq(bankingConnections.userId, auth.userId),
-          eq(bankingConnections.provider, PROVIDER),
-          or(
-            eq(bankingConnections.status, "active"),
-            eq(bankingConnections.status, "repair_required"),
-          ),
-          isNull(bankingConnections.revokedAt),
-          isNull(bankingConnections.deletedAt),
-          or(
-            isNull(bankingConnections.consentExpiresAt),
-            gt(bankingConnections.consentExpiresAt, nowValue),
-          ),
-          eq(bankingAgentEnablements.orgId, auth.orgId),
-          eq(bankingAgentEnablements.userId, auth.userId),
-          eq(bankingAgentEnablements.agentId, agentId),
-          isNull(bankingAgentEnablements.revokedAt),
-          gt(bankingAgentEnablements.expiresAt, nowValue),
-        ),
-      )
-      .limit(1);
-
-    return grant ?? null;
-  },
-);
+function bankingGrantPredicate(
+  auth: BankingAuth,
+  agentId: string,
+  nowValue: Date,
+) {
+  return and(
+    eq(bankingConnections.orgId, auth.orgId),
+    eq(bankingConnections.userId, auth.userId),
+    eq(bankingConnections.provider, PROVIDER),
+    or(
+      eq(bankingConnections.status, "active"),
+      eq(bankingConnections.status, "repair_required"),
+    ),
+    isNull(bankingConnections.revokedAt),
+    isNull(bankingConnections.deletedAt),
+    or(
+      isNull(bankingConnections.consentExpiresAt),
+      gt(bankingConnections.consentExpiresAt, nowValue),
+    ),
+    eq(bankingAgentEnablements.orgId, auth.orgId),
+    eq(bankingAgentEnablements.userId, auth.userId),
+    eq(bankingAgentEnablements.agentId, agentId),
+    isNull(bankingAgentEnablements.revokedAt),
+    gt(bankingAgentEnablements.expiresAt, nowValue),
+  );
+}
 
 const denyBankingAccess$ = command(
   async (
@@ -204,38 +182,36 @@ const denyBankingAccess$ = command(
   },
 );
 
-const enabledBankingAccounts$ = command(
-  async (
-    { get },
-    auth: BankingAuth,
-    grant: BankingGrantContext,
-  ): Promise<readonly BankingAccountRow[]> => {
-    const db = get(db$);
-
-    return await db
-      .select()
-      .from(bankingAccounts)
-      .where(
-        and(
-          eq(bankingAccounts.connectionId, grant.connectionId),
-          eq(bankingAccounts.orgId, auth.orgId),
-          eq(bankingAccounts.userId, auth.userId),
-          eq(bankingAccounts.enabled, true),
-          isNull(bankingAccounts.repairRequiredAt),
-          inArray(bankingAccounts.providerAccountId, grant.accountProviderIds),
-        ),
-      );
-  },
-);
+function bankingAccountsPredicate(
+  auth: BankingAuth,
+  grant: BankingGrantContext,
+) {
+  return and(
+    eq(bankingAccounts.connectionId, grant.connectionId),
+    eq(bankingAccounts.orgId, auth.orgId),
+    eq(bankingAccounts.userId, auth.userId),
+    eq(bankingAccounts.enabled, true),
+    isNull(bankingAccounts.repairRequiredAt),
+    inArray(bankingAccounts.providerAccountId, grant.accountProviderIds),
+  );
+}
 
 export const authorizeBankingAccess$ = command(
   async (
-    { set },
+    { get, set },
     auth: BankingAuth,
     action: BankingOperationScope,
     providerAccountId: string | undefined,
   ): Promise<BankingAccessResult> => {
-    const run = await set(findBankingRun$, auth);
+    const db = get(db$);
+    const [runRow] = await db
+      .select(bankingRunColumns())
+      .from(agentRuns)
+      .where(bankingRunPredicate(auth))
+      .limit(1);
+    const run: BankingRunContext | null = runRow?.agentId
+      ? { ...runRow, agentId: runRow.agentId }
+      : null;
     if (!run) {
       return await set(denyBankingAccess$, auth, action, providerAccountId, {
         failureCode: "RUN_NOT_FOUND",
@@ -243,7 +219,17 @@ export const authorizeBankingAccess$ = command(
       });
     }
 
-    const grant = await set(findBankingGrant$, auth, run.agentId);
+    const nowValue = nowDate();
+    const [grantRow] = await db
+      .select(bankingGrantColumns())
+      .from(bankingConnections)
+      .innerJoin(
+        bankingAgentEnablements,
+        eq(bankingAgentEnablements.connectionId, bankingConnections.id),
+      )
+      .where(bankingGrantPredicate(auth, run.agentId, nowValue))
+      .limit(1);
+    const grant: BankingGrantContext | null = grantRow ?? null;
     if (!grant) {
       return await set(denyBankingAccess$, auth, action, providerAccountId, {
         agentId: run.agentId,
@@ -300,7 +286,10 @@ export const authorizeBankingAccess$ = command(
       };
     }
 
-    const accounts = await set(enabledBankingAccounts$, auth, grant);
+    const accounts: readonly BankingAccountRow[] = await db
+      .select()
+      .from(bankingAccounts)
+      .where(bankingAccountsPredicate(auth, grant));
     const account = providerAccountId
       ? accounts.find((row) => {
           return row.providerAccountId === providerAccountId;
