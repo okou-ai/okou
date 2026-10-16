@@ -554,7 +554,7 @@ function TemplatesPane({
                 type="button"
                 aria-pressed={category === active}
                 className={cn(
-                  "inline-flex h-7 shrink-0 items-center rounded-md px-1.5 text-xs transition-colors",
+                  "inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs transition-colors",
                   category === active
                     ? "bg-state-selected text-foreground"
                     : "text-muted-foreground hover:bg-state-hover hover:text-foreground",
@@ -567,6 +567,7 @@ function TemplatesPane({
                 }}
               >
                 {slashTemplateCategoryLabel(category)}{" "}
+                {/* A flex row drops the space, so `gap-1` keeps them apart. */}
                 <span className="text-muted-foreground/50">
                   {templateCount(category)}
                 </span>
@@ -673,7 +674,12 @@ export function SlashActionsPanel({
       </div>
     );
   }
-  const templateTotal = categories.reduce((total, category) => {
+  // A type with nothing to show gets no tab, as Document has while built-in
+  // documents are off and none of its custom ones exist yet.
+  const templateCategories = categories.filter((category) => {
+    return templateCount(category) > 0;
+  });
+  const templateTotal = templateCategories.reduce((total, category) => {
     return total + templateCount(category);
   }, 0);
   return (
@@ -705,7 +711,7 @@ export function SlashActionsPanel({
             onPreview={onPreview}
             onOpen={overview.openWorkflows}
           />
-          {categories.length > 0 && (
+          {templateCategories.length > 0 && (
             <SlashEntryRow
               id={TEMPLATES_ENTRY_ID}
               Icon={SwatchBook}
@@ -725,7 +731,7 @@ export function SlashActionsPanel({
       {isDesktop && workflowsOpen && <WorkflowPane {...list} />}
       {isDesktop && templatesOpen && (
         <TemplatesPane
-          categories={categories}
+          categories={templateCategories}
           templateCount={templateCount}
           onSelectTemplate={onSelectTemplate}
           onBrowseAll={onBrowseAll}

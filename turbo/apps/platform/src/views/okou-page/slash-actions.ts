@@ -57,7 +57,8 @@ export interface SlashAction {
 /**
  * Whether a typed slash query names the action: the label or one of its
  * keywords starts with it, or one of their words does, so `/re` finds Rename
- * chat but not Share chat.
+ * chat but not Share chat. Keywords are the action's own command words, not
+ * loose synonyms, so a short query does not surface unrelated actions.
  */
 export function slashActionMatches(action: SlashAction, query: string) {
   const normalized = query.toLowerCase().trim();
@@ -125,7 +126,7 @@ function useModelActions(
     hint: t(($) => {
       return $.chat.composer.slashActions.modelHint;
     }),
-    keywords: ["model", "switch"],
+    keywords: ["model"],
     run: () => {
       leave();
       openModelPicker(true);
@@ -169,7 +170,7 @@ function useComposerActions(
       hint: t(($) => {
         return $.chat.composer.slashActions.connectHint;
       }),
-      keywords: ["connect", "tool", "connector", "integration", "app"],
+      keywords: ["connect", "connector", "integration"],
       run: () => {
         leave();
         openConnectors();
@@ -186,7 +187,7 @@ function useComposerActions(
       hint: t(($) => {
         return $.chat.composer.slashActions.scheduleHint;
       }),
-      keywords: ["schedule", "automation", "recurring", "every"],
+      keywords: ["schedule", "automation"],
       run: () => {
         leave();
         insertText(CREATE_AUTOMATION_CHAT_PROMPT);
