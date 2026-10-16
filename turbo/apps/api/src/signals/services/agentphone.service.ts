@@ -1278,7 +1278,6 @@ const persistAgentPhoneChatMessage$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
       readonly userLink: AgentPhoneUserLink;
       readonly agent: WorkspaceAgent;
       readonly event: AgentPhoneMessageEvent;
@@ -1414,7 +1413,6 @@ const runAgentForAgentPhone$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
       readonly userLink: AgentPhoneUserLink;
       readonly agent: WorkspaceAgent;
       readonly event: AgentPhoneMessageEvent;
@@ -1596,7 +1594,6 @@ export const handleAgentPhoneMessage$ = command(
     await set(
       runAgentForAgentPhone$,
       {
-        db,
         userLink,
         agent,
         rootMessageId,
