@@ -1,4 +1,6 @@
 import { command, computed, state } from "ccstate";
+import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
+import type { ComposerTemplateAttachment } from "./tiptap-workflow-composer.ts";
 import {
   createWorkflowRecommendationSignals,
   type WorkflowRecommendationActions,
@@ -106,6 +108,28 @@ export function createComposerTaskChipsSignals(
   const browseTask$ = command(({ set }, task: ComposerTask) => {
     set(applyTask$, task, true);
   });
+  const selectTemplate$ = command(
+    (
+      { set },
+      template: GenerationTemplateRequest,
+      attachment: ComposerTemplateAttachment,
+      type: GenerationTemplateRequest["type"] = template.type,
+    ) => {
+      // The picker can leave the category that opened it. Insert before changing
+      // tasks because task activation moves the editor selection to the end.
+      set(workflowActions.insertTemplate$, template, attachment);
+      if (
+        type === "presentation" ||
+        type === "illustration" ||
+        type === "website" ||
+        type === "workflow"
+      ) {
+        set(openTask$, type === "illustration" ? "image" : type);
+      } else {
+        set(applyTask$, null);
+      }
+    },
+  );
   /**
    * How far a rail can still travel, per rail. A rail that has never reported
    * is assumed to fit, which hides both pagers until a measurement proves
@@ -145,6 +169,7 @@ export function createComposerTaskChipsSignals(
     selectTask$,
     openTask$,
     browseTask$,
+    selectTemplate$,
     railTravel$,
     setRailTravel$,
     bindRail$,

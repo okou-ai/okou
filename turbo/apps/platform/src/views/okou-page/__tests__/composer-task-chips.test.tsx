@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
+import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import {
   click,
@@ -338,6 +339,79 @@ test("The /ill slash command selects Image", async () => {
   expect(editor).toHaveTextContent("A quiet garden");
   expect(editor).not.toHaveTextContent("/ill");
 });
+
+test.each([
+  {
+    entry: "Presentation",
+    category: "Illustration",
+    task: "Image",
+    template: ILLUSTRATION_TEMPLATE_ITEMS[0]!,
+    type: "illustration",
+    instructions: ["Create an image."],
+  },
+  {
+    entry: "Illustration",
+    category: "Presentation",
+    task: "Presentation",
+    template: PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!,
+    type: "presentation",
+    instructions: [expect.stringContaining("Create a presentation.")],
+  },
+  {
+    entry: "Presentation",
+    category: "Website",
+    task: "Website",
+    template: WEBSITE_TEMPLATE_ITEMS[0]!,
+    type: "website",
+    instructions: [],
+  },
+])(
+  "Selecting $category after /$entry updates the task and generation settings",
+  async ({ entry, category, task, template, type, instructions }) => {
+    const capture = mockTemplateChat();
+    const editor = await setupChips();
+    await fill(editor, "Keep my launch brief /");
+    const menu = await screen.findByTestId("slash-workflow-menu");
+    await userEvent.setup({ delay: null }).click(button(entry, menu));
+    const dialog = await screen.findByRole("dialog");
+    click(tabByText(category));
+    click(
+      await within(dialog).findByLabelText(
+        `Select ${type === "website" ? "website " : ""}template ${template.title}`,
+      ),
+    );
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(selectedTask(editor, task)).toBeInTheDocument();
+    expect(
+      queryAllByRoleFast("button", composerCard(editor)).find((item) => {
+        return (
+          item.getAttribute("aria-label") ===
+          `Remove ${entry === "Illustration" ? "Image" : entry}`
+        );
+      }),
+    ).toBeUndefined();
+    expect(editor).toHaveTextContent("Keep my launch brief");
+    expect(composerInlineTemplates()).toHaveLength(1);
+    expect(composerInlineTemplates()[0]).toHaveTextContent(template.title);
+    expect(
+      screen.queryAllByRole("combobox", { name: "Slide count" }),
+    ).toHaveLength(type === "presentation" ? 1 : 0);
+
+    click(button("Send"));
+    await waitFor(() => {
+      expect(capture.sentMessages).toHaveLength(1);
+    });
+    expect(capture.selectedTemplates).toHaveLength(1);
+    expect(capture.selectedTemplates[0]).toMatchObject({ type });
+    expect(
+      capture.sentMessages[0]?.parts.flatMap((part) => {
+        return part.type === "additional_info" ? [part.text] : [];
+      }),
+    ).toStrictEqual(instructions);
+  },
+);
 
 // A cover brings its template along instead of opening the picker, but lands
 // the composer in the same task its category row would.

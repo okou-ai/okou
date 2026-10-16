@@ -16,7 +16,7 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { findComposerEditor } from "./chat-composer-test-helpers.ts";
+import { findComposerEditor, tabByText } from "./chat-composer-test-helpers.ts";
 import {
   AGENT_ID,
   context,
@@ -182,6 +182,70 @@ test.each(SHELVES)(
         { type: "custom", selection: { userTemplateId: own.id } },
       ]);
     });
+  },
+);
+
+test.each([
+  {
+    kind: "presentation",
+    entry: "Illustration",
+    tasks: ["Remove Presentation"],
+    instructions: [expect.stringContaining("Create a presentation.")],
+  },
+  {
+    kind: "illustration",
+    entry: "Presentation",
+    tasks: ["Remove Image"],
+    instructions: ["Create an image."],
+  },
+  { kind: "document", entry: "Presentation", tasks: [], instructions: [] },
+] as const)(
+  "Selecting a custom $kind template updates the slash task",
+  async ({ kind, entry, tasks, instructions }) => {
+    const capture = mockTemplateChat();
+    const own = template(kind);
+    context.mocks.api(userTemplatesContract.list, ({ respond }) => {
+      return respond(200, [own]);
+    });
+    await setupPage({
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+      featureSwitches: { [FeatureSwitchKey.CustomTemplates]: true },
+    });
+    const editor = await findComposerEditor();
+    await fill(editor, "Keep my launch brief /");
+    const menu = await screen.findByTestId("slash-workflow-menu");
+    await userEvent.setup({ delay: null }).click(button(entry, menu));
+    const dialog = await screen.findByRole("dialog");
+    click(tabByText("Custom"));
+    await within(dialog).findByText(own.title);
+    click(button("Use", dialog));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(
+        queryAllByRoleFast("button").flatMap((item) => {
+          const label = item.getAttribute("aria-label");
+          return label === "Remove Presentation" || label === "Remove Image"
+            ? [label]
+            : [];
+        }),
+      ).toStrictEqual(tasks);
+    });
+    expect(editor).toHaveTextContent(own.title);
+    expect(editor).toHaveTextContent("Keep my launch brief");
+    click(button("Send"));
+    await waitFor(() => {
+      expect(capture.selectedTemplates).toStrictEqual([
+        { type: "custom", selection: { userTemplateId: own.id } },
+      ]);
+    });
+    expect(
+      capture.sentMessages[0]?.parts.flatMap((part) => {
+        return part.type === "additional_info" ? [part.text] : [];
+      }),
+    ).toStrictEqual(instructions);
   },
 );
 
