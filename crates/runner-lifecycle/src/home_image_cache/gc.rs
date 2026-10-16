@@ -276,9 +276,20 @@ impl HomeImageCache {
         let inventory = self.gc_inventory(dry_run).await?;
         let stats = self.fs_stats().await?;
         let pressure = self.pressure_thresholds(stats);
+        let prospective = if dry_run {
+            inventory.pre_cleanup_freed_bytes
+        } else {
+            0
+        };
+        // Preview the trigger after prospective cleanup too. Live decisions
+        // still use only actual stats queried after physical cleanup.
+        let decision_available = stats
+            .available_bytes
+            .saturating_add(prospective)
+            .min(stats.total_bytes);
         let required = if additional_peak_bytes > 0 {
             Some(pressure.reserve_bytes.saturating_add(additional_peak_bytes))
-        } else if pressure.reserve_feasible && stats.available_bytes < pressure.low_free_bytes {
+        } else if pressure.reserve_feasible && decision_available < pressure.low_free_bytes {
             Some(pressure.high_free_bytes)
         } else {
             None
@@ -289,11 +300,6 @@ impl HomeImageCache {
             "filesystem_pressure"
         } else {
             "entry_count"
-        };
-        let prospective = if dry_run {
-            inventory.pre_cleanup_freed_bytes
-        } else {
-            0
         };
         let mut continuation = GcContinuation::new(inventory.candidates, prospective);
         let mut removed = inventory.pre_cleanup_freed_bytes;

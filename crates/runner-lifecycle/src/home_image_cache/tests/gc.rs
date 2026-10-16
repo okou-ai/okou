@@ -207,6 +207,33 @@ async fn gc_dry_run_retains_generation_and_uses_actual_allocated_bytes() {
     );
 }
 
+#[tokio::test]
+async fn dry_run_pre_cleanup_recovery_to_low_water_does_not_propose_valid_image_eviction() {
+    let f = Fixture::new().await;
+    let committed = f.commit("thread", b"home", "2026-10-09T09:00:00Z").await;
+    let paths = f.cache.entry_paths(&f.key("thread"));
+    let orphan = paths.image(&uuid::Uuid::new_v4().to_string()).unwrap();
+    write_image(&orphan, b"orphan", SIZE);
+    let orphan_bytes = std::fs::metadata(&orphan).unwrap().blocks() * 512;
+    assert!(orphan_bytes > 1);
+    let stats = FsStats {
+        total_bytes: 400 * GIB,
+        ..FsStats::default()
+    };
+    let thresholds = HomeCachePressureThresholds::from_fs_stats(stats);
+    f.cache.set_fs_stats_for_test(FsStats {
+        available_bytes: thresholds.low_free_bytes - 1,
+        ..stats
+    });
+    assert_eq!(f.cache.gc(true).await.unwrap(), orphan_bytes);
+    assert!(orphan.exists());
+    assert!(f.image("thread", &committed).exists());
+    assert_eq!(
+        f.metadata("thread").await.image_generation,
+        committed.image_generation
+    );
+}
+
 #[test]
 fn pressure_watermarks_cover_small_infeasible_and_integer_boundaries() {
     let example = HomeCachePressureThresholds::from_fs_stats(FsStats {
