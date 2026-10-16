@@ -16,11 +16,11 @@ export function CopyResourceLink({ url }: { readonly url: string }) {
     <Button
       showTooltip
       variant="quiet"
-      size="icon-sm"
+      size="icon-xs"
       aria-label={t(($) => {
         return $.chat.resources.copyLink;
       })}
-      className="shrink-0 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/resource-row:opacity-100 group-focus-within/resource-row:opacity-100"
+      className="shrink-0 hover:bg-gray-50 focus-visible:bg-gray-50 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/resource-row:opacity-100 group-focus-within/resource-row:opacity-100 [&_svg]:size-3.5"
       onClick={() => {
         return detach(copy(url, signal), Reason.DomCallback);
       }}
@@ -50,6 +50,7 @@ export function ChatResourceLinks({
   }
   return (
     <section
+      className={showHeading ? "py-3" : undefined}
       aria-label={t(($) => {
         return $.chat.resources.links;
       })}
@@ -72,21 +73,18 @@ export function ChatResourceLinks({
             return (
               <li
                 key={link.url}
-                className="group/resource-row flex min-w-0 items-center rounded-lg hover:bg-state-hover"
+                className="group/resource-row flex min-w-0 items-center gap-1"
               >
                 <a
                   href={link.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex min-h-11 min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-1 text-sm hover:bg-state-hover"
+                  className="min-h-8 min-w-0 flex-1 truncate rounded-lg px-1 py-1.5 text-[13px] leading-5 hover:bg-gray-50 focus-visible:bg-gray-50"
                   title={link.url}
                 >
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate">{link.title}</span>
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {new URL(link.url).hostname}
-                    </span>
-                  </span>
+                  {link.title === link.url
+                    ? link.title.replace(/^https?:\/\//u, "")
+                    : link.title}
                 </a>
                 <CopyResourceLink url={link.url} />
               </li>

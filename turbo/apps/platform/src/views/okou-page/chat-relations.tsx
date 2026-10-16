@@ -143,9 +143,9 @@ function Origin({ signals }: { readonly signals: ChatRelationSignals }) {
       aria-label={t(($) => {
         return $.chat.relations.origin;
       })}
-      className="flex shrink-0 items-center gap-1 border-b border-border/60 px-5 py-2"
+      className="flex min-h-10.5 shrink-0 items-center gap-1.5 border-b border-divider px-4 py-1.5"
     >
-      <h4 className="shrink-0 text-xs text-muted-foreground">
+      <h4 className="shrink-0 text-xs leading-4.5 text-muted-foreground">
         {t(($) => {
           return $.chat.relations.origin;
         })}
@@ -157,13 +157,13 @@ function Origin({ signals }: { readonly signals: ChatRelationSignals }) {
             pathParams: { threadId: part.threadId },
             hash: `run-${part.runId}`,
           }}
-          className="min-w-0 flex-1 truncate rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-state-hover hover:text-foreground"
+          className="min-w-0 truncate rounded-lg px-1.5 py-1 text-xs leading-4.5 text-muted-foreground transition-colors hover:bg-gray-50 hover:text-foreground focus-visible:bg-gray-50"
           title={part.titleSnapshot}
         >
           {part.titleSnapshot}
         </Link>
       ) : part.kind === "mcp" ? (
-        <p className="px-2 py-1 text-xs text-muted-foreground">
+        <p className="min-w-0 truncate px-1.5 py-1 text-xs leading-4.5 text-muted-foreground">
           {part.clientName ??
             t(($) => {
               return $.chat.origins.mcp;
@@ -173,7 +173,7 @@ function Origin({ signals }: { readonly signals: ChatRelationSignals }) {
         <ExternalSourceMessageAnnotation
           part={part}
           compact
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1 text-xs text-muted-foreground"
+          className="flex min-w-0 items-center gap-2 rounded-lg px-1.5 py-1 text-xs leading-4.5 text-muted-foreground"
         />
       )}
     </section>
@@ -189,7 +189,7 @@ function RelatedChatLink({ chat }: { readonly chat: RelatedChat }) {
     });
   if (chat.status === "unavailable") {
     return (
-      <span className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-sm text-muted-foreground">
+      <span className="flex min-w-0 flex-1 items-center gap-2 px-1 py-1.75 text-[13px] leading-5 text-muted-foreground">
         <CircleSlash size={16} className="shrink-0" />
         <span className="truncate">
           {t(($) => {
@@ -210,7 +210,7 @@ function RelatedChatLink({ chat }: { readonly chat: RelatedChat }) {
     <Link
       pathname={ROUTES.chat}
       options={{ pathParams: { threadId: chat.threadId } }}
-      className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-2 text-sm transition-colors hover:bg-state-hover"
+      className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-1.75 text-[13px] leading-5 transition-colors hover:bg-gray-50 focus-visible:bg-gray-50"
       title={title}
     >
       <span className="min-w-0 flex-1 truncate">{title}</span>
@@ -263,7 +263,7 @@ function MessageRow({
     });
   const content = (
     <>
-      <span className="block whitespace-pre-wrap break-words text-sm leading-relaxed">
+      <span className="block whitespace-pre-wrap break-words text-[13px] leading-5.25">
         {preview}
       </span>
       <span className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -321,11 +321,12 @@ function ResourceChatRow({
   const expanded = selectedPeer === chat.threadId;
   return (
     <li>
-      <div className="flex items-center">
+      <div className="flex min-w-0 items-center gap-1">
         <RelatedChatLink chat={chat} />
         <Button
           variant="quiet"
-          size="icon-sm"
+          size="icon-xs"
+          className="shrink-0 hover:bg-gray-50 focus-visible:bg-gray-50 [&_svg]:size-3"
           aria-expanded={expanded}
           aria-label={t(
             ($) => {
@@ -351,7 +352,7 @@ function ResourceChatRow({
         </Button>
       </div>
       {expanded && messages && (
-        <div className="mb-3 ml-2 border-l border-border/60 pl-2">
+        <div className="mb-2 ml-1 border-l border-divider pl-1">
           <Messages
             list={messages}
             reload={reload}
@@ -419,6 +420,7 @@ function RelationshipsInner({ thread }: { readonly thread: ChatPanelSignals }) {
   }
   return (
     <section
+      className="py-3"
       aria-label={t(($) => {
         return $.chat.relations.communications;
       })}
@@ -442,9 +444,9 @@ function RelationshipsInner({ thread }: { readonly thread: ChatPanelSignals }) {
       >
         <Button
           variant="quiet"
-          size="icon-sm"
+          size="icon-xs"
           showTooltip
-          className="text-muted-foreground [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/heading:opacity-100 group-focus-within/heading:opacity-100"
+          className="text-muted-foreground hover:bg-gray-50 focus-visible:bg-gray-50 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/heading:opacity-100 group-focus-within/heading:opacity-100 [&_svg]:size-3.5"
           aria-label={t(($) => {
             return $.chat.relations.refresh;
           })}

@@ -208,10 +208,10 @@ function ResourceOutputRow({
 }) {
   const openArtifact = useSet(openArtifactSidebar$);
   return (
-    <li className="group/resource-row flex min-w-0 items-center rounded-lg hover:bg-state-hover">
+    <li className="group/resource-row flex min-w-0 items-center gap-1">
       <Button
         variant="quiet"
-        className="h-10 min-w-0 flex-1 justify-start gap-3 px-2 text-sm font-normal"
+        className="h-8.5 min-w-0 flex-1 justify-start gap-2.5 px-1 text-[13px] leading-5 font-normal text-foreground hover:bg-gray-50 focus-visible:bg-gray-50"
         onClick={() => {
           openArtifact(
             {
@@ -256,7 +256,7 @@ function ChatResourcesBody({
     <>
       {hasRelations && <ChatOrigin thread={thread} />}
       {/* Sticky category controls only overlap rows inside this scroll area. */}
-      <div className="isolate min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain p-3 [overflow-anchor:none]">
+      <div className="isolate min-h-0 flex-1 divide-y divide-divider overflow-y-auto overscroll-contain px-4 [overflow-anchor:none]">
         {hasRelations && <ChatRelationships thread={thread} />}
         {content.state === "hasError" ? (
           <div className="flex flex-col items-center gap-2 py-4 text-sm text-muted-foreground">
@@ -275,6 +275,7 @@ function ChatResourcesBody({
           <>
             {data.artifacts.length > 0 && (
               <section
+                className="py-3"
                 aria-label={t(($) => {
                   return $.artifacts.sidebar.panelTitle;
                 })}
@@ -328,11 +329,11 @@ function ChatResourcesBody({
       </div>
       {(content.state === "hasError" ||
         (data && (data.artifacts.length > 0 || data.links.length > 0))) && (
-        <div className="shrink-0 border-t border-border/60 p-2">
+        <div className="shrink-0 border-t border-divider px-4 py-1.5">
           <Button
             variant="quiet"
             size="sm"
-            className="w-full justify-start"
+            className="justify-start px-1 text-xs leading-4.5 font-normal hover:bg-gray-50 focus-visible:bg-gray-50"
             onClick={() => {
               setOpen(false);
               openAll();
