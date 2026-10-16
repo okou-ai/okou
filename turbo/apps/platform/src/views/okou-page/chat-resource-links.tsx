@@ -1,9 +1,10 @@
 import { useLastResolved, useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, ChevronUp, Copy, ExternalLink } from "lucide-react";
+import { Copy } from "lucide-react";
 import { Button } from "@okouai/ui";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import { copyChatResourceLink$ } from "../../signals/chat-page/chat-resources.ts";
+import { ChatResourceSectionHeading } from "./chat-resource-section.tsx";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
@@ -15,43 +16,16 @@ export function CopyResourceLink({ url }: { readonly url: string }) {
     <Button
       showTooltip
       variant="quiet"
-      size="icon-sm"
+      size="icon-xs"
       aria-label={t(($) => {
         return $.chat.resources.copyLink;
       })}
-      className="shrink-0 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+      className="shrink-0 hover:bg-gray-50 focus-visible:bg-gray-50 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/resource-row:opacity-100 group-focus-within/resource-row:opacity-100 [&_svg]:size-3.5"
       onClick={() => {
         return detach(copy(url, signal), Reason.DomCallback);
       }}
     >
       <Copy size={14} />
-    </Button>
-  );
-}
-
-export function ChatResourcePreviewToggle({
-  expanded,
-  onToggle,
-}: {
-  readonly expanded: boolean;
-  readonly onToggle: () => void;
-}) {
-  const { t } = useTranslation();
-  const label = t(($) => {
-    return expanded ? $.chat.resources.collapse : $.chat.resources.expand;
-  });
-  return (
-    <Button
-      variant="quiet"
-      size="xs"
-      iconSize="sm"
-      className="w-full justify-start gap-1 rounded-lg px-2 text-xs font-normal text-muted-foreground/70 hover:text-muted-foreground"
-      aria-label={label}
-      aria-expanded={expanded}
-      onClick={onToggle}
-    >
-      {label}
-      {expanded ? <ChevronUp aria-hidden /> : <ChevronDown aria-hidden />}
     </Button>
   );
 }
@@ -76,16 +50,21 @@ export function ChatResourceLinks({
   }
   return (
     <section
+      className={showHeading ? "py-3" : undefined}
       aria-label={t(($) => {
         return $.chat.resources.links;
       })}
     >
       {showHeading && (
-        <h3 className="px-2 pb-2 text-xs font-medium text-muted-foreground">
-          {t(($) => {
+        <ChatResourceSectionHeading
+          title={t(($) => {
             return $.chat.resources.links;
           })}
-        </h3>
+          count={links.length}
+          preview={
+            preview && links.length > preview.limit ? preview : undefined
+          }
+        />
       )}
       <ul className="m-0 list-none p-0">
         {links
@@ -94,32 +73,24 @@ export function ChatResourceLinks({
             return (
               <li
                 key={link.url}
-                className="group flex min-w-0 items-center rounded-lg hover:bg-state-hover"
+                className="group/resource-row flex min-w-0 items-center gap-1"
               >
                 <a
                   href={link.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex h-10 min-w-0 flex-1 items-center gap-3 rounded-lg px-2 text-sm hover:bg-state-hover"
+                  className="min-h-8 min-w-0 flex-1 truncate rounded-lg px-1 py-1.5 text-[13px] leading-5 hover:bg-gray-50 focus-visible:bg-gray-50"
                   title={link.url}
                 >
-                  <ExternalLink
-                    size={16}
-                    className="shrink-0 text-muted-foreground"
-                  />
-                  <span className="truncate">{link.title}</span>
+                  {link.title === link.url
+                    ? link.title.replace(/^https?:\/\//u, "")
+                    : link.title}
                 </a>
                 <CopyResourceLink url={link.url} />
               </li>
             );
           })}
       </ul>
-      {preview && links.length > preview.limit && (
-        <ChatResourcePreviewToggle
-          expanded={preview.expanded}
-          onToggle={preview.onToggle}
-        />
-      )}
     </section>
   );
 }

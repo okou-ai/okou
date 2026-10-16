@@ -1,4 +1,4 @@
-import { command, computed, state, type Computed } from "ccstate";
+import { command, computed, state, type Command, type Computed } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { marked } from "marked";
@@ -195,15 +195,22 @@ function createChatResourceContentSignals(
   return { content$, links$ };
 }
 
-function createResourceElementRef() {
+function createResourceElementRef(onDetach$?: Command<void, []>) {
   const element$ = state<HTMLElement | null>(null);
   const onRef$ = onRef(
-    command(({ set }, element: HTMLElement, signal: AbortSignal) => {
+    command(({ get, set }, element: HTMLElement, signal: AbortSignal) => {
       set(element$, element);
       signal.addEventListener(
         "abort",
         () => {
+          // A closing desktop popup can detach after its mobile replacement.
+          if (get(element$) !== element) {
+            return;
+          }
           set(element$, null);
+          if (onDetach$) {
+            set(onDetach$);
+          }
         },
         { once: true },
       );
@@ -229,11 +236,38 @@ function resourcePopupAnchor(boundary: HTMLElement | null) {
     : null;
 }
 
+function createResourcePopupSignals() {
+  const frozenHeight$ = state<number | null>(null);
+  const popup = createResourceElementRef(
+    command(({ set }) => {
+      set(frozenHeight$, null);
+    }),
+  );
+  const freezeHeight$ = command(({ get, set }) => {
+    if (get(frozenHeight$) !== null) {
+      return;
+    }
+    const height = get(popup.element$)?.offsetHeight;
+    if (height && height > 0) {
+      // Lock the rendered size only when a category is expanded or collapsed.
+      set(frozenHeight$, height);
+    }
+  });
+  return {
+    ...popup,
+    freezeHeight$,
+    frozenHeight$: computed((get) => {
+      return get(frozenHeight$);
+    }),
+  };
+}
+
 function createChatResourcePanelSignals() {
   const gutterWidth$ = state(0);
   const anchor = createResourceElementRef();
-  const popup = createResourceElementRef();
+  const popup = createResourcePopupSignals();
   const boundary$ = state<HTMLElement | null>(null);
+  const collisionBoundary$ = state<HTMLElement | null>(null);
   const messageColumn$ = state<HTMLElement | null>(null);
   const temporary$ = state<{
     readonly open: boolean;
@@ -295,6 +329,8 @@ function createChatResourcePanelSignals() {
         return;
       }
       set(boundary$, viewport);
+      // Use the whole pane so the composer does not shorten the resource list.
+      set(collisionBoundary$, element);
       set(messageColumn$, column);
       set(temporary$, null);
       const measure = () => {
@@ -309,6 +345,7 @@ function createChatResourcePanelSignals() {
         "abort",
         () => {
           set(boundary$, null);
+          set(collisionBoundary$, null);
           set(messageColumn$, null);
           set(temporary$, null);
         },
@@ -339,10 +376,15 @@ function createChatResourcePanelSignals() {
     layoutOnRef$,
     anchorOnRef$: anchor.onRef$,
     popupOnRef$: popup.onRef$,
+    freezeHeight$: popup.freezeHeight$,
+    frozenHeight$: popup.frozenHeight$,
     blurControl$,
     anchor$: anchor.element$,
     boundary$: computed((get) => {
       return get(boundary$);
+    }),
+    collisionBoundary$: computed((get) => {
+      return get(collisionBoundary$);
     }),
     popupAnchor$: computed((get) => {
       return resourcePopupAnchor(get(boundary$));
@@ -358,22 +400,30 @@ export function createChatResourceSignals(
   artifacts$: Computed<Promise<ChatThreadArtifactRun[]>>,
   initialEventsReady$: Computed<boolean>,
 ) {
-  const expandedSections$ = state({ artifacts: false, links: false });
+  const panel = createChatResourcePanelSignals();
+  const expandedSections$ = state({
+    messages: false,
+    artifacts: false,
+    links: false,
+  });
   return {
     expandedSections$: computed((get) => {
       return get(expandedSections$);
     }),
-    toggleSection$: command(({ set }, section: "artifacts" | "links") => {
-      set(expandedSections$, (expanded) => {
-        return { ...expanded, [section]: !expanded[section] };
-      });
-    }),
+    toggleSection$: command(
+      ({ set }, section: "messages" | "artifacts" | "links") => {
+        set(panel.freezeHeight$);
+        set(expandedSections$, (expanded) => {
+          return { ...expanded, [section]: !expanded[section] };
+        });
+      },
+    ),
     ...createChatResourceContentSignals(
       groups$,
       artifacts$,
       initialEventsReady$,
     ),
-    ...createChatResourcePanelSignals(),
+    ...panel,
   };
 }
 

@@ -3,6 +3,9 @@ import {
   chatRelationsContract,
   type ChatRelationCursor,
   type ChatRelationMessage,
+  type ChatCommunication,
+  type CreatedChatRelation,
+  type RelatedChat,
 } from "@okouai/api-contracts/contracts/chat-relations";
 import type { UserMessagePart } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -163,19 +166,86 @@ function createRelationContentSignal(
     if (origin === null) {
       return null;
     }
+    if (origin.kind === "source") {
+      return true;
+    }
     // Failed lists are settled too: their views retain the error and retry UI.
     const results = await Promise.allSettled(
       lists.map((list) => {
         return get(list.data$);
       }),
     );
-    return (
-      origin.kind === "source" ||
-      results.some((result) => {
-        return result.status === "rejected" || result.value.items.length > 0;
-      })
-    );
+    return results.some((result) => {
+      return result.status === "rejected" || result.value.items.length > 0;
+    });
   });
+}
+
+export interface ResourceChat extends RelatedChat {
+  readonly lastActivityAt: string;
+}
+
+function createResourceChats(
+  children: ChatRelationList<CreatedChatRelation>,
+  communications: ChatRelationList<ChatCommunication>,
+) {
+  const data$ = computed(async (get) => {
+    const [created, exchanged] = await Promise.allSettled([
+      get(children.data$),
+      get(communications.data$),
+    ]);
+    const chats = new Map<string, ResourceChat>();
+    if (created.status === "fulfilled") {
+      for (const chat of created.value.items) {
+        chats.set(chat.threadId, { ...chat, lastActivityAt: chat.createdAt });
+      }
+    }
+    if (exchanged.status === "fulfilled") {
+      for (const chat of exchanged.value.items) {
+        chats.set(chat.threadId, {
+          ...chat,
+          lastActivityAt: chat.lastMessageAt,
+        });
+      }
+    }
+    return {
+      items: [...chats.values()].sort((left, right) => {
+        return (
+          right.lastActivityAt.localeCompare(left.lastActivityAt) ||
+          left.threadId.localeCompare(right.threadId)
+        );
+      }),
+      hasMore: [created, exchanged].some((result) => {
+        return (
+          result.status === "fulfilled" && result.value.nextCursor !== null
+        );
+      }),
+      failed: created.status === "rejected" || exchanged.status === "rejected",
+    };
+  });
+  const more$ = command(async ({ get, set }, signal: AbortSignal) => {
+    // Page both sources independently; one failing list must not hide the other.
+    const lists: readonly ChatRelationList<unknown>[] = [
+      children,
+      communications,
+    ];
+    const results = await Promise.allSettled(
+      lists.map(async (list) => {
+        const page = await get(list.data$);
+        signal.throwIfAborted();
+        if (page.nextCursor) {
+          await set(list.more$, signal);
+        }
+      }),
+    );
+    signal.throwIfAborted();
+    for (const result of results) {
+      if (result.status === "rejected") {
+        throw result.reason;
+      }
+    }
+  });
+  return { data$, more$ };
 }
 
 export function createChatRelationSignals(
@@ -289,8 +359,7 @@ export function createChatRelationSignals(
       children,
       communications,
     ]),
-    children,
-    communications,
+    chats: createResourceChats(children, communications),
     selectedPeer$: computed((get) => {
       return get(selectedPeer$);
     }),

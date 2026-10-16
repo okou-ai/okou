@@ -24,7 +24,7 @@ import {
 } from "./chat-resources-test-helpers.ts";
 
 test("Show all three resources without an overflow control at the limit", async () => {
-  const panel = await setupOverflowResources(3);
+  const { panel } = await setupOverflowResources(3);
   for (const name of ["Artifacts", "Links"]) {
     const section = within(panel).getByRole("region", { name });
     expect(within(section).getAllByRole("listitem")).toHaveLength(3);
@@ -40,7 +40,7 @@ test("Show all three resources without an overflow control at the limit", async 
 test.each(["Artifacts", "Links"] as const)(
   "Expand and collapse the %s list independently in place",
   async (name) => {
-    const panel = await setupOverflowResources(4);
+    const { panel } = await setupOverflowResources(4);
     expect(
       within(panel)
         .getAllByRole("heading")
@@ -127,7 +127,7 @@ test.each(["Artifacts", "Links"] as const)(
 );
 
 test("Browse complete artifacts and links in separate tabs from View all", async () => {
-  const panel = await setupOverflowResources(7);
+  const { panel } = await setupOverflowResources(7);
   click(within(panel).getByText("View all"));
   const all = await screen.findByRole("complementary", { name: "Resources" });
   await within(all).findByText("report-7.pdf");
@@ -149,7 +149,7 @@ test("Browse complete artifacts and links in separate tabs from View all", async
 });
 
 test("Keep loaded gallery pages and fullscreen when switching resource tabs", async () => {
-  const panel = await setupOverflowResources(2, { paginated: true });
+  const { panel } = await setupOverflowResources(2, { paginated: true });
   click(buttonNamed("View all", panel));
   const all = await screen.findByTestId("thread-sidebar-artifacts");
   await within(all).findByText("report-1.pdf");
@@ -177,7 +177,7 @@ test("Keep loaded gallery pages and fullscreen when switching resource tabs", as
 });
 
 test("Explain an empty Links tab and return from an unavailable gallery preview", async () => {
-  const panel = await setupOverflowResources(1, { withLinks: false });
+  const { panel } = await setupOverflowResources(1, { withLinks: false });
   click(buttonNamed("View all", panel));
   const all = await screen.findByTestId("thread-sidebar-artifacts");
   await within(all).findByText("report-1.pdf");
