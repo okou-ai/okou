@@ -31,7 +31,7 @@ import {
 
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
-import { type Db, writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { safeJsonParse } from "../utils";
 import {
   fetchFinicityJson,
@@ -167,57 +167,63 @@ async function createTestingCustomer(
   );
 }
 
-async function ensureConnection(
-  db: Db,
-  owner: BankingOwner,
-  signal: AbortSignal,
-): Promise<BankingConnectionRow | UserErrorResponse> {
-  const [existing] = await db
-    .select()
-    .from(bankingConnections)
-    .where(bankingConnectionCondition(owner))
-    .limit(1);
-  if (existing) {
-    return existing;
-  }
+const ensureConnection$ = command(
+  async (
+    { get, set },
+    owner: BankingOwner,
+    signal: AbortSignal,
+  ): Promise<BankingConnectionRow | UserErrorResponse> => {
+    const db = get(db$);
+    const [existing] = await db
+      .select()
+      .from(bankingConnections)
+      .where(bankingConnectionCondition(owner))
+      .limit(1);
+    signal.throwIfAborted();
+    if (existing) {
+      return existing;
+    }
 
-  const customerId = await createTestingCustomer(owner, signal);
-  signal.throwIfAborted();
-  if (typeof customerId !== "string") {
-    return customerId;
-  }
+    const customerId = await createTestingCustomer(owner, signal);
+    signal.throwIfAborted();
+    if (typeof customerId !== "string") {
+      return customerId;
+    }
 
-  await db
-    .insert(bankingConnections)
-    .values({
-      orgId: owner.orgId,
-      userId: owner.userId,
-      provider: PROVIDER,
-      providerCustomerId: customerId,
-      status: "active",
-    })
-    .onConflictDoNothing({
-      target: [
-        bankingConnections.orgId,
-        bankingConnections.userId,
-        bankingConnections.provider,
-      ],
-    });
+    await set(writeDb$)
+      .insert(bankingConnections)
+      .values({
+        orgId: owner.orgId,
+        userId: owner.userId,
+        provider: PROVIDER,
+        providerCustomerId: customerId,
+        status: "active",
+      })
+      .onConflictDoNothing({
+        target: [
+          bankingConnections.orgId,
+          bankingConnections.userId,
+          bankingConnections.provider,
+        ],
+      });
+    signal.throwIfAborted();
 
-  const [connection] = await db
-    .select()
-    .from(bankingConnections)
-    .where(bankingConnectionCondition(owner))
-    .limit(1);
-  return (
-    connection ??
-    userError(
-      409,
-      "BANKING_CONNECTION_CONFLICT",
-      "The banking connection changed while the request was starting",
-    )
-  );
-}
+    const [connection] = await db
+      .select()
+      .from(bankingConnections)
+      .where(bankingConnectionCondition(owner))
+      .limit(1);
+    signal.throwIfAborted();
+    return (
+      connection ??
+      userError(
+        409,
+        "BANKING_CONNECTION_CONFLICT",
+        "The banking connection changed while the request was starting",
+      )
+    );
+  },
+);
 
 export const bankingAccessRequestStatus$ = command(
   async (
@@ -327,7 +333,7 @@ export const startBankingConnectSession$ = command(
       return userError(404, "AGENT_NOT_FOUND", "Agent not found");
     }
 
-    const connection = await ensureConnection(db, args.owner, signal);
+    const connection = await set(ensureConnection$, args.owner, signal);
     signal.throwIfAborted();
     if (isUserErrorResponse(connection)) {
       return connection;
