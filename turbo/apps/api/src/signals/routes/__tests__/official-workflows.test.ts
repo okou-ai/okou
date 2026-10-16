@@ -1180,13 +1180,15 @@ function capturedOfficialSkill(
 describe("Morning Brief catalog reconciliation", () => {
   it.each(
     MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.flatMap((definitionName) => {
-      return [false, true].map((paused) => {
-        return { definitionName, paused };
+      return [false, true].flatMap((paused) => {
+        return [false, true].map((withBindings) => {
+          return { definitionName, paused, withBindings };
+        });
       });
     }),
   )(
-    "reconciles a schedule revision without replacing identities ($definitionName, paused=$paused)",
-    async ({ definitionName, paused }) => {
+    "reconciles, removes and restores a schedule without replacing identities ($definitionName, paused=$paused, bindings=$withBindings)",
+    async ({ definitionName, paused, withBindings }) => {
       await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
         // Publication and the scheduler are explicitly scoped authenticated
         // system boundaries; this first request selects the case-owned DB.
@@ -1247,29 +1249,84 @@ describe("Morning Brief catalog reconciliation", () => {
           );
         }
 
-        // A supported schedule-to-schedule source revision exercises existing
-        // configuration finalization, without inventing an event-based brief.
-        await syncCatalog(
-          catalog([
-            ...MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.map((name) => {
-              return activeDefinition(name, [
-                {
-                  key: "daily-delivery",
-                  parameters: [],
-                  desiredState: {
-                    kind: "schedule",
-                    schedule: { type: "cron", cronExpression: "0 8 * * *" },
+        const blueprint = (
+          changedDefaults: boolean,
+        ): OfficialWorkflowBlueprint => {
+          return {
+            key: "daily-delivery",
+            parameters: withBindings
+              ? [
+                  {
+                    key: "delivery-cron",
+                    type: "string",
+                    format: "text",
+                    required: true,
+                    default: changedDefaults ? "0 9 * * *" : "0 8 * * *",
                   },
-                },
-              ]);
+                  {
+                    key: "edition",
+                    type: "integer",
+                    required: true,
+                    default: changedDefaults ? 1 : 0,
+                  },
+                  {
+                    key: "include-summary",
+                    type: "boolean",
+                    required: true,
+                    default: changedDefaults,
+                  },
+                  {
+                    key: "note",
+                    type: "string",
+                    format: "text",
+                    required: true,
+                    default: changedDefaults ? "new default" : "",
+                  },
+                ]
+              : [],
+            desiredState: {
+              kind: "schedule",
+              schedule: {
+                type: "cron",
+                cronExpression: withBindings
+                  ? { parameter: "delivery-cron" }
+                  : "0 8 * * *",
+              },
+            },
+          };
+        };
+        const source = (
+          blueprints: readonly OfficialWorkflowBlueprint[],
+          retired = false,
+        ) => {
+          return catalog([
+            ...MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.map((name) => {
+              return retired
+                ? {
+                    name,
+                    lifecycle: "retired" as const,
+                    presentation: { category: "productivity" },
+                  }
+                : activeDefinition(name, blueprints);
             }),
             {
               name: "connector-doctor",
               lifecycle: "retired",
               presentation: { category: "productivity" },
             },
-          ]),
-        );
+          ]);
+        };
+        const bindings = withBindings
+          ? [
+              { key: "delivery-cron", value: "0 8 * * *" },
+              { key: "edition", value: 0 },
+              { key: "include-summary", value: false },
+              { key: "note", value: "" },
+            ]
+          : [];
+        expect(
+          (await syncCatalog(source([blueprint(false)]))).body.outcome,
+        ).toBe("accepted");
         await executeAutomationCron();
         await flushWaitUntilForTest();
         await expect(
@@ -1294,7 +1351,7 @@ describe("Morning Brief catalog reconciliation", () => {
             blueprintKey: "daily-delivery",
             reconciliationStatus: "current",
             intendedEnabled: !paused,
-            parameterBindings: [],
+            parameterBindings: bindings,
           },
         });
         expect(reconciled?.official?.appliedFingerprint).not.toBe(
@@ -1304,8 +1361,100 @@ describe("Morning Brief catalog reconciliation", () => {
           enabled: !paused,
           status: paused ? "paused" : "enabled",
         });
+        // Retirement is an active-only worker no-op, even though it has no key.
+        expect((await syncCatalog(source([], true))).body.outcome).toBe(
+          "accepted",
+        );
+        await executeAutomationCron();
+        await flushWaitUntilForTest();
+        await expect(
+          readMorningBriefAutomations(actor, installation.id),
+        ).resolves.toMatchObject([
+          {
+            id: initial.id,
+            enabled: !paused,
+            official: { parameterBindings: bindings },
+          },
+        ]);
+
+        const history = await allThreadEventRows(actor, first.chatThreadId);
+        expect((await syncCatalog(source([]))).body.outcome).toBe("accepted");
+        await executeAutomationCron();
+        await flushWaitUntilForTest();
+        await expect(
+          readMorningBriefAutomations(actor, installation.id),
+        ).resolves.toStrictEqual([]);
+        await accept(
+          automationClient().get({
+            headers: authHeaders(actor),
+            params: { id: initial.id },
+          }),
+          [404],
+        );
+        await executeAutomationCron();
+        await flushWaitUntilForTest();
+        await expect(
+          readMorningBriefAutomations(actor, installation.id),
+        ).resolves.toStrictEqual([]);
+        await expect(
+          allThreadEventRows(actor, first.chatThreadId),
+        ).resolves.toStrictEqual(history);
+
+        // Valid retained values, including 0/false/empty string, beat new defaults.
+        expect(
+          (await syncCatalog(source([blueprint(true)]))).body.outcome,
+        ).toBe("accepted");
+        await executeAutomationCron();
+        await flushWaitUntilForTest();
+        const [restored] = await readMorningBriefAutomations(
+          actor,
+          installation.id,
+        );
+        expect(restored).toMatchObject({
+          id: initial.id,
+          chatThreadId: first.chatThreadId,
+          enabled: !paused,
+          schedule: {
+            type: "cron",
+            cronExpression: "0 8 * * *",
+            timezone: "Asia/Tokyo",
+          },
+          official: {
+            intendedEnabled: !paused,
+            reconciliationStatus: "current",
+            parameterBindings: bindings,
+          },
+        });
+        await expect(
+          listMorningBriefInstallations(actor),
+        ).resolves.toMatchObject([
+          { id: installation.id, official: { definitionName } },
+        ]);
+        await expect(
+          allThreadEventRows(actor, first.chatThreadId),
+        ).resolves.toStrictEqual(history);
+        const outsider = bdd.user();
+        await accept(
+          automationClient().get({
+            headers: authHeaders(outsider),
+            params: { id: initial.id },
+          }),
+          [404],
+        );
+        await executeAutomationCron();
+        await flushWaitUntilForTest();
+        await expect(
+          readMorningBriefAutomations(actor, installation.id),
+        ).resolves.toMatchObject([
+          {
+            id: initial.id,
+            chatThreadId: first.chatThreadId,
+            enabled: !paused,
+          },
+        ]);
         if (paused) {
-          expect(reconciled?.nextRunAt).toBeNull();
+          expect(restored?.nextRunAt).toBeNull();
+
           await accept(
             morningBriefPreferenceClient().update({
               headers: authHeaders(actor),
