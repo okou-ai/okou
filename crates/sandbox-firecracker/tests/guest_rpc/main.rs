@@ -49,6 +49,7 @@ async fn exercise_factories(runtime: &FirecrackerRuntime, base: PathBuf) -> Test
         };
         let mut factory = runtime
             .create_factory(FactoryConfig {
+                home_drive_pressure: None,
                 profile: "vm0/rpc-metal".into(),
                 binary_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_FIRECRACKER")?),
                 kernel_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_KERNEL")?),

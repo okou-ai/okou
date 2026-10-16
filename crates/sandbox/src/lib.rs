@@ -27,6 +27,7 @@ mod factory;
 mod guest_duplex;
 mod guest_rpc;
 pub mod helper_exec;
+mod home_drive_pressure;
 mod operation_cancellation;
 mod runtime;
 mod sandbox;
@@ -56,6 +57,10 @@ pub use factory::{
 };
 pub use guest_duplex::{AcceptedGuestDuplex, GuestDuplexAcceptor, GuestDuplexStream};
 pub use guest_rpc::{AcceptedGuestRpc, GuestRpcAcceptor, GuestRpcStream};
+pub use home_drive_pressure::{
+    HomeDrivePressureFuture, HomeDrivePressurePolicy, home_drive_copy_peak_bytes,
+    home_drive_copy_peak_bytes_from_file,
+};
 pub use operation_cancellation::{CancelledOperationOwner, OperationCancellationContext};
 pub use runtime::{RuntimeProvider, SandboxRuntime};
 pub use sandbox::{

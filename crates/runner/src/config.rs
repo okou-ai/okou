@@ -683,6 +683,7 @@ impl RunnerConfig {
         let rootfs_paths = RootfsPaths::new(home, &profile.rootfs_hash);
         let snapshot_paths = rootfs_paths.snapshot(&profile.snapshot_hash);
         sandbox::FactoryConfig {
+            home_drive_pressure: None,
             profile: profile_name.to_string(),
             binary_path: firecracker.binary.clone(),
             kernel_path: firecracker.kernel.clone(),

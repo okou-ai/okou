@@ -14,7 +14,7 @@ use runner_host::bounded_command::{
 
 use super::HomeImageCache;
 use super::io_context::with_path;
-use super::types::{CacheBudget, FsStats};
+use super::types::{FsStats, HomeCachePressureThresholds};
 
 pub(super) const HOME_IMAGE_COPY_TIMEOUT: Duration = Duration::from_secs(300);
 
@@ -22,13 +22,16 @@ impl HomeImageCache {
     pub(super) async fn fs_stats(&self) -> LifecycleResult<FsStats> {
         #[cfg(any(test, feature = "test-support"))]
         {
-            Ok(self.inner.fs_stats_override)
+            if !self.use_actual_fs_stats {
+                return Ok(*self
+                    .inner
+                    .fs_stats_override
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner));
+            }
         }
 
-        #[cfg(not(any(test, feature = "test-support")))]
-        {
-            self.query_fs_stats().await
-        }
+        self.query_fs_stats().await
     }
 
     pub(super) async fn query_fs_stats(&self) -> LifecycleResult<FsStats> {
@@ -63,17 +66,6 @@ pub(super) fn is_home_tmp_path_name(name: &str) -> bool {
 
 pub(super) fn allocated_bytes(metadata: &std::fs::Metadata) -> u64 {
     metadata.blocks().saturating_mul(512)
-}
-
-pub(super) fn fs_stats_with_additional_available(stats: FsStats, bytes: u64) -> FsStats {
-    FsStats {
-        total_bytes: stats.total_bytes,
-        available_bytes: stats
-            .available_bytes
-            .saturating_add(bytes)
-            .min(stats.total_bytes),
-        ..stats
-    }
 }
 
 pub(super) fn existing_fs_stats_path(path: &Path) -> PathBuf {
@@ -153,8 +145,14 @@ pub(super) fn secure_home_cache_publication_file(path: &Path) -> LifecycleResult
     Ok(())
 }
 
-pub(super) fn has_copy_headroom(stats: FsStats, budget: CacheBudget, allocated_bytes: u64) -> bool {
-    stats.available_bytes.saturating_sub(allocated_bytes) >= budget.min_free_bytes
+pub(super) fn has_copy_headroom(
+    stats: FsStats,
+    pressure: HomeCachePressureThresholds,
+    allocated_bytes: u64,
+) -> bool {
+    pressure.reserve_feasible
+        && allocated_bytes <= stats.available_bytes
+        && stats.available_bytes - allocated_bytes >= pressure.reserve_bytes
 }
 
 fn cp_command_error(error: BoundedCommandError) -> LifecycleError {
@@ -351,6 +349,9 @@ impl PinnedImage {
     }
     pub(super) fn identity(&self) -> super::metadata::HomeImageFileIdentity {
         self.identity
+    }
+    pub(super) fn clone_file_for_observation(&self) -> std::io::Result<std::fs::File> {
+        self.file.try_clone()
     }
     pub(super) fn descriptor_path(&self) -> PathBuf {
         use std::os::fd::AsRawFd;

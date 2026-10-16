@@ -92,6 +92,7 @@ impl HostCpuFixture {
         launch_contract::verify(&delegated_root()?).await?;
         let factory = runtime
             .create_factory(FactoryConfig {
+                home_drive_pressure: None,
                 profile: "vm0/host-cpu-metal".into(),
                 binary_path: firecracker,
                 kernel_path: kernel,

@@ -36,6 +36,7 @@ fn cancelled_owned_home_create_cleans_workspace_after_physical_io_finishes() {
             device_pool: device_pool.clone(),
         });
         let mut factory = FirecrackerFactory {
+            home_drive_pressure: None,
             config: test_config(dir.path().join("factory")),
             factory_paths,
             runtime_paths: RuntimePaths::with_dir_for_test(dir.path().join("runtime")),
