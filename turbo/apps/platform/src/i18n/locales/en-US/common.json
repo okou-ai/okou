@@ -1774,6 +1774,7 @@
       "selectModel": "Select model",
       "slashPanel": {
         "browseAll": "Browse all templates",
+        "make": "Make",
         "useTemplate": "Use template {{title}}"
       },
       "temporarilySwitchTo": "Temporarily switch to",
@@ -1783,7 +1784,8 @@
         "loading": "Loading workflows...",
         "manage": "Manage workflows",
         "newWorkflow": "New workflow",
-        "showMore": "Show {{total}} more"
+        "showMore": "Show {{total}} more",
+        "title": "Workflows"
       }
     },
     "computerUse": {

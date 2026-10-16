@@ -1771,6 +1771,7 @@
       "selectModel": "모델 선택",
       "slashPanel": {
         "browseAll": "모든 템플릿 보기",
+        "make": "만들기",
         "useTemplate": "템플릿 {{title}} 사용"
       },
       "temporarilySwitchTo": "임시로 전환할 모델",
@@ -1780,7 +1781,8 @@
         "loading": "워크플로 로딩 중...",
         "manage": "워크플로 관리",
         "newWorkflow": "새 워크플로",
-        "showMore": "{{total}}개 더 보기"
+        "showMore": "{{total}}개 더 보기",
+        "title": "워크플로"
       }
     },
     "computerUse": {

@@ -1771,6 +1771,7 @@
       "selectModel": "選擇模型",
       "slashPanel": {
         "browseAll": "瀏覽全部模板",
+        "make": "製作",
         "useTemplate": "使用模板 {{title}}"
       },
       "temporarilySwitchTo": "臨時切換到",
@@ -1780,7 +1781,8 @@
         "loading": "正在載入工作流…",
         "manage": "管理工作流",
         "newWorkflow": "新增工作流",
-        "showMore": "再顯示 {{total}} 個"
+        "showMore": "再顯示 {{total}} 個",
+        "title": "工作流"
       }
     },
     "computerUse": {

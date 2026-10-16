@@ -1803,6 +1803,7 @@
       "selectModel": "Seleccionar modelo",
       "slashPanel": {
         "browseAll": "Ver todas las plantillas",
+        "make": "Crear",
         "useTemplate": "Usar la plantilla {{title}}"
       },
       "temporarilySwitchTo": "Cambiar temporalmente a",
@@ -1812,7 +1813,8 @@
         "loading": "Cargando flujos de trabajo...",
         "manage": "Gestionar flujos de trabajo",
         "newWorkflow": "Nuevo flujo de trabajo",
-        "showMore": "Mostrar {{total}} más"
+        "showMore": "Mostrar {{total}} más",
+        "title": "Flujos de trabajo"
       }
     },
     "computerUse": {
