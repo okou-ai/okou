@@ -58,6 +58,7 @@ import { validatePermanentPlatformGenerationReceipts } from "./test-platform-gen
 import { validateChatRelations } from "./test-chat-relations-permanent";
 import { validatePermanentRunnerStateStorage } from "./test-runner-state-storage-permanent";
 import { validatePermanentSshStorage } from "./test-ssh-storage-permanent";
+import { validatePermanentNativeVncStorage } from "./test-vnc-native-storage-permanent";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_DIR = path.join(dirname, "..");
@@ -2830,6 +2831,7 @@ async function main(): Promise<void> {
     await validatePermanentPiMemoryJobs(dbUrl1);
     await validatePermanentComputerUseHostStorage(dbUrl1);
     await validatePermanentSshStorage(dbUrl1);
+    await validatePermanentNativeVncStorage(dbUrl1);
     await validatePermanentPlatformGenerationReceipts(dbUrl1);
     await validateChatRelations(dbUrl1);
     await validatePermanentRunnerStateStorage(dbUrl1);
@@ -2871,6 +2873,7 @@ async function main(): Promise<void> {
     await validatePermanentPiMemoryJobs(dbUrl2);
     await validatePermanentComputerUseHostStorage(dbUrl2);
     await validatePermanentSshStorage(dbUrl2);
+    await validatePermanentNativeVncStorage(dbUrl2);
     await validatePermanentPlatformGenerationReceipts(dbUrl2);
     await validateChatRelations(dbUrl2);
     await validatePermanentRunnerStateStorage(dbUrl2);

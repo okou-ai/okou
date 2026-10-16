@@ -45,7 +45,7 @@ export const vncConnectionObservations = pgTable(
       ),
       check(
         "chk_vnc_connection_observation_failure",
-        sql`${table.failureReason} IS NULL OR ${table.failureReason} IN ('invalid_credential', 'unsafe_destination', 'network_failure', 'protocol', 'timed_out', 'disconnected', 'authentication_failed', 'unsupported_profile', 'kerberos_expired', 'kerberos_non_renewable', 'kerberos_renewal_exhausted')`,
+        sql`${table.failureReason} IS NULL OR ${table.failureReason} IN ('invalid_credential', 'unsafe_destination', 'network_failure', 'protocol', 'timed_out', 'disconnected', 'authentication_failed', 'unsupported_profile', 'kerberos_expired', 'kerberos_non_renewable', 'kerberos_renewal_exhausted', 'access_rejected', 'access_tls_failure', 'access_protocol_failure', 'origin_tls_failure', 'tailscale_unavailable')`,
       ),
     ];
   },

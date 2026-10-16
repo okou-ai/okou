@@ -13,6 +13,8 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 import { sshConnections } from "./ssh-connection";
+import { cloudflareAccessConfigs } from "./cloudflare-access-config";
+import { tailscaleConfigs } from "./tailscale-config";
 import { vncCredentials } from "./vnc-credential";
 import type { VncKerberosPrincipal } from "../jsonb-contracts/vnc-kerberos";
 import { kerberosPrincipalCheck } from "./vnc-kerberos";
@@ -27,12 +29,20 @@ export const vncConnections = pgTable(
     host: varchar("host", { length: 253 }).notNull(),
     port: integer("port").notNull().default(5900),
     transportType: varchar("transport_type", {
-      length: 16,
-      enum: ["direct", "ssh"],
+      length: 32,
+      enum: ["direct", "ssh", "cloudflare_access", "tailscale"],
     })
       .default("direct")
       .notNull(),
     sshConnectionId: uuid("ssh_connection_id"),
+    cloudflareAccessId: uuid("cloudflare_access_id"),
+    tailscaleId: uuid("tailscale_id"),
+    originTlsServerName: varchar("origin_tls_server_name", { length: 253 }),
+    originTlsTrustMode: varchar("origin_tls_trust_mode", {
+      length: 16,
+      enum: ["system", "custom_ca"],
+    }),
+    originTlsCaBundle: text("origin_tls_ca_bundle"),
     x509ServerName: varchar("x509_server_name", { length: 253 }),
     credentialId: uuid("credential_id"),
     authMethod: varchar("auth_method", {
@@ -80,12 +90,14 @@ export const vncConnections = pgTable(
     rsaServerKeySha256: varchar("rsa_server_key_sha256", { length: 64 }),
     kerberosService: jsonb("kerberos_service").$type<VncKerberosPrincipal>(),
     kdcTransportType: varchar("kdc_transport_type", {
-      length: 16,
-      enum: ["direct", "ssh"],
+      length: 32,
+      enum: ["direct", "ssh", "cloudflare_access", "tailscale"],
     }),
     kdcHost: varchar("kdc_host", { length: 253 }),
     kdcPort: integer("kdc_port"),
     kdcSshConnectionId: uuid("kdc_ssh_connection_id"),
+    kdcCloudflareAccessId: uuid("kdc_cloudflare_access_id"),
+    kdcTailscaleId: uuid("kdc_tailscale_id"),
     kerberosTicketLifetimeSeconds: integer("kerberos_ticket_lifetime_seconds"),
     kerberosRenewableLifetimeSeconds: integer(
       "kerberos_renewable_lifetime_seconds",
@@ -98,7 +110,51 @@ export const vncConnections = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => {
+    // Storage records the required protection configuration. The Runner must
+    // independently verify the actual peer/origin stream before sending bytes.
+    const protectedRawRoute = sql`((${table.transportType} = 'ssh' AND ${table.host} IN ('127.0.0.1', '::1'))
+      OR ${table.transportType} = 'tailscale'
+      OR (${table.transportType} = 'cloudflare_access' AND ${table.originTlsServerName} IS NOT NULL))`;
     return [
+      foreignKey({
+        name: "vnc_connections_cloudflare_org_fk",
+        columns: [table.cloudflareAccessId, table.orgId],
+        foreignColumns: [
+          cloudflareAccessConfigs.id,
+          cloudflareAccessConfigs.orgId,
+        ],
+      }).onDelete("restrict"),
+      foreignKey({
+        name: "vnc_connections_tailscale_org_fk",
+        columns: [table.tailscaleId, table.orgId],
+        foreignColumns: [tailscaleConfigs.id, tailscaleConfigs.orgId],
+      }).onDelete("restrict"),
+      foreignKey({
+        name: "vnc_connections_kdc_cloudflare_org_fk",
+        columns: [table.kdcCloudflareAccessId, table.orgId],
+        foreignColumns: [
+          cloudflareAccessConfigs.id,
+          cloudflareAccessConfigs.orgId,
+        ],
+      }).onDelete("restrict"),
+      foreignKey({
+        name: "vnc_connections_kdc_tailscale_org_fk",
+        columns: [table.kdcTailscaleId, table.orgId],
+        foreignColumns: [tailscaleConfigs.id, tailscaleConfigs.orgId],
+      }).onDelete("restrict"),
+      index("idx_vnc_connections_cloudflare").on(
+        table.cloudflareAccessId,
+        table.id,
+      ),
+      index("idx_vnc_connections_tailscale").on(table.tailscaleId, table.id),
+      index("idx_vnc_connections_kdc_cloudflare").on(
+        table.kdcCloudflareAccessId,
+        table.id,
+      ),
+      index("idx_vnc_connections_kdc_tailscale").on(
+        table.kdcTailscaleId,
+        table.id,
+      ),
       foreignKey({
         name: "vnc_connections_ssh_owner_fk",
         columns: [table.sshConnectionId, table.orgId, table.userId],
@@ -152,7 +208,21 @@ export const vncConnections = pgTable(
       check("chk_vnc_connections_port", sql`${table.port} BETWEEN 1 AND 65535`),
       check(
         "chk_vnc_connections_transport",
-        sql`(${table.transportType} = 'direct' AND ${table.sshConnectionId} IS NULL) OR (${table.transportType} = 'ssh' AND ${table.sshConnectionId} IS NOT NULL)`,
+        sql`(${table.transportType} = 'direct' AND ${table.sshConnectionId} IS NULL AND ${table.cloudflareAccessId} IS NULL AND ${table.tailscaleId} IS NULL)
+          OR (${table.transportType} = 'ssh' AND ${table.sshConnectionId} IS NOT NULL AND ${table.cloudflareAccessId} IS NULL AND ${table.tailscaleId} IS NULL)
+          OR (${table.transportType} = 'cloudflare_access' AND ${table.sshConnectionId} IS NULL AND ${table.tailscaleId} IS NULL AND ${table.port} = 443)
+          OR (${table.transportType} = 'tailscale' AND ${table.sshConnectionId} IS NULL AND ${table.cloudflareAccessId} IS NULL)`,
+      ),
+      check(
+        "chk_vnc_connections_origin_tls",
+        sql`(${table.originTlsServerName} IS NULL AND ${table.originTlsTrustMode} IS NULL AND ${table.originTlsCaBundle} IS NULL)
+          OR (${table.transportType} = 'cloudflare_access'
+            AND ${table.originTlsServerName} IS NOT NULL AND char_length(${table.originTlsServerName}) BETWEEN 1 AND 253
+            AND ${table.originTlsServerName} = lower(${table.originTlsServerName})
+            AND ${table.originTlsServerName} !~ '[[:space:][:cntrl:]/@?#%\\[\\]\\\\]'
+            AND ${table.originTlsTrustMode} IS NOT NULL
+            AND ((${table.originTlsTrustMode} = 'system' AND ${table.originTlsCaBundle} IS NULL)
+              OR (${table.originTlsTrustMode} = 'custom_ca' AND ${table.originTlsCaBundle} IS NOT NULL AND octet_length(${table.originTlsCaBundle}) BETWEEN 1 AND 65536)))`,
       ),
       check(
         "chk_vnc_connections_x509_server_name",
@@ -161,7 +231,7 @@ export const vncConnections = pgTable(
       check("chk_vnc_connections_generation", sql`${table.generation} > 0`),
       check(
         "chk_vnc_connections_profile",
-        sql`(${table.credentialId} IS NOT NULL AND ${table.authMethod} IN ('rsa_aes_password', 'rsa_aes_username_password') AND ((${table.securityType} IN ('rsa_aes_ra2', 'rsa_aes_ra2_256')) OR (${table.securityType} IN ('rsa_aes_ra2ne', 'rsa_aes_ra2ne_256') AND ${table.transportType} = 'ssh' AND ${table.host} IN ('127.0.0.1', '::1')))) OR (${table.authMethod} = 'none' AND ${table.securityType} = 'x509_none' AND ${table.credentialId} IS NULL) OR (${table.credentialId} IS NOT NULL AND ((${table.authMethod} = 'client_certificate' AND ${table.securityType} = 'x509_none') OR (${table.authMethod} = 'client_certificate_vnc_password' AND ${table.securityType} = 'x509_vnc') OR (${table.authMethod} = 'vnc_password' AND ${table.securityType} = 'x509_vnc') OR (${table.authMethod} = 'vnc_password' AND ${table.securityType} = 'apple_vnc_password' AND ${table.transportType} = 'ssh' AND ${table.host} IN ('127.0.0.1', '::1') AND ${table.x509ServerName} IS NULL) OR (${table.authMethod} = 'username_password' AND ${table.securityType} = 'x509_plain') OR (${table.authMethod} = 'qemu_scram_sha256' AND ${table.securityType} = 'qemu_x509_sasl') OR (${table.authMethod} = 'apple_dh_username_password' AND ${table.securityType} = 'apple_dh' AND ${table.transportType} = 'ssh' AND ${table.host} IN ('127.0.0.1', '::1') AND ${table.x509ServerName} IS NULL) OR (${table.authMethod} = 'apple_srp_username_password' AND ${table.securityType} = 'apple_srp' AND ${table.transportType} = 'ssh' AND ${table.host} IN ('127.0.0.1', '::1') AND ${table.x509ServerName} IS NULL) OR (${table.authMethod} = 'apple_rsa_srp_username_password' AND ${table.securityType} = 'apple_rsa_srp' AND ${table.transportType} = 'ssh' AND ${table.host} IN ('127.0.0.1', '::1') AND ${table.x509ServerName} IS NULL))) OR (${table.authMethod} IN ('qemu_kerberos_ticket', 'qemu_kerberos_keytab', 'qemu_kerberos_password') AND ${table.securityType} = 'qemu_x509_gssapi' AND ${table.credentialId} IS NOT NULL)`,
+        sql`(${table.credentialId} IS NOT NULL AND ${table.authMethod} IN ('rsa_aes_password', 'rsa_aes_username_password') AND ((${table.securityType} IN ('rsa_aes_ra2', 'rsa_aes_ra2_256')) OR (${table.securityType} IN ('rsa_aes_ra2ne', 'rsa_aes_ra2ne_256') AND ${protectedRawRoute}))) OR (${table.authMethod} = 'none' AND ${table.securityType} = 'x509_none' AND ${table.credentialId} IS NULL) OR (${table.credentialId} IS NOT NULL AND ((${table.authMethod} = 'client_certificate' AND ${table.securityType} = 'x509_none') OR (${table.authMethod} = 'client_certificate_vnc_password' AND ${table.securityType} = 'x509_vnc') OR (${table.authMethod} = 'vnc_password' AND ${table.securityType} = 'x509_vnc') OR (${table.authMethod} = 'vnc_password' AND ${table.securityType} = 'apple_vnc_password' AND ${protectedRawRoute} AND ${table.x509ServerName} IS NULL) OR (${table.authMethod} = 'username_password' AND ${table.securityType} = 'x509_plain') OR (${table.authMethod} = 'qemu_scram_sha256' AND ${table.securityType} = 'qemu_x509_sasl') OR (${table.authMethod} = 'apple_dh_username_password' AND ${table.securityType} = 'apple_dh' AND ${protectedRawRoute} AND ${table.x509ServerName} IS NULL) OR (${table.authMethod} = 'apple_srp_username_password' AND ${table.securityType} = 'apple_srp' AND ${protectedRawRoute} AND ${table.x509ServerName} IS NULL) OR (${table.authMethod} = 'apple_rsa_srp_username_password' AND ${table.securityType} = 'apple_rsa_srp' AND ${protectedRawRoute} AND ${table.x509ServerName} IS NULL))) OR (${table.authMethod} IN ('qemu_kerberos_ticket', 'qemu_kerberos_keytab', 'qemu_kerberos_password') AND ${table.securityType} = 'qemu_x509_gssapi' AND ${table.credentialId} IS NOT NULL)`,
       ),
       foreignKey({
         name: "vnc_connections_kdc_ssh_owner_fk",
@@ -192,10 +262,12 @@ export const vncConnections = pgTable(
           AND ${table.kdcPort} IS NOT NULL AND ${table.kdcPort} BETWEEN 1 AND 65535
           AND ${table.kerberosTicketLifetimeSeconds} IS NOT NULL AND ${table.kerberosTicketLifetimeSeconds} BETWEEN 1 AND 7200
           AND ${table.kerberosRenewableLifetimeSeconds} IS NOT NULL AND ${table.kerberosRenewableLifetimeSeconds} BETWEEN 0 AND 7200
-          AND ((${table.kdcTransportType} = 'direct' AND ${table.kdcSshConnectionId} IS NULL)
-            OR (${table.kdcTransportType} = 'ssh' AND ${table.kdcSshConnectionId} IS NOT NULL AND ${table.kdcHost} IN ('127.0.0.1', '::1')))
+          AND ((${table.kdcTransportType} = 'direct' AND ${table.kdcSshConnectionId} IS NULL AND ${table.kdcCloudflareAccessId} IS NULL AND ${table.kdcTailscaleId} IS NULL)
+            OR (${table.kdcTransportType} = 'ssh' AND ${table.kdcSshConnectionId} IS NOT NULL AND ${table.kdcCloudflareAccessId} IS NULL AND ${table.kdcTailscaleId} IS NULL AND ${table.kdcHost} IN ('127.0.0.1', '::1'))
+            OR (${table.kdcTransportType} = 'cloudflare_access' AND ${table.kdcSshConnectionId} IS NULL AND ${table.kdcTailscaleId} IS NULL AND ${table.kdcPort} = 443)
+            OR (${table.kdcTransportType} = 'tailscale' AND ${table.kdcSshConnectionId} IS NULL AND ${table.kdcCloudflareAccessId} IS NULL))
         ELSE ${table.kdcTransportType} IS NULL AND ${table.kdcHost} IS NULL AND ${table.kdcPort} IS NULL
-          AND ${table.kdcSshConnectionId} IS NULL AND ${table.kerberosTicketLifetimeSeconds} IS NULL
+          AND ${table.kdcSshConnectionId} IS NULL AND ${table.kdcCloudflareAccessId} IS NULL AND ${table.kdcTailscaleId} IS NULL AND ${table.kerberosTicketLifetimeSeconds} IS NULL
           AND ${table.kerberosRenewableLifetimeSeconds} IS NULL END`,
       ),
       check(

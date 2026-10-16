@@ -37,6 +37,7 @@ import {
   validVncClientAuthentication,
 } from "./vnc-credential.service";
 import type { VncOwner } from "./vnc-owner-lifecycle.service";
+import { preparedVncRoutePredicate } from "./vnc-prepared-route";
 import { vncCreationTimestamp } from "./remote-connection-creation-timestamp.utils";
 import { publishRemoteRunnerInvalidation$ } from "./remote-runtime-wakeup.service";
 import { isVncRsaAesSecurityType } from "@okouai/api-contracts/contracts/vnc-rsa-aes";
@@ -112,6 +113,7 @@ function ownedConnections(owner: VncOwner) {
   return and(
     eq(vncConnections.orgId, owner.orgId),
     eq(vncConnections.userId, owner.userId),
+    preparedVncRoutePredicate,
   );
 }
 
