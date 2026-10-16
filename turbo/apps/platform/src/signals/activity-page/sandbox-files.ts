@@ -147,7 +147,6 @@ function createFilesGraph() {
   return {
     targetRunId$,
     status$,
-    fullscreen$: state(false),
     directories$,
     directoriesView$,
     virtual: createSandboxFilesVirtualListSignals(directoriesView$),
@@ -1609,7 +1608,6 @@ function createDemandCommands(
           set(graph.mounted$, false);
           set(graph.targetRunId$, null);
           set(graph.status$, null);
-          set(graph.fullscreen$, false);
           set(graph.navigation$, null);
           set(graph.navigationFailure$, null);
           set(graph.directories$, new Map());
@@ -1754,14 +1752,7 @@ function createSandboxFilesSignals() {
   return {
     ...createDemandCommands(graph, connection.startRun$, navigation.remember$),
     ...createFilesActions(graph, listing, navigation),
-    fullscreen$: computed((get) => {
-      return get(graph.fullscreen$);
-    }),
-    toggleFullscreen$: command(({ get, set }) => {
-      set(graph.fullscreen$, !get(graph.fullscreen$));
-    }),
     close$: command(({ get, set }) => {
-      set(graph.fullscreen$, false);
       const params = new URLSearchParams(get(searchParams$));
       params.delete("tab");
       set(updateSearchParams$, params);

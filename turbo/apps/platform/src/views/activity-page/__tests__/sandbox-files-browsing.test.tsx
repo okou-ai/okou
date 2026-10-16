@@ -13,7 +13,7 @@ import {
 
 const context = testContext();
 
-test("Files connects on demand, preserves browsing through fullscreen and releases on close", async () => {
+test("Files connects on demand, supports browsing and releases on close", async () => {
   const fixture = await setupFilesPage(context, {
     handler: (request) => {
       if (request.params.cursor) {
@@ -97,17 +97,6 @@ test("Files connects on demand, preserves browsing through fullscreen and releas
   await expect(
     within(panel).findByText("inside.txt"),
   ).resolves.toBeInTheDocument();
-  const fullscreen = filesButton("Enter fullscreen", panel);
-  fullscreen.focus();
-  await userEvent.keyboard("{Enter}");
-  expect(filesButton("Exit fullscreen", panel)).toHaveFocus();
-  expect(within(panel).getByText("inside.txt")).toBeInTheDocument();
-  expect(refreshedFolder).toHaveAttribute("aria-expanded", "true");
-  expect(fixture.sockets).toHaveLength(1);
-  await userEvent.keyboard("{Enter}");
-  expect(filesButton("Enter fullscreen", panel)).toHaveFocus();
-  expect(within(panel).getByText("inside.txt")).toBeInTheDocument();
-  expect(fixture.sockets).toHaveLength(1);
   click(filesButton("Close files", panel));
   await waitFor(() => {
     expect(screen.queryByRole("region", { name: "Files" })).toBeNull();
