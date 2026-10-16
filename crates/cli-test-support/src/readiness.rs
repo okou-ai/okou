@@ -132,7 +132,8 @@ async fn wait_for_path_event(path: &Path) -> io::Result<()> {
 
 fn async_inotify_fd(inotify: Inotify) -> io::Result<AsyncFd<OwnedFd>> {
     let fd: OwnedFd = inotify.into();
-    AsyncFd::new(fd).map_err(|error| io::Error::other(format!("AsyncFd: {error}")))
+    // SAFETY: AsyncFd owns fd and keeps its descriptor unchanged until drop.
+    unsafe { AsyncFd::register(fd) }.map_err(|error| io::Error::other(format!("AsyncFd: {error}")))
 }
 
 fn drain_inotify_fd(fd: std::os::fd::BorrowedFd<'_>) {

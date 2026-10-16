@@ -1173,7 +1173,8 @@ mod tests {
         if remained_live {
             let pidfd = pidfd.expect("live descendant must have a pidfd");
             signal_pidfd(&pidfd, libc::SIGKILL).expect("clean up leaked test descendant");
-            let exit = tokio::io::unix::AsyncFd::new(pidfd).unwrap();
+            // SAFETY: AsyncFd owns the pidfd and keeps its descriptor unchanged until drop.
+            let exit = unsafe { tokio::io::unix::AsyncFd::register(pidfd) }.unwrap();
             let _ready = tokio::time::timeout(CHILD_KILL_WAIT_TIMEOUT, exit.readable())
                 .await
                 .expect("test descendant cleanup must finish")

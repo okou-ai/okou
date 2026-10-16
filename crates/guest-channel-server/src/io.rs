@@ -14,7 +14,8 @@ pub(super) struct FdStream(AsyncFd<UnixStream>);
 impl FdStream {
     pub(super) fn new(stream: UnixStream) -> io::Result<Self> {
         stream.set_nonblocking(true)?;
-        Ok(Self(AsyncFd::new(stream)?))
+        // SAFETY: AsyncFd owns stream and keeps its descriptor unchanged until drop.
+        Ok(Self(unsafe { AsyncFd::register(stream) }?))
     }
 }
 

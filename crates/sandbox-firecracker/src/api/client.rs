@@ -555,7 +555,9 @@ async fn wait_for_socket_file(
 
     // Inotify implements AsFd but not AsRawFd; convert to OwnedFd for AsyncFd.
     let fd: OwnedFd = inotify.into();
-    let async_fd = AsyncFd::new(fd).map_err(|e| ApiError::Other(format!("AsyncFd: {e}")))?;
+    // SAFETY: AsyncFd owns fd and keeps its descriptor unchanged until drop.
+    let async_fd =
+        unsafe { AsyncFd::register(fd) }.map_err(|e| ApiError::Other(format!("AsyncFd: {e}")))?;
 
     // Keep this milestone after the post-watch absence check so deferred-socket
     // tests cannot pass through either existing-file fast path.
