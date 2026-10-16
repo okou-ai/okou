@@ -6,12 +6,10 @@ import {
 } from "node:crypto";
 
 import type {
-  BankingAccessRequestStatusResponse,
   BankingAgentGrantRequest,
   BankingConnectSessionRequest,
   BankingGrantDuration,
 } from "@okouai/api-contracts/contracts/banking";
-import { agents } from "@okouai/db/schema/agent";
 import { prepareBankingConnectSessionReplacement } from "@okouai/db/operations/banking-connect-session-replacement";
 import {
   bankingAccounts,
@@ -23,12 +21,10 @@ import {
 import { command } from "ccstate";
 import {
   and,
-  desc,
   eq,
   inArray,
   isNotNull,
   isNull,
-  or,
   sql,
   type InferSelectModel,
 } from "drizzle-orm";
@@ -43,6 +39,15 @@ import {
   type BankingErrorResponse,
 } from "./banking.service";
 
+import {
+  bankingManagementStatusBody$,
+  bankingConnectionCondition,
+  findBankingAgent$,
+  findBankingConnection$,
+  type BankingOwner,
+  type UserErrorResponse,
+} from "./banking-connect-read.service";
+
 const PROVIDER = "finicity";
 const BANKING_OPERATION_SCOPES = [
   "accounts.read",
@@ -50,25 +55,10 @@ const BANKING_OPERATION_SCOPES = [
   "transactions.read",
 ] as const;
 
-interface BankingOwner {
-  readonly orgId: string;
-  readonly userId: string;
-}
-
 type BankingConnectionRow = InferSelectModel<typeof bankingConnections>;
 type BankingConnectSessionRow = InferSelectModel<typeof bankingConnectSessions>;
 
-type UserErrorStatus = 400 | 403 | 404 | 409 | 502 | 503;
-
-interface UserErrorResponse {
-  readonly status: UserErrorStatus;
-  readonly body: {
-    readonly error: {
-      readonly code: string;
-      readonly message: string;
-    };
-  };
-}
+type UserErrorStatus = UserErrorResponse["status"];
 
 interface ProviderAccount {
   readonly providerAccountId: string;
@@ -128,49 +118,6 @@ function providerResponseError(
   return response;
 }
 
-async function findAgent(
-  db: Db,
-  owner: BankingOwner,
-  agentId: string,
-): Promise<{ readonly id: string; readonly name: string } | null> {
-  const [agent] = await db
-    .select({
-      id: agents.id,
-      name: agents.name,
-      displayName: agents.displayName,
-    })
-    .from(agents)
-    .where(and(eq(agents.id, agentId), eq(agents.orgId, owner.orgId)))
-    .limit(1);
-
-  return agent ? { id: agent.id, name: agent.displayName ?? agent.name } : null;
-}
-
-async function findConnection(
-  db: Db,
-  owner: BankingOwner,
-): Promise<BankingConnectionRow | null> {
-  const [connection] = await db
-    .select()
-    .from(bankingConnections)
-    .where(
-      and(
-        eq(bankingConnections.orgId, owner.orgId),
-        eq(bankingConnections.userId, owner.userId),
-        eq(bankingConnections.provider, PROVIDER),
-        isNull(bankingConnections.revokedAt),
-        isNull(bankingConnections.deletedAt),
-        or(
-          eq(bankingConnections.status, "active"),
-          eq(bankingConnections.status, "repair_required"),
-        ),
-      ),
-    )
-    .limit(1);
-
-  return connection ?? null;
-}
-
 function finicityCustomerId(body: unknown): string | null {
   return isRecord(body) ? nullableString(body.id) : null;
 }
@@ -225,7 +172,11 @@ async function ensureConnection(
   owner: BankingOwner,
   signal: AbortSignal,
 ): Promise<BankingConnectionRow | UserErrorResponse> {
-  const existing = await findConnection(db, owner);
+  const [existing] = await db
+    .select()
+    .from(bankingConnections)
+    .where(bankingConnectionCondition(owner))
+    .limit(1);
   if (existing) {
     return existing;
   }
@@ -253,7 +204,11 @@ async function ensureConnection(
       ],
     });
 
-  const connection = await findConnection(db, owner);
+  const [connection] = await db
+    .select()
+    .from(bankingConnections)
+    .where(bankingConnectionCondition(owner))
+    .limit(1);
   return (
     connection ??
     userError(
@@ -264,144 +219,14 @@ async function ensureConnection(
   );
 }
 
-async function latestSession(
-  db: Db,
-  owner: BankingOwner,
-  connectionId: string,
-): Promise<BankingConnectSessionRow | null> {
-  const [session] = await db
-    .select()
-    .from(bankingConnectSessions)
-    .where(
-      and(
-        eq(bankingConnectSessions.orgId, owner.orgId),
-        eq(bankingConnectSessions.userId, owner.userId),
-        eq(bankingConnectSessions.connectionId, connectionId),
-      ),
-    )
-    .orderBy(desc(bankingConnectSessions.createdAt))
-    .limit(1);
-  return session ?? null;
-}
-
-async function statusResponse(
-  db: Db,
-  owner: BankingOwner,
-  agentId: string,
-): Promise<BankingAccessRequestStatusResponse | UserErrorResponse> {
-  const agent = await findAgent(db, owner, agentId);
-  if (!agent) {
-    return userError(404, "AGENT_NOT_FOUND", "Agent not found");
-  }
-
-  const connection = await findConnection(db, owner);
-  if (!connection) {
-    return { agent, connection: null, session: null, grant: null };
-  }
-
-  const [accountRows, session, grantRows] = await Promise.all([
-    db
-      .select()
-      .from(bankingAccounts)
-      .where(
-        and(
-          eq(bankingAccounts.connectionId, connection.id),
-          eq(bankingAccounts.orgId, owner.orgId),
-          eq(bankingAccounts.userId, owner.userId),
-          eq(bankingAccounts.enabled, true),
-        ),
-      ),
-    latestSession(db, owner, connection.id),
-    db
-      .select()
-      .from(bankingAgentEnablements)
-      .where(
-        and(
-          eq(bankingAgentEnablements.orgId, owner.orgId),
-          eq(bankingAgentEnablements.userId, owner.userId),
-          eq(bankingAgentEnablements.agentId, agentId),
-          eq(bankingAgentEnablements.connectionId, connection.id),
-        ),
-      )
-      .limit(1),
-  ]);
-
-  const accountIdByProviderId = new Map(
-    accountRows.map((account) => {
-      return [account.providerAccountId, account.id] as const;
-    }),
-  );
-  const grant = grantRows[0];
-  const grantStatus = grant
-    ? grant.revokedAt
-      ? "revoked"
-      : !grant.expiresAt || grant.expiresAt.getTime() <= nowDate().getTime()
-        ? "expired"
-        : "active"
-    : null;
-  const repairInstitutions = new Map<
-    string,
-    {
-      readonly institutionLoginId: string;
-      readonly institutionName: string | null;
-    }
-  >();
-  for (const account of accountRows) {
-    if (account.repairRequiredAt && account.institutionLoginId) {
-      repairInstitutions.set(account.institutionLoginId, {
-        institutionLoginId: account.institutionLoginId,
-        institutionName: account.institutionName,
-      });
-    }
-  }
-
-  return {
-    agent,
-    connection: {
-      id: connection.id,
-      status: repairInstitutions.size > 0 ? "repair_required" : "active",
-      accounts: accountRows.map((account) => {
-        return {
-          id: account.id,
-          name: account.displayName,
-          institutionName: account.institutionName,
-          type: account.accountType,
-          last4: account.accountNumberLast4,
-          repairRequired: account.repairRequiredAt !== null,
-        };
-      }),
-      repairInstitutions: [...repairInstitutions.values()],
-    },
-    session: session
-      ? {
-          id: session.id,
-          mode: session.mode,
-          status: session.status,
-          institutionLoginId: session.institutionLoginId,
-        }
-      : null,
-    grant:
-      grant && grantStatus
-        ? {
-            status: grantStatus,
-            accountIds: grant.accountProviderIds.flatMap((providerId) => {
-              const accountId = accountIdByProviderId.get(providerId);
-              return accountId ? [accountId] : [];
-            }),
-            purpose: grant.purpose,
-            expiresAt: grant.expiresAt?.toISOString() ?? null,
-          }
-        : null,
-  };
-}
-
 export const bankingAccessRequestStatus$ = command(
   async (
     { set },
     args: { readonly owner: BankingOwner; readonly agentId: string },
   ) => {
-    const status = await statusResponse(
-      set(writeDb$),
+    set(writeDb$);
+    const status = await set(
+      bankingManagementStatusBody$,
       args.owner,
       args.agentId,
     );
@@ -496,7 +321,7 @@ export const startBankingConnectSession$ = command(
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
-    const agent = await findAgent(db, args.owner, args.body.agentId);
+    const agent = await set(findBankingAgent$, args.owner, args.body.agentId);
     signal.throwIfAborted();
     if (!agent) {
       return userError(404, "AGENT_NOT_FOUND", "Agent not found");
@@ -617,11 +442,11 @@ export const saveBankingAgentGrant$ = command(
     },
   ) => {
     const db = set(writeDb$);
-    const agent = await findAgent(db, args.owner, args.body.agentId);
+    const agent = await set(findBankingAgent$, args.owner, args.body.agentId);
     if (!agent) {
       return userError(404, "AGENT_NOT_FOUND", "Agent not found");
     }
-    const connection = await findConnection(db, args.owner);
+    const connection = await set(findBankingConnection$, args.owner);
     if (!connection) {
       return userError(
         409,
@@ -694,7 +519,11 @@ export const saveBankingAgentGrant$ = command(
         },
       });
 
-    const status = await statusResponse(db, args.owner, args.body.agentId);
+    const status = await set(
+      bankingManagementStatusBody$,
+      args.owner,
+      args.body.agentId,
+    );
     return isUserErrorResponse(status)
       ? status
       : { status: 200 as const, body: status };
@@ -707,7 +536,7 @@ export const revokeBankingAgentGrant$ = command(
     args: { readonly owner: BankingOwner; readonly agentId: string },
   ) => {
     const db = set(writeDb$);
-    const connection = await findConnection(db, args.owner);
+    const connection = await set(findBankingConnection$, args.owner);
     if (connection) {
       await db
         .update(bankingAgentEnablements)
@@ -722,7 +551,11 @@ export const revokeBankingAgentGrant$ = command(
           ),
         );
     }
-    const status = await statusResponse(db, args.owner, args.agentId);
+    const status = await set(
+      bankingManagementStatusBody$,
+      args.owner,
+      args.agentId,
+    );
     return isUserErrorResponse(status)
       ? status
       : { status: 200 as const, body: status };
