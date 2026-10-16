@@ -459,13 +459,6 @@ function RelationshipsInner({ thread }: { readonly thread: ChatPanelSignals }) {
     origin === null ||
     children.state === "loading" ||
     communications.state === "loading";
-  const empty =
-    origin !== null &&
-    !(origin.kind === "source" && origin.part.kind === "agent") &&
-    children.state === "hasData" &&
-    children.data.items.length === 0 &&
-    communications.state === "hasData" &&
-    communications.data.items.length === 0;
   return (
     <section
       className="space-y-4"
@@ -474,7 +467,7 @@ function RelationshipsInner({ thread }: { readonly thread: ChatPanelSignals }) {
       })}
     >
       <div className="flex items-center justify-between px-2">
-        <h3 className="text-sm font-medium">
+        <h3 className="text-xs font-medium text-muted-foreground">
           {t(($) => {
             return $.chat.relations.title;
           })}
@@ -515,13 +508,6 @@ function RelationshipsInner({ thread }: { readonly thread: ChatPanelSignals }) {
             }}
           />
           <Communications signals={signals} data={communications} />
-          {empty && (
-            <p className="px-2 pb-2 text-sm leading-relaxed text-muted-foreground">
-              {t(($) => {
-                return $.chat.relations.parallelHint;
-              })}
-            </p>
-          )}
         </>
       )}
     </section>

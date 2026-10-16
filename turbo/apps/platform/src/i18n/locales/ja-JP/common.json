@@ -2059,7 +2059,6 @@
       "messageUnavailable": "メッセージ取得不可",
       "more": "もっと見る",
       "origin": "開始元",
-      "parallelHint": "複数のチャットで並行作業。待ち時間を短く。",
       "queued": "待機中",
       "received": "受信",
       "refresh": "更新",
@@ -2088,7 +2087,6 @@
     "resources": {
       "collapse": "折りたたむ",
       "copyLink": "リンクをコピー",
-      "empty": "このチャットにはまだアーティファクトやリンクがありません",
       "emptyLinks": "このチャットにはまだリンクがありません",
       "expand": "展開",
       "links": "リンク",

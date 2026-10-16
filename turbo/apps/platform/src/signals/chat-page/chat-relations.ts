@@ -5,8 +5,10 @@ import {
   type ChatRelationMessage,
 } from "@okouai/api-contracts/contracts/chat-relations";
 import type { UserMessagePart } from "@okouai/api-contracts/contracts/chat-threads";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 import { withCleanup } from "../utils.ts";
 import type { ChatEvent } from "./chat-event-types.ts";
 import { eventDrivenChatThreads$ } from "./chat-thread-event-sourcing.ts";
@@ -149,11 +151,38 @@ function chatOrigin(events: ChatEvent[]): ChatOrigin {
   return source ? { kind: "source", part: source } : { kind: "unknown" };
 }
 
+function createRelationContentSignal(
+  origin$: Computed<ChatOrigin | null>,
+  lists: readonly ChatRelationList<unknown>[],
+) {
+  return computed(async (get) => {
+    if (!get(featureSwitch$)[FeatureSwitchKey.ChatRelations]) {
+      return false;
+    }
+    const origin = get(origin$);
+    if (origin === null) {
+      return null;
+    }
+    // Failed lists are settled too: their views retain the error and retry UI.
+    const results = await Promise.allSettled(
+      lists.map((list) => {
+        return get(list.data$);
+      }),
+    );
+    return (
+      origin.kind === "source" ||
+      results.some((result) => {
+        return result.status === "rejected" || result.value.items.length > 0;
+      })
+    );
+  });
+}
+
 export function createChatRelationSignals(
   threadId: string,
   {
     chatEvents$: events$,
-    initialEventsReady$: ready$,
+    initialEventsReady$,
   }: {
     readonly chatEvents$: Computed<ChatEvent[]>;
     readonly initialEventsReady$: Computed<boolean>;
@@ -185,7 +214,7 @@ export function createChatRelationSignals(
     };
   });
   const origin$ = computed((get): ChatOrigin | null => {
-    if (!get(ready$)) {
+    if (!get(initialEventsReady$)) {
       return null;
     }
     const events = get(events$);
@@ -249,10 +278,19 @@ export function createChatRelationSignals(
     const peerId = get(selectedPeer$);
     return peerId ? createMessages(threadId, peerId, revision$) : null;
   });
+  const children = createPaging(childrenFirst$, childrenMore$);
+  const communications = createPaging(
+    communicationsFirst$,
+    communicationsMore$,
+  );
   return {
     origin$,
-    children: createPaging(childrenFirst$, childrenMore$),
-    communications: createPaging(communicationsFirst$, communicationsMore$),
+    hasContent$: createRelationContentSignal(origin$, [
+      children,
+      communications,
+    ]),
+    children,
+    communications,
     selectedPeer$: computed((get) => {
       return get(selectedPeer$);
     }),

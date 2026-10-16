@@ -2106,7 +2106,6 @@
       "messageUnavailable": "Message indisponible",
       "more": "Plus",
       "origin": "Depuis",
-      "parallelHint": "Discutez en parallèle. Attendez moins.",
       "queued": "En attente",
       "received": "Reçu",
       "refresh": "Actualiser",
@@ -2137,7 +2136,6 @@
     "resources": {
       "collapse": "Réduire",
       "copyLink": "Copier le lien",
-      "empty": "Ce chat ne contient pas encore d’artéfacts ni de liens",
       "emptyLinks": "Aucun lien dans ce chat pour le moment",
       "expand": "Développer",
       "links": "Liens",
