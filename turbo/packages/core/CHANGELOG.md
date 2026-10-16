@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.765.1](https://github.com/okou-ai/okou/compare/core-v8.765.0...core-v8.765.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **api:** prefer public og with bounded slack previews and a personal switch ([#40683](https://github.com/okou-ai/okou/issues/40683)) ([fdaa8bd](https://github.com/okou-ai/okou/commit/fdaa8bdfd023f10eba503b63c099d17224b23c51))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.3
+
 ## [8.765.0](https://github.com/okou-ai/okou/compare/core-v8.764.2...core-v8.765.0) (2026-10-16)
 
 

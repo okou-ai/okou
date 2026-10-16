@@ -12,6 +12,22 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1035.1](https://github.com/okou-ai/okou/compare/app-v0.1035.0...app-v0.1035.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **app:** center the office preview loading spinner ([#40700](https://github.com/okou-ai/okou/issues/40700)) ([19badfa](https://github.com/okou-ai/okou/commit/19badfa25abb133fbc4f8fa7bcf622cf523ea990))
+* **app:** retry unauthorized api requests once ([#40720](https://github.com/okou-ai/okou/issues/40720)) ([b5a44ef](https://github.com/okou-ai/okou/commit/b5a44ef267c6fa43dafdacec8a4b7228af51bd9f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.3
+    * @okouai/core bumped to 8.765.1
+
 ## [0.1035.0](https://github.com/okou-ai/okou/compare/app-v0.1034.1...app-v0.1035.0) (2026-10-16)
 
 

@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.399.1](https://github.com/okou-ai/okou/compare/cli-v9.399.0...cli-v9.399.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* repair wechat media transfer and conversation context ([#40674](https://github.com/okou-ai/okou/issues/40674)) ([da2141f](https://github.com/okou-ai/okou/commit/da2141fcd53dff04ba8490d99397f3bcba6e7a84))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.572.3
+    * @okouai/core bumped to 8.765.1
+    * @okouai/pi-agent-runtime bumped to 1.50.15
+
 ## [9.399.0](https://github.com/okou-ai/okou/compare/cli-v9.398.1...cli-v9.399.0) (2026-10-16)
 
 

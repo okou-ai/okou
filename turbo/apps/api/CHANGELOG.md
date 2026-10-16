@@ -9,6 +9,29 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.749.0](https://github.com/okou-ai/okou/compare/api-v1.748.0...api-v1.749.0) (2026-10-16)
+
+
+### Features
+
+* **observability:** anchor web chat api_to_* latency at request receipt ([#40705](https://github.com/okou-ai/okou/issues/40705)) ([f9b6521](https://github.com/okou-ai/okou/commit/f9b65211237386971a5e4a4b00c0b7da52b34ab6))
+
+
+### Bug Fixes
+
+* **api:** prefer public og with bounded slack previews and a personal switch ([#40683](https://github.com/okou-ai/okou/issues/40683)) ([fdaa8bd](https://github.com/okou-ai/okou/commit/fdaa8bdfd023f10eba503b63c099d17224b23c51))
+* repair wechat media transfer and conversation context ([#40674](https://github.com/okou-ai/okou/issues/40674)) ([da2141f](https://github.com/okou-ai/okou/commit/da2141fcd53dff04ba8490d99397f3bcba6e7a84))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.3
+    * @okouai/core bumped to 8.765.1
+    * @okouai/db bumped to 1.345.1
+    * @okouai/pi-agent-runtime bumped to 1.50.15
+
 ## [1.748.0](https://github.com/okou-ai/okou/compare/api-v1.747.1...api-v1.748.0) (2026-10-16)
 
 
