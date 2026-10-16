@@ -379,6 +379,7 @@ struct FirewallRuleSegmentParam<'a> {
 }
 
 const DNS_LABEL_MAX_LENGTH: usize = 63;
+const MAX_IPV4_HOST_SEGMENTS: usize = 4;
 
 fn validate_firewall_permission_rule(rule: &str, allow_aws_predicates: bool) -> Result<(), String> {
     let Some((method, remainder)) = rule.split_once(' ') else {
@@ -922,6 +923,8 @@ fn validate_parameterized_firewall_base_host(
     }
 
     let mut has_static_segment = false;
+    let mut can_match_ipv4 = true;
+    let mut minimum_host_segments = segments.len();
     let mut materialized_host = String::with_capacity(host.len());
     for (index, segment) in segments.iter().enumerate() {
         if segment.is_empty() {
@@ -951,17 +954,31 @@ fn validate_parameterized_firewall_base_host(
             }
             validate_parameterized_firewall_base_host_literal(param.prefix)?;
             validate_parameterized_firewall_base_host_literal(param.suffix)?;
+            can_match_ipv4 &= param
+                .prefix
+                .bytes()
+                .chain(param.suffix.bytes())
+                .all(|byte| byte.is_ascii_digit());
+            if param.greedy && segment.ends_with("*}") {
+                minimum_host_segments -= 1;
+            }
             materialized_host.push_str(param.prefix);
             materialized_host.push('x');
             materialized_host.push_str(param.suffix);
         } else {
             validate_parameterized_firewall_base_host_literal(segment)?;
             has_static_segment = true;
+            can_match_ipv4 &= crate::firewall_hostname_policy::is_ipv4_literal_like(segment);
             materialized_host.push_str(segment);
         }
     }
     if !has_static_segment {
         return Err("base URL host must have at least one static segment".to_string());
+    }
+    // The nonnumeric syntax witness below cannot exclude numeric parameter values.
+    if !param_names.is_empty() && can_match_ipv4 && minimum_host_segments <= MAX_IPV4_HOST_SEGMENTS
+    {
+        return Err("parameterized base URL host must not match an IPv4 address".to_string());
     }
     if has_trailing_dot {
         materialized_host.push('.');

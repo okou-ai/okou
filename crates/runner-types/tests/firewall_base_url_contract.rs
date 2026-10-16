@@ -73,6 +73,47 @@ fn firewall_base_url_validation_matches_shared_contract() {
     );
 }
 
+#[test]
+fn firewall_cache_validation_rejects_parameterized_ipv4_hosts() {
+    for base in [
+        "https://127.{octet}",
+        "https://127.0.{a}.{b}",
+        "https://127.0.0.1{suffix}",
+        "https://{octets+}.0.0.{suffix}1",
+        "https://{octets*}.0.0.{suffix}1",
+        "https://{octet}.0x1",
+        "https://{prefix}7.0.0.1",
+        "https://1{octet}7.0.0.1",
+        "https://{sub*}.127.0.0.1",
+        "https://{sub*}.127.0.0.1{suffix}",
+    ] {
+        let result = firewall(base.to_string()).validate_for_cache();
+        assert!(result.is_err(), "IPv4 host template {base:?} was accepted");
+    }
+}
+
+#[test]
+fn firewall_cache_validation_preserves_valid_numeric_hosts() {
+    for base in [
+        "https://{sub}.123.example.com",
+        "https://{sub}.0123.example.com",
+        "https://{sub}.0XABC.example.com",
+        "https://api-{sub}.123.example.com",
+        "https://{sub+}.0123.example.com",
+        "https://{sub*}.0xabc.example.com",
+        "https://1.2.3.4.{sub}",
+        "https://127.0.{octet}.node-{suffix}",
+        "https://{sub+}.127.0.0.1{suffix}",
+        "https://127.0.0.1/{path}",
+    ] {
+        let result = firewall(base.to_string()).validate_for_cache();
+        assert!(
+            result.is_ok(),
+            "valid host template {base:?} was rejected: {result:?}"
+        );
+    }
+}
+
 fn firewall(base: String) -> Firewall {
     Firewall {
         name: "contract-test".to_string(),
