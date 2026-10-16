@@ -13,6 +13,7 @@ import { cronCompactUsageEventsRoutes } from "../cron-compact-usage-events";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { createBddApi } from "./helpers/api-bdd";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -20,7 +21,7 @@ const context = testContext();
 const fixture = createChatEventsFixture(context);
 
 describe("Billing model reporting", () => {
-  it("retains captured providers and settled totals across compaction and Run deletion", async () => {
+  it("retains captured providers and settled totals across compaction, Thread deletion and Run deletion", async () => {
     await setupApp({ context, routes: usageRecordRoutes, isolatePg: true });
     const at = Date.UTC(2026, 2, 1, 12, 15);
     mockNow(at);
@@ -149,16 +150,20 @@ describe("Billing model reporting", () => {
       const compacted = await report();
       expect(compacted).toStrictEqual(raw);
 
+      await createChatFilesBddApi(context).deleteThread(actor, run.threadId);
+      const withoutThread = await report();
+      expect(withoutThread.record).toStrictEqual({
+        ...raw.record,
+        rows: raw.record.rows.map((row) => {
+          return { ...row, threadId: null, title: "Unavailable thread" };
+        }),
+      });
+      expect(withoutThread.members).toStrictEqual(raw.members);
+
       await createBddApi(context).deleteAgent(actor, agentId);
       await createRunsApi(context).requestReadRun(actor, run.runId, [404]);
       const deleted = await report();
-      expect(deleted.record.totalCredits).toBe(36);
-      expect(deleted.record.rows[0]).toMatchObject({
-        tokens: 10_000,
-        credits: 36,
-        breakdown: expectedBreakdown,
-      });
-      expect(deleted.members.members).toStrictEqual(raw.members.members);
+      expect(deleted).toStrictEqual(withoutThread);
     });
   });
 });

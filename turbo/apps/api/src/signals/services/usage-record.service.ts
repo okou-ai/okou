@@ -3,7 +3,6 @@ import type {
   UsageRecordResponse,
   UsageRecordScope,
 } from "@okouai/api-contracts/contracts/usage-record";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { usageEvent } from "@okouai/db/schema/usage-event";
@@ -75,18 +74,7 @@ function tokenExpr(usage: FinalizedUsageRelation) {
  * row to survive. `billing_run_attribution` carries the original thread id; the
  * live `chat_threads` row decides whether the bill still groups by that thread,
  * so deleting a thread keeps collapsing its usage into the threadless row.
- *
- * ROLLOUT FALLBACK — the `agent_runs` join. Surface: DB vs API, for rows written
- * before migration 1192 whose attribution still reports `thread_context =
- * 'unknown'`. Removal condition: `pnpm -F @okouai/db billing:attribution`
- * reports `thread_gaps: 0` and `conflicts: 0` on a complete (non-truncated)
- * production inventory; the backfill leaves a conflicting row uncaptured on
- * purpose, so a non-zero conflict count is a human-resolution gate rather than
- * a reason to drop this join.
- * Follow-up: the drop pull request of #35875, which deletes this join.
  */
-const groupingThreadId = sql`COALESCE(${billingRunAttribution.threadId}, ${agentRuns.chatThreadId})`;
-
 function usageRecordRunsWith(
   userId: string | null,
   orgId: string,
@@ -97,7 +85,6 @@ function usageRecordRunsWith(
   const usageRows = builder.$with("usage_rows").as(
     builder
       .select({
-        runId: usage.runId,
         billingRunId: usage.billingRunId,
         billingAnchorAt: usage.billingAnchorAt,
         userId: usage.userId,
@@ -116,7 +103,6 @@ function usageRecordRunsWith(
   const runs = builder.$with("runs").as(
     builder
       .select({
-        runId: usageRows.runId,
         userId: usageRows.userId,
         credits: usageRows.credits,
         tokens: usageRows.tokens,
@@ -132,8 +118,10 @@ function usageRecordRunsWith(
         billingRunAttribution,
         eq(billingRunAttribution.runId, usageRows.billingRunId),
       )
-      .leftJoin(agentRuns, eq(agentRuns.id, usageRows.runId))
-      .leftJoin(chatThreads, eq(chatThreads.id, groupingThreadId)),
+      .leftJoin(
+        chatThreads,
+        eq(chatThreads.id, billingRunAttribution.threadId),
+      ),
   );
   return { usageRows, runs };
 }
@@ -310,8 +298,7 @@ function usageRecordBreakdownQuery(
         billingRunAttribution,
         eq(billingRunAttribution.runId, usage.billingRunId),
       )
-      .leftJoin(agentRuns, eq(agentRuns.id, usage.runId))
-      .leftJoin(chatThreads, eq(chatThreads.id, groupingThreadId))
+      .leftJoin(chatThreads, eq(chatThreads.id, billingRunAttribution.threadId))
       .where(
         and(
           eq(usage.orgId, orgId),
