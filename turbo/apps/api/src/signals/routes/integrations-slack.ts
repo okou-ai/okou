@@ -168,8 +168,7 @@ function buildUninstalledAppHomeView(): SlackView {
           {
             type: "button",
             text: { type: "plain_text", text: `Open ${brandName} Settings` },
-            // Keep /works until serving and rollback Apps support bare /settings/slack (#40196).
-            url: `${env("APP_URL")}/works`,
+            url: `${env("APP_URL")}${INTEGRATION_SETTINGS_PATHS.slack}`,
             action_id: "home_open_settings",
             style: "primary",
           },
