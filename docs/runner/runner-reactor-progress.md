@@ -237,11 +237,14 @@ Recovery revalidates the retained generation at its actual location and complete
 an uncertain metadata commit before retiring old data. Failed required saving
 retains its capsule while releasing physical IO admission.
 
-Publication orders entry/source, conditional receiving-device Copy lease, local
-IO slot, then shared canonical capacity. Normal Move bypasses the Copy lease.
+Publication orders entry/source, local IO slot, then shared canonical capacity.
+Move and exceptional Copy share that same bounded IO admission. Copy checks
+actual destination headroom before transfer and metadata headroom before commit;
+concurrent allocation by other publishers or processes can race those observations.
 Unexpected EXDEV and pressure reclamation release IO/barrier admission before
-waiting again; the original 30-second pre-IO budget covers those retries within
-an attempt. Legacy flock contention retains its 250 ms observed retry budget.
+retrying with Copy demand or waiting for GC; the original 30-second pre-IO budget
+covers those retries within an attempt. Legacy flock contention retains its
+250 ms observed retry budget.
 These admission deadlines never abort accepted transfer or sync. Sync runs in
 owned blocking work, while the accepted parent retains the relevant guards.
 Checkout never joins the publication queue. Proven

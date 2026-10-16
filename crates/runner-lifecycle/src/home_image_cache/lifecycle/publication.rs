@@ -54,7 +54,6 @@ struct PublicationRequest {
 }
 
 struct PublicationAdmission<'a> {
-    _copy: Option<Flock<std::fs::File>>,
     _io: tokio::sync::SemaphorePermit<'a>,
     _capacity: Flock<std::fs::File>,
 }
@@ -150,7 +149,6 @@ impl HomeImageCache {
     async fn publication_admission<'a>(
         &'a self,
         deadline: Instant,
-        copy_device: Option<u64>,
     ) -> LifecycleResult<Option<PublicationAdmission<'a>>> {
         if Instant::now() >= deadline {
             return Ok(None);
@@ -158,17 +156,6 @@ impl HomeImageCache {
         #[cfg(test)]
         self.inner.publication_admission_entered.add_permits(1);
         let admission = async {
-            let copy = match copy_device {
-                Some(device) => Some(
-                    runner_host::lock::acquire(
-                        self.inner
-                            .lock_dir
-                            .join(format!("home-image-publication-copy-{device}.lock")),
-                    )
-                    .await?,
-                ),
-                None => None,
-            };
             let io = self
                 .inner
                 .publication_admission
@@ -182,7 +169,6 @@ impl HomeImageCache {
                 runner_host::lock::TryLock::Busy => return Ok(None),
             };
             Ok::<_, LifecycleError>(Some(PublicationAdmission {
-                _copy: copy,
                 _io: io,
                 _capacity: capacity,
             }))
@@ -276,14 +262,13 @@ impl HomeImageCache {
         let device = fs::metadata(&destination).await?.dev();
         // A retained Copy destination is an established transfer phase. A later
         // device observation cannot turn recovery back into a colliding Move.
-        let mut copy_device = (progress.image.is_none()
-            && (progress.copy_target.is_some() || source.identity().dev != device))
-            .then_some(device);
+        let mut copy_required = progress.image.is_none()
+            && (progress.copy_target.is_some() || source.identity().dev != device);
         let deadline = Instant::now() + HOME_IMAGE_PUBLICATION_ADMISSION_TIMEOUT;
         let metadata_peak = runner_host::state_file::HOME_METADATA_MAX_BYTES.saturating_add(8192);
         let mut reclaimed = false;
         loop {
-            let admission = match self.publication_admission(deadline, copy_device).await {
+            let admission = match self.publication_admission(deadline).await {
                 Ok(Some(admission)) => admission,
                 Ok(None) => {
                     let reason = if Instant::now() >= deadline {
@@ -331,8 +316,8 @@ impl HomeImageCache {
                     .forget();
             }
             // All cache-tree growth and physical tails are within this barrier.
-            // Copy/GC waits never retain scarce IO admission or this barrier.
-            let copy_peak = if progress.image.is_none() && copy_device.is_some() {
+            // Both transfers share IO admission; GC waits release it and the barrier.
+            let copy_peak = if progress.image.is_none() && copy_required {
                 source.validate_path(input.active_image)?;
                 let file = source.clone_file_for_observation()?;
                 let destination = destination.clone();
@@ -420,7 +405,7 @@ impl HomeImageCache {
                     {
                         return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
                     }
-                    let (pin, copied) = if copy_device.is_some() {
+                    let (pin, copied) = if copy_required {
                         #[cfg(test)]
                         if let Some(gate) = &self.publication_copy_test_gate {
                             gate.enter_and_wait().await;
@@ -447,7 +432,7 @@ impl HomeImageCache {
                                 // The failed rename leaves the pinned source unmoved.
                                 drop(admission);
                                 source.validate_path(input.active_image)?;
-                                copy_device = Some(device);
+                                copy_required = true;
                                 reclaimed = false;
                                 continue;
                             }

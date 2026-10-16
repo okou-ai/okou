@@ -247,39 +247,21 @@ async fn retained_failure_capsules_do_not_occupy_all_physical_io_slots() {
 }
 
 #[tokio::test]
-async fn normal_move_bypasses_exceptional_copy_admission() {
+async fn blocked_copy_allows_same_runner_move_to_commit() {
     let mut f = Fixture::new().await;
-    let destination = tempfile::tempdir_in("/dev/shm").unwrap();
-    let original_paths = f.paths.clone();
-    let lock_dir = f.cache.inner.lock_dir.clone();
-    f.cache = HomeImageCache::with_cache_dirs_and_fs_stats(
-        f.paths.clone(),
-        destination.path().join("cache"),
-        lock_dir.clone(),
-        "group-a",
-        FsStats::default(),
-    )
-    .with_actual_fs_stats_for_test();
-    f.cache.pressure_reserve_override = Some(sandbox::HomeDriveSpaceReserve::new(0, 10));
     let gate = HomeImagePrepareLockTestGate::default();
     f.cache.publication_copy_test_gate = Some(gate.clone());
     let copied = context(&f, "copy").await;
     let copy_bytes = tokio::fs::read(f.paths.active_home_image(&copied.sandbox_id()))
         .await
         .unwrap();
-    let copy_cache = f.cache.clone();
+    f.cache.inner.publication_fault.store(
+        PublicationFault::UnexpectedExdev as usize,
+        std::sync::atomic::Ordering::SeqCst,
+    );
     let copying = tokio::spawn(async move { copied.promote().await });
     gate.wait_entered(Duration::from_secs(5)).await;
-    f.paths = runner_host::paths::RunnerPaths::new(destination.path().join("runner"));
-    f.cache = HomeImageCache::with_cache_dirs_and_fs_stats(
-        f.paths.clone(),
-        destination.path().join("cache"),
-        lock_dir,
-        "group-a",
-        FsStats::default(),
-    )
-    .with_actual_fs_stats_for_test();
-    f.cache.pressure_reserve_override = Some(sandbox::HomeDriveSpaceReserve::new(0, 10));
+    f.cache.publication_copy_test_gate = None;
     let moved = context(&f, "move").await;
     let move_bytes = tokio::fs::read(f.paths.active_home_image(&moved.sandbox_id()))
         .await
@@ -298,9 +280,6 @@ async fn normal_move_bypasses_exceptional_copy_admission() {
         copying.await.unwrap().unwrap(),
         HomeImagePromotionOutcome::Promoted
     );
-    f.paths = original_paths;
-    f.cache = copy_cache;
-    f.cache.publication_copy_test_gate = None;
     published_bytes(&f, "copy", &copy_bytes).await;
 }
 
@@ -337,52 +316,62 @@ async fn manual_collection_defers_to_the_same_singleton_as_background_collection
 }
 
 #[tokio::test]
-async fn unexpected_exdev_waiters_release_io_slots_before_copy_admission() {
-    let f = Fixture::new().await;
-    let device = std::fs::metadata(f.cache.home_image_cache_fs_stats_path())
-        .unwrap()
-        .dev();
-    let lease = runner_host::lock::acquire(
-        f.cache
-            .inner
-            .lock_dir
-            .join(format!("home-image-publication-copy-{device}.lock")),
+async fn independent_cross_device_copies_share_four_io_slots() {
+    let mut f = Fixture::new().await;
+    let destination = tempfile::tempdir_in("/dev/shm").unwrap();
+    f.cache = HomeImageCache::with_cache_dirs_and_fs_stats(
+        f.paths.clone(),
+        destination.path().join("cache"),
+        f.cache.inner.lock_dir.clone(),
+        "group-a",
+        FsStats::default(),
     )
-    .await
-    .unwrap();
-    let mut waiting = Vec::new();
+    .with_actual_fs_stats_for_test();
+    f.cache.pressure_reserve_override = Some(sandbox::HomeDriveSpaceReserve::new(0, 10));
+    let gate = HomeImagePrepareLockTestGate::default();
+    f.cache.publication_copy_test_gate = Some(gate.clone());
+    let mut copying = Vec::new();
     for index in 0..4 {
-        let key = format!("unexpected-copy-{index}");
+        let key = format!("concurrent-copy-{index}");
         let owned = context(&f, &key).await;
         let active = f.paths.active_home_image(&owned.sandbox_id());
         let expected = tokio::fs::read(&active).await.unwrap();
-        f.cache.inner.publication_fault.store(
-            PublicationFault::UnexpectedExdev as usize,
-            std::sync::atomic::Ordering::SeqCst,
+        assert_ne!(
+            std::fs::metadata(&active).unwrap().dev(),
+            std::fs::metadata(destination.path()).unwrap().dev()
         );
         let task = tokio::spawn(async move { owned.promote().await });
-        tokio::time::timeout(
-            Duration::from_secs(5),
-            f.cache.inner.publication_admission_entered.acquire_many(2),
-        )
-        .await
-        .unwrap()
-        .unwrap()
-        .forget();
+        gate.wait_entered(Duration::from_secs(5)).await;
         assert_eq!(tokio::fs::read(&active).await.unwrap(), expected);
-        waiting.push((key, expected, task));
+        copying.push((key, expected, task));
     }
-    let moved = context(&f, "normal-move").await;
-    assert_eq!(
-        tokio::time::timeout(Duration::from_secs(5), moved.promote())
-            .await
-            .unwrap()
-            .unwrap(),
-        HomeImagePromotionOutcome::Promoted
-    );
-    drop(moved);
-    drop(lease);
-    for (key, expected, task) in waiting {
+
+    let fifth = context(&f, "fifth-copy").await;
+    let expected = tokio::fs::read(f.paths.active_home_image(&fifth.sandbox_id()))
+        .await
+        .unwrap();
+    let paths = f.cache.entry_paths(&f.key("fifth-copy"));
+    let staging = paths.tmp_image(fifth.run_id());
+    let fifth = tokio::spawn(async move { fifth.promote().await });
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        f.cache.inner.publication_admission_entered.acquire_many(5),
+    )
+    .await
+    .unwrap()
+    .unwrap()
+    .forget();
+    assert!(!fifth.is_finished());
+    assert!(!staging.exists());
+    assert!(!paths.metadata().exists());
+
+    gate.release();
+    gate.wait_entered(Duration::from_secs(5)).await;
+    for _ in 0..4 {
+        gate.release();
+    }
+    copying.push(("fifth-copy".into(), expected, fifth));
+    for (key, expected, task) in copying {
         assert_eq!(
             tokio::time::timeout(Duration::from_secs(5), task)
                 .await
