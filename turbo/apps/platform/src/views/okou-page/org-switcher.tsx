@@ -13,27 +13,22 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@okouai/ui";
-import type { BrowserClerk as Clerk } from "@clerk/shared/types";
 import { ChevronDown, Plus, Mail } from "lucide-react";
-import {
-  clerk$,
-  currentOrgInfo$,
-  prepareCreatedOrgOnboarding$,
-} from "../../signals/auth.ts";
-import {
-  createdOrganizationsCount$,
-  refreshCreatedOrganizationsCount$,
-} from "../../signals/org.ts";
+import { clerk$, currentOrgInfo$ } from "../../signals/auth.ts";
+import { createdOrganizationsCount$ } from "../../signals/org.ts";
 import {
   bestEffort,
+  withCleanup,
   detach,
   onDomEventFn,
   Reason,
 } from "../../signals/utils.ts";
+import { userInvitations$ } from "../../signals/user-invitations.ts";
 import {
-  userInvitations$,
-  refreshUserInvitations$,
-} from "../../signals/user-invitations.ts";
+  createWorkspace$,
+  joinWorkspace$,
+  type WorkspaceInvitation,
+} from "../../signals/select-org/workspace-actions.ts";
 import {
   creatingOrg$,
   setCreatingOrg$,
@@ -41,37 +36,21 @@ import {
   setAcceptingInvitationId$,
 } from "../../signals/select-org/org-switcher-ui.ts";
 import { ThumbnailPlaceholder, WorkspaceLogo } from "../components/avatar.tsx";
+import { pageSignal$ } from "../../signals/page-signal.ts";
 
-function InvitationRow({
-  invitation,
-}: {
-  invitation: {
-    id: string;
-    publicOrganizationData: { id?: string; name: string; imageUrl: string };
-    accept: () => Promise<unknown>;
-  };
-}) {
-  const clerkLoadable = useLastLoadable(clerk$);
-  const clerk = clerkLoadable.state === "hasData" ? clerkLoadable.data : null;
+function InvitationRow({ invitation }: { invitation: WorkspaceInvitation }) {
   const acceptingId = useGet(acceptingInvitationId$);
   const setAcceptingId = useSet(setAcceptingInvitationId$);
-  const refreshInvitations = useSet(refreshUserInvitations$);
+  const joinWorkspace = useSet(joinWorkspace$);
+  const signal = useGet(pageSignal$);
   const isAccepting = acceptingId === invitation.id;
   const { t } = useTranslation();
 
   const handleAccept = onDomEventFn(async () => {
     setAcceptingId(invitation.id);
-    await bestEffort(
-      (async () => {
-        await invitation.accept();
-        const orgId = invitation.publicOrganizationData.id;
-        if (orgId) {
-          await clerk?.setActive({ organization: orgId });
-        }
-        refreshInvitations();
-      })(),
-    );
-    setAcceptingId(null);
+    await withCleanup(bestEffort(joinWorkspace(invitation, signal)), () => {
+      setAcceptingId(null);
+    });
   });
 
   return (
@@ -104,28 +83,18 @@ function InvitationRow({
   );
 }
 
-function CreateWorkspaceMenuItem({ clerk }: { clerk: Clerk }) {
+function CreateWorkspaceMenuItem() {
   const creatingOrg = useGet(creatingOrg$);
   const setCreating = useSet(setCreatingOrg$);
-  const prepareCreatedOrgOnboarding = useSet(prepareCreatedOrgOnboarding$);
-  const refreshCreatedOrganizationsCount = useSet(
-    refreshCreatedOrganizationsCount$,
-  );
+  const createWorkspace = useSet(createWorkspace$);
+  const signal = useGet(pageSignal$);
   const { t } = useTranslation();
 
   const handleCreateOrg = onDomEventFn(async () => {
     setCreating(true);
-    const slug = `workspace-${crypto.randomUUID().slice(0, 8)}`;
-    await bestEffort(
-      (async () => {
-        const org = await clerk.createOrganization({ name: slug, slug });
-        prepareCreatedOrgOnboarding(org.id);
-        await clerk.setActive({ organization: org.id }).finally(() => {
-          refreshCreatedOrganizationsCount();
-        });
-      })(),
-    );
-    setCreating(false);
+    await withCleanup(bestEffort(createWorkspace(signal)), () => {
+      setCreating(false);
+    });
   });
 
   return (
@@ -151,13 +120,7 @@ function CreateWorkspaceMenuItem({ clerk }: { clerk: Clerk }) {
   );
 }
 
-function LimitedCreateWorkspaceItem({
-  clerk,
-  limit,
-}: {
-  clerk: Clerk;
-  limit: number;
-}) {
+function LimitedCreateWorkspaceItem({ limit }: { limit: number }) {
   const createdCountLoadable = useLastLoadable(createdOrganizationsCount$);
   if (
     createdCountLoadable.state !== "hasData" ||
@@ -166,7 +129,7 @@ function LimitedCreateWorkspaceItem({
     return null;
   }
 
-  return <CreateWorkspaceMenuItem clerk={clerk} />;
+  return <CreateWorkspaceMenuItem />;
 }
 
 function CreateWorkspaceItem() {
@@ -179,10 +142,10 @@ function CreateWorkspaceItem() {
 
   const limit = user.createOrganizationsLimit;
   if (limit === null) {
-    return <CreateWorkspaceMenuItem clerk={clerk} />;
+    return <CreateWorkspaceMenuItem />;
   }
 
-  return <LimitedCreateWorkspaceItem clerk={clerk} limit={limit} />;
+  return <LimitedCreateWorkspaceItem limit={limit} />;
 }
 
 function OtherMembershipsList() {

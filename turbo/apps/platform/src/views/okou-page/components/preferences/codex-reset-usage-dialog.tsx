@@ -189,12 +189,14 @@ export function CodexResetUsageDialog({
   open,
   resetCredits,
   resetting,
+  error,
   onOpenChange,
   onConfirm,
 }: {
   open: boolean;
   resetCredits: number | null;
   resetting: boolean;
+  error?: string | null;
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
 }) {
@@ -232,6 +234,11 @@ export function CodexResetUsageDialog({
             )}
           </DialogDescription>
         </DialogHeader>
+        {error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
         <DialogFooter>
           <Button
             type="button"

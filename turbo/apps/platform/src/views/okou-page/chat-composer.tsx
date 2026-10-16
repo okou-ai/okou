@@ -183,7 +183,6 @@ import {
 } from "../../signals/external/user-model-preference.ts";
 import type { RestorableAttachment } from "../../signals/okou-page/chat-draft.ts";
 import { readChatMessageFromClipboard } from "../../signals/okou-page/clipboard.ts";
-import { invalidateAgentConnectorAccess$ } from "../../signals/okou-page/composer-agent-connectors.ts";
 import type {
   ComposerPendingEvent,
   ComposerPrimaryAction,
@@ -199,14 +198,10 @@ import {
   CONNECTOR_ACCOUNT_SEARCH_THRESHOLD,
   connectorAccountTargetKey,
 } from "../../signals/okou-page/connector-accounts.ts";
-import {
-  connectorOverview$,
-  invalidateConnectorOverview$,
-} from "../../signals/okou-page/connector-overview.ts";
+import { connectorOverview$ } from "../../signals/okou-page/connector-overview.ts";
 import type { ComposerConnectorData } from "../../signals/okou-page/connectors.ts";
 import { resolveTemplatePickerCategory } from "../../signals/okou-page/chat-composer.ts";
 import {
-  loadCustomTemplateCatalog$,
   resetCustomTemplatePicker$,
   resetCustomTemplatePickerView$,
 } from "../../signals/okou-page/custom-template-library.ts";
@@ -709,21 +704,6 @@ function toImportedPresentationGenerationTemplate(
       ...(template.coverUrl === null ? {} : { previewUrl: template.coverUrl }),
     },
   };
-}
-
-function selectedImportedPresentationTemplate(
-  value: GenerationTemplateRequest | undefined,
-  importedTemplates: readonly PresentationTemplateSummary[],
-): PresentationTemplateSummary | undefined {
-  if (value?.type !== "presentation") {
-    return undefined;
-  }
-  return importedTemplates.find((template) => {
-    return (
-      value.selection.templateId ===
-      formatUserPresentationTemplateId(template.id)
-    );
-  });
 }
 
 function selectedPresentationTemplateItem(
@@ -5617,55 +5597,14 @@ function TemplatePickerCategoryContent({
   return null;
 }
 
-/**
- * The chip for a custom template.
- *
- * The catalog is the only place its title and cover exist, so a selection
- * whose row has not loaded produces no chip rather than an unnamed one.
- *
- * A document's cover stays behind. The chip draws it into a twenty-pixel
- * square, centred rather than top-aligned, which on a page of running prose
- * crops to a patch of body text and resolves to flat grey — less recognisable
- * than the file glyph it would replace. The catalog's tile can afford a page
- * because it shows the head of one at sixty times the area; the chip cannot,
- * so it keeps the glyph and the title carries the rest.
- */
-function customTemplateAttachment(
-  userTemplateId: string,
-  customTemplates: readonly UserTemplateCatalogEntry[],
-): ComposerTemplateAttachment | undefined {
-  const template = customTemplates.find((candidate) => {
-    return candidate.id === userTemplateId;
-  });
-  if (!template) {
-    return undefined;
-  }
-  return {
-    type: "custom",
-    title: template.title,
-    category: "custom",
-    ...(template.coverUrl === null || template.kind === "document"
-      ? {}
-      : { previewImageUrl: template.coverUrl }),
-  };
-}
-
 function selectedComposerTemplateAttachment(
   value: GenerationTemplateRequest | undefined,
-  importedTemplates: readonly PresentationTemplateSummary[] = [],
-  customTemplates: readonly UserTemplateCatalogEntry[] = [],
 ): ComposerTemplateAttachment | undefined {
   if (value?.type === "document") {
     const item = findDocumentTemplateItem(value.selection.documentTemplateId);
     return item
       ? { type: "document", title: item.title, category: "document" }
       : undefined;
-  }
-  if (value?.type === "custom") {
-    return customTemplateAttachment(
-      value.selection.userTemplateId,
-      customTemplates,
-    );
   }
   const presentationItem = selectedPresentationTemplateItem(value);
   if (presentationItem && value?.type === "presentation") {
@@ -5683,20 +5622,6 @@ function selectedComposerTemplateAttachment(
         selectedTheme,
         SELECTED_TEMPLATE_CHIP_PREVIEW_SIZE,
       ),
-    };
-  }
-  const importedPresentationTemplate = selectedImportedPresentationTemplate(
-    value,
-    importedTemplates,
-  );
-  if (importedPresentationTemplate) {
-    return {
-      type: "presentation",
-      title: importedPresentationTemplate.title,
-      category: "slides",
-      ...(importedPresentationTemplate.coverUrl === null
-        ? {}
-        : { previewImageUrl: importedPresentationTemplate.coverUrl }),
     };
   }
   const illustrationItem = selectedIllustrationTemplateItem(value);
@@ -7768,9 +7693,12 @@ function restoreChatClipboardPayload({
     insertPromptMarkdown(payload.text);
   }
   if (persistedAttachments.length > 0) {
+    // Restoration owns persistence once availability and annotated copies have
+    // settled. Do not race it with a save of the temporary placeholders.
     restoreAttachments(persistedAttachments);
+  } else {
+    onDraftChange?.();
   }
-  onDraftChange?.();
   return true;
 }
 
@@ -7785,62 +7713,21 @@ function useComposerDraftChange(signals: ComposerSignals): () => void {
 function useComposerTemplatePicker(
   signals: ComposerSignals,
 ): ComposerTemplatePicker {
-  const selectTemplate = useSet(signals.taskChips.selectTemplate$);
-  const loadImportedTemplates = useSet(
-    signals.template.loadImportedPresentationTemplates$,
-  );
-  const loadCustomTemplates = useSet(loadCustomTemplateCatalog$);
-  const notifyDraftChanged = useComposerDraftChange(signals);
+  const selectTemplateAndSave = useSet(signals.template.selectTemplateAndSave$);
   const pageSignal = useGet(pageSignal$);
-  const insert = (
-    value: GenerationTemplateRequest,
-    attachment: ComposerTemplateAttachment | undefined,
-    type: GenerationTemplateRequest["type"] = value.type,
-  ) => {
-    if (!attachment) {
-      return;
-    }
-    selectTemplate(value, attachment, type);
-    notifyDraftChanged();
-  };
   return {
     onChange(value) {
       if (!value) {
         return;
       }
-      // Built-in templates resolve without a catalog. Uploaded and custom ones
-      // read theirs only now; this picker hook does not subscribe on render.
-      const builtIn = selectedComposerTemplateAttachment(value);
-      if (
-        builtIn ||
-        (value.type !== "custom" && value.type !== "presentation")
-      ) {
-        insert(value, builtIn);
-        return;
-      }
+      // Chip presentation is pure; catalog resolution, insertion, task
+      // selection and persistence are one page-owned business action.
       detach(
-        (async () => {
-          const customTemplates =
-            value.type === "custom"
-              ? await loadCustomTemplates(pageSignal)
-              : [];
-          const importedTemplates =
-            value.type === "presentation"
-              ? await loadImportedTemplates(pageSignal)
-              : [];
-          const attachment = selectedComposerTemplateAttachment(
-            value,
-            importedTemplates,
-            customTemplates,
-          );
-          const type =
-            value.type === "custom"
-              ? customTemplates.find((template) => {
-                  return template.id === value.selection.userTemplateId;
-                })?.kind
-              : value.type;
-          insert(value, attachment, type);
-        })(),
+        selectTemplateAndSave(
+          value,
+          selectedComposerTemplateAttachment(value),
+          pageSignal,
+        ),
         Reason.DomCallback,
       );
     },
@@ -7932,7 +7819,7 @@ function ComposerInputSlot({
   minimumHeightClassName: string;
 }) {
   const notifyDraftChanged = useComposerDraftChange(signals);
-  const restoreAttachments = useSet(signals.draft.restoreAttachments$);
+  const restoreAttachments = useSet(signals.draft.restorePastedAttachments$);
   const pageSignal = useGet(pageSignal$);
   const focusEditor = useSet(signals.editor.focus$);
   const insertPromptMarkdown = useSet(signals.editor.insertPromptMarkdown$);
@@ -7946,15 +7833,7 @@ function ComposerInputSlot({
         insertUserMessage,
         restoreAttachments: (attachments) => {
           detach(
-            (async () => {
-              const removedUnavailableAttachments = await restoreAttachments(
-                attachments,
-                pageSignal,
-              );
-              if (removedUnavailableAttachments) {
-                notifyDraftChanged();
-              }
-            })(),
+            restoreAttachments(attachments, pageSignal),
             Reason.DomCallback,
           );
         },
@@ -8567,7 +8446,7 @@ function ComposerAttachments({ signals }: { signals: ComposerSignals }) {
     <AttachmentChips
       attachments={attachments}
       annotationSignals={signals.imageAnnotation}
-      onAnnotationChange={notifyDraftChanged}
+      annotationActions={signals.draft}
       onRemove={(attachment) => {
         removeAttachment(attachment);
         notifyDraftChanged();
@@ -8756,13 +8635,16 @@ function ComposerConnectorDialogsSlot({
   const agents = useLastResolved(agents$) ?? [];
   const connectorUi = useGet(signals.connector.connectorUiState$);
   const updateConnectorUi = useSet(signals.connector.updateConnectorUiState$);
-  const invalidateConnectorOverview = useSet(invalidateConnectorOverview$);
-  const invalidateAgentConnectors = useSet(invalidateAgentConnectorAccess$);
+  const completeAddition = useSet(
+    signals.connectorCompletion.completeConnectorAddition$,
+  );
+  const completeCustomAddition = useSet(
+    signals.connectorCompletion.completeCustomConnectorAddition$,
+  );
 
   const pageSignal = useGet(pageSignal$);
   const selectedConnectorSlug = connectorUi.selectedConnectorSlug;
   const selectedCustomConnectorId = connectorUi.selectedCustomConnectorId;
-  const setConnectorAuthorization = actions.setAuthorization;
   const agentRecordId = signals.agentId;
   const displayName =
     agents.find((agent) => {
@@ -8790,16 +8672,8 @@ function ComposerConnectorDialogsSlot({
   const selectedCustomConnectorAccountOptions =
     defaultCustomConnectorAccountOptions(selectedCustomConnector);
 
-  const handleConnectSuccess = async (
-    connectorSlug: ConnectorSlug,
-    signal: AbortSignal,
-  ) => {
+  const showConnectSuccess = (connectorSlug: ConnectorSlug) => {
     const label = connectorMap.get(connectorSlug)?.label ?? connectorSlug;
-    await setConnectorAuthorization(
-      { kind: "builtin", connectorSlug },
-      true,
-      signal,
-    );
     toast.success(
       t(
         ($) => {
@@ -8820,14 +8694,16 @@ function ComposerConnectorDialogsSlot({
     connectorSlug: ConnectorSlug,
     signal: AbortSignal,
   ): Promise<void> => {
-    if (
-      connectorData?.authorization.agentId !== agentRecordId ||
-      !authorizedSet.has(connectorSlug)
-    ) {
-      await handleConnectSuccess(connectorSlug, signal);
-    }
+    const newlyAuthorized = await completeAddition(
+      connectorSlug,
+      connectorData?.authorization.agentId === agentRecordId &&
+        authorizedSet.has(connectorSlug),
+      signal,
+    );
     signal.throwIfAborted();
-    invalidateConnectorOverview();
+    if (newlyAuthorized) {
+      showConnectSuccess(connectorSlug);
+    }
     updateConnectorUi({
       showAddDialog: false,
     });
@@ -8925,8 +8801,7 @@ function ComposerConnectorDialogsSlot({
           updateConnectorUi({ selectedCustomConnectorId: null });
         }}
         onCustomSuccess={() => {
-          invalidateConnectorOverview();
-          invalidateAgentConnectors(agentRecordId);
+          completeCustomAddition();
         }}
       />
       {connectorUi.showAddDialog && (
