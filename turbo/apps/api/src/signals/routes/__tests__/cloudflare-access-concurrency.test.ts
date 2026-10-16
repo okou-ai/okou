@@ -1560,6 +1560,49 @@ describe("protected host writes with authorized Runner authority", () => {
     return { owner, shared, host, runner, request };
   }
 
+  function rotateResource(
+    resource: "network" | "login",
+    fixture: Pick<
+      Awaited<ReturnType<typeof claimedHost>>,
+      "owner" | "shared" | "host"
+    >,
+  ) {
+    const { owner, shared, host } = fixture;
+    return resource === "network"
+      ? accept(
+          configs().update({
+            headers: owner.headers,
+            query,
+            params: { configId: shared.id },
+            body: {
+              expectedRevision: shared.revision,
+              credentials: {
+                clientId: "rotated-id",
+                clientSecret: "rotated-secret",
+              },
+            },
+          }),
+          [200],
+        )
+      : accept(
+          credentials().update({
+            headers: owner.headers,
+            params: {
+              credentialId: credentialBackedSshHost(host).credentialId,
+            },
+            body: {
+              expectedRevision: 1,
+              username: "rotated-deploy",
+              authentication: {
+                method: "password",
+                password: "rotated-login-password",
+              },
+            },
+          }),
+          [200],
+        );
+  }
+
   it.each(["personal", "organization"] as const)(
     "keeps the first %s same-ID creation immutable across concurrent requests and changed-payload replays",
     async (scope) => {
@@ -1890,117 +1933,122 @@ describe("protected host writes with authorized Runner authority", () => {
     });
   });
 
-  it("serializes rotation with pin and observation, retaining learned trust and independent login", async () => {
-    const { owner, shared, host, runner, request } = await claimedHost();
-    const [rotated, pinned, observed] = await Promise.all([
-      accept(
-        configs().update({
-          headers: owner.headers,
-          query,
-          params: { configId: shared.id },
-          body: {
-            expectedRevision: shared.revision,
-            credentials: {
-              clientId: "rotated-id",
-              clientSecret: "rotated-secret",
+  it.each(["network", "login"] as const)(
+    "serializes %s rotation with pin and observation, retaining current authority",
+    async (resource) => {
+      const fixture = await claimedHost();
+      const { owner, shared, host, runner, request } = fixture;
+      const [rotated, pinned, observed] = await Promise.all([
+        rotateResource(resource, fixture),
+        accept(
+          runner.pin({
+            ...request,
+            body: {
+              ...request.body,
+              expectedGeneration: host.generation,
+              observedHostKey: hostKey,
             },
+          }),
+          [200],
+        ),
+        accept(
+          runner.observe({
+            ...request,
+            body: {
+              ...request.body,
+              expectedGeneration: host.generation,
+              expectedCreatedAt: host.createdAt,
+              observedAt: nowDate().toISOString(),
+              failureReason: null,
+            },
+          }),
+          [200],
+        ),
+      ]);
+      expect(rotated.body).toMatchObject(
+        resource === "network"
+          ? { revision: 2, generation: 2 }
+          : { revision: 2, username: "rotated-deploy" },
+      );
+      expect(["pinned", "configuration_changed"]).toContain(
+        pinned.body.outcome,
+      );
+      expect(["recorded", "ignored"]).toContain(observed.body.outcome);
+      const saved = (
+        await accept(hosts().list({ headers: owner.headers }), [200])
+      ).body.connections.find(({ id }) => {
+        return id === host.id;
+      });
+      if (!saved) {
+        throw new Error("Expected the retained protected SSH host");
+      }
+      expect(saved).toMatchObject({
+        credentialId: credentialBackedSshHost(host).credentialId,
+        host: host.host,
+        port: host.port,
+        transport: { type: "cloudflare_access", configId: shared.id },
+      });
+      expect(saved.generation).toBe(
+        host.generation + 1 + Number(pinned.body.outcome === "pinned"),
+      );
+      if (pinned.body.outcome === "pinned") {
+        expect(saved.learnedHostKey).toStrictEqual(hostKey);
+      } else {
+        expect(saved.learnedHostKey).toBeNull();
+        expect(
+          (
+            await accept(
+              runner.pin({
+                ...request,
+                body: {
+                  ...request.body,
+                  expectedGeneration: saved.generation,
+                  observedHostKey: hostKey,
+                },
+              }),
+              [200],
+            )
+          ).body,
+        ).toMatchObject({
+          outcome: "pinned",
+          generation: saved.generation + 1,
+        });
+      }
+      expect((await accept(runner.resolve(request), [200])).body).toMatchObject(
+        {
+          outcome: "resolved_access",
+          username: resource === "network" ? login.username : "rotated-deploy",
+          authentication: {
+            method: "password",
+            password:
+              resource === "network"
+                ? login.authentication.password
+                : "rotated-login-password",
           },
-        }),
-        [200],
-      ),
-      accept(
-        runner.pin({
-          ...request,
-          body: {
-            ...request.body,
-            expectedGeneration: host.generation,
-            observedHostKey: hostKey,
+          learnedHostKey: hostKey,
+          access: {
+            configId: shared.id,
+            generation: resource === "network" ? 2 : 1,
+            clientId: resource === "network" ? "rotated-id" : "synthetic-id",
+            clientSecret:
+              resource === "network" ? "rotated-secret" : "synthetic-secret",
           },
-        }),
-        [200],
-      ),
-      accept(
-        runner.observe({
-          ...request,
-          body: {
-            ...request.body,
-            expectedGeneration: host.generation,
-            expectedCreatedAt: host.createdAt,
-            observedAt: nowDate().toISOString(),
-            failureReason: null,
-          },
-        }),
-        [200],
-      ),
-    ]);
-    expect(rotated.body).toMatchObject({ revision: 2, generation: 2 });
-    expect(["pinned", "configuration_changed"]).toContain(pinned.body.outcome);
-    expect(["recorded", "ignored"]).toContain(observed.body.outcome);
-    const saved = (
-      await accept(hosts().list({ headers: owner.headers }), [200])
-    ).body.connections.find(({ id }) => {
-      return id === host.id;
-    });
-    if (!saved) {
-      throw new Error("Expected the retained protected SSH host");
-    }
-    expect(saved).toMatchObject({
-      credentialId: credentialBackedSshHost(host).credentialId,
-      host: host.host,
-      port: host.port,
-      transport: { type: "cloudflare_access", configId: shared.id },
-    });
-    expect(saved.generation).toBe(
-      host.generation + 1 + Number(pinned.body.outcome === "pinned"),
-    );
-    if (pinned.body.outcome === "pinned") {
-      expect(saved.learnedHostKey).toStrictEqual(hostKey);
-    } else {
-      expect(saved.learnedHostKey).toBeNull();
+        },
+      );
       expect(
-        (
-          await accept(
-            runner.pin({
-              ...request,
-              body: {
-                ...request.body,
-                expectedGeneration: saved.generation,
-                observedHostKey: hostKey,
-              },
-            }),
-            [200],
-          )
-        ).body,
-      ).toMatchObject({ outcome: "pinned", generation: saved.generation + 1 });
-    }
-    expect((await accept(runner.resolve(request), [200])).body).toMatchObject({
-      outcome: "resolved_access",
-      username: login.username,
-      authentication: {
-        method: "password",
-        password: login.authentication.password,
-      },
-      learnedHostKey: hostKey,
-      access: {
-        configId: shared.id,
-        generation: 2,
-        clientId: "rotated-id",
-        clientSecret: "rotated-secret",
-      },
-    });
-    expect(
-      (await accept(hosts().observations({ headers: owner.headers }), [200]))
-        .body.observations,
-    ).toStrictEqual([]);
-    expect(
-      (await accept(credentials().list({ headers: owner.headers }), [200])).body
-        .credentials,
-    ).toContainEqual(
-      expect.objectContaining({
-        id: credentialBackedSshHost(host).credentialId,
-        revision: 1,
-        username: login.username,
-      }),
-    );
-  });
+        (await accept(hosts().observations({ headers: owner.headers }), [200]))
+          .body.observations,
+      ).toStrictEqual([]);
+      expect(
+        (await accept(credentials().list({ headers: owner.headers }), [200]))
+          .body.credentials,
+      ).toContainEqual(
+        expect.objectContaining({
+          id: credentialBackedSshHost(host).credentialId,
+          revision: resource === "network" ? 1 : 2,
+          username: resource === "network" ? login.username : "rotated-deploy",
+        }),
+      );
+    },
+  );
 });

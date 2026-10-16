@@ -20,22 +20,30 @@ import type {
   PreparedSshConnectionUpdate,
 } from "./ssh-connection.service";
 
-// Drizzle's sessionless QueryBuilder cannot construct UPDATE. Keep this one
-// DML leaf as SQL, with schema-owned identifiers, projection and predicates.
-// An entering reference can be absent from a concurrent fanout's host snapshot.
-// Advance only its config version; retained references use their real host write.
-export function stampedSshNetworkConfig(
+// Keep the current entering protocols while removing redundant retained fences.
+// Cloudflare config writes must follow the API authority-reader drain in #40577.
+// Drizzle's sessionless builder needs a schema-owned DML leaf for Tailscale.
+export function enteringSshNetworkConfig(
   qb: QueryBuilder,
   alias: string,
   provider: "cloudflare_access" | "tailscale",
   predicate: SQL,
 ) {
-  const config =
-    provider === "tailscale" ? tailscaleConfigs : cloudflareAccessConfigs;
+  if (provider === "cloudflare_access") {
+    return qb
+      .$with(alias)
+      .as(
+        qb
+          .select({ id: cloudflareAccessConfigs.id })
+          .from(cloudflareAccessConfigs)
+          .where(predicate)
+          .for("share"),
+      );
+  }
   return qb
-    .$with(alias, { id: config.id })
+    .$with(alias, { id: tailscaleConfigs.id })
     .as(
-      sql`UPDATE ${config} SET ${sql.identifier(config.name.name)} = ${config.name} WHERE ${predicate} RETURNING ${config.id}`,
+      sql`UPDATE ${tailscaleConfigs} SET ${sql.identifier(tailscaleConfigs.name.name)} = ${tailscaleConfigs.name} WHERE ${predicate} RETURNING ${tailscaleConfigs.id}`,
     );
 }
 
@@ -50,7 +58,7 @@ export function selectedSshNetworkConfig(
   if (entering === undefined) {
     throw new Error("SSH network entry predicate is missing");
   }
-  const entered = stampedSshNetworkConfig(
+  const entered = enteringSshNetworkConfig(
     qb,
     `${alias}_entered`,
     provider,
@@ -198,7 +206,7 @@ export function createSshCreationReads(
     args,
     exists(qb.select({ id: ready.id }).from(ready)),
   );
-  const access = stampedSshNetworkConfig(
+  const access = enteringSshNetworkConfig(
     qb,
     "selected_ssh_creation_access",
     "cloudflare_access",

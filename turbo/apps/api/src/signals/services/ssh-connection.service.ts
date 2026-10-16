@@ -28,7 +28,7 @@ import {
   createSshCreationReads,
   createSshUpdateReads,
   selectedSshNetworkConfig,
-  stampedSshNetworkConfig,
+  enteringSshNetworkConfig,
   stampedSshCredential,
   ownedSshConnection,
   visibleSshAccessConfig,
@@ -417,7 +417,7 @@ function sshConnectionCreationAdmission(args: PreparedSshConnectionCreation) {
   if (predicate === undefined) {
     throw new Error("SSH Tailscale admission predicate is missing");
   }
-  const stamp = stampedSshNetworkConfig(
+  const stamp = enteringSshNetworkConfig(
     reads.qb,
     "stamped_ssh_creation_tailscale",
     "tailscale",

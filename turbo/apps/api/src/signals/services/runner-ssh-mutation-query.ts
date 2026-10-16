@@ -189,8 +189,7 @@ function authorityQuery(
                     eq(sshCredentials.orgId, host.orgId),
                     eq(sshCredentials.userId, host.userId),
                   ),
-                )
-                .for("share"),
+                ),
             ),
           ),
         ),
@@ -207,6 +206,8 @@ function authorityQuery(
 // Host drift is known-unwritten. Every serving/rollback SSH override and
 // observation writer must stamp that tuple before its dependent write. A mixed
 // unstamped cohort does not establish freshness; floors/notices do not drain it.
+// Effective credential/config changes fence the referenced Host first; restrictive FKs
+// preserve identity. Resource predicates remain plain reads under that Host fence.
 export function createRunnerSshMutationReads(
   input: RunnerSshMutationInput,
   initial: RunnerSshHostIdentity,
@@ -214,7 +215,7 @@ export function createRunnerSshMutationReads(
   const qb = new QueryBuilder();
   const { host, observed } = hostQueries(initial);
   const current = authorityQuery(input, { host, observed });
-  const access = qb.$with("locked_runner_access_authority").as(
+  const access = qb.$with("runner_access_authority").as(
     qb
       .select({ id: cloudflareAccessConfigs.id })
       .from(cloudflareAccessConfigs)
@@ -232,10 +233,9 @@ export function createRunnerSshMutationReads(
             ),
           ),
         ),
-      )
-      .for("share", { of: cloudflareAccessConfigs }),
+      ),
   );
-  const tailscale = qb.$with("locked_runner_tailscale_authority").as(
+  const tailscale = qb.$with("runner_tailscale_authority").as(
     qb
       .select({ id: tailscaleConfigs.id })
       .from(tailscaleConfigs)
@@ -256,8 +256,7 @@ export function createRunnerSshMutationReads(
             ),
           ),
         ),
-      )
-      .for("share", { of: tailscaleConfigs }),
+      ),
   );
   const eligible = qb.$with("eligible_runner_ssh_authority").as(
     qb
