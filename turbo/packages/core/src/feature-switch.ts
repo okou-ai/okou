@@ -97,6 +97,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Open chat artifacts and artifacts-page previews directly in a sidebar instead of a lightbox.",
     enabled: false,
   },
+  [FeatureSwitchKey.SlashActions]: {
+    maintainer: "tongx@okou.ai",
+    displayName: "Slash actions",
+    description:
+      "Lead the composer's slash menu with chat actions, and open Workflows and Templates as second-level lists.",
+    enabled: false,
+  },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
     maintainer: "bingjie@okou.ai",
     description:

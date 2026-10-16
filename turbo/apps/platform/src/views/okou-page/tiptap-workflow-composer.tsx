@@ -33,6 +33,11 @@ import {
   SlashWorkflowMenu,
 } from "./slash-workflow.tsx";
 import {
+  SlashActionsPanel,
+  useSlashActionsMenu,
+  type SlashActionsOverview,
+} from "./slash-actions-overview.tsx";
+import {
   SlashTemplatePanel,
   SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT,
   SLASH_PANEL_MANAGE_WORKFLOWS_ID,
@@ -186,6 +191,11 @@ interface ComposerKeyDownContext {
   readonly closeSuggestionMenu: () => void;
   readonly selectSuggestion: (index: number) => void;
   readonly scrollSuggestionIntoView: (index: number) => void;
+  /**
+   * Moves the selection into (1) or out of (-1) the list a row opens, and
+   * reports whether there was one to cross.
+   */
+  readonly crossSuggestionSubmenu?: (direction: 1 | -1) => boolean;
   readonly onKeyDown: (event: KeyboardEventLike) => void;
 }
 
@@ -221,6 +231,23 @@ function nextSuggestionIndex(
         : order.length - 1
       : Math.max(0, Math.min(position + direction, order.length - 1));
   return order[nextPosition];
+}
+
+function crossesSuggestionSubmenu(
+  event: KeyboardEvent,
+  context: ComposerKeyDownContext,
+): boolean {
+  if (
+    !context.crossSuggestionSubmenu ||
+    (event.key !== "ArrowRight" && event.key !== "ArrowLeft") ||
+    event.shiftKey ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.altKey
+  ) {
+    return false;
+  }
+  return context.crossSuggestionSubmenu(event.key === "ArrowRight" ? 1 : -1);
 }
 
 function handleComposerKeyDownCapture(
@@ -265,6 +292,13 @@ function handleComposerKeyDownCapture(
     context.onKeyDown(event);
     return event.defaultPrevented;
   }
+  return handleSuggestionMenuKeyDown(event, context);
+}
+
+function handleSuggestionMenuKeyDown(
+  event: KeyboardEvent,
+  context: ComposerKeyDownContext,
+): boolean {
   if (event.key === "ArrowDown" || event.key === "ArrowUp") {
     event.preventDefault();
     const direction = event.key === "ArrowDown" ? 1 : -1;
@@ -277,6 +311,11 @@ function handleComposerKeyDownCapture(
       context.setSelectedSuggestionIndex(next);
       context.scrollSuggestionIntoView(next);
     }
+    return true;
+  }
+  if (crossesSuggestionSubmenu(event, context)) {
+    // Only a row that opens a list takes the arrow from the caret.
+    event.preventDefault();
     return true;
   }
   if (
@@ -317,6 +356,8 @@ interface ComposerSuggestionMenuState {
   readonly expandWorkflows: () => void;
   readonly showWorkflowActions: boolean;
   readonly newWorkflow: () => void;
+  /** The slash-actions overview, when it replaces the panel's own. */
+  readonly actionsOverview: SlashActionsOverview | null;
   readonly showWorkflows: boolean;
   readonly agents: readonly ComposerAgentSuggestion[];
   readonly chatThreads: readonly ComposerChatThreadSuggestion[];
@@ -432,6 +473,11 @@ function useSlashTemplatePanelActions(
       close();
       navigate(ROUTES.workflows);
     },
+    /** Consumes the token and closes the menu before an action takes over. */
+    leave(): void {
+      clearSlashRange();
+      close();
+    },
   };
 }
 
@@ -520,6 +566,21 @@ interface SuggestionRowActions {
   readonly insertWorkflow: (workflow: ComposerSlashWorkflow) => void;
   readonly insertAgent: (agent: ComposerAgentSuggestion) => void;
   readonly insertChatThread: (chatThread: ComposerChatThreadSuggestion) => void;
+}
+
+function buildSuggestionRows({
+  collapseWorkflows,
+  ...rows
+}: Omit<SuggestionRows, "headCount" | "expandIndex"> & {
+  readonly collapseWorkflows: boolean;
+}): SuggestionRows {
+  const headCount = rows.panelCategories.length;
+  const expandIndex =
+    collapseWorkflows &&
+    rows.workflows.length > SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT
+      ? headCount + SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT
+      : null;
+  return { ...rows, headCount, expandIndex };
 }
 
 function suggestionRowCount(rows: SuggestionRows): number {
@@ -640,6 +701,19 @@ function suggestionNavigationOrder(
   });
 }
 
+function scrollSuggestionRowIntoView(
+  index: number,
+  rows: SuggestionRows,
+  actionsOverview: SlashActionsOverview | null,
+): void {
+  if (rows.showWorkflows) {
+    scrollSlashWorkflowIntoView(
+      actionsOverview?.scrollTarget(index) ??
+        suggestionRowScrollTarget(index, rows),
+    );
+  }
+}
+
 function useComposerSuggestionMenu({
   composer,
   onKeyDown,
@@ -684,30 +758,34 @@ function useComposerSuggestionMenu({
   const mentions = useComposerMentionSuggestions(composer, slashRange);
   const { agents, chatThreads, showMentions } = mentions;
   const open = showWorkflows || showMentions;
-  const headCount = panelCategories.length;
-  const expandIndex =
-    collapseWorkflows &&
-    workflowSuggestions.length > SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT
-      ? headCount + SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT
-      : null;
-
-  const rows: SuggestionRows = {
+  const rows = buildSuggestionRows({
     showWorkflows,
     panelCategories,
-    headCount,
-    expandIndex,
+    collapseWorkflows,
     workflows: workflowSuggestions,
     workflowActions: workflowOverview && workflowsExpanded,
     agents,
     chatThreads,
-  };
-  const suggestionOrder = suggestionNavigationOrder(
-    suggestionRowCount(rows),
-    reversedSuggestions,
-    reversedSuggestions && workflowOverview ? headCount : null,
-  );
+  });
+  const actionsOverview = useSlashActionsMenu({
+    composer,
+    active: showWorkflows && workflowOverview,
+    workflows: workflowSuggestions,
+    panel: templatePanel,
+  });
+  const suggestionOrder =
+    actionsOverview?.order ??
+    suggestionNavigationOrder(
+      suggestionRowCount(rows),
+      reversedSuggestions,
+      reversedSuggestions && workflowOverview ? rows.headCount : null,
+    );
 
   function selectSuggestion(index: number): void {
+    if (actionsOverview) {
+      actionsOverview.select(index);
+      return;
+    }
     selectSuggestionRow(index, rows, {
       ...templatePanel,
       expandWorkflows,
@@ -715,12 +793,6 @@ function useComposerSuggestionMenu({
       insertAgent,
       insertChatThread,
     });
-  }
-
-  function scrollSuggestionIntoView(index: number): void {
-    if (showWorkflows) {
-      scrollSlashWorkflowIntoView(suggestionRowScrollTarget(index, rows));
-    }
   }
 
   function handleKeyDown(event: KeyboardEvent): boolean {
@@ -734,7 +806,10 @@ function useComposerSuggestionMenu({
       setSelectedSuggestionIndex: setSelectedIndex,
       closeSuggestionMenu: close,
       selectSuggestion,
-      scrollSuggestionIntoView,
+      scrollSuggestionIntoView: (index) => {
+        scrollSuggestionRowIntoView(index, rows, actionsOverview);
+      },
+      crossSuggestionSubmenu: actionsOverview?.cross,
       onKeyDown,
     });
   }
@@ -757,6 +832,7 @@ function useComposerSuggestionMenu({
     expandWorkflows,
     showWorkflowActions: rows.workflowActions,
     newWorkflow: templatePanel.newWorkflow,
+    actionsOverview,
     showWorkflows,
     agents,
     chatThreads,
@@ -864,30 +940,49 @@ function ComposerSuggestionMenu({
           menuRef={setSuggestionMenuRef}
           anchor={suggestionAnchor}
         >
-          <SlashTemplatePanel
-            categories={suggestionMenu.panelCategories}
-            reversed={suggestionMenu.reversed}
-            reverseWorkflows={suggestionMenu.reverseWorkflows}
-            workflows={suggestionMenu.workflows}
-            workflowsLoading={suggestionMenu.workflowsLoading}
-            collapseWorkflows={suggestionMenu.collapseWorkflows}
-            onExpandWorkflows={suggestionMenu.expandWorkflows}
-            expandedHeight={expandedSlashHeight}
-            showWorkflowActions={suggestionMenu.showWorkflowActions}
-            onNewWorkflow={suggestionMenu.newWorkflow}
-            onManageWorkflows={() => {
-              suggestionMenu.close();
-            }}
-            selectedIndex={suggestionMenu.selectedIndex}
-            previewIndex={suggestionMenu.previewIndex}
-            onPreview={suggestionMenu.previewSuggestion}
-            onSelectCategory={suggestionMenu.selectCategory}
-            onSelectTemplate={suggestionMenu.selectTemplate}
-            onSelectWorkflow={suggestionMenu.selectWorkflow}
-            onBrowseAll={suggestionMenu.browseAllTemplates}
-            workflowOptionId={slashWorkflowOptionId}
-            categoryOptionId={slashWorkflowOptionId}
-          />
+          {suggestionMenu.actionsOverview ? (
+            <SlashActionsPanel
+              overview={suggestionMenu.actionsOverview}
+              workflows={suggestionMenu.workflows}
+              workflowsLoading={suggestionMenu.workflowsLoading}
+              categories={suggestionMenu.panelCategories}
+              selectedIndex={suggestionMenu.selectedIndex}
+              previewIndex={suggestionMenu.previewIndex}
+              onPreview={suggestionMenu.previewSuggestion}
+              onSelectWorkflow={suggestionMenu.selectWorkflow}
+              onSelectTemplate={suggestionMenu.selectTemplate}
+              onBrowseAll={suggestionMenu.browseAllTemplates}
+              onNewWorkflow={suggestionMenu.newWorkflow}
+              onManageWorkflows={() => {
+                suggestionMenu.close();
+              }}
+            />
+          ) : (
+            <SlashTemplatePanel
+              categories={suggestionMenu.panelCategories}
+              reversed={suggestionMenu.reversed}
+              reverseWorkflows={suggestionMenu.reverseWorkflows}
+              workflows={suggestionMenu.workflows}
+              workflowsLoading={suggestionMenu.workflowsLoading}
+              collapseWorkflows={suggestionMenu.collapseWorkflows}
+              onExpandWorkflows={suggestionMenu.expandWorkflows}
+              expandedHeight={expandedSlashHeight}
+              showWorkflowActions={suggestionMenu.showWorkflowActions}
+              onNewWorkflow={suggestionMenu.newWorkflow}
+              onManageWorkflows={() => {
+                suggestionMenu.close();
+              }}
+              selectedIndex={suggestionMenu.selectedIndex}
+              previewIndex={suggestionMenu.previewIndex}
+              onPreview={suggestionMenu.previewSuggestion}
+              onSelectCategory={suggestionMenu.selectCategory}
+              onSelectTemplate={suggestionMenu.selectTemplate}
+              onSelectWorkflow={suggestionMenu.selectWorkflow}
+              onBrowseAll={suggestionMenu.browseAllTemplates}
+              workflowOptionId={slashWorkflowOptionId}
+              categoryOptionId={slashWorkflowOptionId}
+            />
+          )}
         </SlashWorkflowMenu>
       )}
       {suggestionMenu.showMentions && (
