@@ -79,7 +79,6 @@ test("Document category and scroll survive preview", async () => {
   click(control(dialog, "tab", "Document"));
   expect(within(dialog).queryByRole("textbox")).not.toBeInTheDocument();
   expect(within(dialog).getAllByLabelText(/^Preview /u)).toHaveLength(45);
-  expect(within(dialog).queryByText("Resumes")).not.toBeInTheDocument();
   click(control(dialog, "button", "Invoice"));
   expect(within(dialog).getAllByLabelText(/^Preview /u)).toHaveLength(7);
   const grid = dialog.querySelector<HTMLElement>(

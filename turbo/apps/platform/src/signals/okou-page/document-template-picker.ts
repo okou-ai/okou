@@ -48,11 +48,7 @@ export function createDocumentTemplateSignals() {
   const documentItems$ = computed((get) => {
     const category = get(category$);
     return DOCUMENT_TEMPLATE_ITEMS.filter((item) => {
-      // Retain registry metadata for existing attachments, but stop offering resumes.
-      return (
-        item.category !== "resume" &&
-        (category === "all" || item.category === category)
-      );
+      return category === "all" || item.category === category;
     });
   });
   const setDocumentCategory$ = command(
