@@ -1,24 +1,19 @@
-//! Shared, bounded view of reusable homes backed by the home cache.
+//! Bounded physical-key observations shared by discovery and heartbeat.
 //!
-//! Heartbeats refresh this state from an asynchronous cache scan, while
-//! finalization immediately upserts successful home-cache promotions.
-//! A refresh token prevents a scan that started earlier from replacing a
-//! promotion committed while that scan was in flight.
+//! Entry revisions include negatives, so an older scan cannot resurrect a
+//! removed key. Losing bounded change history invalidates older scan tokens.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use tracing::info;
 
 use crate::active_runs::ActiveRuns;
-use runner_types::types::{HeldHomeState, MAX_HOME_CACHES_PER_REUSE_KEY};
+use runner_types::types::{HeldHomeState, MAX_HELD_HOME_STATES};
 
-use super::cap_held_home_states;
+use super::inventory::{cap_inventory_entries, project_inventory_entries};
+use super::{HomeCacheChange, HomeCacheInventory, HomeCacheKeyUpdates, cap_held_home_states};
 
-/// In-memory cache state shared by heartbeat, discovery, and finalization.
-///
-/// The mutex protects only states and refresh metadata; cache scans run
-/// without it. Active reuse keys are filtered when assembling a current view.
 #[derive(Clone, Default)]
 pub struct HomeCacheStateSnapshot {
     inner: Arc<Mutex<HomeCacheStateSnapshotInner>>,
@@ -26,115 +21,220 @@ pub struct HomeCacheStateSnapshot {
 
 #[derive(Default)]
 struct HomeCacheStateSnapshotInner {
-    home_cache_states: Vec<HeldHomeState>,
-    home_cache_loaded: bool,
-    home_cache_revision: u64,
+    entries: BTreeMap<String, HeldHomeState>,
+    completion_times: BTreeMap<String, String>,
+    // Derived at commit time so ordinary readers keep their snapshot-only cost.
+    states: Vec<HeldHomeState>,
+    loaded: bool,
+    revision: u64,
+    epoch: u64,
+    revisions: BTreeMap<String, u64>,
+    truncated: bool,
 }
 
-/// Opaque revision captured before an asynchronous cache scan.
 #[derive(Clone, Copy)]
 pub struct HomeCacheSnapshotRefresh {
     revision: u64,
+    epoch: u64,
 }
 
-/// Committed bounded states and whether the visible cache snapshot changed.
 pub struct HomeCacheRefreshOutcome {
     pub states: Vec<HeldHomeState>,
     pub changed: bool,
     pub loaded: bool,
+    pub needs_reconcile: bool,
+}
+
+impl HomeCacheStateSnapshotInner {
+    fn touch(&mut self, key: &str) {
+        if (self.revisions.len() == MAX_HELD_HOME_STATES && !self.revisions.contains_key(key))
+            || self.revision == u64::MAX
+        {
+            self.epoch = self.epoch.wrapping_add(1);
+            self.revisions.clear();
+            self.revision = 0;
+        }
+        self.revision += 1;
+        self.revisions.insert(key.to_owned(), self.revision);
+    }
+
+    fn states(&self) -> Vec<HeldHomeState> {
+        self.states.clone()
+    }
+
+    fn reproject(&mut self) {
+        self.states = project_inventory_entries(&self.entries, &self.completion_times);
+    }
+
+    fn cap_entries(&mut self) -> bool {
+        if !self.truncated {
+            self.completion_times.clear();
+        }
+        cap_inventory_entries(&mut self.entries, &mut self.completion_times)
+    }
+
+    fn outcome(&self, before: &[HeldHomeState], needs_reconcile: bool) -> HomeCacheRefreshOutcome {
+        let states = self.states();
+        HomeCacheRefreshOutcome {
+            changed: before != states,
+            states,
+            loaded: self.loaded,
+            needs_reconcile,
+        }
+    }
 }
 
 impl HomeCacheStateSnapshot {
-    /// Creates a snapshot whose cache contents are not yet known.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Whether a refresh or promotion has established cache state.
-    /// A completed empty refresh still counts as loaded.
     pub fn home_cache_loaded(&self) -> bool {
-        self.lock_inner().home_cache_loaded
+        self.lock_inner().loaded
     }
 
-    /// Captures a revision before scanning without retaining the mutex.
-    pub fn begin_home_cache_refresh(&self) -> HomeCacheSnapshotRefresh {
-        HomeCacheSnapshotRefresh {
-            revision: self.lock_inner().home_cache_revision,
+    /// Mark observed changes before admitting asynchronous work. Hints change
+    /// revision authority, but only disk validation produces positive state.
+    pub fn note_home_cache_change(&self, change: &HomeCacheChange) {
+        let mut inner = self.lock_inner();
+        if change.requires_full_reconcile {
+            inner.epoch = inner.epoch.wrapping_add(1);
+            inner.revisions.clear();
+        }
+        for key in &change.dirty_cache_keys {
+            inner.touch(key);
         }
     }
 
-    /// Commits scanned state, merging if an upsert occurred during the scan.
-    ///
-    /// A scan with the same revision replaces the previous view. A concurrent
-    /// promotion advances the revision, so its state survives the older scan.
-    /// Active-key filtering is deferred until a current view is assembled.
+    pub fn begin_home_cache_refresh(&self) -> HomeCacheSnapshotRefresh {
+        let inner = self.lock_inner();
+        HomeCacheSnapshotRefresh {
+            revision: inner.revision,
+            epoch: inner.epoch,
+        }
+    }
+
     pub fn finish_home_cache_refresh(
         &self,
         refresh: HomeCacheSnapshotRefresh,
-        states: Vec<HeldHomeState>,
+        inventory: HomeCacheInventory,
     ) -> HomeCacheRefreshOutcome {
         let mut inner = self.lock_inner();
-        let mut next = if inner.home_cache_revision == refresh.revision {
-            states
-        } else {
-            merge_home_cache_snapshot_states(inner.home_cache_states.clone(), states)
-        };
-        cap_home_cache_snapshot_states(&mut next);
-        let changed = inner.home_cache_states != next;
-        inner.home_cache_states = next;
-        inner.home_cache_loaded = true;
-        inner.home_cache_revision = inner.home_cache_revision.wrapping_add(1);
-        HomeCacheRefreshOutcome {
-            changed,
-            states: inner.home_cache_states.clone(),
-            loaded: inner.home_cache_loaded,
+        let before = inner.states();
+        if inventory.incomplete {
+            return inner.outcome(&before, false);
         }
-    }
-
-    /// Incorporates a successful promotion into the snapshot.
-    /// An in-flight refresh will merge this update rather than replace it.
-    pub fn upsert_home_cache_state(&self, state: HeldHomeState) {
-        let mut inner = self.lock_inner();
-        inner.home_cache_loaded = true;
-        match inner
-            .home_cache_states
-            .iter_mut()
-            .find(|existing| existing.reuse_key == state.reuse_key)
+        if inner.epoch != refresh.epoch
+            || (inventory.truncated && inner.revision != refresh.revision)
         {
-            Some(existing) => merge_held_home_state(existing, state),
-            None => inner.home_cache_states.push(state),
+            return inner.outcome(&before, true);
         }
-        cap_home_cache_snapshot_states(&mut inner.home_cache_states);
-        inner.home_cache_revision = inner.home_cache_revision.wrapping_add(1);
+        let mut completion_times = if inventory.truncated {
+            inventory.completion_times
+        } else {
+            BTreeMap::new()
+        };
+        let mut next = inventory.entries;
+        for (key, revision) in &inner.revisions {
+            if *revision > refresh.revision {
+                next.remove(key);
+                if let Some(state) = inner.entries.get(key) {
+                    next.insert(key.clone(), state.clone());
+                }
+            }
+        }
+        inner.truncated =
+            inventory.truncated | cap_inventory_entries(&mut next, &mut completion_times);
+        let changed_keys = inner
+            .entries
+            .keys()
+            .chain(next.keys())
+            .filter(|key| inner.entries.get(*key) != next.get(*key))
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        inner.entries = next;
+        inner.completion_times = completion_times;
+        inner.loaded = true;
+        for key in changed_keys {
+            inner.touch(&key);
+        }
+        inner.reproject();
+        inner.outcome(&before, false)
     }
 
-    /// Before the first load, any reuse key might be present.
+    pub fn finish_home_cache_key_updates(
+        &self,
+        refresh: HomeCacheSnapshotRefresh,
+        updates: HomeCacheKeyUpdates,
+    ) -> HomeCacheRefreshOutcome {
+        let mut inner = self.lock_inner();
+        let before = inner.states();
+        if updates.incomplete || inner.epoch != refresh.epoch {
+            return inner.outcome(&before, true);
+        }
+        // Omitted profiles may carry the group's newest completion or become
+        // visible after this update. Reconcile instead of guessing that history.
+        let needs_reconcile = inner.truncated && !updates.entries.is_empty();
+        for (key, state) in updates.entries {
+            if inner
+                .revisions
+                .get(&key)
+                .is_some_and(|revision| *revision > refresh.revision)
+            {
+                continue;
+            }
+            match state {
+                Some(state) => {
+                    inner.entries.insert(key.clone(), state);
+                }
+                None => {
+                    inner.entries.remove(&key);
+                }
+            }
+            inner.touch(&key);
+        }
+        let truncated = inner.cap_entries();
+        inner.truncated |= truncated;
+        inner.reproject();
+        inner.outcome(&before, needs_reconcile)
+    }
+
+    /// Called only after generation-owned publication has succeeded.
+    pub fn upsert_home_cache_state(&self, cache_key: String, state: HeldHomeState) {
+        let mut inner = self.lock_inner();
+        inner.entries.insert(cache_key.clone(), state);
+        inner.loaded = true;
+        inner.touch(&cache_key);
+        let truncated = inner.cap_entries();
+        inner.truncated |= truncated;
+        inner.reproject();
+    }
+
     pub fn might_contain_home_cache_reuse_key(&self, reuse_key: &str) -> bool {
         let inner = self.lock_inner();
-        !inner.home_cache_loaded
+        !inner.loaded
             || inner
-                .home_cache_states
-                .iter()
+                .entries
+                .values()
                 .any(|state| state.reuse_key == reuse_key)
     }
 
-    /// Builds a current view without removing active keys from stored state.
     pub fn current_held_home_states(
         &self,
         active_runs: &ActiveRuns,
         extra_active_reuse_key: Option<&str>,
     ) -> Vec<HeldHomeState> {
-        let home_cache_states = self.lock_inner().home_cache_states.clone();
-        filter_current_held_home_states(home_cache_states, active_runs, extra_active_reuse_key)
+        let states = self.lock_inner().states();
+        filter_current_held_home_states(states, active_runs, extra_active_reuse_key)
     }
 
-    /// Capture availability and the existing bounded view under the same lock.
     pub fn loaded_home_cache_snapshot(&self) -> HomeCacheRefreshOutcome {
         let inner = self.lock_inner();
         HomeCacheRefreshOutcome {
-            states: inner.home_cache_states.clone(),
+            states: inner.states(),
             changed: false,
-            loaded: inner.home_cache_loaded,
+            loaded: inner.loaded,
+            needs_reconcile: false,
         }
     }
 
@@ -187,70 +287,6 @@ pub fn filter_current_held_home_states(
     states
 }
 
-fn merge_held_home_state(existing: &mut HeldHomeState, mut incoming: HeldHomeState) {
-    if incoming.last_completed_at > existing.last_completed_at {
-        existing.last_completed_at = incoming.last_completed_at;
-    }
-    for incoming_home_cache in incoming.home_caches.drain(..) {
-        match existing
-            .home_caches
-            .iter_mut()
-            .find(|home_cache| home_cache.profile == incoming_home_cache.profile)
-        {
-            Some(existing_home_cache)
-                if incoming_home_cache.home_affinity_version
-                    >= existing_home_cache.home_affinity_version =>
-            {
-                *existing_home_cache = incoming_home_cache;
-            }
-            Some(_) => {}
-            None => existing.home_caches.push(incoming_home_cache),
-        }
-    }
-    existing
-        .home_caches
-        .sort_unstable_by(|a, b| a.profile.cmp(&b.profile));
-    existing.home_caches.truncate(MAX_HOME_CACHES_PER_REUSE_KEY);
-}
-
-fn merge_home_cache_snapshot_states(
-    existing_states: Vec<HeldHomeState>,
-    refreshed_states: Vec<HeldHomeState>,
-) -> Vec<HeldHomeState> {
-    let mut by_reuse_key = BTreeMap::<String, HeldHomeState>::new();
-    for state in refreshed_states.into_iter().chain(existing_states) {
-        match by_reuse_key.get_mut(&state.reuse_key) {
-            Some(existing) => merge_held_home_state(existing, state),
-            None => {
-                by_reuse_key.insert(state.reuse_key.clone(), state);
-            }
-        }
-    }
-    by_reuse_key.into_values().collect()
-}
-
-fn cap_home_cache_snapshot_states(states: &mut Vec<HeldHomeState>) {
-    let observed_home_states = states.len();
-    let observed_home_caches = states
-        .iter()
-        .map(|state| state.home_caches.len())
-        .sum::<usize>();
-    *states = cap_held_home_states(std::mem::take(states));
-    let retained_home_caches = states
-        .iter()
-        .map(|state| state.home_caches.len())
-        .sum::<usize>();
-    if states.len() < observed_home_states || retained_home_caches < observed_home_caches {
-        info!(
-            observed_home_states,
-            retained_home_states = states.len(),
-            observed_home_caches,
-            retained_home_caches,
-            "home cache snapshot truncated"
-        );
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -279,9 +315,27 @@ mod tests {
         }
     }
 
+    fn inventory(states: Vec<HeldHomeState>) -> HomeCacheInventory {
+        let mut inventory = HomeCacheInventory::default();
+        for state in states {
+            for home in state.home_caches {
+                let key = format!("{}:{}", state.reuse_key, home.profile);
+                inventory.insert(
+                    key,
+                    HeldHomeState {
+                        reuse_key: state.reuse_key.clone(),
+                        last_completed_at: state.last_completed_at.clone(),
+                        home_caches: vec![home],
+                    },
+                );
+            }
+        }
+        inventory
+    }
+
     fn refresh_snapshot(snapshot: &HomeCacheStateSnapshot, states: Vec<HeldHomeState>) {
         let refresh = snapshot.begin_home_cache_refresh();
-        snapshot.finish_home_cache_refresh(refresh, states);
+        snapshot.finish_home_cache_refresh(refresh, inventory(states));
     }
 
     fn timestamp_for_index(index: usize) -> String {
@@ -352,11 +406,14 @@ mod tests {
     fn home_cache_snapshot_upsert_caps_states() {
         let snapshot = HomeCacheStateSnapshot::new();
         for index in 0..=MAX_HELD_HOME_STATES {
-            snapshot.upsert_home_cache_state(HeldHomeState {
-                reuse_key: format!("sess-{index:04}"),
-                last_completed_at: timestamp_for_index(index),
-                home_caches: vec![home_cache("vm0/default")],
-            });
+            snapshot.upsert_home_cache_state(
+                format!("sess-{index:04}:vm0/default"),
+                HeldHomeState {
+                    reuse_key: format!("sess-{index:04}"),
+                    last_completed_at: timestamp_for_index(index),
+                    home_caches: vec![home_cache("vm0/default")],
+                },
+            );
         }
 
         // Observe stored state directly; the current view applies its own cap.
@@ -379,8 +436,9 @@ mod tests {
         refresh_snapshot(&snapshot, vec![original.clone()]);
 
         let refresh = snapshot.begin_home_cache_refresh();
-        snapshot.upsert_home_cache_state(promoted);
-        let refreshed = snapshot.finish_home_cache_refresh(refresh, vec![original.clone()]);
+        snapshot.upsert_home_cache_state("sess-shared:vm0/large".into(), promoted);
+        let refreshed =
+            snapshot.finish_home_cache_refresh(refresh, inventory(vec![original.clone()]));
         let merged = held_home_state(
             "sess-shared",
             "2026-06-01T00:00:02.000Z",
@@ -396,24 +454,197 @@ mod tests {
         );
 
         let refresh = snapshot.begin_home_cache_refresh();
-        snapshot.finish_home_cache_refresh(refresh, vec![original.clone()]);
+        snapshot.finish_home_cache_refresh(refresh, inventory(vec![original.clone()]));
         assert_eq!(
             snapshot.current_held_home_states(&active_runs, None),
             vec![original]
         );
     }
 
+    fn change(keys: &[&str]) -> HomeCacheChange {
+        HomeCacheChange {
+            observed_at: tokio::time::Instant::now(),
+            dirty_cache_keys: keys.iter().map(|key| (*key).to_owned()).collect(),
+            requires_full_reconcile: false,
+        }
+    }
+
+    #[test]
+    fn full_scan_cannot_resurrect_a_key_removed_after_scan_start() {
+        let snapshot = HomeCacheStateSnapshot::new();
+        let original = held_home_state("removed", "2026-06-01T00:00:01.000Z", &["vm0/default"]);
+        let independent =
+            held_home_state("independent", "2026-06-01T00:00:02.000Z", &["vm0/default"]);
+        refresh_snapshot(&snapshot, vec![original.clone(), independent.clone()]);
+        let old_scan = snapshot.begin_home_cache_refresh();
+        snapshot.note_home_cache_change(&change(&["removed:vm0/default"]));
+        let current = snapshot.begin_home_cache_refresh();
+        snapshot.finish_home_cache_key_updates(
+            current,
+            HomeCacheKeyUpdates {
+                entries: BTreeMap::from([("removed:vm0/default".into(), None)]),
+                busy_keys: BTreeSet::new(),
+                incomplete: false,
+            },
+        );
+        let finished = snapshot
+            .finish_home_cache_refresh(old_scan, inventory(vec![original, independent.clone()]));
+        assert_eq!(finished.states, vec![independent]);
+        assert!(!finished.needs_reconcile);
+    }
+
+    #[test]
+    fn delayed_negative_cannot_remove_a_newer_confirmed_publication() {
+        let snapshot = HomeCacheStateSnapshot::new();
+        refresh_snapshot(&snapshot, Vec::new());
+        snapshot.note_home_cache_change(&change(&["home:vm0/default"]));
+        let old_validation = snapshot.begin_home_cache_refresh();
+        let published = held_home_state("home", "2026-06-01T00:00:02.000Z", &["vm0/default"]);
+        snapshot.upsert_home_cache_state("home:vm0/default".into(), published.clone());
+        let finished = snapshot.finish_home_cache_key_updates(
+            old_validation,
+            HomeCacheKeyUpdates {
+                entries: BTreeMap::from([("home:vm0/default".into(), None)]),
+                busy_keys: BTreeSet::new(),
+                incomplete: false,
+            },
+        );
+        assert_eq!(finished.states, vec![published]);
+        assert!(!finished.changed);
+    }
+
+    #[test]
+    fn revision_saturation_rejects_an_old_scan_without_guessing_completeness() {
+        let snapshot = HomeCacheStateSnapshot::new();
+        let original = held_home_state("kept", "2026-06-01T00:00:01.000Z", &["vm0/default"]);
+        refresh_snapshot(&snapshot, vec![original.clone()]);
+        let old_scan = snapshot.begin_home_cache_refresh();
+        for index in 0..=MAX_HELD_HOME_STATES {
+            snapshot.note_home_cache_change(&change(&[&format!("{index:064x}")]));
+        }
+        let finished = snapshot.finish_home_cache_refresh(old_scan, HomeCacheInventory::default());
+        assert_eq!(finished.states, vec![original]);
+        assert!(finished.needs_reconcile);
+        assert!(snapshot.lock_inner().revisions.len() <= MAX_HELD_HOME_STATES);
+    }
+
+    #[test]
+    fn keyed_removal_preserves_other_profiles_and_refills_a_truncated_projection() {
+        let snapshot = HomeCacheStateSnapshot::new();
+        let shared = held_home_state(
+            "shared",
+            "2026-06-01T00:00:01.000Z",
+            &["vm0/default", "vm0/large"],
+        );
+        refresh_snapshot(&snapshot, vec![shared]);
+        let token = snapshot.begin_home_cache_refresh();
+        let result = snapshot.finish_home_cache_key_updates(
+            token,
+            HomeCacheKeyUpdates {
+                entries: BTreeMap::from([("shared:vm0/default".into(), None)]),
+                busy_keys: BTreeSet::new(),
+                incomplete: false,
+            },
+        );
+        assert_eq!(result.states[0].home_caches, vec![home_cache("vm0/large")]);
+        assert!(!result.needs_reconcile);
+
+        let states = (0..=MAX_HELD_HOME_STATES)
+            .map(|index| {
+                held_home_state(
+                    &format!("sess-{index:04}"),
+                    &timestamp_for_index(index),
+                    &["vm0/default"],
+                )
+            })
+            .collect::<Vec<_>>();
+        refresh_snapshot(&snapshot, states.clone());
+        let token = snapshot.begin_home_cache_refresh();
+        let result = snapshot.finish_home_cache_key_updates(
+            token,
+            HomeCacheKeyUpdates {
+                entries: BTreeMap::from([("sess-0001:vm0/default".into(), None)]),
+                busy_keys: BTreeSet::new(),
+                incomplete: false,
+            },
+        );
+        assert!(result.needs_reconcile);
+        assert_eq!(result.states.len(), MAX_HELD_HOME_STATES - 1);
+        refresh_snapshot(
+            &snapshot,
+            states
+                .into_iter()
+                .filter(|state| state.reuse_key != "sess-0001")
+                .collect(),
+        );
+        let refilled = snapshot.loaded_home_cache_snapshot();
+        assert_eq!(refilled.states.len(), MAX_HELD_HOME_STATES);
+        assert!(
+            refilled
+                .states
+                .iter()
+                .any(|state| state.reuse_key == "sess-0000")
+        );
+    }
+
+    #[test]
+    fn truncated_scan_cannot_overwrite_newer_group_ordering() {
+        let snapshot = HomeCacheStateSnapshot::new();
+        refresh_snapshot(&snapshot, Vec::new());
+        let stale_scan = snapshot.begin_home_cache_refresh();
+        let scan = inventory(
+            (0..=MAX_HELD_HOME_STATES)
+                .map(|index| {
+                    held_home_state(
+                        &format!("group-{index:04}"),
+                        &timestamp_for_index(index),
+                        &["vm0/default"],
+                    )
+                })
+                .collect(),
+        );
+        let published = held_home_state("newer", "2026-07-01T00:00:00Z", &["vm0/default"]);
+        snapshot.upsert_home_cache_state("newer:vm0/default".into(), published.clone());
+        let outcome = snapshot.finish_home_cache_refresh(stale_scan, scan);
+        assert!(outcome.needs_reconcile);
+        assert_eq!(outcome.states, vec![published]);
+    }
+
+    #[test]
+    fn incomplete_scan_preserves_known_state_and_does_not_turn_unknown_into_empty() {
+        for loaded in [false, true] {
+            let snapshot = HomeCacheStateSnapshot::new();
+            let original = held_home_state("kept", "2026-06-01T00:00:01.000Z", &["vm0/default"]);
+            if loaded {
+                refresh_snapshot(&snapshot, vec![original.clone()]);
+            }
+            let token = snapshot.begin_home_cache_refresh();
+            let result = snapshot.finish_home_cache_refresh(
+                token,
+                HomeCacheInventory {
+                    incomplete: true,
+                    ..Default::default()
+                },
+            );
+            assert_eq!(result.loaded, loaded);
+            assert_eq!(
+                result.states,
+                if loaded { vec![original] } else { Vec::new() }
+            );
+        }
+    }
+
     #[test]
     fn merge_held_home_state_keeps_newest_timestamp_and_merges_profiles() {
-        let mut existing =
-            held_home_state("thread-1", "2026-06-01T00:00:02.000Z", &["vm0/default"]);
+        let existing = held_home_state("thread-1", "2026-06-01T00:00:02.000Z", &["vm0/default"]);
         let incoming = held_home_state(
             "thread-1",
             "2026-06-01T00:00:01.000Z",
             &["vm0/default", "vm0/large"],
         );
 
-        merge_held_home_state(&mut existing, incoming);
+        let merged = cap_held_home_states(vec![existing, incoming]);
+        let existing = &merged[0];
         assert_eq!(existing.last_completed_at, "2026-06-01T00:00:02.000Z");
         assert_eq!(
             existing.home_caches,

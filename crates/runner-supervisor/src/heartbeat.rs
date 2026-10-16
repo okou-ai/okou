@@ -10,9 +10,9 @@ use tracing::{Instrument, info};
 use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_lifecycle::active_runs::ActiveRuns;
 use runner_lifecycle::home_image_cache::snapshot::{
-    HomeCacheRefreshOutcome, HomeCacheStateSnapshot, filter_current_held_home_states,
+    HomeCacheStateSnapshot, filter_current_held_home_states,
 };
-use runner_lifecycle::home_image_cache::{HomeCacheChange, HomeImageCache};
+use runner_lifecycle::home_image_cache::{HomeCacheChange, HomeCacheInventory, HomeImageCache};
 use runner_lifecycle::idle_pool::IdlePool;
 use runner_lifecycle::lifecycle::RunnerMode;
 use runner_lifecycle::resource_budget::ResourceBudget;
@@ -25,7 +25,6 @@ use runner_types::types::{
 /// Period between routine heartbeat ticks sent to the server. First tick is
 /// deferred by one period via `interval_at`.
 pub const HEARTBEAT_PERIOD: Duration = Duration::from_secs(10);
-const HOME_CACHE_COMMIT_WAIT: Duration = Duration::from_secs(2);
 
 /// Resource shape projected from Runner configuration for heartbeat policy.
 #[derive(Clone)]
@@ -58,7 +57,6 @@ pub type HeartbeatResult<T> = Result<T, HeartbeatError>;
 #[derive(Clone)]
 pub struct HeartbeatContext {
     base: BaseHeartbeatContext,
-    home_cache: Option<HomeImageCache>,
     active_runs: ActiveRuns,
     home_cache_snapshot: HomeCacheStateSnapshot,
     wss_ingress_service_probe: WssIngressServiceProbe,
@@ -83,7 +81,6 @@ pub struct HeartbeatContextInit<'a> {
     pub profiles: &'a BTreeMap<String, HeartbeatProfile>,
     pub budget: &'a Arc<ResourceBudget>,
     pub provider: Arc<dyn JobProvider>,
-    pub home_cache: Option<HomeImageCache>,
     pub active_runs: &'a ActiveRuns,
     pub home_cache_snapshot: HomeCacheStateSnapshot,
     pub wss_ingress_service_probe: WssIngressServiceProbe,
@@ -101,7 +98,6 @@ impl HeartbeatContext {
                 budget: Arc::clone(init.budget),
                 provider: init.provider,
             },
-            home_cache: init.home_cache,
             active_runs: init.active_runs.clone(),
             home_cache_snapshot: init.home_cache_snapshot,
             wss_ingress_service_probe: init.wss_ingress_service_probe,
@@ -160,39 +156,29 @@ impl TerminalHeartbeat {
 }
 
 struct HeartbeatRequest {
-    force_send: bool,
-    refresh_home_cache: bool,
     home_cache_change: Option<HomeCacheChange>,
 }
 
 impl HeartbeatRequest {
     fn ordinary() -> Self {
         Self {
-            force_send: true,
-            refresh_home_cache: false,
             home_cache_change: None,
         }
     }
 
     fn initial_home_cache_snapshot() -> Self {
         Self {
-            force_send: true,
-            refresh_home_cache: false,
             home_cache_change: None,
         }
     }
 
     fn home_cache(change: HomeCacheChange) -> Self {
         Self {
-            force_send: false,
-            refresh_home_cache: true,
             home_cache_change: Some(change),
         }
     }
 
     fn merge(mut self, other: Self) -> Self {
-        self.force_send |= other.force_send;
-        self.refresh_home_cache |= other.refresh_home_cache;
         match (self.home_cache_change.as_mut(), other.home_cache_change) {
             (Some(existing), Some(incoming)) => existing.merge(incoming),
             (None, Some(incoming)) => self.home_cache_change = Some(incoming),
@@ -216,6 +202,8 @@ impl HeartbeatController {
         self.request_inner(mode, HeartbeatRequest::ordinary())
     }
 
+    /// Publish a change already committed by the inventory owner. Sending a
+    /// heartbeat never waits for cache validation or a directory scan.
     pub fn request_home_cache(
         &mut self,
         mode: RunnerMode,
@@ -233,8 +221,7 @@ impl HeartbeatController {
         mode: RunnerMode,
         change: HomeCacheChange,
     ) -> HeartbeatResult<()> {
-        let mut request = HeartbeatRequest::home_cache(change);
-        request.force_send = true;
+        let request = HeartbeatRequest::home_cache(change);
         self.request_inner(mode, request)
     }
 
@@ -361,21 +348,7 @@ async fn send_heartbeat(
     let mut producers = hb.active_runs.active_reuse_producers();
     let mut state = hb.base.collect_state(mode, snapshot_sequence).await;
     let cache_change = request.home_cache_change.as_ref();
-    let previous_home_states = cache_change.map(|_| {
-        hb.home_cache_snapshot
-            .current_held_home_states(&hb.active_runs, None)
-    });
-    let refresh = if request.refresh_home_cache {
-        refresh_home_cache_snapshot_after_change(
-            &hb.home_cache_snapshot,
-            hb.home_cache.as_ref(),
-            &hb.base.profiles,
-            cache_change,
-        )
-        .await
-    } else {
-        hb.home_cache_snapshot.loaded_home_cache_snapshot()
-    };
+    let refresh = hb.home_cache_snapshot.loaded_home_cache_snapshot();
     // Preserve the pre-transfer producer even if filtering observes its
     // resolved state; the next snapshot will advertise the parked sandbox.
     state.held_sandbox_states =
@@ -390,20 +363,6 @@ async fn send_heartbeat(
         filter_current_held_home_states(refresh.states, &hb.active_runs, None),
         &hb.base.profiles,
     );
-    if let Some(change) = cache_change
-        && !request.force_send
-        && previous_home_states
-            .as_ref()
-            .is_some_and(|previous| *previous == state.held_home_states)
-    {
-        info!(
-            changed = false,
-            snapshot_changed = refresh.changed,
-            elapsed_ms = duration_ms(change.observed_at.elapsed()),
-            "home cache change reconciled"
-        );
-        return;
-    }
     state.wss_ingress_service_active = (hb.wss_ingress_service_probe)().await;
     if let Some(reporter) = &hb.sandbox_op_reporter {
         let mut observation = HomeObservation::new(
@@ -457,21 +416,17 @@ pub async fn refresh_initial_home_cache_snapshot(
     profiles: &BTreeMap<String, HeartbeatProfile>,
 ) -> InitialHomeCacheRefreshOutcome {
     let refresh = snapshot.begin_home_cache_refresh();
-    let Some(cache) = home_cache else {
-        let outcome = snapshot.finish_home_cache_refresh(refresh, Vec::new());
-        return InitialHomeCacheRefreshOutcome {
-            states: outcome.states,
-            locked_commit_keys: BTreeSet::new(),
-            loaded_cache_keys: BTreeSet::new(),
-        };
+    let inventory = match home_cache {
+        Some(cache) => {
+            cache
+                .home_cache_inventory_for_profiles(&profile_home_sizes(profiles))
+                .await
+        }
+        None => HomeCacheInventory::default(),
     };
-    // Validate configured profiles, exact home shape and committed-image identity
-    // before advertising the wire capability.
-    let profile_image_sizes = profile_home_sizes(profiles);
-    let (states, locked_commit_keys, loaded_cache_keys) = cache
-        .initial_held_home_states_for_profiles(&profile_image_sizes)
-        .await;
-    let outcome = snapshot.finish_home_cache_refresh(refresh, states);
+    let locked_commit_keys = inventory.locked_keys.clone();
+    let loaded_cache_keys = inventory.projected_cache_keys();
+    let outcome = snapshot.finish_home_cache_refresh(refresh, inventory);
     InitialHomeCacheRefreshOutcome {
         states: outcome.states,
         locked_commit_keys,
@@ -479,79 +434,28 @@ pub async fn refresh_initial_home_cache_snapshot(
     }
 }
 
-async fn refresh_home_cache_snapshot_after_change(
-    snapshot: &HomeCacheStateSnapshot,
-    home_cache: Option<&HomeImageCache>,
+pub(crate) fn profile_home_sizes(
     profiles: &BTreeMap<String, HeartbeatProfile>,
-    change: Option<&HomeCacheChange>,
-) -> HomeCacheRefreshOutcome {
-    if let Some(change) = change
-        && change.selection_release_only
-        && snapshot.home_cache_loaded()
-        && let Some(cache) = home_cache
-        && let Some(states) = cache
-            .held_home_states_for_released_selections(
-                &profile_home_sizes(profiles),
-                &change.committed_cache_keys,
-            )
-            .await
-    {
-        let before = snapshot.loaded_home_cache_snapshot();
-        for state in states {
-            snapshot.upsert_home_cache_state(state);
-        }
-        let mut after = snapshot.loaded_home_cache_snapshot();
-        after.changed = before.states != after.states;
-        return after;
-    }
-    let refresh = snapshot.begin_home_cache_refresh();
-    let states = home_cache_states(
-        home_cache,
-        profiles,
-        change.map(|change| {
-            (
-                &change.committed_cache_keys,
-                tokio::time::Instant::now() + HOME_CACHE_COMMIT_WAIT,
-            )
-        }),
-    )
-    .await;
-    snapshot.finish_home_cache_refresh(refresh, states)
-}
-
-async fn home_cache_states(
-    home_cache: Option<&HomeImageCache>,
-    profiles: &BTreeMap<String, HeartbeatProfile>,
-    commits: Option<(&BTreeSet<String>, tokio::time::Instant)>,
-) -> Vec<HeldHomeState> {
-    let Some(cache) = home_cache else {
-        return Vec::new();
-    };
-
-    let profile_image_sizes = profile_home_sizes(profiles);
-    match commits {
-        Some((committed_cache_keys, deadline)) if !committed_cache_keys.is_empty() => {
-            cache
-                .held_home_states_for_profiles_after_commits(
-                    &profile_image_sizes,
-                    committed_cache_keys,
-                    deadline,
-                )
-                .await
-        }
-        Some(_) | None => {
-            cache
-                .held_home_states_for_profiles(&profile_image_sizes)
-                .await
-        }
-    }
-}
-
-fn profile_home_sizes(profiles: &BTreeMap<String, HeartbeatProfile>) -> BTreeMap<&str, u64> {
+) -> BTreeMap<&str, u64> {
     profiles
         .iter()
         .map(|(name, profile)| (name.as_str(), u64::from(profile.home_disk_mb) * 1024 * 1024))
         .collect()
+}
+
+#[cfg(test)]
+async fn home_cache_states(
+    home_cache: Option<&HomeImageCache>,
+    profiles: &BTreeMap<String, HeartbeatProfile>,
+) -> Vec<HeldHomeState> {
+    match home_cache {
+        Some(cache) => {
+            cache
+                .held_home_states_for_profiles(&profile_home_sizes(profiles))
+                .await
+        }
+        None => Vec::new(),
+    }
 }
 
 /// Cached snapshots are advisory, but may advertise only the current configured
@@ -759,7 +663,20 @@ mod tests {
 
     fn refresh_snapshot(snapshot: &HomeCacheStateSnapshot, states: Vec<HeldHomeState>) {
         let refresh = snapshot.begin_home_cache_refresh();
-        snapshot.finish_home_cache_refresh(refresh, states);
+        let mut inventory = HomeCacheInventory::default();
+        for state in states {
+            for home in state.home_caches {
+                inventory.entries.insert(
+                    format!("{}:{}", state.reuse_key, home.profile),
+                    HeldHomeState {
+                        reuse_key: state.reuse_key.clone(),
+                        last_completed_at: state.last_completed_at.clone(),
+                        home_caches: vec![home],
+                    },
+                );
+            }
+        }
+        snapshot.finish_home_cache_refresh(refresh, inventory);
     }
 
     #[tokio::test]
@@ -781,7 +698,6 @@ mod tests {
             profiles: &profiles,
             budget: &budget,
             provider: provider.clone(),
-            home_cache: None,
             active_runs: &active_runs,
             home_cache_snapshot: snapshot.clone(),
             sandbox_op_reporter: Some(observations.handle()),
@@ -944,8 +860,8 @@ mod tests {
     fn home_cache_change(cache_key: &str) -> HomeCacheChange {
         HomeCacheChange {
             observed_at: tokio::time::Instant::now(),
-            committed_cache_keys: BTreeSet::from([cache_key.to_owned()]),
-            selection_release_only: false,
+            dirty_cache_keys: BTreeSet::from([cache_key.to_owned()]),
+            requires_full_reconcile: false,
         }
     }
 
@@ -956,26 +872,21 @@ mod tests {
             .merge(HeartbeatRequest::ordinary());
         let ordinary_then_cache = HeartbeatRequest::ordinary()
             .merge(HeartbeatRequest::home_cache(home_cache_change("b")));
-
-        assert!(ordinary.force_send);
-        assert!(!ordinary.refresh_home_cache);
         assert!(ordinary.home_cache_change.is_none());
-        assert!(cache_then_ordinary.force_send);
-        assert!(cache_then_ordinary.refresh_home_cache);
+        assert!(cache_then_ordinary.home_cache_change.is_some());
         assert_eq!(
             cache_then_ordinary
                 .home_cache_change
                 .unwrap()
-                .committed_cache_keys,
+                .dirty_cache_keys,
             BTreeSet::from(["a".to_owned()])
         );
-        assert!(ordinary_then_cache.force_send);
-        assert!(ordinary_then_cache.refresh_home_cache);
+        assert!(ordinary_then_cache.home_cache_change.is_some());
         assert_eq!(
             ordinary_then_cache
                 .home_cache_change
                 .unwrap()
-                .committed_cache_keys,
+                .dirty_cache_keys,
             BTreeSet::from(["b".to_owned()])
         );
     }
@@ -1112,7 +1023,6 @@ mod tests {
             profiles: &profiles,
             budget: &budget,
             provider: provider.clone(),
-            home_cache: None,
             active_runs: &active_runs,
             home_cache_snapshot: HomeCacheStateSnapshot::new(),
             wss_ingress_service_probe,
@@ -1158,7 +1068,6 @@ mod tests {
             profiles: &profiles,
             budget: &budget,
             provider,
-            home_cache: Some(cache),
             active_runs: &active_runs,
             home_cache_snapshot: home_cache_snapshot.clone(),
             wss_ingress_service_probe: Arc::new(|| Box::pin(async { false })),
@@ -1249,7 +1158,7 @@ mod tests {
                 .await
                 .unwrap()
                 .unwrap();
-            assert!(change.selection_release_only);
+            assert!(!change.requires_full_reconcile);
             cache.reset_held_state_root_scan_count();
             let idle_pool = Arc::new(tokio::sync::Mutex::new(IdlePool::new(IdlePoolConfig {
                 max_idle: 0,
@@ -1265,11 +1174,21 @@ mod tests {
                 profiles: &profiles,
                 budget: &budget,
                 provider: provider.clone(),
-                home_cache: Some(cache.clone()),
                 active_runs: &active_runs,
                 home_cache_snapshot: snapshot,
                 wss_ingress_service_probe: Arc::new(|| Box::pin(async { false })),
             });
+            hb.home_cache_snapshot.note_home_cache_change(&change);
+            let token = hb.home_cache_snapshot.begin_home_cache_refresh();
+            let updates = cache
+                .revalidate_home_cache_keys(
+                    &profile_home_sizes(&profiles),
+                    &change.dirty_cache_keys,
+                    tokio::time::Instant::now(),
+                )
+                .await;
+            hb.home_cache_snapshot
+                .finish_home_cache_key_updates(token, updates);
             send_heartbeat(
                 &hb,
                 RunnerMode::Running,
@@ -1290,10 +1209,7 @@ mod tests {
                 BTreeSet::from(["independent", "released"])
             };
             assert_eq!(keys, expected);
-            assert_eq!(
-                cache.held_state_root_scan_count(),
-                usize::from(replace_source)
-            );
+            assert_eq!(cache.held_state_root_scan_count(), 0);
         }
     }
 
@@ -1339,7 +1255,6 @@ mod tests {
             profiles: &profiles,
             budget: &budget,
             provider: provider.clone(),
-            home_cache: Some(cache),
             active_runs: &active_runs,
             home_cache_snapshot,
             wss_ingress_service_probe: Arc::new(|| Box::pin(async { false })),
@@ -1382,39 +1297,22 @@ mod tests {
         )
         .await;
         let mut profiles = test_profiles();
-        assert_eq!(
-            home_cache_states(Some(&cache), &profiles, None).await.len(),
-            1
-        );
+        assert_eq!(home_cache_states(Some(&cache), &profiles).await.len(), 1);
         // A new rootfs uses the same independent home image and physical key.
         profiles.get_mut("vm0/default").unwrap().rootfs_hash =
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab".into();
-        assert_eq!(
-            home_cache_states(Some(&cache), &profiles, None).await.len(),
-            1
-        );
+        assert_eq!(home_cache_states(Some(&cache), &profiles).await.len(), 1);
         let snapshot = HomeCacheStateSnapshot::new();
         let initial = refresh_initial_home_cache_snapshot(&snapshot, Some(&cache), &profiles).await;
         assert_eq!(initial.states.len(), 1);
         profiles.get_mut("vm0/default").unwrap().rootfs_hash =
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into();
         profiles.get_mut("vm0/default").unwrap().home_disk_mb = 2;
-        assert!(
-            home_cache_states(Some(&cache), &profiles, None)
-                .await
-                .is_empty()
-        );
+        assert!(home_cache_states(Some(&cache), &profiles).await.is_empty());
         profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
-        assert_eq!(
-            home_cache_states(Some(&cache), &profiles, None).await.len(),
-            1
-        );
+        assert_eq!(home_cache_states(Some(&cache), &profiles).await.len(), 1);
         profiles.clear();
-        assert!(
-            home_cache_states(Some(&cache), &profiles, None)
-                .await
-                .is_empty()
-        );
+        assert!(home_cache_states(Some(&cache), &profiles).await.is_empty());
     }
 
     #[test]
@@ -1456,7 +1354,7 @@ mod tests {
         seed_home_cache_state(&cache, &paths, "sess-claimed", "2026-06-01T00:00:01.000Z").await;
         let active_runs = test_active_runs();
         let profiles = test_profiles();
-        let cache_states = home_cache_states(Some(&cache), &profiles, None).await;
+        let cache_states = home_cache_states(Some(&cache), &profiles).await;
         let states =
             filter_current_held_home_states(cache_states, &active_runs, Some("sess-claimed"));
 
@@ -1493,7 +1391,6 @@ mod tests {
             profiles: &profiles,
             budget: &budget,
             provider: provider.clone(),
-            home_cache: None,
             active_runs: &active_runs,
             home_cache_snapshot: HomeCacheStateSnapshot::new(),
             wss_ingress_service_probe: Arc::new(|| Box::pin(async { false })),

@@ -28,7 +28,10 @@ const ROOT_WATCH_FLAGS: AddWatchFlags = AddWatchFlags::IN_CREATE
     .union(AddWatchFlags::IN_ONLYDIR)
     .union(AddWatchFlags::IN_DONT_FOLLOW);
 
-const ENTRY_WATCH_FLAGS: AddWatchFlags = AddWatchFlags::IN_MOVED_TO
+const ENTRY_WATCH_FLAGS: AddWatchFlags = AddWatchFlags::IN_CREATE
+    .union(AddWatchFlags::IN_CLOSE_WRITE)
+    .union(AddWatchFlags::IN_ATTRIB)
+    .union(AddWatchFlags::IN_MOVED_TO)
     .union(AddWatchFlags::IN_DELETE)
     .union(AddWatchFlags::IN_MOVED_FROM)
     .union(AddWatchFlags::IN_DELETE_SELF)
@@ -45,32 +48,31 @@ const MAX_EVENT_READ_BATCHES_PER_CHANGE: usize = 16;
 
 /// Advisory cache mutation observed from the host-shared filesystem.
 ///
-/// Cache keys identify matching-scope metadata commits whose existing entry
-/// locks should be awaited before authoritative validation. An empty set still
-/// requests a full reconciliation for a relevant removal, invalidation, or
-/// queue-overflow event.
-#[derive(Debug)]
+/// Named mutations select physical entries for authoritative revalidation;
+/// a notification establishes neither scope nor generation availability.
+/// The full-reconcile flag records lost completeness independently of hints.
+#[derive(Clone, Debug)]
 pub struct HomeCacheChange {
     pub observed_at: tokio::time::Instant,
-    pub committed_cache_keys: BTreeSet<String>,
-    /// Only unused local selections were released; validate/upsert these keys
-    /// without replacing the complete inventory. Mixed/overflow events scan.
-    pub selection_release_only: bool,
+    pub dirty_cache_keys: BTreeSet<String>,
+    /// Completeness was lost (overflow, watch loss or saturation). A bounded
+    /// keyed update alone cannot reconcile this observation.
+    pub requires_full_reconcile: bool,
 }
 
 impl HomeCacheChange {
     pub fn merge(&mut self, other: Self) {
         self.observed_at = self.observed_at.min(other.observed_at);
-        self.selection_release_only &= other.selection_release_only;
-        for cache_key in other.committed_cache_keys {
-            if self.committed_cache_keys.contains(&cache_key) {
+        self.requires_full_reconcile |= other.requires_full_reconcile;
+        for cache_key in other.dirty_cache_keys {
+            if self.dirty_cache_keys.contains(&cache_key) {
                 continue;
             }
-            if self.committed_cache_keys.len() == MAX_HELD_HOME_STATES {
-                self.selection_release_only = false;
+            if self.dirty_cache_keys.len() == MAX_HELD_HOME_STATES {
+                self.requires_full_reconcile = true;
                 break;
             }
-            self.committed_cache_keys.insert(cache_key);
+            self.dirty_cache_keys.insert(cache_key);
         }
     }
 }
@@ -90,13 +92,13 @@ impl HomeImageCacheInner {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let change = pending.get_or_insert_with(|| HomeCacheChange {
             observed_at: tokio::time::Instant::now(),
-            committed_cache_keys: BTreeSet::new(),
-            selection_release_only: true,
+            dirty_cache_keys: BTreeSet::new(),
+            requires_full_reconcile: false,
         });
-        if change.committed_cache_keys.len() < MAX_HELD_HOME_STATES {
-            change.committed_cache_keys.insert(key.to_owned());
-        } else if !change.committed_cache_keys.contains(key) {
-            change.selection_release_only = false;
+        if change.dirty_cache_keys.len() < MAX_HELD_HOME_STATES {
+            change.dirty_cache_keys.insert(key.to_owned());
+        } else if !change.dirty_cache_keys.contains(key) {
+            change.requires_full_reconcile = true;
         }
         drop(pending);
         self.selection_releases.wake.notify_one();
@@ -188,7 +190,7 @@ impl HomeCacheWatcher {
         cache_keys: &BTreeSet<String>,
     ) -> LifecycleResult<Option<HomeCacheChange>> {
         let observed_at = tokio::time::Instant::now();
-        let mut committed_cache_keys = BTreeSet::new();
+        let mut dirty_cache_keys = BTreeSet::new();
         let mut requires_refresh = false;
         for cache_key in cache_keys {
             match self.entry_watch_state(cache_key) {
@@ -196,27 +198,24 @@ impl HomeCacheWatcher {
                 Some(EntryWatchState::Unclassified) => {
                     requires_refresh = true;
                     let metadata_path = self.cache.home_image_cache_metadata(cache_key);
-                    self.classify_metadata_commit(
-                        cache_key,
-                        &metadata_path,
-                        &mut committed_cache_keys,
-                    )
-                    .await;
+                    self.classify_metadata_commit(cache_key, &metadata_path, &mut dirty_cache_keys)
+                        .await;
                 }
                 None => {
                     requires_refresh = true;
-                    self.add_entry_watch(cache_key.clone(), &mut committed_cache_keys)
+                    self.add_entry_watch(cache_key.clone(), &mut dirty_cache_keys)
                         .await?;
                 }
             }
         }
-        requires_refresh |= cache_keys
+        let missing_watches = cache_keys
             .iter()
             .any(|cache_key| self.entry_watch_state(cache_key) != Some(EntryWatchState::Relevant));
+        requires_refresh |= missing_watches;
         Ok(requires_refresh.then_some(HomeCacheChange {
             observed_at,
-            committed_cache_keys,
-            selection_release_only: false,
+            requires_full_reconcile: missing_watches || dirty_cache_keys.is_empty(),
+            dirty_cache_keys,
         }))
     }
 
@@ -250,13 +249,15 @@ impl HomeCacheWatcher {
             drop(ready);
 
             let mut changed = false;
+            let mut requires_full_reconcile = false;
             let mut reconcile_all_entry_watches = false;
-            let mut committed_cache_keys = BTreeSet::new();
+            let mut dirty_cache_keys = BTreeSet::new();
             let mut metadata_commit_keys = BTreeSet::new();
-            let mut new_cache_keys = Vec::new();
+            let mut new_cache_keys = BTreeSet::new();
             for event in pending_events {
                 if event.mask.contains(AddWatchFlags::IN_Q_OVERFLOW) {
                     changed = true;
+                    requires_full_reconcile = true;
                     reconcile_all_entry_watches = true;
                     continue;
                 }
@@ -277,67 +278,120 @@ impl HomeCacheWatcher {
                     if event
                         .mask
                         .intersects(AddWatchFlags::IN_CREATE | AddWatchFlags::IN_MOVED_TO)
-                        && new_cache_keys.len() < MAX_HELD_HOME_STATES
                     {
-                        new_cache_keys.push(cache_key.to_owned());
+                        if new_cache_keys.len() < MAX_HELD_HOME_STATES {
+                            new_cache_keys.insert(cache_key.to_owned());
+                        } else if !new_cache_keys.contains(cache_key) {
+                            requires_full_reconcile = true;
+                        }
                     }
                     if event
                         .mask
                         .intersects(AddWatchFlags::IN_DELETE | AddWatchFlags::IN_MOVED_FROM)
+                        && self.forget_entry_watch(cache_key) == Some(EntryWatchState::Relevant)
                     {
-                        changed |=
-                            self.forget_entry_watch(cache_key) == Some(EntryWatchState::Relevant);
+                        changed = true;
+                        if dirty_cache_keys.len() < MAX_HELD_HOME_STATES
+                            || dirty_cache_keys.contains(cache_key)
+                        {
+                            dirty_cache_keys.insert(cache_key.to_owned());
+                        } else {
+                            requires_full_reconcile = true;
+                        }
                     }
                     continue;
                 }
-
                 let Some(entry) = self.entry_by_watch.get(&event.wd).cloned() else {
                     continue;
                 };
                 if event.mask.intersects(WATCH_INVALIDATION_FLAGS) {
-                    changed |=
-                        self.forget_watch_descriptor(event.wd) == Some(EntryWatchState::Relevant);
+                    if self.forget_watch_descriptor(event.wd) == Some(EntryWatchState::Relevant) {
+                        changed = true;
+                        if dirty_cache_keys.len() < MAX_HELD_HOME_STATES
+                            || dirty_cache_keys.contains(&entry.cache_key)
+                        {
+                            dirty_cache_keys.insert(entry.cache_key);
+                        } else {
+                            requires_full_reconcile = true;
+                        }
+                    }
+                    requires_full_reconcile |= event
+                        .mask
+                        .intersects(AddWatchFlags::IN_UNMOUNT | AddWatchFlags::IN_IGNORED);
                     continue;
                 }
-                let Some(name) = event.name.as_deref() else {
+                let Some(name) = event.name.as_deref().and_then(OsStr::to_str) else {
+                    // Entry-directory attributes have no child name. Reclassify
+                    // the known key instead of losing an access/authority change.
+                    if metadata_commit_keys.len() < MAX_HELD_HOME_STATES
+                        || metadata_commit_keys.contains(&entry.cache_key)
+                    {
+                        metadata_commit_keys.insert(entry.cache_key);
+                    } else {
+                        requires_full_reconcile = true;
+                    }
                     continue;
                 };
-                if name == OsStr::new(METADATA_FILE_NAME)
-                    && event.mask.contains(AddWatchFlags::IN_MOVED_TO)
-                {
-                    if metadata_commit_keys.len() < MAX_HELD_HOME_STATES {
+                if name == METADATA_FILE_NAME {
+                    if metadata_commit_keys.len() < MAX_HELD_HOME_STATES
+                        || metadata_commit_keys.contains(&entry.cache_key)
+                    {
                         metadata_commit_keys.insert(entry.cache_key);
+                    } else {
+                        requires_full_reconcile = true;
                     }
-                } else if (name == OsStr::new(METADATA_FILE_NAME)
-                    || name == OsStr::new(CURRENT_IMAGE_FILE_NAME))
-                    && event
-                        .mask
-                        .intersects(AddWatchFlags::IN_DELETE | AddWatchFlags::IN_MOVED_FROM)
+                } else if (name == CURRENT_IMAGE_FILE_NAME
+                    || super::entry::image_generation(name).is_some())
+                    && entry.state == EntryWatchState::Relevant
                 {
-                    changed |= entry.state == EntryWatchState::Relevant;
+                    changed = true;
+                    if dirty_cache_keys.len() < MAX_HELD_HOME_STATES
+                        || dirty_cache_keys.contains(&entry.cache_key)
+                    {
+                        dirty_cache_keys.insert(entry.cache_key);
+                    } else {
+                        requires_full_reconcile = true;
+                    }
                 }
             }
-
             for cache_key in new_cache_keys {
+                requires_full_reconcile |= dirty_cache_keys.len() == MAX_HELD_HOME_STATES
+                    && !dirty_cache_keys.contains(&cache_key);
+                let saturated = self.watch_by_cache_key.len() == MAX_HELD_HOME_STATES
+                    && !self.watch_by_cache_key.contains_key(&cache_key);
                 changed |= self
-                    .add_entry_watch(cache_key, &mut committed_cache_keys)
+                    .add_entry_watch(cache_key, &mut dirty_cache_keys)
                     .await?;
+                requires_full_reconcile |= saturated;
             }
             for cache_key in metadata_commit_keys {
+                requires_full_reconcile |= dirty_cache_keys.len() == MAX_HELD_HOME_STATES
+                    && !dirty_cache_keys.contains(&cache_key);
+                let previous = self.entry_watch_state(&cache_key);
                 let metadata_path = self.cache.home_image_cache_metadata(&cache_key);
-                changed |= self
-                    .classify_metadata_commit(&cache_key, &metadata_path, &mut committed_cache_keys)
+                let relevant = self
+                    .classify_metadata_commit(&cache_key, &metadata_path, &mut dirty_cache_keys)
                     .await;
+                changed |= relevant;
+                if relevant || previous == Some(EntryWatchState::Relevant) {
+                    if dirty_cache_keys.len() < MAX_HELD_HOME_STATES
+                        || dirty_cache_keys.contains(&cache_key)
+                    {
+                        dirty_cache_keys.insert(cache_key);
+                    } else {
+                        requires_full_reconcile = true;
+                    }
+                }
             }
             if reconcile_all_entry_watches {
-                self.reconcile_all_entry_watches(&mut committed_cache_keys)
+                self.reconcile_all_entry_watches(&mut dirty_cache_keys)
                     .await?;
             }
-            if changed || !committed_cache_keys.is_empty() {
+            if changed || requires_full_reconcile || !dirty_cache_keys.is_empty() {
                 return Ok(HomeCacheChange {
                     observed_at,
-                    committed_cache_keys,
-                    selection_release_only: false,
+                    dirty_cache_keys,
+                    requires_full_reconcile,
                 });
             }
             if !drained_all_events {
@@ -350,7 +404,7 @@ impl HomeCacheWatcher {
 
     async fn reconcile_all_entry_watches(
         &mut self,
-        committed_cache_keys: &mut BTreeSet<String>,
+        dirty_cache_keys: &mut BTreeSet<String>,
     ) -> LifecycleResult<()> {
         let stale_cache_keys = self
             .watch_by_cache_key
@@ -370,7 +424,7 @@ impl HomeCacheWatcher {
         let watched_cache_keys = self.watch_by_cache_key.keys().cloned().collect::<Vec<_>>();
         for cache_key in watched_cache_keys {
             let metadata_path = self.cache.home_image_cache_metadata(&cache_key);
-            self.classify_metadata_commit(&cache_key, &metadata_path, committed_cache_keys)
+            self.classify_metadata_commit(&cache_key, &metadata_path, dirty_cache_keys)
                 .await;
         }
 
@@ -379,14 +433,14 @@ impl HomeCacheWatcher {
         }
         let entries = std::fs::read_dir(self.cache.home_image_cache_dir())
             .map_err(|error| watcher_io_error("scan entries", error.kind()))?;
-        self.reconcile_entry_watches(entries, committed_cache_keys)
+        self.reconcile_entry_watches(entries, dirty_cache_keys)
             .await
     }
 
     async fn reconcile_entry_watches(
         &mut self,
         entries: impl Iterator<Item = std::io::Result<std::fs::DirEntry>>,
-        committed_cache_keys: &mut BTreeSet<String>,
+        dirty_cache_keys: &mut BTreeSet<String>,
     ) -> LifecycleResult<()> {
         for entry in entries {
             if self.watch_by_cache_key.len() == MAX_HELD_HOME_STATES {
@@ -414,8 +468,7 @@ impl HomeCacheWatcher {
             if self.watch_by_cache_key.contains_key(&cache_key) {
                 continue;
             }
-            self.add_entry_watch(cache_key, committed_cache_keys)
-                .await?;
+            self.add_entry_watch(cache_key, dirty_cache_keys).await?;
         }
         Ok(())
     }
@@ -431,7 +484,7 @@ impl HomeCacheWatcher {
     async fn add_entry_watch(
         &mut self,
         cache_key: String,
-        committed_cache_keys: &mut BTreeSet<String>,
+        dirty_cache_keys: &mut BTreeSet<String>,
     ) -> LifecycleResult<bool> {
         if self.watch_by_cache_key.contains_key(&cache_key) {
             return Ok(false);
@@ -460,11 +513,11 @@ impl HomeCacheWatcher {
         self.watch_by_cache_key.insert(cache_key.clone(), watch);
         let metadata_path = self.cache.home_image_cache_metadata(&cache_key);
         let changed = self
-            .classify_metadata_commit(&cache_key, &metadata_path, committed_cache_keys)
+            .classify_metadata_commit(&cache_key, &metadata_path, dirty_cache_keys)
             .await;
         self.enforce_watch_limit(&cache_key);
         if !self.watch_by_cache_key.contains_key(&cache_key) {
-            committed_cache_keys.remove(&cache_key);
+            dirty_cache_keys.remove(&cache_key);
         }
         Ok(changed && self.watch_by_cache_key.contains_key(&cache_key))
     }
@@ -473,7 +526,7 @@ impl HomeCacheWatcher {
         &mut self,
         cache_key: &str,
         metadata_path: &Path,
-        committed_cache_keys: &mut BTreeSet<String>,
+        dirty_cache_keys: &mut BTreeSet<String>,
     ) -> bool {
         let Some(previous_state) = self.entry_watch_state(cache_key) else {
             return false;
@@ -485,8 +538,8 @@ impl HomeCacheWatcher {
         {
             HomeCacheScopeClassification::Relevant => {
                 self.set_entry_watch_state(cache_key, EntryWatchState::Relevant);
-                if committed_cache_keys.len() < MAX_HELD_HOME_STATES {
-                    committed_cache_keys.insert(cache_key.to_owned());
+                if dirty_cache_keys.len() < MAX_HELD_HOME_STATES {
+                    dirty_cache_keys.insert(cache_key.to_owned());
                 }
                 true
             }
@@ -631,6 +684,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn entry_directory_attribute_changes_revalidate_the_known_key() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempfile::tempdir().unwrap();
+        let cache = HomeImageCache::new(RunnerPaths::new(temp.path().join("runner")));
+        let key = commit_entry(&cache, "directory-attributes").await;
+        let mut watcher = HomeCacheWatcher::new(cache.clone()).await.unwrap();
+        std::fs::set_permissions(
+            cache.home_image_cache_entry_dir(&key),
+            std::fs::Permissions::from_mode(0o750),
+        )
+        .unwrap();
+        let change = tokio::time::timeout(std::time::Duration::from_secs(2), watcher.next_change())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(change.dirty_cache_keys, BTreeSet::from([key]));
+        assert!(!change.requires_full_reconcile);
+    }
+
+    #[tokio::test]
     async fn reports_metadata_commit_and_removal_from_existing_entry() {
         let temp = tempfile::tempdir().unwrap();
         let paths = RunnerPaths::new(temp.path().join("runner"));
@@ -648,10 +722,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(
-            change.committed_cache_keys,
-            BTreeSet::from([cache_key.clone()])
-        );
+        assert_eq!(change.dirty_cache_keys, BTreeSet::from([cache_key.clone()]));
 
         tokio::fs::remove_file(cache.home_image_cache_metadata(&cache_key))
             .await
@@ -660,7 +731,8 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert!(change.committed_cache_keys.is_empty());
+        assert_eq!(change.dirty_cache_keys, BTreeSet::from([cache_key]));
+        assert!(!change.requires_full_reconcile);
     }
 
     #[tokio::test]
@@ -675,11 +747,11 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(change.committed_cache_keys, BTreeSet::from([cache_key]));
+        assert_eq!(change.dirty_cache_keys, BTreeSet::from([cache_key]));
     }
 
     #[tokio::test]
-    async fn startup_reconciliation_preserves_matching_commit_key() {
+    async fn startup_reconciliation_preserves_matching_key_and_reports_missing_watch() {
         let temp = tempfile::tempdir().unwrap();
         let paths = RunnerPaths::new(temp.path().join("runner"));
         let cache = HomeImageCache::new(paths);
@@ -687,12 +759,16 @@ mod tests {
         let cache_key = commit_entry(&cache, "startup-reconciliation").await;
 
         let change = watcher
-            .reconcile_initial_relevant_entries(&BTreeSet::from([cache_key.clone()]))
+            .reconcile_initial_relevant_entries(&BTreeSet::from([
+                cache_key.clone(),
+                "a".repeat(64),
+            ]))
             .await
             .unwrap()
             .expect("newly classified startup entry should require reconciliation");
 
-        assert_eq!(change.committed_cache_keys, BTreeSet::from([cache_key]));
+        assert_eq!(change.dirty_cache_keys, BTreeSet::from([cache_key]));
+        assert!(change.requires_full_reconcile);
     }
 
     #[tokio::test]
@@ -725,7 +801,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(change.committed_cache_keys, BTreeSet::from([cache_key]));
+        assert_eq!(change.dirty_cache_keys, BTreeSet::from([cache_key]));
     }
 
     #[tokio::test]
@@ -748,10 +824,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(
-            change.committed_cache_keys,
-            BTreeSet::from([cache_key.clone()])
-        );
+        assert_eq!(change.dirty_cache_keys, BTreeSet::from([cache_key.clone()]));
         assert_eq!(watcher.watch_by_cache_key.len(), MAX_HELD_HOME_STATES);
         assert!(watcher.watch_by_cache_key.contains_key(&cache_key));
     }
@@ -774,7 +847,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(
-            change.committed_cache_keys,
+            change.dirty_cache_keys,
             BTreeSet::from([relevant_cache_key])
         );
         assert!(!watcher.watch_by_cache_key.contains_key(&cache_key));
@@ -804,7 +877,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(
-            change.committed_cache_keys,
+            change.dirty_cache_keys,
             BTreeSet::from([relevant_cache_key])
         );
         assert!(!watcher.watch_by_cache_key.contains_key(&foreign_cache_key));
@@ -849,7 +922,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(
-            change.committed_cache_keys,
+            change.dirty_cache_keys,
             BTreeSet::from([relevant_cache_key])
         );
         drop(next_change);
@@ -931,7 +1004,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(
-            change.committed_cache_keys,
+            change.dirty_cache_keys,
             BTreeSet::from([relevant_cache_key])
         );
     }
@@ -964,17 +1037,70 @@ mod tests {
             cache.inner.record_selection_release(&format!("{key:064x}"));
         }
         let change = watcher.next_change().await.unwrap();
-        assert!(!change.selection_release_only);
-        assert_eq!(change.committed_cache_keys.len(), MAX_HELD_HOME_STATES);
+        assert!(change.requires_full_reconcile);
+        assert_eq!(change.dirty_cache_keys.len(), MAX_HELD_HOME_STATES);
         // Hints never advertise nonexistent commits, even after saturation.
+        let updates = cache
+            .revalidate_home_cache_keys(
+                &BTreeMap::from([(TEST_PROFILE_NAME, 1024 * 1024)]),
+                &change.dirty_cache_keys,
+                tokio::time::Instant::now(),
+            )
+            .await;
+        assert!(updates.entries.values().all(Option::is_none));
+        let oversized = (0..=MAX_HELD_HOME_STATES)
+            .map(|key| format!("{key:064x}"))
+            .collect();
+        let updates = cache
+            .revalidate_home_cache_keys(
+                &BTreeMap::from([(TEST_PROFILE_NAME, 1024 * 1024)]),
+                &oversized,
+                tokio::time::Instant::now(),
+            )
+            .await;
         assert!(
-            cache
-                .held_home_states_for_released_selections(
-                    &BTreeMap::from([(TEST_PROFILE_NAME, 1024 * 1024)]),
-                    &change.committed_cache_keys,
-                )
-                .await
-                .is_none()
+            updates.incomplete,
+            "a capped validation cannot claim complete coverage"
         );
+        assert!(updates.entries.is_empty());
+        let snapshot = super::super::snapshot::HomeCacheStateSnapshot::new();
+        let token = snapshot.begin_home_cache_refresh();
+        assert!(
+            snapshot
+                .finish_home_cache_key_updates(token, updates)
+                .needs_reconcile
+        );
+    }
+
+    #[test]
+    fn coalesced_batches_keep_first_deadline_and_report_key_saturation() {
+        let first_observation = tokio::time::Instant::now();
+        let mut change = HomeCacheChange {
+            observed_at: first_observation,
+            dirty_cache_keys: (0..MAX_HELD_HOME_STATES)
+                .map(|key| format!("{key:064x}"))
+                .collect(),
+            requires_full_reconcile: false,
+        };
+        change.merge(HomeCacheChange {
+            observed_at: first_observation + std::time::Duration::from_secs(1),
+            dirty_cache_keys: BTreeSet::from([format!("{:064x}", 0)]),
+            requires_full_reconcile: false,
+        });
+        assert!(
+            !change.requires_full_reconcile,
+            "a duplicate does not lose completeness"
+        );
+        change.merge(HomeCacheChange {
+            observed_at: first_observation + std::time::Duration::from_secs(3),
+            dirty_cache_keys: BTreeSet::from([format!("{MAX_HELD_HOME_STATES:064x}")]),
+            requires_full_reconcile: false,
+        });
+        assert_eq!(
+            change.observed_at, first_observation,
+            "coalescing cannot renew the original commit-wait deadline"
+        );
+        assert!(change.requires_full_reconcile);
+        assert_eq!(change.dirty_cache_keys.len(), MAX_HELD_HOME_STATES);
     }
 }

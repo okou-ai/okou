@@ -320,7 +320,20 @@ are not resident-cache, released-byte or production memory-saving proof.
   uncertain request.
 - Home-cache watcher work remains retained with ownership of its watcher
   and drained filesystem events. Its classification does not own an idle-pool or
-  status waiter needed by an inline reactor branch.
+  status waiter needed by an inline reactor branch. The observation owner admits
+  one independent inventory refresh with bounded coalesced dirty keys. Ordinary
+  heartbeat delivery reads the committed snapshot while validation or scanning
+  waits; shutdown joins accepted refresh work before dependent teardown.
+  Physical-key revisions include negative observations, preventing an older scan
+  from restoring a removed entry or replacing a newer publication. Lost bounded
+  revision history rejects the stale result and requests reconciliation. Named
+  complete changes validate only their keys; overflow, lost watches and removals
+  from truncated projections require a full refill. The physical view retains
+  at most 1,024 groups with eight profiles each before the unchanged wire caps.
+  Group completion maxima survive omitted profiles; if a root scan omits groups,
+  it revisits the final selected groups to recover profiles seen before eviction.
+  Coalescing preserves the
+  original absolute commit-wait deadline. None of these hints grants disk authority.
 - Active-run and budget locks protect short synchronous state updates.
 - Active/idle transfers and cancellation retain their existing ownership gates:
   contested gates are not awaited while holding the idle pool.

@@ -260,20 +260,24 @@ fn mark_reuse_state_refresh(
 
 fn mark_home_cache_snapshot_promoted(
     snapshot: &HomeCacheStateSnapshot,
+    cache_key: Option<&str>,
     reuse_key: Option<&str>,
     profile_name: &str,
     completed_at: &str,
     promoted: bool,
 ) -> bool {
-    if promoted && let Some(reuse_key) = reuse_key {
-        snapshot.upsert_home_cache_state(HeldHomeState {
-            reuse_key: reuse_key.to_owned(),
-            last_completed_at: completed_at.to_owned(),
-            home_caches: vec![HomeCacheCapability {
-                profile: profile_name.to_owned(),
-                home_affinity_version: HOME_AFFINITY_VERSION,
-            }],
-        });
+    if promoted && let (Some(cache_key), Some(reuse_key)) = (cache_key, reuse_key) {
+        snapshot.upsert_home_cache_state(
+            cache_key.to_owned(),
+            HeldHomeState {
+                reuse_key: reuse_key.to_owned(),
+                last_completed_at: completed_at.to_owned(),
+                home_caches: vec![HomeCacheCapability {
+                    profile: profile_name.to_owned(),
+                    home_affinity_version: HOME_AFFINITY_VERSION,
+                }],
+            },
+        );
     }
     promoted
 }
@@ -593,6 +597,10 @@ async fn finalize_sandbox_for_completion_inner(
         } else {
             None
         };
+    let home_cache_key = home_image
+        .as_ref()
+        .and_then(HomeImageLease::cache_key)
+        .map(str::to_owned);
     let home_promotion = home_image.and_then(|home_image| {
         home_image.into_promotion_context(HomeImagePromotionRequest {
             run_id,
@@ -633,6 +641,7 @@ async fn finalize_sandbox_for_completion_inner(
             .await;
             reuse_state_changed |= mark_home_cache_snapshot_promoted(
                 &home_cache_snapshot,
+                home_cache_key.as_deref(),
                 home_promotion_reuse_key.as_deref(),
                 &profile_name,
                 &completed_at,
@@ -718,6 +727,7 @@ async fn finalize_sandbox_for_completion_inner(
                     .await;
                     let home_cache_promoted = mark_home_cache_snapshot_promoted(
                         &home_cache_snapshot,
+                        home_cache_key.as_deref(),
                         Some(&reuse_key),
                         &profile_name,
                         &completed_at,
@@ -773,6 +783,7 @@ async fn finalize_sandbox_for_completion_inner(
                     .await;
                     reuse_state_changed = mark_home_cache_snapshot_promoted(
                         &home_cache_snapshot,
+                        home_cache_key.as_deref(),
                         Some(&reuse_key),
                         &profile_name,
                         &completed_at,
@@ -833,6 +844,7 @@ async fn finalize_sandbox_for_completion_inner(
             .await;
             reuse_state_changed |= mark_home_cache_snapshot_promoted(
                 &home_cache_snapshot,
+                home_cache_key.as_deref(),
                 Some(&reuse_key),
                 &profile_name,
                 &completed_at,
@@ -930,6 +942,7 @@ async fn finalize_sandbox_for_completion_inner(
             .await;
             reuse_state_changed |= mark_home_cache_snapshot_promoted(
                 &home_cache_snapshot,
+                home_cache_key.as_deref(),
                 Some(&reuse_key),
                 &profile_name,
                 &completed_at,
@@ -955,6 +968,7 @@ async fn finalize_sandbox_for_completion_inner(
                     .await;
                     reuse_state_changed = mark_home_cache_snapshot_promoted(
                         &home_cache_snapshot,
+                        home_cache_key.as_deref(),
                         Some(&reuse_key),
                         &profile_name,
                         &completed_at,
@@ -1030,6 +1044,7 @@ async fn finalize_sandbox_for_completion_inner(
                     .await;
                     reuse_state_changed = mark_home_cache_snapshot_promoted(
                         &home_cache_snapshot,
+                        home_cache_key.as_deref(),
                         Some(&reuse_key),
                         &profile_name,
                         &completed_at,
@@ -1069,6 +1084,7 @@ async fn finalize_sandbox_for_completion_inner(
                         .await;
                         reuse_state_changed = mark_home_cache_snapshot_promoted(
                             &home_cache_snapshot,
+                            home_cache_key.as_deref(),
                             Some(&reuse_key),
                             &profile_name,
                             &completed_at,
@@ -1100,6 +1116,7 @@ async fn finalize_sandbox_for_completion_inner(
                     .await;
                     reuse_state_changed = mark_home_cache_snapshot_promoted(
                         &home_cache_snapshot,
+                        home_cache_key.as_deref(),
                         Some(&reuse_key),
                         &profile_name,
                         &completed_at,
@@ -1155,6 +1172,7 @@ async fn finalize_sandbox_for_completion_inner(
                         .await;
                         reuse_state_changed |= mark_home_cache_snapshot_promoted(
                             &home_cache_snapshot,
+                            home_cache_key.as_deref(),
                             Some(&reuse_key),
                             &profile_name,
                             &completed_at,

@@ -113,7 +113,6 @@ impl Probe {
             profiles: &profiles,
             budget,
             provider: provider.clone(),
-            home_cache: None,
             active_runs: &active,
             home_cache_snapshot: HomeCacheStateSnapshot::new(),
             wss_ingress_service_probe: Arc::new(|| Box::pin(async { false })),
