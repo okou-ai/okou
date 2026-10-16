@@ -6,7 +6,7 @@ use super::{
     credential,
     gateway::{self, Mode, SECRET},
 };
-use crate::test_fixtures::diagnostic_report;
+use crate::test_fixtures::diagnostic_text;
 use std::sync::atomic::Ordering;
 
 #[tokio::test]
@@ -46,9 +46,9 @@ async fn access_results_separate_tls_rejection_upgrade_and_interruption() {
         let result = terminal(&frames);
         assert_eq!(result["type"], "failed");
         assert_eq!(result["effects"], "not_started");
-        let report = &diagnostic_report(result);
-        assert_eq!(report["ssh"]["route"], "cloudflare_access");
-        assert_eq!(report["ssh"]["access_failure"], cause);
+        let text = diagnostic_text(result);
+        assert!(text.contains("- Route: cloudflare access; transport: fresh."));
+        assert!(text.contains(&format!("- First Cloudflare Access failure: {cause}.")));
         assert!(result["diagnostic_text"].as_str().unwrap().contains(action));
         assert!(!serde_json::to_string(&frames).unwrap().contains("canary"));
         assert_eq!(h.observed.auth.load(Ordering::SeqCst), 0);

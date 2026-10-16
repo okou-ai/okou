@@ -97,9 +97,11 @@ async fn native_common_rejected_home_announcement_never_sends_login_or_command()
     let original = h
         .raw(json!({"version":1,"method":"ssh.diagnose","params":{}}).to_string())
         .await;
-    let original = crate::test_fixtures::diagnostic_report(&original.last().unwrap()["data"]);
-    assert_eq!(original["native"]["configuration_id"], id.to_string());
-    assert_eq!(original["native"]["evidence"]["terminal"], "domain_failed");
+    let original = crate::test_fixtures::diagnostic_text(&original.last().unwrap()["data"]);
+    assert!(original.contains(&format!(
+        "- Native source: configuration {id}; generation 1; resource "
+    )));
+    assert!(original.contains("first terminal failure domain failed;"));
     let mut params = params();
     params["sshConnectionId"] = OTHER.into();
     let failed = bounded(h.request(params)).await;
@@ -111,20 +113,24 @@ async fn native_common_rejected_home_announcement_never_sends_login_or_command()
     let retained = h
         .raw(json!({"version":1,"method":"ssh.diagnose","params":{}}).to_string())
         .await;
-    let retained = crate::test_fixtures::diagnostic_report(&retained.last().unwrap()["data"]);
-    assert_eq!(retained["connection_id"], OTHER);
+    let retained = crate::test_fixtures::diagnostic_text(&retained.last().unwrap()["data"]);
+    assert!(retained.contains(&format!("Connection: {OTHER}\n")));
+    let created_at = crate::ssh::tests::harness::CREATED_AT;
+    assert!(retained.contains(&format!(
+        "Configuration: created at {created_at}; generation 7."
+    )));
+    assert!(retained.contains(&format!(
+        "- Native source: configuration {id}; generation 1; resource "
+    )));
     assert_eq!(
-        retained["configuration_created_at"],
-        crate::ssh::tests::harness::CREATED_AT
+        retained
+            .lines()
+            .find(|line| line.starts_with("- Native source:")),
+        original
+            .lines()
+            .find(|line| line.starts_with("- Native source:"))
     );
-    assert_eq!(retained["configuration_generation"], 7);
-    assert_eq!(retained["native"]["configuration_id"], id.to_string());
-    assert_eq!(retained["native"]["generation"], 1);
-    assert_eq!(
-        retained["native"]["resource_id"],
-        original["native"]["resource_id"]
-    );
-    assert_eq!(retained["native"]["evidence"]["terminal"], "domain_failed");
+    assert!(retained.contains("first terminal failure domain failed;"));
     assert_eq!(h.observed.auth.load(Ordering::SeqCst), 0);
     assert!(h.observed.commands.lock().unwrap().is_empty());
     assert!(h.observed.queries.lock().unwrap().is_empty());

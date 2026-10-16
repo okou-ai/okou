@@ -2,7 +2,7 @@ use super::{
     harness::{Harness, Reply, params},
     terminal,
 };
-use crate::test_fixtures::diagnostic_report;
+use crate::test_fixtures::diagnostic_text;
 use std::{io, sync::atomic::Ordering, time::Duration};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -67,18 +67,18 @@ async fn corrupt_host_proof_never_pins_or_authenticates_even_with_matching_key_i
         assert_eq!(terminal(&frames)["effects"], "not_started");
         pin.assert_calls_async(0).await;
         assert_eq!(h.observed.auth.load(Ordering::SeqCst), 0);
-        let report = diagnostic_report(terminal(&frames));
-        let stages = report["ssh"]["stages"].as_array().unwrap();
+        let text = diagnostic_text(terminal(&frames));
         for (stage, status) in [
             ("ssh_proof", "failed"),
             ("ssh_trust", "not_reached"),
             ("authentication", "not_reached"),
         ] {
-            assert!(
-                stages
-                    .iter()
-                    .any(|entry| entry["stage"] == stage && entry["status"] == status)
+            let fact = format!(
+                "- {}: {}.\n",
+                stage.replace('_', " "),
+                status.replace('_', " ")
             );
+            assert!(text.contains(&fact), "missing {fact:?} in {text}");
         }
         tokio::time::timeout(Duration::from_secs(5), proxy)
             .await

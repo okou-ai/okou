@@ -2,7 +2,7 @@ use super::{
     harness::{CONNECTION, CREATED_AT, Harness, Reply, params},
     terminal,
 };
-use crate::test_fixtures::{diagnostic_report, remote_inventory};
+use crate::test_fixtures::{diagnostic_attempt, diagnostic_text, remote_inventory};
 use serde_json::{Value, json};
 use std::sync::atomic::Ordering;
 
@@ -15,14 +15,13 @@ async fn rpc(h: &Harness, method: &str, params: Value) -> Value {
     )
     .clone()
 }
-fn stage(report: &Value, name: &str) -> Value {
-    report["ssh"]["stages"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|s| s["stage"] == name)
-        .unwrap()["status"]
-        .clone()
+fn assert_stage(text: &str, name: &str, status: &str) {
+    let fact = format!(
+        "- {}: {}.\n",
+        name.replace('_', " "),
+        status.replace('_', " ")
+    );
+    assert!(text.contains(&fact), "missing {fact:?} in {text}");
 }
 
 #[tokio::test]
@@ -62,26 +61,23 @@ async fn concurrent_failures_return_their_own_committed_report_and_exact_query()
     for (reply, id) in [(&a, CONNECTION), (&b, OTHER)] {
         assert_eq!(reply["failure_reason"], "exec_rejected");
         assert_eq!(reply["effects"], "not_started");
-        let report = &diagnostic_report(reply);
-        assert_eq!(report["connection_id"], id);
+        let text = diagnostic_text(reply);
+        assert!(text.contains(&format!("Connection: {id}\n")));
         assert!(reply["diagnostic_text"].as_str().unwrap().len() <= 8192);
-        assert_eq!(report["configuration_created_at"], CREATED_AT);
-        assert_eq!(stage(report, "ssh_proof"), "passed");
-        assert_eq!(stage(report, "ssh_trust"), "passed");
-        assert_eq!(stage(report, "authentication"), "passed");
-        assert_eq!(stage(report, "operation"), "failed");
+        assert!(text.contains(&format!("Configuration: created at {CREATED_AT};")));
+        assert_stage(text, "ssh_proof", "passed");
+        assert_stage(text, "ssh_trust", "passed");
+        assert_stage(text, "authentication", "passed");
+        assert_stage(text, "operation", "failed");
         let query = rpc(
             &h,
             "ssh.diagnose",
-            json!({"attemptId":report["attempt_id"]}),
+            json!({"attemptId":diagnostic_attempt(reply)}),
         )
         .await;
-        assert_eq!(&diagnostic_report(&query), report);
+        assert_eq!(diagnostic_text(&query), text);
     }
-    assert_ne!(
-        diagnostic_report(&a)["attempt_id"],
-        diagnostic_report(&b)["attempt_id"]
-    );
+    assert_ne!(diagnostic_attempt(&a), diagnostic_attempt(&b));
     h.shutdown().await;
 }
 
@@ -109,7 +105,17 @@ async fn strict_parameters_prevent_dispatch_and_feature_gate_controls_failure_te
     h.enable_diagnostics().await;
     let enabled = rpc(&h, "ssh.exec", params()).await;
     assert_eq!(enabled["failure_reason"], "unavailable");
-    assert_eq!(diagnostic_report(&enabled)["connection_id"], CONNECTION);
+    let text = diagnostic_text(&enabled);
+    assert!(text.contains(&format!("Connection: {CONNECTION}\n")));
+    for section in [
+        "Failure:",
+        "Evidence:",
+        "Unknown:",
+        "Next step:",
+        "Context:",
+    ] {
+        assert!(text.contains(section));
+    }
     h.shutdown().await;
 }
 
@@ -130,13 +136,13 @@ async fn actual_dns_policy_and_tcp_failures_keep_not_reached_stages_and_selected
             _ => h.network.connect_failed.store(true, Ordering::SeqCst),
         }
         let result = rpc(&h, "ssh.exec", params()).await;
-        let report = &diagnostic_report(&result);
+        let text = diagnostic_text(&result);
         assert_eq!(result["effects"], "not_started");
-        assert_eq!(stage(report, "authentication"), "not_reached");
+        assert_stage(text, "authentication", "not_reached");
         match case {
             "dns" => {
-                assert_eq!(stage(report, "dns"), "failed");
-                assert_eq!(stage(report, "tcp"), "not_reached");
+                assert_stage(text, "dns", "failed");
+                assert_stage(text, "tcp", "not_reached");
                 assert!(
                     result["diagnostic_text"]
                         .as_str()
@@ -145,17 +151,15 @@ async fn actual_dns_policy_and_tcp_failures_keep_not_reached_stages_and_selected
                 );
             }
             "policy" => {
-                assert_eq!(stage(report, "destination_policy"), "failed");
-                assert_eq!(stage(report, "tcp"), "not_reached");
+                assert_stage(text, "destination_policy", "failed");
+                assert_stage(text, "tcp", "not_reached");
             }
             _ => {
-                assert_eq!(stage(report, "dns"), "passed");
-                assert_eq!(stage(report, "destination_policy"), "passed");
-                assert_eq!(stage(report, "tcp"), "failed");
-                assert_eq!(
-                    report["ssh"]["address_family"],
-                    if case == "tcp6" { "ipv6" } else { "ipv4" }
-                );
+                assert_stage(text, "dns", "passed");
+                assert_stage(text, "destination_policy", "passed");
+                assert_stage(text, "tcp", "failed");
+                let family = if case == "tcp6" { "ipv6" } else { "ipv4" };
+                assert!(text.contains(&format!("- Address family: {family}.")));
                 assert!(
                     result["diagnostic_text"]
                         .as_str()
@@ -179,11 +183,11 @@ async fn pooled_transport_retains_selected_address_without_fabricating_new_setup
         .reject_reused_channels
         .store(true, Ordering::SeqCst);
     let result = rpc(&h, "ssh.exec", params()).await;
-    let report = &diagnostic_report(&result);
-    assert_eq!(report["ssh"]["transport"], "reused");
-    assert_eq!(report["ssh"]["selected_address"], "93.184.216.34");
-    assert_eq!(stage(report, "authentication"), "reused");
-    assert_eq!(stage(report, "dns"), "reused");
+    let text = diagnostic_text(&result);
+    assert!(text.contains("- Route: direct; transport: reused."));
+    assert!(text.contains("- Selected address: 93.184.216.34."));
+    assert_stage(text, "authentication", "reused");
+    assert_stage(text, "dns", "reused");
     assert_eq!(h.observed.auth.load(Ordering::SeqCst), 1);
     h.shutdown().await;
 }
@@ -208,7 +212,7 @@ async fn trust_rejection_precedes_authentication_and_credential_rejection_keeps_
         }
         let _resolve = h.resolve(credential).await;
         let result = rpc(&h, "ssh.exec", params()).await;
-        let report = &diagnostic_report(&result);
+        let text = diagnostic_text(&result);
         assert_eq!(
             result["failure_reason"],
             if trust_failure {
@@ -217,20 +221,22 @@ async fn trust_rejection_precedes_authentication_and_credential_rejection_keeps_
                 "authentication_failed"
             }
         );
-        assert_eq!(stage(report, "ssh_proof"), "passed");
-        assert_eq!(
-            stage(report, "ssh_trust"),
-            if trust_failure { "failed" } else { "passed" }
+        assert_stage(text, "ssh_proof", "passed");
+        assert_stage(
+            text,
+            "ssh_trust",
+            if trust_failure { "failed" } else { "passed" },
         );
-        assert_eq!(
-            stage(report, "authentication"),
+        assert_stage(
+            text,
+            "authentication",
             if trust_failure {
                 "not_reached"
             } else {
                 "failed"
-            }
+            },
         );
-        assert_eq!(report["configuration_generation"], 7);
+        assert!(text.contains("generation 7."));
         assert!(
             result["diagnostic_text"]
                 .as_str()
@@ -261,12 +267,9 @@ async fn retained_process_status_uses_its_receipt_after_another_host_failure() {
     let session = started["session_id"].as_str().unwrap();
     super::sessions::state(&h, &started["session_id"], "failed").await;
     let first = rpc(&h, "ssh.session.status", json!({"sessionId":session})).await;
-    assert_eq!(diagnostic_report(&first)["session_id"], session);
+    assert!(diagnostic_text(&first).contains(&format!("Session: {session}\n")));
     let unrelated = rpc(&h, "ssh.exec", params()).await;
-    assert_ne!(
-        diagnostic_report(&first)["attempt_id"],
-        diagnostic_report(&unrelated)["attempt_id"]
-    );
+    assert_ne!(diagnostic_attempt(&first), diagnostic_attempt(&unrelated));
     let again = rpc(&h, "ssh.session.status", json!({"sessionId":session})).await;
     assert_eq!(first["diagnostic_text"], again["diagnostic_text"]);
     h.shutdown().await;
@@ -307,19 +310,16 @@ async fn binary_file_failure_keeps_file_cause_and_matching_history_text() {
     }
     assert_eq!(result["failure_reason"], "path_not_found");
     assert_eq!(result["effects"], "not_started");
-    assert_eq!(
-        diagnostic_report(&result)["cause"],
-        json!({"source":"file","code":"path_not_found"})
-    );
-    let report = &diagnostic_report(&result);
+    assert!(diagnostic_text(&result).starts_with("Failure: file path not found during file."));
+    let text = diagnostic_text(&result);
     let history = rpc(
         &h,
         "ssh.diagnose",
-        json!({"attemptId":report["attempt_id"]}),
+        json!({"attemptId":diagnostic_attempt(&result)}),
     )
     .await;
     assert_eq!(history["status"], "found");
-    assert_eq!(diagnostic_report(&history), *report);
+    assert_eq!(diagnostic_text(&history), text);
     assert_eq!(history["message"], result["diagnostic_text"]);
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
     h.shutdown().await;
@@ -352,11 +352,11 @@ async fn forwarding_failure_retains_actual_channel_stage_and_current_source_iden
         .await;
     assert!(result.is_err());
     let query = rpc(&h, "ssh.diagnose", json!({})).await;
-    let report = &diagnostic_report(&query);
-    assert_eq!(report["operation"], "forwarding");
-    assert_eq!(report["configuration_created_at"], CREATED_AT);
-    assert_eq!(report["configuration_generation"], 7);
-    assert_eq!(stage(report, "authentication"), "passed");
-    assert_eq!(stage(report, "forwarding"), "failed");
+    let text = diagnostic_text(&query);
+    assert!(text.contains("during forwarding."));
+    assert!(text.contains(&format!("Configuration: created at {CREATED_AT};")));
+    assert!(text.contains("generation 7."));
+    assert_stage(text, "authentication", "passed");
+    assert_stage(text, "forwarding", "failed");
     h.shutdown().await;
 }

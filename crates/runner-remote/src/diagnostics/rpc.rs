@@ -362,9 +362,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(result["status"], "found");
-        assert_eq!(
-            crate::test_fixtures::diagnostic_report(&result)["dependencies"][0]["cause"]["code"],
-            "host_key_mismatch"
+        assert!(
+            crate::test_fixtures::diagnostic_text(&result).contains(&format!(
+                "- Dependency (ssh): {ssh}; cause: SSH host key mismatch;"
+            ))
         );
         for secret in [
             "inventory-host-canary",

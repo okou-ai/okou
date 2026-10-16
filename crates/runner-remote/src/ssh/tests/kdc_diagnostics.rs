@@ -1,4 +1,4 @@
-use crate::test_fixtures::diagnostic_report;
+use crate::test_fixtures::{diagnostic_attempt, diagnostic_text};
 use base64::Engine;
 use serde_json::json;
 use std::time::Duration;
@@ -98,18 +98,7 @@ async fn vnc_history_retains_kdc_ssh_failure_before_kerberos_conversion() {
         .await;
     let report = terminal(&history);
     assert_eq!(report["status"], "found");
-    assert_eq!(
-        diagnostic_report(report)["dependencies"][0]["connection_id"],
-        KDC
-    );
-    assert_eq!(
-        diagnostic_report(report)["dependencies"][0]["cause"],
-        json!({"source":"ssh","code":"host_key_mismatch"})
-    );
-    assert_eq!(
-        diagnostic_report(report)["dependencies"][0]["configuration_created_at"],
-        CREATED_AT
-    );
+    assert!(diagnostic_text(report).contains(&format!("- Dependency (ssh): {KDC}; cause: SSH host key mismatch; configuration created at {CREATED_AT}; generation 7.")));
     assert!(!report.to_string().contains("kdc-password-canary"));
     assert_eq!(
         h.observed.forwards.lock().unwrap().len(),
@@ -131,9 +120,9 @@ async fn vnc_history_retains_kdc_ssh_failure_before_kerberos_conversion() {
             then.status(200).json_body(hosts);
         })
         .await;
-    let hidden = h.raw(json!({"version":1,"method":"vnc.diagnose","params":{"attemptId":diagnostic_report(report)["attempt_id"]}}).to_string()).await;
+    let hidden = h.raw(json!({"version":1,"method":"vnc.diagnose","params":{"attemptId":diagnostic_attempt(report)}}).to_string()).await;
     assert_eq!(terminal(&hidden)["status"], "authority_unavailable");
-    assert!(diagnostic_report(terminal(&hidden)).is_null());
+    assert!(!diagnostic_text(terminal(&hidden)).contains(KDC));
     recreated.assert_calls_async(1).await;
     h.shutdown().await;
 }

@@ -6,7 +6,7 @@ schema or remediation-code translation.
 
 ## Automatic SSH explanations
 
-Guest always uses the latest CLI. Existing SSH exec, session and file requests
+Runner and CLI always use matching versions. Existing SSH exec, session and file requests
 use their ordinary methods and parameters, without a version marker, opt-in,
 capability request or business retry. The default-off
 `remoteConnectionDiagnostics` switch and current assignment/subject checks
@@ -15,7 +15,10 @@ gate evidence. Disabled diagnostics omit explanation text.
 A failed result may contain one `diagnostic_text` string, at most
 8192 UTF-8 bytes. Runner renders the exact committed report, observed route,
 selected address/family, fresh/reused stages, source/dependency cause, uncertainty
-and guidance. Formatting can change without CLI changes. Human output and JSON
+and guidance in lightweight Failure/Evidence/Unknown/Next step sections with
+context IDs for exact history selection. These sections are readable text, not
+a diagnostic JSON dump or a content schema. Their titles, wording and order can
+change without CLI changes. Human output and JSON
 contain the same text. CLI checks only bounded, terminal-safe text; missing or
 unusable optional text cannot replace a verified business result.
 

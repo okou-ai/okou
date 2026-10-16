@@ -58,7 +58,7 @@ pub(crate) enum Route {
 }
 #[derive(Clone, Copy, Default, Serialize)]
 #[serde(rename_all = "snake_case")]
-enum Transport {
+pub(super) enum Transport {
     #[default]
     Unknown,
     Fresh,
@@ -66,23 +66,23 @@ enum Transport {
 }
 #[derive(Clone, Copy, Serialize)]
 #[serde(rename_all = "snake_case")]
-enum Family {
+pub(super) enum Family {
     Ipv4,
     Ipv6,
 }
 #[derive(Clone, Serialize)]
-struct Step {
-    stage: Stage,
-    status: Progress,
+pub(super) struct Step {
+    pub(super) stage: Stage,
+    pub(super) status: Progress,
 }
 #[derive(Clone, Serialize)]
 pub(crate) struct Snapshot {
     pub(crate) access_failure: Option<crate::cloudflare::Failure>,
-    route: Route,
-    transport: Transport,
-    selected_address: Option<IpAddr>,
-    address_family: Option<Family>,
-    stages: Vec<Step>,
+    pub(super) route: Route,
+    pub(super) transport: Transport,
+    pub(super) selected_address: Option<IpAddr>,
+    pub(super) address_family: Option<Family>,
+    pub(super) stages: Vec<Step>,
 }
 impl Default for Snapshot {
     fn default() -> Self {
