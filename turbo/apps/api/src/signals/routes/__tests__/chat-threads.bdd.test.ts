@@ -3189,6 +3189,42 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     120_000,
   );
 
+  it.each([false, true])(
+    "reserves positive font kerning for editable Slides text (split runs: %s)",
+    async (splitTopicNumber) => {
+      const bytes = slidesImportFixture({
+        topicNumber: "06",
+        splitTopicNumber,
+      });
+      const fixture = await workspaceSource("deck.pptx", bytes, false, true);
+      mockSlidesImportFonts();
+      const native = {
+        id: "kerned-deck",
+        name: "deck",
+        mimeType: GOOGLE_WORKSPACE_MIME_TYPES.presentation,
+      };
+      const uploaded = mockGoogleDriveArtifactUpload(native);
+      mockGoogleWorkspaceReadback(native);
+      mockGoogleSlidesReadback([{ pageElementCount: 12 }]);
+      const response = await fixture.upload("google");
+      expect(response.status).toBe(200);
+      const number = uploadedSlidesText(uploaded.bodies[0]!).find((item) => {
+        return item.id === "2";
+      });
+      expect(number).toMatchObject({
+        text: "06",
+        sizes: splitTopicNumber ? [192, 192] : [192],
+        colors: splitTopicNumber ? ["242121", "00FF00"] : ["242121"],
+      });
+      // The fixture's 0/6 pair adds 30 units to its 1300-unit advance.
+      // A color boundary must not hide that positive kerning adjustment.
+      expect(number!.width).toBeGreaterThanOrEqual(255.36 + 0.75);
+      expect(number!.width).toBeLessThanOrEqual(255.36 + 2);
+      await fixture.finish();
+    },
+    120_000,
+  );
+
   it("preserves a slide with transformed obstacles instead of guessing text clearance", async () => {
     const archive = new AdmZip(slidesImportFixture());
     const slide = archive.readAsText("ppt/slides/slide1.xml");

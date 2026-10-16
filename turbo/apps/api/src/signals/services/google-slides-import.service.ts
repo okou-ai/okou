@@ -441,6 +441,12 @@ async function measureGroup(
   signal: AbortSignal,
 ): Promise<number | undefined> {
   let requiredWidth = group[0]!.insets;
+  const layouts: {
+    font: Font;
+    size: number;
+    text: string;
+    advance: number;
+  }[] = [];
   let previousSourceEnd: number | undefined;
   for (const item of group) {
     // Overlapping frames alone do not establish a shared line. Require
@@ -469,21 +475,34 @@ async function measureGroup(
       ) {
         return undefined;
       }
-      const targetWidth =
-        (([...run.text].reduce((total, character) => {
-          return (
-            total +
-            font.glyphForCodePoint(character.codePointAt(0)!).advanceWidth
-          );
-        }, 0) *
-          run.size) /
-          font.unitsPerEm) *
-        EMU_PER_POINT;
-      requiredWidth += targetWidth;
+      const advance = [...run.text].reduce((total, character) => {
+        return (
+          total + font.glyphForCodePoint(character.codePointAt(0)!).advanceWidth
+        );
+      }, 0);
+      const previous = layouts.at(-1);
+      // Paint-only run boundaries must not hide a kerning pair. Measure
+      // adjacent text together whenever its font and size are unchanged.
+      if (previous?.font === font && previous.size === run.size) {
+        previous.text += run.text;
+        previous.advance += advance;
+      } else {
+        layouts.push({ font, size: run.size, text: run.text, advance });
+      }
       sourceWidth +=
-        targetWidth + [...run.text].length * run.spacing * EMU_PER_POINT;
+        ((advance * run.size) / font.unitsPerEm +
+          [...run.text].length * run.spacing) *
+        EMU_PER_POINT;
     }
     previousSourceEnd = item.bounds.x + sourceWidth;
+  }
+  for (const { font, size, text, advance } of layouts) {
+    // Kerning can widen a pair (for example, Geist's "06"). Retain the
+    // unkerned reservation too, for renderers that omit negative kerning.
+    requiredWidth +=
+      ((Math.max(advance, font.layout(text).advanceWidth) * size) /
+        font.unitsPerEm) *
+      EMU_PER_POINT;
   }
   // An exact-fit frame can still wrap in the editor while Google's server
   // renderer keeps the line intact. Reserve one point of layout tolerance

@@ -23,7 +23,10 @@ export function mockSlidesImportFonts(status = 200): void {
   );
 }
 
-export function slidesImportFixture(): Buffer {
+export function slidesImportFixture({
+  topicNumber = "05",
+  splitTopicNumber = false,
+} = {}): Buffer {
   const shape = (
     id: number,
     text: string,
@@ -34,6 +37,7 @@ export function slidesImportFixture(): Buffer {
       size,
       color = "242121",
       family = "Import Test",
+      split = false,
     }: {
       x: number;
       y: number;
@@ -41,12 +45,24 @@ export function slidesImportFixture(): Buffer {
       size: number;
       color?: string;
       family?: string;
+      split?: boolean;
     },
   ) => {
-    return `<p:sp><p:nvSpPr><p:cNvPr id="${String(id)}" name="text-${String(id)}"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${String(x * 12_700)}" y="${String(y * 12_700)}"/><a:ext cx="${String(width * 12_700)}" cy="${String(Math.round(size * 1.4 * 12_700))}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr><p:txBody><a:bodyPr wrap="none" lIns="0" rIns="0" tIns="0" bIns="0" anchor="t"><a:noAutofit/></a:bodyPr><a:lstStyle/><a:p><a:pPr/><a:r><a:rPr sz="${String(Math.round(size * 100))}" spc="-100"><a:solidFill><a:srgbClr val="${color}"/></a:solidFill><a:latin typeface="${family}"/></a:rPr><a:t xml:space="preserve">${text}</a:t></a:r></a:p></p:txBody></p:sp>`;
+    const runs = (split ? [...text] : [text])
+      .map((content, index) => {
+        return `<a:r><a:rPr sz="${String(Math.round(size * 100))}" spc="-100"><a:solidFill><a:srgbClr val="${index ? "00FF00" : color}"/></a:solidFill><a:latin typeface="${family}"/></a:rPr><a:t xml:space="preserve">${content}</a:t></a:r>`;
+      })
+      .join("");
+    return `<p:sp><p:nvSpPr><p:cNvPr id="${String(id)}" name="text-${String(id)}"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${String(x * 12_700)}" y="${String(y * 12_700)}"/><a:ext cx="${String(width * 12_700)}" cy="${String(Math.round(size * 1.4 * 12_700))}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr><p:txBody><a:bodyPr wrap="none" lIns="0" rIns="0" tIns="0" bIns="0" anchor="t"><a:noAutofit/></a:bodyPr><a:lstStyle/><a:p><a:pPr/>${runs}</a:p></p:txBody></p:sp>`;
   };
   const shapes = [
-    shape(2, "05", { x: 10, y: 20, width: 251, size: 192 }),
+    shape(2, topicNumber, {
+      x: 10,
+      y: 20,
+      width: 251,
+      size: 192,
+      split: splitTopicNumber,
+    }),
     shape(3, "guardrails", { x: 300, y: 100, width: 235, size: 49.92 }),
     shape(4, "White ", { x: 50, y: 310, width: 70, size: 20, color: "FFFFFF" }),
     shape(5, "Green", { x: 115, y: 310, width: 70, size: 20, color: "00FF00" }),
