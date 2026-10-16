@@ -1336,6 +1336,9 @@ describe("Morning Brief catalog reconciliation", () => {
         ) => {
           return catalog([
             ...MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.map((name) => {
+              if (name !== definitionName) {
+                return activeDefinition(name, [initialBlueprint]);
+              }
               return retired
                 ? {
                     name,
