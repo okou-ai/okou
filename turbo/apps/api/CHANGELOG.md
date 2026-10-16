@@ -9,6 +9,13 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.749.2](https://github.com/okou-ai/okou/compare/api-v1.749.1...api-v1.749.2) (2026-10-16)
+
+
+### Refactoring
+
+* **api:** own github compose feature-context reads ([#40748](https://github.com/okou-ai/okou/issues/40748)) ([d5d4ef0](https://github.com/okou-ai/okou/commit/d5d4ef0fce0954e38d509c7d17b1307bc60bee8e))
+
 ## [1.749.1](https://github.com/okou-ai/okou/compare/api-v1.749.0...api-v1.749.1) (2026-10-16)
 
 

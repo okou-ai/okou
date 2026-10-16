@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.23.1...runner-remote-v0.24.0) (2026-10-16)
+
+
+### Features
+
+* **cli:** add active ssh and vnc connectivity checks ([#40724](https://github.com/okou-ai/okou/issues/40724)) ([680e006](https://github.com/okou-ai/okou/commit/680e006659273013a0e514f7d38e05c3402496d9))
+
 ## [0.23.1](https://github.com/okou-ai/okou/compare/runner-remote-v0.23.0...runner-remote-v0.23.1) (2026-10-16)
 
 

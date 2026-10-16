@@ -4089,7 +4089,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.234.2"
+version = "0.234.3"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4160,7 +4160,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.14.1"
+version = "0.14.2"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4330,7 +4330,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.23.1"
+version = "0.24.0"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4474,7 +4474,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.17.1"
+version = "0.17.2"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4798,7 +4798,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.52.1"
+version = "0.52.2"
 dependencies = [
  "api-contracts",
  "async-trait",
