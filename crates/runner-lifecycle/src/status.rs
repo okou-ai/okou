@@ -150,7 +150,11 @@ struct PersistenceCoordinator {
 type StatusWriteFuture = Pin<Box<dyn Future<Output = StatusResult<()>> + Send + 'static>>;
 
 enum InFlightStatusWriteState {
-    Active {
+    Unpolled {
+        write: StatusWriteFuture,
+        ordering: OwnedMutexGuard<()>,
+    },
+    PollCommitted {
         write: StatusWriteFuture,
         ordering: OwnedMutexGuard<()>,
     },
@@ -162,7 +166,6 @@ struct InFlightStatusWrite {
     persistence: Arc<PersistenceCoordinator>,
     path: PathBuf,
     generation: u64,
-    started: bool,
 }
 
 impl PersistenceCoordinator {
@@ -234,18 +237,25 @@ impl InFlightStatusWrite {
         generation: u64,
     ) -> Self {
         Self {
-            state: InFlightStatusWriteState::Active { write, ordering },
+            state: InFlightStatusWriteState::Unpolled { write, ordering },
             persistence,
             path,
             generation,
-            started: false,
         }
     }
 
     async fn finish(&mut self) -> StatusResult<()> {
-        self.started = true;
+        // Commit custody before polling, without implying I/O or publication.
+        self.state = match std::mem::replace(&mut self.state, InFlightStatusWriteState::Complete) {
+            InFlightStatusWriteState::Unpolled { write, ordering }
+            | InFlightStatusWriteState::PollCommitted { write, ordering } => {
+                InFlightStatusWriteState::PollCommitted { write, ordering }
+            }
+            InFlightStatusWriteState::Complete => return Ok(()),
+        };
         let result = match &mut self.state {
-            InFlightStatusWriteState::Active { write, .. } => write.as_mut().await,
+            InFlightStatusWriteState::Unpolled { write, .. }
+            | InFlightStatusWriteState::PollCommitted { write, .. } => write.as_mut().await,
             InFlightStatusWriteState::Complete => return Ok(()),
         };
         if result.is_ok() {
@@ -260,10 +270,10 @@ impl InFlightStatusWrite {
 
 impl Drop for InFlightStatusWrite {
     fn drop(&mut self) {
-        if !self.started || std::thread::panicking() {
+        if std::thread::panicking() {
             return;
         }
-        let InFlightStatusWriteState::Active { write, ordering } =
+        let InFlightStatusWriteState::PollCommitted { write, ordering } =
             std::mem::replace(&mut self.state, InFlightStatusWriteState::Complete)
         else {
             return;
@@ -989,6 +999,32 @@ mod tests {
         let status = read_status(&path);
         assert_eq!(status["mode"], "running");
         assert_latest_generation_published(&tracker).await;
+    }
+
+    #[tokio::test]
+    async fn pre_write_task_abort_allows_newer_generation_to_publish() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("status.json");
+        let started = Arc::new(Notify::new());
+        let tracker = Arc::new(StatusTracker::new_with_write_gate(
+            path.clone(),
+            1,
+            Arc::clone(&started),
+            Arc::new(Semaphore::new(0)),
+        ));
+
+        let write_started = started.notified();
+        let write_tracker = Arc::clone(&tracker);
+        let write = tokio::spawn(async move { write_tracker.write_initial().await });
+        write_started.await;
+        write.abort();
+        assert!(write.await.unwrap_err().is_cancelled());
+        assert!(!path.exists());
+
+        // The cancelled generation's gate stays closed while the newer one publishes.
+        tracker.set_mode(RunnerMode::Running).await.unwrap();
+        let status = read_status(&path);
+        assert_eq!(status["mode"], "running");
     }
 
     #[tokio::test(start_paused = true)]
