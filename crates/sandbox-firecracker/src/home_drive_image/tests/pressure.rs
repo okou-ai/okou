@@ -13,6 +13,50 @@ struct AllocationFixture {
 }
 
 #[tokio::test]
+async fn fragmented_sparse_copy_bound_covers_destination_extent_metadata() {
+    use std::os::unix::fs::FileExt;
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("fragmented-source.ext4");
+    let target = root.path().join("fragmented-target.ext4");
+    let unit = nix::sys::statvfs::statvfs(root.path())
+        .unwrap()
+        .fragment_size();
+    let logical = 4096 * unit;
+    let file = std::fs::OpenOptions::new()
+        .create_new(true)
+        .read(true)
+        .write(true)
+        .open(&source)
+        .unwrap();
+    file.set_len(logical).unwrap();
+    let data = vec![7; unit as usize];
+    for extent in 0..2048 {
+        file.write_all_at(&data, extent * 2 * unit).unwrap();
+    }
+    file.sync_all().unwrap();
+    let bound = sandbox::home_drive_copy_peak_bytes_from_file(&file, logical, unit);
+    prepare_home_drive_image(
+        &target,
+        &sandbox::HomeDriveConfig {
+            size_mb: u32::try_from(logical / (1024 * 1024)).unwrap(),
+            seed_image: Some(HomeDriveSeedImage::Copy(source)),
+            space_reserve: HomeDriveSpaceReserve::default(),
+        },
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let copied = std::fs::File::open(&target).unwrap();
+    copied.sync_all().unwrap();
+    let allocated = copied.metadata().unwrap().blocks() * 512;
+    assert!(
+        allocated <= bound.saturating_add(8192),
+        "copied image allocation {allocated} exceeds sparse data bound {bound} plus metadata allowance"
+    );
+}
+
+#[tokio::test]
 async fn nonregular_copy_observation_is_bounded_and_integer_rounding_stays_conservative() {
     use std::io::{Seek, SeekFrom};
     use std::os::unix::fs::OpenOptionsExt;

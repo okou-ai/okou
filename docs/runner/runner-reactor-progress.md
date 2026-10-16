@@ -262,8 +262,9 @@ image-derived storage/history preparation before creating the replacement.
 
 Runtime home configurations carry the same max(10% capacity, 50 GiB) reserve as
 cache publication. Firecracker queries the actual destination filesystem before
-fresh creation, Copy or EXDEV copy. Copy demand uses conservatively rounded
-logical data extents, with a full-logical bound when observation is unavailable;
+fresh creation, Copy or EXDEV copy. Copy demand includes rounded logical data
+extents and per-extent allocation metadata, with a full-logical bound when
+observation is unavailable;
 source physical block counts alone are not a destination allocation bound.
 Fresh images conservatively need their logical size, and both need metadata
 headroom. A reclaim result never grants allocation: the provider rereads actual
@@ -274,11 +275,11 @@ against other writers or a guarantee about future guest growth. Same-filesystem
 rename still performs ordinary filesystem I/O and can fail.
 
 Successful routine completion emits `entry_count` (the unlocked candidate
-count), `inventory_us`, cumulative `capacity_lock_held_us` (both held phases,
-excluding acquisition waits), `budget_gc` and `freed_bytes`. Deferred final
-admission reports the inventory and initial held durations. Pressure collection
-includes its fresh scan in the held duration. These are phase observations, not
-production cold-start savings or wall-clock performance guarantees. The ignored
+count), `inventory_us`, cumulative `capacity_lock_held_us` (all held phases,
+excluding acquisition waits and unlocked inventory), `budget_gc` and `freed_bytes`.
+Deferred final admission reports the inventory and initial held durations. These
+are phase observations, not production cold-start savings or wall-clock
+performance guarantees. The ignored
 `measure_routine_gc_inventory_and_capacity_hold` owner test prints representative
 local measurements without latency thresholds. It uses temporary files and the
 owner tests' injected filesystem budget, so it does not measure production

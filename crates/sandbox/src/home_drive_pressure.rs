@@ -24,7 +24,7 @@ fn full_copy_peak(logical_bytes: u64, allocation_unit: u64) -> u64 {
     logical_bytes.div_ceil(unit).saturating_mul(unit)
 }
 
-/// Bound copied data from logical extents rather than source physical blocks.
+/// Bound copied data and extent metadata rather than source physical blocks.
 /// The caller owns source stability and runs this filesystem work off-runtime.
 /// Unsupported, changing or excessively fragmented observations use the full
 /// logical bound; no source bytes are read to discover sparse regions.
@@ -111,9 +111,15 @@ pub fn home_drive_copy_peak_bytes_from_file(
             if hole <= data || hole as u64 > logical_bytes || (data as u64) < position {
                 return full;
             }
-            bytes = bytes.saturating_add(
-                full_copy_peak(hole as u64, unit).saturating_sub(data as u64 / unit * unit),
-            );
+            // A sparse destination also allocates extent-index blocks. Charge
+            // one allocation unit per observed extent instead of assuming the
+            // caller's fixed inode/directory allowance covers fragmentation.
+            // The full logical estimate remains the conservative upper choice.
+            bytes = bytes
+                .saturating_add(
+                    full_copy_peak(hole as u64, unit).saturating_sub(data as u64 / unit * unit),
+                )
+                .saturating_add(unit);
             position = hole as u64;
         }
     }
