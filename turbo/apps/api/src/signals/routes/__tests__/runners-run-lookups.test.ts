@@ -65,6 +65,7 @@ describe("Runner run lookup ownership", () => {
       expect(claimed.body).toMatchObject({
         prompt: "the owner's queued lookup",
         isFirstRun: true,
+        cliAgentType: "claude-code",
       });
       await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
         status: "running",
@@ -91,7 +92,16 @@ describe("Runner run lookup ownership", () => {
       expect(foreign.body.error.message).toBe("Run does not belong to user");
 
       await webhooks.requestAgentComplete(
-        { runId: run.runId, exitCode: 0 },
+        {
+          runId: run.runId,
+          exitCode: 0,
+          lastEventSequence: 0,
+          completion: {
+            cliAgentType: "claude-code",
+            cliAgentSessionId: run.runId,
+            cliAgentSessionHistoryDisposition: "native_only",
+          },
+        },
         { authorization: `Bearer ${claimed.body.sandboxToken}` },
         [200],
       );
@@ -134,8 +144,18 @@ describe("Runner run lookup ownership", () => {
         prompt: "complete this lookup first",
       });
       const firstClaim = await owned.claimRunnerRun(first.runId);
+      expect(firstClaim.cliAgentType).toBe("claude-code");
       await webhooks.requestAgentComplete(
-        { runId: first.runId, exitCode: 0 },
+        {
+          runId: first.runId,
+          exitCode: 0,
+          lastEventSequence: 0,
+          completion: {
+            cliAgentType: "claude-code",
+            cliAgentSessionId: first.runId,
+            cliAgentSessionHistoryDisposition: "native_only",
+          },
+        },
         { authorization: `Bearer ${firstClaim.sandboxToken}` },
         [200],
       );
