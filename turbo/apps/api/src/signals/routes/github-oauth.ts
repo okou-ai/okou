@@ -35,7 +35,7 @@ import {
   isGithubOauthStateSignatureValid,
   linkGithubUser$,
   loadActiveGithubInstallationForOrg$,
-  loadComposeFeatureSwitchContext,
+  loadComposeFeatureSwitchContext$,
   parseGithubOauthState,
   resolveGithubOauthOrgId$,
   tryLinkGithubFromLocalRecord$,
@@ -920,7 +920,7 @@ const completeGithubAppInstallationCallback$ = command(
     },
     signal: AbortSignal,
   ): Promise<Response> => {
-    const db = set(writeDb$);
+    set(writeDb$);
     const orgId = await set(
       resolveGithubOauthOrgId$,
       {
@@ -972,8 +972,9 @@ const completeGithubAppInstallationCallback$ = command(
         { appId: args.appId, privateKey: args.privateKey, installationId },
         signal,
       );
-    const featureSwitchContext = await loadComposeFeatureSwitchContext(
-      { db, composeId: args.composeId, userId: args.state.userId },
+    const featureSwitchContext = await set(
+      loadComposeFeatureSwitchContext$,
+      { composeId: args.composeId, userId: args.state.userId },
       signal,
     );
     const installRecordId = await set(
