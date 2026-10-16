@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.7](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.14.6...runner-lifecycle-v0.14.7) (2026-10-16)
+
+
+### Bug Fixes
+
+* **runner:** preserve unused home cache until seed handoff ([#40467](https://github.com/okou-ai/okou/issues/40467)) ([3af329d](https://github.com/okou-ai/okou/commit/3af329d2001560a53ec2525e6c4cc9e9c375c6ae))
+
 ## [0.14.6](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.14.5...runner-lifecycle-v0.14.6) (2026-10-15)
 
 ## [0.14.5](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.14.4...runner-lifecycle-v0.14.5) (2026-10-15)

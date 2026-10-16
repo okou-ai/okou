@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.9](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.16.8...runner-supervisor-v0.16.9) (2026-10-16)
+
+
+### Bug Fixes
+
+* **runner:** preserve unused home cache until seed handoff ([#40467](https://github.com/okou-ai/okou/issues/40467)) ([3af329d](https://github.com/okou-ai/okou/commit/3af329d2001560a53ec2525e6c4cc9e9c375c6ae))
+
 ## [0.16.8](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.16.7...runner-supervisor-v0.16.8) (2026-10-15)
 
 ## [0.16.7](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.16.6...runner-supervisor-v0.16.7) (2026-10-15)

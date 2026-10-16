@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.396.0](https://github.com/okou-ai/okou/compare/cli-v9.395.0...cli-v9.396.0) (2026-10-16)
+
+
+### Features
+
+* add interactive desktop shell sessions ([#40349](https://github.com/okou-ai/okou/issues/40349)) ([6dda0aa](https://github.com/okou-ai/okou/commit/6dda0aad6903feb490f88cd11db2145b140dfd1d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.569.0
+    * @okouai/core bumped to 8.762.0
+    * @okouai/pi-agent-runtime bumped to 1.50.9
+
 ## [9.395.0](https://github.com/okou-ai/okou/compare/cli-v9.394.0...cli-v9.395.0) (2026-10-15)
 
 
