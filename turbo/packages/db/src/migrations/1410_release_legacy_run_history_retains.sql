@@ -49,7 +49,7 @@ WITH batch AS MATERIALIZED (
     -- Recheck on the winning Run row, rather than clearing a captured old value.
     AND NOT (
       r.status = 'completed' AND r.chat_thread_id IS NOT NULL
-      AND r.completed_at >= statement_timestamp() - interval '10 days'
+      AND r.completed_at >= (statement_timestamp() AT TIME ZONE 'UTC') - interval '10 days'
       AND coalesce(r.launch_snapshot->>'framework', r.framework, '') = 'pi'
     )
   RETURNING b.hash

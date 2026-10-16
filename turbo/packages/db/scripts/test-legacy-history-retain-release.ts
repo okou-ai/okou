@@ -66,7 +66,7 @@ try {
     -- A whole first batch is protected; it must not terminate the cursor loop.
     INSERT INTO agent_runs (id, legacy_conversation_history_hash, completed_at, framework, chat_thread_id)
     SELECT ('00000000-0000-0000-0000-' || lpad(i::text,12,'0'))::uuid,
-      lpad(to_hex(i),64,'0'), now() - interval '1 day', 'pi', gen_random_uuid()
+      lpad(to_hex(i),64,'0'), now() - interval '9 days 12 hours', 'pi', gen_random_uuid()
     FROM generate_series(1,500) i;
     INSERT INTO agent_runs (id, legacy_conversation_history_hash, completed_at, framework, launch_snapshot)
     SELECT ('00000000-0000-0000-0000-' || lpad(i::text,12,'0'))::uuid,
@@ -114,6 +114,9 @@ try {
     await sql`SELECT to_jsonb(b) - 'ref_count' AS row FROM blobs b ORDER BY hash`,
   );
   process.chdir(directory);
+  // completed_at stores UTC without a zone. A migration connection's zone
+  // must not shorten the Memory admission window at its ten-day boundary.
+  await sql.unsafe("SET TIME ZONE 'Pacific/Kiritimati'");
   // A failure while decrementing a later batch must roll back that batch's
   // clears too, without undoing or reapplying the previously committed batch.
   await sql.unsafe(`ALTER TABLE blobs ADD CONSTRAINT reject_test_release
