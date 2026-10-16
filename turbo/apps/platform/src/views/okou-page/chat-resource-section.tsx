@@ -39,7 +39,7 @@ export function ChatResourceSectionHeading({
           <Button
             variant="quiet"
             size="xs"
-            className="px-1.5 text-xs leading-4.5 font-normal text-muted-foreground hover:bg-gray-50 focus-visible:bg-gray-50"
+            className="px-1.5 text-xs leading-4.5 font-normal text-muted-foreground hover:bg-gray-50 focus-visible:bg-gray-50 focus-visible:ring-1 focus-visible:ring-border focus-visible:ring-inset focus-visible:ring-offset-0"
             aria-expanded={preview.expanded}
             onClick={preview.onToggle}
           >
