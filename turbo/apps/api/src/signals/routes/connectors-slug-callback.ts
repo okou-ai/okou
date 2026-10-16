@@ -56,7 +56,7 @@ import {
 } from "../services/connector-data.service";
 import { resolveOAuthRequestedScopeSnapshot } from "../services/connector-oauth-scope-snapshot.service";
 import {
-  linkGithubUser,
+  linkGithubUser$,
   loadActiveGithubInstallationForOrg$,
 } from "../services/github-oauth.service";
 import { safeJsonParse, tapError } from "../utils";
@@ -486,7 +486,7 @@ const linkGithubIntegrationAfterConnectorConnect$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const db = set(writeDb$);
+    set(writeDb$);
     if (args.connectorSlug !== "github") {
       return;
     }
@@ -502,9 +502,9 @@ const linkGithubIntegrationAfterConnectorConnect$ = command(
       return;
     }
 
-    const githubUserId = await linkGithubUser(
+    const githubUserId = await set(
+      linkGithubUser$,
       {
-        db,
         installRecordId: installation.id,
         userId: args.identity.userId,
         knownGithubUserId: args.token.userInfo.id,
