@@ -238,6 +238,14 @@ includes its compilation and linking work; these timings do not isolate linker
 CPU time, and overlapping unit durations do not add up to total build wall time.
 Timing uploads are best-effort diagnostics and do not replace the coverage result.
 
+The job also logs the count and summed file bytes of its fresh raw profiles.
+The `rust-coverage-profile-evidence-<attempt>` artifact retains those statistics
+and the fresh LCOV report for seven days. Match its attempt and source checkout
+when comparing coverage or collection cost; asynchronous hit counts can vary.
+Raw-profile file bytes measure retained data footprint, not physical writes,
+process memory or runner cost. Evidence uploads are bounded diagnostics and
+cannot replace a failed coverage run.
+
 ## Test Organization
 
 Guest CLI integration executables share compiled neutral fixtures through
