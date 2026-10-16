@@ -71,7 +71,7 @@ function slashQuietRowState(marked: boolean): string {
 // The row the pointer or the keyboard has marked. Pointing at Browse all takes
 // the mark off it, so the only fill in the index is the one under the pointer,
 // while the preview keeps showing the type it last opened.
-const SLASH_ROW_MARKED =
+export const SLASH_ROW_MARKED =
   "bg-state-selected hover:bg-state-selected-hover group-has-[[data-slot=slash-browse-all]:hover]/slash-panel:bg-transparent";
 
 // A workflow description is written for the agent and often runs a paragraph,
@@ -267,7 +267,11 @@ function SlashCustomTemplateCovers({
   });
 }
 
-function SlashTemplateDetailPane({
+/**
+ * The covers of one category, filling a positioned pane. Shared by the type
+ * preview and the slash-actions Templates list.
+ */
+export function SlashTemplateCovers({
   category,
   onSelectTemplate,
 }: {
@@ -286,13 +290,7 @@ function SlashTemplateDetailPane({
       : slashTemplatePreviews(category);
   const nativeAspect = isSlashTemplateNativeAspectCategory(category);
   return (
-    <div
-      className="relative w-[400px] max-w-1/2 shrink-0 overflow-hidden border-l border-border/60"
-      role="region"
-      aria-label={slashTemplateCategoryLabel(category)}
-      data-slot="slash-template-detail"
-      data-category={category}
-    >
+    <>
       {/*
         No top or bottom padding: the covers scroll all the way to the panel's
         top and bottom edges, so a half-visible row reads as more content
@@ -361,6 +359,32 @@ function SlashTemplateDetailPane({
           </div>
         </div>
       </div>
+    </>
+  );
+}
+
+function SlashTemplateDetailPane({
+  category,
+  onSelectTemplate,
+}: {
+  readonly category: SlashTemplateCategory;
+  readonly onSelectTemplate: (
+    preview: SlashTemplatePreview,
+    category: SlashTemplateCategory,
+  ) => void;
+}) {
+  return (
+    <div
+      className="relative w-[400px] max-w-1/2 shrink-0 overflow-hidden border-l border-border/60"
+      role="region"
+      aria-label={slashTemplateCategoryLabel(category)}
+      data-slot="slash-template-detail"
+      data-category={category}
+    >
+      <SlashTemplateCovers
+        category={category}
+        onSelectTemplate={onSelectTemplate}
+      />
     </div>
   );
 }
