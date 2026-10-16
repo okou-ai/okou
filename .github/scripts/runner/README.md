@@ -16,6 +16,7 @@ Native behavior scenarios and their fixtures belong to the
 | Group reconciliation and startup                                 | `reconcile-runner-binary-groups.sh`, `reconcile-and-start-runner-groups.sh`                                                                                             |
 | Lifecycle ownership and cleanup                                  | `with-runner-lifecycle-lock.sh`, `cleanup-pr-runner-namespace.sh`, `discover-runner-pr-namespaces.sh`, `prune-runner-idle.sh`                                           |
 | Native test binary build and artifact transport                  | `runner-native-test-artifact.sh`                                                                                                                                        |
+| Private CLI input discovery for host E2E                         | `resolve-runner-cli-artifact.sh`                                                                                                                                        |
 | Cloudflare SSH setup, probes, guarded operations and diagnostics | `cloudflare-ssh-proxy.sh`, `cloudflare-ssh-preconnect.sh`, `cloudflare-ssh-command.sh`, `cloudflare-ssh-diagnostics.sh`                                                 |
 
 The target, guest inventory, binary download/GitHub and SSH diagnostic files expose

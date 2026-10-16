@@ -26,7 +26,7 @@ for action in ['github/codeql-action/init@', 'github/codeql-action/analyze@']:
 ts_jobs = ['lint-eslint', 'lint-style', 'lint-types', 'lint-type-app', 'lint-type-api',
            'lint-format', 'lint-knip', 'test-cli', 'test-app', 'test-api',
            'test-other']
-artifacts = ['deploy-app', 'deploy-cli']
+artifacts = ['deploy-app']
 
 def context(ios=True, ts=False, event='pull_request', release=False):
     values = {
@@ -41,6 +41,8 @@ def context(ios=True, ts=False, event='pull_request', release=False):
         'needs.detect-native-only.outputs.ios-only': str(ios).lower(),
         'needs.prepare.outputs.turbo-runner-consumer-needed': 'false',
         'needs.prepare.outputs.playwright-runner-consumer-needed': 'false',
+        'needs.prepare.outputs.cli-e2e-consumer-needed': str(not ios and not release).lower(),
+        'needs.prepare.outputs.job-ref': 'pr-42',
     }
     for job in set(turbo) | set(security):
         values[f'needs.{job}.result'] = 'success'
@@ -70,6 +72,16 @@ def gate(jobs, name, values, expected):
     assert (result.returncode == 0) == expected, result.stdout + result.stderr
 
 native = context()
+for event in ['pull_request', 'merge_group', 'push']:
+    selected = context(ios=False, ts=True, event=event)
+    for name in ['prepare-cli', 'cli-e2e-01-serial']:
+        assert condition(turbo[name], selected), name
+        for failure in ['failure', 'cancelled', 'skipped']:
+            gate(turbo, 'ci-gate-turbo', selected | {f'needs.{name}.result': failure}, False)
+for name in ['prepare-cli', 'cli-e2e-01-serial']:
+    assert not condition(turbo[name], native), name
+    gate(turbo, 'ci-gate-turbo', native | {f'needs.{name}.result': 'skipped'}, True)
+
 for result in ['failure', 'cancelled', 'skipped']:
     blocked = context(ios=False, ts=True) | {'needs.ci-admission.result': result}
     assert not condition(turbo['detect-release'], blocked)

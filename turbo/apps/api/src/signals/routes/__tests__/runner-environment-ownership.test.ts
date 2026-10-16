@@ -52,7 +52,6 @@ describe("runner environment ownership", () => {
     // Platform-owned values reach the Runner only as trusted platform
     // environment, never as Agent environment entries.
     expect(claim.platformEnvironment).toMatchObject({
-      CLI_PKG_URL: expect.any(String),
       OKOU_TOKEN: expect.any(String),
       OKOU_AGENT_ID: agent.agentId,
     });

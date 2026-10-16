@@ -637,7 +637,6 @@ async function setupOwnedTeamsSteering() {
     "MICROSOFT_TEAMS_BOT_APP_PASSWORD",
     "MICROSOFT_TEAMS_BOT_TOKEN_URL",
     "GIT_COMMIT_SHA",
-    "CLI_PKG_URL",
     "GCP_LLM_PROJECT_ID",
   ]);
   const owner = publicRunOwner(context, teams.actor, { restoreEnvironment });

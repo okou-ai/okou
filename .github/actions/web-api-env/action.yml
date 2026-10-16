@@ -33,10 +33,6 @@ inputs:
     description: "Backend API URL; required for API deployments, optional for web proxy routes"
     required: false
     default: ""
-  cli-pkg-url:
-    description: "Commit-addressed Okou CLI npm-format package URL"
-    required: false
-    default: ""
 
 runs:
   using: "composite"
@@ -52,7 +48,6 @@ runs:
         INPUT_WEB_URL: ${{ inputs.web-url }}
         INPUT_APP_URL: ${{ inputs.app-url }}
         INPUT_API_BACKEND_URL: ${{ inputs.api-backend-url }}
-        INPUT_CLI_PKG_URL: ${{ inputs.cli-pkg-url }}
       run: |
         set -euo pipefail
         set +x
@@ -250,15 +245,10 @@ runs:
           add_var GCP_LLM_PROJECT_ID GCP_LLM_PROJECT_ID
           add_var GCP_LLM_WORKLOAD_IDENTITY_PROVIDER GCP_LLM_WORKLOAD_IDENTITY_PROVIDER
           add_var GCP_LLM_SERVICE_ACCOUNT_EMAIL GCP_LLM_SERVICE_ACCOUNT_EMAIL
-          if [[ -z "$INPUT_CLI_PKG_URL" ]]; then
-            echo "::error::cli-pkg-url is required for API deployments"
-            exit 1
-          fi
           add_env FEISHU_CALLBACK_BASE_URL "$api_backend_url"
           add_env FINICITY_WEBHOOK_BASE_URL "$api_backend_url"
           add_env OKOU_WEB_URL "$web_url"
           add_env ENV "$deploy_env"
-          add_env CLI_PKG_URL "$INPUT_CLI_PKG_URL"
           add_env PI_MEMORY_BACKGROUND_WORKERS_ENABLED "$pi_memory_background_workers_enabled"
           if [[ "$INPUT_ENVIRONMENT" == "preview" && -n "$INPUT_JOB_REF" ]]; then
             add_env OKOU_PREVIEW_JOB_REF "$INPUT_JOB_REF"

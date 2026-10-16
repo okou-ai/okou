@@ -29,7 +29,7 @@ ts_checks = [
 ]
 validation = ts_checks + ['file-size-check', 'test-migrate', 'lint-runtime-api-compat']
 deployed = [
-    'deploy-api', 'deploy-app', 'deploy-cli', 'deploy-runner-prepare', 'deploy-runner-start',
+    'deploy-api', 'deploy-app', 'prepare-cli', 'deploy-runner-prepare', 'deploy-runner-start',
     'cli-e2e-01-serial', 'cli-e2e-02-browser', 'cli-e2e-02-playwright',
 ]
 finalizers = ['cli-e2e-02-playwright-finalize', 'cli-e2e-03-runner-cleanup']
@@ -58,6 +58,7 @@ def context(event='push', run_id='100'):
         'needs.prepare.outputs.job-ref': 'staging' if event == 'push' else 'pr-42',
         'needs.prepare.outputs.turbo-runner-consumer-needed': 'false' if event == 'push' else 'true',
         'needs.prepare.outputs.playwright-runner-consumer-needed': 'true',
+        'needs.prepare.outputs.cli-e2e-consumer-needed': 'true',
     }
     for changed in ['api', 'cli', 'platform', 'migration', 'crates', 'ci', 'e2e']:
         values[f'needs.prepare.outputs.{changed}-changed'] = 'true'
@@ -155,7 +156,6 @@ with tempfile.TemporaryDirectory() as temporary:
                        INPUT_JOB_REF='staging', INPUT_WEB_URL='https://staging.invalid',
                        INPUT_APP_URL='https://staging-app.invalid',
                        INPUT_API_BACKEND_URL='https://staging-api.invalid',
-                       INPUT_CLI_PKG_URL='https://static.invalid/cli/package.tgz',
                        REPO_VARS_JSON='{}', DOPPLER_SECRETS_JSON=json.dumps(doppler))
 
     def render_preview(secrets):
@@ -229,7 +229,7 @@ gate(push, True)
 for name in deployed + [name for name in validation if name in needs(jobs['ci-gate-turbo'])]:
     for failure in ['failure', 'cancelled']:
         gate(push | {f'needs.{name}.result': failure}, False)
-for name in ['deploy-app', 'deploy-cli', 'deploy-runner-prepare', 'deploy-runner-start']:
+for name in ['deploy-app', 'prepare-cli', 'cli-e2e-01-serial', 'deploy-runner-prepare', 'deploy-runner-start']:
     gate(push | {f'needs.{name}.result': 'skipped'}, False)
 for name in finalizers:
     assert condition(jobs[name], push | {'needs.cli-e2e-02-playwright.result': 'failure'})

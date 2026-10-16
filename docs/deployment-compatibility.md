@@ -88,11 +88,14 @@ differ, so launch payloads and model configurations must remain compatible with
 supported Runner builds. Deploy a new CLI reader in the Runner before activating
 an API writer that requires it; model-config generation capabilities gate claims.
 
-Run contexts can still capture CLI package URLs for explicit tool invocations,
-and draining Runners can use those URLs for Pi startup. Keep the exact captured
-package available through queueing, execution, and finalization until those
-consumers and rollback builds have drained. Package publication alone does not
-retire an API/Runner protocol.
+Current Run contexts use the installed CLI and do not capture a package URL.
+Historical contexts can still reference packages used by earlier Guests or
+explicit tool invocations. Keep those immutable objects available through their
+queueing, execution and finalization; removing the URL producer does not authorize
+deleting historical bytes. Before removing a startup download path, verify that
+old Runner instances have exited and exclude incompatible Runner artifacts from
+the supported rollback workflow. A paired API rollback alone is insufficient
+when that workflow starts Runner before changing the serving API.
 
 Never replace a captured package's bytes or redirect its historical URL to a
 newer package.

@@ -84,11 +84,6 @@ export default defineConfig({
     if (!isWatchMode) {
       return;
     }
-    console.log("Uploading Okou CLI for local runners...");
-    execSync("pnpm --workspace-root deploy-cli:local", {
-      stdio: "inherit",
-    });
-    console.log("Okou CLI uploaded for local runners");
     console.log("Installing Okou CLI globally...");
     execSync("sudo npm link --local", { cwd: "dist", stdio: "inherit" });
     console.log("Okou CLI installed globally");

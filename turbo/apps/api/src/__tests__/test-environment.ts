@@ -35,7 +35,6 @@ export const apiTestEnvironment = {
   FEISHU_CALLBACK_BASE_URL: "http://localhost:3000",
   OKOU_WEB_URL: "http://localhost:3001",
   APP_URL: "http://localhost:3002",
-  CLI_PKG_URL: `https://static.okou.io/okou-cli/${testApiCommit}/package.tgz`,
   RESEND_API_KEY: "test-resend-key",
   RESEND_WEBHOOK_SECRET: "whsec_test",
   RESEND_FROM_DOMAIN: "mail.example.com",

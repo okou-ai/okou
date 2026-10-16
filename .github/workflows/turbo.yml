@@ -332,6 +332,7 @@ jobs:
       e2e-changed: ${{ steps.detect.outputs.e2e-changed }}
       turbo-runner-consumer-needed: ${{ steps.runner-e2e.outputs.turbo-runner-consumer-needed }}
       playwright-runner-consumer-needed: ${{ steps.playwright-runner.outputs.playwright-runner-consumer-needed }}
+      cli-e2e-consumer-needed: ${{ steps.cli-e2e.outputs.cli-e2e-consumer-needed }}
       base-ref: ${{ steps.detect.outputs.base-ref }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -397,7 +398,7 @@ jobs:
             echo "crates-changed=false" >> "$GITHUB_OUTPUT"
           fi
 
-          if printf '%s\n' "$CHANGED_FILES" | grep -qE "^\.github/workflows/(turbo|staging|benchmark|crates|runner-image(-architecture)?)\.yml$|^\.github/actions/(setup-r2-sccache|setup-ssh-tunnel|provision)/|^\.github/scripts/|^ansible/"; then
+          if printf '%s\n' "$CHANGED_FILES" | grep -qE "^\.github/workflows/(turbo|staging|benchmark|crates|runner-image(-architecture)?)\.yml$|^\.github/actions/(build-runner-cli|setup-r2-sccache|setup-ssh-tunnel|provision)/|^\.github/scripts/|^ansible/"; then
             echo "CI workflow changes detected"
             echo "ci-changed=true" >> "$GITHUB_OUTPUT"
           else
@@ -423,6 +424,16 @@ jobs:
           CI_CHANGED: ${{ steps.detect.outputs.ci-changed }}
           E2E_CHANGED: ${{ steps.detect.outputs.e2e-changed }}
         run: .github/scripts/runner/runner-image-context.sh turbo-consumer
+
+      - name: Select host CLI E2E consumer
+        id: cli-e2e
+        env:
+          API_CHANGED: ${{ steps.detect.outputs.api-changed }}
+          CLI_CHANGED: ${{ steps.detect.outputs.cli-changed }}
+          CRATES_CHANGED: ${{ steps.detect.outputs.crates-changed }}
+          CI_CHANGED: ${{ steps.detect.outputs.ci-changed }}
+          E2E_CHANGED: ${{ steps.detect.outputs.e2e-changed }}
+        run: .github/scripts/runner/runner-image-context.sh cli-consumer
 
       - name: Select Playwright runner consumer
         id: playwright-runner
@@ -1192,7 +1203,6 @@ jobs:
           web-url: ${{ needs.prepare.outputs.api-preview-url }}
           app-url: ${{ needs.prepare.outputs.app-preview-url }}
           api-backend-url: ${{ needs.prepare.outputs.api-preview-url }}
-          cli-pkg-url: https://static.okou.io/okou-cli/${{ github.sha }}/package.tgz
         env:
           REPO_VARS_JSON: ${{ toJSON(vars) }}
           REPO_SECRETS_JSON: ${{ toJSON(secrets) }}
@@ -1256,7 +1266,6 @@ jobs:
           web-url: ${{ needs.prepare.outputs.api-preview-url }}
           app-url: ${{ needs.prepare.outputs.app-preview-url }}
           api-backend-url: ${{ needs.prepare.outputs.api-preview-url }}
-          cli-pkg-url: https://static.okou.io/okou-cli/${{ github.sha }}/package.tgz
         env:
           REPO_VARS_JSON: ${{ toJSON(vars) }}
           REPO_SECRETS_JSON: ${{ toJSON(secrets) }}
@@ -1997,248 +2006,47 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-  # Build one self-contained package archive per checked-out commit and upload
-  # it to the same canonical R2 bucket used by deploy-app. The ready marker is
-  # written last so PR, merge-group, main, and release runs can safely reuse it.
-  deploy-cli:
-    needs: [detect-release, detect-turbo-ts-checks]
+  # Discover the same private input embedded by Runner Image, without compiling
+  # or publishing another package. API deployment has no dependency on this job.
+  prepare-cli:
+    needs: [prepare]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    concurrency:
-      group: deploy-cli-${{ github.sha }}
-      cancel-in-progress: false
-    container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+    timeout-minutes: 20
     if: >-
-      ${{
-        !cancelled() &&
-        (
-          needs.detect-release.outputs.skip == 'true' ||
-          (needs.detect-turbo-ts-checks.result == 'success' && needs.detect-turbo-ts-checks.outputs.ios-only == 'false')
-        ) &&
-        github.actor != 'dependabot[bot]' &&
-        (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-      }}
-    permissions:
-      contents: read
-    defaults:
-      run:
-        shell: bash
-    env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.R2_STATIC_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_STATIC_SECRET_ACCESS_KEY }}
-      AWS_DEFAULT_REGION: auto
-      CLI_STATIC_BASE_URL: https://static.okou.io
-      R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
-      R2_BUCKET_NAME: ${{ vars.R2_STATIC_BUCKET_NAME }}
+      needs.prepare.outputs.job-ref != '' &&
+      needs.prepare.outputs.cli-e2e-consumer-needed == 'true' &&
+      github.actor != 'dependabot[bot]' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    outputs:
+      producer-run-id: ${{ steps.cli-input.outputs.run-id }}
+      artifact-id: ${{ steps.cli-input.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-        with:
-          version: 10.33.4
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: turbo/pnpm-lock.yaml
-      - name: Initialize pnpm cache directory
-        run: mkdir -p "$(pnpm store path --silent)"
-      - name: Configure git safe directory
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-
-      - name: Install AWS CLI
-        run: |
-          architecture="$(dpkg --print-architecture)"
-          case "$architecture" in
-            amd64) aws_architecture="x86_64" ;;
-            arm64) aws_architecture="aarch64" ;;
-            *) echo "Unsupported architecture: $architecture" >&2; exit 1 ;;
-          esac
-
-          curl -fsSL --retry 3 \
-            "https://awscli.amazonaws.com/awscli-exe-linux-${aws_architecture}.zip" \
-            --output /tmp/awscliv2.zip
-          python3 -m zipfile -e /tmp/awscliv2.zip /tmp/awscli
-          chmod +x /tmp/awscli/aws/install /tmp/awscli/aws/dist/aws
-          /tmp/awscli/aws/install
-          aws --version
-
-          # Keep R2 transfers on classic after the AWS CLI 2.38 CRT default change.
-          aws configure set s3.preferred_transfer_client classic
-
-      - name: Resolve artifact commit SHA
-        id: artifact
-        run: |
-          sha="$(bash .github/scripts/resolve-build-commit-sha.sh)"
-          prefix="okou-cli/$sha"
-          {
-            echo "sha=$sha"
-            echo "prefix=$prefix"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Check for existing artifact
-        id: existing
+      - name: Resolve private Runner CLI input
+        id: cli-input
         env:
-          ARTIFACT_PREFIX: ${{ steps.artifact.outputs.prefix }}
-        run: |
-          set -euo pipefail
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          LOOKUP_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: bash .github/scripts/runner/resolve-runner-cli-artifact.sh
 
-          : "${AWS_ACCESS_KEY_ID:?R2_STATIC_ACCESS_KEY_ID secret is required}"
-          : "${AWS_SECRET_ACCESS_KEY:?R2_STATIC_SECRET_ACCESS_KEY secret is required}"
-          : "${R2_ACCOUNT_ID:?R2_ACCOUNT_ID variable is required}"
-          : "${R2_BUCKET_NAME:?R2_STATIC_BUCKET_NAME variable is required}"
-
-          r2_endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-          ready_key="${ARTIFACT_PREFIX}/ready.json"
-          error_log="$(mktemp)"
-
-          set +e
-          aws s3api head-object \
-            --endpoint-url "$r2_endpoint" \
-            --bucket "$R2_BUCKET_NAME" \
-            --key "$ready_key" \
-            >/dev/null 2>"$error_log"
-          status=$?
-          set -e
-
-          if (( status == 0 )); then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Artifact already ready: s3://${R2_BUCKET_NAME}/${ARTIFACT_PREFIX}/"
-          elif grep -Eq '404|NotFound|Not Found|NoSuchKey' "$error_log"; then
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          else
-            cat "$error_log" >&2
-            exit "$status"
-          fi
-
-      - name: Install CLI dependencies
-        if: steps.existing.outputs.exists != 'true'
-        run: cd turbo && pnpm install --frozen-lockfile --filter @okouai/cli...
-      - name: Build CLI
-        if: steps.existing.outputs.exists != 'true'
-        run: cd turbo && pnpm --filter @okouai/cli build
-        env:
-          DEFAULT_SENTRY_DSN: ${{ vars.SENTRY_DSN_CLI }}
-
-      - name: Create canonical CLI artifact
-        if: steps.existing.outputs.exists != 'true'
-        env:
-          ARTIFACT_SHA: ${{ steps.artifact.outputs.sha }}
-        run: |
-          mkdir -p /tmp/okou-cli-artifact
-          bash .github/scripts/artifacts/build-okou-cli-artifact.sh \
-            "$ARTIFACT_SHA" \
-            /tmp/okou-cli-artifact
-
-      - name: Upload canonical CLI artifact
-        if: steps.existing.outputs.exists != 'true'
-        env:
-          ARTIFACT_PREFIX: ${{ steps.artifact.outputs.prefix }}
-        run: |
-          set -euo pipefail
-
-          r2_endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-          artifact_uri="s3://${R2_BUCKET_NAME}/${ARTIFACT_PREFIX}"
-          cache_control="public, max-age=31536000, immutable"
-
-          aws s3 rm "$artifact_uri/" \
-            --endpoint-url "$r2_endpoint" \
-            --recursive
-
-          aws s3api put-object \
-            --endpoint-url "$r2_endpoint" \
-            --bucket "$R2_BUCKET_NAME" \
-            --key "${ARTIFACT_PREFIX}/package.tgz" \
-            --body /tmp/okou-cli-artifact/package.tgz \
-            --content-type application/gzip \
-            --cache-control "$cache_control"
-
-          aws s3api put-object \
-            --endpoint-url "$r2_endpoint" \
-            --bucket "$R2_BUCKET_NAME" \
-            --key "${ARTIFACT_PREFIX}/manifest.json" \
-            --body /tmp/okou-cli-artifact/manifest.json \
-            --content-type application/json \
-            --cache-control "$cache_control"
-
-          aws s3api put-object \
-            --endpoint-url "$r2_endpoint" \
-            --bucket "$R2_BUCKET_NAME" \
-            --key "${ARTIFACT_PREFIX}/ready.json" \
-            --body /tmp/okou-cli-artifact/ready.json \
-            --content-type application/json \
-            --cache-control "$cache_control" \
-            --if-none-match "*"
-
-          echo "Artifact ready: ${artifact_uri}/"
-
-      - name: Download existing CLI artifact
-        if: steps.existing.outputs.exists == 'true'
-        env:
-          ARTIFACT_PREFIX: ${{ steps.artifact.outputs.prefix }}
-        run: |
-          mkdir -p /tmp/okou-cli-artifact
-          aws s3 cp \
-            "s3://${R2_BUCKET_NAME}/${ARTIFACT_PREFIX}/" \
-            /tmp/okou-cli-artifact/ \
-            --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
-            --recursive
-
-      - name: Verify and smoke test CLI artifact
-        env:
-          ARTIFACT_SHA: ${{ steps.artifact.outputs.sha }}
-        run: |
-          set -euo pipefail
-          bash .github/scripts/artifacts/verify-okou-cli-artifact.sh \
-            /tmp/okou-cli-artifact \
-            "$ARTIFACT_SHA"
-          bash .github/scripts/artifacts/smoke-okou-cli-artifact.sh \
-            /tmp/okou-cli-artifact/package.tgz
-
-      - name: Verify CLI artifact through CDN
-        env:
-          ARTIFACT_SHA: ${{ steps.artifact.outputs.sha }}
-          ARTIFACT_PREFIX: ${{ steps.artifact.outputs.prefix }}
-        run: |
-          set -euo pipefail
-          cdn_dir="$(mktemp -d)"
-          for filename in package.tgz manifest.json ready.json; do
-            bash .github/scripts/artifacts/download-okou-cli-cdn-file.sh \
-              "${CLI_STATIC_BASE_URL}/${ARTIFACT_PREFIX}/${filename}" \
-              "${cdn_dir}/${filename}"
-          done
-          bash .github/scripts/artifacts/verify-okou-cli-artifact.sh \
-            "$cdn_dir" \
-            "$ARTIFACT_SHA"
-          bash .github/scripts/artifacts/smoke-okou-cli-artifact.sh \
-            "$cdn_dir/package.tgz"
-
-      - name: Upload CLI artifact
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: cli-package
-          path: /tmp/okou-cli-artifact/package.tgz
-          retention-days: 1
-
-  # Smoke-test the deployed CLI package entry point.
+  # Exercise the exact CLI package embedded into Runner.
   cli-e2e-01-serial:
     runs-on: ubuntu-latest
     concurrency:
       group: cli-e2e-01-serial-${{ needs.prepare.outputs.job-ref }}
       cancel-in-progress: true
     # Code checks remain required by ci-gate-turbo, independently of E2E.
-    needs: [prepare, deploy-cli]
+    needs: [prepare, prepare-cli]
     if: |
-      (github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore: release')) &&
-      needs.prepare.outputs.job-ref != '' && (
-        needs.prepare.outputs.api-changed == 'true' ||
-        needs.prepare.outputs.cli-changed == 'true' ||
-        needs.prepare.outputs.crates-changed == 'true' ||
-        needs.prepare.outputs.ci-changed == 'true' ||
-        needs.prepare.outputs.e2e-changed == 'true'
-      )
+      always() &&
+      needs.prepare.outputs.job-ref != '' &&
+      needs.prepare.outputs.cli-e2e-consumer-needed == 'true' &&
+      needs.prepare-cli.result == 'success'
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -2251,11 +2059,16 @@ jobs:
       - name: Download CLI artifact
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: cli-package
+          artifact-ids: ${{ needs.prepare-cli.outputs.artifact-id }}
+          run-id: ${{ needs.prepare-cli.outputs.producer-run-id }}
+          github-token: ${{ github.token }}
           path: /tmp/cli-package
       - name: Install CLI globally
+        env:
+          SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          bash .github/scripts/artifacts/verify-okou-cli-artifact.sh /tmp/cli-package "$SOURCE_SHA"
           package_root="$(mktemp -d)"
           tar -xzf /tmp/cli-package/package.tgz -C "$package_root"
           node_prefix=$(dirname "$(dirname "$(command -v node)")")
@@ -2602,7 +2415,6 @@ jobs:
     needs:
       - prepare
       - deploy-api
-      - deploy-cli
       - deploy-runner-prepare
       - deploy-runner-start
       - cli-e2e-03-runner-prepare
@@ -2612,7 +2424,6 @@ jobs:
       needs.prepare.outputs.job-ref != '' &&
       needs.prepare.outputs.turbo-runner-consumer-needed == 'true' &&
       needs.deploy-api.result == 'success' &&
-      needs.deploy-cli.result == 'success' &&
       needs.deploy-runner-prepare.result == 'success' &&
       needs.deploy-runner-start.result == 'success' &&
       needs.cli-e2e-03-runner-prepare.result == 'success' &&
@@ -3018,9 +2829,9 @@ jobs:
       - deploy-api
       - deploy-app
       - deploy-stripe-listener
-      - deploy-cli
       - cli-e2e-02-browser
       - cli-e2e-02-playwright
+      - prepare-cli
       - cli-e2e-01-serial
       - cli-e2e-03-runner-prepare
       - cli-e2e-03-runner-bootstrap
@@ -3038,7 +2849,6 @@ jobs:
           IS_RELEASE: ${{ needs.detect-release.outputs.skip }}
           RELEASE_PRESENCE_RESULT: ${{ needs.validate-release-presence.result }}
           RELEASE_DEPLOY_APP_RESULT: ${{ needs.deploy-app.result }}
-          RELEASE_DEPLOY_CLI_RESULT: ${{ needs.deploy-cli.result }}
         run: |
           if [[ "$CI_ADMISSION_RESULT" != "success" ]]; then
             echo "::error::CI admission did not pass ($CI_ADMISSION_RESULT). See the Check PR CI limits job and workflow summary for the reason and retry instructions."
@@ -3053,10 +2863,6 @@ jobs:
             fi
             if [[ "$EVENT_NAME" == "merge_group" && "$RELEASE_DEPLOY_APP_RESULT" != "success" ]]; then
               echo "::error::deploy-app: expected success, got $RELEASE_DEPLOY_APP_RESULT"
-              exit 1
-            fi
-            if [[ "$EVENT_NAME" == "merge_group" && "$RELEASE_DEPLOY_CLI_RESULT" != "success" ]]; then
-              echo "::error::deploy-cli: expected success, got $RELEASE_DEPLOY_CLI_RESULT"
               exit 1
             fi
             echo "✅ Release-please — skipping CI gate"
@@ -3105,6 +2911,12 @@ jobs:
             CF_APP_SKIP_ALLOWED="true"
           fi
 
+          CLI_E2E_SKIP_ALLOWED="true"
+          if [ "${{ needs.prepare.outputs.cli-e2e-consumer-needed }}" = "true" ] &&
+            [ "${{ github.actor == 'dependabot[bot]' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) }}" != "true" ]; then
+            CLI_E2E_SKIP_ALLOWED=""
+          fi
+
           check_result() {
             local job="$1" result="$2" allow_skip="$3"
             if [ "$result" = "success" ]; then
@@ -3151,10 +2963,10 @@ jobs:
           check_result "deploy-api" "${{ needs.deploy-api.result }}" "true"
           check_result "deploy-app" "${{ needs.deploy-app.result }}" "$CF_APP_SKIP_ALLOWED"
           check_result "deploy-stripe-listener" "${{ needs.deploy-stripe-listener.result }}" "true"
-          check_result "deploy-cli" "${{ needs.deploy-cli.result }}" "$CF_APP_SKIP_ALLOWED"
+          check_result "prepare-cli" "${{ needs.prepare-cli.result }}" "$CLI_E2E_SKIP_ALLOWED"
           check_result "cli-e2e-02-browser" "${{ needs.cli-e2e-02-browser.result }}" "true"
           check_result "cli-e2e-02-playwright" "${{ needs.cli-e2e-02-playwright.result }}" "true"
-          check_result "cli-e2e-01-serial" "${{ needs.cli-e2e-01-serial.result }}" "true"
+          check_result "cli-e2e-01-serial" "${{ needs.cli-e2e-01-serial.result }}" "$CLI_E2E_SKIP_ALLOWED"
           check_result "cli-e2e-03-runner-prepare" "${{ needs.cli-e2e-03-runner-prepare.result }}" "$RUNNER_E2E_SKIP_ALLOWED"
           check_result "cli-e2e-03-runner-bootstrap" "${{ needs.cli-e2e-03-runner-bootstrap.result }}" "$RUNNER_E2E_SKIP_ALLOWED"
           check_result "cli-e2e-03-runner" "${{ needs.cli-e2e-03-runner.result }}" "$RUNNER_E2E_SKIP_ALLOWED"

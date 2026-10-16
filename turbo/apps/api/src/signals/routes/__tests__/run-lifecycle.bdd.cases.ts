@@ -1293,7 +1293,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(claim.appendSystemPrompt).not.toContain(
           "If `okou` is unavailable",
         );
-        expect(claim.platformEnvironment.CLI_PKG_URL).toBeTruthy();
         await api.requestCancelRun(actor, run.runId, [200]);
       });
 
@@ -11285,7 +11284,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           OKOU_AGENT_ID: agent.agentId,
           OKOU_CURRENT_INTEGRATION: "web",
           OKOU_TOKEN: claim.platformEnvironment.OKOU_TOKEN,
-          CLI_PKG_URL: `https://static.okou.io/okou-cli/${"a".repeat(40)}/package.tgz`,
         });
         for (const key of Object.keys(claim.platformEnvironment)) {
           expect(claim.environment).not.toHaveProperty(key);

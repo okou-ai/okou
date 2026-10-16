@@ -87,7 +87,7 @@ import { piMemoryPhase2Jobs } from "@okouai/db/runtime/pi-memory-phase2-job";
 import { storages } from "@okouai/db/schema/storage";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
-import { env, optionalEnv } from "../../lib/env";
+import { optionalEnv } from "../../lib/env";
 import { piModelConfigObservation } from "../../lib/pi-model-config-observation";
 import { getDatasetName, ingestToAxiom } from "../external/axiom";
 import { normalizeRunMetadata } from "./agent-run-metadata-write.service";
@@ -1232,7 +1232,6 @@ function buildMaintenanceExecutionContext(
   }
   const platformEnvironment = {
     [DISABLED_PAID_TOOLS_ENV_VAR]: JSON.stringify(args.disabledPaidTools),
-    CLI_PKG_URL: env("CLI_PKG_URL"),
     OKOU_MEMORY_SESSION_ID: memorySessionId,
   };
   const modelEnvironment = maintenanceModelEnvironment({

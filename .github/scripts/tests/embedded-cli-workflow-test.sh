@@ -17,9 +17,9 @@ jq -e '
   .jobs.prepare.steps as $steps |
   ($steps | map(((.uses // "") | startswith("actions/checkout@")) and
     .with.ref == "${{ steps.identity.outputs.head-sha }}") | index(true)) as $checkout |
-  ($steps | map(.run // "" | contains("build-okou-cli-artifact.sh")) | index(true)) as $build |
+  ($steps | map(.uses // "" | . == "./.github/actions/build-runner-cli") | index(true)) as $build |
   ($steps | map(((.uses // "") | startswith("actions/upload-artifact@")) and
-    .with.name == "runner-cli-${{ github.run_id }}") | index(true)) as $upload |
+    .with.name == "runner-cli-${{ github.run_id }}-${{ github.run_attempt }}") | index(true)) as $upload |
   ($steps | map(.id // "") | index("binary-plan")) as $plan |
   ($checkout < $build and $build < $upload and $upload < $plan) and
   .jobs.prepare.outputs["head-sha"] == "${{ steps.identity.outputs.head-sha }}" and
@@ -30,12 +30,10 @@ jq -e '
     .env.PRODUCER_HEAD_SHA == "${{ github.event.pull_request.head.sha || github.sha }}"
   ) and
   $steps[$checkout].with.ref == "${{ steps.identity.outputs.head-sha }}" and
-  $steps[$build].env.SOURCE_SHA == "${{ steps.identity.outputs.head-sha }}" and
-  ($steps[$build].run | contains("test \"$(git rev-parse HEAD)\" = \"$SOURCE_SHA\"")) and
-  ($steps[$build].run | contains("build-okou-cli-artifact.sh")) and
+  $steps[$build].with["source-sha"] == "${{ steps.identity.outputs.head-sha }}" and
   ($steps[$upload].with.path | split("\n") | index("runner-cli-intermediate/package.tgz") != null and index("runner-cli-intermediate/manifest.json") != null) and
-  $steps[$upload].with.name == "runner-cli-${{ github.run_id }}" and
-  $steps[$upload].with.overwrite == true and
+  $steps[$upload].with.name == "runner-cli-${{ github.run_id }}-${{ github.run_attempt }}" and
+  ($steps[$upload].with | has("overwrite") | not) and
   $steps[$plan].env.GUEST_CLI_PATH == "runner-cli-intermediate/package.tgz" and
   $steps[$plan].env.GUEST_CLI_MANIFEST_PATH == "runner-cli-intermediate/manifest.json" and
   $steps[$plan].env.RUNNER_BINARY_GIT_REVISION == "${{ steps.identity.outputs.head-sha }}" and
@@ -47,7 +45,7 @@ jq -e '
       length == 1 and .[0].with.ref == "${{ inputs.head-sha }}") and
     any($root.architecture.jobs[$job].steps[];
       ((.uses // "") | startswith("actions/download-artifact@")) and
-      .with.name == $steps[$upload].with.name)
+      .with["artifact-ids"] == "${{ inputs.cli-artifact-id }}")
   )) and
   .jobs["prewarm-rust-cache"].env.GUEST_CLI_PATH == "runner-cli-intermediate/package.tgz" and
   .jobs["prewarm-rust-cache"].env.GUEST_CLI_MANIFEST_PATH == "runner-cli-intermediate/manifest.json" and
@@ -56,7 +54,7 @@ jq -e '
     length == 1 and .[0].with.ref == "${{ needs.prepare.outputs.head-sha }}") and
   any(.jobs["prewarm-rust-cache"].steps[];
     ((.uses // "") | startswith("actions/download-artifact@")) and
-    .with.name == $steps[$upload].with.name) and
+    .with["artifact-ids"] == "${{ needs.prepare.outputs.cli-artifact-id }}") and
   .jobs.build.with["head-sha"] == .jobs["prewarm-rust-cache"].env.RUNNER_BINARY_GIT_REVISION and
   any(.architecture.jobs.compile.steps[];
     .run == ".github/scripts/runner/runner-binary-transport.sh publish" and
@@ -82,23 +80,22 @@ jq -e '
 jq -e '
   .jobs["prepare-runner-cli"] as $prepare |
   $prepare.steps as $steps |
-  ($steps | map(.run // "" | contains("fetch-okou-cli-artifact.sh")) | index(true)) as $fetch |
+  ($steps | map(.uses // "" | . == "./.github/actions/build-runner-cli") | index(true)) as $build |
   ($steps | map(((.uses // "") | startswith("actions/upload-artifact@")) and
-    .with.name == "runner-release-cli-${{ github.run_id }}") | index(true)) as $upload |
+    .with.name == "runner-release-cli-${{ github.run_id }}-${{ github.run_attempt }}") | index(true)) as $upload |
   $prepare.needs == "release-please" and
   $prepare.if == "${{ needs.release-please.outputs.runner_rs_release_created == \u0027true\u0027 }}" and
-  ($fetch < $upload) and
-  $steps[$fetch].env.ARTIFACT_SHA == "${{ needs.release-please.outputs.release_target }}" and
-  $steps[$fetch].run == "bash .github/scripts/artifacts/fetch-okou-cli-artifact.sh \"$ARTIFACT_SHA\" runner-cli-intermediate" and
+  ($build < $upload) and
+  $steps[$build].with["source-sha"] == "${{ needs.release-please.outputs.release_target }}" and
   ($steps[$upload].with.path | split("\n") | index("runner-cli-intermediate/package.tgz") != null and index("runner-cli-intermediate/manifest.json") != null) and
-  $steps[$upload].with.name == "runner-release-cli-${{ github.run_id }}" and
-  $steps[$upload].with.overwrite == true and
+  $steps[$upload].with.name == "runner-release-cli-${{ github.run_id }}-${{ github.run_attempt }}" and
+  ($steps[$upload].with | has("overwrite") | not) and
   $steps[$upload].with["if-no-files-found"] == "error" and
   $steps[$upload].with["retention-days"] == 1 and
   (.jobs["build-runner-release-assets"].needs | index("prepare-runner-cli") != null) and
   any(.jobs["build-runner-release-assets"].steps[];
     ((.uses // "") | startswith("actions/download-artifact@")) and
-    .with.name == $steps[$upload].with.name and
+    .with["artifact-ids"] == "${{ needs.prepare-runner-cli.outputs.artifact-id }}" and
     .with.path == "runner-cli-intermediate") and
   any(.jobs["build-runner-release-assets"].steps[];
     .env.GUEST_CLI_PATH == "${{ github.workspace }}/runner-cli-intermediate/package.tgz" and

@@ -70,12 +70,12 @@ for (const job of [compile, image]) {
   assert.equal(checkouts.length, 1);
   assert.equal(checkouts[0].with.ref, "${{ inputs.head-sha }}");
 }
-assert.equal(compile.steps[1].run, ".github/scripts/runner/runner-image-architecture.sh validate");
+assert.ok(compile.steps[1].run.includes(".github/scripts/runner/runner-image-architecture.sh validate"));
 assert.equal(compile.steps[1].env.RUNNER_IMAGE_ARCHITECTURE, "${{ inputs.architecture-json }}");
 assert.equal(compile.steps[1].if, undefined);
 assert.equal(compile.steps[1]["continue-on-error"], undefined);
 const guard = image.steps.findIndex(step =>
-  step.run === ".github/scripts/runner/runner-image-architecture.sh build-ready");
+  step.run?.includes(".github/scripts/runner/runner-image-architecture.sh build-ready"));
 assert.equal(guard, 1, "the image prerequisite guard must follow checkout before other work");
 assert.equal(image.steps[guard].env.RUNNER_IMAGE_COMPILE_RESULT, "${{ needs.compile.result }}");
 assert.equal(image.steps[guard].env.RUNNER_IMAGE_CACHE_HIT, "${{ inputs.cache-hit }}");

@@ -138,18 +138,13 @@ end
 required_needs = %w[
   prepare
   deploy-api
-  deploy-cli
   deploy-runner-prepare
   deploy-runner-start
   cli-e2e-03-runner-prepare
   cli-e2e-03-runner-bootstrap
 ]
 unless required_needs.all? { |job_name| Array(runner["needs"]).include?(job_name) }
-  raise "runner E2E shards must wait for accounts, API, CLI, and runner deployment"
-end
-
-unless runner.fetch("if").include?("needs.deploy-cli.result == 'success'")
-  raise "runner E2E shards must require a published CLI artifact"
+  raise "runner E2E shards must wait for accounts, API, and runner deployment"
 end
 
 unless account_prepare.fetch("if").include?("turbo-runner-consumer-needed == 'true'")

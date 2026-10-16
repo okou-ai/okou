@@ -119,13 +119,30 @@ provenance, JSON formatting/key order and unused manifest fields do not affect
 reuse. Manifest validation preserves JSON
 integer types and rejects duplicate compilation fields using Python 3, which is
 available in the pinned Rust toolchain. Invalid CLI inputs fail before cache
-lookup; commit-addressed CLI publication and provenance verification are
-unchanged. Input schema 6 intentionally starts a new key space, so the first
+lookup; private CLI artifact source and producer provenance remain verified.
+Input schema 6 intentionally starts a new key space, so the first
 build of each input combination misses once without migrating old references.
 The digest helper is itself part of the committed build inventory; changing its
 hash recipe also rotates keys without changing the cache artifact schema.
 
 ### Package-bound CLI identity and local rootfs keys
+
+Runner Image owns the CI CLI build. Its private package, manifest and readiness
+record are uploaded under a unique producer run/attempt name. Both architecture
+jobs and dependency prewarming consume its exact immutable artifact ID. Host CLI
+E2E resolves the same successful prepare job and verifies the package against its
+captured source revision; PR-head lookup and merge-source identity stay separate.
+A consumer-only rerun retains the original prepare attempt, while a failed new
+prepare cannot reuse an older input. Host E2E can need this package even when no
+metal host or current image is selected.
+Expired private CLI input fails the consumer; rerun the Runner Image producer to
+publish a fresh run/attempt artifact.
+
+Production prepares CLI only for a Runner release, using the same build,
+integrity and smoke action once before both architecture consumers. API builds
+and deployments do not need a CLI package or public package URL. Rebuild a local
+Runner to update its embedded CLI; globally linking a CLI does not update an
+existing Guest's installed runtime.
 
 The CLI postbuild step writes `okouBuildIdentity` into the existing packed
 `package.json`. Its mandatory schema version 1 contains `piAgentRuntime` and `piSdk`

@@ -4,12 +4,12 @@ These commands build or consume immutable CLI, App and Desktop artifacts. Run
 them from the repository root; each command documents its arguments through its
 usage output. Keep the phases separate from [release promotion](../release/).
 
-| Phase  | Commands                                                                                                                      |
-| ------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| Build  | `build-okou-cli-artifact.sh`, `build-okou-desktop-artifact.sh`                                                                |
-| Fetch  | `fetch-okou-app-artifact.sh`, `fetch-okou-cli-artifact.sh`, `fetch-okou-desktop-artifact.sh`, `download-okou-cli-cdn-file.sh` |
-| Verify | `verify-okou-app-artifact.sh`, `verify-okou-cli-artifact.sh`, `verify-okou-desktop-artifact.sh`                               |
-| Smoke  | `smoke-okou-cli-artifact.sh`, with `smoke-okou-cli-image-resize.mjs`                                                          |
+| Phase  | Commands                                                                                        |
+| ------ | ----------------------------------------------------------------------------------------------- |
+| Build  | `build-okou-cli-artifact.sh`, `build-okou-desktop-artifact.sh`                                  |
+| Fetch  | `fetch-okou-app-artifact.sh`, `fetch-okou-desktop-artifact.sh`                                  |
+| Verify | `verify-okou-app-artifact.sh`, `verify-okou-cli-artifact.sh`, `verify-okou-desktop-artifact.sh` |
+| Smoke  | `smoke-okou-cli-artifact.sh`, with `smoke-okou-cli-image-resize.mjs`                            |
 
 CLI build and verification share `read-okou-cli-package-identity.py`, which reads
 the bounded identity of the actual packaged bytes. Verification protects the

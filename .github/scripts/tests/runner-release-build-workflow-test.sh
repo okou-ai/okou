@@ -18,7 +18,7 @@ jq -e '
   ($job | has("environment") | not) and
   $job.needs == ["release-please", "prepare-runner-cli"] and
   any($job.steps[];
-    .with.name == "runner-release-cli-${{ github.run_id }}" and
+    .with["artifact-ids"] == "${{ needs.prepare-runner-cli.outputs.artifact-id }}" and
     .with.path == "runner-cli-intermediate"
   ) and
   $job.strategy.matrix.target == [
