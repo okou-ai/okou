@@ -1,5 +1,43 @@
 # Guarded idle terminal fixture
 
+## Native incoming inventory progress
+
+`native_incoming_records_reader_heartbeat_and_cleanup_contention` runs actual
+replacement, exact restoration and aged replenishment in fresh and matching
+snapshot factories. Every case completely reads the original 4 GiB at startup
+under Unknown, then through the guarded runtime reader under sustained actual
+Ready while the public incoming caller still waits on the held pool.
+
+After pool release, the exact StatusTracker lock observer proves the status
+publication is Pending. Replacement/restoration compose public insertion with
+public status publication; aged uses its actual internal publication. Independent
+host observation and acknowledged API heartbeat finish while status remains
+held, then again while original required saving waits on the real kernel IO gate.
+
+Replacement retains separate new and original full leases. Restoration returns
+the exact original reservation and retires a distinct competing blank. Aged joins
+the old original cleanup and durable tail before its new blank factory creation;
+the receipt observes that actual factory boundary. Every new preparation settles
+its original Fresh P2 phase, and both original and new backing exits are positively
+joined. The original full lease stays active through complete original data,
+durable 64 MiB tail and producer/dependency joins before main releases it.
+
+Select the ignored incoming test with the exact-source bounded P1 invocation
+below. Metadata additionally requires `native_incoming_policy_json`,
+`native_incoming_inputs_json` and `native_incoming_snapshot_bytes` (4294967296).
+Validate all six cases and the inherited complete physical proof:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/incoming_report.py "$P1_OUTPUT_DIRECTORY"
+```
+
+Ordinary Cargo executes its real-file/CLI refusal contracts. Independent Critical
+contention/mapping remains separate, as do accepted cancellation and provider late
+results. Full production Reactor/P2 installation, numerical relief, full/cold
+residency, calibrated envelopes, original template provenance and OOM protection
+remain unverified. No physical credit is inferred from insertion or logical lease
+custody.
+
 ## Native logical substitution progress
 
 `native_logical_records_reader_heartbeat_and_cleanup_contention` starts with the

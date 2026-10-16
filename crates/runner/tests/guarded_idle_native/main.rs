@@ -13,6 +13,8 @@ mod foreground;
 mod foreground_growth;
 mod foreground_io;
 mod foreground_probe;
+mod incoming_progress;
+mod incoming_work;
 mod logical_progress;
 mod logical_work;
 mod optional;
@@ -61,6 +63,7 @@ enum Corpus {
     Optional,
     Fences,
     LogicalProgress,
+    IncomingProgress,
 }
 
 const MISSING_GUEST_TIMEZONE: &str = "Etc/okou-test-missing-zone";
@@ -448,6 +451,36 @@ async fn native_logical_records_reader_heartbeat_and_cleanup_contention() -> Tes
     measured_selected_corpus(&[NativeScope::Logical], Corpus::LogicalProgress).await
 }
 
+#[test]
+fn native_incoming_report_requires_path_specific_progress_and_full_custody() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/incoming_report_test.py"
+        ))
+        .output()
+        .expect("native incoming report requires Python 3");
+    assert!(
+        output.status.success(),
+        "native incoming report failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD inputs, incoming ownership and exact-source P1 proof"]
+async fn native_incoming_records_reader_heartbeat_and_cleanup_contention() -> TestResult<()> {
+    measured_selected_corpus(
+        &[
+            NativeScope::Replacement,
+            NativeScope::Restore,
+            NativeScope::Aged,
+        ],
+        Corpus::IncomingProgress,
+    )
+    .await
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires owned KVM/NBD artifacts, synthetic native API, mock Codex and exact-source P1 proof"]
 async fn native_continuation_records_complete_session_history_and_required_saving() -> TestResult<()>
@@ -578,6 +611,8 @@ async fn exercise_selected_factories(
                             "{}-{}",
                             if corpus == Corpus::LogicalProgress {
                                 "LogicalProgress".into()
+                            } else if corpus == Corpus::IncomingProgress {
+                                format!("Incoming{scope:?}")
                             } else if corpus == Corpus::Continuation {
                                 if matches!(scope, NativeScope::Batch(_)) {
                                     "ContinuationNonzero".into()
@@ -679,7 +714,7 @@ async fn exercise_retirement(
     if rootfs_hash.is_empty() {
         return Err(io::Error::other("packaged rootfs hash must be supplied").into());
     }
-    let recovery_source = (corpus == Corpus::LogicalProgress
+    let recovery_source = (matches!(corpus, Corpus::LogicalProgress | Corpus::IncomingProgress)
         || matches!(
             scope,
             NativeScope::Recovery
@@ -866,7 +901,7 @@ async fn exercise_retirement(
     });
     let tracker = IdleDestroyTracker::new(Arc::new(Notify::new()));
     if (corpus == Corpus::Optional
-        || corpus == Corpus::LogicalProgress
+        || matches!(corpus, Corpus::LogicalProgress | Corpus::IncomingProgress)
         || matches!(
             scope,
             NativeScope::Recovery
@@ -1090,6 +1125,18 @@ async fn exercise_retirement(
                 Ok(None)
             }
             NativeScope::Replacement | NativeScope::Restore | NativeScope::Aged => {
+                if corpus == Corpus::IncomingProgress {
+                    let lease = incoming_progress::exercise(incoming_progress::Request {
+                        context: transitions::Context {
+                            factory: factory.clone(), pool: pool.clone(), status: status.clone(),
+                            operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
+                            rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
+                        }, inputs, source: recovery_source.as_ref().ok_or_else(|| io::Error::other("incoming source missing"))?,
+                        proof: proof.ok_or_else(|| io::Error::other("incoming proof missing"))?,
+                        directory: paths.base_dir(), backing: backing.clone(), scope,
+                    }).await?;
+                    return Ok(Some(lease));
+                }
                 transitions::exercise(
                     transitions::Context {
                         factory: factory.clone(),
