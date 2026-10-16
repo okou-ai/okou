@@ -67,6 +67,8 @@ const errorContent = z.object({
           op: z.string().optional(),
           description: z.string().optional(),
           data: z.unknown().optional(),
+          tags: z.unknown().optional(),
+          links: z.array(attributeContent).optional(),
         })
         .optional(),
     })
@@ -102,25 +104,39 @@ describe("callback export content assertions", () => {
   it("ignores numeric fixture collisions in SDK metadata and retains ordinary content", () => {
     const traces = traceExport({
       name: "GET /health",
-      traceId: "abcdef123456789abcdef1700000000ab",
+      traceId: "abcdef123456789abcde1700000000ab",
       spanId: "abcdef123456789a",
       startTimeUnixNano: "1792148081700000000",
       endTimeUnixNano: "1792148081700000001",
       events: [{ name: "ordinary event", timeUnixNano: "1792148081700000000" }],
-      links: [{ traceId: "abcdef123456789abcdef1700000000ab" }],
+      links: [
+        {
+          traceId: "abcdef123456789abcde1700000000ab",
+          spanId: "abcdef123456789a",
+        },
+      ],
     });
     const errors = [
       {
-        event_id: "abcdef123456789abcdef1700000000ab",
+        event_id: "abcdef123456789abcde1700000000ab",
         timestamp: 1_700_000_000.123,
         message: "ordinary error",
         contexts: {
-          trace: { trace_id: "abcdef1700000000", span_id: "123456789abcdef" },
+          trace: {
+            trace_id: "abcdef123456789abcde1700000000ab",
+            span_id: "abcdef123456789a",
+            links: [
+              {
+                trace_id: "abcdef123456789abcde1700000000ab",
+                span_id: "abcdef123456789a",
+              },
+            ],
+          },
         },
         breadcrumbs: [
           {
             timestamp: 1_700_000_000,
-            event_id: "123456789abcdef",
+            event_id: "abcdef123456789abcde1700000000ab",
             message: "ordinary breadcrumb",
           },
         ],
@@ -207,6 +223,12 @@ describe("callback export content assertions", () => {
         { tags: { callback: secret } },
         { contexts: { callback: { timestamp: secret } } },
         { contexts: { trace: { data: { id: secret } } } },
+        { contexts: { trace: { tags: { callback: secret } } } },
+        {
+          contexts: {
+            trace: { links: [{ attributes: { callback: secret } }] },
+          },
+        },
         { contexts: { trace: { description: `callback ${secret}` } } },
         { breadcrumbs: [{ message: `callback ${secret}` }] },
         {
