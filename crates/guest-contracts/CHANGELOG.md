@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.5](https://github.com/okou-ai/okou/compare/guest-contracts-v0.25.4...guest-contracts-v0.25.5) (2026-10-16)
+
+
+### Refactoring
+
+* **rust:** retire orphaned history archive selectors ([#40652](https://github.com/okou-ai/okou/issues/40652)) ([12e6555](https://github.com/okou-ai/okou/commit/12e6555d00072f49d7d96e6cddb6f8ca4d079082))
+
 ## [0.25.4](https://github.com/okou-ai/okou/compare/guest-contracts-v0.25.3...guest-contracts-v0.25.4) (2026-10-16)
 
 ## [0.25.3](https://github.com/okou-ai/okou/compare/guest-contracts-v0.25.2...guest-contracts-v0.25.3) (2026-10-15)

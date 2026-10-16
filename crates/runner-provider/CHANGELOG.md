@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.7](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.6...runner-provider-v0.8.7) (2026-10-16)
+
+
+### Bug Fixes
+
+* **runner:** accept numeric dns labels in parameterized firewall hosts ([#40639](https://github.com/okou-ai/okou/issues/40639)) ([3cb77fa](https://github.com/okou-ai/okou/commit/3cb77fa3561e260cc2aecc30ce51f9349eaee5a3))
+
 ## [0.8.6](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.5...runner-provider-v0.8.6) (2026-10-16)
 
 
