@@ -68,6 +68,23 @@ The first Cloudflare cause survives later carrier/cleanup failures. Safe logs
 and explanation text use the same typed source facts.
 
 Native readiness, first terminal work cause and physical cleanup are distinct.
+A finite native trace records application-observed provisioning/control,
+map framing/validation, selected terminal root and relay stages. Selected typed
+endpoint/family and relay-region facts are retained when exposed by the actual
+connector. Each private TCP connection has its own trace and evidence ID;
+concurrent connections cannot replace one another's evidence.
+SSH transport reuse keeps the original connection evidence ID; a fresh dial gets
+a new ID while retaining the shared node identity. Relay attempts are
+isolated, and only the selected terminal root's relay facts enter the node receipt.
+Detailed collection is activated by enabled consumers before native startup.
+Each operational report copies its node and connection stage snapshots when
+recorded, so later map/stream activity cannot rewrite an earlier explanation.
+The node lifecycle's first terminal timestamp and later cleanup remain explicit
+retained-resource facts, separate from the report's captured operation stages.
+The node trace is sealed before terminal publication; later cleanup remains a
+separate fact. SDK-hidden decode/driver causes remain unknown; map/relay readiness
+does not establish current SSH/VNC health. Trace scope retains no SDK/IO owner
+and does not change DNS/address races, retry policy or physical cleanup.
 A pure shared receipt may gain cleanup detail after the original failure,
 but owns no node, stream, Completion, credential, task, token or permit.
 Native subscriptions keep weak consumer activity references, at most 64 recent

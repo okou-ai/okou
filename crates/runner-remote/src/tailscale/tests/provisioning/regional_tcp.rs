@@ -262,18 +262,20 @@ async fn independent_b(retirement: u8) {
     }
     let descriptors = Arc::new(Mutex::new(Vec::new()));
     let cache = Cache::new();
-    let run = cache.register(RunId::new_v4());
+    let run = cache.register_with_diagnostics(RunId::new_v4(), true);
     let access = run.lookup(uuid::Uuid::new_v4()).unwrap();
     let dial = api.secure.as_ref().unwrap().clone();
+    let config = configuration(uuid::Uuid::new_v4());
     let native = access
         .native_configured(
-            configuration(uuid::Uuid::new_v4()),
+            config.clone(),
             control.provisioned_root_factory(
                 dial.clone(),
                 Relay::multiple(&servers, &gates, Arc::clone(&descriptors)),
             ),
         )
         .unwrap();
+    let source = native.diagnostic_source(config.key());
     control.allow_all();
     bounded(native.ready()).await.unwrap();
     assert_eq!(control.announced_home(), vec![1]);
@@ -333,6 +335,22 @@ async fn independent_b(retirement: u8) {
         .await;
     let mut ca = ca.unwrap();
     let mut cb = cb.unwrap();
+    let evidence_a = ca.evidence().unwrap();
+    let evidence_b = cb.evidence().unwrap();
+    assert_ne!(evidence_a.attempt_id, evidence_b.attempt_id);
+    assert_eq!(evidence_a.region, Some(2));
+    assert_eq!(evidence_b.region, Some(1));
+    assert_eq!(evidence_a.endpoints[0].address.to_string(), "100.64.0.2:22");
+    assert_eq!(evidence_b.endpoints[0].address.to_string(), "100.64.0.3:22");
+    for evidence in [&evidence_a, &evidence_b] {
+        assert!(
+            evidence
+                .steps
+                .iter()
+                .any(|s| s.stage == crate::tailscale::evidence::Stage::PrivateTcp
+                    && s.status == crate::tailscale::evidence::Status::Passed)
+        );
+    }
     let mut sa = sa.unwrap();
     let mut sb = sb.unwrap();
     peers.transfer(&mut ca, &mut sa).await;
@@ -398,6 +416,16 @@ async fn independent_b(retirement: u8) {
         peers.services[0].frames.take();
         peers.services[0].outgoing.clear();
         bounded(native.physical()).await.unwrap();
+        let retained = serde_json::to_value(source.evidence.layers().snapshot()).unwrap();
+        assert_eq!(retained["root"], "relay");
+        assert_eq!(retained["region"], 1);
+        assert!(
+            retained["steps"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|s| s["stage"] == "relay_dial" && s["status"] == "failed")
+        );
         let mut byte = [0];
         assert!(matches!(bounded(ca.read(&mut byte)).await, Ok(0) | Err(_)));
         assert!(matches!(bounded(cb.read(&mut byte)).await, Ok(0) | Err(_)));
@@ -444,6 +472,12 @@ async fn independent_b(retirement: u8) {
         peers.finish(gates[1].destroyed()).await;
     }
     peers.transfer(&mut cb, &mut sb).await;
+    assert_eq!(cb.evidence().unwrap().attempt_id, evidence_b.attempt_id);
+    assert_eq!(
+        cb.evidence().unwrap().endpoints[0].address,
+        evidence_b.endpoints[0].address
+    );
+    assert!(source.evidence.layers().snapshot().unwrap().root.is_none());
     assert!(
         !peers.services[0].closed,
         "original home/B relay was replaced"

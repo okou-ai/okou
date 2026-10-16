@@ -37,7 +37,10 @@ impl Dial for Https {
         }
         // Resolver blocking descendants originate inside this retained runtime;
         // Runtime Drop joins them before the physical owner releases capacity.
-        let io = self.0.connect(HOST, 443).await?;
+        let io = super::evidence::Trace::current()
+            .with_role(super::evidence::Role::Provider)
+            .scope(self.0.connect(HOST, 443))
+            .await?;
         Self::authenticate(io, &super::registration::VerifiedTls).await
     }
 }
@@ -57,7 +60,7 @@ impl Https {
         }
         let name = ts_tls_util::ServerName::try_from(HOST).map_err(|_| Failure::DomainFailed)?;
         let (io, _) = LimitedIo::new(io, RAW_BYTES);
-        tls.connect(name, io)
+        super::evidence::observe(super::evidence::Stage::ProviderTls, tls.connect(name, io))
             .await
             .map_err(|_| Failure::DomainFailed)
     }
@@ -113,20 +116,35 @@ impl<D: Dial> Api<D> {
             if let Some(value) = authorization {
                 request.headers_mut().insert("Authorization", value);
             }
-            let response = client
-                .send(request)
-                .await
-                .map_err(|_| Failure::DomainFailed)?;
+            let response = super::evidence::observe(
+                super::evidence::Stage::ProviderRequest,
+                client.send(request),
+            )
+            .await
+            .map_err(|_| Failure::DomainFailed)?;
             // All API operations in the first-party key contract use HTTP 200.
             // Redirects/non-success bodies never become follow-up destinations.
             if response.status() != ts_http_util::StatusCode::OK {
+                super::evidence::failed(
+                    super::evidence::Stage::ProviderRequest,
+                    super::evidence::Detail::Rejected,
+                );
                 return Err(Failure::DomainFailed);
             }
-            collect_secret(response.into_read()).await
-        };
-        tokio::time::timeout(Duration::from_secs(10), operation)
+            super::evidence::observe(
+                super::evidence::Stage::ProviderRequest,
+                collect_secret(response.into_read()),
+            )
             .await
-            .unwrap_or(Err(Failure::DomainFailed))
+        };
+        let result = tokio::time::timeout(Duration::from_secs(10), operation).await;
+        result.unwrap_or_else(|_| {
+            super::evidence::failed(
+                super::evidence::Stage::Provisioning,
+                super::evidence::Detail::TimedOut,
+            );
+            Err(Failure::DomainFailed)
+        })
     }
 }
 

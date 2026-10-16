@@ -14,6 +14,7 @@ use super::{
     Failure,
     control_io::{LimitedIo, collect},
     control_key,
+    evidence::{self, Detail, Stage},
 };
 
 const REGISTRATION_BYTES: usize = 64 * 1024;
@@ -134,9 +135,12 @@ impl Registration {
             .server_url
             .join("machine/map")
             .map_err(|_| Failure::DomainFailed)?;
-        let reader = ts_control::client::send_map_request(request, &url, client)
-            .await
-            .map_err(|_| Failure::DomainFailed)?;
+        let reader = evidence::observe(
+            Stage::MapRequest,
+            ts_control::client::send_map_request(request, &url, client),
+        )
+        .await
+        .map_err(|_| Failure::DomainFailed)?;
         Ok(ts_control::client::map_stream(
             super::map_reader::MapReader::new(reader),
         ))
@@ -168,9 +172,12 @@ impl Registration {
             .map_err(|_| super::Failure::DomainFailed)?;
         // A non-streaming OmitPeers update is acknowledged by HTTP status;
         // control may omit the entire body. Authority stays with the map stream.
-        let response = ts_control::client::send_map_request(request, &url, client)
-            .await
-            .map_err(|_| super::Failure::DomainFailed)?;
+        let response = evidence::observe(
+            Stage::HomeAnnouncement,
+            ts_control::client::send_map_request(request, &url, client),
+        )
+        .await
+        .map_err(|_| super::Failure::DomainFailed)?;
         drop(response);
         Ok(())
     }
@@ -230,15 +237,13 @@ impl Registration {
             .to_owned();
         let (key_io, _) = LimitedIo::new(key_io, STARTUP_BYTES);
         super::diagnostics::Stage::KeyTls.record();
-        let key_tls = tls
-            .connect(server.clone(), key_io)
+        let key_tls = evidence::observe(Stage::KeyTls, tls.connect(server.clone(), key_io))
             .await
             .map_err(|_| Failure::DomainFailed)?;
-        let public_key = control_key::fetch(key_tls).await?;
+        let public_key = evidence::observe(Stage::ControlKey, control_key::fetch(key_tls)).await?;
         let (control_io, registered) = LimitedIo::new(control_io, STARTUP_BYTES);
         super::diagnostics::Stage::ControlTls.record();
-        let control_tls = tls
-            .connect(server, control_io)
+        let control_tls = evidence::observe(Stage::ControlTls, tls.connect(server, control_io))
             .await
             .map_err(|_| Failure::DomainFailed)?;
         let client = self
@@ -281,7 +286,7 @@ impl Registration {
             return Err(Failure::DomainFailed);
         }
         super::diagnostics::Stage::Noise.record();
-        let client = ts_http_util::http1::connect::<EmptyBody>(io)
+        let client = evidence::observe(Stage::Noise, ts_http_util::http1::connect::<EmptyBody>(io))
             .await
             .map_err(|_| Failure::DomainFailed)?;
         let (handshake, initial) = ts_control_noise::Handshake::initialize(
@@ -290,19 +295,26 @@ impl Registration {
             &public_key,
             CapabilityVersion::CURRENT,
         );
-        let io = ts_control::client::upgrade_ts2021(
-            &self.config.server_url,
-            &initial,
-            handshake,
-            &self.keys.machine_keys,
-            client,
+        let io = evidence::observe(
+            Stage::Noise,
+            ts_control::client::upgrade_ts2021(
+                &self.config.server_url,
+                &initial,
+                handshake,
+                &self.keys.machine_keys,
+                client,
+            ),
         )
         .await
         .map_err(|_| Failure::DomainFailed)?;
-        let io = ts_control::client::read_challenge_packet(io)
+        let io = evidence::observe(Stage::Noise, ts_control::client::read_challenge_packet(io))
             .await
             .map_err(|_| Failure::DomainFailed)?;
-        self.register_tracked(io, derived_key, provider_key).await
+        evidence::observe(
+            Stage::Registration,
+            self.register_tracked(io, derived_key, provider_key),
+        )
+        .await
     }
 
     /// The caller must already authenticate fixed-endpoint TLS/Noise IO. This
@@ -317,7 +329,11 @@ impl Registration {
     where
         Io: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
-        self.register_tracked(io, derived_key, None).await
+        evidence::observe(
+            Stage::Registration,
+            self.register_tracked(io, derived_key, None),
+        )
+        .await
     }
 
     async fn register_tracked<Io>(
@@ -360,7 +376,7 @@ impl Registration {
                 .map_err(|_| Failure::DomainFailed)?,
         );
         let (io, registered) = LimitedIo::new(io, REGISTRATION_BYTES);
-        let client = ts_http_util::http2::connect(io)
+        let client = evidence::observe(Stage::Http2, ts_http_util::http2::connect(io))
             .await
             .map_err(|_| Failure::DomainFailed)?;
         if let Some(key) = provider_key {
@@ -385,6 +401,7 @@ impl Registration {
             .await
             .map_err(|_| Failure::DomainFailed)?;
         if !response.status().is_success() {
+            evidence::failed(Stage::Registration, Detail::Rejected);
             return Err(Failure::DomainFailed);
         }
         let body = collect(response.into_read(), REGISTRATION_BYTES).await?;
@@ -395,6 +412,19 @@ impl Registration {
             || !response.machine_authorized
             || !response.auth_url.is_empty()
         {
+            evidence::failed(
+                Stage::Registration,
+                if !response.error.is_empty() {
+                    // The SDK contract says every other field is ignored when Error is set.
+                    Detail::Rejected
+                } else if response.node_key_expired {
+                    Detail::KeyExpired
+                } else if !response.auth_url.is_empty() {
+                    Detail::AuthenticationRequired
+                } else {
+                    Detail::MachineUnauthorized
+                },
+            );
             return Err(Failure::DomainFailed);
         }
         // END_STREAM and all typed authorization checks completed. The subsequent

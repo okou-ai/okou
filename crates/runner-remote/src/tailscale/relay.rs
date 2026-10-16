@@ -267,12 +267,15 @@ where
             1024 * 1024,
         );
         let io = authenticate(io).await?;
-        let client = ts_derp::Client::handshake(
-            SdkIo {
-                io: super::derp_reader::Reader::new(io),
-                gate: Arc::clone(&gate),
-            },
-            keys,
+        let client = super::evidence::observe(
+            super::evidence::Stage::RelayProtocol,
+            ts_derp::Client::handshake(
+                SdkIo {
+                    io: super::derp_reader::Reader::new(io),
+                    gate: Arc::clone(&gate),
+                },
+                keys,
+            ),
         )
         .await
         .map_err(|_| Failure::DomainFailed)?;

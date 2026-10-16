@@ -325,20 +325,32 @@ impl Pool {
                         finalizer: Rc::clone(&finalizer),
                     };
                     let (result, cleanup, panicked) = sdk_runtime.block_on(async {
+                        let trace = owned.evidence.layers();
                         let outcome = std::panic::AssertUnwindSafe(async {
                             tokio::select! { biased;
                                 () = owned.cancel.cancelled() => Err(Failure::Cancelled),
-                                result = work(control) => result,
+                                result = trace.clone().scope(work(control)) => result,
                             }
                         })
                         .catch_unwind()
                         .await;
                         let panicked = outcome.is_err();
                         let result = outcome.unwrap_or(Err(Failure::DomainFailed));
+                        if result.is_err() {
+                            let ready = matches!(
+                                *owned.ready.lock().unwrap_or_else(|p| p.into_inner()),
+                                Some(Ok(()))
+                            );
+                            trace.root(if ready {
+                                super::evidence::Root::Work
+                            } else {
+                                super::evidence::Root::Startup
+                            });
+                        }
                         // Seal adoption and publish startup failure before any
                         // asynchronous finalizer or blocking runtime destruction.
                         if let Err(failure) = result {
-                            super::diagnostics::failed(failure);
+                            super::diagnostics::failed(failure, &owned.evidence);
                         }
                         owned.terminate(result.err().unwrap_or(Failure::Cancelled));
                         let retained = finalizer.borrow_mut().take();
@@ -351,7 +363,7 @@ impl Pool {
                             Ok(())
                         };
                         if let Err(failure) = cleanup {
-                            super::diagnostics::failed(failure);
+                            super::diagnostics::failed(failure, &owned.evidence);
                         }
                         (result, cleanup, panicked)
                     });

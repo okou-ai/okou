@@ -160,6 +160,7 @@ fn shared_native_cause_is_pinned_for_both_consumers_and_cleanup_cannot_replace_i
         generation: 1,
         resource_id: evidence.resource_id,
         evidence: Arc::clone(&evidence),
+        connection: None,
     };
     let active = Arc::new(AtomicBool::new(true));
     evidence.observe(
@@ -230,6 +231,7 @@ fn intentional_session_retirement_cannot_receive_or_overwrite_a_later_native_fai
         generation: 1,
         resource_id: evidence.resource_id,
         evidence: Arc::clone(&evidence),
+        connection: None,
     };
     let retired = Arc::new(AtomicBool::new(true));
     let live = Arc::new(AtomicBool::new(true));

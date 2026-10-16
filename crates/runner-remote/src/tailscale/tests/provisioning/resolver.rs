@@ -32,8 +32,10 @@ async fn a_system_resolved_connection_remains_in_the_run_until_actual_socket_clo
     let cache = Cache::new();
     let run = cache.register(RunId::new_v4());
     let access = run.lookup(uuid::Uuid::new_v4()).unwrap();
+    let trace = crate::tailscale::evidence::Trace::new(true);
+    let observed = trace.clone();
     let work: Work = Box::new(move |control| {
-        Box::pin(async move {
+        Box::pin(observed.scope(async move {
             let mut io = Resolver::new().connect("localhost", port).await?;
             io.write_all(b"owned-system-resolve")
                 .await
@@ -41,7 +43,7 @@ async fn a_system_resolved_connection_remains_in_the_run_until_actual_socket_clo
             control.ready();
             control.cancelled().cancelled().await;
             Ok(())
-        })
+        }))
     });
     let node = access
         .native_node(
@@ -53,6 +55,20 @@ async fn a_system_resolved_connection_remains_in_the_run_until_actual_socket_clo
         )
         .unwrap();
     bounded(node.ready()).await.unwrap();
+    let snapshot = trace.snapshot().unwrap();
+    assert_eq!(
+        snapshot.endpoints[0].address,
+        std::net::SocketAddr::from(([127, 0, 0, 1], port))
+    );
+    for stage in [
+        crate::tailscale::evidence::Stage::ControlDns,
+        crate::tailscale::evidence::Stage::ControlTcp,
+    ] {
+        assert!(
+            snapshot.steps.iter().any(|step| step.stage == stage
+                && step.status == crate::tailscale::evidence::Status::Passed)
+        );
+    }
     run.close();
     bounded(node.physical()).await.unwrap();
     bounded(run.shutdown_native()).await.unwrap();

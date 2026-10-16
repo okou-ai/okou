@@ -29,7 +29,16 @@ impl ControlSockets for FixedControl {
             return Err(Failure::DomainFailed);
         }
         const HOST: &str = "controlplane.tailscale.com";
-        tokio::try_join!(self.0.connect(HOST, 443), self.0.connect(HOST, 443))
+        let trace = super::evidence::Trace::current();
+        tokio::try_join!(
+            trace
+                .clone()
+                .with_role(super::evidence::Role::Key)
+                .scope(self.0.connect(HOST, 443)),
+            trace
+                .with_role(super::evidence::Role::Control)
+                .scope(self.0.connect(HOST, 443))
+        )
     }
     fn tls(&self) -> impl Tls {
         super::registration::VerifiedTls
@@ -88,7 +97,9 @@ where
             control.retain_client(client)?;
             let provider = Provider::new(configuration, journal, provider_io, &control)?;
             let registration = Registration::with_tags(provider.tags());
-            let key = provider.create().await?;
+            let key =
+                super::evidence::observe(super::evidence::Stage::Provisioning, provider.create())
+                    .await?;
             let (key_io, native_io) = control_io.connect(registration.keys()).await?;
             let client = registration
                 .connect_tracked(

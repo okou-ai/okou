@@ -50,20 +50,20 @@ async fn configured_tls_oauth_noise_error_and_auth_url_remain_private_through_ac
     tracing::warn!(target: "hyper", "ordinary parent HTTP diagnostic");
     let api = Api::secure(None).await;
     let relay = Server::secure().await;
-    let body = serde_json::to_vec(&serde_json::json!({
-        "MachineAuthorized": true, "Error": CANARY,
-        "AuthURL": format!("https://synthetic.invalid/{CANARY}"),
-    }))
-    .unwrap();
+    let mut response: serde_json::Value = serde_json::from_slice(ACCEPTED).unwrap();
+    response["Error"] = CANARY.into();
+    response["AuthURL"] = format!("https://synthetic.invalid/{CANARY}").into();
+    let body = serde_json::to_vec(&response).unwrap();
     let control = Control::new(body, map(&relay), KeyReply::Valid, false).await;
     let descriptors = Arc::new(Mutex::new(Vec::new()));
     let cache = Cache::new();
-    let run = cache.register(RunId::new_v4());
+    let run = cache.register_with_diagnostics(RunId::new_v4(), true);
     let access = run.lookup(uuid::Uuid::new_v4()).unwrap();
     let dial = api.secure.as_ref().unwrap().clone();
+    let config = configuration(uuid::Uuid::new_v4());
     let node = access
         .native_configured(
-            configuration(uuid::Uuid::new_v4()),
+            config.clone(),
             control.provisioned_root_factory(
                 dial.clone(),
                 Relay::new(&relay, WriteGate::new(), Arc::clone(&descriptors)),
@@ -73,6 +73,25 @@ async fn configured_tls_oauth_noise_error_and_auth_url_remain_private_through_ac
     control.allow_all();
     assert_eq!(bounded(node.ready()).await, Err(Failure::DomainFailed));
     bounded(node.physical()).await.unwrap();
+    let retained = serde_json::to_value(
+        node.diagnostic_source(config.key())
+            .evidence
+            .layers()
+            .snapshot(),
+    )
+    .unwrap();
+    assert_eq!(retained["root"], "startup");
+    assert!(
+        retained["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["stage"] == "registration"
+                && s["status"] == "failed"
+                && s["detail"] == "rejected"),
+        "{retained}"
+    );
+    assert!(!retained.to_string().contains(CANARY));
     bounded(run.shutdown_native()).await.unwrap();
     dial.assert_closed(2);
     control.assert_control_closed();
@@ -125,9 +144,10 @@ async fn configured_tls_oauth_key_and_authenticated_root_share_one_physical_run_
     let run = cache.register(RunId::new_v4());
     let access = run.lookup(uuid::Uuid::new_v4()).unwrap();
     let dial = api.secure.as_ref().unwrap().clone();
+    let config = configuration(uuid::Uuid::new_v4());
     let node = access
         .native_configured(
-            configuration(uuid::Uuid::new_v4()),
+            config.clone(),
             control.provisioned_root_factory(
                 dial.clone(),
                 Relay::new(&relay, Arc::clone(&gate), Arc::clone(&descriptors)),
@@ -136,6 +156,14 @@ async fn configured_tls_oauth_key_and_authenticated_root_share_one_physical_run_
         .unwrap();
     control.allow_all();
     bounded(node.ready()).await.unwrap();
+    assert!(
+        node.diagnostic_source(config.key())
+            .evidence
+            .layers()
+            .snapshot()
+            .is_none(),
+        "disabled consumers must not activate native collection, including through a source read"
+    );
     assert_eq!(control.announced_home(), vec![1]);
     assert_eq!(control.logout_count(), 0);
     control.set_logout_reply(
