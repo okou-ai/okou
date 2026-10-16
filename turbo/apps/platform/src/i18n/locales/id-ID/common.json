@@ -2059,7 +2059,6 @@
       "messageUnavailable": "Pesan tidak tersedia",
       "more": "Lainnya",
       "origin": "Dari",
-      "parallelHint": "Coba chat paralel. Kurangi menunggu.",
       "queued": "Dalam antrean",
       "received": "Diterima",
       "refresh": "Muat ulang",
@@ -2088,7 +2087,6 @@
     "resources": {
       "collapse": "Ciutkan",
       "copyLink": "Salin tautan",
-      "empty": "Chat ini belum memiliki artefak atau tautan",
       "emptyLinks": "Belum ada tautan di chat ini",
       "expand": "Perluas",
       "links": "Tautan",

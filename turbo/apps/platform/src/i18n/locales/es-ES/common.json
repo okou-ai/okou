@@ -2106,7 +2106,6 @@
       "messageUnavailable": "Mensaje no disponible",
       "more": "Más",
       "origin": "Desde",
-      "parallelHint": "Prueba chats en paralelo. Espera menos.",
       "queued": "En cola",
       "received": "Recibido",
       "refresh": "Actualizar",
@@ -2137,7 +2136,6 @@
     "resources": {
       "collapse": "Contraer",
       "copyLink": "Copiar enlace",
-      "empty": "Este chat aún no tiene artefactos ni enlaces",
       "emptyLinks": "Aún no hay enlaces en este chat",
       "expand": "Expandir",
       "links": "Enlaces",

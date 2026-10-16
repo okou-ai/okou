@@ -2,6 +2,7 @@ import {
   chatThreadArtifactsContract,
   chatThreadEventsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { chatRelationsContract } from "@okouai/api-contracts/contracts/chat-relations";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -73,9 +74,14 @@ async function setupResourceNavigation() {
   return { current, newer, user: userEvent.setup() };
 }
 
-test.each(["messages", "artifacts"] as const)(
-  "Hide the previous chat's resources until the next chat's %s finish loading",
-  async (pendingSource) => {
+test.each([
+  { pendingSource: "messages", relationsEnabled: false },
+  { pendingSource: "artifacts", relationsEnabled: false },
+  { pendingSource: "messages", relationsEnabled: true },
+  { pendingSource: "artifacts", relationsEnabled: true },
+])(
+  "Hide the previous chat's resources until the next chat's $pendingSource finish loading (relationships enabled: $relationsEnabled)",
+  async ({ pendingSource, relationsEnabled }) => {
     installResourceGeometry(480);
     context.mocks.browser.matchMedia(true);
     const first = continuityThread(92, 1, "First resources");
@@ -100,6 +106,12 @@ test.each(["messages", "artifacts"] as const)(
     const workspace = installContinuityWorkspace(context, {
       caseId: 92,
       threads: [first, second],
+    });
+    context.mocks.api(chatRelationsContract.children, ({ respond }) => {
+      return respond(200, { items: [], nextCursor: null });
+    });
+    context.mocks.api(chatRelationsContract.communications, ({ respond }) => {
+      return respond(200, { items: [], nextCursor: null });
     });
     context.mocks.api(
       chatThreadEventsContract.rows,
@@ -179,7 +191,10 @@ test.each(["messages", "artifacts"] as const)(
       context,
       ...workspace.pageOptions,
       path: `/chats/${first.id}`,
-      featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
+      featureSwitches: {
+        [FeatureSwitchKey.ChatResourcePanel]: true,
+        [FeatureSwitchKey.ChatRelations]: relationsEnabled,
+      },
     });
     const previousPanel = await screen.findByRole("region", {
       name: "Resources",
