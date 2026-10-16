@@ -5,6 +5,7 @@ import { buttonVariants, cn } from "@okouai/ui";
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
+import { ApiError } from "../../lib/api-error.ts";
 import {
   discordOrgData$,
   DiscordPopupBlockedError,
@@ -199,9 +200,15 @@ function DiscordConnectionActions({
         ? t(($) => {
             return $.works.discord.popupBlocked;
           })
-        : t(($) => {
-            return $.works.discord.authorizationError;
-          })
+        : authorization.error instanceof ApiError &&
+            authorization.error.expected &&
+            authorization.error.code === "DISCORD_OAUTH_APPROVAL_REQUIRED"
+          ? t(($) => {
+              return $.works.discord.cancelled;
+            })
+          : t(($) => {
+              return $.works.discord.authorizationError;
+            })
       : null;
   return (
     <>
