@@ -9,6 +9,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.744.0](https://github.com/okou-ai/okou/compare/api-v1.743.2...api-v1.744.0) (2026-10-16)
+
+
+### Features
+
+* add interactive desktop shell sessions ([#40349](https://github.com/okou-ai/okou/issues/40349)) ([6dda0aa](https://github.com/okou-ai/okou/commit/6dda0aad6903feb490f88cd11db2145b140dfd1d))
+
+
+### Refactoring
+
+* **api:** retire the stage 1 reconciliation transaction ([#40512](https://github.com/okou-ai/okou/issues/40512)) ([8cc8bda](https://github.com/okou-ai/okou/commit/8cc8bda30955144ae697d2ba8b8e5a967d7f212b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.569.0
+    * @okouai/core bumped to 8.762.0
+    * @okouai/db bumped to 1.342.3
+    * @okouai/pi-agent-runtime bumped to 1.50.9
+
 ## [1.743.2](https://github.com/okou-ai/okou/compare/api-v1.743.1...api-v1.743.2) (2026-10-16)
 
 
