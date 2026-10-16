@@ -2,6 +2,7 @@
 
 mod authority;
 mod diagnostics;
+pub(crate) mod evidence;
 mod invalidation;
 mod kerberos;
 mod network;

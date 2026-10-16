@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { diagnosticTextSchema } from "../../lib/diagnostic-text";
 
 export const VNC_LIMITS = {
   imageBytes: 16 * 1024 * 1024,
@@ -78,6 +79,7 @@ const resultSchema = z.union([
   z.strictObject({
     outcome: z.enum(["not_started", "unknown", "failed"]),
     reason: reasonSchema,
+    diagnostic_text: diagnosticTextSchema,
   }),
 ]);
 const envelopeSchema = z.union([
@@ -95,6 +97,7 @@ const envelopeSchema = z.union([
       "resource_exhausted",
     ]),
     delivery: z.enum(["not_dispatched", "unknown"]),
+    diagnostic_text: diagnosticTextSchema,
   }),
 ]);
 type CaptureMetadata = z.infer<typeof captureSchema>;
@@ -123,7 +126,11 @@ export type VncOutcome = (
       reason: VncReason;
       delivery: "not_dispatched" | "unknown";
     }
-) & { cleanupReason?: "local_io"; residue?: string | null };
+) & {
+  diagnostic_text?: string;
+  cleanupReason?: "local_io";
+  residue?: string | null;
+};
 
 export class VncError extends Error {
   constructor(readonly reason: VncReason) {

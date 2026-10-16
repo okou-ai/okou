@@ -102,6 +102,7 @@ async fn unicode_chord_drag_and_scroll_reach_server_once_with_balanced_releases(
 #[tokio::test]
 async fn stale_geometry_is_not_started_and_preserves_untouched_session() {
     let mut h = Harness::new().await;
+    h.run.enable_diagnostics(&h.runtime).await;
     let resolve = h.resolve().await;
     let _check = h.check("valid", 200).await;
     let session = h.start("shared").await.session();
@@ -226,23 +227,37 @@ async fn idle_session_expires_without_waiting_for_a_followup_operation() {
 
 #[tokio::test]
 async fn cancellation_between_data_and_end_reports_unknown_error_and_eof() {
-    let mut h = Harness::new().await;
-    let _resolve = h.resolve().await;
-    let _check = h.check("valid", 200).await;
-    let session = h.start("shared").await.session();
-    mode(&h, 1).await;
-    let mut guest = h.run.open_stream(true).await;
-    send(&mut guest, &json!({"version":1,"method":"vnc.capture","remaining_ms":60000,"params":{"sessionId":session}}).to_string()).await;
-    // The host stream cancels this Run synchronously only after a whole Data
-    // frame has flushed, when the codec can still emit a valid error terminal.
-    let reply = read(guest).await;
-    assert!(!reply.bytes.is_empty());
-    assert!(!reply.ended);
-    assert_eq!(
-        reply.controls.last().unwrap(),
-        &json!({"type":"error","code":"transport","delivery":"unknown"})
-    );
-    assert!(matches!(h.peer.event().await, Event::Capture));
-    closed(&h).await;
-    h.run.shutdown().await;
+    for enabled in [false, true] {
+        let mut h = Harness::new().await;
+        if enabled {
+            h.run.enable_diagnostics(&h.runtime).await;
+        }
+        let _resolve = h.resolve().await;
+        let _check = h.check("valid", 200).await;
+        let session = h.start("shared").await.session();
+        mode(&h, 1).await;
+        let mut guest = h.run.open_stream(true).await;
+        send(&mut guest, &json!({"version":1,"method":"vnc.capture","remaining_ms":60000,"params":{"sessionId":session}}).to_string()).await;
+        // Cancellation follows a complete Data frame, while an error is still writable.
+        let reply = read(guest).await;
+        assert!(!reply.bytes.is_empty());
+        assert!(!reply.ended);
+        let error = reply.controls.last().unwrap();
+        if enabled {
+            assert_eq!(error["type"], "error");
+            assert_eq!(error["code"], "transport");
+            assert_eq!(error["delivery"], "unknown");
+            let text = crate::test_fixtures::diagnostic_text(error);
+            assert!(text.contains("VNC capture: unknown."), "{text}");
+            assert!(text.contains(&format!("Session: {session}\n")), "{text}");
+        } else {
+            assert_eq!(
+                error,
+                &json!({"type":"error","code":"transport","delivery":"unknown"})
+            );
+        }
+        assert!(matches!(h.peer.event().await, Event::Capture));
+        closed(&h).await;
+        h.run.shutdown().await;
+    }
 }

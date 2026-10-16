@@ -25,6 +25,16 @@ pub(super) struct Attempt {
 }
 
 impl Attempt {
+    pub(super) fn apply(&self, snapshot: &mut Option<super::evidence::Snapshot>) {
+        if let Some(snapshot) = snapshot {
+            snapshot.profile = Some(self.profile);
+            snapshot.rfb_error_code = self.rfb_error_code;
+            snapshot.authentication_stage = self.authentication_stage;
+            snapshot.dh_check = self.dh_check;
+            snapshot.dh_generator = self.dh_generator;
+            snapshot.dh_key_bytes = self.dh_key_bytes;
+        }
+    }
     pub(super) fn new(
         started: Instant,
         authentication: &Authentication,

@@ -237,15 +237,25 @@ async fn vnc_history_preserves_ssh_host_key_failure_before_business_conversion()
         })
         .await;
     let failure = h.raw(json!({"version":1,"method":"vnc.session.start","remaining_ms":60000,"params":{"connectionId":VNC,"mode":"shared"}}).to_string()).await;
-    assert_eq!(
-        terminal(&failure),
-        &json!({"outcome":"failed","reason":"invalid_credential"})
+    assert_eq!(terminal(&failure)["outcome"], "failed");
+    assert_eq!(terminal(&failure)["reason"], "invalid_credential");
+    let automatic = diagnostic_text(terminal(&failure));
+    assert!(automatic.contains("VNC transport: failed."), "{automatic}");
+    assert!(
+        automatic.contains("VNC authentication: not reached."),
+        "{automatic}"
+    );
+    assert!(automatic.contains("ssh trust: failed."), "{automatic}");
+    assert!(
+        automatic.contains("Verify the dependency's SSH server host key"),
+        "{automatic}"
     );
     let history = h
         .raw(json!({"version":1,"method":"vnc.diagnose","params":{}}).to_string())
         .await;
     let report = terminal(&history);
     assert_eq!(report["status"], "found");
+    assert_eq!(diagnostic_text(report), automatic);
     assert!(diagnostic_text(report).contains(&format!("- Dependency (ssh): {CONNECTION}; cause: SSH host key mismatch; configuration created at {CREATED_AT}; generation 7.")));
     assert!(!report.to_string().contains("password-canary"));
     assert!(!report.to_string().contains("user-canary"));
