@@ -10,7 +10,7 @@ export type WalletPermission =
   "payments" | "spendHistory" | "paymentMethods" | "userInfo" | "transactions";
 
 export function walletAuthorization(credentials?: Credentials) {
-  const scopes = credentials?.scope?.split(/[ ,]+/).filter(Boolean) ?? [];
+  const scopes = credentials?.scope.split(/[ ,]+/).filter(Boolean) ?? [];
   const sourceActions = [
     ...new Set(
       credentials?.authorizationDetails
@@ -22,17 +22,11 @@ export function walletAuthorization(credentials?: Credentials) {
         }) ?? [],
     ),
   ];
-  // Legacy credentials were accepted only after validating the payment scope.
-  // They establish no financial-data or profile grant until refreshed.
-  // Remove once old API writers/rollback targets and unrefreshed credentials
-  // are gone, together with linkCredentialsSchema's tolerance; cleanup #40206.
-  const payments =
-    Boolean(credentials && credentials.scope === undefined) ||
-    scopes.includes("payment_methods.agentic");
+  const payments = scopes.includes("payment_methods.agentic");
   const userInfo = scopes.includes("userinfo:read");
   const transactions = sourceActions.includes("read_link_transactions");
   return {
-    known: credentials?.scope !== undefined,
+    known: Boolean(credentials),
     scopes,
     sourceActions,
     capabilities: {

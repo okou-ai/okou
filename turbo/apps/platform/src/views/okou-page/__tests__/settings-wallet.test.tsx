@@ -85,6 +85,25 @@ function connection(connected: boolean): WalletConnectionStatus {
     connectionStatus: connected ? "connected" : "not-connected",
     scopeChange: null,
     nextAction: connected ? ("create_spend" as const) : ("connect" as const),
+    authorization: {
+      known: connected,
+      scopes: connected ? ["payment_methods.agentic"] : [],
+      sourceActions: [],
+      capabilities: {
+        payments: connected,
+        spendHistory: connected,
+        paymentMethods: connected,
+        userInfo: false,
+        transactions: false,
+      },
+      missingPermissions: connected
+        ? ["userinfo:read", "read_link_transactions"]
+        : [
+            "payment_methods.agentic",
+            "userinfo:read",
+            "read_link_transactions",
+          ],
+    },
     checkoutAvailable: false as const,
   };
 }

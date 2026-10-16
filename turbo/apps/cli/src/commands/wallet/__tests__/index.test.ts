@@ -38,6 +38,7 @@ const spend = {
   merchantUrl: "https://books.example.test",
   context,
   test: true,
+  createdAt: "2026-10-12T07:30:00.000Z",
   approvalUrl:
     "https://app.link.com/activity/approve/lsrq_example?approval=keep-exact",
   expiresAt: "2026-10-12T08:00:00.000Z",
@@ -95,24 +96,36 @@ function credentialDownload(value: unknown) {
 }
 
 describe("okou wallet", () => {
-  it("prints wallet status and makes checkout limitations explicit", async () => {
+  it("prints the disconnected wallet status and missing grants", async () => {
+    const status = {
+      connected: false,
+      nextAction: "connect",
+      checkoutAvailable: false,
+      authorization: {
+        known: false,
+        scopes: [],
+        sourceActions: [],
+        capabilities: {
+          payments: false,
+          spendHistory: false,
+          paymentMethods: false,
+          userInfo: false,
+          transactions: false,
+        },
+        missingPermissions: [
+          "payment_methods.agentic",
+          "userinfo:read",
+          "read_link_transactions",
+        ],
+      },
+    };
     server.use(
       http.get(`${origin}/api/wallet/status`, () => {
-        return HttpResponse.json({
-          connected: false,
-          nextAction: "connect",
-          checkoutAvailable: false,
-        });
+        return HttpResponse.json(status);
       }),
     );
     await run(["status", "--json"]);
-    expect(output).toHaveBeenCalledWith(
-      JSON.stringify({
-        connected: false,
-        nextAction: "connect",
-        checkoutAvailable: false,
-      }),
-    );
+    expect(JSON.parse(String(output.mock.calls[0]?.[0]))).toStrictEqual(status);
   });
   it.each([true, false])(
     "reports read-only access while retaining the compatible status response (json=%s)",
