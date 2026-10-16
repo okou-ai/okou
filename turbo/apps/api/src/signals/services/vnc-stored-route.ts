@@ -252,6 +252,9 @@ function validateStoredVncTrust(row: StoredSecurity) {
   } else if (
     row.rsaServerKeySha256 !== null ||
     row.trustMode === "none" ||
+    // The Cloudflare gateway is a carrier endpoint, not the inner VNC identity.
+    (row.transportType === "cloudflare_access" &&
+      row.x509ServerName === null) ||
     (row.trustMode === "system" ? row.caBundle !== null : row.caBundle === null)
   ) {
     throw new Error("Invalid stored VNC X509 trust");
