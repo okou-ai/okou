@@ -560,6 +560,8 @@ jobs:
     timeout-minutes: 20
     env:
       CARGO_PROFILE_TEST_DEBUG: line-tables-only
+      # Merge concurrent cases into a bounded pool per executable build ID.
+      LLVM_PROFILE_FILE_NAME: crates-%b-%8m.profraw
       # Share the pinned native dependencies produced by the check job.
       KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     container:
@@ -628,7 +630,7 @@ jobs:
       - name: Run tests with coverage
         run: |
           cd crates
-          rm -f target/llvm-cov-target/cargo-timings/cargo-timing.html
+          rm -f target/llvm-cov-target/cargo-timings/cargo-timing.html lcov.info coverage-profile-statistics.txt
           cargo llvm-cov nextest --all-targets --all-features --test-threads 8 --lcov --output-path lcov.info --timings
 
       - name: Validate coverage report
@@ -654,7 +656,9 @@ jobs:
       - name: Report final coverage disk usage
         if: success() || failure()
         continue-on-error: true
+        shell: bash
         run: |
+          set -euo pipefail
           df -h "$GITHUB_WORKSPACE"
           for path in crates/target crates/target/llvm-cov-target; do
             if [ -e "$path" ]; then
@@ -663,6 +667,10 @@ jobs:
               echo "$path: not present"
             fi
           done
+          find crates/target/llvm-cov-target -maxdepth 1 -type f -name '*.profraw' -printf '%s\n' |
+            awk '{ count++; bytes += $1 } END {
+              printf "Coverage raw profile files: %d\nCoverage raw profile bytes: %.0f\n", count, bytes
+            }' | tee crates/coverage-profile-statistics.txt
 
       - name: Upload coverage to Codecov
         if: success() || failure()
@@ -686,6 +694,19 @@ jobs:
         with:
           name: rust-coverage-build-timings-${{ github.run_attempt }}
           path: crates/target/llvm-cov-target/cargo-timings/cargo-timing.html
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload coverage profile evidence
+        if: success() || failure()
+        continue-on-error: true
+        timeout-minutes: 1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rust-coverage-profile-evidence-${{ github.run_attempt }}
+          path: |
+            crates/lcov.info
+            crates/coverage-profile-statistics.txt
           if-no-files-found: warn
           retention-days: 7
 

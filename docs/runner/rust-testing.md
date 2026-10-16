@@ -226,6 +226,10 @@ cargo llvm-cov nextest --all-targets --all-features --test-threads 8 \
 Nextest schedules tests across executables and runs each case in a separate
 process. Guest mock fixtures recognize the verified Cargo or nextest parent
 session so the mock binaries are built once per invocation, not once per case.
+On Linux CI, `LLVM_PROFILE_FILE_NAME=crates-%b-%8m.profraw` separates executable
+build IDs and gives each profile signature up to eight raw files. LLVM manages
+locking and merging across test processes and their children. Default fresh
+coverage cleanup still removes profiles from earlier invocations.
 The job requires a nonempty LCOV report with at least one source file, then
 logs the unique normalized source-file count and source-set SHA-256 before
 uploading to Codecov. It does not compare the digest against an expected value;
@@ -237,6 +241,14 @@ to inspect build-unit durations, dependencies and concurrent work. Each unit
 includes its compilation and linking work; these timings do not isolate linker
 CPU time, and overlapping unit durations do not add up to total build wall time.
 Timing uploads are best-effort diagnostics and do not replace the coverage result.
+
+The job also logs the count and summed file bytes of its fresh raw profiles.
+The `rust-coverage-profile-evidence-<attempt>` artifact retains those statistics
+and the fresh LCOV report for seven days. Match its attempt and source checkout
+when comparing coverage or collection cost; asynchronous hit counts can vary.
+Raw-profile file bytes measure retained data footprint, not physical writes,
+process memory or runner cost. Evidence uploads are bounded diagnostics and
+cannot replace a failed coverage run.
 
 ## Test Organization
 
