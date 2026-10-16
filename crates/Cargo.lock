@@ -2083,6 +2083,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "guest-agent-tests"
+version = "0.1.0"
+dependencies = [
+ "api-contracts",
+ "base64 0.23.1",
+ "cli-test-support",
+ "flate2",
+ "futures-util",
+ "guest-agent",
+ "guest-contracts",
+ "guest-telemetry",
+ "httpmock",
+ "libc",
+ "process-control-ipc",
+ "reqwest",
+ "rustix",
+ "serde",
+ "serde_json",
+ "shell-quote",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "uuid",
+]
+
+[[package]]
 name = "guest-channel-server"
 version = "0.4.5"
 dependencies = [
