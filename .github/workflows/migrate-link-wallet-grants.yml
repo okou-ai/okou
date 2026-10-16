@@ -52,12 +52,12 @@ jobs:
           NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
         run: |
           set -euo pipefail
-          database_url=$(neonctl connection-string production --project-id "$NEON_PROJECT_ID" --database-name neondb --role-name neondb_owner --pooled --ssl verify-full)
-          masked_url="${database_url//%/%25}"
-          masked_url="${masked_url//$'\r'/%0D}"
-          masked_url="${masked_url//$'\n'/%0A}"
-          printf '::add-mask::%s\n' "$masked_url"
-          echo "database-url=$database_url" >> "$GITHUB_OUTPUT"
+          DATABASE_URL=$(neonctl connection-string production --project-id "$NEON_PROJECT_ID" --database-name neondb --role-name neondb_owner --pooled --ssl verify-full)
+          WORKFLOW_COMMAND_DATA="${DATABASE_URL//%/%25}"
+          WORKFLOW_COMMAND_DATA="${WORKFLOW_COMMAND_DATA//$'\r'/%0D}"
+          WORKFLOW_COMMAND_DATA="${WORKFLOW_COMMAND_DATA//$'\n'/%0A}"
+          printf '::add-mask::%s\n' "$WORKFLOW_COMMAND_DATA"
+          echo "database-url=$DATABASE_URL" >> "$GITHUB_OUTPUT"
 
       - name: Fetch production Doppler OAuth config
         id: doppler-oauth
