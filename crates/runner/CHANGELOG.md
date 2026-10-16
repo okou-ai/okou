@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.234.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.233.13...runner-rs-v0.234.0) (2026-10-16)
+
+
+### Features
+
+* **runner:** retain home cache by filesystem pressure ([#40658](https://github.com/okou-ai/okou/issues/40658)) ([713e66c](https://github.com/okou-ai/okou/commit/713e66cc7d558d4626834ea5186cfa0f2517e207))
+
+
+### Refactoring
+
+* **runner-provider:** own abandoned local result marker custody ([#40667](https://github.com/okou-ai/okou/issues/40667)) ([a9a257c](https://github.com/okou-ai/okou/commit/a9a257c329ed81cf41582e1900443c4af35a5798))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.233.13](https://github.com/okou-ai/okou/compare/runner-rs-v0.233.12...runner-rs-v0.233.13) (2026-10-16)
 
 

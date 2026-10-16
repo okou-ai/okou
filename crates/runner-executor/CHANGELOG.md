@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.13.12...runner-executor-v0.14.0) (2026-10-16)
+
+
+### Features
+
+* **remote:** explain vnc failures with retained source evidence ([#40669](https://github.com/okou-ai/okou/issues/40669)) ([07b1a90](https://github.com/okou-ai/okou/commit/07b1a902af74b7a3ebde6434b86e4efb35b1de7e))
+
 ## [0.13.12](https://github.com/okou-ai/okou/compare/runner-executor-v0.13.11...runner-executor-v0.13.12) (2026-10-16)
 
 

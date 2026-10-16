@@ -1,5 +1,26 @@
 # Changelog
 
+## [9.399.0](https://github.com/okou-ai/okou/compare/cli-v9.398.1...cli-v9.399.0) (2026-10-16)
+
+
+### Features
+
+* **remote:** explain vnc failures with retained source evidence ([#40669](https://github.com/okou-ai/okou/issues/40669)) ([07b1a90](https://github.com/okou-ai/okou/commit/07b1a902af74b7a3ebde6434b86e4efb35b1de7e))
+
+
+### Refactoring
+
+* **wallet:** migrate and require link grant metadata ([#40627](https://github.com/okou-ai/okou/issues/40627)) ([86adc57](https://github.com/okou-ai/okou/commit/86adc578e06477316a04b479d7c30043264f3e9c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.572.2
+    * @okouai/core bumped to 8.765.0
+    * @okouai/pi-agent-runtime bumped to 1.50.14
+
 ## [9.398.1](https://github.com/okou-ai/okou/compare/cli-v9.398.0...cli-v9.398.1) (2026-10-16)
 
 

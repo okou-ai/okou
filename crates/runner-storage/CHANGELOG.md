@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.9](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.8...runner-storage-v0.5.9) (2026-10-16)
+
+
+### Refactoring
+
+* **runner-storage:** converge multipart scheduler failure retirement ([#40665](https://github.com/okou-ai/okou/issues/40665)) ([de324d4](https://github.com/okou-ai/okou/commit/de324d44248ae8060d183a371978a351700a34f7))
+
 ## [0.5.8](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.7...runner-storage-v0.5.8) (2026-10-16)
 
 

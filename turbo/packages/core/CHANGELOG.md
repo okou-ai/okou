@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.765.0](https://github.com/okou-ai/okou/compare/core-v8.764.2...core-v8.765.0) (2026-10-16)
+
+
+### Features
+
+* **app:** include custom templates in slash commands ([#40685](https://github.com/okou-ai/okou/issues/40685)) ([5c673b4](https://github.com/okou-ai/okou/commit/5c673b4757de42b7bbba75eceb972be3c7a71c20))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.2
+
 ## [8.764.2](https://github.com/okou-ai/okou/compare/core-v8.764.1...core-v8.764.2) (2026-10-16)
 
 

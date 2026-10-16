@@ -9,6 +9,39 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.748.0](https://github.com/okou-ai/okou/compare/api-v1.747.1...api-v1.748.0) (2026-10-16)
+
+
+### Features
+
+* **api:** add wechat reconnect and welcome notices ([#40681](https://github.com/okou-ai/okou/issues/40681)) ([1ee59ba](https://github.com/okou-ai/okou/commit/1ee59ba30a0a33ecbb4d2c0f3362655b64c6a4fe))
+
+
+### Bug Fixes
+
+* **api:** align wechat reply footers and typing status ([#40679](https://github.com/okou-ai/okou/issues/40679)) ([0f56a28](https://github.com/okou-ai/okou/commit/0f56a28b157cf43b9770238ba1ff501f7fb77df7))
+
+
+### Refactoring
+
+* **api:** own browser user-action creation persistence ([#40701](https://github.com/okou-ai/okou/issues/40701)) ([a9801dd](https://github.com/okou-ai/okou/commit/a9801dd83cfe088ab97fb8cbb5874394e2ededcd))
+* **api:** own canonical slack prepare read in its command ([#40695](https://github.com/okou-ai/okou/issues/40695)) ([7cf0612](https://github.com/okou-ai/okou/commit/7cf06121f2c2e7af9d3d81edb2b2523284485280))
+* **api:** own connected teams user read in target command ([#40675](https://github.com/okou-ai/okou/issues/40675)) ([5b6076e](https://github.com/okou-ai/okou/commit/5b6076ee66b32eca7d1cb6a4bed44ead98ccf1ee))
+* **api:** own subscription preview billing read ([#40697](https://github.com/okou-ai/okou/issues/40697)) ([dae07a4](https://github.com/okou-ai/okou/commit/dae07a44c1e37343ce2d1dca5163333ad7c687a2)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** retire tx-0230 prepared-work validation transaction ([#40687](https://github.com/okou-ai/okou/issues/40687)) ([4c26006](https://github.com/okou-ai/okou/commit/4c2600620a2743af42299698506467ba54f1119c)) [#40676](https://github.com/okou-ai/okou/issues/40676)
+* **api:** use captured thread attribution for chat usage ([#40682](https://github.com/okou-ai/okou/issues/40682)) ([e6c4c5e](https://github.com/okou-ai/okou/commit/e6c4c5e4beed1c53bc03f3f5956ea6144b858d8d))
+* **wallet:** migrate and require link grant metadata ([#40627](https://github.com/okou-ai/okou/issues/40627)) ([86adc57](https://github.com/okou-ai/okou/commit/86adc578e06477316a04b479d7c30043264f3e9c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.2
+    * @okouai/core bumped to 8.765.0
+    * @okouai/db bumped to 1.345.0
+    * @okouai/pi-agent-runtime bumped to 1.50.14
+
 ## [1.747.1](https://github.com/okou-ai/okou/compare/api-v1.747.0...api-v1.747.1) (2026-10-16)
 
 
