@@ -497,7 +497,49 @@ export const completeCanonicalSlackDelivery$ = command(
     (CanonicalSlackDeliveryResult & { readonly channelId: string }) | null
   > => {
     const db = set(writeDb$);
-    const row = await canonicalSlackDeliveryRow(db, args);
+    const readDelivery = async (): Promise<
+      CanonicalSlackDeliveryRow | undefined
+    > => {
+      const [row] = await db
+        .select({
+          assetId: runUploadedFiles.id,
+          filename: runUploadedFiles.filename,
+          sizeBytes: runUploadedFiles.sizeBytes,
+          assetUrl: runUploadedFiles.url,
+          operationId: canonicalAssetDeliveries.operationId,
+          status: canonicalAssetDeliveries.status,
+          destination: canonicalAssetDeliveries.destination,
+          externalId: canonicalAssetDeliveries.externalId,
+          deliveryUrl: canonicalAssetDeliveries.url,
+          lastError: canonicalAssetDeliveries.lastError,
+        })
+        .from(canonicalAssetDeliveries)
+        .innerJoin(
+          runUploadedFiles,
+          eq(runUploadedFiles.id, canonicalAssetDeliveries.assetId),
+        )
+        .where(
+          and(
+            eq(runUploadedFiles.id, args.assetId),
+            eq(runUploadedFiles.runId, args.runId),
+            eq(runUploadedFiles.userId, args.userId),
+            eq(runUploadedFiles.assetVersion, CANONICAL_ASSET_VERSION),
+            eq(runUploadedFiles.classification, "published-output"),
+            eq(runUploadedFiles.materializationStatus, "ready"),
+            eq(canonicalAssetDeliveries.provider, "slack"),
+            eq(canonicalAssetDeliveries.operationId, args.operationId),
+          ),
+        )
+        .limit(1);
+      if (!row) {
+        return undefined;
+      }
+      if (row.destination.provider !== undefined) {
+        throw new Error("Slack delivery has a Discord destination");
+      }
+      return { ...row, destination: row.destination };
+    };
+    const row = await readDelivery();
     signal.throwIfAborted();
     if (!row) {
       return null;
