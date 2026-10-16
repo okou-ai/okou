@@ -220,7 +220,7 @@ coverage command from `crates/`:
 
 ```bash
 cargo llvm-cov nextest --all-targets --all-features --test-threads 8 \
-  --lcov --output-path lcov.info
+  --lcov --output-path lcov.info --timings
 ```
 
 Nextest schedules tests across executables and runs each case in a separate
@@ -230,6 +230,13 @@ The job requires a nonempty LCOV report with at least one source file, then
 logs the unique normalized source-file count and source-set SHA-256 before
 uploading to Codecov. It does not compare the digest against an expected value;
 failed coverage still fails the Crates gate.
+
+The coverage job retains its fresh Cargo build timing report for seven days in
+the run's `rust-coverage-build-timings-<attempt>` artifact. Open `cargo-timing.html`
+to inspect build-unit durations, dependencies and concurrent work. Each unit
+includes its compilation and linking work; these timings do not isolate linker
+CPU time, and overlapping unit durations do not add up to total build wall time.
+Timing uploads are best-effort diagnostics and do not replace the coverage result.
 
 ## Test Organization
 

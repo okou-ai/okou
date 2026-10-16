@@ -628,7 +628,8 @@ jobs:
       - name: Run tests with coverage
         run: |
           cd crates
-          cargo llvm-cov nextest --all-targets --all-features --test-threads 8 --lcov --output-path lcov.info
+          rm -f target/llvm-cov-target/cargo-timings/cargo-timing.html
+          cargo llvm-cov nextest --all-targets --all-features --test-threads 8 --lcov --output-path lcov.info --timings
 
       - name: Validate coverage report
         run: |
@@ -676,6 +677,17 @@ jobs:
       - name: Report sccache statistics
         if: always() && steps.sccache.outputs.started == 'true'
         run: .github/scripts/report-sccache-stats.sh
+
+      - name: Upload coverage build timings
+        if: success() || failure()
+        continue-on-error: true
+        timeout-minutes: 1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rust-coverage-build-timings-${{ github.run_attempt }}
+          path: crates/target/llvm-cov-target/cargo-timings/cargo-timing.html
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Report peak memory
         if: always()
