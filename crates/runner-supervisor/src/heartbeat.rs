@@ -335,7 +335,7 @@ pub struct InitialHomeCacheRefreshOutcome {
     pub loaded_cache_keys: BTreeSet<String>,
 }
 
-/// Collect current runner state, refresh the local home-cache snapshot, and
+/// Assemble current runner state and the committed home-cache snapshot, then
 /// send a heartbeat to the server.
 async fn send_heartbeat(
     hb: &HeartbeatContext,
