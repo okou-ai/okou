@@ -8,6 +8,7 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import { click, setupPage, startPage } from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../lib/time.ts";
+import { initSentry } from "../../../lib/sentry.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   getAction,
@@ -127,6 +128,81 @@ test.each(["0.1018", "0.1025", "current"] as const)(
     );
     expect(popup.closed).toBe(generation === "0.1018");
     expect(popup.location.href).not.toContain(completionToken);
+  },
+);
+
+test.each(["/works", "/settings/discord"])(
+  "Approval and closure while a pending response is in flight still completes from %s",
+  async (path) => {
+    const sentry = context.mocks.sentry();
+    initSentry();
+    let approved = false;
+    let connected = false;
+    const pending = context.mocks.deferred<void>();
+    const releasePending = context.mocks.deferred<void>();
+    const popup = context.mocks.browser.authWindow();
+    Object.defineProperty(popup, "location", {
+      configurable: true,
+      value: { href: "" },
+    });
+    context.mocks.browser.open(popup);
+    context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
+      return respond(200, status(connected));
+    });
+    context.mocks.api(discordOauthContract.start, ({ respond }) => {
+      return respond(200, { authorizationUrl, completionToken });
+    });
+    context.mocks.api(
+      discordOauthContract.complete,
+      async ({ body, respond }) => {
+        expect(body).toStrictEqual({ state, completionToken });
+        if (!approved) {
+          pending.resolve();
+          await releasePending.promise;
+          return respond(409, {
+            error: {
+              code: "DISCORD_OAUTH_APPROVAL_REQUIRED",
+              message: "Approval required",
+            },
+          });
+        }
+        connected = true;
+        return respond(200, { status: "connected" });
+      },
+    );
+    await setupPage({
+      context,
+      path,
+      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
+    });
+    const container =
+      path === "/works" ? getIntegrationCard("Discord") : document.body;
+    click(getAction("button", "Connect", container));
+    await pending.promise;
+    expect(popup.location.href).toBe(authorizationUrl);
+    // The API has already decided pending when the 0.1018 tab approves and
+    // closes. Only a subsequent owned completion request can observe approval.
+    approved = true;
+    popup.close();
+    releasePending.resolve();
+    await expect(
+      within(container).findByText(
+        path === "/works" ? "Connected" : "Connected to Discord",
+      ),
+    ).resolves.toBeInTheDocument();
+    expect(window.location.pathname).toBe(path);
+    await waitFor(() => {
+      expect(new URLSearchParams(window.location.search).get("status")).toBe(
+        path === "/works" ? null : "connected",
+      );
+    });
+    expect(popup.closed).toBeTruthy();
+    expect(
+      screen.queryByText(
+        "Discord authorization was cancelled. You can start again.",
+      ),
+    ).toBeNull();
+    expect(sentry.reports).toStrictEqual([]);
   },
 );
 

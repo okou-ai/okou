@@ -13,6 +13,7 @@ import {
   setupPage,
   startPage,
 } from "../../../__tests__/page-helper.ts";
+import { initSentry } from "../../../lib/sentry.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { bootstrapSkeleton } from "../../../test/bootstrap-skeleton.ts";
 import {
@@ -812,15 +813,32 @@ test("Leaving the consent route cancels automatic verification and destroys its 
   expect(closed).not.toHaveBeenCalled();
 });
 
-test("Popup closure without approved evidence fails completion instead of manufacturing a connection", async () => {
+test("Unapproved popup closure shows cancellation without failure capture and Works can retry", async () => {
+  const sentry = context.mocks.sentry();
+  initSentry();
   const { popup } = authorizationWindow();
+  let current = status({ isConnected: false, discordUserId: null });
+  let retrying = false;
+  let approved = false;
+  const retryState = "r".repeat(43);
+  const retryToken = "t".repeat(43);
+  let completionBody: unknown;
+  const retryUrl = `https://discord.com/oauth2/authorize?state=${retryState}`;
   context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
-    return respond(200, status({ isConnected: false, discordUserId: null }));
+    return respond(200, current);
   });
   context.mocks.api(discordOauthContract.start, ({ respond }) => {
-    return respond(200, { authorizationUrl, completionToken });
+    return respond(200, {
+      authorizationUrl: retrying ? retryUrl : authorizationUrl,
+      completionToken: retrying ? retryToken : completionToken,
+    });
   });
-  context.mocks.api(discordOauthContract.complete, ({ respond }) => {
+  context.mocks.api(discordOauthContract.complete, ({ body, respond }) => {
+    completionBody = body;
+    if (body.state === retryState && approved) {
+      current = status();
+      return respond(200, { status: "connected" });
+    }
     return respond(409, approvalRequired());
   });
   await setupDiscordPage();
@@ -836,21 +854,52 @@ test("Popup closure without approved evidence fails completion instead of manufa
   });
   popup.close();
   await expect(
-    screen.findByText(approvalRequired().error.message),
+    screen.findByText(
+      "Discord authorization was cancelled. You can start again.",
+    ),
   ).resolves.toBeInTheDocument();
   expect(within(card).queryByText(/^Connected(?: \(.+\))?$/u)).toBeNull();
   await waitFor(() => {
     expect(getAction("button", "Connect", card)).toBeEnabled();
   });
+  expect(screen.queryByText(approvalRequired().error.message)).toBeNull();
+  expect(window.location.pathname).toBe("/works");
+  expect(window.location.search).toBe("");
+  expect(sentry.reports).toStrictEqual([]);
+
+  const retryPopup = authorizationWindow().popup;
+  retrying = true;
+  click(getAction("button", "Connect", card));
+  await waitFor(() => {
+    expect(retryPopup.location.href).toBe(retryUrl);
+  });
+  expect(getAction("button", "Connect", card)).toBeDisabled();
+  expect(within(card).queryByText(/^Connected(?: \(.+\))?$/u)).toBeNull();
+  approved = true;
+  await expect(
+    within(card).findByText("Connected"),
+  ).resolves.toBeInTheDocument();
+  expect(window.location.pathname).toBe("/works");
+  expect(window.location.search).toBe("");
+  expect(retryPopup.closed).toBeFalsy();
+  expect(completionBody).toStrictEqual({
+    state: retryState,
+    completionToken: retryToken,
+  });
+  expect(sentry.reports).toStrictEqual([]);
 });
 
 test.each([
   { statusCode: 409 as const, code: "CONFLICT" },
   { statusCode: 400 as const, code: "DISCORD_OAUTH_FAILED" },
   { statusCode: 503 as const, code: "DISCORD_OAUTH_UNAVAILABLE" },
+  { statusCode: 403 as const, code: "FORBIDDEN" },
+  { statusCode: 503 as const, code: "DISCORD_OAUTH_APPROVAL_REQUIRED" },
 ])(
   "A terminal completion error $code keeps Works retryable and shows the result in the authorization tab",
   async ({ statusCode, code }) => {
+    const sentry = context.mocks.sentry();
+    initSentry();
     const { popup } = authorizationWindow();
     context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
       return respond(200, status({ isConnected: false, discordUserId: null }));
@@ -893,6 +942,12 @@ test.each([
       window.location.origin,
     );
     expect(popup.closed).toBeFalsy();
+    expect(sentry.reports).toMatchObject([
+      {
+        type: "exception",
+        error: { code, status: statusCode, expected: false },
+      },
+    ]);
   },
 );
 

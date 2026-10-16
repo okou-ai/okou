@@ -133,14 +133,36 @@ export const startDiscordAuthorization$ = command(
               flowSignal.throwIfAborted();
               if (
                 completion.status === 409 &&
-                completion.body.error.code ===
-                  "DISCORD_OAUTH_APPROVAL_REQUIRED" &&
+                completion.body.error.code === "DISCORD_OAUTH_APPROVAL_REQUIRED"
+              ) {
                 // A 0.1018 consent tab can approve and close while an older
                 // pending response is in flight. Check once more under the
                 // private proof before treating closure as cancellation.
-                (!popup.closed || !closedBeforeRequest)
-              ) {
-                return false;
+                if (!popup.closed || !closedBeforeRequest) {
+                  return false;
+                }
+                // Closure makes this pending response an expected cancellation.
+                // Keep its status/code and use the shared error presentation.
+                await accept(
+                  Promise.resolve({
+                    ...completion,
+                    body: {
+                      error: {
+                        ...completion.body.error,
+                        message: i18n.t(($) => {
+                          return $.works.discord.cancelled;
+                        }),
+                      },
+                    },
+                  }),
+                  [200],
+                  flowSignal,
+                  {
+                    expectedErrors: {
+                      409: ["DISCORD_OAUTH_APPROVAL_REQUIRED"],
+                    },
+                  },
+                );
               }
               await accept(Promise.resolve(completion), [200], flowSignal);
               return true;
