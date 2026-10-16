@@ -22,8 +22,10 @@ from firewall_matching.patterns import (
     _split_path_segments,
 )
 from host_normalization import (
+    is_ipv4_number_component,
     normalize_hostname_separators,
     normalize_idna_hostname,
+    normalize_idna_label,
     translate_idna_dot_separators,
 )
 from path_security import has_unsafe_url_path
@@ -36,6 +38,7 @@ from url_syntax import (
 )
 
 _MIN_HOST_SEGMENTS = 2
+_MAX_IPV4_HOST_SEGMENTS = 4
 _ASCII_MAX = 0x7F
 _FORBIDDEN_AUTHORITY_HOST_CHARS = frozenset("#%/<>?@[\\]^|[]")
 _FORBIDDEN_RUNTIME_AUTHORITY_HOST_CHARS = _FORBIDDEN_AUTHORITY_HOST_CHARS | frozenset("{}")
@@ -148,20 +151,38 @@ def _format_param_segment(parsed: SegmentParam) -> str:
     return f"{parsed.prefix.lower()}{{{parsed.name}{parsed.greedy}}}{parsed.suffix.lower()}"
 
 
+def _is_parameterized_ipv4_host(segments: list[ParsedSegment]) -> bool:
+    if len(segments) > _MAX_IPV4_HOST_SEGMENTS:
+        return False
+
+    has_numeric_literal = False
+    for segment in segments:
+        if isinstance(segment, SegmentLiteral):
+            if not is_ipv4_number_component(segment.value):
+                return False
+            has_numeric_literal = True
+        elif not isinstance(segment, SegmentParam) or segment.prefix or segment.suffix:
+            return False
+
+    return has_numeric_literal
+
+
 def _normalize_parameterized_authority_host(host: str) -> tuple[str, bool]:
     normalized = normalize_hostname_separators(host)
     labels: list[str] = []
+    segments: list[ParsedSegment] = []
     malformed = False
 
     for label in normalized.split("."):
         parsed = _parse_segment(label)
+        segments.append(parsed)
         if isinstance(parsed, SegmentLiteral):
             if "*" in parsed.value:
                 labels.append(parsed.value.lower())
                 malformed = True
                 continue
             try:
-                labels.append(normalize_idna_hostname(parsed.value))
+                labels.append(normalize_idna_label(parsed.value))
             except (UnicodeError, ValueError):
                 labels.append(parsed.value.lower())
                 malformed = True
@@ -177,7 +198,7 @@ def _normalize_parameterized_authority_host(host: str) -> tuple[str, bool]:
             malformed = True
         labels.append(_format_param_segment(parsed))
 
-    return ".".join(labels), malformed
+    return ".".join(labels), malformed or _is_parameterized_ipv4_host(segments)
 
 
 def _split_base_match_url(

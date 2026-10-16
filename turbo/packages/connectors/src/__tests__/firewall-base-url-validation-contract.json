@@ -468,6 +468,43 @@
     },
     {
       "category": "valid",
+      "name": "parameterized dns host with decimal literal label",
+      "base": "https://{sub}.123.example.com",
+      "expectedValid": true
+    },
+    {
+      "category": "valid",
+      "name": "parameterized dns host with leading-zero decimal literal label",
+      "base": "https://{sub}.0123.example.com",
+      "expectedValid": true
+    },
+    {
+      "category": "hostname-policy",
+      "name": "parameterized dns host canonicalizes hexadecimal-looking literal label",
+      "base": "https://{sub}.0XABC.example.com",
+      "expectedValid": true,
+      "expectedCanonicalBase": "https://{sub}.0xabc.example.com"
+    },
+    {
+      "category": "valid",
+      "name": "mixed host parameter with decimal literal dns label",
+      "base": "https://api-{sub}.123.example.com",
+      "expectedValid": true
+    },
+    {
+      "category": "valid",
+      "name": "plus-greedy host parameter with leading-zero decimal dns label",
+      "base": "https://{sub+}.0123.example.com",
+      "expectedValid": true
+    },
+    {
+      "category": "valid",
+      "name": "star-greedy host parameter with hexadecimal-looking dns label",
+      "base": "https://{sub*}.0xabc.example.com",
+      "expectedValid": true
+    },
+    {
+      "category": "valid",
       "name": "mixed parameterized host segment",
       "base": "https://api-{sub}.example.com",
       "expectedValid": true
@@ -704,6 +741,60 @@
       "category": "authority",
       "name": "single-number ipv4 literal is invalid",
       "base": "https://2130706433",
+      "expectedValid": false
+    },
+    {
+      "category": "authority",
+      "name": "hexadecimal ipv4 literal is invalid",
+      "base": "https://0x7f000001",
+      "expectedValid": false
+    },
+    {
+      "category": "authority",
+      "name": "abbreviated ipv4 literal is invalid",
+      "base": "https://127.1",
+      "expectedValid": false
+    },
+    {
+      "category": "authority",
+      "name": "parameterized four-component ipv4 authority is invalid",
+      "base": "https://127.{octet}.0.1",
+      "expectedValid": false
+    },
+    {
+      "category": "authority",
+      "name": "parameterized ipv4 authority with leading parameter is invalid",
+      "base": "https://{octet}.0.0.1",
+      "expectedValid": false
+    },
+    {
+      "category": "authority",
+      "name": "parameterized abbreviated ipv4 authority is invalid",
+      "base": "https://127.{octet}",
+      "expectedValid": false
+    },
+    {
+      "category": "authority",
+      "name": "parameterized hexadecimal ipv4 authority is invalid",
+      "base": "https://{octet}.0x1",
+      "expectedValid": false
+    },
+    {
+      "category": "authority",
+      "name": "plus-greedy parameterized ipv4 authority is invalid",
+      "base": "https://{octets+}.0.1",
+      "expectedValid": false
+    },
+    {
+      "category": "authority",
+      "name": "star-greedy parameterized ipv4 authority is invalid",
+      "base": "https://{octets*}.0.1",
+      "expectedValid": false
+    },
+    {
+      "category": "authority",
+      "name": "parameterized ipv4 authority with two parameters is invalid",
+      "base": "https://127.0.{a}.{b}",
       "expectedValid": false
     },
     {

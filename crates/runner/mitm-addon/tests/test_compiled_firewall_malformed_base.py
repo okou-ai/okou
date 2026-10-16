@@ -513,6 +513,10 @@ def test_malformed_parameterized_base_query_or_fragment_respects_base_path_scope
         ("https://{sub}.github.com:99999", REPO_URL),
         ("https://127.{octet}.0.1", "https://127.0.0.1/repos/org/repo"),
         ("https://{a}.0.0.1", "https://127.0.0.1/repos/org/repo"),
+        ("https://{a+}.0.1", "https://127.0.0.1/repos/org/repo"),
+        ("https://{a*}.0.1", "https://127.0.0.1/repos/org/repo"),
+        ("https://{a}.{b}.0.1", "https://127.0.0.1/repos/org/repo"),
+        ("https://127.0.{a}.{b}", "https://127.0.0.1/repos/org/repo"),
         ("https://\u212a.example", "https://k.example/repos/org/repo"),
     ],
 )
