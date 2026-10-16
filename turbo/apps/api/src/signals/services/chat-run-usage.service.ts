@@ -33,12 +33,6 @@ function settledRunUsageQuery(args: RunUsageScope) {
   const query = new QueryBuilder();
   const runId = sql`COALESCE(${usage.billingRunId}, ${usage.runId})`;
   const provider = sql`COALESCE(NULLIF(${usage.provider}, ''), 'unknown')`;
-  // Existing unknown attribution can use its still-live Run. Explicitly
-  // threadless billing identity never borrows a later content association.
-  const threadId = sql`CASE
-    WHEN ${billingRunAttribution.threadContext} = 'thread' THEN ${billingRunAttribution.threadId}
-    WHEN ${billingRunAttribution.threadContext} = 'threadless' THEN NULL
-    ELSE ${agentRuns.chatThreadId} END`;
   return query
     .select({
       runId: sql`${runId}::text`.mapWith(pgTextDecoder).as("run_id"),
@@ -70,7 +64,10 @@ function settledRunUsageQuery(args: RunUsageScope) {
     )
     .innerJoin(
       chatThreads,
-      and(eq(chatThreads.id, threadId), eq(chatThreads.userId, usage.userId)),
+      and(
+        eq(chatThreads.id, billingRunAttribution.threadId),
+        eq(chatThreads.userId, usage.userId),
+      ),
     )
     .innerJoin(
       agents,
