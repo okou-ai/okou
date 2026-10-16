@@ -42,7 +42,7 @@ import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
-import { createDeferredPromise } from "../../utils";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 const context = testContext();
@@ -161,24 +161,45 @@ async function fixture() {
   };
   return { actor, provider, confirm };
 }
-async function pollGateway(connectionId: string) {
+function pollGatewayRequest(
+  connectionId: string,
+  signal = context.signal,
+  rethrowErrors = false,
+) {
   const body = { connectionId };
   const timestamp = String(Math.floor(now() / 1000));
   const signature = createHmac("sha256", secret)
     .update(`${timestamp}.${JSON.stringify(body)}`)
     .digest("hex");
-  return await accept(
-    setupApp({ context, routes: wechatGatewayRoutes })(
-      wechatGatewayContract,
-    ).poll({
-      body,
-      headers: {
-        "x-wechat-timestamp": timestamp,
-        "x-wechat-signature": signature,
-      },
-    }),
-    [200],
-  );
+  return setupApp({
+    context,
+    routes: wechatGatewayRoutes,
+    signal,
+    rethrowErrors,
+  })(wechatGatewayContract).poll({
+    body,
+    headers: {
+      "x-wechat-timestamp": timestamp,
+      "x-wechat-signature": signature,
+    },
+  });
+}
+async function pollGateway(connectionId: string) {
+  return await accept(pollGatewayRequest(connectionId), [200]);
+}
+async function waitForProviderRequestAbort(request: Request) {
+  const aborted = createDeferredPromise<void>(context.signal);
+  const resolve = () => {
+    if (!aborted.settled()) {
+      aborted.resolve();
+    }
+  };
+  if (request.signal.aborted) {
+    resolve();
+  } else {
+    request.signal.addEventListener("abort", resolve, { once: true });
+  }
+  await aborted.promise;
 }
 async function connectOwner(owner: Awaited<ReturnType<typeof fixture>>) {
   const attempt = await accept(client().connect({ headers }), [200]);
@@ -742,6 +763,109 @@ describe("WeChat QR owner binding", () => {
       [401],
     );
   });
+});
+
+describe("WeChat receive timeouts", () => {
+  it("continues from the same cursor after an idle receive deadline", async () => {
+    const owner = await fixture();
+    const connectionId = await connectOwner(owner);
+    server.use(
+      http.post(`${origin}/ilink/bot/getupdates`, () => {
+        return HttpResponse.json({ msgs: [], get_updates_buf: "saved-cursor" });
+      }),
+    );
+    await pollGateway(connectionId);
+    server.use(
+      http.post(`${origin}/ilink/bot/getupdates`, async ({ request }) => {
+        await expect(request.json()).resolves.toMatchObject({
+          get_updates_buf: "saved-cursor",
+        });
+        await waitForProviderRequestAbort(request);
+        return HttpResponse.json({ msgs: [], get_updates_buf: "late-cursor" });
+      }),
+    );
+    expect((await pollGateway(connectionId)).body).toStrictEqual({
+      active: true,
+    });
+    server.use(
+      http.post(`${origin}/ilink/bot/getupdates`, async ({ request }) => {
+        await expect(request.json()).resolves.toMatchObject({
+          get_updates_buf: "saved-cursor",
+        });
+        return HttpResponse.json({ msgs: [], get_updates_buf: "next-cursor" });
+      }),
+    );
+    expect((await pollGateway(connectionId)).body).toStrictEqual({
+      active: true,
+    });
+  }, 60_000);
+
+  it.each([
+    [
+      "transport failure",
+      () => {
+        return HttpResponse.error();
+      },
+    ],
+    [
+      "upstream timeout response",
+      () => {
+        return new HttpResponse(null, { status: 504 });
+      },
+    ],
+    [
+      "provider rejection",
+      () => {
+        return HttpResponse.json({ ret: -1 });
+      },
+    ],
+  ] as const)("keeps a %s visible to the receiver", async (_name, response) => {
+    const owner = await fixture();
+    const connectionId = await connectOwner(owner);
+    server.use(http.post(`${origin}/ilink/bot/getupdates`, response));
+    await expect(pollGatewayRequest(connectionId)).rejects.toThrow(
+      "Unknown response status 500",
+    );
+    server.use(
+      http.post(`${origin}/ilink/bot/getupdates`, async ({ request }) => {
+        await expect(request.json()).resolves.toMatchObject({
+          get_updates_buf: "",
+        });
+        return HttpResponse.json({ msgs: [], get_updates_buf: "recovered" });
+      }),
+    );
+    expect((await pollGateway(connectionId)).body).toStrictEqual({
+      active: true,
+    });
+  });
+
+  it.each(["AbortError", "TimeoutError"])(
+    "propagates a caller-owned %s instead of reporting an idle receive",
+    async (name) => {
+      const owner = await fixture();
+      const connectionId = await connectOwner(owner);
+      const entered = createDeferredPromise<void>(context.signal);
+      const controller = new AbortController();
+      const signal = AbortSignal.any([context.signal, controller.signal]);
+      server.use(
+        http.post(`${origin}/ilink/bot/getupdates`, async ({ request }) => {
+          entered.resolve();
+          await waitForProviderRequestAbort(request);
+          return HttpResponse.json({ msgs: [] });
+        }),
+      );
+      const reason = new DOMException("Receiver stopped", name);
+      const pending = settleIncludingAbort(
+        pollGatewayRequest(connectionId, signal, true),
+      );
+      await entered.promise;
+      controller.abort(reason);
+      await expect(pending).resolves.toStrictEqual({
+        ok: false,
+        error: reason,
+      });
+    },
+  );
 });
 
 test("receives an owner DM once, resumes its native session and delivers the canonical reply", async () => {
