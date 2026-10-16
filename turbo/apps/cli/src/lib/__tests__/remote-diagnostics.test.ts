@@ -35,7 +35,6 @@ vi.mock("node:child_process", async (importOriginal) => {
       process.stdin.on('data', chunk => request += chunk);
       process.stdin.on('end', () => {
         process.send(request);
-        if (JSON.parse(request).method === 'ssh.diagnostics.capabilities') { process.stdout.end(JSON.stringify({type:'error',code:'unknown_method',delivery:'not_dispatched'})+String.fromCharCode(10),()=>process.exit(1)); return; }
         process.stdout.end(Buffer.from(process.env.DIAGNOSTIC_TEST_REPLY, 'base64'), () => process.exit(Number(process.env.DIAGNOSTIC_TEST_EXIT)));
       });
     `,
@@ -50,10 +49,7 @@ vi.mock("node:child_process", async (importOriginal) => {
           },
         );
         child.on("message", (message: unknown) => {
-          if (
-            typeof message === "string" &&
-            JSON.parse(message).method !== "ssh.diagnostics.capabilities"
-          ) {
+          if (typeof message === "string") {
             helper.requests.push(message);
             helper.replies.shift();
           }
@@ -85,37 +81,10 @@ function response(data: unknown) {
     code: 0,
   });
 }
-function capabilities(passive = true) {
-  response({ schema_version: 1, passive_query: passive, active_check: false });
-}
-function report(protocol: "ssh" | "vnc") {
-  return {
-    schema_version: 1,
-    run_id: run,
-    assignment_id: run,
-    attempt_id: attempt,
-    sequence: 1,
-    observed_at: "2026-10-15T00:00:00Z",
-    protocol,
-    connection_id: connection,
-    session_id: session,
-    configuration_created_at: null,
-    configuration_generation: 7,
-    operation: "session",
-    stage: protocol === "ssh" ? "ssh_operation" : "vnc_operation",
-    cause: { source: protocol, code: "disconnected" },
-    dependencies: [],
-    native: null,
-    detail: "not_observed",
-    truncated: false,
-  };
-}
 function found(protocol: "ssh" | "vnc") {
   return {
-    schema_version: 1,
     status: "found",
-    report: report(protocol),
-    retention: { capacity: 64, evicted: 80, latest_failure_pinned: true },
+    message: `Runner explains ${protocol}: SSH dependency rejected the host key; current connectivity has not been checked. 诊断 🧭`,
   };
 }
 function result(): unknown {
@@ -145,9 +114,8 @@ afterEach(() => {
 });
 
 it.each(["ssh", "vnc"] as const)(
-  "queries %s history with exact selectors using only passive methods",
+  "reads %s history with exact selectors in one passive request",
   async (protocol) => {
-    capabilities();
     response(found(protocol));
     await invoke(
       protocol,
@@ -164,7 +132,6 @@ it.each(["ssh", "vnc"] as const)(
         return JSON.parse(raw);
       }),
     ).toEqual([
-      { version: 1, method: "remote.diagnostics.capabilities", params: {} },
       {
         version: 1,
         method: `${protocol}.diagnose`,
@@ -178,49 +145,28 @@ it.each(["ssh", "vnc"] as const)(
     expect(process.exitCode).toBe(0);
   },
 );
-it("explains nested SSH evidence and unobserved current connectivity in human output", async () => {
-  capabilities();
-  const query = found("vnc");
-  response({
-    ...query,
-    report: {
-      ...query.report,
-      dependencies: [
-        {
-          protocol: "ssh",
-          connection_id: run,
-          cause: { source: "ssh", code: "host_key_mismatch" },
-          configuration_created_at: null,
-          configuration_generation: null,
-        },
-      ],
-    },
-  });
+it("passes arbitrary Runner wording unchanged in human output", async () => {
+  response(found("vnc"));
   await invoke("vnc");
-  expect(output).toHaveBeenCalledWith(
-    expect.stringContaining("ssh/host_key_mismatch"),
-  );
-  expect(output).toHaveBeenCalledWith(
-    expect.stringContaining("current connectivity has not been checked"),
-  );
+  expect(output).toHaveBeenCalledWith(found("vnc").message);
 });
-it.each(["no_failure", "not_retained", "authority_unavailable"])(
-  "preserves %s without inventing a connectivity result",
+it.each(["no_failure", "not_retained", "authority_unavailable", "unavailable"])(
+  "preserves %s and its explanation without inventing connectivity",
   async (status) => {
-    capabilities();
-    response({ ...found("ssh"), status, report: null });
+    response({
+      status,
+      message: "Runner's explanation with no known network conclusion.",
+    });
     await invoke("ssh", "--json");
-    expect(result()).toMatchObject({ status, report: null });
-    expect(helper.requests).toHaveLength(2);
+    expect(result()).toEqual({
+      status,
+      message: "Runner's explanation with no known network conclusion.",
+    });
+    expect(helper.requests).toHaveLength(1);
+    expect(process.exitCode).toBe(status === "no_failure" ? 0 : 1);
   },
 );
-it("stops at disabled capability negotiation", async () => {
-  capabilities(false);
-  await invoke("ssh", "--json");
-  expect(result()).toEqual({ status: "unavailable", reason: "disabled" });
-  expect(spawn).toHaveBeenCalledTimes(2);
-});
-it("reports an old owner without trying business methods", async () => {
+it("reports an unsupported owner without trying business methods", async () => {
   helper.replies.push({
     raw:
       JSON.stringify({
@@ -231,60 +177,47 @@ it("reports an old owner without trying business methods", async () => {
     code: 1,
   });
   await invoke("vnc", "--json");
-  expect(result()).toEqual({ status: "unavailable", reason: "unsupported" });
+  expect(result()).toMatchObject({
+    status: "unavailable",
+    reason: "unsupported",
+  });
   expect(spawn).toHaveBeenCalledTimes(1);
 });
 it("reports the unavailable packaged helper", async () => {
   helper.missing = true;
   await invoke("ssh", "--json");
-  expect(result()).toEqual({
+  expect(result()).toMatchObject({
     status: "unavailable",
     reason: "helper_unavailable",
   });
 });
 it.each([
-  "foreign_run",
-  "wrong_subject",
-  "wrong_attempt",
-  "wrong_session",
-  "unknown_version",
-  "raw_text",
+  "non_text",
+  "unknown_status",
   "duplicate",
   "unterminated",
   "oversized",
-])("rejects %s without disclosing untrusted response text", async (mode) => {
-  capabilities();
+  "unsafe",
+])("rejects %s query envelopes without emitting their text", async (mode) => {
   const query = found("ssh");
-  if (mode === "foreign_run") query.report.run_id = connection;
-  if (mode === "wrong_subject") query.report.connection_id = run;
-  if (mode === "wrong_attempt") query.report.attempt_id = run;
-  if (mode === "wrong_session") query.report.session_id = run;
   response(
-    mode === "unknown_version"
-      ? { ...query, schema_version: 2 }
-      : mode === "raw_text"
-        ? { ...query, provider: "secret-canary" }
-        : query,
+    mode === "non_text"
+      ? { status: "found", message: { secret: "secret-canary" } }
+      : mode === "unknown_status"
+        ? { status: "invented", message: "secret-canary" }
+        : mode === "oversized"
+          ? { ...query, message: "secret-canary".repeat(800) }
+          : mode === "unsafe"
+            ? { ...query, message: String.fromCharCode(27) + "secret-canary" }
+            : query,
   );
-  const reply = helper.replies[1]!;
+  const reply = helper.replies[0]!;
   if (mode === "duplicate") reply.raw += reply.raw;
   if (mode === "unterminated") reply.raw = reply.raw.trimEnd();
-  if (mode === "oversized") reply.raw = "secret-canary".repeat(3000);
-  await invoke(
-    "ssh",
-    connection,
-    "--attempt-id",
-    attempt,
-    "--session-id",
-    session,
-    "--json",
-  );
-  expect(result()).toMatchObject({
-    status: "unavailable",
-    reason: mode === "unknown_version" ? "unsupported_version" : "protocol",
-  });
+  await invoke("ssh", "--json");
+  expect(result()).toMatchObject({ status: "unavailable", reason: "protocol" });
   expect(JSON.stringify(output.mock.calls)).not.toContain("secret-canary");
-  expect(helper.requests).toHaveLength(2);
+  expect(helper.requests).toHaveLength(1);
 });
 it.each(["ssh", "vnc"] as const)(
   "rejects missing %s read authority and malformed selectors before spawning",

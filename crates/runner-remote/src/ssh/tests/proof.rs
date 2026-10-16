@@ -2,6 +2,7 @@ use super::{
     harness::{Harness, Reply, params},
     terminal,
 };
+use crate::test_fixtures::diagnostic_report;
 use std::{io, sync::atomic::Ordering, time::Duration};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -61,14 +62,15 @@ async fn corrupt_host_proof_never_pins_or_authenticates_even_with_matching_key_i
                     .json_body(serde_json::json!({"outcome":"pinned","generation":8}));
             })
             .await;
-        let frames = h.raw(serde_json::json!({"version":1,"method":"ssh.exec.diagnostics.v2","remaining_ms":60000,"params":params()}).to_string()).await;
+        let mut diagnostic_params = params();
+        diagnostic_params["diagnosticText"] = true.into();
+        let frames = h.raw(serde_json::json!({"version":1,"method":"ssh.exec","remaining_ms":60000,"params":diagnostic_params}).to_string()).await;
         assert_eq!(terminal(&frames)["failure_reason"], "protocol");
         assert_eq!(terminal(&frames)["effects"], "not_started");
         pin.assert_calls_async(0).await;
         assert_eq!(h.observed.auth.load(Ordering::SeqCst), 0);
-        let stages = terminal(&frames)["diagnostics"]["report"]["ssh"]["stages"]
-            .as_array()
-            .unwrap();
+        let report = diagnostic_report(terminal(&frames));
+        let stages = report["ssh"]["stages"].as_array().unwrap();
         for (stage, status) in [
             ("ssh_proof", "failed"),
             ("ssh_trust", "not_reached"),

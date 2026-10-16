@@ -7,7 +7,7 @@ import { sshCommand } from "../index";
 const helper = vi.hoisted(() => {
   return {
     mode: "normal",
-    discovered: undefined as (() => void) | undefined,
+    dispatched: undefined as (() => void) | undefined,
     requests: [] as { method: string; params: Record<string, unknown> }[],
   };
 });
@@ -23,28 +23,15 @@ vi.mock("node:child_process", async (importOriginal) => {
           "-e",
           `
       const mode=process.env.DIAGNOSTIC_MODE, binary=process.env.DIAGNOSTIC_BINARY==='1';
-      const host='a0000000-0000-4000-8000-000000000001',run='b0000000-0000-4000-8000-000000000001';
+      const host='a0000000-0000-4000-8000-000000000001';
       const frame=bytes=>{const h=Buffer.alloc(4);h.writeUInt32BE(bytes.length);return Buffer.concat([h,bytes]);};
       let pending=Buffer.alloc(0),request,done=false;
       const emit=value=>{const b=Buffer.from(JSON.stringify(value));process.stdout.write(binary?frame(b):Buffer.concat([b,Buffer.from([10])]));};
       function reply(){
         if(done)return;done=true;process.send(request);
-        if(request.method==='ssh.diagnostics.capabilities'){
-          if(mode==='hold_discovery'){setInterval(()=>{},1000);return;}
-          if(mode==='old'){emit({type:'error',code:'unknown_method',delivery:'not_dispatched'});process.stdout.end(()=>process.exit(1));return;}
-          emit({type:'result',data:{schema_version:2,passive_query:mode!=='disabled',automatic_methods:mode==='disabled'?[]:['ssh.exec','ssh.file.upload','ssh.file.download','ssh.session.start','ssh.session.status','ssh.session.read','ssh.session.write','ssh.session.signal','ssh.session.close'].map(m=>m+'.diagnostics.v2'),query_method:'ssh.diagnostics.query.v2'}});
-          process.stdout.end(()=>process.exit(0));return;
-        }
-        const versioned=request.method.endsWith('.diagnostics.v2'), method=request.method.replace('.diagnostics.v2','');
-        const file=method.startsWith('ssh.file.'),session=method.startsWith('ssh.session.');
-        let report={schema_version:2,run_id:run,assignment_id:run,attempt_id:'c0000000-0000-4000-8000-000000000001',sequence:1,observed_at:'2026-10-15T00:00:00Z',protocol:'ssh',connection_id:host,session_id:request.params.sessionId??null,configuration_created_at:'2026-09-01T00:00:00.123456Z',configuration_generation:7,operation:file?'file':session?'session':'exec',stage:'ssh_operation',cause:{source:'ssh',code:'authentication_failed'},dependencies:[],native:null,detail:'not_observed',truncated:false,next_action:'check_credential',ssh:{access_failure:null,route:'direct',transport:'fresh',selected_address:'93.184.216.34',address_family:'ipv4',stages:[{stage:'authentication',status:'failed'}]}};
-        if(mode==='foreign')report.connection_id=run;
-        if(mode==='malformed')report.provider='secret-canary';
-        if(mode==='version')report.schema_version=99;
-        if(request.method==='ssh.diagnostics.query.v2'){
-          emit({type:'result',data:{schema_version:2,status:'found',report,retention:{capacity:64,evicted:0,latest_failure_pinned:true}}});
-          process.stdout.end(()=>process.exit(0));return;
-        }
+        if(mode==='hold'){setInterval(()=>{},1000);return;}
+        if(mode==='old'&&request.params.diagnosticText!==undefined){emit({type:'error',code:'invalid_request',delivery:'not_dispatched'});process.stdout.end(()=>process.exit(1));return;}
+        const method=request.method, file=method.startsWith('ssh.file.'),session=method.startsWith('ssh.session.');
         let data={type:'failed',failure_reason:'authentication_failed',effects:'not_started'};
         if(file)data={...data,direction:method.includes('download')?'download':'upload',ssh_connection_id:host,bytes:0,sha256:null,residue:null,actual_bytes:request.params.size??null,limits:{max_file_bytes:1073741824,timeout_ms:900000,max_concurrent_transfers:2}};
         else if(session&&['ssh.session.status','ssh.session.read'].includes(method)){
@@ -53,7 +40,9 @@ vi.mock("node:child_process", async (importOriginal) => {
         }else if(!session)Object.assign(data,{stdout_bytes:0,stderr_bytes:0,stdout_truncated:false,stderr_truncated:false});
         if(mode==='nonzero'){
           emit({type:'event',data:{type:'accepted'}});data={type:'finished',exit:{type:'status',code:9},effects:'completed',stdout_bytes:0,stderr_bytes:0,stdout_truncated:false,stderr_truncated:false};
-        }else if(versioned&&mode!=='missing')data.diagnostics={status:'found',report};
+        }else if(request.params.diagnosticText&& !['missing','disabled'].includes(mode)){
+          data.diagnostic_text=mode==='malformed'?{unexpected:true}:mode==='oversized'?'x'.repeat(8193):mode==='unsafe'?String.fromCharCode(27)+'[2J':process.env.DIAGNOSTIC_TEXT;
+        }
         if(mode==='bad_business')data.effects='completed';
         if(binary&&method.includes('download'))process.stdout.write(frame(Buffer.from([1])));
         emit({type:'result',data});
@@ -95,12 +84,7 @@ vi.mock("node:child_process", async (importOriginal) => {
                 ? Object.fromEntries(Object.entries(parsed.params))
                 : {},
           });
-        if (
-          parsed &&
-          "method" in parsed &&
-          parsed.method === "ssh.diagnostics.capabilities"
-        )
-          helper.discovered?.();
+        helper.dispatched?.();
       });
       return child;
     }),
@@ -115,10 +99,15 @@ let dir: string;
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "ssh-diagnostic-"));
   helper.mode = "normal";
-  helper.discovered = undefined;
+  helper.dispatched = undefined;
   helper.requests.length = 0;
   output.mockClear();
   errors.mockClear();
+  vi.stubEnv("OKOU_REMOTE_DIAGNOSTIC_TEXT", "1");
+  vi.stubEnv(
+    "DIAGNOSTIC_TEXT",
+    "An arbitrary Runner explanation: credential rejected. 认证失败 🧭",
+  );
   vi.stubEnv(
     "OKOU_TOKEN",
     `vm0_sandbox_e30.${Buffer.from(JSON.stringify({ scope: "okou", capabilities: ["ssh:read", "ssh:write"], runId: run })).toString("base64url")}.signature`,
@@ -150,93 +139,67 @@ async function exec(json = true) {
 function result(): unknown {
   return JSON.parse(String(output.mock.calls.at(-1)?.[0]));
 }
-function business() {
-  return helper.requests.filter((r) => {
-    return r.method !== "ssh.diagnostics.capabilities";
-  });
-}
-
-it("queries the negotiated versioned passive report with exact selectors", async () => {
-  const attempt = "c0000000-0000-4000-8000-000000000001";
-  await sshCommand.parseAsync(
-    ["diagnose", host, "--attempt-id", attempt, "--json"],
-    {
-      from: "user",
-    },
-  );
-  expect(result()).toMatchObject({
-    schema_version: 2,
-    status: "found",
-    report: { attempt_id: attempt, next_action: "check_credential" },
-  });
-  expect(business()).toEqual([
-    {
-      method: "ssh.diagnostics.query.v2",
-      params: { connectionId: host, attemptId: attempt },
-    },
-  ]);
-});
-
-it.each(["exec", "session", "file"])(
-  "attaches the exact owner report for %s without a host-latest query",
+it.each(["exec", "session", "upload", "download"])(
+  "passes Runner text unchanged for %s with one business request",
   async (kind) => {
     if (kind === "exec") await exec();
     else if (kind === "session")
       await sshCommand.parseAsync(["session", "status", session, "--json"], {
         from: "user",
       });
-    else {
+    else if (kind === "upload") {
       const path = join(dir, "source");
       await writeFile(path, "test");
       await sshCommand.parseAsync(["upload", host, path, "/remote", "--json"], {
         from: "user",
       });
-    }
+    } else
+      await sshCommand.parseAsync(
+        ["download", host, "/remote", join(dir, "output"), "--json"],
+        { from: "user" },
+      );
     expect(result()).toMatchObject({
-      diagnostics: {
-        status: "found",
-        report: {
-          attempt_id: "c0000000-0000-4000-8000-000000000001",
-          connection_id: host,
-          next_action: "check_credential",
-        },
-      },
+      diagnostic_text:
+        "An arbitrary Runner explanation: credential rejected. 认证失败 🧭",
     });
-    expect(business()).toHaveLength(1);
-    expect(business()[0]?.method).toContain(".diagnostics.v2");
-    expect(
-      helper.requests.some((r) => {
-        return r.method.includes("query") || r.method === "ssh.diagnose";
-      }),
-    ).toBe(false);
+    expect(helper.requests).toHaveLength(1);
+    expect(helper.requests[0]?.params.diagnosticText).toBe(true);
+    expect(helper.requests[0]?.method).toBe(
+      kind === "exec"
+        ? "ssh.exec"
+        : kind === "session"
+          ? "ssh.session.status"
+          : `ssh.file.${kind}`,
+    );
   },
 );
-it("prints cause-specific next action in human output", async () => {
+it("prints Runner wording unchanged in human output", async () => {
   await exec(false);
-  expect(errors.mock.calls.flat().join(" ")).toContain(
-    "Check the configured SSH credential",
+  expect(errors).toHaveBeenCalledWith(
+    "An arbitrary Runner explanation: credential rejected. 认证失败 🧭",
   );
-  expect(errors.mock.calls.flat().join(" ")).toContain(
-    "c0000000-0000-4000-8000-000000000001",
-  );
+  expect(helper.requests).toHaveLength(1);
 });
-it.each(["old", "disabled"])(
-  "executes business once with unavailable diagnostics for %s owners",
+it.each(["old", "disabled", "missing"])(
+  "preserves the original failure without diagnostic text on %s owners",
   async (mode) => {
     helper.mode = mode;
+    if (mode === "old") vi.stubEnv("OKOU_REMOTE_DIAGNOSTIC_TEXT", "");
     await exec();
     expect(result()).toMatchObject({
       type: "failed",
       failure_reason: "authentication_failed",
       effects: "not_started",
-      diagnostics: { status: "unavailable" },
     });
-    expect(business()).toHaveLength(1);
-    expect(business()[0]?.method).toBe("ssh.exec");
+    expect(result()).not.toHaveProperty("diagnostic_text");
+    expect(helper.requests).toHaveLength(1);
+    expect(helper.requests[0]?.method).toBe("ssh.exec");
+    if (mode === "old")
+      expect(helper.requests[0]?.params).not.toHaveProperty("diagnosticText");
   },
 );
-it.each(["malformed", "foreign", "version", "missing"])(
-  "keeps valid business outcomes when diagnostics are %s",
+it.each(["malformed", "oversized", "unsafe"])(
+  "keeps a verified business failure when explanation text is %s",
   async (mode) => {
     helper.mode = mode;
     await exec();
@@ -244,14 +207,13 @@ it.each(["malformed", "foreign", "version", "missing"])(
       type: "failed",
       failure_reason: "authentication_failed",
       effects: "not_started",
-      diagnostics: { status: "unavailable" },
     });
-    expect(JSON.stringify(output.mock.calls)).not.toContain("secret-canary");
-    expect(business()).toHaveLength(1);
+    expect(result()).not.toHaveProperty("diagnostic_text");
+    expect(helper.requests).toHaveLength(1);
   },
 );
 it.each(["duplicate", "exit", "bad_business"])(
-  "does not trust association after %s business delivery",
+  "discards diagnostic text after %s business delivery",
   async (mode) => {
     helper.mode = mode;
     await exec();
@@ -259,17 +221,17 @@ it.each(["duplicate", "exit", "bad_business"])(
       type: "failed",
       failure_reason: "protocol",
       effects: "unknown",
-      diagnostics: { status: "unavailable" },
     });
-    expect(business()).toHaveLength(1);
+    expect(result()).not.toHaveProperty("diagnostic_text");
+    expect(helper.requests).toHaveLength(1);
   },
 );
 it.each(["exec", "file"])(
-  "cancellation during %s discovery cannot start business work",
+  "cancels an in-flight %s request without replay",
   async (kind) => {
-    helper.mode = "hold_discovery";
+    helper.mode = "hold";
     const ready = new Promise<void>((resolve) => {
-      helper.discovered = resolve;
+      helper.dispatched = resolve;
     });
     const path = join(dir, "cancelled-source");
     await writeFile(path, "test");
@@ -285,14 +247,13 @@ it.each(["exec", "file"])(
     expect(result()).toMatchObject({
       type: "failed",
       failure_reason: "cancelled",
-      effects: "not_started",
-      diagnostics: { status: "unavailable", reason: "cancelled" },
+      effects: "unknown",
     });
-    expect(business()).toHaveLength(0);
+    expect(result()).not.toHaveProperty("diagnostic_text");
+    expect(helper.requests).toHaveLength(1);
   },
 );
-
-it("preserves a completed nonzero remote exit without a failure report", async () => {
+it("preserves a completed nonzero remote exit", async () => {
   helper.mode = "nonzero";
   await exec();
   expect(result()).toMatchObject({
@@ -300,7 +261,7 @@ it("preserves a completed nonzero remote exit without a failure report", async (
     exit: { code: 9 },
     effects: "completed",
   });
-  expect(result()).not.toHaveProperty("diagnostics");
+  expect(result()).not.toHaveProperty("diagnostic_text");
   expect(process.exitCode).toBe(9);
-  expect(business()).toHaveLength(1);
+  expect(helper.requests).toHaveLength(1);
 });

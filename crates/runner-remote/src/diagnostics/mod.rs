@@ -3,8 +3,8 @@
 mod rpc;
 #[cfg(test)]
 mod tests;
+pub(crate) mod text;
 pub(crate) mod trace;
-pub(crate) mod version2;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::{
@@ -204,6 +204,7 @@ pub(crate) struct Record {
 #[serde(rename_all = "snake_case")]
 enum Detail {
     NotObserved,
+    Partial,
 }
 
 #[derive(Clone, Copy, Serialize)]
@@ -426,13 +427,17 @@ impl Handle {
             cause,
             dependencies: dependency.into_iter().collect(),
             native,
+            detail: if ssh.is_some() {
+                Detail::Partial
+            } else {
+                Detail::NotObserved
+            },
             ssh,
-            detail: Detail::NotObserved,
             truncated: false,
         };
         // The schema has no unbounded strings or collections; keep a hard guard as it evolves.
         if !report
-            .version2()
+            .evidence()
             .and_then(|value| serde_json::to_vec(&value).ok())
             .is_some_and(|bytes| bytes.len() <= MAX_REPORT_BYTES)
         {
@@ -448,7 +453,7 @@ impl Handle {
         }
         state.reports.push_back(report.clone());
         drop(state);
-        if let Some(value) = report.version2() {
+        if let Some(value) = report.evidence() {
             tracing::info!(diagnostic = %value, "Remote operation failure retained");
         }
         Some(report)

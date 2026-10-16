@@ -2,11 +2,6 @@ import { Command } from "commander";
 import { z } from "zod";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { writeOutput } from "./rpc";
-import { discoverSshDiagnostics } from "../../lib/remote-diagnostics";
-import {
-  diagnosticText,
-  type DiagnosticResult,
-} from "../../lib/ssh-diagnostics";
 import {
   sessionRpc,
   type SessionReadFailure,
@@ -27,7 +22,7 @@ type StopReason =
   | "failed";
 
 interface ReadResult {
-  diagnostics?: DiagnosticResult;
+  diagnostic_text?: string;
   type: "read";
   session_id: string;
   session: SessionReadPage["session"] | null;
@@ -79,7 +74,6 @@ function readerFailure(signal: AbortSignal): SessionReadFailure {
 }
 
 async function collect(result: ReadResult, signal: AbortSignal) {
-  const support = await discoverSshDiagnostics(signal);
   let bytes = 0;
   for (let request = 0; request < MAX_REQUESTS; request++) {
     if (signal.aborted) {
@@ -97,9 +91,9 @@ async function collect(result: ReadResult, signal: AbortSignal) {
         maxChunks: Math.min(32, MAX_CHUNKS - result.chunks.length),
       },
       signal,
-      support,
     );
-    if (page.diagnostics) result.diagnostics = page.diagnostics;
+    if ("diagnostic_text" in page)
+      result.diagnostic_text = page.diagnostic_text;
     if (page.type === "failed" || page.type === "rpc_error") {
       result.failure = page;
       break;
@@ -204,7 +198,7 @@ async function print(result: ReadResult, json: boolean, signal: AbortSignal) {
       return `Output bytes ${lost.from}–${lost.to} were discarded from the bounded buffer.`;
     }),
   ];
-  if (result.diagnostics) metadata.push(diagnosticText(result.diagnostics));
+  if (result.diagnostic_text) metadata.push(result.diagnostic_text);
   if (result.session?.state.type === "finished")
     metadata.push(`Remote exit: ${JSON.stringify(result.session.state.exit)}.`);
   if (result.session?.state.type === "failed")

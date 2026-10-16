@@ -30,15 +30,6 @@ vi.mock("node:child_process", async (importOriginal) => {
     ...original,
     spawn: vi.fn((file: string, args: string[]) => {
       expect(file).toBe("/usr/local/bin/runner-rpc-client");
-      if (args.length === 0)
-        return original.spawn(
-          process.execPath,
-          [
-            "-e",
-            `let request='';process.stdin.on('data',b=>request+=b);process.stdin.on('end',()=>{if(JSON.parse(request).method!=='ssh.diagnostics.capabilities')process.exit(2);process.stdout.end(JSON.stringify({type:'error',code:'unknown_method',delivery:'not_dispatched'})+String.fromCharCode(10),()=>process.exit(1));});`,
-          ],
-          { stdio: ["pipe", "pipe", "pipe"] },
-        );
       expect(args).toEqual(["--stream"]);
       const script = `
       const crypto = require('node:crypto'), fs = require('node:fs');
@@ -205,7 +196,7 @@ it.each([0, 258, 4 * 1024 * 1024 + 19])(
         },
       },
     ]);
-    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(spawn).toHaveBeenCalledTimes(1);
   },
 );
 
@@ -263,10 +254,7 @@ it("waits for helper exit before publishing", async () => {
   const path = join(dir, "target");
   const work = invoke("download", path);
   await ready;
-  const transferIndex = vi.mocked(spawn).mock.calls.findIndex(([, args]) => {
-    return args?.[0] === "--stream";
-  });
-  const child = vi.mocked(spawn).mock.results[transferIndex]?.value;
+  const child = vi.mocked(spawn).mock.results[0]?.value;
   if (!child) throw new Error("Expected helper");
   await expect(stat(path)).rejects.toMatchObject({ code: "ENOENT" });
   child.send("release");
@@ -286,7 +274,7 @@ it.each(["early", "missing"])(
       failure_reason:
         mode === "early" ? "unsupported_operation" : "helper_unavailable",
     });
-    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(spawn).toHaveBeenCalledTimes(1);
   },
 );
 

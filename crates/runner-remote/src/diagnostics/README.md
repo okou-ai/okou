@@ -1,112 +1,81 @@
-# Remote diagnostic contract
+# Remote diagnostics
 
-The Guest RPC owner exposes three passive version-1 methods:
+Runner owns typed failure evidence, operation association and explanation text.
+CLI treats the wording as opaque text; it has no report/stage/cause/version
+schema or remediation-code translation.
 
-- `remote.diagnostics.capabilities`, with empty params, returns `schema_version`,
-  `passive_query` and `active_check`. Only passive queries are implemented here.
-- `ssh.diagnose` and `vnc.diagnose` accept optional exact UUID `connectionId`,
-  `attemptId` and `sessionId` filters. Filters intersect. An empty filter selects
-  that protocol's latest retained operational failure.
+## Automatic SSH explanations
 
-The CLI exposes these as `okou ssh diagnose [connection-id]` and
-`okou vnc diagnose [connection-id]`, with `--attempt-id`, `--session-id` and
-`--json`. Read each command's help before use. Queries perform no target login,
-desktop capture, input, command replay or node provisioning.
+The owning Runner adds `OKOU_REMOTE_DIAGNOSTIC_TEXT=1` to its reserved per-Run
+environment alongside its bundled helper. New CLI adds `diagnosticText=true`
+to parameters of existing SSH exec, session and file methods only when that
+marker exists. Guest RPC validates/removes it before strict business parsing.
+No capability request, diagnostic method alias or business retry is needed.
 
-`found` includes one report. `no_failure` means no failure was retained in this
-Run; it says nothing about connectivity. `not_retained` never substitutes another
-host or attempt. `authority_unavailable` covers failure to establish current read
-capability and Run/chat/host visibility through the metadata inventory API, and
-returns no report. A nested SSH dependency requires its own current visibility.
-The owner requests `diagnostics=1` from those existing inventories. Their opt-in
-version-1 identity projection preserves PostgreSQL microseconds, and known
-primary/dependency creation timestamps must match. A later generation of the
-same creation instance can still read historical evidence. An old API without
-that projection fails closed. Generic pre-resolve failures are explicitly
-unbound and carry no private configuration or native source evidence.
-`unavailable` covers a disabled or retired owner. Missing/old helpers, unknown
-versions, malformed responses and unavailable RPC paths remain finite CLI errors.
+Old CLIs do not opt in, so their strict responses stay unchanged. A new CLI
+on an older Runner sees no marker and makes one ordinary business call.
+The marker declares support, never authority. The default-off
+`remoteConnectionDiagnostics` switch and current assignment/subject checks
+still gate evidence. Disabled diagnostics omit explanation text.
 
-History belongs to the Run's exact registration. An overlapping replacement
-keeps pure evidence while fencing stale producers by assignment UUID. Queries
-require the live Run; no cross-Run archive is exposed. The store keeps 64 detail reports plus independent pinned latest
-SSH/VNC failures. Later success cannot clear those pins. Each report is at most
-8 KiB; version 1 has one finite operation/source stage, and explicitly marks finer
-detail `not_observed` (below the 32-stage ceiling). Each native resource observes
-at most 64 recent subject bindings. Older unretained selectors report
-`not_retained`; ring pressure is exposed as `retention.evicted`.
+An opted-in failed result may contain one `diagnostic_text` string, at most
+8192 UTF-8 bytes. Runner renders the exact committed report, observed route,
+selected address/family, fresh/reused stages, source/dependency cause, uncertainty
+and guidance. Formatting can change without CLI changes. Human output and JSON
+contain the same text. CLI checks only bounded, terminal-safe text; missing or
+unusable optional text cannot replace a verified business result.
 
-Closing an SSH or VNC session intentionally does not replace a previous
-operational failure with expected cancellation, including a pending VNC capture.
-Independent request failures and authority invalidation remain eligible for
-history.
+Process status/read use their retained terminal receipt. Later unrelated
+operations cannot replace it. Completed remote nonzero exits and intentional
+close do not create failures. Existing business/byte/truncation/EOF/helper-exit
+and local file-publication checks remain authoritative. Lost or corrupt delivery
+never supplies a trusted explanation and never replays work.
+
+## Same-Run passive history
+
+`ssh.diagnose` and `vnc.diagnose` accept optional exact UUID `connectionId`,
+`attemptId` and `sessionId` filters. Filters intersect; no filters select that
+protocol's latest retained operational failure. CLI exposes `okou ssh diagnose`
+and `okou vnc diagnose`, including `--attempt-id`, `--session-id` and `--json`.
+One passive request returns `status` and a bounded Runner-authored `message`.
+These non-GA query formats do not retain old report-format decoders.
+
+`found` explains one matching failure. `no_failure` means none was recorded
+in this Run, not successful connectivity. `not_retained` never substitutes
+an unrelated incident. `authority_unavailable` discloses no retained details.
+`unavailable` covers a disabled/retired owner or unavailable detail.
+Queries perform no target login, capture, input, command replay or provisioning.
+
+History requires current read capability and Run/chat/host visibility. Nested
+SSH evidence requires dependency visibility too. The owner requests
+`diagnostics=1` from existing metadata inventories. Known creation identities
+must match with PostgreSQL microsecond precision; later generations on the
+same creation instance can still read history. Missing identity projection
+fails closed. Generic pre-resolve failures remain unbound and contain no
+private configuration or native source evidence.
+
+## Source ownership and bounds
+
+The exact Run registration owns 64 detailed reports plus separately pinned
+latest SSH/VNC failures. Later successes do not clear pins. Removed sessions
+and nodes do not remove history. Assignment UUIDs fence stale producers.
+No cross-Run archive exists.
+
+Evidence contains finite stages and typed identifiers, never provider/peer
+bodies, hostnames, credentials, auth URLs, commands/output, file paths/content,
+screenshots, input, maps or packets. Only the selected policy-approved address
+is recorded, not a complete DNS answer set. Incomplete stages stay unknown;
+reused setup cannot prove fresh health. File causes remain file causes.
+The first Cloudflare cause survives later carrier/cleanup failures. Safe logs
+and explanation text use the same typed source facts.
 
 Native readiness, first terminal work cause and physical cleanup are distinct.
-A report may retain a small shared receipt whose cleanup fields settle after its
-original failure. The receipt cannot own a node, Completion, credential, stream,
-task, cancellation token or permit. Records contain typed codes and identifiers,
-never provider error text, hostnames, credentials, auth URLs, command output,
-screenshots, input, maps or packets. Existing business result/effect/delivery
-contracts remain independent.
-
-A later SSH request for the same native configuration retains an available
-source receipt even when the terminal node rejects adoption before that host
-owns a node lease. The lookup copies only pure evidence from this Run's exact
-configuration/generation; it does not restart or retain the physical node.
-
-Native subscriptions hold weak references to pure consumer activity flags.
-Explicit retirement or authority invalidation disables later publication for
-that consumer without keeping its physical resource alive. Separate sessions
-of the same host retain separate bindings.
-
-Rollout uses the default-off `remoteConnectionDiagnostics` key in the existing
-Run feature map. Enabling it does not grant SSH or VNC access. Report fields and
-finite vocabularies are a versioned contract; incompatible additions require a
-new negotiated version or method, leaving legacy business replies unchanged.
-The switch controls history publication and passive queries. Native first-cause
-lifecycle handling and the inventory identity projection are shared paths that
-also apply when diagnostics are disabled.
-
-## SSH automatic output, version 2
-
-`ssh.diagnostics.capabilities` accepts an empty object in the legacy request
-envelope and returns schema version 2, `passive_query`, a finite list of
-`automatic_methods` and `query_method` (`ssh.diagnostics.query.v2`). It advertises
-only the live enabled assignment. The old capability response stays unchanged.
-
-The advertised automatic methods append `.diagnostics.v2` to SSH exec,
-file upload/download, and session start/status/read/write/signal/close. Their
-parameters and business execution use the existing handlers; the method label
-is the explicit version opt-in. Generic framing and both bundled-helper modes
-remain opaque. No new envelope/parameter field, helper fallback or replay is
-introduced. Non-opt-in methods retain their strict result shapes.
-
-An opted-in failure terminal may add `diagnostics` with `found` and the exact
-owner-published report, or `unavailable` without invented association. Process
-status/read use that session's retained terminal receipt. Later failures from
-other operations cannot change this reference. Completed remote nonzero exits
-and intentional close do not generate failures. Lost or corrupt helper delivery
-does not establish a diagnostic association; no business operation is retried.
-
-Version-2 reports keep the same identity/retention/authority bounds and add
-finite SSH consumer stages, a cause-specific next action, actual route, fresh
-versus reused transport and the selected address/family when observed. A pooled
-connection retains its original selected address and marks observed setup as
-reused. Incomplete/cancelled stages remain unknown. Public-route selection
-exposes only the one policy-approved address, never a DNS answer set. Native
-source receipts keep their existing cause; finer native stages remain unobserved.
-The current trace has 12 fixed stage entries, below the 32-stage ceiling.
-
-File-operation failures retain a distinct finite `file` cause rather than a
-guessed SSH network failure. Version-1 queries retain their original projection
-for representable records and return unavailable for new-only categories;
-they never emit a malformed version-1 report or substitute an older incident.
-The new CLI negotiates version 2 for passive SSH queries. Collection and
-diagnostic decoding failures remain secondary to valid original business,
-effect, delivery, output, file publication/residue and truncation outcomes.
-The same typed report supplies immediate output, exact passive queries and safe
-structured failure logs. It owns no physical resources and contains no business
-output, file paths, credentials or raw provider/peer text.
+A pure shared receipt may gain cleanup detail after the original failure,
+but owns no node, stream, Completion, credential, task, token or permit.
+Native subscriptions keep weak consumer activity references, at most 64 recent
+subject bindings. Retirement/revocation disables later publication. A later
+rejected adoption copies available pure source evidence from this Run's exact
+configuration/generation without restarting or retaining the physical node.
 
 SSH-routed Kerberos KDC failures retain their source cause and creation identity
 before Kerberos error conversion. The native RPC regression uses a real packaged

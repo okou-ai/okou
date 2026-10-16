@@ -97,7 +97,7 @@ async fn native_common_rejected_home_announcement_never_sends_login_or_command()
     let original = h
         .raw(json!({"version":1,"method":"ssh.diagnose","params":{}}).to_string())
         .await;
-    let original = &original.last().unwrap()["data"]["report"];
+    let original = crate::test_fixtures::diagnostic_report(&original.last().unwrap()["data"]);
     assert_eq!(original["native"]["configuration_id"], id.to_string());
     assert_eq!(original["native"]["evidence"]["terminal"], "domain_failed");
     let mut params = params();
@@ -111,7 +111,7 @@ async fn native_common_rejected_home_announcement_never_sends_login_or_command()
     let retained = h
         .raw(json!({"version":1,"method":"ssh.diagnose","params":{}}).to_string())
         .await;
-    let retained = &retained.last().unwrap()["data"]["report"];
+    let retained = crate::test_fixtures::diagnostic_report(&retained.last().unwrap()["data"]);
     assert_eq!(retained["connection_id"], OTHER);
     assert_eq!(
         retained["configuration_created_at"],

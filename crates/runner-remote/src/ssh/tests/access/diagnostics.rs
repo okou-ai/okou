@@ -6,6 +6,7 @@ use super::{
     credential,
     gateway::{self, Mode, SECRET},
 };
+use crate::test_fixtures::diagnostic_report;
 use serde_json::json;
 use std::sync::atomic::Ordering;
 
@@ -16,7 +17,7 @@ async fn opted_access_results_separate_tls_rejection_upgrade_and_interruption() 
             Mode::Proxy,
             "wrong.example.com",
             "tls",
-            "check_access_certificate",
+            "Check the Access gateway certificate",
         ),
         (
             Mode::Response(format!(
@@ -24,32 +25,34 @@ async fn opted_access_results_separate_tls_rejection_upgrade_and_interruption() 
             )),
             "ssh.example.com",
             "rejected",
-            "check_access_policy",
+            "Check the Cloudflare Access service token",
         ),
         (
             Mode::Extension,
             "ssh.example.com",
             "protocol",
-            "check_access_websocket",
+            "Check the Access WebSocket upgrade",
         ),
         (
             Mode::Text,
             "ssh.example.com",
             "protocol",
-            "check_access_websocket",
+            "Check the Access WebSocket upgrade",
         ),
     ] {
         let (mut h, gateway) = gateway::setup(Reply::default(), mode, cert_host).await;
         h.enable_diagnostics().await;
         let _resolve = h.resolve(credential(&h, true, true)).await;
-        let frames=h.raw(json!({"version":1,"method":"ssh.exec.diagnostics.v2","remaining_ms":60000,"params":params()}).to_string()).await;
+        let mut diagnostic_params = params();
+        diagnostic_params["diagnosticText"] = true.into();
+        let frames=h.raw(json!({"version":1,"method":"ssh.exec","remaining_ms":60000,"params":diagnostic_params}).to_string()).await;
         let result = terminal(&frames);
         assert_eq!(result["type"], "failed");
         assert_eq!(result["effects"], "not_started");
-        let report = &result["diagnostics"]["report"];
+        let report = &diagnostic_report(result);
         assert_eq!(report["ssh"]["route"], "cloudflare_access");
         assert_eq!(report["ssh"]["access_failure"], cause);
-        assert_eq!(report["next_action"], action);
+        assert!(result["diagnostic_text"].as_str().unwrap().contains(action));
         assert!(!serde_json::to_string(&frames).unwrap().contains("canary"));
         assert_eq!(h.observed.auth.load(Ordering::SeqCst), 0);
         assert!(h.observed.commands.lock().unwrap().is_empty());

@@ -150,46 +150,20 @@ enum Status {
 
 #[derive(Serialize)]
 struct Query {
-    schema_version: u8,
     status: Status,
-    report: Option<serde_json::Value>,
-    retention: Retention,
-}
-#[derive(Serialize)]
-struct Retention {
-    capacity: usize,
-    evicted: u64,
-    latest_failure_pinned: bool,
+    message: String,
 }
 
 impl Handle {
-    #[cfg(test)]
     async fn query(
         &self,
         protocol: Protocol,
         selector: Selector,
         authority: Option<&Authority>,
     ) -> Query {
-        self.query_versioned(protocol, selector, authority, false)
-            .await
-    }
-
-    async fn query_versioned(
-        &self,
-        protocol: Protocol,
-        selector: Selector,
-        authority: Option<&Authority>,
-        version2: bool,
-    ) -> Query {
         let mut query = Query {
-            schema_version: if version2 { 2 } else { 1 },
             status: Status::Unavailable,
-            report: None,
-            retention: Retention {
-                capacity: super::CAPACITY,
-                evicted: 0,
-                latest_failure_pinned: true,
-            },
+            message: "Diagnostics are unavailable or disabled for this Run. Current connectivity has not been checked.".into(),
         };
         if !self.enabled() || !self.current() {
             return query;
@@ -198,6 +172,7 @@ impl Handle {
             return query;
         };
         query.status = Status::AuthorityUnavailable;
+        query.message = "Diagnostic history is unavailable under current Run, host or dependency read authority. Check permissions and API availability. Current connectivity has not been checked.".into();
         let Ok(hosts) = authority.hosts(protocol).await else {
             return query;
         };
@@ -239,6 +214,8 @@ impl Handle {
         }
         if !self.current() {
             query.status = Status::Unavailable;
+            query.message =
+                "The Run assignment changed; historical diagnostics are unavailable.".into();
             return query;
         }
         query.status = if report.is_some() {
@@ -251,22 +228,15 @@ impl Handle {
         } else {
             Status::NoFailure
         };
-        query.report = report.as_ref().and_then(|report| {
-            if version2 {
-                report.version2()
-            } else {
-                report.legacy()
-            }
-        });
-        if report.is_some() && query.report.is_none() {
+        let message = report.as_ref().and_then(super::Report::message);
+        if report.is_some() && message.is_none() {
             query.status = Status::Unavailable;
         }
-        query.retention.evicted = self
-            .store
-            .state
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .evicted;
+        query.message = message.unwrap_or_else(|| match query.status {
+            Status::NoFailure => "No operational failure was recorded in this Run. Current connectivity has not been checked.".into(),
+            Status::NotRetained => "No matching failure is retained in this Run's bounded history (64 detailed reports, latest failures pinned). Current connectivity has not been checked.".into(),
+            _ => "Diagnostic detail is unavailable. Current connectivity has not been checked.".into(),
+        });
         query
     }
 
@@ -274,7 +244,6 @@ impl Handle {
         &self,
         request: super::super::guest_rpc::Request,
         authority: Option<Arc<Authority>>,
-        ssh_available: bool,
     ) {
         let super::super::guest_rpc::Request {
             input,
@@ -291,40 +260,20 @@ impl Handle {
             sandbox_cancelled,
             deadline,
         };
-        let data = if matches!(
-            request.method.as_str(),
-            "remote.diagnostics.capabilities" | super::version2::CAPABILITIES
-        ) {
-            if serde_json::from_str::<Empty>(request.params.get()).is_err() {
-                scope
-                    .error(input, runner_rpc_proto::ErrorCode::InvalidRequest)
-                    .await;
-                return;
-            }
-            if request.method == super::version2::CAPABILITIES {
-                serde_json::value::to_raw_value(&super::version2::capabilities(self, ssh_available))
-            } else {
-                serde_json::value::to_raw_value(&Capabilities {
-                    schema_version: 1,
-                    passive_query: self.enabled() && self.current(),
-                    active_check: false,
-                })
-            }
-        } else {
+        let data = {
             let Ok(selector) = serde_json::from_str::<Selector>(request.params.get()) else {
                 scope
                     .error(input, runner_rpc_proto::ErrorCode::InvalidRequest)
                     .await;
                 return;
             };
-            let version2 = request.method == super::version2::QUERY;
-            let protocol = if request.method == "ssh.diagnose" || version2 {
+            let protocol = if request.method == "ssh.diagnose" {
                 Protocol::Ssh
             } else {
                 Protocol::Vnc
             };
             let Some(query) = scope
-                .wait(self.query_versioned(protocol, selector, authority.as_deref(), version2))
+                .wait(self.query(protocol, selector, authority.as_deref()))
                 .await
             else {
                 return;
@@ -337,16 +286,6 @@ impl Handle {
                 .await;
         }
     }
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Empty {}
-#[derive(Serialize)]
-struct Capabilities {
-    schema_version: u8,
-    passive_query: bool,
-    active_check: bool,
 }
 
 #[cfg(test)]
@@ -415,7 +354,7 @@ mod tests {
             serde_json::to_value(&hidden).unwrap()["status"],
             "authority_unavailable"
         );
-        assert!(hidden.report.is_none());
+        assert!(!hidden.message.contains(&ssh.to_string()));
         denied.delete_async().await;
         let allowed = api
             .mock_async(|when, then| {
@@ -432,7 +371,7 @@ mod tests {
         .unwrap();
         assert_eq!(result["status"], "found");
         assert_eq!(
-            result["report"]["dependencies"][0]["cause"]["code"],
+            crate::test_fixtures::diagnostic_report(&result)["dependencies"][0]["cause"]["code"],
             "host_key_mismatch"
         );
         for secret in [
@@ -509,7 +448,7 @@ mod tests {
         let unavailable = handle
             .query(Protocol::Ssh, Selector::default(), Some(&authority))
             .await;
-        assert!(unavailable.report.is_none());
+        assert!(!unavailable.message.contains(&host.to_string()));
         assert_eq!(
             serde_json::to_value(&unavailable).unwrap()["status"],
             "authority_unavailable"

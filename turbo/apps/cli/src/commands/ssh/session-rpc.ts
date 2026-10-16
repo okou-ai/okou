@@ -1,12 +1,10 @@
 import { z } from "zod";
-import type { DiagnosticSupport } from "../../lib/ssh-diagnostics";
 import {
-  failureReasonSchema,
-  remoteExitSchema,
-  invokeSshRpc,
-  rpcErrorSchema,
-  SshProtocolError,
-} from "./rpc";
+  diagnosticParams,
+  diagnosticTextSchema,
+} from "../../lib/ssh-diagnostics";
+import { invokeRunnerRpc, rpcErrorSchema } from "../../lib/runner-rpc";
+import { failureReasonSchema, remoteExitSchema, SshProtocolError } from "./rpc";
 
 const cursor = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 const effects = z.enum(["not_started", "unknown", "completed"]);
@@ -42,6 +40,7 @@ const info = z
 const failure = z
   .object({
     type: z.literal("failed"),
+    diagnostic_text: diagnosticTextSchema,
     failure_reason: failureReasonSchema,
     effects: z.enum(["not_started", "unknown"]),
   })
@@ -51,10 +50,17 @@ const resultSchema = z.discriminatedUnion("type", [
   z
     .object({ type: z.literal("sessions"), sessions: z.array(info).max(8) })
     .strict(),
-  z.object({ type: z.literal("status"), session: info }).strict(),
+  z
+    .object({
+      type: z.literal("status"),
+      session: info,
+      diagnostic_text: diagnosticTextSchema,
+    })
+    .strict(),
   z
     .object({
       type: z.literal("read"),
+      diagnostic_text: diagnosticTextSchema,
       session: info,
       wait_expired: z.boolean(),
       chunks: z
@@ -265,14 +271,12 @@ export async function sessionRpc(
   method: Method,
   params: Readonly<Record<string, unknown>>,
   signal?: AbortSignal,
-  support?: DiagnosticSupport,
 ) {
-  return invokeSshRpc(
+  return invokeRunnerRpc(
     `ssh.session.${method}`,
-    params,
+    method === "list" ? params : diagnosticParams(params),
     new SessionResponse(method, params),
     true,
     signal,
-    support,
   );
 }

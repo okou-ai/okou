@@ -21,7 +21,7 @@ vi.mock("node:child_process", async (importOriginal) => {
         expect(file).toBe("/usr/local/bin/runner-rpc-client");
         expect(args).toEqual([]);
         expect(options).toEqual({ stdio: ["pipe", "pipe", "pipe"] });
-        const reply = helper.replies[0];
+        const reply = helper.replies.shift();
         if (!reply) throw new Error("Unexpected SSH page request");
         const child = original.spawn(
           "python3",
@@ -46,13 +46,7 @@ vi.mock("node:child_process", async (importOriginal) => {
           },
         );
         child.on("message", (message: unknown) => {
-          if (
-            typeof message === "string" &&
-            JSON.parse(message).method !== "ssh.diagnostics.capabilities"
-          ) {
-            helper.requests.push(message);
-            helper.replies.shift();
-          }
+          if (typeof message === "string") helper.requests.push(message);
         });
         return child;
       },
@@ -152,6 +146,43 @@ afterEach(() => {
 });
 
 describe("okou ssh session read", () => {
+  it.each(["json", "human"])(
+    "passes retained Runner text through %s output",
+    async (format) => {
+      vi.stubEnv("OKOU_REMOTE_DIAGNOSTIC_TEXT", "1");
+      const message =
+        "Runner retained this session's authentication failure. 认证失败 🧭";
+      helper.replies.push({
+        data: {
+          ...page(0, Buffer.alloc(0), 0),
+          session: {
+            ...session,
+            state: { type: "failed", failure_reason: "authentication_failed" },
+            effects: "not_started",
+          },
+          diagnostic_text: message,
+        },
+      });
+      if (format === "json") {
+        await read("--wait", "0");
+        expect(result()).toMatchObject({
+          diagnostic_text: message,
+          stop_reason: "terminal",
+          failure: null,
+        });
+      } else {
+        await plain("--wait", "0");
+        expect(Buffer.concat(stderr).toString()).toContain(message);
+      }
+      expect(requests()).toHaveLength(1);
+      expect(requests()[0]).toMatchObject({
+        method: "ssh.session.read",
+        params: { diagnosticText: true },
+      });
+      expect(process.exitCode).toBe(0);
+    },
+  );
+
   it("waits once by default and treats quiet wait expiry as successful observation", async () => {
     helper.replies.push({
       data: { ...page(0, Buffer.alloc(0), 0), wait_expired: true },

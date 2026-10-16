@@ -58,10 +58,6 @@ async fn one_shot_helper_forwards_unrelated_methods_without_executing_or_interpr
             "fixture.metrics",
             json!({"windows": [10, 20], "unit": "bytes"}),
         ),
-        (
-            "ssh.exec.diagnostics.v2",
-            json!({"sshConnectionId":"a0000000-0000-4000-8000-000000000001","command":"literal; $command"}),
-        ),
     ] {
         let bytes =
             serde_json::to_vec_pretty(&json!({"version":1,"method":method,"params":params}))

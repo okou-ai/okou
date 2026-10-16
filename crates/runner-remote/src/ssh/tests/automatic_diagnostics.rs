@@ -2,11 +2,14 @@ use super::{
     harness::{CONNECTION, CREATED_AT, Harness, Reply, params},
     terminal,
 };
-use crate::test_fixtures::remote_inventory;
+use crate::test_fixtures::{diagnostic_report, remote_inventory};
 use serde_json::{Value, json};
 use std::sync::atomic::Ordering;
 
-async fn rpc(h: &Harness, method: &str, params: Value) -> Value {
+async fn rpc(h: &Harness, method: &str, mut params: Value) -> Value {
+    if method != "ssh.diagnose" {
+        params["diagnosticText"] = true.into();
+    }
     terminal(
         &h.raw(
             json!({"version":1,"method":method,"remaining_ms":60000,"params":params}).to_string(),
@@ -26,35 +29,22 @@ fn stage(report: &Value, name: &str) -> Value {
 }
 
 #[tokio::test]
-async fn discovery_and_legacy_results_preserve_strict_shapes_and_nonzero_exit() {
+async fn local_opt_in_preserves_legacy_and_disabled_results_and_nonzero_exit() {
     let mut h = Harness::new(Reply::default()).await;
     let resolve = h.resolve(h.credential(true)).await;
-    assert_eq!(
-        rpc(&h, "ssh.diagnostics.capabilities", json!({})).await["automatic_methods"],
-        json!([])
-    );
-    let unavailable = h
-        .raw(json!({"version":1,"method":"ssh.exec.diagnostics.v2","params":params()}).to_string())
-        .await;
-    assert_eq!(unavailable.last().unwrap()["code"], "unknown_method");
-    resolve.assert_calls_async(0).await;
+    let disabled = rpc(&h, "ssh.exec", params()).await;
+    assert_eq!(disabled["type"], "finished");
+    assert!(disabled.get("diagnostic_text").is_none());
+    resolve.assert_calls_async(1).await;
     h.enable_diagnostics().await;
-    let caps = rpc(&h, "ssh.diagnostics.capabilities", json!({})).await;
-    assert_eq!(caps["schema_version"], 2);
-    assert!(
-        caps["automatic_methods"]
-            .as_array()
-            .unwrap()
-            .contains(&json!("ssh.exec.diagnostics.v2"))
-    );
-    let legacy = rpc(&h, "ssh.exec", params()).await;
+    let legacy = terminal(&h.request(params()).await).clone();
     assert_eq!(legacy["type"], "finished");
     assert_eq!(legacy["exit"]["code"], 7);
-    assert!(legacy.get("diagnostics").is_none());
-    let opted = rpc(&h, "ssh.exec.diagnostics.v2", params()).await;
+    assert!(legacy.get("diagnostic_text").is_none());
+    let opted = rpc(&h, "ssh.exec", params()).await;
     assert_eq!(opted["type"], "finished");
     assert_eq!(opted["exit"]["code"], 7);
-    assert!(opted.get("diagnostics").is_none());
+    assert!(opted.get("diagnostic_text").is_none());
     h.shutdown().await;
 }
 
@@ -75,16 +65,13 @@ async fn concurrent_failures_return_their_own_committed_report_and_exact_query()
         .await;
     let mut b = params();
     b["sshConnectionId"] = OTHER.into();
-    let (a, b) = tokio::join!(
-        rpc(&h, "ssh.exec.diagnostics.v2", params()),
-        rpc(&h, "ssh.exec.diagnostics.v2", b)
-    );
+    let (a, b) = tokio::join!(rpc(&h, "ssh.exec", params()), rpc(&h, "ssh.exec", b));
     for (reply, id) in [(&a, CONNECTION), (&b, OTHER)] {
         assert_eq!(reply["failure_reason"], "exec_rejected");
         assert_eq!(reply["effects"], "not_started");
-        let report = &reply["diagnostics"]["report"];
+        let report = &diagnostic_report(reply);
         assert_eq!(report["connection_id"], id);
-        assert_eq!(report["schema_version"], 2);
+        assert!(reply["diagnostic_text"].as_str().unwrap().len() <= 8192);
         assert_eq!(report["configuration_created_at"], CREATED_AT);
         assert_eq!(stage(report, "ssh_proof"), "passed");
         assert_eq!(stage(report, "ssh_trust"), "passed");
@@ -92,16 +79,49 @@ async fn concurrent_failures_return_their_own_committed_report_and_exact_query()
         assert_eq!(stage(report, "operation"), "failed");
         let query = rpc(
             &h,
-            "ssh.diagnostics.query.v2",
+            "ssh.diagnose",
             json!({"attemptId":report["attempt_id"]}),
         )
         .await;
-        assert_eq!(&query["report"], report);
+        assert_eq!(&diagnostic_report(&query), report);
     }
     assert_ne!(
-        a["diagnostics"]["report"]["attempt_id"],
-        b["diagnostics"]["report"]["attempt_id"]
+        diagnostic_report(&a)["attempt_id"],
+        diagnostic_report(&b)["attempt_id"]
     );
+    h.shutdown().await;
+}
+
+#[tokio::test]
+async fn text_opt_in_keeps_strict_parameters_and_legacy_failures() {
+    let mut h = Harness::new(Reply::default()).await;
+    h.enable_diagnostics().await;
+    let resolve = h.resolve(json!({"outcome":"unavailable"})).await;
+    for params in [
+        r#"{"diagnosticText":"true"}"#.to_owned(),
+        format!(
+            r#"{{"sshConnectionId":"{CONNECTION}","command":"first","command":"second","diagnosticText":true}}"#
+        ),
+        format!(
+            r#"{{"sshConnectionId":"{CONNECTION}","command":"first","diagnosticText":false,"diagnosticText":true}}"#
+        ),
+    ] {
+        let frames = h
+            .raw(format!(
+                r#"{{"version":1,"method":"ssh.exec","params":{params}}}"#
+            ))
+            .await;
+        assert_eq!(frames.last().unwrap()["code"], "invalid_request");
+        assert_eq!(frames.last().unwrap()["delivery"], "not_dispatched");
+    }
+    resolve.assert_calls_async(0).await;
+    let legacy = terminal(&h.request(params()).await).clone();
+    assert_eq!(legacy["failure_reason"], "unavailable");
+    assert!(legacy.get("diagnostic_text").is_none());
+    let opted = rpc(&h, "ssh.exec", params()).await;
+    assert_eq!(opted["failure_reason"], "unavailable");
+    assert_eq!(diagnostic_report(&opted)["connection_id"], CONNECTION);
+    resolve.assert_calls_async(2).await;
     h.shutdown().await;
 }
 
@@ -121,15 +141,20 @@ async fn actual_dns_policy_and_tcp_failures_keep_not_reached_stages_and_selected
             }
             _ => h.network.connect_failed.store(true, Ordering::SeqCst),
         }
-        let result = rpc(&h, "ssh.exec.diagnostics.v2", params()).await;
-        let report = &result["diagnostics"]["report"];
+        let result = rpc(&h, "ssh.exec", params()).await;
+        let report = &diagnostic_report(&result);
         assert_eq!(result["effects"], "not_started");
         assert_eq!(stage(report, "authentication"), "not_reached");
         match case {
             "dns" => {
                 assert_eq!(stage(report, "dns"), "failed");
                 assert_eq!(stage(report, "tcp"), "not_reached");
-                assert_eq!(report["next_action"], "check_dns");
+                assert!(
+                    result["diagnostic_text"]
+                        .as_str()
+                        .unwrap()
+                        .contains("Check destination DNS")
+                );
             }
             "policy" => {
                 assert_eq!(stage(report, "destination_policy"), "failed");
@@ -143,7 +168,12 @@ async fn actual_dns_policy_and_tcp_failures_keep_not_reached_stages_and_selected
                     report["ssh"]["address_family"],
                     if case == "tcp6" { "ipv6" } else { "ipv4" }
                 );
-                assert_eq!(report["next_action"], "check_route_and_port");
+                assert!(
+                    result["diagnostic_text"]
+                        .as_str()
+                        .unwrap()
+                        .contains("Check the selected address")
+                );
             }
         }
         assert_eq!(h.observed.auth.load(Ordering::SeqCst), 0);
@@ -160,8 +190,8 @@ async fn pooled_transport_retains_selected_address_without_fabricating_new_setup
     h.observed
         .reject_reused_channels
         .store(true, Ordering::SeqCst);
-    let result = rpc(&h, "ssh.exec.diagnostics.v2", params()).await;
-    let report = &result["diagnostics"]["report"];
+    let result = rpc(&h, "ssh.exec", params()).await;
+    let report = &diagnostic_report(&result);
     assert_eq!(report["ssh"]["transport"], "reused");
     assert_eq!(report["ssh"]["selected_address"], "93.184.216.34");
     assert_eq!(stage(report, "authentication"), "reused");
@@ -189,8 +219,8 @@ async fn trust_rejection_precedes_authentication_and_credential_rejection_keeps_
             credential.as_object_mut().unwrap().remove("passphrase");
         }
         let _resolve = h.resolve(credential).await;
-        let result = rpc(&h, "ssh.exec.diagnostics.v2", params()).await;
-        let report = &result["diagnostics"]["report"];
+        let result = rpc(&h, "ssh.exec", params()).await;
+        let report = &diagnostic_report(&result);
         assert_eq!(
             result["failure_reason"],
             if trust_failure {
@@ -213,13 +243,15 @@ async fn trust_rejection_precedes_authentication_and_credential_rejection_keeps_
             }
         );
         assert_eq!(report["configuration_generation"], 7);
-        assert_eq!(
-            report["next_action"],
-            if trust_failure {
-                "verify_host_key"
-            } else {
-                "check_credential"
-            }
+        assert!(
+            result["diagnostic_text"]
+                .as_str()
+                .unwrap()
+                .contains(if trust_failure {
+                    "Verify the server host key"
+                } else {
+                    "Check the configured SSH credential"
+                })
         );
         assert!(!result.to_string().contains("canary"));
         assert!(h.observed.commands.lock().unwrap().is_empty());
@@ -234,36 +266,26 @@ async fn retained_process_status_uses_its_receipt_after_another_host_failure() {
     let _resolve = h.resolve(h.credential(true)).await;
     let started = rpc(
         &h,
-        "ssh.session.start.diagnostics.v2",
+        "ssh.session.start",
         json!({"sshConnectionId":CONNECTION,"program":{"type":"exec","command":"hold"}}),
     )
     .await;
     let session = started["session_id"].as_str().unwrap();
     super::sessions::state(&h, &started["session_id"], "failed").await;
-    let first = rpc(
-        &h,
-        "ssh.session.status.diagnostics.v2",
-        json!({"sessionId":session}),
-    )
-    .await;
-    assert_eq!(first["diagnostics"]["report"]["session_id"], session);
-    let unrelated = rpc(&h, "ssh.exec.diagnostics.v2", params()).await;
+    let first = rpc(&h, "ssh.session.status", json!({"sessionId":session})).await;
+    assert_eq!(diagnostic_report(&first)["session_id"], session);
+    let unrelated = rpc(&h, "ssh.exec", params()).await;
     assert_ne!(
-        first["diagnostics"]["report"]["attempt_id"],
-        unrelated["diagnostics"]["report"]["attempt_id"]
+        diagnostic_report(&first)["attempt_id"],
+        diagnostic_report(&unrelated)["attempt_id"]
     );
-    let again = rpc(
-        &h,
-        "ssh.session.status.diagnostics.v2",
-        json!({"sessionId":session}),
-    )
-    .await;
-    assert_eq!(first["diagnostics"], again["diagnostics"]);
+    let again = rpc(&h, "ssh.session.status", json!({"sessionId":session})).await;
+    assert_eq!(first["diagnostic_text"], again["diagnostic_text"]);
     h.shutdown().await;
 }
 
 #[tokio::test]
-async fn binary_file_failure_keeps_file_cause_and_legacy_query_does_not_mislabel_it() {
+async fn binary_file_failure_keeps_file_cause_and_matching_history_text() {
     use runner_rpc_proto::{
         Response,
         stream::{Frame, Reader, Writer},
@@ -283,7 +305,7 @@ async fn binary_file_failure_keeps_file_cause_and_legacy_query_does_not_mislabel
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("absent");
     let mut guest = h.open().await;
-    let request=json!({"version":1,"method":"ssh.file.download.diagnostics.v2","remaining_ms":900000,"params":{"sshConnectionId":CONNECTION,"remotePath":path}}).to_string();
+    let request=json!({"version":1,"method":"ssh.file.download","remaining_ms":900000,"params":{"sshConnectionId":CONNECTION,"remotePath":path,"diagnosticText":true}}).to_string();
     guest.write_u32(request.len() as u32).await.unwrap();
     guest.write_all(request.as_bytes()).await.unwrap();
     let (read, write) = tokio::io::split(guest);
@@ -298,23 +320,19 @@ async fn binary_file_failure_keeps_file_cause_and_legacy_query_does_not_mislabel
     assert_eq!(result["failure_reason"], "path_not_found");
     assert_eq!(result["effects"], "not_started");
     assert_eq!(
-        result["diagnostics"]["report"]["cause"],
+        diagnostic_report(&result)["cause"],
         json!({"source":"file","code":"path_not_found"})
     );
-    let report = &result["diagnostics"]["report"];
-    assert_eq!(
-        rpc(
-            &h,
-            "ssh.diagnostics.query.v2",
-            json!({"attemptId":report["attempt_id"]})
-        )
-        .await["report"],
-        *report
-    );
-    let legacy = rpc(&h, "ssh.diagnose", json!({})).await;
-    assert_eq!(legacy["schema_version"], 1);
-    assert_eq!(legacy["status"], "unavailable");
-    assert!(legacy["report"].is_null());
+    let report = &diagnostic_report(&result);
+    let history = rpc(
+        &h,
+        "ssh.diagnose",
+        json!({"attemptId":report["attempt_id"]}),
+    )
+    .await;
+    assert_eq!(history["status"], "found");
+    assert_eq!(diagnostic_report(&history), *report);
+    assert_eq!(history["message"], result["diagnostic_text"]);
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
     h.shutdown().await;
 }
@@ -345,8 +363,8 @@ async fn forwarding_failure_retains_actual_channel_stage_and_current_source_iden
         )
         .await;
     assert!(result.is_err());
-    let query = rpc(&h, "ssh.diagnostics.query.v2", json!({})).await;
-    let report = &query["report"];
+    let query = rpc(&h, "ssh.diagnose", json!({})).await;
+    let report = &diagnostic_report(&query);
     assert_eq!(report["operation"], "forwarding");
     assert_eq!(report["configuration_created_at"], CREATED_AT);
     assert_eq!(report["configuration_generation"], 7);

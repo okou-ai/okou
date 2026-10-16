@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { sshDiagnosticContext } from "../../lib/ssh-diagnostics";
+import { diagnosticParams } from "../../lib/ssh-diagnostics";
 import type { Writable } from "node:stream";
 import { DownloadDestination, UploadSource, fileReason } from "./file-local";
 import {
@@ -102,15 +102,7 @@ export async function transferFile(args: TransferArgs): Promise<FileOutcome> {
   const stoppedInput = new AbortController();
   const signal = controller.signal;
   const inputSignal = AbortSignal.any([signal, stoppedInput.signal]);
-  const diagnostics = await sshDiagnosticContext(`ssh.file.${direction}`, {
-    sshConnectionId: connectionId,
-  });
-  if (diagnostics.cancelled) {
-    const result = failure(direction, connectionId, "cancelled");
-    result.actual_bytes = source?.size ?? null;
-    return diagnostics.attach(result);
-  }
-  const frames = new FileFrames(diagnostics);
+  const frames = new FileFrames();
   let dispatched = false;
   let spawnFailed = false;
   const cancel = () => {
@@ -157,15 +149,15 @@ export async function transferFile(args: TransferArgs): Promise<FileOutcome> {
   });
 
   const sender = (async () => {
-    const params = {
+    const params = diagnosticParams({
       sshConnectionId: connectionId,
       remotePath: args.remotePath,
       ...(source ? { size: source.size, overwrite: args.overwrite } : {}),
-    };
+    });
     // The helper attaches its own remaining lifetime; clients cannot extend it.
     const request = frame(
       Buffer.from(
-        JSON.stringify({ version: 1, method: diagnostics.wireMethod, params }),
+        JSON.stringify({ version: 1, method: `ssh.file.${direction}`, params }),
       ),
     );
     dispatched = true;
@@ -207,17 +199,14 @@ export async function transferFile(args: TransferArgs): Promise<FileOutcome> {
     const exit = await closed;
     await drain;
     signal.throwIfAborted();
-    return diagnostics.attach(
-      await completeTransfer(args, frames, exit, signal),
-    );
+    return await completeTransfer(args, frames, exit, signal);
   } catch (error) {
-    diagnostics.fail(fileReason(error));
     const result = failure(direction, connectionId, fileReason(error));
     result.bytes = source?.bytes ?? destination?.bytes ?? 0;
     result.actual_bytes = source?.size ?? null;
     if (direction === "upload" && dispatched && !spawnFailed)
       result.effects = "unknown";
-    return diagnostics.attach(result);
+    return result;
   } finally {
     stoppedInput.abort();
     kill();

@@ -217,7 +217,7 @@ pub(super) async fn dispatch(runtime: &SshRuntime, sessions: &sessions::Manager,
             if request.direction == Direction::Download {
                 output.send(&Frame::End).await?;
             }
-            let value = crate::diagnostics::version2::result(
+            let value = crate::diagnostics::text::result(
                 &outcome,
                 diagnosed,
                 diagnostic.as_ref(),

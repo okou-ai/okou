@@ -3,6 +3,7 @@
   "tasks": {
     "test": {
       "passThroughEnv": [
+        "OKOU_REMOTE_DIAGNOSTIC_TEXT",
         "OKOU_PI_SESSION_ID",
         "OKOU_PI_MODEL_CONFIG",
         "OKOU_PI_LAUNCH_PAYLOAD_FILE",

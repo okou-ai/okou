@@ -366,7 +366,7 @@ impl Manager {
         writer: &mut ResponseWriter<GuestIo>,
     ) {
         let response = match scope.wait(self.handle(method, raw, scope)).await {
-            Ok(Ok(data)) => crate::diagnostics::version2::result(
+            Ok(Ok(data)) => crate::diagnostics::text::result(
                 &data,
                 diagnosed,
                 self.diagnostic_report(raw, &data).as_ref(),
@@ -385,7 +385,7 @@ impl Manager {
             Err(reason) => {
                 let Ok(data) = ({
                     let response = Response::failed(reason, Effects::Unknown);
-                    crate::diagnostics::version2::result(
+                    crate::diagnostics::text::result(
                         &response,
                         diagnosed,
                         self.diagnostic_report(raw, &response).as_ref(),

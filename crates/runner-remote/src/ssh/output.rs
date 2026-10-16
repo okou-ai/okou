@@ -157,7 +157,7 @@ impl Output {
             Terminal::Failed { .. } if self.attempted => Effects::Unknown,
             Terminal::Failed { .. } => Effects::NotStarted,
         };
-        let data = crate::diagnostics::version2::result(
+        let data = crate::diagnostics::text::result(
             &ResultData {
                 terminal,
                 effects,

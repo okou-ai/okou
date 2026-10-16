@@ -4,6 +4,7 @@ use super::{
     harness::{CONNECTION, Harness},
     mode,
 };
+use crate::test_fixtures::diagnostic_report;
 use crate::test_fixtures::remote_inventory;
 use serde_json::json;
 use std::sync::{Arc, atomic::Ordering};
@@ -36,11 +37,14 @@ async fn vnc_credential_parse_failure_retains_identity_and_recreated_hosts_canno
     let history = h.run.passive("vnc.diagnose", json!({})).await;
     assert_eq!(history["status"], "found");
     assert_eq!(
-        history["report"]["cause"],
+        diagnostic_report(&history)["cause"],
         json!({"source":"vnc","code":"invalid_credential"})
     );
-    assert_eq!(history["report"]["configuration_created_at"], CREATED_AT);
-    assert_eq!(history["report"]["configuration_generation"], 7);
+    assert_eq!(
+        diagnostic_report(&history)["configuration_created_at"],
+        CREATED_AT
+    );
+    assert_eq!(diagnostic_report(&history)["configuration_generation"], 7);
     assert!(!history.to_string().contains("invalid-ca-canary"));
     assert!(h.network.attempts.lock().unwrap().is_empty());
     inventory.assert_calls_async(1).await;
@@ -59,11 +63,11 @@ async fn vnc_credential_parse_failure_retains_identity_and_recreated_hosts_canno
         .run
         .passive(
             "vnc.diagnose",
-            json!({"attemptId":history["report"]["attempt_id"]}),
+            json!({"attemptId":diagnostic_report(&history)["attempt_id"]}),
         )
         .await;
     assert_eq!(hidden["status"], "authority_unavailable");
-    assert!(hidden["report"].is_null());
+    assert!(diagnostic_report(&hidden).is_null());
     recreated.assert_calls_async(1).await;
     resolve.assert_calls_async(1).await;
     h.run.shutdown().await;
@@ -93,10 +97,10 @@ async fn vnc_failed_start_remains_queryable_after_success_and_session_removal() 
     closed(&h).await;
     let original = h.run.passive("vnc.diagnose", json!({})).await;
     assert_eq!(
-        original["report"]["cause"],
+        diagnostic_report(&original)["cause"],
         json!({"source":"vnc","code":"authentication_failed"})
     );
-    assert_eq!(original["report"]["configuration_generation"], 7);
+    assert_eq!(diagnostic_report(&original)["configuration_generation"], 7);
     h.peer.refuse.store(false, Ordering::SeqCst);
     let session = h.start("shared").await.session();
     mode(&h, 1).await;
@@ -113,15 +117,15 @@ async fn vnc_failed_start_remains_queryable_after_success_and_session_removal() 
     assert_eq!(close.result()["outcome"], "closed");
     closed(&h).await;
     let latest = h.run.passive("vnc.diagnose", json!({})).await;
-    assert_eq!(latest["report"], original["report"]);
+    assert_eq!(diagnostic_report(&latest), diagnostic_report(&original));
     let retained = h
         .run
         .passive(
             "vnc.diagnose",
-            json!({"attemptId":original["report"]["attempt_id"]}),
+            json!({"attemptId":diagnostic_report(&original)["attempt_id"]}),
         )
         .await;
-    assert_eq!(retained["report"], original["report"]);
+    assert_eq!(diagnostic_report(&retained), diagnostic_report(&original));
     resolve.assert_calls_async(2).await;
     inventory.assert_calls_async(3).await;
     h.run.shutdown().await;
@@ -156,10 +160,10 @@ async fn vnc_retained_session_disconnect_is_recorded_before_cleanup_and_query_do
         .await;
     assert_eq!(history["status"], "found");
     assert_eq!(
-        history["report"]["cause"],
+        diagnostic_report(&history)["cause"],
         json!({"source":"vnc","code":"disconnected"})
     );
-    assert_eq!(history["report"]["session_id"], session);
+    assert_eq!(diagnostic_report(&history)["session_id"], session);
     resolve.assert_calls_async(1).await;
     assert_eq!(
         h.run.request("vnc.session.list", json!({})).await.result()["sessions"],

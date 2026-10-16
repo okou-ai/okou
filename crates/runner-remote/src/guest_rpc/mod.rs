@@ -297,22 +297,7 @@ async fn dispatch(
             return;
         }
     };
-    let diagnosed = crate::diagnostics::version2::canonical(&request.method);
-    if diagnosed.is_some() && (!diagnostics.enabled() || !diagnostics.current()) {
-        scope.error(input, ErrorCode::UnknownMethod).await;
-        return;
-    }
-    if let Some(method) = diagnosed {
-        request.method = method.to_owned();
-    }
-    if matches!(
-        request.method.as_str(),
-        "remote.diagnostics.capabilities"
-            | "ssh.diagnose"
-            | "vnc.diagnose"
-            | crate::diagnostics::version2::CAPABILITIES
-            | crate::diagnostics::version2::QUERY
-    ) {
+    if matches!(request.method.as_str(), "ssh.diagnose" | "vnc.diagnose") {
         diagnostics
             .dispatch(
                 Request {
@@ -327,7 +312,6 @@ async fn dispatch(
                     request,
                 },
                 authority,
-                ssh.is_some(),
             )
             .await;
     } else if matches!(
@@ -335,11 +319,16 @@ async fn dispatch(
         "ssh.exec" | "ssh.file.upload" | "ssh.file.download"
     ) || request.method.starts_with("ssh.session.")
     {
+        let Ok((requested, params)) = crate::diagnostics::text::params(request.params.get()) else {
+            scope.error(input, ErrorCode::InvalidRequest).await;
+            return;
+        };
+        request.params = params;
         if let Some(ssh) = ssh {
             // Only request parsing uses the setup deadline here. The consumer
             // owns execution budgets, including the longer file-transfer bound.
             ssh.dispatch(Request {
-                diagnostics: diagnosed.is_some(),
+                diagnostics: requested,
                 input,
                 lease,
                 run,

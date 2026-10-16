@@ -43,10 +43,6 @@ async fn unrelated_methods_round_trip_opaque_objects_and_large_escaped_input() {
             "fixture.metrics-snapshot_v2",
             json!({"windows": [10, 20], "units": "bytes"}),
         ),
-        (
-            "ssh.session.read.diagnostics.v2",
-            json!({"sessionId":"a0000000-0000-4000-8000-000000000001","cursor":0}),
-        ),
     ] {
         let request = parse_request(&request_json(method, params.clone())).unwrap();
         let (mut sender, mut receiver) = UnixStream::pair().unwrap();
