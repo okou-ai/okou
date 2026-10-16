@@ -2077,7 +2077,6 @@ dependencies = [
  "rustix",
  "serde",
  "serde_json",
- "session-history-selector",
  "sha2 0.11.0",
  "shell-quote",
  "tar",
@@ -5191,17 +5190,6 @@ checksum = "66cf8fedced2fcf12406bcb34223dffb92eaf34908ede12fed414c82b7f00b3e"
 dependencies = [
  "base16ct",
  "serde",
-]
-
-[[package]]
-name = "session-history-selector"
-version = "0.3.162"
-dependencies = [
- "guest-contracts",
- "proptest",
- "serde_json",
- "tempfile",
- "uuid",
 ]
 
 [[package]]
