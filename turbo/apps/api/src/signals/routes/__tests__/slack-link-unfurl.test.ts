@@ -2,9 +2,11 @@ import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
+import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import {
   setupAppWithRoutes,
@@ -12,6 +14,7 @@ import {
 } from "../../../__tests__/test-app";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { env } from "../../../lib/env";
+import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { artifactShareRoutes } from "../artifact-shares";
 import { integrationsSlackRoutes } from "../integrations-slack";
@@ -23,12 +26,14 @@ import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
 import { createRouteMocks } from "./helpers/route-test";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const integrations = createBddIntegrationApi(context);
 const host = createHostMapsBddApi(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const messageTs = "1791618140.315329";
+const authorSlackUserId = "U_LINK_SHARER";
 const html =
   '<html><head><title>Report &amp; &lt;!channel&gt;&nbsp;&quot;标题&quot;</title><meta name="description" content="A public report"></head><body>Report</body></html>';
 const previousBotScopes = [
@@ -55,9 +60,16 @@ function compactBrandImageUrl() {
   return `${brandUrl.origin}/cdn-cgi/image/height=112,fit=scale-down,format=auto,quality=85,metadata=none${brandUrl.pathname}`;
 }
 
+function signedImageUrl(source: string) {
+  return expect.stringContaining(
+    `${env("OKOU_API_BACKEND_URL")}/api/artifact-og/slack.png?${new URLSearchParams({ url: source })}&signature=`,
+  );
+}
+
 async function fixture(
   options: {
     readonly scopes?: string;
+    readonly openGraph?: boolean;
   } = {},
 ) {
   integrations.configureSlackAppMocks();
@@ -68,7 +80,13 @@ async function fixture(
   const actor = { ...user, orgId: user.orgId };
   const { teamId } = await integrations.installSlackWorkspace(actor, {
     botScopes: options.scopes ?? `${previousBotScopes},links:read,links:write`,
+    installerSlackUserId: authorSlackUserId,
   });
+  if (options.openGraph !== undefined) {
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.SlackOpenGraphPreviews]: options.openGraph,
+    });
+  }
   await flushWaitUntilForTest();
   context.mocks.slack.chat.postMessage.mockClear();
   context.mocks.slack.chat.unfurl.mockResolvedValue({ ok: true });
@@ -104,7 +122,18 @@ async function fixture(
     files: [hostedTextFile("/index.html", html)],
   });
   const completed = await host.completeHostedSite(actor, prepared.deploymentId);
-  return { actor, teamId, prepared, completed };
+  const pageRequests: Request[] = [];
+  const publicPage = ({ request }: { readonly request: Request }) => {
+    pageRequests.push(request);
+    return HttpResponse.html(
+      "<html><head></head><body>Public page</body></html>",
+    );
+  };
+  server.use(
+    http.get(`${new URL(env("APP_URL")).origin}/*`, publicPage),
+    http.get(/^https:\/\/[^/]+\.okou\.app\//u, publicPage),
+  );
+  return { actor, teamId, prepared, completed, pageRequests };
 }
 
 function postLinks(
@@ -123,7 +152,7 @@ function postLinks(
     event: {
       type: "link_shared",
       channel: "C_PREVIEW",
-      user: "U_NOT_CONNECTED_TO_OKOU",
+      user: authorSlackUserId,
       is_bot_user_member: false,
       message_ts: messageTs,
       thread_ts: "1791618000.000001",
@@ -155,7 +184,12 @@ describe("Slack link previews", () => {
     const f = await fixture();
     const immutable = `https://dpl-${f.prepared.deploymentId}.okou.app/?source=slack&view=cover#cover|v1`;
     const alias = `https://${f.prepared.publicSlug}.okou.app/index.html`;
-    await accept(postLinks(f.teamId, [immutable, alias, immutable]), [200]);
+    await accept(
+      postLinks(f.teamId, [immutable, alias, immutable], {
+        event: { user: "U_NOT_CONNECTED_TO_OKOU" },
+      }),
+      [200],
+    );
     await flushWaitUntilForTest();
 
     const cover = {
@@ -203,14 +237,95 @@ describe("Slack link previews", () => {
       },
     });
     expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
+    expect(f.pageRequests).toHaveLength(0);
     expect(context.mocks.slack.createClient).toHaveBeenCalledWith(
       `xoxb-bdd-${f.teamId}`,
       expect.any(Object),
     );
   });
 
-  it("uses compact public branding for ordinary App pages without loading their content", async () => {
-    const f = await fixture();
+  it("gates Open Graph by the linked author without enabling other workspace members", async () => {
+    const f = await fixture({ openGraph: true });
+    const pageUrl = new URL("/works", env("APP_URL")).href;
+    const requests: string[] = [];
+    server.use(
+      http.get(pageUrl, ({ request }) => {
+        requests.push(request.url);
+        return HttpResponse.html(
+          '<head><meta property="og:title" content="Published title"><meta property="og:image" content="https://images.example.com/cover.png"></head>',
+        );
+      }),
+    );
+    const peer = createBddApi(context).user({
+      orgId: f.actor.orgId,
+      orgRole: "org:member",
+    });
+    const peerSlackUserId = "U_LINK_PEER";
+    await integrations.connectSlackUser(peer, {
+      workspaceId: f.teamId,
+      slackUserId: peerSlackUserId,
+    });
+    const cases = [
+      { user: peerSlackUserId, enabled: false },
+      { user: "U_NOT_CONNECTED_TO_OKOU", enabled: false },
+      { user: undefined, enabled: false },
+      { user: authorSlackUserId, enabled: true },
+      { user: peerSlackUserId, override: true, enabled: true },
+      { user: peerSlackUserId, override: false, enabled: false },
+      { user: authorSlackUserId, enabled: true },
+    ];
+    let expectedPageRequests = 0;
+    for (const scenario of cases) {
+      if (scenario.override !== undefined) {
+        await updateFeatureSwitchesForUser(
+          context,
+          { ...peer, orgId: f.actor.orgId },
+          {
+            [FeatureSwitchKey.SlackOpenGraphPreviews]: scenario.override,
+          },
+        );
+      }
+      context.mocks.slack.chat.unfurl.mockClear();
+      await accept(
+        postLinks(f.teamId, [pageUrl], { event: { user: scenario.user } }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+      const { enabled } = scenario;
+      const title = enabled ? "Published title" : "Okou";
+      expect(context.mocks.slack.chat.unfurl).toHaveBeenCalledExactlyOnceWith({
+        channel: "C_PREVIEW",
+        ts: messageTs,
+        unfurls: {
+          [pageUrl]: {
+            blocks: [
+              { type: "divider" },
+              {
+                type: "section",
+                text: {
+                  type: "mrkdwn",
+                  text: `*<${pageUrl}|${title}>*`,
+                  verbatim: true,
+                },
+              },
+              {
+                type: "image",
+                image_url: enabled
+                  ? signedImageUrl("https://images.example.com/cover.png")
+                  : compactBrandImageUrl(),
+                alt_text: title,
+              },
+            ],
+          },
+        },
+      });
+      expectedPageRequests += Number(enabled);
+      expect(requests).toHaveLength(expectedPageRequests);
+    }
+  });
+
+  it("uses compact branding when anonymous App pages provide no Open Graph metadata", async () => {
+    const f = await fixture({ openGraph: true });
     await flushWaitUntilForTest();
     context.mocks.s3.send.mockClear();
     const origin = new URL(env("APP_URL")).origin;
@@ -255,7 +370,7 @@ describe("Slack link previews", () => {
                 },
                 {
                   type: "image",
-                  image_url: compactBrandImageUrl(),
+                  image_url: signedImageUrl(compactBrandImageUrl()),
                   alt_text: ARTIFACT_OG_BRAND.title,
                 },
               ],
@@ -266,6 +381,249 @@ describe("Slack link previews", () => {
     });
     expect(context.mocks.s3.send).not.toHaveBeenCalled();
     expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
+    expect(f.pageRequests).toHaveLength(pages.length);
+    for (const request of f.pageRequests) {
+      expect(request.headers.get("authorization")).toBeNull();
+      expect(request.headers.get("cookie")).toBeNull();
+    }
+  });
+
+  it("reads Open Graph before classifying App, shared, artifact or hosted paths", async () => {
+    const f = await fixture({ openGraph: true });
+    const origin = new URL(env("APP_URL")).origin;
+    const appUrl = `${origin}/works?source=slack&view=cover#cover|v1`;
+    const hostedUrl = `https://${f.prepared.publicSlug}.okou.app/`;
+    const otherUrls = [
+      `${origin}/share/threads/${randomUUID()}/`,
+      `${origin}/future-feature/public-page`,
+      `${origin}/artifacts/${"0".repeat(32)}.png`,
+      `https://og-${randomUUID()}.okou.app/guides/launch.html`,
+    ];
+    const page =
+      '<html><head><base href="/assets/"><meta property="og:title" content="Launch &amp; &lt;!channel&gt; 计划"><meta property="og:description" content="Public &amp; reviewed &lt;!channel&gt;"><meta property="og:image" content="cover.png?x=1&amp;y=2"></head><body>Page</body></html>';
+    server.use(
+      http.get(`${origin}/works`, () => {
+        return HttpResponse.html(page);
+      }),
+      http.get(hostedUrl, () => {
+        return HttpResponse.html(page);
+      }),
+      ...otherUrls.map((url) => {
+        return http.get(url, () => {
+          return HttpResponse.html(page);
+        });
+      }),
+    );
+    await flushWaitUntilForTest();
+    context.mocks.s3.send.mockClear();
+    await accept(postLinks(f.teamId, [appUrl, hostedUrl, ...otherUrls]), [200]);
+    await flushWaitUntilForTest();
+    expect(context.mocks.slack.chat.unfurl).toHaveBeenCalledExactlyOnceWith({
+      channel: "C_PREVIEW",
+      ts: messageTs,
+      unfurls: Object.fromEntries(
+        [
+          {
+            url: appUrl,
+            href: `${origin}/works?source=slack&amp;view=cover#cover%7Cv1`,
+          },
+          { url: hostedUrl, href: hostedUrl },
+          ...otherUrls.map((url) => {
+            return { url, href: url };
+          }),
+        ].map(({ url, href }) => {
+          return [
+            url,
+            {
+              blocks: [
+                { type: "divider" },
+                {
+                  type: "section",
+                  text: {
+                    type: "mrkdwn",
+                    text: `*<${href}|Launch &amp; &lt;!channel&gt; 计划>*`,
+                    verbatim: true,
+                  },
+                },
+                {
+                  type: "section",
+                  text: {
+                    type: "plain_text",
+                    text: "Public & reviewed <!channel>",
+                    emoji: false,
+                  },
+                },
+                {
+                  type: "image",
+                  image_url: signedImageUrl(
+                    new URL("/assets/cover.png?x=1&y=2", url).href,
+                  ),
+                  alt_text: "Launch & <!channel> 计划",
+                },
+              ],
+            },
+          ];
+        }),
+      ),
+    });
+    expect(context.mocks.s3.send).not.toHaveBeenCalled();
+  });
+
+  it("uses partial Open Graph metadata without requiring an artifact fallback", async () => {
+    const f = await fixture({ openGraph: true });
+    const origin = `https://og-${randomUUID()}.okou.app`;
+    const artifactImageUrl = `${env("OKOU_API_BACKEND_URL")}/api/artifact-og/image?kind=host&id=${f.prepared.deploymentId}&version=v1`;
+    const fields = [
+      {
+        property: "og:title",
+        value: "Public title",
+        image: ARTIFACT_OG_BRAND.imageUrl,
+      },
+      {
+        property: "og:description",
+        value: "Public description",
+        image: ARTIFACT_OG_BRAND.imageUrl,
+      },
+      {
+        property: "og:image",
+        value: "https://images.example.com/cover.png",
+        image: "https://images.example.com/cover.png",
+      },
+      {
+        property: "og:image",
+        value: artifactImageUrl,
+        image: artifactImageUrl,
+      },
+    ];
+    for (const [index, field] of fields.entries()) {
+      server.use(
+        http.get(`${origin}/pages/${index}`, () => {
+          return HttpResponse.html(
+            `<head><meta property="${field.property}" content="${field.value}"></head>`,
+          );
+        }),
+      );
+    }
+    await accept(
+      postLinks(
+        f.teamId,
+        fields.map((_, index) => {
+          return `${origin}/pages/${index}`;
+        }),
+      ),
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(context.mocks.slack.chat.unfurl).toHaveBeenCalledExactlyOnceWith({
+      channel: "C_PREVIEW",
+      ts: messageTs,
+      unfurls: Object.fromEntries(
+        fields.map((field, index) => {
+          const url = `${origin}/pages/${index}`;
+          const title = field.property === "og:title" ? field.value : "Okou";
+          return [
+            url,
+            {
+              blocks: [
+                { type: "divider" },
+                {
+                  type: "section",
+                  text: {
+                    type: "mrkdwn",
+                    text: `*<${url}|${title}>*`,
+                    verbatim: true,
+                  },
+                },
+                ...(field.property === "og:description"
+                  ? [
+                      {
+                        type: "section",
+                        text: {
+                          type: "plain_text",
+                          text: field.value,
+                          emoji: false,
+                        },
+                      },
+                    ]
+                  : []),
+                {
+                  type: "image",
+                  image_url: signedImageUrl(field.image),
+                  alt_text: title,
+                },
+              ],
+            },
+          ];
+        }),
+      ),
+    });
+  });
+
+  it("skips failed, non-HTML, redirected and oversized pages without losing valid sibling previews", async () => {
+    const f = await fixture({ openGraph: true });
+    const origin = new URL(env("APP_URL")).origin;
+    const redirectedRequests: string[] = [];
+    server.use(
+      http.get("http://127.0.0.1/private", ({ request }) => {
+        redirectedRequests.push(request.url);
+        return HttpResponse.html(
+          '<head><meta property="og:title" content="Internal page"></head>',
+        );
+      }),
+      http.get(`${origin}/missing`, () => {
+        return new HttpResponse(null, { status: 404 });
+      }),
+      http.get(`${origin}/share/threads/:id`, () => {
+        return HttpResponse.html(
+          '<head><meta property="og:title" content="Revoked share"></head>',
+          { status: 404 },
+        );
+      }),
+      http.get(`${origin}/private`, () => {
+        return new HttpResponse(null, { status: 403 });
+      }),
+      http.get(`${origin}/offline`, () => {
+        return HttpResponse.error();
+      }),
+      http.get(`${origin}/file`, () => {
+        return HttpResponse.json({ title: "Not page metadata" });
+      }),
+      http.get(`${origin}/redirect`, () => {
+        return new HttpResponse(null, {
+          status: 302,
+          headers: { location: "http://127.0.0.1/private" },
+        });
+      }),
+      http.get(`${origin}/large`, () => {
+        return HttpResponse.html("x".repeat(4 * 1024 * 1024 + 1));
+      }),
+    );
+    const valid = `${origin}/works`;
+    await accept(
+      postLinks(
+        f.teamId,
+        [
+          "missing",
+          `share/threads/${randomUUID()}`,
+          "private",
+          "offline",
+          "file",
+          "redirect",
+          "large",
+          "works",
+        ].map((path) => {
+          return `${origin}/${path}`;
+        }),
+      ),
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(context.mocks.slack.chat.unfurl).toHaveBeenCalledExactlyOnceWith({
+      channel: "C_PREVIEW",
+      ts: messageTs,
+      unfurls: { [valid]: expect.any(Object) },
+    });
+    expect(redirectedRequests).toStrictEqual([]);
   });
 
   it("processes redelivery against the same message and supports composer targets", async () => {
@@ -380,112 +738,123 @@ describe("Slack link previews", () => {
     expect(status.body.reinstallUrl).toStrictEqual(expect.any(String));
   });
 
-  it("requires public sharing for artifact references and honors revocation", async () => {
-    const f = await fixture();
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-      {
-        data: [
-          {
-            organization: { id: f.actor.orgId, name: "Preview test workspace" },
-            publicUserData: { userId: f.actor.userId },
-            role: "org:admin",
-          },
-        ],
-      },
-    );
-    const shares = setupAppWithRoutes({ context, routes: artifactShareRoutes })(
-      artifactSharesContract,
-    );
-    const uploads = setupAppWithRoutes({
-      context,
-      routes: [...uploadsPrepareRoutes, ...uploadsCompleteRoutes],
-    })(uploadsContract);
-    const storage = context.mocks.s3.send.getMockImplementation()!;
-    context.mocks.s3.send.mockImplementation((command, ...rest) => {
-      if (command instanceof HeadObjectCommand) {
-        return Promise.resolve({
-          ContentLength: 13,
-          ContentType: "image/png",
-          Metadata: { "artifact-id": command.input.Key?.split("/")[1] },
-        });
-      }
-      return storage(command, ...rest);
-    });
-    const prepared = await accept(
-      uploads.preparePrivate({
-        headers,
-        body: {
-          filename: "report.png",
-          contentType: "image/png",
-          size: 13,
-          purpose: "artifact",
-        },
-      }),
-      [200],
-    );
-    const completed = await accept(
-      uploads.complete({ headers, body: { id: prepared.body.id } }),
-      [200],
-    );
-    const target = { kind: "file" as const, id: completed.body.id };
-    const privateUrl = new URL(completed.body.url, env("APP_URL")).href;
-    await accept(postLinks(f.teamId, [privateUrl]), [200]);
-    await flushWaitUntilForTest();
-    expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
-
-    const organization = await accept(
-      shares.update({ headers, body: { target, audience: "organization" } }),
-      [200],
-    );
-    if (!organization.body.shortUrl) {
-      throw new Error("Expected an organization share");
-    }
-    await accept(postLinks(f.teamId, [organization.body.shortUrl]), [200]);
-    await flushWaitUntilForTest();
-    expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
-
-    const published = await accept(
-      shares.update({ headers, body: { target, audience: "public" } }),
-      [200],
-    );
-    if (!published.body.url) {
-      throw new Error("Expected a public sharing URL");
-    }
-    const urls = [privateUrl];
-    await accept(postLinks(f.teamId, urls), [200]);
-    await flushWaitUntilForTest();
-    expect(context.mocks.slack.chat.unfurl).toHaveBeenCalledExactlyOnceWith({
-      channel: "C_PREVIEW",
-      ts: messageTs,
-      unfurls: Object.fromEntries(
-        urls.map((url) => {
-          return [
-            url,
+  it.each([false, true])(
+    "requires public sharing for artifact fallbacks and honors revocation with Open Graph %s",
+    async (openGraph) => {
+      const f = await fixture({ openGraph });
+      context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+        {
+          data: [
             {
-              blocks: expect.arrayContaining([
-                expect.objectContaining({
-                  type: "image",
-                  image_url: expect.stringContaining(
-                    "/api/artifact-og/image?kind=reference&id=",
-                  ),
-                  alt_text: "report.png",
-                }),
-              ]),
+              organization: {
+                id: f.actor.orgId,
+                name: "Preview test workspace",
+              },
+              publicUserData: { userId: f.actor.userId },
+              role: "org:admin",
             },
-          ];
+          ],
+        },
+      );
+      const shares = setupAppWithRoutes({
+        context,
+        routes: artifactShareRoutes,
+      })(artifactSharesContract);
+      const uploads = setupAppWithRoutes({
+        context,
+        routes: [...uploadsPrepareRoutes, ...uploadsCompleteRoutes],
+      })(uploadsContract);
+      const storage = context.mocks.s3.send.getMockImplementation()!;
+      context.mocks.s3.send.mockImplementation((command, ...rest) => {
+        if (command instanceof HeadObjectCommand) {
+          return Promise.resolve({
+            ContentLength: 13,
+            ContentType: "image/png",
+            Metadata: { "artifact-id": command.input.Key?.split("/")[1] },
+          });
+        }
+        return storage(command, ...rest);
+      });
+      const prepared = await accept(
+        uploads.preparePrivate({
+          headers,
+          body: {
+            filename: "report.png",
+            contentType: "image/png",
+            size: 13,
+            purpose: "artifact",
+          },
         }),
-      ),
-    });
+        [200],
+      );
+      const completed = await accept(
+        uploads.complete({ headers, body: { id: prepared.body.id } }),
+        [200],
+      );
+      const target = { kind: "file" as const, id: completed.body.id };
+      const privateUrl = new URL(completed.body.url, env("APP_URL")).href;
+      await accept(postLinks(f.teamId, [privateUrl]), [200]);
+      await flushWaitUntilForTest();
+      expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
+      expect(f.pageRequests).toHaveLength(openGraph ? 1 : 0);
 
-    await accept(
-      shares.update({ headers, body: { target, audience: "private" } }),
-      [200],
-    );
-    context.mocks.slack.chat.unfurl.mockClear();
-    await accept(postLinks(f.teamId, urls, { retry: true }), [200]);
-    await flushWaitUntilForTest();
-    expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
-  });
+      const organization = await accept(
+        shares.update({ headers, body: { target, audience: "organization" } }),
+        [200],
+      );
+      if (!organization.body.shortUrl) {
+        throw new Error("Expected an organization share");
+      }
+      await accept(postLinks(f.teamId, [organization.body.shortUrl]), [200]);
+      await flushWaitUntilForTest();
+      expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
+      expect(f.pageRequests).toHaveLength(openGraph ? 2 : 0);
+
+      const published = await accept(
+        shares.update({ headers, body: { target, audience: "public" } }),
+        [200],
+      );
+      if (!published.body.url) {
+        throw new Error("Expected a public sharing URL");
+      }
+      const urls = [privateUrl];
+      await accept(postLinks(f.teamId, urls), [200]);
+      await flushWaitUntilForTest();
+      expect(context.mocks.slack.chat.unfurl).toHaveBeenCalledExactlyOnceWith({
+        channel: "C_PREVIEW",
+        ts: messageTs,
+        unfurls: Object.fromEntries(
+          urls.map((url) => {
+            return [
+              url,
+              {
+                blocks: expect.arrayContaining([
+                  expect.objectContaining({
+                    type: "image",
+                    image_url: expect.stringContaining(
+                      openGraph
+                        ? "/api/artifact-og/slack.png?url="
+                        : "/api/artifact-og/image?kind=reference&id=",
+                    ),
+                    alt_text: "report.png",
+                  }),
+                ]),
+              },
+            ];
+          }),
+        ),
+      });
+
+      await accept(
+        shares.update({ headers, body: { target, audience: "private" } }),
+        [200],
+      );
+      context.mocks.slack.chat.unfurl.mockClear();
+      await accept(postLinks(f.teamId, urls, { retry: true }), [200]);
+      await flushWaitUntilForTest();
+      expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
+    },
+  );
 
   it("does not preview a deleted site", async () => {
     const f = await fixture();

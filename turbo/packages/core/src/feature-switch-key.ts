@@ -48,6 +48,7 @@ export enum FeatureSwitchKey {
   PwaNavigation = "pwaNavigation",
   FeishuIntegration = "_feishuIntegration",
   LarkIntegration = "larkIntegration",
+  SlackOpenGraphPreviews = "slackOpenGraphPreviews",
   WechatIntegration = "wechatIntegration",
   DiscordIntegration = "discordIntegration",
   VncAccess = "vncAccess",
