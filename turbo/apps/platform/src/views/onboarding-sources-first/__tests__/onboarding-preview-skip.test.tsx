@@ -69,6 +69,7 @@ test.each([
   "app.okou.ai",
   "app.vm0.ai",
   "localhost",
+  "app-okou-app-preview.vm0.workers.dev",
   "pr-40584-app-okou-app-preview.vm0.workers.dev.example.com",
 ])("Onboarding does not offer the preview shortcut on %s", async (host) => {
   mockOnboardingNeeded();
