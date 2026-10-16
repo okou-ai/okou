@@ -210,12 +210,14 @@ impl HomeCacheStateSnapshot {
         inner.reproject();
     }
 
+    /// Keep admission's capped advertised view: retained refill candidates must
+    /// not change blank-sandbox preference. Before loading, any key may exist.
     pub fn might_contain_home_cache_reuse_key(&self, reuse_key: &str) -> bool {
         let inner = self.lock_inner();
         !inner.loaded
             || inner
-                .entries
-                .values()
+                .states
+                .iter()
                 .any(|state| state.reuse_key == reuse_key)
     }
 
@@ -400,6 +402,37 @@ mod tests {
             )],
         );
         assert!(snapshot.might_contain_home_cache_reuse_key("sess-cache"));
+    }
+
+    #[test]
+    fn home_cache_priority_uses_the_advertised_view_when_physical_inventory_is_larger() {
+        let snapshot = HomeCacheStateSnapshot::new();
+        let scan = inventory(
+            (0..MAX_HELD_HOME_STATES)
+                .map(|index| {
+                    held_home_state(
+                        &format!("group-{index:04}"),
+                        &timestamp_for_index(index),
+                        &["vm0/default", "vm0/large"],
+                    )
+                })
+                .collect(),
+        );
+        assert_eq!(scan.entries.len(), MAX_HELD_HOME_STATES * 2);
+        let token = snapshot.begin_home_cache_refresh();
+        let advertised = snapshot.finish_home_cache_refresh(token, scan).states;
+        assert!(
+            !advertised
+                .iter()
+                .any(|state| state.reuse_key == "group-0000")
+        );
+        assert!(!snapshot.might_contain_home_cache_reuse_key("group-0000"));
+        assert!(
+            snapshot.might_contain_home_cache_reuse_key(&format!(
+                "group-{:04}",
+                MAX_HELD_HOME_STATES - 1
+            ))
+        );
     }
 
     #[test]
