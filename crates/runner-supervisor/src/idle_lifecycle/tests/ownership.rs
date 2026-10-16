@@ -203,7 +203,13 @@ async fn cancelled_payload_wait_retains_lease_and_published_home_bytes() {
         })
         .await;
     assert_eq!(checkout.result(), HomeCacheCheckoutResult::Hit);
-    let seed = checkout.home_drive_config().unwrap().seed_image.unwrap();
+    let seed = checkout
+        .home_drive_config()
+        .await
+        .unwrap()
+        .unwrap()
+        .seed_image
+        .unwrap();
     let seed_path = match seed {
         sandbox::HomeDriveSeedImage::Copy(path) | sandbox::HomeDriveSeedImage::Move(path) => path,
     };

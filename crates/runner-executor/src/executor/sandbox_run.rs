@@ -1128,6 +1128,23 @@ async fn create_started_sandbox(
         cancel,
         codex_model_catalog_prefetch,
     } = options;
+    let home_drive = match home_image {
+        Some(image) => image
+            .home_drive_config()
+            .await
+            .map_err(|error| SandboxPrepareError::retry_without_home_image(error.into(), true))?,
+        None => Some(sandbox::HomeDriveConfig {
+            size_mb: params.home_disk_mb,
+            seed_image: None,
+            space_reserve: runner_lifecycle::home_image_cache::HOME_IMAGE_SPACE_RESERVE,
+        }),
+    };
+    if cancel.is_cancelled() {
+        return Err(SandboxPrepareError::fatal_after_cleanup(
+            RunnerError::Cancelled,
+            true,
+        ));
+    }
     let sandbox_config = SandboxConfig {
         id: sandbox_id,
         resources: sandbox::ResourceLimits {
@@ -1135,16 +1152,7 @@ async fn create_started_sandbox(
             memory_mb: params.memory_mb,
         },
         device_rate_limits: params.device_rate_limits.clone(),
-        home_drive: home_image.map_or_else(
-            || {
-                Some(sandbox::HomeDriveConfig {
-                    size_mb: params.home_disk_mb,
-                    seed_image: None,
-                    space_reserve: runner_lifecycle::home_image_cache::HOME_IMAGE_SPACE_RESERVE,
-                })
-            },
-            HomeImageLease::home_drive_config,
-        ),
+        home_drive,
     };
 
     info!(run_id = %context.run_id, sandbox_id = %sandbox_id, "creating sandbox");

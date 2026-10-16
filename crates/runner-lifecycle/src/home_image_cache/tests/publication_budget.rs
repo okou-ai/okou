@@ -76,7 +76,7 @@ async fn assert_checkout_bytes(f: &Fixture, key: &str, expected: &[u8]) {
     let mut lease = f.lease(key).await;
     assert_eq!(lease.result(), HomeCacheCheckoutResult::Hit);
     let Some(sandbox::HomeDriveSeedImage::Move(image)) =
-        lease.home_drive_config().unwrap().seed_image
+        lease.home_drive_config().await.unwrap().unwrap().seed_image
     else {
         panic!("published image must be available for same-filesystem checkout");
     };

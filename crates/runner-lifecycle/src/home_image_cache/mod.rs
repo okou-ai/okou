@@ -19,6 +19,7 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio_util::task::TaskTracker;
 
 mod entry;
 mod fs;
@@ -53,6 +54,7 @@ pub use types::{
     HomeImagePromotionIdentityMismatch, HomeImagePromotionIdentityRequest,
     HomeImagePromotionRequest, HomeImageSourceIdentity,
 };
+use watcher::SelectionReleases;
 pub use watcher::{HomeCacheChange, HomeCacheWatcher};
 
 const CACHE_FORMAT_VERSION: u32 = 3;
@@ -76,6 +78,8 @@ pub struct HomeImageCache {
     idle_home_reclamation: Arc<IdleHomeReclamation>,
     #[cfg(any(test, feature = "test-support"))]
     prepare_lock_test_gate: Option<HomeImagePrepareLockTestGate>,
+    #[cfg(any(test, feature = "test-support"))]
+    handoff_test_gate: Option<HomeImageHandoffTestGate>,
     #[cfg(any(test, feature = "test-support"))]
     routine_gc_test_gate: Option<(Arc<tokio::sync::Notify>, Arc<Semaphore>)>,
     #[cfg(test)]
@@ -106,6 +110,48 @@ impl HomeImagePrepareLockTestGate {
         self.release.notify_one();
     }
 }
+/// Synchronizes accepted physical revocation in isolated cancellation tests.
+#[cfg(any(test, feature = "test-support"))]
+#[derive(Clone, Default)]
+pub struct HomeImageHandoffTestGate {
+    entered: Arc<tokio::sync::Notify>,
+    release: Arc<(Mutex<bool>, std::sync::Condvar)>,
+}
+#[cfg(any(test, feature = "test-support"))]
+pub struct HomeImageHandoffTestRelease(HomeImageHandoffTestGate);
+#[cfg(any(test, feature = "test-support"))]
+impl Drop for HomeImageHandoffTestRelease {
+    fn drop(&mut self) {
+        self.0.release();
+    }
+}
+#[cfg(any(test, feature = "test-support"))]
+impl HomeImageHandoffTestGate {
+    pub fn release_on_drop(&self) -> HomeImageHandoffTestRelease {
+        HomeImageHandoffTestRelease(self.clone())
+    }
+
+    fn enter_and_wait(&self) {
+        self.entered.notify_one();
+        let (released, wake) = &*self.release;
+        let mut released = released.lock().unwrap();
+        while !*released {
+            released = wake.wait(released).unwrap();
+        }
+    }
+
+    pub async fn wait_entered(&self, timeout: std::time::Duration) {
+        tokio::time::timeout(timeout, self.entered.notified())
+            .await
+            .expect("handoff must reach physical revocation");
+    }
+
+    pub fn release(&self) {
+        let (released, wake) = &*self.release;
+        *released.lock().unwrap() = true;
+        wake.notify_all();
+    }
+}
 struct HomeImageCacheInner {
     paths: RunnerPaths,
     cache_dir: PathBuf,
@@ -113,6 +159,8 @@ struct HomeImageCacheInner {
     cache_scope: String,
     entry_lock_owners: Mutex<HashMap<String, HomeCacheLockRegistration>>,
     publication_admission: Semaphore,
+    checkout_io: TaskTracker,
+    selection_releases: SelectionReleases,
     #[cfg(test)]
     publication_admission_entered: Semaphore,
     #[cfg(any(test, feature = "test-support"))]
@@ -195,6 +243,8 @@ impl HomeImageCache {
                     cache_scope: scope.to_owned(),
                     entry_lock_owners: Mutex::new(HashMap::new()),
                     publication_admission: Semaphore::new(1),
+                    checkout_io: TaskTracker::new(),
+                    selection_releases: SelectionReleases::default(),
                 }),
                 idle_home_reclamation: Arc::new(IdleHomeReclamation::new(
                     MAX_HOME_PROMOTION_CONCURRENCY,
@@ -220,6 +270,8 @@ impl HomeImageCache {
                 cache_scope: scope.to_owned(),
                 entry_lock_owners: Mutex::new(HashMap::new()),
                 publication_admission: Semaphore::new(1),
+                checkout_io: TaskTracker::new(),
+                selection_releases: SelectionReleases::default(),
                 #[cfg(test)]
                 publication_admission_entered: Semaphore::new(0),
                 fs_stats_override: stats,
@@ -233,6 +285,7 @@ impl HomeImageCache {
                 MAX_HOME_PROMOTION_CONCURRENCY,
             )),
             prepare_lock_test_gate: None,
+            handoff_test_gate: None,
             routine_gc_test_gate: None,
             #[cfg(test)]
             gc_inventory_test_gate: None,
@@ -244,6 +297,12 @@ impl HomeImageCache {
     }
     pub fn with_telemetry(mut self, telemetry: SandboxOpReporter) -> Self {
         self.telemetry = Some(telemetry);
+        self
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_handoff_test_gate(mut self, gate: HomeImageHandoffTestGate) -> Self {
+        self.handoff_test_gate = Some(gate);
         self
     }
 

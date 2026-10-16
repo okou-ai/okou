@@ -734,7 +734,7 @@ async fn exercise_retirement(
         let mut home =
             fixture::checkout(&cache, run_id, sandbox_id, &reuse_key, &rootfs_hash).await;
         let mut sandbox = factory
-            .create(fixture::sandbox_config(sandbox_id, &mut home))
+            .create(fixture::sandbox_config(sandbox_id, &mut home).await?)
             .await?;
         if let Err(error) = fixture::prepare_guest(&mut *sandbox, run_id).await {
             factory.destroy(sandbox).await;
@@ -1169,7 +1169,7 @@ async fn exercise_retirement(
                         let mut home =
                             fixture::checkout(&next_cache, next_run, next_id, &key, &next_rootfs).await;
                         let mut next = next_factory
-                            .create(fixture::sandbox_config(next_id, &mut home))
+                            .create(fixture::sandbox_config(next_id, &mut home).await?)
                             .await?;
                         let prepared: TestResult<()> = async {
                             // The Fresh operation covers startup; Firecracker exposes
@@ -1296,7 +1296,7 @@ async fn exercise_retirement(
     let mut restored = fixture::checkout(&cache, next_run, next_id, &reuse_key, &rootfs_hash).await;
     assert!(restored.is_cache_hit());
     let mut sandbox = factory
-        .create(fixture::sandbox_config(next_id, &mut restored))
+        .create(fixture::sandbox_config(next_id, &mut restored).await?)
         .await?;
     let checked = async {
         sandbox.bind_run_control(&next_run.to_string())?;

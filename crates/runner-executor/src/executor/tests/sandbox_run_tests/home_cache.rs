@@ -95,6 +95,265 @@ fn set_reuse_and_session_history_ref(
 }
 
 #[tokio::test]
+async fn invalid_storage_preparation_preserves_the_selected_home_for_the_next_run() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = RunnerPaths::new(dir.path().join("runner"));
+    let cache = HomeImageCache::new(paths.clone());
+    let mut config = test_executor_config(dir.path()).await;
+    config.home_cache = Some(cache.clone());
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    let factory = MockSandboxFactory::with_overrides(overrides.clone());
+    let mut context = minimal_context();
+    let session = "unused-home-preflight";
+    set_reuse_and_session_identity(&mut context, session, r#"{"type":"init"}"#);
+    let seed = seed_home_image_cache(&cache, &paths, session, 16).await;
+    let metadata = seed.parent().unwrap().join("metadata.json");
+    let original = tokio::fs::read(&metadata).await.unwrap();
+    let mut artifact = api_artifact(
+        "memory",
+        "/home/user/data",
+        "storage-id",
+        "v1",
+        "https://archive.invalid/unused",
+    );
+    artifact.archive_url = None;
+    context.storage_manifest = Some(StorageManifest {
+        storages: Vec::new(),
+        artifacts: vec![artifact],
+    });
+    let params = JobParams {
+        home_disk_mb: 16,
+        ..default_params()
+    };
+    let mut telemetry = test_telemetry(&config, &context);
+    let result = execute_new_sandbox(
+        &factory,
+        &context,
+        NewSandboxDispatch {
+            id: SandboxId::new_v4(),
+            reuse_result: SandboxReuseResult::PoolMiss,
+        },
+        &config,
+        &params,
+        &mut telemetry,
+        tokio_util::sync::CancellationToken::new(),
+    )
+    .await;
+    assert!(
+        result
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("missing archiveUrl")
+    );
+    assert!(overrides.create_configs().is_empty());
+    assert_eq!(tokio::fs::read(metadata).await.unwrap(), original);
+    assert!(seed.is_file());
+    let next = cache
+        .prepare(HomeImagePrepareRequest {
+            identity: HomeImageLeaseIdentity {
+                run_id: RunId::new_v4(),
+                sandbox_id: SandboxId::new_v4(),
+                profile_name: &params.profile_name,
+                rootfs_hash: &params.rootfs_hash,
+                reuse_key: context.reuse_key(),
+                working_dir: CANONICAL_WORKING_DIR,
+                image_size_bytes: 16 * 1024 * 1024,
+            },
+            home_drive_required: true,
+        })
+        .await;
+    assert!(next.is_cache_hit());
+    assert_eq!(
+        next.source_identity().unwrap().image_generation,
+        seed.file_stem()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .strip_prefix("image-")
+            .unwrap()
+    );
+}
+
+#[tokio::test]
+async fn rejected_seed_handoff_rebuilds_current_storage_and_history_before_one_fresh_create() {
+    use crate::home_image_cache::HomeImageHandoffTestGate;
+    use guest_contracts::home_cache_history::{
+        HomeCacheHistoryProof, HomeCacheHistoryProofBinding,
+    };
+    use guest_contracts::session_history_identity::{
+        SessionHistoryIdentity, SessionHistorySourceRef,
+    };
+
+    let dir = tempfile::tempdir().unwrap();
+    let paths = RunnerPaths::new(dir.path().join("runner"));
+    let cache = HomeImageCache::new(paths.clone());
+    let gate = HomeImageHandoffTestGate::default();
+    let _release = gate.release_on_drop();
+    let mut config = test_executor_config(dir.path()).await;
+    config.home_cache = Some(cache.clone().with_handoff_test_gate(gate.clone()));
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    let factory = MockSandboxFactory::with_overrides(overrides.clone());
+    let server = MockServer::start_async().await;
+    let archive = storage_archive(b"current-storage");
+    let archive_get = server
+        .mock_async(|when, then| {
+            when.method(GET)
+                .path("/storage.tar.gz")
+                .header_missing("range");
+            then.status(200).body(archive.clone());
+        })
+        .await;
+    let history = br#"{"type":"init"}"#;
+    let history_get = server
+        .mock_async(|when, then| {
+            when.method(GET).path("/history.blob");
+            then.status(200).body(history);
+        })
+        .await;
+    let mut context = minimal_context();
+    let session = "seed-handoff-changed";
+    set_reuse_and_session_history_ref(&mut context, session, history, server.url("/history.blob"));
+    let mut storage = api_storage(
+        "current-storage",
+        "/home/user/workspace/data",
+        "v1",
+        &server.url("/storage.tar.gz"),
+    );
+    storage.archive_size = Some(archive.len() as u64);
+    let manifest = StorageManifest {
+        storages: vec![storage],
+        artifacts: Vec::new(),
+    };
+    let fingerprints = crate::storage_fingerprints::StorageFingerprints::from_manifest(&manifest);
+    context.storage_manifest = Some(manifest);
+    let seed =
+        seed_home_image_cache_with_fingerprints(&cache, &paths, session, 16, &fingerprints).await;
+    let generation = seed
+        .file_stem()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .strip_prefix("image-")
+        .unwrap();
+    let expected = crate::executor::home_history::expected_history(&context).unwrap();
+    let identity = SessionHistoryIdentity::new(
+        expected.framework,
+        expected.session_id_hash,
+        expected.history_ref_kind,
+        expected.history_hash,
+        expected.history_size_bytes,
+        SessionHistorySourceRef::ClaudeCode {
+            config_dir: "/home/user/.claude".into(),
+            working_dir: CANONICAL_WORKING_DIR.into(),
+            session_id: session.into(),
+        },
+    )
+    .unwrap();
+    let proof = HomeCacheHistoryProof {
+        format_version: 1,
+        generation: generation.into(),
+        identity,
+    };
+    let binding = HomeCacheHistoryProofBinding {
+        sha256: hex::encode(Sha256::digest(proof.to_json_vec().unwrap())),
+        proof,
+    };
+    // A current-format fixture commit containing both derived-input candidates.
+    let metadata_path = seed.parent().unwrap().join("metadata.json");
+    let mut metadata: serde_json::Value =
+        serde_json::from_slice(&tokio::fs::read(&metadata_path).await.unwrap()).unwrap();
+    metadata["historyProof"] = serde_json::to_value(binding).unwrap();
+    tokio::fs::write(&metadata_path, serde_json::to_vec(&metadata).unwrap())
+        .await
+        .unwrap();
+    let params = JobParams {
+        home_disk_mb: 16,
+        ..default_params()
+    };
+    let mut telemetry = test_telemetry(&config, &context);
+    let execution = execute_new_sandbox_with_prepared_notifier(
+        &factory,
+        &context,
+        NewSandboxDispatch {
+            id: SandboxId::new_v4(),
+            reuse_result: SandboxReuseResult::PoolMiss,
+        },
+        &config,
+        &params,
+        &mut telemetry,
+        NewSandboxHooks {
+            preparation: crate::executor::sandbox_run::FreshPreparation::Initial,
+            controls: RunControls::new(tokio_util::sync::CancellationToken::new(), None)
+                .with_session_history_restore_plan(SessionHistoryRestorePlan::DeferredHashBacked {
+                    fallback: None,
+                }),
+            prepared_run_payload: prepare_run_payload_for_run(&context).unwrap(),
+            sandbox_prepared: None,
+        },
+    );
+    let replace_seed = async {
+        gate.wait_entered(RUN_IN_SANDBOX_TEST_TIMEOUT).await;
+        history_get.assert_calls_async(0).await;
+        archive_get.assert_calls_async(0).await;
+        tokio::fs::rename(&seed, dir.path().join("selected-original.ext4"))
+            .await
+            .unwrap();
+        tokio::fs::File::create(&seed)
+            .await
+            .unwrap()
+            .set_len(16 * 1024 * 1024)
+            .await
+            .unwrap();
+        gate.release();
+    };
+    let (outcome, ()) = tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, async {
+        tokio::join!(execution, replace_seed)
+    })
+    .await
+    .expect("seed replacement must finish through the existing bounded fallback");
+    let outcome = outcome.unwrap();
+    assert_eq!(outcome.exit_code(), 0);
+    assert!(outcome.home_image.is_none());
+    let configs = overrides.create_configs();
+    assert_eq!(
+        configs.len(),
+        1,
+        "rejected handoff must not create a seeded VM"
+    );
+    assert!(configs[0].home_drive.as_ref().unwrap().seed_image.is_none());
+    let calls = overrides.storage_manifest_calls();
+    assert_eq!(calls.len(), 1);
+    let applied: guest_contracts::storage_manifest::Manifest =
+        serde_json::from_slice(&calls[0].manifest_json).unwrap();
+    assert_eq!(applied.storages.len(), 1);
+    assert!(
+        !applied.storages[0].cached,
+        "fresh storage cannot use the old seed's fingerprint shortcut"
+    );
+    assert_eq!(applied.storages[0].vas_version_id.as_deref(), Some("v1"));
+    history_get.assert_calls_async(1).await;
+    archive_get.assert_calls_async(1).await;
+    assert!(
+        overrides
+            .write_file_calls()
+            .iter()
+            .any(
+                |call| call.path.ends_with("seed-handoff-changed.jsonl") && call.content == history
+            )
+    );
+    assert!(
+        !overrides
+            .exec_calls()
+            .iter()
+            .any(|call| call.cmd.contains("verify-home-cache-history"))
+    );
+    assert_home_fallback(&telemetry, context.run_id, "home_preparation_failed");
+    config.background_fill.shutdown().await;
+    config.decoded_cache.shutdown().await;
+}
+
+#[tokio::test]
 async fn home_mount_retry_starts_a_new_codex_catalog_prefetch_owner() {
     let dir = tempfile::tempdir().unwrap();
     let runner_paths = RunnerPaths::new(dir.path().join("runner"));
@@ -1748,7 +2007,7 @@ async fn reusable_idle_sandbox_with_home_promotion(
 
     let run_id = RunId::new_v4();
     let sandbox_id = SandboxId::new_v4();
-    let lease = cache
+    let mut lease = cache
         .prepare(HomeImagePrepareRequest {
             identity: HomeImageLeaseIdentity {
                 rootfs_hash: "test-rootfs",
@@ -1763,6 +2022,7 @@ async fn reusable_idle_sandbox_with_home_promotion(
         })
         .await;
     assert!(lease.is_cache_hit());
+    let home_drive = lease.home_drive_config().await.unwrap();
     let promotion = lease
         .into_promotion_context(crate::home_image_cache::HomeImagePromotionRequest {
             run_id,
@@ -1787,7 +2047,7 @@ async fn reusable_idle_sandbox_with_home_promotion(
                 memory_mb: params.memory_mb,
             },
             device_rate_limits: params.device_rate_limits.clone(),
-            home_drive: None,
+            home_drive,
         })
         .await
         .expect("create sandbox");
