@@ -620,7 +620,7 @@ const refreshWalletConnection$ = command(
         readonly encryptedCredentials: string;
       };
       readonly refreshToken: string;
-      readonly readOnly: boolean;
+      readonly readOnly?: boolean;
     },
   ): Promise<{
     connection: Connection;
@@ -682,7 +682,9 @@ const refreshWalletConnection$ = command(
       expiresAt: now() + refreshed.expires_in * 1000,
       scope: refreshed.scope,
       authorizationDetails: refreshed.authorization_details,
-      readOnly: input.readOnly,
+      // Legacy payment consent omitted this marker. Retire with the independent
+      // credential migration and old-writer/rollback gates in #40206.
+      readOnly: input.readOnly ?? false,
     };
     const encryptedCredentials = await encryptStoredSecretValue(
       JSON.stringify(credentials),
@@ -761,7 +763,14 @@ const walletAccess$ = command(
     const credentials = linkCredentialsSchema.parse(
       JSON.parse(plaintext) as unknown,
     );
-    if (credentials.expiresAt > now() + 60_000) {
+    // Legacy grants need provider-confirmed metadata before financial/profile
+    // reads. Remove after the independent migration converges (#40206).
+    if (
+      credentials.expiresAt > now() + 60_000 &&
+      (credentials.scope !== undefined ||
+        permission === "payments" ||
+        permission === "spendHistory")
+    ) {
       requireWalletPermission(credentials, permission);
       return { connection, token: credentials.accessToken, credentials };
     }

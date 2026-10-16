@@ -291,12 +291,12 @@ test("dry-run, migration and rerun preserve wallet identities and use actual Lin
   );
 });
 
-test("refresh failure blocks promotion and never replays the consumed token", async (t) => {
+test("refresh failure fails the migration and never replays the consumed token", async (t) => {
   const db = await database(t);
   const id = await insert(db.client, legacy("failed-refresh"));
   const result = await run(db, { migrate: true, mode: "refresh-failure" });
   assert.equal(result.code, 1);
-  assert.match(result.errors, /API promotion must stop/);
+  assert.match(result.errors, /Link wallet grant migration failed/);
   assert.equal(
     (
       await db.client.query(
@@ -382,7 +382,7 @@ test("incomplete metadata blocks the preflight without modifying any grant", asy
   );
 });
 
-test("failed revocation retains the token for supported retry and blocks promotion", async (t) => {
+test("failed revocation retains the token for supported retry and fails the migration", async (t) => {
   const db = await database(t);
   const id = await insert(db.client, legacy("revoked-retry"), {
     revoked: true,

@@ -10,7 +10,7 @@ export type WalletPermission =
   "payments" | "spendHistory" | "paymentMethods" | "userInfo" | "transactions";
 
 export function walletAuthorization(credentials?: Credentials) {
-  const scopes = credentials?.scope.split(/[ ,]+/).filter(Boolean) ?? [];
+  const scopes = credentials?.scope?.split(/[ ,]+/).filter(Boolean) ?? [];
   const sourceActions = [
     ...new Set(
       credentials?.authorizationDetails
@@ -22,11 +22,16 @@ export function walletAuthorization(credentials?: Credentials) {
         }) ?? [],
     ),
   ];
-  const payments = scopes.includes("payment_methods.agentic");
+  // Pre-#40198 credentials were written only after validating payment consent.
+  // Keep their payment access until the independent migration proves no legacy
+  // credentials remain and old writers/rollback targets are excluded (#40206).
+  const payments =
+    Boolean(credentials && credentials.scope === undefined) ||
+    scopes.includes("payment_methods.agentic");
   const userInfo = scopes.includes("userinfo:read");
   const transactions = sourceActions.includes("read_link_transactions");
   return {
-    known: Boolean(credentials),
+    known: credentials?.scope !== undefined,
     scopes,
     sourceActions,
     capabilities: {

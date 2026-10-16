@@ -303,7 +303,7 @@ jobs:
             .github/actions/report-memory-peak/report.sh \
             .github/scripts/report-sccache-stats.sh \
             .github/scripts/release/resolve-desktop-version-change.sh \
-            .github/scripts/release/migrate-link-wallet-grants.sh \
+            ops/link-wallet-grants-40206/migrate.sh \
             .github/scripts/checks/run-semgrep.sh \
             crates/nbd-cow/tests/run-nbd-cow-tests.sh \
             .github/scripts/run-workflow-script-test-shard.sh \
