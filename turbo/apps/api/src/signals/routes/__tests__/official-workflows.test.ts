@@ -1372,7 +1372,7 @@ describe("Morning Brief catalog reconciliation", () => {
         ).resolves.toMatchObject([
           { id: installation.id, official: { definitionName } },
         ]);
-        const [reconciled] = await readMorningBriefAutomations(
+        const [reconciled] = await listMorningBriefAutomations(
           actor,
           installation.id,
         );
@@ -1444,7 +1444,7 @@ describe("Morning Brief catalog reconciliation", () => {
         ).toBe("accepted");
         await executeAutomationCron();
         await flushWaitUntilForTest();
-        const [restored] = await readMorningBriefAutomations(
+        const [restored] = await listMorningBriefAutomations(
           actor,
           installation.id,
         );
@@ -1481,9 +1481,11 @@ describe("Morning Brief catalog reconciliation", () => {
         );
         await executeAutomationCron();
         await flushWaitUntilForTest();
-        await expect(
-          listMorningBriefAutomations(actor, installation.id),
-        ).resolves.toMatchObject([
+        const unchanged = await listMorningBriefAutomations(
+          actor,
+          installation.id,
+        );
+        expect(unchanged).toMatchObject([
           {
             id: initial.id,
             chatThreadId: first.chatThreadId,
@@ -1501,10 +1503,9 @@ describe("Morning Brief catalog reconciliation", () => {
             [200],
           );
         }
-        const [scheduled] = await listMorningBriefAutomations(
-          actor,
-          installation.id,
-        );
+        const [scheduled] = paused
+          ? await listMorningBriefAutomations(actor, installation.id)
+          : unchanged;
         if (!scheduled) {
           throw new Error("Expected the reconciled schedule");
         }
