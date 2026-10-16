@@ -43,6 +43,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import { createDeferredPromise } from "../../utils";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 const context = testContext();
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
@@ -767,7 +768,7 @@ test("receives an owner DM once, resumes its native session and delivers the can
   const delivered = createDeferredPromise<void>(context.signal);
   let extraItems: NonNullable<WechatMessage["item_list"]> = [];
   let messageId = "18446744073709551615";
-  let messageText = "Remember that the project is called Orchid";
+  let messageText = `Remember that the project is called Orchid\n${"project detail ".repeat(100)}\nKeep the complete context`;
   let senderId = `scanner-${actor.userId}`;
   server.use(
     http.post(`${origin}/ilink/bot/getupdates`, () => {
@@ -1198,7 +1199,45 @@ test("receives an owner DM once, resumes its native session and delivers the can
   expect(second.nativeContinuation?.sessionId).toBe("wechat-native-session");
   expect(second.prompt).toContain(messageText);
   expect(second.prompt).toContain("report.csv");
+  expect(second.prompt).toContain("[Web file] report.csv (text/csv)");
   expect(second.appendSystemPrompt).toContain("I will remember Orchid.");
+  expect(second.appendSystemPrompt).toContain("# WeChat Thread Context");
+  expect(second.appendSystemPrompt).toContain("- RELATIVE_INDEX: -1");
+  expect(second.appendSystemPrompt).toContain(
+    `- SENDER: {id: scanner-${actor.userId}}`,
+  );
+  expect(second.appendSystemPrompt).toContain(
+    "- SENDER: {id: test-bot, name: Okou}",
+  );
+  expect(second.appendSystemPrompt).toContain("Keep the complete context");
+  const fileEvents = await readProjectedChatEvents(context, {
+    threadId,
+    headers,
+  });
+  const fileInput = fileEvents.find((event) => {
+    return event.eventType === "input.prompt" && event.runId === second.runId;
+  });
+  expect(fileInput).toMatchObject({
+    userMessage: {
+      parts: expect.arrayContaining([
+        expect.objectContaining({
+          type: "file",
+          filenameSnapshot: "report.csv",
+          contentType: "text/csv",
+        }),
+      ]),
+    },
+  });
+  expect(
+    context.mocks.s3.send.mock.calls.some(([request]) => {
+      return (
+        request instanceof PutObjectCommand &&
+        request.input.ContentType === "text/csv" &&
+        Buffer.isBuffer(request.input.Body) &&
+        request.input.Body.equals(attachmentBytes)
+      );
+    }),
+  ).toBeTruthy();
   const withFile = await accept(
     messages.history({
       headers: agentHeaders,
@@ -1285,6 +1324,8 @@ test("receives an owner DM once, resumes its native session and delivers the can
     [200],
   );
   expect(published.body.delivery.status).toBe("pending");
+  let cdnUploads = 0;
+  const overlappingUploads = createDeferredPromise<void>(context.signal);
   server.use(
     http.post(`${origin}/ilink/bot/getuploadurl`, () => {
       return HttpResponse.json({
@@ -1292,20 +1333,55 @@ test("receives an owner DM once, resumes its native session and delivers the can
         upload_param: "private-upload-query",
       });
     }),
-    http.post("https://novac2c.cdn.weixin.qq.com/c2c/upload", () => {
+    http.post("https://novac2c.cdn.weixin.qq.com/c2c/upload", async () => {
+      cdnUploads++;
+      if (cdnUploads <= 3) {
+        return new HttpResponse(null, { status: 503 });
+      }
+      if (cdnUploads === 5) {
+        overlappingUploads.resolve();
+      }
+      await overlappingUploads.promise;
       return new HttpResponse(null, {
         headers: { "x-encrypted-param": "private-file-query" },
       });
     }),
   );
-  const completed = await accept(
+  const sendsBeforeUpload = sends.length;
+  const failedUpload = await accept(
     fileApp(integrationsWechatUploadCompleteContract).complete({
       headers,
       body: fileOperation,
     }),
-    [200],
+    [503],
   );
-  expect(completed.body.delivery.status).toBe("delivered");
+  expect(failedUpload.body.error.message).toContain("before sending");
+  expect(cdnUploads).toBe(3);
+  expect(sends).toHaveLength(sendsBeforeUpload);
+  const completions = await Promise.all([
+    accept(
+      fileApp(integrationsWechatUploadCompleteContract).complete({
+        headers,
+        body: fileOperation,
+      }),
+      [200],
+    ),
+    accept(
+      fileApp(integrationsWechatUploadCompleteContract).complete({
+        headers,
+        body: fileOperation,
+      }),
+      [200],
+    ),
+  ]);
+  const completed = completions.find((completion) => {
+    return completion.body.delivery.status === "delivered";
+  });
+  if (!completed) {
+    throw new Error("Expected a confirmed WeChat file delivery");
+  }
+  expect(cdnUploads).toBe(5);
+  expect(sends).toHaveLength(sendsBeforeUpload + 1);
   expect(completed.body.url).toBe(published.body.url);
   const fileSendCount = sends.length;
   expect(
@@ -1320,9 +1396,121 @@ test("receives an owner DM once, resumes its native session and delivers the can
     ).body,
   ).toStrictEqual(completed.body);
   expect(sends).toHaveLength(fileSendCount);
+  const ambiguousInit = await accept(
+    fileInit({
+      headers,
+      body: { ...fileBody, operationId: randomUUID() },
+    }),
+    [200],
+  );
+  objectStore.addObject({
+    bucket: "test-private-artifacts",
+    key: `private-artifacts/${ambiguousInit.body.assetId}/${sanitizeArtifactFilename(fileBody.filename)}`,
+    size: attachmentBytes.length,
+    body: attachmentBytes,
+    contentType: fileBody.contentType,
+    metadata: { "artifact-id": ambiguousInit.body.assetId },
+  });
+  const ambiguousOperation = {
+    assetId: ambiguousInit.body.assetId,
+    operationId: ambiguousInit.body.operationId,
+  };
+  await accept(
+    fileApp(integrationsWechatUploadMaterializeContract).materialize({
+      headers,
+      body: ambiguousOperation,
+    }),
+    [200],
+  );
+  server.use(
+    http.post(`${origin}/ilink/bot/sendmessage`, async ({ request }) => {
+      sends.push(await request.json());
+      return HttpResponse.error();
+    }),
+  );
+  const ambiguous = await accept(
+    fileApp(integrationsWechatUploadCompleteContract).complete({
+      headers,
+      body: ambiguousOperation,
+    }),
+    [200],
+  );
+  expect(ambiguous.body).toMatchObject({
+    url: ambiguousInit.body.url,
+    delivery: { status: "failed", retryable: false },
+  });
+  const afterAmbiguousSend = sends.length;
+  expect(afterAmbiguousSend).toBe(fileSendCount + 1);
+  const inspected = await accept(
+    fileApp(integrationsWechatUploadCompleteContract).complete({
+      headers,
+      body: ambiguousOperation,
+    }),
+    [200],
+  );
+  expect(inspected.body).toStrictEqual(ambiguous.body);
+  expect(sends).toHaveLength(afterAmbiguousSend);
+  // Image-only inputs must retain both their real MIME and canonical file part.
+  const imageBytes = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+afo8AAAAASUVORK5CYII=",
+    "base64",
+  );
+  let imageDownloads = 0;
+  server.use(
+    http.get("https://novac2c.cdn.weixin.qq.com/c2c/download", () => {
+      imageDownloads++;
+      return new HttpResponse(new Uint8Array(imageBytes));
+    }),
+  );
+  extraItems = [
+    { type: 2, image_item: { media: { encrypt_query_param: "image-query" } } },
+  ];
+  messageId = "18446744073709551611";
+  messageText = "";
+  await receive();
+  await receive();
+  expect(imageDownloads).toBe(1);
+  const imageEvents = await readProjectedChatEvents(context, {
+    threadId,
+    headers,
+  });
+  const imageInputs = imageEvents.filter((event) => {
+    return (
+      event.eventType === "input.prompt" &&
+      event.userMessage.parts.some((part) => {
+        return part.type === "file" && part.contentType === "image/png";
+      })
+    );
+  });
+  expect(imageInputs).toHaveLength(1);
+  const { input: imageInput } = await runs.nextSteerableInput(
+    second.sandboxToken,
+    second.runId,
+  );
+  expect(imageInput?.prompt).toContain("[Web file] image (image/png)");
+  expect(objectStore.puts).toContainEqual(
+    expect.objectContaining({ contentType: "image/png" }),
+  );
+  for (const unavailable of [
+    { messageId: "18446744073709551609", status: 404 },
+    { messageId: "18446744073709551608", status: 200 },
+  ]) {
+    let attempts = 0;
+    server.use(
+      http.get("https://novac2c.cdn.weixin.qq.com/c2c/download", () => {
+        attempts++;
+        return new HttpResponse("not an image", { status: unavailable.status });
+      }),
+    );
+    messageId = unavailable.messageId;
+    await receive();
+    await receive();
+    // Permanent failures become failed file parts instead of wedging the batch.
+    expect(attempts).toBe(1);
+  }
   extraItems = [];
 
-  messageId = "18446744073709551611";
+  messageId = "18446744073709551610";
   messageText = "Do not deliver this after I disconnect";
   await receive();
   // Disconnect while a run is active; its eventual output must not use a stale binding.
