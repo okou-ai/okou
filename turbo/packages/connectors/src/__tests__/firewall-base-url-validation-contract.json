@@ -505,6 +505,18 @@
     },
     {
       "category": "valid",
+      "name": "numeric dns labels with more than four required host segments",
+      "base": "https://1.2.3.4.{sub}",
+      "expectedValid": true
+    },
+    {
+      "category": "valid",
+      "name": "nonnumeric mixed affix distinguishes dns from ipv4",
+      "base": "https://127.0.{octet}.node-{suffix}",
+      "expectedValid": true
+    },
+    {
+      "category": "valid",
       "name": "mixed parameterized host segment",
       "base": "https://api-{sub}.example.com",
       "expectedValid": true
@@ -795,6 +807,36 @@
       "category": "authority",
       "name": "parameterized ipv4 authority with two parameters is invalid",
       "base": "https://127.0.{a}.{b}",
+      "expectedValid": false
+    },
+    {
+      "category": "authority",
+      "name": "numeric mixed suffix in ipv4 authority is invalid",
+      "base": "https://{prefix}7.0.0.1",
+      "expectedValid": false
+    },
+    {
+      "category": "authority",
+      "name": "numeric mixed prefix in ipv4 authority is invalid",
+      "base": "https://127.0.0.1{suffix}",
+      "expectedValid": false
+    },
+    {
+      "category": "authority",
+      "name": "numeric mixed prefix and suffix in ipv4 authority are invalid",
+      "base": "https://1{octet}7.0.0.1",
+      "expectedValid": false
+    },
+    {
+      "category": "authority",
+      "name": "optional greedy parameter before four ipv4 literals is invalid",
+      "base": "https://{sub*}.127.0.0.1",
+      "expectedValid": false
+    },
+    {
+      "category": "authority",
+      "name": "greedy and numeric mixed parameters in ipv4 authority are invalid",
+      "base": "https://{octets+}.0.0.{suffix}1",
       "expectedValid": false
     },
     {

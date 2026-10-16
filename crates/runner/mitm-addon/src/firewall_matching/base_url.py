@@ -152,7 +152,10 @@ def _format_param_segment(parsed: SegmentParam) -> str:
 
 
 def _is_parameterized_ipv4_host(segments: list[ParsedSegment]) -> bool:
-    if len(segments) > _MAX_IPV4_HOST_SEGMENTS:
+    minimum_segments = sum(
+        not isinstance(segment, SegmentParam) or segment.greedy != "*" for segment in segments
+    )
+    if minimum_segments > _MAX_IPV4_HOST_SEGMENTS:
         return False
 
     has_numeric_literal = False
@@ -161,7 +164,9 @@ def _is_parameterized_ipv4_host(segments: list[ParsedSegment]) -> bool:
             if not is_ipv4_number_component(segment.value):
                 return False
             has_numeric_literal = True
-        elif not isinstance(segment, SegmentParam) or segment.prefix or segment.suffix:
+        elif not isinstance(segment, SegmentParam) or any(
+            char not in "0123456789" for char in segment.prefix + segment.suffix
+        ):
             return False
 
     return has_numeric_literal

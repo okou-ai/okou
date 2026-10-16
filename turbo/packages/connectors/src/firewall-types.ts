@@ -2908,22 +2908,23 @@ function validateBaseUrlParams(base: string, serviceName: string): string {
   const canonicalHostSegments = splitAuthorityHostSegments(
     canonicalAuthority.normalizedHost,
   );
+  const parsedHostSegments = canonicalHostSegments.map(parseSegment);
+  const minimumHostSegments = parsedHostSegments.filter(
+    (segment) => segment.kind !== "param" || segment.greedy !== "*",
+  ).length;
   if (
     hasBaseUrlParams(canonicalAuthority.normalizedHost) &&
-    canonicalHostSegments.length <= 4 &&
-    canonicalHostSegments.some((segment) => {
-      const parsed = parseSegment(segment);
-      return parsed.kind === "literal" && isIpv4NumberComponent(parsed.value);
-    }) &&
-    canonicalHostSegments.every((segment) => {
-      const parsed = parseSegment(segment);
-      return (
-        (parsed.kind === "literal" && isIpv4NumberComponent(parsed.value)) ||
-        (parsed.kind === "param" &&
-          parsed.prefix === "" &&
-          parsed.suffix === "")
-      );
-    })
+    minimumHostSegments <= 4 &&
+    parsedHostSegments.some(
+      (segment) =>
+        segment.kind === "literal" && isIpv4NumberComponent(segment.value),
+    ) &&
+    parsedHostSegments.every(
+      (segment) =>
+        (segment.kind === "literal" && isIpv4NumberComponent(segment.value)) ||
+        (segment.kind === "param" &&
+          /^[0-9]*$/.test(segment.prefix + segment.suffix)),
+    )
   ) {
     throw new Error(errMsg(base, serviceName, "not a valid URL authority"));
   }
