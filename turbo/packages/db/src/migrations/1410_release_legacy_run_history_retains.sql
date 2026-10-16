@@ -3,6 +3,18 @@
 -- v5 no longer produces remote native History. The supported rollback floor
 -- already requires native continuation; these hashes never authorize resume.
 -- Each batch commits independently and a retry starts again at the first UUID.
+-- Build a migration-owned lookup before applying the short batch deadline.
+-- Retrying a failed concurrent build must replace its possibly invalid index.
+SET statement_timeout = '5min';
+--> statement-breakpoint
+DROP INDEX CONCURRENTLY IF EXISTS public.migration_1410_run_history_hash_idx;
+--> statement-breakpoint
+CREATE INDEX CONCURRENTLY migration_1410_run_history_hash_idx
+  ON public.agent_runs (legacy_conversation_history_hash)
+  WHERE legacy_conversation_history_hash IS NOT NULL;
+--> statement-breakpoint
+ANALYZE public.agent_runs (legacy_conversation_history_hash);
+--> statement-breakpoint
 SET statement_timeout = '2s';
 --> statement-breakpoint
 -- vm0:batch-by-uuid
@@ -71,5 +83,9 @@ SELECT CASE
   ELSE format('History retain accounting mismatch: cleared=%s released=%s',
     (SELECT count(*) FROM cleared), (SELECT coalesce(sum(refs), 0) FROM released))::uuid
 END AS next_cursor;
+--> statement-breakpoint
+SET statement_timeout = '5min';
+--> statement-breakpoint
+DROP INDEX CONCURRENTLY IF EXISTS public.migration_1410_run_history_hash_idx;
 --> statement-breakpoint
 RESET statement_timeout;
