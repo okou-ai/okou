@@ -1,5 +1,6 @@
 //! Accepted publication retains exact data and entry custody independently of observers.
 
+use super::super::HOME_PUBLICATION_IO_SLOTS;
 use super::super::fs::{
     PinnedImage, StagingFile, move_noreplace, sparse_copy_pinned, sync_directory,
 };
@@ -149,6 +150,7 @@ impl HomeImageCache {
     async fn publication_admission<'a>(
         &'a self,
         deadline: Instant,
+        io_slots: u32,
     ) -> LifecycleResult<Option<PublicationAdmission<'a>>> {
         if Instant::now() >= deadline {
             return Ok(None);
@@ -159,7 +161,7 @@ impl HomeImageCache {
             let io = self
                 .inner
                 .publication_admission
-                .acquire()
+                .acquire_many(io_slots)
                 .await
                 .map_err(|error| {
                     LifecycleError::Internal(format!("home publication admission closed: {error}"))
@@ -267,8 +269,9 @@ impl HomeImageCache {
         let deadline = Instant::now() + HOME_IMAGE_PUBLICATION_ADMISSION_TIMEOUT;
         let metadata_peak = runner_host::state_file::HOME_METADATA_MAX_BYTES.saturating_add(8192);
         let mut reclaimed = false;
+        let mut io_slots = 1;
         loop {
-            let admission = match self.publication_admission(deadline).await {
+            let admission = match self.publication_admission(deadline, io_slots).await {
                 Ok(Some(admission)) => admission,
                 Ok(None) => {
                     let reason = if Instant::now() >= deadline {
@@ -338,6 +341,21 @@ impl HomeImageCache {
             let additional = metadata_peak.saturating_add(copy_peak);
             let stats = self.fs_stats().await?;
             let pressure = self.pressure_thresholds(stats);
+            if copy_peak > 0
+                && io_slots == 1
+                && !has_copy_headroom(
+                    stats,
+                    pressure,
+                    additional.saturating_mul(HOME_PUBLICATION_IO_SLOTS as u64),
+                )
+            {
+                // Independent Copies must leave room to commit their metadata.
+                // Reuse the whole existing IO budget under pressure, releasing
+                // partial admission before waiting under the original deadline.
+                drop(admission);
+                io_slots = HOME_PUBLICATION_IO_SLOTS as u32;
+                continue;
+            }
             if !has_copy_headroom(stats, pressure, additional) {
                 drop(admission);
                 if !reclaimed && pressure.reserve_feasible {

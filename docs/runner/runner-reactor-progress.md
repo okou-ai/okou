@@ -240,7 +240,11 @@ retains its capsule while releasing physical IO admission.
 Publication orders entry/source, local IO slot, then shared canonical capacity.
 Move and exceptional Copy share that same bounded IO admission. Copy checks
 actual destination headroom before transfer and metadata headroom before commit;
-concurrent allocation by other publishers or processes can race those observations.
+when the observed margin cannot cover four Copy-plus-metadata peaks, Copy
+releases partial admission and atomically takes all four existing IO permits.
+This serializes pressured Copy within one Runner without another lock or
+semaphore; other Runner owners still share the canonical capacity barrier.
+Concurrent allocation by other publishers or processes can race those observations.
 Unexpected EXDEV and pressure reclamation release IO/barrier admission before
 retrying with Copy demand or waiting for GC; the original 30-second pre-IO budget
 covers those retries within an attempt. Legacy flock contention retains its

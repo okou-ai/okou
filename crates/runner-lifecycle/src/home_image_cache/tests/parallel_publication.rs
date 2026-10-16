@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 mod compatibility;
+mod pressure_admission;
 
 async fn context(f: &Fixture, key: &str) -> HomeImagePromotionContext {
     f.context(
