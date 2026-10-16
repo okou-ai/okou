@@ -499,41 +499,6 @@ export async function loadUsagePackCatalog(): Promise<
   });
 }
 
-export async function activeUsagePackBillingContext(
-  db: Pick<Db, "select">,
-  orgId: string,
-): Promise<{
-  readonly usagePackSubscriptionId: string;
-  readonly stripeCustomerId: string;
-  readonly stripeSubscriptionId: string;
-} | null> {
-  const [subscription] = await db
-    .select({
-      usagePackSubscriptionId: usagePackSubscriptions.id,
-      stripeCustomerId: usagePackSubscriptions.stripeCustomerId,
-      stripeSubscriptionId: usagePackSubscriptions.stripeSubscriptionId,
-    })
-    .from(usagePackSubscriptions)
-    .where(
-      and(
-        eq(usagePackSubscriptions.orgId, orgId),
-        isNotNull(usagePackSubscriptions.stripeSubscriptionId),
-        notInArray(usagePackSubscriptions.subscriptionStatus, [
-          ...TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES,
-        ]),
-      ),
-    )
-    .orderBy(desc(usagePackSubscriptions.updatedAt))
-    .limit(1);
-  return subscription?.stripeSubscriptionId
-    ? {
-        usagePackSubscriptionId: subscription.usagePackSubscriptionId,
-        stripeCustomerId: subscription.stripeCustomerId,
-        stripeSubscriptionId: subscription.stripeSubscriptionId,
-      }
-    : null;
-}
-
 export function usagePackSubscriptionMetadata(args: {
   readonly orgId: string;
   readonly tier: SubscriptionCheckoutTier;
