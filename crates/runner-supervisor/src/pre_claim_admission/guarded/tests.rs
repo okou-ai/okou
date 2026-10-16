@@ -16,6 +16,7 @@ use runner_lifecycle::idle_pool::{
     test_support::ParkedIdleCandidateBuilder,
 };
 use runner_lifecycle::resource_budget::ResourceBudget;
+use runner_provider::{ApiClaimTiming, ClaimResponseAttribution};
 use sandbox::{SandboxBackingProcess, SandboxFactory};
 use sandbox_mock::{
     ExecMatcher, MockBackingProcess, MockLifecycleGate, MockSandbox, MockSandboxFactory,
@@ -227,7 +228,7 @@ async fn real_claim_and_guest_restore_commit_the_original_prepared_resource() {
         let run = RunId::new_v4();
         let returned_run = if mismatch { RunId::new_v4() } else { run };
         let provider: Arc<dyn JobProvider> = if mismatch {
-            Arc::new(FaultProvider(ClaimFault::OtherRun(returned_run)))
+            Arc::new(FaultProvider(ClaimFault::ReturnedRun(returned_run)))
         } else {
             let (provider, _) = MockJobProvider::new(CancellationToken::new());
             let mut context = execution_context_for_test(run);
@@ -245,7 +246,9 @@ async fn real_claim_and_guest_restore_commit_the_original_prepared_resource() {
             assert!(admission.commit().is_err());
             fixture.retained().await;
             let claimed = admission.take_claim_response().unwrap().unwrap();
-            assert_eq!(claimed.context().run_id, returned_run);
+            let (context, auth, _) = claimed.into_parts();
+            assert_eq!(context.run_id, returned_run);
+            assert_eq!(auth.into_sandbox_token(returned_run).unwrap(), CLAIM_TOKEN);
         } else {
             let (claim, sandbox, lease) = admission.commit().unwrap();
             assert_eq!(claim.context().run_id, run);
@@ -297,12 +300,22 @@ async fn cancelling_preparation_observation_does_not_cancel_accepted_claim_or_sh
         .overrides
         .set_guest_state_restore_lifecycle_gate(gate.clone());
     let mut admission = fixture.admission.take().unwrap();
-    let mut pending =
-        Box::pin(admission.prepare_and_claim(provider, fixture.candidate(run), &fixture.tracker));
+    let mut pending = Box::pin(admission.prepare_and_claim(
+        provider.clone(),
+        fixture.candidate(run),
+        &fixture.tracker,
+    ));
     assert!(futures_util::poll!(pending.as_mut()).is_pending());
     gate.wait_entered(1, WAIT).await.unwrap();
     assert!(handle.wait_claim_in_flight(1, WAIT).await);
     drop(pending);
+    let mut pending = Box::pin(admission.wait_for_claim());
+    assert!(futures_util::poll!(pending.as_mut()).is_pending());
+    drop(pending);
+    assert!(matches!(
+        admission.take_claim_response(),
+        Err(MemoryOperationError::Consumed)
+    ));
     fixture.retained().await;
     let mut shutdown = Box::pin(fixture.tracker.close_and_wait());
     assert!(futures_util::poll!(shutdown.as_mut()).is_pending());
@@ -311,8 +324,23 @@ async fn cancelling_preparation_observation_does_not_cancel_accepted_claim_or_sh
         .await
         .unwrap()
         .unwrap();
+    // Guest preparation was cancelled: failed commit must return the same
+    // successful claim to retained custody for explicit completion.
+    assert!(admission.commit().is_err());
     let claim = admission.take_claim_response().unwrap().unwrap();
     assert_eq!(claim.context().run_id, run);
+    admission.wait_for_claim().await.unwrap();
+    assert!(matches!(
+        admission.take_claim_response(),
+        Err(MemoryOperationError::Consumed)
+    ));
+    assert_eq!(
+        admission
+            .prepare_and_claim(provider, fixture.candidate(run), &fixture.tracker)
+            .await
+            .unwrap_err(),
+        "speculative claim already began; observe its retained response"
+    );
     assert!(admission.commit().is_err());
     tokio::time::timeout(WAIT, shutdown).await.unwrap();
     assert_eq!(handle.claim_candidates().len(), 1);
@@ -324,9 +352,8 @@ async fn successful_claim_survives_guest_error_panic_and_cancel_for_explicit_com
     for fault in ["error", "panic", "cancel"] {
         let (_, backing) = MockBackingProcess::channel();
         let mut fixture = Fixture::new(Some(backing), 64).await;
-        let (provider, _) = MockJobProvider::new(CancellationToken::new());
         let run = RunId::new_v4();
-        provider.set_claim_result(run, Some(execution_context_for_test(run)));
+        let provider = Arc::new(FaultProvider(ClaimFault::ReturnedRun(run)));
         let mut admission = fixture.admission.take().unwrap();
         if fault == "cancel" {
             let gate = MockLifecycleGate::new();
@@ -359,15 +386,11 @@ async fn successful_claim_survives_guest_error_panic_and_cancel_for_explicit_com
             );
         }
         admission.wait_for_claim().await.unwrap();
-        assert_eq!(
-            admission
-                .take_claim_response()
-                .unwrap()
-                .unwrap()
-                .context()
-                .run_id,
-            run
-        );
+        assert!(admission.commit().is_err());
+        let claim = admission.take_claim_response().unwrap().unwrap();
+        let (context, auth, _) = claim.into_parts();
+        assert_eq!(context.run_id, run);
+        assert_eq!(auth.into_sandbox_token(run).unwrap(), CLAIM_TOKEN);
         assert!(admission.commit().is_err());
         fixture.retained().await;
         fixture.tracker.close_and_wait().await;
@@ -717,8 +740,10 @@ async fn status_wait_cancellation_leaves_replaced_blank_in_joined_tracker() {
 
 enum ClaimFault {
     Panic,
-    OtherRun(RunId),
+    ReturnedRun(RunId),
 }
+
+const CLAIM_TOKEN: &str = "original-speculative-claim-token";
 
 /// Fault injection belongs to the external provider boundary. The shared
 /// healthy provider correctly rejects mismatched contexts before returning.
@@ -731,14 +756,25 @@ impl JobProvider for FaultProvider {
     async fn claim(&self, _: JobCandidate) -> Option<ClaimedJob> {
         match self.0 {
             ClaimFault::Panic => panic!("claim transport producer lost"),
-            ClaimFault::OtherRun(run) => Some(
-                ClaimedJob::local_with_active_input_source(
-                    run,
-                    execution_context_for_test(run),
-                    None,
+            ClaimFault::ReturnedRun(run) => {
+                let mut context = execution_context_for_test(run);
+                context.sandbox_token = CLAIM_TOKEN.into();
+                Some(
+                    ClaimedJob::api(
+                        run,
+                        context,
+                        ApiClaimTiming::new(
+                            Duration::ZERO,
+                            Duration::ZERO,
+                            Duration::ZERO,
+                            Duration::ZERO,
+                            Duration::ZERO,
+                            ClaimResponseAttribution::from_body_and_encoding(1, None),
+                        ),
+                    )
+                    .unwrap(),
                 )
-                .unwrap(),
-            ),
+            }
         }
     }
     async fn complete(
