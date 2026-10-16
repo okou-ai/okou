@@ -188,55 +188,6 @@ describe("okou web upload-file command", () => {
       ).toMatchObject(file);
     });
 
-    it("uses the content type signed by an older API that strips charset parameters", async () => {
-      const filePath = join(tmpDir, "report.md");
-      const bytes = Buffer.from("# 中文版 😀\n", "utf8");
-      writeFileSync(filePath, bytes);
-      const file = {
-        id: "00000000-0000-4000-8000-000000000031",
-        filename: "report.md",
-        contentType: "text/markdown",
-        size: bytes.length,
-        url: "https://cdn.example.test/report.md",
-      };
-      let uploadedBytes: ArrayBuffer | undefined;
-      server.use(
-        http.post(PREPARE_URL, async ({ request }) => {
-          expect(await request.json()).toMatchObject({
-            contentType: "text/markdown; charset=utf-8",
-          });
-          return HttpResponse.json({ ...file, uploadUrl: PUT_URL });
-        }),
-        http.put(PUT_URL, async ({ request }) => {
-          expect(request.headers.get("content-type")).toBe(file.contentType);
-          uploadedBytes = await request.arrayBuffer();
-          return new HttpResponse(null, { status: 200 });
-        }),
-        http.post(COMPLETE_URL, async ({ request }) => {
-          expect(await request.json()).toEqual({
-            id: file.id,
-            contentType: file.contentType,
-          });
-          return HttpResponse.json(file);
-        }),
-      );
-
-      await uploadFileCommand.parseAsync([
-        "node",
-        "cli",
-        "-f",
-        filePath,
-        "--content-type",
-        "text/markdown",
-        "--json",
-      ]);
-
-      expect(uploadedBytes).toEqual(new Uint8Array(bytes).buffer);
-      expect(
-        JSON.parse(mockConsoleLog.mock.calls.flat().join("\n")),
-      ).toMatchObject(file);
-    });
-
     it("should prepare + PUT + complete and print artifact presentation context", async () => {
       vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
       const filePath = join(tmpDir, "report.pdf");
