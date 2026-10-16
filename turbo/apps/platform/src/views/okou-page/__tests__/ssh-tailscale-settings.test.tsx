@@ -107,13 +107,17 @@ async function page(
   });
 }
 
-async function addHost() {
+async function openAddHost() {
   click(
     await waitFor(() => {
       return getAction("button", "Add host");
     }),
   );
-  const dialog = await screen.findByRole("dialog");
+  return await screen.findByRole("dialog");
+}
+
+async function addHost() {
+  const dialog = await openAddHost();
   await chooseSshConnectionType(dialog, "Tailscale");
   await within(dialog).findByLabelText("Tailscale");
   await fill(within(dialog).getByLabelText("Display name"), "New private host");
@@ -125,9 +129,10 @@ async function addHost() {
   return dialog;
 }
 
-test("Tailscale SSH reuses the selected network and preserves carrier drafts", async () => {
+test("Tailscale SSH reuses the selected network without a credential selector", async () => {
   await page();
-  const dialog = await addHost();
+  const dialog = await openAddHost();
+  await chooseSshConnectionType(dialog, "Tailscale");
   await chooseSshConnectionType(dialog, "Tailscale SSH");
   expect(within(dialog).getByLabelText("Tailscale")).toHaveTextContent(
     config.name,
@@ -135,6 +140,14 @@ test("Tailscale SSH reuses the selected network and preserves carrier drafts", a
   expect(
     within(dialog).queryByRole("combobox", { name: "Credential" }),
   ).toBeNull();
+});
+
+test("Switching Tailscale SSH modes preserves each carrier's draft", async () => {
+  await page();
+  const dialog = await openAddHost();
+  await chooseSshConnectionType(dialog, "Tailscale");
+  await fill(within(dialog).getByLabelText("Port"), "2022");
+  await chooseSshConnectionType(dialog, "Tailscale SSH");
   const username = within(dialog).getByRole("textbox", {
     name: "System username",
   });
