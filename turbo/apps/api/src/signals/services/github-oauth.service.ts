@@ -894,24 +894,6 @@ export const resolveGithubOauthOrgId$ = command(
   },
 );
 
-const loadGithubInstallationForRemoteLink$ = command(
-  async ({ get }, installationId: string, signal: AbortSignal) => {
-    const db = get(db$);
-    const [installation] = await db
-      .select({
-        id: githubInstallations.id,
-        orgId: githubInstallations.orgId,
-        appId: githubInstallations.appId,
-        appSlug: githubInstallations.appSlug,
-      })
-      .from(githubInstallations)
-      .where(eq(githubInstallations.installationId, installationId))
-      .limit(1);
-    signal.throwIfAborted();
-    return installation;
-  },
-);
-
 const linkExistingGithubAppInstallation$ = command(
   async (
     { set },
@@ -1005,7 +987,7 @@ const createGithubInstallationFromRemote$ = command(
 
 export const tryLinkGithubFromRemoteInstallations$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly appId: string;
       readonly appSlug: string;
@@ -1030,11 +1012,18 @@ export const tryLinkGithubFromRemoteInstallations$ = command(
     let unclaimedInstallation: AppInstallation | undefined;
     for (const ghInstall of installations) {
       const ghInstallationId = String(ghInstall.id);
-      const existing = await set(
-        loadGithubInstallationForRemoteLink$,
-        ghInstallationId,
-        signal,
-      );
+      const db = get(db$);
+      const [existing] = await db
+        .select({
+          id: githubInstallations.id,
+          orgId: githubInstallations.orgId,
+          appId: githubInstallations.appId,
+          appSlug: githubInstallations.appSlug,
+        })
+        .from(githubInstallations)
+        .where(eq(githubInstallations.installationId, ghInstallationId))
+        .limit(1);
+      signal.throwIfAborted();
 
       if (existing) {
         if (args.orgId && existing.orgId !== args.orgId) {
@@ -1100,6 +1089,7 @@ export const tryLinkGithubFromRemoteInstallations$ = command(
       },
       signal,
     );
+    signal.throwIfAborted();
 
     if (!newInstall) {
       L.error("Failed to create GitHub installation record", {
