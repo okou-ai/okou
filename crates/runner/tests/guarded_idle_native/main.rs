@@ -6,6 +6,7 @@ mod continuation;
 mod continuation_api;
 mod critical;
 mod evidence;
+mod fences;
 mod finalizing;
 mod fixture;
 mod foreground;
@@ -56,6 +57,7 @@ enum Corpus {
     Terminal,
     Continuation,
     Optional,
+    Fences,
 }
 
 const MISSING_GUEST_TIMEZONE: &str = "Etc/okou-test-missing-zone";
@@ -72,6 +74,22 @@ fn native_report_consumer_validates_external_receipts() {
     assert!(
         output.status.success(),
         "native report contract failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn native_fence_report_requires_real_refusal_and_original_custody() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/fence_report_test.py"
+        ))
+        .output()
+        .expect("native fence report requires Python 3");
+    assert!(
+        output.status.success(),
+        "native fence report failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 }
@@ -393,6 +411,16 @@ async fn native_startup_records_complete_snapshot_reads_and_joined_owners() -> T
 #[ignore = "requires owned KVM/NBD inputs and exact-source foreground P1 proof"]
 async fn native_foreground_records_fresh_and_exact_reuse_progress() -> TestResult<()> {
     measured_corpus(&[NativeScope::ForegroundFresh, NativeScope::ForegroundReuse]).await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD inputs, real grant expiry and exact-source P1 proof"]
+async fn native_foreground_records_retirement_fences_before_detach() -> TestResult<()> {
+    measured_selected_corpus(
+        &[NativeScope::ForegroundFresh, NativeScope::ForegroundReuse],
+        Corpus::Fences,
+    )
+    .await
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -906,7 +934,7 @@ async fn exercise_retirement(
                     rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
                 }, inputs, source: recovery_source.as_ref().ok_or_else(|| io::Error::other("native foreground source missing"))?,
                 proof, directory: paths.base_dir(), backing: backing.clone(), original_run: run_id,
-                fresh: matches!(scope, NativeScope::ForegroundFresh) }).await?;
+                fresh: matches!(scope, NativeScope::ForegroundFresh), fences: corpus == Corpus::Fences }).await?;
                 Ok(None)
             }
             NativeScope::Startup => {
