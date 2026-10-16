@@ -33,7 +33,7 @@ test("An unsupported schema is a stable update state while Activity Steps remain
   expect(fixture.requests).toHaveLength(0);
   click(filesTab("Steps"));
   await expect(
-    screen.findByText("Inspect sandbox files"),
+    screen.findByText("Inspect sandbox files", { selector: "summary span" }),
   ).resolves.toBeInTheDocument();
 });
 
@@ -53,7 +53,7 @@ test.each<Record<string, number>>([{}, { fs: 1 }, { fs: 3 }])(
     ).toBeInTheDocument();
     click(filesTab("Steps"));
     await expect(
-      screen.findByText("Inspect sandbox files"),
+      screen.findByText("Inspect sandbox files", { selector: "summary span" }),
     ).resolves.toBeInTheDocument();
   },
 );

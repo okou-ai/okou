@@ -4,7 +4,6 @@ import {
   type AttachmentPreviewSignals,
 } from "../attachment-resource-url.ts";
 import { command, computed, state, type Command, type Computed } from "ccstate";
-import { authenticatedSessionKey$ } from "../auth.ts";
 
 import {
   createArtifactCatalogSignals,
@@ -230,25 +229,21 @@ export interface ThreadSidebarSignals {
 }
 
 function createThreadSidebarSessionSignals(dispose$: Command<void, []>) {
-  const sessionKey$ = state<string | null>(null);
   const resetSidebarSessionSignal$ = resetSignal();
-  const startSession$ = command(
-    ({ get, set }, signal: AbortSignal): AbortSignal => {
-      signal.throwIfAborted();
-      set(sessionKey$, get(authenticatedSessionKey$));
-      set(dispose$);
-      const sessionSignal = set(resetSidebarSessionSignal$, signal);
-      sessionSignal.addEventListener(
-        "abort",
-        () => {
-          set(dispose$);
-        },
-        { once: true },
-      );
-      return sessionSignal;
-    },
-  );
-  return { sessionKey$, resetSidebarSessionSignal$, startSession$ };
+  const startSession$ = command(({ set }, signal: AbortSignal): AbortSignal => {
+    signal.throwIfAborted();
+    set(dispose$);
+    const sessionSignal = set(resetSidebarSessionSignal$, signal);
+    sessionSignal.addEventListener(
+      "abort",
+      () => {
+        set(dispose$);
+      },
+      { once: true },
+    );
+    return sessionSignal;
+  });
+  return { resetSidebarSessionSignal$, startSession$ };
 }
 
 export function createThreadSidebarSignals(
