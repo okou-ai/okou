@@ -5,13 +5,26 @@ use crate::error::{RunnerError, RunnerResult};
 use crate::network_log_drain::{DrainableLineReaderExit, NetworkLogDrainProducer};
 use runner_host::child_cleanup::kill_and_reap_child_on_drop;
 
+enum ChildCustody {
+    Owned(tokio::process::Child),
+    // An ordinary JoinHandle detaches on drop so physical cleanup survives
+    // cancellation of the owner or its stop observer.
+    Reaping(tokio::task::JoinHandle<std::io::Result<()>>),
+    Empty,
+}
+
+impl ChildCustody {
+    fn take(&mut self) -> Self {
+        std::mem::replace(self, Self::Empty)
+    }
+}
+
 /// Owns the common post-spawn lifecycle of a required network-log process.
 pub(crate) struct NetworkLogProcess {
     child_label: &'static str,
     cancel: CancellationToken,
     task: Option<tokio::task::JoinHandle<DrainableLineReaderExit>>,
-    child: Option<tokio::process::Child>,
-    child_cleanup: Option<tokio::task::JoinHandle<std::io::Result<()>>>,
+    child_custody: ChildCustody,
     #[cfg(any(test, feature = "test-support"))]
     reap_gate: Option<crate::test_fixtures::ReapGate>,
     drain: NetworkLogDrainProducer,
@@ -29,8 +42,7 @@ impl NetworkLogProcess {
             child_label,
             cancel,
             task: Some(task),
-            child: Some(child),
-            child_cleanup: None,
+            child_custody: ChildCustody::Owned(child),
             #[cfg(any(test, feature = "test-support"))]
             reap_gate: None,
             drain,
@@ -54,14 +66,18 @@ impl NetworkLogProcess {
     /// Transfer child cleanup without blocking lifecycle publication. The
     /// handle is joined by stop; dropping it leaves the reaper progressing.
     pub(crate) fn start_child_cleanup(&mut self) {
-        let Some(child) = self.child.take() else {
-            return;
+        let child = match self.child_custody.take() {
+            ChildCustody::Owned(child) => child,
+            custody => {
+                self.child_custody = custody;
+                return;
+            }
         };
         let pid = child.id();
         let mut reaper = runner_host::child_cleanup::ChildReaper::new(self.child_label, child);
         #[cfg(any(test, feature = "test-support"))]
         let gate = self.reap_gate.take();
-        self.child_cleanup = Some(tokio::spawn(
+        self.child_custody = ChildCustody::Reaping(tokio::spawn(
             async move {
                 reaper.start_kill();
                 #[cfg(any(test, feature = "test-support"))]
@@ -82,7 +98,7 @@ impl NetworkLogProcess {
     pub(crate) async fn stop(mut self) -> RunnerResult<()> {
         self.cancel.cancel();
         self.start_child_cleanup();
-        let child_result = if let Some(task) = self.child_cleanup.take() {
+        let child_result = if let ChildCustody::Reaping(task) = self.child_custody.take() {
             match task.await {
                 Ok(result) => result.map_err(|error| {
                     RunnerError::Internal(format!(
@@ -144,8 +160,7 @@ impl NetworkLogProcess {
                     }
                 }
             })),
-            child: None,
-            child_cleanup: None,
+            child_custody: ChildCustody::Empty,
             reap_gate: None,
             drain,
         }
@@ -202,7 +217,9 @@ impl NetworkLogProcess {
 
 impl Drop for NetworkLogProcess {
     fn drop(&mut self) {
-        kill_and_reap_child_on_drop(self.child_label, &mut self.child);
+        if let ChildCustody::Owned(child) = self.child_custody.take() {
+            kill_and_reap_child_on_drop(self.child_label, &mut Some(child));
+        }
         self.cancel.cancel();
         if let Some(task) = &self.task {
             task.abort();

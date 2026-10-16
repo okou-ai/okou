@@ -390,4 +390,58 @@ mod tests {
             "stopped DNS proxy should reap its child"
         );
     }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn repeated_child_cleanup_start_keeps_stop_joining_the_original_reaper() {
+        use runner_host::process::read_process_stat;
+        use std::time::Duration;
+
+        let child = tokio::process::Command::new("sleep")
+            .arg("60")
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let pid = child.id().unwrap();
+        let starttime = read_process_stat(pid).await.unwrap().starttime;
+        let mut proxy = DnsProxy::from_test_child(child, NetworkLogManager::new())
+            .await
+            .unwrap();
+        let gate = crate::test_fixtures::ReapGate::new();
+        proxy.set_reap_gate(gate.clone());
+
+        proxy.start_child_cleanup();
+        proxy.start_child_cleanup();
+        tokio::time::timeout(Duration::from_secs(2), gate.entered.notified())
+            .await
+            .expect("child cleanup should enter its reap gate");
+        assert!(matches!(
+            tokio::time::timeout(Duration::from_secs(2), proxy.wait())
+                .await
+                .expect("killed child's monitor should reach EOF")
+                .unwrap(),
+            DrainableLineReaderExit::Eof {
+                during_drain: false,
+            },
+        ));
+        proxy.start_child_cleanup();
+
+        let stop = proxy.stop();
+        tokio::pin!(stop);
+        assert!(
+            futures_util::poll!(&mut stop).is_pending(),
+            "stop must still join the original gated reaper after repeated starts",
+        );
+        gate.release.add_permits(1);
+        tokio::time::timeout(Duration::from_secs(2), stop)
+            .await
+            .expect("stop should finish after releasing the original reaper")
+            .unwrap();
+        assert_ne!(
+            read_process_stat(pid).await.map(|stat| stat.starttime),
+            Some(starttime),
+            "stop should reap the original child",
+        );
+    }
 }
