@@ -58,7 +58,7 @@ function actionOptionId(id: string): string {
  * the Workflows and Templates entries, then the workflow list the first one
  * opens with its New workflow and Manage workflows rows.
  */
-export function slashActionsLayout(actionCount: number, workflowCount: number) {
+function slashActionsLayout(actionCount: number, workflowCount: number) {
   const workflowsEntry = actionCount;
   const firstWorkflow = workflowsEntry + 2;
   return {
@@ -91,7 +91,7 @@ export interface SlashActionsOverview {
   readonly closeWorkflows: () => void;
 }
 
-export function useSlashActionsOverview({
+function useSlashActionsOverview({
   composer,
   actions,
   workflows,
