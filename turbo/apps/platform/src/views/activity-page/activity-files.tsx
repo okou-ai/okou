@@ -7,12 +7,14 @@ import { authenticatedSessionKey$ } from "../../signals/auth.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { currentRunId$ } from "../../signals/activity-page/activity-signals.ts";
 import { activityFiles } from "../../signals/activity-page/sandbox-files.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
 import { SandboxFilesBody } from "./sandbox-files.tsx";
 
 function ActivityFilesPanel() {
   const { t, i18n } = useTranslation();
   const mount = useSet(activityFiles.mount$);
   const close = useSet(activityFiles.close$);
+  const signal = useGet(pageSignal$);
   const title = t(($) => {
     return $.activity.detail.files.title;
   });
@@ -34,7 +36,9 @@ function ActivityFilesPanel() {
           type="button"
           variant="quiet"
           size="icon-sm"
-          onClick={close}
+          onClick={() => {
+            close(signal);
+          }}
           aria-label={t(
             ($) => {
               return $.artifacts.actions.closeNamed;

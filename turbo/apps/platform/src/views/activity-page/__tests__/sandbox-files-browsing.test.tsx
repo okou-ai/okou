@@ -6,6 +6,7 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   entry,
   filesButton,
+  filesTab,
   listing,
   openFiles,
   setupFilesPage,
@@ -97,9 +98,11 @@ test("Files connects on demand, supports browsing and releases on close", async 
   await expect(
     within(panel).findByText("inside.txt"),
   ).resolves.toBeInTheDocument();
-  click(filesButton("Close files", panel));
+  filesButton("Close files", panel).focus();
+  await userEvent.keyboard("{Enter}");
   await waitFor(() => {
     expect(screen.queryByRole("region", { name: "Files" })).toBeNull();
+    expect(filesTab("Steps")).toHaveFocus();
   });
   expect(fixture.sockets[0]?.readyState).toBe(WebSocket.CLOSED);
 });
