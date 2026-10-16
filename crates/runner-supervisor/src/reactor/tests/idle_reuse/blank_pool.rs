@@ -4,7 +4,6 @@ use super::super::support::{
     mock_run_config_with_overrides, push_job, seed_home_cache_state, seed_idle_pool_with_timing,
     shutdown, test_profiles, two_profiles, wait_budget_count, wait_idle_pool_len, wait_status_mode,
 };
-use super::blank_session_history::history_context;
 
 use crate::home_image_cache::HomeImageCache;
 use runner_host::paths::RunnerPaths;
@@ -330,16 +329,6 @@ async fn blank_backed_run_becomes_exact_reuse_and_wins_over_refilled_blank() {
 
 #[tokio::test]
 async fn blank_unpark_failure_falls_back_to_fresh_sandbox() {
-    use httpmock::prelude::*;
-
-    let server = MockServer::start_async().await;
-    let history = b"{\"type\":\"init\"}\n";
-    let history_mock = server
-        .mock_async(|when, then| {
-            when.method(GET).path("/history");
-            then.status(200).body(history);
-        })
-        .await;
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     let calls = Arc::clone(&overrides);
     overrides.push_unpark_result(Err(sandbox::SandboxError::IdleTransition {
@@ -354,7 +343,7 @@ async fn blank_unpark_failure_falls_back_to_fresh_sandbox() {
     let blank_sandbox_id = idle_pool.lock().await.status_snapshot().blank_sandboxes[0].sandbox_id;
 
     let run_id = RunId::new_v4();
-    let mut context = history_context(run_id, server.url("/history"), history);
+    let mut context = minimal_context(run_id);
     context.reuse_key = Some("session-blank-unpark-failure".into());
     push_job(&env, run_id, "vm0/default", Some(context));
     let completion = env
@@ -369,7 +358,6 @@ async fn blank_unpark_failure_falls_back_to_fresh_sandbox() {
     assert_eq!(calls.destroy_call_count(), 1);
 
     shutdown(&env, run_handle).await;
-    history_mock.assert_calls_async(1).await;
 }
 
 #[tokio::test(start_paused = true)]
@@ -723,16 +711,6 @@ async fn home_cache_hit_takes_priority_over_compatible_blank_inventory() {
 
 #[tokio::test]
 async fn claimed_home_cache_metadata_takes_priority_over_reserved_blank() {
-    use httpmock::prelude::*;
-
-    let server = MockServer::start_async().await;
-    let history = b"{\"type\":\"init\"}\n";
-    let history_mock = server
-        .mock_async(|when, then| {
-            when.method(GET).path("/history");
-            then.status(200).body(history);
-        })
-        .await;
     let mut profiles = test_profiles();
     profiles.get_mut("vm0/default").unwrap().home_disk_mb = 16;
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
@@ -761,7 +739,7 @@ async fn claimed_home_cache_metadata_takes_priority_over_reserved_blank() {
     let blank_sandbox_id = idle_pool.lock().await.status_snapshot().blank_sandboxes[0].sandbox_id;
 
     let run_id = RunId::new_v4();
-    let mut context = history_context(run_id, server.url("/history"), history);
+    let mut context = minimal_context(run_id);
     context.reuse_key = Some(reuse_key.into());
     env.provider.set_claim_result(run_id, Some(context));
     env.handle
@@ -787,5 +765,4 @@ async fn claimed_home_cache_metadata_takes_priority_over_reserved_blank() {
     );
 
     shutdown(&env, run_handle).await;
-    history_mock.assert_calls_async(1).await;
 }

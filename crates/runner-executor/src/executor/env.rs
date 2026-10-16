@@ -476,10 +476,10 @@ fn validate_pi_execution_context(context: &ExecutionContext) -> Result<(), Strin
         .as_ref()
         .ok_or_else(|| "Pi execution context is missing pi_model_config".to_string())?;
     validate_pi_model_config(model_config)?;
-    if let Some(resume) = &context.resume_session
-        && resume.cli_agent_session_id != session_id
+    if let Some(resume) = &context.local_resume_session_id
+        && resume != session_id
     {
-        return Err("Pi resume session id does not match pi_session_id".to_string());
+        return Err("Pi resume session id does not match pi_session_id".into());
     }
     Ok(())
 }
@@ -574,22 +574,27 @@ fn validate_bootstrap_environment_for_guest(
 }
 
 pub fn validate_resume_session_id(context: &ExecutionContext) -> Result<(), String> {
-    let Some(session) = &context.resume_session else {
+    let Some(session_id) = context
+        .native_continuation
+        .as_ref()
+        .and_then(|native| native.session_id.as_deref())
+        .or(context.local_resume_session_id.as_deref())
+    else {
         return Ok(());
     };
     match effective_cli_framework(&context.cli_agent_type) {
-        EffectiveCliFramework::Codex => canonical_codex_thread_id(&session.cli_agent_session_id)
+        EffectiveCliFramework::Codex => canonical_codex_thread_id(session_id)
             .map(|_| ())
             .ok_or_else(|| "invalid codex session_id".to_string()),
         EffectiveCliFramework::ClaudeCode => {
-            if is_valid_cli_agent_session_id(&session.cli_agent_session_id) {
+            if is_valid_cli_agent_session_id(session_id) {
                 Ok(())
             } else {
                 Err("invalid session_id".to_string())
             }
         }
         EffectiveCliFramework::Pi => {
-            if is_valid_cli_agent_session_id(&session.cli_agent_session_id) {
+            if is_valid_cli_agent_session_id(session_id) {
                 Ok(())
             } else {
                 Err("invalid pi session_id".to_string())
@@ -813,14 +818,14 @@ pub(super) fn build_env_json_with_host_env(
         );
     }
 
-    // Resume session ID
-    if let Some(session) = &context.resume_session {
+    // Standalone local submissions retain their explicit native resume input.
+    if let Some(session_id) = &context.local_resume_session_id {
         let session_id =
             if effective_cli_framework(&context.cli_agent_type) == EffectiveCliFramework::Codex {
-                canonical_codex_thread_id(&session.cli_agent_session_id)
+                canonical_codex_thread_id(session_id)
                     .ok_or_else(|| RunnerError::Internal("invalid codex session_id".into()))?
             } else {
-                session.cli_agent_session_id.clone()
+                session_id.clone()
             };
         env.insert(
             guest_contracts::env::CANONICAL_RESUME_SESSION_ID_ENV.into(),

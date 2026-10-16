@@ -534,23 +534,6 @@ fn masks_nested_json() {
 
 ## What to Test
 
-### Runner session-history overlap
-
-Exercise discovery and history planning through the full `run()` fixture in
-`runner-supervisor/src/reactor/tests/idle_reuse`. Use the external sandbox mock's
-`set_storage_manifest_lifecycle_gate` to hold storage apply and a controlled local
-HTTP response to hold history materialization. A received history request while
-storage is blocked proves automatic prestart; a manually constructed `Prestarted`
-plan does not cover that dispatch decision. Verify restored bytes and unchanged
-reuse attribution, and keep guest history writes and process start behind their
-required preparation boundaries.
-
-Use `RawHttpAction::WaitForDisconnect` when cancellation or an earlier preparation
-failure must release a pending download. Its bounded completion observes the
-client closing the request without making the response available. Synchronization
-deadlines bound test liveness; do not use elapsed-time thresholds to claim a
-performance improvement.
-
 ### General coverage
 
 - **Config parsing**: round-trip (generate → load), validation of invalid inputs

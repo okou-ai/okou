@@ -5326,7 +5326,6 @@ function buildStoredExecutionContextDraft(
       platformEnvironment,
       secretValueEnvironmentKeys,
       vars: args.environment.vars ?? null,
-      resumeSession: null,
       nativeContinuation: args.resolved.nativeContinuation ?? {
         sessionId: null,
         generationRunId: null,
@@ -5480,7 +5479,6 @@ function assembleRunnerLaunch(args: {
   const cliAgentSessionId =
     storedContext.piSessionId ??
     storedContext.nativeContinuation?.sessionId ??
-    storedContext.resumeSession?.sessionId ??
     null;
   return {
     runnerJobPayload: runnerJobPayload({
@@ -6081,7 +6079,6 @@ function buildRunContextSnapshot(args: {
   const cliAgentSessionId =
     storedContext.piSessionId ??
     storedContext.nativeContinuation?.sessionId ??
-    storedContext.resumeSession?.sessionId ??
     null;
   const snapshot: RunContextAxiomSnapshot = {
     _time: nowDate().toISOString(),

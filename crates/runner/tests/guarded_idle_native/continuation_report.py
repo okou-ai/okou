@@ -18,7 +18,7 @@ CASES = {f"Continuation{scope}-{mode}" for scope in
 PHASES = ("original_executor_completed", "scenario_observed",
           "continued_executor_completed", "continued_saving_completed")
 THREAD = "019e9154-c304-70f0-adde-36efb1be1701"
-SEED = pathlib.Path(__file__).with_name("continuation_history.jsonl").read_bytes()
+SEED = b""
 SEED_HASH = hashlib.sha256(SEED).hexdigest()
 
 
@@ -84,7 +84,7 @@ def validate(directory):
         new_ids.add(incoming)
         home = (run.encode()*2048)[:65536]
         home_hash = hashlib.sha256(home).hexdigest()
-        if (original.get("thread_id") != THREAD or continued.get("thread_id") != THREAD
+        if (canonical(original.get("thread_id")) != canonical(continued.get("thread_id"))
                 or original.get("seed_history_sha256") != SEED_HASH
                 or type(original.get("seed_history_bytes")) is not int
                 or original["seed_history_bytes"] != len(SEED)):

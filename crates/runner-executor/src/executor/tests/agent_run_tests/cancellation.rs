@@ -4,9 +4,6 @@ use std::time::Duration;
 use sandbox::{ProcessExit, ProcessOutputChunk};
 use sandbox_mock::MockLifecycleGate;
 use sha2::{Digest, Sha256};
-use tokio::io::AsyncReadExt;
-use tokio::net::TcpListener;
-use tokio::sync::oneshot;
 use tracing::Level;
 use tracing_subscriber::prelude::*;
 use tracing_test_support::CapturedEvents;
@@ -21,14 +18,10 @@ use crate::executor::tests::support::{
 };
 use crate::executor::{
     EXIT_SIGKILL, PROCESS_CANCEL_TIMEOUTS, PROCESS_CANCEL_WRITE_TIMEOUT, SandboxReuseDisposition,
-    SandboxReuseRejection, SandboxReuseTerminal, SessionHistoryMaterializer,
-    SessionHistoryRestorePlan, effective_cli_framework,
+    SandboxReuseRejection, SandboxReuseTerminal,
 };
 use runner_provider::RunCancellationHandle;
-use runner_types::types::{
-    ResumeSession, ResumeSessionHistory, ResumeSessionHistoryEncoding, ResumeSessionHistoryRef,
-    ResumeSessionHistoryRefKind, SandboxReuseResult,
-};
+use runner_types::types::SandboxReuseResult;
 
 #[tokio::test]
 async fn closed_cooperative_control_retains_oom_without_changing_terminal_confirmation() {
@@ -229,100 +222,6 @@ async fn run_in_sandbox_preserves_wait_result_when_cancel_arrives_after_wait() {
             stream_incomplete: false,
         }
     );
-}
-
-#[tokio::test]
-async fn run_in_sandbox_reports_cancelled_while_session_history_download_is_pending() {
-    let dir = tempfile::tempdir().unwrap();
-    let config = test_executor_config(dir.path()).await;
-    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
-    let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    let (request_received_tx, request_received_rx) = oneshot::channel();
-    let server = tokio::spawn(async move {
-        let (mut stream, _) = listener.accept().await.unwrap();
-        let mut request = [0u8; 1024];
-        let request_bytes = stream.read(&mut request).await.unwrap();
-        assert!(request_bytes > 0);
-        request_received_tx.send(()).unwrap();
-        let mut byte = [0u8; 1];
-        let closed = stream.read(&mut byte).await.unwrap();
-        assert_eq!(closed, 0);
-    });
-    let history = br#"{"type":"init"}"#;
-    let mut ctx = minimal_context();
-    ctx.resume_session = Some(ResumeSession {
-        cli_agent_session_id: "sess-cancel-pending-123".into(),
-        history: ResumeSessionHistory::Ref {
-            history_ref: ResumeSessionHistoryRef {
-                kind: ResumeSessionHistoryRefKind::Blob,
-                hash: hex::encode(Sha256::digest(history)),
-                url: format!("http://{address}/history.blob?token=secret"),
-                encoding: ResumeSessionHistoryEncoding::Identity,
-                raw_size: history.len() as u64,
-                encoded_size: history.len() as u64,
-                download_source: None,
-            },
-        },
-    });
-    // Production materializers receive a child of the run token. Keep the
-    // tokens independent here so the inner cancellation result deterministically
-    // reaches the result-first pre-spawn branch instead of racing the outer
-    // cancellation branch.
-    let materializer_cancel = tokio_util::sync::CancellationToken::new();
-    let materializer = SessionHistoryMaterializer::start_cancellable(
-        &config.http,
-        &config.session_history_cpu,
-        ctx.resume_session.as_ref(),
-        effective_cli_framework(&ctx.cli_agent_type),
-        materializer_cancel.clone(),
-        Some(&config.session_history_probe),
-    );
-    let run_task = tokio::spawn(async move {
-        let mut telemetry = test_telemetry(&config, &ctx);
-        run_in_sandbox(
-            &*sandbox,
-            &ctx,
-            &config,
-            RunStart {
-                sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
-                restore_guest_state: false,
-                reuse_result: SandboxReuseResult::PoolMiss,
-                home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
-                prev_storage: None,
-            },
-            &mut telemetry,
-            RunControls::new(tokio_util::sync::CancellationToken::new(), None)
-                .with_session_history_restore_plan(SessionHistoryRestorePlan::Prestarted {
-                    materializer,
-                    fallback: None,
-                }),
-        )
-        .await
-    });
-
-    tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, request_received_rx)
-        .await
-        .expect("session history request should start")
-        .unwrap();
-    materializer_cancel.cancel();
-
-    let result = tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, run_task)
-        .await
-        .expect("cancelled run should finish")
-        .unwrap()
-        .unwrap();
-    tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, server)
-        .await
-        .expect("session history server should observe disconnect")
-        .unwrap();
-
-    let failure = result.failure.expect("cancelled run should fail");
-    assert_eq!(failure.exit_code, EXIT_SIGKILL);
-    assert_eq!(failure.error, "cancelled by user");
-    assert!(overrides.start_agent_process_calls().is_empty());
-    assert!(overrides.wait_process_calls().is_empty());
 }
 
 #[tokio::test]

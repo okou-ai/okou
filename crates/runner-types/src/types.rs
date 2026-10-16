@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
-use std::sync::Arc;
 
 use api_contracts::generated::types::runners::runs::CodexRuntimeConfig;
 use api_contracts::generated::types::webhooks::agent::complete::RequestFailureReason;
@@ -90,14 +89,15 @@ pub struct ExecutionContext {
     pub environment: Option<HashMap<String, String>>,
     /// Trusted API-authored agent environment.
     pub platform_environment: HashMap<String, String>,
-    #[serde(default)]
-    pub resume_session: Option<ResumeSession>,
     /// Native-only continuation from the intended Thread's retained home.
     #[serde(default)]
     pub native_continuation: Option<guest_contracts::env::NativeContinuation>,
     // Plain secret values used only for redaction. These are values, not names.
     #[serde(default)]
     pub secret_values: Option<Vec<String>>,
+    /// Standalone local submissions may resume native files without an API claim.
+    #[serde(default, skip)]
+    pub local_resume_session_id: Option<String>,
     // Local submit may explicitly allow raw provider secrets for local-only
     // runner testing. This marker is internal and must not be claimable via API JSON.
     #[serde(default, skip)]
@@ -1554,110 +1554,6 @@ pub struct ConnectorRuntimeSyncBatchResponse {
     pub results: Vec<ConnectorRuntimeSyncResult>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ResumeSession {
-    #[serde(rename = "sessionId")]
-    pub cli_agent_session_id: String,
-    #[serde(flatten)]
-    pub history: ResumeSessionHistory,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(untagged)]
-pub enum ResumeSessionHistory {
-    Inline {
-        #[serde(rename = "sessionHistory")]
-        #[serde(deserialize_with = "deserialize_shared_string")]
-        session_history: Arc<String>,
-    },
-    Ref {
-        #[serde(rename = "historyRef")]
-        history_ref: ResumeSessionHistoryRef,
-    },
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ResumeSessionHistoryRef {
-    pub kind: ResumeSessionHistoryRefKind,
-    pub hash: String,
-    pub url: String,
-    pub encoding: ResumeSessionHistoryEncoding,
-    #[serde(rename = "rawSize")]
-    pub raw_size: u64,
-    #[serde(rename = "encodedSize")]
-    pub encoded_size: u64,
-    #[serde(rename = "downloadSource", default)]
-    pub download_source: Option<ResumeSessionHistoryDownloadSource>,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
-pub enum ResumeSessionHistoryRefKind {
-    #[serde(rename = "blob")]
-    Blob,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq)]
-pub enum ResumeSessionHistoryEncoding {
-    #[serde(rename = "identity")]
-    Identity,
-    #[serde(rename = "gzip")]
-    Gzip,
-    #[serde(rename = "zstd")]
-    Zstd,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
-pub enum ResumeSessionHistoryDownloadSource {
-    #[serde(rename = "configured_public_endpoint")]
-    ConfiguredPublicEndpoint,
-    #[serde(rename = "default_r2_endpoint")]
-    DefaultR2Endpoint,
-    #[serde(other)]
-    Unknown,
-}
-
-impl ResumeSession {
-    pub fn inline(cli_agent_session_id: String, session_history: String) -> Self {
-        Self {
-            cli_agent_session_id,
-            history: ResumeSessionHistory::Inline {
-                session_history: Arc::new(session_history),
-            },
-        }
-    }
-
-    #[cfg(test)]
-    pub fn session_history(&self) -> Option<&str> {
-        match &self.history {
-            ResumeSessionHistory::Inline { session_history } => Some(session_history),
-            ResumeSessionHistory::Ref { .. } => None,
-        }
-    }
-
-    pub fn shared_session_history(&self) -> Option<Arc<String>> {
-        match &self.history {
-            ResumeSessionHistory::Inline { session_history } => Some(Arc::clone(session_history)),
-            ResumeSessionHistory::Ref { .. } => None,
-        }
-    }
-
-    pub fn history_ref(&self) -> Option<&ResumeSessionHistoryRef> {
-        match &self.history {
-            ResumeSessionHistory::Inline { .. } => None,
-            ResumeSessionHistory::Ref { history_ref } => Some(history_ref),
-        }
-    }
-}
-
-fn deserialize_shared_string<'de, D>(deserializer: D) -> Result<Arc<String>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    String::deserialize(deserializer).map(Arc::new)
-}
-
 impl ExecutionContext {
     pub fn reuse_key(&self) -> Option<&str> {
         self.reuse_key.as_deref()
@@ -1666,9 +1562,9 @@ impl ExecutionContext {
     /// Extract the framework-native session id.
     ///
     /// Prefers native continuation identity, then `pi_session_id`, then the
-    /// captured legacy resume-session id.
+    /// standalone local resume id.
     /// Pi session ids are preassigned, including on first runs without a
-    /// `resume_session`, so `Some` does not imply a continued session.
+    /// retained history, so `Some` does not imply a continued session.
     ///
     /// Returns `None` only when neither source supplies an id. In that case,
     /// the executor reads the CLI-generated session id from the guest filesystem
@@ -1678,11 +1574,7 @@ impl ExecutionContext {
             .as_ref()
             .and_then(|native| native.session_id.as_deref())
             .or(self.pi_session_id.as_deref())
-            .or_else(|| {
-                self.resume_session
-                    .as_ref()
-                    .map(|r| r.cli_agent_session_id.as_str())
-            })
+            .or(self.local_resume_session_id.as_deref())
     }
 }
 
@@ -1696,63 +1588,6 @@ pub struct ReusableSandboxState {
     pub profile: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub history_generation_run_id: Option<RunId>,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub enum SessionHistorySizeBucket {
-    #[serde(rename = "lt_64_kib")]
-    LessThan64Kib,
-    #[serde(rename = "64_256_kib")]
-    From64To256Kib,
-    #[serde(rename = "256_kib_1_mib")]
-    From256KibTo1Mib,
-    #[serde(rename = "1_4_mib")]
-    From1To4Mib,
-    #[serde(rename = "4_16_mib")]
-    From4To16Mib,
-    #[serde(rename = "16_64_mib")]
-    From16To64Mib,
-    #[serde(rename = "64_128_mib")]
-    From64To128Mib,
-}
-
-impl SessionHistorySizeBucket {
-    pub const fn from_size(size: u64) -> Self {
-        const SIZE_64_KIB: u64 = 64 * 1024;
-        const SIZE_256_KIB: u64 = 256 * 1024;
-        const SIZE_1_MIB: u64 = 1024 * 1024;
-        const SIZE_4_MIB: u64 = 4 * SIZE_1_MIB;
-        const SIZE_16_MIB: u64 = 16 * SIZE_1_MIB;
-        const SIZE_64_MIB: u64 = 64 * SIZE_1_MIB;
-
-        if size < SIZE_64_KIB {
-            Self::LessThan64Kib
-        } else if size < SIZE_256_KIB {
-            Self::From64To256Kib
-        } else if size < SIZE_1_MIB {
-            Self::From256KibTo1Mib
-        } else if size < SIZE_4_MIB {
-            Self::From1To4Mib
-        } else if size < SIZE_16_MIB {
-            Self::From4To16Mib
-        } else if size < SIZE_64_MIB {
-            Self::From16To64Mib
-        } else {
-            Self::From64To128Mib
-        }
-    }
-
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::LessThan64Kib => "lt_64_kib",
-            Self::From64To256Kib => "64_256_kib",
-            Self::From256KibTo1Mib => "256_kib_1_mib",
-            Self::From1To4Mib => "1_4_mib",
-            Self::From4To16Mib => "4_16_mib",
-            Self::From16To64Mib => "16_64_mib",
-            Self::From64To128Mib => "64_128_mib",
-        }
-    }
 }
 
 /// Reusable sandbox state keyed by the runner-owned reuse identity.
@@ -2020,7 +1855,6 @@ mod tests {
             context.pi_session_id.as_deref(),
             Some("22222222-2222-4222-8222-222222222222")
         );
-        assert!(context.resume_session.is_none());
         assert_eq!(
             context.cli_agent_session_id(),
             Some("22222222-2222-4222-8222-222222222222")
@@ -2503,167 +2337,15 @@ mod tests {
     }
 
     #[test]
-    fn cli_agent_session_id_returns_id_from_resume_session() {
-        let json = json!({
-            "runId": "550e8400-e29b-41d4-a716-446655440000",
-            "prompt": "hello",
-            "sandboxToken": "tok",
-            "cliAgentType": "claude_code",
-            "resumeSession": {
-                "sessionId": "sess-abc-123",
-                "sessionHistory": "{}"
-            },
-            "billableFirewalls": [],
-            "platformEnvironment": {},
-            "connectorRuntimeTargets": []
-        });
-        let ctx: ExecutionContext = serde_json::from_value(json).unwrap();
-        assert_eq!(ctx.cli_agent_session_id(), Some("sess-abc-123"));
-        assert_eq!(
-            ctx.resume_session.as_ref().unwrap().session_history(),
-            Some("{}")
-        );
-        let session = ctx.resume_session.as_ref().unwrap();
-        let first = session.shared_session_history().unwrap();
-        let second = session.shared_session_history().unwrap();
-        assert!(Arc::ptr_eq(&first, &second));
-    }
-
-    #[test]
-    fn cli_agent_session_id_returns_id_from_resume_session_history_ref() {
-        let json = json!({
-            "runId": "550e8400-e29b-41d4-a716-446655440000",
-            "prompt": "hello",
-            "sandboxToken": "tok",
-            "cliAgentType": "claude_code",
-            "resumeSession": {
-                "sessionId": "sess-ref-123",
-                "historyRef": {
-                    "kind": "blob",
-                    "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                    "url": "https://r2.example.com/blobs/a.blob?sig=secret",
-                    "encoding": "identity",
-                    "rawSize": 42,
-                    "encodedSize": 42
-                }
-            },
-            "billableFirewalls": [],
-            "platformEnvironment": {},
-            "connectorRuntimeTargets": []
-        });
-        let ctx: ExecutionContext = serde_json::from_value(json).unwrap();
-        let session = ctx.resume_session.as_ref().unwrap();
-        let history_ref = session.history_ref().unwrap();
-        assert_eq!(ctx.cli_agent_session_id(), Some("sess-ref-123"));
-        assert!(session.session_history().is_none());
-        assert_eq!(history_ref.kind, ResumeSessionHistoryRefKind::Blob);
-        assert_eq!(history_ref.encoding, ResumeSessionHistoryEncoding::Identity);
-        assert_eq!(history_ref.raw_size, 42);
-        assert_eq!(history_ref.encoded_size, 42);
-    }
-
-    #[test]
-    fn cli_agent_session_id_returns_id_from_gzip_resume_session_history_ref() {
-        let json = json!({
-            "runId": "550e8400-e29b-41d4-a716-446655440000",
-            "prompt": "hello",
-            "sandboxToken": "tok",
-            "cliAgentType": "claude_code",
-            "resumeSession": {
-                "sessionId": "sess-ref-123",
-                "historyRef": {
-                    "kind": "blob",
-                    "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                    "url": "https://r2.example.com/blobs/a.blob.gz?sig=secret",
-                    "encoding": "gzip",
-                    "rawSize": 42,
-                    "encodedSize": 24,
-                    "downloadSource": "configured_public_endpoint"
-                }
-            },
-            "billableFirewalls": [],
-            "platformEnvironment": {},
-            "connectorRuntimeTargets": []
-        });
-        let ctx: ExecutionContext = serde_json::from_value(json).unwrap();
-        let session = ctx.resume_session.as_ref().unwrap();
-        let history_ref = session.history_ref().unwrap();
-        assert_eq!(ctx.cli_agent_session_id(), Some("sess-ref-123"));
-        assert!(session.session_history().is_none());
-        assert_eq!(history_ref.kind, ResumeSessionHistoryRefKind::Blob);
-        assert_eq!(history_ref.encoding, ResumeSessionHistoryEncoding::Gzip);
-        assert_eq!(history_ref.raw_size, 42);
-        assert_eq!(history_ref.encoded_size, 24);
-        assert_eq!(
-            history_ref.download_source,
-            Some(ResumeSessionHistoryDownloadSource::ConfiguredPublicEndpoint)
-        );
-    }
-
-    #[test]
-    fn cli_agent_session_id_tolerates_unknown_resume_session_history_download_source() {
-        let json = json!({
-            "runId": "550e8400-e29b-41d4-a716-446655440000",
-            "prompt": "hello",
-            "sandboxToken": "tok",
-            "cliAgentType": "claude_code",
-            "resumeSession": {
-                "sessionId": "sess-ref-123",
-                "historyRef": {
-                    "kind": "blob",
-                    "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                    "url": "https://r2.example.com/blobs/a.blob.gz?sig=secret",
-                    "encoding": "gzip",
-                    "rawSize": 42,
-                    "encodedSize": 24,
-                    "downloadSource": "future_edge_cache"
-                }
-            },
-            "billableFirewalls": [],
-            "platformEnvironment": {},
-            "connectorRuntimeTargets": []
-        });
-        let ctx: ExecutionContext = serde_json::from_value(json).unwrap();
-        let session = ctx.resume_session.as_ref().unwrap();
-        let history_ref = session.history_ref().unwrap();
-        assert_eq!(ctx.cli_agent_session_id(), Some("sess-ref-123"));
-        assert_eq!(
-            history_ref.download_source,
-            Some(ResumeSessionHistoryDownloadSource::Unknown)
-        );
-    }
-
-    #[test]
-    fn cli_agent_session_id_returns_id_from_zstd_resume_session_history_ref() {
-        let json = json!({
-            "runId": "550e8400-e29b-41d4-a716-446655440000",
-            "prompt": "hello",
-            "sandboxToken": "tok",
-            "cliAgentType": "claude_code",
-            "resumeSession": {
-                "sessionId": "sess-ref-123",
-                "historyRef": {
-                    "kind": "blob",
-                    "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                    "url": "https://r2.example.com/blobs/a.blob.zst?sig=secret",
-                    "encoding": "zstd",
-                    "rawSize": 42,
-                    "encodedSize": 18
-                }
-            },
-            "billableFirewalls": [],
-            "platformEnvironment": {},
-            "connectorRuntimeTargets": []
-        });
-        let ctx: ExecutionContext = serde_json::from_value(json).unwrap();
-        let session = ctx.resume_session.as_ref().unwrap();
-        let history_ref = session.history_ref().unwrap();
-        assert_eq!(ctx.cli_agent_session_id(), Some("sess-ref-123"));
-        assert!(session.session_history().is_none());
-        assert_eq!(history_ref.kind, ResumeSessionHistoryRefKind::Blob);
-        assert_eq!(history_ref.encoding, ResumeSessionHistoryEncoding::Zstd);
-        assert_eq!(history_ref.raw_size, 42);
-        assert_eq!(history_ref.encoded_size, 18);
+    fn cli_agent_session_identity_uses_native_intent_and_local_submission() {
+        let mut context: ExecutionContext = serde_json::from_value(json!({
+            "runId": "550e8400-e29b-41d4-a716-446655440000", "prompt": "hello", "sandboxToken": "tok", "cliAgentType": "claude-code", "platformEnvironment": {}, "connectorRuntimeTargets": [],
+            "nativeContinuation": { "sessionId": "native-session", "generationRunId": "550e8400-e29b-41d4-a716-446655440001", "recoveryPrompt": null }
+        })).unwrap();
+        assert_eq!(context.cli_agent_session_id(), Some("native-session"));
+        context.native_continuation = None;
+        context.local_resume_session_id = Some("local-session".into());
+        assert_eq!(context.cli_agent_session_id(), Some("local-session"));
     }
 
     fn execution_context_with_storage_manifest(

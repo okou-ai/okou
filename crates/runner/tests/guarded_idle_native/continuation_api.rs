@@ -1,16 +1,13 @@
-//! Invocation-owned synthetic history/storage/finalization peer for real Guests.
+//! Invocation-owned storage and native completion peer for real Guests.
 
 use std::{
     collections::HashMap,
     convert::Infallible,
-    io::Read,
     net::Ipv4Addr,
     sync::{Arc, Mutex},
 };
 
-use api_contracts::generated::types::webhooks::agent::{
-    session_history::prepare as history, storages,
-};
+use api_contracts::generated::types::webhooks::agent::storages;
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full, Limited};
 use hyper::{Method, Request, Response, StatusCode, body::Incoming, service::service_fn};
@@ -27,19 +24,16 @@ const MAX_HISTORY: u64 = 4 * 1024 * 1024;
 
 #[derive(Default)]
 struct Ledger {
-    histories: HashMap<String, Vec<u8>>,
-    history_preparations: HashMap<String, history::Request>,
     storage_preparations: HashMap<String, storages::prepare::Request>,
     uploads: HashMap<String, Vec<u8>>,
     completions: HashMap<String, Value>,
-    history_reads: usize,
+    latest_run: Option<String>,
     runner_heartbeats: Vec<Value>,
     errors: Vec<String>,
 }
 
 enum Reply {
     Json(Value),
-    Raw(Vec<u8>),
     Empty,
 }
 
@@ -111,16 +105,6 @@ impl Api {
         })
     }
 
-    pub fn history_url(&self, bytes: &[u8]) -> TestResult<String> {
-        let hash = hex::encode(Sha256::digest(bytes));
-        self.ledger
-            .lock()
-            .map_err(|_| io::Error::other("native API ledger poisoned"))?
-            .histories
-            .insert(hash.clone(), bytes.to_vec());
-        Ok(format!("{}/history/{hash}", self.url))
-    }
-
     pub fn runner_heartbeats(&self) -> TestResult<Vec<Value>> {
         let state = self
             .ledger
@@ -132,37 +116,25 @@ impl Api {
         Ok(state.runner_heartbeats.clone())
     }
 
-    pub fn finalized_history(&self, run: &str, thread: &str) -> TestResult<Vec<u8>> {
+    pub fn session(&self, run: Option<&str>) -> TestResult<(String, String)> {
         let state = self
             .ledger
             .lock()
             .map_err(|_| io::Error::other("native API ledger poisoned"))?;
-        if !state.errors.is_empty() || state.history_reads == 0 {
-            return Err(io::Error::other(format!(
-                "native service did not complete real history work: {:?}",
-                state.errors
-            ))
-            .into());
+        if !state.errors.is_empty() {
+            return Err(io::Error::other("native API peer has errors").into());
         }
-        let complete = state
+        let run = run
+            .or(state.latest_run.as_deref())
+            .ok_or_else(|| io::Error::other("native completion missing"))?;
+        let id = state
             .completions
             .get(run)
-            .ok_or_else(|| io::Error::other("native completion was not acknowledged"))?;
-        let completion = complete
-            .get("completion")
-            .ok_or_else(|| io::Error::other("native completion has no session"))?;
-        if completion.get("cliAgentSessionId").and_then(Value::as_str) != Some(thread) {
-            return Err(io::Error::other("native completion changed the original thread").into());
-        }
-        let hash = completion
-            .get("cliAgentSessionHistoryHash")
+            .and_then(|c| c.pointer("/completion/cliAgentSessionId"))
             .and_then(Value::as_str)
-            .ok_or_else(|| io::Error::other("native completion has no complete history hash"))?;
-        state
-            .histories
-            .get(hash)
-            .cloned()
-            .ok_or_else(|| io::Error::other("complete native history was not uploaded").into())
+            .ok_or_else(|| io::Error::other("native completion session missing"))?;
+        uuid::Uuid::parse_str(id)?;
+        Ok((id.into(), run.into()))
     }
 
     pub async fn finish(self) -> TestResult<()> {
@@ -193,26 +165,6 @@ async fn respond(
         let bytes = Limited::new(body, MAX_HISTORY as usize).collect().await?.to_bytes();
         let path = parts.uri.path();
         let mut state = ledger.lock().map_err(|_| io::Error::other("native API ledger poisoned"))?;
-        if parts.method == Method::GET && let Some(hash) = path.strip_prefix("/history/") {
-            let bytes = state.histories.get(hash).cloned().ok_or_else(|| io::Error::other("unknown original history"))?;
-            state.history_reads += 1;
-            return Ok(Reply::Raw(bytes));
-        }
-        if parts.method == Method::PUT && let Some(run) = path.strip_prefix("/history-upload/") {
-            let prepared = state.history_preparations.get(run).ok_or_else(|| io::Error::other("history upload was not prepared"))?;
-            let mut raw = Vec::new();
-            match prepared.encoding {
-                None | Some(history::SessionHistoryEncoding::Identity) => raw.extend_from_slice(&bytes),
-                Some(history::SessionHistoryEncoding::Gzip) => { flate2::read::GzDecoder::new(bytes.as_ref()).take(MAX_HISTORY + 1).read_to_end(&mut raw)?; }
-                Some(history::SessionHistoryEncoding::Zstd) => { zstd::stream::read::Decoder::new(bytes.as_ref())?.take(MAX_HISTORY + 1).read_to_end(&mut raw)?; }
-            }
-            let hash = hex::encode(Sha256::digest(&raw));
-            if prepared.hash != hash || prepared.raw_size != raw.len() as u64
-                || prepared.encoded_size != bytes.len() as u64
-            { return Err(io::Error::other("complete uploaded history differs from preparation").into()); }
-            state.histories.insert(hash, raw);
-            return Ok(Reply::Json(json!({})));
-        }
         if parts.method == Method::PUT && let Some(key) = path.strip_prefix("/storage-upload/") {
             state.uploads.insert(key.to_string(), bytes.to_vec());
             return Ok(Reply::Json(json!({})));
@@ -245,23 +197,11 @@ async fn respond(
         let run = value.get("runId").and_then(Value::as_str).ok_or_else(|| io::Error::other("native request has no original run"))?.to_string();
         uuid::Uuid::parse_str(&run)?;
         match path {
-            "/api/webhooks/agent/session-history/prepare" => {
-                let typed: history::Request = serde_json::from_value(value)?;
-                if typed.raw_size == 0 || typed.raw_size > MAX_HISTORY || typed.hash.len() != 64 {
-                    return Err(io::Error::other("invalid native history preparation").into());
-                }
-                let response = serde_json::to_value(history::Response {
-                    existing: false, presigned_url: Some(format!("{base}/history-upload/{run}")), encoding: typed.encoding,
-                })?;
-                state.history_preparations.insert(run, typed);
-                Ok(Reply::Json(response))
-            }
             "/api/webhooks/agent/complete" => {
-                let hash = value.pointer("/completion/cliAgentSessionHistoryHash").and_then(Value::as_str)
-                    .ok_or_else(|| io::Error::other("native completion has no history identity"))?;
-                if !state.histories.contains_key(hash) || !value.get("exitCode").is_some_and(Value::is_i64) {
-                    return Err(io::Error::other("native completion precedes complete history upload").into());
+                if value.pointer("/completion/cliAgentSessionHistoryDisposition").and_then(Value::as_str) != Some("native_only") || !value.get("exitCode").is_some_and(Value::is_i64) {
+                    return Err(io::Error::other("native completion is missing current identity metadata").into());
                 }
+                state.latest_run = Some(run.clone());
                 let status = if value.get("exitCode").and_then(Value::as_i64) == Some(0) {"completed"} else {"failed"};
                 state.completions.insert(run, value);
                 Ok(Reply::Json(json!({"success": true, "status": status})))
@@ -290,7 +230,6 @@ async fn respond(
         }
     }.await;
     let encoded = match result {
-        Ok(Reply::Raw(bytes)) => Ok((StatusCode::OK, bytes)),
         Ok(Reply::Empty) => Ok((StatusCode::NO_CONTENT, Vec::new())),
         Ok(Reply::Json(value)) => serde_json::to_vec(&value)
             .map(|bytes| (StatusCode::OK, bytes))

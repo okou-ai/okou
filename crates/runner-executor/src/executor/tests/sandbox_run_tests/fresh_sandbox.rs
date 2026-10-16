@@ -1,7 +1,7 @@
 use super::*;
 use crate::error::RunnerError;
 use crate::executor::tests::support::RUN_IN_SANDBOX_TEST_TIMEOUT;
-use crate::executor::{SandboxReuseDisposition, SandboxReuseTerminal, SessionHistoryRestorePlan};
+use crate::executor::{SandboxReuseDisposition, SandboxReuseTerminal};
 use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer};
 
 use std::future::Future;
@@ -9,12 +9,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use async_trait::async_trait;
-use runner_types::types::{
-    ResumeSessionHistory, ResumeSessionHistoryEncoding, ResumeSessionHistoryRef,
-    ResumeSessionHistoryRefKind,
-};
 use sandbox::SandboxConfig;
-use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
 fn assert_future_pending<T>(future: Pin<&mut impl Future<Output = T>>) {
@@ -1338,8 +1333,6 @@ async fn execute_new_sandbox_drains_pending_downloads_on_terminal_prepare_failur
         let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
         let mut archive_server =
             RawHttpTestServer::spawn(vec![RawHttpAction::WaitForDisconnect]).await;
-        let mut history_server =
-            RawHttpTestServer::spawn(vec![RawHttpAction::WaitForDisconnect]).await;
         let archive = storage_archive(b"pending storage");
         let mut storage = api_storage(
             "pending-storage",
@@ -1348,26 +1341,12 @@ async fn execute_new_sandbox_drains_pending_downloads_on_terminal_prepare_failur
             &format!("{}/storage.tar.gz", archive_server.url()),
         );
         storage.archive_size = Some(archive.len() as u64);
-        let history = br#"{"type":"init"}"#;
         let mut ctx = minimal_context();
         ctx.storage_manifest = Some(StorageManifest {
             storages: vec![storage],
             artifacts: Vec::new(),
         });
-        ctx.resume_session = Some(ResumeSession {
-            cli_agent_session_id: "sess-terminal-prepare".into(),
-            history: ResumeSessionHistory::Ref {
-                history_ref: ResumeSessionHistoryRef {
-                    kind: ResumeSessionHistoryRefKind::Blob,
-                    hash: hex::encode(Sha256::digest(history)),
-                    url: format!("{}/history.blob", history_server.url()),
-                    encoding: ResumeSessionHistoryEncoding::Identity,
-                    raw_size: history.len() as u64,
-                    encoded_size: history.len() as u64,
-                    download_source: None,
-                },
-            },
-        });
+
         let params = default_params();
         let mut telemetry = test_telemetry(&config, &ctx);
         let result = tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, async {
@@ -1383,24 +1362,19 @@ async fn execute_new_sandbox_drains_pending_downloads_on_terminal_prepare_failur
                 &mut telemetry,
                 NewSandboxHooks {
                     preparation: crate::executor::sandbox_run::FreshPreparation::Initial,
-                    controls: RunControls::new(CancellationToken::new(), None)
-                        .with_session_history_restore_plan(
-                            SessionHistoryRestorePlan::DeferredHashBacked { fallback: None },
-                        ),
+                    controls: RunControls::new(CancellationToken::new(), None),
                     prepared_run_payload: prepare_run_payload_for_run(&ctx).unwrap(),
                     sandbox_prepared: None,
                 },
             );
             tokio::pin!(execution);
             tokio::select! {
-                _ = &mut execution => panic!("preparation escaped before both downloads started"),
+                _ = &mut execution => panic!("preparation escaped before storage download started"),
                 () = async {
                     create_gate.wait_entered(1, RUN_IN_SANDBOX_TEST_TIMEOUT)
                         .await.expect("sandbox create must enter its gate");
                     assert!(archive_server.next_request("pending storage download").await
                         .starts_with("GET /storage.tar.gz "));
-                    assert!(history_server.next_request("pending history download").await
-                        .starts_with("GET /history.blob "));
                 } => {}
             }
             let probe_cancel = CancellationToken::new();
@@ -1421,7 +1395,7 @@ async fn execute_new_sandbox_drains_pending_downloads_on_terminal_prepare_failur
             result
         })
         .await
-        .expect("terminal preparation must retire both pending downloads");
+        .expect("terminal preparation must retire the pending storage download");
 
         let error = result.err().expect("preparation must fail");
         assert_eq!(error.to_string(), expected_error);
@@ -1430,7 +1404,6 @@ async fn execute_new_sandbox_drains_pending_downloads_on_terminal_prepare_failur
         assert!(overrides.start_process_calls().is_empty());
         assert!(overrides.start_agent_process_calls().is_empty());
         archive_server.assert_finished().await;
-        history_server.assert_finished().await;
         assert!(matches!(
             runner_host::lock::try_acquire_or_busy(
                 config.home.storage_lock("pending-storage", "v1")
@@ -1446,7 +1419,6 @@ async fn execute_new_sandbox_drains_pending_downloads_on_terminal_prepare_failur
                 [
                     "runner_fresh_sandbox_prepare",
                     "storage_cache_fresh_delivery_drained",
-                    "session_history_download_attribution",
                 ]
                 .contains(&action.as_str())
             })
@@ -1460,11 +1432,6 @@ async fn execute_new_sandbox_drains_pending_downloads_on_terminal_prepare_failur
                     "storage_cache_fresh_delivery_drained".to_string(),
                     true,
                     None
-                ),
-                (
-                    "session_history_download_attribution".to_string(),
-                    false,
-                    Some("cancelled".to_string()),
                 ),
             ]
         );
@@ -2217,10 +2184,7 @@ async fn execute_inner_with_resume_session() {
     let factory = MockSandboxFactory::new();
 
     let mut ctx = minimal_context();
-    ctx.resume_session = Some(ResumeSession::inline(
-        "sess-abc-123".into(),
-        r#"{"type":"init"}"#.into(),
-    ));
+    ctx.local_resume_session_id = Some("sess-abc-123".into());
     let (exit_code, _) = run_new_sandbox_status(&factory, &ctx, &config, &default_params())
         .await
         .unwrap();

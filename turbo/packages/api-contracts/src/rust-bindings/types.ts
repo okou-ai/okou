@@ -8,7 +8,6 @@ import {
   runnerCancellationResponseSchema,
   runnerNextSteerableInputResponseSchema,
   runnerSteeredInputResponseSchema,
-  sessionHistoryEncodingSchema,
   sandboxStartupPathSchema,
   storageMountEntrySchema,
 } from "../contracts/runners";
@@ -21,7 +20,6 @@ import { knownRunFailureReasonSchema } from "../contracts/run-failure-reasons";
 import { modelProviderCodexRuntimeConfigSchema } from "../contracts/model-providers";
 import { fileEntryWithHashSchema } from "../contracts/storages";
 import {
-  webhookSessionHistoryPrepareContract,
   webhookCompleteContract,
   webhookStoragesCommitContract,
   webhookStoragesPrepareContract,
@@ -128,14 +126,6 @@ export const rustTypeModuleDocs = [
   {
     rustModulePath: ["webhooks", "agent"],
     rustDoc: ["Agent webhook DTOs exchanged between sandboxes and the API."],
-  },
-  {
-    rustModulePath: ["webhooks", "agent", "session_history"],
-    rustDoc: ["Native CLI history upload DTOs."],
-  },
-  {
-    rustModulePath: ["webhooks", "agent", "session_history", "prepare"],
-    rustDoc: ["Prepare a native CLI history upload."],
   },
   {
     rustModulePath: ["webhooks", "agent", "complete"],
@@ -770,11 +760,8 @@ export const rustTypeBindings = [
           cliAgentSessionId: [
             "Native CLI session identifier retained for continuation.",
           ],
-          cliAgentSessionHistoryHash: [
-            "Optional SHA-256 hash of uploaded CLI agent session history.",
-          ],
           cliAgentSessionHistoryDisposition: [
-            "Optional reason resumable session history was omitted.",
+            "Native history is retained only in the disposable sandbox/home.",
           ],
           artifactSnapshots: [
             "Optional artifact versions captured by the Run output.",
@@ -790,10 +777,6 @@ export const rustTypeBindings = [
           "Reason a final Run output intentionally omits resumable CLI agent session history.",
         ],
         variants: {
-          discarded_oversized: [
-            "The native history exceeded the bounded Run output limit.",
-          ],
-          unavailable: ["The native history was unavailable or unusable."],
           native_only: [
             "Native history is retained only in the disposable sandbox/home.",
           ],
@@ -847,67 +830,6 @@ export const rustTypeBindings = [
           completion: [
             "Native history and published file outputs saved with completion.",
           ],
-        },
-      },
-    ],
-  },
-  {
-    schema: sessionHistoryEncodingSchema,
-    rustModulePath: ["webhooks", "agent", "session_history", "prepare"],
-    rustTypeName: "SessionHistoryEncoding",
-    direction: "request",
-    declarations: [
-      {
-        rustTypeName: "SessionHistoryEncoding",
-        rustDoc: ["Encoding used for persisted CLI agent session history."],
-        variants: {
-          identity: ["Uncompressed session history bytes."],
-          gzip: ["Gzip-compressed session history bytes."],
-          zstd: ["Zstandard-compressed session history bytes."],
-        },
-      },
-    ],
-  },
-  {
-    schema: webhookSessionHistoryPrepareContract.prepare.body,
-    rustModulePath: ["webhooks", "agent", "session_history", "prepare"],
-    rustTypeName: "Request",
-    direction: "request",
-    fieldTypeOverrides: {
-      rawSize: "u64",
-      encodedSize: "u64",
-      encoding: "SessionHistoryEncoding",
-    },
-    declarations: [
-      {
-        rustTypeName: "Request",
-        rustDoc: ["Request body for preparing a session-history upload."],
-        fields: {
-          runId: ["Agent run identifier bound to the sandbox token."],
-          hash: ["SHA-256 hash of the uncompressed session history."],
-          rawSize: ["Uncompressed session-history size in bytes."],
-          encodedSize: ["Encoded session-history size in bytes."],
-          encoding: ["Optional encoding used for the uploaded bytes."],
-        },
-      },
-    ],
-  },
-  {
-    schema: webhookSessionHistoryPrepareContract.prepare.responses[200],
-    rustModulePath: ["webhooks", "agent", "session_history", "prepare"],
-    rustTypeName: "Response",
-    direction: "response",
-    fieldTypeOverrides: {
-      encoding: "SessionHistoryEncoding",
-    },
-    declarations: [
-      {
-        rustTypeName: "Response",
-        rustDoc: ["Response body returned when preparing session history."],
-        fields: {
-          presignedUrl: ["Optional presigned URL for uploading new content."],
-          existing: ["Whether the requested session history already exists."],
-          encoding: ["Optional encoding of the persisted session history."],
         },
       },
     ],

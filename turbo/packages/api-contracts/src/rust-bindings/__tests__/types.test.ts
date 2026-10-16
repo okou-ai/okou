@@ -15,13 +15,11 @@ import { runnerWssTicketsContract } from "../../contracts/runner-wss-tickets";
 import {
   piLaunchConfigSchema,
   piModelConfigV2Schema,
-  sessionHistoryEncodingSchema,
   storageMountEntrySchema,
 } from "../../contracts/runners";
 import { fileEntryWithHashSchema } from "../../contracts/storages";
 import {
   runCompletionMetadataSchema,
-  webhookSessionHistoryPrepareContract,
   webhookStoragesCommitContract,
   webhookStoragesPrepareContract,
 } from "../../contracts/webhooks";
@@ -185,21 +183,6 @@ const expectedBindings = [
     rustModulePath: ["runners", "storage"],
     rustTypeName: "StorageMountEntry",
     direction: "response",
-  },
-  {
-    rustModulePath: ["webhooks", "agent", "session_history", "prepare"],
-    rustTypeName: "Request",
-    direction: "request",
-  },
-  {
-    rustModulePath: ["webhooks", "agent", "session_history", "prepare"],
-    rustTypeName: "Response",
-    direction: "response",
-  },
-  {
-    rustModulePath: ["webhooks", "agent", "session_history", "prepare"],
-    rustTypeName: "SessionHistoryEncoding",
-    direction: "request",
   },
   {
     rustModulePath: ["webhooks", "agent", "complete"],
@@ -450,7 +433,6 @@ describe("Rust type bindings", () => {
 
     expect(secondRender).toBe(firstRender);
     expect(firstRender).toContain("pub mod webhooks {");
-    expect(firstRender).toContain("pub mod session_history {");
     expect(firstRender).toContain("pub mod complete {");
     expect(firstRender).toContain("pub mod prepare {");
     expect(firstRender).toContain("pub struct FileEntryWithHash {");
@@ -506,9 +488,6 @@ describe("Rust type bindings", () => {
     expect(firstRender).toContain(
       "pub missing_root_policy: Option<ArtifactEntryMissingRootPolicy>,",
     );
-    expect(firstRender).toMatch(
-      /#\[derive\(\n\s+Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize,\n\s+\)\]\n\s+pub enum SessionHistoryEncoding \{/,
-    );
     expect(firstRender).toContain(
       "/// Final Run output metadata included with completion.",
     );
@@ -526,7 +505,7 @@ describe("Rust type bindings", () => {
       "pub volume_versions_snapshot: Option<RequestCompletionVolumeVersionsSnapshot>,",
     );
     expect(firstRender).toMatch(
-      /pub cli_agent_session_history_disposition:\n\s+Option<RequestCompletionCliAgentSessionHistoryDisposition>,/,
+      /pub cli_agent_session_history_disposition:\s+RequestCompletionCliAgentSessionHistoryDisposition,/,
     );
     expect(firstRender).toContain(
       "pub versions: std::collections::BTreeMap<String, String>,",
@@ -536,12 +515,6 @@ describe("Rust type bindings", () => {
     expect(firstRender).toContain("pub enum RequestFailureReason {");
     expect(firstRender).toContain("pub failure_reason: Option<String>,");
     expect(firstRender).toContain("pub last_event_sequence: Option<u32>,");
-    expect(firstRender).toContain("pub enum SessionHistoryEncoding {");
-    expect(firstRender).toContain(
-      "pub encoding: Option<SessionHistoryEncoding>,",
-    );
-    expect(firstRender).toContain("pub raw_size: u64,");
-    expect(firstRender).toContain("pub encoded_size: u64,");
     expect(firstRender.match(/pub archive_size: Option<u64>,/g)).toHaveLength(
       1,
     );
@@ -681,40 +654,6 @@ describe("Rust type bindings", () => {
         .missingRootPolicy,
     );
     expect(completionPolicySchema).toEqual(runnerPolicySchema);
-  });
-
-  it("reuses native history upload encoding and size schemas", () => {
-    const module = "webhooks/agent/session_history/prepare";
-    const bindings: readonly RustTypeBinding[] = rustTypeBindings.filter(
-      ({ rustModulePath }) => {
-        return rustModulePath.join("/") === module;
-      },
-    );
-    expect(
-      webhookSessionHistoryPrepareContract.prepare.body.shape.encoding.unwrap(),
-    ).toBe(sessionHistoryEncodingSchema);
-    expect(
-      webhookSessionHistoryPrepareContract.prepare.responses[200].shape.encoding.unwrap(),
-    ).toBe(sessionHistoryEncodingSchema);
-    expect(
-      bindings.find(({ rustTypeName }) => {
-        return rustTypeName === "SessionHistoryEncoding";
-      })?.schema,
-    ).toBe(sessionHistoryEncodingSchema);
-    expect(
-      bindings.find(({ rustTypeName }) => {
-        return rustTypeName === "Request";
-      })?.fieldTypeOverrides,
-    ).toEqual({
-      rawSize: "u64",
-      encodedSize: "u64",
-      encoding: "SessionHistoryEncoding",
-    });
-    expect(
-      bindings.find(({ rustTypeName }) => {
-        return rustTypeName === "Response";
-      })?.fieldTypeOverrides,
-    ).toEqual({ encoding: "SessionHistoryEncoding" });
   });
 
   it("renders common JSON schema shapes", () => {

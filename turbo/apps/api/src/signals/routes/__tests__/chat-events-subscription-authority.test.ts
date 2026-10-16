@@ -257,7 +257,7 @@ describe("CHAT-02: run-level model overrides", () => {
         prompt: "Luna standard start",
       });
       const firstClaim = await claimChatRun(runnerGroup, first.runId);
-      expect(firstClaim.claim.resumeSession).toBeNull();
+
       expect(firstClaim.claim.piSessionId).toBe(first.threadId);
       expect(firstClaim.claim.piModelConfig).toMatchObject({
         model: route.runtimeModel,
@@ -288,7 +288,7 @@ describe("CHAT-02: run-level model overrides", () => {
       });
       await flushWaitUntilForTest();
       const fastClaim = await claimChatRun(runnerGroup, fast.runId);
-      expect(fastClaim.claim.resumeSession).toBeNull();
+
       expect(fastClaim.claim.nativeContinuation).toMatchObject({
         sessionId: first.threadId,
         generationRunId: first.runId,

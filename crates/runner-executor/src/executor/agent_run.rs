@@ -1,29 +1,16 @@
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use guest_contracts::diagnostics::{CliTerminationReason, FailureDiagnostic};
-use guest_contracts::env::CliFramework;
 use guest_contracts::session_history_identity::{
-    SESSION_HISTORY_IDENTITY_VERIFY_EXIT_EXPECTED_MISMATCH,
-    SESSION_HISTORY_IDENTITY_VERIFY_EXIT_FRAMEWORK_MISMATCH,
-    SESSION_HISTORY_IDENTITY_VERIFY_EXIT_HISTORY_MISMATCH,
-    SESSION_HISTORY_IDENTITY_VERIFY_EXIT_HISTORY_READ,
-    SESSION_HISTORY_IDENTITY_VERIFY_EXIT_HISTORY_TOO_LARGE,
-    SESSION_HISTORY_IDENTITY_VERIFY_EXIT_INVALID_ARGS,
-    SESSION_HISTORY_IDENTITY_VERIFY_EXIT_INVALID_METADATA,
-    SESSION_HISTORY_IDENTITY_VERIFY_EXIT_METADATA_READ, SessionHistoryIdentity,
-    SessionHistoryIdentityError,
+    SessionHistoryIdentity, SessionHistoryIdentityError,
 };
 use sandbox::{
     ExecTermination, GuestProcessCancelHandle, GuestProcessControlHandle, GuestProcessHandle,
     OperationCancellationContext, ProcessControlFailureKind, ProcessControlGuestStatus,
-    ProcessControlOutcome, ProcessOutputMode, Sandbox, SessionHistoryIdentityVerifyRequest,
-    StagedFileDisposition, StagedFileFinalizeOutcome, StagedFileFinalizeRequest,
-    StagedFileNotPublishedReason, StartAgentProcessRequest,
+    ProcessControlOutcome, ProcessOutputMode, Sandbox, StartAgentProcessRequest,
 };
-use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
@@ -42,58 +29,30 @@ use super::diagnostics::{
     should_collect_unattributed_sigkill_resource_diagnostics,
     should_log_agent_bootstrap_abnormal_exit_diagnostics,
 };
-use super::effective_cli_framework;
 use super::env::{
     PreparedRunPayload, build_env_json_for_run, build_user_env_json, write_required_agent_files,
 };
 use super::guest_state::{restore_guest_state, sync_guest_timezone};
-use super::session_history_attribution::{
-    HistoryMaterializationObservation, HistoryMaterializationOutcome, HistoryTimingWindow,
-    record_download_attribution,
-};
-use super::session_history_cpu::{SessionHistoryCpuJob, SessionHistoryPrefixOutcome};
-use super::session_history_download::{
-    SessionHistoryDownloadPhaseTiming, SessionHistoryDownloadTimings,
-    SessionHistoryMaterialization, SessionHistoryMaterializer, SessionHistoryReadinessObserver,
-};
-use super::session_restore::{
-    FreshSessionRestorePlan, MaterializedResumeSession, SessionRestoreDiagnostics,
-    plan_fresh_session_restore, restore_session, restored_session_identity_from_context,
-};
 use super::telemetry::{RunnerSpawnTiming, record_api_startup_boundaries};
 use super::{
     EXIT_SIGKILL, ExecutionFailure, ExecutorConfig, JOB_TIMEOUT, JOB_TIMEOUT_EXIT_CODE,
     ResourceFailureDiagnostics, ResourceFailureKind, RunnerError, RunnerResult,
     SandboxReuseDisposition, SandboxReuseRejection, SandboxReuseResult, SandboxReuseTerminal,
-    SessionHistoryRestoreFallback, SessionHistoryRestorePlan, agent_exit_failure_message,
-    guest_runtime_dir, guest_runtime_path, job_supervisor_timeout, job_terminal_wait_timeout,
-    normalize_failure_exit_code,
+    agent_exit_failure_message, guest_runtime_dir, guest_runtime_path, job_supervisor_timeout,
+    job_terminal_wait_timeout, normalize_failure_exit_code,
 };
-use crate::helper_exec::helper_exec_succeeded;
 use crate::restored_session_identity::{
-    FINAL_SESSION_HISTORY_IDENTITY_READ_LIMIT, RestoredSessionFinalMetadataVerification,
-    RestoredSessionIdentity, RestoredSessionIdentityMismatchReason,
+    FINAL_SESSION_HISTORY_IDENTITY_READ_LIMIT, RestoredSessionIdentity,
 };
 use crate::storage_plan::{StoragePlan, build_storage_plan};
-use crate::telemetry::{
-    HistoryTransferSource, JobTelemetry, SessionHistoryTelemetryMetadata,
-    session_history_prefix_extension_action_type,
-};
+use crate::telemetry::JobTelemetry;
 use guest_contracts::guest_binary::AGENT_PATH;
 use runner_provider::ActiveInputSource;
 use runner_types::types::{ExecutionContext, HomeReuseResult};
 
 const AGENT_START_STDERR_CAPTURE_LIMIT_BYTES: u32 = 64 * 1024;
-const SESSION_HISTORY_DOWNLOAD_TELEMETRY_ERROR: &str = "session history download failed";
-const SESSION_HISTORY_DOWNLOAD_PHASE_TELEMETRY_ERROR: &str =
-    "session history download phase failed";
-const SESSION_HISTORY_MATERIALIZATION_WAIT_TELEMETRY_ERROR: &str =
-    "session history materialization failed";
-const SESSION_HISTORY_IDENTITY_REUSE_VERIFY_TELEMETRY_ERROR: &str =
-    "session history identity reuse verification failed";
 const STORAGE_CACHE_POPULATE_FAILED: &str = "storage-cache-populate-failed";
 const STORAGE_DOWNLOAD_FAILED: &str = "storage-download-failed";
-const SESSION_HISTORY_IDENTITY_VERIFY_TIMEOUT: Duration = Duration::from_secs(5);
 const USER_CANCELLATION_CONTROL_PAYLOAD: &[u8] = br#"{"type":"user-cancellation"}"#;
 
 fn private_write_timeout_stage(error: &RunnerError) -> Option<&'static str> {
@@ -115,395 +74,50 @@ fn private_write_timeout_stage(error: &RunnerError) -> Option<&'static str> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum SessionHistoryIdentityReason {
-    FinalizeMetadataPathUnresolved,
-    FinalizeRuntimeDirUnresolved,
-    FinalizeMissingMetadata,
-    FinalizeMetadataReadFailed,
-    FinalizeInvalidMetadata,
-    FinalizeUnverifiableMetadata,
-    VerifyRequestMissing,
-    VerifyRequestMismatch,
-    VerifyMissingVerifier,
-    VerifyHelperFailed,
-    VerifyHelperCancelled,
-    VerifyHelperTimedOut,
-    VerifyHelperInvalidArgs,
-    VerifyHelperMetadataRead,
-    VerifyHelperInvalidMetadata,
-    VerifyHelperFrameworkMismatch,
-    VerifyHelperExpectedMismatch,
-    VerifyHelperHistoryRead,
-    VerifyHelperHistoryMismatch,
-    VerifyHelperHistoryTooLarge,
-    VerifyHelperExecError,
-    ReuseMissingNoIdleIdentity,
+enum FinalIdentityReason {
+    MetadataPathUnresolved,
+    RuntimeDirUnresolved,
+    MissingMetadata,
+    MetadataReadFailed,
+    InvalidMetadata,
+    UnverifiableMetadata,
 }
 
-impl SessionHistoryIdentityReason {
+impl FinalIdentityReason {
     const fn action_type(self) -> &'static str {
         match self {
-            Self::FinalizeMetadataPathUnresolved => {
+            Self::MetadataPathUnresolved => {
                 "session_history_identity_finalize_metadata_path_unresolved"
             }
-            Self::FinalizeRuntimeDirUnresolved => {
+            Self::RuntimeDirUnresolved => {
                 "session_history_identity_finalize_runtime_dir_unresolved"
             }
-            Self::FinalizeMissingMetadata => "session_history_identity_finalize_missing_metadata",
-            Self::FinalizeMetadataReadFailed => {
-                "session_history_identity_finalize_metadata_read_failed"
-            }
-            Self::FinalizeInvalidMetadata => "session_history_identity_finalize_invalid_metadata",
-            Self::FinalizeUnverifiableMetadata => {
-                "session_history_identity_finalize_unverifiable_metadata"
-            }
-            Self::VerifyRequestMissing => "session_history_identity_verify_request_missing",
-            Self::VerifyRequestMismatch => "session_history_identity_verify_request_mismatch",
-            Self::VerifyMissingVerifier => "session_history_identity_verify_missing_verifier",
-            Self::VerifyHelperFailed => "session_history_identity_verify_helper_failed",
-            Self::VerifyHelperCancelled => "session_history_identity_verify_helper_cancelled",
-            Self::VerifyHelperTimedOut => "session_history_identity_verify_helper_timed_out",
-            Self::VerifyHelperInvalidArgs => "session_history_identity_verify_helper_invalid_args",
-            Self::VerifyHelperMetadataRead => {
-                "session_history_identity_verify_helper_metadata_read_failed"
-            }
-            Self::VerifyHelperInvalidMetadata => {
-                "session_history_identity_verify_helper_invalid_metadata"
-            }
-            Self::VerifyHelperFrameworkMismatch => {
-                "session_history_identity_verify_helper_framework_mismatch"
-            }
-            Self::VerifyHelperExpectedMismatch => {
-                "session_history_identity_verify_helper_expected_mismatch"
-            }
-            Self::VerifyHelperHistoryRead => {
-                "session_history_identity_verify_helper_history_read_failed"
-            }
-            Self::VerifyHelperHistoryMismatch => {
-                "session_history_identity_verify_helper_history_mismatch"
-            }
-            Self::VerifyHelperHistoryTooLarge => {
-                "session_history_identity_verify_helper_history_too_large"
-            }
-            Self::VerifyHelperExecError => "session_history_identity_verify_helper_exec_error",
-            Self::ReuseMissingNoIdleIdentity => {
-                "session_history_identity_reuse_missing_no_idle_identity"
-            }
+            Self::MissingMetadata => "session_history_identity_finalize_missing_metadata",
+            Self::MetadataReadFailed => "session_history_identity_finalize_metadata_read_failed",
+            Self::InvalidMetadata => "session_history_identity_finalize_invalid_metadata",
+            Self::UnverifiableMetadata => "session_history_identity_finalize_unverifiable_metadata",
         }
     }
 
     const fn from_final_metadata_error(error: SessionHistoryIdentityError) -> Self {
         match error {
-            SessionHistoryIdentityError::MetadataTooLarge => Self::FinalizeUnverifiableMetadata,
+            SessionHistoryIdentityError::MetadataTooLarge => Self::UnverifiableMetadata,
             SessionHistoryIdentityError::InvalidJson
             | SessionHistoryIdentityError::InvalidFramework
             | SessionHistoryIdentityError::InvalidHistoryRefKind
             | SessionHistoryIdentityError::InvalidSessionIdHash
             | SessionHistoryIdentityError::InvalidHistoryHash
             | SessionHistoryIdentityError::InvalidHistorySize
-            | SessionHistoryIdentityError::InvalidHistorySource => Self::FinalizeInvalidMetadata,
+            | SessionHistoryIdentityError::InvalidHistorySource => Self::InvalidMetadata,
         }
     }
 }
 
 fn record_session_history_identity_reason(
     telemetry: &mut JobTelemetry,
-    reason: SessionHistoryIdentityReason,
+    reason: FinalIdentityReason,
 ) {
     telemetry.record(reason.action_type(), Duration::ZERO, true, None);
-}
-
-fn record_session_history_identity_mismatch_reason(
-    telemetry: &mut JobTelemetry,
-    reason: RestoredSessionIdentityMismatchReason,
-) {
-    telemetry.record(reason.action_type(), Duration::ZERO, true, None);
-    if let Some(action_type) = reason.history_hash_size_relationship_action_type() {
-        telemetry.record(action_type, Duration::ZERO, true, None);
-    }
-}
-
-fn record_session_history_prefix_outcome(
-    telemetry: &mut JobTelemetry,
-    outcome: SessionHistoryPrefixOutcome,
-) {
-    match outcome {
-        SessionHistoryPrefixOutcome::Verified { raw_extension_size } => {
-            telemetry.record(
-                "session_history_requested_larger_prefix_verified",
-                Duration::ZERO,
-                true,
-                None,
-            );
-            telemetry.record(
-                session_history_prefix_extension_action_type(raw_extension_size),
-                Duration::ZERO,
-                true,
-                None,
-            );
-        }
-        SessionHistoryPrefixOutcome::Divergent => telemetry.record(
-            "session_history_requested_larger_prefix_divergent",
-            Duration::ZERO,
-            true,
-            None,
-        ),
-    }
-}
-
-fn record_session_history_download_timings(
-    telemetry: &mut JobTelemetry,
-    timings: &SessionHistoryDownloadTimings,
-    restore_wait: HistoryTimingWindow,
-    outcome: HistoryMaterializationOutcome,
-) {
-    let metadata = timings.metadata();
-    record_session_history_download_phase(
-        telemetry,
-        "session_history_download_request_status",
-        timings.request_status(),
-        metadata,
-    );
-    record_session_history_download_phase(
-        telemetry,
-        "session_history_download_body_read",
-        timings.body_read(),
-        metadata,
-    );
-    record_session_history_download_phase(
-        telemetry,
-        "session_history_download_validation",
-        timings.validation(),
-        metadata,
-    );
-    record_session_history_download_phase(
-        telemetry,
-        "session_history_download_decompression",
-        timings.decompression(),
-        metadata,
-    );
-    record_session_history_download_phase(
-        telemetry,
-        "session_history_download_hash_verification",
-        timings.hash_verification(),
-        metadata,
-    );
-    record_download_attribution(
-        telemetry,
-        timings,
-        HistoryMaterializationObservation {
-            window: restore_wait,
-            stage: crate::telemetry::SessionHistoryObservationStage::Restore,
-            outcome,
-        },
-    );
-}
-
-fn record_session_history_download_phase(
-    telemetry: &mut JobTelemetry,
-    action_type: &'static str,
-    phase: Option<SessionHistoryDownloadPhaseTiming>,
-    metadata: Option<SessionHistoryTelemetryMetadata>,
-) {
-    if let Some(phase) = phase {
-        telemetry.record_with_session_history_metadata(
-            action_type,
-            phase.elapsed(),
-            phase.success(),
-            (!phase.success()).then_some(SESSION_HISTORY_DOWNLOAD_PHASE_TELEMETRY_ERROR),
-            metadata,
-        );
-    }
-}
-
-fn record_session_history_materializer_state(
-    telemetry: &mut JobTelemetry,
-    was_downloading: bool,
-    completed_before_restore: bool,
-    wait: Duration,
-    success: bool,
-    metadata: Option<SessionHistoryTelemetryMetadata>,
-) {
-    if !was_downloading {
-        return;
-    }
-    if completed_before_restore {
-        telemetry.record_with_session_history_metadata(
-            "session_history_materializer_completed_before_restore",
-            Duration::ZERO,
-            success,
-            (!success).then_some(SESSION_HISTORY_MATERIALIZATION_WAIT_TELEMETRY_ERROR),
-            metadata,
-        );
-    } else {
-        telemetry.record_with_session_history_metadata(
-            "session_history_materializer_waited_at_restore",
-            wait,
-            success,
-            (!success).then_some(SESSION_HISTORY_MATERIALIZATION_WAIT_TELEMETRY_ERROR),
-            metadata,
-        );
-    }
-}
-
-async fn finish_session_history_materialization(
-    materializer: SessionHistoryMaterializer,
-    cancel: &CancellationToken,
-    telemetry: &mut JobTelemetry,
-) -> RunnerResult<Option<MaterializedResumeSession>> {
-    let should_record_wait = materializer.is_downloading();
-    let completed_before_restore = materializer.is_download_finished();
-    let wait_started = Instant::now();
-    let materialization = materializer.finish(cancel).await;
-    let wait_finished = Instant::now();
-    let restore_wait_window = HistoryTimingWindow::new(wait_started, wait_finished);
-    let materialization_wait = restore_wait_window.elapsed();
-    let downloaded = match materialization {
-        SessionHistoryMaterialization::Missing
-        | SessionHistoryMaterialization::NoDownloadNeeded => None,
-        SessionHistoryMaterialization::Downloaded {
-            session,
-            prefix_outcome,
-            elapsed,
-            timings,
-        } => {
-            record_session_history_materializer_state(
-                telemetry,
-                should_record_wait,
-                completed_before_restore,
-                materialization_wait,
-                true,
-                timings.metadata(),
-            );
-            if should_record_wait {
-                telemetry.record_with_session_history_metadata(
-                    "session_history_materialization_wait",
-                    materialization_wait,
-                    true,
-                    None,
-                    timings.metadata(),
-                );
-            }
-            telemetry.record_with_session_history_metadata(
-                "session_history_download",
-                elapsed,
-                true,
-                None,
-                timings.metadata(),
-            );
-            record_session_history_download_timings(
-                telemetry,
-                &timings,
-                restore_wait_window,
-                HistoryMaterializationOutcome::Succeeded,
-            );
-            if let Some(prefix_outcome) = prefix_outcome {
-                record_session_history_prefix_outcome(telemetry, prefix_outcome);
-            }
-            Some(session)
-        }
-        SessionHistoryMaterialization::Failed {
-            elapsed,
-            timings,
-            error,
-        } => {
-            record_session_history_materializer_state(
-                telemetry,
-                should_record_wait,
-                completed_before_restore,
-                materialization_wait,
-                false,
-                timings.metadata(),
-            );
-            if should_record_wait {
-                telemetry.record_with_session_history_metadata(
-                    "session_history_materialization_wait",
-                    materialization_wait,
-                    false,
-                    Some(SESSION_HISTORY_MATERIALIZATION_WAIT_TELEMETRY_ERROR),
-                    timings.metadata(),
-                );
-            }
-            telemetry.record_with_session_history_metadata(
-                "session_history_download",
-                elapsed,
-                false,
-                Some(SESSION_HISTORY_DOWNLOAD_TELEMETRY_ERROR),
-                timings.metadata(),
-            );
-            record_session_history_download_timings(
-                telemetry,
-                &timings,
-                restore_wait_window,
-                if matches!(&error, RunnerError::Cancelled) {
-                    HistoryMaterializationOutcome::Cancelled
-                } else {
-                    HistoryMaterializationOutcome::Failed
-                },
-            );
-            return Err(error);
-        }
-    };
-    Ok(downloaded)
-}
-
-fn record_session_history_restore_fallback(
-    telemetry: &mut JobTelemetry,
-    fallback: Option<SessionHistoryRestoreFallback>,
-) {
-    if let Some(fallback) = fallback {
-        telemetry.record(fallback.action_type(), Duration::ZERO, true, None);
-        if let Some(reason) = fallback.identity_mismatch_reason() {
-            record_session_history_identity_mismatch_reason(telemetry, reason);
-        }
-        if matches!(fallback, SessionHistoryRestoreFallback::MissingIdleIdentity) {
-            telemetry.record(
-                "session_history_identity_reuse_missing",
-                Duration::ZERO,
-                true,
-                None,
-            );
-            record_session_history_identity_reason(
-                telemetry,
-                SessionHistoryIdentityReason::ReuseMissingNoIdleIdentity,
-            );
-        }
-    }
-}
-
-async fn materialize_inline_resume_session(
-    context: &ExecutionContext,
-    config: &ExecutorConfig,
-    cancel: &CancellationToken,
-) -> RunnerResult<Option<MaterializedResumeSession>> {
-    let Some(resume_session) = context.resume_session.as_ref() else {
-        return Ok(None);
-    };
-    let Some(history) = resume_session.shared_session_history() else {
-        return Ok(None);
-    };
-    if effective_cli_framework(&context.cli_agent_type)
-        == super::cli_framework::EffectiveCliFramework::Codex
-    {
-        let outcome = config
-            .session_history_cpu
-            .materialize(
-                SessionHistoryCpuJob::inline_codex(
-                    resume_session.cli_agent_session_id.clone(),
-                    history,
-                ),
-                cancel,
-            )
-            .await?;
-        return outcome
-            .result
-            .map(|materialization| Some(materialization.session));
-    }
-    Ok(Some(MaterializedResumeSession::new_shared(
-        resume_session.cli_agent_session_id.clone(),
-        history,
-        None,
-    )))
 }
 
 fn validate_agent_bootstrap_exec_boundary(env_pairs: &[(String, String)]) -> RunnerResult<()> {
@@ -523,132 +137,23 @@ fn validate_agent_bootstrap_exec_boundary(env_pairs: &[(String, String)]) -> Run
     })
 }
 
-async fn verify_restored_session_identity_for_reuse(
-    sandbox: &dyn Sandbox,
-    context: &ExecutionContext,
-    identity: RestoredSessionIdentity,
-) -> Result<RestoredSessionIdentity, SessionHistoryIdentityReason> {
-    let Some(requested_identity) = restored_session_identity_from_context(context) else {
-        return Err(SessionHistoryIdentityReason::VerifyRequestMissing);
-    };
-    if identity != requested_identity {
-        return Err(SessionHistoryIdentityReason::VerifyRequestMismatch);
-    }
-    let Some(verification) = identity.final_metadata_verification() else {
-        return Err(SessionHistoryIdentityReason::VerifyMissingVerifier);
-    };
-    if !identity.is_verified_match_for_request(&requested_identity) {
-        return Err(SessionHistoryIdentityReason::VerifyRequestMismatch);
-    }
-
-    let RestoredSessionFinalMetadataVerification {
-        metadata_path,
-        runtime_dir,
-        framework,
-        session_id_hash,
-        history_ref_kind,
-        history_hash,
-        history_size_bytes,
-    } = verification;
-    let metadata_path = metadata_path.to_owned();
-    let runtime_dir = runtime_dir.to_owned();
-    let session_id_hash = session_id_hash.to_owned();
-    let history_hash = history_hash.to_owned();
-    let metadata = sandbox
-        .read_file(&metadata_path, FINAL_SESSION_HISTORY_IDENTITY_READ_LIMIT)
-        .await
-        .ok()
-        .flatten()
-        .and_then(|bytes| SessionHistoryIdentity::from_json_slice(&bytes).ok())
-        .ok_or(SessionHistoryIdentityReason::VerifyHelperInvalidMetadata)?;
-    if super::home_history::current_source(context, &metadata.history_source).as_ref()
-        != Some(&metadata.history_source)
-        || !super::home_history::expected_history(context)
-            .is_some_and(|expected| expected.matches_identity(&metadata))
-    {
-        return Err(SessionHistoryIdentityReason::VerifyRequestMismatch);
-    }
-    let request = SessionHistoryIdentityVerifyRequest {
-        metadata_path: &metadata_path,
-        runtime_dir: &runtime_dir,
-        framework: framework.as_str(),
-        session_id_hash: &session_id_hash,
-        history_ref_kind: history_ref_kind.as_str(),
-        history_hash: &history_hash,
-        history_size_bytes,
-        timeout: SESSION_HISTORY_IDENTITY_VERIFY_TIMEOUT,
-    };
-    verify_final_identity_metadata(sandbox, identity, &request).await
-}
-
-async fn verify_final_identity_metadata(
-    sandbox: &dyn Sandbox,
-    identity: RestoredSessionIdentity,
-    request: &SessionHistoryIdentityVerifyRequest<'_>,
-) -> Result<RestoredSessionIdentity, SessionHistoryIdentityReason> {
-    match sandbox.verify_session_history_identity(request).await {
-        Ok(result) if helper_exec_succeeded(&result) => Ok(identity),
-        Ok(result) => Err(session_history_identity_reason_from_helper_result(&result)),
-        Err(_) => Err(SessionHistoryIdentityReason::VerifyHelperExecError),
-    }
-}
-
-fn session_history_identity_reason_from_helper_result(
-    result: &sandbox::ExecResult,
-) -> SessionHistoryIdentityReason {
-    match result.termination {
-        ExecTermination::TimedOut => SessionHistoryIdentityReason::VerifyHelperTimedOut,
-        ExecTermination::Exited { exit_code } => match exit_code {
-            SESSION_HISTORY_IDENTITY_VERIFY_EXIT_INVALID_ARGS => {
-                SessionHistoryIdentityReason::VerifyHelperInvalidArgs
-            }
-            SESSION_HISTORY_IDENTITY_VERIFY_EXIT_METADATA_READ => {
-                SessionHistoryIdentityReason::VerifyHelperMetadataRead
-            }
-            SESSION_HISTORY_IDENTITY_VERIFY_EXIT_INVALID_METADATA => {
-                SessionHistoryIdentityReason::VerifyHelperInvalidMetadata
-            }
-            SESSION_HISTORY_IDENTITY_VERIFY_EXIT_FRAMEWORK_MISMATCH => {
-                SessionHistoryIdentityReason::VerifyHelperFrameworkMismatch
-            }
-            SESSION_HISTORY_IDENTITY_VERIFY_EXIT_EXPECTED_MISMATCH => {
-                SessionHistoryIdentityReason::VerifyHelperExpectedMismatch
-            }
-            SESSION_HISTORY_IDENTITY_VERIFY_EXIT_HISTORY_READ => {
-                SessionHistoryIdentityReason::VerifyHelperHistoryRead
-            }
-            SESSION_HISTORY_IDENTITY_VERIFY_EXIT_HISTORY_MISMATCH => {
-                SessionHistoryIdentityReason::VerifyHelperHistoryMismatch
-            }
-            SESSION_HISTORY_IDENTITY_VERIFY_EXIT_HISTORY_TOO_LARGE => {
-                SessionHistoryIdentityReason::VerifyHelperHistoryTooLarge
-            }
-            _ => SessionHistoryIdentityReason::VerifyHelperFailed,
-        },
-        ExecTermination::Cancelled => SessionHistoryIdentityReason::VerifyHelperCancelled,
-        ExecTermination::StartFailed | ExecTermination::WaitFailed => {
-            SessionHistoryIdentityReason::VerifyHelperFailed
-        }
-    }
-}
-
 async fn read_final_session_history_identity(
     sandbox: &dyn Sandbox,
     context: &ExecutionContext,
-) -> Result<RestoredSessionIdentity, SessionHistoryIdentityReason> {
+) -> Result<RestoredSessionIdentity, FinalIdentityReason> {
     let metadata_path = match guest_runtime_path(
         context.run_id,
         guest_contracts::runtime_paths::final_session_history_identity_file,
     ) {
         Ok(path) => path,
         Err(_) => {
-            return Err(SessionHistoryIdentityReason::FinalizeMetadataPathUnresolved);
+            return Err(FinalIdentityReason::MetadataPathUnresolved);
         }
     };
     let runtime_dir = match guest_runtime_dir(context.run_id) {
         Ok(path) => path,
         Err(_) => {
-            return Err(SessionHistoryIdentityReason::FinalizeRuntimeDirUnresolved);
+            return Err(FinalIdentityReason::RuntimeDirUnresolved);
         }
     };
     let bytes = match sandbox
@@ -656,19 +161,17 @@ async fn read_final_session_history_identity(
         .await
     {
         Ok(Some(bytes)) => bytes,
-        Ok(None) => return Err(SessionHistoryIdentityReason::FinalizeMissingMetadata),
-        Err(_) => return Err(SessionHistoryIdentityReason::FinalizeMetadataReadFailed),
+        Ok(None) => return Err(FinalIdentityReason::MissingMetadata),
+        Err(_) => return Err(FinalIdentityReason::MetadataReadFailed),
     };
     let metadata = match SessionHistoryIdentity::from_json_slice(&bytes) {
         Ok(metadata) => metadata,
         Err(error) => {
-            return Err(SessionHistoryIdentityReason::from_final_metadata_error(
-                error,
-            ));
+            return Err(FinalIdentityReason::from_final_metadata_error(error));
         }
     };
     RestoredSessionIdentity::from_final_metadata(metadata, metadata_path, runtime_dir)
-        .ok_or(SessionHistoryIdentityReason::FinalizeUnverifiableMetadata)
+        .ok_or(FinalIdentityReason::UnverifiableMetadata)
 }
 
 #[derive(Clone, Copy)]
@@ -1318,7 +821,8 @@ pub(super) struct RunControls {
     pub(super) hard_cancel: CancellationToken,
     pub(super) active_input_source: Option<ActiveInputSource>,
     pub(super) spawn_timing: Option<RunnerSpawnTiming>,
-    pub(super) session_history_restore_plan: SessionHistoryRestorePlan,
+    pub(super) home_history_proof:
+        Option<guest_contracts::home_cache_history::HomeCacheHistoryProofBinding>,
     pub(super) prepared_storage: Option<crate::storage_cache::PreparedStorage>,
     pub(super) prepared_guest_runtime: Option<PreparedGuestRuntime>,
     pub(super) pre_spawn_admission_lease:
@@ -1508,7 +1012,7 @@ impl RunControls {
             hard_cancel: cancellation.hard(),
             active_input_source,
             spawn_timing: None,
-            session_history_restore_plan: SessionHistoryRestorePlan::Default,
+            home_history_proof: None,
             prepared_storage: None,
             prepared_guest_runtime: None,
             pre_spawn_admission_lease: None,
@@ -1518,14 +1022,6 @@ impl RunControls {
 
     pub(super) fn with_spawn_timing(mut self, spawn_timing: RunnerSpawnTiming) -> Self {
         self.spawn_timing = Some(spawn_timing);
-        self
-    }
-
-    pub(super) fn with_session_history_restore_plan(
-        mut self,
-        plan: SessionHistoryRestorePlan,
-    ) -> Self {
-        self.session_history_restore_plan = plan;
         self
     }
 
@@ -1541,8 +1037,6 @@ struct PreparedAgentProcess {
     agent_started_at: Instant,
     host_oom_evidence_since: super::diagnostics::HostOomEvidenceSince,
     deferred_background_fill: Option<crate::storage_cache::DeferredBackgroundFill>,
-    session_restore_diagnostics: Option<SessionRestoreDiagnostics>,
-    pre_run_restored_session_identity: Option<RestoredSessionIdentity>,
     env_diagnostics: AgentEnvDiagnostics,
     env_pairs: Vec<(String, String)>,
 }
@@ -1603,215 +1097,6 @@ fn record_storage_plan_state(
             "computed instruction cleanup entries for stale file removal"
         );
     }
-}
-
-struct StagedSessionRestore {
-    session: MaterializedResumeSession,
-    plan: FreshSessionRestorePlan,
-    transfer_source: HistoryTransferSource,
-    transfer: crate::telemetry::HistoryTransferMeasurements,
-    staging_elapsed: Duration,
-}
-
-enum StagedSessionRestorePreparation {
-    /// Storage had no Guest apply work, so the untouched plan remains serial.
-    Serial(SessionHistoryRestorePlan),
-    /// No materialized history exists for this run.
-    Missing,
-    /// Exact bytes were written to the isolated staging path.
-    Ready(Box<StagedSessionRestore>),
-}
-
-struct StagedSessionRestoreInput<'a> {
-    sandbox: &'a dyn Sandbox,
-    context: &'a ExecutionContext,
-    config: &'a ExecutorConfig,
-    cancel: &'a CancellationToken,
-    storage_apply_start: oneshot::Receiver<()>,
-    staging_path: &'a str,
-}
-
-struct GuestStorageStart<'a> {
-    history_readiness: &'a SessionHistoryReadinessObserver,
-    staged_history: Option<(oneshot::Sender<()>, &'a AtomicBool)>,
-}
-
-impl GuestStorageStart<'_> {
-    fn record(&mut self, telemetry: &mut JobTelemetry) {
-        // Sample the existing owner after Host preparation and before Guest delivery.
-        // This records Runner handoff, not admission by the Guest storage worker.
-        telemetry.record_with_outcome(
-            "session_history_readiness_at_guest_storage_start",
-            Duration::ZERO,
-            true,
-            None,
-            Some(self.history_readiness.snapshot().outcome()),
-        );
-        if let Some((start, storage_apply_admitted)) = self.staged_history.take() {
-            storage_apply_admitted.store(true, Ordering::Release);
-            let _ = start.send(());
-        }
-    }
-}
-
-async fn discard_staged_session_history(sandbox: &dyn Sandbox, staging_path: &str) -> bool {
-    match sandbox
-        .finalize_staged_file(&StagedFileFinalizeRequest {
-            staging_path,
-            disposition: StagedFileDisposition::Discard,
-        })
-        .await
-    {
-        Ok(StagedFileFinalizeOutcome::Discarded { .. }) => return true,
-        Ok(outcome) => {
-            warn!(?outcome, "staged session history was not discarded");
-        }
-        Err(error) => {
-            warn!(error = %error, "failed to discard staged session history");
-        }
-    }
-    false
-}
-
-async fn write_staged_session(
-    sandbox: &dyn Sandbox,
-    context: &ExecutionContext,
-    session: MaterializedResumeSession,
-    source: HistoryTransferSource,
-    staging_path: &str,
-    telemetry: &mut JobTelemetry,
-) -> RunnerResult<StagedSessionRestore> {
-    let plan = plan_fresh_session_restore(context, &session, SandboxReuseResult::PoolMiss)?
-        .ok_or_else(|| RunnerError::Internal("fresh session restore plan unavailable".into()))?;
-    let started = Instant::now();
-    let result = plan.write_to(sandbox, staging_path, &session).await;
-    let elapsed = started.elapsed();
-    if result.is_err() {
-        telemetry.record_history_transfer(
-            elapsed,
-            source,
-            CliFramework::from(effective_cli_framework(&context.cli_agent_type))
-                .as_cli_agent_type(),
-            None,
-        );
-    }
-    telemetry.record(
-        "session_history_workspace_staging",
-        elapsed,
-        result.is_ok(),
-        result
-            .as_ref()
-            .err()
-            .map(|_| "session history staging failed"),
-    );
-    let transfer = result?;
-    Ok(StagedSessionRestore {
-        session,
-        plan,
-        transfer_source: source,
-        transfer,
-        staging_elapsed: elapsed,
-    })
-}
-
-fn record_staged_history_transfer_outcome(
-    telemetry: &mut JobTelemetry,
-    context: &ExecutionContext,
-    staged: &StagedSessionRestore,
-    elapsed: Duration,
-    success: bool,
-) {
-    telemetry.record_history_transfer(
-        elapsed,
-        staged.transfer_source,
-        CliFramework::from(effective_cli_framework(&context.cli_agent_type)).as_cli_agent_type(),
-        success.then(|| staged.transfer.clone()),
-    );
-}
-
-const fn staged_file_not_published_outcome(reason: StagedFileNotPublishedReason) -> &'static str {
-    match reason {
-        StagedFileNotPublishedReason::InvalidSource => "invalid_source",
-        StagedFileNotPublishedReason::InvalidDestinationParent => "invalid_parent",
-        StagedFileNotPublishedReason::InvalidDestination => "invalid_destination",
-        StagedFileNotPublishedReason::MetadataPreparationFailed => "metadata_failed",
-        StagedFileNotPublishedReason::RenameFailed => "rename_failed",
-        StagedFileNotPublishedReason::CopyFailed => "copy_failed",
-        StagedFileNotPublishedReason::DiscardFailed => "discard_failed",
-        StagedFileNotPublishedReason::Other => "other",
-    }
-}
-
-async fn prepare_staged_session_restore(
-    input: StagedSessionRestoreInput<'_>,
-    plan: SessionHistoryRestorePlan,
-    telemetry: &mut JobTelemetry,
-) -> RunnerResult<StagedSessionRestorePreparation> {
-    let StagedSessionRestoreInput {
-        sandbox,
-        context,
-        config,
-        cancel,
-        storage_apply_start,
-        staging_path,
-    } = input;
-    if storage_apply_start.await.is_err() {
-        return Ok(StagedSessionRestorePreparation::Serial(plan));
-    }
-
-    let remote_materializer = match plan {
-        SessionHistoryRestorePlan::SkipVerified(_)
-        | SessionHistoryRestorePlan::HomeCacheCandidate { .. } => {
-            return Err(RunnerError::Internal(
-                "verify-first history plan reached staged restore".into(),
-            ));
-        }
-        SessionHistoryRestorePlan::DeferredHashBacked { fallback } => {
-            record_session_history_restore_fallback(telemetry, fallback);
-            Some(SessionHistoryMaterializer::start_cancellable(
-                &config.http,
-                &config.session_history_cpu,
-                context.resume_session.as_ref(),
-                effective_cli_framework(&context.cli_agent_type),
-                cancel.clone(),
-                Some(&config.session_history_probe),
-            ))
-        }
-        SessionHistoryRestorePlan::Default => Some(SessionHistoryMaterializer::start_cancellable(
-            &config.http,
-            &config.session_history_cpu,
-            context.resume_session.as_ref(),
-            effective_cli_framework(&context.cli_agent_type),
-            cancel.clone(),
-            Some(&config.session_history_probe),
-        )),
-        SessionHistoryRestorePlan::Prestarted {
-            materializer,
-            fallback,
-        } => {
-            record_session_history_restore_fallback(telemetry, fallback);
-            Some(materializer)
-        }
-    };
-
-    let Some(remote_materializer) = remote_materializer else {
-        return Ok(StagedSessionRestorePreparation::Missing);
-    };
-    let downloaded =
-        finish_session_history_materialization(remote_materializer, cancel, telemetry).await?;
-    let (source, session) = match downloaded {
-        Some(session) => (HistoryTransferSource::Downloaded, Some(session)),
-        None => (
-            HistoryTransferSource::Inline,
-            materialize_inline_resume_session(context, config, cancel).await?,
-        ),
-    };
-    let Some(session) = session else {
-        return Ok(StagedSessionRestorePreparation::Missing);
-    };
-    write_staged_session(sandbox, context, session, source, staging_path, telemetry)
-        .await
-        .map(|staged| StagedSessionRestorePreparation::Ready(Box::new(staged)))
 }
 
 async fn populate_storage_plan(
@@ -1902,7 +1187,6 @@ async fn prepare_guest_storage(
     start: &RunStart<'_>,
     telemetry: &mut JobTelemetry,
     prepared_storage: &mut Option<crate::storage_cache::PreparedStorage>,
-    mut storage_start: GuestStorageStart<'_>,
 ) -> RunnerResult<Option<crate::storage_cache::DeferredBackgroundFill>> {
     let Some(manifest) = &context.storage_manifest else {
         return Ok(None);
@@ -1946,7 +1230,6 @@ async fn prepare_guest_storage(
                 })?;
                 let files = prepared.plan.take_decoded();
                 let guest_manifest = prepared.plan.into_guest_manifest();
-                storage_start.record(telemetry);
                 let download_started = Instant::now();
                 let download_result = super::storage::download_storages_with_files(
                     sandbox,
@@ -1988,7 +1271,6 @@ async fn prepare_guest_storage(
                     populate_storage_plan(&mut plan, None, sandbox, config, telemetry).await?;
                 let files = plan.take_decoded();
                 let guest_manifest = plan.into_guest_manifest();
-                storage_start.record(telemetry);
                 let download_started = Instant::now();
                 let download_result = super::storage::download_storages_with_files(
                     sandbox,
@@ -2045,11 +1327,11 @@ pub(super) async fn run_in_sandbox(
 /// Runs the inner guest-agent lifecycle with configurable cancellation timeouts.
 ///
 /// Guest runtime state may already be prepared, while storage delivery or
-/// session-history materialization may already be in flight. This function:
+/// model-catalog prefetch may already be in flight. This function:
 ///
 /// - completes cancellation-aware guest runtime and storage preparation while
 ///   taking ownership of model-catalog prefetch supervision;
-/// - consumes the session-history restore plan, finalizes and writes private
+/// - verifies retained-home evidence, finalizes and writes private
 ///   guest inputs, and spawns guest-agent;
 /// - starts locally owned active-input and stdout-drain work, releases deferred
 ///   cache fill, and supervises normal exit or cancellation;
@@ -2081,21 +1363,12 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         hard_cancel,
         active_input_source,
         spawn_timing,
-        session_history_restore_plan,
+        home_history_proof,
         mut prepared_storage,
         prepared_guest_runtime,
         mut pre_spawn_admission_lease,
         guest_state_prepared,
     } = controls;
-    let history_readiness = session_history_restore_plan.readiness_observer(context);
-    let staged_history_eligible = start.home_reuse_result == HomeReuseResult::Reused
-        && start.reuse_result != SandboxReuseResult::Reused
-        && context.resume_session.is_some()
-        && !matches!(
-            &session_history_restore_plan,
-            SessionHistoryRestorePlan::SkipVerified(_)
-                | SessionHistoryRestorePlan::HomeCacheCandidate { .. }
-        );
     let pre_spawn_started = Instant::now();
 
     // Complete cancellation-aware guest runtime and storage preparation while
@@ -2158,219 +1431,49 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                     Ok(result)
                 }
             };
-            session_history_restore_plan
-                .cancel_and_drain(telemetry)
-                .await;
             return result;
         }
     };
     model_catalog_prefetch.record_outcome(telemetry);
-    let (deferred_background_fill, session_history_restore_plan, staged_restore_diagnostics) =
-        if staged_history_eligible {
-            let (storage_apply_start, storage_apply_started) = oneshot::channel();
-            let staging_path = guest_runtime_path(context.run_id, |dir| {
-                dir.join("session-history-restore")
-                    .join(uuid::Uuid::new_v4().simple().to_string())
-            })?;
-            let staged_restore_started = Instant::now();
-            let mut history_telemetry = telemetry.fork_concurrent_phase();
-            let staged_cancel = cancel.child_token();
-            let staged_cancel_after_storage = staged_cancel.clone();
-            let storage_apply_admitted = AtomicBool::new(false);
-            let (storage_result, staged_result) = model_catalog_prefetch
-                .race(async {
-                    tokio::join!(
-                        async {
-                            let storage = prepare_guest_storage(
-                                sandbox,
-                                context,
-                                config,
-                                &start,
-                                telemetry,
-                                &mut prepared_storage,
-                                GuestStorageStart {
-                                    history_readiness: &history_readiness,
-                                    staged_history: Some((
-                                        storage_apply_start,
-                                        &storage_apply_admitted,
-                                    )),
-                                },
-                            );
-                            tokio::pin!(storage);
-                            let result = tokio::select! {
-                                biased;
-                                result = &mut storage => result,
-                                _ = cancel.cancelled() => {
-                                    if storage_apply_admitted.load(Ordering::Acquire) {
-                                        storage.await
-                                    } else {
-                                        Err(RunnerError::Cancelled)
-                                    }
-                                }
-                            };
-                            if result.is_err() {
-                                staged_cancel_after_storage.cancel();
-                            }
-                            result
-                        },
-                        prepare_staged_session_restore(
-                            StagedSessionRestoreInput {
-                                sandbox,
-                                context,
-                                config,
-                                cancel: &staged_cancel,
-                                storage_apply_start: storage_apply_started,
-                                staging_path: &staging_path,
-                            },
-                            session_history_restore_plan,
-                            &mut history_telemetry,
-                        )
-                    )
-                })
-                .await;
-            telemetry.merge_concurrent_phase(history_telemetry);
-            model_catalog_prefetch.record_outcome(telemetry);
-
-            let deferred = match storage_result {
-                Ok(deferred) => deferred,
-                Err(storage_error) => {
-                    let cancelled_before_storage_apply = cancel.is_cancelled()
-                        && matches!(&storage_error, RunnerError::Cancelled)
-                        && !storage_apply_admitted.load(Ordering::Acquire);
-                    let should_discard_staging = match staged_result {
-                        Ok(StagedSessionRestorePreparation::Serial(plan)) => {
-                            plan.cancel_and_drain(telemetry).await;
-                            false
-                        }
-                        Ok(StagedSessionRestorePreparation::Ready(staged)) => {
-                            let elapsed = staged.staging_elapsed;
-                            record_staged_history_transfer_outcome(
-                                telemetry, context, &staged, elapsed, false,
-                            );
-                            true
-                        }
-                        Ok(StagedSessionRestorePreparation::Missing) => false,
-                        Err(_) => true,
-                    };
-                    if should_discard_staging {
-                        let _ = discard_staged_session_history(sandbox, &staging_path).await;
-                    }
-                    if let Some(prepared) = prepared_storage.as_mut() {
-                        prepared.delivery.cancel_and_drain(telemetry).await;
-                    }
-                    model_catalog_prefetch.finish(telemetry).await;
-                    if cancelled_before_storage_apply {
-                        info!(
-                            run_id = %context.run_id,
-                            "cancel received before guest process started"
-                        );
-                        let result = AgentExecutionResult::cancelled();
-                        telemetry.record(
-                            "agent_execute",
-                            pre_spawn_started.elapsed(),
-                            false,
-                            result
-                                .failure
-                                .as_ref()
-                                .map(|failure| failure.error.as_str()),
-                        );
-                        return Ok(result);
-                    }
-                    return Err(storage_error);
-                }
-            };
-            let staged = match staged_result {
-                Ok(staged) => staged,
-                Err(error) => {
-                    let _ = discard_staged_session_history(sandbox, &staging_path).await;
-                    model_catalog_prefetch.finish(telemetry).await;
-                    if cancel.is_cancelled() || matches!(&error, RunnerError::Cancelled) {
-                        info!(
-                            run_id = %context.run_id,
-                            "cancel received before guest process started"
-                        );
-                        let result = AgentExecutionResult::cancelled();
-                        telemetry.record(
-                            "agent_execute",
-                            pre_spawn_started.elapsed(),
-                            false,
-                            result
-                                .failure
-                                .as_ref()
-                                .map(|failure| failure.error.as_str()),
-                        );
-                        return Ok(result);
-                    }
-                    return Err(error);
-                }
-            };
-            if cancel.is_cancelled() {
-                let should_discard_staging = match staged {
-                    StagedSessionRestorePreparation::Serial(plan) => {
-                        plan.cancel_and_drain(telemetry).await;
-                        false
-                    }
-                    StagedSessionRestorePreparation::Ready(staged) => {
-                        let elapsed = staged.staging_elapsed;
-                        record_staged_history_transfer_outcome(
-                            telemetry, context, &staged, elapsed, false,
-                        );
-                        true
-                    }
-                    StagedSessionRestorePreparation::Missing => false,
-                };
-                if should_discard_staging {
-                    let _ = discard_staged_session_history(sandbox, &staging_path).await;
+    let deferred_background_fill = {
+        let storage_result = model_catalog_prefetch
+            .race(run_pre_spawn_phase(
+                &cancel,
+                &OperationCancellationContext::new(
+                    &context.run_id.to_string(),
+                    sandbox.id(),
+                    "guest_storage",
+                ),
+                prepare_guest_storage(
+                    sandbox,
+                    context,
+                    config,
+                    &start,
+                    telemetry,
+                    &mut prepared_storage,
+                ),
+            ))
+            .await;
+        model_catalog_prefetch.record_outcome(telemetry);
+        let storage_preparation = match storage_result {
+            Some(Ok(deferred)) => Ok(deferred),
+            Some(Err(error)) => Err(Some(error)),
+            None => Err(None),
+        };
+        match storage_preparation {
+            Ok(deferred) => deferred,
+            Err(error) => {
+                if let Some(prepared) = prepared_storage.as_mut() {
+                    prepared.delivery.cancel_and_drain(telemetry).await;
                 }
                 model_catalog_prefetch.finish(telemetry).await;
-                info!(
-                    run_id = %context.run_id,
-                    "cancel received before guest process started"
-                );
-                let result = AgentExecutionResult::cancelled();
-                telemetry.record(
-                    "agent_execute",
-                    pre_spawn_started.elapsed(),
-                    false,
-                    result
-                        .failure
-                        .as_ref()
-                        .map(|failure| failure.error.as_str()),
-                );
-                return Ok(result);
-            }
-
-            match staged {
-                StagedSessionRestorePreparation::Serial(plan) => (deferred, Some(plan), None),
-                StagedSessionRestorePreparation::Missing => (deferred, None, None),
-                StagedSessionRestorePreparation::Ready(mut staged) => {
-                    // Storage and the isolated write have finished. A fresh VM can retain history;
-                    // prepare the requested live destination without losing staging overlap.
-                    let destination_started = Instant::now();
-                    let destination = staged
-                        .plan
-                        .prepare_destination(sandbox, context, &staged.session)
-                        .await;
-                    // The standalone staging write was recorded when it completed; aggregate
-                    // restore/transfer timings must also include live destination preparation.
-                    staged.staging_elapsed = staged
-                        .staging_elapsed
-                        .saturating_add(destination_started.elapsed());
-                    if cancel.is_cancelled() || destination.is_err() {
-                        record_staged_history_transfer_outcome(
-                            telemetry,
-                            context,
-                            &staged,
-                            staged.staging_elapsed,
-                            false,
+                let result = match error {
+                    Some(error) => Err(error),
+                    None => {
+                        info!(
+                            run_id = %context.run_id,
+                            "cancel received before guest process started"
                         );
-                        let _ = discard_staged_session_history(sandbox, &staging_path).await;
-                        model_catalog_prefetch.finish(telemetry).await;
-                        if !cancel.is_cancelled()
-                            && let Err(error) = destination
-                        {
-                            return Err(error);
-                        }
                         let result = AgentExecutionResult::cancelled();
                         telemetry.record(
                             "agent_execute",
@@ -2381,243 +1484,13 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                                 .as_ref()
                                 .map(|failure| failure.error.as_str()),
                         );
-                        return Ok(result);
+                        Ok(result)
                     }
-                    let publication_started = Instant::now();
-                    let publication = sandbox
-                        .finalize_staged_file(&StagedFileFinalizeRequest {
-                            staging_path: &staging_path,
-                            disposition: StagedFileDisposition::Publish {
-                                destination: staged.plan.final_path(),
-                            },
-                        })
-                        .await;
-                    let publication_elapsed = publication_started.elapsed();
-                    let publication_outcome = match &publication {
-                        Ok(StagedFileFinalizeOutcome::Published { mode, .. }) => Some(match mode {
-                            sandbox::StagedFilePublicationMode::SameDeviceRename => "same_device",
-                            sandbox::StagedFilePublicationMode::CrossDeviceCopyRename => {
-                                "cross_device"
-                            }
-                        }),
-                        Ok(StagedFileFinalizeOutcome::NotPublished { .. }) => Some("not_published"),
-                        Ok(StagedFileFinalizeOutcome::Discarded { .. }) => {
-                            Some("unexpected_discard")
-                        }
-                        Err(_) => Some("ambiguous"),
-                    };
-                    telemetry.record_with_outcome(
-                        "session_history_workspace_publication",
-                        publication_elapsed,
-                        matches!(
-                            &publication,
-                            Ok(StagedFileFinalizeOutcome::Published { .. })
-                        ),
-                        publication.as_ref().err().map(|_| "ambiguous publication"),
-                        publication_outcome,
-                    );
-                    let (diagnostics, fallback_elapsed, published_from_stage) = match publication {
-                        Ok(StagedFileFinalizeOutcome::Published { .. }) => (
-                            staged
-                                .plan
-                                .complete(context, &staged.session, staged.transfer.clone()),
-                            Duration::ZERO,
-                            true,
-                        ),
-                        Ok(StagedFileFinalizeOutcome::NotPublished { reason, .. }) => {
-                            telemetry.record_with_outcome(
-                                "session_history_workspace_staged_restore_fallback",
-                                Duration::ZERO,
-                                true,
-                                None,
-                                Some(staged_file_not_published_outcome(reason)),
-                            );
-                            let started = Instant::now();
-                            let result = staged
-                                .plan
-                                .write_final(sandbox, context, &staged.session)
-                                .await;
-                            let elapsed = started.elapsed();
-                            telemetry.record_history_transfer(
-                                elapsed,
-                                staged.transfer_source,
-                                CliFramework::from(effective_cli_framework(
-                                    &context.cli_agent_type,
-                                ))
-                                .as_cli_agent_type(),
-                                result
-                                    .as_ref()
-                                    .ok()
-                                    .map(|diagnostics| diagnostics.transfer.clone()),
-                            );
-                            let staged_discarded =
-                                discard_staged_session_history(sandbox, &staging_path).await;
-                            match result {
-                                Ok(diagnostics) if staged_discarded => {
-                                    (diagnostics, elapsed, false)
-                                }
-                                Ok(_) => {
-                                    let restore_elapsed = staged
-                                        .staging_elapsed
-                                        .saturating_add(publication_elapsed)
-                                        .saturating_add(elapsed);
-                                    record_staged_history_transfer_outcome(
-                                        telemetry,
-                                        context,
-                                        &staged,
-                                        restore_elapsed,
-                                        false,
-                                    );
-                                    return Err(RunnerError::Internal(
-                                        "staged session history remained after serial recovery"
-                                            .into(),
-                                    ));
-                                }
-                                Err(error) => {
-                                    let restore_elapsed = staged
-                                        .staging_elapsed
-                                        .saturating_add(publication_elapsed)
-                                        .saturating_add(elapsed);
-                                    record_staged_history_transfer_outcome(
-                                        telemetry,
-                                        context,
-                                        &staged,
-                                        restore_elapsed,
-                                        false,
-                                    );
-                                    return Err(error);
-                                }
-                            }
-                        }
-                        Ok(StagedFileFinalizeOutcome::Discarded { .. }) => {
-                            let restore_elapsed =
-                                staged.staging_elapsed.saturating_add(publication_elapsed);
-                            record_staged_history_transfer_outcome(
-                                telemetry,
-                                context,
-                                &staged,
-                                restore_elapsed,
-                                false,
-                            );
-                            return Err(RunnerError::Internal(
-                                "publish request unexpectedly discarded staged history".into(),
-                            ));
-                        }
-                        Err(error) => {
-                            let restore_elapsed =
-                                staged.staging_elapsed.saturating_add(publication_elapsed);
-                            record_staged_history_transfer_outcome(
-                                telemetry,
-                                context,
-                                &staged,
-                                restore_elapsed,
-                                false,
-                            );
-                            return Err(RunnerError::Sandbox(error));
-                        }
-                    };
-                    let total_elapsed = staged_restore_started.elapsed();
-                    let restore_elapsed = staged
-                        .staging_elapsed
-                        .saturating_add(publication_elapsed)
-                        .saturating_add(fallback_elapsed);
-                    if published_from_stage {
-                        record_staged_history_transfer_outcome(
-                            telemetry,
-                            context,
-                            &staged,
-                            restore_elapsed,
-                            true,
-                        );
-                    }
-                    telemetry.record("session_restore", restore_elapsed, true, None);
-                    telemetry.record_with_outcome(
-                        "session_history_workspace_staged_restore",
-                        total_elapsed,
-                        true,
-                        None,
-                        publication_outcome,
-                    );
-                    if cancel.is_cancelled() {
-                        model_catalog_prefetch.finish(telemetry).await;
-                        let result = AgentExecutionResult::cancelled();
-                        telemetry.record(
-                            "agent_execute",
-                            pre_spawn_started.elapsed(),
-                            false,
-                            result
-                                .failure
-                                .as_ref()
-                                .map(|failure| failure.error.as_str()),
-                        );
-                        return Ok(result);
-                    }
-                    (deferred, None, Some(diagnostics))
-                }
+                };
+                return result;
             }
-        } else {
-            let storage_result = model_catalog_prefetch
-                .race(run_pre_spawn_phase(
-                    &cancel,
-                    &OperationCancellationContext::new(
-                        &context.run_id.to_string(),
-                        sandbox.id(),
-                        "guest_storage",
-                    ),
-                    prepare_guest_storage(
-                        sandbox,
-                        context,
-                        config,
-                        &start,
-                        telemetry,
-                        &mut prepared_storage,
-                        GuestStorageStart {
-                            history_readiness: &history_readiness,
-                            staged_history: None,
-                        },
-                    ),
-                ))
-                .await;
-            model_catalog_prefetch.record_outcome(telemetry);
-            let storage_preparation = match storage_result {
-                Some(Ok(deferred)) => Ok(deferred),
-                Some(Err(error)) => Err(Some(error)),
-                None => Err(None),
-            };
-            match storage_preparation {
-                Ok(deferred) => (deferred, Some(session_history_restore_plan), None),
-                Err(error) => {
-                    if let Some(prepared) = prepared_storage.as_mut() {
-                        prepared.delivery.cancel_and_drain(telemetry).await;
-                    }
-                    model_catalog_prefetch.finish(telemetry).await;
-                    let result = match error {
-                        Some(error) => Err(error),
-                        None => {
-                            info!(
-                                run_id = %context.run_id,
-                                "cancel received before guest process started"
-                            );
-                            let result = AgentExecutionResult::cancelled();
-                            telemetry.record(
-                                "agent_execute",
-                                pre_spawn_started.elapsed(),
-                                false,
-                                result
-                                    .failure
-                                    .as_ref()
-                                    .map(|failure| failure.error.as_str()),
-                            );
-                            Ok(result)
-                        }
-                    };
-                    session_history_restore_plan
-                        .cancel_and_drain(telemetry)
-                        .await;
-                    return result;
-                }
-            }
-        };
+        }
+    };
     let pre_spawn_cancel = cancel.clone();
     let pre_spawn_start = &start;
     let pre_spawn_telemetry = &mut *telemetry;
@@ -2633,144 +1506,16 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             let telemetry = pre_spawn_telemetry;
             let deferred_background_fill = deferred_background_fill;
 
-    // Consume the session-history restore plan and prepare the private guest
-    // inputs before crossing the process-spawn ownership boundary.
-    let mut session_restore_diagnostics = staged_restore_diagnostics;
-    let mut pre_run_restored_session_identity = None;
-    let mut native_home_proof_failed = false;
-    if let Some(session_history_restore_plan) = session_history_restore_plan {
-    let session_history_materializer = match session_history_restore_plan {
-        SessionHistoryRestorePlan::SkipVerified(identity) => {
-            let verification_started = Instant::now();
-            let verification_result =
-                verify_restored_session_identity_for_reuse(sandbox, context, identity).await;
-            let verification_succeeded = verification_result.is_ok();
-            telemetry.record(
-                "session_history_identity_reuse_verify",
-                verification_started.elapsed(),
-                verification_succeeded,
-                (!verification_succeeded)
-                    .then_some(SESSION_HISTORY_IDENTITY_REUSE_VERIFY_TELEMETRY_ERROR),
-            );
-            match verification_result {
-                Ok(identity) => {
-                    telemetry.record(
-                        "session_history_identity_reuse_hit",
-                        Duration::ZERO,
-                        true,
-                        None,
-                    );
-                    telemetry.record("session_history_restore_skip", Duration::ZERO, true, None);
-                    pre_run_restored_session_identity = Some(identity);
-                    None
-                }
-                Err(reason) => {
-                    if reason == SessionHistoryIdentityReason::VerifyHelperCancelled || cancel.is_cancelled() {
-                        return Err(RunnerError::Cancelled);
-                    }
-                    telemetry.record(
-                        SessionHistoryRestoreFallback::StaleIdleIdentity.action_type(),
-                        Duration::ZERO,
-                        true,
-                        None,
-                    );
-                    record_session_history_identity_reason(telemetry, reason);
-                    Some(SessionHistoryMaterializer::start_cancellable(
-                        &config.http,
-                        &config.session_history_cpu,
-                        context.resume_session.as_ref(),
-                        effective_cli_framework(&context.cli_agent_type),
-                        cancel.clone(),
-                        Some(&config.session_history_probe),
-                    ))
-                }
-            }
-        }
-        SessionHistoryRestorePlan::DeferredHashBacked { fallback } => {
-            record_session_history_restore_fallback(telemetry, fallback);
-            Some(SessionHistoryMaterializer::start_cancellable(
-                &config.http,
-                &config.session_history_cpu,
-                context.resume_session.as_ref(),
-                effective_cli_framework(&context.cli_agent_type),
-                cancel.clone(),
-                Some(&config.session_history_probe),
-            ))
-        }
-        SessionHistoryRestorePlan::Default => Some(SessionHistoryMaterializer::start_cancellable(
-            &config.http,
-            &config.session_history_cpu,
-            context.resume_session.as_ref(),
-            effective_cli_framework(&context.cli_agent_type),
-            cancel.clone(),
-            Some(&config.session_history_probe),
-        )),
-        SessionHistoryRestorePlan::Prestarted {
-            materializer,
-            fallback,
-        } => {
-            record_session_history_restore_fallback(telemetry, fallback);
-            Some(materializer)
-        }
-        SessionHistoryRestorePlan::HomeCacheCandidate { binding, fallback } => {
-            let verification_started = Instant::now();
-            let verified = super::home_history::verify_home_candidate(sandbox, context, binding, &cancel).await?;
-            telemetry.record("session_history_home_cache_verify", verification_started.elapsed(), verified, None);
-            if verified {
-                telemetry.record("session_history_home_cache_hit", Duration::ZERO, true, None);
-                telemetry.record("session_history_restore_skip", Duration::ZERO, true, None);
-                telemetry.record_history_transfer(verification_started.elapsed(), HistoryTransferSource::HomeCache,
-                    CliFramework::from(effective_cli_framework(&context.cli_agent_type)).as_cli_agent_type(), None);
-                None
-            } else {
-                native_home_proof_failed = context.native_continuation.is_some();
-                record_session_history_restore_fallback(telemetry, fallback);
-                telemetry.record("session_history_home_cache_miss", Duration::ZERO, true, None);
-                Some(SessionHistoryMaterializer::start_cancellable(
-                    &config.http, &config.session_history_cpu, context.resume_session.as_ref(),
-                    effective_cli_framework(&context.cli_agent_type), cancel.clone(), Some(&config.session_history_probe),
-                ))
-            }
-        }
+    // Check the selected home image before crossing the process-spawn boundary.
+    let native_home_proof_failed = if let Some(binding) = home_history_proof {
+        let started = Instant::now();
+        let verified = super::home_history::verify_home_candidate(sandbox, context, binding, &cancel).await?;
+        telemetry.record("session_history_home_cache_verify", started.elapsed(), verified, None);
+        telemetry.record(if verified { "session_history_home_cache_hit" } else { "session_history_home_cache_miss" }, Duration::ZERO, true, None);
+        !verified && context.native_continuation.is_some()
+    } else {
+        false
     };
-    if let Some(session_history_materializer) = session_history_materializer {
-        // Finish any remaining history materialization immediately before
-        // restoring it into the guest.
-        let downloaded_resume_session = finish_session_history_materialization(
-            session_history_materializer, &cancel, telemetry,
-        ).await?;
-        let transfer_source = if downloaded_resume_session.is_some() {
-            HistoryTransferSource::Downloaded
-        } else {
-            HistoryTransferSource::Inline
-        };
-        let resume_session = match downloaded_resume_session {
-            Some(session) => Some(session),
-            None => materialize_inline_resume_session(context, config, &cancel).await?,
-        };
-        if let Some(session) = resume_session {
-            let t = Instant::now();
-            let result = restore_session(sandbox, context, &session).await;
-            let elapsed = t.elapsed();
-            telemetry.record_history_transfer(
-                elapsed,
-                transfer_source,
-                CliFramework::from(effective_cli_framework(&context.cli_agent_type))
-                    .as_cli_agent_type(),
-                result.as_ref().ok().map(|diagnostics| diagnostics.transfer.clone()),
-            );
-            let err = result.as_ref().err().map(|e| e.to_string());
-            telemetry.record(
-                "session_restore",
-                elapsed,
-                result.is_ok(),
-                err.as_deref(),
-            );
-            let diagnostics = result?;
-            session_restore_diagnostics = Some(diagnostics);
-        }
-    }
-    }
 
     // Finalize the prepared private run payload and build the environment used
     // to bootstrap guest-agent. User-provided env is passed through a private
@@ -2993,8 +1738,6 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                 agent_started_at: t,
                 host_oom_evidence_since,
                 deferred_background_fill,
-                session_restore_diagnostics,
-                pre_run_restored_session_identity,
                 env_diagnostics,
                 env_pairs,
             })
@@ -3035,8 +1778,6 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         agent_started_at: t,
         host_oom_evidence_since,
         deferred_background_fill,
-        session_restore_diagnostics,
-        mut pre_run_restored_session_identity,
         env_diagnostics,
         env_pairs,
     } = prepared_agent;
@@ -3345,7 +2086,6 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                         env_diagnostics: &env_diagnostics,
                         env_key_diagnostics: &env_key_diagnostics,
                         stdout_stream_diagnostics,
-                        session_restore_diagnostics: session_restore_diagnostics.as_ref(),
                         resource_failure_kind,
                     },
                 );
@@ -3404,25 +2144,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             }
             Err(final_identity_reason) => {
                 record_session_history_identity_reason(telemetry, final_identity_reason);
-                if let Some(restored_identity) = pre_run_restored_session_identity.take() {
-                    match verify_restored_session_identity_for_reuse(
-                        sandbox,
-                        context,
-                        restored_identity,
-                    )
-                    .await
-                    {
-                        Ok(verified_restored_session_identity) => {
-                            Some(verified_restored_session_identity)
-                        }
-                        Err(reason) => {
-                            record_session_history_identity_reason(telemetry, reason);
-                            None
-                        }
-                    }
-                } else {
-                    None
-                }
+                None
             }
         }
     } else {

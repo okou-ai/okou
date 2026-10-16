@@ -52,23 +52,7 @@ async fn execution_timeout_preserves_the_resumable_session_before_exit()
             .header("Content-Type", "application/json")
             .json_body(json!({}));
     });
-    let prepare = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/agent/session-history/prepare")
-            .json_body_includes(format!(r#"{{"runId":"{RUN_ID}"}}"#));
-        then.status(200)
-            .header("Content-Type", "application/json")
-            .json_body(json!({
-                "presignedUrl": server.url("/test/execution-timeout-history"),
-                "existing": false
-            }));
-    });
-    let upload = server.mock(|when, then| {
-        when.method(PUT)
-            .path("/test/execution-timeout-history")
-            .header("Content-Type", "application/octet-stream");
-        then.status(200);
-    });
+
     let complete = server.mock(|when, then| {
         when.method(POST)
             .path("/api/webhooks/agent/complete")
@@ -144,8 +128,7 @@ async fn execution_timeout_preserves_the_resumable_session_before_exit()
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    prepare.assert_calls_async(1).await;
-    upload.assert_calls_async(1).await;
+
     complete.assert_calls_async(1).await;
 
     let paths = guest_agent::paths::GuestPaths::from_runtime_dir(runtime_dir);

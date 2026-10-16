@@ -202,22 +202,7 @@ fn recovery_finalization_resolves_history_from_codex_sessions_root() -> TestResu
         .enable_all()
         .build()?;
     let server = MockServer::start();
-    let prepare_mock = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/agent/session-history/prepare");
-        then.status(200)
-            .header("Content-Type", "application/json")
-            .json_body(json!({
-                "presignedUrl": server.url("/test/codex-derived-history-upload"),
-                "existing": false
-            }));
-    });
-    let upload_mock = server.mock(|when, then| {
-        when.method(PUT)
-            .path("/test/codex-derived-history-upload")
-            .body(history.as_str());
-        then.status(200);
-    });
+
     let complete_mock = server.mock(|when, then| {
         when.method(POST)
             .path("/api/webhooks/agent/complete")
@@ -266,8 +251,7 @@ fn recovery_finalization_resolves_history_from_codex_sessions_root() -> TestResu
         )
         .await
     })?;
-    prepare_mock.assert_calls(1);
-    upload_mock.assert_calls(1);
+
     complete_mock.assert_calls(1);
     Ok(())
 }

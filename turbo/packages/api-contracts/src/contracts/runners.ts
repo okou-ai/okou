@@ -25,18 +25,18 @@ export { BUILTIN_FIREWALL_CATALOG_MAX_BYTES } from "@okouai/connectors/connector
 export {
   CANONICAL_GUEST_HOME_DIR,
   CANONICAL_WORKING_DIR,
-  RUNNER_HOSTNAME_MAX_LENGTH,
+  homeReuseResultSchema,
   OFFICIAL_RUNNER_TOKEN_PREFIX,
+  RUNNER_HOSTNAME_MAX_LENGTH,
   RUNNER_VERSION_MAX_LENGTH,
   runnerGroupSchema,
   runnerHeartbeatGenerationSchema,
   runnerHostnameSchema,
   runnerVersionSchema,
   sandboxReuseResultSchema,
-  homeReuseResultSchema,
   sandboxStartupPathSchema,
-  type SandboxReuseResult,
   type HomeReuseResult,
+  type SandboxReuseResult,
   type SandboxStartupPath,
 } from "./runner-primitives";
 
@@ -607,90 +607,6 @@ export const storageManifestSchema = z.object({
     .superRefine(uniqueStorageMountPaths),
 });
 
-/**
- * Resume session information. The compatibility wire field is `sessionId`, but
- * its semantic name in API/runner code is `cliAgentSessionId`.
- */
-const inlineResumeSessionSchema = z.object({
-  sessionId: z.string(),
-  sessionHistory: z.string(),
-});
-
-const resumeSessionHistoryBlobRefSchema = z.object({
-  kind: z.literal("blob"),
-  hash: z.string().regex(/^[a-f0-9]{64}$/),
-});
-const resumeSessionHistoryDownloadSourceFieldSchema = {
-  downloadSource: sessionHistoryDownloadSourceSchema.optional(),
-};
-const resumeSessionHistoryRawSizeSchema = z
-  .number()
-  .int()
-  .positive()
-  .max(RESUME_SESSION_HISTORY_MAX_BYTES);
-const resumeSessionHistoryEncodedSizeSchema = z
-  .number()
-  .int()
-  .positive()
-  .max(RESUME_SESSION_HISTORY_MAX_BYTES);
-
-const storedResumeSessionRefSchema = z.object({
-  sessionId: z.string(),
-  historyGenerationRunId: z.uuid().optional(),
-  historyRef: resumeSessionHistoryBlobRefSchema.extend({
-    encoding: sessionHistoryEncodingSchema.optional(),
-  }),
-});
-
-const resumeSessionIdentityHistoryRefSchema = resumeSessionHistoryBlobRefSchema
-  .extend({
-    url: z.string().url(),
-    encoding: z.literal("identity"),
-    rawSize: resumeSessionHistoryRawSizeSchema,
-    encodedSize: resumeSessionHistoryEncodedSizeSchema,
-    ...resumeSessionHistoryDownloadSourceFieldSchema,
-  })
-  .strict();
-
-const resumeSessionGzipHistoryRefSchema = resumeSessionHistoryBlobRefSchema
-  .extend({
-    url: z.string().url(),
-    encoding: z.literal("gzip"),
-    rawSize: resumeSessionHistoryRawSizeSchema,
-    encodedSize: resumeSessionHistoryEncodedSizeSchema,
-    ...resumeSessionHistoryDownloadSourceFieldSchema,
-  })
-  .strict();
-
-const resumeSessionZstdHistoryRefSchema = resumeSessionHistoryBlobRefSchema
-  .extend({
-    url: z.string().url(),
-    encoding: z.literal("zstd"),
-    rawSize: resumeSessionHistoryRawSizeSchema,
-    encodedSize: resumeSessionHistoryEncodedSizeSchema,
-    ...resumeSessionHistoryDownloadSourceFieldSchema,
-  })
-  .strict();
-
-const resumeSessionRefSchema = z.object({
-  sessionId: z.string(),
-  historyRef: z.union([
-    resumeSessionGzipHistoryRefSchema,
-    resumeSessionZstdHistoryRefSchema,
-    resumeSessionIdentityHistoryRefSchema,
-  ]),
-});
-
-export const storedResumeSessionSchema = z.union([
-  inlineResumeSessionSchema,
-  storedResumeSessionRefSchema,
-]);
-
-export const resumeSessionSchema = z.union([
-  inlineResumeSessionSchema,
-  resumeSessionRefSchema,
-]);
-
 /** Retained native files are disposable; Chat remains the recovery source. */
 export const nativeContinuationSchema = z
   .object({
@@ -1149,8 +1065,7 @@ const storedExecutionContextObjectSchema = z.object({
   // Connector-owned runtime vars used by proxy/firewall template resolution.
   // User-provided run vars stay in agent_runs.vars and are merged at claim time.
   vars: z.record(z.string(), z.string()).nullable().optional(),
-  resumeSession: storedResumeSessionSchema.nullable(),
-  nativeContinuation: nativeContinuationSchema.optional(),
+  nativeContinuation: nativeContinuationSchema,
   // AES-256-GCM encrypted Record<string, string>. Keys are the runtime secret
   // names used by `${{ secrets.NAME }}`; connector/model-provider keys are env
   // aliases, not backing storage secret names.
@@ -1255,8 +1170,7 @@ const executionContextObjectSchema = z.object({
   storageManifest: storageManifestSchema.nullable(),
   environment: z.record(z.string(), z.string()).nullable(),
   platformEnvironment: z.record(z.string(), z.string()),
-  resumeSession: resumeSessionSchema.nullable(),
-  nativeContinuation: nativeContinuationSchema.optional(),
+  nativeContinuation: nativeContinuationSchema,
   // Plain secret values used by the runner for redaction. These are values, not
   // names, and are base64-encoded only when exported through OKOU_SECRET_VALUES.
   secretValues: z.array(z.string()).nullable(),
@@ -1697,8 +1611,6 @@ export type StoredStorageMountEntry = z.infer<
 >;
 export type StorageManifest = z.infer<typeof storageManifestSchema>;
 export type CanonicalStorageManifest = StorageManifest;
-export type StoredResumeSession = z.infer<typeof storedResumeSessionSchema>;
-export type ResumeSession = z.infer<typeof resumeSessionSchema>;
 export type SessionHistoryDownloadSource = z.infer<
   typeof sessionHistoryDownloadSourceSchema
 >;

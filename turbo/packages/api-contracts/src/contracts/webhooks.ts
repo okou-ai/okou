@@ -33,16 +33,15 @@ import {
 } from "./storages";
 
 export {
-  sandboxReuseResultSchema,
   homeReuseResultSchema,
-  type SandboxReuseResult,
+  sandboxReuseResultSchema,
   type HomeReuseResult,
+  type SandboxReuseResult,
 } from "./runners";
 
 const c = initContract();
 
-// Hash-backed resume history is keyed and verified as lowercase SHA-256 hex.
-// Accepting other 64-character strings would defer bad input until runner claim.
+// Memory publication identities use lowercase SHA-256 hex.
 const sha256HexSchema = z
   .string()
   .regex(
@@ -345,37 +344,15 @@ const volumeVersionsSnapshotSchema = z.object({
 const runCompletionMetadataShape = {
   cliAgentType: z.string().min(1, "cliAgentType is required"),
   cliAgentSessionId: z.string().min(1, "cliAgentSessionId is required"),
-  cliAgentSessionHistoryHash: sha256HexSchema.optional(),
-  cliAgentSessionHistoryDisposition: z
-    .enum(["discarded_oversized", "unavailable", "native_only"])
-    .optional(),
+  cliAgentSessionHistoryDisposition: z.enum(["native_only"]),
   // Versions of the run's authorized writeback mounts after publication.
   artifactSnapshots: artifactSnapshotsSchema.optional(),
   volumeVersionsSnapshot: volumeVersionsSnapshotSchema.optional(),
 } as const;
 
-function requireCompletionHistory(
-  body: {
-    readonly cliAgentSessionHistoryHash?: string;
-    readonly cliAgentSessionHistoryDisposition?: string;
-  },
-  context: z.RefinementCtx,
-): void {
-  const hasHash = body.cliAgentSessionHistoryHash !== undefined;
-  const hasDisposition = body.cliAgentSessionHistoryDisposition !== undefined;
-  if (hasHash === hasDisposition) {
-    context.addIssue({
-      code: "custom",
-      path: ["cliAgentSessionHistoryHash"],
-      message: "Exactly one session history hash or disposition is required",
-    });
-  }
-}
-
 export const runCompletionMetadataSchema = z
   .object(runCompletionMetadataShape)
-  .strict()
-  .superRefine(requireCompletionHistory);
+  .strict();
 
 const webhookCompleteBodySchema = z.object({
   runId: z.string().min(1, "runId is required"),
@@ -652,46 +629,6 @@ export const webhookCompleteContract = c.router({
       500: apiErrorSchema,
     },
     summary: "Handle agent run completion",
-  },
-});
-
-/**
- * Native CLI history upload preparation, independent of file publication.
- * Returns a presigned URL for uploading session history directly to S3,
- * bypassing Vercel's 4.5MB body size limit.
- */
-export const webhookSessionHistoryPrepareContract = c.router({
-  prepare: {
-    method: "POST",
-    path: "/api/webhooks/agent/session-history/prepare",
-    headers: authHeadersSchema,
-    body: z.object({
-      runId: z.string().min(1, "runId is required"),
-      hash: sha256HexSchema,
-      rawSize: z
-        .number()
-        .int()
-        .positive("rawSize must be a positive integer")
-        .max(RESUME_SESSION_HISTORY_MAX_BYTES),
-      encodedSize: z
-        .number()
-        .int()
-        .positive("encodedSize must be a positive integer")
-        .max(RESUME_SESSION_HISTORY_MAX_BYTES),
-      encoding: sessionHistoryEncodingSchema.optional(),
-    }),
-    responses: {
-      200: z.object({
-        presignedUrl: z.string().optional(),
-        existing: z.boolean(),
-        encoding: sessionHistoryEncodingSchema.optional(),
-      }),
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      404: apiErrorSchema,
-      500: apiErrorSchema,
-    },
-    summary: "Get presigned URL for uploading session history to S3",
   },
 });
 

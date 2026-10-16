@@ -3,17 +3,13 @@ use httpmock::prelude::*;
 use sha2::{Digest, Sha256};
 
 use crate::executor::tests::support::RUN_IN_SANDBOX_TEST_TIMEOUT;
-use crate::executor::{SessionHistoryRestoreFallback, SessionHistoryRestorePlan};
 use crate::home_image_cache::{HomeImagePrepareLockPolicy, HomeImagePrepareLockTestGate};
 use crate::telemetry::{JobTelemetry, RunnerStartupPath};
 use runner_host::home_observation::{
     HomeObservation, HomeObservationKind as HomeKind, HomeObservationOutcome as HomeOutcome,
 };
 use runner_storage::operation_test_support::RecordedHomeObservations;
-use runner_types::types::{
-    HomeReuseResult, ResumeSessionHistory, ResumeSessionHistoryEncoding, ResumeSessionHistoryRef,
-    ResumeSessionHistoryRefKind,
-};
+use runner_types::types::HomeReuseResult;
 
 fn enable_api_start_telemetry(context: &mut runner_types::types::ExecutionContext) {
     context.api_start_time = Some(chrono::Utc::now().timestamp_millis().max(0) as u64);
@@ -62,35 +58,12 @@ fn assert_api_to_spawn_path(
 fn set_reuse_and_session_identity(
     context: &mut runner_types::types::ExecutionContext,
     session_id: &str,
-    session_history: &str,
 ) {
     context.reuse_key = Some(format!("thread:home-cache-{session_id}"));
-    context.resume_session = Some(ResumeSession::inline(
-        session_id.into(),
-        session_history.into(),
-    ));
-}
-
-fn set_reuse_and_session_history_ref(
-    context: &mut runner_types::types::ExecutionContext,
-    session_id: &str,
-    history: &[u8],
-    url: String,
-) {
-    context.reuse_key = Some(format!("thread:home-cache-{session_id}"));
-    context.resume_session = Some(ResumeSession {
-        cli_agent_session_id: session_id.into(),
-        history: ResumeSessionHistory::Ref {
-            history_ref: ResumeSessionHistoryRef {
-                kind: ResumeSessionHistoryRefKind::Blob,
-                hash: hex::encode(Sha256::digest(history)),
-                url,
-                encoding: ResumeSessionHistoryEncoding::Identity,
-                raw_size: history.len() as u64,
-                encoded_size: history.len() as u64,
-                download_source: None,
-            },
-        },
+    context.native_continuation = Some(guest_contracts::env::NativeContinuation {
+        session_id: Some(session_id.into()),
+        generation_run_id: Some(context.run_id.to_string()),
+        recovery_prompt: None,
     });
 }
 
@@ -105,7 +78,7 @@ async fn invalid_storage_preparation_preserves_the_selected_home_for_the_next_ru
     let factory = MockSandboxFactory::with_overrides(overrides.clone());
     let mut context = minimal_context();
     let session = "unused-home-preflight";
-    set_reuse_and_session_identity(&mut context, session, r#"{"type":"init"}"#);
+    set_reuse_and_session_identity(&mut context, session);
     let seed = seed_home_image_cache(&cache, &paths, session, 16).await;
     let metadata = seed.parent().unwrap().join("metadata.json");
     let original = tokio::fs::read(&metadata).await.unwrap();
@@ -176,7 +149,7 @@ async fn invalid_storage_preparation_preserves_the_selected_home_for_the_next_ru
 }
 
 #[tokio::test]
-async fn rejected_seed_handoff_rebuilds_current_storage_and_history_before_one_fresh_create() {
+async fn rejected_seed_handoff_rebuilds_current_storage_before_one_fresh_create() {
     use crate::home_image_cache::HomeImageHandoffTestGate;
     use guest_contracts::home_cache_history::{
         HomeCacheHistoryProof, HomeCacheHistoryProofBinding,
@@ -205,15 +178,9 @@ async fn rejected_seed_handoff_rebuilds_current_storage_and_history_before_one_f
         })
         .await;
     let history = br#"{"type":"init"}"#;
-    let history_get = server
-        .mock_async(|when, then| {
-            when.method(GET).path("/history.blob");
-            then.status(200).body(history);
-        })
-        .await;
     let mut context = minimal_context();
     let session = "seed-handoff-changed";
-    set_reuse_and_session_history_ref(&mut context, session, history, server.url("/history.blob"));
+    set_reuse_and_session_identity(&mut context, session);
     let mut storage = api_storage(
         "current-storage",
         "/home/user/workspace/data",
@@ -236,13 +203,12 @@ async fn rejected_seed_handoff_rebuilds_current_storage_and_history_before_one_f
         .unwrap()
         .strip_prefix("image-")
         .unwrap();
-    let expected = crate::executor::home_history::expected_history(&context).unwrap();
     let identity = SessionHistoryIdentity::new(
-        expected.framework,
-        expected.session_id_hash,
-        expected.history_ref_kind,
-        expected.history_hash,
-        expected.history_size_bytes,
+        guest_contracts::session_history_identity::SessionHistoryFramework::ClaudeCode,
+        hex::encode(Sha256::digest(session.as_bytes())),
+        guest_contracts::session_history_identity::SessionHistoryRefKind::LocalHome,
+        hex::encode(Sha256::digest(history)),
+        history.len() as u64,
         SessionHistorySourceRef::ClaudeCode {
             config_dir: "/home/user/.claude".into(),
             working_dir: CANONICAL_WORKING_DIR.into(),
@@ -284,17 +250,13 @@ async fn rejected_seed_handoff_rebuilds_current_storage_and_history_before_one_f
         &mut telemetry,
         NewSandboxHooks {
             preparation: crate::executor::sandbox_run::FreshPreparation::Initial,
-            controls: RunControls::new(tokio_util::sync::CancellationToken::new(), None)
-                .with_session_history_restore_plan(SessionHistoryRestorePlan::DeferredHashBacked {
-                    fallback: None,
-                }),
+            controls: RunControls::new(tokio_util::sync::CancellationToken::new(), None),
             prepared_run_payload: prepare_run_payload_for_run(&context).unwrap(),
             sandbox_prepared: None,
         },
     );
     let replace_seed = async {
         gate.wait_entered(RUN_IN_SANDBOX_TEST_TIMEOUT).await;
-        history_get.assert_calls_async(0).await;
         archive_get.assert_calls_async(0).await;
         tokio::fs::rename(&seed, dir.path().join("selected-original.ext4"))
             .await
@@ -332,16 +294,7 @@ async fn rejected_seed_handoff_rebuilds_current_storage_and_history_before_one_f
         "fresh storage cannot use the old seed's fingerprint shortcut"
     );
     assert_eq!(applied.storages[0].vas_version_id.as_deref(), Some("v1"));
-    history_get.assert_calls_async(1).await;
     archive_get.assert_calls_async(1).await;
-    assert!(
-        overrides
-            .write_file_calls()
-            .iter()
-            .any(
-                |call| call.path.ends_with("seed-handoff-changed.jsonl") && call.content == history
-            )
-    );
     assert!(
         !overrides
             .exec_calls()
@@ -370,7 +323,7 @@ async fn home_mount_retry_starts_a_new_codex_catalog_prefetch_owner() {
     let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
     let mut ctx = codex_oauth_context();
     let session_id = "00000000-0000-4000-8000-000000023425";
-    set_reuse_and_session_identity(&mut ctx, session_id, r#"{"type":"init"}"#);
+    set_reuse_and_session_identity(&mut ctx, session_id);
     let params = JobParams {
         home_disk_mb: 16,
         ..default_params()
@@ -454,7 +407,7 @@ async fn post_write_prefetch_failure_replaces_consumed_cache_hit_with_fresh_home
         let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
         let mut context = codex_oauth_context();
         let session_id = "00000000-0000-4000-8000-000000032219";
-        set_reuse_and_session_identity(&mut context, session_id, r#"{"type":"init"}"#);
+        set_reuse_and_session_identity(&mut context, session_id);
         let params = JobParams {
             home_disk_mb: 16,
             ..default_params()
@@ -564,7 +517,7 @@ async fn execute_inner_retries_fresh_after_home_cache_hit_create_failure() {
         storages: vec![storage],
         artifacts: Vec::new(),
     });
-    set_reuse_and_session_identity(&mut ctx, "sess-cache-hit", r#"{"type":"init"}"#);
+    set_reuse_and_session_identity(&mut ctx, "sess-cache-hit");
     let params = JobParams {
         home_disk_mb: 16,
         ..default_params()
@@ -679,7 +632,7 @@ async fn execute_inner_dns_readiness_retry_replaces_consumed_home_cache_hit() {
     }));
     let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
     let mut ctx = minimal_context();
-    set_reuse_and_session_identity(&mut ctx, "sess-cache-dns-retry", r#"{"type":"init"}"#);
+    set_reuse_and_session_identity(&mut ctx, "sess-cache-dns-retry");
     let params = JobParams {
         home_disk_mb: 16,
         ..default_params()
@@ -753,7 +706,7 @@ async fn process_timeout_invalidates_consumed_home_cache_without_fallback() {
     let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
     let session_id = "sess-cache-dns-process-timeout";
     let mut ctx = minimal_context();
-    set_reuse_and_session_identity(&mut ctx, session_id, r#"{"type":"init"}"#);
+    set_reuse_and_session_identity(&mut ctx, session_id);
     let params = JobParams {
         home_disk_mb: 16,
         ..default_params()
@@ -853,11 +806,7 @@ async fn dns_replacement_storage_classification_failure_prevents_agent_start() {
     let storage_fingerprints =
         crate::storage_fingerprints::StorageFingerprints::from_manifest(&manifest);
     ctx.storage_manifest = Some(manifest);
-    set_reuse_and_session_identity(
-        &mut ctx,
-        "sess-cache-dns-prepare-failure",
-        r#"{"type":"init"}"#,
-    );
+    set_reuse_and_session_identity(&mut ctx, "sess-cache-dns-prepare-failure");
     let params = JobParams {
         home_disk_mb: 16,
         ..default_params()
@@ -921,11 +870,7 @@ async fn execute_inner_cache_hit_retry_requires_completed_cleanup() {
     overrides.push_destroy_panic("simulated destroy panic");
     let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
     let mut ctx = minimal_context();
-    set_reuse_and_session_identity(
-        &mut ctx,
-        "sess-cache-cleanup-uncertain",
-        r#"{"type":"init"}"#,
-    );
+    set_reuse_and_session_identity(&mut ctx, "sess-cache-cleanup-uncertain");
     let params = JobParams {
         home_disk_mb: 16,
         ..default_params()
@@ -988,7 +933,7 @@ async fn execute_inner_waits_for_transient_home_cache_lock() {
     let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
     let mut ctx = minimal_context();
     let session_id = "sess-cache-transient-lock";
-    set_reuse_and_session_identity(&mut ctx, session_id, r#"{"type":"init"}"#);
+    set_reuse_and_session_identity(&mut ctx, session_id);
     let params = JobParams {
         home_disk_mb: 16,
         ..default_params()
@@ -1087,7 +1032,7 @@ async fn actual_startup_correlates_the_consumed_generation_but_not_a_discarded_c
         let mut ctx = minimal_context();
         ctx.is_first_run = Some(false);
         let session_id = "sess-source-identity";
-        set_reuse_and_session_identity(&mut ctx, session_id, r#"{"type":"init"}"#);
+        set_reuse_and_session_identity(&mut ctx, session_id);
         let params = JobParams {
             home_disk_mb: 16,
             ..default_params()
@@ -1183,7 +1128,7 @@ async fn execute_inner_immediate_lock_policy_still_consumes_available_cache() {
     let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
     let mut ctx = minimal_context();
     let session_id = "sess-cache-immediate-lock-policy";
-    set_reuse_and_session_identity(&mut ctx, session_id, r#"{"type":"init"}"#);
+    set_reuse_and_session_identity(&mut ctx, session_id);
     let params = JobParams {
         home_disk_mb: 16,
         home_image_prepare_lock_policy: HomeImagePrepareLockPolicy::ImmediateFallback,
@@ -1246,7 +1191,7 @@ async fn execute_inner_records_home_cache_lock_busy_prepare_telemetry() {
     let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
     let mut ctx = minimal_context();
     let session_id = "sess-cache-lock-busy-prepare";
-    set_reuse_and_session_identity(&mut ctx, session_id, r#"{"type":"init"}"#);
+    set_reuse_and_session_identity(&mut ctx, session_id);
     let params = JobParams {
         home_disk_mb: 16,
         ..default_params()
@@ -1331,7 +1276,7 @@ async fn execute_inner_logs_home_cache_lock_error_separately() {
     let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
     let mut ctx = minimal_context();
     let session_id = "sess-cache-lock-error-prepare";
-    set_reuse_and_session_identity(&mut ctx, session_id, r#"{"type":"init"}"#);
+    set_reuse_and_session_identity(&mut ctx, session_id);
     let params = JobParams {
         home_disk_mb: 16,
         ..default_params()
@@ -1427,29 +1372,8 @@ async fn execute_inner_does_not_retry_home_cache_hit_after_proxy_register_failur
     let create_gate = MockLifecycleGate::new();
     overrides.set_create_lifecycle_gate(create_gate.clone());
     let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
-    let server = MockServer::start_async().await;
-    let history = br#"{"type":"init"}"#;
-    let history_requested = Arc::new(tokio::sync::Notify::new());
-    let responder_requested = Arc::clone(&history_requested);
-    let history_mock = server
-        .mock_async(|when, then| {
-            when.method(GET).path("/history.blob");
-            then.respond_with(move |_| {
-                responder_requested.notify_one();
-                httpmock::HttpMockResponse::builder()
-                    .status(200)
-                    .body(history.as_slice())
-                    .build()
-            });
-        })
-        .await;
     let mut ctx = minimal_context();
-    set_reuse_and_session_history_ref(
-        &mut ctx,
-        "sess-register-fail",
-        history,
-        server.url("/history.blob?token=secret"),
-    );
+    set_reuse_and_session_identity(&mut ctx, "sess-register-fail");
     let params = JobParams {
         home_disk_mb: 16,
         ..default_params()
@@ -1476,32 +1400,24 @@ async fn execute_inner_does_not_retry_home_cache_hit_after_proxy_register_failur
             &mut telemetry,
             NewSandboxHooks {
                 preparation: crate::executor::sandbox_run::FreshPreparation::Initial,
-                controls: RunControls::new(tokio_util::sync::CancellationToken::new(), None)
-                    .with_session_history_restore_plan(
-                        SessionHistoryRestorePlan::DeferredHashBacked {
-                            fallback: Some(SessionHistoryRestoreFallback::NonReuse),
-                        },
-                    ),
+                controls: RunControls::new(tokio_util::sync::CancellationToken::new(), None),
                 prepared_run_payload: prepare_run_payload_for_run(&ctx).unwrap(),
                 sandbox_prepared: None,
             },
         );
         tokio::pin!(execution);
         tokio::select! {
-            _ = &mut execution => panic!("execution escaped the create gate before history GET"),
+            _ = &mut execution => panic!("execution escaped the create gate before sandbox creation"),
             () = async {
                 create_gate.wait_entered(1, RUN_IN_SANDBOX_TEST_TIMEOUT)
                     .await.expect("sandbox create must enter its gate");
-                history_requested.notified().await;
             } => {}
         }
-        // The remote owner is proven to have started before registration can
-        // fail. Cancellation may otherwise legitimately win before its first GET.
         create_gate.release_one();
         execution.await
     })
     .await
-    .expect("proxy registration failure must drain the prestart history owner");
+    .expect("proxy registration failure must finish cleanup");
 
     assert!(
         result.is_err(),
@@ -1527,10 +1443,6 @@ async fn execute_inner_does_not_retry_home_cache_hit_after_proxy_register_failur
         expected_seed.exists(),
         "proxy registration failure must not invalidate the unrelated home cache hit"
     );
-    // A lease alone is not retained-history authority. The normal prestart
-    // download overlaps creation until current preparation and live proof can
-    // be verified. Registration failure drains that one owner, without retry.
-    history_mock.assert_calls_async(1).await;
     assert_telemetry_action(
         &telemetry,
         "runner_fresh_sandbox_factory_create",
@@ -1577,7 +1489,7 @@ async fn execute_job_reuse_uses_home_cache_when_configured() {
     ctx.is_first_run = Some(false);
     let run_id = ctx.run_id;
     enable_api_start_telemetry(&mut ctx);
-    set_reuse_and_session_identity(&mut ctx, session_id, r#"{"type":"init"}"#);
+    set_reuse_and_session_identity(&mut ctx, session_id);
 
     let cancel = tokio_util::sync::CancellationToken::new();
     let (reuse_outcome, telemetry) =
@@ -1643,7 +1555,7 @@ async fn cached_reuse_home_promotion_identity_mismatch_stops_before_agent() {
     .await;
 
     let mut ctx = minimal_context();
-    set_reuse_and_session_identity(&mut ctx, session_id, r#"{"type":"init"}"#);
+    set_reuse_and_session_identity(&mut ctx, session_id);
 
     let cancel = tokio_util::sync::CancellationToken::new();
     let (reuse_outcome, _telemetry) =
@@ -1695,7 +1607,7 @@ async fn execute_job_reuse_without_home_cache_config_invalidates_held_cache_entr
         reusable_idle_sandbox_with_home_promotion(&cache, &runner_paths, &params, session_id).await;
 
     let mut ctx = minimal_context();
-    set_reuse_and_session_identity(&mut ctx, session_id, r#"{"type":"init"}"#);
+    set_reuse_and_session_identity(&mut ctx, session_id);
 
     let cancel = tokio_util::sync::CancellationToken::new();
     let (reuse_outcome, _telemetry) =
@@ -1750,7 +1662,7 @@ async fn unconfigured_cache_reuse_stops_when_cache_invalidation_fails() {
     std::os::unix::fs::symlink(cache_parent, cache_parent).unwrap();
 
     let mut ctx = minimal_context();
-    set_reuse_and_session_identity(&mut ctx, session_id, r#"{"type":"init"}"#);
+    set_reuse_and_session_identity(&mut ctx, session_id);
 
     let cancel = tokio_util::sync::CancellationToken::new();
     let (reuse_outcome, _telemetry) =
@@ -1795,7 +1707,7 @@ async fn cached_reuse_validation_failure_keeps_home_cache_hidden() {
     let mut ctx = minimal_context();
     ctx.is_first_run = Some(false);
     let run_id = ctx.run_id;
-    set_reuse_and_session_identity(&mut ctx, session_id, r#"{"type":"init"}"#);
+    set_reuse_and_session_identity(&mut ctx, session_id);
     ctx.environment = Some(HashMap::from([(
         "OPENAI_API_KEY".into(),
         "sk-proj-real-openai-secret".into(),
@@ -1872,7 +1784,7 @@ async fn assert_invalid_resume_session_publication_attribution(is_first_run: Opt
     let mut ctx = minimal_context();
     ctx.is_first_run = is_first_run;
     let run_id = ctx.run_id;
-    set_reuse_and_session_identity(&mut ctx, raw_session_id, r#"{"type":"init"}"#);
+    set_reuse_and_session_identity(&mut ctx, raw_session_id);
 
     let cancel = tokio_util::sync::CancellationToken::new();
     let (reuse_outcome, _telemetry) =
@@ -1967,7 +1879,7 @@ async fn cached_reuse_invalid_resume_session_without_promotion_skips_home_lease(
 
     let raw_session_id = "../invalid-resume";
     let mut ctx = minimal_context();
-    set_reuse_and_session_identity(&mut ctx, raw_session_id, r#"{"type":"init"}"#);
+    set_reuse_and_session_identity(&mut ctx, raw_session_id);
 
     let cancel = tokio_util::sync::CancellationToken::new();
     let (reuse_outcome, _telemetry) =

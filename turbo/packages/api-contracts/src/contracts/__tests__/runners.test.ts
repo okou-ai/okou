@@ -10,8 +10,8 @@ import {
   connectorRuntimeSyncResultSchema,
   elapsedSinceApiStartMs,
   executionContextSchema,
+  nativeContinuationSchema,
   heartbeatBodySchema,
-  heldSandboxStateSchema,
   heldHomeStateSchema,
   jobSchema,
   PI_MEMORY_SUMMARY_MAX_BYTES,
@@ -25,9 +25,6 @@ import {
   RUNNER_CANCELLATION_RECOVERY_GRACE_MS,
   RUNNER_BUILTIN_FIREWALL_RESOLVE_NAMES_MAX,
   RUNNER_POLL_EXCLUDED_RUN_IDS_MAX,
-  SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT,
-  RESUME_SESSION_HISTORY_MAX_BYTES,
-  resumeSessionSchema,
   runnersBuiltinFirewallsResolveContract,
   runnersConnectorRuntimeSyncContract,
   runnersJobClaimContract,
@@ -36,7 +33,6 @@ import {
   storageMountEntrySchema,
   storageManifestSchema,
   storedExecutionContextSchema,
-  storedResumeSessionSchema,
   homeReuseResultSchema as runnersHomeReuseResultSchema,
 } from "../runners";
 import {
@@ -182,7 +178,11 @@ describe("runner claim response contract", () => {
       },
       platformEnvironment: { OKOU_AGENT_ID: "stored-agent-id" },
       secretValueEnvironmentKeys: null,
-      resumeSession: null,
+      nativeContinuation: {
+        sessionId: null,
+        generationRunId: null,
+        recoveryPrompt: null,
+      },
       encryptedSecrets: null,
       cliAgentType: "claude-code",
     });
@@ -213,7 +213,11 @@ describe("Pi sandbox execution contract", () => {
     environment: null,
     platformEnvironment: {},
     secretValueEnvironmentKeys: null,
-    resumeSession: null,
+    nativeContinuation: {
+      sessionId: null,
+      generationRunId: null,
+      recoveryPrompt: null,
+    },
     encryptedSecrets: null,
     cliAgentType: "pi",
   };
@@ -868,7 +872,11 @@ describe("runner storage manifest contract", () => {
     environment: null,
     platformEnvironment: {},
     secretValueEnvironmentKeys: null,
-    resumeSession: null,
+    nativeContinuation: {
+      sessionId: null,
+      generationRunId: null,
+      recoveryPrompt: null,
+    },
     encryptedSecrets: null,
     cliAgentType: "codex",
   };
@@ -1018,101 +1026,7 @@ describe("runner storage manifest contract", () => {
   });
 });
 
-describe("runner resume session contract", () => {
-  const historyHash =
-    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-  const historyGenerationRunId = "11111111-1111-4111-8111-111111111111";
-
-  it("accepts inline stored and claim resume sessions", () => {
-    const resumeSession = {
-      sessionId: "sess-123",
-      sessionHistory: '{"type":"init"}\n',
-    };
-
-    expect(storedResumeSessionSchema.safeParse(resumeSession).success).toBe(
-      true,
-    );
-    expect(resumeSessionSchema.safeParse(resumeSession).success).toBe(true);
-  });
-
-  it("accepts hash-backed stored resume sessions without URLs", () => {
-    const resumeSession = {
-      sessionId: "sess-123",
-      historyRef: { kind: "blob", hash: historyHash },
-    };
-
-    expect(storedResumeSessionSchema.parse(resumeSession)).toEqual(
-      resumeSession,
-    );
-    expect(
-      storedExecutionContextSchema.shape.resumeSession.safeParse(resumeSession)
-        .success,
-    ).toBe(true);
-  });
-
-  it("keeps generation metadata in stable discovery and reusable shapes", () => {
-    const storedResumeSession = {
-      sessionId: "sess-123",
-      historyGenerationRunId,
-      historyRef: { kind: "blob" as const, hash: historyHash },
-    };
-    expect(storedResumeSessionSchema.parse(storedResumeSession)).toEqual(
-      storedResumeSession,
-    );
-
-    const claimResumeSession = resumeSessionSchema.parse({
-      ...storedResumeSession,
-      historyRef: {
-        ...storedResumeSession.historyRef,
-        url: "https://r2.example.com/blobs/history.blob?sig=secret",
-        encoding: "identity",
-        rawSize: 1024,
-        encodedSize: 1024,
-      },
-    });
-    expect(claimResumeSession).not.toHaveProperty("historyGenerationRunId");
-
-    const job = jobSchema.parse({
-      runId: "22222222-2222-4222-8222-222222222222",
-      prompt: "continue",
-      appendSystemPrompt: null,
-      vars: null,
-      experimentalProfile: "vm0/default",
-      historyGenerationRunId,
-      runnerPreference: {
-        kind: "noPreference",
-        reason: "noReuseKey",
-      },
-    });
-    expect(job.historyGenerationRunId).toBe(historyGenerationRunId);
-
-    const heldSandboxState = heldSandboxStateSchema.parse({
-      reuseKey: "thread:22222222-2222-4222-8222-222222222223",
-      lastCompletedAt: "2026-07-15T00:00:00.000Z",
-      reusableSandbox: {
-        profile: "vm0/default",
-        historyGenerationRunId,
-      },
-    });
-    expect(heldSandboxState).not.toHaveProperty("sessionId");
-    expect(heldSandboxState.reusableSandbox.historyGenerationRunId).toBe(
-      historyGenerationRunId,
-    );
-
-    const heldHomeState = heldHomeStateSchema.parse({
-      reuseKey: "thread:22222222-2222-4222-8222-222222222223",
-      lastCompletedAt: "2026-07-15T00:00:00.000Z",
-      homeCaches: [
-        { profile: "vm0/default", homeAffinityVersion: 1 },
-        { profile: "vm0/large", homeAffinityVersion: 1 },
-      ],
-    });
-    expect(heldHomeState.homeCaches).toEqual([
-      { profile: "vm0/default", homeAffinityVersion: 1 },
-      { profile: "vm0/large", homeAffinityVersion: 1 },
-    ]);
-  });
-
+describe("runner reuse preference contract", () => {
   it("requires a canonical runner preference", () => {
     const jobInput = {
       runId: "22222222-2222-4222-8222-222222222222",
@@ -1461,167 +1375,6 @@ describe("runner resume session contract", () => {
         homeCaches: [{ profile: "vm0/default", homeAffinityVersion: 2 }],
       }).success,
     ).toBe(false);
-  });
-
-  it("keeps stored identity refs tolerant and requires explicit claim metadata", () => {
-    const storedResumeSession = {
-      sessionId: "sess-123",
-      historyRef: { kind: "blob", hash: historyHash },
-    };
-    const claimResumeSessionWithoutEncoding = {
-      sessionId: "sess-123",
-      historyRef: {
-        kind: "blob",
-        hash: historyHash,
-        url: "https://r2.example.com/blobs/history.blob?sig=secret",
-        rawSize: 1024,
-        encodedSize: 1024,
-      },
-    };
-    const claimResumeSession = {
-      ...claimResumeSessionWithoutEncoding,
-      historyRef: {
-        ...claimResumeSessionWithoutEncoding.historyRef,
-        encoding: "identity",
-      },
-    };
-
-    expect(
-      storedResumeSessionSchema.safeParse(storedResumeSession).success,
-    ).toBe(true);
-    expect(resumeSessionSchema.safeParse(storedResumeSession).success).toBe(
-      false,
-    );
-    expect(
-      resumeSessionSchema.safeParse(claimResumeSessionWithoutEncoding).success,
-    ).toBe(false);
-    expect(resumeSessionSchema.parse(claimResumeSession)).toEqual(
-      claimResumeSession,
-    );
-    expect(
-      executionContextSchema.shape.resumeSession.safeParse(claimResumeSession)
-        .success,
-    ).toBe(true);
-  });
-
-  it("rejects non-lowercase session history hashes", () => {
-    const resumeSession = {
-      sessionId: "sess-123",
-      historyRef: { kind: "blob", hash: "A".repeat(64) },
-    };
-
-    expect(storedResumeSessionSchema.safeParse(resumeSession).success).toBe(
-      false,
-    );
-    expect(resumeSessionSchema.safeParse(resumeSession).success).toBe(false);
-  });
-
-  it("rejects oversized hash-backed claim resume sessions", () => {
-    const resumeSession = {
-      sessionId: "sess-123",
-      historyRef: {
-        kind: "blob",
-        hash: historyHash,
-        url: "https://r2.example.com/blobs/history.blob?sig=secret",
-        encoding: "identity",
-        rawSize: RESUME_SESSION_HISTORY_MAX_BYTES + 1,
-        encodedSize: RESUME_SESSION_HISTORY_MAX_BYTES + 1,
-      },
-    };
-
-    expect(resumeSessionSchema.safeParse(resumeSession).success).toBe(false);
-  });
-
-  it("accepts gzip hash-backed claim resume sessions with explicit sizes", () => {
-    const resumeSession = {
-      sessionId: "sess-123",
-      historyRef: {
-        kind: "blob",
-        hash: historyHash,
-        url: "https://r2.example.com/blobs/history.blob.gz?sig=secret",
-        encoding: "gzip",
-        rawSize: 1024,
-        encodedSize: 128,
-        downloadSource:
-          SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT,
-      },
-    };
-
-    expect(resumeSessionSchema.parse(resumeSession)).toEqual(resumeSession);
-  });
-
-  it("rejects unknown hash-backed claim resume session download sources", () => {
-    const resumeSession = {
-      sessionId: "sess-123",
-      historyRef: {
-        kind: "blob",
-        hash: historyHash,
-        url: "https://r2.example.com/blobs/history.blob?sig=secret",
-        encoding: "identity",
-        rawSize: 1024,
-        encodedSize: 1024,
-        downloadSource: "regional_edge_cache",
-      },
-    };
-
-    expect(resumeSessionSchema.safeParse(resumeSession).success).toBe(false);
-  });
-
-  it("accepts zstd hash-backed stored and claim resume sessions", () => {
-    const storedResumeSession = {
-      sessionId: "sess-123",
-      historyRef: {
-        kind: "blob",
-        hash: historyHash,
-        encoding: "zstd",
-      },
-    };
-    const claimResumeSession = {
-      sessionId: "sess-123",
-      historyRef: {
-        kind: "blob",
-        hash: historyHash,
-        url: "https://r2.example.com/blobs/history.blob.zst?sig=secret",
-        encoding: "zstd",
-        rawSize: 1024,
-        encodedSize: 96,
-      },
-    };
-
-    expect(storedResumeSessionSchema.parse(storedResumeSession)).toEqual(
-      storedResumeSession,
-    );
-    expect(resumeSessionSchema.parse(claimResumeSession)).toEqual(
-      claimResumeSession,
-    );
-  });
-
-  it("rejects malformed gzip claim resume sessions", () => {
-    const resumeSession = {
-      sessionId: "sess-123",
-      historyRef: {
-        kind: "blob",
-        hash: historyHash,
-        url: "https://r2.example.com/blobs/history.blob.gz?sig=secret",
-        encoding: "gzip",
-      },
-    };
-
-    expect(resumeSessionSchema.safeParse(resumeSession).success).toBe(false);
-  });
-
-  it("rejects malformed zstd claim resume sessions", () => {
-    const resumeSession = {
-      sessionId: "sess-123",
-      historyRef: {
-        kind: "blob",
-        hash: historyHash,
-        url: "https://r2.example.com/blobs/history.blob.zst?sig=secret",
-        encoding: "zstd",
-      },
-    };
-
-    expect(resumeSessionSchema.safeParse(resumeSession).success).toBe(false);
   });
 });
 
@@ -2180,5 +1933,40 @@ describe("Pi memory recall selection contract", () => {
         storageVersionId: "storage-version-a",
       }).success,
     ).toBe(true);
+  });
+});
+
+describe("native continuation intent", () => {
+  it("preserves fresh, resumed and Chat recovery launches", () => {
+    for (const intent of [
+      { sessionId: null, generationRunId: null, recoveryPrompt: null },
+      {
+        sessionId: "native-session",
+        generationRunId: "22222222-2222-4222-8222-222222222222",
+        recoveryPrompt: null,
+      },
+      {
+        sessionId: null,
+        generationRunId: null,
+        recoveryPrompt:
+          "Read context with okou chat messages --output-dir threads before proceeding",
+      },
+    ])
+      expect(nativeContinuationSchema.parse(intent)).toStrictEqual(intent);
+  });
+  it("requires the native session and producing Run as one identity", () => {
+    for (const intent of [
+      {
+        sessionId: "native-session",
+        generationRunId: null,
+        recoveryPrompt: null,
+      },
+      {
+        sessionId: null,
+        generationRunId: "22222222-2222-4222-8222-222222222222",
+        recoveryPrompt: null,
+      },
+    ])
+      expect(nativeContinuationSchema.safeParse(intent).success).toBe(false);
   });
 });

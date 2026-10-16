@@ -8,7 +8,6 @@ import {
   runnersPollContract,
 } from "../contracts/runners";
 import {
-  webhookSessionHistoryPrepareContract,
   webhookCompleteContract,
   webhookEventsContract,
   webhookFirewallAuthContract,
@@ -87,11 +86,6 @@ const runtimeServiceRouteBindings = [
     id: "webhooks.agent.events",
     owner: "guest-agent",
     route: webhookEventsContract.send,
-  },
-  {
-    id: "webhooks.agent.sessionHistory.prepare",
-    owner: "guest-agent",
-    route: webhookSessionHistoryPrepareContract.prepare,
   },
   {
     id: "webhooks.agent.complete",

@@ -1,6 +1,5 @@
 mod blank_pool;
 mod blank_prefetch;
-mod blank_session_history;
 mod device_limits;
 mod drain;
 mod home_cache;

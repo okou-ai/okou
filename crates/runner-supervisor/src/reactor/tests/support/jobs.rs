@@ -39,16 +39,13 @@ pub(in super::super) async fn shutdown(
     env.shutdown_startup_api().await;
 }
 
-/// ExecutionContext with a resume_session for idle pool testing.
+/// ExecutionContext with a native session identity for idle pool testing.
 pub(in super::super) fn context_with_session(
     run_id: RunId,
     session_id: &str,
 ) -> runner_types::types::ExecutionContext {
     let mut ctx = minimal_context(run_id);
     ctx.reuse_key = Some(session_id.into());
-    ctx.resume_session = Some(runner_types::types::ResumeSession::inline(
-        session_id.into(),
-        String::new(),
-    ));
+    ctx.local_resume_session_id = Some(session_id.into());
     ctx
 }

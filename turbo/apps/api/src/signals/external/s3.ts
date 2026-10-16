@@ -20,11 +20,6 @@ import {
   CURRENT_LINK_LAYOUT,
   linkLayoutSegment,
 } from "@okouai/api-contracts/contracts/link-layout";
-import {
-  SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT,
-  SESSION_HISTORY_DOWNLOAD_SOURCE_DEFAULT_R2_ENDPOINT,
-  type SessionHistoryDownloadSource,
-} from "@okouai/api-contracts/contracts/runners";
 import { command, computed, type Computed } from "ccstate";
 import { Readable } from "node:stream";
 
@@ -237,13 +232,6 @@ function defaultS3Credentials(): S3Credentials {
     accessKeyId: env("R2_ACCESS_KEY_ID"),
     secretAccessKey: env("R2_SECRET_ACCESS_KEY"),
   };
-}
-
-export function publicS3DownloadSource(): SessionHistoryDownloadSource {
-  // Mirror `generatePresignedGetUrl(..., usePublicEndpoint=true)` without exposing the endpoint.
-  return env("S3_PUBLIC_ENDPOINT") || env("S3_ENDPOINT")
-    ? SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT
-    : SESSION_HISTORY_DOWNLOAD_SOURCE_DEFAULT_R2_ENDPOINT;
 }
 
 function userArtifactsS3Credentials(): S3Credentials {
@@ -1753,19 +1741,6 @@ export function downloadManifest(
   });
 }
 
-export function s3ObjectContentLength(
-  bucket: string,
-  key: string,
-  maxBytes?: number,
-): Computed<Promise<number | undefined>> {
-  return s3ObjectContentLengthWithClient(
-    s3ClientForBucket(bucket),
-    bucket,
-    key,
-    maxBytes,
-  );
-}
-
 /** An exact, bounded range from an immutable source revision. */
 export function readS3ObjectRange(
   args: {
@@ -1880,29 +1855,6 @@ function s3ObjectHeadWithClient(
       metadata: result.value.Metadata ?? {},
       etag: result.value.ETag,
     };
-  });
-}
-
-function s3ObjectContentLengthWithClient(
-  client$: Computed<S3Client>,
-  bucket: string,
-  key: string,
-  maxBytes: number | undefined,
-): Computed<Promise<number | undefined>> {
-  return computed(async (get): Promise<number | undefined> => {
-    const result = await get(s3ObjectHeadWithClient(client$, bucket, key));
-    if (result.kind === "missing") {
-      return undefined;
-    }
-
-    const contentLength = result.contentLength;
-    if (contentLength === undefined) {
-      return undefined;
-    }
-    if (maxBytes !== undefined && contentLength > maxBytes) {
-      throw new S3ObjectSizeLimitError(key, contentLength, maxBytes);
-    }
-    return contentLength;
   });
 }
 

@@ -359,7 +359,7 @@ describe("CHAT-02: run-level model overrides", () => {
       ).toMatchObject({
         sourceId: accountSourceId,
       });
-      expect(claim.resumeSession).toBeNull();
+
       expect(JSON.stringify(claim)).not.toContain(externalAccountId);
       expect(JSON.stringify(claim)).not.toContain(refreshToken);
 

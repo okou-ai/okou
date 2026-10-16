@@ -73,11 +73,6 @@ pub(super) async fn execute_reused_sandbox(
         Ok(session) => session,
         Err(error) => {
             cancel_prepared_storage(&mut inputs.controls, telemetry).await;
-            inputs
-                .controls
-                .session_history_restore_plan
-                .cancel_and_drain(telemetry)
-                .await;
             telemetry.record(
                 "runner_reused_sandbox_prepare",
                 prepare_started.elapsed(),
@@ -198,11 +193,6 @@ async fn replace_unusable_blank(
             false,
             Some("cleanup_uncertain"),
         );
-        inputs
-            .controls
-            .session_history_restore_plan
-            .cancel_and_drain(telemetry)
-            .await;
         warn!(run_id = %context.run_id, %sandbox_id,
             "blank Codex prefetch replacement suppressed after uncertain cleanup");
         return ExecuteOutcome::preparation_failure(error);
@@ -214,11 +204,6 @@ async fn replace_unusable_blank(
             false,
             Some("cancelled"),
         );
-        inputs
-            .controls
-            .session_history_restore_plan
-            .cancel_and_drain(telemetry)
-            .await;
         let mut outcome = ExecuteOutcome::preparation_failure(RunnerError::Cancelled);
         outcome.mark_cancelled();
         return outcome;
