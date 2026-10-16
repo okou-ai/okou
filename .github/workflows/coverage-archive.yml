@@ -68,8 +68,10 @@ jobs:
           shared-key: coverage-line-tables-only
           save-if: "false"
 
-      - name: Configure pinned Kerberos cache
-        run: echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
+      - name: Configure coverage validation paths
+        run: |
+          echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
+          echo "COVERAGE_ARCHIVE_TEMP_DIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
 
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -121,7 +123,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-archive-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/coverage-archive/
+          path: ${{ env.COVERAGE_ARCHIVE_TEMP_DIR }}/coverage-archive/
           if-no-files-found: error
           compression-level: 0
           retention-days: 1
@@ -138,8 +140,6 @@ jobs:
     timeout-minutes: 30
     env:
       COVERAGE_ARCHIVE_PRODUCER_ATTEMPT: ${{ needs.produce.outputs.attempt }}
-      CARGO_LLVM_COV_TARGET_DIR: ${{ github.workspace }}/crates/target/llvm-cov-target
-      CARGO_LLVM_COV_BUILD_DIR: ${{ github.workspace }}/crates/target/llvm-cov-target
     container:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     defaults:
@@ -163,8 +163,12 @@ jobs:
           r2-account-id: ${{ vars.R2_ACCOUNT_ID }}
           r2-bucket-name: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
 
-      - name: Configure pinned Kerberos cache
-        run: echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
+      - name: Configure coverage validation paths
+        run: |
+          echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
+          echo "COVERAGE_ARCHIVE_TEMP_DIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          echo "CARGO_LLVM_COV_TARGET_DIR=$GITHUB_WORKSPACE/crates/target/llvm-cov-target" >> "$GITHUB_ENV"
+          echo "CARGO_LLVM_COV_BUILD_DIR=$GITHUB_WORKSPACE/crates/target/llvm-cov-target" >> "$GITHUB_ENV"
 
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -198,7 +202,7 @@ jobs:
         with:
           artifact-ids: ${{ needs.produce.outputs.artifact-id }}
           merge-multiple: true
-          path: ${{ runner.temp }}/coverage-archive/
+          path: ${{ env.COVERAGE_ARCHIVE_TEMP_DIR }}/coverage-archive/
 
       - name: Verify current producer identity and bytes
         run: python3 .github/scripts/artifacts/coverage-archive.py verify "$RUNNER_TEMP/coverage-archive"
@@ -249,10 +253,11 @@ jobs:
         with:
           name: coverage-archive-consumer-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            ${{ runner.temp }}/coverage-archive/identity.json
-            ${{ runner.temp }}/restored-tests.json
-            ${{ runner.temp }}/restored-lcov.info
-            ${{ runner.temp }}/archive-comparison.json
+            ${{ env.COVERAGE_ARCHIVE_TEMP_DIR }}/coverage-archive/identity.json
+            ${{ env.COVERAGE_ARCHIVE_TEMP_DIR }}/restored-binaries.json
+            ${{ env.COVERAGE_ARCHIVE_TEMP_DIR }}/restored-tests.json
+            ${{ env.COVERAGE_ARCHIVE_TEMP_DIR }}/restored-lcov.info
+            ${{ env.COVERAGE_ARCHIVE_TEMP_DIR }}/archive-comparison.json
           if-no-files-found: warn
           retention-days: 7
 
