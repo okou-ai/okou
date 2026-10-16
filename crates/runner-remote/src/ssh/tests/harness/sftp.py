@@ -115,14 +115,24 @@ while True:
             path, flags = fields.string(), fields.number()
             assert fields.number() == 4
             permissions = fields.number()
+            if mode == "open-denied":
+                status(request, 3)
+                continue
             serial += 1
             # Handles are opaque bytes, deliberately invalid UTF-8.
             handle = b"\xff\0" + integer(serial)
             fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL if flags & 8 else os.O_RDONLY, permissions)
             handles[handle] = fd
+            if mode == "lost-open":
+                break
             send(102, integer(request) + string(handle))
         elif kind == 4:
+            if mode == "close-denied":
+                status(request, 3)
+                continue
             os.close(handles.pop(fields.string()))
+            if mode == "lost-close":
+                break
             status(request, 0)
         elif kind == 5:
             fd, offset, size = handles[fields.string()], fields.offset(), fields.number()
