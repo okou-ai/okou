@@ -17,6 +17,7 @@ import {
   unfurlSlackLinks,
   type SlackLinkUnfurl,
 } from "../external/slack-message-client";
+import { fetchSlackPageMetadata } from "../external/slack-page-metadata";
 import { artifactDeliveryRecord } from "./artifact-delivery.service";
 import { artifactOgMetadata$ } from "./artifact-og.service";
 import {
@@ -24,6 +25,7 @@ import {
   resolvePublicArtifactSource$,
 } from "./artifact-shares.service";
 import { decryptPersistentSecretValue } from "./crypto.utils";
+import { readSharedThreadMeta$ } from "./shared-thread.service";
 
 export const slackLinkSharedEventSchema = z.object({
   type: z.literal("link_shared"),
@@ -182,6 +184,24 @@ const slackArtifactOgTarget$ = command(
   },
 );
 
+const slackAppPageMetadata$ = command(
+  async ({ set }, url: URL, signal: AbortSignal) => {
+    if (!url.pathname.toLowerCase().startsWith("/share/threads/")) {
+      return { available: true as const, ...ARTIFACT_OG_BRAND };
+    }
+    const match = /^\/share\/threads\/([^/]+)\/?$/iu.exec(url.pathname);
+    const id = z.uuid().safeParse(match?.[1]);
+    if (!id.success) {
+      return { available: false as const };
+    }
+    // Check live sharing authority before a public page or CDN can supply OG.
+    const shared = await set(readSharedThreadMeta$, id.data, signal);
+    return shared
+      ? { available: true as const, ...ARTIFACT_OG_BRAND, title: shared.title }
+      : { available: false as const };
+  },
+);
+
 const slackArtifactUnfurl$ = command(
   async (
     { set },
@@ -193,28 +213,35 @@ const slackArtifactUnfurl$ = command(
       return null;
     }
     const target = await set(slackArtifactOgTarget$, pageUrl, signal);
-    // Only ordinary App pages use branding; unsupported links stay skipped.
+    // Only configured App pages and resolved artifacts may be fetched.
     if (!target && pageUrl.origin !== new URL(env("APP_URL")).origin) {
       return null;
     }
     const metadata = target
       ? await set(artifactOgMetadata$, target, signal)
-      : { available: true as const, ...ARTIFACT_OG_BRAND };
+      : await set(slackAppPageMetadata$, pageUrl, signal);
     signal.throwIfAborted();
     if (!metadata.available) {
       return null;
     }
-    const title = metadata.title.trim().slice(0, 150) || "Okou artifact";
+    const page = await fetchSlackPageMetadata(pageUrl, signal);
+    if (!page) {
+      return null;
+    }
+    const title =
+      (page.title ?? metadata.title).trim().slice(0, 150) || "Okou artifact";
     // A pipe in the URL must not become Slack's link-label separator.
     const href = escapeSlackLinkText(pageUrl.href.replaceAll("|", "%7C"));
+    const sourceImageUrl = page.imageUrl ?? metadata.imageUrl;
+    const artifactImage = target && sourceImageUrl === metadata.imageUrl;
     const imageUrl = new URL(
-      target
-        ? metadata.imageUrl
-        : r2ImageTransformUrl(metadata.imageUrl, {
+      artifactImage
+        ? sourceImageUrl
+        : r2ImageTransformUrl(sourceImageUrl, {
             height: SLACK_PREVIEW_IMAGE_HEIGHT,
           }),
     );
-    if (target) {
+    if (artifactImage) {
       imageUrl.searchParams.set("variant", "slack");
     }
     return {
@@ -228,6 +255,18 @@ const slackArtifactUnfurl$ = command(
             verbatim: true,
           },
         },
+        ...(page.description
+          ? [
+              {
+                type: "section" as const,
+                text: {
+                  type: "plain_text" as const,
+                  text: page.description,
+                  emoji: false,
+                },
+              },
+            ]
+          : []),
         { type: "image", image_url: imageUrl.href, alt_text: title },
       ],
     };
