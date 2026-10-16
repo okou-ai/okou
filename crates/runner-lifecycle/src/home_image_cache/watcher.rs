@@ -144,6 +144,12 @@ struct WatchedEntry {
     state: EntryWatchState,
 }
 
+#[derive(Default)]
+struct EntryWatchUpdate {
+    changed: bool,
+    requires_full_reconcile: bool,
+}
+
 struct AsyncInotify(Inotify);
 
 impl AsRawFd for AsyncInotify {
@@ -192,6 +198,7 @@ impl HomeCacheWatcher {
         let observed_at = tokio::time::Instant::now();
         let mut dirty_cache_keys = BTreeSet::new();
         let mut requires_refresh = false;
+        let mut requires_full_reconcile = false;
         for cache_key in cache_keys {
             match self.entry_watch_state(cache_key) {
                 Some(EntryWatchState::Relevant) => {}
@@ -203,8 +210,10 @@ impl HomeCacheWatcher {
                 }
                 None => {
                     requires_refresh = true;
-                    self.add_entry_watch(cache_key.clone(), &mut dirty_cache_keys)
+                    let update = self
+                        .add_entry_watch(cache_key.clone(), &mut dirty_cache_keys)
                         .await?;
+                    requires_full_reconcile |= update.requires_full_reconcile;
                 }
             }
         }
@@ -214,7 +223,9 @@ impl HomeCacheWatcher {
         requires_refresh |= missing_watches;
         Ok(requires_refresh.then_some(HomeCacheChange {
             observed_at,
-            requires_full_reconcile: missing_watches || dirty_cache_keys.is_empty(),
+            requires_full_reconcile: requires_full_reconcile
+                || missing_watches
+                || dirty_cache_keys.is_empty(),
             dirty_cache_keys,
         }))
     }
@@ -355,18 +366,13 @@ impl HomeCacheWatcher {
                 }
             }
             for cache_key in new_cache_keys {
-                requires_full_reconcile |= dirty_cache_keys.len() == MAX_HELD_HOME_STATES
-                    && !dirty_cache_keys.contains(&cache_key);
-                let saturated = self.watch_by_cache_key.len() == MAX_HELD_HOME_STATES
-                    && !self.watch_by_cache_key.contains_key(&cache_key);
-                changed |= self
+                let update = self
                     .add_entry_watch(cache_key, &mut dirty_cache_keys)
                     .await?;
-                requires_full_reconcile |= saturated;
+                changed |= update.changed;
+                requires_full_reconcile |= update.requires_full_reconcile;
             }
             for cache_key in metadata_commit_keys {
-                requires_full_reconcile |= dirty_cache_keys.len() == MAX_HELD_HOME_STATES
-                    && !dirty_cache_keys.contains(&cache_key);
                 let previous = self.entry_watch_state(&cache_key);
                 let metadata_path = self.cache.home_image_cache_metadata(&cache_key);
                 let relevant = self
@@ -485,13 +491,13 @@ impl HomeCacheWatcher {
         &mut self,
         cache_key: String,
         dirty_cache_keys: &mut BTreeSet<String>,
-    ) -> LifecycleResult<bool> {
+    ) -> LifecycleResult<EntryWatchUpdate> {
         if self.watch_by_cache_key.contains_key(&cache_key) {
-            return Ok(false);
+            return Ok(EntryWatchUpdate::default());
         }
         let entry_dir = self.cache.home_image_cache_entry_dir(&cache_key);
         if !Self::entry_is_watchable(&entry_dir)? {
-            return Ok(false);
+            return Ok(EntryWatchUpdate::default());
         }
         let watch = match self
             .inotify
@@ -500,7 +506,9 @@ impl HomeCacheWatcher {
             .add_watch(&entry_dir, ENTRY_WATCH_FLAGS)
         {
             Ok(watch) => watch,
-            Err(Errno::ENOENT | Errno::ENOTDIR | Errno::ELOOP) => return Ok(false),
+            Err(Errno::ENOENT | Errno::ENOTDIR | Errno::ELOOP) => {
+                return Ok(EntryWatchUpdate::default());
+            }
             Err(error) => return Err(watcher_error("watch entry", error)),
         };
         self.entry_by_watch.insert(
@@ -515,11 +523,18 @@ impl HomeCacheWatcher {
         let changed = self
             .classify_metadata_commit(&cache_key, &metadata_path, dirty_cache_keys)
             .await;
+        // Foreign entries consume neither watch nor dirty-key capacity. Track
+        // actual eviction or dropped relevant hints after classification.
+        let evicts_watch = self.watch_by_cache_key.len() > MAX_HELD_HOME_STATES;
         self.enforce_watch_limit(&cache_key);
         if !self.watch_by_cache_key.contains_key(&cache_key) {
             dirty_cache_keys.remove(&cache_key);
         }
-        Ok(changed && self.watch_by_cache_key.contains_key(&cache_key))
+        Ok(EntryWatchUpdate {
+            changed: changed && self.watch_by_cache_key.contains_key(&cache_key),
+            requires_full_reconcile: evicts_watch
+                || (changed && !dirty_cache_keys.contains(&cache_key)),
+        })
     }
 
     async fn classify_metadata_commit(
@@ -772,6 +787,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn startup_reconciliation_reports_eviction_at_the_watch_limit() {
+        let temp = tempfile::tempdir().unwrap();
+        let cache = HomeImageCache::new(RunnerPaths::new(temp.path().join("runner")));
+        for index in 0..MAX_HELD_HOME_STATES {
+            cache
+                .ensure_home_cache_entry_dir(&format!("{index:064x}"))
+                .await
+                .unwrap();
+        }
+        let mut watcher = HomeCacheWatcher::new(cache.clone()).await.unwrap();
+        let cache_key = commit_entry(&cache, "startup-at-limit").await;
+        let change = watcher
+            .reconcile_initial_relevant_entries(&BTreeSet::from([cache_key.clone()]))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(change.dirty_cache_keys, BTreeSet::from([cache_key.clone()]));
+        assert!(
+            change.requires_full_reconcile,
+            "startup handoff must preserve actual watch-eviction completeness loss"
+        );
+        assert_eq!(watcher.watch_by_cache_key.len(), MAX_HELD_HOME_STATES);
+        assert!(watcher.watch_by_cache_key.contains_key(&cache_key));
+    }
+
+    #[tokio::test]
     async fn bounded_drain_preserves_readiness_for_remaining_events() {
         let temp = tempfile::tempdir().unwrap();
         let paths = RunnerPaths::new(temp.path().join("runner"));
@@ -926,6 +967,55 @@ mod tests {
             BTreeSet::from([relevant_cache_key])
         );
         drop(next_change);
+        assert!(!watcher.watch_by_cache_key.contains_key(&foreign_cache_key));
+    }
+
+    #[tokio::test]
+    async fn foreign_scope_commit_does_not_request_reconciliation_at_the_watch_limit() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = HomePaths::with_root(temp.path().join("home"));
+        let observer_paths = RunnerPaths::new(temp.path().join("observer"));
+        let publisher_paths = RunnerPaths::new(temp.path().join("publisher"));
+        tokio::fs::create_dir_all(observer_paths.base_dir())
+            .await
+            .unwrap();
+        tokio::fs::create_dir_all(publisher_paths.base_dir())
+            .await
+            .unwrap();
+        let observer = HomeImageCache::shared(observer_paths, &home, "group-a");
+        let publisher = HomeImageCache::shared(publisher_paths, &home, "group-b");
+        for index in 0..MAX_HELD_HOME_STATES {
+            observer
+                .ensure_home_cache_entry_dir(&format!("{index:064x}"))
+                .await
+                .unwrap();
+        }
+        let mut watcher = HomeCacheWatcher::new(observer.clone()).await.unwrap();
+        assert_eq!(watcher.watch_by_cache_key.len(), MAX_HELD_HOME_STATES);
+        let foreign_cache_key = commit_entry(&publisher, "foreign-at-limit").await;
+
+        let mut next_change = Box::pin(watcher.next_change());
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(100), &mut next_change)
+                .await
+                .is_err(),
+            "a classified foreign entry does not lose relevant tracking completeness"
+        );
+        let relevant_cache_key = commit_entry(&observer, "relevant-at-limit").await;
+        let change = tokio::time::timeout(std::time::Duration::from_secs(2), &mut next_change)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            change.dirty_cache_keys,
+            BTreeSet::from([relevant_cache_key])
+        );
+        assert!(
+            change.requires_full_reconcile,
+            "a relevant entry replacing an existing watch still loses completeness"
+        );
+        drop(next_change);
+        assert_eq!(watcher.watch_by_cache_key.len(), MAX_HELD_HOME_STATES);
         assert!(!watcher.watch_by_cache_key.contains_key(&foreign_cache_key));
     }
 
