@@ -50,6 +50,17 @@ function detailGroup(title: string): HTMLElement {
   return preview;
 }
 
+function buttonByLabel(label: string, container: ParentNode): HTMLElement {
+  const buttons = queryAllByRoleFast("button", container).filter((button) => {
+    return button.getAttribute("aria-label") === label;
+  });
+  const [button] = buttons;
+  if (buttons.length !== 1 || !button) {
+    throw new Error(`Expected one button labelled ${label}`);
+  }
+  return button;
+}
+
 async function openPresentationThemePreview() {
   const capture = mockTemplateChat();
   context.mocks.data.availableRunModels([
@@ -75,9 +86,12 @@ async function openPresentationThemePreview() {
     throw new Error("The saved presentation template has no edit control");
   }
   click(edit);
-  const preview = await screen.findByLabelText(
-    `Preview ${template.title} at current slide`,
-  );
+  const preview = await waitFor(() => {
+    return buttonByLabel(
+      `Preview ${template.title} at current slide`,
+      document.body,
+    );
+  });
   const dialog = preview.closest('[role="dialog"]');
   if (!(dialog instanceof HTMLElement)) {
     throw new Error("Expected the presentation template picker dialog");
@@ -99,8 +113,8 @@ async function openPresentationThemePreview() {
 test("Select a presentation theme from its preview", async () => {
   const { capture, template, drafts, dialog } =
     await openPresentationThemePreview();
-  click(within(dialog).getByLabelText("Select style Deep dive"));
-  click(within(dialog).getByLabelText(`Select template ${template.title}`));
+  click(buttonByLabel("Select style Deep dive", dialog));
+  click(buttonByLabel(`Select template ${template.title}`, dialog));
   await expectInlineTemplate(template.title);
   await waitFor(() => {
     expect(drafts).toContainEqual(
