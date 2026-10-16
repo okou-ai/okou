@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.15.1](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.15.0...runner-lifecycle-v0.15.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **runner:** stop background home cache gc during drain ([#40721](https://github.com/okou-ai/okou/issues/40721)) ([f32f299](https://github.com/okou-ai/okou/commit/f32f2993681e4b7074b7789ce3cc5f4e0ac373dd))
+
+
+### Refactoring
+
+* **runner-lifecycle:** share home drive helper result interpretation ([#40717](https://github.com/okou-ai/okou/issues/40717)) ([2132ff6](https://github.com/okou-ai/okou/commit/2132ff6fd345b4dd219f449139616b2c30604113))
+
 ## [0.15.0](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.14.10...runner-lifecycle-v0.15.0) (2026-10-16)
 
 
