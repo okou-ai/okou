@@ -1,10 +1,12 @@
-import type { WalletPurchaseHistoryEntry } from "@okouai/api-contracts/contracts/wallet";
+import type {
+  WalletPurchaseHistoryEntry,
+  WalletTransaction,
+} from "@okouai/api-contracts/contracts/wallet";
 import { Badge, Button, cn } from "@okouai/ui";
 import { Skeleton } from "@okouai/ui/components/ui/skeleton";
 import { useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { currentLocale } from "../../../../i18n/index.ts";
-import { formatUsd } from "../../../../i18n/format.ts";
 import {
   refreshWalletTransactions$,
   walletTransactions$,
@@ -70,38 +72,91 @@ const HEADER_CELL =
   "border-b border-b-gray-400 py-3 pr-6 font-medium last:pr-0";
 const BODY_CELL = "py-3 pr-6 last:pr-0";
 
+function LinkTransactionStatus({ status }: { readonly status: string }) {
+  const { t } = useTranslation();
+  const succeeded = ["posted", "succeeded", "completed", "settled"].includes(
+    status,
+  );
+  const failed = ["failed", "declined"].includes(status);
+  const label = succeeded
+    ? t(($) => {
+        return $.settings.wallet.transactions.status.succeeded;
+      })
+    : failed
+      ? t(($) => {
+          return $.settings.wallet.transactions.status.failed;
+        })
+      : status === "pending" ||
+          status === "processing" ||
+          status === "submitted"
+        ? t(($) => {
+            return $.settings.wallet.transactions.status.submitted;
+          })
+        : status === "canceled" || status === "cancelled"
+          ? t(($) => {
+              return $.settings.wallet.transactions.status.canceled;
+            })
+          : status === "refunded"
+            ? t(($) => {
+                return $.settings.wallet.transactions.refunded;
+              })
+            : t(($) => {
+                return $.settings.wallet.transactions.unknownStatus;
+              });
+  return (
+    <Badge
+      className={cn(
+        "text-xs text-muted-foreground",
+        succeeded && "text-emerald-600 dark:text-emerald-400",
+        failed && "text-destructive",
+      )}
+    >
+      {label}
+    </Badge>
+  );
+}
+
 function TransactionRow({
   transaction,
 }: {
-  readonly transaction: WalletPurchaseHistoryEntry;
+  readonly transaction: WalletPurchaseHistoryEntry | WalletTransaction;
 }) {
-  const { t } = useTranslation();
+  const request = "merchantName" in transaction;
+  const date = request ? transaction.createdAt : transaction.date;
+  const formatter = new Intl.NumberFormat(currentLocale(), {
+    style: "currency",
+    currency: transaction.currency,
+  });
+  const fractionDigits = formatter.resolvedOptions().maximumFractionDigits;
+  if (fractionDigits === undefined) {
+    throw new Error("Currency formatting requires minor-unit precision");
+  }
   return (
     <tr>
       <td className={BODY_CELL}>
         <div className="flex min-w-0 items-center gap-3">
           <span className="truncate font-medium text-foreground">
-            {transaction.merchantName}
+            {request ? transaction.merchantName : transaction.description}
           </span>
-          {transaction.test && (
-            <Badge className="shrink-0 text-xs text-muted-foreground">
-              {t(($) => {
-                return $.settings.wallet.transactions.test;
-              })}
-            </Badge>
-          )}
         </div>
       </td>
       <td className={cn(BODY_CELL, "tabular-nums text-muted-foreground")}>
-        <time dateTime={transaction.createdAt}>
-          {new Date(transaction.createdAt).toLocaleDateString(currentLocale())}
+        <time dateTime={date}>
+          {new Date(date).toLocaleDateString(
+            currentLocale(),
+            request ? undefined : { timeZone: "UTC" },
+          )}
         </time>
       </td>
       <td className={cn(BODY_CELL, "tabular-nums text-foreground")}>
-        {formatUsd(transaction.amount / 100)}
+        {formatter.format(transaction.amount / 10 ** fractionDigits)}
       </td>
       <td className={BODY_CELL}>
-        <TransactionStatus status={transaction.status} />
+        {request ? (
+          <TransactionStatus status={transaction.status} />
+        ) : (
+          <LinkTransactionStatus status={transaction.status} />
+        )}
       </td>
     </tr>
   );
@@ -113,17 +168,26 @@ export function WalletTransactions() {
   const retry = useSet(refreshWalletTransactions$);
   const data = transactions.state === "hasData" ? transactions.data : null;
   const loading = transactions.state === "loading";
-  const title = t(($) => {
-    return $.settings.wallet.transactions.title;
-  });
+  const requests = data?.source === "requests";
+  const title = requests
+    ? t(($) => {
+        return $.settings.wallet.transactions.requestsTitle;
+      })
+    : t(($) => {
+        return $.settings.wallet.transactions.title;
+      });
   return (
     <section aria-label={title} className="flex min-h-0 flex-1 flex-col gap-4">
       <div className="shrink-0">
         <h3 className="text-sm font-medium text-foreground">{title}</h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          {t(($) => {
-            return $.settings.wallet.transactions.description;
-          })}
+          {requests
+            ? t(($) => {
+                return $.settings.wallet.transactions.requestsDescription;
+              })
+            : t(($) => {
+                return $.settings.wallet.transactions.description;
+              })}
         </p>
       </div>
       {transactions.state === "hasError" ? (
@@ -147,9 +211,13 @@ export function WalletTransactions() {
         </div>
       ) : !loading && !data?.transactions.length ? (
         <p className="text-sm text-muted-foreground">
-          {t(($) => {
-            return $.settings.wallet.transactions.empty;
-          })}
+          {requests
+            ? t(($) => {
+                return $.settings.wallet.transactions.requestsEmpty;
+              })
+            : t(($) => {
+                return $.settings.wallet.transactions.empty;
+              })}
         </p>
       ) : (
         <div className="isolate min-h-0 overflow-auto scroll-pt-12 rounded-[10px] border border-surface-border bg-card">
