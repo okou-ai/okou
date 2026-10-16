@@ -15,15 +15,22 @@ ssh "$REMOTE" bash -s -- "${BIN_DIR}" "${SVC}" "${GROUP_DIR}" "${RUNNER_DIR}" <<
 set -euo pipefail
 BIN_DIR=$1; SVC=$2; GROUP_DIR=$3; RUNNER_DIR=$4
 UNIT="vm0-runner-${SVC}.service"
+# A failed stop may still leave a stopped/collected unit; require positive state.
 sudo "$BIN_DIR/runner" service stop --name "$SVC" --force || true
+INACTIVE=false
 for _ in $(seq 1 30); do
-  if ! sudo systemctl is-active --quiet "$UNIT"; then
-    break
+  if ACTIVE_STATE=$(sudo systemctl show "$UNIT" --property=ActiveState --value); then
+    case "$ACTIVE_STATE" in
+      inactive | failed)
+        INACTIVE=true
+        break
+        ;;
+    esac
   fi
   sleep 1
 done
-if sudo systemctl is-active --quiet "$UNIT"; then
-  echo "FAIL: ${UNIT} is still active after cleanup stop" >&2
+if [ "$INACTIVE" != true ]; then
+  echo "FAIL: ${UNIT} inactivity was not confirmed after cleanup stop; preserving state" >&2
   exit 1
 fi
 sudo rm -rf "$GROUP_DIR" "$RUNNER_DIR"

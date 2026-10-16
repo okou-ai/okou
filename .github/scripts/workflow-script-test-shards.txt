@@ -19,6 +19,7 @@
 1 resolve-app-preview-url-test.sh
 1 runner-api-curl-test.sh
 1 crates/runner/tests/behavior/tests/runner-behavior-durable-test.sh
+1 crates/runner/tests/behavior/tests/runner-behavior-keep-alive-preflight-test.sh
 1 crates/sandbox-firecracker/tests/native/tests/runner-behavior-guest-rpc-test.sh
 1 crates/runner/tests/behavior/tests/runner-behavior-upgrade-local-test.sh
 1 runner-firewall-contract-workflow-test.sh
