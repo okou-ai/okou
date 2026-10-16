@@ -351,8 +351,7 @@
     "src/signals/services/usage-pack-upgrade-invoice-sql.ts",
     "src/signals/services/usage-pack-retained-sql.ts",
     "src/signals/services/usage-pack-pending-snapshot-plan.ts",
-    "src/signals/services/usage-pack-member-removal-plan.ts",
-    "src/signals/services/usage-pack-subscription-deletion-plan.ts"
+    "src/signals/services/usage-pack-member-removal-plan.ts"
   ],
   "exclude": ["node_modules", "dist"],
   "references": [
