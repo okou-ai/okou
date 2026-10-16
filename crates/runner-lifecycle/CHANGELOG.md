@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.14.6](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.14.5...runner-lifecycle-v0.14.6) (2026-10-15)
+
+## [0.14.5](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.14.4...runner-lifecycle-v0.14.5) (2026-10-15)
+
+
+### Bug Fixes
+
+* **runner:** reclaim old home images for pending publications ([#40361](https://github.com/okou-ai/okou/issues/40361)) ([72f82c9](https://github.com/okou-ai/okou/commit/72f82c98205c582d6d972fc2b19ba9567b663405))
+
 ## [0.14.4](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.14.3...runner-lifecycle-v0.14.4) (2026-10-15)
 
 

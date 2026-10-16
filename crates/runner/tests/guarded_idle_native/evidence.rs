@@ -172,6 +172,7 @@ pub struct Case {
     state: Mutex<State>,
     exit_observer: Mutex<Option<tokio::task::JoinHandle<io::Result<()>>>>,
     retained: Mutex<Vec<Box<dyn Send>>>,
+    foreground_io: Mutex<Option<Arc<super::foreground_io::Gate>>>,
 }
 
 impl Case {
@@ -188,6 +189,7 @@ impl Case {
             }),
             exit_observer: Mutex::new(None),
             retained: Mutex::new(Vec::new()),
+            foreground_io: Mutex::new(None),
         });
         case.event(
             "case_started",
@@ -218,6 +220,34 @@ impl Case {
 
     pub fn critical_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
         self.write_event("NATIVE_CRITICAL_WITNESS ", phase, evidence)
+    }
+
+    pub fn startup_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_STARTUP_WITNESS ", phase, evidence)
+    }
+
+    pub fn foreground_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_FOREGROUND_WITNESS ", phase, evidence)
+    }
+
+    pub fn install_foreground_io(&self, gate: Arc<super::foreground_io::Gate>) -> io::Result<()> {
+        let mut current = self
+            .foreground_io
+            .lock()
+            .map_err(|_| io::Error::other("native IO owner poisoned"))?;
+        if current.is_some() {
+            return Err(io::Error::other("native IO owner already installed"));
+        }
+        *current = Some(gate);
+        Ok(())
+    }
+
+    pub fn foreground_io(&self) -> io::Result<Option<Arc<super::foreground_io::Gate>>> {
+        Ok(self
+            .foreground_io
+            .lock()
+            .map_err(|_| io::Error::other("native IO owner poisoned"))?
+            .clone())
     }
 
     pub fn snapshot_memory_hash(&self) -> io::Result<&str> {

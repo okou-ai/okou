@@ -393,16 +393,23 @@ drives NBD COW and rootfs process tests. The Crates CI gate requires selected-ta
 image preparation when applicable, including on reruns. Turbo runner preparation
 validates all configured architecture manifests before starting the runner.
 
-Native CPU fairness and guest RPC tests compile after `runner-host-groups`
+Native host CPU placement and guest RPC tests compile after `runner-host-groups`
 resolves the architecture inventory, in parallel with `runner-test-prepare`
 waiting for its selected image. The `host-cpu-fairness-build` and
 `guest-rpc-firecracker-build` jobs retain their `release` and `ci` profiles and
 separate target-specific Cargo cache keys. Compilation does not use a metal host,
 rootfs, or snapshot.
 
-CPU fairness compiles for the selected target and executes with the host and
-immutable image hashes supplied by `runner-test-prepare`. Guest RPC filesystem
-acceptance builds and executes the full configured architecture matrix, requiring
+The host CPU artifact compiles for the selected target and executes with the host
+and immutable image hashes supplied by `runner-test-prepare`. The historically
+named `host-cpu-fairness-test` job pins `HOST_CPU_TEST_MODE=placement` and runs only
+the exact real-Guest cgroup placement, launch/cancellation, and cleanup case.
+CPU saturation, service/borrowing ratios, and scheduling-gap measurements require
+explicit execution on a reserved host, as described by the
+[native driver](../../crates/sandbox-firecracker/tests/native/README.md) and
+[shared-host testing guide](../testing.md#shared-native-ci-hosts). The compiled
+artifact retains that ignored measurement case without executing it in shared CI.
+Guest RPC filesystem acceptance builds and executes the full configured architecture matrix, requiring
 both amd64 and ARM64. Each consumer selects a host from its matching architecture
 group and waits for that target's validated Runner Image manifest to supply its
 immutable rootfs and snapshot hashes. Its `runner-test-prepare` dependency remains
@@ -429,7 +436,7 @@ fallback to another run or target.
 
 The Crates gate requires both compilation and execution when a native test is
 selected. A failed or skipped producer cannot turn its dependent execution into
-an allowed skip. The existing selection rules still allow CPU fairness to be
+an allowed skip. The existing selection rules still allow host CPU placement to be
 omitted for unrelated changes and all native tests for release-only workflows.
 
 Playwright uses the same metal inventory to bootstrap the runner exercised by

@@ -124,7 +124,14 @@ async fn publication_survives_routine_gc_deleting_an_unrelated_discovered_orphan
         );
         let mut lease = f.lease("publishing-entry").await;
         assert_eq!(lease.result(), HomeCacheCheckoutResult::Hit);
-        let seed = match lease.home_drive_config().unwrap().seed_image.unwrap() {
+        let seed = match lease
+            .home_drive_config()
+            .await
+            .unwrap()
+            .unwrap()
+            .seed_image
+            .unwrap()
+        {
             sandbox::HomeDriveSeedImage::Copy(path) | sandbox::HomeDriveSeedImage::Move(path) => {
                 path
             }

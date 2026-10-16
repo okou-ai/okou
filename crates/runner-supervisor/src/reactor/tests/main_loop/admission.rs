@@ -910,6 +910,56 @@ async fn reserved_reuse_running_status_write_error_recovers_claim_and_sandbox() 
 }
 
 #[tokio::test]
+async fn fresh_activation_status_failure_retains_lease_until_completion() {
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    let (mut config, env) =
+        mock_run_config_with_overrides(test_profiles(), 2, 4096, 1, Arc::clone(&overrides));
+    let budget = Arc::clone(&config.capacity.budget);
+    let status_path = env._temp_dir.path().join("fresh-activation-status.json");
+    let status = Arc::new(StatusTracker::new(status_path.clone(), 1, None, None));
+    config.shared.status = Arc::clone(&status);
+    let run_handle = tokio::spawn(run(config));
+    wait_discover_entered(&env, Duration::from_secs(2)).await;
+
+    // Replacing the status file with a directory makes atomic publication fail.
+    tokio::fs::remove_file(&status_path).await.unwrap();
+    tokio::fs::create_dir(&status_path).await.unwrap();
+    env.handle.block_completions();
+    let run_id = RunId::new_v4();
+    push_job(&env, run_id, "vm0/default", Some(minimal_context(run_id)));
+
+    let completion = env
+        .handle
+        .wait_completion(run_id, Duration::from_secs(5))
+        .await
+        .expect("status failure should complete the fresh claim without an executor");
+    assert!(completion.error.as_deref().is_some_and(|error| {
+        error.starts_with("persist active runner ownership: write runner status")
+    }));
+    assert_eq!(completion.sandbox_id, None);
+    assert_eq!(env.handle.completion_in_flight(), 1);
+    assert_eq!(budget.allocated(), (2, 4096, 1));
+    assert!(env.active_runs.contains(run_id));
+    assert!(env.cancel_tokens.handle(run_id).await.is_some());
+    assert!(overrides.start_agent_process_calls().is_empty());
+    assert_eq!(overrides.destroy_call_count(), 0);
+
+    tokio::fs::remove_dir(&status_path).await.unwrap();
+    status.set_mode(RunnerMode::Running).await.unwrap();
+    let (_, active_runs) = status_idle_reuse_keys_and_active_runs(&status_path).await;
+    assert_eq!(active_runs, vec![run_id.to_string()]);
+
+    env.handle.unblock_completions();
+    wait_cancel_token_removed(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
+    wait_budget_count(&budget, 0, Duration::from_secs(5)).await;
+    assert!(!env.active_runs.contains(run_id));
+    wait_status_idle_reuse_keys_and_active_runs(&status_path, &[], &[], Duration::from_secs(5))
+        .await;
+    assert_eq!(overrides.destroy_call_count(), 0);
+    shutdown(&env, run_handle).await;
+}
+
+#[tokio::test]
 async fn uncertain_activation_destroy_keeps_active_status_for_orphan_reconciliation() {
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     crate::idle_reuse_preparation::add_healthy_reuse_preparation_matcher(&overrides);

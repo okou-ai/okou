@@ -1,5 +1,37 @@
 # Changelog
 
+## [9.395.0](https://github.com/okou-ai/okou/compare/cli-v9.394.0...cli-v9.395.0) (2026-10-15)
+
+
+### Features
+
+* **cli:** retain same-run ssh and vnc failure diagnostics ([#40358](https://github.com/okou-ai/okou/issues/40358)) ([4e5cd58](https://github.com/okou-ai/okou/commit/4e5cd5836d1f051a85ca076d170cc2e30e3a8177))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.568.0
+    * @okouai/core bumped to 8.761.0
+    * @okouai/pi-agent-runtime bumped to 1.50.8
+
+## [9.394.0](https://github.com/okou-ai/okou/compare/cli-v9.393.2...cli-v9.394.0) (2026-10-15)
+
+
+### Features
+
+* **vnc:** prepare native network contracts and readers ([#40316](https://github.com/okou-ai/okou/issues/40316)) ([ea3aa10](https://github.com/okou-ai/okou/commit/ea3aa10c7fa4fce02f776752a904c4cca8b43f7e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.567.0
+    * @okouai/core bumped to 8.760.0
+    * @okouai/pi-agent-runtime bumped to 1.50.7
+
 ## [9.393.2](https://github.com/okou-ai/okou/compare/cli-v9.393.1...cli-v9.393.2) (2026-10-15)
 
 

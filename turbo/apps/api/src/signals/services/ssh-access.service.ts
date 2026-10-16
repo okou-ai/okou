@@ -1,4 +1,5 @@
 import { sshHostSchema } from "@okouai/api-contracts/contracts/ssh-access";
+import { remoteHostIdentitySchema } from "@okouai/api-contracts/contracts/remote-host-identity";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
@@ -13,9 +14,11 @@ import { command } from "ccstate";
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
+  zodDriverValueDecoder,
 } from "../../lib/db-structured-result";
 import { writeDb$ } from "../external/db";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
+import { sshCreationTimestamp } from "./remote-connection-creation-timestamp.utils";
 import {
   runThreadExists,
   runThreadSshAccess,
@@ -32,6 +35,12 @@ const loadRunSshHostRows$ = command(
     return await db
       .select({
         id: sshConnections.id,
+        createdAt: sql`${sshCreationTimestamp}`.mapWith(
+          nullableDriverValueDecoder(
+            zodDriverValueDecoder(remoteHostIdentitySchema.shape.createdAt),
+          ),
+        ),
+        generation: sshConnections.generation,
         displayName: sshConnections.displayName,
         host: sshConnections.host,
         port: sshConnections.port,
@@ -108,18 +117,18 @@ export const listRunSshHosts$ = command(
     if (rows.length === 0) {
       return null;
     }
-    return {
-      hosts: rows.flatMap((row) => {
-        if (row.id === null) {
-          return [];
+    const admitted = rows.flatMap((row) => {
+      if (row.id === null) {
+        return [];
+      }
+      if (!row.needsRebind && row.accessId !== null) {
+        if (row.accessConfigId === null) {
+          throw new Error("SSH Cloudflare Access is missing");
         }
-        if (!row.needsRebind && row.accessId !== null) {
-          if (row.accessConfigId === null) {
-            throw new Error("SSH Cloudflare Access is missing");
-          }
-        }
-        return [
-          sshHostSchema.parse({
+      }
+      return [
+        {
+          host: sshHostSchema.parse({
             id: row.id,
             displayName: row.displayName,
             host: row.host,
@@ -133,7 +142,20 @@ export const listRunSshHosts$ = command(
               ? { status: "blocked", reason: "needs_rebind" }
               : { status: "ready" },
           }),
-        ];
+          identity: remoteHostIdentitySchema.parse({
+            id: row.id,
+            createdAt: row.createdAt,
+            generation: row.generation,
+          }),
+        },
+      ];
+    });
+    return {
+      hosts: admitted.map((entry) => {
+        return entry.host;
+      }),
+      identities: admitted.map((entry) => {
+        return entry.identity;
       }),
     };
   },

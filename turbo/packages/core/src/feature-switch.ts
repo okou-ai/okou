@@ -44,6 +44,13 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.DesktopShell]: {
+    maintainer: "lancy@okou.ai",
+    displayName: "Desktop Shell",
+    description:
+      "Use interactive shells on an authorized computer with local opt-in.",
+    enabled: false,
+  },
   [FeatureSwitchKey.SandboxFilesSidebar]: {
     maintainer: "liangyou@okou.ai",
     displayName: "Sandbox files sidebar",
@@ -82,6 +89,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Manage Tailscale networks and bind or rebind SSH hosts.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.RemoteConnectionDiagnostics]: {
+    maintainer: "liangyou@okou.ai",
+    displayName: "Remote connection diagnostics",
+    description:
+      "Retain and query safe SSH and VNC failure evidence in the same Run.",
+    enabled: false,
   },
   [FeatureSwitchKey.ArtifactSidebarPreview]: {
     maintainer: "ethan@okou.ai",

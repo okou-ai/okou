@@ -281,6 +281,36 @@ impl TestRun {
             bounded(dispatcher.shutdown()).await.unwrap();
         }
     }
+
+    pub(super) async fn enable_diagnostics(&mut self, runtime: &Arc<VncRuntime>) {
+        self.shutdown().await;
+        let (incoming, receiver) = mpsc::channel(16);
+        self.incoming = incoming;
+        self.dispatcher = Some(
+            Runtime::new(None, Some(Arc::clone(runtime)), None).start_with_diagnostics(
+                Arc::new(Acceptor(tokio::sync::Mutex::new(receiver))),
+                "vnc-assigned-sandbox".into(),
+                self.id,
+                &self.cancel,
+                None,
+                Some(Arc::new(crate::diagnostics::Authority::new(
+                    runtime.http_client(),
+                    "diagnostic-vnc-agent",
+                ))),
+            ),
+        );
+    }
+
+    pub(super) async fn passive(&self, method: &str, params: Value) -> Value {
+        let mut guest = self.open().await;
+        let request = json!({"version":1,"method":method,"params":params}).to_string();
+        guest.write_u32(request.len() as u32).await.unwrap();
+        guest.write_all(request.as_bytes()).await.unwrap();
+        let mut reader = runner_rpc_proto::ResponseReader::new(guest);
+        let frame = bounded(reader.next()).await.unwrap().unwrap();
+        assert!(bounded(reader.next()).await.unwrap().is_none());
+        serde_json::to_value(frame).unwrap()["data"].clone()
+    }
 }
 
 pub(super) async fn send(guest: &mut DuplexStream, request: &str) {

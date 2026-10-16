@@ -2,7 +2,7 @@ import { computed, type Computed } from "ccstate";
 import { getRunModelDisplayName } from "@okouai/core/model-display-name";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { eq } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 
 import { db$, type ReadonlyDb } from "../external/db";
 import { escapeHtml } from "../../lib/telegram-format";
@@ -37,22 +37,6 @@ export async function resolveTelegramAgentReplyFooterText(args: {
   return modelLabel ? escapeHtml(modelLabel) : undefined;
 }
 
-async function resolveRunAgentLabel(
-  db: ReadonlyDb,
-  runId: string,
-): Promise<string | undefined> {
-  const [row] = await db
-    .select({
-      agentDisplayName: agents.displayName,
-      agentName: agents.name,
-    })
-    .from(agentRuns)
-    .innerJoin(agents, eq(agentRuns.agentId, agents.id))
-    .where(eq(agentRuns.id, runId))
-    .limit(1);
-  return row ? displayLabel(row) : undefined;
-}
-
 /**
  * Resolve the attribution footer text appended to user-initiated Telegram messages.
  *
@@ -65,15 +49,54 @@ export function telegramMessageSendFooterText(args: {
   readonly authRunId: string | undefined;
   readonly botId: string;
 }): Computed<Promise<string | undefined>> {
+  type ModelRead = Awaited<ReturnType<typeof resolveRunModelSelection>>;
+
   return computed(async (get): Promise<string | undefined> => {
     if (!args.authRunId) {
       return undefined;
     }
     const db = get(db$);
+    const runId = args.authRunId;
 
     const [agentLabel, runModel] = await Promise.all([
-      resolveRunAgentLabel(db, args.authRunId),
-      resolveRunModelSelection(db, args.authRunId),
+      (async (): Promise<string | undefined> => {
+        const [row] = await db
+          .select({
+            agentDisplayName: agents.displayName,
+            agentName: agents.name,
+          })
+          .from(agentRuns)
+          .innerJoin(agents, eq(agentRuns.agentId, agents.id))
+          .where(eq(agentRuns.id, runId))
+          .limit(1);
+        return row ? displayLabel(row) : undefined;
+      })(),
+      ((): Promise<ModelRead> => {
+        const modelRunId = args.authRunId;
+        return (async (): Promise<ModelRead> => {
+          const [row] = await db
+            .select({
+              selectedModel: agentRuns.selectedModel,
+              codexServiceTier: agentRuns.codexServiceTier,
+            })
+            .from(agentRuns)
+            .where(
+              and(
+                eq(agentRuns.id, modelRunId),
+                isNotNull(agentRuns.triggerSource),
+              ),
+            )
+            .limit(1);
+          if (!row) {
+            return undefined;
+          }
+          // A historical run's retired Ultrafast tier reads as Standard.
+          return {
+            selectedModel: row.selectedModel,
+            codexServiceTier: row.codexServiceTier === "fast" ? "fast" : null,
+          };
+        })();
+      })(),
     ]);
 
     const parts: string[] = [];

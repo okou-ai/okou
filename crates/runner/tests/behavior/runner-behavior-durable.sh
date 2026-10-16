@@ -1,19 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; then
-  echo "usage: $0 <scenario-name> <remote-worker-file-or-directory> [worker-argument]" >&2
+if [ "$#" -lt 2 ]; then
+  echo "usage: $0 <scenario-name> <remote-worker-file-or-directory> [worker-argument ...]" >&2
   exit 2
 fi
 
 TEST_NAME=$1
 REMOTE_WORKER=$2
-# The optional argument is visible in transient unit process metadata. Callers
+# Optional arguments are visible in transient unit process metadata. Callers
 # must keep secrets in their short configuration boundary instead.
-REMOTE_WORKER_ARGUMENTS=()
-if [ "$#" -eq 3 ]; then
-  REMOTE_WORKER_ARGUMENTS=("$3")
-fi
+REMOTE_WORKER_ARGUMENTS=("${@:3}")
 if [[ ! "$TEST_NAME" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
   echo "scenario name must contain lowercase alphanumeric segments joined by hyphens" >&2
   exit 2

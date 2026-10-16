@@ -1,4 +1,8 @@
 import { randomUUID } from "node:crypto";
+import {
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/runtime/connector-catalog";
 
 import type { BuiltinConnectorListResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import {
@@ -43,7 +47,11 @@ import {
 } from "./builtin-connector-credential-runtime.service";
 
 import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
-import { loadConnectorRuntimeSlugSelection } from "./connector-catalog-slug-source.service";
+import {
+  connectorCatalogCurrentWhere,
+  connectorRuntimeSlugSelectionReadPlan,
+  connectorRuntimeSlugSelectionFromRows,
+} from "./connector-catalog-slug-source.service";
 import { builtinConnectorList } from "./connector-data.service";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import {
@@ -556,11 +564,20 @@ const runJob$ = command(
     if (sources.length === 0) {
       throw new Error("No supported connected source was available");
     }
-    const snapshot = await loadConnectorRuntimeSlugSelection(set(writeDb$), {
+    const catalogDb = set(writeDb$);
+    const catalogPlan = connectorRuntimeSlugSelectionReadPlan({
       connectorSlugs: sources.map((source) => {
         return source.slug;
       }),
     });
+    const snapshot = connectorRuntimeSlugSelectionFromRows(
+      catalogPlan.selection,
+      await catalogDb
+        .select(catalogPlan.columns)
+        .from(connectorCatalog)
+        .leftJoin(connectorCatalogEntries, catalogPlan.join)
+        .where(connectorCatalogCurrentWhere()),
+    );
     signal.throwIfAborted();
     const collected = await Promise.allSettled(
       sources.map((source) => {

@@ -34,7 +34,7 @@ use runner_types::ids::RunId;
 
 use crate::RemoteInitError;
 use authority::{Authority, CredentialAuth, PreparedAuth, PreparedCredential, Trust};
-pub(crate) use forwarding::DirectTcpIpStream;
+pub(crate) use forwarding::{DirectTcpIpStream, ForwardingFailure};
 use io::GuestIo;
 use network::{Network, PublicNetwork};
 use runner_host::runner_process_identity::RunnerProcessIdentity;
@@ -91,6 +91,9 @@ pub struct SshRuntime {
 }
 
 impl SshRuntime {
+    pub(crate) fn http_client(&self) -> HttpClient {
+        self.authority.http.clone()
+    }
     pub(crate) fn ably_message(&self, message: &ably_subscriber::Message) -> bool {
         use api_contracts::generated::types::runners::ssh::InvalidateNotification;
         if message.name.as_deref() != Some("ssh-authority-invalidated") {
@@ -252,6 +255,13 @@ impl SshRuntime {
             )
             .await;
         let observation = output.connection.finish(result.as_ref().err().copied());
+        output.connection.record(
+            &sessions.registration.diagnostics(),
+            connection,
+            crate::diagnostics::Operation::Exec,
+            None,
+            result.as_ref().err().copied(),
+        );
         let outcome = output.terminal(result);
         // A poisoned writer cannot emit a replacement terminal after partial I/O.
         let terminal_scope = Scope {
@@ -447,6 +457,7 @@ impl SshRuntime {
         credential: &PreparedCredential,
         access: &cache::Access,
         scope: &Scope,
+        observation: &mut observation::Attempt,
     ) -> Result<io::Carrier, FailureReason> {
         if let authority::Transport::Tailscale(configuration) = &credential.transport {
             let node =
@@ -462,6 +473,7 @@ impl SshRuntime {
                     }
                     tailscale::work(configuration, journal)
                 })?;
+            observation.native = Some(node.diagnostic_source(configuration.key()));
             let stream = scope
                 .wait(node.dial_retained(
                     &credential.host,

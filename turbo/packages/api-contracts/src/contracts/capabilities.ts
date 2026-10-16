@@ -47,6 +47,7 @@ export const CAPABILITIES = [
   "finance:read",
   "seo:read",
   "computer-use:write",
+  "computer-use:shell:write",
   "browser:read",
   "browser:write",
   "file:read",
@@ -79,6 +80,10 @@ export interface CapabilityMeta {
  * will produce a TypeScript compile error.
  */
 export const CAPABILITY_META: Record<Capability, CapabilityMeta> = {
+  "computer-use:shell:write": {
+    group: "Computer Use",
+    label: "Use interactive shells on your authorized computer",
+  },
   "suggestion:read": { group: "Suggestions", label: "Read your suggestions" },
   "suggestion:write": {
     group: "Suggestions",

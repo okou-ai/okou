@@ -1673,3 +1673,5 @@ export {
   chatInputStatusResponseSchema,
   type ChatInputStatusResponse,
 } from "./chat-input-status";
+
+export { desktopShellContract } from "./desktop-shell";

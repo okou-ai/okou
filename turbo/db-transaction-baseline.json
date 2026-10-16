@@ -122,19 +122,9 @@
       "owner": "publishAutomaticConnection$"
     },
     {
-      "id": "TX-0082",
-      "file": "turbo/apps/api/src/signals/services/builtin-connector-credential-runtime.service.ts",
-      "owner": "persistConnectorRefresh$"
-    },
-    {
       "id": "TX-0084",
       "file": "turbo/apps/api/src/signals/services/builtin-connector-oauth-device-auth.service.ts",
       "owner": "completeClaimedSession$"
-    },
-    {
-      "id": "TX-0086",
-      "file": "turbo/apps/api/src/signals/services/canonical-asset.service.ts",
-      "owner": "ensureCanonicalDelivery$"
     },
     {
       "id": "TX-0088",
@@ -312,11 +302,6 @@
       "owner": "deleteCustomConnectorAccount$"
     },
     {
-      "id": "TX-0149",
-      "file": "turbo/apps/api/src/signals/services/discord-chat-ingress.service.ts",
-      "owner": "ensureCanonicalDiscordChatThreadRoute$"
-    },
-    {
       "id": "TX-0150",
       "file": "turbo/apps/api/src/signals/services/discord-chat-ingress.service.ts",
       "owner": "admitCanonicalDiscordChatEvent$"
@@ -417,11 +402,6 @@
       "owner": "restoreFailedReconfiguration$"
     },
     {
-      "id": "TX-0199",
-      "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
-      "owner": "finalizeReconfiguration$"
-    },
-    {
       "id": "TX-0201",
       "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
       "owner": "stageAutomationStructureTransition$"
@@ -467,11 +447,6 @@
       "owner": "pauseRemovedAutomationConfiguration$"
     },
     {
-      "id": "TX-0212",
-      "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
-      "owner": "deleteRemovedAutomationConfiguration$"
-    },
-    {
       "id": "TX-0216",
       "file": "turbo/apps/api/src/signals/services/org-limited-free-bootstrap.service.ts",
       "owner": "cleanupBootstrapCandidate$"
@@ -487,11 +462,6 @@
       "owner": "revokeOrgMemberRunAuthority"
     },
     {
-      "id": "TX-0221",
-      "file": "turbo/apps/api/src/signals/services/pi-memory-maintenance-execution.service.ts",
-      "owner": "failMaintenanceLaunch$"
-    },
-    {
       "id": "TX-0222",
       "file": "turbo/apps/api/src/signals/services/pi-memory-maintenance-execution.service.ts",
       "owner": "persistMaintenanceRun$"
@@ -500,11 +470,6 @@
       "id": "TX-0223",
       "file": "turbo/apps/api/src/signals/services/pi-memory-phase2-job.service.ts",
       "owner": "claimPiMemoryPhase2Job$"
-    },
-    {
-      "id": "TX-0225",
-      "file": "turbo/apps/api/src/signals/services/pi-memory-stage1-candidate.service.ts",
-      "owner": "commitPiMemoryStage1Candidate$"
     },
     {
       "id": "TX-0227",
@@ -630,11 +595,6 @@
       "id": "TX-0270",
       "file": "turbo/apps/api/src/signals/services/usage-pack-allocation-change.service.ts",
       "owner": "finalizeCanceledUsagePackChanges"
-    },
-    {
-      "id": "TX-0271",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-allocation-change.service.ts",
-      "owner": "commitUsagePackUpgradeInvoice"
     },
     {
       "id": "TX-0272",
@@ -817,54 +777,14 @@
       "owner": "applyPendingMigrations"
     },
     {
-      "id": "TX-0376",
-      "file": "turbo/packages/db/scripts/test-connector-catalog-columns-permanent.ts",
-      "owner": "validateConnectorCatalogColumnContract"
-    },
-    {
-      "id": "TX-0378",
-      "file": "turbo/packages/db/scripts/test-connector-catalog-entry-columns.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0380",
-      "file": "turbo/packages/db/scripts/test-connector-catalog-entry-columns.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0392",
-      "file": "turbo/packages/db/scripts/test-hosted-publication-contraction.ts",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0393",
       "file": "turbo/packages/db/scripts/test-hosted-publication-runtime.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0394",
-      "file": "turbo/packages/db/scripts/test-legacy-free-retirement.ts",
       "owner": "<module>"
     },
     {
       "id": "TX-0417",
       "file": "turbo/packages/db/scripts/test-pi-memory-stage1-cost.ts",
       "owner": "validatePiMemoryStage1Cost"
-    },
-    {
-      "id": "TX-0420",
-      "file": "turbo/packages/db/scripts/test-prepared-domain-trigger-retirement.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0421",
-      "file": "turbo/packages/db/scripts/test-prepared-domain-trigger-retirement.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0432",
-      "file": "turbo/packages/db/scripts/test-usage-pack-overdraft-transfer.ts",
-      "owner": "<module>"
     }
   ]
 }

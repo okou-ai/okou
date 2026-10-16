@@ -2170,7 +2170,7 @@ test("Mac classic password is an explicit SSH-only profile with risk disclosure 
   ]);
 });
 
-test.each([
+const appleHostProfiles = [
   {
     profile: "apple_dh" as const,
     method: "apple_dh_username_password" as const,
@@ -2192,19 +2192,29 @@ test.each([
     usernameMaxLength: 234,
     usernameHelp: /1–234 UTF-8 bytes/u,
   },
-])(
-  "$label host editor requires SSH loopback and omits X509 trust",
-  async ({ profile, method, label, usernameMaxLength, usernameHelp }) => {
+] as const;
+
+test.each(appleHostProfiles)(
+  "$label saves SSH loopback selection without X509 trust",
+  async ({ profile, method, label }) => {
+    const appleCredential: VncCredentialResponse = {
+      ...credential,
+      name: "Mac login",
+      authMethod: method,
+      username: "operator",
+      hosts: [],
+    };
     mockSettings({
       connections: [],
-      credentials: [],
+      credentials: [appleCredential],
       sshConnections: [sshHost],
     });
     const requests: unknown[] = [];
     const appleHost: CredentialedVncConnection = {
       ...host,
       host: "127.0.0.1",
-      credentialName: "Mac login",
+      credentialId: appleCredential.id,
+      credentialName: appleCredential.name,
       security: { type: profile },
       transport: { type: "ssh", connectionId: sshHost.id },
     };
@@ -2239,6 +2249,61 @@ test.each([
     await choose(dialog, "RFB destination host", "::1");
     expect(destination).toHaveTextContent("::1");
     await choose(dialog, "RFB destination host", "127.0.0.1");
+    expect(destination).toHaveTextContent("127.0.0.1");
+    await choose(dialog, "Credential", appleCredential.name);
+    click(getAction("button", "Save", dialog));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(requests).toStrictEqual([
+      {
+        id: expect.any(String),
+        displayName: "Mac Screen Sharing",
+        host: "127.0.0.1",
+        port: 5900,
+        transport: { type: "ssh", connectionId: sshHost.id },
+        credential: { id: appleCredential.id },
+        security: { type: profile },
+      },
+    ]);
+  },
+);
+
+test.each(appleHostProfiles)(
+  "$label creates credentials with its username limits",
+  async ({ profile, method, label, usernameMaxLength, usernameHelp }) => {
+    mockSettings({
+      connections: [],
+      credentials: [],
+      sshConnections: [sshHost],
+    });
+    const requests: unknown[] = [];
+    const appleHost: CredentialedVncConnection = {
+      ...host,
+      host: "127.0.0.1",
+      credentialName: "Mac login",
+      security: { type: profile },
+      transport: { type: "ssh", connectionId: sshHost.id },
+    };
+    context.mocks.api(vncConnectionsContract.create, ({ body, respond }) => {
+      requests.push(body);
+      return respond(201, appleHost);
+    });
+    await openAddHostPage();
+    const dialog = await screen.findByRole("dialog", { name: "Add host" });
+    await choose(dialog, "Security profile", label);
+    await choose(
+      dialog,
+      "SSH host",
+      "Desktop gateway · gateway.example.com:22",
+    );
+    await fill(
+      within(dialog).getByLabelText("Display name"),
+      "Mac Screen Sharing",
+    );
+    expect(
+      within(dialog).getByLabelText("RFB destination host"),
+    ).toHaveTextContent("127.0.0.1");
     await choose(dialog, "Credential", "Create new credential");
     await fill(within(dialog).getByLabelText("Credential name"), "Mac login");
     const usernameField = within(dialog).getByLabelText("Username");

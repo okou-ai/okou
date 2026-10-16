@@ -1,3 +1,4 @@
+import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { agents } from "@okouai/db/schema/agent";
@@ -327,7 +328,7 @@ function buildOrgConnectUrl(
   if (threadTs) {
     params.set("t", threadTs);
   }
-  return `${env("APP_URL")}/settings/slack?${params.toString()}`;
+  return `${env("APP_URL")}${INTEGRATION_SETTINGS_PATHS.slack}?${params.toString()}`;
 }
 
 function buildNotInstalledMessage(detail?: string): unknown[] {

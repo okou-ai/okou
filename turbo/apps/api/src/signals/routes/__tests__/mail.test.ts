@@ -3,6 +3,7 @@ import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import { mailContract } from "@okouai/api-contracts/contracts/mail";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
@@ -22,6 +23,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 
 import { createRouteMocks } from "./helpers/route-test";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
+import { agentsRoutes } from "../agents";
 import { mailRoutes } from "../mail";
 import { chatThreadRoutes } from "../chat-threads";
 
@@ -301,6 +303,7 @@ function mockGmailDraftApi(options?: {
 
 async function seedGmailMailCardFixture(
   registerCleanup?: (cleanup: () => Promise<void>) => void,
+  isolatePg = false,
 ) {
   const actor = bdd.user();
   if (!actor.orgId) {
@@ -308,10 +311,24 @@ async function seedGmailMailCardFixture(
   }
   const actorWithOrg = { ...actor, orgId: actor.orgId };
   bdd.acceptAgentStorageWrites();
-  const agent = await bdd.createAgent(actor, {
+  const agentBody = {
     displayName: "Nova Mail agent",
     visibility: "private",
-  });
+  } as const;
+  mocks.clerk.session(actor.userId, actorWithOrg.orgId, actor.orgRole);
+  const agent = isolatePg
+    ? (
+        await accept(
+          (await setupApp({ context, routes: agentsRoutes, isolatePg: true }))(
+            agentsMainContract,
+          ).create({
+            headers: authHeaders(),
+            body: agentBody,
+          }),
+          [201],
+        )
+      ).body
+    : await bdd.createAgent(actor, agentBody);
   registerCleanup?.(async () => {
     await bdd.deleteAgent(actor, agent.agentId);
   });
@@ -1941,5 +1958,320 @@ describe("POST /api/mail/drafts/link", () => {
     );
     expect(relinked.body.mailDraftId).not.toBe(linked.body.mailDraftId);
     expect(gmail.deleteCount).toBe(0);
+  });
+});
+
+// Keep this publication path on the public mail/OAuth lifecycle. The fixed
+// catalog cannot expose arbitrary refresh-output aliases or invalid storage.
+describe("mail refresh publication", () => {
+  async function expiredLinkedDraft() {
+    // The first real fixture operation uses the returned isolated agent client.
+    const fixture = await seedGmailMailCardFixture(undefined, true);
+    mockGmailDraftApi();
+    const linked = await linkDraft(fixture);
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", async ({ request }) => {
+        const body = new URLSearchParams(await request.text());
+        expect(body.get("grant_type")).toBe("authorization_code");
+        return HttpResponse.json({
+          access_token: "expired-public-mail-token",
+          refresh_token: "original-public-mail-refresh",
+          expires_in: 0,
+          token_type: "Bearer",
+          scope: GMAIL_MODIFY_SCOPE,
+        });
+      }),
+    );
+    const start = await connectors.startOauth(
+      fixture.actor,
+      "gmail",
+      "oauth",
+      undefined,
+      {
+        intent: "reconnect",
+        connectionId: fixture.gmail.id,
+      },
+    );
+    const state = new URL(start.authorizationUrl).searchParams.get("state");
+    if (!state) {
+      throw new Error("Expected reconnect state");
+    }
+    await connectors.completeOauthCallback("gmail", {
+      code: "expire-public-mail",
+      state,
+    });
+    return { ...fixture, linked };
+  }
+
+  async function readLinkedDraft(
+    fixture: Awaited<ReturnType<typeof expiredLinkedDraft>>,
+  ) {
+    return await accept(
+      client().getDraft({
+        headers: authHeaders(),
+        params: { mailDraftId: fixture.linked.body.mailDraftId },
+      }),
+      [200],
+    );
+  }
+
+  it("persists rotation, preserves explicit zero expiry and reuses the default expiry token", async () => {
+    const fixture = await expiredLinkedDraft();
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", async ({ request }) => {
+        const body = new URLSearchParams(await request.text());
+        expect(body.get("grant_type")).toBe("refresh_token");
+        expect(body.get("refresh_token")).toBe("original-public-mail-refresh");
+        return HttpResponse.json({
+          access_token: "zero-expiry-token",
+          refresh_token: "rotated-public-mail-refresh",
+          expires_in: 0,
+          token_type: "Bearer",
+        });
+      }),
+    );
+    mockGmailDraftApi({ accessToken: "zero-expiry-token" });
+    expect(
+      (await readLinkedDraft(fixture)).body.mailDraft.detailAvailable,
+    ).toBeTruthy();
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", async ({ request }) => {
+        const body = new URLSearchParams(await request.text());
+        expect(body.get("grant_type")).toBe("refresh_token");
+        expect(body.get("refresh_token")).toBe("rotated-public-mail-refresh");
+        // No expiry or replacement refresh token: mail's existing default applies.
+        return HttpResponse.json({
+          access_token: "default-expiry-token",
+          token_type: "Bearer",
+        });
+      }),
+    );
+    mockGmailDraftApi({ accessToken: "default-expiry-token" });
+    expect(
+      (await readLinkedDraft(fixture)).body.mailDraft.detailAvailable,
+    ).toBeTruthy();
+    const stored = await connectors.readConnectorBySlug(fixture.actor, "gmail");
+    expect(stored).toMatchObject({
+      id: fixture.gmail.id,
+      oauthScopes: [GMAIL_MODIFY_SCOPE],
+      connectionStatus: "connected",
+      tokenExpiresAt: expect.any(String),
+    });
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", () => {
+        throw new Error("A persisted unexpired token must not refresh again");
+      }),
+    );
+    expect(
+      (await readLinkedDraft(fixture)).body.mailDraft.detailAvailable,
+    ).toBeTruthy();
+  });
+
+  it.each([
+    {
+      label: "omitted",
+      scope: undefined,
+      grants: [GMAIL_MODIFY_SCOPE],
+      usable: true,
+    },
+    { label: "empty", scope: "", grants: [], usable: false },
+    {
+      label: "narrower",
+      scope: "https://www.googleapis.com/auth/gmail.readonly",
+      grants: ["https://www.googleapis.com/auth/gmail.readonly"],
+      usable: false,
+    },
+  ])(
+    "publishes $label grants with the refreshed credential",
+    async ({ scope, grants, usable }) => {
+      const fixture = await expiredLinkedDraft();
+      server.use(
+        http.post(
+          "https://oauth2.googleapis.com/token",
+          async ({ request }) => {
+            const body = new URLSearchParams(await request.text());
+            expect(body.get("grant_type")).toBe("refresh_token");
+            expect(body.get("refresh_token")).toBe(
+              "original-public-mail-refresh",
+            );
+            return HttpResponse.json({
+              access_token: "grant-public-mail-token",
+              expires_in: 3600,
+              token_type: "Bearer",
+              ...(scope === undefined ? {} : { scope }),
+            });
+          },
+        ),
+      );
+      mockGmailDraftApi({ accessToken: "grant-public-mail-token" });
+      expect(
+        (await readLinkedDraft(fixture)).body.mailDraft.detailAvailable,
+      ).toBeTruthy();
+      await expect(
+        connectors.readConnectorBySlug(fixture.actor, "gmail"),
+      ).resolves.toMatchObject({ id: fixture.gmail.id, oauthScopes: grants });
+      expect(
+        (await readLinkedDraft(fixture)).body.mailDraft.detailAvailable,
+      ).toBe(usable);
+    },
+  );
+
+  it.each([
+    {
+      error: "invalid_grant",
+      status: 400,
+      connectionStatus: "reconnect-required",
+    },
+    {
+      error: "temporarily_unavailable",
+      status: 503,
+      connectionStatus: "connected",
+    },
+  ])(
+    "keeps the public reconnect outcome for $error",
+    async ({ error, status, connectionStatus }) => {
+      const fixture = await expiredLinkedDraft();
+      server.use(
+        http.post("https://oauth2.googleapis.com/token", () => {
+          return HttpResponse.json({ error }, { status });
+        }),
+      );
+      expect((await readLinkedDraft(fixture)).body.mailDraft).toMatchObject({
+        detailAvailable: false,
+        accessStatus: "reconnect",
+      });
+      await expect(
+        connectors.readConnectorBySlug(fixture.actor, "gmail"),
+      ).resolves.toMatchObject({
+        id: fixture.gmail.id,
+        connectionStatus,
+        oauthScopes: [GMAIL_MODIFY_SCOPE],
+      });
+      if (connectionStatus === "connected") {
+        server.use(
+          http.post("https://oauth2.googleapis.com/token", () => {
+            return HttpResponse.json({
+              access_token: "recovered-public-mail-token",
+              expires_in: 3600,
+              token_type: "Bearer",
+            });
+          }),
+        );
+        mockGmailDraftApi({ accessToken: "recovered-public-mail-token" });
+        expect(
+          (await readLinkedDraft(fixture)).body.mailDraft.detailAvailable,
+        ).toBeTruthy();
+      }
+    },
+  );
+
+  it("suppresses publication after the exact account is deleted during provider refresh", async () => {
+    const fixture = await expiredLinkedDraft();
+    const siblingId = await addGmailAccount(fixture, {
+      accessToken: "sibling-public-mail-token",
+      email: "sibling@example.com",
+      subject: "sibling-mail-user",
+    });
+    const siblingBefore = (
+      await connectors.listBuiltinConnectorAccounts(fixture.actor, "gmail")
+    ).find((account) => {
+      return account.id === siblingId;
+    });
+    expect(siblingBefore).toBeDefined();
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", async ({ request }) => {
+        const body = new URLSearchParams(await request.text());
+        expect(body.get("refresh_token")).toBe("original-public-mail-refresh");
+        await connectors.deleteBuiltinConnectorAccount(
+          fixture.actor,
+          "gmail",
+          fixture.gmail.id,
+        );
+        return HttpResponse.json({
+          access_token: "deleted-account-token",
+          refresh_token: "deleted-account-refresh",
+          expires_in: 3600,
+          scope: "",
+          token_type: "Bearer",
+        });
+      }),
+    );
+    const unavailable = await readLinkedDraft(fixture);
+    expect(unavailable.body.mailDraft.detailAvailable).toBeFalsy();
+    const remaining = await connectors.listBuiltinConnectorAccounts(
+      fixture.actor,
+      "gmail",
+    );
+    expect(
+      remaining.map((account) => {
+        return account.id;
+      }),
+    ).not.toContain(fixture.gmail.id);
+    expect(
+      remaining.find((account) => {
+        return account.id === siblingId;
+      }),
+    ).toMatchObject({
+      id: siblingId,
+      oauthScopes: siblingBefore?.oauthScopes,
+      tokenExpiresAt: siblingBefore?.tokenExpiresAt,
+      connectionStatus: "connected",
+    });
+    await selectGmailAccount(fixture, siblingId);
+    mockGmailDraftApi({ accessToken: "sibling-public-mail-token" });
+    // Existing cards retain their exact source; a new public link uses the selected sibling.
+    const siblingLink = await linkDraft(fixture);
+    expect(siblingLink.body.mailDraftId).not.toBe(
+      fixture.linked.body.mailDraftId,
+    );
+    const siblingRead = await accept(
+      client().getDraft({
+        headers: authHeaders(),
+        params: { mailDraftId: siblingLink.body.mailDraftId },
+      }),
+      [200],
+    );
+    expect(siblingRead.body.mailDraft.detailAvailable).toBeTruthy();
+  });
+
+  it("keeps another actor's account and credential isolated from refresh", async () => {
+    const fixture = await expiredLinkedDraft();
+    const other = await seedGmailMailCardFixture();
+    mockGmailDraftApi();
+    const otherLink = await linkDraft(other);
+    const otherBefore = await connectors.readConnectorBySlug(
+      other.actor,
+      "gmail",
+    );
+    mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", async ({ request }) => {
+        const body = new URLSearchParams(await request.text());
+        expect(body.get("refresh_token")).toBe("original-public-mail-refresh");
+        return HttpResponse.json({
+          access_token: "isolated-public-mail-token",
+          refresh_token: "isolated-public-mail-refresh",
+          expires_in: 3600,
+          token_type: "Bearer",
+        });
+      }),
+    );
+    mockGmailDraftApi({ accessToken: "isolated-public-mail-token" });
+    expect(
+      (await readLinkedDraft(fixture)).body.mailDraft.detailAvailable,
+    ).toBeTruthy();
+    await expect(
+      connectors.readConnectorBySlug(other.actor, "gmail"),
+    ).resolves.toStrictEqual(otherBefore);
+    mockGmailDraftApi();
+    mocks.clerk.session(other.actor.userId, other.actor.orgId);
+    const otherRead = await accept(
+      client().getDraft({
+        headers: authHeaders(),
+        params: { mailDraftId: otherLink.body.mailDraftId },
+      }),
+      [200],
+    );
+    expect(otherRead.body.mailDraft.detailAvailable).toBeTruthy();
   });
 });

@@ -127,7 +127,7 @@ async fn publication_burst(real_hold: bool) -> usize {
             continue;
         }
         let Some(sandbox::HomeDriveSeedImage::Move(seed)) =
-            lease.home_drive_config().unwrap().seed_image
+            lease.home_drive_config().await.unwrap().unwrap().seed_image
         else {
             panic!("committed burst image must be consumable");
         };
@@ -253,7 +253,7 @@ async fn cancelled_admission_keeps_entry_and_bytes_without_blocking_other_checko
     drop(context);
     let mut lease = f.lease("waiting").await;
     let Some(sandbox::HomeDriveSeedImage::Move(seed)) =
-        lease.home_drive_config().unwrap().seed_image
+        lease.home_drive_config().await.unwrap().unwrap().seed_image
     else {
         panic!("cancelled admission must remain retryable with intact bytes");
     };

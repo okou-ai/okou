@@ -22,6 +22,7 @@ use super::{
 };
 use crate::SharedFactory;
 use crate::blank_pool::BlankPoolDiagnostics;
+use crate::claimed_activation::ClaimedActivationError;
 use crate::executor::{
     self, ExecutorConfig, RunnerPreSpawnConcurrency, RunnerPreSpawnPhase, RunnerPreSpawnTiming,
     SessionHistoryRestorePlan,
@@ -52,6 +53,8 @@ use runner_provider::{ClaimedJob, JobProvider};
 use runner_provider::{RunCancellationHandle, RunCancellationRegistration, RunCancellationSignals};
 use runner_types::ids::RunId;
 use runner_types::types::{ExecutionContext, SandboxReuseResult};
+
+pub(super) type JobResult = Result<RunCancellationRegistration, ClaimedActivationError>;
 
 /// Per-job profile parameters resolved from the profile config.
 pub(super) struct JobProfile {
@@ -472,10 +475,11 @@ impl DeferredUploadPhase {
 pub(super) fn spawn_job(
     mut request: SpawnJobRequest,
     ctx: &SpawnContext,
-    jobs: &mut JoinSet<RunCancellationRegistration>,
+    jobs: &mut JoinSet<JobResult>,
 ) {
     request.pre_spawn_timing.mark_task_enqueued();
-    jobs.spawn(run_job(request, ctx.clone()));
+    let ctx = ctx.clone();
+    jobs.spawn(async move { Ok(run_job(request, ctx).await) });
 }
 
 pub(super) async fn run_job(
@@ -745,12 +749,13 @@ pub(super) async fn cleanup_panicked_job(
 }
 
 /// Handle a completed job from the JoinSet, removing its cancellation registration.
-pub(super) async fn handle_job_result(
-    result: Option<Result<RunCancellationRegistration, tokio::task::JoinError>>,
-) {
+pub(super) async fn handle_job_result(result: Option<Result<JobResult, tokio::task::JoinError>>) {
     match result {
-        Some(Ok(cancellation)) => {
+        Some(Ok(Ok(cancellation))) => {
             cancellation.unregister().await;
+        }
+        Some(Ok(Err(error))) => {
+            error!(%error, "claimed activation job failed");
         }
         Some(Err(e)) => {
             error!(error = %e, "job task panicked");

@@ -899,6 +899,59 @@ describe("Canonical Discord file publication and delivery", () => {
     );
   });
 
+  it("reuses concurrent upload initialization for one operation", async () => {
+    const fixture = await boundFixture();
+    const client = fileClients();
+    const body = uploadBody({ channelId: fixture.channelId });
+    const [first, second] = await Promise.all([
+      accept(client.init({ headers: fixture.headers, body }), [200]),
+      accept(client.init({ headers: fixture.headers, body }), [200]),
+    ]);
+    expect(second.body.assetId).toBe(first.body.assetId);
+    expect(second.body.url).toBe(first.body.url);
+    const repeated = await accept(
+      client.init({ headers: fixture.headers, body }),
+      [200],
+    );
+    expect(repeated.body.assetId).toBe(first.body.assetId);
+  });
+
+  it("keeps exactly one destination when an upload operation races", async () => {
+    const fixture = await boundFixture();
+    const client = fileClients();
+    const body = uploadBody({ channelId: fixture.channelId });
+    const candidates = [
+      { ...body, comment: "First destination caption" },
+      { ...body, comment: "Second destination caption" },
+    ];
+    const outcomes = await Promise.all(
+      candidates.map(async (candidate) => {
+        const response = await accept(
+          client.init({ headers: fixture.headers, body: candidate }),
+          [200, 409],
+        );
+        return { candidate, response };
+      }),
+    );
+    expect(
+      outcomes
+        .map(({ response }) => {
+          return response.status;
+        })
+        .sort(),
+    ).toStrictEqual([200, 409]);
+    for (const { candidate, response } of outcomes) {
+      const repeated = await accept(
+        client.init({ headers: fixture.headers, body: candidate }),
+        [200, 409],
+      );
+      expect(repeated.status).toBe(response.status);
+      if (repeated.status === 200 && response.status === 200) {
+        expect(repeated.body.assetId).toBe(response.body.assetId);
+      }
+    }
+  });
+
   it("rejects reuse of an operation for a different destination or file", async () => {
     const fixture = await boundFixture();
     const upload = await canonicalUpload(fixture);

@@ -62,6 +62,7 @@ async fn native_common_rejected_home_announcement_never_sends_login_or_command()
     let dispatch = tracing::Dispatch::new(tracing_subscriber::registry().with(captured.clone()));
     let _parent = tracing::dispatcher::set_default(&dispatch);
     let mut h = Harness::new(Reply::default()).await;
+    h.enable_diagnostics().await;
     let api = Api::secure(None).await;
     let home = Server::secure().await;
     let control = Control::new(ACCEPTED.to_vec(), map(&home), KeyReply::Valid, false).await;
@@ -72,19 +73,65 @@ async fn native_common_rejected_home_announcement_never_sends_login_or_command()
         dial.clone(),
         Relay::new(&home, WriteGate::new(), Arc::clone(&descriptors)),
     ));
-    let resolve = h
-        .resolve(credential(&h, uuid::Uuid::new_v4(), Case::Exec))
+    let id = uuid::Uuid::new_v4();
+    let resolve = h.resolve(credential(&h, id, Case::Exec)).await;
+    let second = h
+        .resolve_connection(OTHER, credential(&h, id, Case::Exec))
+        .await;
+    let inventory = h
+        .api
+        .mock_async(|when, then| {
+            when.method("GET").path("/api/ssh/hosts");
+            then.status(200)
+                .json_body(crate::test_fixtures::remote_inventory(
+                    &[(CONNECTION, 7), (OTHER, 7)],
+                    crate::ssh::tests::harness::CREATED_AT,
+                ));
+        })
         .await;
     control.allow_all();
     let frames = bounded(h.request(params())).await;
     let terminal = &frames.last().unwrap()["data"];
     assert_eq!(terminal["failure_reason"], "network_failure", "{frames:?}");
     assert_eq!(terminal["effects"], "not_started");
+    let original = h
+        .raw(json!({"version":1,"method":"ssh.diagnose","params":{}}).to_string())
+        .await;
+    let original = &original.last().unwrap()["data"]["report"];
+    assert_eq!(original["native"]["configuration_id"], id.to_string());
+    assert_eq!(original["native"]["evidence"]["terminal"], "domain_failed");
+    let mut params = params();
+    params["sshConnectionId"] = OTHER.into();
+    let failed = bounded(h.request(params)).await;
+    assert_eq!(
+        failed.last().unwrap()["data"]["failure_reason"],
+        "authority_failure"
+    );
+    assert_eq!(failed.last().unwrap()["data"]["effects"], "not_started");
+    let retained = h
+        .raw(json!({"version":1,"method":"ssh.diagnose","params":{}}).to_string())
+        .await;
+    let retained = &retained.last().unwrap()["data"]["report"];
+    assert_eq!(retained["connection_id"], OTHER);
+    assert_eq!(
+        retained["configuration_created_at"],
+        crate::ssh::tests::harness::CREATED_AT
+    );
+    assert_eq!(retained["configuration_generation"], 7);
+    assert_eq!(retained["native"]["configuration_id"], id.to_string());
+    assert_eq!(retained["native"]["generation"], 1);
+    assert_eq!(
+        retained["native"]["resource_id"],
+        original["native"]["resource_id"]
+    );
+    assert_eq!(retained["native"]["evidence"]["terminal"], "domain_failed");
     assert_eq!(h.observed.auth.load(Ordering::SeqCst), 0);
     assert!(h.observed.commands.lock().unwrap().is_empty());
     assert!(h.observed.queries.lock().unwrap().is_empty());
     assert_eq!(control.announced_home(), vec![1]);
     resolve.assert_calls_async(1).await;
+    second.assert_calls_async(1).await;
+    inventory.assert_calls_async(2).await;
     bounded(h.shutdown()).await;
     assert!(descriptors.lock().unwrap().is_empty());
     control.assert_control_closed();

@@ -15,7 +15,12 @@ import {
   mockTemplateChat,
   openTemplatePicker,
 } from "./chat-composer-template-gallery-test-helpers.ts";
-import { findComposerEditor, tabByText } from "./chat-composer-test-helpers.ts";
+import {
+  buildRunModel,
+  CLAUDE_SUBSCRIPTION_PROVIDER_ID,
+  findComposerEditor,
+  tabByText,
+} from "./chat-composer-test-helpers.ts";
 
 function button(name: string, root: ParentNode = document.body) {
   const element = queryAllByRoleFast("button", root).find((candidate) => {
@@ -60,6 +65,12 @@ test("Explicit image creation shows the notice and stays blocked while image gen
 
 test("An image creation notice opens settings and a confirmed save restores creation", async () => {
   const capture = mockTemplateChat();
+  context.mocks.data.availableRunModels([
+    buildRunModel({
+      model: "claude-sonnet-5",
+      modelProviderId: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
+    }),
+  ]);
   const disabled = new Set(["image-generation"]);
   context.mocks.api(paidToolsContract.get, ({ respond }) => {
     return respond(200, { disabledTools: [...disabled] });

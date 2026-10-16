@@ -1,15 +1,11 @@
 import { and, eq } from "drizzle-orm";
 import { connectors } from "@okouai/db/schema/connector";
-import { secrets } from "@okouai/db/schema/secret";
-import { variables } from "@okouai/db/schema/variable";
 
 import type { Db } from "../external/db";
 import type { Tx } from "../../lib/db-types";
 import {
   deleteConnectorCredentialStorageConnection,
   type ConnectorCredentialStorageDeclaration,
-  connectorOwnedSecretWrite,
-  connectorOwnedVariableWrite,
 } from "./connector-credential-storage-write.service";
 import { prepareConnectorAccountDeletionWithTargetLocked } from "./connector-account-lifecycle.service";
 
@@ -36,7 +32,7 @@ interface CustomConnectorMemberConnection {
   readonly userId: string;
 }
 
-function customConnectorStorageDeclaration(
+export function customConnectorStorageDeclaration(
   fields: readonly CustomConnectorCredentialField[],
 ): ConnectorCredentialStorageDeclaration {
   return {
@@ -47,68 +43,6 @@ function customConnectorStorageDeclaration(
       return field.kind === "variable" ? [field.key] : [];
     }),
   };
-}
-
-export async function upsertCustomConnectorStoredValues(
-  db: Db,
-  args: {
-    readonly connectionId: string;
-    readonly fields: readonly CustomConnectorCredentialField[];
-    readonly orgId: string;
-    readonly userId: string;
-    readonly values: readonly PreparedCustomConnectorValue[];
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const storage = customConnectorStorageDeclaration(args.fields);
-  for (const value of args.values) {
-    if (value.kind === "secret") {
-      const credential = {
-        connectorId: args.connectionId,
-        storage,
-        orgId: args.orgId,
-        userId: args.userId,
-        name: value.key,
-        encryptedValue: value.encryptedValue,
-        description: null,
-        updatedDescription: null,
-      };
-      const write = connectorOwnedSecretWrite(credential);
-      const [row] = await db
-        .insert(secrets)
-        .values(write.values)
-        .onConflictDoUpdate(write.conflict)
-        .returning({ id: secrets.id });
-      if (!row) {
-        throw new Error(
-          `Connector secret ${credential.name} is owned by another row`,
-        );
-      }
-    } else {
-      const credential = {
-        connectorId: args.connectionId,
-        storage,
-        orgId: args.orgId,
-        userId: args.userId,
-        name: value.key,
-        value: value.value,
-        description: null,
-        updatedDescription: null,
-      };
-      const write = connectorOwnedVariableWrite(credential);
-      const [row] = await db
-        .insert(variables)
-        .values(write.values)
-        .onConflictDoUpdate(write.conflict)
-        .returning({ id: variables.id });
-      if (!row) {
-        throw new Error(
-          `Connector variable ${credential.name} is owned by another row`,
-        );
-      }
-    }
-    signal.throwIfAborted();
-  }
 }
 
 export async function deleteCustomConnectorMemberConnectionById(

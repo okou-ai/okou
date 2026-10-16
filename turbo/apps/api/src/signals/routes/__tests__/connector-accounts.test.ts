@@ -85,23 +85,28 @@ async function deleteBuiltinAccountPage(
   connections: readonly { readonly id: string }[],
 ): Promise<void> {
   const accountsApi = accountClient();
-  for (let offset = 0; offset < connections.length; offset += 4) {
-    const deleted = await Promise.allSettled(
-      connections.slice(offset, offset + 4).map(async (account) => {
-        await accept(
-          accountsApi.delete({
-            headers: authHeaders(),
-            params: { connectionId: account.id },
-            body: { target: { kind: "builtin", connectorSlug } },
-          }),
-          [200, 404],
-        );
-      }),
-    );
-    for (const result of deleted) {
-      if (result.status === "rejected") {
-        throw result.reason;
-      }
+  // Keep four owned streams moving without waiting for a whole batch, and
+  // settle every stream before fixture cleanup reports a failure.
+  const deleted = await Promise.allSettled(
+    Array.from(
+      { length: Math.min(4, connections.length) },
+      async (_, stream) => {
+        for (let index = stream; index < connections.length; index += 4) {
+          await accept(
+            accountsApi.delete({
+              headers: authHeaders(),
+              params: { connectionId: connections[index]!.id },
+              body: { target: { kind: "builtin", connectorSlug } },
+            }),
+            [200, 404],
+          );
+        }
+      },
+    ),
+  );
+  for (const result of deleted) {
+    if (result.status === "rejected") {
+      throw result.reason;
     }
   }
 }
@@ -1273,16 +1278,16 @@ describe("connector account lifecycle routes", () => {
     ).toHaveLength(1);
   });
 
-  async function createBulkAccounts(): Promise<string[]> {
+  async function createAccounts(accountCount: number): Promise<string[]> {
     await seedFixture();
 
     const createdAccountIds: string[] = [];
     const connectorsApi = connectorClient();
-    // Sixteen owned streams keep independent requests moving without unbounded
+    // Up to sixteen owned streams keep requests moving without unbounded
     // fan-out. Wait for every stream before fixture cleanup after a failure.
     const created = await Promise.allSettled(
-      Array.from({ length: 16 }, async (_, stream) => {
-        for (let index = stream; index < 101; index += 16) {
+      Array.from({ length: Math.min(16, accountCount) }, async (_, stream) => {
+        for (let index = stream; index < accountCount; index += 16) {
           const label = `Bulk ${index.toString().padStart(3, "0")}`;
           const response = await accept(
             connectorsApi.connect({
@@ -1308,65 +1313,66 @@ describe("connector account lifecycle routes", () => {
     return createdAccountIds;
   }
 
+  it("returns the default account outside the requested page", async () => {
+    const createdAccountIds = await createAccounts(3);
+    const firstTwo = await accept(
+      accountClient().connections({
+        headers: authHeaders(),
+        query: { kind: "builtin", connectorSlug: "openai", limit: 2 },
+      }),
+      [200],
+    );
+    expect(firstTwo.body.connections).toHaveLength(2);
+    const outsideFirstTwo = createdAccountIds.find((id) => {
+      return !firstTwo.body.connections.some((account) => {
+        return account.id === id;
+      });
+    });
+    if (!outsideFirstTwo) {
+      throw new Error("Expected an account outside the first two rows");
+    }
+    const defaultAccount = await accept(
+      accountClient().setDefault({
+        headers: authHeaders(),
+        params: { connectionId: outsideFirstTwo },
+        body: { target: { kind: "builtin", connectorSlug: "openai" } },
+      }),
+      [200],
+    );
+    expect(defaultAccount.body).toMatchObject({
+      id: outsideFirstTwo,
+      isDefault: true,
+    });
+    const firstPage = await accept(
+      accountClient().connections({
+        headers: authHeaders(),
+        query: {
+          kind: "builtin",
+          connectorSlug: "openai",
+          limit: 1,
+          includeScopeMismatch: "true",
+        },
+      }),
+      [200],
+    );
+    expect(firstPage.body.connections).toHaveLength(1);
+    expect(firstPage.body.connections[0]!.id).toBe(
+      firstTwo.body.connections[0]!.id,
+    );
+    expect(firstPage.body.defaultConnection).toMatchObject({
+      id: defaultAccount.body.id,
+      isDefault: true,
+    });
+    expect(firstPage.body.nextCursor).not.toBeNull();
+  });
+
   describe("more than one hundred accounts", () => {
     let createdAccountIds: string[];
 
     beforeEach(async () => {
       // Pagination changes accounts, not catalog generations. Use the existing
       // shared fixed catalog; the tracker still owns all 101 API-created accounts.
-      createdAccountIds = await createBulkAccounts();
-    });
-
-    it("keeps the default account outside the first page of one hundred accounts", async () => {
-      const firstTwo = await accept(
-        accountClient().connections({
-          headers: authHeaders(),
-          query: { kind: "builtin", connectorSlug: "openai", limit: 2 },
-        }),
-        [200],
-      );
-      expect(firstTwo.body.connections).toHaveLength(2);
-      const outsideFirstTwo = createdAccountIds.find((id) => {
-        return !firstTwo.body.connections.some((account) => {
-          return account.id === id;
-        });
-      });
-      if (!outsideFirstTwo) {
-        throw new Error("Expected an account outside the first two rows");
-      }
-      const defaultAccount = await accept(
-        accountClient().setDefault({
-          headers: authHeaders(),
-          params: { connectionId: outsideFirstTwo },
-          body: { target: { kind: "builtin", connectorSlug: "openai" } },
-        }),
-        [200],
-      );
-      expect(defaultAccount.body).toMatchObject({
-        id: outsideFirstTwo,
-        isDefault: true,
-      });
-      const firstPage = await accept(
-        accountClient().connections({
-          headers: authHeaders(),
-          query: {
-            kind: "builtin",
-            connectorSlug: "openai",
-            limit: 1,
-            includeScopeMismatch: "true",
-          },
-        }),
-        [200],
-      );
-      expect(firstPage.body.connections).toHaveLength(1);
-      expect(firstPage.body.connections[0]!.id).toBe(
-        firstTwo.body.connections[0]!.id,
-      );
-      expect(firstPage.body.defaultConnection).toMatchObject({
-        id: defaultAccount.body.id,
-        isDefault: true,
-      });
-      expect(firstPage.body.nextCursor).not.toBeNull();
+      createdAccountIds = await createAccounts(101);
     });
 
     it("paginates more than one hundred accounts", async () => {

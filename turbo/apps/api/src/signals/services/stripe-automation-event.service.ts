@@ -31,7 +31,7 @@ import { and, asc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import {
@@ -519,60 +519,6 @@ function eventMode(event: unknown): "live" | "test" | "unknown" {
   return parsed.data.livemode ? "live" : "test";
 }
 
-async function loadMissingStripeProjectionOwners(
-  db: ReadonlyDb,
-  accountId: string,
-  signal: AbortSignal,
-): Promise<readonly StripeAutomationOwner[]> {
-  const owners = await db
-    .selectDistinct({
-      automationId: workflowAutomations.id,
-      orgId: workflowAutomations.orgId,
-      userId: workflowAutomations.ownerUserId,
-    })
-    .from(connectors)
-    .innerJoin(
-      workflowAutomations,
-      and(
-        eq(workflowAutomations.orgId, connectors.orgId),
-        eq(workflowAutomations.ownerUserId, connectors.userId),
-      ),
-    )
-    .where(
-      and(
-        eq(connectors.connectorSlug, "stripe"),
-        eq(connectors.authMethod, "oauth"),
-        eq(connectors.externalId, accountId),
-        eq(workflowAutomations.kind, "event"),
-        eq(workflowAutomations.eventType, "stripe-invoice-paid"),
-        eq(workflowAutomations.enabled, true),
-        isNull(workflowAutomations.eventConnectorId),
-      ),
-    )
-    .orderBy(
-      asc(workflowAutomations.orgId),
-      asc(workflowAutomations.ownerUserId),
-      asc(workflowAutomations.id),
-    );
-  signal.throwIfAborted();
-  return owners;
-}
-
-async function repairMissingStripeIngressProjections(
-  db: Db,
-  accountId: string,
-  signal: AbortSignal,
-): Promise<void> {
-  const owners = await loadMissingStripeProjectionOwners(db, accountId, signal);
-  for (const owner of owners) {
-    // No row lock: the repair publishes only while the automation is still
-    // unbound (conditional UPDATE). A reprojection that binds it first wins;
-    // one that commits afterward recomputes from current rows and overwrites.
-    await repairMissingStripeInvoicePaidAutomationProjection(db, owner, signal);
-    signal.throwIfAborted();
-  }
-}
-
 function stripeMappedConnectorsReadPlan(accountId: string) {
   return {
     columns: { id: connectors.id },
@@ -1008,11 +954,56 @@ export const dispatchStripeAutomationEvent$ = command(
       });
       return { kind: "bad_request" };
     }
-    await repairMissingStripeIngressProjections(
-      db,
-      parsed.data.account,
-      signal,
-    );
+    const accountId = parsed.data.account;
+    await (async (): Promise<void> => {
+      const owners = await (async (): Promise<
+        readonly StripeAutomationOwner[]
+      > => {
+        const owners = await db
+          .selectDistinct({
+            automationId: workflowAutomations.id,
+            orgId: workflowAutomations.orgId,
+            userId: workflowAutomations.ownerUserId,
+          })
+          .from(connectors)
+          .innerJoin(
+            workflowAutomations,
+            and(
+              eq(workflowAutomations.orgId, connectors.orgId),
+              eq(workflowAutomations.ownerUserId, connectors.userId),
+            ),
+          )
+          .where(
+            and(
+              eq(connectors.connectorSlug, "stripe"),
+              eq(connectors.authMethod, "oauth"),
+              eq(connectors.externalId, accountId),
+              eq(workflowAutomations.kind, "event"),
+              eq(workflowAutomations.eventType, "stripe-invoice-paid"),
+              eq(workflowAutomations.enabled, true),
+              isNull(workflowAutomations.eventConnectorId),
+            ),
+          )
+          .orderBy(
+            asc(workflowAutomations.orgId),
+            asc(workflowAutomations.ownerUserId),
+            asc(workflowAutomations.id),
+          );
+        signal.throwIfAborted();
+        return owners;
+      })();
+      for (const owner of owners) {
+        // No row lock: the repair publishes only while the automation is still
+        // unbound (conditional UPDATE). A reprojection that binds it first wins;
+        // one that commits afterward recomputes from current rows and overwrites.
+        await repairMissingStripeInvoicePaidAutomationProjection(
+          db,
+          owner,
+          signal,
+        );
+        signal.throwIfAborted();
+      }
+    })();
     signal.throwIfAborted();
     const fanout = await set(recordStripeInvoiceFanout$, parsed.data, signal);
     signal.throwIfAborted();
@@ -1312,43 +1303,6 @@ const loadStripeDeliveryRuntimeSelection$ = command(
   },
 );
 
-async function repairMissingStripeDeliveryProjection(
-  db: Db,
-  delivery: StripeWorkflowDeliveryRow,
-  signal: AbortSignal,
-): Promise<void> {
-  const [owner] = await db
-    .select({
-      orgId: workflowAutomations.orgId,
-      userId: workflowAutomations.ownerUserId,
-      eventConnectorId: workflowAutomations.eventConnectorId,
-      eventType: workflowAutomations.eventType,
-    })
-    .from(workflowAutomations)
-    .where(eq(workflowAutomations.id, delivery.automationId))
-    .limit(1);
-  signal.throwIfAborted();
-  if (
-    !owner ||
-    owner.eventType !== "stripe-invoice-paid" ||
-    owner.eventConnectorId !== null
-  ) {
-    return;
-  }
-  // No row lock: the repair publishes only while the automation is still
-  // unbound (conditional UPDATE); see repairMissingStripeIngressProjections.
-  await repairMissingStripeInvoicePaidAutomationProjection(
-    db,
-    {
-      automationId: delivery.automationId,
-      orgId: owner.orgId,
-      userId: owner.userId,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-}
-
 const finishDelivery$ = command(
   async (
     { set },
@@ -1501,6 +1455,45 @@ function deliveryContext(args: {
   });
 }
 
+function stripeDeliveryDue(target: StripeDeliveryTarget) {
+  return {
+    automation: target.automation,
+    agentId: target.agentId,
+    chatThreadId: target.chatThreadId,
+  };
+}
+
+function stripeDeliveryAuthorization(
+  prepared: Extract<StripeDeliveryValidation, { kind: "ok" }>,
+) {
+  return {
+    automation: prepared.target.automation,
+    agentId: prepared.target.agentId,
+  };
+}
+
+function stripeDeliverySourcePlan(
+  args: { readonly delivery: StripeWorkflowDeliveryRow },
+  target: StripeDeliveryTarget,
+  snapshot: ReturnType<typeof connectorRuntimeSlugSelectionFromRows>,
+) {
+  return {
+    kind: "stripe" as const,
+    source: {
+      id: args.delivery.id,
+      revision: args.delivery.revision,
+      automationId: args.delivery.automationId,
+      connectorId: args.delivery.connectorId,
+      stripeAccountId: args.delivery.stripeAccountId,
+      livemode: args.delivery.livemode,
+      billingReason: args.delivery.billingReason,
+      orgId: target.automation.orgId,
+      userId: target.automation.ownerUserId,
+    },
+    snapshot,
+  };
+}
+
 const processClaimedDelivery$ = command(
   async (
     { set },
@@ -1508,7 +1501,39 @@ const processClaimedDelivery$ = command(
     signal: AbortSignal,
   ): Promise<"executed" | "skipped" | "failed" | "retried" | "lost"> => {
     const db = set(writeDb$);
-    await repairMissingStripeDeliveryProjection(db, args.delivery, signal);
+    const delivery = args.delivery;
+    await (async (signal: AbortSignal): Promise<void> => {
+      const [owner] = await db
+        .select({
+          orgId: workflowAutomations.orgId,
+          userId: workflowAutomations.ownerUserId,
+          eventConnectorId: workflowAutomations.eventConnectorId,
+          eventType: workflowAutomations.eventType,
+        })
+        .from(workflowAutomations)
+        .where(eq(workflowAutomations.id, delivery.automationId))
+        .limit(1);
+      signal.throwIfAborted();
+      if (
+        !owner ||
+        owner.eventType !== "stripe-invoice-paid" ||
+        owner.eventConnectorId !== null
+      ) {
+        return;
+      }
+      // No row lock: the repair publishes only while the automation is still
+      // unbound (conditional UPDATE); see dispatchStripeAutomationEvent$.
+      await repairMissingStripeInvoicePaidAutomationProjection(
+        db,
+        {
+          automationId: delivery.automationId,
+          orgId: owner.orgId,
+          userId: owner.userId,
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+    })(signal);
     const prepared = await set(
       loadStripeDeliveryTarget$,
       args.delivery,
@@ -1518,10 +1543,7 @@ const processClaimedDelivery$ = command(
       prepared.kind === "ok" &&
       !(await set(
         workflowAutomationCanFire$,
-        {
-          automation: prepared.target.automation,
-          agentId: prepared.target.agentId,
-        },
+        stripeDeliveryAuthorization(prepared),
         signal,
       ))
         ? { kind: "skip", reason: "automation_access_revoked" }
@@ -1552,11 +1574,7 @@ const processClaimedDelivery$ = command(
       set(
         runWorkflowAutomationNow$,
         {
-          due: {
-            automation: target.automation,
-            agentId: target.agentId,
-            chatThreadId: target.chatThreadId,
-          },
+          due: stripeDeliveryDue(target),
           automationContext: deliveryContext({
             delivery: args.delivery,
             target,
@@ -1566,21 +1584,7 @@ const processClaimedDelivery$ = command(
           triggerSource: "automation-event",
           triggerBrief: `Stripe invoice paid: ${args.delivery.snapshot.invoice.id}`,
           replacePendingScheduleTick: false,
-          sourcePlan: {
-            kind: "stripe",
-            source: {
-              id: args.delivery.id,
-              revision: args.delivery.revision,
-              automationId: args.delivery.automationId,
-              connectorId: args.delivery.connectorId,
-              stripeAccountId: args.delivery.stripeAccountId,
-              livemode: args.delivery.livemode,
-              billingReason: args.delivery.billingReason,
-              orgId: target.automation.orgId,
-              userId: target.automation.ownerUserId,
-            },
-            snapshot,
-          },
+          sourcePlan: stripeDeliverySourcePlan(args, target, snapshot),
         },
         signal,
       ),

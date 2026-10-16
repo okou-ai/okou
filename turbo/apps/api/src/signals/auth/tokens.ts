@@ -37,6 +37,7 @@ const SKILL_IMPORT_TOKEN_PREFIX = "vm0_skillimport_";
 const SANDBOX_TOKEN_TTL_SECONDS = 3 * 60 * 60;
 
 const CONDITIONAL_CAPABILITIES = [
+  ["computer-use:shell:write", FeatureSwitchKey.DesktopShell],
   ["suggestion:read", FeatureSwitchKey.AgentSuggestion],
   ["suggestion:write", FeatureSwitchKey.AgentSuggestion],
   ["banking:read", FeatureSwitchKey.Banking],
@@ -196,7 +197,10 @@ function isCapabilityAvailableToAgent(
   ) {
     return false;
   }
-  if (capability === "computer-use:write") {
+  if (
+    capability === "computer-use:write" ||
+    capability === "computer-use:shell:write"
+  ) {
     return options?.computerUseHostId !== undefined;
   }
   if (capability === "browser:read" || capability === "browser:write") {

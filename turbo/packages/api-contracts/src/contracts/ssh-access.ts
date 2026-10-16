@@ -3,6 +3,10 @@ import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { sshConnectionMetadataSchema } from "./ssh-connections";
+import {
+  remoteHostInventoryQuerySchema,
+  remoteInventoryDiagnosticsSchema,
+} from "./remote-host-identity";
 
 const c = initContract();
 export const sshChangedPayloadSchema = z
@@ -36,7 +40,10 @@ export const sshHostSchema = sshConnectionMetadataSchema
   })
   .extend({ availability: sshHostAvailabilitySchema });
 export const sshHostsResponseSchema = z
-  .object({ hosts: z.array(sshHostSchema) })
+  .object({
+    hosts: z.array(sshHostSchema),
+    diagnostics: remoteInventoryDiagnosticsSchema.optional(),
+  })
   .strict();
 
 export const sshHostsContract = c.router({
@@ -44,6 +51,7 @@ export const sshHostsContract = c.router({
     method: "GET",
     path: "/api/ssh/hosts",
     headers: authHeadersSchema,
+    query: remoteHostInventoryQuerySchema,
     responses: { 200: sshHostsResponseSchema, ...errors },
     summary: "List current SSH hosts authorized for a running Agent",
   },

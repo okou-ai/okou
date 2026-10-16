@@ -49,10 +49,13 @@ import {
   type ConnectorCatalogSource,
 } from "./connector-catalog-source";
 import {
-  loadConnectorRuntimeSnapshot,
+  materializeConnectorRuntimeSnapshot,
   type ConnectorRuntimeSnapshot,
 } from "./connector-catalog-runtime.service";
-import { ExternalConnectorCatalogUnavailableError } from "./connector-catalog-external-reader.service";
+import {
+  ExternalConnectorCatalogUnavailableError,
+  loadAcceptedConnectorCatalogSnapshot,
+} from "./connector-catalog-external-reader.service";
 import { loadCustomConnectorPermissionBundle } from "./custom-connector-permission-bundle.service";
 import { publishConnectorRuntimeSyncWakeups } from "./connector-runtime-wakeup.service";
 import { effectiveCustomConnectorPermissionBundleRef } from "./feishu-custom-connector-permissions";
@@ -532,7 +535,11 @@ export const syncConnectorCatalog$ = command(
     // switch. A cold catalog has no previous runtime snapshot.
     const db = set(writeDb$);
     const previousSnapshotResult = await settle(
-      loadConnectorRuntimeSnapshot(db),
+      (async () => {
+        return materializeConnectorRuntimeSnapshot(
+          await loadAcceptedConnectorCatalogSnapshot(db),
+        );
+      })(),
       signal,
     );
     signal.throwIfAborted();

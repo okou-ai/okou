@@ -1,6 +1,8 @@
 -- Capture only retained billing evidence, not every historical Run. The identity
 -- anchor is Run.created_at, matching current attribution writers. SQL preserves
 -- its full timestamp precision. No established anchor or financial field changes.
+-- Probe stable and legacy identities separately so unlinked usage does not
+-- become a broad lookup path for every Run when NULL statistics are stale.
 -- vm0:batch-by-uuid
 WITH batch AS MATERIALIZED (
   SELECT id FROM agent_runs
@@ -20,20 +22,38 @@ WITH batch AS MATERIALIZED (
   WHERE (existing.run_id IS NULL OR NOT existing.usage_observed
     OR (existing.thread_context = 'unknown' AND r.chat_thread_id IS NOT NULL))
     AND (
-      EXISTS (
-        SELECT 1 FROM usage_event u
-        WHERE (u.billing_run_id = r.id OR (u.billing_run_id IS NULL AND u.run_id = r.id))
-          AND (u.run_id IS NULL OR u.run_id = r.id)
-          AND u.billing_context NOT IN ('runless', 'pi_memory_stage1')
-          AND u.org_id = r.org_id AND u.user_id = r.user_id
-          AND (u.billing_anchor_at IS NULL OR u.billing_anchor_at = r.created_at)
-      ) OR EXISTS (
-        SELECT 1 FROM usage_event_hourly_rollup u
-        WHERE (u.billing_run_id = r.id OR (u.billing_run_id IS NULL AND u.run_id = r.id))
-          AND (u.run_id IS NULL OR u.run_id = r.id)
-          AND u.billing_context NOT IN ('runless', 'pi_memory_stage1')
-          AND u.org_id = r.org_id AND u.user_id = r.user_id
-          AND (u.billing_anchor_at IS NULL OR u.billing_anchor_at = r.created_at)
+      (
+        EXISTS (
+          SELECT 1 FROM usage_event u
+          WHERE u.billing_run_id = r.id
+            AND (u.run_id IS NULL OR u.run_id = r.id)
+            AND u.billing_context NOT IN ('runless', 'pi_memory_stage1')
+            AND u.org_id = r.org_id AND u.user_id = r.user_id
+            AND (u.billing_anchor_at IS NULL OR u.billing_anchor_at = r.created_at)
+        ) OR EXISTS (
+          SELECT 1 FROM usage_event u
+          WHERE u.billing_run_id IS NULL AND u.run_id = r.id
+            AND (u.run_id IS NULL OR u.run_id = r.id)
+            AND u.billing_context NOT IN ('runless', 'pi_memory_stage1')
+            AND u.org_id = r.org_id AND u.user_id = r.user_id
+            AND (u.billing_anchor_at IS NULL OR u.billing_anchor_at = r.created_at)
+        )
+      ) OR (
+        EXISTS (
+          SELECT 1 FROM usage_event_hourly_rollup u
+          WHERE u.billing_run_id = r.id
+            AND (u.run_id IS NULL OR u.run_id = r.id)
+            AND u.billing_context NOT IN ('runless', 'pi_memory_stage1')
+            AND u.org_id = r.org_id AND u.user_id = r.user_id
+            AND (u.billing_anchor_at IS NULL OR u.billing_anchor_at = r.created_at)
+        ) OR EXISTS (
+          SELECT 1 FROM usage_event_hourly_rollup u
+          WHERE u.billing_run_id IS NULL AND u.run_id = r.id
+            AND (u.run_id IS NULL OR u.run_id = r.id)
+            AND u.billing_context NOT IN ('runless', 'pi_memory_stage1')
+            AND u.org_id = r.org_id AND u.user_id = r.user_id
+            AND (u.billing_anchor_at IS NULL OR u.billing_anchor_at = r.created_at)
+        )
       )
     )
 ), captured AS (

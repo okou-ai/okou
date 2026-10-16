@@ -45,7 +45,8 @@ import {
 } from "../services/custom-connector-oauth2.service";
 import {
   ensureFeishuCustomConnector$,
-  resolveFeishuConnectorAccountMutation as resolveFeishuAccountMutation,
+  feishuConnectorAccountMutationReadPlan,
+  feishuConnectorAccountMutationFromRows,
 } from "../services/feishu-custom-connector.service";
 import {
   isFeishuInstallationEnabled,
@@ -651,6 +652,25 @@ function connectionErrorMessage(
   }
 }
 
+function feishuConnectionCompletionResponse(
+  completed: FeishuConnectionCompletionResult,
+  platform: FeishuPlatform,
+  installation: Pick<FeishuInstallationOAuthRow, "appId" | "platform">,
+  responseMode: FeishuOAuthCallbackQuery["responseMode"],
+): ReturnType<typeof callbackRedirectResponse> {
+  if (completed !== "connected") {
+    return completionErrorResponse(
+      connectionErrorMessage(completed, platform),
+      responseMode,
+      platform,
+    );
+  }
+  return callbackRedirectResponse(
+    feishuBotOpenUrl(installation.appId, installation.platform),
+    responseMode,
+  );
+}
+
 const connect$ = command(async ({ get, set }, signal: AbortSignal) => {
   const query = get(queryOf(feishuOauthContract.connect));
   const state = query.state ? verifyFeishuOAuthState(query.state) : null;
@@ -705,10 +725,17 @@ const connect$ = command(async ({ get, set }, signal: AbortSignal) => {
       `${FEISHU_PLATFORMS[installation.platform].name} connector not found`,
     );
   }
-  const account = await resolveFeishuAccountMutation(db, {
+  const accountPlan = feishuConnectorAccountMutationReadPlan({
     installationId: state.installationId,
     userId: state.userId,
   });
+  const account = feishuConnectorAccountMutationFromRows(
+    await db
+      .select(accountPlan.columns)
+      .from(feishuOrgConnections)
+      .where(accountPlan.condition)
+      .limit(2),
+  );
   signal.throwIfAborted();
   const result = await set(
     startCustomConnectorOAuth2$,
@@ -809,7 +836,14 @@ const completeLegacyFeishuOAuth$ = command(
         platform,
       );
     }
-    const accountMutation = await resolveFeishuAccountMutation(db, state);
+    const accountPlan = feishuConnectorAccountMutationReadPlan(state);
+    const accountMutation = feishuConnectorAccountMutationFromRows(
+      await db
+        .select(accountPlan.columns)
+        .from(feishuOrgConnections)
+        .where(accountPlan.condition)
+        .limit(2),
+    );
     signal.throwIfAborted();
     const exchanged = await exchangeOAuthTokenAndUserInfo(
       {
@@ -848,15 +882,10 @@ const completeLegacyFeishuOAuth$ = command(
       },
       signal,
     );
-    if (completed !== "connected") {
-      return completionErrorResponse(
-        connectionErrorMessage(completed, platform),
-        query.responseMode,
-        platform,
-      );
-    }
-    return callbackRedirectResponse(
-      feishuBotOpenUrl(installation.appId, installation.platform),
+    return feishuConnectionCompletionResponse(
+      completed,
+      platform,
+      installation,
       query.responseMode,
     );
   },
@@ -979,15 +1008,10 @@ const completeClaimedCustomFeishuOAuth$ = command(
       },
       signal,
     );
-    if (completed !== "connected") {
-      return completionErrorResponse(
-        connectionErrorMessage(completed, platform),
-        query.responseMode,
-        platform,
-      );
-    }
-    return callbackRedirectResponse(
-      feishuBotOpenUrl(installation.appId, installation.platform),
+    return feishuConnectionCompletionResponse(
+      completed,
+      platform,
+      installation,
       query.responseMode,
     );
   },

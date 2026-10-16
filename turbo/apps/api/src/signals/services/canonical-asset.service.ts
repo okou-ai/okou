@@ -1343,46 +1343,9 @@ const ensureCanonicalDelivery$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0086; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      const [asset] = await tx
-        .select({ id: runUploadedFiles.id })
-        .from(runUploadedFiles)
-        .where(eq(runUploadedFiles.id, assetId))
-        .for("update");
-      signal.throwIfAborted();
-      if (!asset) {
-        return false;
-      }
-      const [delivery] = await tx
-        .select({
-          provider: canonicalAssetDeliveries.provider,
-          destination: canonicalAssetDeliveries.destination,
-        })
-        .from(canonicalAssetDeliveries)
-        .where(
-          and(
-            eq(canonicalAssetDeliveries.assetId, assetId),
-            eq(canonicalAssetDeliveries.operationId, args.operationId),
-          ),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      if (delivery) {
-        if (
-          delivery.provider !== args.provider ||
-          !sameCanonicalDeliveryDestination(
-            delivery.destination,
-            args.destination,
-          )
-        ) {
-          throw new CanonicalPublicationConflictError(
-            "Upload operation identity was reused for another delivery destination",
-          );
-        }
-        return true;
-      }
-      await tx.insert(canonicalAssetDeliveries).values({
+    const [inserted] = await db
+      .insert(canonicalAssetDeliveries)
+      .values({
         assetId,
         provider: args.provider,
         operationId: args.operationId,
@@ -1393,10 +1356,45 @@ const ensureCanonicalDelivery$ = command(
               providerState: { provider: args.provider, attempt: null },
             }
           : {}),
-      });
-      signal.throwIfAborted();
+      })
+      .onConflictDoNothing({
+        target: [
+          canonicalAssetDeliveries.assetId,
+          canonicalAssetDeliveries.operationId,
+        ],
+      })
+      .returning({ id: canonicalAssetDeliveries.id });
+    signal.throwIfAborted();
+    if (inserted) {
       return true;
-    });
+    }
+    // A separate statement sees the winner after ON CONFLICT waits for it.
+    const [delivery] = await db
+      .select({
+        provider: canonicalAssetDeliveries.provider,
+        destination: canonicalAssetDeliveries.destination,
+      })
+      .from(canonicalAssetDeliveries)
+      .where(
+        and(
+          eq(canonicalAssetDeliveries.assetId, assetId),
+          eq(canonicalAssetDeliveries.operationId, args.operationId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!delivery) {
+      return false;
+    }
+    if (
+      delivery.provider !== args.provider ||
+      !sameCanonicalDeliveryDestination(delivery.destination, args.destination)
+    ) {
+      throw new CanonicalPublicationConflictError(
+        "Upload operation identity was reused for another delivery destination",
+      );
+    }
+    return true;
   },
 );
 

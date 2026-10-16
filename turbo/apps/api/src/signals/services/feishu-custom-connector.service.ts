@@ -697,23 +697,22 @@ export const deleteFeishuInstallationAndCustomConnector$ = command(
   },
 );
 
-export async function resolveFeishuConnectorAccountMutation(
-  db: ReadonlyDb,
-  args: {
-    readonly installationId: string;
-    readonly userId: string;
-  },
-): Promise<ConnectorAccountMutationIntent> {
-  const connectionRows = await db
-    .select({ connectorId: feishuOrgConnections.connectorId })
-    .from(feishuOrgConnections)
-    .where(
-      and(
-        eq(feishuOrgConnections.installationId, args.installationId),
-        eq(feishuOrgConnections.userId, args.userId),
-      ),
-    )
-    .limit(2);
+export function feishuConnectorAccountMutationReadPlan(args: {
+  readonly installationId: string;
+  readonly userId: string;
+}) {
+  return {
+    columns: { connectorId: feishuOrgConnections.connectorId },
+    condition: and(
+      eq(feishuOrgConnections.installationId, args.installationId),
+      eq(feishuOrgConnections.userId, args.userId),
+    ),
+  };
+}
+
+export function feishuConnectorAccountMutationFromRows(
+  connectionRows: readonly { readonly connectorId: string | null }[],
+): ConnectorAccountMutationIntent {
   if (connectionRows.length > 1) {
     throw new Error("Multiple Feishu member connections found");
   }

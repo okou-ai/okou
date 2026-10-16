@@ -2297,6 +2297,13 @@
       "when": 1792065143404,
       "tag": "1405_wechat_message_archive",
       "breakpoints": true
+    },
+    {
+      "idx": 1406,
+      "version": "7",
+      "when": 1792118885774,
+      "tag": "1406_canonical_delivery_operation_identity",
+      "breakpoints": true
     }
   ]
 }

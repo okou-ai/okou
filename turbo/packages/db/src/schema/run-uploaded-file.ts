@@ -173,6 +173,10 @@ export const canonicalAssetDeliveries = pgTable(
       uniqueIndex(
         "canonical_asset_deliveries_asset_provider_operation_unique",
       ).on(table.assetId, table.provider, table.operationId),
+      uniqueIndex("canonical_asset_deliveries_asset_operation_unique").on(
+        table.assetId,
+        table.operationId,
+      ),
       index("canonical_asset_deliveries_asset_idx").on(table.assetId),
     ];
   },

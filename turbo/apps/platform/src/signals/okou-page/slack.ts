@@ -7,6 +7,14 @@ import {
 import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
 import { setAblyLoop$ } from "../realtime.ts";
+import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
+import {
+  pathname$,
+  searchParams$,
+  hash$,
+  replacePathSilently$,
+  replaceSearchParams$,
+} from "../route.ts";
 import { i18n } from "../../i18n/index.ts";
 
 const internalReload$ = state(0);
@@ -19,7 +27,7 @@ export const slackOrgData$ = computed(async (get) => {
   return result.body;
 });
 
-const reloadSlackOrg$ = command(({ set }) => {
+export const reloadSlackOrg$ = command(({ set }) => {
   set(internalReload$, (prev) => {
     return prev + 1;
   });
@@ -32,7 +40,8 @@ function hasSlackStatusChanged(
   return (
     previous !== null &&
     (previous.isInstalled !== next.isInstalled ||
-      previous.isConnected !== next.isConnected)
+      previous.isConnected !== next.isConnected ||
+      (previous.scopeMismatch === true && next.scopeMismatch === false))
   );
 }
 
@@ -40,6 +49,14 @@ function toastSlackStatusChange(
   previous: SlackOrgStatus,
   next: SlackOrgStatus,
 ): void {
+  if (previous.scopeMismatch === true && next.scopeMismatch === false) {
+    toast.success(
+      i18n.t(($) => {
+        return $.connectors.providerSettings.toasts.slackPermissionsUpdated;
+      }),
+    );
+    return;
+  }
   if (next.isConnected && !previous.isConnected) {
     toast.success(
       i18n.t(($) => {
@@ -153,29 +170,31 @@ export const watchSlackConnection$ = command(
   },
 );
 
-export const initSlackOrg$ = command((_ctx) => {
-  const params = new URLSearchParams(window.location.search);
-  if (params.get("updated") === "1") {
-    toast.success(
-      i18n.t(($) => {
-        return $.connectors.providerSettings.toasts.slackPermissionsUpdated;
-      }),
+// Retained Slack callbacks and copied links (#40196). Keep until their public
+// URL contract and serving/rollback writers have been retired by the PMO.
+export const initSlackOrg$ = command(({ get, set }) => {
+  const path = get(pathname$).toLowerCase().replace(/\/$/u, "") || "/";
+  const params = new URLSearchParams(get(searchParams$));
+  const legacyResult =
+    path === "/" &&
+    params.get("tab") === "works" &&
+    ["updated", "installed", "connected"].some((key) => {
+      return params.get(key) === "1";
+    }) &&
+    [...params.keys()].every((key) => {
+      return ["tab", "updated", "installed", "connected"].includes(key);
+    });
+  if (path === "/slack/failed" || legacyResult) {
+    const fragment = get(hash$);
+    params.delete("tab");
+    set(
+      replacePathSilently$,
+      INTEGRATION_SETTINGS_PATHS.slack,
+      undefined,
+      params,
     );
-    window.history.replaceState({}, "", window.location.pathname);
-  } else if (params.get("installed") === "1") {
-    toast.success(
-      i18n.t(($) => {
-        return $.connectors.providerSettings.toasts.slackInstalled;
-      }),
-    );
-    window.history.replaceState({}, "", window.location.pathname);
-  }
-  if (params.get("connected") === "1") {
-    toast.success(
-      i18n.t(($) => {
-        return $.connectors.providerSettings.toasts.slackConnected;
-      }),
-    );
-    window.history.replaceState({}, "", window.location.pathname);
+    if (fragment) {
+      set(replaceSearchParams$, params, {}, fragment);
+    }
   }
 });

@@ -844,12 +844,19 @@ test("receives an owner DM once, resumes its native session and delivers the can
     operationId: randomUUID(),
     channelId: connectionId,
   };
-  const initialized = await accept(
-    fileApp(integrationsWechatUploadInitContract).init({
+  const fileInit = fileApp(integrationsWechatUploadInitContract).init;
+  const [initialized, repeatedInit] = await Promise.all([
+    accept(fileInit({ headers, body: fileBody }), [200]),
+    accept(fileInit({ headers, body: fileBody }), [200]),
+  ]);
+  expect(repeatedInit.body.assetId).toBe(initialized.body.assetId);
+  expect(repeatedInit.body.url).toBe(initialized.body.url);
+  await accept(
+    fileInit({
       headers,
-      body: fileBody,
+      body: { ...fileBody, comment: "Changed destination" },
     }),
-    [200],
+    [409],
   );
   objectStore.addObject({
     bucket: "test-private-artifacts",

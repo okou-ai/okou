@@ -1,99 +1,27 @@
+import { z } from "zod";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import {
-  usagePackPendingSnapshotGuards,
-  usagePackSubscriptions,
-} from "@okouai/db/schema/usage-pack-subscription";
-import { and, eq, inArray, or } from "drizzle-orm";
+  usagePackPendingSnapshotPlan,
+  UsagePackPendingSnapshotConflict,
+} from "./usage-pack-pending-snapshot-plan";
 
-import type { ApiDb, Tx } from "../../lib/db-types";
+import { usagePackPendingSnapshotGuards } from "@okouai/db/schema/usage-pack-subscription";
 
-/** A concurrent pending-snapshot transition committed first; nothing was written. */
-export class UsagePackPendingSnapshotConflict extends Error {}
+import { and, eq } from "drizzle-orm";
+import { command } from "ccstate";
+import type { Tx } from "../../lib/db-types";
+import { settle } from "../utils";
+import { writeDb$ } from "../external/db";
+import { nowDate } from "../../lib/time";
 
-function isPending(status: string): boolean {
-  return status === "checkout_pending" || status === "purchase_pending";
-}
+import type {
+  CreateUsagePackCheckoutSessionArgs,
+  UsagePackContext,
+  PreparedPendingUsagePackCheckout,
+  UsagePackSubscriptionInput,
+} from "./usage-pack-subscription.service";
+const retainedRowSchema = z.record(z.string(), z.unknown());
 
-async function preparePendingSnapshotScope(
-  tx: Tx,
-  orgIds: readonly string[],
-  referencedSubscriptionIds: readonly string[],
-) {
-  const orderedOrgIds = [...new Set(orgIds)].sort();
-  if (orderedOrgIds.length === 0) {
-    throw new Error("Usage pack writes require an organization scope");
-  }
-  const roots = await tx
-    .select({
-      id: usagePackSubscriptions.id,
-      orgId: usagePackSubscriptions.orgId,
-    })
-    .from(usagePackSubscriptions)
-    .where(
-      or(
-        inArray(usagePackSubscriptions.orgId, orderedOrgIds),
-        inArray(usagePackSubscriptions.id, referencedSubscriptionIds),
-      ),
-    );
-  if (
-    roots.some((root) => {
-      return !orderedOrgIds.includes(root.orgId);
-    })
-  ) {
-    throw new Error("Usage pack subscription moved outside its locked scope");
-  }
-  for (const orgId of orderedOrgIds) {
-    await tx
-      .insert(usagePackPendingSnapshotGuards)
-      .values({ orgId, pendingSnapshotCount: 0 })
-      .onConflictDoNothing();
-  }
-  // READ COMMITTED gives each statement a new snapshot. Read the guard and
-  // business rows together so a committed transition cannot look like damage.
-  const scope = await tx
-    .select({
-      guard: usagePackPendingSnapshotGuards,
-      snapshot: {
-        id: usagePackSubscriptions.id,
-        orgId: usagePackSubscriptions.orgId,
-        status: usagePackSubscriptions.subscriptionStatus,
-      },
-    })
-    .from(usagePackPendingSnapshotGuards)
-    .leftJoin(
-      usagePackSubscriptions,
-      eq(usagePackSubscriptions.orgId, usagePackPendingSnapshotGuards.orgId),
-    )
-    .where(inArray(usagePackPendingSnapshotGuards.orgId, orderedOrgIds));
-  const guards = orderedOrgIds.map((orgId) => {
-    const row = scope.find(({ guard }) => {
-      return guard.orgId === orgId;
-    });
-    if (!row) {
-      throw new Error("Usage pack pending snapshot count disappeared");
-    }
-    return row.guard;
-  });
-  const snapshots = scope.flatMap(({ snapshot }) => {
-    return snapshot ? [snapshot] : [];
-  });
-  return { orderedOrgIds, guards, snapshots };
-}
-
-type SnapshotRow = Awaited<
-  ReturnType<typeof preparePendingSnapshotScope>
->["snapshots"][number];
-
-function pendingRows(rows: readonly SnapshotRow[], orgId: string) {
-  return rows.filter((row) => {
-    return row.orgId === orgId && isPending(row.status);
-  });
-}
-
-/**
- * Publish an actual business-count change, never a lock-only write. A competing
- * transition that changed the observed count rejects this transaction once;
- * its subscription/allocation writes roll back with the rejected publication.
- */
 export async function publishUsagePackPendingSnapshotCount(
   tx: Pick<Tx, "update">,
   orgId: string,
@@ -120,88 +48,189 @@ export async function publishUsagePackPendingSnapshotCount(
   }
 }
 
-/**
- * Own the complete subscription mutation transaction. Scope both organizations
- * for a move. Every subscription written by the callback must belong to this
- * scope; callbacks must condition transitions on the business state they read.
- * Subscription roots and count rows are not prelocked. A changed count is
- * published conditionally in the same transaction as the business rows.
- */
-export async function writeUsagePackPendingSnapshots<T>(
-  db: Pick<ApiDb, "transaction">,
-  orgIds: readonly string[],
-  write: (tx: Tx) => Promise<T>,
-  referencedSubscriptionIds: readonly string[] = [],
-): Promise<T> {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0284; new non-billing transactions are prohibited.
-  return await db.transaction(async (tx) => {
-    const {
-      orderedOrgIds,
-      guards,
-      snapshots: before,
-    } = await preparePendingSnapshotScope(
-      tx,
-      orgIds,
-      referencedSubscriptionIds,
-    );
-    for (const guard of guards) {
-      if (
-        guard.pendingSnapshotCount !== pendingRows(before, guard.orgId).length
-      ) {
-        throw new Error("Usage pack pending snapshot guard requires repair");
-      }
+export type UsagePackPendingSnapshotOperation =
+  | {
+      readonly kind: "prepare-purchase";
+      readonly purchase: CreateUsagePackCheckoutSessionArgs;
+      readonly customerId: string;
+      readonly prepared: PreparedPendingUsagePackCheckout;
     }
+  | {
+      readonly kind: "correlate-claim";
+      readonly orgId: string;
+      readonly rootId: string;
+      readonly sessionId: string;
+      readonly customerId: string;
+      readonly planPriceId: string;
+      readonly tier: UsagePackContext["subscription"]["tier"];
+    }
+  | {
+      readonly kind: "claim-purchase";
+      readonly orgId: string;
+      readonly rootId: string;
+      readonly at: Date;
+      readonly planClaimStaleBefore: Date;
+    }
+  | {
+      readonly kind: "publish-purchase";
+      readonly orgId: string;
+      readonly rootId: string;
+      readonly subscription: { readonly id: string; readonly status: string };
+    }
+  | {
+      readonly kind: "synchronize";
+      readonly orgId: string;
+      readonly rootId: string;
+      readonly checkoutSessionId?: string;
+      readonly subscription: UsagePackSubscriptionInput;
+      readonly shape: {
+        readonly tier: UsagePackContext["subscription"]["tier"];
+        readonly planPriceId: string;
+        readonly projectsOrgPlan: boolean;
+      };
+    }
+  | {
+      readonly kind: "deactivate";
+      readonly orgId: string;
+      readonly rootId: string;
+      readonly subscription: UsagePackSubscriptionInput;
+      readonly reason: string;
+      readonly status: string;
+    }
+  | {
+      readonly kind: "delete";
+      readonly orgId: string;
+      readonly rootId: string;
+      readonly subscriptionId: string;
+    };
+export type UsagePackPendingSnapshotResult =
+  | {
+      readonly kind: "prepare-purchase";
+      readonly value:
+        | { readonly kind: "conflict" }
+        | { readonly kind: "redirect"; readonly url: string }
+        | {
+            readonly kind: "snapshot";
+            readonly usagePackSubscriptionId: string;
+          };
+    }
+  | {
+      readonly kind: "correlate-claim";
+      readonly value: "correlated" | "changed";
+    }
+  | { readonly kind: "claim-purchase"; readonly value: boolean }
+  | { readonly kind: "publish-purchase"; readonly value: boolean }
+  | { readonly kind: "synchronize" | "deactivate" | "delete" };
 
-    const result = await write(tx);
-    const after = await tx
-      .select({
-        id: usagePackSubscriptions.id,
-        orgId: usagePackSubscriptions.orgId,
-        status: usagePackSubscriptions.subscriptionStatus,
-      })
-      .from(usagePackSubscriptions)
-      .where(
-        or(
-          inArray(usagePackSubscriptions.orgId, orderedOrgIds),
-          inArray(
-            usagePackSubscriptions.id,
-            before.map((row) => {
-              return row.id;
-            }),
-          ),
-        ),
-      );
-    if (
-      after.some((row) => {
-        return !orderedOrgIds.includes(row.orgId);
-      })
-    ) {
-      throw new Error("Usage pack subscription moved outside its locked scope");
-    }
-    for (const orgId of orderedOrgIds) {
-      const prior = new Set(
-        pendingRows(before, orgId).map((row) => {
-          return row.id;
-        }),
-      );
-      const pending = pendingRows(after, orgId);
-      if (
-        pending.length > 1 &&
-        pending.some((row) => {
-          return !prior.has(row.id);
-        })
-      ) {
-        throw new Error(
-          "Another usage-pack purchase is already pending for this organization",
-        );
+export type UsagePackPendingSnapshotOutcome =
+  | { readonly ok: true; readonly value: UsagePackPendingSnapshotResult }
+  | { readonly ok: false; readonly error: unknown };
+
+/** The closed operations are the seven original callbacks. Their early results
+ * still pass through after-snapshot/count publication in this same transaction. */
+export const writeUsagePackPendingSnapshots$ = command(
+  async function writeUsagePackPendingSnapshots(
+    { set },
+    operation: UsagePackPendingSnapshotOperation,
+    signal?: AbortSignal,
+  ): Promise<UsagePackPendingSnapshotOutcome> {
+    const db = set(writeDb$);
+
+    return await settle(
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0284; new non-billing transactions are prohibited.
+      db.transaction(async (tx) => {
+        const plan = usagePackPendingSnapshotPlan(operation);
+        let step = plan.next();
+        while (!step.done) {
+          const current = step.value;
+          let rows: readonly unknown[] = [];
+          switch (current.kind) {
+            case "timestamp": {
+              rows = [nowDate()];
+              break;
+            }
+            case "abort-check": {
+              signal?.throwIfAborted();
+              break;
+            }
+            case "batch": {
+              rows = await Promise.all(
+                current.statements.map(async (statement) => {
+                  return parseRawRows(
+                    retainedRowSchema,
+                    await tx.execute(statement),
+                  );
+                }),
+              );
+              break;
+            }
+            case "read": {
+              rows = parseRawRows(
+                retainedRowSchema,
+                await tx.execute(current.sql),
+              );
+              break;
+            }
+            case "write": {
+              await tx.execute(current.sql);
+              break;
+            }
+          }
+          step = plan.next(rows);
+        }
+        return step.value;
+      }),
+    );
+  },
+);
+
+export function pendingSnapshotResult(
+  outcome: UsagePackPendingSnapshotOutcome,
+  kind: "prepare-purchase",
+): Extract<
+  UsagePackPendingSnapshotResult,
+  { kind: "prepare-purchase" }
+>["value"];
+export function pendingSnapshotResult(
+  outcome: UsagePackPendingSnapshotOutcome,
+  kind: "correlate-claim",
+): "correlated" | "changed";
+export function pendingSnapshotResult(
+  outcome: UsagePackPendingSnapshotOutcome,
+  kind: "claim-purchase" | "publish-purchase",
+): boolean;
+export function pendingSnapshotResult(
+  outcome: UsagePackPendingSnapshotOutcome,
+  kind: "synchronize" | "deactivate" | "delete",
+): void;
+export function pendingSnapshotResult(
+  outcome: UsagePackPendingSnapshotOutcome,
+  kind: UsagePackPendingSnapshotOperation["kind"],
+):
+  | Extract<
+      UsagePackPendingSnapshotResult,
+      { kind: "prepare-purchase" }
+    >["value"]
+  | "correlated"
+  | "changed"
+  | boolean
+  | void {
+  if (!outcome.ok) {
+    if (outcome.error instanceof UsagePackPendingSnapshotConflict) {
+      if (kind === "prepare-purchase") {
+        return { kind: "conflict" };
       }
-      await publishUsagePackPendingSnapshotCount(
-        tx,
-        orgId,
-        prior.size,
-        pending.length,
-      );
+      if (kind === "claim-purchase") {
+        return false;
+      }
     }
-    return result;
-  });
+    throw outcome.error;
+  }
+  const result = outcome.value;
+  if (result.kind !== kind) {
+    throw new Error("Usage pack operation result kind mismatch");
+  }
+  if ("value" in result) {
+    return result.value;
+  }
 }

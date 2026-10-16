@@ -66,6 +66,15 @@ pub(crate) struct Request {
     pub(crate) request: runner_rpc_proto::Request,
 }
 
+#[derive(Clone)]
+struct Consumers {
+    ssh: Option<Arc<ssh::Run>>,
+    vnc: Option<Arc<vnc::Run>>,
+    usage: Option<Arc<run_usage::Run>>,
+    diagnostics: crate::diagnostics::Handle,
+    authority: Option<Arc<crate::diagnostics::Authority>>,
+}
+
 impl Runtime {
     pub fn new(
         ssh: Option<Arc<ssh::SshRuntime>>,
@@ -91,12 +100,29 @@ impl Runtime {
             .usage
             .as_ref()
             .map(|runtime| runtime.for_context(context));
-        Some(self.start_with_usage(
+        let authority = context
+            .feature_flags
+            .as_ref()
+            .is_some_and(|flags| flags.get("remoteConnectionDiagnostics") == Some(&true))
+            .then(|| {
+                let http = self
+                    .ssh
+                    .as_ref()
+                    .map(|s| s.http_client())
+                    .or_else(|| self.vnc.as_ref().map(|v| v.http_client()))?;
+                Some(Arc::new(crate::diagnostics::Authority::new(
+                    http,
+                    &context.sandbox_token,
+                )))
+            })
+            .flatten();
+        Some(self.start_with_diagnostics(
             acceptor,
             sandbox.id().to_owned(),
             context.run_id,
             cancel,
             usage,
+            authority,
         ))
     }
 
@@ -111,6 +137,7 @@ impl Runtime {
         self.start_with_usage(acceptor, sandbox, run, cancel, None)
     }
 
+    #[cfg(test)]
     fn start_with_usage(
         &self,
         acceptor: Arc<dyn GuestRpcAcceptor>,
@@ -119,8 +146,22 @@ impl Runtime {
         cancel: &CancellationToken,
         usage: Option<Arc<run_usage::Run>>,
     ) -> Run {
+        self.start_with_diagnostics(acceptor, sandbox, run, cancel, usage, None)
+    }
+
+    pub(crate) fn start_with_diagnostics(
+        &self,
+        acceptor: Arc<dyn GuestRpcAcceptor>,
+        sandbox: String,
+        run: RunId,
+        cancel: &CancellationToken,
+        usage: Option<Arc<run_usage::Run>>,
+        authority: Option<Arc<crate::diagnostics::Authority>>,
+    ) -> Run {
         let cancel = cancel.child_token();
-        let native = self.native.register(run, &cancel);
+        let native = self
+            .native
+            .register_with_diagnostics(run, &cancel, authority.is_some());
         let ssh = self
             .ssh
             .as_ref()
@@ -129,6 +170,9 @@ impl Runtime {
             .vnc
             .as_ref()
             .map(|runtime| runtime.for_run(run, &cancel, ssh.clone()));
+        if let Some(vnc) = &vnc {
+            vnc.set_diagnostics(native.diagnostics.clone());
+        }
         let task_ssh = ssh.clone();
         let task_vnc = vnc.clone();
         let task_native = Arc::clone(&native);
@@ -136,10 +180,14 @@ impl Runtime {
             acceptor,
             sandbox,
             run,
-            task_ssh,
-            task_vnc,
             task_native,
-            usage,
+            Consumers {
+                ssh: task_ssh,
+                vnc: task_vnc,
+                usage,
+                diagnostics: native.diagnostics.clone(),
+                authority,
+            },
         ));
         Run {
             cancel,
@@ -155,11 +203,11 @@ async fn serve(
     acceptor: Arc<dyn GuestRpcAcceptor>,
     sandbox: String,
     run: RunId,
-    ssh: Option<Arc<ssh::Run>>,
-    vnc: Option<Arc<vnc::Run>>,
     native: Arc<native::Run>,
-    usage: Option<Arc<run_usage::Run>>,
+    consumers: Consumers,
 ) {
+    let ssh = consumers.ssh.clone();
+    let vnc = consumers.vnc.clone();
     let cancel = native.cancelled();
     let permits = Arc::new(Semaphore::new(RUN_REQUEST_CAPACITY));
     let mut prune = tokio::time::interval(Duration::from_secs(30));
@@ -202,9 +250,7 @@ async fn serve(
             Arc::new(permit),
             run,
             scope,
-            ssh.clone(),
-            vnc.clone(),
-            usage.clone(),
+            consumers.clone(),
         ));
     }
     cancel.cancel();
@@ -232,10 +278,15 @@ async fn dispatch(
     lease: Arc<OwnedSemaphorePermit>,
     run: RunId,
     scope: Scope,
-    ssh: Option<Arc<ssh::Run>>,
-    vnc: Option<Arc<vnc::Run>>,
-    usage: Option<Arc<run_usage::Run>>,
+    consumers: Consumers,
 ) {
+    let Consumers {
+        ssh,
+        vnc,
+        usage,
+        diagnostics,
+        authority,
+    } = consumers;
     let _cancel_on_drop = scope.cancelled.clone().drop_guard();
     let started = Instant::now();
     let request = match scope.wait(runner_rpc_proto::read_request(&mut input)).await {
@@ -246,6 +297,25 @@ async fn dispatch(
         }
     };
     if matches!(
+        request.method.as_str(),
+        "remote.diagnostics.capabilities" | "ssh.diagnose" | "vnc.diagnose"
+    ) {
+        diagnostics
+            .dispatch(
+                Request {
+                    input,
+                    lease,
+                    run,
+                    started,
+                    deadline: scope.deadline,
+                    cancelled: scope.cancelled,
+                    sandbox_cancelled: scope.sandbox_cancelled,
+                    request,
+                },
+                authority,
+            )
+            .await;
+    } else if matches!(
         request.method.as_str(),
         "ssh.exec" | "ssh.file.upload" | "ssh.file.download"
     ) || request.method.starts_with("ssh.session.")
@@ -313,14 +383,14 @@ async fn dispatch(
     }
 }
 
-struct Scope {
-    cancelled: CancellationToken,
-    sandbox_cancelled: CancellationToken,
-    deadline: Instant,
+pub(crate) struct Scope {
+    pub(crate) cancelled: CancellationToken,
+    pub(crate) sandbox_cancelled: CancellationToken,
+    pub(crate) deadline: Instant,
 }
 
 impl Scope {
-    async fn wait<T>(&self, future: impl std::future::Future<Output = T>) -> Option<T> {
+    pub(crate) async fn wait<T>(&self, future: impl std::future::Future<Output = T>) -> Option<T> {
         tokio::select! {
             biased;
             () = self.cancelled.cancelled() => None,
@@ -330,7 +400,7 @@ impl Scope {
         }
     }
 
-    async fn error(&self, input: Box<dyn GuestRpcStream>, code: ErrorCode) {
+    pub(crate) async fn error(&self, input: Box<dyn GuestRpcStream>, code: ErrorCode) {
         let mut writer = ResponseWriter::new(input);
         let _ = self
             .wait(writer.send(&Response::error(code, Delivery::NotDispatched)))
