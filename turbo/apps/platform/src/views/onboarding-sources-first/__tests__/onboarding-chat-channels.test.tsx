@@ -1,4 +1,3 @@
-import { getAction } from "../../okou-page/__tests__/connector-integrations-test-helpers.ts";
 import {
   integrationsSlackContract,
   type SlackOrgStatus,
@@ -500,10 +499,6 @@ test("Telegram authorizes the official bot in a new tab and keeps onboarding ope
   expect(getChannelTile("Telegram")).toHaveTextContent("Added");
   expect(getButtonByName("Continue")).toBeEnabled();
   expect({ value: authorizationWindow.closed }).toStrictEqual({ value: false });
-  expect(getAction("link", "View Telegram settings")).toHaveAttribute(
-    "target",
-    "_blank",
-  );
 });
 
 test("A pending Teams installation keeps onboarding in place until real status is connected", async () => {

@@ -173,7 +173,7 @@ function ConnectedTelegram({
       ) : (
         <TelegramLink username={status.botUsername ?? bot?.username} />
       )}
-      <RefreshButton />
+      {mismatch && <RefreshButton />}
       <BackLink />
     </PageShell>
   );

@@ -82,7 +82,10 @@ function PageContent() {
           })}
         />
       )}
-      <TeamsStatusRefresh />
+      {(status.state === "hasError" ||
+        (status.state === "hasData" && !status.data.success)) && (
+        <TeamsStatusRefresh />
+      )}
       <SettingsBackLink />
     </>
   );

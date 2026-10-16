@@ -191,7 +191,9 @@ test("Signed confirmation consumes proof only after the POST and displays a real
     new URLSearchParams(window.location.search).getAll("context"),
   ).toStrictEqual(["one", "two"]);
   expect(window.location.hash).toBe("#return-context");
-  click(getAction("button", "Refresh status"));
+  act(() => {
+    window.dispatchEvent(new Event("focus"));
+  });
   await expect(
     screen.findByText("Connected as @actual_name."),
   ).resolves.toBeInTheDocument();
