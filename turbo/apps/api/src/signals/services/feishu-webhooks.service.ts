@@ -14,7 +14,7 @@ import {
   fetchFeishuBotInfo,
   getFeishuTenantAccessToken,
 } from "../external/feishu-client";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { now, nowDate } from "../../lib/time";
 import { safeSync, tapError } from "../utils";
 import { processCanonicalFeishuIngress$ } from "./canonical-feishu-ingress-processor.service";
@@ -87,27 +87,30 @@ function textResponse(text: string): Response {
   return new Response(text, { status: 200 });
 }
 
-async function markCallbackVerified(
-  args: {
-    readonly db: Db;
-    readonly config: FeishuInstallationConfig;
+const markCallbackVerified$ = command(
+  async (
+    { set },
+    args: {
+      readonly config: FeishuInstallationConfig;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    if (args.config.callbackVerified) {
+      return;
+    }
+    await db
+      .update(feishuOrgInstallations)
+      .set({ callbackVerifiedAt: nowDate(), updatedAt: nowDate() })
+      .where(eq(feishuOrgInstallations.id, args.config.id));
+    signal.throwIfAborted();
+    await publishFeishuOrgChanged(
+      db,
+      args.config.orgId,
+      args.config.ownerUserId,
+    );
   },
-  signal: AbortSignal,
-): Promise<void> {
-  if (args.config.callbackVerified) {
-    return;
-  }
-  await args.db
-    .update(feishuOrgInstallations)
-    .set({ callbackVerifiedAt: nowDate(), updatedAt: nowDate() })
-    .where(eq(feishuOrgInstallations.id, args.config.id));
-  signal.throwIfAborted();
-  await publishFeishuOrgChanged(
-    args.db,
-    args.config.orgId,
-    args.config.ownerUserId,
-  );
-}
+);
 
 function verifySignature(args: {
   readonly rawBody: string;
@@ -232,65 +235,68 @@ function inboundMessage(
   };
 }
 
-async function ensureInboundBotIdentity(
-  args: {
-    readonly db: Db;
-    readonly config: FeishuInstallationConfig;
-    readonly envelope: z.infer<typeof v2EnvelopeSchema>;
-  },
-  signal: AbortSignal,
-): Promise<FeishuInstallationConfig> {
-  if (args.config.botOpenId) {
-    return args.config;
-  }
-  const event = v2MessageEventSchema.safeParse(args.envelope.event);
-  if (
-    !event.success ||
-    (event.data.message.chat_type !== "group" &&
-      event.data.message.chat_type !== "topic_group")
-  ) {
-    return args.config;
-  }
-  const bot = await tapError(
-    (async () => {
-      const tenantAccessToken = await getFeishuTenantAccessToken(
-        {
-          db: args.db,
-          installationId: args.config.id,
-        },
-        signal,
-      );
-      return await fetchFeishuBotInfo(
-        {
-          platform: args.config.platform,
-          tenantAccessToken,
-        },
-        signal,
-      );
-    })(),
-    (error) => {
-      L.warn("Failed to backfill Feishu bot identity", {
-        error,
-        installationId: args.config.id,
-      });
+const ensureInboundBotIdentity$ = command(
+  async (
+    { set },
+    args: {
+      readonly config: FeishuInstallationConfig;
+      readonly envelope: z.infer<typeof v2EnvelopeSchema>;
     },
-  );
-  signal.throwIfAborted();
-  if (!bot) {
-    return args.config;
-  }
-  await args.db
-    .update(feishuOrgInstallations)
-    .set({
-      botOpenId: bot.openId,
-      botName: bot.name,
-      botAvatarUrl: bot.avatarUrl,
-      updatedAt: nowDate(),
-    })
-    .where(eq(feishuOrgInstallations.id, args.config.id));
-  signal.throwIfAborted();
-  return { ...args.config, botOpenId: bot.openId };
-}
+    signal: AbortSignal,
+  ): Promise<FeishuInstallationConfig> => {
+    const db = set(writeDb$);
+    if (args.config.botOpenId) {
+      return args.config;
+    }
+    const event = v2MessageEventSchema.safeParse(args.envelope.event);
+    if (
+      !event.success ||
+      (event.data.message.chat_type !== "group" &&
+        event.data.message.chat_type !== "topic_group")
+    ) {
+      return args.config;
+    }
+    const bot = await tapError(
+      (async () => {
+        const tenantAccessToken = await getFeishuTenantAccessToken(
+          {
+            db,
+            installationId: args.config.id,
+          },
+          signal,
+        );
+        return await fetchFeishuBotInfo(
+          {
+            platform: args.config.platform,
+            tenantAccessToken,
+          },
+          signal,
+        );
+      })(),
+      (error) => {
+        L.warn("Failed to backfill Feishu bot identity", {
+          error,
+          installationId: args.config.id,
+        });
+      },
+    );
+    signal.throwIfAborted();
+    if (!bot) {
+      return args.config;
+    }
+    await db
+      .update(feishuOrgInstallations)
+      .set({
+        botOpenId: bot.openId,
+        botName: bot.name,
+        botAvatarUrl: bot.avatarUrl,
+        updatedAt: nowDate(),
+      })
+      .where(eq(feishuOrgInstallations.id, args.config.id));
+    signal.throwIfAborted();
+    return { ...args.config, botOpenId: bot.openId };
+  },
+);
 
 const admitInboundFeishuMessage$ = command(
   async (
@@ -391,7 +397,7 @@ export const handleFeishuEvents$ = command(
         });
         return jsonResponse({ error: "Invalid Feishu token" }, 401);
       }
-      await markCallbackVerified({ db, config }, signal);
+      await set(markCallbackVerified$, { config }, signal);
       L.debug("Verified Feishu callback URL", {
         installationId: config.id,
       });
@@ -433,10 +439,10 @@ export const handleFeishuEvents$ = command(
       });
       return jsonResponse({ error: "Invalid Feishu token" }, 401);
     }
-    await markCallbackVerified({ db, config }, signal);
-    const dispatchConfig = await ensureInboundBotIdentity(
+    await set(markCallbackVerified$, { config }, signal);
+    const dispatchConfig = await set(
+      ensureInboundBotIdentity$,
       {
-        db,
         config,
         envelope: v2.data,
       },
