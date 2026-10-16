@@ -137,7 +137,8 @@ def _is_ascii(value: str) -> bool:
     return value.isascii()
 
 
-def _is_ipv4_number_component(value: str) -> bool:
+def is_ipv4_number_component(value: str) -> bool:
+    """Identify decimal or hexadecimal components of an IPv4-like host."""
     if not value:
         return False
     if value.lower().startswith("0x"):
@@ -150,7 +151,7 @@ def _is_ipv4_number_component(value: str) -> bool:
 def _is_ipv4_literal_like(value: str) -> bool:
     parts = value.split(".")
     return _IPV4_MIN_PARTS <= len(parts) <= _IPV4_PART_COUNT and all(
-        _is_ipv4_number_component(part) for part in parts
+        is_ipv4_number_component(part) for part in parts
     )
 
 
