@@ -477,11 +477,6 @@
       "owner": "claimPiMemoryPhase2Job$"
     },
     {
-      "id": "TX-0225",
-      "file": "turbo/apps/api/src/signals/services/pi-memory-stage1-candidate.service.ts",
-      "owner": "commitPiMemoryStage1Candidate$"
-    },
-    {
       "id": "TX-0227",
       "file": "turbo/apps/api/src/signals/services/pi-memory-stage1-schedule.service.ts",
       "owner": "commitSelectedPiMemoryStage1Day$"
