@@ -283,8 +283,8 @@ impl HomeImageCache {
                     victim_attempts: attempts,
                 });
             };
-            // Never wait for capacity while retaining the routine owner. Inline
-            // publication owns capacity and must not await this worker.
+            // All new collectors share the routine owner. Never wait for a
+            // legacy exclusive barrier while retaining collection ownership.
             let routine = match runner_host::lock::try_acquire_or_busy(self.routine_gc_lock_path())
                 .await?
             {
@@ -298,7 +298,9 @@ impl HomeImageCache {
                 }
             };
             let mut capacity =
-                match runner_host::lock::try_acquire_or_busy(self.capacity_lock_path()).await? {
+                match runner_host::lock::try_acquire_shared_or_busy(self.capacity_lock_path())
+                    .await?
+                {
                     runner_host::lock::TryLock::Acquired(lock) => lock,
                     runner_host::lock::TryLock::Busy => {
                         return Ok(HomeCacheReclaimOutcome::observed(
@@ -336,18 +338,19 @@ impl HomeImageCache {
                         // release the owner and restart discovery if still needed.
                         continue;
                     };
-                    capacity =
-                        match runner_host::lock::try_acquire_or_busy(self.capacity_lock_path())
-                            .await?
-                        {
-                            runner_host::lock::TryLock::Acquired(lock) => lock,
-                            runner_host::lock::TryLock::Busy => {
-                                return Ok(HomeCacheReclaimOutcome::observed(
-                                    HomeCacheReclaimStatus::Contended,
-                                    self.fs_stats().await?.available_bytes,
-                                ));
-                            }
-                        };
+                    capacity = match runner_host::lock::try_acquire_shared_or_busy(
+                        self.capacity_lock_path(),
+                    )
+                    .await?
+                    {
+                        runner_host::lock::TryLock::Acquired(lock) => lock,
+                        runner_host::lock::TryLock::Busy => {
+                            return Ok(HomeCacheReclaimOutcome::observed(
+                                HomeCacheReclaimStatus::Contended,
+                                self.fs_stats().await?.available_bytes,
+                            ));
+                        }
+                    };
                     empty.insert(GcContinuation::new(candidates, 0))
                 }
             };

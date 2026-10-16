@@ -190,31 +190,21 @@ establish full session/history restoration or calibrate production host limits.
 
 ## Routine GC and promotion capacity
 
-Updated runners serialize routine maintenance with
-`home-image-cache-routine-gc.lock`. They briefly acquire capacity to check
-its existing nonempty completion-file mtime, then release capacity during the
-inventory and entry-local stale/temp cleanup. Every such mutation still requires
-that entry's nonblocking exclusive flock, so active checkout, generation staging and
-publication cannot be cleaned concurrently. No entry flock survives inventory.
+Updated runners serialize routine, manual, demand and publication-triggered
+collection with `home-image-cache-routine-gc.lock`. They only try the shared
+canonical capacity barrier and victim entry locks; contention defers collection.
+Routine maintenance checks the existing nonempty completion-file mtime, then
+holds a shared barrier during inventory and entry-local stale/temp cleanup.
+Every mutation requires that entry's nonblocking exclusive flock. No entry
+flock survives inventory. Final admission rechecks cadence and actual space;
+interrupted maintenance never advances the completion marker.
 
-Afterward routine GC attempts capacity nonblockingly, rechecks the completion
-interval and reads fresh filesystem stats. Count pressure observed in the
-unlocked inventory, or current free-space pressure, uses that retained inventory
-as hints for bounded mutation turns. Each victim needs its entry lock and current
-generation, inode and last-use revalidation. Cooperative exhaustion releases both
-global owners; continuation tries them again and rechecks the completion interval.
-Unlocked candidates alone never authorize eviction. Failed work or busy final
-capacity admission writes no new completion marker and is eligible for a later retry.
-
-Other processes using the same canonical home-cache domain can overlap the
-unlocked pass. Shared entry flocks protect mutations, and the second interval
-check observes another collector's intervening completion. Manual and
-promotion-triggered pressure GC retain capacity ownership and can still contend
-with promotion. This removes the routine inventory/entry-cleanup collision
-window, not pressure contention. The inventory covers the canonical home-cache
-domain. Count limits and observed free-space targets are independent; count-only
-cleanup does not activate a byte target. Profile-bound image eligibility, fresh allocation/reserve and cross-device
-copy headroom remain mandatory.
+New publishers can overlap collection through shared capacity while exclusive
+entry flocks protect each mutation. Legacy exclusive capacity windows still
+exclude new publication growth and physical IO on the exact same inode. Victim
+operations revalidate generation, inode and last-use; cooperative continuations
+try both global owners again. Count limits and observed free-space targets are
+independent. Unlocked candidates alone never authorize eviction.
 
 Cheap pressure probes and completed invalid/temp maintenance have independent
 cadences. A probe or cooperative reclaim turn never advances the maintenance
@@ -239,18 +229,22 @@ foreground demand keeps its own required free-space target and physical owner.
 Explicit manual and publication collection retain their caller authority. These
 are per-Runner lifecycle boundaries; other host collectors remain independent.
 
-Stopped publishers share one fair process-local publication permit, separate
-from Guest reclamation admission. They retain entry ownership while queued for
-up to 30 seconds before staging. Admission timeout leaves the original context
-untouched and reports `publication_admission_timeout`; ordinary abandonment and
-required-saving recovery retain their existing policies. This initial retention
-cap is not a measured optimum. Only the admitted publisher starts the existing
-250 ms observed capacity-flock contention retry. Other processes and GC still
-compete through that flock; checkout never joins the publication queue.
+Stopped publishers share four process-local physical IO slots, separate from
+Guest reclamation admission. Accepted attempts retain entry ownership, pinned
+source and exact staged/candidate/uncertain-commit progress in the existing IO
+tracker. Observer loss cannot release a physical tail's locks; shutdown joins it.
+Recovery revalidates the retained generation at its actual location and completes
+an uncertain metadata commit before retiring old data. Failed required saving
+retains its capsule while releasing physical IO admission.
 
-Publication retains its local permit through the existing commit or refusal.
-A capacity owner must never wait for an entry lock. This retry has a separate
-budget from startup's short entry wait and immediate-fallback policy. Proven
+Publication orders entry/source, conditional receiving-device Copy lease, local
+IO slot, then shared canonical capacity. Normal Move bypasses the Copy lease.
+Unexpected EXDEV and pressure reclamation release IO/barrier admission before
+waiting again; the original 30-second pre-IO budget covers those retries within
+an attempt. Legacy flock contention retains its 250 ms observed retry budget.
+These admission deadlines never abort accepted transfer or sync. Sync runs in
+owned blocking work, while the accepted parent retains the relevant guards.
+Checkout never joins the publication queue. Proven
 guest exit releases healthy reclamation CPU permits before publication, but the
 entry and applicable logical lease remain owned until their cleanup contract
 completes. Waiting can therefore affect same-key checkout, resource-limited blank
@@ -289,16 +283,13 @@ retain the reserve policy. This is an observed allocation check, not a reservati
 against other writers or a guarantee about future guest growth. Same-filesystem
 rename still performs ordinary filesystem I/O and can fail.
 
-Successful routine completion emits `entry_count` (the unlocked candidate
+Successful routine completion emits `entry_count` (the inventory candidate
 count), `inventory_us`, cumulative `capacity_lock_held_us` (all held phases,
-excluding acquisition waits and unlocked inventory), `budget_gc` and `freed_bytes`.
-Deferred final admission reports the inventory and initial held durations. These
-are phase observations, not production cold-start savings or wall-clock
-performance guarantees. The ignored
-`measure_routine_gc_inventory_and_capacity_hold` owner test prints representative
-local measurements without latency thresholds. It uses temporary files and the
-owner tests' injected filesystem budget, so it does not measure production
-`statvfs` latency or pressure collection.
+including shared inventory but excluding acquisition waits), `budget_gc` and
+`freed_bytes`. Deferred final admission reports the inventory and initial held
+durations. These observations are not production cold-start savings or wall-clock
+guarantees. Isolated temporary-file trials and injected filesystem budgets do
+not establish production pressure, IO or startup performance.
 
 ## Optional snapshot IO
 

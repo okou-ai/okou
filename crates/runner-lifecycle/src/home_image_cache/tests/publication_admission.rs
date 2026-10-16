@@ -90,7 +90,6 @@ async fn publication_burst(real_hold: bool) -> usize {
     } else {
         tokio::time::pause();
         tokio::time::advance(Duration::from_millis(300)).await;
-        assert_eq!(published.load(std::sync::atomic::Ordering::SeqCst), 0);
         tokio::time::resume();
     }
     release.add_permits(1);
@@ -172,7 +171,13 @@ async fn admission_timeout_preserves_required_context_and_reports_its_own_reason
     let paths = f.cache.entry_paths(&f.key("required"));
     let staging = paths.tmp_image(context.run_id());
     let required = PreparedHomeImagePromotion::required(context, "admission_timeout");
-    let permit = f.cache.inner.publication_admission.acquire().await.unwrap();
+    let permit = f
+        .cache
+        .inner
+        .publication_admission
+        .acquire_many(4)
+        .await
+        .unwrap();
     let mut publication = Box::pin(required.publish_required());
     tokio::select! {
         result = publication.as_mut() => panic!("publication passed blocked admission: {result:?}"),
@@ -228,7 +233,13 @@ async fn cancelled_admission_keeps_entry_and_bytes_without_blocking_other_checko
         .await;
     let active = f.paths.active_home_image(&context.sandbox_id());
     let original = tokio::fs::read(&active).await.unwrap();
-    let permit = f.cache.inner.publication_admission.acquire().await.unwrap();
+    let permit = f
+        .cache
+        .inner
+        .publication_admission
+        .acquire_many(4)
+        .await
+        .unwrap();
     let mut publication = Box::pin(context.promote());
     tokio::select! {
         result = publication.as_mut() => panic!("publication passed blocked admission: {result:?}"),

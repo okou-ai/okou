@@ -1,6 +1,5 @@
 use super::super::fs::{
     PinnedImage, fs_stats_from_statvfs, statvfs_bytes, statvfs_for_path, sync_directory,
-    sync_private_file,
 };
 use super::super::types::FsStats;
 use super::support::{Fixture, SIZE, write_image};
@@ -124,11 +123,6 @@ async fn image_validation_and_sync_failures_retain_os_errors_without_disclosing_
     assert_missing_path_context(
         sync_directory(&missing).await.unwrap_err(),
         "open_directory",
-        &missing,
-    );
-    assert_missing_path_context(
-        sync_private_file(&missing).await.unwrap_err(),
-        "open_private_file",
         &missing,
     );
     assert_missing_path_context(
