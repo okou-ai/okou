@@ -68,7 +68,8 @@ prepare_r2() {
 
 r2_put() {
   local key=$1 body=$2 content_type=$3
-  if ! AWS_MAX_ATTEMPTS=1 AWS_RETRY_MODE=standard AWS_CLI_ERROR_FORMAT=json \
+  # The three-attempt limit includes the initial request.
+  if ! AWS_MAX_ATTEMPTS=3 AWS_RETRY_MODE=standard AWS_CLI_ERROR_FORMAT=json \
     AWS_PAGER='' AWS_CLI_AUTO_PROMPT=off \
     timeout --kill-after=5s 120s aws s3api put-object \
       --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
