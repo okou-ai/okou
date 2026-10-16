@@ -1,8 +1,10 @@
 import type { Writable } from "node:stream";
 import { z } from "zod";
+import { diagnosticTextSchema } from "../../lib/ssh-diagnostics";
 
 import {
   invokeRunnerRpc,
+  rpcErrorSchema,
   RunnerRpcProtocolError,
   type RunnerRpcLocalFailure,
 } from "../../lib/runner-rpc";
@@ -79,27 +81,13 @@ const terminalSchema = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("failed"),
+      diagnostic_text: diagnosticTextSchema,
       failure_reason: failureReasonSchema,
       effects: z.enum(["not_started", "unknown"]),
       ...totals,
     })
     .strict(),
 ]);
-export const rpcErrorSchema = z
-  .object({
-    type: z.literal("error"),
-    code: z.enum([
-      "invalid_request",
-      "unknown_method",
-      "unavailable",
-      "protocol",
-      "transport",
-      "timed_out",
-      "resource_exhausted",
-    ]),
-    delivery: z.enum(["not_dispatched", "unknown"]),
-  })
-  .strict();
 const envelopeSchema = z.discriminatedUnion("type", [
   z
     .object({
@@ -305,5 +293,3 @@ export async function executeSsh(
     json,
   );
 }
-
-export const invokeSshRpc = invokeRunnerRpc;

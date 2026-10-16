@@ -80,6 +80,7 @@ impl Execution {
         config: client::Config,
         observation: &mut Attempt,
     ) -> Result<Connected, FailureReason> {
+        use crate::diagnostics::trace::{Progress, Stage};
         let (stream, socket_guard) =
             SshSocket::new(stream, self.lease).map_err(|_| FailureReason::NetworkFailure)?;
         let stream: Box<dyn crate::cloudflare::ByteIo> = match &self.credential.transport {
@@ -110,9 +111,11 @@ impl Execution {
             self.connection,
             Arc::clone(&self.credential),
             trust_scope.clone(),
+            observation.trace.clone(),
         );
         let failure = Arc::clone(&handler.failure);
         let authority_pending = Arc::clone(&handler.authority_pending);
+        observation.trace.set(Stage::SshProof, Progress::Running);
         let connection = scope
             .wait(client::connect_stream(Arc::new(config), stream, handler))
             .await;
@@ -126,6 +129,7 @@ impl Execution {
                 .generation,
         );
         let session = connection?.map_err(|_| {
+            observation.trace.finish(Stage::SshProof, Progress::Failed);
             failure
                 .lock()
                 .ok()
@@ -137,45 +141,69 @@ impl Execution {
             guard: socket_guard,
         };
         let session = &mut connected.session;
-        let authentication = match &self.credential.auth {
-            PreparedAuth::Tailscale => scope
-                .wait(session.authenticate_none(self.credential.username.clone()))
-                .await?
-                .map_err(|_| FailureReason::AuthenticationFailed)?,
-            PreparedAuth::Password(password) => scope
-                .wait(
-                    session
-                        .authenticate_password(self.credential.username.clone(), password.expose()),
-                )
-                .await?
-                .map_err(|_| FailureReason::AuthenticationFailed)?,
-            PreparedAuth::PrivateKey(key) => {
-                let hash = if matches!(key.0.algorithm(), Algorithm::Rsa { .. }) {
-                    match scope
-                        .wait(session.best_supported_rsa_hash())
+        observation
+            .trace
+            .set(Stage::Authentication, Progress::Running);
+        let authentication = async {
+            let authentication =
+                match &self.credential.auth {
+                    PreparedAuth::Tailscale => scope
+                        .wait(session.authenticate_none(self.credential.username.clone()))
                         .await?
-                        .map_err(|_| FailureReason::Protocol)?
-                    {
-                        Some(Some(hash)) => Some(hash),
-                        None => Some(HashAlg::Sha512),
-                        Some(None) => return Err(FailureReason::AuthenticationFailed),
+                        .map_err(|_| FailureReason::AuthenticationFailed)?,
+                    PreparedAuth::Password(password) => scope
+                        .wait(session.authenticate_password(
+                            self.credential.username.clone(),
+                            password.expose(),
+                        ))
+                        .await?
+                        .map_err(|_| FailureReason::AuthenticationFailed)?,
+                    PreparedAuth::PrivateKey(key) => {
+                        let hash = if matches!(key.0.algorithm(), Algorithm::Rsa { .. }) {
+                            match scope
+                                .wait(session.best_supported_rsa_hash())
+                                .await?
+                                .map_err(|_| FailureReason::Protocol)?
+                            {
+                                Some(Some(hash)) => Some(hash),
+                                None => Some(HashAlg::Sha512),
+                                Some(None) => return Err(FailureReason::AuthenticationFailed),
+                            }
+                        } else {
+                            None
+                        };
+                        scope
+                            .wait(session.authenticate_publickey(
+                                self.credential.username.clone(),
+                                PrivateKeyWithHashAlg::new(Arc::clone(&key.0), hash),
+                            ))
+                            .await?
+                            .map_err(|_| FailureReason::AuthenticationFailed)?
                     }
-                } else {
-                    None
                 };
-                scope
-                    .wait(session.authenticate_publickey(
-                        self.credential.username.clone(),
-                        PrivateKeyWithHashAlg::new(Arc::clone(&key.0), hash),
-                    ))
-                    .await?
-                    .map_err(|_| FailureReason::AuthenticationFailed)?
-            }
-        };
+            Ok::<_, FailureReason>(authentication)
+        }
+        .await
+        .inspect_err(|error| {
+            observation.trace.set(
+                Stage::Authentication,
+                if matches!(error, FailureReason::Cancelled | FailureReason::TimedOut) {
+                    Progress::Unknown
+                } else {
+                    Progress::Failed
+                },
+            );
+        })?;
         if !authentication.success() {
+            observation
+                .trace
+                .set(Stage::Authentication, Progress::Failed);
             return Err(FailureReason::AuthenticationFailed);
         }
         observation.authenticated_at = Some(chrono::Utc::now());
+        observation
+            .trace
+            .set(Stage::Authentication, Progress::Passed);
         Ok(connected)
     }
 }
@@ -188,6 +216,10 @@ impl Connected {
         writer: &mut ResponseWriter<GuestIo>,
         output: &mut Output,
     ) -> Result<RemoteExit, FailureReason> {
+        output.connection.trace.set(
+            crate::diagnostics::trace::Stage::Operation,
+            crate::diagnostics::trace::Progress::Running,
+        );
         let session = &self.session;
         let mut channel = scope
             .wait(session.channel_open_session())

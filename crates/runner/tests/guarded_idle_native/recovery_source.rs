@@ -1,4 +1,4 @@
-//! Owned delays before real /proc reads; no sample fabrication or replay.
+//! Owned gates around real /proc reads; no fabrication or timestamp renewal.
 
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -22,6 +22,7 @@ pub struct Source {
     entered: Notify,
     samples: Mutex<Vec<Value>>,
     failure: Mutex<Option<String>>,
+    next_delivery_delay: Mutex<Option<Duration>>,
 }
 
 impl Source {
@@ -34,6 +35,7 @@ impl Source {
             entered: Notify::new(),
             samples: Mutex::new(Vec::new()),
             failure: Mutex::new(None),
+            next_delivery_delay: Mutex::new(None),
         }
     }
 
@@ -47,6 +49,18 @@ impl Source {
 
     pub fn one_read(&self) {
         self.passes.add_permits(1);
+    }
+
+    pub fn delay_next_delivery(&self, delay: Duration) -> TestResult<()> {
+        let mut pending = self
+            .next_delivery_delay
+            .lock()
+            .map_err(|_| io::Error::other("native delivery delay poisoned"))?;
+        if pending.is_some() {
+            return Err(io::Error::other("native delivery delay already armed").into());
+        }
+        *pending = Some(delay);
+        Ok(())
     }
 
     pub async fn wait_for_readers(&self, count: usize) {
@@ -111,6 +125,16 @@ impl MemoryObservationSource for Source {
             let captured: TestResult<HostMemoryObservation> = async {
                 let started = evidence::clocks()?.0;
                 let observation = ProcMemoryObservationSource.observe().await;
+                let delay = self
+                    .next_delivery_delay
+                    .lock()
+                    .map_err(|_| io::Error::other("native delivery delay poisoned"))?
+                    .take();
+                if let Some(delay) = delay {
+                    // Deliver this one actual read with its unchanged timestamp.
+                    // Elapsed delivery time must never renew its freshness.
+                    tokio::time::sleep(delay).await;
+                }
                 let now = tokio::time::Instant::now();
                 let finished = evidence::clocks()?.0;
                 let age = observation

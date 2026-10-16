@@ -155,7 +155,7 @@ impl Run {
         cancelled: CancellationToken,
         deadline: Instant,
     ) -> Result<DirectTcpIpStream, ForwardingFailure> {
-        let mut attempt = observation::Attempt::default();
+        let mut attempt = observation::Attempt::new(&self.sessions.registration.diagnostics());
         let result = self
             .open_direct_tcpip_inner(
                 Target {
@@ -169,7 +169,7 @@ impl Run {
                 &mut attempt,
             )
             .await;
-        attempt.record(
+        let _ = attempt.record(
             &self.sessions.registration.diagnostics(),
             connection,
             crate::diagnostics::Operation::Forwarding,
@@ -269,10 +269,18 @@ impl Run {
                 }
                 trust.generation
             };
+            attempt.trace.set(
+                crate::diagnostics::trace::Stage::Forwarding,
+                crate::diagnostics::trace::Progress::Running,
+            );
             let stream = lease
                 .connected()
                 .open_direct_tcpip(host, port, &scope)
                 .await?;
+            attempt.trace.set(
+                crate::diagnostics::trace::Stage::Forwarding,
+                crate::diagnostics::trace::Progress::Passed,
+            );
             let transport_cancelled = lease.cancelled();
             let monitor_done = CancellationToken::new();
             let task_done = monitor_done.clone();

@@ -11531,6 +11531,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(prompt).toContain("okou ssh download");
         expect(prompt).toContain("okou ssh --help");
         expect(prompt).toContain("relevant subcommand's `--help` before use");
+        expect(prompt).not.toContain("okou ssh diagnose");
+        expect(prompt).not.toContain("okou vnc diagnose");
         const sshGuidance = prompt.split("\n").filter((line) => {
           return line.startsWith("- SSH");
         });
@@ -11558,6 +11560,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
           await connectors.updateFeatureSwitches(actor, {
             [FeatureSwitchKey.VncAccess]: enabled,
+            [FeatureSwitchKey.RemoteConnectionDiagnostics]: true,
           });
           const run = await api.createThreadRun(actor, {
             agentId,
@@ -11573,6 +11576,11 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           }
           const capabilities = verifyOkouToken(token)?.capabilities;
           expect(capabilities).toBeDefined();
+          expect(prompt).toContain("okou ssh diagnose <connection-id> --json");
+          expect(prompt).toContain("passive history");
+          expect(prompt).toContain(
+            "unavailable evidence does not establish a cause",
+          );
           if (enabled) {
             expect(capabilities).toContain("vnc:read");
             expect(capabilities).toContain("vnc:write");
@@ -11586,6 +11594,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             );
             expect(prompt).toContain("okou vnc session close");
             expect(prompt).toContain("okou vnc --help");
+            expect(prompt).toContain(
+              "okou vnc diagnose <connection-id> --json",
+            );
           } else {
             expect(capabilities).not.toContain("vnc:read");
             expect(capabilities).not.toContain("vnc:write");

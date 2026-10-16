@@ -1,3 +1,4 @@
+mod diagnostics;
 mod gateway;
 mod live;
 

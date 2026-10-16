@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { z } from "zod";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { sessionRpc } from "./session-rpc";
+import { printSshDiagnostics } from "../../lib/ssh-diagnostics";
 import { createSessionReadCommand } from "./session-read";
 
 function id(value: string) {
@@ -21,6 +22,7 @@ async function output(
     console.log(JSON.stringify(result));
     return;
   }
+  printSshDiagnostics(result);
   switch (result.type) {
     case "started":
       console.log(

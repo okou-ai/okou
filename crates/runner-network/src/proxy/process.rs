@@ -2115,6 +2115,65 @@ exit 42
         );
     }
 
+    #[test]
+    fn dropped_mitmdump_without_current_runtime_preserves_launch_for_recovery() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = HomePaths::with_root(dir.path().join("home"));
+        let fake_mitmdump = dir.path().join("fake-mitmdump");
+        write_fake_listening_mitmdump(&fake_mitmdump);
+        let config = test_proxy_config(dir.path(), &home, fake_mitmdump.clone());
+        let tokio_runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let (child, pid, starttime, launch_path) = tokio_runtime.block_on(async {
+            crate::ca::ensure(&home).await.unwrap();
+            let runtime = acquire_test_runtime(&config).await;
+            let (crash_tx, _crash_rx) = mpsc::channel(1);
+            let stopping = Arc::new(AtomicBool::new(false));
+            let child = spawn_mitmdump(
+                &config,
+                &runtime,
+                find_available_port().unwrap(),
+                &crash_tx,
+                &stopping,
+                "usage-state-test",
+            )
+            .await
+            .unwrap();
+            let pid = child.id().unwrap();
+            let ProcessStatRead::Found(stat) = read_process_stat_checked(pid).await else {
+                panic!("mitmdump process stat is unavailable for pid {pid}");
+            };
+            let environment = std::fs::read_to_string(fake_mitmdump.with_extension("env")).unwrap();
+            let launch_path = PathBuf::from(environment.lines().next().unwrap());
+            stopping.store(true, Ordering::Release);
+            // Leave the launch as the sole owner of the exclusive runtime lock.
+            drop(runtime);
+            (child, pid, stat.starttime, launch_path)
+        });
+
+        assert!(tokio::runtime::Handle::try_current().is_err());
+        drop(child);
+        assert!(
+            launch_path.is_dir(),
+            "drop without a current runtime must preserve extraction data"
+        );
+
+        tokio_runtime.block_on(async {
+            assert!(
+                wait_for_reaped_pid(pid, starttime).await,
+                "drop fallback should kill and reap the direct mitmdump child"
+            );
+            let _recovered_runtime = acquire_test_runtime(&config).await;
+            assert!(
+                !launch_path.exists(),
+                "the next runtime owner must recover the preserved launch directory"
+            );
+            assert_no_launch_dirs(&config.runtime_dir).await;
+        });
+    }
+
     #[tokio::test]
     async fn startup_failure_kills_forked_descendant_and_removes_launch_directory() {
         let dir = tempfile::tempdir().unwrap();

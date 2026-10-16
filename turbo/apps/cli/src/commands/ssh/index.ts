@@ -21,6 +21,7 @@ import { createSessionCommand } from "./sessions";
 import { createFileCommand } from "./files";
 import { FILE_LIMIT_HELP } from "./file-protocol";
 import { createDiagnoseCommand } from "../../lib/remote-diagnostics";
+import { printSshDiagnostics } from "../../lib/ssh-diagnostics";
 
 function requireCapability(capability: "ssh:read" | "ssh:write") {
   if (!decodeSandboxTokenPayload()?.capabilities.includes(capability)) {
@@ -140,6 +141,7 @@ Safety:
         );
         if (options.json) console.log(JSON.stringify(result));
         else {
+          printSshDiagnostics(result);
           if (result.type === "failed")
             console.error(
               `SSH failed: ${result.failure_reason}; effects=${result.effects}. ${result.effects === "unknown" ? "The command may have run. Do not automatically retry." : "Check SSH access and host configuration before retrying."}`,

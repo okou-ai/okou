@@ -39,6 +39,8 @@ struct Idle {
 }
 
 struct Transport {
+    source_trace: crate::diagnostics::trace::Trace,
+    diagnostic_setup: Option<crate::diagnostics::trace::Snapshot>,
     connection: Uuid,
     credential: Arc<PreparedCredential>,
     access: Access,
@@ -165,12 +167,22 @@ impl Pool {
         scope: &Scope,
         observation: &mut Attempt,
     ) -> Result<Lease, FailureReason> {
+        use crate::diagnostics::trace::Route;
+        observation
+            .trace
+            .route(match &request.credential.transport {
+                super::authority::Transport::Direct => Route::Direct,
+                super::authority::Transport::CloudflareAccess(_) => Route::CloudflareAccess,
+                super::authority::Transport::Tailscale(_) => Route::Tailscale,
+            });
         observation.native = request.access.native_source();
+        observation.trace.prepared();
         observation.created_at = Some(request.credential.created_at);
         scope.check()?;
         request.access.check()?;
         self.prune();
         let generation = generation(&request.credential)?;
+        observation.diagnostic_generation = Some(generation);
         let found = {
             let mut idle = self.idle.lock().unwrap_or_else(|p| p.into_inner());
             // A fresh authoritative generation cannot reuse an older idle snapshot.
@@ -194,6 +206,8 @@ impl Pool {
                 retire_on_drop: true,
             };
             let transport = &lease.transport;
+            observation.trace.reuse(transport.diagnostic_setup.as_ref());
+            observation.carrier_trace = Some(transport.source_trace.clone());
             transport.current()?;
             transport.host_lease.activate(request.operation)?;
             transport.idle_deadline.send_replace(None);
@@ -251,6 +265,8 @@ impl Pool {
         }?;
         let (idle_deadline, _) = watch::channel(None);
         let transport = Arc::new(Transport {
+            source_trace: observation.trace.clone(),
+            diagnostic_setup: observation.trace.snapshot(),
             connection: request.connection,
             credential: request.credential,
             access: request.access,

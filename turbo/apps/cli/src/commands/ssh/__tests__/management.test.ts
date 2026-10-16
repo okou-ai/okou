@@ -179,6 +179,9 @@ describe("okou ssh management", () => {
     server.use(
       http.get(`${base}/api/ssh/hosts`, () => {
         return HttpResponse.json({
+          identities: [
+            { id, createdAt: "2026-09-01T00:00:00.123456Z", generation: 1 },
+          ],
           hosts: [
             {
               id,

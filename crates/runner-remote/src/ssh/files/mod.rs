@@ -18,7 +18,8 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 
 use super::{FailureReason, Scope, SshRuntime, io::GuestIo, observation::Attempt, pool, sessions};
-use protocol::{Direction, Effects, Failure, FileFailure, Outcome, Request};
+pub(crate) use protocol::FileFailure;
+use protocol::{Direction, Effects, Failure, Outcome, Request};
 use runner_types::ids::RunId;
 
 pub(super) fn capacity() -> Arc<Semaphore> {
@@ -68,7 +69,7 @@ pub(super) async fn dispatch(runtime: &SshRuntime, sessions: &sessions::Manager,
         ..work.clone()
     };
     let mut outcome = Outcome::new(&request);
-    let mut observation = Attempt::default();
+    let mut observation = Attempt::new(&sessions.registration.diagnostics());
     let permit = Arc::clone(&sessions.file_transfers).try_acquire_owned();
     let result: Result<(), Failure> = async {
         let _permit = permit.map_err(|_| FileFailure::TransferLimit)?;
@@ -108,6 +109,10 @@ pub(super) async fn dispatch(runtime: &SshRuntime, sessions: &sessions::Manager,
                     .lock()
                     .map_err(|_| FailureReason::Protocol)?
                     .generation,
+            );
+            observation.trace.set(
+                crate::diagnostics::trace::Stage::Operation,
+                crate::diagnostics::trace::Progress::Running,
             );
             let mut channel = setup
                 .wait(transport.connected().session.channel_open_session())
@@ -186,16 +191,18 @@ pub(super) async fn dispatch(runtime: &SshRuntime, sessions: &sessions::Manager,
         Some(Failure::Ssh(reason)) => Some(reason),
         _ => None,
     });
-    observation.record(
-        &sessions.registration.diagnostics(),
-        request.connection,
-        crate::diagnostics::Operation::File,
-        None,
-        match outcome.failure_reason {
-            Some(Failure::Ssh(reason)) => Some(reason),
-            _ => None,
-        },
-    );
+    let diagnostic = outcome.failure_reason.and_then(|failure| {
+        observation.record_cause(
+            &sessions.registration.diagnostics(),
+            request.connection,
+            crate::diagnostics::Operation::File,
+            None,
+            match failure {
+                Failure::Ssh(reason) => crate::diagnostics::Cause::Ssh(reason),
+                Failure::File(reason) => crate::diagnostics::Cause::File(reason),
+            },
+        )
+    });
     let terminal = Scope {
         cancelled: CancellationToken::new(),
         deadline: scope
@@ -208,7 +215,12 @@ pub(super) async fn dispatch(runtime: &SshRuntime, sessions: &sessions::Manager,
             if request.direction == Direction::Download {
                 output.send(&Frame::End).await?;
             }
-            let value = serde_json::value::to_raw_value(&outcome).map_err(std::io::Error::other)?;
+            let value = crate::diagnostics::text::result(
+                &outcome,
+                diagnostic.as_ref(),
+                &sessions.registration.diagnostics(),
+            )
+            .map_err(std::io::Error::other)?;
             output
                 .send(&Frame::Control(Response::Result { data: value }))
                 .await?;

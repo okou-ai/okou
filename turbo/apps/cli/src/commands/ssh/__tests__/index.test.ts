@@ -376,6 +376,14 @@ describe("okou ssh command", () => {
     server.use(
       http.get("http://localhost:3000/api/ssh/hosts", () => {
         return HttpResponse.json({
+          identities: [
+            { id, createdAt: "2026-09-01T00:00:00.123456Z", generation: 1 },
+            {
+              id: blockedId,
+              createdAt: "2026-09-01T00:00:00.123456Z",
+              generation: 1,
+            },
+          ],
           hosts: [
             {
               id,
@@ -422,6 +430,14 @@ describe("okou ssh command", () => {
     server.use(
       http.get("http://localhost:3000/api/ssh/hosts", () => {
         return HttpResponse.json({
+          identities: [
+            { id, createdAt: "2026-09-01T00:00:00.123456Z", generation: 1 },
+            {
+              id: blockedId,
+              createdAt: "2026-09-01T00:00:00.123456Z",
+              generation: 1,
+            },
+          ],
           hosts: [
             {
               id,
@@ -463,7 +479,7 @@ describe("okou ssh command", () => {
   it("does not claim an empty Run inventory proves the owner has no hosts", async () => {
     server.use(
       http.get("http://localhost:3000/api/ssh/hosts", () => {
-        return HttpResponse.json({ hosts: [] });
+        return HttpResponse.json({ hosts: [], identities: [] });
       }),
     );
     await sshCommand.parseAsync(["host", "list"], { from: "user" });
@@ -480,6 +496,9 @@ describe("okou ssh command", () => {
     server.use(
       http.get("http://localhost:3000/api/ssh/hosts", () => {
         return HttpResponse.json({
+          identities: [
+            { id, createdAt: "2026-09-01T00:00:00.123456Z", generation: 1 },
+          ],
           hosts: [
             {
               id,

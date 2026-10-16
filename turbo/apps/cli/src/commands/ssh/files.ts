@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { printSshDiagnostics } from "../../lib/ssh-diagnostics";
 import { z } from "zod";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import {
@@ -47,6 +48,7 @@ function guidance(reason: FileReason | null) {
 }
 
 function printResult(result: FileOutcome, json: boolean) {
+  if (!json) printSshDiagnostics(result);
   const next = guidance(result.failure_reason);
   if (json)
     console.log(

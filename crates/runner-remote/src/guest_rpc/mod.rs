@@ -296,10 +296,7 @@ async fn dispatch(
             return;
         }
     };
-    if matches!(
-        request.method.as_str(),
-        "remote.diagnostics.capabilities" | "ssh.diagnose" | "vnc.diagnose"
-    ) {
+    if matches!(request.method.as_str(), "ssh.diagnose" | "vnc.diagnose") {
         diagnostics
             .dispatch(
                 Request {

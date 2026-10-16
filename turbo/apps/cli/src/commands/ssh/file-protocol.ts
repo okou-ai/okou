@@ -1,5 +1,7 @@
 import { z } from "zod";
-import { failureReasonSchema, rpcErrorSchema } from "./rpc";
+import { failureReasonSchema } from "./rpc";
+import { rpcErrorSchema } from "../../lib/runner-rpc";
+import { diagnosticTextSchema } from "../../lib/ssh-diagnostics";
 
 export const FILE_LIMITS = {
   max_file_bytes: 1_073_741_824,
@@ -29,6 +31,7 @@ export type FileReason = z.infer<typeof reasonSchema>;
 export const outcomeSchema = z
   .object({
     type: z.enum(["completed", "failed"]),
+    diagnostic_text: diagnosticTextSchema,
     direction: z.enum(["upload", "download"]),
     ssh_connection_id: z.uuid(),
     bytes: z.number().int().min(0).max(FILE_LIMITS.max_file_bytes),
@@ -167,6 +170,10 @@ export class FileFrames {
       }
       return;
     }
+    this.control(payload);
+  }
+
+  private control(payload: Buffer) {
     if (payload.length > 24576) throw new FileError("protocol");
     let decoded: unknown;
     try {

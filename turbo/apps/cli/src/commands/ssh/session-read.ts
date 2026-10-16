@@ -22,6 +22,7 @@ type StopReason =
   | "failed";
 
 interface ReadResult {
+  diagnostic_text?: string;
   type: "read";
   session_id: string;
   session: SessionReadPage["session"] | null;
@@ -91,6 +92,8 @@ async function collect(result: ReadResult, signal: AbortSignal) {
       },
       signal,
     );
+    if ("diagnostic_text" in page)
+      result.diagnostic_text = page.diagnostic_text;
     if (page.type === "failed" || page.type === "rpc_error") {
       result.failure = page;
       break;
@@ -195,6 +198,7 @@ async function print(result: ReadResult, json: boolean, signal: AbortSignal) {
       return `Output bytes ${lost.from}–${lost.to} were discarded from the bounded buffer.`;
     }),
   ];
+  if (result.diagnostic_text) metadata.push(result.diagnostic_text);
   if (result.session?.state.type === "finished")
     metadata.push(`Remote exit: ${JSON.stringify(result.session.state.exit)}.`);
   if (result.session?.state.type === "failed")

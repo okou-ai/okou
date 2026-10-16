@@ -220,6 +220,17 @@ impl Drop for Registration {
 }
 
 impl Access {
+    pub(crate) fn diagnostic_identity(&self) -> crate::diagnostics::Identity {
+        self.entry
+            .value
+            .get()
+            .map(|credential| crate::diagnostics::Identity {
+                created_at: Some(credential.created_at),
+                generation: credential.trust.lock().ok().map(|trust| trust.generation),
+                session: None,
+            })
+            .unwrap_or_default()
+    }
     pub(crate) fn native_source(&self) -> Option<crate::diagnostics::NativeSource> {
         if !self.registration.native.diagnostics.enabled() {
             return None;

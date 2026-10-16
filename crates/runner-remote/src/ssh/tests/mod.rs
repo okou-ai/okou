@@ -1,5 +1,6 @@
 mod access;
 mod admission;
+mod automatic_diagnostics;
 mod cache;
 mod credentials;
 mod diagnostics;

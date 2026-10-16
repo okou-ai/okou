@@ -4,20 +4,12 @@ use super::{
     terminal,
 };
 use crate::test_fixtures::remote_inventory;
+use crate::test_fixtures::{diagnostic_attempt, diagnostic_text};
 use serde_json::{Value, json};
 
 #[tokio::test]
-async fn disabled_owner_advertises_no_passive_support_without_affecting_legacy_methods() {
+async fn disabled_history_preserves_ordinary_ssh_behavior() {
     let mut h = Harness::new(Reply::default()).await;
-    let capabilities = h
-        .raw(
-            json!({"version":1,"method":"remote.diagnostics.capabilities","params":{}}).to_string(),
-        )
-        .await;
-    assert_eq!(
-        terminal(&capabilities),
-        &json!({"schema_version":1,"passive_query":false,"active_check":false})
-    );
     assert_eq!(query(&h, json!({})).await["status"], "unavailable");
     let _resolve = h.resolve(h.credential(true)).await;
     assert_eq!(terminal(&h.request(params()).await)["type"], "finished");
@@ -54,22 +46,19 @@ async fn ssh_history_survives_failed_connection_cleanup_and_later_success_withou
     );
     let first = query(&h, json!({})).await;
     assert_eq!(first["status"], "found");
-    assert_eq!(
-        first["report"]["cause"],
-        json!({"source":"ssh","code":"unavailable"})
-    );
+    assert!(diagnostic_text(&first).starts_with("Failure: SSH unavailable during exec."));
     bad.assert_calls_async(1).await;
     bad.delete_async().await;
     let good = h.resolve(h.credential(true)).await;
     assert_eq!(terminal(&h.request(params()).await)["type"], "finished");
     h.expire_idle().await;
     let last = query(&h, json!({})).await;
-    assert_eq!(last["report"]["attempt_id"], first["report"]["attempt_id"]);
-    let exact = query(&h, json!({"attemptId":first["report"]["attempt_id"]})).await;
-    assert_eq!(exact["report"]["connection_id"], CONNECTION);
+    assert_eq!(diagnostic_attempt(&last), diagnostic_attempt(&first));
+    let exact = query(&h, json!({"attemptId":diagnostic_attempt(&first)})).await;
+    assert!(diagnostic_text(&exact).contains(&format!("Connection: {CONNECTION}\n")));
     let missing = query(&h, json!({"sessionId":uuid::Uuid::new_v4()})).await;
     assert_eq!(missing["status"], "not_retained");
-    assert!(missing["report"].is_null());
+    assert!(!diagnostic_text(&missing).contains(CONNECTION));
     good.assert_calls_async(1).await;
     inventory.assert_calls_async(4).await;
     assert!(!last.to_string().contains("inventory-host-canary"));
@@ -114,7 +103,7 @@ async fn closing_running_ssh_session_preserves_the_previous_operational_failure(
     );
     let retained = query(&h, json!({})).await;
     assert_eq!(retained["status"], "found");
-    assert_eq!(retained["report"], original["report"]);
+    assert_eq!(diagnostic_text(&retained), diagnostic_text(&original));
     resolve.assert_calls_async(1).await;
     h.shutdown().await;
 }
@@ -135,7 +124,7 @@ async fn revoked_host_hides_old_evidence_and_new_run_does_not_inherit_it() {
         .await;
     let denied = query(&h, json!({})).await;
     assert_eq!(denied["status"], "authority_unavailable");
-    assert!(denied["report"].is_null());
+    assert!(!diagnostic_text(&denied).contains(CONNECTION));
     revoked.delete_async().await;
     let _allowed = h
         .api
@@ -183,10 +172,13 @@ async fn retained_ssh_process_failure_remains_after_authority_prunes_its_session
     h.ssh().prune();
     let last = query(&h, json!({"sessionId":session})).await;
     assert_eq!(last["status"], "found");
-    assert_eq!(last["report"]["session_id"], session);
-    assert_eq!(last["report"]["cause"]["code"], "configuration_changed");
-    assert_eq!(last["report"]["configuration_generation"], 7);
-    assert!(last["report"]["configuration_created_at"].is_string());
+    assert!(diagnostic_text(&last).contains(&format!("Session: {}\n", session.as_str().unwrap())));
+    assert!(
+        diagnostic_text(&last).starts_with("Failure: SSH configuration changed during session.")
+    );
+    assert!(diagnostic_text(&last).contains(&format!(
+        "Configuration: created at {CREATED_AT}; generation 7."
+    )));
     h.shutdown().await;
 }
 
@@ -254,14 +246,7 @@ async fn vnc_history_preserves_ssh_host_key_failure_before_business_conversion()
         .await;
     let report = terminal(&history);
     assert_eq!(report["status"], "found");
-    assert_eq!(
-        report["report"]["dependencies"][0]["cause"],
-        json!({"source":"ssh","code":"host_key_mismatch"})
-    );
-    assert_eq!(
-        report["report"]["dependencies"][0]["connection_id"],
-        CONNECTION
-    );
+    assert!(diagnostic_text(report).contains(&format!("- Dependency (ssh): {CONNECTION}; cause: SSH host key mismatch; configuration created at {CREATED_AT}; generation 7.")));
     assert!(!report.to_string().contains("password-canary"));
     assert!(!report.to_string().contains("user-canary"));
     resolve.assert_calls_async(1).await;
