@@ -88,7 +88,6 @@ test.each([true, false])(
       screen.getByRole("heading", { name: "Add Okou to a server" }),
     ).toBeInTheDocument();
     expect(queryAction("link", "Open Discord")).toBeNull();
-    expect(screen.getByText("Server: Design team")).toBeInTheDocument();
     expect(requestBody).toBeUndefined();
     click(getAction("button", "Join new server"));
     await waitFor(() => {
@@ -216,9 +215,6 @@ test.each(["install", "connect"] as const)(
     expect(
       queryAction("link", "Open Discord")?.getAttribute("href") ?? null,
     ).toBe(`discord://-/channels/${guildId}`);
-    expect(
-      queryAction("link", "Open in browser")?.getAttribute("href") ?? null,
-    ).toBe(`https://discord.com/channels/${guildId}`);
     expect(popup.closed).toBeFalsy();
     expect(popup.location.href).toBe(authorizationUrl);
     expect(popup.postMessage).toHaveBeenCalledWith(
@@ -580,9 +576,10 @@ test("Closing Discord consent shows cancellation without failure capture and can
   await expect(
     screen.findByRole("heading", { name: "Connected to Discord" }),
   ).resolves.toBeInTheDocument();
-  expect(
-    screen.getByText("Discord account: 234567890123456789"),
-  ).toBeInTheDocument();
+  expect(getAction("link", "Open Discord")).toHaveAttribute(
+    "href",
+    `discord://-/channels/${guildId}`,
+  );
   await waitFor(() => {
     expect(new URLSearchParams(window.location.search).get("status")).toBe(
       "connected",

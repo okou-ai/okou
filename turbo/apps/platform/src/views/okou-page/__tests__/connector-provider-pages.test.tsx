@@ -438,9 +438,11 @@ test.each(["/telegram/connect", "/settings/telegram"])(
     await expect(
       screen.findByText("Connected to Telegram!"),
     ).resolves.toBeInTheDocument();
-    expect(screen.getByText("Connected as @alice.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Send the bot a message in Telegram to start chatting."),
+    ).toBeInTheDocument();
     expect(getAction("link", "Open Telegram")).toBeInTheDocument();
-    expect(getAction("link", "Back to integrations")).toHaveAttribute(
+    expect(getAction("link", "Back to settings")).toHaveAttribute(
       "href",
       "/works",
     );

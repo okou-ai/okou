@@ -361,7 +361,10 @@ test.each(["/telegram/connect", "/settings/telegram"])(
         "We couldn't verify Telegram login for this app. Try again, or contact support if the problem continues.",
       ),
     ).toBeInTheDocument();
-    expect(getAction("link", "Back to integrations")).toBeInTheDocument();
+    expect(getAction("link", "Back to settings")).toHaveAttribute(
+      "href",
+      "/works",
+    );
     expect(queryAction("button", "Continue with Telegram")).toBeNull();
   },
 );
