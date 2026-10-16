@@ -62,10 +62,7 @@ class DiagnosticReader implements RunnerRpcResponseReader<Query | Unavailable> {
       this.rpcError = true;
       this.terminal = {
         status: "unavailable",
-        reason:
-          parsed.data.code === "unknown_method"
-            ? "unsupported"
-            : "helper_unavailable",
+        reason: parsed.data.code,
         message:
           "Diagnostic history is unavailable from this Runner helper. Current connectivity has not been checked.",
       };

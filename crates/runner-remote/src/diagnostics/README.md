@@ -41,9 +41,10 @@ an unrelated incident. `authority_unavailable` discloses no retained details.
 Queries perform no target login, capture, input, command replay or provisioning.
 
 History requires current read capability and Run/chat/host visibility. Nested
-SSH evidence requires dependency visibility too. The owner requests
-`diagnostics=1` from existing metadata inventories. Known creation identities
-must match with PostgreSQL microsecond precision; later generations on the
+SSH evidence requires dependency visibility too. Existing metadata inventories
+always return the current authorized hosts and their required identities.
+Known creation identities must match with PostgreSQL microsecond precision;
+later generations on the
 same creation instance can still read history. Missing identity projection
 fails closed. Generic pre-resolve failures remain unbound and contain no
 private configuration or native source evidence.

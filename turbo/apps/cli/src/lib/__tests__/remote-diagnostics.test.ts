@@ -166,12 +166,12 @@ it.each(["no_failure", "not_retained", "authority_unavailable", "unavailable"])(
     expect(process.exitCode).toBe(status === "no_failure" ? 0 : 1);
   },
 );
-it("reports an unsupported owner without trying business methods", async () => {
+it("reports an RPC rejection without trying business methods", async () => {
   helper.replies.push({
     raw:
       JSON.stringify({
         type: "error",
-        code: "unknown_method",
+        code: "invalid_request",
         delivery: "not_dispatched",
       }) + "\n",
     code: 1,
@@ -179,7 +179,7 @@ it("reports an unsupported owner without trying business methods", async () => {
   await invoke("vnc", "--json");
   expect(result()).toMatchObject({
     status: "unavailable",
-    reason: "unsupported",
+    reason: "invalid_request",
   });
   expect(spawn).toHaveBeenCalledTimes(1);
 });

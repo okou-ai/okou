@@ -8,14 +8,11 @@ import { vncErrorResponse } from "../../lib/vnc-error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
-import { queryOf } from "../context/request";
 import { clerk$ } from "../external/clerk";
 import type { RouteEntry } from "../route-entry";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import { listRunVncHosts$ } from "../services/vnc-access.service";
 import { hasCurrentVncMembership } from "../services/vnc-owner-lifecycle.service";
-
-const inventoryQuery$ = queryOf(vncHostsContract.list);
 
 const unavailable = Object.freeze(
   vncErrorResponse(
@@ -58,17 +55,7 @@ const listHosts$ = command(async ({ get, set }, signal: AbortSignal) => {
   return result
     ? {
         status: 200 as const,
-        body: {
-          hosts: result.hosts,
-          ...(get(inventoryQuery$)?.diagnostics === "1"
-            ? {
-                diagnostics: {
-                  version: 1 as const,
-                  identities: result.identities,
-                },
-              }
-            : {}),
-        },
+        body: result,
       }
     : unavailable;
 });

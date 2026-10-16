@@ -17,11 +17,6 @@ pub(crate) struct Authority {
 #[derive(Deserialize)]
 struct Inventory {
     hosts: Vec<Host>,
-    diagnostics: InventoryDiagnostics,
-}
-#[derive(Deserialize)]
-struct InventoryDiagnostics {
-    version: u8,
     identities: Vec<HostIdentity>,
 }
 #[derive(Deserialize)]
@@ -55,7 +50,6 @@ impl Authority {
             let mut response = self
                 .http
                 .request_route(route, &self.token)
-                .query(&[("diagnostics", "1")])
                 .send("remote_diagnostics_authority")
                 .await
                 .map_err(|_| ())?;
@@ -83,10 +77,9 @@ impl Authority {
                 .into_iter()
                 .map(|host| host.id)
                 .collect::<std::collections::HashSet<_>>();
-            if inventory.diagnostics.version != 1
-                || count != visible.len()
-                || count != inventory.diagnostics.identities.len()
-                || inventory.diagnostics.identities.iter().any(|host| {
+            if count != visible.len()
+                || count != inventory.identities.len()
+                || inventory.identities.iter().any(|host| {
                     !visible.remove(&host.id)
                         || host.generation <= 0
                         || host.generation > i64::from(i32::MAX)
@@ -94,7 +87,7 @@ impl Authority {
             {
                 return Err(());
             }
-            Ok(inventory.diagnostics.identities)
+            Ok(inventory.identities)
         };
         tokio::time::timeout(Duration::from_secs(5), work)
             .await
@@ -314,7 +307,6 @@ mod tests {
             .mock_async(|when, then| {
                 when.method("GET")
                     .path("/api/vnc/hosts")
-                    .query_param("diagnostics", "1")
                     .header("authorization", "Bearer agent-token-canary");
                 then.status(200)
                     .json_body(remote_inventory(&[(&vnc.to_string(), 7)], CREATED_AT));
@@ -386,7 +378,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn creation_precision_and_old_identity_writers_fail_closed() {
+    async fn creation_precision_and_missing_identity_fail_closed() {
         let api = MockServer::start_async().await;
         let authority = Authority::new(
             http_client(HttpClientConfig {
@@ -415,9 +407,7 @@ mod tests {
         for created_at in ["2026-09-01T00:00:00.123457Z", CREATED_AT] {
             let inventory = api
                 .mock_async(|when, then| {
-                    when.method("GET")
-                        .path("/api/ssh/hosts")
-                        .query_param("diagnostics", "1");
+                    when.method("GET").path("/api/ssh/hosts");
                     then.status(200)
                         .json_body(remote_inventory(&[(&host.to_string(), 99)], created_at));
                 })
@@ -438,7 +428,7 @@ mod tests {
             );
             inventory.delete_async().await;
         }
-        let old = api
+        let missing_identity = api
             .mock_async(|when, then| {
                 when.method("GET").path("/api/ssh/hosts");
                 then.status(200)
@@ -453,6 +443,6 @@ mod tests {
             serde_json::to_value(&unavailable).unwrap()["status"],
             "authority_unavailable"
         );
-        old.assert_calls_async(1).await;
+        missing_identity.assert_calls_async(1).await;
     }
 }

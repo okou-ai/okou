@@ -143,6 +143,7 @@ describe("live chat VNC Run inventory", () => {
       }),
       [200],
     );
+    const decryptsBeforeInventory = kms.decryptCalls;
     const result = await accept(
       inventory().list({ headers: claimed.agentHeaders(f) }),
       [200],
@@ -157,27 +158,11 @@ describe("live chat VNC Run inventory", () => {
     });
     expect(JSON.stringify(result.body)).not.toContain(privateKey);
     expect(JSON.stringify(result.body)).not.toContain("certificateChain");
-    expect(result.body).not.toHaveProperty("diagnostics");
-    const decryptsBeforeQuery = kms.decryptCalls;
-    const diagnostic = await accept(
-      inventory().list({
-        headers: claimed.agentHeaders(f),
-        query: { diagnostics: "1" },
-      }),
-      [200],
-    );
-    expect(diagnostic.body.diagnostics).toMatchObject({
-      version: 1,
-      identities: [
-        { id: created.body.id, generation: created.body.generation },
-      ],
-    });
-    expect(diagnostic.body.diagnostics?.identities[0]?.createdAt).toMatch(
-      /\.\d{6}Z$/,
-    );
-    expect(JSON.stringify(diagnostic.body)).not.toContain(privateKey);
-    expect(JSON.stringify(diagnostic.body)).not.toContain("certificateChain");
-    expect(kms.decryptCalls).toBe(decryptsBeforeQuery);
+    expect(result.body.identities).toMatchObject([
+      { id: created.body.id, generation: created.body.generation },
+    ]);
+    expect(result.body.identities[0]?.createdAt).toMatch(/\.\d{6}Z$/);
+    expect(kms.decryptCalls).toBe(decryptsBeforeInventory);
   });
 
   it("lists the owner-selected QEMU SCRAM pair without exposing its password", async () => {
@@ -215,7 +200,7 @@ describe("live chat VNC Run inventory", () => {
           [200],
         )
       ).body,
-    ).toStrictEqual({ hosts: [] });
+    ).toStrictEqual({ hosts: [], identities: [] });
     await accept(
       setupApp({ context, routes: chatRemoteAccessRoutes })(
         chatRemoteAccessContract,
@@ -348,7 +333,7 @@ describe("live chat VNC Run inventory", () => {
           [200],
         )
       ).body,
-    ).toStrictEqual({ hosts: [] });
+    ).toStrictEqual({ hosts: [], identities: [] });
     await accept(
       api.connections().delete({
         headers,
@@ -365,7 +350,7 @@ describe("live chat VNC Run inventory", () => {
           [200],
         )
       ).body,
-    ).toStrictEqual({ hosts: [] });
+    ).toStrictEqual({ hosts: [], identities: [] });
   });
 
   it("commits concurrent first hosts without implicit chat access", async () => {
@@ -386,7 +371,7 @@ describe("live chat VNC Run inventory", () => {
           [200],
         )
       ).body,
-    ).toStrictEqual({ hosts: [] });
+    ).toStrictEqual({ hosts: [], identities: [] });
   });
 
   it("lists a chat-enabled host for an Agent without decrypting credentials", async () => {
@@ -435,7 +420,7 @@ describe("live chat VNC Run inventory", () => {
           [200],
         )
       ).body,
-    ).toStrictEqual({ hosts: [] });
+    ).toStrictEqual({ hosts: [], identities: [] });
     const bdd = createBddApi(context);
     const laterAgent = await bdd.createAgent(bdd.user(current), {
       displayName: "Later VNC Agent",
@@ -453,7 +438,7 @@ describe("live chat VNC Run inventory", () => {
           [200],
         )
       ).body,
-    ).toStrictEqual({ hosts: [] });
+    ).toStrictEqual({ hosts: [], identities: [] });
   });
 
   it("requires both VNC and SSH chat host permissions for SSH-backed inventory rows", async () => {
@@ -586,7 +571,7 @@ describe("live chat VNC Run inventory", () => {
           [200],
         )
       ).body,
-    ).toStrictEqual({ hosts: [] });
+    ).toStrictEqual({ hosts: [], identities: [] });
   });
 
   it("returns both exact supported pairs without decrypting credentials", async () => {
@@ -713,7 +698,7 @@ describe("live chat VNC Run inventory", () => {
           [200],
         )
       ).body,
-    ).toStrictEqual({ hosts: [] });
+    ).toStrictEqual({ hosts: [], identities: [] });
     const host = await accept(
       api.connections().create({
         headers,
