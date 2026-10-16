@@ -12,6 +12,26 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1033.0](https://github.com/okou-ai/okou/compare/app-v0.1032.0...app-v0.1033.0) (2026-10-16)
+
+
+### Features
+
+* **app:** move sandbox files to debug activity details ([#40544](https://github.com/okou-ai/okou/issues/40544)) ([8a386e7](https://github.com/okou-ai/okou/commit/8a386e7d16d3659f76b9959a0fee5c4c3d0c3a6e))
+
+
+### Bug Fixes
+
+* **discord:** treat unapproved consent closure as cancellation ([#40560](https://github.com/okou-ai/okou/issues/40560)) ([4b00906](https://github.com/okou-ai/okou/commit/4b00906ac0919137d41e0acc89cc636a6fee98e8)) [#40196](https://github.com/okou-ai/okou/issues/40196)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.571.0
+    * @okouai/core bumped to 8.764.0
+
 ## [0.1032.0](https://github.com/okou-ai/okou/compare/app-v0.1031.3...app-v0.1032.0) (2026-10-16)
 
 

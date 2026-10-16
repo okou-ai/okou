@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.107.7](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.6...guest-agent-v0.107.7) (2026-10-16)
+
+
+### Refactoring
+
+* **ci:** decouple api from cli package publication ([#40530](https://github.com/okou-ai/okou/issues/40530)) ([47a09bd](https://github.com/okou-ai/okou/commit/47a09bdbceef594fc874636b73c6b0446153677c))
+
 ## [0.107.6](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.5...guest-agent-v0.107.6) (2026-10-16)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.11](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.16.10...runner-supervisor-v0.16.11) (2026-10-16)
+
+
+### Refactoring
+
+* **runner-supervisor:** own speculative claim observation ([#40566](https://github.com/okou-ai/okou/issues/40566)) ([17fb160](https://github.com/okou-ai/okou/commit/17fb160970a50133dc45963151d4369d05ff56b3))
+
 ## [0.16.10](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.16.9...runner-supervisor-v0.16.10) (2026-10-16)
 
 
