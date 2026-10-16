@@ -36,7 +36,7 @@ fetch() {
   fi
   if [[ ! -f "$file" ]]; then
     curl --fail --silent --show-error --location --proto '=https' --max-time 120 \
-      --retry 3 --retry-delay 2 --retry-max-time 60 "$url" -o "$file.part"
+      --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 60 "$url" -o "$file.part"
     printf '%s  %s\n' "$sha" "$file.part" | sha256sum --check --status
     mv -- "$file.part" "$file"
   fi
