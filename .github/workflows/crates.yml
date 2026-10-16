@@ -1344,7 +1344,7 @@ jobs:
 
   # Compilation only needs the selected target; overlap it with image preparation.
   host-cpu-fairness-build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-8-cores
     container:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     needs:
@@ -1373,10 +1373,27 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
+      - name: Resolve compiler cache architecture
+        id: cache-target
+        run: |
+          source .github/scripts/runner/runner-image-target.sh
+          architecture=$(runner_image_sccache_architecture "$TARGET_TRIPLE")
+          echo "architecture=$architecture" >> "$GITHUB_OUTPUT"
+
+      - name: Setup R2 sccache
+        id: sccache
+        uses: ./.github/actions/setup-r2-sccache
+        with:
+          architecture: ${{ steps.cache-target.outputs.architecture }}
+          r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          r2-account-id: ${{ vars.R2_ACCOUNT_ID }}
+          r2-bucket-name: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: crates -> target
-          shared-key: ${{ needs.runner-host-groups.outputs.selected-target }}-host-cpu-fairness
+          shared-key: ${{ needs.runner-host-groups.outputs.selected-target }}-host-cpu-fairness-ci
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Configure pinned Kerberos cache
@@ -1404,6 +1421,10 @@ jobs:
           R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
           R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
         run: bash .github/scripts/runner/runner-native-test-artifact.sh publish
+
+      - name: Report sccache statistics
+        if: always() && steps.sccache.outputs.started == 'true'
+        run: .github/scripts/report-sccache-stats.sh
 
       - name: Report peak memory
         if: always()
