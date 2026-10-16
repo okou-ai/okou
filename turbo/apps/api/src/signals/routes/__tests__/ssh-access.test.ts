@@ -242,24 +242,18 @@ describe("live chat SSH Run inventory", () => {
     await expect(listIds()).resolves.toStrictEqual([]);
   });
 
-  it("returns opt-in creation identities from the same visible inventory and distinguishes recreated IDs", async () => {
+  it("returns creation identities from the same visible inventory and distinguishes recreated IDs", async () => {
     const f = await publicInventoryRun();
     const first = await createHost();
     await enableChatDefault(first.body.id);
-    const ordinary = await accept(
+    const diagnostic = await accept(
       inventory().list({ headers: f.token() }),
       [200],
     );
-    expect(ordinary.body).not.toHaveProperty("diagnostics");
-    const diagnostic = await accept(
-      inventory().list({ headers: f.token(), query: { diagnostics: "1" } }),
-      [200],
-    );
-    expect(diagnostic.body.diagnostics).toMatchObject({
-      version: 1,
-      identities: [{ id: first.body.id, generation: first.body.generation }],
-    });
-    const originalIdentity = diagnostic.body.diagnostics?.identities[0];
+    expect(diagnostic.body.identities).toMatchObject([
+      { id: first.body.id, generation: first.body.generation },
+    ]);
+    const originalIdentity = diagnostic.body.identities[0];
     expect(originalIdentity?.createdAt).toMatch(/\.\d{6}Z$/);
     expect(JSON.stringify(diagnostic.body)).not.toContain("test-private-key");
     await accept(
@@ -283,19 +277,19 @@ describe("live chat SSH Run inventory", () => {
       [201],
     );
     const hidden = await accept(
-      inventory().list({ headers: f.token(), query: { diagnostics: "1" } }),
+      inventory().list({ headers: f.token() }),
       [200],
     );
-    expect(hidden.body.diagnostics?.identities).toStrictEqual([]);
+    expect(hidden.body.identities).toStrictEqual([]);
     await enableChatDefault(replacement.body.id);
     const recreated = await accept(
-      inventory().list({ headers: f.token(), query: { diagnostics: "1" } }),
+      inventory().list({ headers: f.token() }),
       [200],
     );
-    expect(recreated.body.diagnostics?.identities[0]?.createdAt).not.toBe(
+    expect(recreated.body.identities[0]?.createdAt).not.toBe(
       originalIdentity?.createdAt,
     );
-    expect(recreated.body.diagnostics?.identities[0]?.id).toBe(first.body.id);
+    expect(recreated.body.identities[0]?.id).toBe(first.body.id);
   });
 
   async function createAgent(visibility: "public" | "private") {
@@ -352,7 +346,7 @@ describe("live chat SSH Run inventory", () => {
     ]);
     expect(
       (await accept(inventory().list({ headers: f.token() }), [200])).body,
-    ).toStrictEqual({ hosts: [] });
+    ).toStrictEqual({ hosts: [], identities: [] });
     await accept(
       config().delete({
         headers,
@@ -364,7 +358,7 @@ describe("live chat SSH Run inventory", () => {
     await createHost("replacement.example.com");
     expect(
       (await accept(inventory().list({ headers: f.token() }), [200])).body,
-    ).toStrictEqual({ hosts: [] });
+    ).toStrictEqual({ hosts: [], identities: [] });
   });
 
   it("commits concurrent first hosts when best-effort invalidation fails", async () => {

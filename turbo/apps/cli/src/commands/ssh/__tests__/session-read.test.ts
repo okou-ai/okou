@@ -146,6 +146,42 @@ afterEach(() => {
 });
 
 describe("okou ssh session read", () => {
+  it.each(["json", "human"])(
+    "passes retained Runner text through %s output",
+    async (format) => {
+      const message =
+        "Runner retained this session's authentication failure. 认证失败 🧭";
+      helper.replies.push({
+        data: {
+          ...page(0, Buffer.alloc(0), 0),
+          session: {
+            ...session,
+            state: { type: "failed", failure_reason: "authentication_failed" },
+            effects: "not_started",
+          },
+          diagnostic_text: message,
+        },
+      });
+      if (format === "json") {
+        await read("--wait", "0");
+        expect(result()).toMatchObject({
+          diagnostic_text: message,
+          stop_reason: "terminal",
+          failure: null,
+        });
+      } else {
+        await plain("--wait", "0");
+        expect(Buffer.concat(stderr).toString()).toContain(message);
+      }
+      expect(requests()).toHaveLength(1);
+      expect(requests()[0]).toMatchObject({
+        method: "ssh.session.read",
+        params: { sessionId: id },
+      });
+      expect(process.exitCode).toBe(0);
+    },
+  );
+
   it("waits once by default and treats quiet wait expiry as successful observation", async () => {
     helper.replies.push({
       data: { ...page(0, Buffer.alloc(0), 0), wait_expired: true },

@@ -23,6 +23,14 @@ const plainHost = {
   authMethod: "username_password",
   securityType: "x509_plain",
 };
+function inventory<T extends { id: string }>(hosts: T[]) {
+  return {
+    hosts,
+    identities: hosts.map(({ id }) => {
+      return { id, createdAt: "2026-09-01T00:00:00.123456Z", generation: 1 };
+    }),
+  };
+}
 const output = vi.spyOn(console, "log").mockImplementation(() => {});
 const errors = vi.spyOn(console, "error").mockImplementation(() => {});
 vi.spyOn(process, "exit").mockImplementation((): never => {
@@ -64,7 +72,7 @@ describe("okou vnc host list", () => {
     server.use(
       http.get("http://localhost:3000/api/vnc/hosts", ({ request }) => {
         authorization = request.headers.get("authorization");
-        return HttpResponse.json({ hosts: [host] });
+        return HttpResponse.json(inventory([host]));
       }),
     );
 
@@ -81,7 +89,7 @@ describe("okou vnc host list", () => {
   it("prints host identity and the explicit session-mode next step", async () => {
     server.use(
       http.get("http://localhost:3000/api/vnc/hosts", () => {
-        return HttpResponse.json({ hosts: [host] });
+        return HttpResponse.json(inventory([host]));
       }),
     );
 
@@ -101,7 +109,7 @@ describe("okou vnc host list", () => {
   it("prints the exact X509Plain authentication and security pair", async () => {
     server.use(
       http.get("http://localhost:3000/api/vnc/hosts", () => {
-        return HttpResponse.json({ hosts: [plainHost] });
+        return HttpResponse.json(inventory([plainHost]));
       }),
     );
 
@@ -121,7 +129,7 @@ describe("okou vnc host list", () => {
     };
     server.use(
       http.get("http://localhost:3000/api/vnc/hosts", () => {
-        return HttpResponse.json({ hosts: [host, blocked] });
+        return HttpResponse.json(inventory([host, blocked]));
       }),
     );
     await invoke("--json");
@@ -141,7 +149,7 @@ describe("okou vnc host list", () => {
   it("explains an authorized empty inventory without inventing a host", async () => {
     server.use(
       http.get("http://localhost:3000/api/vnc/hosts", () => {
-        return HttpResponse.json({ hosts: [] });
+        return HttpResponse.json(inventory([]));
       }),
     );
 
@@ -233,6 +241,7 @@ describe("okou vnc host list", () => {
       "cross-paired inventory",
       () => {
         return HttpResponse.json({
+          identities: inventory([host]).identities,
           hosts: [{ ...host, authMethod: "username_password" }],
         });
       },
@@ -241,6 +250,7 @@ describe("okou vnc host list", () => {
       "missing availability",
       () => {
         return HttpResponse.json({
+          identities: inventory([host]).identities,
           hosts: [{ ...host, availability: undefined }],
         });
       },
@@ -249,6 +259,7 @@ describe("okou vnc host list", () => {
       "unknown blocked reason",
       () => {
         return HttpResponse.json({
+          identities: inventory([host]).identities,
           hosts: [
             {
               ...host,
@@ -297,7 +308,7 @@ describe("okou vnc host list", () => {
       server.use(
         http.get("http://localhost:3000/api/vnc/hosts", () => {
           requests++;
-          return HttpResponse.json({ hosts: [host] });
+          return HttpResponse.json(inventory([host]));
         }),
       );
 

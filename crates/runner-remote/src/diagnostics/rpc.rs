@@ -17,11 +17,6 @@ pub(crate) struct Authority {
 #[derive(Deserialize)]
 struct Inventory {
     hosts: Vec<Host>,
-    diagnostics: InventoryDiagnostics,
-}
-#[derive(Deserialize)]
-struct InventoryDiagnostics {
-    version: u8,
     identities: Vec<HostIdentity>,
 }
 #[derive(Deserialize)]
@@ -55,7 +50,6 @@ impl Authority {
             let mut response = self
                 .http
                 .request_route(route, &self.token)
-                .query(&[("diagnostics", "1")])
                 .send("remote_diagnostics_authority")
                 .await
                 .map_err(|_| ())?;
@@ -83,10 +77,9 @@ impl Authority {
                 .into_iter()
                 .map(|host| host.id)
                 .collect::<std::collections::HashSet<_>>();
-            if inventory.diagnostics.version != 1
-                || count != visible.len()
-                || count != inventory.diagnostics.identities.len()
-                || inventory.diagnostics.identities.iter().any(|host| {
+            if count != visible.len()
+                || count != inventory.identities.len()
+                || inventory.identities.iter().any(|host| {
                     !visible.remove(&host.id)
                         || host.generation <= 0
                         || host.generation > i64::from(i32::MAX)
@@ -94,7 +87,7 @@ impl Authority {
             {
                 return Err(());
             }
-            Ok(inventory.diagnostics.identities)
+            Ok(inventory.identities)
         };
         tokio::time::timeout(Duration::from_secs(5), work)
             .await
@@ -132,6 +125,8 @@ fn unbound(cause: super::Cause) -> bool {
                 | V::TimedOut
                 | V::InvalidInput
                 | V::UnsupportedProfile
+        ) | super::Cause::File(
+            crate::ssh::FileFailure::TransferLimit | crate::ssh::FileFailure::FileTooLarge
         )
     )
 }
@@ -148,16 +143,8 @@ enum Status {
 
 #[derive(Serialize)]
 struct Query {
-    schema_version: u8,
     status: Status,
-    report: Option<super::Report>,
-    retention: Retention,
-}
-#[derive(Serialize)]
-struct Retention {
-    capacity: usize,
-    evicted: u64,
-    latest_failure_pinned: bool,
+    message: String,
 }
 
 impl Handle {
@@ -168,14 +155,8 @@ impl Handle {
         authority: Option<&Authority>,
     ) -> Query {
         let mut query = Query {
-            schema_version: 1,
             status: Status::Unavailable,
-            report: None,
-            retention: Retention {
-                capacity: super::CAPACITY,
-                evicted: 0,
-                latest_failure_pinned: true,
-            },
+            message: "Diagnostics are unavailable or disabled for this Run. Current connectivity has not been checked.".into(),
         };
         if !self.enabled() || !self.current() {
             return query;
@@ -184,6 +165,7 @@ impl Handle {
             return query;
         };
         query.status = Status::AuthorityUnavailable;
+        query.message = "Diagnostic history is unavailable under current Run, host or dependency read authority. Check permissions and API availability. Current connectivity has not been checked.".into();
         let Ok(hosts) = authority.hosts(protocol).await else {
             return query;
         };
@@ -225,6 +207,8 @@ impl Handle {
         }
         if !self.current() {
             query.status = Status::Unavailable;
+            query.message =
+                "The Run assignment changed; historical diagnostics are unavailable.".into();
             return query;
         }
         query.status = if report.is_some() {
@@ -237,13 +221,15 @@ impl Handle {
         } else {
             Status::NoFailure
         };
-        query.report = report;
-        query.retention.evicted = self
-            .store
-            .state
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .evicted;
+        let message = report.as_ref().and_then(super::Report::message);
+        if report.is_some() && message.is_none() {
+            query.status = Status::Unavailable;
+        }
+        query.message = message.unwrap_or_else(|| match query.status {
+            Status::NoFailure => "No operational failure was recorded in this Run. Current connectivity has not been checked.".into(),
+            Status::NotRetained => "No matching failure is retained in this Run's bounded history (64 detailed reports, latest failures pinned). Current connectivity has not been checked.".into(),
+            _ => "Diagnostic detail is unavailable. Current connectivity has not been checked.".into(),
+        });
         query
     }
 
@@ -267,19 +253,7 @@ impl Handle {
             sandbox_cancelled,
             deadline,
         };
-        let data = if request.method == "remote.diagnostics.capabilities" {
-            if serde_json::from_str::<Empty>(request.params.get()).is_err() {
-                scope
-                    .error(input, runner_rpc_proto::ErrorCode::InvalidRequest)
-                    .await;
-                return;
-            }
-            serde_json::value::to_raw_value(&Capabilities {
-                schema_version: 1,
-                passive_query: self.enabled() && self.current(),
-                active_check: false,
-            })
-        } else {
+        let data = {
             let Ok(selector) = serde_json::from_str::<Selector>(request.params.get()) else {
                 scope
                     .error(input, runner_rpc_proto::ErrorCode::InvalidRequest)
@@ -305,16 +279,6 @@ impl Handle {
                 .await;
         }
     }
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Empty {}
-#[derive(Serialize)]
-struct Capabilities {
-    schema_version: u8,
-    passive_query: bool,
-    active_check: bool,
 }
 
 #[cfg(test)]
@@ -343,7 +307,6 @@ mod tests {
             .mock_async(|when, then| {
                 when.method("GET")
                     .path("/api/vnc/hosts")
-                    .query_param("diagnostics", "1")
                     .header("authorization", "Bearer agent-token-canary");
                 then.status(200)
                     .json_body(remote_inventory(&[(&vnc.to_string(), 7)], CREATED_AT));
@@ -356,7 +319,7 @@ mod tests {
             })
             .await;
         let handle = Handle::new(runner_types::ids::RunId::new_v4(), true);
-        handle.record(super::super::Record {
+        let _ = handle.record(super::super::Record {
             protocol: Protocol::Vnc,
             connection: vnc,
             operation: Operation::Start,
@@ -374,6 +337,7 @@ mod tests {
                 configuration_generation: Some(7),
             }),
             native: None,
+            ssh: None,
         });
         let hidden = handle
             .query(Protocol::Vnc, Selector::default(), Some(&authority))
@@ -382,7 +346,7 @@ mod tests {
             serde_json::to_value(&hidden).unwrap()["status"],
             "authority_unavailable"
         );
-        assert!(hidden.report.is_none());
+        assert!(!hidden.message.contains(&ssh.to_string()));
         denied.delete_async().await;
         let allowed = api
             .mock_async(|when, then| {
@@ -398,9 +362,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(result["status"], "found");
-        assert_eq!(
-            result["report"]["dependencies"][0]["cause"]["code"],
-            "host_key_mismatch"
+        assert!(
+            crate::test_fixtures::diagnostic_text(&result).contains(&format!(
+                "- Dependency (ssh): {ssh}; cause: SSH host key mismatch;"
+            ))
         );
         for secret in [
             "inventory-host-canary",
@@ -414,7 +379,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn creation_precision_and_old_identity_writers_fail_closed() {
+    async fn creation_precision_and_missing_identity_fail_closed() {
         let api = MockServer::start_async().await;
         let authority = Authority::new(
             http_client(HttpClientConfig {
@@ -426,7 +391,7 @@ mod tests {
         );
         let host = Uuid::new_v4();
         let handle = Handle::new(runner_types::ids::RunId::new_v4(), true);
-        handle.record(super::super::Record {
+        let _ = handle.record(super::super::Record {
             protocol: Protocol::Ssh,
             connection: host,
             operation: Operation::Exec,
@@ -438,13 +403,12 @@ mod tests {
             cause: Cause::Ssh(crate::ssh::FailureReason::HostKeyMismatch),
             dependency: None,
             native: None,
+            ssh: None,
         });
         for created_at in ["2026-09-01T00:00:00.123457Z", CREATED_AT] {
             let inventory = api
                 .mock_async(|when, then| {
-                    when.method("GET")
-                        .path("/api/ssh/hosts")
-                        .query_param("diagnostics", "1");
+                    when.method("GET").path("/api/ssh/hosts");
                     then.status(200)
                         .json_body(remote_inventory(&[(&host.to_string(), 99)], created_at));
                 })
@@ -465,7 +429,7 @@ mod tests {
             );
             inventory.delete_async().await;
         }
-        let old = api
+        let missing_identity = api
             .mock_async(|when, then| {
                 when.method("GET").path("/api/ssh/hosts");
                 then.status(200)
@@ -475,11 +439,11 @@ mod tests {
         let unavailable = handle
             .query(Protocol::Ssh, Selector::default(), Some(&authority))
             .await;
-        assert!(unavailable.report.is_none());
+        assert!(!unavailable.message.contains(&host.to_string()));
         assert_eq!(
             serde_json::to_value(&unavailable).unwrap()["status"],
             "authority_unavailable"
         );
-        old.assert_calls_async(1).await;
+        missing_identity.assert_calls_async(1).await;
     }
 }

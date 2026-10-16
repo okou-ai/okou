@@ -23,7 +23,10 @@ pub(super) async fn run(
     start: Start,
     receiver: mpsc::Receiver<Command>,
 ) {
-    let mut observation = Attempt::default();
+    let mut observation = Attempt {
+        trace: entry.trace.clone(),
+        ..Attempt::default()
+    };
     let cancelled = entry.access.cancelled();
     let result = tokio::select! { biased;
         () = cancelled.cancelled() => Err(FailureReason::ConfigurationChanged),
@@ -34,7 +37,7 @@ pub(super) async fn run(
     let failure = result.as_ref().err().copied().filter(|reason| {
         *reason != FailureReason::Cancelled || !entry.scope.cancelled.is_cancelled()
     });
-    observation.record(
+    let diagnostic = observation.record(
         &entry.access.diagnostics(),
         entry.connection,
         crate::diagnostics::Operation::Session,
@@ -43,6 +46,7 @@ pub(super) async fn run(
     );
     {
         let mut data = entry.data.lock().unwrap_or_else(|p| p.into_inner());
+        data.diagnostic = diagnostic;
         data.generation = observation.generation;
         data.state = match result.as_ref() {
             Ok(exit) => {
@@ -129,6 +133,10 @@ async fn execute(
         .lock()
         .unwrap_or_else(|p| p.into_inner())
         .generation = observation.generation;
+    observation.trace.set(
+        crate::diagnostics::trace::Stage::Operation,
+        crate::diagnostics::trace::Progress::Running,
+    );
     let result = scope
         .wait(async {
             let mut channel = setup

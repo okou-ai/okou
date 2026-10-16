@@ -5,6 +5,7 @@ mod authority;
 pub(crate) mod cache;
 mod engine;
 mod files;
+pub(crate) use files::FileFailure;
 mod forwarding;
 mod io;
 mod keys;
@@ -240,6 +241,7 @@ impl SshRuntime {
             }
         };
         let mut output = output::Output::default();
+        output.connection = observation::Attempt::new(&sessions.registration.diagnostics());
         let result = self
             .execute(
                 Arc::clone(&lease),
@@ -255,7 +257,7 @@ impl SshRuntime {
             )
             .await;
         let observation = output.connection.finish(result.as_ref().err().copied());
-        output.connection.record(
+        let diagnostic = output.connection.record(
             &sessions.registration.diagnostics(),
             connection,
             crate::diagnostics::Operation::Exec,
@@ -270,7 +272,12 @@ impl SshRuntime {
             ..scope
         };
         let delivered = terminal_scope
-            .wait(output.finish(&mut writer, outcome))
+            .wait(output.finish(
+                &mut writer,
+                outcome,
+                &sessions.registration.diagnostics(),
+                diagnostic.as_ref(),
+            ))
             .await
             .is_ok_and(|result| result.is_ok());
         tracing::info!(run_id = %run, connection_id = %connection, outcome = output.outcome(), failure_reason = ?output.failure(), elapsed_ms = started.elapsed().as_millis() as u64,
@@ -367,10 +374,25 @@ impl SshRuntime {
         scope: &Scope,
         observation: &mut observation::Attempt,
     ) -> Result<PreparedCredential, FailureReason> {
+        use crate::diagnostics::trace::{Progress, Stage};
+        observation.trace.set(Stage::Authority, Progress::Running);
         let credential = scope
             .wait(self.authority.resolve(run, connection))
-            .await??;
+            .await?
+            .inspect_err(|_| {
+                observation.trace.set(Stage::Authority, Progress::Failed);
+            })?;
+        observation.trace.set(Stage::Authority, Progress::Passed);
         observation.created_at = Some(credential.created_at);
+        observation.diagnostic_generation = Some(credential.generation);
+        observation.trace.route(match &credential.transport {
+            authority::Transport::Direct => crate::diagnostics::trace::Route::Direct,
+            authority::Transport::CloudflareAccess(_) => {
+                crate::diagnostics::trace::Route::CloudflareAccess
+            }
+            authority::Transport::Tailscale(_) => crate::diagnostics::trace::Route::Tailscale,
+        });
+        observation.trace.set(Stage::Credential, Progress::Running);
         let (private_key, passphrase) = match credential.auth {
             CredentialAuth::Tailscale => {
                 if credential.port != 22
@@ -380,6 +402,7 @@ impl SshRuntime {
                 }
                 scope.check()?;
                 observation.generation = Some(credential.generation);
+                observation.trace.set(Stage::Credential, Progress::Passed);
                 return Ok(PreparedCredential {
                     created_at: credential.created_at,
                     host: credential.host,
@@ -400,6 +423,7 @@ impl SshRuntime {
             CredentialAuth::Password(password) => {
                 scope.check()?;
                 observation.generation = Some(credential.generation);
+                observation.trace.set(Stage::Credential, Progress::Passed);
                 return Ok(PreparedCredential {
                     created_at: credential.created_at,
                     host: credential.host,
@@ -448,6 +472,14 @@ impl SshRuntime {
             .await?
             .map_err(|_| FailureReason::InvalidCredential)?;
         observation.generation = Some(generation);
+        observation.trace.set(
+            Stage::Credential,
+            if result.is_ok() {
+                Progress::Passed
+            } else {
+                Progress::Failed
+            },
+        );
         result
     }
 
@@ -459,6 +491,7 @@ impl SshRuntime {
         scope: &Scope,
         observation: &mut observation::Attempt,
     ) -> Result<io::Carrier, FailureReason> {
+        use crate::diagnostics::trace::{Progress, Stage};
         if let authority::Transport::Tailscale(configuration) = &credential.transport {
             let node =
                 access.native_configured(configuration.clone(), |configuration, journal| {
@@ -474,6 +507,7 @@ impl SshRuntime {
                     tailscale::work(configuration, journal)
                 })?;
             observation.native = Some(node.diagnostic_source(configuration.key()));
+            observation.trace.set(Stage::Tcp, Progress::Running);
             let stream = scope
                 .wait(node.dial_retained(
                     &credential.host,
@@ -481,11 +515,15 @@ impl SshRuntime {
                     tailscale::Lease::new(lease),
                 ))
                 .await?
-                .map_err(|failure| match failure {
-                    tailscale::Failure::ResourceExhausted => FailureReason::ResourceExhausted,
-                    tailscale::Failure::Cancelled => FailureReason::Cancelled,
-                    _ => FailureReason::NetworkFailure,
+                .map_err(|failure| {
+                    observation.trace.set(Stage::Tcp, Progress::Failed);
+                    match failure {
+                        tailscale::Failure::ResourceExhausted => FailureReason::ResourceExhausted,
+                        tailscale::Failure::Cancelled => FailureReason::Cancelled,
+                        _ => FailureReason::NetworkFailure,
+                    }
                 })?;
+            observation.trace.set(Stage::Tcp, Progress::Passed);
             access.check()?;
             return Ok(io::Carrier::Native {
                 stream,
@@ -500,19 +538,25 @@ impl SshRuntime {
         let network = Arc::clone(&self.network);
         let host = host.to_owned();
         let resolver_lease = Arc::clone(&lease);
+        let trace = observation.trace.clone();
         let resolver = tokio::spawn(async move {
             let _lease = resolver_lease;
-            network::destination(network, &host, port).await
+            network::destination(network, &host, port, &trace).await
         });
         let address = scope
             .wait(resolver)
             .await?
             .map_err(|_| FailureReason::NetworkFailure)??;
-        scope
+        observation.trace.set(Stage::Tcp, Progress::Running);
+        let stream = scope
             .wait(self.network.connect(address))
             .await?
-            .map_err(|_| FailureReason::NetworkFailure)
-            .map(io::Carrier::Public)
+            .map_err(|_| {
+                observation.trace.set(Stage::Tcp, Progress::Failed);
+                FailureReason::NetworkFailure
+            })?;
+        observation.trace.set(Stage::Tcp, Progress::Passed);
+        Ok(io::Carrier::Public(stream))
     }
 }
 

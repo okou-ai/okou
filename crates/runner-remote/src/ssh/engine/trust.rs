@@ -23,6 +23,7 @@ use super::super::{
 use runner_types::ids::RunId;
 
 pub(in crate::ssh) struct HostTrust {
+    trace: crate::diagnostics::trace::Trace,
     authority: Arc<Authority>,
     run: RunId,
     connection: uuid::Uuid,
@@ -39,8 +40,10 @@ impl HostTrust {
         connection: uuid::Uuid,
         credential: Arc<PreparedCredential>,
         scope: Scope,
+        trace: crate::diagnostics::trace::Trace,
     ) -> Self {
         Self {
+            trace,
             authority,
             run,
             connection,
@@ -139,9 +142,23 @@ impl client::Handler for HostTrust {
         &mut self,
         key: &PublicKeyOrCertificate,
     ) -> Result<bool, Self::Error> {
+        use crate::diagnostics::trace::{Progress, Stage};
+        self.trace.set(Stage::SshProof, Progress::Passed);
+        self.trace.set(Stage::SshTrust, Progress::Running);
         match self.verify(key).await {
-            Ok(()) => Ok(true),
+            Ok(()) => {
+                self.trace.set(Stage::SshTrust, Progress::Passed);
+                Ok(true)
+            }
             Err(failure) => {
+                self.trace.set(
+                    Stage::SshTrust,
+                    if matches!(failure, FailureReason::TimedOut | FailureReason::Cancelled) {
+                        Progress::Unknown
+                    } else {
+                        Progress::Failed
+                    },
+                );
                 *self
                     .failure
                     .lock()

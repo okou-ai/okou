@@ -96,6 +96,8 @@ pub(crate) struct Observed {
 }
 
 pub(crate) struct TestNetwork {
+    pub(super) resolve_failed: AtomicBool,
+    pub(super) connect_failed: AtomicBool,
     pub(crate) target: Mutex<SocketAddr>,
     pub(super) answers: Mutex<Vec<SocketAddr>>,
     pub(super) observed: Arc<Observed>,
@@ -104,6 +106,9 @@ pub(crate) struct TestNetwork {
 #[async_trait]
 impl Network for TestNetwork {
     async fn resolve(&self, host: &str, port: u16) -> io::Result<Vec<SocketAddr>> {
+        if self.resolve_failed.load(Ordering::SeqCst) {
+            return Err(io::Error::other("controlled resolver refusal"));
+        }
         self.observed
             .queries
             .lock()
@@ -119,6 +124,9 @@ impl Network for TestNetwork {
     }
     async fn connect(&self, address: SocketAddr) -> io::Result<TcpStream> {
         self.observed.attempts.lock().unwrap().push(address);
+        if self.connect_failed.load(Ordering::SeqCst) {
+            return Err(io::Error::from(io::ErrorKind::ConnectionRefused));
+        }
         let target = *self.target.lock().unwrap();
         TcpStream::connect(target).await
     }
@@ -301,6 +309,8 @@ impl Harness {
         let forwarded = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let forward_target = forwarded.local_addr().unwrap();
         let network = Arc::new(TestNetwork {
+            resolve_failed: AtomicBool::new(false),
+            connect_failed: AtomicBool::new(false),
             target: Mutex::new(target),
             answers: Mutex::new(vec!["93.184.216.34:22".parse().unwrap()]),
             observed: Arc::clone(&observed),

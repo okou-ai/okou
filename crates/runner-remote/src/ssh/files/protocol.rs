@@ -100,7 +100,7 @@ impl From<FailureReason> for Failure {
 
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(super) enum FileFailure {
+pub(crate) enum FileFailure {
     InvalidPath,
     FileTooLarge,
     TransferLimit,

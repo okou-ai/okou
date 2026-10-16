@@ -55,6 +55,7 @@ export interface AgentToolsPromptInputs {
   readonly walletEnabled: boolean;
   readonly bankingEnabled: boolean;
   readonly vncEnabled: boolean;
+  readonly remoteConnectionDiagnosticsEnabled: boolean;
   readonly larkEnabled: boolean;
   readonly discordEnabled: boolean;
   readonly deliveryFormatGuidanceEnabled: boolean;
@@ -72,6 +73,10 @@ export function buildAgentToolsPromptInputs(args: {
     bankingEnabled: isFeatureEnabled(FeatureSwitchKey.Banking, context),
     walletEnabled: isFeatureEnabled(FeatureSwitchKey.LinkWallet, context),
     vncEnabled: isFeatureEnabled(FeatureSwitchKey.VncAccess, context),
+    remoteConnectionDiagnosticsEnabled: isFeatureEnabled(
+      FeatureSwitchKey.RemoteConnectionDiagnostics,
+      context,
+    ),
     discordEnabled: isFeatureEnabled(
       FeatureSwitchKey.DiscordIntegration,
       context,
@@ -101,10 +106,20 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
     "- Private artifact sharing: for `/artifacts/xxx` links, only the owner can change visibility; use `okou artifact --help`.",
     "- Private artifact downloads: Private files referenced by `/artifacts/xxx` or full artifact URLs may not be directly viewable. Run `okou artifact download -h` for usage, then download the file locally and open it with the appropriate tool.",
     "- SSH: use `okou ssh host list --json` to find hosts, `okou ssh exec` to run commands, `okou ssh session` for persistent sessions, and `okou ssh upload` / `okou ssh download` for files. Read `okou ssh --help` and the relevant subcommand's `--help` before use.",
+    ...(args.remoteConnectionDiagnosticsEnabled
+      ? [
+          "- Remote SSH failures: after a connection failure or unexpected disconnect, use `okou ssh diagnose <connection-id> --json` (optionally with `--session-id <id>`) to read this Run's retained failure explanation. This is passive history, not a current-connectivity check; unavailable evidence does not establish a cause. Never automatically replay an uncertain command.",
+        ]
+      : []),
     "- Current Run usage: use `okou run usage --json` to inspect observed provider-token usage for the currently assigned Run.",
     ...(args.vncEnabled
       ? [
           "- VNC: use `okou vnc host list --json` to find owner-authorized hosts, then `okou vnc session start` with an explicit shared/exclusive mode. Read `okou vnc --help` and the relevant subcommand's `--help` before use. Use fresh `okou vnc screenshot` geometry for coordinate input, never replay uncertain input automatically, and close sessions with `okou vnc session close`.",
+          ...(args.remoteConnectionDiagnosticsEnabled
+            ? [
+                "- Remote VNC failures: after a connection failure or unexpected disconnect, use `okou vnc diagnose <connection-id> --json` (optionally with `--session-id <id>`) to read this Run's retained failure explanation. This is passive history, not a current-connectivity check; unavailable evidence does not establish a cause. Never automatically replay uncertain input.",
+              ]
+            : []),
         ]
       : []),
     "- When an Okou CLI command prints a user-facing action URL, return that exact URL verbatim. Never rewrite, shorten, reconstruct, or omit any query parameters.",

@@ -150,7 +150,7 @@ impl Session {
         }
         *terminal = true;
         if let Some(diagnostics) = &self.diagnostics {
-            diagnostics.record(crate::diagnostics::Record {
+            let _ = diagnostics.record(crate::diagnostics::Record {
                 protocol: crate::diagnostics::Protocol::Vnc,
                 connection: self.info.connection_id,
                 operation,
@@ -165,6 +165,7 @@ impl Session {
                     dependency
                 }),
                 native: self.native.clone(),
+                ssh: None,
             });
         }
     }
@@ -281,7 +282,7 @@ impl Run {
         if let Err(failure) = &result
             && let Some(diagnostics) = self.diagnostics.get()
         {
-            diagnostics.record(crate::diagnostics::Record {
+            let _ = diagnostics.record(crate::diagnostics::Record {
                 protocol: crate::diagnostics::Protocol::Vnc,
                 connection,
                 operation: crate::diagnostics::Operation::Start,
@@ -289,6 +290,7 @@ impl Run {
                 cause: crate::diagnostics::Cause::Vnc(*failure),
                 dependency: evidence.dependency,
                 native: evidence.native,
+                ssh: None,
             });
         }
         result

@@ -3,6 +3,8 @@
 mod rpc;
 #[cfg(test)]
 mod tests;
+pub(crate) mod text;
+pub(crate) mod trace;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::{
@@ -44,6 +46,7 @@ pub(crate) enum Operation {
 #[serde(tag = "source", content = "code", rename_all = "snake_case")]
 pub(crate) enum Cause {
     Ssh(crate::ssh::FailureReason),
+    File(crate::ssh::FileFailure),
     Vnc(crate::vnc::Failure),
     Native(crate::tailscale::Failure),
 }
@@ -163,7 +166,6 @@ fn serialize_evidence<S: serde::Serializer>(
 
 #[derive(Clone, Serialize)]
 pub(crate) struct Report {
-    schema_version: u8,
     run_id: RunId,
     assignment_id: Uuid,
     pub(crate) attempt_id: Uuid,
@@ -179,6 +181,8 @@ pub(crate) struct Report {
     cause: Cause,
     pub(crate) dependencies: Vec<Dependency>,
     native: Option<NativeSource>,
+    #[serde(skip)]
+    ssh: Option<trace::Snapshot>,
     // Finer stages are deliberately not inferred from an operation's final code.
     detail: Detail,
     truncated: bool,
@@ -192,12 +196,14 @@ pub(crate) struct Record {
     pub(crate) cause: Cause,
     pub(crate) dependency: Option<Dependency>,
     pub(crate) native: Option<NativeSource>,
+    pub(crate) ssh: Option<trace::Snapshot>,
 }
 
 #[derive(Clone, Copy, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum Detail {
     NotObserved,
+    Partial,
 }
 
 #[derive(Clone, Copy, Serialize)]
@@ -270,7 +276,7 @@ impl NativeWatch {
                 assignment: self.assignment,
                 enabled: true,
             };
-            handle.record(Record {
+            let _ = handle.record(Record {
                 protocol: self.protocol,
                 connection: self.connection,
                 operation: Operation::Native,
@@ -286,6 +292,7 @@ impl NativeWatch {
                     resource_id: evidence.resource_id,
                     evidence: Arc::clone(evidence),
                 }),
+                ssh: None,
             });
         }
     }
@@ -377,7 +384,7 @@ impl Handle {
         watch.ssh_dependency = Some(ssh);
         Some(watch)
     }
-    pub(crate) fn record(&self, record: Record) {
+    pub(crate) fn record(&self, record: Record) -> Option<Report> {
         let Record {
             protocol,
             connection,
@@ -386,17 +393,17 @@ impl Handle {
             cause,
             dependency,
             native,
+            ssh,
         } = record;
         if !self.enabled {
-            return;
+            return None;
         }
         let mut state = self.store.state.lock().unwrap_or_else(|p| p.into_inner());
         if state.assignment != self.assignment {
-            return;
+            return None;
         }
         state.sequence = state.sequence.saturating_add(1).min((1 << 53) - 1);
         let report = Report {
-            schema_version: 1,
             run_id: self.store.run,
             assignment_id: self.assignment,
             attempt_id: Uuid::new_v4(),
@@ -418,12 +425,21 @@ impl Handle {
             cause,
             dependencies: dependency.into_iter().collect(),
             native,
-            detail: Detail::NotObserved,
+            detail: if ssh.is_some() {
+                Detail::Partial
+            } else {
+                Detail::NotObserved
+            },
+            ssh,
             truncated: false,
         };
         // The schema has no unbounded strings or collections; keep a hard guard as it evolves.
-        if !serde_json::to_vec(&report).is_ok_and(|bytes| bytes.len() <= MAX_REPORT_BYTES) {
-            return;
+        if !report
+            .evidence()
+            .and_then(|value| serde_json::to_vec(&value).ok())
+            .is_some_and(|bytes| bytes.len() <= MAX_REPORT_BYTES)
+        {
+            return None;
         }
         match protocol {
             Protocol::Ssh => state.latest_ssh = Some(report.clone()),
@@ -433,7 +449,12 @@ impl Handle {
             state.reports.pop_front();
             state.evicted = state.evicted.saturating_add(1);
         }
-        state.reports.push_back(report);
+        state.reports.push_back(report.clone());
+        drop(state);
+        if let Some(value) = report.evidence() {
+            tracing::info!(diagnostic = %value, "Remote operation failure retained");
+        }
+        Some(report)
     }
     fn select(&self, protocol: Protocol, selector: &Selector) -> Option<Report> {
         let state = self.store.state.lock().unwrap_or_else(|p| p.into_inner());
