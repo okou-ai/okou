@@ -3,9 +3,9 @@ import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onbo
 import { orgContract } from "@okouai/api-contracts/contracts/org-routes";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
-import { okouAppWorkerPreviewJobRef } from "@okouai/core/platform-service-origin";
 import { command, computed } from "ccstate";
 import { accept } from "../../lib/accept.ts";
+import { resolvePlatformEnvironment } from "../../lib/platform-host.ts";
 import { reloadAgents$ } from "../agent.ts";
 import { discardApiBootstrapResponse } from "../api-client-base.ts";
 import { apiClient$ } from "../api-client.ts";
@@ -105,7 +105,7 @@ export const completeOnboarding$ = command(
 export const canSkipPreviewOnboarding$ = computed((get) => {
   return (
     get(pathname$) === ROUTES.onboarding &&
-    okouAppWorkerPreviewJobRef(window.location.hostname) !== null
+    resolvePlatformEnvironment() === "preview"
   );
 });
 

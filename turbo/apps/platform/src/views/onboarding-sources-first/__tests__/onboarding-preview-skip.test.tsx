@@ -41,6 +41,8 @@ function buttonNamed(name: string): HTMLElement {
 test.each([
   { host: PREVIEW_HOST, isAdmin: true },
   { host: "staging-app-okou-app-preview.vm0.workers.dev", isAdmin: false },
+  { host: "app-okou-app-preview.vm0.workers.dev", isAdmin: true },
+  { host: "pr-40584-app.omby.ai", isAdmin: true },
 ])(
   "A preview visitor can skip unanswered onboarding on $host",
   async ({ host, isAdmin }) => {
@@ -65,22 +67,19 @@ test.each([
   },
 );
 
-test.each([
-  "app.okou.ai",
-  "app.vm0.ai",
-  "localhost",
-  "app-okou-app-preview.vm0.workers.dev",
-  "pr-40584-app-okou-app-preview.vm0.workers.dev.example.com",
-])("Onboarding does not offer the preview shortcut on %s", async (host) => {
-  mockOnboardingNeeded();
-  await setupPage({ context, host, path: ROUTES.onboarding });
+test.each(["app.okou.ai", "okou.ai", "localhost", "127.0.0.1"])(
+  "Onboarding does not offer the preview shortcut on %s",
+  async (host) => {
+    mockOnboardingNeeded();
+    await setupPage({ context, host, path: ROUTES.onboarding });
 
-  expect(
-    screen.getByRole("heading", { name: INDUSTRY_QUESTION }),
-  ).toBeInTheDocument();
-  expect(buttonsNamed("Skip")).toHaveLength(0);
-  expect(buttonNamed("Continue")).toBeDisabled();
-});
+    expect(
+      screen.getByRole("heading", { name: INDUSTRY_QUESTION }),
+    ).toBeInTheDocument();
+    expect(buttonsNamed("Skip")).toHaveLength(0);
+    expect(buttonNamed("Continue")).toBeDisabled();
+  },
+);
 
 test("The preview shortcut is limited to the onboarding entry page", async () => {
   mockOnboardingNeeded();
