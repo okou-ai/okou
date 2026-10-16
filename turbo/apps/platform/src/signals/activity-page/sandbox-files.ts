@@ -25,6 +25,7 @@ import {
   bestEffort,
   detach,
   onDomEventFn,
+  onRejection,
   onRef,
   Reason,
   resetSignal,
@@ -1508,7 +1509,7 @@ function createRunObservationCommands(
       }
       set(checking$, version);
       return await withCleanup(
-        tapError(set(lifecycle.load$, runId, signal), () => {
+        onRejection(set(lifecycle.load$, runId, signal), () => {
           set(fail$, runId, signal);
         }),
         () => {
@@ -1524,7 +1525,7 @@ function createRunObservationCommands(
       const version = get(version$) + 1;
       set(version$, version);
       set(failed$, false);
-      const detail = await tapError(get(activityDetail$), () => {
+      const detail = await onRejection(get(activityDetail$), () => {
         set(fail$, runId, signal);
       });
       signal.throwIfAborted();
@@ -1540,7 +1541,7 @@ function createRunObservationCommands(
           if (get(failed$)) {
             return true;
           }
-          return (await set(check$, runId, version, loopSignal)) ?? true;
+          return await set(check$, runId, version, loopSignal);
         },
         REFRESH_INTERVAL_MS,
         signal,
