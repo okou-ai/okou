@@ -30,6 +30,7 @@ const MAX_FRAME: usize = 131072;
 const PROFILE: &[u8] = b"[libdefaults]\n dns_lookup_kdc = false\n dns_lookup_realm = false\n rdns = false\n canonicalize = false\n kdc_timesync = 0\n default_ccache_name = FILE:/absent\n default_client_keytab_name = FILE:/absent\n default_keytab_name = FILE:/absent\n";
 static QUEUE: Semaphore = Semaphore::const_new(16);
 static RUNNING: OnceLock<Arc<Semaphore>> = OnceLock::new();
+static PACKAGE_INTEGRITY: OnceLock<Result<(), Error>> = OnceLock::new();
 
 #[cfg(native_kerberos)]
 const BINARY: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/native/kerberos-worker"));
@@ -64,22 +65,28 @@ pub struct NativePackage {
 
 /// Inspect/export the same sealed bytes used by native resource provisioning.
 /// Unsupported targets or a broken package refuse before returning any bytes.
+/// Integrity is checked once per process; mutable runtime checks are not cached.
 pub fn native_package() -> Result<NativePackage, Error> {
-    if BINARY.is_empty()
-        || BINARY.len() > 16 * 1024 * 1024
-        || Sha256::digest(BINARY)
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>()
-            != BINARY_DIGEST
-        || Sha256::digest(crate::NATIVE_NOTICES.as_bytes())
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>()
-            != NOTICES_DIGEST
-    {
-        return Err(Error::Unavailable);
-    }
+    // Only compile-embedded bytes and digests enter this immutable verdict.
+    let integrity = PACKAGE_INTEGRITY.get_or_init(|| {
+        if BINARY.is_empty()
+            || BINARY.len() > 16 * 1024 * 1024
+            || Sha256::digest(BINARY)
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+                != BINARY_DIGEST
+            || Sha256::digest(crate::NATIVE_NOTICES.as_bytes())
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+                != NOTICES_DIGEST
+        {
+            return Err(Error::Unavailable);
+        }
+        Ok(())
+    });
+    (*integrity)?;
     Ok(NativePackage {
         helper: BINARY,
         helper_sha256: BINARY_DIGEST,

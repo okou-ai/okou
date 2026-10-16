@@ -36,6 +36,42 @@ fn allocation_drop_before_exec_closes_files_cleans_then_releases() {
 }
 
 #[test]
+fn warmed_package_still_checks_current_provisioning_root() {
+    let (root, semaphore, resources) = allocation();
+    drop(resources);
+    let path = root.path().canonicalize().unwrap();
+    let capacity = || Capacity {
+        owner: None,
+        permit: Some(semaphore.clone().try_acquire_owned().unwrap()),
+        clean: Arc::new(AtomicBool::new(true)),
+        reaped: Arc::new(AtomicBool::new(true)),
+    };
+
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(matches!(
+        Resources::create(&path, capacity()),
+        Err(Error::Unavailable)
+    ));
+    assert_eq!(fs::read_dir(&path).unwrap().count(), 0);
+    assert_eq!(semaphore.available_permits(), 1);
+
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+    let links = tempfile::tempdir_in(path.parent().unwrap()).unwrap();
+    let linked_root = links.path().join("root");
+    std::os::unix::fs::symlink(&path, &linked_root).unwrap();
+    assert!(matches!(
+        Resources::create(&linked_root, capacity()),
+        Err(Error::Unavailable)
+    ));
+    assert_eq!(fs::read_dir(&path).unwrap().count(), 0);
+    assert_eq!(semaphore.available_permits(), 1);
+
+    drop(Resources::create(&path, capacity()).unwrap());
+    assert_eq!(fs::read_dir(&path).unwrap().count(), 0);
+    assert_eq!(semaphore.available_permits(), 1);
+}
+
+#[test]
 fn expired_or_cancelled_start_never_opens_the_actual_helper_and_releases_resources() {
     use rustix::fs::inotify::{self, CreateFlags, ReadFlags, Reader, WatchFlags};
     use std::mem::MaybeUninit;
