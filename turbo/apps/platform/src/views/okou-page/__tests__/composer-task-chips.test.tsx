@@ -369,6 +369,7 @@ test.each([
   "Selecting $category after /$entry updates the task and generation settings",
   async ({ entry, category, task, template, type, instructions }) => {
     const capture = mockTemplateChat();
+    context.mocks.data.userPreferences({ timezone: "UTC", locale: "en-US" });
     const editor = await setupChips();
     await fill(editor, "Keep my launch brief /");
     const menu = await screen.findByTestId("slash-workflow-menu");

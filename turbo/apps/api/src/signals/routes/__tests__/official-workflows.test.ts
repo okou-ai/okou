@@ -657,6 +657,20 @@ async function readMorningBriefAutomations(
   return response.body.automations;
 }
 
+async function listMorningBriefAutomations(
+  actor: ApiTestUser,
+  workflowId: string,
+) {
+  const response = await accept(
+    automationClient().list({
+      headers: authHeaders(actor),
+      params: { workflowId },
+    }),
+    [200],
+  );
+  return response.body;
+}
+
 function mockBriefMemberships(
   entries: readonly {
     readonly actor: ApiTestUser;
@@ -1193,8 +1207,29 @@ describe("Morning Brief catalog reconciliation", () => {
         // Publication and the scheduler are explicitly scoped authenticated
         // system boundaries; this first request selects the case-owned DB.
         installCatalogStorageFixture();
-        await syncDeployedCatalog();
-        const { actor } = await workflowBdd.setupWorkflowOrg({
+        const initialBlueprint: OfficialWorkflowBlueprint = {
+          key: "daily-delivery",
+          parameters: [],
+          desiredState: {
+            kind: "schedule",
+            schedule: { type: "cron", cronExpression: "0 7 * * *" },
+          },
+        };
+        // One accepted catalog supplies the initial schedules and the
+        // Definition that reconciliation retires below.
+        expect(
+          (
+            await syncCatalog(
+              catalog([
+                ...MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.map((name) => {
+                  return activeDefinition(name, [initialBlueprint]);
+                }),
+                connectorDoctorDefinition(),
+              ]),
+            )
+          ).body.outcome,
+        ).toBe("accepted");
+        const { actor, defaultAgentId } = await workflowBdd.setupWorkflowOrg({
           timezone: "Asia/Tokyo",
         });
         if (!actor.orgId) {
@@ -1208,7 +1243,7 @@ describe("Morning Brief catalog reconciliation", () => {
               definitionName === "internal-test-morning-brief",
           },
         );
-        await connectBriefSource(actor);
+        await connectBriefSourceForAgent(actor, defaultAgentId);
         await accept(
           morningBriefPreferenceClient().update({
             headers: authHeaders(actor),
@@ -1220,7 +1255,7 @@ describe("Morning Brief catalog reconciliation", () => {
         if (!installation) {
           throw new Error("Expected the Morning Brief installation");
         }
-        const [initial] = await readMorningBriefAutomations(
+        const [initial] = await listMorningBriefAutomations(
           actor,
           installation.id,
         );
@@ -1301,6 +1336,9 @@ describe("Morning Brief catalog reconciliation", () => {
         ) => {
           return catalog([
             ...MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.map((name) => {
+              if (name !== definitionName) {
+                return activeDefinition(name, [initialBlueprint]);
+              }
               return retired
                 ? {
                     name,
@@ -1334,7 +1372,7 @@ describe("Morning Brief catalog reconciliation", () => {
         ).resolves.toMatchObject([
           { id: installation.id, official: { definitionName } },
         ]);
-        const [reconciled] = await readMorningBriefAutomations(
+        const [reconciled] = await listMorningBriefAutomations(
           actor,
           installation.id,
         );
@@ -1368,7 +1406,7 @@ describe("Morning Brief catalog reconciliation", () => {
         await executeAutomationCron();
         await flushWaitUntilForTest();
         await expect(
-          readMorningBriefAutomations(actor, installation.id),
+          listMorningBriefAutomations(actor, installation.id),
         ).resolves.toMatchObject([
           {
             id: initial.id,
@@ -1382,7 +1420,7 @@ describe("Morning Brief catalog reconciliation", () => {
         await executeAutomationCron();
         await flushWaitUntilForTest();
         await expect(
-          readMorningBriefAutomations(actor, installation.id),
+          listMorningBriefAutomations(actor, installation.id),
         ).resolves.toStrictEqual([]);
         await accept(
           automationClient().get({
@@ -1394,7 +1432,7 @@ describe("Morning Brief catalog reconciliation", () => {
         await executeAutomationCron();
         await flushWaitUntilForTest();
         await expect(
-          readMorningBriefAutomations(actor, installation.id),
+          listMorningBriefAutomations(actor, installation.id),
         ).resolves.toStrictEqual([]);
         await expect(
           allThreadEventRows(actor, first.chatThreadId),
@@ -1406,7 +1444,7 @@ describe("Morning Brief catalog reconciliation", () => {
         ).toBe("accepted");
         await executeAutomationCron();
         await flushWaitUntilForTest();
-        const [restored] = await readMorningBriefAutomations(
+        const [restored] = await listMorningBriefAutomations(
           actor,
           installation.id,
         );
@@ -1443,9 +1481,11 @@ describe("Morning Brief catalog reconciliation", () => {
         );
         await executeAutomationCron();
         await flushWaitUntilForTest();
-        await expect(
-          readMorningBriefAutomations(actor, installation.id),
-        ).resolves.toMatchObject([
+        const unchanged = await listMorningBriefAutomations(
+          actor,
+          installation.id,
+        );
+        expect(unchanged).toMatchObject([
           {
             id: initial.id,
             chatThreadId: first.chatThreadId,
@@ -1463,10 +1503,9 @@ describe("Morning Brief catalog reconciliation", () => {
             [200],
           );
         }
-        const [scheduled] = await readMorningBriefAutomations(
-          actor,
-          installation.id,
-        );
+        const [scheduled] = paused
+          ? await listMorningBriefAutomations(actor, installation.id)
+          : unchanged;
         if (!scheduled) {
           throw new Error("Expected the reconciled schedule");
         }
