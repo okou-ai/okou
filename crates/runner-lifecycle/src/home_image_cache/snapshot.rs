@@ -124,8 +124,10 @@ impl HomeCacheStateSnapshot {
         if inventory.incomplete {
             return inner.outcome(&before, false);
         }
+        // A capped newer publication can advance group completion without
+        // retaining its physical key, so per-key merging cannot preserve it.
         if inner.epoch != refresh.epoch
-            || (inventory.truncated && inner.revision != refresh.revision)
+            || ((inventory.truncated || inner.truncated) && inner.revision != refresh.revision)
         {
             return inner.outcome(&before, true);
         }
@@ -685,6 +687,49 @@ mod tests {
         let outcome = snapshot.finish_home_cache_refresh(stale_scan, scan);
         assert!(outcome.needs_reconcile);
         assert_eq!(outcome.states, vec![published]);
+    }
+
+    #[test]
+    fn untruncated_scan_cannot_overwrite_a_newer_capped_profile_publication() {
+        use runner_types::types::MAX_HOME_CACHES_PER_REUSE_KEY;
+
+        let snapshot = HomeCacheStateSnapshot::new();
+        let profiles = (0..MAX_HOME_CACHES_PER_REUSE_KEY)
+            .map(|index| format!("vm0/profile-{index:02}"))
+            .collect::<Vec<_>>();
+        let original = held_home_state(
+            "home",
+            "2026-06-01T00:00:00Z",
+            &profiles.iter().map(String::as_str).collect::<Vec<_>>(),
+        );
+        let independent = held_home_state("independent", "2026-06-02T00:00:00Z", &["vm0/default"]);
+        refresh_snapshot(&snapshot, vec![original.clone(), independent.clone()]);
+        let stale_scan = snapshot.begin_home_cache_refresh();
+        let scan = inventory(vec![original.clone(), independent.clone()]);
+        assert!(!scan.truncated);
+
+        let published = held_home_state("home", "2026-06-03T00:00:00Z", &["vm0/zz"]);
+        snapshot.upsert_home_cache_state("home:vm0/zz".into(), published.clone());
+        let current = snapshot.loaded_home_cache_snapshot().states;
+        assert_eq!(current[0].reuse_key, "home");
+        assert_eq!(current[0].last_completed_at, published.last_completed_at);
+        assert_eq!(current[0].home_caches.len(), MAX_HOME_CACHES_PER_REUSE_KEY);
+        assert!(
+            current[0]
+                .home_caches
+                .iter()
+                .all(|home| home.profile != "vm0/zz")
+        );
+
+        let outcome = snapshot.finish_home_cache_refresh(stale_scan, scan);
+        assert_eq!(outcome.states, current);
+        assert!(outcome.needs_reconcile);
+
+        let refresh = snapshot.begin_home_cache_refresh();
+        let outcome = snapshot
+            .finish_home_cache_refresh(refresh, inventory(vec![original, independent, published]));
+        assert_eq!(outcome.states, current);
+        assert!(!outcome.needs_reconcile);
     }
 
     #[test]
