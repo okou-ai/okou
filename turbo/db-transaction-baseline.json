@@ -517,11 +517,6 @@
       "owner": "issueRunnerWssTicket$"
     },
     {
-      "id": "TX-0241",
-      "file": "turbo/apps/api/src/signals/services/runner-wss-ticket.service.ts",
-      "owner": "consumeRunnerWssTicket$"
-    },
-    {
       "id": "TX-0246",
       "file": "turbo/apps/api/src/signals/services/slack-installation-reward.ts",
       "owner": "settleSlackRewardClaim"
