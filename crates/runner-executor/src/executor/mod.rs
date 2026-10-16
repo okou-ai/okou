@@ -609,6 +609,25 @@ fn agent_exit_failure_message(exit_code: i32) -> String {
     format!("Agent exited with code {exit_code}")
 }
 
+fn initialize_execution_telemetry(
+    context: &ExecutionContext,
+    config: &ExecutorConfig,
+    pre_spawn_timing: Option<RunnerPreSpawnTiming>,
+) -> (RunnerSpawnTiming, JobTelemetry) {
+    let spawn_timing = RunnerSpawnTiming::start(pre_spawn_timing);
+    let mut telemetry = JobTelemetry::new(
+        config.http.clone(),
+        context.run_id,
+        context.sandbox_token.clone(),
+        config.runner_hostname.clone(),
+    );
+    telemetry.set_first_run(context.is_first_run);
+    spawn_timing.record_claim_to_executor_start(&mut telemetry);
+    record_api_latency("api_to_sandbox_start", context, &mut telemetry);
+
+    (spawn_timing, telemetry)
+}
+
 /// uploads (~383 ms saved per job).
 #[cfg(test)]
 pub async fn execute_job(
@@ -645,18 +664,8 @@ pub async fn execute_job_with_prepared_notifier(
         active_input_source,
         pre_spawn_timing,
     } = hooks;
-    let spawn_timing = RunnerSpawnTiming::start(pre_spawn_timing);
-    let run_id = context.run_id;
-    let mut telemetry = JobTelemetry::new(
-        config.http.clone(),
-        run_id,
-        context.sandbox_token.clone(),
-        config.runner_hostname.clone(),
-    );
-    telemetry.set_first_run(context.is_first_run);
-    spawn_timing.record_claim_to_executor_start(&mut telemetry);
-
-    record_api_latency("api_to_sandbox_start", &context, &mut telemetry);
+    let (spawn_timing, mut telemetry) =
+        initialize_execution_telemetry(&context, config, pre_spawn_timing);
 
     let sandbox_id = dispatch.id.to_string();
     let outcome =
@@ -763,18 +772,9 @@ pub async fn execute_job_reuse_with_hooks(
         active_input_source,
         pre_spawn_timing,
     } = hooks;
-    let spawn_timing = RunnerSpawnTiming::start(pre_spawn_timing);
+    let (spawn_timing, mut telemetry) =
+        initialize_execution_telemetry(&context, config, pre_spawn_timing);
     let run_id = context.run_id;
-    let mut telemetry = JobTelemetry::new(
-        config.http.clone(),
-        run_id,
-        context.sandbox_token.clone(),
-        config.runner_hostname.clone(),
-    );
-    telemetry.set_first_run(context.is_first_run);
-    spawn_timing.record_claim_to_executor_start(&mut telemetry);
-
-    record_api_latency("api_to_sandbox_start", &context, &mut telemetry);
 
     let sandbox_id = idle_sandbox.sandbox_id();
     let ReusableIdleSandboxParts {
