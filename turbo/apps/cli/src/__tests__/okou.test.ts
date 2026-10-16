@@ -69,6 +69,7 @@ describe("Okou CLI program", () => {
       "resource",
       "workflow",
       "slack",
+      "wechat",
       "feishu",
       "lark",
       "teams",
@@ -129,8 +130,8 @@ describe("Okou CLI program", () => {
     expect(canonicalCommandNames).not.toContain("__agent-loop");
   });
 
-  it("should have exactly 52 canonical commands", () => {
-    expect(canonicalCommandNames).toHaveLength(52);
+  it("should have exactly 53 canonical commands", () => {
+    expect(canonicalCommandNames).toHaveLength(53);
     expect(canonicalCommandNames).toContain("subscription");
   });
 });

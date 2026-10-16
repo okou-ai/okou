@@ -67,6 +67,7 @@ const COMMAND_CAPABILITY_MAP: Record<
   github: ["github:read", "github:write"],
   slack: ["slack:read", "slack:write"],
   discord: ["discord:read", "discord:write"],
+  wechat: ["wechat:read", "wechat:write"],
   feishu: "feishu:write",
   lark: "lark:write",
   teams: "teams:write",
@@ -251,6 +252,13 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
       "List channels, read history, send messages, and transfer files as the Slack bot",
     load: async () => {
       return (await import("./commands/slack")).slackCommand;
+    },
+  },
+  {
+    name: "wechat",
+    description: "Connect WeChat, read recorded history and send messages",
+    load: async () => {
+      return (await import("./commands/wechat")).wechatCommand;
     },
   },
   {

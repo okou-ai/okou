@@ -2311,6 +2311,20 @@
       "when": 1792120619099,
       "tag": "1407_link_wallet_scope_snapshots",
       "breakpoints": true
+    },
+    {
+      "idx": 1408,
+      "version": "7",
+      "when": 1792122867954,
+      "tag": "1408_wechat_message_archive",
+      "breakpoints": true
+    },
+    {
+      "idx": 1409,
+      "version": "7",
+      "when": 1792122887680,
+      "tag": "1409_canonical_delivery_operation_identity",
+      "breakpoints": true
     }
   ]
 }

@@ -15,7 +15,7 @@ import { chatThreads } from "./chat-thread";
 import type {
   CanonicalAssetDeliveryDestination,
   CanonicalAssetDeliveryError,
-  CanonicalAssetDiscordDeliveryState,
+  CanonicalAssetDeliveryProviderState,
   CanonicalAssetMaterializationError,
   CanonicalAssetProvenance,
   RunUploadedFileMetadata,
@@ -27,6 +27,7 @@ export const RUN_UPLOADED_FILE_SOURCES = [
   "web",
   "slack",
   "discord",
+  "wechat",
   "teams",
   "feishu",
   "lark",
@@ -160,7 +161,7 @@ export const canonicalAssetDeliveries = pgTable(
       .$type<CanonicalAssetDeliveryDestination>()
       .notNull(),
     providerState:
-      jsonb("provider_state").$type<CanonicalAssetDiscordDeliveryState>(),
+      jsonb("provider_state").$type<CanonicalAssetDeliveryProviderState>(),
     externalId: text("external_id"),
     url: text("url"),
     lastError: jsonb("last_error").$type<CanonicalAssetDeliveryError>(),
@@ -172,6 +173,10 @@ export const canonicalAssetDeliveries = pgTable(
       uniqueIndex(
         "canonical_asset_deliveries_asset_provider_operation_unique",
       ).on(table.assetId, table.provider, table.operationId),
+      uniqueIndex("canonical_asset_deliveries_asset_operation_unique").on(
+        table.assetId,
+        table.operationId,
+      ),
       index("canonical_asset_deliveries_asset_idx").on(table.assetId),
     ];
   },

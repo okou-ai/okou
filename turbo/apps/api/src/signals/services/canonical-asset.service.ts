@@ -7,6 +7,7 @@ import {
 import type {
   CanonicalAssetDeliveryDestination,
   CanonicalAssetDiscordDeliveryDestination,
+  CanonicalAssetWechatDeliveryDestination,
   CanonicalAssetProvenance,
   CanonicalAssetSlackDeliveryDestination,
   RunUploadedFileMetadata,
@@ -1210,6 +1211,11 @@ type PrepareCanonicalPublishedAssetArgs = CanonicalPublicationFileArgs &
         readonly runId: string | null;
         readonly destination: CanonicalAssetDiscordDeliveryDestination;
       }
+    | {
+        readonly provider: "wechat";
+        readonly runId: string | null;
+        readonly destination: CanonicalAssetWechatDeliveryDestination;
+      }
   );
 
 interface PreparedCanonicalPublishedAsset {
@@ -1301,6 +1307,16 @@ function sameCanonicalDeliveryDestination(
   stored: CanonicalAssetDeliveryDestination,
   requested: CanonicalAssetDeliveryDestination,
 ): boolean {
+  if (stored.provider === "wechat" || requested.provider === "wechat") {
+    return (
+      stored.provider === "wechat" &&
+      requested.provider === "wechat" &&
+      stored.connectionId === requested.connectionId &&
+      stored.generation === requested.generation &&
+      stored.channelId === requested.channelId &&
+      stored.comment === requested.comment
+    );
+  }
   if (stored.provider === "discord" || requested.provider === "discord") {
     return (
       stored.provider === "discord" &&
@@ -1327,66 +1343,65 @@ const ensureCanonicalDelivery$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0086; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      const [asset] = await tx
-        .select({ id: runUploadedFiles.id })
-        .from(runUploadedFiles)
-        .where(eq(runUploadedFiles.id, assetId))
-        .for("update");
-      signal.throwIfAborted();
-      if (!asset) {
-        return false;
-      }
-      const [delivery] = await tx
-        .select({
-          provider: canonicalAssetDeliveries.provider,
-          destination: canonicalAssetDeliveries.destination,
-        })
-        .from(canonicalAssetDeliveries)
-        .where(
-          and(
-            eq(canonicalAssetDeliveries.assetId, assetId),
-            eq(canonicalAssetDeliveries.operationId, args.operationId),
-          ),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      if (delivery) {
-        if (
-          delivery.provider !== args.provider ||
-          !sameCanonicalDeliveryDestination(
-            delivery.destination,
-            args.destination,
-          )
-        ) {
-          throw new CanonicalPublicationConflictError(
-            "Upload operation identity was reused for another delivery destination",
-          );
-        }
-        return true;
-      }
-      await tx.insert(canonicalAssetDeliveries).values({
+    const [inserted] = await db
+      .insert(canonicalAssetDeliveries)
+      .values({
         assetId,
         provider: args.provider,
         operationId: args.operationId,
         status: "pending",
         destination: args.destination,
-        ...(args.provider === "discord"
+        ...(args.provider === "discord" || args.provider === "wechat"
           ? {
-              providerState: { provider: "discord" as const, attempt: null },
+              providerState: { provider: args.provider, attempt: null },
             }
           : {}),
-      });
-      signal.throwIfAborted();
+      })
+      .onConflictDoNothing({
+        target: [
+          canonicalAssetDeliveries.assetId,
+          canonicalAssetDeliveries.operationId,
+        ],
+      })
+      .returning({ id: canonicalAssetDeliveries.id });
+    signal.throwIfAborted();
+    if (inserted) {
       return true;
-    });
+    }
+    // A separate statement sees the winner after ON CONFLICT waits for it.
+    const [delivery] = await db
+      .select({
+        provider: canonicalAssetDeliveries.provider,
+        destination: canonicalAssetDeliveries.destination,
+      })
+      .from(canonicalAssetDeliveries)
+      .where(
+        and(
+          eq(canonicalAssetDeliveries.assetId, assetId),
+          eq(canonicalAssetDeliveries.operationId, args.operationId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!delivery) {
+      return false;
+    }
+    if (
+      delivery.provider !== args.provider ||
+      !sameCanonicalDeliveryDestination(delivery.destination, args.destination)
+    ) {
+      throw new CanonicalPublicationConflictError(
+        "Upload operation identity was reused for another delivery destination",
+      );
+    }
+    return true;
   },
 );
 
 function canonicalPublicationScope(args: PrepareCanonicalPublishedAssetArgs) {
-  return args.provider === "discord" && args.runId === null
-    ? `discord:${args.destination.connectionId}`
+  return (args.provider === "discord" || args.provider === "wechat") &&
+    args.runId === null
+    ? `${args.provider}:${args.destination.connectionId}`
     : `run:${args.runId}`;
 }
 
@@ -1491,7 +1506,7 @@ export const prepareCanonicalPublishedAsset$ = command(
     const scope = canonicalPublicationScope(args);
     const source =
       args.runId === null
-        ? "discord"
+        ? args.provider
         : await set(sourceForRun$, args.runId, args.provider, signal);
     let chatThreadId: string | null = null;
     if (args.runId !== null) {

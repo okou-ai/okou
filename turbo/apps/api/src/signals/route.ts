@@ -1,3 +1,5 @@
+import { integrationsWechatFileRoutes } from "./routes/integrations-wechat-files";
+import { integrationsWechatMessagesRoutes } from "./routes/integrations-wechat-messages";
 import type { RouteEntry } from "./route-entry";
 import { agentDraftRoutes } from "./routes/agent-draft";
 import { suggestionsRoutes } from "./routes/suggestions";
@@ -418,6 +420,8 @@ export const ROUTES: readonly RouteEntry[] = [
   ...slackCommandsRoutes,
   ...slackEventsRoutes,
   ...integrationsWechatRoutes,
+  ...integrationsWechatMessagesRoutes,
+  ...integrationsWechatFileRoutes,
   ...wechatGatewayRoutes,
   ...discordGatewayRoutes,
   ...slackInteractiveRoutes,

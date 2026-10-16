@@ -2,8 +2,10 @@ import { describe, it, expect } from "vitest";
 import { CAPABILITIES, CAPABILITY_META } from "../capabilities";
 
 describe("CAPABILITIES", () => {
-  it("should have exactly 59 capabilities", () => {
-    expect(CAPABILITIES).toHaveLength(59);
+  it("should have exactly 61 capabilities", () => {
+    expect(CAPABILITIES).toHaveLength(61);
+    expect(CAPABILITIES).toContain("wechat:read");
+    expect(CAPABILITIES).toContain("wechat:write");
   });
 
   it("should follow {resource}:{action} naming pattern", () => {

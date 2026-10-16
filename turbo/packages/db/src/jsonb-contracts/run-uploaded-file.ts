@@ -52,7 +52,8 @@ export interface CanonicalAssetDiscordDeliveryDestination {
 
 export type CanonicalAssetDeliveryDestination =
   | CanonicalAssetSlackDeliveryDestination
-  | CanonicalAssetDiscordDeliveryDestination;
+  | CanonicalAssetDiscordDeliveryDestination
+  | CanonicalAssetWechatDeliveryDestination;
 
 export interface CanonicalAssetDiscordDeliveryState {
   readonly provider: "discord";
@@ -68,3 +69,18 @@ export interface CanonicalAssetDeliveryError {
   readonly message: string;
   readonly retryable: boolean;
 }
+
+export interface CanonicalAssetWechatDeliveryDestination {
+  readonly provider: "wechat";
+  readonly connectionId: string;
+  readonly generation: string;
+  readonly channelId: string;
+  readonly comment?: string;
+}
+export interface CanonicalAssetWechatDeliveryState {
+  readonly provider: "wechat";
+  readonly attempt: { readonly id: string; readonly startedAt: string } | null;
+}
+
+export type CanonicalAssetDeliveryProviderState =
+  CanonicalAssetDiscordDeliveryState | CanonicalAssetWechatDeliveryState;

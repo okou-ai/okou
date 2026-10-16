@@ -106,7 +106,7 @@ async function canonicalSlackDeliveryRow(
   if (!row) {
     return undefined;
   }
-  if (row.destination.provider === "discord") {
+  if (row.destination.provider !== undefined) {
     throw new Error("Slack delivery has a Discord destination");
   }
   return { ...row, destination: row.destination };
