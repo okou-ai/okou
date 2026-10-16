@@ -3,6 +3,7 @@ use super::{
     terminal, wait_for,
 };
 use crate::test_fixtures::{diagnostic_attempt, diagnostic_text, remote_inventory};
+use russh::keys::{Algorithm, HashAlg};
 use serde_json::{Value, json};
 use std::sync::atomic::Ordering;
 
@@ -49,8 +50,10 @@ async fn active_check_is_fresh_has_no_channels_and_preserves_operational_history
     wait_for(|| h.observed.closed.load(Ordering::SeqCst) > 0).await;
     assert_eq!(rpc(&h, "ssh.diagnose", json!({})).await, before);
     let mut wrong_pin = h.credential(true);
-    wrong_pin["learnedHostKey"]["fingerprint"] =
-        json!("SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    wrong_pin["learnedHostKey"]["fingerprint"] = super::harness::key(Algorithm::Ed25519)
+        .fingerprint(HashAlg::Sha256)
+        .to_string()
+        .into();
     let _other = h.resolve_connection(OTHER, wrong_pin).await;
     let (passed, failed) = tokio::join!(
         rpc(&h, "ssh.check", json!({"connectionId":CONNECTION})),
@@ -98,8 +101,10 @@ async fn active_check_host_key_refusal_is_failed_without_poisoning_history() {
         })
         .await;
     let mut credential = h.credential(true);
-    credential["learnedHostKey"]["fingerprint"] =
-        json!("SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    credential["learnedHostKey"]["fingerprint"] = super::harness::key(Algorithm::Ed25519)
+        .fingerprint(HashAlg::Sha256)
+        .to_string()
+        .into();
     let _resolve = h.resolve(credential).await;
     let result = rpc(&h, "ssh.check", json!({"connectionId":CONNECTION})).await;
     assert_eq!(result["status"], "failed", "{result}");
