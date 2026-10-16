@@ -114,6 +114,21 @@ try {
     await sql`SELECT to_jsonb(b) - 'ref_count' AS row FROM blobs b ORDER BY hash`,
   );
   process.chdir(directory);
+  // A failed concurrent build leaves an invalid index behind. Replay must
+  // replace it, rather than let IF NOT EXISTS silently accept unusable lookup.
+  await assert.rejects(
+    sql.unsafe(`CREATE UNIQUE INDEX CONCURRENTLY migration_1410_run_history_hash_idx
+      ON agent_runs (legacy_conversation_history_hash)
+      WHERE legacy_conversation_history_hash IS NOT NULL`),
+    /could not create unique index/,
+  );
+  assert.equal(
+    (
+      await sql`SELECT indisvalid FROM pg_index
+        WHERE indexrelid = 'migration_1410_run_history_hash_idx'::regclass`
+    )[0]?.indisvalid,
+    false,
+  );
   // completed_at stores UTC without a zone. A migration connection's zone
   // must not shorten the Memory admission window at its ten-day boundary.
   await sql.unsafe("SET TIME ZONE 'Pacific/Kiritimati'");
@@ -122,6 +137,13 @@ try {
   await sql.unsafe(`ALTER TABLE blobs ADD CONSTRAINT reject_test_release
     CHECK (hash <> lpad(to_hex(1100),64,'0') OR ref_count > 0)`);
   await assert.rejects(applyPendingMigrations(sql), /reject_test_release/);
+  assert.equal(
+    (
+      await sql`SELECT indisvalid AND NOT indisunique AS usable FROM pg_index
+        WHERE indexrelid = 'migration_1410_run_history_hash_idx'::regclass`
+    )[0]?.usable,
+    true,
+  );
   assert.equal(
     (
       await sql`SELECT count(*)::int AS count FROM agent_runs WHERE legacy_conversation_history_hash IS NULL`
@@ -142,6 +164,12 @@ try {
   );
   await sql.unsafe("ALTER TABLE blobs DROP CONSTRAINT reject_test_release");
   await applyPendingMigrations(sql);
+  assert.equal(
+    (
+      await sql`SELECT to_regclass('public.migration_1410_run_history_hash_idx') AS remaining_index`
+    )[0]?.remaining_index,
+    null,
+  );
   assert.deepEqual(
     Array.from(
       await sql`SELECT to_jsonb(r) - 'legacy_conversation_history_hash' AS row FROM agent_runs r ORDER BY id`,
