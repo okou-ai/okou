@@ -150,7 +150,9 @@ impl HomeCacheRefresh {
             }
         }
         if let Some(pending) = self.pending.take() {
-            self.start(pending);
+            // Full follow-ups must also transfer busy keys discovered by
+            // the completed task before accepting another reconciliation.
+            self.enqueue(pending);
         }
         Ok(result.outcome.changed.then_some(result.change))
     }
