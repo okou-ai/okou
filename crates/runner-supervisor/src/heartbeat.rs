@@ -398,7 +398,6 @@ async fn send_heartbeat(
     if let Some(change) = cache_change {
         info!(
             changed = true,
-            snapshot_changed = refresh.changed,
             elapsed_ms = duration_ms(change.observed_at.elapsed()),
             "home cache change heartbeat completed"
         );
