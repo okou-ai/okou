@@ -318,7 +318,8 @@ async fn child_exit_bounds_discarding_when_a_descendant_holds_stdout() -> Result
         "stdout must still be held open when the supervisor returns",
     );
     rustix::process::pidfd_send_signal(holder_pidfd, Signal::KILL)?;
-    let holder_pidfd = tokio::io::unix::AsyncFd::new(holder_pidfd.try_clone()?)?;
+    // SAFETY: AsyncFd owns the cloned pidfd and keeps its descriptor unchanged until drop.
+    let holder_pidfd = unsafe { tokio::io::unix::AsyncFd::register(holder_pidfd.try_clone()?) }?;
     tokio::time::timeout(Duration::from_secs(5), holder_pidfd.readable())
         .await?
         .map(drop)?;

@@ -154,7 +154,7 @@ subtle = { version = "2.6", default-features = false }
 tar = { version = "0.4", default-features = false }
 tempfile = { version = "3", default-features = false }
 thiserror = { version = "2", default-features = false }
-tokio = { version = "1", default-features = false }
+tokio = { version = "1.53.3", default-features = false }
 tokio-rustls = { version = "0.26", default-features = false }
 tokio-tungstenite = { version = "0.30", default-features = false }
 tokio-util = { version = "0.7", default-features = false }
