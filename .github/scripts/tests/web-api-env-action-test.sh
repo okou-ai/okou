@@ -275,14 +275,13 @@ run_action() {
   local test_dir="$2"
   local input_app="${3:-api}"
   local input_environment="${4:-preview}"
-  local input_cli_pkg_url="${5-https://static.okou.io/okou-cli/test-sha/package.tgz}"
-  local branded_config="${6:-canonical}"
-  local github_app_vars_json="${7:-}"
-  local github_app_secrets_json="${8:-}"
-  local input_job_ref="${9-pr-123}"
-  local input_api_backend_url="${10-https://pr-123-api-backend.okou.test}"
-  local machine_secret_repo_secrets_json="${11:-}"
-  local extra_repo_vars_json="${12:-}"
+  local branded_config="${5:-canonical}"
+  local github_app_vars_json="${6:-}"
+  local github_app_secrets_json="${7:-}"
+  local input_job_ref="${8-pr-123}"
+  local input_api_backend_url="${9-https://pr-123-api-backend.okou.test}"
+  local machine_secret_repo_secrets_json="${10:-}"
+  local extra_repo_vars_json="${11:-}"
   local action_script="${test_dir}/web-api-env-action.sh"
   local github_output="${test_dir}/github-output"
   local repo_vars_json
@@ -341,7 +340,6 @@ run_action() {
     INPUT_WEB_URL="https://pr-123-www.okou.test" \
     INPUT_APP_URL="https://pr-123-app.okou.test" \
     INPUT_API_BACKEND_URL="$input_api_backend_url" \
-    INPUT_CLI_PKG_URL="$input_cli_pkg_url" \
     REPO_VARS_JSON="$repo_vars_json" \
     REPO_SECRETS_JSON="$repo_secrets_json" \
     DOPPLER_SECRETS_JSON="$doppler_secrets_json" \
@@ -357,7 +355,6 @@ run_github_app_action() {
     "$test_dir" \
     api \
     preview \
-    "https://static.okou.io/okou-cli/test-sha/package.tgz" \
     canonical \
     "$repo_vars_json" \
     "$repo_secrets_json"
@@ -373,7 +370,6 @@ run_machine_secret_action() {
     "$test_dir" \
     "$input_app" \
     "$input_environment" \
-    "https://static.okou.io/okou-cli/test-sha/package.tgz" \
     canonical \
     "" \
     "" \
@@ -392,7 +388,6 @@ run_pi_memory_worker_switch_action() {
     "$test_dir" \
     "$input_app" \
     "$input_environment" \
-    "https://static.okou.io/okou-cli/test-sha/package.tgz" \
     canonical \
     "" \
     "" \
@@ -485,7 +480,6 @@ api_backend_url_explicit_output="$(
     "$api_backend_url_explicit_dir" \
     api \
     production \
-    "https://static.okou.io/okou-cli/test-sha/package.tgz" \
     canonical \
     "" \
     "" \
@@ -509,7 +503,6 @@ for api_backend_url_environment in preview production; do
       "$api_backend_url_absent_dir" \
       api \
       "$api_backend_url_environment" \
-      "https://static.okou.io/okou-cli/test-sha/package.tgz" \
       canonical \
       "" \
       "" \
@@ -534,7 +527,6 @@ web_backend_url_absent_output="$(
     "$web_backend_url_absent_dir" \
     web \
     production \
-    "https://static.okou.io/okou-cli/test-sha/package.tgz" \
     canonical \
     "" \
     "" \
@@ -559,7 +551,7 @@ for mcp_case in \
   mcp_vars="$(jq -nc --arg issuer "$mcp_issuer" \
     '{MCP_OAUTH_ISSUER: $issuer, MCP_RESOURCE_URL: "https://wrong-resource.example.test/mcp"}')"
   mcp_output="$(run_action "$(build_doppler_secrets_json)" "$mcp_dir" \
-    "$mcp_app" "$mcp_environment" "https://static.okou.io/okou-cli/test-sha/package.tgz" \
+    "$mcp_app" "$mcp_environment" \
     canonical "" "" pr-123 "$mcp_api_url" "" "$mcp_vars" 2>&1)"
   mcp_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${mcp_dir}/github-output")"
   assert_contains "$mcp_output" "Rendered"
@@ -654,7 +646,6 @@ assert_google_llm_config "$success_env_file" "llm-dev@vm0-ai-488909.iam.gservice
 assert_env_value "$success_env_file" FEISHU_CALLBACK_BASE_URL "https://pr-123-api-backend.okou.test"
 assert_env_value "$success_env_file" FINICITY_WEBHOOK_BASE_URL "https://pr-123-api-backend.okou.test"
 assert_web_url_canonical "$success_env_file" "https://pr-123-www.okou.test"
-assert_env_value "$success_env_file" CLI_PKG_URL "https://static.okou.io/okou-cli/test-sha/package.tgz"
 assert_env_key_count "$success_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED 1
 assert_env_value "$success_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED "false"
 assert_env_value "$success_env_file" GIT_COMMIT_SHA "$EXPECTED_BUILD_COMMIT_SHA"
@@ -712,7 +703,7 @@ assert_env_key_absent "$preview_web_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABL
 
 empty_job_ref_dir="$(mktemp -d)"
 TEMP_DIRS+=("$empty_job_ref_dir")
-empty_job_ref_output="$(run_action "$(build_doppler_secrets_json)" "$empty_job_ref_dir" api preview "https://static.okou.io/okou-cli/test-sha/package.tgz" canonical "" "" "" 2>&1)"
+empty_job_ref_output="$(run_action "$(build_doppler_secrets_json)" "$empty_job_ref_dir" api preview canonical "" "" "" 2>&1)"
 empty_job_ref_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${empty_job_ref_dir}/github-output")"
 assert_contains "$empty_job_ref_output" "Rendered"
 assert_preview_job_ref_absent "$empty_job_ref_env_file"
@@ -722,7 +713,7 @@ assert_machine_secret_canonical "$empty_job_ref_env_file" "github-atom-machine-s
 
 empty_dir="$(mktemp -d)"
 TEMP_DIRS+=("$empty_dir")
-empty_output="$(run_action "$(build_doppler_secrets_json)" "$empty_dir" api preview "https://static.okou.io/okou-cli/test-sha/package.tgz" empty 2>&1)"
+empty_output="$(run_action "$(build_doppler_secrets_json)" "$empty_dir" api preview empty 2>&1)"
 empty_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${empty_dir}/github-output")"
 assert_contains "$empty_output" "Rendered"
 assert_no_fixture_secret_values "$empty_output"
@@ -757,7 +748,6 @@ assert_env_value "$production_web_env_file" POSTHOG_HOST "https://posthog.github
 assert_env_value "$production_web_env_file" GIT_COMMIT_SHA "$EXPECTED_BUILD_COMMIT_SHA"
 assert_env_absent_value "$production_web_env_file" "ATOM_URL="
 assert_env_key_absent "$production_web_env_file" OKOU_MACHINE_SECRET_KEY
-assert_env_absent_value "$production_web_env_file" "CLI_PKG_URL="
 assert_env_value "$production_web_env_file" OKOU_WEATHER_GOOGLE_WEATHER_TOKEN "github-google-weather-token"
 assert_env_value "$production_web_env_file" OKOU_FINANCE_APIDOJO_TOKEN "github-apidojo-token"
 assert_env_absent_value "$production_web_env_file" "OKOU_SEO_DATAFORSEO_LOGIN="
@@ -772,7 +762,7 @@ assert_env_absent_value "$production_web_env_file" "github-artifact-preview-waf-
 
 production_api_dir="$(mktemp -d)"
 TEMP_DIRS+=("$production_api_dir")
-production_api_output="$(run_action "$(build_doppler_secrets_json)" "$production_api_dir" api production "https://static.okou.io/okou-cli/test-sha/package.tgz" canonical '{"GCP_LLM_SERVICE_ACCOUNT_EMAIL":"llm-prod@vm0-ai-488909.iam.gserviceaccount.com"}' '{"PREVIEW_KMS_KEY_ID":null,"PREVIEW_KMS_ACCESS_KEY_ID":null,"PREVIEW_KMS_SECRET_ACCESS_KEY":null}' 2>&1)"
+production_api_output="$(run_action "$(build_doppler_secrets_json)" "$production_api_dir" api production canonical '{"GCP_LLM_SERVICE_ACCOUNT_EMAIL":"llm-prod@vm0-ai-488909.iam.gserviceaccount.com"}' '{"PREVIEW_KMS_KEY_ID":null,"PREVIEW_KMS_ACCESS_KEY_ID":null,"PREVIEW_KMS_SECRET_ACCESS_KEY":null}' 2>&1)"
 production_api_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${production_api_dir}/github-output")"
 assert_contains "$production_api_output" "Rendered"
 assert_no_fixture_secret_values "$production_api_output"
@@ -797,7 +787,6 @@ assert_web_url_canonical "$production_api_env_file" "https://pr-123-www.okou.tes
 assert_api_backend_url_canonical "$production_api_env_file" "https://pr-123-api-backend.okou.test"
 assert_env_value "$production_api_env_file" FEISHU_CALLBACK_BASE_URL "https://pr-123-api-backend.okou.test"
 assert_env_value "$production_api_env_file" FINICITY_WEBHOOK_BASE_URL "https://pr-123-api-backend.okou.test"
-assert_env_value "$production_api_env_file" CLI_PKG_URL "https://static.okou.io/okou-cli/test-sha/package.tgz"
 assert_env_value "$production_api_env_file" ATOM_URL "https://atom.github.test"
 assert_machine_secret_canonical "$production_api_env_file" "github-atom-machine-secret"
 assert_env_value "$production_api_env_file" MICROSOFT_TEAMS_BOT_APP_ID "github-teams-bot-app-id"
@@ -826,7 +815,7 @@ for kms_secret in PREVIEW_KMS_KEY_ID PREVIEW_KMS_ACCESS_KEY_ID PREVIEW_KMS_SECRE
   TEMP_DIRS+=("$missing_kms_dir")
   missing_kms_secret="$(jq -cn --arg key "$kms_secret" '{($key): null}')"
   status=0
-  missing_kms_output="$(run_action "$(build_doppler_secrets_json)" "$missing_kms_dir" api preview "https://static.okou.io/okou-cli/test-sha/package.tgz" canonical "" "$missing_kms_secret" 2>&1)" || status=$?
+  missing_kms_output="$(run_action "$(build_doppler_secrets_json)" "$missing_kms_dir" api preview canonical "" "$missing_kms_secret" 2>&1)" || status=$?
   if [[ "$status" -eq 0 ]]; then
     fail "preview must reject incomplete KMS credentials instead of using production credentials"
   fi
@@ -846,7 +835,6 @@ for wechat_environment in preview production; do
         "$wechat_dir" \
         "$wechat_app" \
         "$wechat_environment" \
-        "https://static.okou.io/okou-cli/test-sha/package.tgz" \
         canonical \
         "$wechat_vars_json" \
         "$wechat_secrets_json" \
@@ -894,7 +882,6 @@ for discord_environment in preview production; do
         "$discord_dir" \
         "$discord_app" \
         "$discord_environment" \
-        "https://static.okou.io/okou-cli/test-sha/package.tgz" \
         canonical \
         "$discord_vars_json" \
         "$discord_secrets_json" \
@@ -934,7 +921,6 @@ for discord_environment in preview production; do
       "$unconfigured_discord_dir" \
       api \
       "$discord_environment" \
-      "https://static.okou.io/okou-cli/test-sha/package.tgz" \
       canonical \
       '{"DISCORD_OAUTH_CLIENT_ID":"github-discord-legacy-client-id"}' \
       '{"DISCORD_OAUTH_CLIENT_SECRET":"github-discord-legacy-oauth-secret"}' \
@@ -1067,14 +1053,5 @@ for oauth_key in MAILCHIMP_OAUTH_CLIENT_ID MAILCHIMP_OAUTH_CLIENT_SECRET CAL_COM
   assert_contains "$missing_oauth_output" "::error::${oauth_key} is missing from Doppler OAuth config"
   assert_no_fixture_secret_values "$missing_oauth_output"
 done
-
-missing_cli_pkg_dir="$(mktemp -d)"
-TEMP_DIRS+=("$missing_cli_pkg_dir")
-status=0
-missing_cli_pkg_output="$(run_action "$(build_doppler_secrets_json)" "$missing_cli_pkg_dir" api preview "" 2>&1)" || status=$?
-if [[ "$status" -eq 0 ]]; then
-  fail "expected missing API CLI package URL to fail"
-fi
-assert_contains "$missing_cli_pkg_output" "::error::cli-pkg-url is required for API deployments"
 
 echo "web-api-env-action-test: ok"

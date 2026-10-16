@@ -27,7 +27,7 @@ import { isConnectorCatalogUnavailableError } from "../services/connector-catalo
 import {
   buildGithubAppInstallUrl,
   startGithubUserOAuth$,
-  createOrActivateGithubInstallation,
+  createOrActivateGithubInstallation$,
   findGithubInstallationByInstallationId$,
   getGithubInstallationAccessToken,
   getGithubInstallationInfo,
@@ -663,21 +663,14 @@ const connectExistingGithubInstallation$ = command(
   },
 );
 
-async function createActiveGithubInstallationFromCallback(
+async function prepareGithubInstallationFromCallback(
   args: {
-    readonly db: Db;
     readonly appId: string;
     readonly privateKey: string;
-    readonly orgId: string;
-    readonly composeId: string;
     readonly installationId: string;
-    readonly state: ParsedGithubOauthState;
   },
   signal: AbortSignal,
-): Promise<{
-  readonly installRecordId: string;
-  readonly adminGithubUserId: string | null;
-}> {
+) {
   const installInfo = await getGithubInstallationInfo(
     {
       appId: args.appId,
@@ -700,31 +693,7 @@ async function createActiveGithubInstallationFromCallback(
 
   const adminGithubUserId =
     installInfo.targetType === "User" ? installInfo.targetId : null;
-  const featureSwitchContext = await loadComposeFeatureSwitchContext(
-    {
-      db: args.db,
-      composeId: args.composeId,
-      userId: args.state.userId,
-    },
-    signal,
-  );
-  const installRecordId = await createOrActivateGithubInstallation(
-    {
-      db: args.db,
-      orgId: args.orgId,
-      installationId: args.installationId,
-      installInfo,
-      encryptedAccessToken: await encryptPersistentSecretValue(
-        token,
-        featureSwitchContext,
-      ),
-      adminGithubUserId,
-      composeId: args.composeId,
-    },
-    signal,
-  );
-
-  return { installRecordId, adminGithubUserId };
+  return { installInfo, token, adminGithubUserId };
 }
 
 const installGithubOauth$ = command(
@@ -999,15 +968,27 @@ const completeGithubAppInstallationCallback$ = command(
       return worksErrorRedirect(GITHUB_SINGLE_INSTALLATION_REQUIRED);
     }
 
-    const installation = await createActiveGithubInstallationFromCallback(
+    const { installInfo, token, adminGithubUserId } =
+      await prepareGithubInstallationFromCallback(
+        { appId: args.appId, privateKey: args.privateKey, installationId },
+        signal,
+      );
+    const featureSwitchContext = await loadComposeFeatureSwitchContext(
+      { db, composeId: args.composeId, userId: args.state.userId },
+      signal,
+    );
+    const installRecordId = await set(
+      createOrActivateGithubInstallation$,
       {
-        db,
-        appId: args.appId,
-        privateKey: args.privateKey,
         orgId,
-        composeId: args.composeId,
         installationId,
-        state: args.state,
+        installInfo,
+        encryptedAccessToken: await encryptPersistentSecretValue(
+          token,
+          featureSwitchContext,
+        ),
+        adminGithubUserId,
+        composeId: args.composeId,
       },
       signal,
     );
@@ -1018,11 +999,11 @@ const completeGithubAppInstallationCallback$ = command(
       {
         db,
         orgId,
-        installRecordId: installation.installRecordId,
+        installRecordId,
         ghInstallationId: installationId,
         state: args.state,
         code: args.query.code,
-        knownGithubUserId: installation.adminGithubUserId,
+        knownGithubUserId: adminGithubUserId,
       },
       signal,
     );

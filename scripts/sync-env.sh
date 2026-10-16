@@ -36,9 +36,7 @@ API_ENV_LOCAL="$PROJECT_ROOT/turbo/apps/api/.env.local"
 SCRIPTS_ENV_LOCAL="$PROJECT_ROOT/scripts/.env.local"
 
 # --- Computed variables ---
-# RUNNER_DEFAULT_GROUP and CLI_PKG_URL are auto-derived from git email + hostname.
-# The runner group is written to the API and runner env files; the package URL
-# only belongs to the API, which forwards it to runner guests.
+# RUNNER_DEFAULT_GROUP is auto-derived from git email + hostname.
 append_runner_group() {
   local env_file="$1" group_name="$2"
   [[ -f "$env_file" ]] || return 0
@@ -76,35 +74,6 @@ configure_runner_group() {
   echo "  ✓ RUNNER_DEFAULT_GROUP=${group_name}"
 }
 
-append_cli_pkg_url() {
-  local env_file="$1" package_url="$2"
-  [[ -f "$env_file" ]] || return 0
-
-  if grep -q "^CLI_PKG_URL=" "$env_file" 2>/dev/null; then
-    sed -i '/^# Local Okou CLI package$/d; /^# Local Zero CLI package$/d; /^CLI_PKG_URL=/d' "$env_file"
-  fi
-
-  while [[ -s "$env_file" && -z "$(tail -c 1 "$env_file")" ]] && tail -1 "$env_file" | grep -q '^$'; do
-    sed -i '$ d' "$env_file"
-  done
-
-  echo "" >> "$env_file"
-  echo "# Local Okou CLI package" >> "$env_file"
-  echo "CLI_PKG_URL=${package_url}" >> "$env_file"
-}
-
-configure_cli_pkg_url() {
-  local identity package_url
-  identity=$("$SCRIPT_DIR/cn.sh" -u)
-  if [[ ! "$identity" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]; then
-    echo "  ✗ CLI_PKG_URL identity is invalid: ${identity}"
-    exit 1
-  fi
-  package_url="https://static.vm7.io/okou-cli/local/${identity}/package.tgz"
-  append_cli_pkg_url "$API_ENV_LOCAL" "$package_url"
-  echo "  ✓ CLI_PKG_URL=${package_url}"
-}
-
 # --- SSH key provisioning ---
 provision_ssh_key() {
   local key_ref="op://Development/vm0-metal-local/private_key"
@@ -121,5 +90,4 @@ provision_ssh_key() {
 # --- Main ---
 sync_with_1password
 configure_runner_group
-configure_cli_pkg_url
 provision_ssh_key

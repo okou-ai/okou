@@ -2,6 +2,7 @@ import {
   compareRuntimeApiSchemas,
   type RuntimeApiCompatFinding,
 } from "../compat";
+import type { RuntimeApiRouteOwner } from "../routes";
 import {
   type JsonObject,
   runtimeApiSchemaFormatVersion,
@@ -51,6 +52,46 @@ function objectSchema(
     type: "object",
     properties,
     required: [...required],
+  };
+}
+
+/** A route whose 409 declares its error codes and whose 426 names a floor. */
+function documentWithErrorResponses(
+  owner: RuntimeApiRouteOwner,
+  conflictCodes: readonly string[],
+  upgradeRequired: readonly string[],
+): RuntimeApiSchemaDocument {
+  const document = documentWithBody(objectSchema({}, []));
+  return {
+    ...document,
+    routes: document.routes.map((route) => {
+      return {
+        ...route,
+        owner,
+        responses: {
+          ...route.responses,
+          "409": {
+            kind: "json-schema",
+            schema: objectSchema(
+              {
+                error: objectSchema(
+                  { code: { type: "string", enum: [...conflictCodes] } },
+                  ["code"],
+                ),
+              },
+              ["error"],
+            ),
+          },
+          "426": {
+            kind: "json-schema",
+            schema: objectSchema(
+              { minimumSupportedVersion: { type: "string" } },
+              upgradeRequired,
+            ),
+          },
+        },
+      };
+    }),
   };
 }
 
@@ -208,6 +249,43 @@ describe("runtime API compatibility diff", () => {
       problem:
         'Enum value "paused" can be returned by the current schema but is not in the production schema, so clients that decode the production enum reject it.',
     });
+  });
+
+  it("compares non-2xx response bodies on Desktop routes", () => {
+    const findings = compareRuntimeApiSchemas(
+      documentWithErrorResponses(
+        "desktop",
+        ["CONFLICT"],
+        ["minimumSupportedVersion"],
+      ),
+      documentWithErrorResponses("desktop", ["COMMAND_NOT_RUNNING"], []),
+    );
+
+    expect(findings).toMatchObject([
+      {
+        kind: "response-enum-value-removed",
+        path: "responses.409.error.code",
+        responseStatus: 409,
+      },
+      {
+        kind: "response-required-field-removed",
+        path: "responses.426.minimumSupportedVersion",
+        responseStatus: 426,
+      },
+    ]);
+  });
+
+  it("compares only 2xx response bodies on runtime service routes", () => {
+    const findings = compareRuntimeApiSchemas(
+      documentWithErrorResponses(
+        "guest-agent",
+        ["CONFLICT"],
+        ["minimumSupportedVersion"],
+      ),
+      documentWithErrorResponses("guest-agent", ["COMMAND_NOT_RUNNING"], []),
+    );
+
+    expect(findings).toEqual([]);
   });
 
   it("reports nothing for a route that production does not have yet", () => {

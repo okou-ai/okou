@@ -10,13 +10,11 @@
 1 cloudflare-ssh-preconnect-test.sh
 1 cloudflare-ssh-proxy-test.sh
 1 crates-runner-image-waiters-test.sh
-1 deploy-cli-workflow-test.sh
 1 discover-runner-pr-namespaces-test.sh
 1 embedded-cli-workflow-test.sh
 1 fetch-okou-desktop-artifact-test.sh
 1 neon-credential-mask-test.sh
 1 publish-okou-app-assets-test.sh
-1 fetch-okou-cli-artifact-test.sh
 1 reconcile-and-start-runner-groups-test.sh
 1 resolve-app-preview-url-test.sh
 1 runner-api-curl-test.sh
@@ -105,9 +103,7 @@
 4 cleanup-stale-runners-test.sh
 4 clerk-test-resource-workflow-test.sh
 4 cli-package-identity-test.sh
-4 deploy-cli-local-test.sh
 4 dev-runner-test.sh
-4 download-okou-cli-cdn-file-test.sh
 4 fetch-okou-app-artifact-test.sh
 4 kms-production-exit-check-test.sh
 4 neon-connection-string-ssl-test.sh

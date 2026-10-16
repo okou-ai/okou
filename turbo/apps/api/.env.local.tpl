@@ -17,7 +17,6 @@ FEISHU_CALLBACK_BASE_URL=https://api.vm7.ai:8443
 OKOU_WEB_URL=https://www.vm7.ai:8443
 APP_URL=https://app.vm7.ai:8443
 
-# CLI_PKG_URL is appended by scripts/sync-env.sh using the local machine identity.
 
 # Optional: Atom redeem service for onboarding codes
 ATOM_URL=https://atom-api.vm7.ai:8442

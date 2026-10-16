@@ -65,7 +65,6 @@ const SCHEMA = {
   FEISHU_CALLBACK_BASE_URL: z.url(),
   OKOU_WEB_URL: z.url(),
   APP_URL: z.url(),
-  CLI_PKG_URL: z.url(),
   RESEND_API_KEY: z.string().min(1).optional(),
   RESEND_WEBHOOK_SECRET: z.string().min(1).optional(),
   RESEND_FROM_DOMAIN: z.string().min(1).optional(),

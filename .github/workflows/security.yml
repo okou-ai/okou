@@ -293,7 +293,6 @@ jobs:
             .github/scripts/runner/cloudflare-ssh-command.sh \
             .github/scripts/runner/cloudflare-ssh-diagnostics.sh \
             .github/scripts/runner/cloudflare-ssh-preconnect.sh \
-            .github/scripts/artifacts/download-okou-cli-cdn-file.sh \
             .github/scripts/download-verified.sh \
             .github/scripts/neon-preview-branch.sh \
             .github/scripts/release/pass-release-pr-ci-gates.sh \
@@ -310,7 +309,6 @@ jobs:
             crates/runner/tests/behavior/runner-behavior-*.sh \
             crates/sandbox-firecracker/tests/native/runner-behavior-*.sh \
             .github/scripts/artifacts/smoke-okou-cli-artifact.sh \
-            .github/scripts/artifacts/fetch-okou-cli-artifact.sh \
             .github/scripts/artifacts/verify-okou-cli-artifact.sh \
             .github/scripts/artifacts/verify-okou-desktop-artifact.sh \
             .github/scripts/runner/with-runner-lifecycle-lock.sh \
@@ -332,14 +330,11 @@ jobs:
             .github/scripts/tests/cloudflare-ssh-proxy-test.sh \
             .github/scripts/tests/deploy-desktop-workflow-test.sh \
             .github/scripts/tests/ios-testflight-workflow-test.sh \
-            .github/scripts/tests/deploy-cli-local-test.sh \
             .github/scripts/tests/deploy-okou-app-worker-workflow-test.sh \
             .github/scripts/tests/discover-runner-pr-namespaces-test.sh \
             .github/scripts/tests/publish-okou-app-assets-test.sh \
-            .github/scripts/tests/download-okou-cli-cdn-file-test.sh \
             .github/scripts/tests/download-verified-test.sh \
             .github/scripts/tests/fetch-okou-desktop-artifact-test.sh \
-            .github/scripts/tests/fetch-okou-cli-artifact-test.sh \
             crates/nbd-cow/tests/infrastructure/nbd-cow-upload-test.sh \
             .github/scripts/tests/neon-credential-mask-test.sh \
             .github/scripts/tests/neon-connection-string-ssl-test.sh \

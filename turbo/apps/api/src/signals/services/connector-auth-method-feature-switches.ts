@@ -16,7 +16,6 @@ const FEATURE_SWITCH_BY_AUTH_METHOD = Object.freeze<
   "bill\0api-token": FeatureSwitchKey.BillConnector,
   "canva\0oauth": FeatureSwitchKey.CanvaConnector,
   "close\0oauth": FeatureSwitchKey.CloseConnector,
-  "copper\0oauth": FeatureSwitchKey.CopperConnector,
   "datadog\0oauth": FeatureSwitchKey.DatadogConnector,
   "deel\0oauth": FeatureSwitchKey.DeelConnector,
   "docusign\0oauth": FeatureSwitchKey.DocuSignConnector,

@@ -267,7 +267,8 @@ jq -e '
   (.architecture.jobs.build.if | contains("always()")) and
   (.architecture.jobs.build.if | contains("!cancelled()")) and
   any(.architecture.jobs.build.steps[];
-    .run == ".github/scripts/runner/runner-image-architecture.sh build-ready" and
+    (.run // "" | contains(".github/scripts/runner/runner-image-architecture.sh build-ready")) and
+    .env.CLI_ARTIFACT_ID == "${{ inputs.cli-artifact-id }}" and
     .env.RUNNER_IMAGE_COMPILE_RESULT == "${{ needs.compile.result }}" and
     .env.RUNNER_IMAGE_CACHE_HIT == "${{ inputs.cache-hit }}"
   ) and

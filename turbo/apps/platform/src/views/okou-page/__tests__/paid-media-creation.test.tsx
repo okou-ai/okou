@@ -99,11 +99,9 @@ test("An image creation notice opens settings and a confirmed save restores crea
   await waitFor(() => {
     return expect(toggle).toBeChecked();
   });
-  click(within(dialog).getByLabelText("Close"));
+  click(button("Close", dialog));
   await waitFor(() => {
-    return expect(
-      screen.queryByRole("dialog", { name: "Settings" }),
-    ).not.toBeInTheDocument();
+    return expect(dialog).not.toBeInTheDocument();
   });
   await waitFor(() => {
     return expect(

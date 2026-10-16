@@ -5172,7 +5172,6 @@ function buildStoredPlatformEnvironment(args: {
 }): Record<string, string> {
   const platformEnvironment = {
     ...args.platformEnvironment,
-    CLI_PKG_URL: env("CLI_PKG_URL"),
   };
   return args.canonicalOkouRuntime
     ? (withoutLegacyAgentRunEnvironmentEntries(platformEnvironment) ?? {})

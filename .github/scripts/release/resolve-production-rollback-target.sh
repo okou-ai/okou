@@ -4,6 +4,9 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly BLANK_SANDBOX_STATUS_READER_COMMIT=febec8a3399be74b0f14a89cb9f42e39dd5ce69f
 readonly PROVIDER_BALANCE_FAILURE_COMMIT=0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6
+# #40232 installs Pi's runtime with Runner. URL-free APIs cannot serve earlier
+# Guests during the Runner-first rollback interval, even for an older API target.
+readonly BUNDLED_ONLY_CLI_RUNNER_COMMIT=dfff1605013103371cd90962ee5b54c80fc93140
 # #36897 made chat_thread_drafts the only draft store and writes user_id on
 # every draft row. Migration contract_chat_thread_drafts makes user_id and
 # draft_user_message NOT NULL, so earlier APIs fail every draft save.
@@ -650,6 +653,9 @@ if ! git merge-base --is-ancestor "$BLANK_SANDBOX_STATUS_READER_COMMIT" "$runner
 fi
 if ! git merge-base --is-ancestor "$PROVIDER_BALANCE_FAILURE_COMMIT" "$runner_tag_commit"; then
   fail "Runner release ${runner_tag} predates structured provider balance failures: ${PROVIDER_BALANCE_FAILURE_COMMIT}."
+fi
+if ! git merge-base --is-ancestor "$BUNDLED_ONLY_CLI_RUNNER_COMMIT" "$runner_tag_commit"; then
+  fail "Runner release ${runner_tag} predates bundled-only CLI startup: ${BUNDLED_ONLY_CLI_RUNNER_COMMIT}."
 fi
 
 runner_matrix=$("${script_dir}/../runner/runner-host-architecture-groups.sh" target-matrix)

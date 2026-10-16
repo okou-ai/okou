@@ -82,7 +82,7 @@ API integration or crates layer rather than introducing a deployed test hook.
 
 All `cli-e2e-*` jobs in `.github/workflows/turbo.yml` check out the event's
 captured `github.sha`. On `pull_request`, this is the immutable synthetic merge
-commit, matching the preview API, public CLI artifact, App, and Runner rather
+commit, matching the preview API, private CLI input, App, and Runner rather
 than the isolated PR head. This applies to test discovery, account/shard
 preparation, bootstrap, execution, report finalization, and cleanup. All setup
 and test code must match the deployed components so it does not send requests

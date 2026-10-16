@@ -197,11 +197,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Canva design connector",
     enabled: false,
   },
-  [FeatureSwitchKey.CopperConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Copper CRM connector",
-    enabled: true,
-  },
   [FeatureSwitchKey.DatadogConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Datadog observability connector",

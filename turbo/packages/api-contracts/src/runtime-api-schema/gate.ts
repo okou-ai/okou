@@ -1,3 +1,4 @@
+import { isTransformableStatus } from "../client-transforms/select";
 import type { ClientResponseTransform } from "../client-transforms/types";
 import type { RuntimeApiCompatFinding } from "./compat";
 import type { RuntimeApiRouteOwner } from "./routes";
@@ -365,10 +366,8 @@ function transformProof(
   readonly proof?: ClientResponseTransform;
   readonly rejection?: string;
 } {
-  if (
-    finding.direction !== "response" ||
-    finding.responseStatus === undefined
-  ) {
+  const status = transformableStatus(finding);
+  if (status === undefined) {
     return {};
   }
 
@@ -377,7 +376,7 @@ function transformProof(
       transform.client === "desktop" &&
       transform.method.toUpperCase() === finding.method.toUpperCase() &&
       transform.path === finding.routePath &&
-      transform.status === finding.responseStatus
+      transform.status === status
     );
   });
   const publishedVersion =
@@ -414,16 +413,30 @@ function desktopProofs(
     published === undefined
       ? `the published Desktop version (${DESKTOP_PUBLISHED_VERSION_ORACLE})`
       : `the published Desktop version ${published}`;
-  const transformApplies =
-    finding.direction === "response" && finding.responseStatus !== undefined;
-  const proofB = transformApplies
-    ? `(B) register a response transform for ${finding.method} ${finding.routePath} ${finding.responseStatus} in ${DESKTOP_TRANSFORMS_FILE} with maxVersion null or at least ${publishedLabel}.`
-    : `(B) a response transform in ${DESKTOP_TRANSFORMS_FILE}, which cannot prove a ${finding.direction}-level finding; use (A) or keep the production contract.`;
+  const status = transformableStatus(finding);
+  const unprovable =
+    finding.responseStatus === undefined
+      ? `a ${finding.direction}-level finding`
+      : `a non-2xx (${finding.responseStatus}) response finding, because the API transforms only 2xx bodies`;
+  const proofB =
+    status === undefined
+      ? `(B) a response transform in ${DESKTOP_TRANSFORMS_FILE}, which cannot prove ${unprovable}; use (A) or keep the production contract.`
+      : `(B) register a response transform for ${finding.method} ${finding.routePath} ${status} in ${DESKTOP_TRANSFORMS_FILE} with maxVersion null or at least ${publishedLabel}.`;
 
   return [
     `A breaking change here needs one proof in the same PR: (A) raise minimumSupportedVersion in ${DESKTOP_FLOOR_FILE} to a stable x.y.z version that is not lower than the base branch floor, not above ${publishedLabel}, and already tolerates the new shape; or`,
     proofB,
   ].join(" ");
+}
+
+/** The response status a transform could prove, if the finding has one. */
+function transformableStatus(
+  finding: RuntimeApiCompatFinding,
+): number | undefined {
+  const status = finding.responseStatus;
+  return status !== undefined && isTransformableStatus(status)
+    ? status
+    : undefined;
 }
 
 function findingKey(finding: RuntimeApiCompatFinding): string {

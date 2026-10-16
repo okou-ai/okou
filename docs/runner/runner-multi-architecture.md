@@ -119,13 +119,30 @@ provenance, JSON formatting/key order and unused manifest fields do not affect
 reuse. Manifest validation preserves JSON
 integer types and rejects duplicate compilation fields using Python 3, which is
 available in the pinned Rust toolchain. Invalid CLI inputs fail before cache
-lookup; commit-addressed CLI publication and provenance verification are
-unchanged. Input schema 6 intentionally starts a new key space, so the first
+lookup; private CLI artifact source and producer provenance remain verified.
+Input schema 6 intentionally starts a new key space, so the first
 build of each input combination misses once without migrating old references.
 The digest helper is itself part of the committed build inventory; changing its
 hash recipe also rotates keys without changing the cache artifact schema.
 
 ### Package-bound CLI identity and local rootfs keys
+
+Runner Image owns the CLI build for its current image. Its private package,
+manifest and readiness record are uploaded under a unique producer run/attempt
+name. Both architecture jobs and dependency prewarming consume its exact immutable
+artifact ID.
+
+Turbo independently builds its host E2E CLI with the same build, integrity and
+smoke action. Its serial E2E consumes that workflow's immutable artifact ID and
+verifies the package against the captured event source before installation. Host
+E2E selection is independent of metal hosts and image reuse. If a private CLI
+input expires, rerun its producer in the owning workflow before its consumers.
+
+Production prepares CLI only for a Runner release, using the same build,
+integrity and smoke action once before both architecture consumers. API builds
+and deployments do not need a CLI package or public package URL. Rebuild a local
+Runner to update its embedded CLI; globally linking a CLI does not update an
+existing Guest's installed runtime.
 
 The CLI postbuild step writes `okouBuildIdentity` into the existing packed
 `package.json`. Its mandatory schema version 1 contains `piAgentRuntime` and `piSdk`
@@ -140,9 +157,9 @@ consumed keys or metadata entries. The compressed package remains bounded at
 64 MiB; both readers cap the complete decompressed stream at 256 MiB and never
 extract or execute package code. Missing identity or disagreement with the
 external identity fails directly; there is no legacy-format fallback.
-Commit provenance, actual package SHA/size, ready checksums, canonical asset
-checks and immutable commit-addressed publication remain mandatory. Captured
-package URLs continue to serve draining Runners and explicit tool consumers.
+Commit provenance, actual package SHA/size, ready checksums and canonical asset
+checks remain mandatory. Retain immutable historical packages while captured
+contexts can still reference them; current API contexts use the installed CLI.
 CLI changes trigger a Runner release through the existing release dependency.
 
 The build-only native module `crates/runner/cli_package.rs` validates external

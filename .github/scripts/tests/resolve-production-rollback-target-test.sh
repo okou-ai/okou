@@ -22,7 +22,9 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "52525252525252525252525252525252525252ab" ]; then
+    if [ "${3:-}" = "dfff1605013103371cd90962ee5b54c80fc93140" ]; then
+      [ "${MOCK_BUNDLED_CLI_RUNNER_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "52525252525252525252525252525252525252ab" ]; then
       [ "${MOCK_WORKFLOW_NAME_SCOPES_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "4747474747474747474747474747474747474747" ]; then
       [ "${MOCK_NATIVE_BRIEF_MEMBER_RUNTIME_FLOOR_VALID:-1}" = "1" ]
@@ -1038,6 +1040,14 @@ fi
 : >"${tmp_dir}/boundaries.log"
 assert_failure "found 0" run_resolver "${tmp_dir}/zero.output" MOCK_VERCEL_MATCH_COUNT=0
 [ ! -s "${tmp_dir}/zero.output" ] || fail "failed resolution must not publish outputs"
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "predates bundled-only CLI startup" \
+  run_resolver "${tmp_dir}/bundled-cli-runner.output" MOCK_BUNDLED_CLI_RUNNER_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/bundled-cli-runner.output" ] || fail "incompatible CLI Runner must not publish outputs"
+if grep -Eq '^ssh |api.github.com/repos/.*/releases/tags/' "${tmp_dir}/boundaries.log"; then
+  fail "incompatible CLI Runner must fail before Runner artifact or host access"
+fi
 
 : >"${tmp_dir}/boundaries.log"
 assert_failure "found 2" run_resolver "${tmp_dir}/multiple.output" MOCK_VERCEL_MATCH_COUNT=2

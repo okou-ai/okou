@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
   cat <<'USAGE'
-Usage: runner-image-context.sh <resolve|turbo-consumer|playwright-consumer|crates-consumer|image-inputs|needed|artifact-name>
+Usage: runner-image-context.sh <resolve|cli-consumer|turbo-consumer|playwright-consumer|crates-consumer|image-inputs|needed|artifact-name>
 
 resolve:
   Computes release skip, canonical job ref, and head SHA from GitHub event env.
@@ -14,6 +14,9 @@ resolve:
 needed:
   Computes runner image consumer demand and current-image selection from
   explicit workflow selection booleans.
+
+cli-consumer:
+  Computes host CLI E2E demand independently of metal hosts and image reuse.
 
 turbo-consumer:
   Computes whether Turbo runner E2E is a runner image consumer from the same
@@ -251,6 +254,14 @@ needed() {
   emit "image-selection-reason" "$reason"
 }
 
+cli_consumer() {
+  local consumer="false" name
+  for name in API_CHANGED CLI_CHANGED CRATES_CHANGED CI_CHANGED E2E_CHANGED; do
+    if is_true "${!name:-false}"; then consumer="true"; fi
+  done
+  emit "cli-e2e-consumer-needed" "$consumer"
+}
+
 turbo_consumer() {
   require_env EVENT_NAME
 
@@ -329,6 +340,7 @@ artifact_name() {
 cmd="${1:-}"
 case "$cmd" in
   resolve) resolve ;;
+  cli-consumer) cli_consumer ;;
   turbo-consumer) turbo_consumer ;;
   playwright-consumer) playwright_consumer ;;
   crates-consumer) crates_consumer ;;
