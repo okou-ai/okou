@@ -8,6 +8,7 @@ import { onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
+import { env } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { SlackFileFetchError } from "../../external/slack-file-fetcher";
@@ -339,7 +340,8 @@ describe("DELETE /api/integrations/slack", () => {
                 elements: expect.arrayContaining([
                   expect.objectContaining({
                     action_id: "home_login_prompt",
-                    url: expect.stringContaining("/settings/slack?w="),
+                    text: { type: "plain_text", text: "Connect" },
+                    url: `${env("APP_URL")}/settings/slack?w=${install.teamId}&u=${install.installerSlackUserId}`,
                   }),
                 ]),
               }),
@@ -476,7 +478,11 @@ describe("DELETE /api/integrations/slack?action=uninstall", () => {
                   elements: expect.arrayContaining([
                     expect.objectContaining({
                       action_id: "home_open_settings",
-                      url: expect.stringMatching(/\/works$/u),
+                      text: {
+                        type: "plain_text",
+                        text: "Open Okou Settings",
+                      },
+                      url: `${env("APP_URL")}/settings/slack`,
                     }),
                   ]),
                 }),

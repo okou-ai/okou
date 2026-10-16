@@ -132,37 +132,28 @@ pub async fn run_output_bounded(
         () = &mut deadline => WaitOutcome::TimedOut,
     };
 
-    let status = match wait_outcome {
-        WaitOutcome::Child(Ok(status)) => status,
-        WaitOutcome::Child(Err(error)) => {
-            let cleanup_result = kill_and_reap_child(program, &mut child).await;
-            output_tasks.abort();
-            cleanup_result.map_err(BoundedCommandError::Lifecycle)?;
-            return Err(BoundedCommandError::Wait(error));
+    let terminal_result = match wait_outcome {
+        WaitOutcome::Child(Ok(status)) => {
+            let (stdout, stderr) = output_tasks.collect(program).await?;
+            return Ok(BoundedCommandOutcome::Exited(Output {
+                status,
+                stdout,
+                stderr,
+            }));
         }
-        WaitOutcome::SemanticStdoutOverflow(limit) => {
-            let cleanup_result = kill_and_reap_child(program, &mut child).await;
-            output_tasks.abort();
-            cleanup_result.map_err(BoundedCommandError::Lifecycle)?;
-            return Err(BoundedCommandError::OutputTooLarge {
-                stream: "stdout",
-                limit,
-            });
-        }
-        WaitOutcome::TimedOut => {
-            let cleanup_result = kill_and_reap_child(program, &mut child).await;
-            output_tasks.abort();
-            cleanup_result.map_err(BoundedCommandError::Lifecycle)?;
-            return Ok(BoundedCommandOutcome::TimedOut);
-        }
+        WaitOutcome::Child(Err(error)) => Err(BoundedCommandError::Wait(error)),
+        WaitOutcome::SemanticStdoutOverflow(limit) => Err(BoundedCommandError::OutputTooLarge {
+            stream: "stdout",
+            limit,
+        }),
+        WaitOutcome::TimedOut => Ok(BoundedCommandOutcome::TimedOut),
     };
 
-    let (stdout, stderr) = output_tasks.collect(program).await?;
-    Ok(BoundedCommandOutcome::Exited(Output {
-        status,
-        stdout,
-        stderr,
-    }))
+    let cleanup_result = kill_and_reap_child(program, &mut child).await;
+    // Abort readers even when child cleanup fails.
+    output_tasks.abort();
+    cleanup_result.map_err(BoundedCommandError::Lifecycle)?;
+    terminal_result
 }
 
 struct BoundedChild {

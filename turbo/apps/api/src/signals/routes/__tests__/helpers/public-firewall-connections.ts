@@ -86,7 +86,7 @@ export function createPublicFirewallConnections(context: TestContext) {
 
   async function completeOAuth(
     actor: ApiTestUser,
-    slug: "test-oauth" | "gmail" | "google-ads",
+    slug: "test-oauth" | "gmail" | "google-ads" | "google-sheets",
     method: "oauth" | "api" = "oauth",
   ) {
     const started = await connectors.startOauth(actor, slug, method);
@@ -125,7 +125,7 @@ export function createPublicFirewallConnections(context: TestContext) {
 
   async function googleOAuth(
     actor: ApiTestUser,
-    slug: "gmail" | "google-ads",
+    slug: "gmail" | "google-ads" | "google-sheets",
     token: ProviderToken,
   ) {
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");

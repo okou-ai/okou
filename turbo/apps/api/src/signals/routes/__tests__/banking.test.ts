@@ -662,6 +662,16 @@ describe("banking access request lifecycle", () => {
     expect(saved.body.grant?.expiresAt).not.toBeNull();
     expect(saved.body.connection?.status).toBe("active");
 
+    const savedStatus = await accept(
+      client.accessRequestStatus({
+        headers: sessionHeaders(),
+        params: { agentId: fixture.agentId },
+      }),
+      [200],
+    );
+    expect(savedStatus.body.grant).toStrictEqual(saved.body.grant);
+    expect(savedStatus.body.connection).toStrictEqual(saved.body.connection);
+
     const revoked = await accept(
       client.revokeAgentGrant({
         headers: sessionHeaders(),
@@ -671,6 +681,18 @@ describe("banking access request lifecycle", () => {
     );
     expect(revoked.body.grant?.status).toBe("revoked");
     expect(revoked.body.connection?.status).toBe("active");
+
+    const revokedStatus = await accept(
+      client.accessRequestStatus({
+        headers: sessionHeaders(),
+        params: { agentId: fixture.agentId },
+      }),
+      [200],
+    );
+    expect(revokedStatus.body.grant).toStrictEqual(revoked.body.grant);
+    expect(revokedStatus.body.connection).toStrictEqual(
+      revoked.body.connection,
+    );
   });
 
   it("uses branded Mastercard redirect origins without changing the webhook origin", async () => {

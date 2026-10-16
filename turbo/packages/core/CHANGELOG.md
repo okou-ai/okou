@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.762.0](https://github.com/okou-ai/okou/compare/core-v8.761.0...core-v8.762.0) (2026-10-16)
+
+
+### Features
+
+* add interactive desktop shell sessions ([#40349](https://github.com/okou-ai/okou/issues/40349)) ([6dda0aa](https://github.com/okou-ai/okou/commit/6dda0aad6903feb490f88cd11db2145b140dfd1d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.569.0
+
 ## [8.761.0](https://github.com/okou-ai/okou/compare/core-v8.760.0...core-v8.761.0) (2026-10-15)
 
 

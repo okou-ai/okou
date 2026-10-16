@@ -114,16 +114,33 @@ pub(super) struct PollWakeups {
 }
 
 #[derive(Debug)]
+struct DeferredPollWindow {
+    at: tokio::time::Instant,
+    /// The original cap stays with this window across deadline extensions.
+    cap_at: tokio::time::Instant,
+}
+
+impl DeferredPollWindow {
+    fn new(at: tokio::time::Instant, cap_at: tokio::time::Instant) -> Self {
+        Self {
+            at: at.min(cap_at),
+            cap_at,
+        }
+    }
+
+    fn extend_to(&mut self, at: tokio::time::Instant) {
+        self.at = self.at.max(at.min(self.cap_at));
+    }
+}
+
+#[derive(Debug)]
 struct PollWakeupsInner {
     /// Selects slow versus fast ordinary polling cadence.
     ably_connected: bool,
     /// Immediate poll request. Re-armed after `JobFound` to drain backlog.
     poll_now: bool,
-    /// Deferred poll deadline. Blocks immediate and retry polls until this
-    /// deadline is reached.
-    deferred_poll_at: Option<tokio::time::Instant>,
-    /// Upper bound for repeated deferral extension.
-    deferred_poll_cap_at: Option<tokio::time::Instant>,
+    /// A capped deferred window blocks immediate and retry polls until due.
+    deferred_poll: Option<DeferredPollWindow>,
     /// Retry deadline for failed wakeup-driven polls only.
     wakeup_retry_at: Option<tokio::time::Instant>,
     /// Bumped whenever a new wakeup is recorded. This keeps an older HTTP poll
@@ -134,6 +151,20 @@ struct PollWakeupsInner {
 impl PollWakeupsInner {
     fn bump_generation(&mut self) {
         self.generation = self.generation.wrapping_add(1);
+    }
+
+    fn consume_deferred_if_due(&mut self, now: tokio::time::Instant) -> bool {
+        if self
+            .deferred_poll
+            .as_ref()
+            .is_some_and(|window| window.at <= now)
+        {
+            self.deferred_poll = None;
+            self.poll_now = false;
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -149,8 +180,7 @@ impl PollWakeups {
             inner: StdMutex::new(PollWakeupsInner {
                 ably_connected,
                 poll_now: true,
-                deferred_poll_at: None,
-                deferred_poll_cap_at: None,
+                deferred_poll: None,
                 wakeup_retry_at: None,
                 generation: 0,
             }),
@@ -195,10 +225,9 @@ impl PollWakeups {
         cap_at: tokio::time::Instant,
     ) {
         let mut inner = self.lock_inner();
-        let cap_at = *inner.deferred_poll_cap_at.get_or_insert(cap_at);
-        let at = at.min(cap_at);
-        if inner.deferred_poll_at.is_none_or(|existing| at > existing) {
-            inner.deferred_poll_at = Some(at);
+        match &mut inner.deferred_poll {
+            Some(window) => window.extend_to(at),
+            None => inner.deferred_poll = Some(DeferredPollWindow::new(at, cap_at)),
         }
         inner.bump_generation();
         drop(inner);
@@ -227,7 +256,7 @@ impl PollWakeups {
         // A deferred wakeup that arrives while an HTTP poll is in flight
         // must be honored before returning a newly found job to this runner.
         let defer_job_return =
-            outcome == PollOutcome::JobFound && has_new_wakeup && inner.deferred_poll_at.is_some();
+            outcome == PollOutcome::JobFound && has_new_wakeup && inner.deferred_poll.is_some();
         match outcome {
             PollOutcome::JobFound => {
                 // A successful poll can mean more eligible work is already queued,
@@ -235,8 +264,7 @@ impl PollWakeups {
                 // for the ordinary slow/fast cadence.
                 inner.poll_now = true;
                 if !has_new_wakeup {
-                    inner.deferred_poll_at = None;
-                    inner.deferred_poll_cap_at = None;
+                    inner.deferred_poll = None;
                     inner.wakeup_retry_at = None;
                 }
                 inner.bump_generation();
@@ -244,8 +272,7 @@ impl PollWakeups {
             }
             PollOutcome::Empty => {
                 if !has_new_wakeup {
-                    inner.deferred_poll_at = None;
-                    inner.deferred_poll_cap_at = None;
+                    inner.deferred_poll = None;
                     inner.wakeup_retry_at = None;
                 }
             }
@@ -277,16 +304,13 @@ impl PollWakeups {
             let scheduled = {
                 let mut inner = self.lock_inner();
                 let now = tokio::time::Instant::now();
-                if inner.deferred_poll_at.is_some_and(|at| at <= now) {
-                    inner.deferred_poll_at = None;
-                    inner.deferred_poll_cap_at = None;
-                    inner.poll_now = false;
+                if inner.consume_deferred_if_due(now) {
                     return Some(PollDue {
                         reason: PollReason::Deferred,
                         generation: inner.generation,
                     });
                 }
-                if inner.deferred_poll_at.is_some() {
+                if inner.deferred_poll.is_some() {
                     // Deferred fairness deliberately holds immediate polls
                     // and wakeup retries until the deferred deadline.
                     Self::next_scheduled(&inner, now, slow_interval, fast_interval)
@@ -327,11 +351,11 @@ impl PollWakeups {
         slow_interval: Duration,
         fast_interval: Duration,
     ) -> ScheduledPoll {
-        let mut scheduled = if let Some(at) = inner.deferred_poll_at {
+        let mut scheduled = if let Some(window) = &inner.deferred_poll {
             // A pending deferred poll is the highest-priority scheduled
             // deadline, even when an immediate poll or wakeup retry exists.
             ScheduledPoll {
-                at,
+                at: window.at,
                 reason: PollReason::Deferred,
             }
         } else if inner.ably_connected {
@@ -346,7 +370,7 @@ impl PollWakeups {
             }
         };
 
-        if inner.deferred_poll_at.is_none()
+        if inner.deferred_poll.is_none()
             && let Some(at) = inner.wakeup_retry_at
             && at <= scheduled.at
         {
@@ -365,7 +389,7 @@ impl PollWakeups {
         let is_due = match scheduled.reason {
             PollReason::Immediate => false,
             PollReason::WakeupRetry => {
-                if inner.deferred_poll_at.is_none()
+                if inner.deferred_poll.is_none()
                     && inner.wakeup_retry_at.is_some_and(|at| at <= now)
                 {
                     inner.wakeup_retry_at = None;
@@ -374,24 +398,15 @@ impl PollWakeups {
                     false
                 }
             }
-            PollReason::Deferred => {
-                if inner.deferred_poll_at.is_some_and(|at| at <= now) {
-                    inner.deferred_poll_at = None;
-                    inner.deferred_poll_cap_at = None;
-                    inner.poll_now = false;
-                    true
-                } else {
-                    false
-                }
-            }
+            PollReason::Deferred => inner.consume_deferred_if_due(now),
             PollReason::Slow => {
-                inner.deferred_poll_at.is_none()
+                inner.deferred_poll.is_none()
                     && inner.ably_connected
                     && !inner.poll_now
                     && !Self::has_due_wakeup(&inner, now)
             }
             PollReason::Fast => {
-                inner.deferred_poll_at.is_none()
+                inner.deferred_poll.is_none()
                     && !inner.ably_connected
                     && !inner.poll_now
                     && !Self::has_due_wakeup(&inner, now)
@@ -405,7 +420,10 @@ impl PollWakeups {
 
     fn has_due_wakeup(inner: &PollWakeupsInner, now: tokio::time::Instant) -> bool {
         inner.wakeup_retry_at.is_some_and(|at| at <= now)
-            || inner.deferred_poll_at.is_some_and(|at| at <= now)
+            || inner
+                .deferred_poll
+                .as_ref()
+                .is_some_and(|window| window.at <= now)
     }
 
     #[cfg(test)]
@@ -414,8 +432,8 @@ impl PollWakeups {
         PollWakeupsSnapshot {
             ably_connected: inner.ably_connected,
             poll_now: inner.poll_now,
-            deferred_poll_at: inner.deferred_poll_at,
-            deferred_poll_cap_at: inner.deferred_poll_cap_at,
+            deferred_poll_at: inner.deferred_poll.as_ref().map(|window| window.at),
+            deferred_poll_cap_at: inner.deferred_poll.as_ref().map(|window| window.cap_at),
             wakeup_retry_at: inner.wakeup_retry_at,
         }
     }
@@ -1566,6 +1584,38 @@ mod tests {
         wakeups.request_deferred_poll_until(deadline);
 
         assert_eq!(wakeups.snapshot().deferred_poll_at, Some(deadline.into()));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn deferred_poll_revalidates_extended_deadline() {
+        let wakeups = PollWakeups::new(true);
+        let now = tokio::time::Instant::now();
+        wakeups.request_deferred_poll_after(Duration::from_secs(2));
+        let scheduled = PollWakeups::next_scheduled(
+            &wakeups.lock_inner(),
+            now,
+            Duration::from_secs(30),
+            Duration::from_secs(5),
+        );
+
+        tokio::time::advance(Duration::from_secs(1)).await;
+        wakeups.request_deferred_poll_after(Duration::from_secs(2));
+        wakeups.request_deferred_poll_after(Duration::ZERO);
+
+        // The earlier timer can win a race with the extension notification.
+        tokio::time::sleep_until(scheduled.at).await;
+        assert!(wakeups.consume_scheduled(scheduled).is_none());
+
+        let due = wakeups
+            .wait_for_poll_due(
+                &CancellationToken::new(),
+                Duration::from_secs(30),
+                Duration::from_secs(5),
+            )
+            .await;
+        assert_eq!(poll_reason(due), Some(PollReason::Deferred));
+        assert_eq!(tokio::time::Instant::now(), now + Duration::from_secs(3));
+        assert!(!wakeups.snapshot().poll_now);
     }
 
     #[tokio::test(start_paused = true)]

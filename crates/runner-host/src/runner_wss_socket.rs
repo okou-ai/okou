@@ -373,6 +373,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn invalid_journals_are_preserved_without_publishing_socket() {
+        let record = |inode: u64, temporary_name: &str| {
+            serde_json::to_vec(&serde_json::json!({
+                "inode": inode,
+                "mtime": 0,
+                "mtime_nsec": 0,
+                "temporary_name": temporary_name,
+            }))
+            .unwrap()
+        };
+        let valid_name = format!(".wss-{}", Uuid::new_v4().simple());
+        for (bytes, expected_error) in [
+            (b"{".to_vec(), io::ErrorKind::Other),
+            (vec![b'x'; 1025], io::ErrorKind::PermissionDenied),
+            (record(1, "foreign"), io::ErrorKind::PermissionDenied),
+            (record(1, ".wss-short"), io::ErrorKind::PermissionDenied),
+            (
+                record(1, ".wss-gggggggggggggggggggggggggggggggg"),
+                io::ErrorKind::PermissionDenied,
+            ),
+            (record(0, &valid_name), io::ErrorKind::PermissionDenied),
+            (
+                br#"{"inode":1,"mtime":0,"mtime_nsec":0,"temporary_name":".wss-00000000000000000000000000000000","extra":true}"#.to_vec(),
+                io::ErrorKind::Other,
+            ),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let dir = root.path().join("wss");
+            std::fs::create_dir(&dir).unwrap();
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o710)).unwrap();
+            let id = Uuid::new_v4();
+            let journal = dir.join(format!("{id}.owner"));
+            std::fs::write(&journal, &bytes).unwrap();
+            std::fs::set_permissions(&journal, std::fs::Permissions::from_mode(0o600)).unwrap();
+            let before = std::fs::symlink_metadata(&journal).unwrap();
+            let error = RunnerWssSocket::bind(&dir, id).err().unwrap();
+            assert_eq!(error.kind(), expected_error);
+            assert_eq!(std::fs::read(&journal).unwrap(), bytes);
+            assert_eq!(std::fs::symlink_metadata(&journal).unwrap().ino(), before.ino());
+            assert!(!dir.join(format!("{id}.sock")).exists());
+            assert!(!std::fs::read_dir(&dir).unwrap().any(|entry| {
+                entry
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".wss-")
+            }));
+        }
+    }
+
+    #[tokio::test]
     async fn replaced_parent_symlink_is_not_followed_during_cleanup() {
         let root = tempfile::tempdir().unwrap();
         let dir = root.path().join("wss");
