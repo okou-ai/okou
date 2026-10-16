@@ -70,8 +70,10 @@ jobs:
 
       - name: Configure coverage validation paths
         run: |
-          echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
-          echo "COVERAGE_ARCHIVE_TEMP_DIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          {
+            echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache"
+            echo "COVERAGE_ARCHIVE_TEMP_DIR=$RUNNER_TEMP"
+          } >> "$GITHUB_ENV"
 
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -165,10 +167,12 @@ jobs:
 
       - name: Configure coverage validation paths
         run: |
-          echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
-          echo "COVERAGE_ARCHIVE_TEMP_DIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
-          echo "CARGO_LLVM_COV_TARGET_DIR=$GITHUB_WORKSPACE/crates/target/llvm-cov-target" >> "$GITHUB_ENV"
-          echo "CARGO_LLVM_COV_BUILD_DIR=$GITHUB_WORKSPACE/crates/target/llvm-cov-target" >> "$GITHUB_ENV"
+          {
+            echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache"
+            echo "COVERAGE_ARCHIVE_TEMP_DIR=$RUNNER_TEMP"
+            echo "CARGO_LLVM_COV_TARGET_DIR=$GITHUB_WORKSPACE/crates/target/llvm-cov-target"
+            echo "CARGO_LLVM_COV_BUILD_DIR=$GITHUB_WORKSPACE/crates/target/llvm-cov-target"
+          } >> "$GITHUB_ENV"
 
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -188,6 +192,11 @@ jobs:
       - name: Sync locked addon
         working-directory: crates/runner/mitm-addon
         run: uv sync --locked
+
+      - name: Fetch locked Rust source dependencies
+        working-directory: crates
+        timeout-minutes: 5
+        run: cargo fetch --locked
 
       - name: Validate producer artifact selection
         env:
