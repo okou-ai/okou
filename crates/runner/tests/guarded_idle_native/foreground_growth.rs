@@ -36,12 +36,22 @@ async fn held<T>(
     Ok(future.await)
 }
 
-pub async fn exercise(request: Request) -> TestResult<()> {
+#[derive(serde::Serialize)]
+pub struct Completion {
+    pub sandbox_id: SandboxId,
+    pub run_id: RunId,
+    pub operation_id: String,
+    pub backing_generation: String,
+    pub backing_exit_confirmed: bool,
+}
+
+/// Complete only this foreground owner; other accepted inventory remains owned.
+pub async fn prepare(request: Request) -> TestResult<Completion> {
     let Request {
         context,
         plan,
         preparation_bytes,
-        envelope,
+        envelope: _,
         proof,
         backing,
         original,
@@ -109,6 +119,8 @@ pub async fn exercise(request: Request) -> TestResult<()> {
     let work_proof = proof.clone();
     let work = permit.spawn(move |mut operation| async move {
         let context = work_context;
+        let completed_backing;
+        let backing_exit_confirmed;
         if fresh {
             let lease = ResourceBudget::try_reserve_lease(&context.budget, 2, 4096)
                 .ok_or_else(|| io::Error::other("native foreground full profile does not fit"))?;
@@ -163,6 +175,13 @@ pub async fn exercise(request: Request) -> TestResult<()> {
                 );
             }
             checked?;
+            completed_backing = actual
+                .as_ref()
+                .ok_or_else(|| io::Error::other("native Fresh completion backing missing"))?
+                .identity()
+                .generation()
+                .to_string();
+            backing_exit_confirmed = true;
             drop(lease);
         } else {
             let reservation =
@@ -252,6 +271,8 @@ pub async fn exercise(request: Request) -> TestResult<()> {
                 work_proof.retain(parked);
                 return Err(io::Error::other("native reuse original repark was rejected").into());
             }
+            completed_backing = backing.identity().generation().to_string();
+            backing_exit_confirmed = false;
         }
         context.status.remove_run_if_matching(run, id).await?;
         work_proof.foreground_witness(
@@ -263,9 +284,21 @@ pub async fn exercise(request: Request) -> TestResult<()> {
                 "original_owner_preserved": true, "allocated": context.budget.allocated(),
             }),
         )?;
-        Ok::<(), Box<dyn Error + Send + Sync>>(())
+        Ok::<_, Box<dyn Error + Send + Sync>>(Completion {
+            sandbox_id: id,
+            run_id: run,
+            operation_id: operation_id.generation().to_string(),
+            backing_generation: completed_backing,
+            backing_exit_confirmed,
+        })
     })?;
-    work.join().await??;
+    work.join().await?
+}
+
+pub async fn exercise(request: Request) -> TestResult<()> {
+    let context = request.context.clone();
+    let envelope = request.envelope;
+    prepare(request).await?;
     let mut saving = context
         .tracker
         .start_pool_retirement_batch(

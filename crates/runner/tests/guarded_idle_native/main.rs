@@ -5,6 +5,7 @@
 mod continuation;
 mod continuation_api;
 mod critical;
+mod critical_progress;
 mod evidence;
 mod fences;
 mod finalizing;
@@ -64,6 +65,7 @@ enum Corpus {
     Fences,
     LogicalProgress,
     IncomingProgress,
+    CriticalProgress,
 }
 
 const MISSING_GUEST_TIMEZONE: &str = "Etc/okou-test-missing-zone";
@@ -481,6 +483,28 @@ async fn native_incoming_records_reader_heartbeat_and_cleanup_contention() -> Te
     .await
 }
 
+#[test]
+fn native_critical_progress_report_requires_complete_contention_and_custody() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/critical_progress_report_test.py"
+        ))
+        .output()
+        .expect("native Critical progress report requires Python3");
+    assert!(
+        output.status.success(),
+        "Critical progress report failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD inputs and final-source Critical contention P1 proof"]
+async fn native_critical_records_independent_contention_progress() -> TestResult<()> {
+    measured_selected_corpus(&[NativeScope::Critical], Corpus::CriticalProgress).await
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires owned KVM/NBD artifacts, synthetic native API, mock Codex and exact-source P1 proof"]
 async fn native_continuation_records_complete_session_history_and_required_saving() -> TestResult<()>
@@ -613,6 +637,8 @@ async fn exercise_selected_factories(
                                 "LogicalProgress".into()
                             } else if corpus == Corpus::IncomingProgress {
                                 format!("Incoming{scope:?}")
+                            } else if corpus == Corpus::CriticalProgress {
+                                "CriticalProgress".into()
                             } else if corpus == Corpus::Continuation {
                                 if matches!(scope, NativeScope::Batch(_)) {
                                     "ContinuationNonzero".into()
@@ -1015,7 +1041,10 @@ async fn exercise_retirement(
                     factory: factory.clone(), pool: pool.clone(), status: status.clone(),
                     operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
                     rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
-                }, inputs, recovery_source.as_ref().ok_or_else(|| io::Error::other("native Critical source missing"))?, proof).await?;
+                }, inputs, recovery_source.as_ref().ok_or_else(|| io::Error::other("native Critical source missing"))?, proof,
+                    (corpus == Corpus::CriticalProgress).then(|| critical_progress::Request {
+                        directory: paths.base_dir(), backing: backing.clone(), original: run_id,
+                    })).await?;
                 Ok(None)
             }
             NativeScope::Recovery => {
