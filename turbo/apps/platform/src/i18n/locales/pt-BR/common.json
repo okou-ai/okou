@@ -126,7 +126,7 @@
         "other": "Outro",
         "parentFolders": "Pastas superiores",
         "pending": "Os arquivos estarão disponíveis quando a execução na fila começar.",
-        "readonly": "Arquivos somente para leitura da execução atual. Fechar o painel libera a conexão.",
+        "readonly": "Arquivos somente para leitura da execução atual.",
         "refresh": "Atualizar",
         "retry": "Tentar novamente",
         "root": "Pasta raiz",

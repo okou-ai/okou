@@ -124,7 +124,7 @@
         "other": "Sonstige",
         "parentFolders": "Übergeordnete Ordner",
         "pending": "Dateien sind verfügbar, sobald der wartende Lauf startet.",
-        "readonly": "Schreibgeschützte Dateien des aktuellen Laufs. Beim Schließen wird die Verbindung freigegeben.",
+        "readonly": "Schreibgeschützte Dateien des aktuellen Laufs.",
         "refresh": "Aktualisieren",
         "retry": "Erneut versuchen",
         "root": "Stammordner",

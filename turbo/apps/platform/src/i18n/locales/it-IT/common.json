@@ -126,7 +126,7 @@
         "other": "Altro",
         "parentFolders": "Cartelle superiori",
         "pending": "I file saranno disponibili all’avvio dell’esecuzione in coda.",
-        "readonly": "File di sola lettura dell’esecuzione corrente. Chiudendo il pannello si libera la connessione.",
+        "readonly": "File di sola lettura dell’esecuzione corrente.",
         "refresh": "Aggiorna",
         "retry": "Riprova",
         "root": "Cartella radice",

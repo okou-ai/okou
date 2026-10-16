@@ -124,7 +124,7 @@
         "other": "其他",
         "parentFolders": "上级文件夹",
         "pending": "排队中的运行开始后即可浏览文件。",
-        "readonly": "仅浏览当前运行的文件。关闭面板会释放连接。",
+        "readonly": "仅浏览当前运行的文件。",
         "refresh": "刷新",
         "retry": "重试",
         "root": "根目录",

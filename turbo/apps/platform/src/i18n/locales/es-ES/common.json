@@ -126,7 +126,7 @@
         "other": "Otro",
         "parentFolders": "Carpetas superiores",
         "pending": "Los archivos estarán disponibles cuando comience la ejecución en cola.",
-        "readonly": "Archivos de solo lectura de la ejecución actual. Cerrar el panel libera la conexión.",
+        "readonly": "Archivos de solo lectura de la ejecución actual.",
         "refresh": "Actualizar",
         "retry": "Reintentar",
         "root": "Carpeta raíz",
