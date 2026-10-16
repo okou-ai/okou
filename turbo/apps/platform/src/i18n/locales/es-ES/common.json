@@ -4097,6 +4097,7 @@
   "onboarding": {
     "common": {
       "next": "Siguiente",
+      "skip": "Omitir",
       "stepProgress": "Paso {{current}} de {{total}}"
     },
     "documentTitles": {

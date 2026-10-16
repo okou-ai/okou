@@ -1,13 +1,20 @@
 import { PersonalSubscriptionDialogs } from "../okou-page/subscription-linking.tsx";
 import type { ReactNode } from "react";
 import { Button } from "@okouai/ui";
-import { useSet } from "ccstate-react";
+import { useGet, useSet } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { ChevronLeft, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { AccountDropdown } from "../okou-page/sidebar-account";
 import { OrgSwitcherCompact } from "../okou-page/org-switcher.tsx";
 import { SettingsDialogMount } from "../okou-page/components/settings/settings-dialog.tsx";
 import { handleAccountAction$ } from "../../signals/okou-page/nav.ts";
+import {
+  canSkipPreviewOnboarding$,
+  skipPreviewOnboarding$,
+} from "../../signals/onboarding/onboarding-actions.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
+import { detach, Reason } from "../../signals/utils.ts";
 
 /** One track that fills with the flow, rather than a segment per step. */
 function OnboardingStepProgress({
@@ -115,12 +122,16 @@ function OnboardingStepTopBar({
   total,
   secondaryLabel,
   onSecondary,
+  secondaryDisabled,
+  secondaryBusy,
   onBack,
 }: {
   readonly current: number;
   readonly total: number;
   readonly secondaryLabel?: string;
   readonly onSecondary?: () => void;
+  readonly secondaryDisabled: boolean;
+  readonly secondaryBusy: boolean;
   readonly onBack?: () => void;
 }) {
   const { t } = useTranslation();
@@ -154,6 +165,8 @@ function OnboardingStepTopBar({
           variant="ghost"
           className="px-3"
           onClick={onSecondary}
+          disabled={secondaryDisabled}
+          aria-busy={secondaryBusy}
         >
           {secondaryLabel}
         </Button>
@@ -176,6 +189,8 @@ function OnboardingStepActions({
   primaryBusy,
   secondaryLabel,
   onSecondary,
+  secondaryDisabled,
+  secondaryBusy,
   onBack,
 }: {
   readonly primaryLabel: string;
@@ -184,6 +199,8 @@ function OnboardingStepActions({
   readonly primaryBusy: boolean;
   readonly secondaryLabel?: string;
   readonly onSecondary?: () => void;
+  readonly secondaryDisabled: boolean;
+  readonly secondaryBusy: boolean;
   readonly onBack?: () => void;
 }) {
   const { t } = useTranslation();
@@ -212,6 +229,8 @@ function OnboardingStepActions({
             size="lg"
             variant="ghost"
             onClick={onSecondary}
+            disabled={secondaryDisabled}
+            aria-busy={secondaryBusy}
             className="max-sm:hidden"
           >
             {secondaryLabel}
@@ -277,6 +296,22 @@ export function OnboardingStepLayout({
   readonly contentAlign?: "center" | "start";
   readonly children: ReactNode;
 }) {
+  const { t } = useTranslation();
+  const canSkipPreview = useGet(canSkipPreviewOnboarding$);
+  const pageSignal = useGet(pageSignal$);
+  const [skipLoadable, skipPreview] = useLoadableSet(skipPreviewOnboarding$);
+  const skipping = canSkipPreview && skipLoadable.state === "loading";
+  const secondaryActionLabel = canSkipPreview
+    ? t(($) => {
+        return $.onboarding.common.skip;
+      })
+    : secondaryLabel;
+  const secondaryAction = canSkipPreview
+    ? () => {
+        detach(skipPreview(pageSignal), Reason.DomCallback);
+      }
+    : onSecondary;
+
   return (
     <div className="relative box-border flex h-full max-h-full min-h-full w-full overflow-hidden bg-sidebar pb-safe text-foreground max-sm:bg-background">
       <SettingsDialogMount />
@@ -295,8 +330,10 @@ export function OnboardingStepLayout({
         <OnboardingStepTopBar
           current={currentStep}
           total={totalSteps}
-          secondaryLabel={secondaryLabel}
-          onSecondary={onSecondary}
+          secondaryLabel={secondaryActionLabel}
+          onSecondary={secondaryAction}
+          secondaryDisabled={canSkipPreview && (skipping || primaryBusy)}
+          secondaryBusy={skipping}
           onBack={onBack}
         />
         {/* The rail is 3.5rem wide, so account for half of it in each track:
@@ -334,10 +371,12 @@ export function OnboardingStepLayout({
           <OnboardingStepActions
             primaryLabel={primaryLabel}
             onPrimary={onPrimary}
-            primaryDisabled={primaryDisabled}
+            primaryDisabled={primaryDisabled || skipping}
             primaryBusy={primaryBusy}
-            secondaryLabel={secondaryLabel}
-            onSecondary={onSecondary}
+            secondaryLabel={secondaryActionLabel}
+            onSecondary={secondaryAction}
+            secondaryDisabled={canSkipPreview && (skipping || primaryBusy)}
+            secondaryBusy={skipping}
             onBack={onBack}
           />
         </div>

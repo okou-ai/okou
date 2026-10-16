@@ -4020,6 +4020,7 @@
   "onboarding": {
     "common": {
       "next": "Berikutnya",
+      "skip": "Lewati",
       "stepProgress": "Langkah {{current}} dari {{total}}"
     },
     "documentTitles": {

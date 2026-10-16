@@ -4038,6 +4038,7 @@
   "onboarding": {
     "common": {
       "next": "अगला",
+      "skip": "छोड़ें",
       "stepProgress": "{{total}} का चरण {{current}}"
     },
     "documentTitles": {
