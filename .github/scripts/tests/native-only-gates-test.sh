@@ -74,6 +74,8 @@ def gate(jobs, name, values, expected):
 native = context()
 for event in ['pull_request', 'merge_group', 'push']:
     selected = context(ios=False, ts=True, event=event)
+    assert not condition(turbo['cli-e2e-01-serial'], selected, cancelled=True), \
+        'host CLI E2E must stop when the workflow is cancelled'
     for name in ['prepare-cli', 'cli-e2e-01-serial']:
         assert condition(turbo[name], selected), name
         for failure in ['failure', 'cancelled', 'skipped']:

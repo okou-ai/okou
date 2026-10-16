@@ -2051,7 +2051,8 @@ jobs:
     # Code checks remain required by ci-gate-turbo, independently of E2E.
     needs: [prepare, prepare-cli]
     if: |
-      always() &&
+      !cancelled() &&
+      needs.prepare.result == 'success' &&
       needs.prepare.outputs.job-ref != '' &&
       needs.prepare.outputs.cli-e2e-consumer-needed == 'true' &&
       needs.prepare-cli.result == 'success'
