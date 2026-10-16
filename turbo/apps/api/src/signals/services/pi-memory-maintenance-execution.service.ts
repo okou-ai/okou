@@ -33,6 +33,9 @@ import {
   piMemorySessionAffinityKey,
 } from "@okouai/pi-agent-runtime/api";
 import { command } from "ccstate";
+import { eq, sql, type SQL } from "drizzle-orm";
+import { z } from "zod";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { randomUUID } from "node:crypto";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
@@ -523,6 +526,96 @@ const prepareMaintenanceLaunch$ = command(
  * Launch preparation failed after admission: keep the failed run record (with
  * its callback row), re-validate the claim fence and bind nothing.
  */
+const failedMaintenancePublicationRowSchema = z.discriminatedUnion("outcome", [
+  z.object({
+    outcome: z.literal("storage0"),
+    attribution_id: z.null(),
+    run_id: z.null(),
+    callback_id: z.null(),
+  }),
+  z.object({
+    outcome: z.literal("feature_false"),
+    attribution_id: z.null(),
+    run_id: z.null(),
+    callback_id: z.null(),
+  }),
+  z.object({
+    outcome: z.literal("attribution0"),
+    attribution_id: z.null(),
+    run_id: z.null(),
+    callback_id: z.null(),
+  }),
+  z.object({
+    outcome: z.literal("published"),
+    attribution_id: z.uuid(),
+    run_id: z.uuid(),
+    callback_id: z.uuid(),
+  }),
+]);
+
+/** Actual RETURNING relations gate every dependent insert. */
+function failedMaintenancePublicationWrites(): SQL {
+  return sql`
+      written_attribution AS (
+        INSERT INTO ${billingRunAttribution}
+          ("run_id", "org_id", "user_id", "run_started_at", "source",
+           "thread_id", "thread_context")
+        SELECT input.run_id, input.run_org_id, input.run_user_id,
+          input.attribution_started_at, 'agent', NULL, 'threadless'
+        FROM input CROSS JOIN allowed
+        WHERE true
+        ON CONFLICT ("run_id") DO UPDATE SET
+          "run_id" = excluded.run_id,
+          "thread_id" = CASE
+            WHEN ${billingRunAttribution.threadContext} = 'unknown'
+            THEN excluded.thread_id ELSE ${billingRunAttribution.threadId} END,
+          "thread_context" = CASE
+            WHEN ${billingRunAttribution.threadContext} = 'unknown'
+            THEN excluded.thread_context ELSE ${billingRunAttribution.threadContext} END
+        WHERE (${eq(billingRunAttribution.orgId, sql`excluded.org_id`)}
+          AND ${eq(billingRunAttribution.userId, sql`excluded.user_id`)}
+          AND ${eq(billingRunAttribution.runStartedAt, sql`excluded.run_started_at`)}
+          AND ${eq(billingRunAttribution.source, sql`excluded.source`)})
+        RETURNING ${billingRunAttribution.runId} AS run_id
+      ),
+      written_run AS (
+        INSERT INTO ${agentRuns} (
+          "id", "user_id", "agent_id", "status", "prompt", "append_system_prompt",
+          "vars", "secret_names", "storage_mounts", "launch_snapshot",
+          "official_workflow_provenance", "error", "org_id", "created_at",
+          "credit_admitted", "completed_at", "runner_group", "trigger_source",
+          "autonomy_budget", "workflow_automation_id", "model_provider",
+          "model_provider_id", "model_provider_account_identity",
+          "model_provider_credential_scope", "selected_model",
+          "model_runtime_provider", "model_runtime_model", "model_usage_provider",
+          "model_long_context_min_total_input_tokens", "built_in_model_key_id",
+          "reasoning_effort", "codex_service_tier", "selected_image_model",
+          "chat_thread_id", "api_started_at", "first_assistant_event_acknowledged_at",
+          "summary", "trigger_brief"
+        )
+        SELECT
+          written_attribution.run_id, input.run_user_id, NULL, 'failed',
+          input.prompt, input.append_system_prompt, NULL, input.secret_names,
+          NULL, input.launch_snapshot, NULL, input.error, input.run_org_id,
+          input.created_at, false, input.created_at, NULL, input.trigger_source,
+          input.autonomy_budget, NULL, input.model_provider, input.model_provider_id,
+          NULL, input.model_provider_credential_scope, input.selected_model,
+          input.model_runtime_provider, input.model_runtime_model, NULL, NULL,
+          input.built_in_model_key_id, NULL, NULL, input.selected_image_model,
+          NULL, input.api_started_at, NULL, NULL, NULL
+        FROM input CROSS JOIN written_attribution
+        RETURNING ${agentRuns.id} AS id
+      ),
+      written_callback AS (
+        INSERT INTO ${agentRunCallbacks}
+          ("run_id", "url", "internal_kind", "encrypted_secret", "payload")
+        SELECT written_run.id, NULL, input.internal_kind, NULL, input.callback_payload
+        FROM input CROSS JOIN written_run
+        RETURNING ${agentRunCallbacks.id} AS id
+      )
+  `;
+}
+
 const failMaintenanceLaunch$ = command(
   async (
     { set },
@@ -533,55 +626,128 @@ const failMaintenanceLaunch$ = command(
     },
     signal: AbortSignal,
   ): Promise<never> => {
-    const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0221; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      const { record } = args;
-      const error =
-        args.error instanceof Error ? args.error.message : "Run failed";
-      const rowInput = {
-        record,
-        createdAt: nowDate(),
-        status: "failed" as const,
-        runStorageMounts: null,
-        runnerGroup: null,
-        creditAdmitted: false,
-        accountIdentity: null,
-        error,
-      };
-      await tx.insert(agentRuns).values(maintenanceRunValues(rowInput));
-      await tx
-        .insert(agentRunCallbacks)
-        .values(maintenanceCallbackValues(record));
-      const capture = maintenanceBillingAttribution(record, rowInput.createdAt);
-      const [attribution] = await tx
-        .insert(billingRunAttribution)
-        .values(capture.values)
-        .onConflictDoUpdate(capture.conflict)
-        .returning({ id: billingRunAttribution.runId });
-      if (!attribution) {
-        throw new Error("New Run billing attribution conflicts with history");
-      }
-      signal.throwIfAborted();
-      const proof = args.credential.proof;
-      // Preserve the storage and feature fences for the captured owner.
-      const plan = piMemoryPhase2CredentialValidationPlan(proof);
-      const [storage] = await tx
-        .select(plan.storage.fields)
-        .from(storages)
-        .where(plan.storage.where)
-        .for("share");
-      requirePiMemoryPhase2CredentialStorage(storage);
-      const featureRows = await tx
-        .select(plan.features.fields)
-        .from(userFeatureSwitches)
-        .where(plan.features.where);
-      const context = piMemoryPhase2FeatureContext(proof, featureRows);
-      signal.throwIfAborted();
-      requirePiMemoryPhase2FeatureEnabled(context);
+    const db = set(writeDb$); // Owning command's only handle; never passed out.
+    signal.throwIfAborted();
+    const { record } = args;
+    const proof = args.credential.proof;
+    const error =
+      args.error instanceof Error ? args.error.message : "Run failed";
+    const createdAt = nowDate();
+    const metadata = maintenanceRunMetadata(record); // Ordinary values only.
+    const attributionStartedAt = createdAt.toISOString();
+    // Registry/identity default only. Database overrides are read below, in the
+    // publishing statement itself; this is not a feature-override preflight.
+    const featureDefault = isFeatureEnabled(FeatureSwitchKey.PiMemory, {
+      orgId: proof.storage.orgId,
+      userId: proof.storage.userId,
     });
     signal.throwIfAborted();
-    throw new PiMaintenanceDispositionError("maintenance_dispatch_failed");
+
+    const publication = sql`
+      WITH input AS MATERIALIZED (
+        SELECT
+          ${sql.param(proof.storage.memoryStorageId, storages.id)}::uuid AS storage_id,
+          ${sql.param(proof.storage.orgId, storages.orgId)}::text AS storage_org_id,
+          ${sql.param(proof.storage.userId, storages.userId)}::text AS storage_user_id,
+          ${sql.param(proof.storage.baseVersionId, storages.headVersionId)}::text AS base_version_id,
+          ${sql.param(featureDefault)}::boolean AS feature_default,
+          ${sql.param(record.runId, agentRuns.id)}::uuid AS run_id,
+          ${sql.param(record.orgId, agentRuns.orgId)}::text AS run_org_id,
+          ${sql.param(record.userId, agentRuns.userId)}::text AS run_user_id,
+          ${sql.param(createdAt, agentRuns.createdAt)}::timestamp AS created_at,
+          ${sql.param(error, agentRuns.error)}::text AS error,
+          ${sql.param(record.prompt, agentRuns.prompt)}::text AS prompt,
+          ${sql.param(record.appendSystemPrompt, agentRuns.appendSystemPrompt)}::text AS append_system_prompt,
+          ${sql.param([], agentRuns.secretNames)}::jsonb AS secret_names,
+          ${sql.param(record.launchSnapshot, agentRuns.launchSnapshot)}::jsonb AS launch_snapshot,
+          ${sql.param(metadata.triggerSource, agentRuns.triggerSource)}::text AS trigger_source,
+          ${sql.param(metadata.autonomyBudget, agentRuns.autonomyBudget)}::integer AS autonomy_budget,
+          ${sql.param(metadata.modelProvider, agentRuns.modelProvider)}::text AS model_provider,
+          ${sql.param(metadata.modelProviderId, agentRuns.modelProviderId)}::uuid AS model_provider_id,
+          ${sql.param(metadata.modelProviderCredentialScope, agentRuns.modelProviderCredentialScope)}::text AS model_provider_credential_scope,
+          ${sql.param(metadata.selectedModel, agentRuns.selectedModel)}::text AS selected_model,
+          ${sql.param(metadata.modelRuntimeProvider, agentRuns.modelRuntimeProvider)}::text AS model_runtime_provider,
+          ${sql.param(metadata.modelRuntimeModel, agentRuns.modelRuntimeModel)}::text AS model_runtime_model,
+          ${sql.param(metadata.builtInModelKeyId, agentRuns.builtInModelKeyId)}::uuid AS built_in_model_key_id,
+          ${sql.param(metadata.selectedImageModel, agentRuns.selectedImageModel)}::text AS selected_image_model,
+          ${sql.param(metadata.apiStartedAt, agentRuns.apiStartedAt)}::timestamp AS api_started_at,
+          ${sql.param(record.callback.internalKind, agentRunCallbacks.internalKind)}::text AS internal_kind,
+          ${sql.param(record.callback.payload, agentRunCallbacks.payload)}::jsonb AS callback_payload,
+          ${sql.param(attributionStartedAt)}::timestamp AS attribution_started_at
+      ),
+      valid_storage AS MATERIALIZED (
+        SELECT ${storages.id} AS id
+        FROM ${storages} CROSS JOIN input
+        WHERE (${eq(storages.id, sql`input.storage_id`)}
+          AND ${eq(storages.orgId, sql`input.storage_org_id`)}
+          AND ${eq(storages.userId, sql`input.storage_user_id`)}
+          AND ${eq(storages.headVersionId, sql`input.base_version_id`)})
+        FOR SHARE
+      ),
+      user_setting AS MATERIALIZED (
+        SELECT (
+          SELECT ${userFeatureSwitches.switches}->'piMemory'
+          FROM ${userFeatureSwitches}
+          WHERE (${eq(userFeatureSwitches.orgId, sql`input.storage_org_id`)}
+            AND ${eq(userFeatureSwitches.userId, sql`input.storage_user_id`)})
+        ) AS override
+        FROM input
+        WHERE EXISTS (SELECT 1 FROM valid_storage)
+      ),
+      effective_feature AS MATERIALIZED (
+        SELECT CASE
+          WHEN user_setting.override IS NULL THEN input.feature_default
+          ELSE user_setting.override NOT IN
+            ('null'::jsonb, 'false'::jsonb, '0'::jsonb, '""'::jsonb)
+        END AS enabled
+        FROM user_setting CROSS JOIN input
+      ),
+      allowed AS MATERIALIZED (
+        SELECT valid_storage.id
+        FROM valid_storage CROSS JOIN effective_feature
+        WHERE effective_feature.enabled
+      ),
+      ${failedMaintenancePublicationWrites()}
+      SELECT CASE
+          WHEN NOT EXISTS (SELECT 1 FROM valid_storage) THEN 'storage0'
+          WHEN NOT EXISTS (SELECT 1 FROM allowed) THEN 'feature_false'
+          WHEN NOT EXISTS (SELECT 1 FROM written_attribution) THEN 'attribution0'
+          ELSE 'published'
+        END AS outcome,
+        (SELECT run_id::text FROM written_attribution) AS attribution_id,
+        (SELECT id::text FROM written_run) AS run_id,
+        (SELECT id::text FROM written_callback) AS callback_id
+    `;
+
+    // Decoding follows execute: autocommit may already have committed.
+    // Result-contract failures below never roll back SQL.
+    const [row] = z
+      .tuple([failedMaintenancePublicationRowSchema])
+      .parse(
+        parseRawRows(
+          failedMaintenancePublicationRowSchema,
+          await db.execute(publication),
+        ),
+      );
+    signal.throwIfAborted();
+    switch (row.outcome) {
+      case "storage0": {
+        throw new PiMemoryPhase2CredentialError("storage_binding_changed");
+      }
+      case "feature_false": {
+        throw new PiMemoryPhase2CredentialError("pi_memory_disabled");
+      }
+      case "attribution0": {
+        throw new Error("New Run billing attribution conflicts with history");
+      }
+      case "published": {
+        // Returned identities are additionally checked without narrowing a
+        // driver value by assertion or claiming an after-write rollback.
+        z.literal(record.runId).parse(row.attribution_id);
+        z.literal(record.runId).parse(row.run_id);
+        throw new PiMaintenanceDispositionError("maintenance_dispatch_failed");
+      }
+    }
   },
 );
 
