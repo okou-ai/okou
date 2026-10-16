@@ -24,11 +24,13 @@ def command(*args):
 
 
 def identity():
-    subprocess.run(["git", "diff", "--quiet", "HEAD", "--"], check=True)
+    workspace = str(Path.cwd().resolve())
+    git = ["git", "-c", f"safe.directory={workspace}"]
+    subprocess.run([*git, "diff", "--quiet", "HEAD", "--"], check=True)
     return {
-        "source_sha": command("git", "rev-parse", "HEAD"),
-        "source_tree": command("git", "rev-parse", "HEAD^{tree}"),
-        "workspace": str(Path.cwd().resolve()),
+        "source_sha": command(*git, "rev-parse", "HEAD"),
+        "source_tree": command(*git, "rev-parse", "HEAD^{tree}"),
+        "workspace": workspace,
         "rustc": command("rustc", "-vV"),
         "llvm_cov": command("cargo", "llvm-cov", "--version"),
         "nextest": command("cargo", "nextest", "--version"),
