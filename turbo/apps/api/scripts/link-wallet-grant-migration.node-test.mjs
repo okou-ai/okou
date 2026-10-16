@@ -54,6 +54,7 @@ function decrypt(envelope) {
     "aes-256-gcm",
     dataKey,
     Buffer.from(kms.iv, "base64"),
+    { authTagLength: 16 },
   );
   decipher.setAuthTag(Buffer.from(kms.authTag, "base64"));
   return JSON.parse(
