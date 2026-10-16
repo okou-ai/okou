@@ -20,8 +20,11 @@ bytes of an instrumented nextest archive. Its comparison checks every discovered
 test (including ignored/filter metadata and empty suites) and the fresh LCOV
 source set. The separate `coverage-archive.yml` producer and consumer execute the
 complete workload in separate jobs, without changing required Crates coverage
-or deploying a cross-run cache. Job steps expose control, export, transfer and
-restored execution costs; matching inventories alone do not prove a speedup.
+or deploying a cross-run cache. Native nextest extraction restores the original
+target pathname so compiled `CARGO_BIN_EXE` and build-output paths keep working;
+the consumer starts without producer targets and cleans only profile counters.
+Job steps expose control, export, transfer, extraction, execution and reporting
+costs; matching inventories alone do not prove a speedup.
 
 The App/Desktop fetch commands source `r2-copy.sh`. They own their temporary
 diagnostics and cleanup, and supply their distinct retry environment settings and
