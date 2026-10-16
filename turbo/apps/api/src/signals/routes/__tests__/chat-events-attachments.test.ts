@@ -15,6 +15,7 @@ import {
   WEBSITE_TEMPLATE_ITEMS,
   WORKFLOW_TEMPLATE_ITEMS,
 } from "@okouai/core";
+import { DOCUMENT_TEMPLATE_ITEMS } from "@okouai/core/document-template-items";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   formatUserPresentationTemplateId,
@@ -1522,29 +1523,21 @@ describe("CHAT-02: generation templates and attachments", () => {
         id: "document-template:creative-brief",
         source:
           "rampstackco/claude-skills/482c9bf74697fc1e311bd4dca5ce301f046c4b76/skills/creative-brief/references/creative-brief-template.md",
-        license:
-          "rampstackco/claude-skills/482c9bf74697fc1e311bd4dca5ce301f046c4b76/LICENSE",
       },
       {
         id: "document-template:fixed-price-contract",
         source:
           "Oak-Harbor-Kits/Contract-Templates/4e49c669fa1e856d583723f0a60175533645b680/Lump%20Sum%20Contract%20Template.docx",
-        license:
-          "Oak-Harbor-Kits/Contract-Templates/4e49c669fa1e856d583723f0a60175533645b680/LICENSE",
       },
       {
         id: "document-template:design-services",
         source:
           "studionaeo/design-services-standard-agreement/df71218eb1d5c5a59efb1ceb80de56a9935d6420/%E5%8D%8F%E8%AE%AE/%E8%AE%BE%E8%AE%A1%E6%9C%8D%E5%8A%A1%E6%A0%87%E5%87%86%E5%8D%8F%E8%AE%AE%E4%B9%A6.md",
-        license:
-          "studionaeo/design-services-standard-agreement/df71218eb1d5c5a59efb1ceb80de56a9935d6420/LICENSE",
       },
       {
         id: "document-template:department-newsletter",
         source:
           "typst/templates/71b01c6b0a828649c7a0a38e8167cd82aab76efc/dashing-dept-news/template/main.typ",
-        license:
-          "typst/templates/71b01c6b0a828649c7a0a38e8167cd82aab76efc/dashing-dept-news/LICENSE",
       },
     ];
     const prompt = "Prepare these documents";
@@ -1573,25 +1566,33 @@ describe("CHAT-02: generation templates and attachments", () => {
     if (!systemPrompt) {
       throw new Error("Expected document template guidance");
     }
-    for (const [index, reference] of references.entries()) {
-      const section = `## Template #${index + 1} (document)`;
-      const source = `Template file: https://raw.githubusercontent.com/${reference.source}`;
-      expect(systemPrompt).toContain(section);
-      expect(systemPrompt).toContain(source);
-      expect(systemPrompt).toContain(
-        `License: https://raw.githubusercontent.com/${reference.license}`,
-      );
-      expect(systemPrompt.indexOf(section)).toBeLessThan(
-        systemPrompt.indexOf(source),
-      );
-      if (references[index + 1]) {
-        expect(systemPrompt.indexOf(source)).toBeLessThan(
-          systemPrompt.indexOf(`## Template #${index + 2} (document)`),
-        );
-      }
-    }
-    expect(systemPrompt).toContain("office-files");
-    expect(systemPrompt).toContain("Word or PDF");
+    const documentSections = systemPrompt
+      .split(/(?=^#)/m)
+      .filter((section) => {
+        return section.startsWith("## Template #");
+      })
+      .map((section) => {
+        return section.trim();
+      });
+    expect(documentSections).toStrictEqual(
+      references.map((reference, index) => {
+        const item = DOCUMENT_TEMPLATE_ITEMS.find((candidate) => {
+          return candidate.id === reference.id;
+        });
+        if (!item) {
+          throw new Error(`Expected document template ${reference.id}`);
+        }
+        return [
+          `## Template #${index + 1} (document)`,
+          "",
+          `Selected document template: ${item.title}`,
+          `- Public upstream original (fixed commit/path): https://raw.githubusercontent.com/${reference.source}`,
+          `- Layout previews: ${item.previewPages.join(", ")}`,
+          "- Read the original file and its references at that fixed commit. Use the source for content and structure, and the previews for layout.",
+          "- Replace sample content with the user's facts; leave missing business details as placeholders.",
+        ].join("\n");
+      }),
+    );
     const events = await chat.listThreadEvents(actor, sent.threadId);
     const launched = events.events.find((event) => {
       return event.eventType === "input.prompt" && event.runId === sent.runId;

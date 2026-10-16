@@ -481,17 +481,14 @@ function buildDocumentGenerationTemplatePrompt(
   const { source } = item;
   const sourceBaseUrl = `https://raw.githubusercontent.com/${source.repo}/${source.ref}`;
   const sourceUrl = `${sourceBaseUrl}/${source.path.split("/").map(encodeURIComponent).join("/")}`;
-  const licenseUrl = `${sourceBaseUrl}/${source.licensePath.split("/").map(encodeURIComponent).join("/")}`;
   return {
     status: "resolved",
     prompt: [
       ...templateFraming("a document"),
       `Selected document template: ${item.title}`,
-      `- Template file: ${sourceUrl}`,
-      `- License: ${licenseUrl}`,
+      `- Public upstream original (fixed commit/path): ${sourceUrl}`,
       `- Layout previews: ${item.previewPages.join(", ")}`,
-      "- Read the template, license, and referenced files at the linked commit. Use the source for structure and clauses, and the previews for layout.",
-      "- Use the office-files skill for the user's requested Word or PDF output.",
+      "- Read the original file and its references at that fixed commit. Use the source for content and structure, and the previews for layout.",
       "- Replace sample content with the user's facts; leave missing business details as placeholders.",
     ].join("\n"),
   };
