@@ -4,7 +4,7 @@ import { runnerWssTicketsContract } from "@okouai/api-contracts/contracts/runner
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
+import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { runnerWssTicketRoutes } from "../runner-wss-tickets";
 import { createBddApi } from "./helpers/api-bdd";
@@ -245,24 +245,28 @@ describe("direct Runner WSS ticket boundary", () => {
     expect(issued.body.wssUrl).not.toContain(issued.body.ticket);
     expect(issued.body.ticket).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(new Date(issued.body.expiresAt).getTime()).toBeGreaterThan(now());
-    await accept(
+    const wrongRun = await accept(
       consume(f, issued.body.ticket, { runId: randomUUID() }),
       [404],
     );
-    await accept(
+    expect(wrongRun.headers.get("Cache-Control")).toBe("no-store");
+    const wrongRunner = await accept(
       consume(f, issued.body.ticket, { runnerId: randomUUID() }),
       [404],
     );
-    await accept(
+    expect(wrongRunner.headers.get("Cache-Control")).toBe("no-store");
+    const wrongOrigin = await accept(
       consume(f, issued.body.ticket, {
         origin: "wss://attacker.example.com:443",
       }),
       [404],
     );
-    await accept(
+    expect(wrongOrigin.headers.get("Cache-Control")).toBe("no-store");
+    const unauthenticated = await accept(
       consume(f, issued.body.ticket, { authorization: "Bearer invalid" }),
       [401],
     );
+    expect(unauthenticated.headers.get("Cache-Control")).toBe("no-store");
     const accepted = await accept(consume(f, issued.body.ticket), [200]);
     expect(accepted.body).toStrictEqual({
       runId: f.runId,
@@ -272,7 +276,9 @@ describe("direct Runner WSS ticket boundary", () => {
       userId: f.actor.userId,
       digest: digestOf(issued.body.ticket),
     });
-    await accept(consume(f, issued.body.ticket), [404]);
+    const replay = await accept(consume(f, issued.body.ticket), [404]);
+    expect(accepted.headers.get("Cache-Control")).toBe("no-store");
+    expect(replay.headers.get("Cache-Control")).toBe("no-store");
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
   });
 
@@ -309,6 +315,70 @@ describe("direct Runner WSS ticket boundary", () => {
     });
     await accept(bootstrap({ ...f, runId: withoutHost.runId }), [404]);
     await f.api.requestCancelRun(f.actor, withoutHost.runId, [200]);
+    await f.api.requestCancelRun(f.actor, f.runId, [200]);
+  });
+
+  it.each(["mode", "group", "freshness"] as const)(
+    "preserves an issued ticket through temporary Runner %s ineligibility",
+    async (reason) => {
+      const f = await setup();
+      const issued = await accept(bootstrap(f), [200]);
+      if (reason === "freshness") {
+        mockNow(now() + 31_000);
+      } else {
+        await f.api.requestHeartbeatRunner(true, [200], {
+          runnerId: f.runnerId,
+          group: reason === "group" ? "vm0/other" : f.group,
+          mode: reason === "mode" ? "stopping" : "running",
+          snapshotSequence: 2,
+          wssIngressServiceActive: true,
+        });
+      }
+      const denied = await accept(consume(f, issued.body.ticket), [404]);
+      expect(denied.body.error.code).toBe("NOT_FOUND");
+      expect(denied.headers.get("Cache-Control")).toBe("no-store");
+      clearMockNow();
+      await f.api.requestHeartbeatRunner(true, [200], {
+        runnerId: f.runnerId,
+        group: f.group,
+        mode: "running",
+        snapshotSequence: 3,
+        wssIngressServiceActive: true,
+      });
+      const redeemed = await accept(consume(f, issued.body.ticket), [200]);
+      expect(redeemed.body).toStrictEqual({
+        runId: f.runId,
+        runnerId: f.runnerId,
+        origin,
+        orgId: f.actor.orgId,
+        userId: f.actor.userId,
+        digest: digestOf(issued.body.ticket),
+      });
+      expect(redeemed.headers.get("Cache-Control")).toBe("no-store");
+      await f.api.requestCancelRun(f.actor, f.runId, [200]);
+    },
+  );
+
+  it("rejects extra consume fields without spending the ticket or caching the response", async () => {
+    const f = await setup();
+    const issued = await accept(bootstrap(f), [200]);
+    const raw = setupRawAppRequest({ context, routes: runnerWssTicketRoutes });
+    const rejected = await raw("/api/runners/wss/tickets/consume", {
+      method: "POST",
+      headers: { ...officialHeaders, "content-type": "application/json" },
+      body: JSON.stringify({
+        runId: f.runId,
+        runnerId: f.runnerId,
+        origin,
+        ticket: issued.body.ticket,
+        extra: true,
+      }),
+    });
+    expect(rejected.status).toBe(400);
+    expect(rejected.headers.get("Cache-Control")).toBe("no-store");
+    const redeemed = await accept(consume(f, issued.body.ticket), [200]);
+    expect(redeemed.body.digest).toBe(digestOf(issued.body.ticket));
+    expect(redeemed.headers.get("Cache-Control")).toBe("no-store");
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
   });
 
@@ -421,6 +491,7 @@ describe("direct Runner WSS ticket boundary", () => {
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
     const denied = await accept(consume(f, terminal.body.ticket), [404]);
     expect(denied.body.error.code).toBe("NOT_FOUND");
+    expect(denied.headers.get("Cache-Control")).toBe("no-store");
     await accept(bootstrap(f), [404]);
   });
 });

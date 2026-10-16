@@ -5,7 +5,7 @@ import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { runnerState } from "@okouai/db/runtime/runner-state";
 import { runnerWssTickets } from "@okouai/db/schema/runner-wss-ticket";
 import { command } from "ccstate";
-import { and, eq, gt, inArray, lte, sql } from "drizzle-orm";
+import { and, eq, exists, gt, inArray, lte, sql } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
@@ -149,75 +149,101 @@ export const consumeRunnerWssTicket$ = command(
     | null
   > => {
     const digest = digestOf(args.ticket);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0241; new non-billing transactions are prohibited.
-    return await set(writeDb$).transaction(async (tx) => {
-      const [candidate] = await tx
-        .select({ runId: runnerWssTickets.runId })
-        .from(runnerWssTickets)
-        .where(eq(runnerWssTickets.digest, digest));
-      if (!candidate || candidate.runId !== args.runId) {
-        return null;
-      }
-      const [run] = await tx
-        .select({ id: agentRuns.id })
-        .from(agentRuns)
-        .where(eq(agentRuns.id, candidate.runId))
-        .for("update");
-      if (!run) {
-        return null;
-      }
-      const [stored] = await tx
-        .select({
-          runId: runnerWssTickets.runId,
-          orgId: runnerWssTickets.orgId,
-          userId: runnerWssTickets.userId,
-          runnerId: runnerWssTickets.runnerId,
-          origin: runnerWssTickets.origin,
-          digest: runnerWssTickets.digest,
-        })
-        .from(runnerWssTickets)
-        .where(
-          and(
-            eq(runnerWssTickets.digest, digest),
-            eq(runnerWssTickets.runId, args.runId),
-            eq(runnerWssTickets.runnerId, args.runnerId),
-            eq(runnerWssTickets.origin, args.origin),
-            gt(runnerWssTickets.createdAt, oldestRedeemableCreatedAt),
-          ),
-        );
-      if (!stored) {
-        return null;
-      }
-      const query = buildRunnerWssTargetQuery({
-        runId: stored.runId,
-        owner: { orgId: stored.orgId, userId: stored.userId },
-        now: nowDate(),
-        purpose: "consume",
-      });
-      const [targetRow] = await tx
-        .select(query.selection)
-        .from(agentRuns)
-        .innerJoin(activeAgentRuns, query.activeRunJoin)
-        .innerJoin(runnerState, query.runnerStateJoin)
-        .where(query.where);
-      const target = runnerWssTargetFromRow(targetRow);
-      if (
-        !target ||
-        target.runnerId !== stored.runnerId ||
-        target.publicOrigin !== stored.origin
-      ) {
-        return null;
-      }
-      const [consumed] = await tx
-        .delete(runnerWssTickets)
-        .where(
-          and(
-            eq(runnerWssTickets.digest, digest),
-            gt(runnerWssTickets.createdAt, oldestRedeemableCreatedAt),
-          ),
-        )
-        .returning({ digest: runnerWssTickets.digest });
-      return consumed ? stored : null;
+    const db = set(writeDb$);
+    const [candidate] = await db
+      .select({ runId: runnerWssTickets.runId })
+      .from(runnerWssTickets)
+      .where(eq(runnerWssTickets.digest, digest));
+    if (!candidate || candidate.runId !== args.runId) {
+      return null;
+    }
+    const [run] = await db
+      .select({ id: agentRuns.id })
+      .from(agentRuns)
+      .where(eq(agentRuns.id, candidate.runId));
+    if (!run) {
+      return null;
+    }
+    const [stored] = await db
+      .select({
+        runId: runnerWssTickets.runId,
+        orgId: runnerWssTickets.orgId,
+        userId: runnerWssTickets.userId,
+        runnerId: runnerWssTickets.runnerId,
+        origin: runnerWssTickets.origin,
+        digest: runnerWssTickets.digest,
+      })
+      .from(runnerWssTickets)
+      .where(
+        and(
+          eq(runnerWssTickets.digest, digest),
+          eq(runnerWssTickets.runId, args.runId),
+          eq(runnerWssTickets.runnerId, args.runnerId),
+          eq(runnerWssTickets.origin, args.origin),
+          gt(runnerWssTickets.createdAt, oldestRedeemableCreatedAt),
+        ),
+      );
+    if (!stored) {
+      return null;
+    }
+    const query = buildRunnerWssTargetQuery({
+      runId: stored.runId,
+      owner: { orgId: stored.orgId, userId: stored.userId },
+      now: nowDate(),
+      purpose: "consume",
     });
+    const [targetRow] = await db
+      .select(query.selection)
+      .from(agentRuns)
+      .innerJoin(activeAgentRuns, query.activeRunJoin)
+      .innerJoin(runnerState, query.runnerStateJoin)
+      .where(query.where);
+    const target = runnerWssTargetFromRow(targetRow);
+    if (
+      !targetRow ||
+      !targetRow.runnerHostname ||
+      !target ||
+      target.runnerId !== stored.runnerId ||
+      target.publicOrigin !== stored.origin
+    ) {
+      return null;
+    }
+    const rawHostname = targetRow.runnerHostname;
+    const [consumed] = await db
+      .delete(runnerWssTickets)
+      .where(
+        and(
+          eq(runnerWssTickets.digest, stored.digest),
+          eq(runnerWssTickets.runId, stored.runId),
+          eq(runnerWssTickets.orgId, stored.orgId),
+          eq(runnerWssTickets.userId, stored.userId),
+          eq(runnerWssTickets.runnerId, stored.runnerId),
+          eq(runnerWssTickets.origin, stored.origin),
+          gt(runnerWssTickets.createdAt, oldestRedeemableCreatedAt),
+          exists(
+            db
+              .select(query.selection)
+              .from(agentRuns)
+              .innerJoin(activeAgentRuns, query.activeRunJoin)
+              .innerJoin(runnerState, query.runnerStateJoin)
+              .where(
+                and(
+                  query.where,
+                  eq(agentRuns.runnerId, target.runnerId),
+                  eq(agentRuns.runnerHostname, rawHostname),
+                ),
+              ),
+          ),
+        ),
+      )
+      .returning({
+        runId: runnerWssTickets.runId,
+        orgId: runnerWssTickets.orgId,
+        userId: runnerWssTickets.userId,
+        runnerId: runnerWssTickets.runnerId,
+        origin: runnerWssTickets.origin,
+        digest: runnerWssTickets.digest,
+      });
+    return consumed ?? null;
   },
 );

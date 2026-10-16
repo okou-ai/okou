@@ -47,6 +47,11 @@ describe("WSS ticket authorization-store outage", () => {
           ticket: randomBytes(32).toString("base64url"),
         },
       }),
-    ).rejects.toThrow(/ECONNREFUSED/);
+    ).rejects.toMatchObject({
+      cause: expect.objectContaining({
+        code: "ECONNREFUSED",
+        message: expect.stringMatching(/ECONNREFUSED/),
+      }),
+    });
   });
 });

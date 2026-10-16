@@ -22,6 +22,7 @@ import {
   type UserLocale,
 } from "@okouai/api-contracts/contracts/user-preferences";
 
+import { setupApp } from "../../../../__tests__/test-helpers";
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { apiTestS3PresignedUrl } from "../../../../__tests__/mocks";
@@ -195,13 +196,21 @@ export function createBddApi(context: TestContext) {
     user,
     acceptAgentStorageWrites,
 
-    async readMe(nextUser: ApiTestUser): Promise<{
+    async readMe(
+      nextUser: ApiTestUser,
+      options: { readonly isolatePg?: true } = {},
+    ): Promise<{
       readonly userId: string;
       readonly email: string;
       readonly orgId: string | null;
     }> {
+      const client = options.isolatePg
+        ? (await setupApp({ context, routes: authMeRoutes, isolatePg: true }))(
+            authContract,
+          )
+        : authClient();
       const response = await accept(
-        authClient().me({ headers: authenticate(nextUser) }),
+        client.me({ headers: authenticate(nextUser) }),
         [200],
       );
       return response.body;
