@@ -118,6 +118,13 @@ out=$(run_clean \
   "$CONTEXT" turbo-consumer)
 assert_contains "$out" "turbo-runner-consumer-needed=false"
 
+for flag in API_CHANGED CLI_CHANGED CRATES_CHANGED CI_CHANGED E2E_CHANGED; do
+  out=$(run_clean "${flag}=true" "$CONTEXT" cli-consumer)
+  assert_contains "$out" "cli-e2e-consumer-needed=true"
+done
+out=$(run_clean PLATFORM_CHANGED=true "$CONTEXT" cli-consumer)
+assert_contains "$out" "cli-e2e-consumer-needed=false"
+
 out=$(run_clean "$CONTEXT" playwright-consumer)
 assert_contains "$out" "playwright-runner-consumer-needed=false"
 

@@ -6,16 +6,12 @@
 //! reads that status back out of the marker the Pi runtime produced, and bounds
 //! any model error that still arrives as a whole document.
 //!
-//! # Fallback
+//! # Terminal error boundary
 //!
-//! The markup branch in [`project_model_error_text`] is a bounded cross-version
-//! rollout fallback (`docs/fallback.md` §6.1). The sandbox resolves its CLI from
-//! a caller-supplied package URL, so a build predating the provider boundary can
-//! still hand the guest an entire page as its terminal `errorMessage`.
-//!
-//! - Surface: existing runner / sandbox (`docs/fallback.md` §7).
-//! - Removal gate: old sandbox CLI artifacts finish draining and no pinnable
-//!   `CLI_PACKAGE_URL` artifact predates `guardPiUpstreamErrorBody`.
+//! Pi uses the CLI installed from the same Runner artifact. Its HTTP response
+//! guard handles markup error bodies, while terminal `errorMessage` values
+//! remain upstream-controlled text. [`project_model_error_text`] bounds that
+//! text before it becomes the public result, event, or failure diagnostic.
 //!
 //! It reports `status=unknown content_type=unknown` rather than claiming
 //! transport evidence the guest never observed, so an unproven failure stays

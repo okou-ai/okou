@@ -11,7 +11,7 @@ event_source = "${{ github.sha }}"
 
 e2e_jobs = jobs.keys.select { |name| name.start_with?("cli-e2e-") }
 raise "missing CLI E2E source consumers" if e2e_jobs.empty?
-(%w[lint-eslint deploy-api deploy-cli deploy-app] + e2e_jobs).each do |name|
+(%w[lint-eslint deploy-api prepare-cli deploy-app] + e2e_jobs).each do |name|
   checkouts = jobs.fetch(name).fetch("steps").select do |step|
     step.fetch("uses", "").start_with?("actions/checkout@")
   end
@@ -20,19 +20,9 @@ raise "missing CLI E2E source consumers" if e2e_jobs.empty?
   end
 end
 
-cli = jobs.fetch("deploy-cli")
-unless cli.dig("concurrency", "group") == "deploy-cli-#{event_source}"
-  raise "CLI publication concurrency must match the captured artifact source"
-end
-api_urls = jobs.fetch("deploy-api").fetch("steps").filter_map do |step|
-  next unless step["uses"] == "./.github/actions/web-api-env"
-  step.fetch("with").fetch("cli-pkg-url")
-end
-unless api_urls.length == 2 && api_urls.all? { |url| url == "https://static.okou.io/okou-cli/#{event_source}/package.tgz" }
-  raise "API seed and deploy must consume the captured source's CLI archive"
-end
-artifact_step = cli.fetch("steps").find { |step| step["id"] == "artifact" }
-raise "missing CLI artifact source output" unless artifact_step
+app = jobs.fetch("deploy-app")
+artifact_step = app.fetch("steps").find { |step| step["id"] == "artifact" }
+raise "missing App artifact source output" unless artifact_step
 
 def run!(command, directory, environment = {})
   stdout, stderr, status = Open3.capture3(environment, *command, chdir: directory)
@@ -86,12 +76,8 @@ Dir.mktmpdir("ci-source-revision-") do |fixture|
     git.call("checkout", "--quiet", "--detach", sha)
     action_env = environment.merge("GITHUB_EVENT_NAME" => event, "GITHUB_SHA" => sha)
     artifact = action_outputs(artifact_step.fetch("run"), checkout, action_env, File.join(fixture, "artifact outputs"))
-    unless artifact.fetch("sha") == sha && artifact.fetch("prefix") == "okou-cli/#{sha}"
+    unless artifact.fetch("sha") == sha && artifact.fetch("prefix") == "okou-app/#{sha}"
       raise "#{event} artifact outputs must identify the actual captured checkout"
-    end
-    unless api_urls.all? { |url| url.sub(event_source, sha) == "https://static.okou.io/#{artifact.fetch('prefix')}/package.tgz" } &&
-        cli.fetch("concurrency").fetch("group").sub(event_source, sha) == "deploy-cli-#{artifact.fetch('sha')}"
-      raise "#{event} API URLs and publication concurrency must address the produced artifact"
     end
   end
 
@@ -99,7 +85,7 @@ Dir.mktmpdir("ci-source-revision-") do |fixture|
   git.call("checkout", "--quiet", "--detach", merge_sha)
   artifact = action_outputs(artifact_step.fetch("run"), checkout, environment.merge("GITHUB_SHA" => later_main),
     File.join(fixture, "different driver outputs"))
-  unless artifact.fetch("sha") == merge_sha && artifact.fetch("prefix") == "okou-cli/#{merge_sha}"
+  unless artifact.fetch("sha") == merge_sha && artifact.fetch("prefix") == "okou-app/#{merge_sha}"
     raise "artifact source must not be replaced with the driver SHA"
   end
 

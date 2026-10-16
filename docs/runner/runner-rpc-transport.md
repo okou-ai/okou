@@ -368,11 +368,11 @@ input before request transmission is not dispatched; failure after an attempted
 request can hide effects, even when no Data was forwarded. No disconnect,
 timeout or missing acknowledgement causes reconnection or replay.
 
-Runner and its bundled helper are one artifact, including rootfs/snapshot
-identity. No cross-version helper/Runner negotiation is added. Independently
-selected older CLI packages keep the unchanged no-argument interface. A
-stream-aware CLI on an old helper must report an unsupported invocation without
-exec fallback. An unavailable method returns the existing JSON unknown-method
+Runner, its bundled helper, and the installed CLI share one artifact boundary,
+including rootfs/snapshot identity. No cross-version helper/Runner negotiation
+is added. The no-argument interface remains supported for existing callers.
+Unsupported streaming invocations fail without exec fallback. An unavailable
+method returns the existing JSON unknown-method
 error, which the streaming response reader accepts without binary frames.
 
 Real-socket codec/helper tests exercise greater-than-4-MiB bidirectional data,

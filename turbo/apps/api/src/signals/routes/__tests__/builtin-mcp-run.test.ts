@@ -6,7 +6,6 @@ import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/u
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { agentsRoutes } from "../agents";
 import { builtinConnectorsRoutes } from "../connectors";
@@ -26,7 +25,6 @@ const connectors = createConnectorBddApi(context);
 const runs = createRunsApi(context);
 const firewall = createFirewallApi(context);
 const mocks = createRouteMocks(context);
-const packageUrl = "https://static.okou.io/okou-cli/latest/package.tgz";
 
 async function runActor() {
   const actor = bdd.user();
@@ -41,7 +39,6 @@ async function runActor() {
   const agent = await bdd.createAgent(actor, {
     displayName: "Builtin MCP Agent",
   });
-  mockEnv("CLI_PKG_URL", packageUrl);
   return { actor, agentId: agent.agentId, runnerGroup };
 }
 
@@ -154,7 +151,6 @@ describe("builtin MCP Run admission", () => {
     );
     await runs.heartbeatRunner(runnerGroup);
     const claim = await runs.claimRunnerJob(run.runId);
-    expect(claim.platformEnvironment.CLI_PKG_URL).toBe(packageUrl);
     expect(claim.environment).not.toHaveProperty("MCP_API_KEY");
     expect(claim.platformEnvironment).not.toHaveProperty("MCP_API_KEY");
     expect(claim.secretConnectorMap ?? {}).not.toHaveProperty("MCP_API_KEY");

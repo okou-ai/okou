@@ -3091,7 +3091,7 @@
     "storageId": "f5cd8a7d-86cd-40f4-bf30-9785d65d276c",
     "frontmatter": {
       "name": "local-agent",
-      "description": "Okou local-agent CLI for delegating work to an already linked local Codex or Claude host. Use when an agent should list local-agent hosts or run tasks through `npx --yes --package=\"$CLI_PKG_URL\" okou local-agent`."
+      "description": "Okou local-agent CLI for delegating work to an already linked local Codex or Claude host. Use when an agent should list local-agent hosts or run tasks through `okou local-agent`."
     },
     "storageName": "agent-skills@vm0-ai/vm0-skills/tree/main/local-agent",
     "storageSize": 2011,
@@ -3113,7 +3113,7 @@
     "storageId": "7552a830-1a04-4c39-b2e7-fd1d1c71605f",
     "frontmatter": {
       "name": "local-browser",
-      "description": "Okou Local Browser connector for using a user's paired browser extension. Use when a task needs current tabs, page snapshots, screenshots, selected text, page metadata, or user-approved browser actions through `npx --yes --package=\"$CLI_PKG_URL\" okou local-browser`."
+      "description": "Okou Local Browser connector for using a user's paired browser extension. Use when a task needs current tabs, page snapshots, screenshots, selected text, page metadata, or user-approved browser actions through `okou local-browser`."
     },
     "storageName": "agent-skills@vm0-ai/vm0-skills/tree/main/local-browser",
     "storageSize": 1413,

@@ -2,7 +2,7 @@ name: release-please
 
 # Releases run straight off the push to main. Waiting for the Staging workflow
 # adds no artifact dependency: each queued pull request's merge-group Turbo run
-# uploads the canonical app and CLI artifacts under its merged commit SHA, and
+# uploads the canonical App artifact under its merged commit SHA, and
 # the Desktop workflow does the same when its package version changes.
 # iOS merge groups publish immutable unsigned archives by exact input fingerprint;
 # the approved publishing job maps release_target to one archive and signs/exports it.
@@ -1092,7 +1092,7 @@ jobs:
                   type: mrkdwn
                   text: "*Host Worker* ❌ Deploy failed\n⏱️ `${{ steps.duration.outputs.text }}`\n🔗 <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
 
-  # Both Runner architectures embed the release commit's canonical CLI bytes.
+  # Build only for a Runner release; both architectures consume these exact bytes.
   prepare-runner-cli:
     needs: release-please
     if: ${{ needs.release-please.outputs.runner_rs_release_created == 'true' }}
@@ -1100,27 +1100,29 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
-    env:
-      CLI_STATIC_BASE_URL: https://static.okou.io
+    outputs:
+      artifact-id: ${{ steps.cli-input.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ needs.release-please.outputs.release_target }}
 
-      - name: Fetch canonical CLI build input
-        shell: bash
+      - name: Build private CLI input
+        uses: ./.github/actions/build-runner-cli
+        with:
+          source-sha: ${{ needs.release-please.outputs.release_target }}
         env:
-          ARTIFACT_SHA: ${{ needs.release-please.outputs.release_target }}
-        run: bash .github/scripts/artifacts/fetch-okou-cli-artifact.sh "$ARTIFACT_SHA" runner-cli-intermediate
+          DEFAULT_SENTRY_DSN: ${{ vars.SENTRY_DSN_CLI }}
 
-      - name: Upload canonical CLI build input for Runner
+      - name: Upload private CLI build input for Runner
+        id: cli-input
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: runner-release-cli-${{ github.run_id }}
+          name: runner-release-cli-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             runner-cli-intermediate/package.tgz
             runner-cli-intermediate/manifest.json
-          overwrite: true
+            runner-cli-intermediate/ready.json
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
@@ -1245,22 +1247,6 @@ jobs:
           doppler-project: vm0
           doppler-config: prd
 
-      - name: Wait for canonical CLI artifact
-        id: cli-artifact
-        shell: bash
-        env:
-          ARTIFACT_SHA: ${{ needs.release-please.outputs.release_target }}
-          CLI_STATIC_BASE_URL: https://static.okou.io
-        run: |
-          set -euo pipefail
-
-          artifact_dir="$(mktemp -d)"
-          trap 'rm -rf "$artifact_dir"' EXIT
-          bash .github/scripts/artifacts/fetch-okou-cli-artifact.sh "$ARTIFACT_SHA" "$artifact_dir"
-          bash .github/scripts/artifacts/smoke-okou-cli-artifact.sh \
-            "$artifact_dir/package.tgz"
-          echo "package-url=${CLI_STATIC_BASE_URL}/okou-cli/${ARTIFACT_SHA}/package.tgz" >> "$GITHUB_OUTPUT"
-
       - name: Resolve API production environment
         id: api-production-env
         uses: ./.github/actions/web-api-env
@@ -1271,7 +1257,6 @@ jobs:
           web-url: https://www.okou.ai
           app-url: https://app.okou.ai
           api-backend-url: ${{ vars.OKOU_API_BACKEND_URL }}
-          cli-pkg-url: ${{ steps.cli-artifact.outputs.package-url }}
         env:
           REPO_VARS_JSON: ${{ toJSON(vars) }}
           REPO_SECRETS_JSON: ${{ toJSON(secrets) }}
@@ -1949,7 +1934,7 @@ jobs:
             echo "r2-bucket=$R2_BUCKET"
           } >> "$GITHUB_OUTPUT"
 
-  # Both architectures embed the same verified canonical CLI input retained
+  # Both architectures embed the same verified private CLI input retained
   # by prepare-runner-cli, without a second CLI compilation.
   build-runner-release-assets:
     needs: [release-please, prepare-runner-cli]
@@ -1976,10 +1961,10 @@ jobs:
         with:
           ref: ${{ needs.release-please.outputs.release_target }}
 
-      - name: Download canonical CLI build input
+      - name: Download private CLI build input
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: runner-release-cli-${{ github.run_id }}
+          artifact-ids: ${{ needs.prepare-runner-cli.outputs.artifact-id }}
           path: runner-cli-intermediate
 
       - name: Check CLI package and identity before compiling Runner
