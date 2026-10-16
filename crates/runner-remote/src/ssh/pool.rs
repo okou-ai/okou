@@ -41,6 +41,7 @@ struct Idle {
 struct Transport {
     source_trace: crate::diagnostics::trace::Trace,
     diagnostic_setup: Option<crate::diagnostics::trace::Snapshot>,
+    native: Option<crate::diagnostics::NativeSource>,
     connection: Uuid,
     credential: Arc<PreparedCredential>,
     access: Access,
@@ -206,6 +207,7 @@ impl Pool {
                 retire_on_drop: true,
             };
             let transport = &lease.transport;
+            observation.native = transport.native.clone();
             observation.trace.reuse(transport.diagnostic_setup.as_ref());
             observation.carrier_trace = Some(transport.source_trace.clone());
             transport.current()?;
@@ -267,6 +269,7 @@ impl Pool {
         let transport = Arc::new(Transport {
             source_trace: observation.trace.clone(),
             diagnostic_setup: observation.trace.snapshot(),
+            native: observation.native.clone(),
             connection: request.connection,
             credential: request.credential,
             access: request.access,

@@ -72,7 +72,9 @@ A finite native trace records application-observed provisioning/control,
 map framing/validation, selected terminal root and relay stages. Selected typed
 endpoint/family and relay-region facts are retained when exposed by the actual
 connector. Each private TCP connection has its own trace and evidence ID;
-concurrent connections cannot replace one another's evidence. Relay attempts are
+concurrent connections cannot replace one another's evidence.
+SSH transport reuse keeps the original connection evidence ID; a fresh dial gets
+a new ID while retaining the shared node identity. Relay attempts are
 isolated, and only the selected terminal root's relay facts enter the node receipt.
 Detailed collection is activated by enabled consumers before native startup.
 Each operational report copies its node and connection stage snapshots when

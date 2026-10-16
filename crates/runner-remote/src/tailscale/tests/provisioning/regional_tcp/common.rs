@@ -291,6 +291,11 @@ async fn native_common_exec_reuse_and_forwarding_preserve_real_binary_bytes() {
 }
 
 #[tokio::test]
+async fn native_common_reused_ssh_failure_retains_exact_private_tcp_evidence() {
+    run_case(Case::ReusedDiagnostics).await;
+}
+
+#[tokio::test]
 async fn native_common_sessions_preserve_original_b_after_closing_a() {
     run_case(Case::Sessions).await;
 }
@@ -354,6 +359,7 @@ enum Case {
     IdentityFiles,
     RejectedIdentity,
     Exec,
+    ReusedDiagnostics,
     Sessions,
     TargetedSessions,
     Files,
@@ -422,7 +428,7 @@ async fn run_case(case: Case) {
     .await;
     if matches!(
         case,
-        Case::WrongPin | Case::BadPassword | Case::RejectedIdentity
+        Case::WrongPin | Case::BadPassword | Case::RejectedIdentity | Case::ReusedDiagnostics
     ) {
         h.enable_diagnostics().await;
     }
@@ -639,9 +645,70 @@ async fn forwarding(peers: &mut Peers, h: &Harness, mut forward: crate::ssh::Dir
     drop(forwarded);
 }
 
+async fn reused_diagnostics(peers: &mut Peers, h: &Harness) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("unopened-private-file-canary");
+    let (first, bytes) = peers.finish(files::download(h, &path)).await;
+    assert_eq!(first["type"], "failed");
+    assert_eq!(first["failure_reason"], "subsystem_unavailable");
+    assert!(bytes.is_empty() && !path.exists());
+    let first_text = crate::test_fixtures::diagnostic_text(&first);
+    assert!(first_text.contains("transport: reused."), "{first_text}");
+    assert!(
+        first_text.contains("Native connection private tcp: passed;"),
+        "{first_text}"
+    );
+    assert!(
+        first_text.contains("Native connection private tcp endpoint: 100.64.0.2:22; family: ipv4.")
+    );
+    assert_eq!(h.observed.auth.load(Ordering::SeqCst), 2);
+    let (fresh, bytes) = peers.finish(files::download(h, &path)).await;
+    assert_eq!(fresh["failure_reason"], "subsystem_unavailable");
+    assert!(bytes.is_empty() && !path.exists());
+    let fresh_text = crate::test_fixtures::diagnostic_text(&fresh);
+    assert!(fresh_text.contains("transport: fresh."), "{fresh_text}");
+    let source = |text: &str, prefix: &str| {
+        text.lines()
+            .find(|line| line.starts_with(prefix))
+            .unwrap()
+            .to_owned()
+    };
+    assert_ne!(
+        source(first_text, "- Native connection evidence:"),
+        source(fresh_text, "- Native connection evidence:")
+    );
+    assert_eq!(
+        source(first_text, "- Native source:"),
+        source(fresh_text, "- Native source:")
+    );
+    assert_eq!(h.observed.auth.load(Ordering::SeqCst), 3);
+    let inventory = h
+        .api
+        .mock_async(|when, then| {
+            when.method("GET").path("/api/ssh/hosts");
+            then.status(200)
+                .json_body(crate::test_fixtures::remote_inventory(
+                    &[(CONNECTION, 7)],
+                    crate::ssh::tests::harness::CREATED_AT,
+                ));
+        })
+        .await;
+    let attempt = crate::test_fixtures::diagnostic_attempt(&first);
+    let retained = peers
+        .finish(h.raw(
+            json!({"version":1,"method":"ssh.diagnose","params":{"attemptId":attempt}}).to_string(),
+        ))
+        .await;
+    let retained = &retained.last().unwrap()["data"];
+    assert_eq!(retained["status"], "found");
+    assert_eq!(crate::test_fixtures::diagnostic_text(retained), first_text);
+    assert!(!first_text.contains("unopened-private-file-canary"));
+    inventory.assert_calls_async(1).await;
+}
+
 async fn exercise(peers: &mut Peers, h: &Harness, case: Case) {
     match case {
-        Case::Exec | Case::Password | Case::Tofu | Case::Identity => {
+        Case::Exec | Case::Password | Case::Tofu | Case::Identity | Case::ReusedDiagnostics => {
             for _ in 0..2 {
                 let frames = peers.finish(h.request(params())).await;
                 assert_eq!(
@@ -656,6 +723,9 @@ async fn exercise(peers: &mut Peers, h: &Harness, case: Case) {
             // The dedicated forwarding socket retires; the two execs reuse
             // one later physical SSH transport, within the same native node.
             assert_eq!(h.observed.auth.load(Ordering::SeqCst), 2);
+            if matches!(case, Case::ReusedDiagnostics) {
+                reused_diagnostics(peers, h).await;
+            }
         }
         Case::Sessions | Case::TargetedSessions | Case::IdentitySessions => {
             let a = peers
