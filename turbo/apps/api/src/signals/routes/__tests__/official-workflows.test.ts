@@ -657,6 +657,20 @@ async function readMorningBriefAutomations(
   return response.body.automations;
 }
 
+async function listMorningBriefAutomations(
+  actor: ApiTestUser,
+  workflowId: string,
+) {
+  const response = await accept(
+    automationClient().list({
+      headers: authHeaders(actor),
+      params: { workflowId },
+    }),
+    [200],
+  );
+  return response.body;
+}
+
 function mockBriefMemberships(
   entries: readonly {
     readonly actor: ApiTestUser;
@@ -1215,14 +1229,12 @@ describe("Morning Brief catalog reconciliation", () => {
             )
           ).body.outcome,
         ).toBe("accepted");
-        const actor = bdd.user();
-        const onboarding = await bdd.readOnboardingStatus(actor);
-        if (!actor.orgId || !onboarding.defaultAgentId) {
-          throw new Error("Expected a Morning Brief workspace and Agent");
+        const { actor, defaultAgentId } = await workflowBdd.setupWorkflowOrg({
+          timezone: "Asia/Tokyo",
+        });
+        if (!actor.orgId) {
+          throw new Error("Expected a Morning Brief workspace");
         }
-        await bdd.completeOnboarding(actor, { timezone: "Asia/Tokyo" });
-        await selectPersonalDefaultModel(actor);
-        bdd.acceptAgentStorageWrites();
         await updateFeatureSwitchesForUser(
           context,
           { ...actor, orgId: actor.orgId },
@@ -1231,7 +1243,7 @@ describe("Morning Brief catalog reconciliation", () => {
               definitionName === "internal-test-morning-brief",
           },
         );
-        await connectBriefSourceForAgent(actor, onboarding.defaultAgentId);
+        await connectBriefSourceForAgent(actor, defaultAgentId);
         await accept(
           morningBriefPreferenceClient().update({
             headers: authHeaders(actor),
@@ -1243,7 +1255,7 @@ describe("Morning Brief catalog reconciliation", () => {
         if (!installation) {
           throw new Error("Expected the Morning Brief installation");
         }
-        const [initial] = await readMorningBriefAutomations(
+        const [initial] = await listMorningBriefAutomations(
           actor,
           installation.id,
         );
@@ -1391,7 +1403,7 @@ describe("Morning Brief catalog reconciliation", () => {
         await executeAutomationCron();
         await flushWaitUntilForTest();
         await expect(
-          readMorningBriefAutomations(actor, installation.id),
+          listMorningBriefAutomations(actor, installation.id),
         ).resolves.toMatchObject([
           {
             id: initial.id,
@@ -1405,7 +1417,7 @@ describe("Morning Brief catalog reconciliation", () => {
         await executeAutomationCron();
         await flushWaitUntilForTest();
         await expect(
-          readMorningBriefAutomations(actor, installation.id),
+          listMorningBriefAutomations(actor, installation.id),
         ).resolves.toStrictEqual([]);
         await accept(
           automationClient().get({
@@ -1417,7 +1429,7 @@ describe("Morning Brief catalog reconciliation", () => {
         await executeAutomationCron();
         await flushWaitUntilForTest();
         await expect(
-          readMorningBriefAutomations(actor, installation.id),
+          listMorningBriefAutomations(actor, installation.id),
         ).resolves.toStrictEqual([]);
         await expect(
           allThreadEventRows(actor, first.chatThreadId),
@@ -1467,7 +1479,7 @@ describe("Morning Brief catalog reconciliation", () => {
         await executeAutomationCron();
         await flushWaitUntilForTest();
         await expect(
-          readMorningBriefAutomations(actor, installation.id),
+          listMorningBriefAutomations(actor, installation.id),
         ).resolves.toMatchObject([
           {
             id: initial.id,
@@ -1486,7 +1498,7 @@ describe("Morning Brief catalog reconciliation", () => {
             [200],
           );
         }
-        const [scheduled] = await readMorningBriefAutomations(
+        const [scheduled] = await listMorningBriefAutomations(
           actor,
           installation.id,
         );
