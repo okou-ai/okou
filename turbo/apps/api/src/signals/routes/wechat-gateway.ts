@@ -36,8 +36,8 @@ const poll$ = command(async ({ get, set }, signal: AbortSignal) => {
     !secret ||
     !verifyWechatGatewaySignature(
       secret,
-      req.header("x-wechat-timestamp") ?? null,
-      req.header("x-wechat-signature") ?? null,
+      req.raw.headers.get("x-wechat-timestamp"),
+      req.raw.headers.get("x-wechat-signature"),
       raw,
     )
   ) {
@@ -104,6 +104,9 @@ const poll$ = command(async ({ get, set }, signal: AbortSignal) => {
     }
 
     const updates = fetched.value;
+    if (updates === null) {
+      return Response.json({ active: true });
+    }
     batchCiphertext = await encryptStoredSecretValue(JSON.stringify(updates));
 
     const [saved] = await db
