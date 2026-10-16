@@ -215,7 +215,9 @@ async function syncArtifactFileToGoogleDrive(
   );
 }
 
-const internalGoogleDriveSyncPending$ = state<ReadonlySet<string>>(new Set());
+const internalGoogleDriveSyncPending$ = state<
+  ReadonlyMap<string, GoogleDriveUploadMode>
+>(new Map());
 export const googleDriveSyncPending$ = computed((get) => {
   return get(internalGoogleDriveSyncPending$);
 });
@@ -234,12 +236,15 @@ export const syncArtifactFileToGoogleDrive$ = command(
     }
     set(
       internalGoogleDriveSyncPending$,
-      new Set([...get(internalGoogleDriveSyncPending$), params.artifactId]),
+      new Map(get(internalGoogleDriveSyncPending$)).set(
+        params.artifactId,
+        params.mode,
+      ),
     );
     return await withCleanup(
       syncArtifactFileToGoogleDrive(params, signal),
       () => {
-        const pending = new Set(get(internalGoogleDriveSyncPending$));
+        const pending = new Map(get(internalGoogleDriveSyncPending$));
         pending.delete(params.artifactId);
         set(internalGoogleDriveSyncPending$, pending);
       },
