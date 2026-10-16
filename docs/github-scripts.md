@@ -96,9 +96,10 @@ the collector considers four recent proxy instances and two native log files per
 instance, with explicit truncation/unavailable markers. Different instances are
 shown separately, not automatically declared the cause of an operation. A missing
 final lifecycle event means no final status was observed in that snapshot; it
-does not prove whether the process remains alive or was killed. Probe failures
-also include the selected master's evidence. Successful operations keep added
-diagnostics out of their output. Reads preserve caller stdout/status and never
+does not prove whether the process remains alive or was killed. Preconnection
+failure/retry reports and probe failures also include the selected master's
+evidence. Successful operations keep added diagnostics out of their output.
+Reads preserve caller stdout/status and never
 reconnect, replay a caller, or close a live master to flush logs.
 The operation deadline's native `timeout --verbose` message records when it
 actually forwards a termination signal. The wrapper records handled HUP/INT/TERM

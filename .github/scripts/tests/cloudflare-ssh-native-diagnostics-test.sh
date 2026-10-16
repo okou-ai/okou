@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [ -z "${NATIVE_DIAGNOSTIC_CASE:-}" ]; then
-  for creation in preconnect probe recovery failed-recovery; do
+  for creation in preconnect probe recovery failed-recovery failed-preconnect; do
     NATIVE_DIAGNOSTIC_CASE="$creation" timeout --kill-after=2s 10s bash "$0"
   done
   exit 0
@@ -67,7 +67,7 @@ if [ ! -e "$FIXTURE/master-created" ]; then
     probe)
       [[ " $* " != *" true "* ]] || create=true
       ;;
-    recovery|failed-recovery)
+    recovery|failed-recovery|failed-preconnect)
       if [[ " $* " == *" true "* ]] && [ ! -e "$FIXTURE/probe-failed" ]; then
         touch "$FIXTURE/probe-failed"
         echo 'connection closed before caller submission' >&2
@@ -101,6 +101,12 @@ if [ "$create" = true ]; then
   printf '%s\n' "$!" > "$FIXTURE/master.pid"
   IFS= read -r _ < "$FIXTURE/started"
   echo 'debug1: fixture master connected' >&2
+  if [ "$NATIVE_DIAGNOSTIC_CASE" = failed-preconnect ]; then
+    printf 'fail\n' > "$FIXTURE/trigger"
+    IFS= read -r _ < "$FIXTURE/finished"
+    echo 'Permission denied (publickey).' >&2
+    exit 255
+  fi
 fi
 exit 0
 EOF
@@ -127,13 +133,16 @@ export OKOU_CLOUDFLARE_SSH_STATE_DIR="$tmp/state" OKOU_CLOUDFLARE_SSH_SCRIPTS_DI
 "$OWNER/cloudflare-ssh-preconnect.sh" ubuntu dev-11.gcp.vm3.ai > "$tmp/setup.out" 2> "$tmp/setup.err"
 first_status=0
 "$tmp/bin/scp" /tmp/source ubuntu@dev-11.gcp.vm3.ai:/tmp/target > "$tmp/first.out" 2> "$tmp/first.err" || first_status=$?
-if [ "$NATIVE_DIAGNOSTIC_CASE" = failed-recovery ]; then
+if [[ "$NATIVE_DIAGNOSTIC_CASE" = failed-recovery || "$NATIVE_DIAGNOSTIC_CASE" = failed-preconnect ]]; then
   test "$first_status" -eq 255
   test ! -e "$tmp/first-call"
   test "$(< "$tmp/proxy.status")" -eq 0
-  grep -Fq 'close 1006' "$tmp/first.err"
+  if ! grep -Fq 'close 1006' "$tmp/first.err"; then
+    echo 'failed recovery omitted retained native proxy evidence' >&2
+    exit 1
+  fi
   test -n "$(find "$tmp/state" -type d -name 'proxy.*' -print -quit)"
-  echo 'cloudflare-ssh-native-diagnostics-test (failed-recovery): ok'
+  echo "cloudflare-ssh-native-diagnostics-test (${NATIVE_DIAGNOSTIC_CASE}): ok"
   exit 0
 fi
 test "$first_status" -eq 0

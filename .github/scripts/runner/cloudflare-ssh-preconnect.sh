@@ -102,17 +102,17 @@ emit_failure() {
   fi
 
   echo "::${annotation} title=Cloudflare SSH preconnection failed::Unable to establish replay-safe SSH transport to ${host}: ${reason}" >&2
-  if [ -s "$diagnostics_file" ]; then
-    echo "----- SSH preconnection stderr (last 20 lines, redacted) -----" >&2
-    cloudflare_ssh_sanitize_diagnostics "$diagnostics_file" | tail -n 20 >&2
+  if [ -s "$diagnostics_file" ] || [ -d "${diagnostics_file}.proxies" ]; then
+    echo "----- SSH preconnection diagnostics (bounded, redacted) -----" >&2
+    cloudflare_ssh_emit_master_diagnostics "$diagnostics_file" || true
   fi
 }
 
 emit_retry_diagnostics() {
   local diagnostics_file="$1"
-  if [ -s "$diagnostics_file" ]; then
-    echo "----- transient SSH preconnection stderr (last 20 lines, redacted) -----" >&2
-    cloudflare_ssh_sanitize_diagnostics "$diagnostics_file" | tail -n 20 >&2
+  if [ -s "$diagnostics_file" ] || [ -d "${diagnostics_file}.proxies" ]; then
+    echo "----- transient SSH preconnection diagnostics (bounded, redacted) -----" >&2
+    cloudflare_ssh_emit_master_diagnostics "$diagnostics_file" || true
   fi
 }
 
