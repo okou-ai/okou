@@ -231,8 +231,10 @@ Installed Desktop builds decode every route in
 strictly, and the API deploys long before a Desktop release reaches users. The
 required `lint-runtime-api-compat` job binds those routes into the runtime API
 schema with owner `desktop` and compares the candidate with the production
-snapshot that each API production promotion republishes. A breaking Desktop
-finding fails the job unless the same PR carries one of two proofs:
+snapshot that each API production promotion republishes. Desktop routes compare
+every declared response status, because Desktop also decodes error bodies such
+as the `426` upgrade floor; other owners compare `2xx` bodies only. A breaking
+Desktop finding fails the job unless the same PR carries one of two proofs:
 
 - **(A) Floor raise.** Raise `minimumSupportedVersion` in
   [`desktop-compatibility.json`](../turbo/apps/api/src/lib/desktop-compatibility.json)
@@ -244,9 +246,14 @@ finding fails the job unless the same PR carries one of two proofs:
   and `2xx` status in
   [`client-transforms/desktop.ts`](../turbo/packages/api-contracts/src/client-transforms/desktop.ts)
   with `maxVersion` `null` or at least the published Desktop version.
-  Transforms cannot prove request findings or route removal, method, or path
-  changes. [Desktop Response Transforms](#desktop-response-transforms) defines
-  how the API applies them.
+  Transforms cannot prove request findings, non-`2xx` findings, or route
+  removal, method, or path changes. [Desktop Response Transforms](#desktop-response-transforms)
+  defines how the API applies them.
+
+The gate sees only what the contract declares. When Desktop branches on an
+error code, declare that response's `error.code` as an enum of every code the
+handler returns, as the command-completion `409` does, so that a renamed or
+added code becomes a finding.
 
 The published Desktop version is `currentRelease` of
 `GET https://api.okou.ai/api/desktop/updates/ai-okou-desktop/stable/darwin/arm64/RELEASES.json`,

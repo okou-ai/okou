@@ -70,6 +70,24 @@ function transform(
 const production = document(route("desktop", ["hostId", "ok"]));
 const removedHostId = document(route("desktop", ["ok"]));
 
+function withConflictCodes(codes: readonly string[]): RuntimeApiSchemaDocument {
+  const base = route("desktop", ["hostId", "ok"]);
+  return document({
+    ...base,
+    responses: {
+      ...base.responses,
+      "409": {
+        kind: "json-schema",
+        schema: {
+          type: "object",
+          properties: { code: { type: "string", enum: [...codes] } },
+          required: ["code"],
+        },
+      },
+    },
+  });
+}
+
 function gate(overrides: Partial<RuntimeApiGateInput> = {}) {
   return evaluateRuntimeApiGate({
     findings: compareRuntimeApiSchemas(production, removedHostId),
@@ -168,6 +186,27 @@ describe("runtime API Desktop contract gate", () => {
     expect(result.findings[0]?.proofs).toContain(
       "cannot prove a route-level finding",
     );
+  });
+
+  it("accepts only a floor raise for a non-2xx Desktop finding", () => {
+    const findings = compareRuntimeApiSchemas(
+      withConflictCodes(["CONFLICT"]),
+      withConflictCodes(["COMMAND_NOT_RUNNING"]),
+    );
+    const transformed = gate({
+      findings,
+      desktopTransforms: [transform({ status: 409 })],
+    });
+    const raised = gate({
+      findings,
+      desktopFloor: { floor: "0.52.2", baseFloor: "0.51.0" },
+    });
+
+    expect(outcomes(transformed)).toEqual(["blocking"]);
+    expect(transformed.findings[0]?.proofs).toContain(
+      "cannot prove a non-2xx (409) response finding",
+    );
+    expect(outcomes(raised)).toEqual(["proven"]);
   });
 
   it("fails a lowered floor even without findings", () => {

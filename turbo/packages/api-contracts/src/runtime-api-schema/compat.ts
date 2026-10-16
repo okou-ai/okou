@@ -15,7 +15,7 @@ export interface RuntimeApiCompatFinding {
   /** Method and path of the production route the finding was found on. */
   readonly method: string;
   readonly routePath: string;
-  /** The 2xx status whose body changed; set only for response findings. */
+  /** The status whose body changed; set only for response findings. */
   readonly responseStatus?: number;
   readonly direction: "request" | "response" | "route";
   readonly path: string;
@@ -139,7 +139,9 @@ function compareResponses(
   findings: RuntimeApiCompatFinding[],
 ): void {
   for (const [status, onlineSchema] of Object.entries(online.responses)) {
-    if (!status.startsWith("2")) {
+    // Desktop also decodes error bodies, such as the 426 upgrade floor and
+    // the 409 completion code, so its routes compare every status.
+    if (!status.startsWith("2") && online.owner !== "desktop") {
       continue;
     }
 
