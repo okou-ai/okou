@@ -247,6 +247,7 @@ export interface WorkflowComposerSignals {
     (() => void) | undefined,
     [HTMLElement | null]
   >;
+  readonly setSlashHintMenuRef$: WorkflowComposerSignals["setSuggestionMenuRef$"];
   /** Drops the typed `/token` for a row that does not insert one itself. */
   readonly clearSlashRange$: Command<void, []>;
   readonly insertWorkflow$: Command<void, [ComposerSlashWorkflow]>;
@@ -2127,6 +2128,86 @@ function createSuggestionMenuBoundary() {
   };
 }
 
+function createSlashHintPlugin(key: PluginKey): Plugin {
+  let hint: HTMLElement | null = null;
+  return new Plugin({
+    key,
+    props: {
+      decorations({ doc, selection }) {
+        const { $head } = selection;
+        if (
+          !selection.empty ||
+          !$head.parent.isTextblock ||
+          $head.parentOffset !== $head.parent.content.size
+        ) {
+          return DecorationSet.empty;
+        }
+        const text = nodeText($head.parent);
+        if (findActiveSlashWorkflowRange(text, text.length)?.query !== "") {
+          return DecorationSet.empty;
+        }
+        return DecorationSet.create(doc, [
+          Decoration.widget(
+            $head.pos,
+            () => {
+              hint = document.createElement("span");
+              // Generated content stays out of the editable text, clipboard,
+              // draft and message. Keep the widget key stable beside the caret.
+              hint.className =
+                "pointer-events-none select-none text-muted-foreground/80 " +
+                "after:content-[attr(data-placeholder)] data-composing:hidden";
+              hint.setAttribute("aria-hidden", "true");
+              hint.dataset.placeholder = ` ${i18n.t(($) => {
+                return $.chat.composer.slashPanel.hint;
+              })}`;
+              return hint;
+            },
+            {
+              key: `composer-slash-hint-${i18n.language}`,
+              side: 1,
+              ignoreSelection: true,
+            },
+          ),
+        ]);
+      },
+      handleDOMEvents: {
+        compositionstart() {
+          // Hide the decoration without replacing a DOM node during IME start.
+          if (hint) {
+            hint.dataset.composing = "";
+          }
+          return false;
+        },
+        compositionend() {
+          delete hint?.dataset.composing;
+          return false;
+        },
+      },
+    },
+  });
+}
+
+function createSuggestionMenuRefs(
+  editor: Editor,
+  menuRef$: WorkflowComposerSignals["setSuggestionMenuRef$"],
+) {
+  const setSlashHintMenuRef$ = onRef(
+    command(({ set }, element: HTMLElement, signal: AbortSignal) => {
+      const releaseMenu = set(menuRef$, element);
+      const key = new PluginKey("composerSlashHint");
+      const plugin = createSlashHintPlugin(key);
+      // The slash menu owns the hint's lifetime, including Escape, outside
+      // dismissal and feature-switch changes. Editor transactions own position.
+      editor.registerPlugin(plugin);
+      signal.addEventListener("abort", () => {
+        editor.unregisterPlugin(key);
+        releaseMenu?.();
+      });
+    }),
+  );
+  return { setSuggestionMenuRef$: menuRef$, setSlashHintMenuRef$ };
+}
+
 interface MountEditorOptions {
   editor: Editor;
   draft: DraftSignals;
@@ -3128,7 +3209,7 @@ export function createWorkflowComposerSignals<
     previewSuggestion$,
     ...createSlashExpansionSignals(editor, activeSlashRange$, suggestionMenu),
     closeSuggestionMenu$,
-    setSuggestionMenuRef$: suggestionMenu.ref$,
+    ...createSuggestionMenuRefs(editor, suggestionMenu.ref$),
     ...suggestionInsertionCommands,
     ...textCommands,
     ...templates.commands,

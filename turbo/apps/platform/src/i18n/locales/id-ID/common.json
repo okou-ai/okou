@@ -1771,6 +1771,7 @@
       "selectModel": "Pilih model",
       "slashPanel": {
         "browseAll": "Jelajahi semua templat",
+        "hint": "Cari alur kerja atau pilih templat…",
         "make": "Buat",
         "useTemplate": "Gunakan templat {{title}}"
       },

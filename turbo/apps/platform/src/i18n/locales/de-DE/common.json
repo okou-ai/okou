@@ -1774,6 +1774,7 @@
       "selectModel": "Modell auswählen",
       "slashPanel": {
         "browseAll": "Alle Vorlagen durchsuchen",
+        "hint": "Workflows suchen oder eine Vorlage auswählen…",
         "make": "Erstellen",
         "useTemplate": "Vorlage {{title}} verwenden"
       },

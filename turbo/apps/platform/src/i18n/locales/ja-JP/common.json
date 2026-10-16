@@ -1771,6 +1771,7 @@
       "selectModel": "モデルを選択してください",
       "slashPanel": {
         "browseAll": "すべてのテンプレートを見る",
+        "hint": "ワークフローを検索するか、テンプレートを選択…",
         "make": "作成",
         "useTemplate": "テンプレート {{title}} を使う"
       },

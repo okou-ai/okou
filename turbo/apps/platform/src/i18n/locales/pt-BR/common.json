@@ -1803,6 +1803,7 @@
       "selectModel": "Selecionar modelo",
       "slashPanel": {
         "browseAll": "Ver todos os modelos",
+        "hint": "Pesquise fluxos de trabalho ou escolha um modelo…",
         "make": "Criar",
         "useTemplate": "Usar o modelo {{title}}"
       },
