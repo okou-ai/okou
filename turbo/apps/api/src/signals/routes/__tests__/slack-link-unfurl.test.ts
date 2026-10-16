@@ -13,7 +13,7 @@ import {
   setupRawAppRequestWithRoutes,
 } from "../../../__tests__/test-app";
 import { accept, testContext } from "../../../__tests__/test-context";
-import { env, mockOptionalEnv } from "../../../lib/env";
+import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { artifactShareRoutes } from "../artifact-shares";
@@ -291,6 +291,7 @@ describe("Slack link previews", () => {
   });
 
   it("uses public Open Graph fields on App and hosted pages, preserving link keys and escaping titles", async () => {
+    mockEnv("APP_URL", "https://app.okou.ai");
     const f = await fixture();
     const origin = new URL(env("APP_URL")).origin;
     const appUrl = `${origin}/works?source=slack&view=cover#cover|v1`;
