@@ -203,6 +203,59 @@ export async function getWechatUpdates(
     ),
   );
 }
+const wechatConfigSchema = z.object({
+  typing_ticket: z.string().optional(),
+});
+
+export async function getWechatTypingTicket(
+  args: {
+    readonly baseUrl: string;
+    readonly token: string;
+    readonly senderId: string;
+    readonly contextToken: string;
+  },
+  signal: AbortSignal,
+): Promise<string | undefined> {
+  const config = wechatConfigSchema.parse(
+    await wechatRequest(
+      args.baseUrl,
+      "/ilink/bot/getconfig",
+      {
+        ilink_user_id: args.senderId,
+        context_token: args.contextToken,
+        base_info: baseInfo,
+      },
+      args.token,
+      AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
+    ),
+  );
+  return config.typing_ticket;
+}
+
+export async function sendWechatTyping(
+  args: {
+    readonly baseUrl: string;
+    readonly token: string;
+    readonly senderId: string;
+    readonly typingTicket: string;
+    readonly status: 1 | 2;
+  },
+  signal: AbortSignal,
+): Promise<void> {
+  await wechatRequest(
+    args.baseUrl,
+    "/ilink/bot/sendtyping",
+    {
+      ilink_user_id: args.senderId,
+      typing_ticket: args.typingTicket,
+      status: args.status,
+      base_info: baseInfo,
+    },
+    args.token,
+    AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
+  );
+}
+
 export const wechatSendReceiptSchema = z.object({
   message_id: z.string().optional(),
 });
