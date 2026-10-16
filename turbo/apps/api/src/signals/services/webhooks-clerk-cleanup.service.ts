@@ -1,3 +1,4 @@
+import { deleteWechatOwnerData$ } from "./wechat-owner-cleanup.service";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -36,7 +37,7 @@ import { pendingChatQueueEventCondition } from "./chat-event-queue.service";
 import { workflowScheduleRevocationRows } from "./workflow-automation-enqueue.service";
 import { cancelAndRefundOrgBillingForDeletion } from "./org-deletion-billing.service";
 import { cleanupOrgMemberResources$ } from "./org-member-cleanup.service";
-import { removeUsagePackMemberAllocation } from "./usage-pack-allocation-change.service";
+import { removeUsagePackMemberAllocation$ } from "./usage-pack-allocation-change.service";
 import { refundUsagePackMemberCredits } from "./usage-pack-credit-refund.service";
 
 const L = logger("WebhookClerkCleanup");
@@ -420,6 +421,7 @@ async function cancelStripeSubscriptionsForDeletedOrg(
 export const cleanupClerkDeletedOrg$ = command(
   async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
     const owner = { kind: "organization", orgId } as const;
+    await set(deleteWechatOwnerData$, owner, signal);
     await set(stopClerkDeletedOwnerSchedules$, owner, signal);
     await set(stopClerkDeletedOwnerRuns$, owner, signal);
   },
@@ -436,6 +438,7 @@ export const cleanupClerkDeletedOrgBilling$ = command(
 export const cleanupClerkDeletedUser$ = command(
   async ({ set }, userId: string, signal: AbortSignal): Promise<void> => {
     const owner = { kind: "user", userId } as const;
+    await set(deleteWechatOwnerData$, owner, signal);
     await set(stopClerkDeletedOwnerSchedules$, owner, signal);
     await set(stopClerkDeletedOwnerRuns$, owner, signal);
   },
@@ -454,8 +457,8 @@ const commitClerkDeletedOrgMembershipCleanup$ = command(
   ): Promise<void> => {
     signal.throwIfAborted();
     const db = set(writeDb$);
-    const emptyCancellation = await removeUsagePackMemberAllocation(
-      db,
+    const emptyCancellation = await set(
+      removeUsagePackMemberAllocation$,
       args,
       signal,
     );

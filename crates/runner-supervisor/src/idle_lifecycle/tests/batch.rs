@@ -265,7 +265,13 @@ impl ParkedHome {
             })
             .await;
         assert!(checkout.is_cache_hit());
-        let seed = checkout.home_drive_config().unwrap().seed_image.unwrap();
+        let seed = checkout
+            .home_drive_config()
+            .await
+            .unwrap()
+            .unwrap()
+            .seed_image
+            .unwrap();
         let path = match seed {
             sandbox::HomeDriveSeedImage::Copy(path) | sandbox::HomeDriveSeedImage::Move(path) => {
                 path

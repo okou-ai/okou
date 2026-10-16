@@ -165,6 +165,8 @@ impl Pool {
         scope: &Scope,
         observation: &mut Attempt,
     ) -> Result<Lease, FailureReason> {
+        observation.native = request.access.native_source();
+        observation.created_at = Some(request.credential.created_at);
         scope.check()?;
         request.access.check()?;
         self.prune();
@@ -220,6 +222,7 @@ impl Pool {
                     &request.credential,
                     &request.access,
                     scope,
+                    observation,
                 )
                 .await?;
             transport_scope.check()?;

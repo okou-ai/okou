@@ -5,6 +5,35 @@ import { cloudBrowserEnabledByDefault$ } from "../cloud-browser-preference.ts";
 import { onRef } from "../utils.ts";
 import { createPresentationTemplatePreviewSignals } from "./presentation-template-preview.ts";
 import { createImportedPresentationTemplateSignals } from "./presentation-template-library.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
+/** `category` is null until an entry point or the member names one. */
+export function resolveTemplatePickerCategory(
+  category: string | null,
+  customTemplatesEnabled: boolean,
+  documentTemplatesEnabled: boolean,
+): string {
+  switch (category) {
+    case "document": {
+      return documentTemplatesEnabled ? category : "slides";
+    }
+    case "custom": {
+      return customTemplatesEnabled ? category : "slides";
+    }
+    case "slides":
+    case "website":
+    case "illustration":
+    case "workflow": {
+      return category;
+    }
+    default: {
+      // Whatever leads the nav: Custom while the switch is on, and the first
+      // format below it otherwise.
+      return customTemplatesEnabled ? "custom" : "slides";
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Composer UI state — search, dialogs, loading indicators
@@ -201,6 +230,14 @@ function createTemplatePickerListSignals() {
   const templatePickerCategory$ = computed((get) => {
     return get(internalTemplatePickerCategory$);
   });
+  const selectedTemplatePickerCategory$ = computed((get) => {
+    const features = get(featureSwitch$);
+    return resolveTemplatePickerCategory(
+      get(templatePickerCategory$),
+      features[FeatureSwitchKey.CustomTemplates] === true,
+      features[FeatureSwitchKey.BuiltinDocumentTemplates] === true,
+    );
+  });
   const setTemplatePickerCategory$ = command(({ set }, category: string) => {
     set(internalTemplatePickerCategory$, category);
   });
@@ -258,6 +295,7 @@ function createTemplatePickerListSignals() {
   return {
     signals: {
       templatePickerCategory$,
+      selectedTemplatePickerCategory$,
       setTemplatePickerCategory$,
       templatePickerSearch$,
       setTemplatePickerSearch$,
@@ -369,6 +407,19 @@ export function createComposerUiSignals() {
   const previews = createPresentationTemplatePreviewSignals();
   const importedPresentationTemplates =
     createImportedPresentationTemplateSignals();
+  const importedPresentationTemplatePickerItems$ = computed((get) => {
+    if (
+      get(list.signals.selectedTemplatePickerCategory$) !== "slides" &&
+      get(
+        importedPresentationTemplates.importedPresentationTemplatePreviewId$,
+      ) === null
+    ) {
+      return [];
+    }
+    return get(
+      importedPresentationTemplates.importedPresentationTemplatePickerItems$,
+    );
+  });
 
   return {
     model: basic.model,
@@ -384,6 +435,7 @@ export function createComposerUiSignals() {
       ...cards.signals,
       ...previews,
       ...importedPresentationTemplates,
+      importedPresentationTemplatePickerItems$,
       ...createTemplatePickerFocusSignals(
         dialog,
         previews,

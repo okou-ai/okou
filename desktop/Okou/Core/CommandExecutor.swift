@@ -6,10 +6,37 @@ public actor CommandExecutor {
     "element.perform_action", "keyboard.type_text", "keyboard.press_key",
   ]
   private let helper: NativeProcess
+  public let shells: ShellSessions
+  private var shellPermissionId: String?
+  private var shellPolicyRevision = -1
+  private var shellConfigurationRevision = 0
+  public func configureShell(enabled: Bool, policyRevision: Int) async {
+    guard policyRevision >= shellPolicyRevision else { return }
+    shellPolicyRevision = policyRevision
+    guard enabled != (shellPermissionId != nil) else { return }
+    shellPermissionId = enabled ? UUID().uuidString.lowercased() : nil
+    shellConfigurationRevision += 1
+    await shells.configure(permissionId: shellPermissionId, revision: shellConfigurationRevision)
+  }
+  public func supportedCapabilities() -> [String] {
+    guard let shellPermissionId else { return Self.capabilities }
+    return Self.capabilities + ShellSessions.capabilities + [
+      "shell.permission:\(shellPermissionId)"
+    ]
+  }
+  public func retireShellSessions() async {
+    shellPermissionId = shellPermissionId.map { _ in UUID().uuidString.lowercased() }
+    shellConfigurationRevision += 1
+    await shells.configure(
+      permissionId: shellPermissionId, revision: shellConfigurationRevision, reason: "host_stopped")
+  }
   private var snapshots: [String: JSONValue] = [:]
   private var latest: [String: String] = [:]
   private var snapshotOrder: [String] = []
-  public init(helper: NativeProcess) { self.helper = helper }
+  public init(helper: NativeProcess, shells: ShellSessions = ShellSessions()) {
+    self.helper = helper
+    self.shells = shells
+  }
   public func permissions() async throws -> JSONValue {
     try await call(.object(["kind": .string("permissions.state")]), remaining: 10)
   }
@@ -39,6 +66,20 @@ public actor CommandExecutor {
   ) async -> JSONValue {
     do {
       let kind = command.kind.rawValue
+      if ShellSessions.capabilities.contains(kind) {
+        let budget = try CommandBudget(command: command, claimStarted: claimStarted)
+        guard budget.remaining > 0 else {
+          throw DesktopFailure("command_timeout", "Shell operation expired before dispatch")
+        }
+        guard let shellPermissionId,
+          command.payload["shellPermissionId"]?.string == shellPermissionId
+        else {
+          throw DesktopFailure(
+            "permission_denied", "Shell Access is disabled or its permission changed")
+        }
+        return await shells.execute(
+          kind: kind, payload: .object(command.payload), budget: budget.remaining)
+      }
       guard Self.capabilities.contains(kind) else {
         throw DesktopFailure("unsupported_command", "Unsupported command: \(kind)")
       }
@@ -159,6 +200,7 @@ public actor CommandExecutor {
     return .object(["status": .string("succeeded"), "result": .object(publicValues)])
   }
   public func stop() async {
+    await retireShellSessions()
     await helper.stop()
     snapshots.removeAll()
     latest.removeAll()

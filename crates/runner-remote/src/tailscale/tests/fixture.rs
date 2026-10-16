@@ -1,4 +1,5 @@
 mod authority;
+mod tests;
 pub(crate) use authority::Cache;
 
 use bytes::Bytes;
@@ -33,13 +34,19 @@ pub(super) enum SocketClosure {
     Reset,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Reset {
+    operation: &'static str,
+    kind: io::ErrorKind,
+}
+
 pub(super) struct Http {
     pub(super) address: SocketAddr,
     peer: &'static str,
     response: CancellationToken,
     requested: Arc<tokio::sync::Notify>,
     eof: Arc<AtomicBool>,
-    reset: Arc<AtomicBool>,
+    reset: Arc<Mutex<Option<Reset>>>,
     body: Arc<Mutex<Option<serde_json::Value>>>,
     task: tokio::task::JoinHandle<Result<(), hyper::Error>>,
 }
@@ -67,7 +74,7 @@ impl Http {
         let response = CancellationToken::new();
         let requested = Arc::new(tokio::sync::Notify::new());
         let eof = Arc::new(AtomicBool::new(false));
-        let reset = Arc::new(AtomicBool::new(false));
+        let reset = Arc::new(Mutex::new(None));
         let received = Arc::new(Mutex::new(None));
         let gate = response.clone();
         let observed = Arc::clone(&requested);
@@ -171,14 +178,14 @@ impl Http {
         self.response.cancel();
         let server = bounded(self.task).await.unwrap();
         let eof = self.eof.load(Ordering::Acquire);
-        let reset = self.reset.load(Ordering::Acquire);
+        let reset = *self.reset.lock().unwrap();
         assert!(
-            eof || reset,
-            "{} at {}: expected socket EOF/reset; eof={eof}, reset={reset}, server={server:?}",
+            eof || reset.is_some(),
+            "{} at {}: expected socket EOF/reset; eof={eof}, reset={reset:?}, server={server:?}",
             self.peer,
             self.address,
         );
-        if reset {
+        if reset.is_some() {
             SocketClosure::Reset
         } else {
             SocketClosure::Eof
@@ -188,52 +195,73 @@ impl Http {
         self.response.cancel();
         let server = bounded(self.task).await.unwrap();
         let eof = self.eof.load(Ordering::Acquire);
-        let reset = self.reset.load(Ordering::Acquire);
+        let reset = *self.reset.lock().unwrap();
         assert!(
             eof,
-            "{} at {}: expected socket EOF; eof={eof}, reset={reset}, server={server:?}",
+            "{} at {}: expected socket EOF; eof={eof}, reset={reset:?}, server={server:?}",
             self.peer, self.address,
         );
     }
 }
 
-struct Observed {
-    socket: tokio::net::TcpStream,
+struct Observed<Io> {
+    socket: Io,
     eof: Arc<AtomicBool>,
-    reset: Arc<AtomicBool>,
+    reset: Arc<Mutex<Option<Reset>>>,
 }
 
-impl AsyncRead for Observed {
+impl<Io> Observed<Io> {
+    fn observe<T>(
+        &self,
+        operation: &'static str,
+        result: Poll<io::Result<T>>,
+    ) -> Poll<io::Result<T>> {
+        if let Poll::Ready(Err(error)) = &result
+            && matches!(
+                error.kind(),
+                io::ErrorKind::ConnectionReset | io::ErrorKind::ConnectionAborted
+            )
+        {
+            self.reset.lock().unwrap().get_or_insert(Reset {
+                operation,
+                kind: error.kind(),
+            });
+        }
+        result
+    }
+}
+
+impl<Io: AsyncRead + Unpin> AsyncRead for Observed<Io> {
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
         let before = buf.filled().len();
+        let had_capacity = buf.remaining() != 0;
         let result = Pin::new(&mut self.socket).poll_read(cx, buf);
-        if matches!(result, Poll::Ready(Ok(()))) && before == buf.filled().len() {
+        if had_capacity && matches!(result, Poll::Ready(Ok(()))) && before == buf.filled().len() {
             self.eof.store(true, Ordering::Release);
         }
-        if matches!(&result, Poll::Ready(Err(error)) if matches!(error.kind(), io::ErrorKind::ConnectionReset | io::ErrorKind::ConnectionAborted))
-        {
-            self.reset.store(true, Ordering::Release);
-        }
-        result
+        self.observe("read", result)
     }
 }
-impl AsyncWrite for Observed {
+impl<Io: AsyncWrite + Unpin> AsyncWrite for Observed<Io> {
     fn poll_write(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         bytes: &[u8],
     ) -> Poll<io::Result<usize>> {
-        Pin::new(&mut self.socket).poll_write(cx, bytes)
+        let result = Pin::new(&mut self.socket).poll_write(cx, bytes);
+        self.observe("write", result)
     }
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.socket).poll_flush(cx)
+        let result = Pin::new(&mut self.socket).poll_flush(cx);
+        self.observe("flush", result)
     }
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.socket).poll_shutdown(cx)
+        let result = Pin::new(&mut self.socket).poll_shutdown(cx);
+        self.observe("shutdown", result)
     }
 }
 

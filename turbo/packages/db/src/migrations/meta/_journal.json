@@ -2280,15 +2280,29 @@
     {
       "idx": 1403,
       "version": "7",
-      "when": 1792056579549,
-      "tag": "1403_link_wallet_workspace_owner",
+      "when": 1792060146799,
+      "tag": "1403_concerned_hedge_knight",
       "breakpoints": true
     },
     {
       "idx": 1404,
       "version": "7",
-      "when": 1792056627336,
-      "tag": "1404_link_wallet_scope_snapshots",
+      "when": 1792062514680,
+      "tag": "1404_validate_wechat_context_types",
+      "breakpoints": true
+    },
+    {
+      "idx": 1405,
+      "version": "7",
+      "when": 1792118400586,
+      "tag": "1405_link_wallet_workspace_owner",
+      "breakpoints": true
+    },
+    {
+      "idx": 1406,
+      "version": "7",
+      "when": 1792118428394,
+      "tag": "1406_link_wallet_scope_snapshots",
       "breakpoints": true
     }
   ]

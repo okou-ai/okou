@@ -29,6 +29,8 @@ import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-co
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgCustomConnectorDcrRegistrations } from "@okouai/db/schema/org-custom-connector-dcr-registration";
+import { secrets } from "@okouai/db/schema/secret";
+import { variables } from "@okouai/db/schema/variable";
 import {
   orgCustomConnectorOauthConfigs,
   type OrgCustomConnectorOAuthPkceMethod,
@@ -47,7 +49,15 @@ import { nowDate } from "../../lib/time";
 import { clerk$ } from "../external/clerk";
 import { db$, writeDb$, type ReadonlyDb } from "../external/db";
 import { safeSync, settle } from "../utils";
-import { loadConnectorRuntimeSlugSelection } from "./connector-catalog-slug-source.service";
+import {
+  connectorCatalogCurrentWhere,
+  connectorRuntimeSlugSelectionReadPlan,
+  connectorRuntimeSlugSelectionFromRows,
+} from "./connector-catalog-slug-source.service";
+import {
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/runtime/connector-catalog";
 import {
   publishCustomConnectorOrganizationInvalidationAfterCommit,
   publishCustomConnectorUserInvalidationAfterCommit,
@@ -76,8 +86,12 @@ import {
   type CustomConnectorStoredValue,
 } from "./custom-connector-credential-access.service";
 import {
+  connectorOwnedSecretWrite,
+  connectorOwnedVariableWrite,
+} from "./connector-credential-storage-write.service";
+import {
   deleteCustomConnectorMemberConnectionExact,
-  upsertCustomConnectorStoredValues,
+  customConnectorStorageDeclaration,
   type PreparedCustomConnectorValue,
 } from "./custom-connector-credential-storage.service";
 import {
@@ -1574,19 +1588,6 @@ function validateDefinition(
   };
 }
 
-/** A bundle reads only its dependency connector's firewall metadata. */
-async function loadPermissionBundleCatalog(
-  db: ReadonlyDb,
-  permissionBundleRef: CustomConnectorPermissionBundleRef,
-) {
-  const dependency =
-    customConnectorPermissionBundleDependencySlug(permissionBundleRef);
-  return await loadConnectorRuntimeSlugSelection(db, {
-    connectorSlugs: [],
-    metadataConnectorSlugs: dependency === null ? [] : [dependency],
-  });
-}
-
 const validatePermissionBundleRef$ = command(
   async (
     { set },
@@ -1596,9 +1597,21 @@ const validatePermissionBundleRef$ = command(
     if (permissionBundleRef === null) {
       return null;
     }
-    const snapshot = await loadPermissionBundleCatalog(
-      set(writeDb$),
-      permissionBundleRef,
+    const catalogDb = set(writeDb$);
+    // A bundle reads only its dependency connector's firewall metadata.
+    const dependency =
+      customConnectorPermissionBundleDependencySlug(permissionBundleRef);
+    const catalogPlan = connectorRuntimeSlugSelectionReadPlan({
+      connectorSlugs: [],
+      metadataConnectorSlugs: dependency === null ? [] : [dependency],
+    });
+    const snapshot = connectorRuntimeSlugSelectionFromRows(
+      catalogPlan.selection,
+      await catalogDb
+        .select(catalogPlan.columns)
+        .from(connectorCatalog)
+        .leftJoin(connectorCatalogEntries, catalogPlan.join)
+        .where(connectorCatalogCurrentWhere()),
     );
     signal.throwIfAborted();
     const bundle = await loadCustomConnectorPermissionBundle({
@@ -2616,7 +2629,21 @@ export function getCustomConnectorPermissionBundle(args: {
     if (!permissionBundleRef) {
       return null;
     }
-    const snapshot = await loadPermissionBundleCatalog(db, permissionBundleRef);
+    const catalogDb = db;
+    const dependency =
+      customConnectorPermissionBundleDependencySlug(permissionBundleRef);
+    const catalogPlan = connectorRuntimeSlugSelectionReadPlan({
+      connectorSlugs: [],
+      metadataConnectorSlugs: dependency === null ? [] : [dependency],
+    });
+    const snapshot = connectorRuntimeSlugSelectionFromRows(
+      catalogPlan.selection,
+      await catalogDb
+        .select(catalogPlan.columns)
+        .from(connectorCatalog)
+        .leftJoin(connectorCatalogEntries, catalogPlan.join)
+        .where(connectorCatalogCurrentWhere()),
+    );
     const bundle = await loadCustomConnectorPermissionBundle({
       catalog: snapshot.serverFirewallMetadata,
       ref: permissionBundleRef,
@@ -2871,6 +2898,17 @@ async function prepareCustomConnectorValueWrite(args: {
   };
 }
 
+type CustomConnectorValueWriteResult =
+  | {
+      readonly connector: CustomConnectorRow;
+      readonly runtimeRecovered: boolean;
+      readonly connectedConnection: boolean;
+      readonly connectedAccountId: string;
+    }
+  | BadRequestResponse
+  | NotFoundResponse
+  | ConflictResponse;
+
 async function persistCustomConnectorValues(
   args: {
     readonly tx: Tx;
@@ -2880,17 +2918,7 @@ async function persistCustomConnectorValues(
     readonly preparedValues: readonly PreparedCustomConnectorValue[];
   },
   signal: AbortSignal,
-): Promise<
-  | {
-      readonly connector: CustomConnectorRow;
-      readonly runtimeRecovered: boolean;
-      readonly connectedConnection: boolean;
-      readonly connectedAccountId: string;
-    }
-  | BadRequestResponse
-  | NotFoundResponse
-  | ConflictResponse
-> {
+): Promise<CustomConnectorValueWriteResult> {
   const state = await prepareCustomConnectorValueWrite(args);
   if ("status" in state) {
     return state;
@@ -2900,17 +2928,63 @@ async function persistCustomConnectorValues(
     connectionId: string,
     writeSignal: AbortSignal,
   ) => {
-    await upsertCustomConnectorStoredValues(
-      tx,
-      {
-        connectionId,
-        fields: state.connector.fields,
-        orgId: args.request.orgId,
-        userId: args.request.userId,
-        values: args.preparedValues,
-      },
-      writeSignal,
-    );
+    const credentialDb = tx;
+    const preparedWrite = {
+      connectionId,
+      fields: state.connector.fields,
+      orgId: args.request.orgId,
+      userId: args.request.userId,
+      values: args.preparedValues,
+    };
+    const storage = customConnectorStorageDeclaration(preparedWrite.fields);
+    for (const value of preparedWrite.values) {
+      if (value.kind === "secret") {
+        const credential = {
+          connectorId: preparedWrite.connectionId,
+          storage,
+          orgId: preparedWrite.orgId,
+          userId: preparedWrite.userId,
+          name: value.key,
+          encryptedValue: value.encryptedValue,
+          description: null,
+          updatedDescription: null,
+        };
+        const write = connectorOwnedSecretWrite(credential);
+        const [row] = await credentialDb
+          .insert(secrets)
+          .values(write.values)
+          .onConflictDoUpdate(write.conflict)
+          .returning({ id: secrets.id });
+        if (!row) {
+          throw new Error(
+            `Connector secret ${credential.name} is owned by another row`,
+          );
+        }
+      } else {
+        const credential = {
+          connectorId: preparedWrite.connectionId,
+          storage,
+          orgId: preparedWrite.orgId,
+          userId: preparedWrite.userId,
+          name: value.key,
+          value: value.value,
+          description: null,
+          updatedDescription: null,
+        };
+        const write = connectorOwnedVariableWrite(credential);
+        const [row] = await credentialDb
+          .insert(variables)
+          .values(write.values)
+          .onConflictDoUpdate(write.conflict)
+          .returning({ id: variables.id });
+        if (!row) {
+          throw new Error(
+            `Connector variable ${credential.name} is owned by another row`,
+          );
+        }
+      }
+      writeSignal.throwIfAborted();
+    }
   };
   const connectionArgs: ConnectorConnectionMetadataArgs = {
     orgId: args.request.orgId,

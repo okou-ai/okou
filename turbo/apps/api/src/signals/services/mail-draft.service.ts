@@ -6,6 +6,10 @@ import {
   type MailDraftStatus,
   type MailInlineImage,
 } from "@okouai/api-contracts/contracts/mail";
+import {
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/runtime/connector-catalog";
 import { connectorAuthMethodHasRequiredScopes } from "@okouai/connectors/connector-auth-method";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
@@ -40,7 +44,11 @@ import {
   handleGmailSendError,
   type GmailDraftRejection,
 } from "./gmail-error";
-import { loadConnectorRuntimeSlugSelection } from "./connector-catalog-slug-source.service";
+import {
+  connectorCatalogCurrentWhere,
+  connectorRuntimeSlugSelectionReadPlan,
+  connectorRuntimeSlugSelectionFromRows,
+} from "./connector-catalog-slug-source.service";
 
 const L = logger("api:mail-draft");
 
@@ -1584,9 +1592,18 @@ export const linkMailDraft$ = command(
     },
     signal: AbortSignal,
   ): Promise<MailDraftLinkMutationResult> => {
-    const snapshot = await loadConnectorRuntimeSlugSelection(set(writeDb$), {
+    const catalogDb = set(writeDb$);
+    const catalogPlan = connectorRuntimeSlugSelectionReadPlan({
       connectorSlugs: ["gmail"],
     });
+    const snapshot = connectorRuntimeSlugSelectionFromRows(
+      catalogPlan.selection,
+      await catalogDb
+        .select(catalogPlan.columns)
+        .from(connectorCatalog)
+        .leftJoin(connectorCatalogEntries, catalogPlan.join)
+        .where(connectorCatalogCurrentWhere()),
+    );
     signal.throwIfAborted();
     const thread = await set(loadOwnedMailThreadContext$, { ...args });
     signal.throwIfAborted();
@@ -1703,9 +1720,18 @@ export const getMailDraft$ = command(
     if (!row) {
       return { kind: "not_found", message: "Mail draft not found" };
     }
-    const snapshot = await loadConnectorRuntimeSlugSelection(set(writeDb$), {
+    const catalogDb = set(writeDb$);
+    const catalogPlan = connectorRuntimeSlugSelectionReadPlan({
       connectorSlugs: ["gmail"],
     });
+    const snapshot = connectorRuntimeSlugSelectionFromRows(
+      catalogPlan.selection,
+      await catalogDb
+        .select(catalogPlan.columns)
+        .from(connectorCatalog)
+        .leftJoin(connectorCatalogEntries, catalogPlan.join)
+        .where(connectorCatalogCurrentWhere()),
+    );
     signal.throwIfAborted();
     return await set(
       loadMailDraftDetails$,
@@ -1736,9 +1762,18 @@ export const getMailDraftAttachment$ = command(
     if (!row) {
       return { kind: "not_found", message: "Mail draft not found" };
     }
-    const snapshot = await loadConnectorRuntimeSlugSelection(set(writeDb$), {
+    const catalogDb = set(writeDb$);
+    const catalogPlan = connectorRuntimeSlugSelectionReadPlan({
       connectorSlugs: ["gmail"],
     });
+    const snapshot = connectorRuntimeSlugSelectionFromRows(
+      catalogPlan.selection,
+      await catalogDb
+        .select(catalogPlan.columns)
+        .from(connectorCatalog)
+        .leftJoin(connectorCatalogEntries, catalogPlan.join)
+        .where(connectorCatalogCurrentWhere()),
+    );
     signal.throwIfAborted();
     const access = await set(
       accessForRow$,
@@ -1841,9 +1876,18 @@ export const deleteMailDraft$ = command(
         message: "Only an active draft can be deleted",
       };
     }
-    const snapshot = await loadConnectorRuntimeSlugSelection(set(writeDb$), {
+    const catalogDb = set(writeDb$);
+    const catalogPlan = connectorRuntimeSlugSelectionReadPlan({
       connectorSlugs: ["gmail"],
     });
+    const snapshot = connectorRuntimeSlugSelectionFromRows(
+      catalogPlan.selection,
+      await catalogDb
+        .select(catalogPlan.columns)
+        .from(connectorCatalog)
+        .leftJoin(connectorCatalogEntries, catalogPlan.join)
+        .where(connectorCatalogCurrentWhere()),
+    );
     signal.throwIfAborted();
     const access = await set(
       accessForRow$,
@@ -1909,9 +1953,18 @@ export const sendMailDraft$ = command(
         message: "This mail draft can no longer be sent",
       };
     }
-    const snapshot = await loadConnectorRuntimeSlugSelection(set(writeDb$), {
+    const catalogDb = set(writeDb$);
+    const catalogPlan = connectorRuntimeSlugSelectionReadPlan({
       connectorSlugs: ["gmail"],
     });
+    const snapshot = connectorRuntimeSlugSelectionFromRows(
+      catalogPlan.selection,
+      await catalogDb
+        .select(catalogPlan.columns)
+        .from(connectorCatalog)
+        .leftJoin(connectorCatalogEntries, catalogPlan.join)
+        .where(connectorCatalogCurrentWhere()),
+    );
     signal.throwIfAborted();
     const access = await set(
       accessForRow$,

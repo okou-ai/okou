@@ -1,6 +1,6 @@
 #![cfg(target_os = "linux")]
 
-//! Root-required real-Firecracker proof for weighted host CPU placement.
+//! Real-Firecracker host CPU placement checks and reserved-host measurements.
 
 use std::error::Error;
 use std::fs;
@@ -11,7 +11,8 @@ use std::time::Duration;
 use futures_util::future::join_all;
 use sandbox::{
     EXEC_OUTPUT_LIMIT_64_KIB, ExecRequest, ExecTermination, FactoryConfig, HostCpuPlacementConfig,
-    HostCpuPlacementMode, ResourceLimits, RuntimeConfig, Sandbox, SandboxConfig, SandboxRuntime,
+    HostCpuPlacementMode, ResourceLimits, RuntimeConfig, Sandbox, SandboxConfig, SandboxFactory,
+    SandboxRuntime,
 };
 use sandbox_firecracker::FirecrackerRuntime;
 
@@ -41,67 +42,113 @@ struct RunningSandbox {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires root, Firecracker fixtures, NBD, and delegated cgroup v2"]
-async fn real_firecracker_guests_receive_weighted_host_cpu_service() -> TestResult<()> {
-    if !nix::unistd::getuid().is_root() {
-        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "test requires root").into());
-    }
-    let firecracker = required_path("OKOU_TEST_HOST_CPU_FIRECRACKER")?;
-    let kernel = required_path("OKOU_TEST_HOST_CPU_KERNEL")?;
-    let rootfs = required_path("OKOU_TEST_HOST_CPU_ROOTFS")?;
-    let base_dir = PathBuf::from(required_env("OKOU_TEST_HOST_CPU_BASE_DIR")?);
-    fs::create_dir_all(&base_dir)?;
+async fn real_firecracker_guests_have_managed_host_cpu_placement() -> TestResult<()> {
+    HostCpuFixture::start().await?.shutdown().await
+}
 
-    let host_cpu_placement = Some(
-        HostCpuPlacementConfig::new(
-            CONTROL_WEIGHT,
-            GUESTS_WEIGHT,
-            HostCpuPlacementMode::Required,
-        )
-        .map_err(io::Error::other)?,
-    );
-    let mut runtime = FirecrackerRuntime::new(RuntimeConfig {
-        proxy_port: None,
-        dns_port: None,
-        host_cpu_placement,
-    })
-    .await?;
-    launch_contract::verify(&delegated_root()?).await?;
-    let mut factory = runtime
-        .create_factory(FactoryConfig {
-            profile: "vm0/host-cpu-metal".into(),
-            binary_path: firecracker,
-            kernel_path: kernel,
-            rootfs_path: rootfs,
-            base_dir,
-            snapshot: None,
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires a reserved measurement host, root, Firecracker, NBD, and delegated cgroup v2"]
+async fn real_firecracker_guests_receive_weighted_host_cpu_service() -> TestResult<()> {
+    let fixture = HostCpuFixture::start().await?;
+    verify_weighted_service(&fixture.cgroup_root, &fixture.sandboxes).await?;
+    fixture.shutdown().await
+}
+
+struct HostCpuFixture {
+    // Preserve Guest-before-factory-before-runtime drop order on assertion unwind.
+    sandboxes: Vec<RunningSandbox>,
+    factory: Box<dyn SandboxFactory>,
+    runtime: FirecrackerRuntime,
+    cgroup_root: PathBuf,
+}
+
+impl HostCpuFixture {
+    async fn start() -> TestResult<Self> {
+        if !nix::unistd::getuid().is_root() {
+            return Err(
+                io::Error::new(io::ErrorKind::PermissionDenied, "test requires root").into(),
+            );
+        }
+        let firecracker = required_path("OKOU_TEST_HOST_CPU_FIRECRACKER")?;
+        let kernel = required_path("OKOU_TEST_HOST_CPU_KERNEL")?;
+        let rootfs = required_path("OKOU_TEST_HOST_CPU_ROOTFS")?;
+        let base_dir = PathBuf::from(required_env("OKOU_TEST_HOST_CPU_BASE_DIR")?);
+        fs::create_dir_all(&base_dir)?;
+
+        let host_cpu_placement = Some(
+            HostCpuPlacementConfig::new(
+                CONTROL_WEIGHT,
+                GUESTS_WEIGHT,
+                HostCpuPlacementMode::Required,
+            )
+            .map_err(io::Error::other)?,
+        );
+        let runtime = FirecrackerRuntime::new(RuntimeConfig {
+            proxy_port: None,
+            dns_port: None,
+            host_cpu_placement,
         })
         .await?;
-
-    let mut sandboxes = Vec::with_capacity(TEST_VCPUS.len());
-    for vcpu in TEST_VCPUS {
-        let mut sandbox = factory
-            .create(SandboxConfig {
-                id: sandbox::SandboxId::new_v4(),
-                resources: ResourceLimits {
-                    cpu_count: vcpu,
-                    memory_mb: 512,
-                },
-                device_rate_limits: None,
-                home_drive: None,
+        launch_contract::verify(&delegated_root()?).await?;
+        let factory = runtime
+            .create_factory(FactoryConfig {
+                profile: "vm0/host-cpu-metal".into(),
+                binary_path: firecracker,
+                kernel_path: kernel,
+                rootfs_path: rootfs,
+                base_dir,
+                snapshot: None,
             })
             .await?;
-        sandbox.start().await?;
-        sandboxes.push(RunningSandbox { vcpu, sandbox });
+
+        let mut sandboxes = Vec::with_capacity(TEST_VCPUS.len());
+        for vcpu in TEST_VCPUS {
+            let mut sandbox = factory
+                .create(SandboxConfig {
+                    id: sandbox::SandboxId::new_v4(),
+                    resources: ResourceLimits {
+                        cpu_count: vcpu,
+                        memory_mb: 512,
+                    },
+                    device_rate_limits: None,
+                    home_drive: None,
+                })
+                .await?;
+            sandbox.start().await?;
+            sandboxes.push(RunningSandbox { vcpu, sandbox });
+        }
+
+        let cgroup_root = delegated_root()?;
+        verify_managed_hierarchy(&cgroup_root, &sandboxes)?;
+
+        Ok(Self {
+            runtime,
+            factory,
+            sandboxes,
+            cgroup_root,
+        })
     }
 
-    let cgroup_root = delegated_root()?;
-    verify_managed_hierarchy(&cgroup_root, &sandboxes)?;
+    async fn shutdown(mut self) -> TestResult<()> {
+        while let Some(running) = self.sandboxes.pop() {
+            self.factory.destroy(running.sandbox).await;
+        }
+        verify_no_guest_leaves(&self.cgroup_root)?;
+        self.factory.shutdown().await;
+        self.runtime.shutdown().await;
+        Ok(())
+    }
+}
 
+async fn verify_weighted_service(
+    cgroup_root: &Path,
+    sandboxes: &[RunningSandbox],
+) -> TestResult<()> {
     let mut saturated_usage = vec![0_u64; sandboxes.len()];
     let mut saturated_control_ticks = 0_u64;
     let mut saturated_control_max_gap_micros = 0_u64;
     for sample in 0..SATURATED_SAMPLES {
-        let measurement = run_load_and_measure(&cgroup_root, &sandboxes, &[0, 1]).await?;
+        let measurement = run_load_and_measure(cgroup_root, sandboxes, &[0, 1]).await?;
         assert_eq!(measurement.usage.len(), saturated_usage.len());
         for (index, (total, usage)) in saturated_usage
             .iter_mut()
@@ -131,7 +178,7 @@ async fn real_firecracker_guests_receive_weighted_host_cpu_service() -> TestResu
 
     let normalized = saturated_usage
         .iter()
-        .zip(&sandboxes)
+        .zip(sandboxes)
         .map(|(usage, sandbox)| *usage as f64 / f64::from(sandbox.vcpu))
         .collect::<Vec<_>>();
     let normalized_ratio = ratio(&normalized)?;
@@ -145,7 +192,7 @@ async fn real_firecracker_guests_receive_weighted_host_cpu_service() -> TestResu
     );
 
     let selected = 0;
-    let borrowing = run_load_and_measure(&cgroup_root, &sandboxes, &[selected]).await?;
+    let borrowing = run_load_and_measure(cgroup_root, sandboxes, &[selected]).await?;
     let saturated_selected = saturated_usage
         .get(selected)
         .copied()
@@ -165,12 +212,6 @@ async fn real_firecracker_guests_receive_weighted_host_cpu_service() -> TestResu
         "remaining Guest did not borrow idle CPU: saturated={saturated_selected}, borrowing={borrowing_selected}, ratio={borrowing_ratio:.3}"
     );
 
-    while let Some(running) = sandboxes.pop() {
-        factory.destroy(running.sandbox).await;
-    }
-    verify_no_guest_leaves(&cgroup_root)?;
-    factory.shutdown().await;
-    runtime.shutdown().await;
     Ok(())
 }
 

@@ -1,3 +1,4 @@
+import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { connectSlackWorkspace$ } from "../services/slack-workspace-write.service";
 import { persistSlackInstallation$ } from "../services/slack-installation-write.service";
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -89,13 +90,9 @@ function appUrl(path: string): string {
 
 function failedRedirect(message: string): Response {
   return redirectResponse(
-    appUrl(`/slack/failed?error=${encodeURIComponent(message)}`),
-  );
-}
-
-function settingsErrorRedirect(message: string): Response {
-  return redirectResponse(
-    appUrl(`/settings/slack?error=${encodeURIComponent(message)}`),
+    appUrl(
+      `${INTEGRATION_SETTINGS_PATHS.slack}?error=${encodeURIComponent(message)}`,
+    ),
   );
 }
 
@@ -431,7 +428,7 @@ const handlePlatformInstall$ = command(
     if (!args.state.orgId || !args.state.userId) {
       return redirectResponse(
         appUrl(
-          `/settings/slack?w=${encodeURIComponent(args.installation.slackWorkspaceId)}&u=${encodeURIComponent(args.authedUserId)}`,
+          `${INTEGRATION_SETTINGS_PATHS.slack}?w=${encodeURIComponent(args.installation.slackWorkspaceId)}&u=${encodeURIComponent(args.authedUserId)}`,
         ),
       );
     }
@@ -450,7 +447,7 @@ const handlePlatformInstall$ = command(
     );
     signal.throwIfAborted();
     if (connectionResult.kind !== "ok") {
-      return settingsErrorRedirect(connectionResult.message);
+      return failedRedirect(connectionResult.message);
     }
 
     set(
@@ -467,12 +464,16 @@ const handlePlatformInstall$ = command(
     );
 
     if (args.isReinstall && args.state.reinstall) {
-      return redirectResponse(appUrl("/?tab=works&updated=1"));
+      return redirectResponse(
+        appUrl(
+          `${INTEGRATION_SETTINGS_PATHS.slack}?status=connected&updated=1&w=${encodeURIComponent(args.installation.slackWorkspaceId)}&u=${encodeURIComponent(args.authedUserId)}`,
+        ),
+      );
     }
 
     return redirectResponse(
       appUrl(
-        `/settings/slack?status=connected&workspace=${encodeURIComponent(args.teamName)}`,
+        `${INTEGRATION_SETTINGS_PATHS.slack}?status=connected&workspace=${encodeURIComponent(args.teamName)}&w=${encodeURIComponent(args.installation.slackWorkspaceId)}&u=${encodeURIComponent(args.authedUserId)}`,
       ),
     );
   },
@@ -558,7 +559,7 @@ const handleInstallCallback$ = command(
         existingOrgId: existing.orgId,
         requestedOrgId: args.state.orgId,
       });
-      return settingsErrorRedirect(
+      return failedRedirect(
         "This Slack workspace is already installed by another organization. Please contact the workspace admin to uninstall first.",
       );
     }
@@ -595,7 +596,7 @@ const handleInstallCallback$ = command(
 
     return redirectResponse(
       appUrl(
-        `/settings/slack?w=${encodeURIComponent(oauthResult.teamId)}&u=${encodeURIComponent(oauthResult.authedUserId)}`,
+        `${INTEGRATION_SETTINGS_PATHS.slack}?w=${encodeURIComponent(oauthResult.teamId)}&u=${encodeURIComponent(oauthResult.authedUserId)}`,
       ),
     );
   },
@@ -616,7 +617,7 @@ const handleConnectCallback$ = command(
     signal: AbortSignal,
   ): Promise<Response> => {
     if (!args.state.orgId || !args.state.userId) {
-      return settingsErrorRedirect("Invalid connect state.");
+      return failedRedirect("Invalid connect state.");
     }
 
     const oauthResult = await tapError(
@@ -633,7 +634,7 @@ const handleConnectCallback$ = command(
     signal.throwIfAborted();
 
     if (!oauthResult) {
-      return settingsErrorRedirect(
+      return failedRedirect(
         "Failed to connect Slack account. Please try again.",
       );
     }
@@ -647,13 +648,13 @@ const handleConnectCallback$ = command(
     signal.throwIfAborted();
 
     if (!installation) {
-      return settingsErrorRedirect(
+      return failedRedirect(
         "No Slack workspace installed for this organization.",
       );
     }
 
     if (oauthResult.teamId !== installation.slackWorkspaceId) {
-      return settingsErrorRedirect(
+      return failedRedirect(
         "You authenticated with a different Slack workspace. Please use the workspace connected to your organization.",
       );
     }
@@ -685,7 +686,7 @@ const handleConnectCallback$ = command(
     signal.throwIfAborted();
 
     if (connectionResult.kind !== "ok") {
-      return settingsErrorRedirect(connectionResult.message);
+      return failedRedirect(connectionResult.message);
     }
 
     await set(
@@ -710,7 +711,7 @@ const handleConnectCallback$ = command(
 
     return redirectResponse(
       appUrl(
-        `/settings/slack?status=connected&workspace=${encodeURIComponent(installation.slackWorkspaceName ?? "")}`,
+        `${INTEGRATION_SETTINGS_PATHS.slack}?status=connected&workspace=${encodeURIComponent(installation.slackWorkspaceName ?? "")}&w=${encodeURIComponent(installation.slackWorkspaceId)}&u=${encodeURIComponent(oauthResult.authedUserId)}`,
       ),
     );
   },

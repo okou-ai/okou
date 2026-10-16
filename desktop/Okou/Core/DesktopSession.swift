@@ -48,6 +48,7 @@ public struct DesktopSessionState: Sendable {
   public var email = ""
   public var organizationName: String?
   public var developerToolsAvailable = false
+  public var shellAvailable = false
   public var error: String?
   public var updateRequired = false
   public var minimumSupportedVersion: String?
@@ -216,6 +217,7 @@ public final class DesktopSessionCoordinator {
       state.organizationName = name
       state.preparing = false
       state.developerToolsAvailable = false
+      state.shellAvailable = false
       if identity.organizationId != nil {
         let switches = try await authenticatedGet(
           ApiRoutes.featureSwitches, identity: identity, generation: current)
@@ -230,8 +232,9 @@ public final class DesktopSessionCoordinator {
         guard switches.status == 200 else {
           throw DesktopFailure("network_error", "Unable to refresh Desktop feature switches")
         }
-        state.developerToolsAvailable =
-          (try? switches.decode(FeatureSwitches.self))?.effectiveSwitches["_debug"] == true
+        let features = try switches.decode(FeatureSwitches.self).effectiveSwitches
+        state.developerToolsAvailable = features["_debug"] == true
+        state.shellAvailable = features["desktopShell"] == true
       }
       try checkIdentity(identity, generation: current)
       state.error = nil
@@ -247,6 +250,7 @@ public final class DesktopSessionCoordinator {
       state.preparing = false
       state.error = error.localizedDescription
       state.developerToolsAvailable = false
+      state.shellAvailable = false
       publish()
       scheduleRetry(refreshSource: authenticationFailed)
     }
@@ -334,6 +338,7 @@ public final class DesktopSessionCoordinator {
     setOnlineIntent(false)
     if failure == .permissionDenied {
       state.developerToolsAvailable = false
+      state.shellAvailable = false
       publish()
     }
     requestRefresh(refreshSource: failure == .authentication)

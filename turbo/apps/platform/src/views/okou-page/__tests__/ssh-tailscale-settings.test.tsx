@@ -107,13 +107,17 @@ async function page(
   });
 }
 
-async function addHost() {
+async function openAddHost() {
   click(
     await waitFor(() => {
       return getAction("button", "Add host");
     }),
   );
-  const dialog = await screen.findByRole("dialog");
+  return await screen.findByRole("dialog");
+}
+
+async function addHost() {
+  const dialog = await openAddHost();
   await chooseSshConnectionType(dialog, "Tailscale");
   await within(dialog).findByLabelText("Tailscale");
   await fill(within(dialog).getByLabelText("Display name"), "New private host");
@@ -125,7 +129,41 @@ async function addHost() {
   return dialog;
 }
 
-test("Tailscale SSH reuses the selected network, preserves drafts and saves only an OS username", async () => {
+test("Tailscale SSH reuses the selected network without a credential selector", async () => {
+  await page();
+  const dialog = await openAddHost();
+  await chooseSshConnectionType(dialog, "Tailscale");
+  await chooseSshConnectionType(dialog, "Tailscale SSH");
+  expect(within(dialog).getByLabelText("Tailscale")).toHaveTextContent(
+    config.name,
+  );
+  expect(
+    within(dialog).queryByRole("combobox", { name: "Credential" }),
+  ).toBeNull();
+});
+
+test("Switching Tailscale SSH modes preserves each carrier's draft", async () => {
+  await page();
+  const dialog = await openAddHost();
+  await chooseSshConnectionType(dialog, "Tailscale");
+  await fill(within(dialog).getByLabelText("Port"), "2022");
+  await chooseSshConnectionType(dialog, "Tailscale SSH");
+  const username = within(dialog).getByRole("textbox", {
+    name: "System username",
+  });
+  await fill(username, "ubuntu");
+  await chooseSshConnectionType(dialog, "Tailscale");
+  expect(within(dialog).getByLabelText("Port")).toHaveValue(2022);
+  expect(within(dialog).getByLabelText("Credential")).toHaveTextContent(
+    "SSH login",
+  );
+  await chooseSshConnectionType(dialog, "Tailscale SSH");
+  expect(
+    within(dialog).getByRole("textbox", { name: "System username" }),
+  ).toHaveValue("ubuntu");
+});
+
+test("Saving Tailscale SSH sends only its OS username and selected network", async () => {
   const requests: unknown[] = [];
   context.mocks.api(sshConnectionsContract.create, ({ body, respond }) => {
     requests.push(body);
@@ -145,25 +183,10 @@ test("Tailscale SSH reuses the selected network, preserves drafts and saves only
   await page();
   const dialog = await addHost();
   await chooseSshConnectionType(dialog, "Tailscale SSH");
-  expect(within(dialog).getByLabelText("Tailscale")).toHaveTextContent(
-    config.name,
-  );
-  expect(
-    within(dialog).queryByRole("combobox", { name: "Credential" }),
-  ).toBeNull();
-  const username = within(dialog).getByRole("textbox", {
-    name: "System username",
-  });
-  await fill(username, "ubuntu");
-  await chooseSshConnectionType(dialog, "Tailscale");
-  expect(within(dialog).getByLabelText("Port")).toHaveValue(2022);
-  expect(within(dialog).getByLabelText("Credential")).toHaveTextContent(
-    "SSH login",
-  );
-  await chooseSshConnectionType(dialog, "Tailscale SSH");
-  expect(
+  await fill(
     within(dialog).getByRole("textbox", { name: "System username" }),
-  ).toHaveValue("ubuntu");
+    "ubuntu",
+  );
   click(getAction("button", "Save", dialog));
   await waitFor(() => {
     return expect(screen.queryByRole("dialog")).toBeNull();

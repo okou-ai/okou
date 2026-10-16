@@ -5,6 +5,10 @@ import {
   CANCELLATION_RECOVERY_STALE_AFTER_MS,
 } from "@okouai/api-contracts/contracts/runners";
 import { describe, expect, it } from "vitest";
+import { http, HttpResponse } from "msw";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { server } from "../../../mocks/server";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -22,6 +26,7 @@ const {
   cronHeaders,
   createChatActor,
   prepareMaintenance,
+  prepareSources,
   publication,
   publish,
   completeMaintenance,
@@ -342,6 +347,316 @@ describe("Pi maintenance publication ownership", () => {
       expect((await observeMemory(run)).memory.versionId).toBe(
         published.versionId,
       );
+    },
+  );
+});
+
+// Only the external extraction provider is controlled; construction and observations
+// use the same authenticated cron, chat, Runner and storage protocols as production.
+function extractionResponse(
+  options: {
+    readonly status?: number;
+    readonly noOutput?: boolean;
+    readonly beforeResponse?: () => void | Promise<void>;
+  } = {},
+) {
+  server.use(
+    http.post("https://openrouter.ai/api/v1/chat/completions", async () => {
+      await options.beforeResponse?.();
+      if (options.status) {
+        return HttpResponse.json(
+          { error: { message: "Provider rejected extraction" } },
+          { status: options.status },
+        );
+      }
+      const content = JSON.stringify({
+        raw_memory: options.noOutput
+          ? ""
+          : "This user prefers focused public API tests.",
+        rollout_summary: options.noOutput
+          ? ""
+          : "The user asked for focused public API coverage.",
+        rollout_slug: options.noOutput ? null : "public-api-tests",
+      });
+      const chunks = [
+        {
+          id: "chatcmpl_reconciliation",
+          object: "chat.completion.chunk",
+          model: "@preset/memory",
+          choices: [{ index: 0, delta: { content }, finish_reason: null }],
+        },
+        {
+          id: "chatcmpl_reconciliation",
+          object: "chat.completion.chunk",
+          model: "@preset/memory",
+          choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+          usage: { prompt_tokens: 12, completion_tokens: 8 },
+        },
+      ];
+      return new HttpResponse(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            const body =
+              chunks
+                .map((chunk) => {
+                  return `data: ${JSON.stringify(chunk)}\n\n`;
+                })
+                .join("") + "data: [DONE]\n\n";
+            controller.enqueue(new TextEncoder().encode(body));
+            controller.close();
+          },
+        }),
+        { headers: { "content-type": "text/event-stream" } },
+      );
+    }),
+  );
+}
+
+describe("Stage 1 result publication", () => {
+  it.each([false, true])(
+    "settles admitted output across midnight (no output: %s) and rejects replay",
+    async (noOutput) => {
+      const beforeMidnight = new Date(now());
+      beforeMidnight.setUTCHours(23, 58, 0, 0);
+      mockNow(beforeMidnight);
+      const source = await prepareSources();
+      extractionResponse({
+        noOutput,
+        beforeResponse: () => {
+          mockNow(now() + 3 * 60 * 1000);
+        },
+      });
+      const settled = await accept(
+        source.stage1.extract({ headers: cronHeaders() }),
+        [200],
+      );
+      expect(settled.body).toMatchObject({
+        succeeded: noOutput ? 0 : 1,
+        succeededNoOutput: noOutput ? 1 : 0,
+        staleDiscarded: 0,
+        terminalFailure: 0,
+        retryableFailure: 0,
+      });
+      const dispatched = await accept(
+        source.stage2.consolidate({ headers: cronHeaders() }),
+        [200],
+      );
+      expect(dispatched.body).toMatchObject({
+        claimed: 1,
+        // The existing Phase 2 credential boundary declines an empty selection.
+        failed: noOutput ? 1 : 0,
+        stale: 0,
+      });
+      if (noOutput) {
+        expect((await runs.pollRunner(source.runnerGroup)).body.job).toBeNull();
+        const initialMemory = expectCanonicalStorageManifest(
+          source.sourceClaim.claim.storageManifest,
+        )?.storageMounts.find((mount) => {
+          return mount.name === "memory";
+        });
+        if (!initialMemory) {
+          throw new Error("Expected the source Run's actual memory mount");
+        }
+        expect((await observeMemory(source)).memory.versionId).toBe(
+          initialMemory.versionId,
+        );
+      } else {
+        const run = { ...source, ...(await source.claimMaintenance()) };
+        const published = await publish(
+          run,
+          "Memory from admitted output across midnight.\n",
+        );
+        await completeMaintenance(run, published.versionId);
+        expect(
+          (
+            await observeMemory(
+              run,
+              "Memory from admitted output across midnight.\n",
+            )
+          ).memory.versionId,
+        ).toBe(published.versionId);
+      }
+      const replay = await accept(
+        source.stage1.extract({ headers: cronHeaders() }),
+        [200],
+      );
+      expect(replay.body).toMatchObject({
+        claimed: 0,
+        succeeded: 0,
+        succeededNoOutput: 0,
+      });
+      const repeated = await accept(
+        source.stage2.consolidate({ headers: cronHeaders() }),
+        [200],
+      );
+      expect(repeated.body).toMatchObject({ claimed: 0, noWork: 1 });
+    },
+  );
+
+  it("retries a provider failure only after its ordinary retry deadline, then publishes once", async () => {
+    const source = await prepareSources();
+    extractionResponse({ status: 400 });
+    const failed = await accept(
+      source.stage1.extract({ headers: cronHeaders() }),
+      [200],
+    );
+    expect(failed.body).toMatchObject({
+      retryableFailure: 1,
+      succeeded: 0,
+      terminalFailure: 0,
+      staleDiscarded: 0,
+    });
+    expect(
+      (
+        await accept(
+          source.stage2.consolidate({ headers: cronHeaders() }),
+          [200],
+        )
+      ).body,
+    ).toMatchObject({ claimed: 0, noWork: 1 });
+    expect(
+      (await accept(source.stage1.extract({ headers: cronHeaders() }), [200]))
+        .body,
+    ).toMatchObject({ claimed: 0 });
+    extractionResponse();
+    mockNow(now() + 60 * 60 * 1000);
+    expect(
+      (await accept(source.stage1.extract({ headers: cronHeaders() }), [200]))
+        .body,
+    ).toMatchObject({ succeeded: 1, retryableFailure: 0, staleDiscarded: 0 });
+    expect(
+      (
+        await accept(
+          source.stage2.consolidate({ headers: cronHeaders() }),
+          [200],
+        )
+      ).body,
+    ).toMatchObject({ claimed: 1, failed: 0 });
+    const run = { ...source, ...(await source.claimMaintenance()) };
+    const published = await publish(
+      run,
+      "Memory after a finite extraction retry.\n",
+    );
+    await completeMaintenance(run, published.versionId);
+    expect(
+      (await observeMemory(run, "Memory after a finite extraction retry.\n"))
+        .memory.versionId,
+    ).toBe(published.versionId);
+  });
+
+  it.each([false, true])(
+    "revalidates permanent credential failures against the UTC day (rollover: %s)",
+    async (rollover) => {
+      const beforeMidnight = new Date(now());
+      beforeMidnight.setUTCHours(23, 58, 0, 0);
+      mockNow(beforeMidnight);
+      const source = await prepareSources();
+      extractionResponse({
+        status: 401,
+        beforeResponse: () => {
+          if (rollover) {
+            mockNow(now() + 3 * 60 * 1000);
+          }
+        },
+      });
+      expect(
+        (await accept(source.stage1.extract({ headers: cronHeaders() }), [200]))
+          .body,
+      ).toMatchObject({
+        terminalFailure: rollover ? 0 : 1,
+        staleDiscarded: rollover ? 1 : 0,
+        succeeded: 0,
+        retryableFailure: 0,
+      });
+      expect(
+        (
+          await accept(
+            source.stage2.consolidate({ headers: cronHeaders() }),
+            [200],
+          )
+        ).body,
+      ).toMatchObject({ claimed: 0, noWork: 1 });
+      expect((await runs.pollRunner(source.runnerGroup)).body.job).toBeNull();
+    },
+  );
+
+  it("discards an extraction whose lease expires while the provider is responding, then reclaims it", async () => {
+    const source = await prepareSources();
+    extractionResponse({
+      beforeResponse: () => {
+        mockNow(now() + 60 * 60 * 1000);
+      },
+    });
+    expect(
+      (await accept(source.stage1.extract({ headers: cronHeaders() }), [200]))
+        .body,
+    ).toMatchObject({ succeeded: 0, staleDiscarded: 1 });
+    expect(
+      (
+        await accept(
+          source.stage2.consolidate({ headers: cronHeaders() }),
+          [200],
+        )
+      ).body,
+    ).toMatchObject({ claimed: 0, noWork: 1 });
+    extractionResponse();
+    expect(
+      (await accept(source.stage1.extract({ headers: cronHeaders() }), [200]))
+        .body,
+    ).toMatchObject({ succeeded: 1, staleDiscarded: 0 });
+    expect(
+      (
+        await accept(
+          source.stage2.consolidate({ headers: cronHeaders() }),
+          [200],
+        )
+      ).body,
+    ).toMatchObject({ claimed: 1, failed: 0 });
+    const run = { ...source, ...(await source.claimMaintenance()) };
+    const published = await publish(run, "Memory after lease reclamation.\n");
+    await completeMaintenance(run, published.versionId);
+    expect(
+      (await observeMemory(run, "Memory after lease reclamation.\n")).memory
+        .versionId,
+    ).toBe(published.versionId);
+  });
+
+  it.each(["feature", "source"] as const)(
+    "revalidates a credential failure after a public %s change",
+    async (change) => {
+      const source = await prepareSources();
+      extractionResponse({
+        status: 403,
+        beforeResponse: async () => {
+          if (change === "feature") {
+            await updateFeatureSwitchesForUser(context, source.actor, {
+              [FeatureSwitchKey.PiMemory]: false,
+            });
+          } else {
+            const newer = await chat.sendChatRun(source.actor, {
+              agentId: source.agentId,
+              threadId: source.source.threadId,
+              prompt: "New input changes the selected source",
+              model: "gpt-6-luna",
+            });
+            await runs.requestCancelRun(source.actor, newer.runId, [200]);
+            await flushWaitUntilForTest();
+          }
+        },
+      });
+      expect(
+        (await accept(source.stage1.extract({ headers: cronHeaders() }), [200]))
+          .body,
+      ).toMatchObject({ terminalFailure: 0, succeeded: 0, staleDiscarded: 1 });
+      expect(
+        (
+          await accept(
+            source.stage2.consolidate({ headers: cronHeaders() }),
+            [200],
+          )
+        ).body,
+      ).toMatchObject({ claimed: 0, noWork: 1 });
+      expect((await runs.pollRunner(source.runnerGroup)).body.job).toBeNull();
     },
   );
 });

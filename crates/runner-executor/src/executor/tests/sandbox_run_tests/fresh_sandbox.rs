@@ -1,13 +1,20 @@
 use super::*;
 use crate::error::RunnerError;
-use crate::executor::{SandboxReuseDisposition, SandboxReuseTerminal};
+use crate::executor::tests::support::RUN_IN_SANDBOX_TEST_TIMEOUT;
+use crate::executor::{SandboxReuseDisposition, SandboxReuseTerminal, SessionHistoryRestorePlan};
+use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer};
 
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use async_trait::async_trait;
+use runner_types::types::{
+    ResumeSessionHistory, ResumeSessionHistoryEncoding, ResumeSessionHistoryRef,
+    ResumeSessionHistoryRefKind,
+};
 use sandbox::SandboxConfig;
+use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
 fn assert_future_pending<T>(future: Pin<&mut impl Future<Output = T>>) {
@@ -1303,6 +1310,175 @@ async fn execute_new_sandbox_does_not_retry_an_unrelated_start_failure() {
     .await
     .unwrap()
     .unwrap();
+}
+
+#[tokio::test]
+async fn execute_new_sandbox_drains_pending_downloads_on_terminal_prepare_failure() {
+    for fail_create in [true, false] {
+        let dir = tempfile::tempdir().unwrap();
+        let config = test_executor_config(dir.path()).await;
+        let registry_path = dir.path().join("proxy-registry.json");
+        let initial_registry = tokio::fs::read(&registry_path).await.unwrap();
+        let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+        let create_gate = MockLifecycleGate::new();
+        overrides.set_create_lifecycle_gate(create_gate.clone());
+        let failure = if fail_create {
+            sandbox_create_error("terminal create failure")
+        } else {
+            SandboxError::Start {
+                message: "terminal start failure".into(),
+            }
+        };
+        let expected_error = format!("sandbox error: {failure}");
+        if fail_create {
+            overrides.push_create_result(Err(failure));
+        } else {
+            overrides.push_start_result(Err(failure));
+        }
+        let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
+        let mut archive_server =
+            RawHttpTestServer::spawn(vec![RawHttpAction::WaitForDisconnect]).await;
+        let mut history_server =
+            RawHttpTestServer::spawn(vec![RawHttpAction::WaitForDisconnect]).await;
+        let archive = storage_archive(b"pending storage");
+        let mut storage = api_storage(
+            "pending-storage",
+            "/data",
+            "v1",
+            &format!("{}/storage.tar.gz", archive_server.url()),
+        );
+        storage.archive_size = Some(archive.len() as u64);
+        let history = br#"{"type":"init"}"#;
+        let mut ctx = minimal_context();
+        ctx.storage_manifest = Some(StorageManifest {
+            storages: vec![storage],
+            artifacts: Vec::new(),
+        });
+        ctx.resume_session = Some(ResumeSession {
+            cli_agent_session_id: "sess-terminal-prepare".into(),
+            history: ResumeSessionHistory::Ref {
+                history_ref: ResumeSessionHistoryRef {
+                    kind: ResumeSessionHistoryRefKind::Blob,
+                    hash: hex::encode(Sha256::digest(history)),
+                    url: format!("{}/history.blob", history_server.url()),
+                    encoding: ResumeSessionHistoryEncoding::Identity,
+                    raw_size: history.len() as u64,
+                    encoded_size: history.len() as u64,
+                    download_source: None,
+                },
+            },
+        });
+        let params = default_params();
+        let mut telemetry = test_telemetry(&config, &ctx);
+        let result = tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, async {
+            let execution = execute_new_sandbox_with_prepared_notifier(
+                &factory,
+                &ctx,
+                NewSandboxDispatch {
+                    id: SandboxId::new_v4(),
+                    reuse_result: SandboxReuseResult::PoolMiss,
+                },
+                &config,
+                &params,
+                &mut telemetry,
+                NewSandboxHooks {
+                    preparation: crate::executor::sandbox_run::FreshPreparation::Initial,
+                    controls: RunControls::new(CancellationToken::new(), None)
+                        .with_session_history_restore_plan(
+                            SessionHistoryRestorePlan::DeferredHashBacked { fallback: None },
+                        ),
+                    prepared_run_payload: prepare_run_payload_for_run(&ctx).unwrap(),
+                    sandbox_prepared: None,
+                },
+            );
+            tokio::pin!(execution);
+            tokio::select! {
+                _ = &mut execution => panic!("preparation escaped before both downloads started"),
+                () = async {
+                    create_gate.wait_entered(1, RUN_IN_SANDBOX_TEST_TIMEOUT)
+                        .await.expect("sandbox create must enter its gate");
+                    assert!(archive_server.next_request("pending storage download").await
+                        .starts_with("GET /storage.tar.gz "));
+                    assert!(history_server.next_request("pending history download").await
+                        .starts_with("GET /history.blob "));
+                } => {}
+            }
+            let probe_cancel = CancellationToken::new();
+            let mut admission_probe = Box::pin(
+                config
+                    .pre_spawn_admission
+                    .acquire(config.pre_spawn_admission.total_tokens(), &probe_cancel),
+            );
+            assert_future_pending(admission_probe.as_mut());
+            create_gate.release_one();
+            let result = execution.await;
+            drop(
+                tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, admission_probe)
+                    .await
+                    .expect("terminal preparation must release admission before returning")
+                    .unwrap(),
+            );
+            result
+        })
+        .await
+        .expect("terminal preparation must retire both pending downloads");
+
+        let error = result.err().expect("preparation must fail");
+        assert_eq!(error.to_string(), expected_error);
+        assert_eq!(overrides.create_configs().len(), 1);
+        assert_eq!(overrides.destroy_call_count(), u32::from(!fail_create));
+        assert!(overrides.start_process_calls().is_empty());
+        assert!(overrides.start_agent_process_calls().is_empty());
+        archive_server.assert_finished().await;
+        history_server.assert_finished().await;
+        assert!(matches!(
+            runner_host::lock::try_acquire_or_busy(
+                config.home.storage_lock("pending-storage", "v1")
+            )
+            .await
+            .unwrap(),
+            runner_host::lock::TryLock::Acquired(_)
+        ));
+        let retirement: Vec<_> = telemetry
+            .pending_ops_with_outcome_snapshot()
+            .into_iter()
+            .filter(|(action, _, _, _)| {
+                [
+                    "runner_fresh_sandbox_prepare",
+                    "storage_cache_fresh_delivery_drained",
+                    "session_history_download_attribution",
+                ]
+                .contains(&action.as_str())
+            })
+            .map(|(action, success, outcome, _)| (action, success, outcome))
+            .collect();
+        assert_eq!(
+            retirement,
+            vec![
+                ("runner_fresh_sandbox_prepare".to_string(), false, None),
+                (
+                    "storage_cache_fresh_delivery_drained".to_string(),
+                    true,
+                    None
+                ),
+                (
+                    "session_history_download_attribution".to_string(),
+                    false,
+                    Some("cancelled".to_string()),
+                ),
+            ]
+        );
+        if fail_create {
+            assert_eq!(
+                tokio::fs::read(&registry_path).await.unwrap(),
+                initial_registry
+            );
+        } else {
+            assert_proxy_registry_empty(dir.path()).await;
+        }
+        config.background_fill.shutdown().await;
+        config.decoded_cache.shutdown().await;
+    }
 }
 
 #[tokio::test]

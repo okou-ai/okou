@@ -127,6 +127,11 @@
     "packages/pi-agent-runtime": {
       "entry": ["src/**/*.{test,spec}.ts"],
       "project": ["src/**/*.ts"]
+    },
+    "apps/wechat-gateway-worker": {
+      "entry": ["src/index.ts", "src/**/*.{test,spec}.ts"],
+      "project": ["src/**/*.ts", "*.config.{ts,mjs}"],
+      "ignoreDependencies": ["cloudflare"]
     }
   },
   "ignoreIssues": {

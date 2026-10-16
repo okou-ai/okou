@@ -1,3 +1,4 @@
+import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { command, computed, type Computed } from "ccstate";
 import type { SlackConnectLinkStatus } from "@okouai/api-contracts/contracts/slack-connect";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
@@ -45,7 +46,7 @@ function buildSlackConnectUrl(
   slackUserId: string,
 ): string {
   const params = new URLSearchParams({ w: workspaceId, u: slackUserId });
-  return `${env("APP_URL")}/settings/slack?${params.toString()}`;
+  return `${env("APP_URL")}${INTEGRATION_SETTINGS_PATHS.slack}?${params.toString()}`;
 }
 
 async function refreshSlackAppHome(args: {

@@ -1,3 +1,4 @@
+import { computerUseCommands } from "@okouai/db/schema/computer-use-host";
 import { command, computed, type Computed } from "ccstate";
 import {
   getAllFeatureStates,
@@ -109,6 +110,44 @@ export function createUserFeatureSwitchContext(
   });
 }
 
+const retireQueuedShellCommands$ = command(
+  async (
+    { set },
+    identity: { readonly orgId: string; readonly userId: string },
+    signal: AbortSignal,
+  ) => {
+    const now = nowDate();
+    const error = {
+      code: "permission_denied",
+      message:
+        "Desktop Shell access changed before dispatch; no input was delivered",
+    };
+    await set(writeDb$)
+      .update(computerUseCommands)
+      .set({
+        status: "failed",
+        result: { error },
+        error: error.code,
+        completedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(computerUseCommands.orgId, identity.orgId),
+          eq(computerUseCommands.userId, identity.userId),
+          eq(computerUseCommands.status, "queued"),
+          inArray(computerUseCommands.kind, [
+            "shell.cmd",
+            "shell.list",
+            "shell.status",
+            "shell.close",
+          ]),
+        ),
+      );
+    signal.throwIfAborted();
+  },
+);
+
 export const updateUserFeatureSwitches$ = command(
   async (
     { set },
@@ -165,6 +204,9 @@ export const updateUserFeatureSwitches$ = command(
       );
       signal.throwIfAborted();
     }
+    if (args.switches[FeatureSwitchKey.DesktopShell] === false) {
+      await set(retireQueuedShellCommands$, args, signal);
+    }
     const context = await set(
       loadUserFeatureSwitchContext$,
       args.orgId,
@@ -208,6 +250,7 @@ export const deleteUserFeatureSwitches$ = command(
       .delete(userFeatureSwitches)
       .where(and(orgCondition, eq(userFeatureSwitches.switches, {})));
     signal.throwIfAborted();
+    await set(retireQueuedShellCommands$, args, signal);
     await set(
       publishRemoteRunnerInvalidation$,
       { ...args, connectionId: null },

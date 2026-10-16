@@ -48,6 +48,7 @@ struct DesktopView: View {
                       in: RoundedRectangle(cornerRadius: 7))
                 }
                 if model.developerToolsAvailable && model.developerToolsEnabled {
+                  if model.shellAvailable { shellPanel }
                   runtimePanel
                   commandPanel
                 }
@@ -269,6 +270,28 @@ struct DesktopView: View {
         Rectangle().fill(foreground.opacity(0.08)).frame(height: 1)
       }
     }
+  }
+  private var shellPanel: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Toggle(
+        "Shell Access",
+        isOn: Binding(
+          get: { model.shellEnabled }, set: { model.setShellAccess($0) })
+      )
+      .fontWeight(.semibold).disabled(model.busy)
+      Text(
+        "Allow agents authorized for this Mac to run interactive terminal commands as your account. Sessions start in your home directory and close after 15 minutes without agent interaction."
+      )
+      .font(.system(size: 13)).foregroundStyle(muted)
+      HStack {
+        Text(
+          "\(model.shellSessionCount) active sessions · \(model.shellEnabled ? "Enabled" : "Disabled")"
+        )
+        Spacer()
+        Button("Stop all sessions", role: .destructive) { model.stopShellSessions() }
+          .disabled(model.busy || !model.shellEnabled)
+      }.font(.system(size: 12))
+    }.padding(16).background(.white, in: RoundedRectangle(cornerRadius: 10))
   }
   private var runtimePanel: some View {
     VStack(alignment: .leading, spacing: 14) {

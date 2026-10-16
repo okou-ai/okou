@@ -136,7 +136,7 @@ impl HomeImageCache {
 
     pub async fn gc(&self, dry_run: bool) -> LifecycleResult<u64> {
         let _capacity_lock = runner_host::lock::acquire(self.capacity_lock_path()).await?;
-        self.gc_locked(dry_run).await
+        self.gc_locked(dry_run, 0).await
     }
 
     pub async fn try_routine_gc(&self, minimum_interval: Duration) -> LifecycleResult<Option<u64>> {
@@ -203,7 +203,7 @@ impl HomeImageCache {
         if budget_gc {
             // Promotions may have added/replaced entries during inventory.
             // Rebuild all accounting under capacity before budget collection.
-            freed_bytes = freed_bytes.saturating_add(self.gc_locked(false).await?);
+            freed_bytes = freed_bytes.saturating_add(self.gc_locked(false, 0).await?);
         }
         capacity_lock.write_all(b"\0")?;
         let capacity_duration = initial_capacity_duration + capacity_started.elapsed();
@@ -235,7 +235,11 @@ impl HomeImageCache {
         self
     }
 
-    pub(super) async fn gc_locked(&self, dry_run: bool) -> LifecycleResult<u64> {
+    pub(super) async fn gc_locked(
+        &self,
+        dry_run: bool,
+        pending_cache_bytes: u64,
+    ) -> LifecycleResult<u64> {
         let inventory = self.gc_inventory(dry_run).await?;
         let stats = self.fs_stats().await?;
         let pre_cleanup_freed = inventory.pre_cleanup_freed_bytes;
@@ -248,7 +252,11 @@ impl HomeImageCache {
         let mut candidates = inventory.candidates;
         let mut entry_count = candidates.len();
         let mut total = self.total_cache_allocated_bytes().await?;
-        let needs_budget_gc = total > budget.max_cache_bytes
+        // Publication's pinned source is still outside the retained-cache tree.
+        // Reserve its measured allocation and staging allowance in both the
+        // pressure trigger and target. Physical Move/Copy headroom is checked
+        // separately by publication.
+        let needs_budget_gc = total.saturating_add(pending_cache_bytes) > budget.max_cache_bytes
             || stats_after_pre_cleanup.available_bytes < budget.min_free_bytes;
         if !needs_budget_gc && entry_count <= MAX_HELD_HOME_STATES {
             return Ok(pre_cleanup_freed);
@@ -263,7 +271,7 @@ impl HomeImageCache {
         for candidate in candidates {
             if gc_budget_satisfied(
                 needs_budget_gc,
-                total,
+                total.saturating_add(pending_cache_bytes),
                 entry_count,
                 stats_after_pre_cleanup,
                 budget,

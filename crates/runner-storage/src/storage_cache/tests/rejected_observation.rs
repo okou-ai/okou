@@ -166,7 +166,7 @@ async fn rejected_prefix_leaves_room_for_useful_first_warming() {
         // rejected-prefix order at the actual post-spawn admission boundary.
         deferred
             .groups
-            .sort_by_key(|(group, _)| group.targets[0].name == useful);
+            .sort_by_key(|(group, _)| group.representative.name == useful);
         deferred.start(&coordinator, &mut telemetry);
         // Leave three network workers occupied. One maintenance worker then
         // proves useful admission without racing the optional decoder budget.

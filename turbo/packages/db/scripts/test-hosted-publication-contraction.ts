@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { pgTable, text } from "drizzle-orm/pg-core";
-import { Client } from "pg";
+import { Client, DatabaseError, Query } from "pg";
 import postgres from "postgres";
 import { z } from "zod";
 import {
@@ -218,7 +218,9 @@ async function physicalState() {
   ).rows;
 }
 
-async function rejectUnchanged(pattern: RegExp) {
+async function rejectUnchanged(
+  pattern: RegExp | ((error: unknown) => boolean),
+) {
   const before = await physicalState();
   await assert.rejects(apply, pattern);
   assert.deepEqual(await physicalState(), before);
@@ -386,16 +388,213 @@ try {
   await client.query(`DROP FUNCTION public.reject_host_contract_journal()`);
 
   const locker = new Client({ connectionString: fixtureUrl.toString() });
-  await locker.connect();
-  try {
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0392; new non-billing transactions are prohibited.
-    await locker.query("BEGIN");
-    await locker.query("LOCK TABLE hosted_sites IN ACCESS SHARE MODE");
-    await rejectUnchanged(/lock timeout/u);
-  } finally {
-    await locker.query("ROLLBACK");
-    await locker.end();
+  const errors: unknown[] = [];
+  const onClientError = (error: unknown) => {
+    errors.push(error);
+  };
+  // COPY cannot bind parameters in this simple-query protocol. The only
+  // interpolated value is our existing fixture-owned, validated UUID.
+  const siteId = z.guid().parse(activeSite.id);
+  const copySql = `COPY (
+    SELECT s.id, ordinal, repeat('x', 8192)
+    FROM public.hosted_sites s
+    CROSS JOIN generate_series(1, 8192) AS ordinal
+    WHERE s.id = '${siteId}'::uuid
+  ) TO STDOUT`;
+  const firstRow = `${siteId}\t1\t${"x".repeat(8192)}\n`;
+  class PausedCopy extends Query<Record<string, unknown>, []> {
+    receivedData = false;
+
+    handleCopyData(message: { chunk: unknown }): void {
+      if (this.receivedData) return;
+      this.receivedData = true;
+      try {
+        assert.ok(Buffer.isBuffer(message.chunk));
+        assert.equal(message.chunk.toString("utf8"), firstRow);
+        locker.connection.stream.pause();
+        this.emit("firstCopyData", { ready: true });
+      } catch (error) {
+        this.emit("firstCopyData", { error });
+      }
+    }
   }
+  // This ordinary read holds ACCESS SHARE against shipped 1173's ACCESS
+  // EXCLUSIVE. One site's finite 8192 rows bound padding to ~64 MiB.
+  const resource = new PausedCopy(copySql);
+  let resourceEnded = false;
+  const outcome = new Promise<{ error: unknown } | { completed: true }>(
+    (resolveOutcome) => {
+      resource.once("error", (error: unknown) => {
+        resourceEnded = true;
+        resolveOutcome({ error });
+      });
+      resource.once("end", () => {
+        resourceEnded = true;
+        resolveOutcome({ completed: true });
+      });
+    },
+  );
+  const firstData = new Promise<{ ready: true } | { error: unknown }>(
+    (resolveFirst) => {
+      resource.once("firstCopyData", resolveFirst);
+    },
+  );
+  // All observers precede submission. Both outcomes fulfill, so even setup
+  // failure owns early error/end without an unhandled rejection.
+  const ready = Promise.race([firstData, outcome]);
+  locker.on("error", onClientError);
+  client.on("error", onClientError);
+  let pid: number | undefined;
+  let submitted = false;
+  let attemptOutcome:
+    Promise<{ error: unknown } | { completed: true }> | undefined;
+  try {
+    await locker.connect();
+    const backend = await locker.query<{ pid: unknown }>(
+      "SELECT pg_backend_pid() AS pid",
+    );
+    assert.equal(backend.rowCount, 1);
+    const value = backend.rows[0]?.pid;
+    assert.ok(
+      typeof value === "number" && Number.isSafeInteger(value) && value > 0,
+    );
+    pid = value;
+    locker.query(resource);
+    submitted = true;
+    const first = await ready;
+    if ("error" in first) throw first.error;
+    assert.ok("ready" in first, "COPY completed before readiness");
+    assert.equal(locker.connection.stream.isPaused(), true);
+    assert.equal(resourceEnded, false);
+    // The COPY connection is busy. Independently prove that this exact PID
+    // still executes this COPY and holds the actual conflicting relation lock.
+    const live = await client.query(
+      `SELECT a.pid, a.state, a.query, l.mode, l.granted
+      FROM pg_stat_activity a JOIN pg_locks l ON l.pid = a.pid
+      WHERE a.pid = $1 AND a.datname = current_database()
+        AND l.locktype = 'relation'
+        AND l.relation = 'public.hosted_sites'::regclass
+        AND l.mode = 'AccessShareLock' AND l.granted`,
+      [pid],
+    );
+    assert.deepEqual(live.rows, [
+      {
+        pid,
+        state: "active",
+        query: copySql,
+        mode: "AccessShareLock",
+        granted: true,
+      },
+    ]);
+    console.log(
+      "Read-only COPY ready:",
+      JSON.stringify({
+        ...live.rows[0],
+        firstRowBytes: Buffer.byteLength(firstRow),
+        exactFirstRow: true,
+      }),
+    );
+    assert.equal(errors.length, 0);
+    attemptOutcome = rejectUnchanged((error: unknown) => {
+      assert.ok(error instanceof postgres.PostgresError);
+      assert.equal(error.code, "55P03");
+      assert.match(error.message, /lock timeout/u);
+      return true;
+    }).then(
+      () => {
+        return { completed: true as const };
+      },
+      (error: unknown) => {
+        return { error };
+      },
+    );
+    await Promise.race([
+      attemptOutcome.then((result) => {
+        if ("error" in result) throw result.error;
+      }),
+      outcome.then((result) => {
+        if ("error" in result) throw result.error;
+        assert.fail("COPY completed before the migration timeout");
+      }),
+    ]);
+    assert.equal(resourceEnded, false);
+  } catch (error) {
+    errors.push(error);
+  } finally {
+    if (submitted) {
+      let cancellationRequested = false;
+      let cancellationDrained = false;
+      try {
+        if (!resourceEnded) {
+          assert.ok(pid !== undefined);
+          const cancelled = await client.query(
+            "SELECT pg_cancel_backend($1) AS cancelled",
+            [pid],
+          );
+          assert.deepEqual(cancelled.rows, [{ cancelled: true }]);
+          cancellationRequested = true;
+        }
+      } catch (error) {
+        errors.push(error);
+      }
+      // Attempt every release step independently, retaining primary and
+      // cleanup failures. Fixture DROP DATABASE must not release this resource.
+      try {
+        locker.connection.stream.resume();
+      } catch (error) {
+        errors.push(error);
+      }
+      try {
+        const result = await outcome;
+        assert.ok("error" in result, "COPY completed without cancellation");
+        const error = result.error;
+        if (!(error instanceof DatabaseError) || error.code !== "57014") {
+          errors.push(error);
+        }
+        assert.ok(error instanceof DatabaseError);
+        assert.equal(error.code, "57014");
+        assert.equal(cancellationRequested, true);
+        cancellationDrained = true;
+      } catch (error) {
+        errors.push(error);
+      }
+      try {
+        // This query waits for COPY's ReadyForQuery and its own idle ACK.
+        const releaseACK = await locker.query("SELECT pg_backend_pid() AS pid");
+        assert.deepEqual(releaseACK.rows, [{ pid }]);
+        assert.equal(locker.getTransactionStatus(), "I");
+        console.log(
+          "Read-only COPY release:",
+          JSON.stringify({
+            pid,
+            cancellationRequested,
+            cancellationDrained,
+            transactionStatus: locker.getTransactionStatus(),
+          }),
+        );
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    if (attemptOutcome) {
+      const result = await attemptOutcome;
+      if ("error" in result && !errors.includes(result.error)) {
+        errors.push(result.error);
+      }
+    }
+    try {
+      await locker.end();
+    } catch (error) {
+      errors.push(error);
+    }
+    client.off("error", onClientError);
+  }
+  if (errors.length > 0) {
+    throw new AggregateError(errors, "Hosted publication COPY blocker failed");
+  }
+  console.log(
+    "Read-only COPY: migration 55P03; complete physical state unchanged; cancellation and idle release verified",
+  );
 
   const before = await state();
   await apply();

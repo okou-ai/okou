@@ -11,8 +11,9 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Client } from "pg";
+import { Client, DatabaseError, Query } from "pg";
 import postgres from "postgres";
+import { z } from "zod";
 import { applyPendingMigrations } from "./migration-runner";
 
 // DDL, catalog corruption and journal failures are infrastructure boundaries.
@@ -289,74 +290,794 @@ try {
     "default lock timeout leaves data/catalog/journal untouched",
     async (client, url) => {
       const blocker = new Client({ connectionString: url });
-      await blocker.connect();
+      const errors: unknown[] = [];
+      let failClient: (result: { error: unknown }) => void = () => {};
+      const clientFailure = new Promise<{ error: unknown }>((resolve) => {
+        failClient = resolve;
+      });
+      const onClientError = (error: unknown) => {
+        errors.push(error);
+        failClient({ error });
+      };
+      let ending = false;
+      blocker.on("error", onClientError);
+      blocker.on("end", () => {
+        if (!ending) {
+          onClientError(new Error("COPY client ended before release"));
+        }
+      });
+      client.on("error", onClientError);
+      let pid: number | undefined;
+      let submitted = false;
+      let resourceEnded = false;
+      let attemptOutcome:
+        Promise<{ error: unknown } | { completed: true }> | undefined;
+      // The native client and Query resource belong only to this scenario.
+      let outcome:
+        Promise<{ error: unknown } | { completed: true }> | undefined;
+      let receivedRows = 0;
+      let receivedBytes = 0;
+      const started = performance.now();
       try {
-        await blocker.query(
-          // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0420; new non-billing transactions are prohibited.
-          "BEGIN; SELECT * FROM usage_pack_subscriptions FOR UPDATE",
+        await blocker.connect();
+        const subscription = z
+          .tuple([z.object({ id: z.guid() })])
+          .parse(
+            (
+              await client.query(
+                "SELECT id FROM public.usage_pack_subscriptions WHERE org_id = $1",
+                ["domain-org"],
+              )
+            ).rows,
+          )[0];
+        // COPY uses simple-query protocol and cannot bind values. Interpolate
+        // only the actual sole fixture UUID after runtime validation.
+        const copySql = `COPY (
+          SELECT s.id, ordinal, repeat('x', 8192)
+          FROM public.usage_pack_subscriptions s
+          CROSS JOIN generate_series(1, 8192) AS ordinal
+          WHERE s.id = '${subscription.id}'::uuid
+        ) TO STDOUT`;
+        const firstRow = `${subscription.id}\t1\t${"x".repeat(8192)}\n`;
+        class PausedCopy extends Query<Record<string, unknown>, []> {
+          handleCopyData(message: { chunk: unknown }): void {
+            try {
+              assert.ok(Buffer.isBuffer(message.chunk));
+              receivedRows += 1;
+              receivedBytes += message.chunk.length;
+              if (receivedRows !== 1) return;
+              assert.equal(message.chunk.toString("utf8"), firstRow);
+              blocker.connection.stream.pause();
+              this.emit("firstCopyData", { ready: true });
+            } catch (error) {
+              this.emit("firstCopyData", { error });
+            }
+          }
+        }
+        // One PK-selected subscription, 8192 rows and 8192 bytes of padding
+        // per row bound this ordinary ACCESS SHARE read to about 64 MiB.
+        const resource = new PausedCopy(copySql);
+        outcome = new Promise<{ error: unknown } | { completed: true }>(
+          (resolve) => {
+            resource.once("error", (error: unknown) => {
+              resourceEnded = true;
+              resolve({ error });
+            });
+            resource.once("end", () => {
+              resourceEnded = true;
+              resolve({ completed: true });
+            });
+          },
         );
+        const firstData = new Promise<{ ready: true } | { error: unknown }>(
+          (resolve) => {
+            resource.once("firstCopyData", resolve);
+          },
+        );
+        // Every observer precedes submission. All stored outcomes fulfill,
+        // including client failures, so setup failure owns early rejection.
+        const ready = Promise.race([firstData, outcome, clientFailure]);
+        const backend = await blocker.query<{ pid: unknown }>(
+          "SELECT pg_backend_pid() AS pid",
+        );
+        assert.equal(backend.rowCount, 1);
+        const value = backend.rows[0]?.pid;
+        assert.ok(
+          typeof value === "number" && Number.isSafeInteger(value) && value > 0,
+        );
+        pid = value;
+        blocker.query(resource);
+        submitted = true;
+        const first = await ready;
+        if ("error" in first) throw first.error;
+        assert.ok("ready" in first, "COPY completed before readiness");
+        assert.equal(blocker.connection.stream.isPaused(), true);
+        assert.equal(resourceEnded, false);
+        const live = await client.query(
+          `SELECT a.pid, a.state, a.query, l.mode, l.granted
+          FROM pg_stat_activity a JOIN pg_locks l ON l.pid = a.pid
+          WHERE a.pid = $1 AND a.datname = current_database()
+            AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+            AND l.locktype = 'relation'
+            AND l.relation = 'public.usage_pack_subscriptions'::regclass
+            AND l.mode = 'AccessShareLock' AND l.granted`,
+          [pid],
+        );
+        assert.deepEqual(live.rows, [
+          {
+            pid,
+            state: "active",
+            query: copySql,
+            mode: "AccessShareLock",
+            granted: true,
+          },
+        ]);
+        console.log(
+          "Prepared domain read-only COPY ready:",
+          JSON.stringify({
+            ...live.rows[0],
+            subscriptionId: subscription.id,
+            firstRowBytes: Buffer.byteLength(firstRow),
+            exactFirstRow: true,
+            maximumRows: 8192,
+            paddingBytesPerRow: 8192,
+          }),
+        );
+        assert.equal(errors.length, 0);
         const before = await catalog(client);
-        await assert.rejects(apply(url), /lock timeout/);
-        assert.deepEqual(await catalog(client), before);
+        attemptOutcome = (async () => {
+          await assert.rejects(apply(url), (error: unknown) => {
+            assert.ok(error instanceof postgres.PostgresError);
+            assert.equal(error.code, "55P03");
+            assert.match(error.message, /lock timeout/u);
+            console.log(
+              "Prepared domain migration rejected:",
+              JSON.stringify({
+                name: error.name,
+                code: error.code,
+                message: error.message,
+              }),
+            );
+            return true;
+          });
+          assert.deepEqual(await catalog(client), before);
+        })().then(
+          () => {
+            return { completed: true as const };
+          },
+          (error: unknown) => {
+            return { error };
+          },
+        );
+        await Promise.race([
+          attemptOutcome.then((result) => {
+            if ("error" in result) throw result.error;
+          }),
+          outcome.then((result) => {
+            if ("error" in result) throw result.error;
+            assert.fail("COPY completed before the migration timeout");
+          }),
+          clientFailure.then((result) => {
+            throw result.error;
+          }),
+        ]);
+        assert.equal(resourceEnded, false);
+      } catch (error) {
+        errors.push(error);
       } finally {
-        await blocker.query("ROLLBACK");
-        await blocker.end();
+        if (submitted) {
+          let cancellationRequested = false;
+          let cancellationDrained = false;
+          try {
+            if (!resourceEnded) {
+              assert.ok(pid !== undefined);
+              const cancelled = await client.query(
+                "SELECT pg_cancel_backend($1) AS cancelled",
+                [pid],
+              );
+              assert.deepEqual(cancelled.rows, [{ cancelled: true }]);
+              cancellationRequested = true;
+            }
+          } catch (error) {
+            errors.push(error);
+          }
+          // Attempt each release step independently and retain all failures.
+          // DROP DATABASE is never used as the resource release mechanism.
+          try {
+            blocker.connection.stream.resume();
+          } catch (error) {
+            errors.push(error);
+          }
+          try {
+            assert.ok(outcome);
+            const result = await Promise.race([outcome, clientFailure]);
+            assert.ok("error" in result, "COPY completed without cancellation");
+            const error = result.error;
+            if (!(error instanceof DatabaseError) || error.code !== "57014") {
+              errors.push(error);
+            }
+            assert.ok(error instanceof DatabaseError);
+            assert.equal(error.code, "57014");
+            assert.equal(cancellationRequested, true);
+            cancellationDrained = true;
+            console.log(
+              "Prepared domain COPY drained:",
+              JSON.stringify({ pid, code: error.code, message: error.message }),
+            );
+          } catch (error) {
+            errors.push(error);
+          }
+          try {
+            // The same client's query waits for COPY ReadyForQuery and its
+            // own idle ACK; a cancellation request alone proves no release.
+            const releaseACK = await blocker.query(
+              "SELECT pg_backend_pid() AS pid",
+            );
+            assert.deepEqual(releaseACK.rows, [{ pid }]);
+            assert.equal(blocker.getTransactionStatus(), "I");
+            console.log(
+              "Prepared domain read-only COPY release:",
+              JSON.stringify({
+                pid,
+                cancellationRequested,
+                cancellationDrained,
+                transactionStatus: blocker.getTransactionStatus(),
+                receivedRows,
+                receivedBytes,
+                elapsedMs: Math.round(performance.now() - started),
+              }),
+            );
+          } catch (error) {
+            errors.push(error);
+          }
+        }
+        if (attemptOutcome) {
+          const result = await attemptOutcome;
+          if ("error" in result && !errors.includes(result.error)) {
+            errors.push(result.error);
+          }
+        }
+        try {
+          ending = true;
+          await blocker.end();
+          console.log("Prepared domain COPY client ended");
+        } catch (error) {
+          errors.push(error);
+        }
+        client.off("error", onClientError);
+      }
+      if (errors.length > 0) {
+        throw new AggregateError(errors, "Prepared domain COPY blocker failed");
       }
     },
   );
   await scenario(
     "audit sees a writer committed while table locks were waiting",
     async (client, url) => {
-      const blocker = new Client({ connectionString: url });
-      await blocker.connect();
+      const writer = new Client({ connectionString: url });
       const applicationName = `domain_migration_${randomUUID()}`;
-      await blocker.query(
-        // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0421; new non-billing transactions are prohibited.
-        "BEGIN; UPDATE usage_pack_pending_snapshot_guards SET pending_snapshot_count = 2",
-      );
-      const outcome = apply(url, {
-        connection: { application_name: applicationName },
-      }).then(
-        () => {
-          return { ok: true as const };
-        },
-        (error: unknown) => {
-          return { ok: false as const, error };
-        },
-      );
-      try {
-        const deadline = performance.now() + 1000;
-        let blocked = false;
-        while (!blocked && performance.now() < deadline) {
-          const state = await client.query<{ blocked: boolean }>(
-            `SELECT EXISTS (SELECT 1 FROM pg_stat_activity
-            WHERE application_name = $1 AND cardinality(pg_blocking_pids(pid)) > 0) AS blocked`,
-            [applicationName],
-          );
-          blocked = state.rows[0]?.blocked === true;
-          if (!blocked)
-            await new Promise((resolve) => {
-              return setTimeout(resolve, 5);
-            });
+      const errors: unknown[] = [];
+      let failClient: (result: { error: unknown }) => void = () => {};
+      const clientFailure = new Promise<{ error: unknown }>((resolve) => {
+        failClient = resolve;
+      });
+      const onClientError = (error: unknown) => {
+        errors.push(error);
+        failClient({ error });
+      };
+      let ending = false;
+      let writerClosed = false;
+      const onWriterEnd = () => {
+        if (!ending) onClientError(new Error("Writer ended before release"));
+      };
+      const onObserverEnd = () => {
+        onClientError(new Error("Observer ended before writer cleanup"));
+      };
+      client.on("end", onObserverEnd);
+      writer.on("error", onClientError);
+      writer.on("end", onWriterEnd);
+      client.on("error", onClientError);
+      class PausedCopy extends Query<Record<string, unknown>, []> {
+        paused = false;
+
+        handleCopyData(message: { chunk: unknown }): void {
+          if (!this.paused) {
+            this.paused = true;
+            writer.connection.stream.pause();
+            this.emit("firstCopyData", { chunk: message.chunk });
+          }
         }
-        assert.ok(
-          blocked,
-          "Observe the actual migration waiting on the writer",
-        );
-        const before = await catalog(client);
-        await blocker.query("COMMIT");
-        const result = await outcome;
-        assert.equal(result.ok, false);
-        if (!result.ok) {
-          assert.ok(result.error instanceof Error);
-          assert.match(result.error.message, /invariant audit failed/);
-        }
-        assert.deepEqual(await catalog(client), before);
-      } finally {
-        await blocker.query("ROLLBACK");
-        await blocker.end();
-        await outcome;
       }
+      // Consume every unrestricted UPDATE receipt before the fixed 64 MiB
+      // output. Normal COPY completion, never cancellation, commits this write.
+      const copySql = `COPY (
+  WITH changed AS (
+    UPDATE public.usage_pack_pending_snapshot_guards
+    SET pending_snapshot_count = 2
+    RETURNING org_id, pending_snapshot_count
+  ), receipt AS (
+    SELECT count(*)::int AS changed_rows,
+      min(org_id) AS first_org_id,
+      max(org_id) AS last_org_id,
+      min(pending_snapshot_count) AS min_count,
+      max(pending_snapshot_count) AS max_count
+    FROM changed
+  )
+  SELECT pg_backend_pid() AS writer_pid,
+    receipt.changed_rows, receipt.first_org_id, receipt.last_org_id,
+    receipt.min_count, receipt.max_count, n.ordinal, repeat('x', 8192)
+  FROM receipt
+  CROSS JOIN generate_series(1, 8192) AS n(ordinal)
+  ORDER BY n.ordinal
+) TO STDOUT WITH (FORMAT text);`;
+      const resource = new PausedCopy(copySql);
+      let resourceEnded = false;
+      const outcome = new Promise<{ error: unknown } | { result: unknown }>(
+        (resolve) => {
+          resource.once("error", (error: unknown) => {
+            resourceEnded = true;
+            resolve({ error });
+          });
+          resource.once("end", (result: unknown) => {
+            resourceEnded = true;
+            resolve({ result });
+          });
+        },
+      );
+      const firstData = new Promise<{ chunk: unknown }>((resolve) => {
+        resource.once("firstCopyData", resolve);
+      });
+      const ready = Promise.race([firstData, outcome, clientFailure]);
+      const pidSchema = z.number().int().positive().max(2147483647);
+      const guardSchema = z.tuple([
+        z
+          .object({
+            org_id: z.literal("domain-org"),
+            pending_snapshot_count: z.literal(1),
+          })
+          .strict(),
+      ]);
+      const guardsSql = `SELECT org_id, pending_snapshot_count
+FROM public.usage_pack_pending_snapshot_guards
+ORDER BY org_id;`;
+      let pid: number | undefined;
+      let submissionAttempted = false;
+      let submitted = false;
+      let idleAcknowledged = false;
+      let writerRolledBack = false;
+      let initialData: Awaited<ReturnType<typeof data>> | undefined;
+      let waiting: Promise<{ error: unknown } | { observed: true }> | undefined;
+      let snapshot:
+        | Promise<
+            { error: unknown } | { state: Awaited<ReturnType<typeof catalog>> }
+          >
+        | undefined;
+      let attemptOutcome:
+        Promise<{ ok: true } | { ok: false; error: unknown }> | undefined;
+      let attemptEnded = false;
+      const started = performance.now();
+      async function releaseFailedCopy() {
+        let cancellationRequested = false;
+        let cancelledWrite = false;
+        try {
+          if (!resourceEnded) {
+            assert.ok(pid !== undefined);
+            const cancelled = await client.query(
+              "SELECT pg_cancel_backend($1::integer) AS cancelled;",
+              [pid],
+            );
+            cancellationRequested = true;
+            assert.equal(cancelled.rowCount, 1);
+            assert.deepEqual(cancelled.rows, [{ cancelled: true }]);
+          }
+        } catch (error) {
+          errors.push(error);
+        }
+        // Each cleanup is independent; a request never proves rollback.
+        try {
+          writer.connection.stream.resume();
+        } catch (error) {
+          errors.push(error);
+        }
+        try {
+          const terminal = await Promise.race([outcome, clientFailure]);
+          if ("error" in terminal) {
+            if (!errors.includes(terminal.error)) errors.push(terminal.error);
+            assert.ok(terminal.error instanceof DatabaseError);
+            if (cancellationRequested)
+              assert.equal(terminal.error.code, "57014");
+            cancelledWrite = terminal.error.code === "57014";
+            writerRolledBack = true;
+            console.log(
+              "Prepared domain writer failure terminal:",
+              JSON.stringify({
+                pid,
+                cancellationRequested,
+                code: terminal.error.code,
+                message: terminal.error.message,
+              }),
+            );
+          } else {
+            console.log(
+              "Prepared domain writer cleanup observed commit:",
+              JSON.stringify(terminal),
+            );
+            assert.equal(
+              cancellationRequested,
+              false,
+              "Cancellation raced a committed writer; this is not rollback",
+            );
+          }
+        } catch (error) {
+          errors.push(error);
+        }
+        try {
+          const ack = await writer.query("SELECT pg_backend_pid() AS pid;");
+          assert.equal(ack.rowCount, 1);
+          assert.deepEqual(ack.rows, [{ pid }]);
+          assert.equal(writer.getTransactionStatus(), "I");
+          idleAcknowledged = true;
+          console.log(
+            "Prepared domain writer cleanup idle:",
+            JSON.stringify({
+              pid,
+              transactionStatus: writer.getTransactionStatus(),
+              cancellationRequested,
+              cancelledWrite,
+            }),
+          );
+        } catch (error) {
+          errors.push(error);
+        }
+        if (attemptOutcome) {
+          const actual = await attemptOutcome;
+          console.log("Prepared domain writer cleanup apply:", actual);
+        }
+      }
+      async function settleObservers() {
+        if (attemptOutcome) {
+          const actual = await attemptOutcome;
+          if (!actual.ok && errors.length > 0 && !errors.includes(actual.error))
+            errors.push(actual.error);
+        }
+        if (waiting) {
+          const actual = await waiting;
+          if ("error" in actual && !errors.includes(actual.error))
+            errors.push(actual.error);
+        }
+        if (snapshot) {
+          const actual = await snapshot;
+          if ("error" in actual && !errors.includes(actual.error))
+            errors.push(actual.error);
+        }
+        if (errors.length > 0 && submitted && idleAcknowledged && initialData) {
+          try {
+            const actualData = await data(client);
+            console.log(
+              "Prepared domain writer cleanup data:",
+              JSON.stringify({ writerRolledBack, data: actualData }),
+            );
+            if (writerRolledBack) assert.deepEqual(actualData, initialData);
+          } catch (error) {
+            errors.push(error);
+          }
+        }
+      }
+      try {
+        initialData = await data(client);
+        const guards = await client.query(guardsSql);
+        assert.equal(guards.rowCount, 1);
+        guardSchema.parse(guards.rows);
+        const roots = await client.query(`SELECT org_id, subscription_status
+FROM public.usage_pack_subscriptions
+WHERE subscription_status IN ('checkout_pending', 'purchase_pending')
+ORDER BY org_id, subscription_status;`);
+        assert.equal(roots.rowCount, 1);
+        assert.deepEqual(roots.rows, [
+          { org_id: "domain-org", subscription_status: "checkout_pending" },
+        ]);
+        await writer.connect();
+        const backend = await writer.query("SELECT pg_backend_pid() AS pid;");
+        assert.equal(backend.rowCount, 1);
+        pid = z
+          .tuple([z.object({ pid: pidSchema }).strict()])
+          .parse(backend.rows)[0].pid;
+        submissionAttempted = true;
+        assert.equal(writer.query(resource), resource);
+        submitted = true;
+        const first = await ready;
+        if ("error" in first) throw first.error;
+        assert.ok("chunk" in first, "COPY ended before writer readiness");
+        assert.ok(Buffer.isBuffer(first.chunk));
+        const expectedFirst = Buffer.from(
+          `${pid}\t1\tdomain-org\tdomain-org\t2\t2\t1\t${"x".repeat(8192)}\n`,
+          "utf8",
+        );
+        assert.deepEqual(first.chunk, expectedFirst);
+        assert.equal(writer.connection.stream.isPaused(), true);
+        assert.equal(resourceEnded, false);
+        assert.equal(errors.length, 0);
+        // Read the old committed guard before the exclusive migration queues.
+        const oldGuards = await client.query(guardsSql);
+        assert.equal(oldGuards.rowCount, 1);
+        guardSchema.parse(oldGuards.rows);
+        console.log(
+          "Prepared domain writer ready:",
+          JSON.stringify({
+            pid,
+            copySql,
+            parameters: [],
+            firstRow: first.chunk.toString("utf8"),
+            oldGuards: oldGuards.rows,
+          }),
+        );
+        attemptOutcome = apply(url, {
+          connection: { application_name: applicationName },
+        }).then(
+          () => {
+            attemptEnded = true;
+            return { ok: true as const };
+          },
+          (error: unknown) => {
+            attemptEnded = true;
+            return { ok: false as const, error };
+          },
+        );
+        const deadline = performance.now() + 1000;
+        waiting = (async () => {
+          let blocked = false;
+          let samples = 0;
+          while (!blocked && performance.now() < deadline) {
+            const state = await client.query(
+              `SELECT m.pid AS migration_pid, w.pid AS writer_pid,
+  m.state AS migration_state, m.wait_event_type AS migration_wait_type,
+  m.wait_event AS migration_wait, w.state AS writer_state,
+  w.wait_event_type AS writer_wait_type, w.wait_event AS writer_wait,
+  g.mode AS writer_lock_mode, q.mode AS migration_lock_mode,
+  m.query AS migration_query
+FROM pg_stat_activity AS m
+JOIN pg_stat_activity AS w ON w.pid = $2::integer
+JOIN pg_locks AS g ON g.pid = w.pid
+  AND g.locktype = 'relation'
+  AND g.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+  AND g.relation = 'public.usage_pack_pending_snapshot_guards'::regclass
+  AND g.mode = 'RowExclusiveLock' AND g.granted
+JOIN pg_locks AS q ON q.pid = m.pid
+  AND q.locktype = 'relation'
+  AND q.database = g.database AND q.relation = g.relation
+  AND q.mode = 'AccessExclusiveLock' AND NOT q.granted
+WHERE m.application_name = $1::text
+  AND m.datname = current_database() AND w.datname = current_database()
+  AND m.pid <> w.pid AND m.pid <> pg_backend_pid()
+  AND m.state = 'active' AND m.wait_event_type = 'Lock'
+  AND m.wait_event = 'relation'
+  AND w.state = 'active' AND w.wait_event_type = 'Client'
+  AND w.wait_event = 'ClientWrite'
+  AND w.pid = ANY (pg_blocking_pids(m.pid))
+  AND position('LOCK TABLE public.usage_pack_subscriptions,' IN m.query) > 0;`,
+              [applicationName, pid],
+            );
+            samples += 1;
+            assert.ok(state.rowCount === 0 || state.rowCount === 1);
+            if (state.rowCount === 1) {
+              const receipt = z
+                .tuple([
+                  z
+                    .object({
+                      migration_pid: pidSchema,
+                      writer_pid: z.literal(pid),
+                      migration_state: z.literal("active"),
+                      migration_wait_type: z.literal("Lock"),
+                      migration_wait: z.literal("relation"),
+                      writer_state: z.literal("active"),
+                      writer_wait_type: z.literal("Client"),
+                      writer_wait: z.literal("ClientWrite"),
+                      writer_lock_mode: z.literal("RowExclusiveLock"),
+                      migration_lock_mode: z.literal("AccessExclusiveLock"),
+                      migration_query: z
+                        .string()
+                        .includes(
+                          "LOCK TABLE public.usage_pack_subscriptions,",
+                        ),
+                    })
+                    .strict(),
+                ])
+                .parse(state.rows)[0];
+              assert.notEqual(receipt.migration_pid, pid);
+              blocked = true;
+              console.log(
+                "Prepared domain writer wait:",
+                JSON.stringify({
+                  ...receipt,
+                  samples,
+                  parameters: [applicationName, pid],
+                  elapsedMs: performance.now() - started,
+                  observationDeadlineMs: 1000,
+                  lockTimeout: "1s",
+                  statementTimeout: "10s",
+                }),
+              );
+            }
+            if (!blocked)
+              await new Promise((resolve) => {
+                return setTimeout(resolve, 5);
+              });
+          }
+          assert.ok(
+            blocked,
+            "Observe the actual migration waiting on the writer",
+          );
+        })().then(
+          () => {
+            return { observed: true as const };
+          },
+          (error: unknown) => {
+            return { error };
+          },
+        );
+        const earlyCopy = outcome.then((result) => {
+          if ("error" in result) throw result.error;
+          assert.fail("COPY completed before normal writer release");
+        });
+        const earlyApply = attemptOutcome.then((result) => {
+          if (!result.ok) throw result.error;
+          assert.fail("Migration completed before normal writer release");
+        });
+        const earlyClient = clientFailure.then((result) => {
+          throw result.error;
+        });
+        const observed = await Promise.race([
+          waiting,
+          earlyCopy,
+          earlyApply,
+          earlyClient,
+        ]);
+        if ("error" in observed) throw observed.error;
+        // Only catalog/journal reads may run behind the queued exclusive lock.
+        snapshot = catalog(client).then(
+          (state) => {
+            return { state };
+          },
+          (error: unknown) => {
+            return { error };
+          },
+        );
+        const before = await Promise.race([
+          snapshot,
+          earlyCopy,
+          earlyApply,
+          earlyClient,
+        ]);
+        if ("error" in before) throw before.error;
+        assert.equal(resourceEnded, false);
+        assert.equal(attemptEnded, false);
+        assert.equal(errors.length, 0);
+        writer.connection.stream.resume();
+        const completed = await Promise.race([outcome, clientFailure]);
+        if ("error" in completed) throw completed.error;
+        const copyResult = z
+          .object({ rowCount: z.literal(8192), command: z.literal("COPY") })
+          .parse(completed.result);
+        const ack = await writer.query("SELECT pg_backend_pid() AS pid;");
+        assert.equal(ack.rowCount, 1);
+        assert.deepEqual(ack.rows, [{ pid }]);
+        assert.equal(writer.getTransactionStatus(), "I");
+        idleAcknowledged = true;
+        console.log(
+          "Prepared domain writer committed:",
+          JSON.stringify({
+            pid,
+            ...copyResult,
+            transactionStatus: writer.getTransactionStatus(),
+            elapsedMs: performance.now() - started,
+          }),
+        );
+        const result = await attemptOutcome;
+        assert.equal(result.ok, false);
+        assert.ok(!result.ok);
+        assert.ok(result.error instanceof postgres.PostgresError);
+        assert.equal(result.error.code, "P0001");
+        const prefix = "Prepared domain retirement invariant audit failed: ";
+        assert.ok(result.error.message.startsWith(prefix));
+        const detail: unknown = JSON.parse(
+          result.error.message.slice(prefix.length),
+        );
+        z.object({
+          pending_guard_mismatches: z.literal(1),
+          matched_triggers: z.literal(8),
+          matched_functions: z.literal(8),
+          missing_entitlements: z.literal(0),
+          managed_credit_mismatches: z.literal(0),
+          oauth_pair_mismatches: z.literal(0),
+          oauth_orphans: z.literal(0),
+          missing_requested_slugs: z.literal(0),
+          deployment_org_mismatches: z.literal(0),
+          grandfathered_organizations: z.literal(0),
+        }).parse(detail);
+        console.log(
+          "Prepared domain writer audit rejected:",
+          JSON.stringify({
+            name: result.error.name,
+            code: result.error.code,
+            message: result.error.message,
+            detail: result.error.detail,
+          }),
+        );
+        const committedGuards = await client.query(guardsSql);
+        assert.equal(committedGuards.rowCount, 1);
+        assert.deepEqual(committedGuards.rows, [
+          { org_id: "domain-org", pending_snapshot_count: 2 },
+        ]);
+        const expectedData = structuredClone(initialData);
+        expectedData[7] = [
+          { row: { org_id: "domain-org", pending_snapshot_count: 2 } },
+        ];
+        assert.deepEqual(await data(client), expectedData);
+        assert.deepEqual(await catalog(client), before.state);
+        console.log(
+          "Prepared domain writer state: guard 2 persisted; only known guard delta across eight tables; original full catalog/journal unchanged",
+        );
+      } catch (error) {
+        errors.push(error);
+      } finally {
+        // A synchronous submit throw can leave send state uncertain. Inspect
+        // only this owned PID before deciding whether a resource was started.
+        if (submissionAttempted && !submitted) {
+          try {
+            const live = await client.query(
+              "SELECT state, query FROM pg_stat_activity WHERE pid = $1::integer AND datname = current_database()",
+              [pid],
+            );
+            console.log(
+              "Prepared domain writer uncertain submission:",
+              JSON.stringify(live.rows),
+            );
+            submitted = live.rows.some((row: Record<string, unknown>) => {
+              return row.query === copySql;
+            });
+            assert.ok(
+              submitted ||
+                (live.rows.length === 1 && live.rows[0]?.state === "idle"),
+              "Writer submission/release remains unverified",
+            );
+            if (!submitted) {
+              const ack = await writer.query("SELECT pg_backend_pid() AS pid;");
+              assert.equal(ack.rowCount, 1);
+              assert.deepEqual(ack.rows, [{ pid }]);
+              assert.equal(writer.getTransactionStatus(), "I");
+              idleAcknowledged = true;
+            }
+          } catch (error) {
+            errors.push(error);
+          }
+        }
+        if (submitted && !idleAcknowledged) {
+          await releaseFailedCopy();
+        }
+        await settleObservers();
+        try {
+          assert.ok(
+            !submissionAttempted || idleAcknowledged,
+            "No idle ACK; writer close is not certified safe",
+          );
+          ending = true;
+          await writer.end();
+          writerClosed = true;
+        } catch (error) {
+          errors.push(error);
+        }
+        if (writerClosed) {
+          writer.off("error", onClientError);
+          writer.off("end", onWriterEnd);
+        }
+        client.off("error", onClientError);
+        client.off("end", onObserverEnd);
+      }
+      if (errors.length > 0)
+        throw new AggregateError(
+          errors,
+          "Prepared domain committed writer failed",
+        );
     },
   );
   await scenario("stale isolation snapshot rejected", async (client, url) => {

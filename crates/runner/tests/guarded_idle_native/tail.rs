@@ -76,9 +76,13 @@ impl MeasuredFactory {
         )?;
         let path = self.directory.join("required-post-exit.bin");
         let case = self.case.clone();
+        let gate = self.case.foreground_io()?;
         let custody = self.physical.token();
         tokio::task::spawn_blocking(move || {
             let _custody = custody;
+            if let Some(gate) = gate {
+                gate.blocking_wait()?;
+            }
             let mut file = OpenOptions::new()
                 .write(true)
                 .create_new(true)

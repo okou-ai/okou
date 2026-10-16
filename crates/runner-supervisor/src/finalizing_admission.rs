@@ -553,7 +553,7 @@ async fn acquire_fallback_resource(
     let mut idle_pool_changes = ctx.idle_pool.lock().await.subscribe_changes();
     let cancel = cancellation.token();
     let mut retiring_leases = Vec::new();
-    loop {
+    let lease = loop {
         let (selection, blank_pool_selection) = select_idle_entries_for_pressure(
             ctx.idle_pool,
             ctx.status,
@@ -582,31 +582,7 @@ async fn acquire_fallback_resource(
                     .record_finalizing_exact_idle_lookup(FinalizingExactIdleLookup::Hit);
                 return Ok(FinalizingResource::Exact(reservation));
             }
-            IdlePressureSelection::Fresh(lease) => {
-                match reserve_fallback_exact(
-                    cancellation,
-                    reuse_key,
-                    profile_name,
-                    device_rate_limits,
-                    history_generation_run_id,
-                    ctx,
-                )
-                .await?
-                {
-                    FallbackExactLookup::Hit(reservation) => {
-                        drop(lease);
-                        pre_spawn_timing
-                            .record_finalizing_exact_idle_lookup(FinalizingExactIdleLookup::Hit);
-                        return Ok(FinalizingResource::Exact(reservation));
-                    }
-                    FallbackExactLookup::Miss(miss) => {
-                        pre_spawn_timing.record_finalizing_exact_idle_lookup(
-                            FinalizingExactIdleLookup::Miss(miss),
-                        );
-                    }
-                }
-                return Ok(FinalizingResource::Fresh(lease));
-            }
+            IdlePressureSelection::Fresh(lease) => break lease,
             IdlePressureSelection::Exhausted(retained) => retiring_leases = retained,
         }
 
@@ -623,30 +599,30 @@ async fn acquire_fallback_resource(
                 &mut retiring_leases,
                 vcpu,
                 memory_mb,
-            ) => {
-                match reserve_fallback_exact(
-                    cancellation,
-                    reuse_key,
-                    profile_name,
-                    device_rate_limits,
-                    history_generation_run_id,
-                    ctx,
-                ).await? {
-                    FallbackExactLookup::Hit(reservation) => {
-                        drop(lease);
-                        pre_spawn_timing
-                            .record_finalizing_exact_idle_lookup(FinalizingExactIdleLookup::Hit);
-                        return Ok(FinalizingResource::Exact(reservation));
-                    }
-                    FallbackExactLookup::Miss(miss) => {
-                        pre_spawn_timing.record_finalizing_exact_idle_lookup(
-                            FinalizingExactIdleLookup::Miss(miss),
-                        );
-                    }
-                }
-                return Ok(FinalizingResource::Fresh(lease));
-            }
+            ) => break lease,
             _ = idle_pool_changes.changed() => {}
+        }
+    };
+
+    match reserve_fallback_exact(
+        cancellation,
+        reuse_key,
+        profile_name,
+        device_rate_limits,
+        history_generation_run_id,
+        ctx,
+    )
+    .await?
+    {
+        FallbackExactLookup::Hit(reservation) => {
+            drop(lease);
+            pre_spawn_timing.record_finalizing_exact_idle_lookup(FinalizingExactIdleLookup::Hit);
+            Ok(FinalizingResource::Exact(reservation))
+        }
+        FallbackExactLookup::Miss(miss) => {
+            pre_spawn_timing
+                .record_finalizing_exact_idle_lookup(FinalizingExactIdleLookup::Miss(miss));
+            Ok(FinalizingResource::Fresh(lease))
         }
     }
 }
@@ -1091,6 +1067,101 @@ mod tests {
             .await
             .expect("selector should wake with capacity")
             .unwrap();
+        assert_eq!(budget.allocated(), (0, 0, 0));
+    }
+
+    #[tokio::test]
+    async fn fallback_budget_wakeup_reuses_exact_published_while_waiting() {
+        let mut admission = released_admission();
+        let budget = Arc::new(ResourceBudget::new(5, 4096, 1.0, 0));
+        let held = ResourceBudget::try_reserve_lease(&budget, 2, 2048).unwrap();
+        let exact_lease = ResourceBudget::try_reserve_lease(&budget, 2, 2048).unwrap();
+        let exact_id = sandbox::SandboxId::new_v4();
+        let candidate = ParkedIdleCandidateBuilder::new(&admission.reuse_key, exact_lease)
+            .with_sandbox_id(exact_id)
+            .with_history_generation_run_id(admission.history_generation_run_id)
+            .build();
+        let idle_pool = Arc::new(tokio::sync::Mutex::new(IdlePool::new(
+            IdlePoolConfig::default(),
+        )));
+        let entered = Arc::new(Notify::new());
+        let budget_for_task = Arc::clone(&budget);
+        let pool_for_task = Arc::clone(&idle_pool);
+        let entered_for_task = Arc::clone(&entered);
+        let task = tokio::spawn(async move {
+            let dir = tempfile::tempdir().unwrap();
+            let status = StatusTracker::new(dir.path().join("status.json"), 5, None, None);
+            status.write_initial().await.unwrap();
+            let notify = Arc::new(Notify::new());
+            let destroy_tracker = IdleDestroyTracker::new(Arc::clone(&notify));
+            let run_id = RunId::new_v4();
+            let cancellation = RunCancellationRegistry::new()
+                .register(run_id)
+                .await
+                .unwrap();
+            let mut timing = RunnerPreSpawnTiming::start_at(
+                Instant::now(),
+                None,
+                &RunnerPreSpawnConcurrency::default(),
+            );
+            let mut reserved_exact = None;
+            let selected = select_finalizing_resource_with_test_hooks(
+                FinalizingSelectionRequest {
+                    run_id,
+                    cancellation: &cancellation,
+                    admission: &mut admission,
+                    profile_name: "vm0/default",
+                    vcpu: 2,
+                    memory_mb: 2048,
+                    device_rate_limits: &None,
+                    resources: FinalizingSelectionResources {
+                        idle_pool: &pool_for_task,
+                        status: &status,
+                        idle_destroy_tracker: &destroy_tracker,
+                        budget: &budget_for_task,
+                        reuse_state_notify: &notify,
+                    },
+                },
+                &mut timing,
+                &mut reserved_exact,
+                FinalizingSelectionTestHooks {
+                    on_capacity_wait: Some(Arc::new(move |_| {
+                        entered_for_task.notify_one();
+                    })),
+                },
+            )
+            .await
+            .unwrap();
+            assert!(reserved_exact.is_none());
+            cancellation.unregister().await;
+            selected
+        });
+        tokio::time::timeout(Duration::from_secs(5), entered.notified())
+            .await
+            .expect("selector should wait with the full budget retained");
+        assert_eq!(budget.allocated(), (4, 4096, 2));
+        {
+            let mut pool = idle_pool.lock().await;
+            assert!(matches!(
+                pool.park(candidate),
+                runner_lifecycle::idle_pool::ParkResult::Parked
+            ));
+            // Make both wakeups ready before the selector resumes. Its budget
+            // branch must still recheck the newly published exact generation.
+            drop(held);
+        }
+        let selected = tokio::time::timeout(Duration::from_secs(5), task)
+            .await
+            .expect("selector should accept the published exact sandbox")
+            .unwrap();
+        let FinalizingResource::Exact(reservation) = selected else {
+            panic!("exact reuse should win over the newly available fresh capacity");
+        };
+        assert_eq!(reservation.sandbox_id(), exact_id);
+        assert_eq!(idle_pool.lock().await.len(), 0);
+        assert_eq!(budget.allocated(), (2, 2048, 1));
+        let (reservation, _) = reservation.into_parts();
+        reservation.into_destroy_job().run().await;
         assert_eq!(budget.allocated(), (0, 0, 0));
     }
 

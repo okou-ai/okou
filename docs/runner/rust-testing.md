@@ -21,6 +21,13 @@ download dependencies, contact APIs, or silently skip the integration. Crates
 coverage prepares the same environment before running tests. The status/log-only
 control tests retain their standard-library Python boundary.
 
+Ordinary Supervisor reactor fixtures retain a loopback startup API in the test's
+Tokio runtime so paused time cannot outrun a separate server thread. The peer
+acknowledges startup reports with HTTP 204. Keep the run environment alive through
+Runner shutdown; the shared shutdown helper joins delivery before cancelling and
+joining the peer. Tests that control response failure or timing use the
+explicit-URL variants and keep their supplied server alive through shutdown.
+
 ## Running Tests
 
 Use the `local` profile for routine local validation. It retains source locations in
@@ -226,6 +233,14 @@ failed coverage still fails the Crates gate.
 
 ## Test Organization
 
+Guest CLI integration executables share compiled neutral fixtures through
+`cli-test-support` and its non-default `test-support` feature. Keep that edge in
+development dependencies. Guest runtime adapters, compile-time manifest paths
+and process-global setup stay with the test owner; the fixture crate must not
+depend back on guest-agent. Reusing a library does not make process-global tests
+safe to combine into one executable. Existing fixture contracts exercise the
+real command, file, HTTP and verified Cargo/nextest mock-session boundaries.
+
 ### Keep large fixtures cheap without weakening their contracts
 
 Remove redundant setup and observation instead of reducing a slow test's workload.
@@ -321,6 +336,18 @@ crates/guest-agent/
   tests/
     integration.rs     # Integration tests
 ```
+
+Guest-agent's [integration layout](../../crates/guest-agent/tests/README.md)
+groups cases with explicit configuration and independent resources into domain
+targets. Retain separate executables for process environment/cwd, global
+telemetry/log sinks, signals and resource-limit fixtures, including transitive
+setup helpers.
+Ordinary Cargo can execute cases concurrently in one binary; nextest's separate
+case processes do not replace that isolation contract. Existing guarded-child
+parents may share a target only when their child remains exact, ignored and
+guarded. After moving a case, update its module-qualified self-spawn filter and
+any source-relative fixture include, then compare case ownership and ignored
+policy before and after the move.
 
 ### Inline Tests (`#[cfg(test)]`)
 

@@ -73,6 +73,7 @@ function billingSource(triggerSource: string | null): string {
       return "automation";
     }
     case "slack":
+    case "wechat":
     case "discord":
     case "teams":
     case "telegram":

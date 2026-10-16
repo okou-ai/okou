@@ -1,3 +1,4 @@
+import { deleteWechatOwnerData$ } from "./wechat-owner-cleanup.service";
 import { usagePackUsdSchema } from "@okouai/api-contracts/contracts/billing";
 import {
   orgRoleSchema,
@@ -40,7 +41,7 @@ import { cancelAndRefundOrgBillingForDeletion } from "./org-deletion-billing.ser
 import { cleanupOrgMemberResources$ } from "./org-member-cleanup.service";
 import {
   cancelUsagePackMemberRemovalReservation,
-  removeUsagePackMemberAllocation,
+  removeUsagePackMemberAllocation$,
   reserveUsagePackMemberRemoval,
 } from "./usage-pack-allocation-change.service";
 import { refundUsagePackMemberCredits } from "./usage-pack-credit-refund.service";
@@ -335,8 +336,8 @@ const commitOrgMemberRemoval$ = command(
       await cancelUsagePackMemberRemovalReservation(db, reservationId);
     });
     signal.throwIfAborted();
-    const emptyCancellation = await removeUsagePackMemberAllocation(
-      db,
+    const emptyCancellation = await set(
+      removeUsagePackMemberAllocation$,
       args,
       signal,
     );
@@ -664,6 +665,11 @@ export const deleteOrg$ = command(
     await client.organizations.deleteOrganization(args.orgId);
     signal.throwIfAborted();
     await set(deleteDiscordOrgData$, args.orgId, signal);
+    await set(
+      deleteWechatOwnerData$,
+      { kind: "organization", orgId: args.orgId },
+      signal,
+    );
     signal.throwIfAborted();
 
     return { message: "Organization deleted" };

@@ -7,7 +7,7 @@ use tokio::sync::mpsc;
 use tracing::warn;
 
 use super::file_append::append_lines;
-use super::state::{AcceptedAppend, PendingWriteCompletion};
+use super::state::AcceptedAppend;
 
 #[cfg(any(test, feature = "test-support"))]
 use super::WriteGate;
@@ -44,8 +44,7 @@ pub(super) struct WriterPool {
 
 struct PathWriteBatch {
     path: Arc<Path>,
-    lines: Vec<String>,
-    completions: Vec<PendingWriteCompletion>,
+    rows: Vec<AcceptedAppend>,
 }
 
 impl WriterConfig {
@@ -153,15 +152,12 @@ fn push_accepted_append(
 ) {
     *row_count += 1;
     *byte_count += item.line_len();
-    let (path, line, completion) = item.into_parts();
-    if let Some(batch) = batches.iter_mut().find(|batch| batch.path == path) {
-        batch.lines.push(line);
-        batch.completions.push(completion);
+    if let Some(batch) = batches.iter_mut().find(|batch| &batch.path == item.path()) {
+        batch.rows.push(item);
     } else {
         batches.push(PathWriteBatch {
-            path,
-            lines: vec![line],
-            completions: vec![completion],
+            path: Arc::clone(item.path()),
+            rows: vec![item],
         });
     }
 }
@@ -193,13 +189,16 @@ async fn write_path_batch(
                 .expect("blocking write gate closed")
                 .forget();
         }
-        let result = append_lines(write_path.as_ref(), &batch.lines);
+        let result = append_lines(
+            write_path.as_ref(),
+            batch.rows.iter().map(AcceptedAppend::line),
+        );
         if let Err(error) = &result {
             warn!(path = %write_path.display(), %error, "failed to write network log");
         }
         // This closure can outlive the async shard. Settle only after physical
         // I/O completes; unwinding also drops the owned completion guards.
-        PendingWriteCompletion::complete_batch(batch.completions, result.is_ok());
+        AcceptedAppend::complete_batch(batch.rows, result.is_ok());
         result
     })
     .await;

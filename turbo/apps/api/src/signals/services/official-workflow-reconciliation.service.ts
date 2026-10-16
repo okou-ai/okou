@@ -35,9 +35,20 @@ import {
 } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
-import { and, asc, eq, getTableColumns, isNull, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  exists,
+  getTableColumns,
+  isNull,
+  isNotNull,
+  ne,
+  sql,
+} from "drizzle-orm";
 
-import { nowDate } from "../../lib/time";
+import { nowDate, timestampWithoutTimeZone } from "../../lib/time";
+import { pgNullDecoder } from "../../lib/db-structured-result";
 
 import {
   webhookTierLockStatement,
@@ -69,7 +80,7 @@ import {
   type OfficialAutomationAccountProjection,
 } from "./official-workflow-account-projection";
 
-import { db$, writeDb$ } from "../external/db";
+import { db$, rawSqlReadDb$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import {
   ensureAutomationEventWatchReconfiguration$,
@@ -399,6 +410,46 @@ function sameAutomationBaseline(
       current.officialReconciliationStatus &&
     expected.enabled === current.enabled &&
     expected.officialIntendedEnabled === current.officialIntendedEnabled
+  );
+}
+
+function failedAutomationBaselineCondition(expected: OfficialAutomationRow) {
+  // Match the original Date.getTime() comparison, including invalid Dates,
+  // without strengthening this baseline to an exact row-version condition.
+  if (Number.isNaN(expected.updatedAt.getTime())) {
+    return sql`false`;
+  }
+  return and(
+    eq(workflowAutomations.id, expected.id),
+    eq(
+      sql`date_trunc('milliseconds', ${workflowAutomations.updatedAt})`,
+      sql`${sql.param(expected.updatedAt, workflowAutomations.updatedAt)}::timestamp`,
+    ),
+    expected.officialBlueprintKey === null
+      ? isNull(workflowAutomations.officialBlueprintKey)
+      : eq(
+          workflowAutomations.officialBlueprintKey,
+          expected.officialBlueprintKey,
+        ),
+    expected.officialAppliedFingerprint === null
+      ? isNull(workflowAutomations.officialAppliedFingerprint)
+      : eq(
+          workflowAutomations.officialAppliedFingerprint,
+          expected.officialAppliedFingerprint,
+        ),
+    expected.officialReconciliationStatus === null
+      ? isNull(workflowAutomations.officialReconciliationStatus)
+      : eq(
+          workflowAutomations.officialReconciliationStatus,
+          expected.officialReconciliationStatus,
+        ),
+    eq(workflowAutomations.enabled, expected.enabled),
+    expected.officialIntendedEnabled === null
+      ? isNull(workflowAutomations.officialIntendedEnabled)
+      : eq(
+          workflowAutomations.officialIntendedEnabled,
+          expected.officialIntendedEnabled,
+        ),
   );
 }
 
@@ -746,95 +797,160 @@ const restoreFailedReconfiguration$ = command(
   },
 );
 
+interface FinalizeReconfigurationArgs {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly definitionName: string;
+  readonly blueprint: OfficialWorkflowAcceptedBlueprint;
+  readonly activeDefinitionOnly: boolean;
+  readonly persisted: PersistedReconfiguration;
+}
+
+function finalizationCondition(
+  current: OfficialAutomationRow,
+  fingerprint: string,
+) {
+  return and(
+    observedWorkflowAutomationCondition(current),
+    eq(
+      sql`date_trunc('milliseconds', ${workflowAutomations.updatedAt})`,
+      sql`${sql.param(current.updatedAt, workflowAutomations.updatedAt)}::timestamp`,
+    ),
+    eq(workflowAutomations.officialReconciliationStatus, "reconciling"),
+    eq(workflowAutomations.officialAppliedFingerprint, fingerprint),
+  );
+}
+
 const finalizeReconfiguration$ = command(
   async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly definitionName: string;
-      readonly blueprint: OfficialWorkflowAcceptedBlueprint;
-      readonly activeDefinitionOnly: boolean;
-      readonly persisted: PersistedReconfiguration;
-    },
+    { get, set },
+    args: FinalizeReconfigurationArgs,
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const db = set(writeDb$);
+    const readDb = get(rawSqlReadDb$);
+    const [catalogRow] = parseRawRows(
+      acceptedCatalogRowSchema,
+      await readDb.execute(acceptedCatalogReadStatement()),
+    );
+    signal.throwIfAborted();
+    const catalogIdentity = blueprintAuthorityIdentity(args);
+    const acceptedDefinition = matchingAcceptedBlueprintDefinition(
+      acceptedCatalogFromRow(catalogRow),
+      catalogIdentity,
+    );
+    if (!acceptedDefinition) {
+      return false;
+    }
+    const [revisionRow] = parseRawRows(
+      acceptedRevisionRowSchema,
+      await readDb.execute(acceptedRevisionReadStatement(acceptedDefinition)),
+    );
+    signal.throwIfAborted();
+    if (!acceptedRevisionBlueprintMatches(revisionRow, catalogIdentity)) {
+      return false;
+    }
 
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0199; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
-      await tx.execute(acceptedCatalogLockStatement());
-      const [catalogRow] = parseRawRows(
-        acceptedCatalogRowSchema,
-        await tx.execute(acceptedCatalogReadStatement()),
-      );
-      signal.throwIfAborted();
-      const catalogIdentity = blueprintAuthorityIdentity(args);
-      const acceptedDefinition = matchingAcceptedBlueprintDefinition(
-        acceptedCatalogFromRow(catalogRow),
-        catalogIdentity,
-      );
-      if (!acceptedDefinition) {
-        return false;
-      }
-      const [revisionRow] = parseRawRows(
-        acceptedRevisionRowSchema,
-        await tx.execute(acceptedRevisionReadStatement(acceptedDefinition)),
-      );
-      signal.throwIfAborted();
-      if (!acceptedRevisionBlueprintMatches(revisionRow, catalogIdentity)) {
-        return false;
-      }
-      const [installationLockedRow] = await tx
-        .select({ id: workflows.id })
-        .from(workflows)
-        .where(
-          installedWorkflowCondition(args, args.persisted.current.workflowId),
-        )
-        .for("update")
-        .limit(1);
-      const installationLocked = installationLockedRow !== undefined;
-      if (!installationLocked) {
-        return false;
-      }
-      const [current] = await tx
-        .select(workflowAutomationColumns())
-        .from(workflowAutomations)
-        .where(observedWorkflowAutomationCondition(args.persisted.current))
-        .for("update")
-        .limit(1);
-      if (
-        !current ||
-        current.updatedAt.getTime() !==
-          args.persisted.current.updatedAt.getTime() ||
-        current.officialReconciliationStatus !== "reconciling" ||
-        current.officialAppliedFingerprint !== args.blueprint.fingerprint
-      ) {
-        return false;
-      }
-      const currentTime = nowDate();
-      const [finalized] = await tx
+    const current = args.persisted.current;
+    // Invalid Date observations never matched the original getTime comparison.
+    if (!Number.isFinite(current.updatedAt.getTime())) {
+      return false;
+    }
+
+    const db = set(writeDb$);
+    const currentTime = nowDate();
+    const columns = workflowAutomationColumns();
+    const identities = officialWorkflowAutomationIdentities;
+    // Catalog and installation authority are observations. The actual target
+    // retains its complete observed version predicate after any implicit wait.
+    const finalized = db.$with("finalized_official_reconfiguration").as(
+      db
         .update(workflowAutomations)
         .set({
           officialReconciliationStatus: "current",
           updatedAt: currentTime,
         })
-        .where(eq(workflowAutomations.id, current.id))
-        .returning(workflowAutomationColumns());
-      if (!finalized) {
-        return false;
-      }
-      await tx
-        .insert(officialWorkflowAutomationIdentities)
-        .values(activeIdentityValues(finalized, currentTime))
-        .onConflictDoUpdate(activeIdentityConflict(finalized, currentTime));
-      await tx
-        .update(workflows)
-        .set({ updatedBy: args.userId, updatedAt: currentTime })
-        .where(eq(workflows.id, finalized.workflowId));
-      return true;
-    });
+        .where(
+          and(
+            finalizationCondition(current, args.blueprint.fingerprint),
+            exists(
+              db
+                .select({ id: workflows.id })
+                .from(workflows)
+                .where(installedWorkflowCondition(args, current.workflowId)),
+            ),
+          ),
+        )
+        .returning({
+          ...columns,
+          observedUpdatedAt: columns.observedUpdatedAt.as("observedUpdatedAt"),
+          observedXmin: columns.observedXmin.as("observedXmin"),
+        }),
+    );
+    const identity = db.$with("finalized_official_identity").as(
+      db
+        .insert(identities)
+        .select(
+          db
+            .select({
+              id: finalized.id,
+              workflowId: finalized.workflowId,
+              automationId: finalized.id,
+              blueprintKey: finalized.officialBlueprintKey,
+              state: sql`'active'`.mapWith(identities.state).as("state"),
+              retainedParameterBindings: sql`NULL`
+                .mapWith(pgNullDecoder)
+                .as("retained_parameter_bindings"),
+              retainedIntendedEnabled: sql`NULL`
+                .mapWith(pgNullDecoder)
+                .as("retained_intended_enabled"),
+              retainedAppliedFingerprint: sql`NULL`
+                .mapWith(pgNullDecoder)
+                .as("retained_applied_fingerprint"),
+              createdAt: sql`${sql.param(currentTime, identities.createdAt)}`
+                .mapWith(identities.createdAt)
+                .as("created_at"),
+              updatedAt: sql`${sql.param(currentTime, identities.updatedAt)}`
+                .mapWith(identities.updatedAt)
+                .as("updated_at"),
+            })
+            .from(finalized),
+        )
+        .onConflictDoUpdate({
+          target: [identities.workflowId, identities.blueprintKey],
+          set: {
+            automationId: sql`excluded.automation_id`,
+            state: "active",
+            retainedParameterBindings: null,
+            retainedIntendedEnabled: null,
+            retainedAppliedFingerprint: null,
+            updatedAt: currentTime,
+          },
+        })
+        .returning({
+          automationId: identities.automationId,
+        }),
+    );
+    const touched = db
+      .$with("finalized_official_workflow")
+      .as(
+        db
+          .update(workflows)
+          .set({ updatedBy: args.userId, updatedAt: currentTime })
+          .from(finalized)
+          .innerJoin(identity, eq(identity.automationId, finalized.id))
+          .where(eq(workflows.id, finalized.workflowId))
+          .returning({ id: workflows.id }),
+      );
+    // Consume every write, but retain the original success condition: a
+    // workflow touch with no returned row does not negate finalization.
+    const [row] = await db
+      .with(finalized, identity, touched)
+      .select()
+      .from(finalized)
+      .innerJoin(identity, eq(identity.automationId, finalized.id))
+      .leftJoin(touched, eq(touched.id, finalized.workflowId));
+    signal.throwIfAborted();
+    return row !== undefined;
   },
 );
 
@@ -867,52 +983,35 @@ interface PauseForReconfigurationArgs {
 const persistPausedReconfiguration$ = command(
   async ({ set }, args: PauseForReconfigurationArgs, signal: AbortSignal) => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0200; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
-      await tx.execute(acceptedCatalogLockStatement());
-      const [catalogRow] = parseRawRows(
-        acceptedCatalogRowSchema,
-        await tx.execute(acceptedCatalogReadStatement()),
-      );
-      signal.throwIfAborted();
-      const catalogIdentity = blueprintAuthorityIdentity(args);
-      const acceptedDefinition = matchingAcceptedBlueprintDefinition(
-        acceptedCatalogFromRow(catalogRow),
-        catalogIdentity,
-      );
-      if (!acceptedDefinition) {
-        return null;
-      }
-      const [revisionRow] = parseRawRows(
-        acceptedRevisionRowSchema,
-        await tx.execute(acceptedRevisionReadStatement(acceptedDefinition)),
-      );
-      signal.throwIfAborted();
-      if (!acceptedRevisionBlueprintMatches(revisionRow, catalogIdentity)) {
-        return null;
-      }
-      const [installationLockedRow] = await tx
-        .select({ id: workflows.id })
-        .from(workflows)
-        .where(installedWorkflowCondition(args, args.automation.workflowId))
-        .for("update")
-        .limit(1);
-      const installationLocked = installationLockedRow !== undefined;
-      if (!installationLocked) {
-        return null;
-      }
-      const [current] = await tx
-        .select(workflowAutomationColumns())
-        .from(workflowAutomations)
-        .where(observedWorkflowAutomationCondition(args.automation))
-        .for("update")
-        .limit(1);
-      if (!current || !sameAutomationBaseline(args.automation, current)) {
-        return null;
-      }
-      const currentTime = nowDate();
-      const [paused] = await tx
+    const [catalogRow] = parseRawRows(
+      acceptedCatalogRowSchema,
+      await db.execute(acceptedCatalogReadStatement()),
+    );
+    signal.throwIfAborted();
+    const catalogIdentity = blueprintAuthorityIdentity(args);
+    const acceptedDefinition = matchingAcceptedBlueprintDefinition(
+      acceptedCatalogFromRow(catalogRow),
+      catalogIdentity,
+    );
+    if (!acceptedDefinition) {
+      return null;
+    }
+    const [revisionRow] = parseRawRows(
+      acceptedRevisionRowSchema,
+      await db.execute(acceptedRevisionReadStatement(acceptedDefinition)),
+    );
+    signal.throwIfAborted();
+    if (!acceptedRevisionBlueprintMatches(revisionRow, catalogIdentity)) {
+      return null;
+    }
+    const expected = args.automation;
+    if (!Number.isFinite(expected.updatedAt.getTime())) {
+      return null;
+    }
+    const currentTime = nowDate();
+    const columns = workflowAutomationColumns();
+    const paused = db.$with("paused_official_automation").as(
+      db
         .update(workflowAutomations)
         .set({
           enabled: false,
@@ -921,20 +1020,95 @@ const persistPausedReconfiguration$ = command(
           officialReconciliationStatus: "needs_reconfiguration",
           updatedAt: currentTime,
         })
-        .where(eq(workflowAutomations.id, current.id))
-        .returning(workflowAutomationColumns());
-      if (!paused) {
-        return null;
-      }
-      await tx
+        .where(
+          and(
+            observedWorkflowAutomationCondition(expected),
+            eq(
+              sql`date_trunc('milliseconds', ${workflowAutomations.updatedAt})`,
+              sql`${timestampWithoutTimeZone(expected.updatedAt)}::timestamp`,
+            ),
+            expected.officialBlueprintKey === null
+              ? isNull(workflowAutomations.officialBlueprintKey)
+              : eq(
+                  workflowAutomations.officialBlueprintKey,
+                  expected.officialBlueprintKey,
+                ),
+            expected.officialAppliedFingerprint === null
+              ? isNull(workflowAutomations.officialAppliedFingerprint)
+              : eq(
+                  workflowAutomations.officialAppliedFingerprint,
+                  expected.officialAppliedFingerprint,
+                ),
+            expected.officialReconciliationStatus === null
+              ? isNull(workflowAutomations.officialReconciliationStatus)
+              : eq(
+                  workflowAutomations.officialReconciliationStatus,
+                  expected.officialReconciliationStatus,
+                ),
+            eq(workflowAutomations.enabled, expected.enabled),
+            expected.officialIntendedEnabled === null
+              ? isNull(workflowAutomations.officialIntendedEnabled)
+              : eq(
+                  workflowAutomations.officialIntendedEnabled,
+                  expected.officialIntendedEnabled,
+                ),
+            exists(
+              db
+                .select({ id: workflows.id })
+                .from(workflows)
+                .where(installedWorkflowCondition(args, expected.workflowId)),
+            ),
+          ),
+        )
+        .returning({
+          ...columns,
+          observedUpdatedAt: columns.observedUpdatedAt.as("observedUpdatedAt"),
+          observedXmin: columns.observedXmin.as("observedXmin"),
+        }),
+    );
+    const identity = db.$with("paused_official_identity").as(
+      db
         .insert(officialWorkflowAutomationIdentities)
-        .values(activeIdentityValues(paused, currentTime))
-        .onConflictDoUpdate(activeIdentityConflict(paused, currentTime));
-      return {
-        previous: current,
-        current: paused,
-      };
-    });
+        .select(
+          sql`
+          SELECT ${paused.id}, ${paused.workflowId}, ${paused.id},
+            ${paused.officialBlueprintKey}, 'active', NULL, NULL, NULL,
+            ${sql.param(currentTime, officialWorkflowAutomationIdentities.createdAt)},
+            ${sql.param(currentTime, officialWorkflowAutomationIdentities.updatedAt)}
+          FROM ${paused}
+        `,
+        )
+        .onConflictDoUpdate({
+          target: [
+            officialWorkflowAutomationIdentities.workflowId,
+            officialWorkflowAutomationIdentities.blueprintKey,
+          ],
+          set: {
+            automationId: sql`excluded.${sql.identifier(officialWorkflowAutomationIdentities.automationId.name)}`,
+            state: "active",
+            retainedParameterBindings: null,
+            retainedIntendedEnabled: null,
+            retainedAppliedFingerprint: null,
+            updatedAt: currentTime,
+          },
+        })
+        .returning({
+          automationId: officialWorkflowAutomationIdentities.automationId,
+        }),
+    );
+    const [current] = await db
+      .with(paused, identity)
+      .select()
+      .from(paused)
+      .where(
+        exists(
+          db.select({ automationId: identity.automationId }).from(identity),
+        ),
+      );
+    signal.throwIfAborted();
+    // The exact target observation rejects intervening writes, including account
+    // projections that leave updatedAt unchanged. Keep its full runtime snapshot.
+    return current ? { previous: expected, current } : null;
   },
 );
 const pauseForReconfiguration$ = command(
@@ -1908,74 +2082,114 @@ const markActiveAutomationFailed$ = command(
   ): Promise<boolean> => {
     const db = set(writeDb$);
 
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0203; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
-      await tx.execute(acceptedCatalogLockStatement());
-      const [catalogRow] = parseRawRows(
-        acceptedCatalogRowSchema,
-        await tx.execute(acceptedCatalogReadStatement()),
-      );
-      signal.throwIfAborted();
-      const catalogIdentity = blueprintAuthorityIdentity(args);
-      const acceptedDefinition = matchingAcceptedBlueprintDefinition(
-        acceptedCatalogFromRow(catalogRow),
-        catalogIdentity,
-      );
-      if (!acceptedDefinition) {
-        return false;
-      }
-      const [revisionRow] = parseRawRows(
-        acceptedRevisionRowSchema,
-        await tx.execute(acceptedRevisionReadStatement(acceptedDefinition)),
-      );
-      signal.throwIfAborted();
-      if (!acceptedRevisionBlueprintMatches(revisionRow, catalogIdentity)) {
-        return false;
-      }
-      const [installedWorkflow] = await tx
-        .select({ id: workflows.id })
-        .from(workflows)
-        .where(installedWorkflowCondition(args, args.workflowId))
-        .for("update")
-        .limit(1);
-      if (!installedWorkflow) {
-        return false;
-      }
-      const [current] = await tx
-        .select(workflowAutomationColumns())
-        .from(workflowAutomations)
-        .where(eq(workflowAutomations.id, args.automationId))
-        .for("update")
-        .limit(1);
-      if (
-        !current ||
-        current.workflowId !== args.workflowId ||
-        current.officialBlueprintKey !== args.blueprint.key ||
-        current.officialAppliedFingerprint !== args.blueprint.fingerprint ||
-        (args.expected !== undefined &&
-          !sameAutomationBaseline(args.expected, current))
-      ) {
-        return false;
-      }
-      const currentTime = nowDate();
-      const [failed] = await tx
+    const [catalogRow] = parseRawRows(
+      acceptedCatalogRowSchema,
+      await db.execute(acceptedCatalogReadStatement()),
+    );
+    signal.throwIfAborted();
+    const catalogIdentity = blueprintAuthorityIdentity(args);
+    const acceptedDefinition = matchingAcceptedBlueprintDefinition(
+      acceptedCatalogFromRow(catalogRow),
+      catalogIdentity,
+    );
+    if (!acceptedDefinition) {
+      return false;
+    }
+    const [revisionRow] = parseRawRows(
+      acceptedRevisionRowSchema,
+      await db.execute(acceptedRevisionReadStatement(acceptedDefinition)),
+    );
+    signal.throwIfAborted();
+    if (!acceptedRevisionBlueprintMatches(revisionRow, catalogIdentity)) {
+      return false;
+    }
+
+    const expectedCondition =
+      args.expected === undefined
+        ? undefined
+        : failedAutomationBaselineCondition(args.expected);
+    const currentTime = nowDate();
+    const columns = workflowAutomationColumns();
+    const failed = db.$with("failed_official_automation").as(
+      db
         .update(workflowAutomations)
         .set({
           officialReconciliationStatus: "failed",
           updatedAt: currentTime,
         })
-        .where(eq(workflowAutomations.id, current.id))
-        .returning(workflowAutomationColumns());
-      if (!failed) {
-        return false;
-      }
-      await tx
-        .insert(officialWorkflowAutomationIdentities)
-        .values(activeIdentityValues(failed, currentTime))
-        .onConflictDoUpdate(activeIdentityConflict(failed, currentTime));
-      return true;
-    });
+        .where(
+          and(
+            eq(workflowAutomations.id, args.automationId),
+            eq(workflowAutomations.workflowId, args.workflowId),
+            eq(workflowAutomations.officialBlueprintKey, args.blueprint.key),
+            eq(
+              workflowAutomations.officialAppliedFingerprint,
+              args.blueprint.fingerprint,
+            ),
+            expectedCondition,
+            exists(
+              db
+                .select({ id: workflows.id })
+                .from(workflows)
+                .where(installedWorkflowCondition(args, args.workflowId)),
+            ),
+          ),
+        )
+        .returning({
+          ...columns,
+          observedUpdatedAt: columns.observedUpdatedAt.as("observedUpdatedAt"),
+          observedXmin: columns.observedXmin.as("observedXmin"),
+        }),
+    );
+    const identity = officialWorkflowAutomationIdentities;
+    const published = await db
+      .with(failed)
+      .insert(identity)
+      .select(
+        db
+          .select({
+            id: failed.id,
+            workflowId: failed.workflowId,
+            automationId: failed.id,
+            blueprintKey: sql`${failed.officialBlueprintKey}`
+              .mapWith(identity.blueprintKey)
+              .as("blueprint_key"),
+            state: sql`'active'`.mapWith(identity.state).as("state"),
+            retainedParameterBindings: sql`NULL`
+              .mapWith(identity.retainedParameterBindings)
+              .as("retained_parameter_bindings"),
+            retainedIntendedEnabled: sql`NULL`
+              .mapWith(identity.retainedIntendedEnabled)
+              .as("retained_intended_enabled"),
+            retainedAppliedFingerprint: sql`NULL`
+              .mapWith(identity.retainedAppliedFingerprint)
+              .as("retained_applied_fingerprint"),
+            createdAt:
+              sql`${sql.param(currentTime, identity.createdAt)}::timestamp`
+                .mapWith(identity.createdAt)
+                .as("created_at"),
+            updatedAt:
+              sql`${sql.param(currentTime, identity.updatedAt)}::timestamp`
+                .mapWith(identity.updatedAt)
+                .as("updated_at"),
+          })
+          .from(failed),
+      )
+      .onConflictDoUpdate({
+        target: [identity.workflowId, identity.blueprintKey],
+        set: {
+          automationId: sql`excluded.automation_id`,
+          state: "active",
+          retainedParameterBindings: null,
+          retainedIntendedEnabled: null,
+          retainedAppliedFingerprint: null,
+          updatedAt: currentTime,
+        },
+      })
+      .returning({ id: identity.id });
+    // The dependent identity write commits with the actual failed target.
+    signal.throwIfAborted();
+    return published.length > 0;
   },
 );
 
@@ -3243,104 +3457,157 @@ const pauseRemovedAutomationConfiguration$ = command(
   },
 );
 
+function removedAutomationCondition(
+  current: Pick<OfficialAutomationRow, "id" | "updatedAt">,
+) {
+  return and(
+    eq(workflowAutomations.id, current.id),
+    eq(
+      sql`date_trunc('milliseconds', ${workflowAutomations.updatedAt})`,
+      sql`${sql.param(current.updatedAt, workflowAutomations.updatedAt)}::timestamp`,
+    ),
+    eq(workflowAutomations.officialReconciliationStatus, "reconciling"),
+    isNotNull(workflowAutomations.officialBlueprintKey),
+    ne(workflowAutomations.officialBlueprintKey, ""),
+    isNotNull(workflowAutomations.officialParameterBindings),
+    sql`${workflowAutomations.officialParameterBindings} <> 'null'::jsonb`,
+    isNotNull(workflowAutomations.officialIntendedEnabled),
+  );
+}
+
 const deleteRemovedAutomationConfiguration$ = command(
   async (
-    { set },
+    { get, set },
     args: RemoveAutomationConfigurationArgs,
     paused: {
       readonly current: OfficialAutomationRow;
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const db = set(writeDb$);
-
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0212; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
-      await tx.execute(acceptedCatalogLockStatement());
-      const [catalogRow] = parseRawRows(
-        acceptedCatalogRowSchema,
-        await tx.execute(acceptedCatalogReadStatement()),
+    const readDb = get(db$);
+    const plan = acceptedOfficialWorkflowCatalogReadPlan();
+    const [catalogRow] = acceptedCatalogRowSchema
+      .array()
+      .parse(
+        await readDb
+          .select(plan.columns)
+          .from(officialWorkflowCatalogState)
+          .innerJoin(officialWorkflowCatalogReleases, plan.join)
+          .where(plan.condition)
+          .limit(1),
       );
-      signal.throwIfAborted();
-      if (
-        !acceptedDefinitionOmitsBlueprint(
-          acceptedCatalogFromRow(catalogRow),
-          args.definition.name,
-          paused.current.officialBlueprintKey,
-          args.activeDefinitionOnly,
-        )
-      ) {
-        return false;
-      }
-      const [installedWorkflow] = await tx
-        .select({ id: workflows.id })
-        .from(workflows)
+    signal.throwIfAborted();
+    const catalog = acceptedCatalogFromRow(catalogRow);
+    if (
+      !catalog ||
+      !acceptedDefinitionOmitsBlueprint(
+        catalog,
+        args.definition.name,
+        paused.current.officialBlueprintKey,
+        args.activeDefinitionOnly,
+      )
+    ) {
+      return false;
+    }
+    const current = paused.current;
+    if (!Number.isFinite(current.updatedAt.getTime())) {
+      return false;
+    }
+
+    const db = set(writeDb$);
+    const currentTime = nowDate();
+    const identities = officialWorkflowAutomationIdentities;
+    // Authority is observed at the write snapshot. Only the actual DELETE
+    // owns retention, including after an implicit wait on the target row.
+    const removed = db.$with("removed_official_automation").as(
+      db
+        .delete(workflowAutomations)
         .where(
-          installedWorkflowCondition(
-            {
-              orgId: args.orgId,
-              userId: args.userId,
-              definitionName: args.definition.name,
-            },
-            paused.current.workflowId,
+          and(
+            removedAutomationCondition(current),
+            exists(
+              db
+                .select({ id: workflows.id })
+                .from(workflows)
+                .where(
+                  installedWorkflowCondition(
+                    {
+                      orgId: args.orgId,
+                      userId: args.userId,
+                      definitionName: args.definition.name,
+                    },
+                    current.workflowId,
+                  ),
+                ),
+            ),
+            exists(
+              db
+                .select({
+                  releaseId: officialWorkflowCatalogState.acceptedReleaseId,
+                })
+                .from(officialWorkflowCatalogState)
+                .innerJoin(officialWorkflowCatalogReleases, plan.join)
+                .where(
+                  and(
+                    plan.condition,
+                    eq(
+                      officialWorkflowCatalogState.acceptedReleaseId,
+                      catalog.releaseId,
+                    ),
+                  ),
+                ),
+            ),
           ),
         )
-        .for("update")
-        .limit(1);
-      if (!installedWorkflow) {
-        return false;
-      }
-      const [current] = await tx
-        .select(workflowAutomationColumns())
-        .from(workflowAutomations)
-        .where(eq(workflowAutomations.id, paused.current.id))
-        .for("update")
-        .limit(1);
-      if (
-        !current ||
-        current.updatedAt.getTime() !== paused.current.updatedAt.getTime() ||
-        current.officialReconciliationStatus !== "reconciling" ||
-        !current.officialBlueprintKey ||
-        !current.officialParameterBindings ||
-        current.officialIntendedEnabled === null
-      ) {
-        return false;
-      }
-      const currentTime = nowDate();
-      await tx
-        .insert(officialWorkflowAutomationIdentities)
-        .values({
-          id: current.id,
-          workflowId: current.workflowId,
+        .returning({
+          id: workflowAutomations.id,
+          workflowId: workflowAutomations.workflowId,
+          blueprintKey: workflowAutomations.officialBlueprintKey,
+          parameterBindings: workflowAutomations.officialParameterBindings,
+          intendedEnabled: workflowAutomations.officialIntendedEnabled,
+          appliedFingerprint: workflowAutomations.officialAppliedFingerprint,
+        }),
+    );
+    // Keep DELETE and UPSERT in one statement: the active identity's SET NULL
+    // FK action must see the coherent removed identity at end of query.
+    const [identity] = await db
+      .with(removed)
+      .insert(identities)
+      .select(
+        db
+          .select({
+            id: removed.id,
+            workflowId: removed.workflowId,
+            automationId: sql`NULL`.mapWith(pgNullDecoder).as("automation_id"),
+            blueprintKey: removed.blueprintKey,
+            state: sql`'removed'`.mapWith(identities.state).as("state"),
+            retainedParameterBindings: removed.parameterBindings,
+            retainedIntendedEnabled: removed.intendedEnabled,
+            retainedAppliedFingerprint: removed.appliedFingerprint,
+            createdAt: sql`${sql.param(currentTime, identities.createdAt)}`
+              .mapWith(identities.createdAt)
+              .as("created_at"),
+            updatedAt: sql`${sql.param(currentTime, identities.updatedAt)}`
+              .mapWith(identities.updatedAt)
+              .as("updated_at"),
+          })
+          .from(removed)
+          .where(sql`true`),
+      )
+      .onConflictDoUpdate({
+        target: [identities.workflowId, identities.blueprintKey],
+        set: {
           automationId: null,
-          blueprintKey: current.officialBlueprintKey,
           state: "removed",
-          retainedParameterBindings: current.officialParameterBindings,
-          retainedIntendedEnabled: current.officialIntendedEnabled,
-          retainedAppliedFingerprint: current.officialAppliedFingerprint,
-          createdAt: currentTime,
+          retainedParameterBindings: sql`excluded.retained_parameter_bindings`,
+          retainedIntendedEnabled: sql`excluded.retained_intended_enabled`,
+          retainedAppliedFingerprint: sql`excluded.retained_applied_fingerprint`,
           updatedAt: currentTime,
-        })
-        .onConflictDoUpdate({
-          target: [
-            officialWorkflowAutomationIdentities.workflowId,
-            officialWorkflowAutomationIdentities.blueprintKey,
-          ],
-          set: {
-            automationId: null,
-            state: "removed",
-            retainedParameterBindings: current.officialParameterBindings,
-            retainedIntendedEnabled: current.officialIntendedEnabled,
-            retainedAppliedFingerprint: current.officialAppliedFingerprint,
-            updatedAt: currentTime,
-          },
-        });
-      await tx
-        .delete(workflowAutomations)
-        .where(eq(workflowAutomations.id, current.id));
-      return true;
-    });
+        },
+      })
+      .returning({ id: identities.id });
+    signal.throwIfAborted();
+    return identity !== undefined;
   },
 );
 const removeAutomationConfiguration$ = command(

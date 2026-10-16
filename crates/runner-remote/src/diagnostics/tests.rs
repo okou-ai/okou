@@ -1,0 +1,278 @@
+use super::*;
+
+fn failure(handle: &Handle, protocol: Protocol, connection: Uuid) {
+    handle.record(Record {
+        protocol,
+        connection,
+        operation: Operation::Exec,
+        identity: Identity::default(),
+        cause: match protocol {
+            Protocol::Ssh => Cause::Ssh(crate::ssh::FailureReason::HostKeyMismatch),
+            Protocol::Vnc => Cause::Vnc(crate::vnc::Failure::AuthenticationFailed),
+        },
+        dependency: None,
+        native: None,
+    });
+}
+
+#[test]
+fn pinned_failures_survive_other_protocol_pressure_and_exact_queries_never_substitute() {
+    let handle = Handle::new(RunId::new_v4(), true);
+    let ssh = Uuid::new_v4();
+    failure(&handle, Protocol::Ssh, ssh);
+    let original = handle.select(Protocol::Ssh, &Selector::default()).unwrap();
+    for _ in 0..100 {
+        failure(&handle, Protocol::Vnc, Uuid::new_v4());
+    }
+    assert_eq!(handle.store.state.lock().unwrap().reports.len(), CAPACITY);
+    assert_eq!(
+        handle
+            .select(Protocol::Ssh, &Selector::default())
+            .unwrap()
+            .attempt_id,
+        original.attempt_id
+    );
+    assert!(
+        handle
+            .select(
+                Protocol::Ssh,
+                &Selector {
+                    connection_id: Some(Uuid::new_v4()),
+                    ..Selector::default()
+                }
+            )
+            .is_none()
+    );
+    assert_eq!(
+        handle
+            .select(
+                Protocol::Ssh,
+                &Selector {
+                    attempt_id: Some(original.attempt_id),
+                    ..Selector::default()
+                }
+            )
+            .unwrap()
+            .connection_id,
+        ssh
+    );
+    assert!(serde_json::to_vec(&original).unwrap().len() < MAX_REPORT_BYTES);
+}
+
+#[test]
+fn replacement_preserves_history_but_fences_stale_producers_and_other_runs() {
+    let old = Handle::new(RunId::new_v4(), true);
+    let connection = Uuid::new_v4();
+    failure(&old, Protocol::Ssh, connection);
+    let current = old.replacement(true);
+    failure(&old, Protocol::Vnc, connection);
+    assert!(
+        current
+            .select(Protocol::Vnc, &Selector::default())
+            .is_none()
+    );
+    assert_eq!(
+        current
+            .select(Protocol::Ssh, &Selector::default())
+            .unwrap()
+            .connection_id,
+        connection
+    );
+    assert!(
+        Handle::new(RunId::new_v4(), true)
+            .select(Protocol::Ssh, &Selector::default())
+            .is_none()
+    );
+    assert!(old.select(Protocol::Ssh, &Selector::default()).is_none());
+}
+
+#[tokio::test]
+async fn stale_native_owner_shutdown_cannot_remove_winning_assignments_history() {
+    let runtime = crate::native::Runtime::new();
+    let run = RunId::new_v4();
+    let old =
+        runtime.register_with_diagnostics(run, &tokio_util::sync::CancellationToken::new(), true);
+    let connection = Uuid::new_v4();
+    failure(&old.diagnostics, Protocol::Ssh, connection);
+    let winner =
+        runtime.register_with_diagnostics(run, &tokio_util::sync::CancellationToken::new(), true);
+    failure(&old.diagnostics, Protocol::Vnc, connection);
+    old.shutdown().await.unwrap();
+    assert!(winner.diagnostics.current());
+    assert!(!winner.is_cancelled());
+    assert_eq!(
+        winner
+            .diagnostics
+            .select(Protocol::Ssh, &Selector::default())
+            .unwrap()
+            .connection_id,
+        connection
+    );
+    assert!(
+        winner
+            .diagnostics
+            .select(Protocol::Vnc, &Selector::default())
+            .is_none()
+    );
+    winner.shutdown().await.unwrap();
+}
+
+#[test]
+fn concurrent_subjects_keep_their_exact_identity_and_bounded_native_summary() {
+    let handle = Handle::new(RunId::new_v4(), true);
+    let mut subjects = Vec::new();
+    let mut tasks = Vec::new();
+    for _ in 0..8 {
+        let connection = Uuid::new_v4();
+        subjects.push(connection);
+        let handle = handle.clone();
+        tasks.push(std::thread::spawn(move || {
+            failure(&handle, Protocol::Ssh, connection)
+        }));
+    }
+    for task in tasks {
+        task.join().unwrap();
+    }
+    for connection in subjects {
+        let selected = handle
+            .select(
+                Protocol::Ssh,
+                &Selector {
+                    connection_id: Some(connection),
+                    ..Selector::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(selected.connection_id, connection);
+    }
+}
+
+#[test]
+fn shared_native_cause_is_pinned_for_both_consumers_and_cleanup_cannot_replace_it() {
+    let handle = Handle::new(RunId::new_v4(), true);
+    let ssh = Uuid::new_v4();
+    let vnc = Uuid::new_v4();
+    let evidence = Arc::new(NativeEvidence::new());
+    let configuration = Uuid::new_v4();
+    let source = NativeSource {
+        configuration_id: configuration,
+        generation: 1,
+        resource_id: evidence.resource_id,
+        evidence: Arc::clone(&evidence),
+    };
+    let active = Arc::new(AtomicBool::new(true));
+    evidence.observe(
+        handle
+            .watch(ssh, Identity::default(), configuration, 1, &active)
+            .unwrap(),
+    );
+    evidence.observe(
+        handle
+            .watch_vnc(
+                vnc,
+                Identity::default(),
+                &source,
+                Dependency {
+                    protocol: Protocol::Ssh,
+                    connection_id: ssh,
+                    cause: None,
+                    configuration_created_at: None,
+                    configuration_generation: None,
+                },
+                &active,
+            )
+            .unwrap(),
+    );
+    evidence.ready();
+    evidence.terminate(crate::tailscale::Failure::DomainFailed);
+    evidence.terminate(crate::tailscale::Failure::Cancelled);
+    evidence.cleanup(Err(crate::tailscale::Failure::CleanupTimedOut));
+    let vnc_report =
+        serde_json::to_value(handle.select(Protocol::Vnc, &Selector::default()).unwrap()).unwrap();
+    assert_eq!(
+        vnc_report["dependencies"][0]["connection_id"],
+        ssh.to_string()
+    );
+    assert_eq!(
+        vnc_report["cause"],
+        serde_json::json!({"source":"native","code":"domain_failed"})
+    );
+    for _ in 0..100 {
+        failure(&handle, Protocol::Vnc, Uuid::new_v4());
+    }
+    drop(source);
+    drop(evidence);
+    let pinned =
+        serde_json::to_value(handle.select(Protocol::Ssh, &Selector::default()).unwrap()).unwrap();
+    assert_eq!(
+        pinned["native"]["resource_id"],
+        vnc_report["native"]["resource_id"]
+    );
+    assert_eq!(pinned["native"]["evidence"]["terminal"], "domain_failed");
+    assert_eq!(
+        pinned["native"]["evidence"]["cleanup_failure"],
+        "cleanup_timed_out"
+    );
+    assert!(pinned.to_string().len() < MAX_REPORT_BYTES);
+}
+
+#[test]
+fn intentional_session_retirement_cannot_receive_or_overwrite_a_later_native_failure() {
+    let handle = Handle::new(RunId::new_v4(), true);
+    let ssh = Uuid::new_v4();
+    let vnc = Uuid::new_v4();
+    let old_session = Uuid::new_v4();
+    let live_session = Uuid::new_v4();
+    let evidence = Arc::new(NativeEvidence::new());
+    let source = NativeSource {
+        configuration_id: Uuid::new_v4(),
+        generation: 1,
+        resource_id: evidence.resource_id,
+        evidence: Arc::clone(&evidence),
+    };
+    let retired = Arc::new(AtomicBool::new(true));
+    let live = Arc::new(AtomicBool::new(true));
+    let dependency = Dependency {
+        protocol: Protocol::Ssh,
+        connection_id: ssh,
+        cause: None,
+        configuration_created_at: None,
+        configuration_generation: None,
+    };
+    for (session, active) in [(old_session, &retired), (live_session, &live)] {
+        evidence.observe(
+            handle
+                .watch_vnc(
+                    vnc,
+                    Identity {
+                        session: Some(session),
+                        ..Identity::default()
+                    },
+                    &source,
+                    dependency.clone(),
+                    active,
+                )
+                .unwrap(),
+        );
+    }
+    retired.store(false, Ordering::Release);
+    evidence.terminate(crate::tailscale::Failure::DomainFailed);
+    assert!(
+        handle
+            .select(
+                Protocol::Vnc,
+                &Selector {
+                    session_id: Some(old_session),
+                    ..Selector::default()
+                }
+            )
+            .is_none()
+    );
+    assert_eq!(
+        handle
+            .select(Protocol::Vnc, &Selector::default())
+            .unwrap()
+            .session_id,
+        Some(live_session)
+    );
+}

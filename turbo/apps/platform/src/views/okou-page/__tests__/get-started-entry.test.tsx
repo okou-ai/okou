@@ -9,6 +9,8 @@ import {
   isOneClickConnectorGrantKind,
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
+import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
+import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -21,10 +23,14 @@ import { expect, test, vi } from "vitest";
 
 import {
   click,
+  fill,
   queryAllByRoleFast,
   setupPage,
+  startPage,
 } from "../../../__tests__/page-helper.ts";
 import { connectorCatalogConnectItem } from "../../../mocks/handlers/api-connectors.ts";
+import { defaultBillingStatus } from "../../../mocks/handlers/api-billing.ts";
+import { mockNow } from "../../../lib/time.ts";
 import { pathname } from "../../../signals/location.ts";
 import {
   testContext,
@@ -694,8 +700,9 @@ test("Slack not yet installed keeps the step and its reward on offer", async () 
   expect(within(row).getByText("+2,000")).toBeInTheDocument();
 });
 
-test("A failed Slack status read leaves the Slack step as the rewards report it", async () => {
+test("A failed Slack status read leaves the Slack step actionable on canonical settings", async () => {
   configureQuestPage(context, "admin", { slackClaimed: false });
+  const opened = context.mocks.browser.open();
   context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
     return respond(500, {
       error: {
@@ -718,6 +725,14 @@ test("A failed Slack status read leaves the Slack step as the rewards report it"
   expect(
     within(screen.getByTestId("get-started-quest-slack")).getByText("+2,000"),
   ).toBeInTheDocument();
+  click(screen.getByTestId("get-started-quest-slack"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Work with Okou where your team already talks",
+  });
+  click(buttonNamed("Add to Slack", dialog));
+  expect(new URL(opened.calls[0]?.url ?? "").pathname).toBe("/settings/slack");
+  expect(opened.calls[0]?.target).toBe("_blank");
+  expect(pathname()).toBe(questChatPath());
 });
 
 test("Invitation progress separates successful rewards from pending members and remains actionable below 15", async () => {
@@ -901,80 +916,286 @@ test("Picking a connector in the dialog starts its authorization", async () => {
   expect(pathname()).toBe(questChatPath());
 });
 
-test("The Slack step starts the install instead of handing over a list", async () => {
-  const data = configureQuestPage(context, "admin");
-  // The workspace this step exists for: an admin who has not installed yet, so
-  // the quest is still claimable and the status carries the URL that does the
-  // work. The shared fixture ships Slack already installed.
-  const slack = data.quests.find((quest) => {
-    return quest.key === "slack";
-  });
-  if (!slack) {
-    throw new Error("Missing slack fixture");
-  }
-  slack.claimedCount = 0;
-  slack.earnedCredits = 0;
-  slack.canEarnMore = true;
-  context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
-    return respond(200, {
-      ...slackInstalled(),
-      isConnected: false,
-      isInstalled: false,
-      installUrl: "https://slack.com/oauth/v2/authorize?state=quest",
-    });
-  });
-  const opened: string[] = [];
-  vi.spyOn(window, "open").mockImplementation((url) => {
-    opened.push(String(url));
-    return null;
-  });
-  await setupPage({
-    context,
-    path: questChatPath(),
-  });
+function slackNotInstalled(): SlackOrgStatus {
+  return {
+    ...slackInstalled(),
+    isInstalled: false,
+    isConnected: false,
+    workspaceName: null,
+    installUrl: null,
+  };
+}
 
+async function openSlackIntro(): Promise<HTMLElement> {
   await openQuestPanel();
   click(screen.getByTestId("get-started-quest-slack"));
-  const dialog = await screen.findByRole("dialog", {
+  return await screen.findByRole("dialog", {
     name: "Work with Okou where your team already talks",
   });
+}
 
-  click(buttonNamed("Add to Slack", dialog));
-  await waitFor(() => {
-    expect(opened).toHaveLength(1);
+test.each(["https://slack.com/oauth/v2/authorize?state=quest", null])(
+  "The Slack step opens canonical settings at click time with install URL %s and retains the chat draft",
+  async (installUrl) => {
+    configureQuestPage(context, "admin", { slackClaimed: false });
+    context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
+      return respond(200, { ...slackNotInstalled(), installUrl });
+    });
+    const opened = context.mocks.browser.open();
+    const timestamp = new Date("2026-10-15T13:00:00Z");
+    mockNow(timestamp, context.signal);
+    await setupPage({ context, path: questChatPath() });
+    const composer = await screen.findByRole("textbox", { name: "Message" });
+    await fill(composer, "Keep my unsent Slack setup notes");
+
+    const dialog = await openSlackIntro();
+    const confirm = buttonNamed("Add to Slack", dialog);
+    expect(confirm).toBeEnabled();
+    click(confirm);
+    // No await: window creation must happen inside the user gesture.
+    expect(opened.calls).toStrictEqual([
+      {
+        url: `http://localhost/settings/slack?_t=${timestamp.getTime()}`,
+        target: "_blank",
+        features: null,
+      },
+    ]);
+    expect(pathname()).toBe(questChatPath());
+    expect(composer).toHaveTextContent("Keep my unsent Slack setup notes");
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+  },
+);
+
+test("The Slack entry forwards an existing prompt and retains same-origin preview access", async () => {
+  configureQuestPage(context, "admin", { slackClaimed: false });
+  context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
+    return respond(200, slackNotInstalled());
   });
-  expect(opened[0]).toContain("https://slack.com/oauth/v2/authorize");
-  // The authorization owns the next step, so the reader is not also dropped on
-  // the integrations page behind it.
+  const opened = context.mocks.browser.open();
+  // Same-origin App tabs share the captured cookie; the helper only puts the
+  // bypass query on the corresponding API origin, never arbitrary links.
+  context.mocks.browser.cookie("x-vercel-protection-bypass=preview-secret");
+  const releaseAgents = context.mocks.deferred<void>();
+  context.mocks.api(agentsMainContract.list, async ({ respond }) => {
+    await releaseAgents.promise;
+    return respond(200, [
+      {
+        agentId: QUEST_AGENT_ID,
+        isDefaultAgent: false,
+        ownerId: "test-user-123",
+        displayName: null,
+        description: null,
+        sound: null,
+        avatarUrl: null,
+        visibility: "private",
+      },
+    ]);
+  });
+  // The page is interactive before its pending agent read consumes the prompt.
+  const page = await startPage({
+    context,
+    host: "pr-431-app-okou-app-preview.vm0.workers.dev",
+    path: `${questChatPath()}?prompt=Retain+my+work`,
+  });
+  await page.content;
+  const dialog = await openSlackIntro();
+  click(buttonNamed("Add to Slack", dialog));
+  const url = new URL(opened.calls[0]?.url ?? "");
+  expect(url.origin).toBe(window.location.origin);
+  expect(url.pathname).toBe("/settings/slack");
+  expect(url.searchParams.get("prompt")).toBe("Retain my work");
+  expect(url.searchParams.get("_t")).toMatch(/^\d+$/u);
+  expect(url.searchParams.has("x-vercel-protection-bypass")).toBeFalsy();
+  expect(document.cookie).toContain(
+    "x-vercel-protection-bypass=preview-secret",
+  );
   expect(pathname()).toBe(questChatPath());
+  releaseAgents.resolve();
+  await page.ready;
+  await expect(
+    screen.findByRole("textbox", { name: "Message" }),
+  ).resolves.toHaveTextContent("Retain my work");
 });
 
-test("The Slack step links to integrations when no install URL is available", async () => {
+test("The Slack action remains usable while a status refresh is pending", async () => {
   configureQuestPage(context, "admin", { slackClaimed: false });
-  context.mocks.browser.open();
-  context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
-    return respond(200, {
-      ...slackInstalled(),
-      isConnected: false,
-      isInstalled: false,
-      installUrl: null,
-    });
-  });
+  const requested = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  let pending = false;
+  context.mocks.api(
+    integrationsSlackContract.getStatus,
+    async ({ respond }) => {
+      if (pending) {
+        requested.resolve();
+        await release.promise;
+      }
+      return respond(200, slackNotInstalled());
+    },
+  );
+  const opened = context.mocks.browser.open();
   await setupPage({ context, path: questChatPath() });
-
-  await openQuestPanel();
-  click(screen.getByTestId("get-started-quest-slack"));
-  const dialog = await screen.findByRole("dialog", {
-    name: "Work with Okou where your team already talks",
-  });
-  const browse = linkNamed("Add to Slack", dialog);
-  expect(browse).toHaveAttribute("href", "/works");
-  await expectBrowserActivationsKeepIntro(browse, dialog);
-  click(browse);
+  const dialog = await openSlackIntro();
   await waitFor(() => {
-    expect(pathname()).toBe("/works");
+    expect(context.mocks.ably.hasSubscription("slack:changed")).toBeTruthy();
+  });
+  pending = true;
+  context.mocks.ably.trigger("slack:changed");
+  await requested.promise;
+  click(buttonNamed("Add to Slack", dialog));
+  expect(new URL(opened.calls[0]?.url ?? "").pathname).toBe("/settings/slack");
+  expect(opened.calls[0]?.target).toBe("_blank");
+  expect(pathname()).toBe(questChatPath());
+  release.resolve();
+  await waitFor(() => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
+});
+
+test.each(["blocked", "closed", "open"] as const)(
+  "A %s Slack tab without completion leaves the quest retryable",
+  async (outcome) => {
+    configureQuestPage(context, "admin", { slackClaimed: false });
+    context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
+      return respond(200, slackNotInstalled());
+    });
+    const popup = context.mocks.browser.authWindow();
+    const opened = context.mocks.browser.open(
+      outcome === "blocked" ? null : popup,
+    );
+    let timestamp = 1_792_065_600_000;
+    mockNow(() => {
+      return timestamp;
+    }, context.signal);
+    await setupPage({ context, path: `${questChatPath()}?status=connected` });
+    const dialog = await openSlackIntro();
+    click(buttonNamed("Add to Slack", dialog));
+    expect(opened.calls[0]?.target).toBe("_blank");
+    if (outcome === "closed") {
+      popup.close();
+    }
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    const retry = await openSlackIntro();
+    expect(normalizedText(screen.getByTestId("get-started-entry"))).toBe(
+      "Get more credits2/6",
+    );
+    expect(buttonNamed("Add to Slack", retry)).toBeEnabled();
+    timestamp += 1;
+    click(buttonNamed("Add to Slack", retry));
+    expect(opened.calls).toHaveLength(2);
+    expect(new URL(opened.calls[1]?.url ?? "").searchParams.get("_t")).toBe(
+      String(timestamp),
+    );
+    expect(pathname()).toBe(questChatPath());
+    expect(popup.closed).toBe(outcome === "closed");
+  },
+);
+
+test.each([
+  { outcome: "unchanged", installed: false, rewarded: false, credits: 38 },
+  {
+    outcome: "installed without reward",
+    installed: true,
+    rewarded: false,
+    credits: 37,
+  },
+  {
+    outcome: "server-reported reward",
+    installed: false,
+    rewarded: true,
+    credits: 2037,
+  },
+])(
+  "The real Slack event reconciles $outcome from the API without inventing credit",
+  async ({ installed, rewarded, credits }) => {
+    const data = configureQuestPage(context, "admin", { slackClaimed: false });
+    let org = slackNotInstalled();
+    let balance = 37;
+    context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
+      return respond(200, org);
+    });
+    context.mocks.api(billingStatusContract.get, ({ respond }) => {
+      return respond(200, { ...defaultBillingStatus(), credits: balance });
+    });
+    await setupPage({
+      context,
+      path: questChatPath(),
+      auth: { user: { id: "test-user-123", fullName: "Slack Quest Admin" } },
+    });
+    await waitFor(() => {
+      expect(normalizedText(screen.getByTestId("get-started-entry"))).toBe(
+        "Get more credits2/6",
+      );
+      expect(context.mocks.ably.hasSubscription("slack:changed")).toBeTruthy();
+    });
+    click(buttonNamed("Slack Quest Admin", document.body));
+    const menu = await screen.findByRole("menu");
+    const creditBalance = await within(menu).findByTestId(
+      "account-menu-credit-balance",
+    );
+    await expect(
+      within(creditBalance).findByText("37 credits"),
+    ).resolves.toBeInTheDocument();
+
+    // The event is only a hint. These are the independent API responses.
+    org = installed ? { ...slackInstalled(), isConnected: false } : org;
+    balance = credits;
+    if (rewarded) {
+      const slack = data.quests.find((quest) => {
+        return quest.key === "slack";
+      });
+      if (!slack) {
+        throw new Error("Missing Slack quest fixture");
+      }
+      Object.assign(slack, {
+        claimedCount: 1,
+        earnedCredits: 2000,
+        canEarnMore: false,
+      });
+    }
+    context.mocks.ably.trigger("slack:changed", { status: "connected" });
+    await waitFor(() => {
+      expect(
+        within(creditBalance).getByText(
+          `${credits.toLocaleString("en-US")} credits`,
+        ),
+      ).toBeInTheDocument();
+      expect(normalizedText(screen.getByTestId("get-started-entry"))).toBe(
+        installed || rewarded ? "Get more credits3/6" : "Get more credits2/6",
+      );
+    });
+    expect(pathname()).toBe(questChatPath());
+  },
+);
+
+test("Reopening Get Started recovers a Slack installation missed by realtime", async () => {
+  configureQuestPage(context, "admin", { slackClaimed: false });
+  let org = slackNotInstalled();
+  context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
+    return respond(200, org);
+  });
+  await setupPage({ context, path: questChatPath() });
+  const panel = await openQuestPanel();
+  expect(within(panel).getByText("5,200 to go")).toBeInTheDocument();
+  fireEvent.keyDown(document.body, { key: "Escape" });
+  await waitFor(() => {
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+  org = { ...slackInstalled(), isConnected: false };
+  const reopened = await openQuestPanel();
+  await expect(
+    within(reopened).findByText("3,200 to go"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByTestId("get-started-quest-slack")).not.toHaveAttribute(
+    "role",
+    "menuitem",
+  );
+  expect(normalizedText(screen.getByTestId("get-started-entry"))).toBe(
+    "Get more credits3/6",
+  );
 });
 
 test("The workflow step offers the recommendations rather than one sentence", async () => {

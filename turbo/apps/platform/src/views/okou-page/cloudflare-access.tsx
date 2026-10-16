@@ -1,4 +1,6 @@
 import type { ClipboardEvent } from "react";
+import { privateNetworkHostCount } from "../../lib/private-network-references.ts";
+import { PrivateNetworkHostReferences } from "./private-network-host-references.tsx";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -126,7 +128,8 @@ export function CloudflareAccessConflictReview() {
             variant="outline"
             disabled={
               current.kind === "delete" &&
-              (current.config?.sshHosts.length ?? 0) > 0
+              !!current.config &&
+              privateNetworkHostCount(current.config) > 0
             }
             onClick={() => {
               return detach(acceptReview(current, signal), Reason.DomCallback);
@@ -164,32 +167,9 @@ export function CloudflareAccessLoadError() {
 export function AccessImpact({
   config,
 }: {
-  readonly config: Pick<CloudflareAccessConfig, "sshHosts">;
+  readonly config: Pick<CloudflareAccessConfig, "sshHosts" | "vncHosts">;
 }) {
-  const { t } = useTranslation();
-  return (
-    <div className="grid gap-1 text-sm text-muted-foreground">
-      <p>
-        {config.sshHosts.length === 0
-          ? t(($) => {
-              return $.cloudflareAccess.unused;
-            })
-          : t(
-              ($) => {
-                return $.cloudflareAccess.usedBy;
-              },
-              { count: config.sshHosts.length },
-            )}
-      </p>
-      {config.sshHosts.length > 0 && (
-        <ul className="list-inside list-disc">
-          {config.sshHosts.map((host) => {
-            return <li key={host.id}>{host.displayName}</li>;
-          })}
-        </ul>
-      )}
-    </div>
-  );
+  return <PrivateNetworkHostReferences config={config} />;
 }
 
 interface AccessCredentials {
@@ -672,7 +652,7 @@ function CloudflareAccessConversionControls({
               }}
             />
             {t(($) => {
-              return $.cloudflareAccess.impactConfirm;
+              return $.vnc.native.impactConfirm;
             })}
           </label>
         </div>
@@ -835,7 +815,7 @@ function CloudflareAccessDeletionReview({
       {impact && impact.ownHostCount > 0 && (
         <p role="alert">
           {t(($) => {
-            return $.cloudflareAccess.inUseHelp;
+            return $.vnc.native.inUse;
           })}
         </p>
       )}
@@ -851,7 +831,7 @@ function CloudflareAccessDeletionReview({
               }}
             />
             {t(($) => {
-              return $.cloudflareAccess.impactConfirm;
+              return $.vnc.native.impactConfirm;
             })}
           </label>
         </div>
@@ -1165,7 +1145,7 @@ function CloudflareAccessSection({
                 )}
                 <Button
                   variant="outline"
-                  disabled={config.sshHosts.length > 0}
+                  disabled={privateNetworkHostCount(config) > 0}
                   onClick={() => {
                     return detach(
                       scope === "organization"
@@ -1181,10 +1161,10 @@ function CloudflareAccessSection({
                 </Button>
               </div>
             )}
-            {canManage && config.sshHosts.length > 0 && (
+            {canManage && privateNetworkHostCount(config) > 0 && (
               <p className="text-sm text-muted-foreground">
                 {t(($) => {
-                  return $.cloudflareAccess.inUseHelp;
+                  return $.vnc.native.inUse;
                 })}
               </p>
             )}

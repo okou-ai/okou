@@ -239,6 +239,15 @@ consumed by same-filesystem rename even below the reserve; periodic maintenance
 owns reclamation. A pressure miss may therefore fail promptly until maintenance
 frees space.
 
+Selection retains the immutable selecting commit under its entry guard until
+fallible storage/history preparation finishes. Factory handoff revalidates the
+commit and image pins, then revokes the commit before exposing Move. Accepted
+revocation owns its guards through physical completion and is joined after jobs
+drain, before factory teardown. Unused release preserves the commit and requests
+bounded advisory key revalidation; a notification alone cannot advertise a home.
+Rejected handoff uses the existing bounded fresh replacement, which rebuilds
+image-derived storage/history preparation before creating the replacement.
+
 Runtime home configurations carry the same max(10% capacity, 50 GiB) reserve as
 cache publication. Firecracker queries the actual destination filesystem before
 fresh creation, Copy or EXDEV copy. Sparse seeds need their allocated bytes plus

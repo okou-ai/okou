@@ -46,6 +46,9 @@ async function insertIntegrationContext(
   chatThreadId: string,
   createdAt: Date,
 ): Promise<void> {
+  if (context.type === "wechat") {
+    throw new Error("WeChat inputs use their atomic statement writer");
+  }
   if (context.type === "discord") {
     await tx
       .insert(chatDiscordContext)

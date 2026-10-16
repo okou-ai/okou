@@ -13,6 +13,7 @@ import { logger } from "../../lib/log";
 import type { Db } from "../external/db";
 import { settle } from "../utils";
 import { DiscordQueuedLaunchUnavailableError } from "./discord-queued-launch-context.service";
+import { WechatLaunchUnavailableError } from "./wechat-context.service";
 import {
   activeInputDeliveryPromptFitsControlPayload,
   activeInputRowsByIds,
@@ -295,7 +296,10 @@ export const loadNextSteerableInput$ = command(
       signal,
     );
     if (!prompt.ok) {
-      if (!(prompt.error instanceof DiscordQueuedLaunchUnavailableError)) {
+      if (
+        !(prompt.error instanceof DiscordQueuedLaunchUnavailableError) &&
+        !(prompt.error instanceof WechatLaunchUnavailableError)
+      ) {
         throw prompt.error;
       }
       return { outcome: "found", input: null };

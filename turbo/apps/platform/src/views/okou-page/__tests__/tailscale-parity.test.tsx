@@ -37,7 +37,7 @@ const impact: TailscaleImpactPreview = Object.freeze({
   impactSnapshot: "a".repeat(64),
 });
 const acknowledgement =
-  "I understand these members' SSH hosts will remain saved but cannot connect until their owners rebind them or explicitly choose Direct.";
+  "I understand these members' hosts will remain saved but cannot connect until their owners rebind them.";
 
 beforeEach(() => {
   context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
@@ -273,7 +273,7 @@ test("An uncertain shared conversion requires reviewing and acknowledging fresh 
   expect(getAction("button", "Make personal", dialog)).toBeDisabled();
   expect(dialog.textContent).not.toContain("provider-secret-canary");
   click(getAction("button", "Review latest impact", dialog));
-  await within(dialog).findByText(/Affected: 1 member and 3 SSH hosts\./u);
+  await within(dialog).findByText(/Affected: 1 member and 3 hosts\./u);
   expect(within(dialog).getByRole("checkbox")).not.toBeChecked();
   expect(getAction("button", "Make personal", dialog)).toBeDisabled();
   expect(requests).toStrictEqual([

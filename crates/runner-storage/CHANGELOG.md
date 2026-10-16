@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.6](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.5...runner-storage-v0.5.6) (2026-10-15)
+
+
+### Refactoring
+
+* **runner-storage:** encode nonempty archive target groups ([#40446](https://github.com/okou-ai/okou/issues/40446)) ([9cfe624](https://github.com/okou-ai/okou/commit/9cfe6249dc62a8352b1ce184cbc717ebf6111f31))
+* **runner-storage:** pair fresh staging payloads with retained permits ([#40447](https://github.com/okou-ai/okou/issues/40447)) ([e8f6338](https://github.com/okou-ai/okou/commit/e8f6338d5758e0f0f9400c1283d47685fd6bdf49))
+
+## [0.5.5](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.4...runner-storage-v0.5.5) (2026-10-15)
+
 ## [0.5.4](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.3...runner-storage-v0.5.4) (2026-10-15)
 
 ## [0.5.3](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.2...runner-storage-v0.5.3) (2026-10-15)

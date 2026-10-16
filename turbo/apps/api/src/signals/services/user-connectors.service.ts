@@ -1,4 +1,8 @@
 import { command } from "ccstate";
+import {
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/runtime/connector-catalog";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
@@ -18,7 +22,11 @@ import {
   customConnectorPermissionBundleDependencySlug,
   loadCustomConnectorPermissionBundle,
 } from "./custom-connector-permission-bundle.service";
-import { loadConnectorRuntimeSlugSelection } from "./connector-catalog-slug-source.service";
+import {
+  connectorCatalogCurrentWhere,
+  connectorRuntimeSlugSelectionReadPlan,
+  connectorRuntimeSlugSelectionFromRows,
+} from "./connector-catalog-slug-source.service";
 import { publishConnectorRuntimeSyncWakeups } from "./connector-runtime-wakeup.service";
 import { changedCustomConnectorIds } from "./user-custom-connector-changes";
 import {
@@ -673,14 +681,24 @@ async function persistUserCustomConnectors(args: {
     };
   }
   // Permission bundles read only their dependency connectors' metadata.
-  const connectorCatalogSnapshot = args.readsConnectorCatalog
-    ? await loadConnectorRuntimeSlugSelection(args.db, {
-        connectorSlugs: [],
-        metadataConnectorSlugs: permissionBundleDependencySlugs(
-          definitions.permissionBundleRefs.values(),
-        ),
-      })
-    : null;
+  let connectorCatalogSnapshot: ConnectorRuntimeSelection | null = null;
+  if (args.readsConnectorCatalog) {
+    const catalogDb = args.db;
+    const catalogPlan = connectorRuntimeSlugSelectionReadPlan({
+      connectorSlugs: [],
+      metadataConnectorSlugs: permissionBundleDependencySlugs(
+        definitions.permissionBundleRefs.values(),
+      ),
+    });
+    connectorCatalogSnapshot = connectorRuntimeSlugSelectionFromRows(
+      catalogPlan.selection,
+      await catalogDb
+        .select(catalogPlan.columns)
+        .from(connectorCatalog)
+        .leftJoin(connectorCatalogEntries, catalogPlan.join)
+        .where(connectorCatalogCurrentWhere()),
+    );
+  }
   const permissionSelection = await resolveCustomConnectorPermissionSelection({
     connectorIds,
     permissionIntent: args.request.permissionIntent,

@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.47](https://github.com/okou-ai/okou/compare/runner-network-v0.2.46...runner-network-v0.2.47) (2026-10-15)
+
+
+### Refactoring
+
+* **runner-network:** retain accepted row ownership through batching ([#40450](https://github.com/okou-ai/okou/issues/40450)) ([500b635](https://github.com/okou-ai/okou/commit/500b635dda2cc197abdb8b81dc141c2e52b0d5fe))
+
+## [0.2.46](https://github.com/okou-ai/okou/compare/runner-network-v0.2.45...runner-network-v0.2.46) (2026-10-15)
+
 ## [0.2.45](https://github.com/okou-ai/okou/compare/runner-network-v0.2.44...runner-network-v0.2.45) (2026-10-15)
 
 ## [0.2.44](https://github.com/okou-ai/okou/compare/runner-network-v0.2.43...runner-network-v0.2.44) (2026-10-15)

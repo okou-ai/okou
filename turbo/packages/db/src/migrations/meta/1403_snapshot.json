@@ -1,5 +1,5 @@
 {
-  "id": "48f296a6-0565-41dd-bed3-23d0828a3344",
+  "id": "92f50faa-e7d1-4057-ae68-186ace960b30",
   "prevId": "29497b8e-8e6b-4d54-be21-4b31e41bdda2",
   "version": "7",
   "dialect": "postgresql",
@@ -4110,7 +4110,7 @@
       "checkConstraints": {
         "billing_run_attribution_source_check": {
           "name": "billing_run_attribution_source_check",
-          "value": "\"billing_run_attribution\".\"source\" IN ('chat', 'automation', 'slack', 'discord', 'teams', 'telegram', 'email', 'agentphone', 'github', 'agent', 'other')"
+          "value": "\"billing_run_attribution\".\"source\" IN ('chat', 'automation', 'slack', 'discord', 'wechat', 'teams', 'telegram', 'email', 'agentphone', 'github', 'agent', 'other')"
         },
         "billing_run_attribution_thread_context_check": {
           "name": "billing_run_attribution_thread_context_check",
@@ -6906,7 +6906,7 @@
         },
         "chat_events_context_type_check": {
           "name": "chat_events_context_type_check",
-          "value": "\"chat_events\".\"context_type\" IN (\n          'web',\n          'slack',\n          'discord',\n          'feishu',\n          'teams',\n          'telegram',\n          'agentphone',\n          'automation',\n          'agent_run'\n        )"
+          "value": "\"chat_events\".\"context_type\" IN (\n          'web',\n          'slack',\n          'discord', 'wechat',\n          'feishu',\n          'teams',\n          'telegram',\n          'agentphone',\n          'automation',\n          'agent_run'\n        )"
         },
         "chat_events_input_context_type_check": {
           "name": "chat_events_input_context_type_check",
@@ -17099,7 +17099,7 @@
           "name": "agent_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "authorization_id": {
           "name": "authorization_id",
@@ -17157,28 +17157,6 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_link_wallet_connections_owner": {
-          "name": "idx_link_wallet_connections_owner",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"link_wallet_connections\".\"agent_id\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -17245,14 +17223,7 @@
           "name": "agent_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
-        },
-        "scope": {
-          "name": "scope",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'agent'"
+          "notNull": true
         },
         "encrypted_verifier": {
           "name": "encrypted_verifier",
@@ -34211,6 +34182,426 @@
           "value": "\"vnc_credentials\".\"revision\" > 0"
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.chat_wechat_context": {
+      "name": "chat_wechat_context",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "chat_thread_id": {
+          "name": "chat_thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "connection_id": {
+          "name": "connection_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "generation": {
+          "name": "generation",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sender_id": {
+          "name": "sender_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bot_id": {
+          "name": "bot_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "message_id": {
+          "name": "message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "context_token_ciphertext": {
+          "name": "context_token_ciphertext",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quoted_text": {
+          "name": "quoted_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "chat_wechat_context_thread_idx": {
+          "name": "chat_wechat_context_thread_idx",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "chat_wechat_context_chat_thread_id_chat_threads_id_fk": {
+          "name": "chat_wechat_context_chat_thread_id_chat_threads_id_fk",
+          "tableFrom": "chat_wechat_context",
+          "tableTo": "chat_threads",
+          "columnsFrom": [
+            "chat_thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "chat_wechat_context_connection_id_wechat_connections_id_fk": {
+          "name": "chat_wechat_context_connection_id_wechat_connections_id_fk",
+          "tableFrom": "chat_wechat_context",
+          "tableTo": "wechat_connections",
+          "columnsFrom": [
+            "connection_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.wechat_chat_thread_routes": {
+      "name": "wechat_chat_thread_routes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "connection_id": {
+          "name": "connection_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "chat_thread_id": {
+          "name": "chat_thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "wechat_chat_thread_routes_connection_idx": {
+          "name": "wechat_chat_thread_routes_connection_idx",
+          "columns": [
+            {
+              "expression": "connection_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "wechat_chat_thread_routes_thread_idx": {
+          "name": "wechat_chat_thread_routes_thread_idx",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "wechat_chat_thread_routes_connection_id_wechat_connections_id_fk": {
+          "name": "wechat_chat_thread_routes_connection_id_wechat_connections_id_fk",
+          "tableFrom": "wechat_chat_thread_routes",
+          "tableTo": "wechat_connections",
+          "columnsFrom": [
+            "connection_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "wechat_chat_thread_routes_chat_thread_id_chat_threads_id_fk": {
+          "name": "wechat_chat_thread_routes_chat_thread_id_chat_threads_id_fk",
+          "tableFrom": "wechat_chat_thread_routes",
+          "tableTo": "chat_threads",
+          "columnsFrom": [
+            "chat_thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.wechat_connect_attempts": {
+      "name": "wechat_connect_attempts",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "qr_ciphertext": {
+          "name": "qr_ciphertext",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "base_url": {
+          "name": "base_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "wechat_connect_attempts_owner_idx": {
+          "name": "wechat_connect_attempts_owner_idx",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.wechat_connections": {
+      "name": "wechat_connections",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sender_id": {
+          "name": "sender_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bot_id": {
+          "name": "bot_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "generation": {
+          "name": "generation",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "base_url": {
+          "name": "base_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_ciphertext": {
+          "name": "token_ciphertext",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "updates_cursor": {
+          "name": "updates_cursor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "pending_batch_ciphertext": {
+          "name": "pending_batch_ciphertext",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "wechat_connections_owner_idx": {
+          "name": "wechat_connections_owner_idx",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "wechat_connections_sender_idx": {
+          "name": "wechat_connections_sender_idx",
+          "columns": [
+            {
+              "expression": "sender_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.workflow_schedule_skips": {

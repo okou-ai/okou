@@ -15,7 +15,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { resolveImmutableDedupeInsert } from "../../lib/immutable-dedupe-insert";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import {
   AutomationEventSourceTiming,
@@ -68,8 +68,6 @@ export interface GithubWorkflowRunEventPayload {
   };
   readonly sender: GithubUser;
 }
-
-type GithubInstallationRecord = typeof githubInstallations.$inferSelect;
 
 interface GithubWorkflowRunAutomationRow {
   readonly automation: AutomationRow;
@@ -124,23 +122,6 @@ function workflowRunMatchesConfig(args: {
       run.actor ? [run.actor.login, String(run.actor.id)] : [],
     )
   );
-}
-
-async function findActiveInstallation(args: {
-  readonly db: ReadonlyDb;
-  readonly ghInstallationId: string;
-}): Promise<GithubInstallationRecord | null> {
-  const [installation] = await args.db
-    .select()
-    .from(githubInstallations)
-    .where(
-      and(
-        eq(githubInstallations.installationId, args.ghInstallationId),
-        eq(githubInstallations.status, "active"),
-      ),
-    )
-    .limit(1);
-  return installation ?? null;
 }
 
 const loadGithubWorkflowRunAutomations$ = command(
@@ -235,30 +216,22 @@ const loadGithubWorkflowRunAutomations$ = command(
   },
 );
 
-async function recordProcessedDelivery(args: {
-  readonly db: Db;
-  readonly automation: GithubWorkflowRunAutomationRow;
-  readonly deliveryId: string;
-  readonly payload: GithubWorkflowRunEventPayload;
-}): Promise<string | null> {
-  const row = resolveImmutableDedupeInsert(
-    await settle(
-      args.db
-        .insert(workflowGithubProcessedEvents)
-        .values({
-          automationId: args.automation.automation.id,
-          githubDeliveryId: args.deliveryId,
-          repo: args.payload.repository.full_name,
-          subjectType: null,
-          subjectNumber: null,
-          action: args.payload.action,
-          labelNameNormalized: null,
-          createdAt: nowDate(),
-        })
-        .returning({ id: workflowGithubProcessedEvents.id }),
-    ),
-  );
-  return row?.id ?? null;
+function processedDeliveryValues(
+  automation: GithubWorkflowRunAutomationRow,
+  args: {
+    readonly deliveryId: string;
+    readonly payload: GithubWorkflowRunEventPayload;
+  },
+) {
+  return {
+    automationId: automation.automation.id,
+    githubDeliveryId: args.deliveryId,
+    repo: args.payload.repository.full_name,
+    subjectType: null,
+    subjectNumber: null,
+    action: args.payload.action,
+    labelNameNormalized: null,
+  };
 }
 
 function githubWorkflowRunTriggerContext(args: {
@@ -378,10 +351,18 @@ export const dispatchGithubWorkflowRunAutomations$ = command(
     const installation = await sourceTiming.measure(
       "api_dispatch_pre_create_agent_automation_event_load_source_state",
       async () => {
-        return await findActiveInstallation({
-          db,
-          ghInstallationId: String(args.payload.installation.id),
-        });
+        const ghInstallationId = String(args.payload.installation.id);
+        const [installation] = await db
+          .select()
+          .from(githubInstallations)
+          .where(
+            and(
+              eq(githubInstallations.installationId, ghInstallationId),
+              eq(githubInstallations.status, "active"),
+            ),
+          )
+          .limit(1);
+        return installation ?? null;
       },
     );
     signal.throwIfAborted();
@@ -428,12 +409,18 @@ export const dispatchGithubWorkflowRunAutomations$ = command(
       const processedId = await runTiming.measure(
         "api_dispatch_pre_create_agent_automation_event_record_processed_event",
         async () => {
-          return await recordProcessedDelivery({
-            db,
-            automation,
-            deliveryId: args.deliveryId,
-            payload: args.payload,
-          });
+          const row = resolveImmutableDedupeInsert(
+            await settle(
+              db
+                .insert(workflowGithubProcessedEvents)
+                .values({
+                  ...processedDeliveryValues(automation, args),
+                  createdAt: nowDate(),
+                })
+                .returning({ id: workflowGithubProcessedEvents.id }),
+            ),
+          );
+          return row?.id ?? null;
         },
       );
       signal.throwIfAborted();

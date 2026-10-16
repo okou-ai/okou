@@ -21,6 +21,10 @@ import {
 } from "@okouai/core/google-slides-conversion";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/runtime/connector-catalog";
+import {
   hostedDeployments,
   privateHostedDeployments,
 } from "@okouai/db/runtime/hosted-site";
@@ -67,7 +71,11 @@ import {
 
 import { runOwnedChatEventForRunCondition } from "./chat-event-type.service";
 import type { ConnectorRuntimeAuthLookup } from "./connector-catalog-runtime.service";
-import { loadConnectorRuntimeAuthSelection } from "./connector-catalog-slug-source.service";
+import {
+  connectorCatalogCurrentWhere,
+  connectorRuntimeAuthSelectionReadPlan,
+  connectorRuntimeAuthSelectionFromRows,
+} from "./connector-catalog-slug-source.service";
 import { userFeatureSwitchOverrides } from "./feature-switches.service";
 import { resolveArtifactFileReference$ } from "./private-artifact-storage.service";
 import { uploadedArtifactObject$ } from "./uploaded-artifact.service";
@@ -576,9 +584,19 @@ export function googleDriveArtifactStatusLookup(args: {
       userId: args.userId,
       overrides: featureSwitchOverrides,
     };
-    const snapshot = await loadConnectorRuntimeAuthSelection(set(writeDb$), {
+    const catalogDb = set(writeDb$);
+    const catalogPlan = connectorRuntimeAuthSelectionReadPlan({
       connectorSlugs: ["google-drive"],
     });
+    const snapshot = connectorRuntimeAuthSelectionFromRows(
+      await catalogDb
+        .select(catalogPlan.columns)
+        .from(connectorCatalog)
+        .leftJoin(connectorCatalogEntries, catalogPlan.join)
+        .where(connectorCatalogCurrentWhere()),
+      catalogPlan.requestedConnectorSlugs,
+      catalogPlan.firewallConnectorSlugs,
+    );
     signal.throwIfAborted();
     const connection = await set(
       loadDriveConnection$,
@@ -1710,9 +1728,19 @@ export const syncArtifactToGoogleDrive$ = command(
     } else {
       accountSelector = { threadId: args.threadId };
     }
-    const snapshot = await loadConnectorRuntimeAuthSelection(set(writeDb$), {
+    const catalogDb = set(writeDb$);
+    const catalogPlan = connectorRuntimeAuthSelectionReadPlan({
       connectorSlugs: ["google-drive"],
     });
+    const snapshot = connectorRuntimeAuthSelectionFromRows(
+      await catalogDb
+        .select(catalogPlan.columns)
+        .from(connectorCatalog)
+        .leftJoin(connectorCatalogEntries, catalogPlan.join)
+        .where(connectorCatalogCurrentWhere()),
+      catalogPlan.requestedConnectorSlugs,
+      catalogPlan.firewallConnectorSlugs,
+    );
     signal.throwIfAborted();
     const connection = await set(
       loadDriveConnection$,

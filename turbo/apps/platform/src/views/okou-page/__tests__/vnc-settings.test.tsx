@@ -199,6 +199,112 @@ async function openAddHostPage() {
   );
 }
 
+test.each(["cloudflare_access", "direct"] as const)(
+  "Prepared %s RFB and native KDC routes preserve identity and cannot be converted by the legacy editor",
+  async (rfbTransport) => {
+    const native: VncConnectionResponse = {
+      ...host,
+      displayName: "Native desktop",
+      transport:
+        rfbTransport === "direct"
+          ? { type: "direct" }
+          : {
+              type: "cloudflare_access",
+              configId: host.id,
+              originTls: {
+                serverName: "origin.example.com",
+                trust: { mode: "custom_ca", caBundle: "ORIGIN_CA" },
+              },
+            },
+      kerberosAuthentication: "qemu_kerberos_password",
+      security: {
+        type: "qemu_x509_gssapi",
+        serverName: "rfb.example.com",
+        trust: { mode: "system" },
+        service: { realm: "EXAMPLE.COM", components: ["vnc", "desktop"] },
+        kdc: {
+          host: "kdc.tailnet",
+          port: 88,
+          transport: { type: "tailscale", needsRebind: true },
+          ticketLifetimeSeconds: 1200,
+          renewableLifetimeSeconds: 7200,
+        },
+      },
+    };
+    mockSettings({ connections: [native] });
+    await page();
+    const title = await screen.findByRole("heading", {
+      name: "Native desktop",
+    });
+    const card = title.closest("article");
+    expect(card).not.toBeNull();
+    if (!card) {
+      throw new Error("Missing host card");
+    }
+    expect(within(card).queryAllByText("Cloudflare Access")).toHaveLength(
+      rfbTransport === "cloudflare_access" ? 1 : 0,
+    );
+    expect(
+      within(card).queryAllByText(/Origin TLS: origin.example.com/),
+    ).toHaveLength(rfbTransport === "cloudflare_access" ? 1 : 0);
+    expect(within(card).queryAllByText("Direct from Runner")).toHaveLength(
+      rfbTransport === "direct" ? 1 : 0,
+    );
+    expect(within(card).getByText("Tailscale")).toBeInTheDocument();
+    expect(
+      within(card).getByText("rfb.example.com", { exact: false }),
+    ).toBeInTheDocument();
+    expect(
+      within(card).getByText(/needs a new configuration/),
+    ).toBeInTheDocument();
+    expect(getAction("button", "Edit host", card)).toBeDisabled();
+    expect(getAction("button", "Delete host", card)).toBeEnabled();
+  },
+);
+
+test("A conflict cannot reapply a Direct draft over a newly native saved route", async () => {
+  const data = mockSettings();
+  const requests: unknown[] = [];
+  context.mocks.api(vncConnectionsContract.update, ({ body, respond }) => {
+    requests.push(body);
+    data.connections = [
+      {
+        ...host,
+        generation: 5,
+        transport: { type: "tailscale", configId: host.id },
+      },
+    ];
+    return respond(409, {
+      error: { code: "VNC_GENERATION_CONFLICT", message: "Changed route" },
+    });
+  });
+  await page();
+  await screen.findByText(host.displayName);
+  click(getAction("button", "Edit host"));
+  const dialog = await screen.findByRole("dialog", { name: "Edit host" });
+  await fill(within(dialog).getByLabelText("Display name"), "Preserved draft");
+  click(getAction("button", "Save", dialog));
+  const review = await within(dialog).findByRole("region", {
+    name: "Current saved details",
+  });
+  await expect(
+    within(review).findByText("Tailscale"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    within(review).getByText(
+      "Editing this private-network route is not available yet.",
+    ),
+  ).toBeInTheDocument();
+  expect(
+    getAction("button", "Keep my changes with this version", review),
+  ).toBeDisabled();
+  expect(getAction("button", "Save", dialog)).toBeDisabled();
+  expect(within(dialog).getByLabelText("Display name")).toHaveValue(
+    "Preserved draft",
+  );
+  expect(requests).toHaveLength(1);
+});
+
 test("VNC settings show a current-generation failure and its observation time", async () => {
   mockSettings();
   let failed = true;
@@ -2064,7 +2170,7 @@ test("Mac classic password is an explicit SSH-only profile with risk disclosure 
   ]);
 });
 
-test.each([
+const appleHostProfiles = [
   {
     profile: "apple_dh" as const,
     method: "apple_dh_username_password" as const,
@@ -2086,19 +2192,29 @@ test.each([
     usernameMaxLength: 234,
     usernameHelp: /1–234 UTF-8 bytes/u,
   },
-])(
-  "$label host editor requires SSH loopback and omits X509 trust",
-  async ({ profile, method, label, usernameMaxLength, usernameHelp }) => {
+] as const;
+
+test.each(appleHostProfiles)(
+  "$label saves SSH loopback selection without X509 trust",
+  async ({ profile, method, label }) => {
+    const appleCredential: VncCredentialResponse = {
+      ...credential,
+      name: "Mac login",
+      authMethod: method,
+      username: "operator",
+      hosts: [],
+    };
     mockSettings({
       connections: [],
-      credentials: [],
+      credentials: [appleCredential],
       sshConnections: [sshHost],
     });
     const requests: unknown[] = [];
     const appleHost: CredentialedVncConnection = {
       ...host,
       host: "127.0.0.1",
-      credentialName: "Mac login",
+      credentialId: appleCredential.id,
+      credentialName: appleCredential.name,
       security: { type: profile },
       transport: { type: "ssh", connectionId: sshHost.id },
     };
@@ -2133,6 +2249,61 @@ test.each([
     await choose(dialog, "RFB destination host", "::1");
     expect(destination).toHaveTextContent("::1");
     await choose(dialog, "RFB destination host", "127.0.0.1");
+    expect(destination).toHaveTextContent("127.0.0.1");
+    await choose(dialog, "Credential", appleCredential.name);
+    click(getAction("button", "Save", dialog));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(requests).toStrictEqual([
+      {
+        id: expect.any(String),
+        displayName: "Mac Screen Sharing",
+        host: "127.0.0.1",
+        port: 5900,
+        transport: { type: "ssh", connectionId: sshHost.id },
+        credential: { id: appleCredential.id },
+        security: { type: profile },
+      },
+    ]);
+  },
+);
+
+test.each(appleHostProfiles)(
+  "$label creates credentials with its username limits",
+  async ({ profile, method, label, usernameMaxLength, usernameHelp }) => {
+    mockSettings({
+      connections: [],
+      credentials: [],
+      sshConnections: [sshHost],
+    });
+    const requests: unknown[] = [];
+    const appleHost: CredentialedVncConnection = {
+      ...host,
+      host: "127.0.0.1",
+      credentialName: "Mac login",
+      security: { type: profile },
+      transport: { type: "ssh", connectionId: sshHost.id },
+    };
+    context.mocks.api(vncConnectionsContract.create, ({ body, respond }) => {
+      requests.push(body);
+      return respond(201, appleHost);
+    });
+    await openAddHostPage();
+    const dialog = await screen.findByRole("dialog", { name: "Add host" });
+    await choose(dialog, "Security profile", label);
+    await choose(
+      dialog,
+      "SSH host",
+      "Desktop gateway · gateway.example.com:22",
+    );
+    await fill(
+      within(dialog).getByLabelText("Display name"),
+      "Mac Screen Sharing",
+    );
+    expect(
+      within(dialog).getByLabelText("RFB destination host"),
+    ).toHaveTextContent("127.0.0.1");
     await choose(dialog, "Credential", "Create new credential");
     await fill(within(dialog).getByLabelText("Credential name"), "Mac login");
     const usernameField = within(dialog).getByLabelText("Username");

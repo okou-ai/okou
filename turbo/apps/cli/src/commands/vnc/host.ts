@@ -6,6 +6,7 @@ import {
   deleteConfiguredVncHost,
   listConfiguredVncHosts,
   updateConfiguredVncHost,
+  vncRouteMetadataSchema,
 } from "../../lib/api/domains/vnc-management";
 import { handleManagementError } from "../../lib/management-input";
 import {
@@ -116,6 +117,13 @@ export function createVncHostCommand(): Command {
                         port: host.port,
                         authMethod: host.authMethod,
                         securityType: host.securityType,
+                        ...(host.transport
+                          ? {
+                              transport: vncRouteMetadataSchema.parse(
+                                host.transport,
+                              ),
+                            }
+                          : {}),
                         availability:
                           host.availability.status === "ready"
                             ? { status: "ready" }
@@ -135,7 +143,10 @@ export function createVncHostCommand(): Command {
               for (const host of result.body.hosts) {
                 const availability =
                   host.availability.status === "blocked"
-                    ? "blocked: needs_rebind (ask the owner to rebind the underlying SSH host to Cloudflare Access or explicitly choose Direct in SSH settings)"
+                    ? host.transport?.type === "cloudflare_access" ||
+                      host.transport?.type === "tailscale"
+                      ? "blocked: needs_rebind (ask the owner to rebind the saved VNC route; no automatic Direct fallback)"
+                      : "blocked: needs_rebind (ask the owner to rebind the underlying SSH host to Cloudflare Access or explicitly choose Direct in SSH settings)"
                     : "ready to attempt (connectivity not checked)";
                 console.log(
                   `${host.id}  ${host.displayName}  ${host.host}:${host.port}  ${host.authMethod} / ${host.securityType}  ${availability}`,

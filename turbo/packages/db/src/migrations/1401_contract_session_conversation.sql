@@ -2,8 +2,18 @@
 -- Run/Memory retain their own history references. Dropping these old mirrors
 -- must not decrement blob counters or delete retained Runs and Chat messages.
 -- All checks run before DDL. There is no bulk backfill under the DDL locks.
+-- Cold production clones can need more than 10s for the native-facts scan.
+-- This read-only budget must not extend into the AccessExclusive phase.
+SET LOCAL statement_timeout = '60s';
+--> statement-breakpoint
 DO $$
 BEGIN
+  -- PostgreSQL 17+ arms an inactive transaction timer when SET LOCAL enables
+  -- it below. An inherited active timer would not restart at the DDL boundary.
+  IF current_setting('transaction_timeout', true) IS DISTINCT FROM '0' THEN
+    RAISE EXCEPTION 'Session/Conversation contraction requires PostgreSQL 17+ with transaction_timeout initially disabled';
+  END IF;
+
   IF EXISTS (
     SELECT 1 FROM agent_runs
     WHERE status IN ('pending', 'running')
@@ -11,14 +21,22 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'Session/Conversation contraction requires legacy Run drain';
   END IF;
-
+END;
+$$;
+--> statement-breakpoint
+DO $$
+BEGIN
   IF EXISTS (
     SELECT 1 FROM conversations c JOIN agent_runs r ON r.id = c.run_id
     WHERE r.framework IS NULL OR r.framework_session_id IS NULL
   ) THEN
     RAISE EXCEPTION 'Session/Conversation native facts were not transferred to Run';
   END IF;
-
+END;
+$$;
+--> statement-breakpoint
+DO $$
+BEGIN
   IF EXISTS (
     SELECT 1 FROM pg_catalog.pg_class
     WHERE oid IN ('public.agent_sessions'::regclass, 'public.conversations'::regclass,
@@ -73,6 +91,15 @@ BEGIN
   END IF;
 END;
 $$;
+--> statement-breakpoint
+SET LOCAL statement_timeout = '10s';
+--> statement-breakpoint
+SET LOCAL lock_timeout = '100ms';
+--> statement-breakpoint
+-- Bound the whole remaining transaction, including later lock waits, client
+-- gaps and the runner's journal INSERT. Timeout terminates this connection and
+-- rolls back uncommitted DDL; lock release still includes abort cleanup.
+SET LOCAL transaction_timeout = '2s';
 --> statement-breakpoint
 ALTER TABLE "agent_runs" DROP CONSTRAINT "agent_runs_session_id_agent_sessions_id_fk";
 --> statement-breakpoint

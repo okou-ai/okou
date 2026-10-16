@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { createDiagnoseCommand } from "../../lib/remote-diagnostics";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { createVncHostCommand } from "./host";
 import { createVncCredentialCommand } from "./credential";
@@ -158,6 +159,7 @@ VNC requires the host to be enabled for this chat (an SSH-backed host also needs
     .addCommand(createVncHostCommand())
     .addCommand(createVncCredentialCommand())
     .addCommand(createSessionCommand());
+  vnc.addCommand(createDiagnoseCommand("vnc"));
 
   vnc.addCommand(
     new Command("screenshot")

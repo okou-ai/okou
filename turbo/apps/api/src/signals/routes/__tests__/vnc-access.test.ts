@@ -103,7 +103,7 @@ describe("live chat VNC Run inventory", () => {
   });
 
   it("advertises the exact client-certificate profile without revealing private material", async () => {
-    useSecretKmsProbe();
+    const kms = useSecretKmsProbe();
     const f = await claimed.fixture({
       defaultEnabled: false,
     });
@@ -157,6 +157,27 @@ describe("live chat VNC Run inventory", () => {
     });
     expect(JSON.stringify(result.body)).not.toContain(privateKey);
     expect(JSON.stringify(result.body)).not.toContain("certificateChain");
+    expect(result.body).not.toHaveProperty("diagnostics");
+    const decryptsBeforeQuery = kms.decryptCalls;
+    const diagnostic = await accept(
+      inventory().list({
+        headers: claimed.agentHeaders(f),
+        query: { diagnostics: "1" },
+      }),
+      [200],
+    );
+    expect(diagnostic.body.diagnostics).toMatchObject({
+      version: 1,
+      identities: [
+        { id: created.body.id, generation: created.body.generation },
+      ],
+    });
+    expect(diagnostic.body.diagnostics?.identities[0]?.createdAt).toMatch(
+      /\.\d{6}Z$/,
+    );
+    expect(JSON.stringify(diagnostic.body)).not.toContain(privateKey);
+    expect(JSON.stringify(diagnostic.body)).not.toContain("certificateChain");
+    expect(kms.decryptCalls).toBe(decryptsBeforeQuery);
   });
 
   it("lists the owner-selected QEMU SCRAM pair without exposing its password", async () => {

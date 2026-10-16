@@ -1,29 +1,9 @@
-import { githubInstallations } from "@okouai/db/schema/github-installation";
-import { and, eq } from "drizzle-orm";
+import type { githubInstallations } from "@okouai/db/schema/github-installation";
 
 import { optionalEnv } from "../../lib/env";
-import type { ReadonlyDb } from "../external/db";
 import { getGithubInstallationAccessToken } from "./github-app.service";
 
 type ActiveGithubInstallation = typeof githubInstallations.$inferSelect;
-
-export async function loadActiveGithubInstallationForOrg(args: {
-  readonly db: ReadonlyDb;
-  readonly orgId: string;
-}): Promise<ActiveGithubInstallation | null> {
-  const [installation] = await args.db
-    .select()
-    .from(githubInstallations)
-    .where(
-      and(
-        eq(githubInstallations.orgId, args.orgId),
-        eq(githubInstallations.status, "active"),
-      ),
-    )
-    .limit(1);
-
-  return installation ?? null;
-}
 
 export async function getGithubIntegrationAccessToken(
   args: {

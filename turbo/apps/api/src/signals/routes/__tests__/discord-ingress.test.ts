@@ -740,6 +740,214 @@ describe("canonical Discord ingress", () => {
     expect(run.appendSystemPrompt).toContain("MESSAGE_CONTENT is unavailable");
   });
 
+  it.each(["thread", "dm"] as const)(
+    "publishes one owned %s and created event for concurrent distinct messages on the same physical key",
+    async (kind) => {
+      const actor = await connected();
+      const provider = mockDiscordProvider(actor);
+      const chat = createChatFilesBddApi(context);
+      const before = await chat.getThreadSnapshot(actor.actor);
+      const channelId =
+        kind === "dm"
+          ? provider.dmChannelId
+          : provider.createThread(uniqueDiscordSnowflake()).id;
+      const messages = [
+        "first concurrent input",
+        "second concurrent input",
+      ].map((text) => {
+        const message = discordMessageForTest(actor, {
+          channelId,
+          guild: kind !== "dm",
+          content: kind === "dm" ? text : `<@${actor.botUserId}> ${text}`,
+        });
+        provider.messages.set(message.id, message);
+        return message;
+      });
+      const receipts = await Promise.all(
+        messages.map((message) => {
+          return postDiscordMessage(context, message);
+        }),
+      );
+      expect(
+        receipts.map((receipt) => {
+          return receipt.body.outcome;
+        }),
+      ).toStrictEqual(["accepted", "accepted"]);
+      await flushWaitUntilForTest();
+      const threads = await discordChatThreads(context, actor);
+      expect(threads).toHaveLength(1);
+      const [thread] = threads;
+      if (!thread) {
+        throw new Error("Expected one canonical Discord thread");
+      }
+      const inputs = currentInputs(await events(actor, thread.id));
+      expect(inputs).toHaveLength(2);
+      expect(
+        inputs.map((input) => {
+          return input.userMessage.parts;
+        }),
+      ).toStrictEqual(
+        expect.arrayContaining([
+          expect.arrayContaining([
+            {
+              type: "text",
+              text:
+                kind === "dm"
+                  ? "first concurrent input"
+                  : "@Okou first concurrent input",
+            },
+          ]),
+          expect.arrayContaining([
+            {
+              type: "text",
+              text:
+                kind === "dm"
+                  ? "second concurrent input"
+                  : "@Okou second concurrent input",
+            },
+          ]),
+        ]),
+      );
+      const lifecycle = await chat.requestThreadEvents(
+        actor.actor,
+        before.latestSeqId === null ? {} : { sinceSeqId: before.latestSeqId },
+        [200],
+      );
+      if (lifecycle.status !== 200) {
+        throw new Error("Expected current lifecycle events");
+      }
+      expect(lifecycle.body.hasMore).toBeFalsy();
+      const created = lifecycle.body.events.filter((event) => {
+        return event.kind === "created";
+      });
+      expect(created).toHaveLength(1);
+      expect(created[0]).toMatchObject({
+        chatThreadId: thread.id,
+        agentId: actor.defaultAgentId,
+        selectedModel: thread.selectedModel,
+        modelSettings: thread.modelSettings,
+        cloudBrowserEnabled: thread.cloudBrowserEnabled,
+      });
+      const sequence = lifecycle.body.events.map((event) => {
+        return event.seqId;
+      });
+      expect(sequence).toStrictEqual(
+        [...new Set(sequence)].sort((left, right) => {
+          return left - right;
+        }),
+      );
+      const replays = await Promise.all(
+        messages.map((message) => {
+          return postDiscordMessage(context, message, `replayed:${message.id}`);
+        }),
+      );
+      expect(
+        replays.map((receipt) => {
+          return receipt.body.outcome;
+        }),
+      ).toStrictEqual(["duplicate", "duplicate"]);
+      await flushWaitUntilForTest();
+      expect(
+        currentInputs(await events(actor, thread.id))
+          .map((input) => {
+            return input.id;
+          })
+          .sort(),
+      ).toStrictEqual(
+        inputs
+          .map((input) => {
+            return input.id;
+          })
+          .sort(),
+      );
+      const afterReplay = await chat.requestThreadEvents(
+        actor.actor,
+        before.latestSeqId === null ? {} : { sinceSeqId: before.latestSeqId },
+        [200],
+      );
+      if (afterReplay.status !== 200) {
+        throw new Error("Expected current lifecycle events after replay");
+      }
+      expect(
+        afterReplay.body.events.filter((event) => {
+          return event.kind === "created";
+        }),
+      ).toStrictEqual(created);
+      expect(
+        (await discordChatThreads(context, actor)).map((entry) => {
+          return entry.id;
+        }),
+      ).toStrictEqual([thread.id]);
+    },
+  );
+
+  it("keeps deleted DM receipts consumed while a new message creates a new owned chat", async () => {
+    const actor = await connected();
+    const provider = mockDiscordProvider(actor);
+    const chat = createChatFilesBddApi(context);
+    const message = discordMessageForTest(actor, {
+      channelId: provider.dmChannelId,
+      guild: false,
+      content: "remember this message identity",
+    });
+    provider.messages.set(message.id, message);
+    expect((await postDiscordMessage(context, message)).body.outcome).toBe(
+      "accepted",
+    );
+    await flushWaitUntilForTest();
+    const [thread] = await discordChatThreads(context, actor);
+    if (!thread) {
+      throw new Error("Expected original canonical DM thread");
+    }
+    await chat.deleteThread(actor.actor, thread.id);
+    await chat.requestReadThreadMetadata(actor.actor, thread.id, [404]);
+    expect(
+      (await postDiscordMessage(context, message, `after-delete:${message.id}`))
+        .body.outcome,
+    ).toBe("duplicate");
+    await flushWaitUntilForTest();
+    await expect(discordChatThreads(context, actor)).resolves.toHaveLength(0);
+    const next = discordMessageForTest(actor, {
+      channelId: provider.dmChannelId,
+      guild: false,
+      content: "start a new conversation after deletion",
+    });
+    provider.messages.set(next.id, next);
+    expect((await postDiscordMessage(context, next)).body.outcome).toBe(
+      "accepted",
+    );
+    await flushWaitUntilForTest();
+    const threads = await discordChatThreads(context, actor);
+    expect(threads).toHaveLength(1);
+    const [replacement] = threads;
+    if (!replacement) {
+      throw new Error("Expected replacement canonical DM thread");
+    }
+    expect(replacement.id).not.toBe(thread.id);
+    const inputs = currentInputs(await events(actor, replacement.id));
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]?.userMessage.parts).toContainEqual({
+      type: "text",
+      text: "start a new conversation after deletion",
+    });
+    const lifecycle = await chat.requestThreadEvents(actor.actor, {}, [200]);
+    if (lifecycle.status !== 200) {
+      throw new Error("Expected DM lifecycle events");
+    }
+    expect(lifecycle.body.events).toContainEqual(
+      expect.objectContaining({ kind: "deleted", chatThreadId: thread.id }),
+    );
+    expect(
+      lifecycle.body.events
+        .filter((event) => {
+          return event.kind === "created";
+        })
+        .map((event) => {
+          return event.chatThreadId;
+        }),
+    ).toStrictEqual([thread.id, replacement.id]);
+  });
+
   it("tells a Discord run how its final reply and files reach Discord", async () => {
     const actor = await connected();
     const provider = mockDiscordProvider(actor);

@@ -116,9 +116,9 @@ client.on("error", (error: unknown) => {
   parentOccurrences.push({ stage: "native error event", error });
   rejectParentError(error);
 });
-let parentBegun = false;
 let parentOwned = false;
 let parentSearchPath: string | undefined;
+let parentPathChangeAttempted = false;
 
 async function snapshot(table: "org_metadata" | "org_plan_entitlements") {
   const result = await client.query<{ value: Record<string, unknown> }>(
@@ -148,14 +148,12 @@ try {
   const namespaces = await client.query(namespaceSql, [schema]);
   observeNativeErrors(parentOccurrences);
   assert.equal(namespaces.rowCount, 0);
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0394; new non-billing transactions are prohibited.
-  await client.query("BEGIN");
-  parentBegun = true;
-  observeNativeErrors(parentOccurrences);
   await client.query(`CREATE SCHEMA "${schema}"`);
+  // Only the successful CREATE ACK grants ownership; never adopt a collision.
   parentOwned = true;
   observeNativeErrors(parentOccurrences);
-  await client.query(`SET LOCAL search_path TO "${schema}"`);
+  parentPathChangeAttempted = true;
+  await client.query("SELECT set_config('search_path', $1, false)", [schema]);
   observeNativeErrors(parentOccurrences);
   await client.query(base);
   observeNativeErrors(parentOccurrences);
@@ -452,28 +450,33 @@ try {
 } catch (error) {
   parentOccurrences.push({ stage: "validation", error });
 } finally {
-  if (parentBegun) {
-    try {
-      await client.query("ROLLBACK");
-    } catch (error) {
-      parentOccurrences.push({ stage: "rollback", error });
-    }
-  }
   if (parentOwned) {
+    try {
+      await client.query(`DROP SCHEMA "${schema}" CASCADE`);
+    } catch (error) {
+      parentOccurrences.push({ stage: "drop", error });
+    }
     try {
       assert.equal((await client.query(namespaceSql, [schema])).rowCount, 0);
     } catch (error) {
-      parentOccurrences.push({ stage: "absence after rollback", error });
+      parentOccurrences.push({ stage: "absence", error });
     }
   }
-  if (parentSearchPath !== undefined) {
+  if (parentPathChangeAttempted && parentSearchPath !== undefined) {
+    try {
+      await client.query("SELECT set_config('search_path', $1, false)", [
+        parentSearchPath,
+      ]);
+    } catch (error) {
+      parentOccurrences.push({ stage: "restore search_path", error });
+    }
     try {
       assert.deepEqual((await client.query("SHOW search_path")).rows, [
         { search_path: parentSearchPath },
       ]);
     } catch (error) {
       parentOccurrences.push({
-        stage: "verify search_path after rollback",
+        stage: "verify search_path",
         error,
       });
     }

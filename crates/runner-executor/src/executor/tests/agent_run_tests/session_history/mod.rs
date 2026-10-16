@@ -1,3 +1,4 @@
+mod completion;
 mod final_identity;
 mod materialization;
 mod readiness;

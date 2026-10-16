@@ -23,6 +23,11 @@ export function getTriggerSourceLabel(
         return $.activity.sources.web;
       });
     }
+    case "wechat": {
+      return i18n.t(($) => {
+        return $.activity.sources.wechat;
+      });
+    }
     case "discord": {
       return i18n.t(($) => {
         return $.activity.sources.discord;
