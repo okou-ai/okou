@@ -67,8 +67,10 @@ impl LocalQueueWatcher {
         desired_paths.dedup();
         let inotify = Inotify::init(InitFlags::IN_CLOEXEC | InitFlags::IN_NONBLOCK)
             .map_err(|error| watcher_error("initialize", error))?;
-        let inotify = AsyncFd::new(AsyncInotify(inotify))
-            .map_err(|error| watcher_io_error("register descriptor", error.kind()))?;
+        // SAFETY: AsyncInotify owns inotify and exposes the same live descriptor until drop.
+        let inotify = unsafe { AsyncFd::register(AsyncInotify(inotify)) }.map_err(|error| {
+            watcher_io_error("register descriptor", std::io::Error::from(error).kind())
+        })?;
         Ok(Self {
             inotify,
             desired_paths,

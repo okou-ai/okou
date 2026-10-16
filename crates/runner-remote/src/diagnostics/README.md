@@ -28,6 +28,30 @@ close do not create failures. Existing business/byte/truncation/EOF/helper-exit
 and local file-publication checks remain authoritative. Lost or corrupt delivery
 never supplies a trusted explanation and never replays work.
 
+## Automatic VNC explanations
+
+Ordinary VNC failures can carry the same optional `diagnostic_text` as SSH.
+Runner captures early admission/configuration, selected destination/transport,
+RFB authentication/initialization and independent KDC stages in owned finite
+snapshots. Existing RFB deadline and Apple DH categories remain available.
+Nested SSH trust/carrier/native evidence keeps its exact dependency identity;
+KDC failure identifies the independent route rather than the RFB data route.
+
+Each delivered explanation uses that operation's committed report. Retained
+sessions keep pure setup/source facts and latch their first terminal cause and
+time independently of subsequent operation report IDs. Later operations and
+successful connections cannot substitute another report's context.
+Intentional close, stale geometry and input validation do not create retained
+network failures. Setup evidence on a later session operation is marked reused.
+
+An interrupted capture can attach text to the existing error terminal without
+End or a completed image. Binary framing, EOF/exit verification, PNG publication,
+input outcome and delivery uncertainty remain authoritative. CLI only validates
+text size/terminal safety and forwards it in human/JSON output. Missing or unsafe
+optional text cannot replace a verified result; no diagnosis query or action is
+replayed automatically. Collection uses the same default-off switch and current
+assignment/host/dependency authority as passive history.
+
 ## Same-Run passive history
 
 `ssh.diagnose` and `vnc.diagnose` accept optional exact UUID `connectionId`,

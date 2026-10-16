@@ -130,8 +130,8 @@ export async function setupOverflowResources(
   count: number,
   options: { readonly paginated?: boolean; readonly withLinks?: boolean } = {},
 ) {
-  installResourceGeometry(480);
-  context.mocks.browser.matchMedia(true);
+  const resize = installResourceGeometry(480);
+  const media = context.mocks.browser.matchMedia(true);
   const catalog = Array.from({ length: count }, (_, index) => {
     return artifactSummary(
       `e0000000-0000-4000-a000-${String(index + 1).padStart(12, "0")}`,
@@ -186,5 +186,5 @@ export async function setupOverflowResources(
   await within(panel).findByText(
     options.withLinks === false ? "report-1.pdf" : "Reference 1",
   );
-  return panel;
+  return { panel, media, resize };
 }

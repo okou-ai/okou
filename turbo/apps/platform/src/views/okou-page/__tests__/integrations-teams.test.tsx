@@ -27,7 +27,7 @@ function status(
   };
 }
 
-test.each(["focus", "visibility", "manual", "realtime"])(
+test.each(["focus", "visibility", "realtime"])(
   "Works reconciles Teams through %s without leaving its prompt",
   async (trigger) => {
     let current = status();
@@ -57,9 +57,7 @@ test.each(["focus", "visibility", "manual", "realtime"])(
       teamName: "Verified team",
       connectUrl: null,
     });
-    if (trigger === "manual") {
-      click(getAction("button", "Refresh Teams status", card));
-    } else if (trigger === "focus") {
+    if (trigger === "focus") {
       act(() => {
         window.dispatchEvent(new Event("focus"));
       });
@@ -98,7 +96,7 @@ test("Works sends prepared installations to the canonical page and does not mark
   expect(window.location.pathname).toBe("/works");
 });
 
-test("Works retries a failed Teams read without hiding the other integrations", async () => {
+test("Returning to Works retries a failed Teams read without hiding the other integrations", async () => {
   let failed = true;
   context.mocks.api(teamsConnectContract.getStatus, ({ respond }) => {
     if (failed) {
@@ -111,7 +109,9 @@ test("Works retries a failed Teams read without hiding the other integrations", 
   expect(card).toHaveTextContent("Unable to check your Teams connection.");
   expect(getIntegrationCard("Slack")).toBeInTheDocument();
   failed = false;
-  click(getAction("button", "Refresh Teams status", card));
+  act(() => {
+    window.dispatchEvent(new Event("focus"));
+  });
   await waitFor(() => {
     return expect(getAction("button", "Install in Teams", card)).toBeEnabled();
   });
@@ -180,7 +180,7 @@ test("An overlapping focus refresh keeps later realtime notifications active", a
     expect(
       getAction(
         "button",
-        "Refresh Teams status",
+        "Install in Teams",
         getIntegrationCard("Microsoft Teams"),
       ),
     ).toBeEnabled();

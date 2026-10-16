@@ -160,7 +160,15 @@ These illustrate alternatives: a stream permits zero or more events followed by
 exactly one result OR error, then EOF. Data can be any opaque JSON value,
 including null. Error codes are `invalid_request`, `unknown_method`,
 `unavailable`, `protocol`, `transport`, `timed_out` and
-`resource_exhausted`. No arbitrary diagnostic string is allowed.
+`resource_exhausted`. An error may also carry optional `diagnostic_text`, at most
+8192 UTF-8 bytes, authored by the operation owner from its safe retained evidence.
+Transport preserves this opaque explanation without decoding its contents;
+consumers validate text size and terminal safety. It does not change the error
+code, delivery, completion, binary ordering or EOF requirements. Other arbitrary
+envelope fields remain invalid. Raw provider/peer errors and credentials must
+never be copied into the explanation.
+An unusable optional text value is omitted while preserving the verified error;
+it cannot replace that error with a transport failure.
 
 The helper emits events as single-line NDJSON. Only JSON whitespace outside
 strings is removed; raw numeric tokens, duplicate keys and escapes survive.

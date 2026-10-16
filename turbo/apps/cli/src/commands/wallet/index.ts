@@ -63,7 +63,7 @@ function renderSpend(value: WalletSpend, options: JsonOptions): void {
   console.log(`Merchant: ${value.merchantName}`);
   console.log(`Total: ${value.amount} ${value.currency.toUpperCase()} cents`);
   console.log(`Next action: ${value.nextAction}`);
-  if (value.createdAt) console.log(`Requested at: ${value.createdAt}`);
+  console.log(`Requested at: ${value.createdAt}`);
   if (value.payment)
     console.log(`Latest payment: ${JSON.stringify(value.payment)}`);
   if (value.paymentHistory)
@@ -216,9 +216,7 @@ export const walletCommand = new Command("wallet")
         withErrorHandler(async (options: JsonOptions) => {
           const value = await walletStatus();
           const nextAction =
-            value.connected &&
-            value.authorization &&
-            !value.authorization.capabilities.payments
+            value.connected && !value.authorization.capabilities.payments
               ? "read_wallet"
               : value.nextAction;
           console.log(
@@ -226,7 +224,7 @@ export const walletCommand = new Command("wallet")
               ? JSON.stringify(value)
               : `Link wallet: ${value.connected ? "connected" : "not connected"}. Next: ${nextAction}. Checkout unavailable.`,
           );
-          if (!options.json && value.authorization) {
+          if (!options.json) {
             console.log(
               `Granted scopes: ${value.authorization.scopes.join(", ") || "not recorded; reconnect or refresh to inspect"}`,
             );

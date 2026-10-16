@@ -193,9 +193,7 @@ export const walletSpendSchema = z.object({
   merchantUrl: z.url(),
   context: z.string(),
   test: z.boolean(),
-  // New CLI -> old API: require after pre-#40198 APIs are neither serving nor
-  // retained for rollback; remove the tolerance and its tests in #40206.
-  createdAt: z.iso.datetime().optional(),
+  createdAt: z.iso.datetime(),
   payment: walletPaymentSchema.nullable().optional(),
   paymentHistory: z.array(walletPaymentSchema).optional(),
   approvalUrl: z.url().nullable(),
@@ -294,23 +292,19 @@ export const walletContract = c.router({
         // Purchase readiness retains the enum understood by captured CLI builds.
         // Read availability is expressed by the additive authorization fields.
         nextAction: z.enum(["connect", "create_spend"]),
-        // New CLI -> old API: require after pre-#40198 APIs are neither serving
-        // nor retained for rollback; cleanup #40206 includes the CLI branch/tests.
-        authorization: z
-          .object({
-            known: z.boolean(),
-            scopes: z.array(z.string()),
-            sourceActions: z.array(z.string()),
-            capabilities: z.object({
-              payments: z.boolean(),
-              spendHistory: z.boolean(),
-              paymentMethods: z.boolean(),
-              userInfo: z.boolean(),
-              transactions: z.boolean(),
-            }),
-            missingPermissions: z.array(z.string()),
-          })
-          .optional(),
+        authorization: z.object({
+          known: z.boolean(),
+          scopes: z.array(z.string()),
+          sourceActions: z.array(z.string()),
+          capabilities: z.object({
+            payments: z.boolean(),
+            spendHistory: z.boolean(),
+            paymentMethods: z.boolean(),
+            userInfo: z.boolean(),
+            transactions: z.boolean(),
+          }),
+          missingPermissions: z.array(z.string()),
+        }),
         checkoutAvailable: z.literal(false),
       }),
       400: apiErrorSchema,

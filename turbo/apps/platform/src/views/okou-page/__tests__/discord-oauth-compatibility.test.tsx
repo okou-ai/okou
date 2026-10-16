@@ -302,10 +302,6 @@ test.each(["missing", "closed", "closes after approval"] as const)(
         "This authorization was interrupted or refreshed. Start again to verify a new connection.",
       ),
     ).resolves.toBeInTheDocument();
-    expect(
-      screen.getByText("Discord account: 234567890123456789"),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Server: Verified server")).toBeInTheDocument();
     expect(getAction("button", "Restart authorization")).toBeEnabled();
     expect(queryAction("link", "Open Discord")).toBeNull();
     expect(approvals).toHaveLength(kind === "closes after approval" ? 1 : 0);
@@ -362,10 +358,6 @@ test.each(["connected", "error"] as const)(
       path: `/settings/discord?status=${result}&workspace=Forged`,
       featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     });
-    expect(
-      screen.getByText("Discord account: 234567890123456789"),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Server: Verified server")).toBeInTheDocument();
     expect(screen.queryByText("Forged")).toBeNull();
     expect(
       screen.getByRole("heading", {

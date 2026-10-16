@@ -9,9 +9,11 @@ import { appendCapturedPreviewBypassToUrl } from "../../lib/preview-bypass-cooki
 import { accept } from "../../lib/accept.ts";
 import type { SlackOrgStatus } from "@okouai/api-contracts/contracts/integrations-slack";
 import { slackOrgData$, reloadSlackOrg$ } from "./slack.ts";
+import { authenticatedSessionKey$ } from "../auth.ts";
+import { settle } from "../utils.ts";
 
 const linkReload$ = state(0);
-export const reloadSlackConnectStatus$ = command(({ set }) => {
+const reloadSlackConnectStatus$ = command(({ set }) => {
   set(linkReload$, (value) => {
     return value + 1;
   });
@@ -95,12 +97,6 @@ export const effectiveError$ = computed((get) => {
   return params.get("error") ?? "";
 });
 
-// Every visit/reload reconciles authenticated state; a result marker is only a hint.
-export const initSlackConnectPage$ = command(({ set }, signal: AbortSignal) => {
-  signal.throwIfAborted();
-  set(reloadSlackConnectStatus$);
-});
-
 export const slackReturnUrl$ = computed((get) => {
   const params = get(searchParams$);
   const workspace = params.get("w");
@@ -114,6 +110,37 @@ export const slackReturnUrl$ = computed((get) => {
   }
   return url.toString();
 });
+
+// Reconcile authenticated state before returning to Slack, once per entry or retry.
+export const initSlackConnectPage$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const owner = get(authenticatedSessionKey$);
+    set(reloadSlackConnectStatus$);
+    const pending = get(slackConnectStatus$);
+    const result = await settle(pending, signal);
+    // The page owns read errors and retry; a failed or superseded read cannot launch Slack.
+    if (
+      !result.ok ||
+      !owner ||
+      get(authenticatedSessionKey$) !== owner ||
+      get(slackConnectStatus$) !== pending ||
+      get(effectiveError$)
+    ) {
+      return;
+    }
+    const status = result.value;
+    if (status.kind === "success") {
+      window.location.assign(get(slackReturnUrl$));
+    } else if (
+      status.kind === "overview" &&
+      status.data.isConnected &&
+      !status.data.scopeMismatch
+    ) {
+      window.location.assign("slack://open");
+    }
+  },
+);
 
 // Connect account
 export const connectSlackAccount$ = command(

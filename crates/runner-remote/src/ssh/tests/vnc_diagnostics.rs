@@ -48,6 +48,7 @@ async fn apple_dh_failure(stalled: bool) {
     .unwrap()
     .unwrap();
     h.restart_with_vnc(Arc::clone(&vnc)).await;
+    h.enable_diagnostics().await;
     let ssh_resolve = h.resolve(h.credential(true)).await;
     let vnc_resolve = h.api.mock_async(|when, then| {
         when.method("POST").path(format!("/api/runners/runs/{}/vnc/resolve", h.run));
@@ -86,10 +87,28 @@ async fn apple_dh_failure(stalled: bool) {
         );
     };
     let (reply, ()) = tokio::join!(request, peer);
+    let result = terminal(&reply);
+    assert_eq!(result["outcome"], "failed");
     assert_eq!(
-        terminal(&reply),
-        &json!({"outcome":"failed","reason":if stalled {"timed_out"} else {"protocol"}})
+        result["reason"],
+        if stalled { "timed_out" } else { "protocol" }
     );
+    let explanation = result["diagnostic_text"].as_str().unwrap();
+    assert!(explanation.contains("VNC RFB route: ssh"));
+    assert!(explanation.contains("VNC transport: passed"));
+    assert!(explanation.contains("VNC initialization: not reached"));
+    if stalled {
+        assert!(explanation.contains("VNC authentication: unknown"));
+        assert!(explanation.contains("authentication_deadline_exceeded"));
+        assert!(explanation.contains("authentication stage: rfb_version"));
+    } else {
+        assert!(explanation.contains("VNC authentication: failed"));
+        assert!(explanation.contains("invalid_apple_dh_parameters"));
+        assert!(explanation.contains("Apple DH check: key_length; generator: 5; key bytes: 128"));
+    }
+    for secret in [USER, SECRET, PASSWORD, TOKEN] {
+        assert!(!explanation.contains(secret));
+    }
     ssh_resolve.assert_calls_async(1).await;
     vnc_resolve.assert_calls_async(1).await;
     h.shutdown().await;

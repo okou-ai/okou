@@ -204,6 +204,7 @@ pub(crate) struct Report {
     native: Option<NativeSource>,
     native_layers: Option<crate::tailscale::evidence::Snapshot>,
     native_connection: Option<crate::tailscale::evidence::Snapshot>,
+    vnc: Option<crate::vnc::evidence::Snapshot>,
     #[serde(skip)]
     ssh: Option<trace::Snapshot>,
     // Finer stages are deliberately not inferred from an operation's final code.
@@ -220,6 +221,7 @@ pub(crate) struct Record {
     pub(crate) dependency: Option<Dependency>,
     pub(crate) native: Option<NativeSource>,
     pub(crate) ssh: Option<trace::Snapshot>,
+    pub(crate) vnc: Option<crate::vnc::evidence::Snapshot>,
 }
 
 #[derive(Clone, Copy, Serialize)]
@@ -317,6 +319,7 @@ impl NativeWatch {
                     connection: None,
                 }),
                 ssh: None,
+                vnc: None,
             });
         }
     }
@@ -418,6 +421,7 @@ impl Handle {
             dependency,
             native,
             ssh,
+            vnc,
         } = record;
         if !self.enabled {
             return None;
@@ -460,12 +464,13 @@ impl Handle {
             native,
             native_layers,
             native_connection,
-            detail: if ssh.is_some() {
+            detail: if ssh.is_some() || vnc.is_some() {
                 Detail::Partial
             } else {
                 Detail::NotObserved
             },
             ssh,
+            vnc,
             truncated: false,
         };
         // The schema has no unbounded strings or collections; keep a hard guard as it evolves.

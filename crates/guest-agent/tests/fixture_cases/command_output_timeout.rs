@@ -396,7 +396,8 @@ fn rustix_pid(pid: u32) -> io::Result<rustix::process::Pid> {
 fn open_pidfd(pid: u32) -> io::Result<AsyncFd<OwnedFd>> {
     let pidfd =
         rustix::process::pidfd_open(rustix_pid(pid)?, rustix::process::PidfdFlags::empty())?;
-    AsyncFd::new(pidfd)
+    // SAFETY: AsyncFd owns the pidfd and keeps its descriptor unchanged until drop.
+    unsafe { AsyncFd::register(pidfd) }.map_err(io::Error::from)
 }
 
 async fn wait_for_pidfd_exit(pidfd: &AsyncFd<OwnedFd>, timeout: Duration) -> io::Result<bool> {

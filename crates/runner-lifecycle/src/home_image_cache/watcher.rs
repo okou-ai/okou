@@ -171,8 +171,10 @@ impl HomeCacheWatcher {
         let root_watch = inotify
             .add_watch(cache.home_image_cache_dir(), ROOT_WATCH_FLAGS)
             .map_err(|error| watcher_error("watch root", error))?;
-        let inotify = AsyncFd::new(AsyncInotify(inotify))
-            .map_err(|error| watcher_io_error("register descriptor", error.kind()))?;
+        // SAFETY: AsyncInotify owns inotify and exposes the same live descriptor until drop.
+        let inotify = unsafe { AsyncFd::register(AsyncInotify(inotify)) }.map_err(|error| {
+            watcher_io_error("register descriptor", std::io::Error::from(error).kind())
+        })?;
         let mut watcher = Self {
             inotify,
             root_watch,

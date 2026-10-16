@@ -3,6 +3,13 @@ import { VncCommandError } from "./validation";
 
 function failureMessage(result: Extract<VncOutcome, { reason: string }>) {
   const delivery = "delivery" in result ? result.delivery : undefined;
+  if (result.diagnostic_text) {
+    const uncertainty =
+      result.outcome === "unknown" || delivery === "unknown"
+        ? " The operation may have taken effect. Never replay automatically; inspect the session and take a fresh screenshot."
+        : "";
+    return `VNC ${result.outcome}: ${result.reason}${delivery ? `; delivery=${delivery}` : ""}.${uncertainty}\n${result.diagnostic_text}`;
+  }
   let guidance =
     "Check VNC access, the saved host configuration and this command's --help before proceeding.";
   if (result.outcome === "unknown" || delivery === "unknown")

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { diagnosticTextSchema } from "../../lib/ssh-diagnostics";
+import { diagnosticTextSchema } from "../../lib/diagnostic-text";
 import { invokeRunnerRpc, rpcErrorSchema } from "../../lib/runner-rpc";
 import { failureReasonSchema, remoteExitSchema, SshProtocolError } from "./rpc";
 

@@ -21,6 +21,8 @@ The API owns provider credentials and canonical Chat/Run processing.
 5. Enable `wechatIntegration` only for the internal tester. Open `/works`, click
    WeChat Connect, scan and confirm, then send two text turns. Close Works before
    the second turn to verify background receiving and session continuity.
+   The first valid direct message after each binding gets one welcome notice;
+   a failed or ambiguous welcome must not block the prompt or be retried.
 6. Exercise an expired QR, verification challenge if Tencent requests it,
    reconnect, disconnect during an active run, and member departure. Confirm
    tokens are absent from browser responses and model-visible material.
@@ -34,10 +36,15 @@ The API owns provider credentials and canonical Chat/Run processing.
    finish before delivery. A failed delivery must retain the published file.
 
 History covers this connection's recorded messages, not pre-connection personal
-WeChat history, contacts, or groups. Reconnecting retains recorded history;
-disconnecting deletes the connection's message archive and private media
-references while keeping canonical Okou conversation events. Tencent CDN
-references can expire; ask the sender to resend an unavailable attachment.
+WeChat history, contacts, or groups. Reconnecting an expired session retains recorded history;
+disconnecting revokes agent access and deletes the message archive and private
+media references while keeping canonical Okou conversation events. The encrypted
+transport credential remains only to reply to later direct messages with the
+Works connection link; these messages do not start runs or enter chat history.
+A new verified QR replaces this detached transport with a fresh binding.
+Member/account deletion permanently removes the transport. If Tencent expires
+it first, receiving and reconnect notices stop until the user scans again.
+Tencent CDN references can expire; ask the sender to resend an unavailable attachment.
 
 The receiver requires Cloudflare SQLite Durable Objects. At scale, long polling
 creates one outstanding provider/API request per active binding; evaluate

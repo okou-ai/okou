@@ -55,6 +55,10 @@ import { composerCreatePlaceholder } from "../../signals/okou-page/composer-crea
 import { CREATE_WORKFLOW_WITH_CHAT_PROMPT } from "../../signals/chat-page/workflow-prompt-action.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
+import {
+  setCustomTemplateKindFilter$,
+  slashCustomTemplatesEnabled$,
+} from "../../signals/okou-page/custom-template-library.ts";
 
 function isMacKeyboard(): boolean {
   return /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
@@ -347,12 +351,17 @@ function useSlashTemplateCategorySuggestions(
   useTranslation();
   const documentTemplatesEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.BuiltinDocumentTemplates] === true;
+  const customTemplatesEnabled = useGet(slashCustomTemplatesEnabled$);
   if (query === undefined) {
     return [];
   }
   const normalized = query.toLowerCase().trim();
   return SLASH_TEMPLATE_CATEGORIES.filter((category) => {
-    if (category === "document" && !documentTemplatesEnabled) {
+    if (
+      category === "document" &&
+      !documentTemplatesEnabled &&
+      !customTemplatesEnabled
+    ) {
       return false;
     }
     return slashTemplateCategoryLabel(category)
@@ -376,6 +385,9 @@ function useSlashTemplatePanelActions(
   const openTemplatePicker = useSet(composer.template.openTemplatePicker$);
   const insertText = useSet(composer.editor.insertText$);
   const navigate = useSet(detachedNavigateTo$);
+  const setCustomTemplateKind = useSet(setCustomTemplateKindFilter$);
+  const documentTemplatesEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.BuiltinDocumentTemplates] === true;
   const categories = useSlashTemplateCategorySuggestions(query);
   return {
     categories,
@@ -388,6 +400,11 @@ function useSlashTemplatePanelActions(
       clearSlashRange();
       close();
       openTask(SLASH_TEMPLATE_CATEGORY_TASK[category]);
+      if (category === "document" && !documentTemplatesEnabled) {
+        setCustomTemplateKind("document");
+        openTemplatePicker({ kind: "insert", category: "custom" });
+        return;
+      }
       openTemplatePicker({ kind: "insert", category });
     },
     /**

@@ -618,10 +618,11 @@ function GoogleDriveMenuItem({
   const connectionPending = useGet(connectorConnectionPending$);
   const workspaceTarget = useGoogleWorkspaceTarget(filename);
   const target = original ? undefined : workspaceTarget;
+  const mode = target ? "google" : "original";
   const syncOrConnect = useGoogleDriveMenuAction(
     syncTarget,
     availability,
-    target ? "google" : "original",
+    mode,
   );
   const pending = useGet(googleDriveSyncPending$);
   const labels = useGoogleDriveMenuLabels(target);
@@ -642,7 +643,8 @@ function GoogleDriveMenuItem({
     return <GoogleDriveCompletedMenuItem action={completed} />;
   }
 
-  if (pending.has(syncTarget.artifactId)) {
+  const pendingMode = pending.get(syncTarget.artifactId);
+  if (pendingMode === mode) {
     return (
       <DropdownMenuItem disabled>
         <Loader2 size={14} className="animate-spin" />
@@ -653,7 +655,7 @@ function GoogleDriveMenuItem({
     );
   }
 
-  if (!connectorListLoaded || connectionPending) {
+  if (pendingMode || !connectorListLoaded || connectionPending) {
     return (
       <GoogleDriveDisabledMenuItem
         kind={syncTarget.disconnected ? "connect" : "upload"}

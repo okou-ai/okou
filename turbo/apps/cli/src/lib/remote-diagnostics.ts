@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { z } from "zod";
 import { decodeSandboxTokenPayload } from "./api/sandbox-token";
 import { withErrorHandler } from "./command/with-error-handler";
-import { diagnosticTextSchema } from "./ssh-diagnostics";
+import { diagnosticTextSchema } from "./diagnostic-text";
 import {
   invokeRunnerRpc,
   rpcErrorSchema,

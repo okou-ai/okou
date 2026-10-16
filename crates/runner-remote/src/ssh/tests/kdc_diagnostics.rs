@@ -93,11 +93,27 @@ async fn vnc_history_retains_kdc_ssh_failure_before_kerberos_conversion() {
     .await
     .unwrap();
     assert_eq!(terminal(&started)["reason"], "network_failure");
+    let automatic = diagnostic_text(terminal(&started));
+    assert!(automatic.contains("VNC RFB route: ssh;"), "{automatic}");
+    assert!(
+        automatic.contains("independent KDC route: ssh."),
+        "{automatic}"
+    );
+    assert!(automatic.contains("VNC transport: passed."), "{automatic}");
+    assert!(
+        automatic.contains("VNC kdc transport: failed."),
+        "{automatic}"
+    );
+    assert!(
+        automatic.contains("VNC initialization: not reached."),
+        "{automatic}"
+    );
     let history = h
         .raw(json!({"version":1,"method":"vnc.diagnose","params":{}}).to_string())
         .await;
     let report = terminal(&history);
     assert_eq!(report["status"], "found");
+    assert_eq!(diagnostic_text(report), automatic);
     assert!(diagnostic_text(report).contains(&format!("- Dependency (ssh): {KDC}; cause: SSH host key mismatch; configuration created at {CREATED_AT}; generation 7.")));
     assert!(!report.to_string().contains("kdc-password-canary"));
     assert_eq!(

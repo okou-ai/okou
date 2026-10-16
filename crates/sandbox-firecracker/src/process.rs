@@ -205,14 +205,17 @@ impl ChildExitNotifier {
     #[cfg(target_os = "linux")]
     fn open_for_pid(pid: u32) -> Self {
         match process_launch::asynchronous::open_pidfd(pid) {
-            Ok(pidfd) => match tokio::io::unix::AsyncFd::new(pidfd) {
-                Ok(pidfd) => Self {
-                    inner: ChildExitNotifierInner::PidFd(pidfd),
-                },
-                Err(error) => {
-                    Self::unavailable(ChildExitNotifierUnavailable::RegisterFailed(error))
+            Ok(pidfd) => {
+                // SAFETY: AsyncFd owns the pidfd and keeps its descriptor unchanged until drop.
+                match unsafe { tokio::io::unix::AsyncFd::register(pidfd) } {
+                    Ok(pidfd) => Self {
+                        inner: ChildExitNotifierInner::PidFd(pidfd),
+                    },
+                    Err(error) => Self::unavailable(ChildExitNotifierUnavailable::RegisterFailed(
+                        error.into(),
+                    )),
                 }
-            },
+            }
             Err(error) => Self::unavailable(ChildExitNotifierUnavailable::OpenFailed(error)),
         }
     }

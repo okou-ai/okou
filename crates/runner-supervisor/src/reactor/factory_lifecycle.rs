@@ -30,10 +30,13 @@ use crate::SharedFactory;
 pub(super) async fn start_factories(
     profiles: &BTreeMap<String, ProfileConfig>,
     runtime: &mut dyn SandboxRuntime,
+    home_cache: Option<&crate::home_image_cache::HomeImageCache>,
 ) -> RunnerResult<BTreeMap<String, (SharedFactory, bool)>> {
     let mut factories: BTreeMap<String, (Box<dyn SandboxFactory>, bool)> = BTreeMap::new();
     for (profile_name, profile_config) in profiles {
-        let factory_config = profile_config.factory_config.clone();
+        let mut factory_config = profile_config.factory_config.clone();
+        factory_config.home_drive_pressure =
+            home_cache.map(|cache| cache.home_drive_pressure_policy());
         let restore_guest_state = factory_config.snapshot.is_some();
         let factory_result = runtime.create_factory(factory_config).await;
         let factory = match factory_result {
@@ -248,6 +251,7 @@ mod tests {
             rootfs_disk_mb: 12288,
             home_disk_mb: 10240,
             factory_config: sandbox::FactoryConfig {
+                home_drive_pressure: None,
                 profile: name.into(),
                 binary_path: binary_kernel.0.clone(),
                 kernel_path: binary_kernel.1.clone(),
@@ -293,9 +297,24 @@ mod tests {
         );
         let mut runtime = RecordingRuntime::new(usize::MAX);
 
-        let factories = start_factories(&profiles, &mut runtime).await.unwrap();
+        let cache = crate::home_image_cache::HomeImageCache::shared(
+            runner_host::paths::RunnerPaths::new(base_dir.clone()),
+            &home,
+            "group-a",
+        );
+        let factories = start_factories(&profiles, &mut runtime, Some(&cache))
+            .await
+            .unwrap();
 
         assert_eq!(runtime.create_calls.load(Ordering::SeqCst), 2);
+        assert!(
+            runtime
+                .factory_configs
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|config| config.home_drive_pressure.is_some())
+        );
         assert_eq!(
             factories.keys().cloned().collect::<Vec<_>>(),
             vec![
@@ -336,7 +355,7 @@ mod tests {
         );
         let mut runtime = RecordingRuntime::new(2);
 
-        let result = start_factories(&profiles, &mut runtime).await;
+        let result = start_factories(&profiles, &mut runtime, None).await;
 
         match result {
             Err(RunnerError::Sandbox(SandboxError::Initialization { phase, message })) => {
@@ -382,7 +401,7 @@ mod tests {
         );
         let mut runtime = RecordingRuntime::new(1);
 
-        let result = start_factories(&profiles, &mut runtime).await;
+        let result = start_factories(&profiles, &mut runtime, None).await;
 
         match result {
             Err(RunnerError::Sandbox(SandboxError::Initialization { phase, message })) => {

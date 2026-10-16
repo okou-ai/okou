@@ -5,6 +5,7 @@ mod inspection;
 mod lifecycle;
 mod metadata;
 mod observations;
+mod pressure;
 mod promotion;
 mod publication_admission;
 mod publication_budget;

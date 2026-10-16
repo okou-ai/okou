@@ -15,12 +15,11 @@ use tokio::fs;
 impl HomeImageCache {
     pub async fn inspect(&self) -> LifecycleResult<HomeImageCacheInspection> {
         let stats = self.fs_stats().await?;
-        let budget = CacheBudget::from_fs_stats(stats);
         let mut entries = Vec::new();
         let mut reader = match fs::read_dir(self.home_image_cache_dir()).await {
             Ok(reader) => reader,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(self.inspection_from_entries(stats, budget, entries));
+                return Ok(self.inspection_from_entries(stats, entries, Some(0)));
             }
             Err(e) => return Err(e.into()),
         };
@@ -39,13 +38,21 @@ impl HomeImageCache {
             }
         }
         entries.sort_unstable_by(|a, b| a.cache_key.cmp(&b.cache_key));
-        Ok(self.inspection_from_entries(stats, budget, entries))
+        let allocated = if entries
+            .iter()
+            .all(|entry| entry.status != HomeImageCacheInspectionStatus::Locked)
+        {
+            Some(measured_entry_bytes(self.home_image_cache_dir()).await?)
+        } else {
+            None
+        };
+        Ok(self.inspection_from_entries(stats, entries, allocated))
     }
     fn inspection_from_entries(
         &self,
         stats: FsStats,
-        budget: CacheBudget,
         entries: Vec<HomeImageCacheInspectionEntry>,
+        allocated: Option<u64>,
     ) -> HomeImageCacheInspection {
         let mut summary = HomeImageCacheInspectionSummary {
             total_entries: entries.len(),
@@ -71,11 +78,13 @@ impl HomeImageCache {
                 .total_logical_image_bytes
                 .saturating_add(entry.logical_image_size_bytes);
         }
+        let budget = CacheBudget::from_observed_allocation(stats, allocated);
         HomeImageCacheInspection {
             cache_dir: self.home_image_cache_dir().display().to_string(),
             lock_dir: self.inner.lock_dir.display().to_string(),
             fs_stats: stats,
             budget,
+            pressure: self.pressure_thresholds(stats),
             summary,
             entries,
         }
