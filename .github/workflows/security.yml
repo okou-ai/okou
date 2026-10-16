@@ -310,8 +310,6 @@ jobs:
             crates/sandbox-firecracker/tests/native/runner-behavior-*.sh \
             .github/scripts/artifacts/smoke-okou-cli-artifact.sh \
             .github/scripts/artifacts/verify-okou-cli-artifact.sh \
-            .github/scripts/runner/resolve-runner-cli-artifact.sh \
-            .github/scripts/tests/resolve-runner-cli-artifact-test.sh \
             .github/scripts/artifacts/verify-okou-desktop-artifact.sh \
             .github/scripts/runner/with-runner-lifecycle-lock.sh \
             .github/scripts/tests/check-action-pins-test.sh \

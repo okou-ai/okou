@@ -127,16 +127,16 @@ hash recipe also rotates keys without changing the cache artifact schema.
 
 ### Package-bound CLI identity and local rootfs keys
 
-Runner Image owns the CI CLI build. Its private package, manifest and readiness
-record are uploaded under a unique producer run/attempt name. Both architecture
-jobs and dependency prewarming consume its exact immutable artifact ID. Host CLI
-E2E resolves the same successful prepare job and verifies the package against its
-captured source revision; PR-head lookup and merge-source identity stay separate.
-A consumer-only rerun retains the original prepare attempt, while a failed new
-prepare cannot reuse an older input. Host E2E can need this package even when no
-metal host or current image is selected.
-Expired private CLI input fails the consumer; rerun the Runner Image producer to
-publish a fresh run/attempt artifact.
+Runner Image owns the CLI build for its current image. Its private package,
+manifest and readiness record are uploaded under a unique producer run/attempt
+name. Both architecture jobs and dependency prewarming consume its exact immutable
+artifact ID.
+
+Turbo independently builds its host E2E CLI with the same build, integrity and
+smoke action. Its serial E2E consumes that workflow's immutable artifact ID and
+verifies the package against the captured event source before installation. Host
+E2E selection is independent of metal hosts and image reuse. If a private CLI
+input expires, rerun its producer in the owning workflow before its consumers.
 
 Production prepares CLI only for a Runner release, using the same build,
 integrity and smoke action once before both architecture consumers. API builds
@@ -157,9 +157,9 @@ consumed keys or metadata entries. The compressed package remains bounded at
 64 MiB; both readers cap the complete decompressed stream at 256 MiB and never
 extract or execute package code. Missing identity or disagreement with the
 external identity fails directly; there is no legacy-format fallback.
-Commit provenance, actual package SHA/size, ready checksums, canonical asset
-checks and immutable commit-addressed publication remain mandatory. Captured
-package URLs continue to serve draining Runners and explicit tool consumers.
+Commit provenance, actual package SHA/size, ready checksums and canonical asset
+checks remain mandatory. Retain immutable historical packages while captured
+contexts can still reference them; current API contexts use the installed CLI.
 CLI changes trigger a Runner release through the existing release dependency.
 
 The build-only native module `crates/runner/cli_package.rs` validates external

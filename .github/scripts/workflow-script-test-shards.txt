@@ -12,7 +12,6 @@
 1 crates-runner-image-waiters-test.sh
 1 discover-runner-pr-namespaces-test.sh
 1 embedded-cli-workflow-test.sh
-1 resolve-runner-cli-artifact-test.sh
 1 fetch-okou-desktop-artifact-test.sh
 1 neon-credential-mask-test.sh
 1 publish-okou-app-assets-test.sh

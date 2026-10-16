@@ -2006,8 +2006,8 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-  # Discover the same private input embedded by Runner Image, without compiling
-  # or publishing another package. API deployment has no dependency on this job.
+  # Build a private CLI package for this workflow's host E2E. API deployment
+  # has no dependency on this job.
   prepare-cli:
     needs: [prepare]
     runs-on: ubuntu-latest
@@ -2018,23 +2018,31 @@ jobs:
       github.actor != 'dependabot[bot]' &&
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     outputs:
-      producer-run-id: ${{ steps.cli-input.outputs.run-id }}
       artifact-id: ${{ steps.cli-input.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
-      - name: Resolve private Runner CLI input
-        id: cli-input
+      - name: Build private source-bound CLI input
+        uses: ./.github/actions/build-runner-cli
+        with:
+          source-sha: ${{ github.sha }}
         env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          LOOKUP_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          EVENT_NAME: ${{ github.event_name }}
-          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
-        run: bash .github/scripts/runner/resolve-runner-cli-artifact.sh
+          DEFAULT_SENTRY_DSN: ${{ vars.SENTRY_DSN_CLI }}
+      - name: Upload private CLI build input
+        id: cli-input
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cli-package-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            runner-cli-intermediate/package.tgz
+            runner-cli-intermediate/manifest.json
+            runner-cli-intermediate/ready.json
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
 
-  # Exercise the exact CLI package embedded into Runner.
+  # Exercise the CLI package built by this workflow.
   cli-e2e-01-serial:
     runs-on: ubuntu-latest
     concurrency:
@@ -2060,8 +2068,6 @@ jobs:
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           artifact-ids: ${{ needs.prepare-cli.outputs.artifact-id }}
-          run-id: ${{ needs.prepare-cli.outputs.producer-run-id }}
-          github-token: ${{ github.token }}
           path: /tmp/cli-package
       - name: Install CLI globally
         env:

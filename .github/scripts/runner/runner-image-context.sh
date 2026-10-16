@@ -200,9 +200,6 @@ needed() {
   local image_inputs_changed
   image_inputs_changed=$(bool "${RUNNER_IMAGE_INPUTS_CHANGED:-false}")
 
-  local cli_consumer
-  cli_consumer=$(bool "${CLI_E2E_CONSUMER_NEEDED:-false}")
-
   local stable_reuse_enabled
   stable_reuse_enabled=$(bool "${STABLE_RUNNER_IMAGE_REUSE_ENABLED:-false}")
 
@@ -246,11 +243,6 @@ needed() {
     fi
   fi
 
-  local cli_input_needed="false"
-  if [ "$release_skip" != "true" ] && { [ "$current_image_needed" = "true" ] || [ "$cli_consumer" = "true" ]; }; then
-    cli_input_needed="true"
-  fi
-  emit "cli-input-needed" "$cli_input_needed"
   emit "has-metal-hosts" "$has_metal_hosts"
   emit "turbo-runner-consumer-needed" "$turbo_consumer"
   emit "playwright-runner-consumer-needed" "$playwright_consumer"

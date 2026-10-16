@@ -1,5 +1,5 @@
-name: Build Runner CLI input
-description: Build, verify and smoke the source-bound CLI package consumed by Runner and host E2E
+name: Build CLI input
+description: Build, verify and smoke a source-bound CLI package for the calling workflow
 inputs:
   source-sha:
     description: Immutable checked-out source revision

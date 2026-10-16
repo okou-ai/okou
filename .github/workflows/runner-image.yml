@@ -55,7 +55,6 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      cli-input-needed: ${{ steps.needed.outputs.cli-input-needed }}
       cli-artifact-id: ${{ steps.cli-input.outputs.artifact-id }}
       release-skip: ${{ steps.identity.outputs.release-skip }}
       skip-reason: ${{ steps.identity.outputs.skip-reason }}
@@ -158,13 +157,6 @@ jobs:
             e2e_changed=false
           fi
 
-          API_CHANGED="$api_changed" \
-          CLI_CHANGED="$cli_changed" \
-          CRATES_CHANGED="$crates_changed" \
-          CI_CHANGED="$ci_changed" \
-          E2E_CHANGED="$e2e_changed" \
-          .github/scripts/runner/runner-image-context.sh cli-consumer
-
           EVENT_NAME="${{ github.event_name }}" \
           WEB_CHANGED="$web_changed" \
           API_CHANGED="$api_changed" \
@@ -266,7 +258,6 @@ jobs:
           PLAYWRIGHT_RUNNER_CONSUMER_NEEDED: ${{ steps.turbo.outputs.playwright-runner-consumer-needed }}
           CRATES_RUNNER_CONSUMER_NEEDED: ${{ steps.crates.outputs.crates-runner-consumer-needed }}
           RUNNER_IMAGE_INPUTS_CHANGED: ${{ steps.image-inputs.outputs.runner-image-inputs-changed }}
-          CLI_E2E_CONSUMER_NEEDED: ${{ steps.turbo.outputs.cli-e2e-consumer-needed }}
         run: .github/scripts/runner/runner-image-context.sh needed
 
       - name: Setup SSH via Cloudflare Tunnel
@@ -297,15 +288,15 @@ jobs:
           echo "matrix=${matrix}" >> "$GITHUB_OUTPUT"
           echo "Configured runner host architecture groups: $(jq -r 'map(.id) | join(",") // ""' <<<"$matrix")"
 
-      # The private CLI producer also serves host E2E without a current image.
+      # CLI, Runner and Guest use the same captured event source revision.
       - name: Checkout source revision for CLI and Runner
-        if: steps.needed.outputs.cli-input-needed == 'true'
+        if: steps.needed.outputs.current-runner-image-needed == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.identity.outputs.head-sha }}
 
       - name: Build private source-bound CLI input
-        if: steps.needed.outputs.cli-input-needed == 'true'
+        if: steps.needed.outputs.current-runner-image-needed == 'true'
         uses: ./.github/actions/build-runner-cli
         with:
           source-sha: ${{ steps.identity.outputs.head-sha }}
@@ -314,7 +305,7 @@ jobs:
 
       - name: Upload private CLI build input
         id: cli-input
-        if: steps.needed.outputs.cli-input-needed == 'true'
+        if: steps.needed.outputs.current-runner-image-needed == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: runner-cli-${{ github.run_id }}-${{ github.run_attempt }}

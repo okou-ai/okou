@@ -125,13 +125,6 @@ done
 out=$(run_clean PLATFORM_CHANGED=true "$CONTEXT" cli-consumer)
 assert_contains "$out" "cli-e2e-consumer-needed=false"
 
-# Host E2E still needs source-bound CLI bytes without a current image or host.
-out=$(assert_needed_case host-cli-only EVENT_NAME=push CLI_E2E_CONSUMER_NEEDED=true)
-assert_contains "$out" "current-runner-image-needed=false"
-assert_contains "$out" "cli-input-needed=true"
-out=$(assert_needed_case release-cli-skip EVENT_NAME=push RELEASE_SKIP=true CLI_E2E_CONSUMER_NEEDED=true)
-assert_contains "$out" "cli-input-needed=false"
-
 out=$(run_clean "$CONTEXT" playwright-consumer)
 assert_contains "$out" "playwright-runner-consumer-needed=false"
 
