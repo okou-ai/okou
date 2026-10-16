@@ -19,16 +19,7 @@ import {
   sshCredentialFailure,
 } from "./ssh-credential.service";
 import { sshConnections } from "@okouai/db/runtime/ssh-connection";
-import {
-  and,
-  asc,
-  count,
-  eq,
-  exists,
-  getTableColumns,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, asc, count, eq, exists, getTableColumns, sql } from "drizzle-orm";
 import {
   pgBooleanDecoder,
   pgIntegerDecoder,
@@ -36,7 +27,7 @@ import {
 import {
   createSshCreationReads,
   createSshUpdateReads,
-  stampedSshTailscaleConfig,
+  stampedSshNetworkConfig,
   stampedSshCredential,
   ownedSshConnection,
   visibleSshAccessConfig,
@@ -425,9 +416,10 @@ function sshConnectionCreationAdmission(args: PreparedSshConnectionCreation) {
   if (predicate === undefined) {
     throw new Error("SSH Tailscale admission predicate is missing");
   }
-  const stamp = stampedSshTailscaleConfig(
+  const stamp = stampedSshNetworkConfig(
     reads.qb,
     "stamped_ssh_creation_tailscale",
+    "tailscale",
     predicate,
   );
   const networkReady = reads.qb.$with("complete_ssh_creation_admission").as(
@@ -741,14 +733,15 @@ function sshConnectionUpdateAdmission(args: PreparedSshConnectionUpdate) {
   );
   const predicate = and(
     selectedId === null ? sql`false` : visibleTailscaleConfig(args, selectedId),
-    reads.entering,
+    exists(reads.qb.select({ id: reads.admission.id }).from(reads.admission)),
   );
   if (predicate === undefined) {
     throw new Error("SSH Tailscale admission predicate is missing");
   }
-  const stamp = stampedSshTailscaleConfig(
+  const stamp = stampedSshNetworkConfig(
     reads.qb,
     "stamped_ssh_binding_tailscale",
+    "tailscale",
     predicate,
   );
   const networkReady = reads.qb.$with("complete_ssh_binding_admission").as(
@@ -758,12 +751,7 @@ function sshConnectionUpdateAdmission(args: PreparedSshConnectionUpdate) {
       .where(
         selectedId === null
           ? sql`true`
-          : or(
-              exists(reads.qb.select({ id: stamp.id }).from(stamp)),
-              exists(
-                reads.qb.select({ id: reads.retained.id }).from(reads.retained),
-              ),
-            ),
+          : exists(reads.qb.select({ id: stamp.id }).from(stamp)),
       ),
   );
   const selectedCredentialId = args.preparedCredential?.id;
@@ -907,7 +895,7 @@ const commitSshConnectionUpdateAttempt$ = command(
             pgBooleanDecoder,
           ),
         tailscale:
-          sql`${or(exists(db.select({ id: stamp.id }).from(stamp)), exists(db.select({ id: reads.retained.id }).from(reads.retained)))}`.mapWith(
+          sql`${exists(db.select({ id: stamp.id }).from(stamp))}`.mapWith(
             pgBooleanDecoder,
           ),
         complete,
