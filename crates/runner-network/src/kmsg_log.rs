@@ -12,6 +12,7 @@ use chrono::{DateTime, Utc};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
+use tokio_util::task::AbortOnDropHandle;
 use tracing::{info, warn};
 
 use crate::network_log_drain::{
@@ -28,6 +29,7 @@ const LOG_PREFIX: &str = "VM0:";
 /// shutdown to cancel the async task and kill the `dmesg -w` child process.
 pub struct KmsgHandle {
     process: NetworkLogProcess,
+    stderr_task: Option<AbortOnDropHandle<()>>,
 }
 
 impl KmsgHandle {
@@ -50,9 +52,19 @@ impl KmsgHandle {
         self.process.set_reap_gate(gate);
     }
 
-    /// Stop the kmsg monitor and wait for cleanup.
+    /// Stop the kmsg monitor and wait for child and diagnostic-reader cleanup.
     pub async fn stop(self) -> crate::error::RunnerResult<()> {
-        self.process.stop().await?;
+        let Self {
+            process,
+            stderr_task,
+        } = self;
+        let result = process.stop().await;
+        if let Some(task) = stderr_task {
+            // Optional diagnostics must retire even when required cleanup fails,
+            // but their result must not replace the required process result.
+            let _ = task.await;
+        }
+        result?;
         info!("kmsg monitor stopped");
         Ok(())
     }
@@ -62,6 +74,7 @@ impl KmsgHandle {
     pub fn noop() -> Self {
         Self {
             process: NetworkLogProcess::noop("dmesg", "kmsg"),
+            stderr_task: None,
         }
     }
 
@@ -108,11 +121,11 @@ impl KmsgHandle {
         let token = cancel.clone();
         let (drain, drain_rx) = NetworkLogDrainProducer::channel("kmsg");
 
-        // Log stderr in a background task so dmesg errors are visible.
-        // Shares the cancel token so the task exits promptly on shutdown.
-        if let Some(stderr) = child.stderr.take() {
+        // Keep diagnostics owned through stop, owner Drop and cancelled stop.
+        // The shared token lets normal stop join the reader cooperatively.
+        let stderr_task = child.stderr.take().map(|stderr| {
             let stderr_cancel = cancel.clone();
-            tokio::spawn(async move {
+            AbortOnDropHandle::new(tokio::spawn(async move {
                 let mut lines = tokio::io::BufReader::new(stderr).lines();
                 loop {
                     tokio::select! {
@@ -128,12 +141,13 @@ impl KmsgHandle {
                         }
                     }
                 }
-            });
-        }
+            }))
+        });
 
         let task = tokio::spawn(run_loop(network_log_manager, token, stdout, drain_rx));
         Ok(Self {
             process: NetworkLogProcess::new("dmesg", cancel, task, child, drain),
+            stderr_task,
         })
     }
 
@@ -284,6 +298,129 @@ mod tests {
     use crate::network_log_drain::NetworkLogDrainContext;
     use runner_types::ids::RunId;
     use tokio::io::AsyncWriteExt;
+
+    #[cfg(target_os = "linux")]
+    mod lifecycle {
+        use std::sync::Arc;
+        use std::time::Duration;
+
+        use runner_host::process::read_process_stat;
+        use tokio::task::AbortHandle;
+        use tokio::time::timeout;
+
+        use super::*;
+
+        const CLEANUP_TIMEOUT: Duration = Duration::from_secs(2);
+
+        async fn running_kmsg() -> (KmsgHandle, AbortHandle, u32, u64) {
+            let child = tokio::process::Command::new("cat")
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .kill_on_drop(true)
+                .spawn()
+                .unwrap();
+            let pid = child.id().unwrap();
+            let starttime = read_process_stat(pid).await.unwrap().starttime;
+            let handle = KmsgHandle::from_test_child(child, NetworkLogManager::new()).unwrap();
+            let stderr = handle.stderr_task.as_ref().unwrap().abort_handle();
+            (handle, stderr, pid, starttime)
+        }
+
+        async fn assert_child_reaped(pid: u32, starttime: u64) {
+            assert_ne!(
+                read_process_stat(pid).await.map(|stat| stat.starttime),
+                Some(starttime),
+                "Kmsg child must be physically reaped"
+            );
+        }
+
+        async fn wait_for_retirement(stderr: &AbortHandle, pid: u32, starttime: u64) {
+            timeout(CLEANUP_TIMEOUT, async {
+                while !stderr.is_finished()
+                    || read_process_stat(pid)
+                        .await
+                        .is_some_and(|stat| stat.starttime == starttime)
+                {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .expect("diagnostic reader and real child must retire");
+        }
+
+        #[tokio::test]
+        async fn stop_joins_stderr_reader_and_reaps_child() {
+            let (handle, stderr, pid, starttime) = running_kmsg().await;
+
+            timeout(CLEANUP_TIMEOUT, handle.stop())
+                .await
+                .unwrap()
+                .unwrap();
+
+            assert!(stderr.is_finished(), "stop must join diagnostic retirement");
+            assert_child_reaped(pid, starttime).await;
+        }
+
+        #[tokio::test]
+        async fn stop_joins_stderr_reader_after_required_monitor_failure() {
+            let (mut handle, stderr, pid, starttime) = running_kmsg().await;
+            let trigger = handle
+                .process
+                .replace_monitor_with_panic_trigger_for_test("kmsg")
+                .await;
+            let monitor_lifetime = Arc::downgrade(&trigger);
+            trigger.notify_one();
+            drop(trigger);
+            // The existing panic fixture retains its trigger until its task
+            // exits. Wait for that release before stop can cancel the monitor.
+            timeout(CLEANUP_TIMEOUT, async {
+                while monitor_lifetime.strong_count() != 0 {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+
+            let error = timeout(CLEANUP_TIMEOUT, handle.stop())
+                .await
+                .unwrap()
+                .unwrap_err();
+
+            assert!(error.to_string().contains("dmesg monitor cleanup failed"));
+            assert!(
+                stderr.is_finished(),
+                "required errors must not skip diagnostics"
+            );
+            assert_child_reaped(pid, starttime).await;
+        }
+
+        #[tokio::test]
+        async fn drop_retires_stderr_reader_and_reaps_child() {
+            let (handle, stderr, pid, starttime) = running_kmsg().await;
+
+            drop(handle);
+
+            wait_for_retirement(&stderr, pid, starttime).await;
+        }
+
+        #[tokio::test]
+        async fn cancelled_stop_retires_stderr_without_aborting_child_reaper() {
+            let (mut handle, stderr, pid, starttime) = running_kmsg().await;
+            let gate = crate::test_fixtures::ReapGate::new();
+            handle.set_reap_gate(gate.clone());
+            let stop = tokio::spawn(handle.stop());
+            timeout(CLEANUP_TIMEOUT, gate.entered.notified())
+                .await
+                .unwrap();
+
+            stop.abort();
+            assert!(stop.await.unwrap_err().is_cancelled());
+            gate.release.add_permits(1);
+
+            wait_for_retirement(&stderr, pid, starttime).await;
+        }
+    }
 
     #[tokio::test]
     async fn command_configures_parent_death_signal() {
