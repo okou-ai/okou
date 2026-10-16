@@ -7,7 +7,7 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { and, eq, isNotNull, type SQL } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
-import { writeDb$, type ReadonlyDb } from "../external/db";
+import { db$, type ReadonlyDb } from "../external/db";
 import { publishConnectorRuntimeSyncBatch } from "../external/realtime";
 import {
   connectorRuntimeWakeupBatches,
@@ -205,11 +205,11 @@ export async function publishConnectorRuntimeSyncWakeups(
 /** Post-commit notification owns its read and never receives a database handle. */
 export const publishConnectorRuntimeSyncWakeups$ = command(
   async (
-    { set },
+    { get },
     args: ConnectorRuntimeWakeupBusinessArgs,
     signal: AbortSignal,
   ): Promise<void> => {
-    const db = set(writeDb$);
+    const db = get(db$);
     const targets = uniqueConnectorRuntimeTargets(args.targets);
     if (targets.length === 0) {
       signal.throwIfAborted();
