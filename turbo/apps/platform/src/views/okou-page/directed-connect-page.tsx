@@ -53,7 +53,7 @@ import {
 } from "../../signals/connectors-page/directed-connect-slug.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { Check, Loader2 } from "lucide-react";
-import { DirectedCardShell } from "./directed-shared.tsx";
+import { DirectedActionError, DirectedCardShell } from "./directed-shared.tsx";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
 import type { FormEvent, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -675,11 +675,7 @@ function DirectedConnectCard() {
         canConnect={canConnect}
         onConnect={handleConnect}
       />
-      {connectLoadable.state === "hasError" && (
-        <p role="alert" className="text-sm text-destructive">
-          {String(connectLoadable.error)}
-        </p>
-      )}
+      <DirectedActionError loadable={connectLoadable} />
       <DirectedConnectDialogs
         connectorSlug={connectorSlug}
         item={item}

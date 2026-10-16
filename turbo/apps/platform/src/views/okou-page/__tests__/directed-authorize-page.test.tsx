@@ -539,6 +539,7 @@ test("Leave an agent unauthorized when OAuth progress is closed", async () => {
   await screen.findByText("Authorize Okou");
   expect(updateCalls).toBe(0);
   expect(screen.queryByText("GitHub authorized")).not.toBeInTheDocument();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 
 test("Keep a failed chat continuation retryable after authorizing the connector", async () => {

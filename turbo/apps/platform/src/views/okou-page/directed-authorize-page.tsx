@@ -28,7 +28,7 @@ import {
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { routeChatActionCallback$ } from "../../signals/chat-page/action-callback.ts";
 import { Check, Loader2 } from "lucide-react";
-import { DirectedCardShell } from "./directed-shared.tsx";
+import { DirectedActionError, DirectedCardShell } from "./directed-shared.tsx";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -343,11 +343,7 @@ function DirectedAuthorizeCard() {
             />
           )}
         </div>
-        {authorizeLoadable.state === "hasError" && (
-          <p role="alert" className="text-sm text-destructive">
-            {String(authorizeLoadable.error)}
-          </p>
-        )}
+        <DirectedActionError loadable={authorizeLoadable} />
       </DirectedCardShell>
       <DirectedAuthorizeConnectModal
         open={connectModalOpen}

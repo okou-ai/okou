@@ -1013,6 +1013,40 @@ test("Start public OAuth from a directed connection link", async () => {
   ).toBeVisible();
 });
 
+test("Close directed OAuth progress without reporting a failure", async () => {
+  const { authWindow } = mockConnectorOauthStart({ popupClosed: false });
+  mockPublicConnectorStatus(
+    publicOAuthConnectorStatus({
+      slug: "github",
+      label: "Public GitHub",
+      singleAuthCodeAuthMethodId: "oauth",
+    }),
+  );
+
+  await setupPage({
+    context,
+    path: `/connectors/github/connect?agentId=${AGENT_ID}`,
+  });
+
+  await screen.findByText("Okou needs Public GitHub to proceed");
+  click(getButtonByText("Connect"));
+
+  await waitFor(() => {
+    expect(authWindow.location.href).toBe(
+      "https://oauth.test/github/authorize",
+    );
+  });
+  const progress = await screen.findByRole("dialog", {
+    name: "Connecting your account",
+  });
+
+  click(within(progress).getByLabelText("Close"));
+  expect(authWindow.closed).toBeTruthy();
+
+  await screen.findByText("Connect");
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
 test("Connect a no-auth connector and continue the originating chat", async () => {
   mockPublicConnectorStatus(
     publicNoAuthConnectorStatus({
