@@ -420,6 +420,12 @@
     },
     {
       "category": "valid",
+      "name": "static canonical ipv4 base with parameterized path",
+      "base": "https://127.0.0.1/items/{item}",
+      "expectedValid": true
+    },
+    {
+      "category": "valid",
       "name": "percent-encoded unicode host is valid",
       "base": "https://%E2%98%83.example.com",
       "expectedValid": true,
