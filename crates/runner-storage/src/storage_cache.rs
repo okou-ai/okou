@@ -105,10 +105,10 @@ const FRESH_DELIVERY_SCAN_LIMIT: usize = 64;
 const FRESH_DELIVERY_PER_RUN_LIMIT: usize = 4;
 const FRESH_DELIVERY_RUNNER_LIMIT: usize = 8;
 
-/// Maximum number of warm cache-hit archives staged in one guest batch write.
+/// Maximum number of archives staged in one guest batch write.
 const GUEST_STAGE_BATCH_MAX_FILES: usize = 64;
 
-/// Maximum total warm cache-hit bytes staged in one guest batch write.
+/// Maximum total archive bytes staged in one guest batch write.
 const GUEST_STAGE_BATCH_MAX_BYTES: usize = 15 * 1024 * 1024;
 
 /// Guest stage directory for `file://` archives.
@@ -2010,12 +2010,27 @@ impl GuestWriteLocks {
     }
 }
 
+fn guest_stage_batch_should_flush_before(
+    file_count: usize,
+    content_bytes: usize,
+    incoming_bytes: usize,
+) -> bool {
+    file_count != 0
+        && (file_count >= GUEST_STAGE_BATCH_MAX_FILES
+            || content_bytes.saturating_add(incoming_bytes) > GUEST_STAGE_BATCH_MAX_BYTES)
+}
+
+fn guest_stage_batch_should_flush_after_push(file_count: usize, content_bytes: usize) -> bool {
+    file_count >= GUEST_STAGE_BATCH_MAX_FILES || content_bytes >= GUEST_STAGE_BATCH_MAX_BYTES
+}
+
 impl GuestStageBatch {
     fn should_flush_before(&self, write: &GuestStageWrite) -> bool {
-        !self.writes.is_empty()
-            && (self.writes.len() >= GUEST_STAGE_BATCH_MAX_FILES
-                || self.content_bytes.saturating_add(write.bytes.len())
-                    > GUEST_STAGE_BATCH_MAX_BYTES)
+        guest_stage_batch_should_flush_before(
+            self.writes.len(),
+            self.content_bytes,
+            write.bytes.len(),
+        )
     }
 
     fn push(&mut self, write: GuestStageWrite) {
@@ -2024,17 +2039,17 @@ impl GuestStageBatch {
     }
 
     fn should_flush_after_push(&self) -> bool {
-        self.writes.len() >= GUEST_STAGE_BATCH_MAX_FILES
-            || self.content_bytes >= GUEST_STAGE_BATCH_MAX_BYTES
+        guest_stage_batch_should_flush_after_push(self.writes.len(), self.content_bytes)
     }
 }
 
 impl FreshGuestStageBatch {
     fn should_flush_before(&self, write: &GuestStageWrite) -> bool {
-        !self.entries.is_empty()
-            && (self.entries.len() >= GUEST_STAGE_BATCH_MAX_FILES
-                || self.content_bytes.saturating_add(write.bytes.len())
-                    > GUEST_STAGE_BATCH_MAX_BYTES)
+        guest_stage_batch_should_flush_before(
+            self.entries.len(),
+            self.content_bytes,
+            write.bytes.len(),
+        )
     }
 
     fn push(&mut self, entry: FreshGuestStageEntry) {
@@ -2043,8 +2058,7 @@ impl FreshGuestStageBatch {
     }
 
     fn should_flush_after_push(&self) -> bool {
-        self.entries.len() >= GUEST_STAGE_BATCH_MAX_FILES
-            || self.content_bytes >= GUEST_STAGE_BATCH_MAX_BYTES
+        guest_stage_batch_should_flush_after_push(self.entries.len(), self.content_bytes)
     }
 }
 
@@ -4348,6 +4362,7 @@ mod tests {
     use super::*;
 
     mod archive_retries;
+    mod batch_limits;
     mod decoded_observation;
     mod fresh_staging;
     mod http_reuse;
