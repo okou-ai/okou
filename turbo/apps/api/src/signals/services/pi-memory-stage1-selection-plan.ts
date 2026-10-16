@@ -44,7 +44,7 @@ type SourceRun = Pick<
 >;
 
 /** Pure predicates; the owning command takes these locks in this order. */
-function piMemoryStage1SelectionLockConditions(
+export function piMemoryStage1SelectionLockConditions(
   selection: PiMemoryStage1Selection,
 ) {
   return {
