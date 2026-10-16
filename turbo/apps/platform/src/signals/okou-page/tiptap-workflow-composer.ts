@@ -2119,13 +2119,10 @@ function createSuggestionMenuBoundary() {
             })))
       );
     },
-    /**
-     * The open menu's height inside its border, or null while no menu has been
-     * laid out.
-     */
+    /** The open menu's height inside its border, or null while none is open. */
     innerHeight(): number | null {
       const [menu] = elements;
-      return menu && menu.clientHeight > 0 ? menu.clientHeight : null;
+      return menu ? menu.clientHeight : null;
     },
   };
 }

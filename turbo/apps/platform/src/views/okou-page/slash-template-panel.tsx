@@ -1,7 +1,7 @@
 // The slash panel indexes creation types and workflows, with desktop previews
 // embedded on the right.
 // It renders inside the slash menu's popover shell from slash-workflow.tsx.
-import type { ComponentProps, ReactNode } from "react";
+import type { ComponentProps, CSSProperties, ReactNode } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -738,12 +738,21 @@ export function SlashTemplatePanel({
   );
   return (
     <div
-      className="group/slash-panel flex min-h-0 w-full flex-row overflow-hidden"
+      className={cn(
+        "group/slash-panel flex min-h-0 w-full flex-row overflow-hidden",
+        // Revealing the rest of the workflows keeps the menu's height, so the
+        // menu never grows away from the composer and moves the row that was
+        // clicked; the revealed rows scroll inside instead.
+        expandedHeight !== null && "h-(--slash-panel-expanded-height)",
+      )}
       data-slot="slash-panel"
-      // Revealing the rest of the workflows keeps the menu's height, so the
-      // menu never grows away from the composer and moves the row that was
-      // clicked; the revealed rows scroll inside instead.
-      style={expandedHeight === null ? undefined : { height: expandedHeight }}
+      style={
+        expandedHeight === null
+          ? undefined
+          : ({
+              "--slash-panel-expanded-height": `${String(expandedHeight)}px`,
+            } as CSSProperties)
+      }
       onMouseLeave={() => {
         onPreview(null);
       }}
