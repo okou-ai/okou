@@ -208,6 +208,7 @@ test.each([
   "Selecting a custom $kind template updates the slash task",
   async ({ kind, entry, tasks, instructions }) => {
     const capture = mockTemplateChat();
+    context.mocks.data.userPreferences({ timezone: "UTC", locale: "en-US" });
     context.mocks.data.availableRunModels([
       buildRunModel({
         model: "claude-sonnet-5",

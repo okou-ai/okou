@@ -118,19 +118,31 @@ export type MockHandler<R extends AppRoute> = (ctx: {
 
 class ContractHttpHandler extends HttpHandler {
   readonly #pattern: string | RegExp;
+  readonly #pathPrefix: string;
 
   constructor(route: AppRoute, resolver: HttpResponseResolver<PathParams>) {
     const pattern = routePattern(route);
     super(route.method, pattern, resolver);
     this.#pattern = pattern;
+    const patternIndex = route.path.search(/[:*?+()[\]{}\\]/);
+    // An optional parameter can own its preceding slash or dot. This prefix
+    // only rejects candidates; MSW still matches the complete pattern below.
+    this.#pathPrefix = (
+      patternIndex === -1 ? route.path : route.path.slice(0, patternIndex)
+    )
+      .replace(/[/.]+$/, "")
+      .toLowerCase();
   }
 
   override async parse(
     args: Parameters<HttpHandler["parse"]>[0],
   ): ReturnType<HttpHandler["parse"]> {
-    // MSW parses cookies for every candidate before checking its method/path.
-    // Only a matching contract needs that work; keep MSW's full parsing there.
-    if (args.request.method !== this.info.method) {
+    // Reject unrelated candidates before compiling a matcher or parsing cookies.
+    // Keep MSW's complete matching and parsing for every possible match.
+    if (
+      args.request.method !== this.info.method ||
+      !args.request.url.toLowerCase().includes(this.#pathPrefix)
+    ) {
       return { match: { matches: false, params: {} }, cookies: {} };
     }
     const match = matchRequestUrl(

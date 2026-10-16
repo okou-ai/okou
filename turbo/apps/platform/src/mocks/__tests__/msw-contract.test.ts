@@ -26,6 +26,12 @@ const contracts = c.router({
     path: "/api/mock-cookies",
     responses: { 200: z.object({ cookies: z.string().nullable() }) },
   },
+  optional: {
+    method: "GET",
+    path: "/api/mock-optional/:id?",
+    pathParams: z.object({ id: z.string().optional() }),
+    responses: { 200: z.object({ id: z.string().nullable() }) },
+  },
   thread: {
     method: "GET",
     path: "/api/chat-threads/:id",
@@ -94,13 +100,39 @@ test("Nonmatching contract mocks do not duplicate cookies on the matched request
     return respond(200, { id: params.id, title: body.title });
   });
 
-  const response = await fetch("http://localhost/api/mock-cookies", {
-    credentials: "include",
-  });
+  // A route prefix appearing only in the query is not a matching path.
+  const response = await fetch(
+    "http://localhost/api/mock-cookies?next=/api/mock-contracts/ignored",
+    { credentials: "include" },
+  );
   expect(response.status).toBe(200);
   const body = contracts.cookie.responses[200].parse(await response.json());
   expect(body.cookies).toBe("browser-preference=compact");
 });
+
+test.each([
+  { url: "http://localhost/api/mock-optional", id: null },
+  { url: "http://localhost/api/mock-optional/", id: null },
+  {
+    url: "http://localhost/API/MOCK-OPTIONAL/entry%20one/",
+    id: "entry one",
+  },
+  {
+    url: "https://api.preview.test/gateway/api/mock-optional/entry%20one",
+    id: "entry one",
+  },
+])(
+  "Contract mocks preserve optional path matching for $url",
+  async ({ url, id }) => {
+    context.mocks.api(contracts.optional, ({ params, respond }) => {
+      return respond(200, { id: params.id ?? null });
+    });
+
+    const response = await fetch(url);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toStrictEqual({ id });
+  },
+);
 
 test("Thread detail mocks leave static siblings to their own handlers", async () => {
   context.mocks.api(contracts.snapshot, ({ respond }) => {

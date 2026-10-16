@@ -63,6 +63,7 @@ function buttonByLabel(label: string, container: ParentNode): HTMLElement {
 
 async function openPresentationThemePreview() {
   const capture = mockTemplateChat();
+  context.mocks.data.userPreferences({ timezone: "UTC", locale: "en-US" });
   context.mocks.data.availableRunModels([
     buildRunModel({
       model: "claude-sonnet-5",
