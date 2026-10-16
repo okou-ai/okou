@@ -257,6 +257,24 @@ pub(super) fn parse_transport(
     }
 }
 
+fn apple_ssh_endpoint(
+    host: &str,
+    port: u64,
+    generation: i64,
+    transport: ResolveResponseResolvedTransportTransport,
+    supports_ssh: bool,
+) -> Result<(u16, Transport), Failure> {
+    let port = valid_port_and_generation(port, generation)?;
+    if !supports_ssh || !matches!(host, "127.0.0.1" | "::1") {
+        return Err(Failure::Authority);
+    }
+    let transport = match parse_transport(transport, supports_ssh)? {
+        ssh @ Transport::Ssh { .. } => ssh,
+        Transport::Direct => return Err(Failure::Authority),
+    };
+    Ok((port, transport))
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "The exact protocol handoff includes endpoint, creation identity, and authentication fields."
@@ -271,14 +289,7 @@ fn apple_vnc_password_credential(
     security: ResolveResponseResolvedTransportSecurity,
     supports_ssh: bool,
 ) -> Result<Credential, Failure> {
-    let port = valid_port_and_generation(port, generation)?;
-    if !supports_ssh || !matches!(host.as_str(), "127.0.0.1" | "::1") {
-        return Err(Failure::Authority);
-    }
-    let transport = match parse_transport(transport, supports_ssh)? {
-        ssh @ Transport::Ssh { .. } => ssh,
-        Transport::Direct => return Err(Failure::Authority),
-    };
+    let (port, transport) = apple_ssh_endpoint(&host, port, generation, transport, supports_ssh)?;
     let password = match (authentication, security) {
         (
             ResolveResponseResolvedTransportAuthentication::VncPassword { password },
@@ -311,14 +322,7 @@ fn apple_dh_credential(
     security: ResolveResponseResolvedTransportSecurity,
     supports_ssh: bool,
 ) -> Result<Credential, Failure> {
-    let port = valid_port_and_generation(port, generation)?;
-    if !supports_ssh || !matches!(host.as_str(), "127.0.0.1" | "::1") {
-        return Err(Failure::Authority);
-    }
-    let transport = match parse_transport(transport, supports_ssh)? {
-        ssh @ Transport::Ssh { .. } => ssh,
-        Transport::Direct => return Err(Failure::Authority),
-    };
+    let (port, transport) = apple_ssh_endpoint(&host, port, generation, transport, supports_ssh)?;
     let credentials = match (authentication, security) {
         (
             ResolveResponseResolvedTransportAuthentication::AppleDhUsernamePassword {
@@ -354,14 +358,7 @@ fn apple_srp_credential(
     security: ResolveResponseResolvedTransportSecurity,
     supports_ssh: bool,
 ) -> Result<Credential, Failure> {
-    let port = valid_port_and_generation(port, generation)?;
-    if !supports_ssh || !matches!(host.as_str(), "127.0.0.1" | "::1") {
-        return Err(Failure::Authority);
-    }
-    let transport = match parse_transport(transport, supports_ssh)? {
-        ssh @ Transport::Ssh { .. } => ssh,
-        Transport::Direct => return Err(Failure::Authority),
-    };
+    let (port, transport) = apple_ssh_endpoint(&host, port, generation, transport, supports_ssh)?;
     let credentials = match (authentication, security) {
         (
             ResolveResponseResolvedTransportAuthentication::AppleSrpUsernamePassword {
@@ -397,14 +394,7 @@ fn apple_rsa_srp_credential(
     security: ResolveResponseResolvedTransportSecurity,
     supports_ssh: bool,
 ) -> Result<Credential, Failure> {
-    let port = valid_port_and_generation(port, generation)?;
-    if !supports_ssh || !matches!(host.as_str(), "127.0.0.1" | "::1") {
-        return Err(Failure::Authority);
-    }
-    let transport = match parse_transport(transport, supports_ssh)? {
-        ssh @ Transport::Ssh { .. } => ssh,
-        Transport::Direct => return Err(Failure::Authority),
-    };
+    let (port, transport) = apple_ssh_endpoint(&host, port, generation, transport, supports_ssh)?;
     let credentials = match (authentication, security) {
         (
             ResolveResponseResolvedTransportAuthentication::AppleRsaSrpUsernamePassword {
