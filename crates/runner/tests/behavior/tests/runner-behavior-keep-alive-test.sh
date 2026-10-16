@@ -86,6 +86,7 @@ elif command == 'journalctl':
     records += ['run_id=fixture-turn-1 sandbox_id=fixture-sandbox-1',
                 'run_id=fixture-turn-2 sandbox_id=fixture-sandbox-2',
                 'vm0_official_fixture-secret vm0_sandbox_fixture-secret',
+                'vm0_official_' + 'opaque+official/credential~='.ljust(64, 'a'),
                 'Authorization: Bearer fixture-bearer-secret']
     print('\n'.join(records[-limit:]))
 elif command == 'rm':
@@ -125,6 +126,7 @@ with tempfile.TemporaryDirectory(prefix='keep-alive-diagnostics-') as temporary:
         assert 'service=fixture-keepalive chat_thread_id=' in output, (scenario, output)
         assert 'UNRELATED_INVOCATION_LOG' not in output, (scenario, output)
         assert 'fixture-secret' not in output and 'fixture-bearer-secret' not in output
+        assert 'official/credential' not in output, 'opaque Runner credential suffix leaked'
         for name in ('runner-state', 'group-state'):
             assert (case / name).exists() == (scenario in ('remove-failure', 'active-stop', 'state-failure')), (scenario, name, output)
 

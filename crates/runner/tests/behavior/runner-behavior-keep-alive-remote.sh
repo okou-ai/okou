@@ -46,7 +46,7 @@ report_failure_diagnostics() {
   if ! timeout 10 sudo journalctl --no-pager --output=cat --lines=300 \
     "_SYSTEMD_INVOCATION_ID=$INVOCATION_ID" 2>&1 \
     | sed -E \
-      -e 's/vm0_(official|sandbox)_[[:alnum:]_.=-]+/[redacted]/g' \
+      -e 's/vm0_(official|sandbox)_[^[:space:]"]+/[redacted]/g' \
       -e 's/(Authorization:[[:space:]]*Bearer[[:space:]]+)[^[:space:]"]+/\1[redacted]/Ig' \
     | tail -c 65536; then
     echo "Runner invocation journal collection failed."
