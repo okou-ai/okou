@@ -145,10 +145,17 @@ impl HomeImageCache {
                 authority_changed = true;
                 continue;
             }
+            // Previewed cleanup is still physically present. Count it once,
+            // including when this whole entry becomes a subsequent victim.
+            let victim_bytes = current.allocated_bytes.saturating_sub(if dry_run {
+                candidate.prospective_cleanup_bytes
+            } else {
+                0
+            });
             if dry_run {
                 continuation.prospective_released_bytes = continuation
                     .prospective_released_bytes
-                    .saturating_add(current.allocated_bytes);
+                    .saturating_add(victim_bytes);
             } else {
                 if let Err(error) =
                     tokio::fs::remove_dir_all(self.home_image_cache_entry_dir(&current.cache_key))
@@ -177,9 +184,8 @@ impl HomeImageCache {
                 outcome.available_after = Some(available_after);
             }
             continuation.entry_count = continuation.entry_count.saturating_sub(1);
-            outcome.removed_allocated_bytes = outcome
-                .removed_allocated_bytes
-                .saturating_add(current.allocated_bytes);
+            outcome.removed_allocated_bytes =
+                outcome.removed_allocated_bytes.saturating_add(victim_bytes);
         }
     }
 }

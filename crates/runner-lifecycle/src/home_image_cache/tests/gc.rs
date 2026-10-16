@@ -208,6 +208,33 @@ async fn gc_dry_run_retains_generation_and_uses_actual_allocated_bytes() {
 }
 
 #[tokio::test]
+async fn dry_run_pressure_counts_orphan_allocation_once_when_evicting_its_whole_entry() {
+    let f = Fixture::new().await;
+    let committed = f.commit("thread", b"home", "2026-10-09T09:00:00Z").await;
+    let paths = f.cache.entry_paths(&f.key("thread"));
+    let orphan = paths.image(&uuid::Uuid::new_v4().to_string()).unwrap();
+    write_image(&orphan, b"orphan", SIZE);
+    let mut allocated = std::fs::metadata(paths.entry_dir()).unwrap().blocks() * 512;
+    for entry in std::fs::read_dir(paths.entry_dir()).unwrap() {
+        let metadata = std::fs::symlink_metadata(entry.unwrap().path()).unwrap();
+        assert!(metadata.is_file());
+        allocated += metadata.blocks() * 512;
+    }
+    f.cache.set_fs_stats_for_test(FsStats {
+        total_bytes: 400 * GIB,
+        available_bytes: 1,
+        ..FsStats::default()
+    });
+    assert_eq!(f.cache.gc(true).await.unwrap(), allocated);
+    assert!(orphan.exists());
+    assert!(f.image("thread", &committed).exists());
+    assert_eq!(
+        f.metadata("thread").await.image_generation,
+        committed.image_generation
+    );
+}
+
+#[tokio::test]
 async fn dry_run_pre_cleanup_recovery_to_low_water_does_not_propose_valid_image_eviction() {
     let f = Fixture::new().await;
     let committed = f.commit("thread", b"home", "2026-10-09T09:00:00Z").await;

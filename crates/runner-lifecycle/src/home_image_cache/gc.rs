@@ -28,6 +28,7 @@ pub(super) struct GcCandidate {
     pub(super) cache_key: String,
     pub(super) image_generation: String,
     pub(super) allocated_bytes: u64,
+    pub(super) prospective_cleanup_bytes: u64,
     file_dev: u64,
     file_ino: u64,
     pub(super) last_used_at: String,
@@ -361,7 +362,10 @@ impl HomeImageCache {
             inventory.pre_cleanup_freed_bytes = inventory
                 .pre_cleanup_freed_bytes
                 .saturating_add(entry_inventory.pre_cleanup_freed_bytes);
-            if let Some(candidate) = entry_inventory.candidate {
+            if let Some(mut candidate) = entry_inventory.candidate {
+                if dry_run {
+                    candidate.prospective_cleanup_bytes = entry_inventory.pre_cleanup_freed_bytes;
+                }
                 inventory.candidates.push(candidate);
             }
             #[cfg(test)]
@@ -727,6 +731,7 @@ impl HomeImageCache {
             cache_key,
             image_generation,
             allocated_bytes: total,
+            prospective_cleanup_bytes: 0,
             file_dev: file_metadata.dev(),
             file_ino: file_metadata.ino(),
             last_used_at,
