@@ -30,13 +30,15 @@ for workflow, name, compiler in consumers:
     assert restore["with"]["path"] == "${{ env.KERBEROS_NATIVE_CACHE_DIR }}"
     expected_key = producer_restore["with"]["key"]
     if workflow != "crates":
-        expected_key = expected_key.replace("kerberos-native-v2-", "kerberos-native-runner-v1-", 1)
+        expected_key = expected_key.replace("kerberos-native-v3-", "kerberos-native-runner-v2-", 1)
         expected_key += "-${{ env.TARGET_TRIPLE }}"
         assert job["env"]["TARGET_TRIPLE"] == "${{ matrix.target }}"
     elif "TARGET_TRIPLE" in job.get("env", {}):
         expected_key += "-${{ env.TARGET_TRIPLE }}"
     assert restore["with"]["key"] == expected_key
-    assert "build-dependencies.sh" in restore["with"]["key"]
+    # Immutable Actions entries must turn over for helper source/notices as well
+    # as dependency pins; otherwise a populated dependency-only entry stays stale.
+    assert "hashFiles('crates/kerberos-worker/native/*')" in restore["with"]["key"]
     assert "runner.os" in restore["with"]["key"] and "runner.arch" in restore["with"]["key"]
     assert job["env"]["KERBEROS_NATIVE_BUILD_ENV"] == job["container"]["image"] == producer["container"]["image"]
     assert "env.KERBEROS_NATIVE_BUILD_ENV" in restore["with"]["key"]

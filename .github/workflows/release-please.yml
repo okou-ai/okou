@@ -2007,7 +2007,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
-          key: kerberos-native-runner-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/build-dependencies.sh') }}-${{ env.TARGET_TRIPLE }}
+          key: kerberos-native-runner-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/*') }}-${{ env.TARGET_TRIPLE }}
 
       - name: Notify Slack - Starting
         id: slack-start
