@@ -156,6 +156,7 @@ export type ApiDispatchTimingActionType =
   | "api_dispatch_workflow_enqueue_source_transition"
   | "api_dispatch_workflow_event_created_to_consume_start"
   | "api_dispatch_enqueue_commit_to_consume_start"
+  | "api_dispatch_request_received_to_enqueue_commit"
   | "api_dispatch_workflow_admission_display_name"
   | "api_dispatch_workflow_admission_transaction"
   | "api_dispatch_workflow_admission_transaction_callback"

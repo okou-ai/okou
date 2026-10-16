@@ -35,5 +35,10 @@ export interface ChatThreadRequestFacts {
     readonly modelSelection: ChatInputModelSelection;
     readonly requiredOfficialWorkflowIds: readonly string[] | undefined;
     readonly captureNetworkBodies: boolean;
+    /**
+     * Route-entry time of the `POST /api/chat/events` request that committed
+     * this input. Other producers omit it.
+     */
+    readonly requestReceivedAt?: number;
   };
 }
