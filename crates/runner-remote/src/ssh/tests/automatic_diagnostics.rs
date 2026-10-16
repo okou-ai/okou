@@ -299,6 +299,15 @@ async fn retained_process_status_uses_its_receipt_after_another_host_failure() {
     assert_ne!(diagnostic_attempt(&first), diagnostic_attempt(&unrelated));
     let again = rpc(&h, "ssh.session.status", json!({"sessionId":session})).await;
     assert_eq!(first["diagnostic_text"], again["diagnostic_text"]);
+    let read = rpc(
+        &h,
+        "ssh.session.read",
+        json!({"sessionId":session,"cursor":0,"waitMs":30000,"maxBytes":8192,"maxChunks":32}),
+    )
+    .await;
+    assert_eq!(read["session"], first["session"]);
+    assert_eq!(read["diagnostic_text"], first["diagnostic_text"]);
+    assert_eq!(read["wait_expired"], false);
     h.shutdown().await;
 }
 

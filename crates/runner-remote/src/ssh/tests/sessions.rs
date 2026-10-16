@@ -413,6 +413,66 @@ async fn targeted_run_wide_invalidation_and_replacement_retire_existing_ids() {
 }
 
 #[tokio::test]
+async fn dispatched_start_retains_honest_effects_through_acknowledgement_and_terminal_reads() {
+    for (reply, expected_state, expected_effects, failure) in [
+        (Reply::Hold, "running", "unknown", None),
+        (
+            Reply::Reject,
+            "failed",
+            "not_started",
+            Some("exec_rejected"),
+        ),
+        (Reply::Disconnect, "failed", "unknown", Some("disconnected")),
+    ] {
+        let mut h = Harness::new(reply).await;
+        let _resolve = h.resolve(h.credential(true)).await;
+        let gate = Arc::new(tokio::sync::Semaphore::new(0));
+        *h.observed.exec_ack_gate.lock().unwrap() = Some(Arc::clone(&gate));
+        let id = start(&h, json!({"type":"exec","command":"hold"}), false).await;
+        wait_for(|| h.observed.commands.lock().unwrap().len() == 1).await;
+        let pending = state(&h, &id, "starting").await;
+        assert_eq!(pending["effects"], "unknown");
+        assert_eq!(pending["generation"], 7);
+        assert_eq!(
+            rpc(&h, "read", json!({"sessionId":id,"cursor":0})).await["session"],
+            pending
+        );
+        assert_eq!(
+            rpc(&h, "write", json!({"sessionId":id,"dataBase64":"YQ=="})).await["reason"],
+            "not_running"
+        );
+        gate.add_permits(1);
+        let status = state(&h, &id, expected_state).await;
+        assert_eq!(status["effects"], expected_effects);
+        assert_eq!(status["generation"], 7);
+        if let Some(reason) = failure {
+            assert_eq!(status["state"]["failure_reason"], reason);
+            for _ in 0..2 {
+                let read = timeout(
+                    Duration::from_secs(5),
+                    rpc(
+                        &h,
+                        "read",
+                        json!({"sessionId":id,"cursor":0,"waitMs":30000}),
+                    ),
+                )
+                .await
+                .unwrap();
+                assert_eq!(read["session"], status);
+                assert_eq!(read["wait_expired"], false);
+                assert_eq!(read["next_cursor"], 0);
+                assert!(bytes(&read).is_empty());
+            }
+        }
+        assert_eq!(
+            rpc(&h, "close", json!({"sessionId":id})).await["effects"],
+            expected_effects
+        );
+        h.shutdown().await;
+    }
+}
+
+#[tokio::test]
 async fn failed_async_preparation_remains_inspectable_and_cpu_wait_does_not_keep_guest_busy() {
     let mut h = Harness::new(Reply::Hold).await;
     let mut credential = h.credential(true);
@@ -425,6 +485,9 @@ async fn failed_async_preparation_remains_inspectable_and_cpu_wait_does_not_keep
     let id = start(&h, json!({"type":"exec","command":"never"}), false).await;
     wait_for(|| h.observed.reservations.load(Ordering::SeqCst) == 0).await;
     drop(h.control.try_fence_normal_operations().unwrap());
+    let preparing = state(&h, &id, "starting").await;
+    assert_eq!(preparing["effects"], "not_started");
+    assert_eq!(preparing["generation"], Value::Null);
     drop(cpu);
     let status = state(&h, &id, "failed").await;
     assert_eq!(status["effects"], "not_started");

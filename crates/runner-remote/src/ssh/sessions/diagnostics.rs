@@ -1,5 +1,5 @@
 //! A process receipt belongs to that exact session, never to a host-latest lookup.
-use super::{Manager, Response, State};
+use super::{Manager, Response, protocol::State};
 use crate::diagnostics::{Operation, Report};
 use serde::Deserialize;
 use uuid::Uuid;
@@ -14,8 +14,9 @@ impl Manager {
                     .data
                     .lock()
                     .unwrap_or_else(|p| p.into_inner())
-                    .diagnostic
-                    .clone()
+                    .lifecycle
+                    .diagnostic()
+                    .cloned()
             }
             Response::Failed { failure_reason, .. } => {
                 #[derive(Deserialize)]
