@@ -794,7 +794,7 @@ test("refreshes rotating credentials only on the backend and isolates requests f
   const fixture = await carrier();
   server.use(tokenHandler({ expiresIn: 30 }));
   await connect(fixture);
-  server.use(tokenHandler());
+  server.use(tokenHandler({ scope: "payment_methods.agentic" }));
   const input = purchase();
   spendProvider(input);
   const created = await accept(
@@ -2908,7 +2908,7 @@ test("requests payment, profile and transaction consent from both CLI and settin
     const started = await accept(request(), [200]);
     const url = new URL(started.body.url);
     const scopes = url.searchParams.get("scope")?.split(" ");
-    expect(scopes).toEqual(
+    expect(scopes).toStrictEqual(
       expect.arrayContaining(["payment_methods.agentic", "userinfo:read"]),
     );
     expect(
