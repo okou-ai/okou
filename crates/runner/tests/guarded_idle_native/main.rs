@@ -13,6 +13,8 @@ mod foreground;
 mod foreground_growth;
 mod foreground_io;
 mod foreground_probe;
+mod logical_progress;
+mod logical_work;
 mod optional;
 mod pressure;
 mod pressure_condition;
@@ -58,6 +60,7 @@ enum Corpus {
     Continuation,
     Optional,
     Fences,
+    LogicalProgress,
 }
 
 const MISSING_GUEST_TIMEZONE: &str = "Etc/okou-test-missing-zone";
@@ -423,6 +426,28 @@ async fn native_foreground_records_retirement_fences_before_detach() -> TestResu
     .await
 }
 
+#[test]
+fn native_logical_progress_report_requires_physical_coverage_and_real_waits() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/logical_report_test.py"
+        ))
+        .output()
+        .expect("native logical progress report requires Python 3");
+    assert!(
+        output.status.success(),
+        "native logical report failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD inputs, full-budget logical transfer and exact-source P1 proof"]
+async fn native_logical_records_reader_heartbeat_and_cleanup_contention() -> TestResult<()> {
+    measured_selected_corpus(&[NativeScope::Logical], Corpus::LogicalProgress).await
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires owned KVM/NBD artifacts, synthetic native API, mock Codex and exact-source P1 proof"]
 async fn native_continuation_records_complete_session_history_and_required_saving() -> TestResult<()>
@@ -551,7 +576,9 @@ async fn exercise_selected_factories(
                     evidence::Case::new(
                         format!(
                             "{}-{}",
-                            if corpus == Corpus::Continuation {
+                            if corpus == Corpus::LogicalProgress {
+                                "LogicalProgress".into()
+                            } else if corpus == Corpus::Continuation {
                                 if matches!(scope, NativeScope::Batch(_)) {
                                     "ContinuationNonzero".into()
                                 } else {
@@ -652,14 +679,15 @@ async fn exercise_retirement(
     if rootfs_hash.is_empty() {
         return Err(io::Error::other("packaged rootfs hash must be supplied").into());
     }
-    let recovery_source = matches!(
-        scope,
-        NativeScope::Recovery
-            | NativeScope::Critical
-            | NativeScope::Startup
-            | NativeScope::ForegroundFresh
-            | NativeScope::ForegroundReuse
-    )
+    let recovery_source = (corpus == Corpus::LogicalProgress
+        || matches!(
+            scope,
+            NativeScope::Recovery
+                | NativeScope::Critical
+                | NativeScope::Startup
+                | NativeScope::ForegroundFresh
+                | NativeScope::ForegroundReuse
+        ))
     .then(|| Arc::new(recovery_source::Source::new()));
     let operations = match &recovery_source {
         Some(source) => inputs.operations_with_source(source.clone())?,
@@ -838,6 +866,7 @@ async fn exercise_retirement(
     });
     let tracker = IdleDestroyTracker::new(Arc::new(Notify::new()));
     if (corpus == Corpus::Optional
+        || corpus == Corpus::LogicalProgress
         || matches!(
             scope,
             NativeScope::Recovery
@@ -1103,6 +1132,18 @@ async fn exercise_retirement(
                     (1, 1, 0)
                 );
                 Ok(None)
+            }
+            NativeScope::Logical if corpus == Corpus::LogicalProgress => {
+                let lease = logical_progress::exercise(logical_progress::Request {
+                    context: transitions::Context {
+                        factory: factory.clone(), pool: pool.clone(), status: status.clone(),
+                        operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
+                        rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
+                    }, inputs, source: recovery_source.as_ref().ok_or_else(|| io::Error::other("logical source missing"))?,
+                    proof: proof.ok_or_else(|| io::Error::other("logical proof missing"))?,
+                    directory: paths.base_dir(), backing: backing.clone(),
+                }).await?;
+                Ok(Some(lease))
             }
             NativeScope::Logical => {
                 // Same physical authority reserves real replacement growth before
