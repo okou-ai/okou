@@ -78,11 +78,13 @@ test("Correlates concurrent Worker 401s with each request's credential without l
   const slowThread = crypto.randomUUID();
   const fastThread = crypto.randomUUID();
   const releaseSlow = context.mocks.deferred<void>();
-  const observedRequests = new Map<string, Headers>();
+  const observedRequests = new Map<string, Headers[]>();
   context.mocks.api(
     chatThreadEventsContract.rows,
     async ({ request, params, respond }) => {
-      observedRequests.set(params.threadId, request.headers);
+      const attempts = observedRequests.get(params.threadId) ?? [];
+      attempts.push(request.headers);
+      observedRequests.set(params.threadId, attempts);
       if (params.threadId === slowThread) {
         await releaseSlow.promise;
       }
@@ -99,10 +101,22 @@ test("Correlates concurrent Worker 401s with each request's credential without l
     sub: "private-user",
     o: { id: "private-org" },
   });
+  const fastRetryToken = token({
+    exp: NOW / 1000 + 120,
+    sub: "private-user",
+    o: { id: "private-org" },
+  });
+  const slowRetryToken = token({
+    exp: NOW / 1000 + 30,
+    sub: "private-user",
+    org_id: "private-org",
+  });
   const getToken = vi
     .fn<() => Promise<string | null>>()
     .mockResolvedValueOnce(slowToken)
-    .mockResolvedValueOnce(fastToken);
+    .mockResolvedValueOnce(fastToken)
+    .mockResolvedValueOnce(fastRetryToken)
+    .mockResolvedValueOnce(slowRetryToken);
   const api = client(getToken);
   vi.stubGlobal("window", undefined);
 
@@ -122,20 +136,36 @@ test("Correlates concurrent Worker 401s with each request's credential without l
   });
 
   const events = diagnostics();
-  expect(events).toHaveLength(2);
-  for (const [index, thread, ttl] of [
-    [0, fastThread, 60],
-    [1, slowThread, -5],
+  expect(getToken).toHaveBeenCalledTimes(4);
+  expect(events).toHaveLength(4);
+  expect(observedRequests.get(fastThread)).toHaveLength(2);
+  expect(observedRequests.get(slowThread)).toHaveLength(2);
+  const requests = [...observedRequests.values()].flat();
+  expect(
+    new Set(
+      requests.map((headers) => {
+        return headers.get(CLIENT_REQUEST_ID_HEADER);
+      }),
+    ).size,
+  ).toBe(4);
+  for (const [index, thread, attempt, ttl, credential] of [
+    [0, fastThread, 0, 60, fastToken],
+    [1, fastThread, 1, 120, fastRetryToken],
+    [2, slowThread, 0, -5, slowToken],
+    [3, slowThread, 1, 30, slowRetryToken],
   ] as const) {
+    const headers = observedRequests.get(thread)?.[attempt];
+    expect(headers?.get("Authorization")).toBe(`Bearer ${credential}`);
+    expect(headers?.get(CLIENT_REQUEST_ID_HEADER)).toStrictEqual(
+      expect.any(String),
+    );
     expect(events[index]).toMatchObject({
       level: "info",
       fields: {
         type: "temporary_auth_failure",
         runtime: "shared_worker",
-        requestId: observedRequests.get(thread)?.get(CLIENT_REQUEST_ID_HEADER),
-        clientSessionId: observedRequests
-          .get(thread)
-          ?.get(CLIENT_SESSION_ID_HEADER),
+        requestId: headers?.get(CLIENT_REQUEST_ID_HEADER),
+        clientSessionId: headers?.get(CLIENT_SESSION_ID_HEADER),
         clientVersion: "0.984.1",
         method: "GET",
         route: "/api/chat-threads/:threadId/event-rows",
@@ -152,6 +182,8 @@ test("Correlates concurrent Worker 401s with each request's credential without l
   for (const secret of [
     slowToken,
     fastToken,
+    slowRetryToken,
+    fastRetryToken,
     "private-user",
     "private-org",
     "private-signature",
@@ -181,8 +213,10 @@ test.each([
         query: { limit: 50, sinceSeqId: 0 },
       }),
     ).resolves.toMatchObject({ status: 401, body: denied });
-    expect(diagnostics()).toMatchObject([
-      {
+    const events = diagnostics();
+    expect(events).toHaveLength(2);
+    for (const event of events) {
+      expect(event).toMatchObject({
         fields: {
           has_bearer_token: credential !== null,
           jwt_decoded: credential?.endsWith("private-signature") ?? false,
@@ -190,8 +224,11 @@ test.each([
             ? false
             : null,
         },
-      },
-    ]);
+      });
+    }
+    const emitted = JSON.stringify(axiom.ingest.mock.calls);
+    expect(emitted).not.toContain(credential ?? "private-signature");
+    expect(emitted).not.toContain("private-signature");
   },
 );
 
@@ -208,7 +245,7 @@ test("Stops temporary diagnostics at the deadline while preserving request RED",
   };
   mockNow(AUTH_FAILURE_DIAGNOSTICS_EXPIRES_AT - 1, context.signal);
   await api.rows(request);
-  expect(diagnostics()).toHaveLength(1);
+  expect(diagnostics()).toHaveLength(2);
 
   axiom.ingest.mockClear();
   mockNow(AUTH_FAILURE_DIAGNOSTICS_EXPIRES_AT, context.signal);
@@ -222,6 +259,10 @@ test("Stops temporary diagnostics at the deadline while preserving request RED",
       return events;
     }),
   ).toMatchObject([
+    {
+      kind: "client",
+      "attributes.http.response.status_code": 401,
+    },
     {
       kind: "client",
       "attributes.http.response.status_code": 401,
