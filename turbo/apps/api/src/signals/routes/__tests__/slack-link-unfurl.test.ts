@@ -12,7 +12,7 @@ import {
   setupRawAppRequestWithRoutes,
 } from "../../../__tests__/test-app";
 import { accept, testContext } from "../../../__tests__/test-context";
-import { env, mockEnv } from "../../../lib/env";
+import { env } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { artifactShareRoutes } from "../artifact-shares";
@@ -287,7 +287,6 @@ describe("Slack link previews", () => {
   });
 
   it("reads Open Graph before classifying App, shared, artifact or hosted paths", async () => {
-    mockEnv("APP_URL", "https://app.okou.ai");
     const f = await fixture();
     const origin = new URL(env("APP_URL")).origin;
     const appUrl = `${origin}/works?source=slack&view=cover#cover|v1`;
@@ -367,10 +366,9 @@ describe("Slack link previews", () => {
   });
 
   it("uses partial Open Graph metadata without requiring an artifact fallback", async () => {
-    mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
     const f = await fixture();
     const origin = `https://og-${randomUUID()}.okou.app`;
-    const artifactImageUrl = `https://api.okou.ai/api/artifact-og/image?kind=host&id=${f.prepared.deploymentId}&version=v1`;
+    const artifactImageUrl = `${env("OKOU_API_BACKEND_URL")}/api/artifact-og/image?kind=host&id=${f.prepared.deploymentId}&version=v1`;
     const fields = [
       {
         property: "og:title",
