@@ -193,7 +193,11 @@ function SlashTemplateDetailPane({
   const nativeAspect = isSlashTemplateNativeAspectCategory(category);
   return (
     <div
-      className="relative w-[400px] max-w-1/2 shrink-0 overflow-hidden border-l border-border/60"
+      className={cn(
+        "relative w-[400px] max-w-1/2 shrink-0 overflow-hidden border-l border-border/60",
+        // A filtered Document row still needs room for a whole portrait cover.
+        category === "document" && "min-h-[min(320px,var(--available-height))]",
+      )}
       role="region"
       aria-label={slashTemplateCategoryLabel(category)}
       data-slot="slash-template-detail"
@@ -206,8 +210,7 @@ function SlashTemplateDetailPane({
         space live inside the scroller.
       */}
       <div
-        // The rows set the menu height; previews scroll within that height
-        // without moving the menu when the pointer switches between rows.
+        // Previews scroll within the menu, including the portrait minimum.
         className="absolute inset-0 flex flex-col px-4"
       >
         {/*
@@ -237,7 +240,7 @@ function SlashTemplateDetailPane({
           className="-ml-px -mr-4 min-h-0 flex-1 overflow-y-auto pl-px pr-4 pt-4"
         >
           {/*
-            Illustration uses native Grid Lanes when available, with multi-column
+            Native-aspect covers use Grid Lanes when available, with multi-column
             masonry as a fallback. Other categories keep their 16:9 grid rows.
           */}
           <div
