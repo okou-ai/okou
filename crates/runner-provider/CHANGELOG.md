@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.9](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.8...runner-provider-v0.8.9) (2026-10-16)
+
+
+### Refactoring
+
+* **runner-provider:** centralize current connector sync identity checks ([#40716](https://github.com/okou-ai/okou/issues/40716)) ([e2e886c](https://github.com/okou-ai/okou/commit/e2e886cf7a73409b3534eba274b1a9e6068def5b))
+
 ## [0.8.8](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.7...runner-provider-v0.8.8) (2026-10-16)
 
 

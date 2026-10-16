@@ -12,6 +12,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1035.2](https://github.com/okou-ai/okou/compare/app-v0.1035.1...app-v0.1035.2) (2026-10-16)
+
+
+### Refactoring
+
+* **app:** keep business continuations in page-owned actions ([#40729](https://github.com/okou-ai/okou/issues/40729)) ([e9db5e3](https://github.com/okou-ai/okou/commit/e9db5e3e1200ad0b06331f14e5d3ebc0f118303a))
+
 ## [0.1035.1](https://github.com/okou-ai/okou/compare/app-v0.1035.0...app-v0.1035.1) (2026-10-16)
 
 

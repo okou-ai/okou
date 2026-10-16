@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.234.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.1...runner-rs-v0.234.2) (2026-10-16)
+
+
+### Refactoring
+
+* **runner:** share terminal diagnostic rendering ([#40718](https://github.com/okou-ai/okou/issues/40718)) ([3829a51](https://github.com/okou-ai/okou/commit/3829a5112abfc868d042e21b1241771252fce2e5))
+
 ## [0.234.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.0...runner-rs-v0.234.1) (2026-10-16)
 
 ### Release Dependencies

@@ -9,6 +9,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.749.1](https://github.com/okou-ai/okou/compare/api-v1.749.0...api-v1.749.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **db:** diagnose opted-in smoke batch timeouts ([#40734](https://github.com/okou-ai/okou/issues/40734)) ([5aa8912](https://github.com/okou-ai/okou/commit/5aa8912feb9790c21d95d74c3bf560ab53e50b67))
+
+
+### Refactoring
+
+* **api:** own canonical slack completion branches ([#40727](https://github.com/okou-ai/okou/issues/40727)) ([5c41526](https://github.com/okou-ai/okou/commit/5c41526e92d8d4da42f0324902ebeebeaf856a3e))
+* **api:** own github user-linking database access ([#40733](https://github.com/okou-ai/okou/issues/40733)) ([f31ff98](https://github.com/okou-ai/okou/commit/f31ff98a23ce18734c3e940df9b798aac92828ff))
+* **api:** own stripe bulk projection in its serial loop ([#40730](https://github.com/okou-ai/okou/issues/40730)) ([8a991ef](https://github.com/okou-ai/okou/commit/8a991ef07d510c604858b063d7a2c647b75289d7)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** publish chat model metadata and events atomically ([#40726](https://github.com/okou-ai/okou/issues/40726)) ([a35c72c](https://github.com/okou-ai/okou/commit/a35c72c2878e5cf3eee8ac279095563561c38c19))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 1.345.2
+
 ## [1.749.0](https://github.com/okou-ai/okou/compare/api-v1.748.0...api-v1.749.0) (2026-10-16)
 
 

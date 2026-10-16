@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.1](https://github.com/okou-ai/okou/compare/runner-remote-v0.23.0...runner-remote-v0.23.1) (2026-10-16)
+
+
+### Refactoring
+
+* **runner-remote:** own ssh session terminal retention state ([#40719](https://github.com/okou-ai/okou/issues/40719)) ([2eb8337](https://github.com/okou-ai/okou/commit/2eb8337e3df2b287555e84e5683cd9944d3f0b48))
+
 ## [0.23.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.22.0...runner-remote-v0.23.0) (2026-10-16)
 
 

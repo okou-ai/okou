@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.1](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.17.0...runner-supervisor-v0.17.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **runner:** stop background home cache gc during drain ([#40721](https://github.com/okou-ai/okou/issues/40721)) ([f32f299](https://github.com/okou-ai/okou/commit/f32f2993681e4b7074b7789ce3cc5f4e0ac373dd))
+
 ## [0.17.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.16.13...runner-supervisor-v0.17.0) (2026-10-16)
 
 
