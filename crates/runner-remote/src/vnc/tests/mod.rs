@@ -403,16 +403,23 @@ async fn unsafe_dns_answer_rejects_without_connecting() {
     let mut h = Harness::new().await;
     let resolve = h.resolve().await;
     let _check = h.check("valid", 200).await;
-    h.network
-        .answers
-        .lock()
-        .unwrap()
-        .push("127.0.0.1:5900".parse().unwrap());
-    let reply = h.start("shared").await;
-    assert_eq!(reply.result()["outcome"], "failed");
-    assert_eq!(reply.result()["reason"], "unsafe_destination");
-    assert!(h.network.attempts.lock().unwrap().is_empty());
-    resolve.assert_calls_async(1).await;
+    let public = h.network.answers.lock().unwrap().first().copied().unwrap();
+    for unsafe_address in [
+        "127.0.0.1:5900".parse().unwrap(),
+        std::net::SocketAddr::V6(std::net::SocketAddrV6::new(
+            "2001:4860:4860::8888".parse().unwrap(),
+            5900,
+            1,
+            0,
+        )),
+    ] {
+        *h.network.answers.lock().unwrap() = vec![public, unsafe_address];
+        let reply = h.start("shared").await;
+        assert_eq!(reply.result()["outcome"], "failed");
+        assert_eq!(reply.result()["reason"], "unsafe_destination");
+        assert!(h.network.attempts.lock().unwrap().is_empty());
+    }
+    resolve.assert_calls_async(2).await;
     h.run.shutdown().await;
 }
 

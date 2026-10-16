@@ -276,18 +276,25 @@ async fn first_use_requires_current_authority_pin_before_authentication() {
 async fn complete_dns_answer_set_is_checked_before_any_connection() {
     let h = Harness::new(Reply::default()).await;
     let _resolve = h.resolve(h.credential(true)).await;
+    let public = "93.184.216.34:22".parse().unwrap();
     for answers in [
         vec![],
-        vec!["93.184.216.34:22", "127.0.0.1:22"],
-        vec!["[::ffff:93.184.216.34]:22"],
-        vec!["93.184.216.34:23"],
-        vec!["[2606:4700:4700::1111%3]:22"],
-        vec!["93.184.216.34:22"; 65],
+        vec![public, "127.0.0.1:22".parse().unwrap()],
+        vec!["[::ffff:93.184.216.34]:22".parse().unwrap()],
+        vec!["93.184.216.34:23".parse().unwrap()],
+        vec!["[2606:4700:4700::1111%3]:22".parse().unwrap()],
+        vec![public; 65],
+        vec![
+            public,
+            std::net::SocketAddr::V6(std::net::SocketAddrV6::new(
+                "2606:4700:4700::1111".parse().unwrap(),
+                22,
+                1,
+                0,
+            )),
+        ],
     ] {
-        *h.network.answers.lock().unwrap() = answers
-            .into_iter()
-            .map(|address| address.parse().unwrap())
-            .collect();
+        *h.network.answers.lock().unwrap() = answers;
         assert_eq!(
             terminal(&h.request(params()).await)["failure_reason"],
             "unsafe_destination"
