@@ -39,7 +39,8 @@ function compareStableVersions(
   return left[0] - right[0] || left[1] - right[1] || left[2] - right[2];
 }
 
-function isSuccessStatus(status: number): boolean {
+/** Only `2xx` bodies are transformed; the contract gate shares this rule. */
+export function isTransformableStatus(status: number): boolean {
   return status >= 200 && status < 300;
 }
 
@@ -61,7 +62,7 @@ export function selectClientResponseTransforms({
   if (
     client !== CLIENT_TYPE_DESKTOP ||
     version === undefined ||
-    !isSuccessStatus(status)
+    !isTransformableStatus(status)
   ) {
     return [];
   }

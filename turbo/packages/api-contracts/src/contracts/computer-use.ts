@@ -1,7 +1,7 @@
 import { desktopUpgradeRequiredSchema } from "./desktop-updates";
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
-import { apiErrorSchema } from "./errors";
+import { ApiError, apiErrorSchema } from "./errors";
 import {
   computerUseCommandNotificationsSchema,
   realtimeSubscriptionSchema,
@@ -718,6 +718,17 @@ const sessionHostResponses = {
   429: apiErrorSchema,
   503: apiErrorSchema,
 };
+// Desktop treats a completion 409 with CONFLICT as already recorded, so its
+// codes are declared for the Desktop contract gate.
+const sessionHostCompleteConflictSchema = z.object({
+  error: z.object({
+    message: z.string(),
+    code: z.enum([
+      ApiError.CONFLICT.code,
+      ApiError.HOST_CONNECTION_INVALID.code,
+    ]),
+  }),
+});
 export const computerUseSessionHostsContract = c.router({
   register: {
     method: "POST",
@@ -793,6 +804,7 @@ export const computerUseSessionHostsContract = c.router({
       400: apiErrorSchema,
       404: apiErrorSchema,
       ...sessionHostResponses,
+      409: sessionHostCompleteConflictSchema,
     },
     summary: "Report a claimed command using the current Clerk session",
   },

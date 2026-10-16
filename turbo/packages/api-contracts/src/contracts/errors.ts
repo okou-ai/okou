@@ -36,6 +36,11 @@ export const ApiError = {
     status: 409 as const,
     code: "AUTONOMY_BUDGET_EXHAUSTED",
   },
+  /** A computer-use host connection was replaced or lost its authority. */
+  HOST_CONNECTION_INVALID: {
+    status: 409 as const,
+    code: "HOST_CONNECTION_INVALID",
+  },
   RUN_NOT_CANCELLABLE: {
     status: 400 as const,
     code: "RUN_NOT_CANCELLABLE",

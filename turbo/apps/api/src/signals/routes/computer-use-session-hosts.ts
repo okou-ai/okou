@@ -1,6 +1,7 @@
 import { desktopUpgradeRequired } from "../../lib/desktop-compatibility";
 import { command, computed, type Command } from "ccstate";
 import { computerUseSessionHostsContract as contract } from "@okouai/api-contracts/contracts/computer-use";
+import { createErrorResponse } from "@okouai/api-contracts/contracts/errors";
 import {
   computerUseHostChannelName,
   computerUseCommandsChangedEvent,
@@ -31,15 +32,12 @@ const invalidSession = Object.freeze({
     },
   },
 });
-const invalidConnection = Object.freeze({
-  status: 409 as const,
-  body: {
-    error: {
-      code: "HOST_CONNECTION_INVALID",
-      message: "Computer-use host connection is no longer authorized",
-    },
-  },
-});
+const invalidConnection = Object.freeze(
+  createErrorResponse(
+    "HOST_CONNECTION_INVALID",
+    "Computer-use host connection is no longer authorized",
+  ),
+);
 const identity$ = computed((get) => {
   const auth = get(organizationAuthContext$);
   return auth.tokenType === "session" && auth.sessionId
