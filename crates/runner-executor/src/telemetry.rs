@@ -255,8 +255,7 @@ pub struct JobTelemetry {
     is_first_run: Option<bool>,
     home_startup_source: Option<HomeStartupSource>,
     runner_pre_spawn_attribution: Option<RunnerPreSpawnAttribution>,
-    pending_ops: Vec<SandboxOp>,
-    oldest_pending: Option<Instant>,
+    pending: PendingOperations,
     in_flight_flushes: Vec<JoinHandle<()>>,
 }
 
@@ -321,6 +320,82 @@ struct SandboxOp {
     archive_connection_attempt: Option<ArchiveConnectionAttempt>,
     #[serde(flatten)]
     home: Option<HomeObservation>,
+}
+
+#[derive(Default)]
+struct PendingOperations {
+    batch: Option<PendingBatch>,
+}
+
+struct PendingBatch {
+    operations: Vec<SandboxOp>,
+    oldest: Instant,
+}
+
+impl PendingOperations {
+    fn operations(&self) -> &[SandboxOp] {
+        self.batch
+            .as_ref()
+            .map_or(&[], |batch| batch.operations.as_slice())
+    }
+
+    fn len(&self) -> usize {
+        self.operations().len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.batch.is_none()
+    }
+
+    fn age(&self) -> Option<Duration> {
+        self.batch.as_ref().map(|batch| batch.oldest.elapsed())
+    }
+
+    fn push(&mut self, operation: SandboxOp) {
+        if let Some(batch) = &mut self.batch {
+            batch.operations.push(operation);
+        } else {
+            self.batch = Some(PendingBatch {
+                operations: vec![operation],
+                oldest: Instant::now(),
+            });
+        }
+    }
+
+    fn append(&mut self, other: Self) {
+        let Some(mut other) = other.batch else {
+            return;
+        };
+        if let Some(batch) = &mut self.batch {
+            batch.oldest = batch.oldest.min(other.oldest);
+            batch.operations.append(&mut other.operations);
+        } else {
+            self.batch = Some(other);
+        }
+    }
+
+    fn take_up_to(&mut self, count: usize) -> Vec<SandboxOp> {
+        match self.batch.as_mut() {
+            Some(batch) if batch.operations.len() > count => {
+                // A surviving suffix keeps the original pending age.
+                batch.operations.drain(..count).collect()
+            }
+            _ => self.take_all(),
+        }
+    }
+
+    fn take_all(&mut self) -> Vec<SandboxOp> {
+        self.batch
+            .take()
+            .map_or_else(Vec::new, |batch| batch.operations)
+    }
+
+    #[cfg(test)]
+    fn rewind_for_test(&mut self, by: Duration) {
+        if let Some(batch) = &mut self.batch {
+            batch.oldest -= by;
+        }
+    }
 }
 
 /// Shared buffering for host-owned operations that outlive any one Run.
@@ -412,8 +487,7 @@ impl JobTelemetry {
             is_first_run: None,
             home_startup_source: None,
             runner_pre_spawn_attribution: None,
-            pending_ops: Vec::new(),
-            oldest_pending: None,
+            pending: PendingOperations::default(),
             in_flight_flushes: Vec::new(),
         }
     }
@@ -456,8 +530,7 @@ impl JobTelemetry {
             is_first_run: None,
             home_startup_source: None,
             runner_pre_spawn_attribution: None,
-            pending_ops: Vec::new(),
-            oldest_pending: None,
+            pending: PendingOperations::default(),
             in_flight_flushes: Vec::new(),
         };
         SharedJobTelemetry {
@@ -519,19 +592,14 @@ impl JobTelemetry {
             is_first_run: self.is_first_run,
             home_startup_source: self.home_startup_source.clone(),
             runner_pre_spawn_attribution: self.runner_pre_spawn_attribution.clone(),
-            pending_ops: Vec::new(),
-            oldest_pending: None,
+            pending: PendingOperations::default(),
             in_flight_flushes: Vec::new(),
         }
     }
 
     /// Reclaim every pending or in-flight operation from a concurrent phase.
     pub(crate) fn merge_concurrent_phase(&mut self, mut phase: Self) {
-        self.oldest_pending = match (self.oldest_pending, phase.oldest_pending) {
-            (Some(left), Some(right)) => Some(left.min(right)),
-            (left, right) => left.or(right),
-        };
-        self.pending_ops.append(&mut phase.pending_ops);
+        self.pending.append(phase.pending);
         self.in_flight_flushes.append(&mut phase.in_flight_flushes);
     }
 
@@ -808,11 +876,11 @@ impl JobTelemetry {
         }
         // Host collectors live for the Runner lifetime; keep their optional
         // records bounded while outstanding API sends are slow.
-        if self.run_id.is_none() && self.pending_ops.len() >= HOST_PENDING_LIMIT {
+        if self.run_id.is_none() && self.pending.len() >= HOST_PENDING_LIMIT {
             // A completed send may have opened capacity since the last callback.
             // Try draining before dropping a new record from a full buffer.
             self.start_auto_flush();
-            if self.pending_ops.len() >= HOST_PENDING_LIMIT {
+            if self.pending.len() >= HOST_PENDING_LIMIT {
                 return;
             }
         }
@@ -833,14 +901,11 @@ impl JobTelemetry {
                 operation.runner_resource_budget_lease_count_bucket = Some(occupancy.lease_count);
             }
         }
-        self.pending_ops.push(operation);
-        if self.oldest_pending.is_none() {
-            self.oldest_pending = Some(Instant::now());
-        }
+        self.pending.push(operation);
 
-        if let Some(oldest) = self.oldest_pending
-            && (oldest.elapsed() >= FLUSH_THRESHOLD
-                || (self.run_id.is_none() && self.pending_ops.len() >= HOST_BATCH_SIZE))
+        if let Some(age) = self.pending.age()
+            && (age >= FLUSH_THRESHOLD
+                || (self.run_id.is_none() && self.pending.len() >= HOST_BATCH_SIZE))
         {
             self.start_auto_flush();
         }
@@ -849,10 +914,10 @@ impl JobTelemetry {
     /// Final flush — awaits buffered and already-started HTTP requests.
     /// Consumes self so callers can't accidentally record after flushing.
     pub async fn flush(mut self) {
-        if self.pending_ops.is_empty() && self.in_flight_flushes.is_empty() {
+        if self.pending.is_empty() && self.in_flight_flushes.is_empty() {
             return;
         }
-        let ops = std::mem::take(&mut self.pending_ops);
+        let ops = self.pending.take_all();
         let in_flight_flushes = std::mem::take(&mut self.in_flight_flushes);
         let run_id = self.run_id;
         let runner_hostname = self.runner_hostname.clone();
@@ -894,7 +959,8 @@ impl JobTelemetry {
     /// tuples in insertion order.
     #[cfg(any(test, feature = "test-support"))]
     pub fn pending_ops_snapshot(&self) -> Vec<(String, bool, Option<String>)> {
-        self.pending_ops
+        self.pending
+            .operations()
             .iter()
             .map(|op| (op.action_type.clone(), op.success, op.error.clone()))
             .collect()
@@ -902,7 +968,8 @@ impl JobTelemetry {
 
     #[cfg(test)]
     pub(crate) fn pending_storage_batch_payloads(&self) -> Vec<serde_json::Value> {
-        self.pending_ops
+        self.pending
+            .operations()
             .iter()
             .filter(|op| op.storage_batch.is_some())
             .map(|op| serde_json::to_value(op).expect("serialize storage batch operation"))
@@ -914,7 +981,8 @@ impl JobTelemetry {
     pub(crate) fn pending_ops_with_duration_snapshot(
         &self,
     ) -> Vec<(String, u64, bool, Option<String>)> {
-        self.pending_ops
+        self.pending
+            .operations()
             .iter()
             .map(|op| {
                 (
@@ -932,7 +1000,8 @@ impl JobTelemetry {
     pub fn pending_ops_with_outcome_snapshot(
         &self,
     ) -> Vec<(String, bool, Option<String>, Option<String>)> {
-        self.pending_ops
+        self.pending
+            .operations()
             .iter()
             .map(|op| {
                 (
@@ -947,7 +1016,8 @@ impl JobTelemetry {
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn pending_home_snapshot(&self) -> Vec<HomeObservation> {
-        self.pending_ops
+        self.pending
+            .operations()
             .iter()
             .filter_map(|op| {
                 op.home.clone().map(|mut home| {
@@ -968,7 +1038,8 @@ impl JobTelemetry {
     pub(crate) fn pending_ops_with_runner_startup_snapshot(
         &self,
     ) -> Vec<RunnerStartupTelemetrySnapshot> {
-        self.pending_ops
+        self.pending
+            .operations()
             .iter()
             .map(|op| RunnerStartupTelemetrySnapshot {
                 action_type: op.action_type.clone(),
@@ -990,9 +1061,7 @@ impl JobTelemetry {
     /// paused tokio clock.
     #[cfg(test)]
     pub(crate) fn rewind_oldest_pending_for_test(&mut self, by: Duration) {
-        if let Some(instant) = self.oldest_pending {
-            self.oldest_pending = Some(instant - by);
-        }
+        self.pending.rewind_for_test(by);
     }
 
     /// Start an owned flush for auto-threshold flushes.
@@ -1005,14 +1074,10 @@ impl JobTelemetry {
             }
         }
         let ops = if self.run_id.is_none() {
-            let count = self.pending_ops.len().min(HOST_BATCH_SIZE);
-            self.pending_ops.drain(..count).collect()
+            self.pending.take_up_to(HOST_BATCH_SIZE)
         } else {
-            std::mem::take(&mut self.pending_ops)
+            self.pending.take_all()
         };
-        if self.pending_ops.is_empty() {
-            self.oldest_pending = None;
-        }
 
         let http = self.http.clone();
         let run_id = self.run_id;
@@ -1658,9 +1723,9 @@ mod tests {
         );
 
         assert_eq!(
-            serde_json::to_value(&telemetry.pending_ops[0]).unwrap(),
+            serde_json::to_value(&telemetry.pending.operations()[0]).unwrap(),
             serde_json::json!({
-                "ts": telemetry.pending_ops[0].ts.clone(),
+                "ts": telemetry.pending.operations()[0].ts.clone(),
                 "action_type": "storage_cache_fresh_delivery_scan_groups",
                 "duration_ms": 0,
                 "success": true,
@@ -1930,9 +1995,9 @@ mod tests {
         );
 
         assert_eq!(
-            serde_json::to_value(&telemetry.pending_ops[0]).unwrap(),
+            serde_json::to_value(&telemetry.pending.operations()[0]).unwrap(),
             serde_json::json!({
-                "ts": telemetry.pending_ops[0].ts.clone(),
+                "ts": telemetry.pending.operations()[0].ts.clone(),
                 "action_type": "api_to_spawn",
                 "duration_ms": 125,
                 "success": true,
@@ -1945,9 +2010,9 @@ mod tests {
             })
         );
         assert_eq!(
-            serde_json::to_value(&telemetry.pending_ops[1]).unwrap(),
+            serde_json::to_value(&telemetry.pending.operations()[1]).unwrap(),
             serde_json::json!({
-                "ts": telemetry.pending_ops[1].ts.clone(),
+                "ts": telemetry.pending.operations()[1].ts.clone(),
                 "action_type": "api_to_agent_ready",
                 "duration_ms": 150,
                 "success": true,
@@ -2063,8 +2128,8 @@ mod tests {
             "tok".to_string(),
             None,
         );
-        assert!(telemetry.pending_ops.is_empty());
-        assert!(telemetry.oldest_pending.is_none());
+        assert!(telemetry.pending.is_empty());
+        assert!(telemetry.pending.age().is_none());
         assert!(telemetry.in_flight_flushes.is_empty());
     }
 
@@ -2086,15 +2151,24 @@ mod tests {
             Some("timeout"),
         );
 
-        assert_eq!(telemetry.pending_ops.len(), 2);
-        assert_eq!(telemetry.pending_ops[0].action_type, "sandbox_create");
-        assert_eq!(telemetry.pending_ops[0].duration_ms, 500);
-        assert!(telemetry.pending_ops[0].success);
-        assert!(telemetry.pending_ops[0].error.is_none());
-        assert_eq!(telemetry.pending_ops[1].action_type, "agent_execute");
-        assert!(!telemetry.pending_ops[1].success);
-        assert_eq!(telemetry.pending_ops[1].error.as_deref(), Some("timeout"));
-        assert!(telemetry.oldest_pending.is_some());
+        assert_eq!(telemetry.pending.len(), 2);
+        assert_eq!(
+            telemetry.pending.operations()[0].action_type,
+            "sandbox_create"
+        );
+        assert_eq!(telemetry.pending.operations()[0].duration_ms, 500);
+        assert!(telemetry.pending.operations()[0].success);
+        assert!(telemetry.pending.operations()[0].error.is_none());
+        assert_eq!(
+            telemetry.pending.operations()[1].action_type,
+            "agent_execute"
+        );
+        assert!(!telemetry.pending.operations()[1].success);
+        assert_eq!(
+            telemetry.pending.operations()[1].error.as_deref(),
+            Some("timeout")
+        );
+        assert!(telemetry.pending.age().is_some());
     }
 
     #[test]
@@ -2109,8 +2183,8 @@ mod tests {
 
         telemetry.record("huge_op", Duration::MAX, true, None);
 
-        assert_eq!(telemetry.pending_ops.len(), 1);
-        assert_eq!(telemetry.pending_ops[0].duration_ms, u64::MAX);
+        assert_eq!(telemetry.pending.len(), 1);
+        assert_eq!(telemetry.pending.operations()[0].duration_ms, u64::MAX);
     }
 
     #[tokio::test]
@@ -2127,7 +2201,7 @@ mod tests {
         telemetry.record("op2", Duration::from_millis(10), true, None);
 
         assert_eq!(telemetry.pending_ops_snapshot().len(), 2);
-        assert!(telemetry.oldest_pending.is_some());
+        assert!(telemetry.pending.age().is_some());
     }
 
     #[tokio::test]
@@ -2233,32 +2307,169 @@ mod tests {
 
     #[tokio::test]
     async fn auto_flush_triggers_after_threshold() {
-        let http = http_client();
+        let mut server = RawHttpTestServer::spawn(vec![
+            RawHttpAction::Respond(json_response("200 OK", r#"{"success":true}"#)),
+            RawHttpAction::Respond(json_response("200 OK", r#"{"success":true}"#)),
+        ])
+        .await;
         let mut telemetry = JobTelemetry::new(
-            http,
+            http_client_for_api_url(&server.url()),
             RunId::from(uuid::Uuid::nil()),
             "tok".to_string(),
             None,
         );
 
         telemetry.record("op1", Duration::from_millis(10), true, None);
-        assert_eq!(telemetry.pending_ops_snapshot().len(), 1);
-
-        // Age the oldest-pending marker past the threshold so the next record
-        // starts an owned auto flush.
         telemetry.rewind_oldest_pending_for_test(FLUSH_THRESHOLD + Duration::from_millis(1));
         telemetry.record("op2", Duration::from_millis(10), true, None);
 
-        // start_auto_flush drains the buffer (including the op that
-        // tripped the threshold) and resets the oldest-pending marker so the
-        // next record re-seeds it.
-        assert!(telemetry.pending_ops_snapshot().is_empty());
-        assert!(telemetry.oldest_pending.is_none());
-        assert_eq!(telemetry.in_flight_flushes.len(), 1);
+        let first = server.next_request("threshold-triggered batch").await;
+        let first: serde_json::Value =
+            serde_json::from_str(first.split_once("\r\n\r\n").unwrap().1).unwrap();
+        let operations = first["sandboxOperations"].as_array().unwrap();
+        assert_eq!(operations.len(), 2);
+        assert_eq!(operations[0]["action_type"], "op1");
+        assert_eq!(operations[1]["action_type"], "op2");
 
-        for handle in telemetry.in_flight_flushes.drain(..) {
-            handle.abort();
-            let _ = handle.await;
+        // A full drain seeds a fresh age, so both new records share the final
+        // batch instead of inheriting the previous threshold-triggered age.
+        telemetry.record("op3", Duration::from_millis(10), true, None);
+        telemetry.record("op4", Duration::from_millis(10), true, None);
+        telemetry.flush().await;
+        let second = server
+            .next_request("fresh pending batch at final flush")
+            .await;
+        let second: serde_json::Value =
+            serde_json::from_str(second.split_once("\r\n\r\n").unwrap().1).unwrap();
+        let operations = second["sandboxOperations"].as_array().unwrap();
+        assert_eq!(operations.len(), 2);
+        assert_eq!(operations[0]["action_type"], "op3");
+        assert_eq!(operations[1]["action_type"], "op4");
+        server.assert_finished().await;
+    }
+
+    #[tokio::test]
+    async fn partial_host_drain_preserves_the_pending_age_for_the_short_suffix() {
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+        let mut actions = vec![RawHttpAction::WaitThenRespond {
+            release: release_rx,
+            response: json_response("200 OK", r#"{"success":true}"#),
+        }];
+        actions.extend(
+            (1..HOST_IN_FLIGHT_LIMIT + 2)
+                .map(|_| RawHttpAction::Respond(json_response("200 OK", r#"{"success":true}"#))),
+        );
+        let mut server = RawHttpTestServer::spawn(actions).await;
+        let telemetry = JobTelemetry::new_runner(
+            http_client_for_api_url(&server.url()),
+            "host-operation-token".into(),
+            None,
+        );
+        let reporter = telemetry.reporter();
+        let record = |index| {
+            SandboxOpRecord::new(
+                "host_operation",
+                Duration::from_millis(index as u64),
+                true,
+                None,
+            )
+        };
+        let sent = HOST_IN_FLIGHT_LIMIT * HOST_BATCH_SIZE;
+        let buffered = HOST_BATCH_SIZE + 10;
+        for index in 0..sent {
+            reporter.record(record(index));
+        }
+        server.next_request("held host batch").await;
+        for index in sent..sent + buffered {
+            reporter.record(record(index));
+        }
+        let in_flight = {
+            let mut collector = telemetry.collector.lock().unwrap();
+            let collector = collector.as_mut().unwrap();
+            collector.rewind_oldest_pending_for_test(FLUSH_THRESHOLD + Duration::from_millis(1));
+            std::mem::take(&mut collector.in_flight_flushes)
+        };
+        release_tx.send(()).unwrap();
+        drain_in_flight_flushes(None, in_flight).await;
+        for _ in 1..HOST_IN_FLIGHT_LIMIT {
+            server.next_request("completed host batch").await;
+        }
+
+        reporter.record(record(sent + buffered));
+        let prefix = server
+            .next_request("bounded prefix after send capacity returns")
+            .await;
+        let prefix: serde_json::Value =
+            serde_json::from_str(prefix.split_once("\r\n\r\n").unwrap().1).unwrap();
+        let operations = prefix["sandboxOperations"].as_array().unwrap();
+        assert_eq!(operations.len(), HOST_BATCH_SIZE);
+        assert_eq!(
+            operations
+                .iter()
+                .map(|op| op["duration_ms"].as_u64().unwrap())
+                .collect::<Vec<_>>(),
+            (sent as u64..(sent + HOST_BATCH_SIZE) as u64).collect::<Vec<_>>()
+        );
+
+        // This suffix is smaller than HOST_BATCH_SIZE. Its original age must
+        // still trigger an HTTP request before consuming the final collector.
+        reporter.record(record(sent + buffered + 1));
+        let suffix = server
+            .next_request("aged short suffix before final flush")
+            .await;
+        let suffix: serde_json::Value =
+            serde_json::from_str(suffix.split_once("\r\n\r\n").unwrap().1).unwrap();
+        let operations = suffix["sandboxOperations"].as_array().unwrap();
+        assert_eq!(operations.len(), buffered + 2 - HOST_BATCH_SIZE);
+        assert_eq!(
+            operations
+                .iter()
+                .map(|op| op["duration_ms"].as_u64().unwrap())
+                .collect::<Vec<_>>(),
+            ((sent + HOST_BATCH_SIZE) as u64..(sent + buffered + 2) as u64).collect::<Vec<_>>()
+        );
+        telemetry.flush().await;
+        server.assert_finished().await;
+    }
+
+    #[tokio::test]
+    async fn merged_pending_phases_keep_the_earliest_age_and_insertion_order() {
+        for older_phase in [false, true] {
+            let mut server = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(json_response(
+                "200 OK",
+                r#"{"success":true}"#,
+            ))])
+            .await;
+            let mut telemetry = JobTelemetry::new(
+                http_client_for_api_url(&server.url()),
+                RunId::new_v4(),
+                "tok".into(),
+                None,
+            );
+            let mut phase = telemetry.fork_concurrent_phase();
+            telemetry.record("parent", Duration::ZERO, true, None);
+            phase.record("phase", Duration::ZERO, true, None);
+            let older = if older_phase {
+                &mut phase
+            } else {
+                &mut telemetry
+            };
+            older.rewind_oldest_pending_for_test(FLUSH_THRESHOLD + Duration::from_millis(1));
+            telemetry.merge_concurrent_phase(phase);
+            telemetry.record("trigger", Duration::ZERO, true, None);
+
+            let request = server
+                .next_request("merged aged batch before final flush")
+                .await;
+            let payload: serde_json::Value =
+                serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap();
+            let operations = payload["sandboxOperations"].as_array().unwrap();
+            assert_eq!(operations.len(), 3);
+            assert_eq!(operations[0]["action_type"], "parent");
+            assert_eq!(operations[1]["action_type"], "phase");
+            assert_eq!(operations[2]["action_type"], "trigger");
+            telemetry.flush().await;
+            server.assert_finished().await;
         }
     }
 
