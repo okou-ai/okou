@@ -1215,17 +1215,15 @@ describe("Morning Brief catalog reconciliation", () => {
             schedule: { type: "cron", cronExpression: "0 7 * * *" },
           },
         };
-        // One accepted catalog supplies the initial schedules and the
-        // Definition that reconciliation retires below.
+        // Both selectable Definitions start with the accepted initial schedule.
         expect(
           (
             await syncCatalog(
-              catalog([
-                ...MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.map((name) => {
+              catalog(
+                MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.map((name) => {
                   return activeDefinition(name, [initialBlueprint]);
                 }),
-                connectorDoctorDefinition(),
-              ]),
+              ),
             )
           ).body.outcome,
         ).toBe("accepted");
@@ -1334,8 +1332,8 @@ describe("Morning Brief catalog reconciliation", () => {
           blueprints: readonly OfficialWorkflowBlueprint[],
           retired = false,
         ) => {
-          return catalog([
-            ...MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.map((name) => {
+          return catalog(
+            MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.map((name) => {
               if (name !== definitionName) {
                 return activeDefinition(name, [initialBlueprint]);
               }
@@ -1347,12 +1345,7 @@ describe("Morning Brief catalog reconciliation", () => {
                   }
                 : activeDefinition(name, blueprints);
             }),
-            {
-              name: "connector-doctor",
-              lifecycle: "retired",
-              presentation: { category: "productivity" },
-            },
-          ]);
+          );
         };
         const bindings = withBindings
           ? [
