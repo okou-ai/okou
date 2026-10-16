@@ -198,11 +198,15 @@ function createChatResourceContentSignals(
 function createResourceElementRef(onDetach$?: Command<void, []>) {
   const element$ = state<HTMLElement | null>(null);
   const onRef$ = onRef(
-    command(({ set }, element: HTMLElement, signal: AbortSignal) => {
+    command(({ get, set }, element: HTMLElement, signal: AbortSignal) => {
       set(element$, element);
       signal.addEventListener(
         "abort",
         () => {
+          // A closing desktop popup can detach after its mobile replacement.
+          if (get(element$) !== element) {
+            return;
+          }
           set(element$, null);
           if (onDetach$) {
             set(onDetach$);
