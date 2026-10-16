@@ -1839,7 +1839,11 @@ describe("INT-01: Slack integration and Slack app routes", () => {
               elements: expect.arrayContaining([
                 expect.objectContaining({
                   action_id: "home_open_settings",
-                  url: `${env("APP_URL")}/works`,
+                  text: {
+                    type: "plain_text",
+                    text: "Open Okou Settings",
+                  },
+                  url: `${env("APP_URL")}/settings/slack`,
                 }),
               ]),
             }),
@@ -4533,7 +4537,22 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
     await flushWaitUntilAndAssert(() => {
       expect(context.mocks.slack.views.publish).toHaveBeenCalledWith(
-        expect.objectContaining({ user_id: slackUserId }),
+        expect.objectContaining({
+          user_id: slackUserId,
+          view: expect.objectContaining({
+            type: "home",
+            blocks: expect.arrayContaining([
+              expect.objectContaining({
+                type: "section",
+                accessory: expect.objectContaining({
+                  action_id: "home_environment_setup",
+                  text: { type: "plain_text", text: "Settings" },
+                  url: `${env("APP_URL")}/works`,
+                }),
+              }),
+            ]),
+          }),
+        }),
       );
       expect(
         JSON.stringify(context.mocks.slack.views.publish.mock.calls),
@@ -4618,6 +4637,26 @@ describe("INT-01: Slack app deep webhook flows", () => {
       expect(
         JSON.stringify(context.mocks.slack.views.publish.mock.calls),
       ).toContain("Account not connected");
+      expect(context.mocks.slack.views.publish).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: slackUserId,
+          view: expect.objectContaining({
+            type: "home",
+            blocks: expect.arrayContaining([
+              expect.objectContaining({
+                type: "actions",
+                elements: expect.arrayContaining([
+                  expect.objectContaining({
+                    action_id: "home_login_prompt",
+                    text: { type: "plain_text", text: "Connect" },
+                    url: `${env("APP_URL")}/settings/slack?w=${teamId}&u=${slackUserId}`,
+                  }),
+                ]),
+              }),
+            ]),
+          }),
+        }),
+      );
     });
     await integrations.postSlackEvent(teamId, {
       type: "app_home_opened",
