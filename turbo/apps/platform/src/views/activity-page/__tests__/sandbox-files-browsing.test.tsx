@@ -14,7 +14,7 @@ import {
 
 const context = testContext();
 
-test("Files connects on demand, supports browsing and releases on close", async () => {
+test("Files connects on demand, supports browsing and releases when switching tabs", async () => {
   const fixture = await setupFilesPage(context, {
     handler: (request) => {
       if (request.params.cursor) {
@@ -98,7 +98,7 @@ test("Files connects on demand, supports browsing and releases on close", async 
   await expect(
     within(panel).findByText("inside.txt"),
   ).resolves.toBeInTheDocument();
-  filesButton("Close files", panel).focus();
+  filesTab("Steps").focus();
   await userEvent.keyboard("{Enter}");
   await waitFor(() => {
     expect(screen.queryByRole("region", { name: "Files" })).toBeNull();
@@ -119,12 +119,10 @@ test("The mobile Activity Files tab opens the readonly browser", async () => {
     within(panel).findByText("This folder is empty."),
   ).resolves.toBeInTheDocument();
   expect(
-    within(panel).getByText(
-      "Read-only files from the current run. Closing this panel releases its connection.",
-    ),
+    within(panel).getByText("Read-only files from the current run."),
   ).toBeInTheDocument();
   expect(fixture.sockets).toHaveLength(1);
-  click(filesButton("Close files", panel));
+  click(filesTab("Steps"));
   await waitFor(() => {
     expect(screen.queryByRole("region", { name: "Files" })).toBeNull();
   });

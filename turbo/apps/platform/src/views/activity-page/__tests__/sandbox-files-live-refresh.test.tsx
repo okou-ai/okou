@@ -15,6 +15,7 @@ import {
   listing,
   openFiles,
   filesButton,
+  filesTab,
   setupFilesPage,
   loadMoreFiles,
   scrollFilesToEnd,
@@ -23,7 +24,7 @@ import {
 
 const context = testContext();
 
-test("Foreground refresh updates expanded files silently and stops after close", async () => {
+test("Foreground refresh updates expanded files silently and stops after switching tabs", async () => {
   let generation = 0;
   const fixture = await setupFilesPage(context, {
     handler: (request) => {
@@ -52,7 +53,7 @@ test("Foreground refresh updates expanded files silently and stops after close",
     "true",
   );
   expect(within(panel).queryByRole("status")).toBeNull();
-  click(filesButton("Close files", panel));
+  click(filesTab("Steps"));
   await waitFor(() => {
     expect(screen.queryByRole("region", { name: "Files" })).toBeNull();
   });

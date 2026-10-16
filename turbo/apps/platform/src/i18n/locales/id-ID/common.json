@@ -124,7 +124,7 @@
         "other": "Lainnya",
         "parentFolders": "Folder induk",
         "pending": "File tersedia saat proses dalam antrean dimulai.",
-        "readonly": "File hanya baca dari proses saat ini. Menutup panel akan melepaskan koneksi.",
+        "readonly": "File hanya baca dari proses saat ini.",
         "refresh": "Segarkan",
         "retry": "Coba lagi",
         "root": "Folder akar",

@@ -19,6 +19,7 @@ import { detachedNavigateTo$ } from "../../../signals/route.ts";
 import {
   FILES_RUN_ID,
   filesButton,
+  filesTab,
   navigationListing,
   openFiles,
   setupFilesPage,
@@ -163,7 +164,7 @@ test("Status unavailability releases Files until the user retries its existing c
   expect(fixture.bootstraps).toStrictEqual([FILES_RUN_ID, FILES_RUN_ID]);
 });
 
-test("Closing Files during a foreground status read releases demand despite repeated visibility events", async () => {
+test("Leaving Files during a foreground status read releases demand despite repeated visibility events", async () => {
   const response = createDeferredPromise<RunStatus>(context.signal);
   const requested = createDeferredPromise<void>(context.signal);
   const returned = createDeferredPromise<void>(context.signal);
@@ -191,7 +192,7 @@ test("Closing Files during a foreground status read releases demand despite repe
   fireEvent(document, new Event("visibilitychange"));
   await requested.promise;
   fireEvent(document, new Event("visibilitychange"));
-  click(filesButton("Close files", panel));
+  click(filesTab("Steps"));
   await waitFor(() => {
     expect(screen.queryByRole("region", { name: "Files" })).toBeNull();
   });

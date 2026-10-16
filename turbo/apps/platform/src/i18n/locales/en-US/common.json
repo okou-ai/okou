@@ -124,7 +124,7 @@
         "other": "Other",
         "parentFolders": "Parent folders",
         "pending": "Files will be available when the queued run starts.",
-        "readonly": "Read-only files from the current run. Closing this panel releases its connection.",
+        "readonly": "Read-only files from the current run.",
         "refresh": "Refresh",
         "retry": "Retry",
         "root": "Root folder",

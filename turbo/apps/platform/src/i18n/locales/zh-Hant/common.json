@@ -124,7 +124,7 @@
         "other": "其他",
         "parentFolders": "上層資料夾",
         "pending": "排隊中的執行開始後即可瀏覽檔案。",
-        "readonly": "僅瀏覽目前執行的檔案。關閉面板會釋放連線。",
+        "readonly": "僅瀏覽目前執行的檔案。",
         "refresh": "重新整理",
         "retry": "重試",
         "root": "根目錄",
