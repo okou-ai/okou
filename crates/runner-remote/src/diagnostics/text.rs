@@ -82,6 +82,14 @@ impl Report {
                 state.ready,
                 state.cleanup_complete,
             ));
+            text.push_str(&format!("- Native lifecycle first terminal observed at: {}. Node lifecycle and cleanup may complete after this operation; layered stages below are the report's captured facts.\n",
+                observed(state.terminal_at.map(timestamp))));
+            native_text(&mut text, "Native node", self.native_layers.as_ref())?;
+            native_text(
+                &mut text,
+                "Native connection",
+                self.native_connection.as_ref(),
+            )?;
         }
         text.push_str(&format!(
             "\nUnknown: Stages marked not reached, unknown or reused do not establish current health. Finer unobserved stages and the remote/network trigger remain unknown. This is retained evidence; current connectivity has not been checked.\n\nNext step: {}\n\nContext:\nRun: {}\nAssignment: {}\nAttempt: {}\nSequence: {}\nConnection: {}\nObserved at: {}\nConfiguration: created at {}; generation {}.\n",
@@ -104,6 +112,40 @@ impl Report {
     fn guidance(&self) -> &'static str {
         use super::trace::Stage;
         use crate::ssh::FailureReason as S;
+        if matches!(
+            self.cause,
+            Cause::Native(crate::tailscale::Failure::DomainFailed)
+                | Cause::Ssh(S::NetworkFailure | S::Cancelled | S::AuthorityFailure)
+        ) && let Some(root) = self.native_layers.as_ref().and_then(|s| s.root)
+        {
+            return match root {
+                crate::tailscale::evidence::Root::Startup => {
+                    "Inspect the failed native provisioning/control stage and its configured authorization before any manual retry."
+                }
+                crate::tailscale::evidence::Root::MapStream => {
+                    "Inspect the native control/map stream and its validation evidence; the remote network trigger remains unknown."
+                }
+                crate::tailscale::evidence::Root::Relay => {
+                    "Inspect the selected native relay path and retained region/endpoint evidence; this does not prove target unavailability."
+                }
+                _ => {
+                    "Inspect the retained native work/data-plane evidence before any manual retry; current SSH/VNC health remains unknown."
+                }
+            };
+        }
+        if matches!(self.cause, Cause::Ssh(S::NetworkFailure))
+            && self.native_connection.as_ref().is_some_and(|snapshot| {
+                snapshot.steps.iter().any(|s| {
+                    matches!(
+                        s.stage,
+                        crate::tailscale::evidence::Stage::PeerSelection
+                            | crate::tailscale::evidence::Stage::PrivateTcp
+                    ) && s.status == crate::tailscale::evidence::Status::Failed
+                })
+            })
+        {
+            return "Inspect the selected private TCP peer/region and map authority; prior native readiness does not establish target service health.";
+        }
         if let Some(failure) = self.ssh.as_ref().and_then(|s| s.access_failure) {
             return match failure {
                 crate::cloudflare::Failure::Tls => {
@@ -152,6 +194,46 @@ impl Report {
             _ => "Inspect the operation and its effects before any manual retry.",
         }
     }
+}
+
+fn native_text(
+    text: &mut String,
+    subject: &str,
+    snapshot: Option<&crate::tailscale::evidence::Snapshot>,
+) -> Option<()> {
+    let Some(snapshot) = snapshot else {
+        return Some(());
+    };
+    text.push_str(&format!(
+        "- {subject} evidence: {}; terminal root: {}; relay region: {}.\n",
+        snapshot.attempt_id,
+        match snapshot.root {
+            Some(root) => words(root)?,
+            None => "not observed".into(),
+        },
+        observed(snapshot.region)
+    ));
+    for endpoint in &snapshot.endpoints {
+        text.push_str(&format!(
+            "- {subject} {} endpoint: {}; family: {}.\n",
+            words(endpoint.role)?,
+            endpoint.address,
+            if endpoint.address.is_ipv4() {
+                "ipv4"
+            } else {
+                "ipv6"
+            }
+        ));
+    }
+    for step in &snapshot.steps {
+        text.push_str(&format!(
+            "- {subject} {}: {}; detail: {}.\n",
+            words(step.stage)?,
+            words(step.status)?,
+            words(step.detail)?
+        ));
+    }
+    Some(())
 }
 
 // These names come only from finite, internally owned enums, never provider text.

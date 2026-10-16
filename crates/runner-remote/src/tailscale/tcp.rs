@@ -35,6 +35,7 @@ pub(super) struct Connection {
     cancellation: Pin<Box<tokio_util::sync::WaitForCancellationFutureOwned>>,
     epoch: Instant,
     lease: Option<super::Lease>,
+    trace: super::evidence::Trace,
 }
 
 impl Connection {
@@ -60,6 +61,16 @@ impl Connection {
         let remote = binding.remote();
         let command = Box::pin(core.wait_for_cmd());
         let cancellation = Box::pin(binding.cancelled().cancelled_owned());
+        let trace = super::evidence::Trace::current();
+        trace
+            .clone()
+            .with_role(super::evidence::Role::PrivateTcp)
+            .endpoint(remote);
+        trace.set(
+            super::evidence::Stage::PrivateTcp,
+            super::evidence::Status::Running,
+            super::evidence::Detail::NotExposed,
+        );
         Ok(Self {
             binding,
             core: Some(core),
@@ -72,6 +83,7 @@ impl Connection {
             cancellation,
             epoch: Instant::now(),
             lease,
+            trace,
         })
     }
 
@@ -103,10 +115,21 @@ impl Connection {
             match connect.as_mut().poll(cx) {
                 Poll::Pending => {}
                 Poll::Ready(Err(_)) => {
+                    self.trace.set(
+                        super::evidence::Stage::PrivateTcp,
+                        super::evidence::Status::Failed,
+                        super::evidence::Detail::NotExposed,
+                    );
+                    self.trace.seal();
                     self.retire();
                     return Err(Failure::DomainFailed);
                 }
                 Poll::Ready(Ok(mut tcp)) => {
+                    self.trace.set(
+                        super::evidence::Stage::PrivateTcp,
+                        super::evidence::Status::Passed,
+                        super::evidence::Detail::NotExposed,
+                    );
                     self.connecting.take();
                     let (mut owner, io) = tokio::io::duplex(BYTE_CAPACITY);
                     let cancelled = self.binding.cancelled();
@@ -121,15 +144,25 @@ impl Connection {
                         binding: Arc::clone(&self.binding),
                         cancellation: Box::pin(self.binding.cancelled().cancelled_owned()),
                         io,
+                        #[cfg(test)]
+                        trace: self.trace.clone(),
                     });
                 }
             }
         }
-        if self
-            .bridge
-            .as_mut()
-            .is_some_and(|bridge| bridge.as_mut().poll(cx).is_ready())
+        if let Some(bridge) = self.bridge.as_mut()
+            && let Poll::Ready(result) = bridge.as_mut().poll(cx)
         {
+            self.trace.set(
+                super::evidence::Stage::PrivateStream,
+                super::evidence::Status::Unknown,
+                if result.is_ok() {
+                    super::evidence::Detail::EndOfStream
+                } else {
+                    super::evidence::Detail::Io
+                },
+            );
+            self.trace.seal();
             self.retire();
             return Err(Failure::Cancelled);
         }
@@ -195,9 +228,15 @@ pub(crate) struct Stream {
     binding: Arc<Binding>,
     cancellation: Pin<Box<tokio_util::sync::WaitForCancellationFutureOwned>>,
     io: DuplexStream,
+    #[cfg(test)]
+    trace: super::evidence::Trace,
 }
 
 impl Stream {
+    #[cfg(test)]
+    pub(super) fn evidence(&self) -> Option<super::evidence::Snapshot> {
+        self.trace.snapshot()
+    }
     pub(crate) fn cancelled(&self) -> tokio_util::sync::CancellationToken {
         self.binding.cancelled()
     }

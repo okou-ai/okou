@@ -10,6 +10,7 @@ mod derp_reader;
 mod diagnostic_fixture;
 mod diagnostics;
 mod domain;
+pub(crate) mod evidence;
 mod lease;
 mod logout;
 mod map_reader;

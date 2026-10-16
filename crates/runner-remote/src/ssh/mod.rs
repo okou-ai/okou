@@ -506,13 +506,20 @@ impl SshRuntime {
                     }
                     tailscale::work(configuration, journal)
                 })?;
-            observation.native = Some(node.diagnostic_source(configuration.key()));
+            let native_trace =
+                crate::tailscale::evidence::Trace::new(access.diagnostics().enabled());
+            if access.diagnostics().enabled() {
+                let mut source = node.diagnostic_source(configuration.key());
+                source.connection = Some(native_trace.clone());
+                observation.native = Some(source);
+            }
             observation.trace.set(Stage::Tcp, Progress::Running);
             let stream = scope
                 .wait(node.dial_retained(
                     &credential.host,
                     credential.port,
                     tailscale::Lease::new(lease),
+                    native_trace,
                 ))
                 .await?
                 .map_err(|failure| {

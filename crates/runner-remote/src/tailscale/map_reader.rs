@@ -1,5 +1,6 @@
 //! Withhold an untrusted map length before the public SDK can allocate it.
 
+use super::evidence::{Detail, Stage, Status, Trace};
 use serde::Deserialize;
 use std::{
     io,
@@ -20,10 +21,13 @@ pub(super) struct MapReader<R> {
     emitted: usize,
     validated: bool,
     rejected: bool,
+    trace: Trace,
 }
 
 impl<R> MapReader<R> {
     pub(super) fn new(inner: R) -> Self {
+        let trace = Trace::current();
+        trace.set(Stage::MapHeader, Status::Running, Detail::NotExposed);
         Self {
             inner,
             header: [0; 4],
@@ -34,6 +38,7 @@ impl<R> MapReader<R> {
             emitted: 0,
             validated: false,
             rejected: false,
+            trace,
         }
     }
 }
@@ -60,20 +65,47 @@ impl<R: AsyncRead + Unpin> AsyncRead for MapReader<R> {
                 let mut capture = ReadBuf::new(bytes);
                 match Pin::new(&mut this.inner).poll_read(cx, &mut capture) {
                     Poll::Pending => return Poll::Pending,
-                    Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
+                    Poll::Ready(Err(error)) => {
+                        this.trace.set(Stage::MapHeader, Status::Failed, Detail::Io);
+                        return Poll::Ready(Err(error));
+                    }
                     Poll::Ready(Ok(())) if capture.filled().is_empty() => {
+                        this.trace.set(
+                            Stage::MapHeader,
+                            Status::Failed,
+                            if this.captured == 0 {
+                                Detail::EndOfStream
+                            } else {
+                                Detail::Truncated
+                            },
+                        );
                         return Poll::Ready(Ok(()));
                     }
-                    Poll::Ready(Ok(())) => this.captured += capture.filled().len(),
+                    Poll::Ready(Ok(())) => {
+                        if this.captured == 0 {
+                            this.trace.forget(&[
+                                Stage::MapBody,
+                                Stage::MapValidation,
+                                Stage::MapDecode,
+                            ]);
+                        }
+                        this.captured += capture.filled().len();
+                    }
                 }
                 if this.captured == 4 {
                     let length = u32::from_le_bytes(this.header) as usize;
                     if length == 0 || length > MAX_MAP_BYTES {
+                        this.trace
+                            .set(Stage::MapHeader, Status::Failed, Detail::Limit);
                         this.rejected = true;
                         // SDK read_u32_le cannot complete, so PacketMut cannot allocate this length.
                         return Poll::Ready(Err(io::ErrorKind::InvalidData.into()));
                     }
                     this.body.resize(length, 0);
+                    this.trace
+                        .set(Stage::MapHeader, Status::Passed, Detail::NotExposed);
+                    this.trace
+                        .set(Stage::MapBody, Status::Running, Detail::NotExposed);
                 }
             }
             // Validate key presence before SDK defaults can manufacture a
@@ -87,8 +119,13 @@ impl<R: AsyncRead + Unpin> AsyncRead for MapReader<R> {
                 let mut capture = ReadBuf::new(bytes);
                 match Pin::new(&mut this.inner).poll_read(cx, &mut capture) {
                     Poll::Pending => return Poll::Pending,
-                    Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
+                    Poll::Ready(Err(error)) => {
+                        this.trace.set(Stage::MapBody, Status::Failed, Detail::Io);
+                        return Poll::Ready(Err(error));
+                    }
                     Poll::Ready(Ok(())) if capture.filled().is_empty() => {
+                        this.trace
+                            .set(Stage::MapBody, Status::Failed, Detail::Truncated);
                         this.rejected = true;
                         return Poll::Ready(Err(io::ErrorKind::UnexpectedEof.into()));
                     }
@@ -96,6 +133,8 @@ impl<R: AsyncRead + Unpin> AsyncRead for MapReader<R> {
                 }
             }
             if !this.validated {
+                this.trace
+                    .set(Stage::MapBody, Status::Passed, Detail::NotExposed);
                 if serde_json::from_slice::<RequiredKeys<'_>>(&this.body).map_or(true, |keys| {
                     keys.peers.as_ref().is_some_and(|peers| peers.len() > 256)
                         || keys.changed.as_ref().is_some_and(|peers| peers.len() > 256)
@@ -104,10 +143,16 @@ impl<R: AsyncRead + Unpin> AsyncRead for MapReader<R> {
                             .as_ref()
                             .is_some_and(|map| !super::region_map::valid(map))
                 }) {
+                    this.trace
+                        .set(Stage::MapValidation, Status::Failed, Detail::Invalid);
                     this.rejected = true;
                     return Poll::Ready(Err(io::ErrorKind::InvalidData.into()));
                 }
                 this.validated = true;
+                this.trace
+                    .set(Stage::MapValidation, Status::Passed, Detail::NotExposed);
+                this.trace
+                    .set(Stage::MapDecode, Status::Running, Detail::NotExposed);
             }
             if this.released < 4 {
                 let count = out.remaining().min(4 - this.released);
@@ -135,6 +180,8 @@ impl<R: AsyncRead + Unpin> AsyncRead for MapReader<R> {
             this.filled = 0;
             this.emitted = 0;
             this.validated = false;
+            this.trace
+                .set(Stage::MapHeader, Status::Running, Detail::NotExposed);
         }
     }
 }

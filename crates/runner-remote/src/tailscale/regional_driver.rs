@@ -24,7 +24,8 @@ use super::{
 };
 
 const OWNERS: usize = 8;
-type Completing = Pin<Box<dyn Future<Output = (RegionId, Result<(), Failure>)>>>;
+type Completing =
+    Pin<Box<dyn Future<Output = (RegionId, Result<(), Failure>, super::evidence::Trace)>>>;
 
 struct State {
     home: RegionId,
@@ -239,19 +240,27 @@ impl<D: Dial> RegionalDriver<D> {
         };
         state.active.insert(id, cancelled);
         self.sending.insert(id, sender);
+        let trace = super::evidence::Trace::current().fork();
+        trace.region(id.0.get());
         self.jobs.push(Box::pin(async move {
-            let run = driver.run(connector);
-            tokio::pin!(run);
-            if let Some(announce) = announce {
-                tokio::select! { biased;
-                    result = &mut run => return (id, result),
-                    connected = ready => {
-                        if connected.is_err() { return (id, Err(Failure::DomainFailed)); }
-                        let _ = announce.send(());
+            let result = trace
+                .clone()
+                .scope(async move {
+                    let run = driver.run(connector);
+                    tokio::pin!(run);
+                    if let Some(announce) = announce {
+                        tokio::select! { biased;
+                            result = &mut run => return result,
+                            connected = ready => {
+                                if connected.is_err() { return Err(Failure::DomainFailed); }
+                                let _ = announce.send(());
+                            }
+                        }
                     }
-                }
-            }
-            (id, run.await)
+                    run.await
+                })
+                .await;
+            (id, result, trace)
         }));
         Ok(true)
     }
@@ -263,13 +272,13 @@ impl<D: Dial> RegionalDriver<D> {
             tokio::select! { biased;
                 _ = self.cancelled.cancelled() => return Err(Failure::Cancelled),
                 outcome = self.jobs.next(), if !self.jobs.is_empty() => {
-                    let (id, result) = outcome.ok_or(Failure::DomainFailed)?;
+                    let (id, result, trace) = outcome.ok_or(Failure::DomainFailed)?;
                     let cancelled = self.routes.0.borrow_mut().active.remove(&id).ok_or(Failure::DomainFailed)?;
                     self.sending.remove(&id);
                     // Old SDK client/TLS/raw socket have been dropped within
                     // this completed job before its regional slot is reused.
                     if !cancelled.is_cancelled() {
-                        if id == home { return result.and(Err(Failure::DomainFailed)); }
+                        if id == home { super::evidence::Trace::current().adopt(&trace); return result.and(Err(Failure::DomainFailed)); }
                         let mut state = self.routes.0.borrow_mut();
                         state.failed.insert(id);
                         state.changed.notify_one();

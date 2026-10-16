@@ -7,6 +7,7 @@ use ts_derp::{IpUsage, ServerConnInfo, TlsValidationConfig};
 use ts_http_util::{Client, EmptyBody, Upgraded};
 use ts_keys::NodeKeyPair;
 
+use super::evidence::{self, Detail, Role, Stage, Trace};
 use super::{Failure, relay::Relay, relay_driver::Connector};
 
 pub(super) trait Dial: Clone + 'static {
@@ -24,31 +25,31 @@ impl Dial for Verified {
         if !super::diagnostics::in_domain() {
             return Err(Failure::DomainFailed);
         }
-        let v4 = async {
+        let trace = Trace::current().with_role(Role::Relay);
+        let trace4 = trace.fork();
+        let trace6 = trace.fork();
+        let v4 = trace4.clone().scope(async {
             match server.ipv4 {
                 IpUsage::Disable => std::future::pending().await,
-                IpUsage::FixedAddr(ip) => {
-                    tokio::net::TcpStream::connect((ip, server.https_port)).await
-                }
+                IpUsage::FixedAddr(ip) => connect((ip, server.https_port).into()).await,
                 IpUsage::UseDns => dns(&self.0, server, false).await,
             }
-        };
-        let v6 = async {
+        });
+        let v6 = trace6.clone().scope(async {
             match server.ipv6 {
                 IpUsage::Disable => std::future::pending().await,
-                IpUsage::FixedAddr(ip) => {
-                    tokio::net::TcpStream::connect((ip, server.https_port)).await
-                }
+                IpUsage::FixedAddr(ip) => connect((ip, server.https_port).into()).await,
                 IpUsage::UseDns => dns(&self.0, server, true).await,
             }
-        };
+        });
         // Both owned branches remain within the retained runtime; dropping a
         // losing resolver future does not release the node's physical receipt.
         tokio::pin!(v4, v6);
-        let result = tokio::select! {
-            result = &mut v4 => match result { Ok(io) => Ok(io), Err(_) => v6.await },
-            result = &mut v6 => match result { Ok(io) => Ok(io), Err(_) => v4.await },
+        let (result, selected) = tokio::select! {
+            result = &mut v4 => match result { Ok(io) => (Ok(io), &trace4), Err(_) => (v6.await, &trace6) },
+            result = &mut v6 => match result { Ok(io) => (Ok(io), &trace6), Err(_) => (v4.await, &trace4) },
         };
+        trace.adopt(selected);
         let io = result.map_err(|_| Failure::DomainFailed)?;
         io.set_nodelay(true).map_err(|_| Failure::DomainFailed)?;
         Ok(io)
@@ -57,6 +58,11 @@ impl Dial for Verified {
     fn tls(&self, _server: &ServerConnInfo) -> impl super::registration::Tls {
         super::registration::VerifiedTls
     }
+}
+
+async fn connect(address: std::net::SocketAddr) -> std::io::Result<tokio::net::TcpStream> {
+    Trace::current().endpoint(address);
+    evidence::observe(Stage::RelayTcp, tokio::net::TcpStream::connect(address)).await
 }
 
 async fn dns(
@@ -77,7 +83,7 @@ async fn dns(
         if tried > 16 {
             break;
         }
-        if let Ok(io) = tokio::net::TcpStream::connect(address).await {
+        if let Ok(io) = connect(address).await {
             return Ok(io);
         }
     }
@@ -111,42 +117,54 @@ impl<D: Dial> Connector for Regional<D> {
             {
                 return Err(Failure::DomainFailed);
             }
-            let attempt = async {
-                let raw = self.dial.tcp(server).await?;
-                let name = ts_tls_util::ServerName::try_from(common_name.clone())
-                    .map_err(|_| Failure::DomainFailed)?;
-                let mut url = ts_control::DEFAULT_CONTROL_SERVER.clone();
-                url.set_host(Some(&server.hostname))
-                    .map_err(|_| Failure::DomainFailed)?;
-                url.set_port(Some(server.https_port))
-                    .map_err(|_| Failure::DomainFailed)?;
-                url.set_path("/derp");
-                let tls = self.dial.tls(server);
-                Relay::connect(raw, &self.keys, self.cancelled.clone(), |raw| async move {
-                    use super::registration::Tls;
-                    let io = tls
-                        .connect(name, raw)
+            let trace = Trace::current();
+            let attempt_trace = trace.fork().with_role(Role::Relay);
+            let attempt =
+                attempt_trace
+                    .clone()
+                    .scope(evidence::observe(Stage::RelayAttempt, async {
+                        let raw =
+                            evidence::observe(Stage::RelayDial, self.dial.tcp(server)).await?;
+                        let name = ts_tls_util::ServerName::try_from(common_name.clone())
+                            .map_err(|_| Failure::DomainFailed)?;
+                        let mut url = ts_control::DEFAULT_CONTROL_SERVER.clone();
+                        url.set_host(Some(&server.hostname))
+                            .map_err(|_| Failure::DomainFailed)?;
+                        url.set_port(Some(server.https_port))
+                            .map_err(|_| Failure::DomainFailed)?;
+                        url.set_path("/derp");
+                        let tls = self.dial.tls(server);
+                        Relay::connect(raw, &self.keys, self.cancelled.clone(), |raw| async move {
+                            use super::registration::Tls;
+                            let io = evidence::observe(Stage::RelayTls, tls.connect(name, raw))
+                                .await
+                                .map_err(|_| Failure::DomainFailed)?;
+                            let client = ts_http_util::http1::connect::<EmptyBody>(io)
+                                .await
+                                .map_err(|_| Failure::DomainFailed)?;
+                            let request = ts_http_util::make_upgrade_req(&url, "DERP", None)
+                                .map_err(|_| Failure::DomainFailed)?;
+                            let response =
+                                evidence::observe(Stage::RelayUpgrade, client.send(request))
+                                    .await
+                                    .map_err(|_| Failure::DomainFailed)?;
+                            evidence::observe(
+                                Stage::RelayUpgrade,
+                                ts_http_util::do_upgrade(response),
+                            )
+                            .await
+                            .map_err(|_| Failure::DomainFailed)
+                        })
                         .await
-                        .map_err(|_| Failure::DomainFailed)?;
-                    let client = ts_http_util::http1::connect::<EmptyBody>(io)
-                        .await
-                        .map_err(|_| Failure::DomainFailed)?;
-                    let request = ts_http_util::make_upgrade_req(&url, "DERP", None)
-                        .map_err(|_| Failure::DomainFailed)?;
-                    let response = client
-                        .send(request)
-                        .await
-                        .map_err(|_| Failure::DomainFailed)?;
-                    ts_http_util::do_upgrade(response)
-                        .await
-                        .map_err(|_| Failure::DomainFailed)
-                })
-                .await
-            };
+                    }));
             let result = tokio::select! { biased;
                 _ = self.cancelled.cancelled() => return Err(Failure::Cancelled),
-                result = tokio::time::timeout(Duration::from_secs(10), attempt) => result.unwrap_or(Err(Failure::DomainFailed)),
+                result = tokio::time::timeout(Duration::from_secs(10), attempt) => result.unwrap_or_else(|_| {
+                    attempt_trace.set(Stage::RelayAttempt, evidence::Status::Failed, Detail::TimedOut);
+                    Err(Failure::DomainFailed)
+                }),
             };
+            trace.replace(&attempt_trace);
             if result.is_ok() {
                 return result;
             }

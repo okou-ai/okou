@@ -152,6 +152,7 @@ async fn cancelling_pending_sdk_registration_drops_its_actual_driver_before_root
 
 #[tokio::test]
 async fn registration_rejects_error_expiry_and_interactive_authorization() {
+    use crate::tailscale::evidence::{Detail, Stage, Status, Trace};
     for (field, value) in [
         (
             "Error",
@@ -163,14 +164,23 @@ async fn registration_rejects_error_expiry_and_interactive_authorization() {
             "AuthURL",
             serde_json::json!("https://invalid.example/SECRET-AUTH-URL-CANARY"),
         ),
+        ("ignored-expiry", serde_json::json!(true)),
     ] {
         let mut response: serde_json::Value = serde_json::from_slice(ACCEPTED).unwrap();
-        response[field] = value;
+        if field == "ignored-expiry" {
+            response["Error"] = "SYNTHETIC-PROVIDER-ERROR-CANARY".into();
+            response["NodeKeyExpired"] = value;
+        } else {
+            response[field] = value;
+        }
         let http = Http::registration(serde_json::to_vec(&response).unwrap(), 200).await;
         let cache = Cache::new();
         let run = cache.register(RunId::new_v4());
         let access = run.lookup(uuid::Uuid::new_v4()).unwrap();
         let (work, _) = work(http.address, Arc::new(AtomicUsize::new(0)));
+        let trace = Trace::new(true);
+        let observed = trace.clone();
+        let work: Work = Box::new(move |control| Box::pin(observed.scope(work(control))));
         let node = access
             .native_node(
                 Key {
@@ -188,6 +198,21 @@ async fn registration_rejects_error_expiry_and_interactive_authorization() {
             "reject the provider's {field} instead of accepting MachineAuthorized alone"
         );
         bounded(node.physical()).await.unwrap();
+        let snapshot = trace.snapshot().unwrap();
+        let expected = match field {
+            "NodeKeyExpired" => Detail::KeyExpired,
+            "MachineAuthorized" => Detail::MachineUnauthorized,
+            "AuthURL" => Detail::AuthenticationRequired,
+            _ => Detail::Rejected,
+        };
+        assert!(
+            snapshot.steps.iter().any(|s| s.stage == Stage::Registration
+                && s.status == Status::Failed
+                && s.detail == expected),
+            "{field}"
+        );
+        let encoded = serde_json::to_string(&snapshot).unwrap();
+        assert!(!encoded.contains("CANARY") && !encoded.contains(DERIVED));
         bounded(run.shutdown_native()).await.unwrap();
         http.finish_closed().await;
     }

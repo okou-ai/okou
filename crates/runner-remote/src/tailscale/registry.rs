@@ -32,6 +32,7 @@ impl Node {
             generation: key.generation,
             resource_id: self.completion.evidence.resource_id,
             evidence: Arc::clone(&self.completion.evidence),
+            connection: None,
         }
     }
     pub(crate) fn observe(&self, watch: crate::diagnostics::NativeWatch) {
@@ -60,7 +61,10 @@ impl Node {
         port: u16,
     ) -> Result<super::tcp::Stream, Failure> {
         self.completion.ready().await?;
-        self.completion.client()?.dial(target, port)?.await
+        self.completion
+            .client()?
+            .dial_retained(target, port, None, self.completion.evidence.layers().fork())?
+            .await
     }
 
     pub(crate) async fn dial_retained(
@@ -68,11 +72,12 @@ impl Node {
         target: &str,
         port: u16,
         lease: super::Lease,
+        trace: super::evidence::Trace,
     ) -> Result<super::tcp::Stream, Failure> {
         self.completion.ready().await?;
         self.completion
             .client()?
-            .dial_retained(target, port, Some(lease))?
+            .dial_retained(target, port, Some(lease), trace)?
             .await
     }
 }

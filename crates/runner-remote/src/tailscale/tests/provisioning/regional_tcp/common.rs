@@ -14,6 +14,122 @@ use tokio_util::sync::CancellationToken;
 const OTHER: &str = "11111111-1111-4111-8111-111111111112";
 
 #[tokio::test]
+async fn post_ready_map_validation_failure_is_queryable_after_native_cleanup_without_target_login()
+{
+    let mut h = Harness::new(Reply::default()).await;
+    h.enable_diagnostics().await;
+    let api = Api::secure(None).await;
+    let home = Server::secure().await;
+    let control = Control::new(ACCEPTED.to_vec(), map(&home), KeyReply::Valid, false).await;
+    control.set_logout_reply(
+        hyper::StatusCode::OK,
+        br#"{"NodeKeyExpired":true}"#.to_vec(),
+    );
+    let dial = api.secure.as_ref().unwrap().clone();
+    let descriptors = Arc::new(Mutex::new(Vec::new()));
+    *h.runtime.native_services.lock().unwrap() = Some(control.test_services(
+        dial.clone(),
+        Relay::new(&home, WriteGate::new(), Arc::clone(&descriptors)),
+    ));
+    let id = uuid::Uuid::new_v4();
+    let resolve = h.resolve(credential(&h, id, Case::Exec)).await;
+    let inventory = h
+        .api
+        .mock_async(|when, then| {
+            when.method("GET").path("/api/ssh/hosts");
+            then.status(200)
+                .json_body(crate::test_fixtures::remote_inventory(
+                    &[(CONNECTION, 7)],
+                    crate::ssh::tests::harness::CREATED_AT,
+                ));
+        })
+        .await;
+    control.allow_all();
+    let frames = bounded(h.request(params())).await;
+    assert_eq!(
+        frames.last().unwrap()["data"]["failure_reason"],
+        "network_failure"
+    );
+    let original_attempt =
+        crate::test_fixtures::diagnostic_attempt(&frames.last().unwrap()["data"]);
+    let (mut relay, _) = bounded(home.task).await.unwrap();
+    control
+        .update_map(json!({"Peers":[{"ID":2,"Name":"private-map-canary"}]}))
+        .await;
+    let history = bounded(async {
+        loop {
+            let response = h
+                .raw(
+                    json!({"version":1,"method":"ssh.diagnose",
+                "params":{"connectionId":CONNECTION}})
+                    .to_string(),
+                )
+                .await;
+            let data = response.last().unwrap()["data"].clone();
+            let text = crate::test_fixtures::diagnostic_text(&data);
+            if text.contains("terminal root: map stream;")
+                && text.contains("cleanup complete true;")
+            {
+                break data;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await;
+    let text = crate::test_fixtures::diagnostic_text(&history);
+    assert_eq!(history["status"], "found");
+    assert!(
+        text.contains("Native node map validation: failed; detail: invalid."),
+        "{text}"
+    );
+    assert!(
+        !text.contains("Native node map decode: passed;"),
+        "a guard-rejected frame never reached SDK decode: {text}"
+    );
+    assert!(
+        text.contains("Native observations: ready true; first terminal failure domain failed;")
+    );
+    assert!(text.contains(&format!("configuration {id}; generation 1; resource ")));
+    assert!(!text.contains("private-map-canary") && !text.contains("synthetic-secret"));
+    assert!(text.len() <= 8192);
+    assert!(
+        text.contains("Next step: Inspect the native control/map stream"),
+        "{text}"
+    );
+    let original = h
+        .raw(
+            json!({"version":1,"method":"ssh.diagnose",
+        "params":{"attemptId":original_attempt}})
+            .to_string(),
+        )
+        .await;
+    let original = &original.last().unwrap()["data"];
+    assert_eq!(original["status"], "found");
+    let original = crate::test_fixtures::diagnostic_text(original);
+    assert!(
+        original.contains("Native node map validation: passed;"),
+        "{original}"
+    );
+    assert!(
+        !original.contains("terminal root: map stream;")
+            && !original.contains("Native node map validation: failed;"),
+        "{original}"
+    );
+    assert_eq!(h.observed.auth.load(Ordering::SeqCst), 0);
+    assert!(h.observed.commands.lock().unwrap().is_empty());
+    resolve.assert_calls_async(1).await;
+    assert!(inventory.calls_async().await > 0);
+    bounded(h.shutdown()).await;
+    crate::tailscale::tests::peers::relay::closed(relay.get_mut(), true).await;
+    assert_eq!(descriptors.lock().unwrap().len(), 1);
+    control.assert_control_closed();
+    dial.assert_closed(2);
+    api.assert_contract(1, 0);
+    api.finish().await;
+    control.finish().await;
+}
+
+#[tokio::test]
 async fn native_common_cleanup_rejection_reaches_guest_rpc_without_retry_or_login() {
     let mut h = Harness::new(Reply::default()).await;
     let api = Api::secure_with_delete_status(None, 500).await;
@@ -102,6 +218,16 @@ async fn native_common_rejected_home_announcement_never_sends_login_or_command()
         "- Native source: configuration {id}; generation 1; resource "
     )));
     assert!(original.contains("first terminal failure domain failed;"));
+    assert!(original.contains("terminal root: startup;"), "{original}");
+    assert!(
+        original.contains("Native node registration: passed;"),
+        "{original}"
+    );
+    assert!(
+        original.contains("Native node home announcement: failed;"),
+        "{original}"
+    );
+    assert!(!original.contains("Native node relay protocol: passed;"));
     let mut params = params();
     params["sshConnectionId"] = OTHER.into();
     let failed = bounded(h.request(params)).await;
@@ -294,6 +420,12 @@ async fn run_case(case: Case) {
         _ => Reply::default(),
     })
     .await;
+    if matches!(
+        case,
+        Case::WrongPin | Case::BadPassword | Case::RejectedIdentity
+    ) {
+        h.enable_diagnostics().await;
+    }
     h.observed.allow_none_auth.store(
         matches!(
             case,
@@ -420,6 +552,41 @@ async fn run_case(case: Case) {
                 usize::from(matches!(case, Case::BadPassword | Case::RejectedIdentity))
             );
             assert!(h.observed.commands.lock().unwrap().is_empty());
+            if !matches!(case, Case::TofuChanged) {
+                let inventory = h
+                    .api
+                    .mock_async(|when, then| {
+                        when.method("GET").path("/api/ssh/hosts");
+                        then.status(200)
+                            .json_body(crate::test_fixtures::remote_inventory(
+                                &[(CONNECTION, 7)],
+                                crate::ssh::tests::harness::CREATED_AT,
+                            ));
+                    })
+                    .await;
+                let history = peers
+                    .finish(
+                        h.raw(
+                            json!({"version":1,"method":"ssh.diagnose",
+                "params":{"connectionId":CONNECTION}})
+                            .to_string(),
+                        ),
+                    )
+                    .await;
+                let text = crate::test_fixtures::diagnostic_text(&history.last().unwrap()["data"]);
+                assert!(
+                    text.contains("Native connection private tcp: passed;"),
+                    "{text}"
+                );
+                assert!(
+                    text.contains(
+                        "Native connection private tcp endpoint: 100.64.0.2:22; family: ipv4."
+                    ),
+                    "{text}"
+                );
+                assert!(text.contains(&format!("configuration {id}; generation 1; resource ")));
+                inventory.assert_calls_async(1).await;
+            }
         }
         _ => {
             forwarding(&mut peers, &h, opened.unwrap()).await;

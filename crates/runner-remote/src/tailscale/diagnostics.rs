@@ -38,14 +38,19 @@ pub fn safe_log_metadata(metadata: &Metadata<'_>) -> bool {
 }
 
 /// This allow-list is also the only error event admitted into production sinks.
-pub(super) fn failed(failure: super::Failure) {
+pub(super) fn failed(failure: super::Failure, evidence: &crate::diagnostics::NativeEvidence) {
     let reason = match failure {
         super::Failure::Cancelled => return,
         super::Failure::DomainFailed => "authority_failure",
         super::Failure::ResourceExhausted => "resource_exhausted",
         super::Failure::CleanupTimedOut => "cleanup_timed_out",
     };
-    tracing::warn!(target: "runner_remote::tailscale", stage = "node", reason, "native Tailscale resource domain failed");
+    let source = evidence
+        .layers()
+        .snapshot()
+        .and_then(|snapshot| serde_json::to_value(snapshot).ok());
+    tracing::warn!(target: "runner_remote::tailscale", stage = "node", reason,
+        resource_id = %evidence.resource_id, diagnostic = ?source, "native Tailscale resource domain failed");
 }
 
 /// Only fixed application stages cross the private SDK diagnostic boundary.
