@@ -1215,12 +1215,14 @@ describe("Morning Brief catalog reconciliation", () => {
             )
           ).body.outcome,
         ).toBe("accepted");
-        const { actor } = await workflowBdd.setupWorkflowOrg({
-          timezone: "Asia/Tokyo",
-        });
-        if (!actor.orgId) {
-          throw new Error("Expected a Morning Brief workspace");
+        const actor = bdd.user();
+        const onboarding = await bdd.readOnboardingStatus(actor);
+        if (!actor.orgId || !onboarding.defaultAgentId) {
+          throw new Error("Expected a Morning Brief workspace and Agent");
         }
+        await bdd.completeOnboarding(actor, { timezone: "Asia/Tokyo" });
+        await selectPersonalDefaultModel(actor);
+        bdd.acceptAgentStorageWrites();
         await updateFeatureSwitchesForUser(
           context,
           { ...actor, orgId: actor.orgId },
@@ -1229,7 +1231,7 @@ describe("Morning Brief catalog reconciliation", () => {
               definitionName === "internal-test-morning-brief",
           },
         );
-        await connectBriefSource(actor);
+        await connectBriefSourceForAgent(actor, onboarding.defaultAgentId);
         await accept(
           morningBriefPreferenceClient().update({
             headers: authHeaders(actor),
