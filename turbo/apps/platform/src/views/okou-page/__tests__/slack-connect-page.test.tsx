@@ -311,6 +311,53 @@ test("Leaving the page during verification cancels the automatic Slack launch", 
   expect(pathname()).toBe("/works");
 });
 
+test.each(["/settings/slack", "/settings/slack?w=T_ACTUAL&u=U_ACTUAL"])(
+  "Changing accounts during verification prevents the old account from opening Slack: %s",
+  async (path) => {
+    const launched = context.mocks.browser.locationAssign();
+    const requested = context.mocks.deferred<void>();
+    const release = context.mocks.deferred<void>();
+    context.mocks.api(
+      integrationsSlackContract.getStatus,
+      async ({ respond }) => {
+        requested.resolve();
+        await release.promise;
+        return respond(200, {
+          isConnected: true,
+          isInstalled: true,
+          isAdmin: false,
+        });
+      },
+    );
+    context.mocks.api(
+      slackConnectContract.getLinkStatus,
+      async ({ respond }) => {
+        requested.resolve();
+        await release.promise;
+        return respond(200, {
+          isConnected: true,
+          isAdmin: false,
+          linkStatus: { kind: "connected" },
+        });
+      },
+    );
+    const page = await startPage({ context, path });
+    await page.content;
+    await requested.promise;
+    const clerk = context.mocks.clerk();
+    act(() => {
+      clerk.user(
+        { id: "replacement-owner", fullName: "Replacement" },
+        { id: "replacement-session", token: "replacement-token" },
+      );
+      clerk.stateChanged();
+    });
+    release.resolve();
+    await page.ready;
+    expect(launched.calls).toStrictEqual([]);
+  },
+);
+
 test("A partial provider link offers a clean restart", async () => {
   await setupPage({ context, path: "/settings/slack?w=T_ACTUAL" });
   await expect(

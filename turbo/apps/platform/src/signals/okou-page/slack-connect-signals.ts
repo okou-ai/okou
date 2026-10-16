@@ -9,6 +9,7 @@ import { appendCapturedPreviewBypassToUrl } from "../../lib/preview-bypass-cooki
 import { accept } from "../../lib/accept.ts";
 import type { SlackOrgStatus } from "@okouai/api-contracts/contracts/integrations-slack";
 import { slackOrgData$, reloadSlackOrg$ } from "./slack.ts";
+import { authenticatedSessionKey$ } from "../auth.ts";
 import { settle } from "../utils.ts";
 
 const linkReload$ = state(0);
@@ -114,12 +115,15 @@ export const slackReturnUrl$ = computed((get) => {
 export const initSlackConnectPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
+    const owner = get(authenticatedSessionKey$);
     set(reloadSlackConnectStatus$);
     const pending = get(slackConnectStatus$);
     const result = await settle(pending, signal);
     // The page owns read errors and retry; a failed or superseded read cannot launch Slack.
     if (
       !result.ok ||
+      !owner ||
+      get(authenticatedSessionKey$) !== owner ||
       get(slackConnectStatus$) !== pending ||
       get(effectiveError$)
     ) {
