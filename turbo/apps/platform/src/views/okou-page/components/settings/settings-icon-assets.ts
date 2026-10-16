@@ -14,6 +14,7 @@ const SETTINGS_ICON_ASSET_PATHS = {
   openai: "views/zero-page/components/settings/icons/openai-df8a3d9c4274.svg",
   slack:
     "views/zero-page/components/settings/icons/slack-198390069136.svg?v=568fa471",
+  wechat: "views/okou-page/components/settings/icons/wechat-86fe5e0aadfe.svg",
   teams: "views/zero-page/components/settings/icons/teams-0dc3a5275d31.svg",
   telegram:
     "views/zero-page/components/settings/icons/telegram-2d9ff5d01146.svg",
