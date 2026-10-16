@@ -37,32 +37,16 @@ safe_host=$(printf '%s' "$HOST" | tr -c 'A-Za-z0-9_.-' '_')
 proxy_root="${OKOU_CLOUDFLARE_SSH_PROXY_DIAGNOSTICS_DIR:-}"
 RETAIN_DIAGNOSTICS=false
 PROXY_DIR=""
-if [[ "$proxy_root" == /* ]]; then
-  if [ ! -L "$proxy_root" ] \
-    && mkdir -p -- "$proxy_root" \
-    && chmod 700 "$proxy_root"; then
-    PROXY_DIR=$(mktemp -d "${proxy_root}/proxy.XXXXXX") || true
-    if [ -n "$PROXY_DIR" ]; then
-      RETAIN_DIAGNOSTICS=true
-    fi
-  fi
-fi
-if [ -z "$PROXY_DIR" ]; then
-  PROXY_DIR=$(mktemp -d "${LOG_DIR%/}/cloudflared-ssh-${safe_host}.XXXXXX.log")
-fi
-LOG_FILE="${PROXY_DIR}/stderr.log"
-EVENTS_FILE="${PROXY_DIR}/events.log"
-: > "$LOG_FILE"
-: > "$EVENTS_FILE"
+LOG_FILE=""
+EVENTS_FILE=""
 native_log_args=()
-if mkdir -m 700 "${PROXY_DIR}/application" \
-  && touch "${PROXY_DIR}/application/cloudflared.log"; then
-  native_log_args=(--log-level debug --log-directory "${PROXY_DIR}/application")
-fi
 
 proxy_event() {
   local event=$1 status=${2:-unknown} signal=${3:-none}
   local uptime=unavailable utc
+  if [ -z "$EVENTS_FILE" ]; then
+    return
+  fi
   if [ -r /proc/uptime ]; then
     read -r uptime _ < /proc/uptime || uptime=unavailable
   fi
@@ -72,7 +56,6 @@ proxy_event() {
     "$$" "$PPID" "${cloudflared_pid:-none}" "$status" "$signal" "$safe_host" \
     >> "$EVENTS_FILE" || true
 }
-proxy_event proxy-start
 
 github_escape() {
   local value="$1"
@@ -84,6 +67,10 @@ github_escape() {
 
 emit_redacted_cloudflared_log() {
   local header="$1"
+  if [ -z "$PROXY_DIR" ]; then
+    echo "Cloudflare proxy diagnostics unavailable before initialization." >&2
+    return
+  fi
   echo "$header" >&2
   cloudflare_ssh_render_diagnostics proxy "$PROXY_DIR" >&2 || true
 }
@@ -180,7 +167,7 @@ cleanup() {
   trap - EXIT
   terminate_cloudflared
   proxy_event proxy-exit "$status"
-  if [ "$RETAIN_DIAGNOSTICS" = "false" ]; then
+  if [ "$RETAIN_DIAGNOSTICS" = "false" ] && [ -n "$PROXY_DIR" ]; then
     rm -rf -- "$PROXY_DIR"
   fi
   exit "$status"
@@ -209,6 +196,30 @@ trap 'cleanup $?' EXIT
 trap handle_hup HUP
 trap 'handle_signal INT 130' INT
 trap 'handle_signal TERM 143' TERM
+
+# Register cleanup before creating owned directories or fallible log files.
+if [[ "$proxy_root" == /* ]]; then
+  if [ ! -L "$proxy_root" ] \
+    && mkdir -p -- "$proxy_root" \
+    && chmod 700 "$proxy_root"; then
+    PROXY_DIR=$(mktemp -d "${proxy_root}/proxy.XXXXXX") || true
+    if [ -n "$PROXY_DIR" ]; then
+      RETAIN_DIAGNOSTICS=true
+    fi
+  fi
+fi
+if [ -z "$PROXY_DIR" ]; then
+  PROXY_DIR=$(mktemp -d "${LOG_DIR%/}/cloudflared-ssh-${safe_host}.XXXXXX.log")
+fi
+LOG_FILE="${PROXY_DIR}/stderr.log"
+EVENTS_FILE="${PROXY_DIR}/events.log"
+: > "$LOG_FILE"
+: > "$EVENTS_FILE"
+if mkdir -m 700 "${PROXY_DIR}/application" \
+  && touch "${PROXY_DIR}/application/cloudflared.log"; then
+  native_log_args=(--log-level debug --log-directory "${PROXY_DIR}/application")
+fi
+proxy_event proxy-start
 
 status=0
 TUNNEL_SERVICE_TOKEN_ID="$CF_ACCESS_CLIENT_ID" \
