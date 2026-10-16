@@ -5,7 +5,7 @@ use std::time::Duration;
 use runner_rpc_proto::ErrorCode;
 use tokio::time::Instant;
 
-use super::{Effects, FailureReason, Manager, Response, State, buffer, protocol};
+use super::{Effects, FailureReason, Manager, Response, buffer, protocol};
 
 impl Manager {
     pub(super) async fn read(&self, params: protocol::Read) -> Result<Response, ErrorCode> {
@@ -39,7 +39,7 @@ impl Manager {
                 if params.cursor > data.output.end {
                     return Err(ErrorCode::InvalidRequest);
                 }
-                let terminal = matches!(data.state, State::Finished { .. } | State::Failed { .. });
+                let terminal = data.lifecycle.is_terminal();
                 let progress = params.cursor < data.output.end;
                 let expired = Instant::now() >= deadline;
                 if progress || terminal || expired {

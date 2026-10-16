@@ -10,8 +10,8 @@ use super::super::{
     pool,
 };
 use super::{
-    Command, Entry, Input,
-    protocol::{Effects, Program, Rejection, Response, Start, State},
+    Command, Entry, Input, Lifecycle,
+    protocol::{Effects, Program, Rejection, Response, Start},
 };
 use runner_types::ids::RunId;
 
@@ -46,18 +46,8 @@ pub(super) async fn run(
     );
     {
         let mut data = entry.data.lock().unwrap_or_else(|p| p.into_inner());
-        data.diagnostic = diagnostic;
         data.generation = observation.generation;
-        data.state = match result.as_ref() {
-            Ok(exit) => {
-                data.effects = Effects::Completed;
-                State::Finished { exit: exit.clone() }
-            }
-            Err(reason) => State::Failed {
-                failure_reason: *reason,
-            },
-        };
-        data.completed = Some(Instant::now());
+        data.lifecycle.complete(&result, diagnostic);
     }
     entry.changed.notify_waiters();
     // This task owns no guest I/O. Diagnostic reporting never extends a park lease.
@@ -151,7 +141,13 @@ async fn execute(
                 acknowledgement(&mut channel, &setup).await?;
             }
             entry.current()?;
-            entry.data.lock().unwrap_or_else(|p| p.into_inner()).effects = Effects::Unknown;
+            entry
+                .data
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .lifecycle = Lifecycle::Starting {
+                effects: Effects::Unknown,
+            };
             let sent = match start.program {
                 Program::Exec { command } => setup.wait(channel.exec(true, command)).await?,
                 Program::Shell {} => setup.wait(channel.request_shell(true)).await?,
@@ -159,13 +155,22 @@ async fn execute(
             sent.map_err(|_| FailureReason::Disconnected)?;
             if let Err(reason) = acknowledgement(&mut channel, &setup).await {
                 if reason == FailureReason::ExecRejected {
-                    entry.data.lock().unwrap_or_else(|p| p.into_inner()).effects =
-                        Effects::NotStarted;
+                    entry
+                        .data
+                        .lock()
+                        .unwrap_or_else(|p| p.into_inner())
+                        .lifecycle = Lifecycle::Starting {
+                        effects: Effects::NotStarted,
+                    };
                 }
                 return Err(reason);
             }
             entry.current()?;
-            entry.data.lock().unwrap_or_else(|p| p.into_inner()).state = State::Running;
+            entry
+                .data
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .lifecycle = Lifecycle::Running;
             let (reader, writer) = channel.split();
             // Keep draining the remote channel while stdin is flow-controlled.
             tokio::select! {

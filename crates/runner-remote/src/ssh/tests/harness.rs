@@ -81,6 +81,7 @@ pub(crate) struct Observed {
     pub(crate) none_auth: AtomicUsize,
     pub(crate) allow_none_auth: AtomicBool,
     pub(crate) commands: Mutex<Vec<Vec<u8>>>,
+    pub(super) exec_ack_gate: Mutex<Option<Arc<Semaphore>>>,
     pub(super) attempts: Mutex<Vec<SocketAddr>>,
     pub(crate) queries: Mutex<Vec<(String, u16)>>,
     pub(super) resolved: AtomicUsize,
@@ -916,6 +917,10 @@ impl server::Handler for Peer {
             .lock()
             .unwrap()
             .push(command.to_vec());
+        let gate = self.observed.exec_ack_gate.lock().unwrap().clone();
+        if let Some(gate) = gate {
+            gate.acquire().await.unwrap().forget();
+        }
         match &self.reply {
             Reply::Process => {
                 session.channel_success(channel)?;
