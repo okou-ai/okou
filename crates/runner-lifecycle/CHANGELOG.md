@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.9](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.14.8...runner-lifecycle-v0.14.9) (2026-10-16)
+
+
+### Performance Improvements
+
+* **runner:** reconcile home inventory by cache key ([#40537](https://github.com/okou-ai/okou/issues/40537)) ([48f5e09](https://github.com/okou-ai/okou/commit/48f5e09b52fcd10baaabf949d797c67837f651d3))
+
 ## [0.14.8](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.14.7...runner-lifecycle-v0.14.8) (2026-10-16)
 
 ## [0.14.7](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.14.6...runner-lifecycle-v0.14.7) (2026-10-16)

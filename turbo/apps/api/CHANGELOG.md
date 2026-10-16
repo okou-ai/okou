@@ -9,6 +9,35 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.747.0](https://github.com/okou-ai/okou/compare/api-v1.746.0...api-v1.747.0) (2026-10-16)
+
+
+### Features
+
+* add wechat cli history and file delivery ([#40385](https://github.com/okou-ai/okou/issues/40385)) ([a1f8a0e](https://github.com/okou-ai/okou/commit/a1f8a0e02166de9dae893adbd2ce60e01704b633))
+
+
+### Bug Fixes
+
+* **api:** simplify pinned document template prompts ([#40574](https://github.com/okou-ai/okou/issues/40574)) ([7657e16](https://github.com/okou-ai/okou/commit/7657e16141fcb2950e60d39a176ba9e559432319))
+
+
+### Refactoring
+
+* **api:** own github installation lookup and callback linking ([#40581](https://github.com/okou-ai/okou/issues/40581)) ([74b4374](https://github.com/okou-ai/okou/commit/74b4374d119ccb25a4e34d4980a6ef775b71d7ea))
+* **api:** own github installation status reads ([#40590](https://github.com/okou-ai/okou/issues/40590)) ([c12450f](https://github.com/okou-ai/okou/commit/c12450fa5c2bb0a7af48ad37af785730e17bced9))
+* **api:** remove redundant ssh authority and retained config read fences ([#40559](https://github.com/okou-ai/okou/issues/40559)) ([2328ec5](https://github.com/okou-ai/okou/commit/2328ec5e765347cb5ac057467053604870660243))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.0
+    * @okouai/core bumped to 8.764.1
+    * @okouai/db bumped to 1.344.0
+    * @okouai/pi-agent-runtime bumped to 1.50.12
+
 ## [1.746.0](https://github.com/okou-ai/okou/compare/api-v1.745.0...api-v1.746.0) (2026-10-16)
 
 

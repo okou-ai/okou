@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.233.12](https://github.com/okou-ai/okou/compare/runner-rs-v0.233.11...runner-rs-v0.233.12) (2026-10-16)
+
+
+### Performance Improvements
+
+* **runner:** reconcile home inventory by cache key ([#40537](https://github.com/okou-ai/okou/issues/40537)) ([48f5e09](https://github.com/okou-ai/okou/commit/48f5e09b52fcd10baaabf949d797c67837f651d3))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.233.11](https://github.com/okou-ai/okou/compare/runner-rs-v0.233.10...runner-rs-v0.233.11) (2026-10-16)
 
 ### Release Dependencies
