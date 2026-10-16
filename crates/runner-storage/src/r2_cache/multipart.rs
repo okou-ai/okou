@@ -158,47 +158,48 @@ where
     let mut part_number: i32 = 1;
     let mut eof = false;
 
-    while !eof || !tasks.is_empty() {
-        // Refill the in-flight window by reading and spawning more parts.
-        while !eof && tasks.len() < concurrency {
-            let mut buf = vec![0u8; part_size];
-            let n = read_full(&mut reader, &mut buf).await?;
-            if n == 0 {
-                eof = true;
-                break;
+    let result = async {
+        while !eof || !tasks.is_empty() {
+            // Refill the in-flight window by reading and spawning more parts.
+            while !eof && tasks.len() < concurrency {
+                let mut buf = vec![0u8; part_size];
+                let n = read_full(&mut reader, &mut buf).await?;
+                if n == 0 {
+                    eof = true;
+                    break;
+                }
+                buf.truncate(n);
+                // Vec → Bytes is zero-copy (transfers ownership). Avoids the
+                // ~16 MiB memcpy per part that `to_vec()` would do.
+                let chunk = bytes::Bytes::from(buf);
+                let pn = part_number;
+                let upload_part = upload.clone();
+                tasks.spawn(async move { upload_part(pn, chunk).await.map(|part| (pn, part)) });
+                part_number = part_number
+                    .checked_add(1)
+                    .ok_or_else(|| R2Error::Io(io_other("part_number overflow")))?;
+                if n < part_size {
+                    eof = true;
+                    break;
+                }
             }
-            buf.truncate(n);
-            // Vec → Bytes is zero-copy (transfers ownership). Avoids the
-            // ~16 MiB memcpy per part that `to_vec()` would do.
-            let chunk = bytes::Bytes::from(buf);
-            let pn = part_number;
-            let upload_part = upload.clone();
-            tasks.spawn(async move { upload_part(pn, chunk).await.map(|part| (pn, part)) });
-            part_number = part_number
-                .checked_add(1)
-                .ok_or_else(|| R2Error::Io(io_other("part_number overflow")))?;
-            if n < part_size {
-                eof = true;
-                break;
+
+            // Drain at least one completion. JoinSet returns None only when
+            // empty, which our outer loop condition prevents.
+            if let Some(joined) = tasks.join_next().await {
+                let (pn, part) = joined.map_err(|error| R2Error::Io(io_other(error)))??;
+                parts.push((pn, part));
             }
         }
 
-        // Drain at least one completion. JoinSet returns None only when
-        // empty, which our outer loop condition prevents.
-        if let Some(joined) = tasks.join_next().await {
-            let result = match joined {
-                Ok(result) => result,
-                Err(error) => Err(R2Error::Io(io_other(error))),
-            };
-            match result {
-                Ok((pn, part)) => parts.push((pn, part)),
-                Err(error) => {
-                    // Finish cancelling uploads before the caller aborts the multipart session.
-                    tasks.shutdown().await;
-                    return Err(error);
-                }
-            }
-        }
+        Ok::<(), R2Error>(())
+    }
+    .await;
+
+    if let Err(error) = result {
+        // Finish cancelling uploads for every scheduler error before the caller aborts the session.
+        tasks.shutdown().await;
+        return Err(error);
     }
 
     // Parts must be in part_number order for CompleteMultipartUpload.
@@ -346,6 +347,7 @@ mod tests {
         inner: Cursor<Vec<u8>>,
         blocked_at: u64,
         queued_read_allowed: Arc<AtomicBool>,
+        blocked_read_attempts: usize,
     }
 
     impl AsyncRead for WindowGuardReader {
@@ -357,8 +359,9 @@ mod tests {
             if self.inner.position() >= self.blocked_at
                 && !self.queued_read_allowed.load(Ordering::SeqCst)
             {
+                self.blocked_read_attempts += 1;
                 return Poll::Ready(Err(io::Error::other(
-                    "multipart scheduler read a queued part before an upload slot was released",
+                    "multipart scheduler read a queued part before it was allowed",
                 )));
             }
 
@@ -440,6 +443,7 @@ mod tests {
             inner: Cursor::new(b"aaaabbbbcccc".to_vec()),
             blocked_at: 8,
             queued_read_allowed: Arc::clone(&queued_read_allowed),
+            blocked_read_attempts: 0,
         };
         let releases = Arc::new([
             Arc::new(Notify::new()),
@@ -552,6 +556,7 @@ mod tests {
         enum Failure {
             Upload,
             Join,
+            Reader,
         }
 
         struct DropFlag(Arc<AtomicBool>);
@@ -562,22 +567,27 @@ mod tests {
             }
         }
 
-        for failure in [Failure::Upload, Failure::Join] {
-            let reader = WindowGuardReader {
+        for failure in [Failure::Upload, Failure::Join, Failure::Reader] {
+            let mut reader = WindowGuardReader {
                 inner: Cursor::new(b"aaaabbbbcccc".to_vec()),
                 blocked_at: 8,
                 queued_read_allowed: Arc::new(AtomicBool::new(false)),
+                blocked_read_attempts: 0,
             };
             let initial_uploads_ready = Arc::new(Barrier::new(2));
             let sibling_dropped = Arc::new(AtomicBool::new(false));
+            let uploads_started = Arc::new(AtomicUsize::new(0));
 
             let upload = {
                 let initial_uploads_ready = Arc::clone(&initial_uploads_ready);
                 let sibling_dropped = Arc::clone(&sibling_dropped);
+                let uploads_started = Arc::clone(&uploads_started);
                 move |part_number: i32, chunk: bytes::Bytes| {
                     let initial_uploads_ready = Arc::clone(&initial_uploads_ready);
                     let sibling_dropped = Arc::clone(&sibling_dropped);
+                    let uploads_started = Arc::clone(&uploads_started);
                     async move {
+                        uploads_started.fetch_add(1, Ordering::SeqCst);
                         let expected_chunk: &[u8] = match part_number {
                             1 => b"aaaa",
                             2 => b"bbbb",
@@ -597,6 +607,11 @@ mod tests {
                                     Err(R2Error::S3("upload part 2 failed".to_string()))
                                 }
                                 Failure::Join => panic!("upload part 2 panicked"),
+                                // Free a slot so the reader faults with the sibling still alive.
+                                Failure::Reader => Ok(CompletedPart::builder()
+                                    .e_tag("etag-2")
+                                    .part_number(part_number)
+                                    .build()),
                             }
                         }
                     }
@@ -605,7 +620,7 @@ mod tests {
 
             let error = tokio::time::timeout(
                 Duration::from_secs(5),
-                upload_parts_streaming_with(reader, 4, 2, upload),
+                upload_parts_streaming_with(&mut reader, 4, 2, upload),
             )
             .await
             .expect("multipart scheduler test timed out")
@@ -615,6 +630,13 @@ mod tests {
                 sibling_dropped.load(Ordering::SeqCst),
                 "sibling upload must be dropped before the scheduler returns"
             );
+            assert_eq!(uploads_started.load(Ordering::SeqCst), 2);
+            assert_eq!(reader.inner.position(), 8, "queued part must remain unread");
+            assert_eq!(
+                reader.blocked_read_attempts,
+                usize::from(matches!(failure, Failure::Reader)),
+                "scheduler must stop reading after the first error"
+            );
             match (failure, error) {
                 (Failure::Upload, R2Error::S3(message)) => {
                     assert_eq!(message, "upload part 2 failed");
@@ -623,6 +645,13 @@ mod tests {
                     assert!(
                         error.to_string().contains("upload part 2 panicked"),
                         "join error must preserve the task panic: {error}"
+                    );
+                }
+                (Failure::Reader, R2Error::Io(error)) => {
+                    assert_eq!(error.kind(), io::ErrorKind::Other);
+                    assert_eq!(
+                        error.to_string(),
+                        "multipart scheduler read a queued part before it was allowed"
                     );
                 }
                 (_, other) => panic!("unexpected scheduler error: {other:?}"),
