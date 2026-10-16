@@ -69,7 +69,18 @@ class FenceReportTests(unittest.TestCase):
                     "original_sandbox_id": identity[0], "original_backing_generation": identity[1],
                     "full_original_lease": [2, 4096, 1], "allocated": [2, 4096, 1],
                     "original_retained": True, "cleanup_accepted": False,
+                    "refresh": None, "start_error": error,
                 }
+                if phase == "stale_refresh":
+                    evidence["start_error"] = "Consumed"
+                    evidence["pool_released_ns"] = clock + 40_000_000
+                    evidence["observer"]["started_ns"] = clock + 31_000_000
+                    evidence["observer"]["completed_ns"] = clock + 35_000_000
+                    evidence["refresh"] = {"started_ns": clock + 50_000_000,
+                        "finished_ns": clock + 1_100_000_000, "error": error, "backing_rearm_error": "Consumed"}
+                    evidence["samples"].append({"started_ns": clock + 60_000_000,
+                        "finished_ns": clock + 1_090_000_000, "read_start_offset_ns": clock + 60_000_001,
+                        "available_bytes": 32 * 1024**3, "age_ns": 1_029_999_999, "read_duration_ns": 1})
                 self.fences.append({"version": 1, "case": case, "phase": phase,
                     "monotonic_ns": clock + 1_120_000_000, "unix_ns": clock + 1_120_001_000,
                     "sandbox_id": identity[0], "backing_generation": identity[1], "evidence": evidence})
@@ -128,13 +139,23 @@ class FenceReportTests(unittest.TestCase):
 
     def test_elapsed_expiry_and_observer_inside_wait_are_required(self):
         original = copy.deepcopy(self.fences)
-        for key, value in (("granted_ns", self.fences[0]["evidence"]["pool_held_ns"] - 1),
+        for key, value in (("refresh", None),
                            ("wait_polled_ns", self.fences[0]["evidence"]["observer"]["started_ns"] + 1)):
             self.fences = copy.deepcopy(original)
             self.fences[0]["evidence"][key] = value
-            if key == "granted_ns":
-                self.fences[0]["evidence"]["pool_released_ns"] = value + 999_999_999
             with self.subTest(key=key), self.assertRaises(ValueError):
+                self.validate()
+
+    def test_expired_refresh_cannot_be_fresh_rearmed_or_started(self):
+        original = copy.deepcopy(self.fences)
+        for mutation in (lambda v: v["samples"][2].update(age_ns=999_999_999),
+                lambda v: v["refresh"].update(started_ns=v["pool_released_ns"]),
+                lambda v: v["refresh"].update(backing_rearm_error=None),
+                lambda v: v.update(start_error="UnknownObservation(Stale)"),
+                lambda v: v["samples"][2].update(finished_ns=v["refresh"]["finished_ns"])):
+            self.fences = copy.deepcopy(original)
+            mutation(self.fences[0]["evidence"])
+            with self.assertRaises(ValueError):
                 self.validate()
 
     def test_both_original_grant_reads_and_unchanged_refusal_revision_required(self):

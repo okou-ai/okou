@@ -22,7 +22,7 @@ enum Fence {
 impl Fence {
     fn name(self) -> &'static str {
         match self {
-            Self::Stale => "stale_permission",
+            Self::Stale => "stale_refresh",
             Self::Insertion => "changed_insertion",
             Self::Authority => "foreign_authority",
             Self::Envelope => "changed_envelope",
@@ -101,9 +101,34 @@ pub async fn exercise(
                 .send(())
                 .map_err(|_| io::Error::other("native fence wait observer lost"))?;
             let mut pool = lock.await;
-            let retirement = retirement
+            let mut retirement = retirement
                 .take()
                 .ok_or_else(|| io::Error::other("native fence permissions already consumed"))?;
+            let mut refresh = None;
+            let mut refresh_error = None;
+            if matches!(fence, Fence::Stale) {
+                // A grant has no automatic start-time expiry. The caller must
+                // refresh after a wait, outside the inventory lock.
+                drop(pool);
+                source.delay_next_delivery(
+                    inputs.pressure_policy()?.max_sample_age + Duration::from_millis(1),
+                )?;
+                let started_ns = evidence::clocks()?.0;
+                let error = retirement
+                    .refresh_grants()
+                    .await
+                    .err()
+                    .ok_or_else(|| io::Error::other("native expired refresh was accepted"))?;
+                let finished_ns = evidence::clocks()?.0;
+                let rearm = retirement.validate_granted_backing();
+                if rearm != Err(MemoryOperationError::Consumed) {
+                    return Err(io::Error::other("native failed refresh was rearmed").into());
+                }
+                refresh = Some(json!({"started_ns": started_ns, "finished_ns": finished_ns,
+                    "error": format!("{error:?}"), "backing_rearm_error": "Consumed"}));
+                refresh_error = Some(error);
+                pool = context.pool.lock().await;
+            }
             let result = match fence {
                 Fence::Authority => retirement.start_required(
                     &mut pool,
@@ -141,11 +166,17 @@ pub async fn exercise(
                     .into());
                 }
             };
+            let start_error = format!("{error:?}");
+            if matches!(fence, Fence::Stale) && error != MemoryOperationError::Consumed {
+                return Err(io::Error::other("native failed refresh allowed start").into());
+            }
             Ok::<_, Box<dyn Error + Send + Sync>>((
-                error,
+                refresh_error.unwrap_or(error),
                 revision,
                 snapshot,
                 evidence::clocks()?.0,
+                refresh,
+                start_error,
             ))
         };
         tokio::pin!(attempt);
@@ -157,12 +188,6 @@ pub async fn exercise(
         pending.await?;
         let wait_polled_ns = evidence::clocks()?.0;
         let observer = foreground_probe::observe().await?;
-        if matches!(fence, Fence::Stale) {
-            // Actual admission expiry, with its original timestamp. No paused
-            // clock, fabricated observation or numerical host pressure.
-            tokio::time::sleep(inputs.pressure_policy()?.max_sample_age + Duration::from_millis(1))
-                .await;
-        }
         if matches!(fence, Fence::Insertion) {
             let owner = holder
                 .take_reserved(&context.reuse_key)
@@ -185,7 +210,7 @@ pub async fn exercise(
         }
         drop(holder);
         let released_ns = evidence::clocks()?.0;
-        let (error, revision, snapshot, refused_ns) = attempt.await?;
+        let (error, revision, snapshot, refused_ns, refresh, start_error) = attempt.await?;
         if error != fence.expected()
             || revision != ready_revision
             || !matches!(snapshot.idle_sandboxes.as_slice(), [entry] if entry.sandbox_id == original_id)
@@ -212,6 +237,7 @@ pub async fn exercise(
         proof.fence_witness(fence.name(), json!({
             "policy": serde_json::to_value(inputs)?, "expected_error": format!("{:?}", fence.expected()),
             "error": format!("{error:?}"), "selected_ns": selected_ns, "granted_ns": granted_ns,
+            "refresh": refresh, "start_error": start_error,
             "pool_held_ns": held_ns, "wait_polled_ns": wait_polled_ns,
             "pool_released_ns": released_ns, "refused_ns": refused_ns,
             "selected_revision": selected_revision, "ready_revision": ready_revision, "refused_revision": revision,

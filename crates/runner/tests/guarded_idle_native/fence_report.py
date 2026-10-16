@@ -12,7 +12,7 @@ import startup_report as startup
 
 PREFIX = "NATIVE_FENCE_WITNESS "
 ERRORS = {
-    "stale_permission": "UnknownObservation(Stale)",
+    "stale_refresh": "UnknownObservation(Stale)",
     "changed_insertion": "ResourceChanged",
     "foreign_authority": "OwnershipInvariant",
     "changed_envelope": "OwnershipInvariant",
@@ -56,14 +56,13 @@ def validate(directory):
                     or (event["sandbox_id"], event["backing_generation"]) != identity):
                 raise ValueError("native refusal is outside its original positively polled wait")
             selected, granted, held, polled, released, refused = clocks
-            if phase == "stale_permission" and released - granted < policy["max_sample_age_millis"] * 1_000_000:
-                raise ValueError("native stale grant did not actually expire")
             foreground.observer(value.get("observer"), polled, released)
             samples = value.get("samples")
-            if not isinstance(samples, list) or len(samples) != 2:
+            stale = phase == "stale_refresh"
+            if not isinstance(samples, list) or len(samples) != (3 if stale else 2):
                 raise ValueError("native fence lacks both actual original grant reads")
             last, last_offset = selected, -1
-            for sample in samples:
+            for sample in samples[:2]:
                 if (not isinstance(sample, dict) or set(sample) != {
                         "started_ns", "finished_ns", "read_start_offset_ns", "available_bytes", "age_ns", "read_duration_ns"}
                         or any(not pressure_report.integer(sample[k]) for k in sample)
@@ -74,6 +73,26 @@ def validate(directory):
                         or not 0 < sample["available_bytes"] <= policy["host_total_bytes"]):
                     raise ValueError("native fence original grant read timing or availability changed")
                 last, last_offset = sample["finished_ns"], sample["read_start_offset_ns"]
+            refresh = value.get("refresh")
+            if stale:
+                if (not isinstance(refresh, dict) or set(refresh) != {
+                        "started_ns", "finished_ns", "error", "backing_rearm_error"}
+                        or not report.positive_integer(refresh["started_ns"])
+                        or not report.positive_integer(refresh["finished_ns"])
+                        or not released < refresh["started_ns"] < refresh["finished_ns"] < refused
+                        or refresh["error"] != ERRORS[phase] or refresh["backing_rearm_error"] != "Consumed"):
+                    raise ValueError("native expired refresh/rearm is outside the released pool wait")
+                sample = samples[2]
+                if (not isinstance(sample, dict) or set(sample) != set(samples[0])
+                        or any(not pressure_report.integer(sample[k]) for k in sample)
+                        or not refresh["started_ns"] < sample["started_ns"] < sample["finished_ns"] < refresh["finished_ns"]
+                        or sample["read_start_offset_ns"] <= last_offset
+                        or not sample["read_duration_ns"] <= sample["age_ns"] <= sample["finished_ns"] - sample["started_ns"]
+                        or sample["age_ns"] < policy["max_sample_age_millis"] * 1_000_000
+                        or not 0 < sample["available_bytes"] <= policy["host_total_bytes"]):
+                    raise ValueError("native refresh did not deliver an actually expired original read")
+            elif refresh is not None:
+                raise ValueError("unexpected native refresh evidence")
             revisions = [value.get(k) for k in ("selected_revision", "ready_revision", "refused_revision")]
             if (any(not pressure_report.integer(r) for r in revisions)
                     or revisions[1] != revisions[0] + (2 if phase == "changed_insertion" else 0)
@@ -82,6 +101,7 @@ def validate(directory):
                 raise ValueError("native refusal changed or replaced original inventory")
             startup.exact(value, {
                 "policy": policy, "expected_error": ERRORS[phase], "error": ERRORS[phase],
+                "refresh": refresh, "start_error": "Consumed" if stale else ERRORS[phase],
                 "selected_ns": selected, "granted_ns": granted, "pool_held_ns": held,
                 "wait_polled_ns": polled, "pool_released_ns": released, "refused_ns": refused,
                 "selected_revision": revisions[0], "ready_revision": revisions[1], "refused_revision": revisions[2],

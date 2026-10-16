@@ -5,9 +5,12 @@
 `native_foreground_records_retirement_fences_before_detach` first grants real
 paired retirement permissions for the original parked Guest. Each of four
 separate attempts positively polls a held pool lock and joins an actual host
-observation inside that wait. Actual elapsed expiry, reserve/restore insertion
-change, a foreign memory authority and changed coverage must return their exact
-refusal without accepting cleanup or changing the original Guest, full lease
+observation inside that wait. After releasing the pool, public grant refresh
+receives one actual proc read delayed past freshness with its original timestamp.
+It must return `UnknownObservation(Stale)`; backing validation and start must then
+return `Consumed`. Grants have no automatic start-time expiry. Reserve/restore
+insertion change, a foreign memory authority and changed coverage must return their
+exact refusals without accepting cleanup or changing the original Guest, full lease
 or final inventory revision. Unused claims are released outside the pool lock;
 the empty foreign authority is positively closed and joined.
 
