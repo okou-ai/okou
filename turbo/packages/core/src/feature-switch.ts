@@ -50,6 +50,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Use interactive shells on an authorized computer with local opt-in.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.SandboxFilesSidebar]: {
     maintainer: "liangyou@okou.ai",
