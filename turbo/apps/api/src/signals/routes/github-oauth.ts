@@ -37,9 +37,9 @@ import {
   loadActiveGithubInstallationForOrg$,
   loadComposeFeatureSwitchContext,
   parseGithubOauthState,
-  resolveGithubOauthOrgId,
+  resolveGithubOauthOrgId$,
   tryLinkGithubFromLocalRecord,
-  tryLinkGithubFromRemoteInstallations,
+  tryLinkGithubFromRemoteInstallations$,
   verifyGithubConnectSignature,
 } from "../services/github-oauth.service";
 import { encryptPersistentSecretValue } from "../services/crypto.utils";
@@ -741,9 +741,9 @@ const installGithubOauth$ = command(
         return redirectResponse(appUrl("/workflows"));
       }
 
-      const linkedFromRemote = await tryLinkGithubFromRemoteInstallations(
+      const linkedFromRemote = await set(
+        tryLinkGithubFromRemoteInstallations$,
         {
-          db,
           appId,
           appSlug,
           privateKey,
@@ -921,9 +921,9 @@ const completeGithubAppInstallationCallback$ = command(
     signal: AbortSignal,
   ): Promise<Response> => {
     const db = set(writeDb$);
-    const orgId = await resolveGithubOauthOrgId(
+    const orgId = await set(
+      resolveGithubOauthOrgId$,
       {
-        db,
         orgId: args.state.orgId,
         composeId: args.composeId,
       },

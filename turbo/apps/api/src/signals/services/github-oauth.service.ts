@@ -865,223 +865,252 @@ export async function loadComposeFeatureSwitchContext(
   );
 }
 
-export async function resolveGithubOauthOrgId(
-  args: {
-    readonly db: Db;
-    readonly orgId: string | null;
-    readonly composeId: string;
-  },
-  signal: AbortSignal,
-): Promise<string> {
-  if (args.orgId) {
-    return args.orgId;
-  }
-
-  const [compose] = await args.db
-    .select({ orgId: agents.orgId })
-    .from(agents)
-    .where(eq(agents.id, args.composeId))
-    .limit(1);
-  signal.throwIfAborted();
-
-  if (!compose) {
-    throw new Error(`Agent compose not found: composeId=${args.composeId}`);
-  }
-
-  return compose.orgId;
-}
-
-async function loadGithubInstallationForRemoteLink(
-  db: Db,
-  installationId: string,
-) {
-  const [installation] = await db
-    .select({
-      id: githubInstallations.id,
-      orgId: githubInstallations.orgId,
-      appId: githubInstallations.appId,
-      appSlug: githubInstallations.appSlug,
-    })
-    .from(githubInstallations)
-    .where(eq(githubInstallations.installationId, installationId))
-    .limit(1);
-  return installation;
-}
-
-async function linkExistingGithubAppInstallation(
-  args: {
-    readonly db: Db;
-    readonly userId: string;
-    readonly installation: {
-      readonly id: string;
-      readonly appId: string | null;
-      readonly appSlug: string | null;
-    };
-    readonly providerInstallation: AppInstallation;
-  },
-  signal: AbortSignal,
-): Promise<boolean> {
-  const providerAppId = String(args.providerInstallation.app_id);
-  const providerAppSlug = args.providerInstallation.app_slug;
-  if (
-    args.installation.appId !== providerAppId ||
-    args.installation.appSlug !== providerAppSlug
-  ) {
-    await args.db
-      .update(githubInstallations)
-      .set({
-        appId: providerAppId,
-        appSlug: providerAppSlug,
-        updatedAt: new Date(now()),
-      })
-      .where(eq(githubInstallations.id, args.installation.id));
-    signal.throwIfAborted();
-  }
-  const linked = await linkGithubUser(
-    {
-      db: args.db,
-      installRecordId: args.installation.id,
-      userId: args.userId,
+export const resolveGithubOauthOrgId$ = command(
+  async (
+    { get },
+    args: {
+      readonly orgId: string | null;
+      readonly composeId: string;
     },
-    signal,
-  );
-  return linked !== null;
-}
+    signal: AbortSignal,
+  ): Promise<string> => {
+    if (args.orgId) {
+      return args.orgId;
+    }
 
-export async function tryLinkGithubFromRemoteInstallations(
-  args: {
-    readonly db: Db;
-    readonly appId: string;
-    readonly appSlug: string;
-    readonly privateKey: string;
-    readonly orgId: string | null;
-    readonly userId: string;
-    readonly composeId: string | null;
+    const db = get(db$);
+    const [compose] = await db
+      .select({ orgId: agents.orgId })
+      .from(agents)
+      .where(eq(agents.id, args.composeId))
+      .limit(1);
+    signal.throwIfAborted();
+
+    if (!compose) {
+      throw new Error(`Agent compose not found: composeId=${args.composeId}`);
+    }
+
+    return compose.orgId;
   },
-  signal: AbortSignal,
-): Promise<boolean> {
-  const installations = await tapError(
-    listGithubAppInstallations(
+);
+
+const linkExistingGithubAppInstallation$ = command(
+  async (
+    { set },
+    args: {
+      readonly userId: string;
+      readonly installation: {
+        readonly id: string;
+        readonly appId: string | null;
+        readonly appSlug: string | null;
+      };
+      readonly providerInstallation: AppInstallation;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    const providerAppId = String(args.providerInstallation.app_id);
+    const providerAppSlug = args.providerInstallation.app_slug;
+    if (
+      args.installation.appId !== providerAppId ||
+      args.installation.appSlug !== providerAppSlug
+    ) {
+      await db
+        .update(githubInstallations)
+        .set({
+          appId: providerAppId,
+          appSlug: providerAppSlug,
+          updatedAt: new Date(now()),
+        })
+        .where(eq(githubInstallations.id, args.installation.id));
+      signal.throwIfAborted();
+    }
+    const linked = await linkGithubUser(
+      {
+        db,
+        installRecordId: args.installation.id,
+        userId: args.userId,
+      },
+      signal,
+    );
+    return linked !== null;
+  },
+);
+
+const discoverGithubAppInstallations$ = command(
+  async (
+    _,
+    args: { readonly appId: string; readonly privateKey: string },
+    signal: AbortSignal,
+  ) => {
+    return await tapError(listGithubAppInstallations(args, signal), (error) => {
+      L.warn("Failed to list app installations", { error });
+    });
+  },
+);
+
+const createGithubInstallationFromRemote$ = command(
+  async (
+    { set },
+    args: {
+      readonly installation: AppInstallation;
+      readonly token: string;
+      readonly orgId: string;
+      readonly adminGithubUserId: string | null;
+      readonly featureSwitchContext: FeatureSwitchContext;
+    },
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    const [newInstall] = await db
+      .insert(githubInstallations)
+      .values({
+        installationId: String(args.installation.id),
+        appId: String(args.installation.app_id),
+        appSlug: args.installation.app_slug,
+        encryptedAccessToken: await encryptPersistentSecretValue(
+          args.token,
+          args.featureSwitchContext,
+        ),
+        status: "active",
+        orgId: args.orgId,
+        targetType: args.installation.account.type,
+        targetId: String(args.installation.account.id),
+        targetName: args.installation.account.login,
+        adminGithubUserId: args.adminGithubUserId,
+      })
+      .returning({ id: githubInstallations.id });
+    signal.throwIfAborted();
+    return newInstall;
+  },
+);
+
+export const tryLinkGithubFromRemoteInstallations$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly appId: string;
+      readonly appSlug: string;
+      readonly privateKey: string;
+      readonly orgId: string | null;
+      readonly userId: string;
+      readonly composeId: string | null;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    const installations = await set(
+      discoverGithubAppInstallations$,
+      { appId: args.appId, privateKey: args.privateKey },
+      signal,
+    );
+    if (!installations) {
+      return false;
+    }
+    signal.throwIfAborted();
+
+    let unclaimedInstallation: AppInstallation | undefined;
+    for (const ghInstall of installations) {
+      const ghInstallationId = String(ghInstall.id);
+      const db = get(db$);
+      const [existing] = await db
+        .select({
+          id: githubInstallations.id,
+          orgId: githubInstallations.orgId,
+          appId: githubInstallations.appId,
+          appSlug: githubInstallations.appSlug,
+        })
+        .from(githubInstallations)
+        .where(eq(githubInstallations.installationId, ghInstallationId))
+        .limit(1);
+      signal.throwIfAborted();
+
+      if (existing) {
+        if (args.orgId && existing.orgId !== args.orgId) {
+          continue;
+        }
+        return await set(
+          linkExistingGithubAppInstallation$,
+          {
+            userId: args.userId,
+            installation: existing,
+            providerInstallation: ghInstall,
+          },
+          signal,
+        );
+      }
+
+      unclaimedInstallation ??= ghInstall;
+    }
+
+    const ghInstall = unclaimedInstallation;
+    if (!ghInstall) {
+      return false;
+    }
+
+    if (!args.composeId) {
+      return false;
+    }
+    const orgId = await set(
+      resolveGithubOauthOrgId$,
+      { orgId: args.orgId, composeId: args.composeId },
+      signal,
+    );
+    const featureSwitchContext = await loadComposeFeatureSwitchContext(
+      {
+        db,
+        composeId: args.composeId,
+        userId: args.userId,
+      },
+      signal,
+    );
+
+    const ghInstallationId = String(ghInstall.id);
+    const { token } = await getGithubInstallationAccessToken(
       {
         appId: args.appId,
         privateKey: args.privateKey,
+        installationId: ghInstallationId,
       },
       signal,
-    ),
-    (error) => {
-      L.warn("Failed to list app installations", { error });
-    },
-  );
-  if (!installations) {
-    return false;
-  }
-  signal.throwIfAborted();
-
-  let unclaimedInstallation: AppInstallation | undefined;
-  for (const ghInstall of installations) {
-    const ghInstallationId = String(ghInstall.id);
-    const existing = await loadGithubInstallationForRemoteLink(
-      args.db,
-      ghInstallationId,
     );
     signal.throwIfAborted();
 
-    if (existing) {
-      if (args.orgId && existing.orgId !== args.orgId) {
-        continue;
-      }
-      return await linkExistingGithubAppInstallation(
-        {
-          db: args.db,
-          userId: args.userId,
-          installation: existing,
-          providerInstallation: ghInstall,
-        },
-        signal,
-      );
+    const adminGithubUserId =
+      ghInstall.account.type === "User" ? String(ghInstall.account.id) : null;
+    const newInstall = await set(
+      createGithubInstallationFromRemote$,
+      {
+        installation: ghInstall,
+        token,
+        orgId,
+        adminGithubUserId,
+        featureSwitchContext,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+
+    if (!newInstall) {
+      L.error("Failed to create GitHub installation record", {
+        ghInstallationId,
+      });
+      return false;
     }
 
-    unclaimedInstallation ??= ghInstall;
-  }
+    await linkGithubUser(
+      {
+        db,
+        installRecordId: newInstall.id,
+        userId: args.userId,
+        knownGithubUserId: adminGithubUserId,
+      },
+      signal,
+    );
 
-  const ghInstall = unclaimedInstallation;
-  if (!ghInstall) {
-    return false;
-  }
-
-  if (!args.composeId) {
-    return false;
-  }
-  const orgId = await resolveGithubOauthOrgId(
-    {
-      db: args.db,
-      orgId: args.orgId,
-      composeId: args.composeId,
-    },
-    signal,
-  );
-  const featureSwitchContext = await loadComposeFeatureSwitchContext(
-    {
-      db: args.db,
-      composeId: args.composeId,
-      userId: args.userId,
-    },
-    signal,
-  );
-
-  const ghInstallationId = String(ghInstall.id);
-  const { token } = await getGithubInstallationAccessToken(
-    {
-      appId: args.appId,
-      privateKey: args.privateKey,
-      installationId: ghInstallationId,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-
-  const adminGithubUserId =
-    ghInstall.account.type === "User" ? String(ghInstall.account.id) : null;
-
-  const [newInstall] = await args.db
-    .insert(githubInstallations)
-    .values({
-      installationId: ghInstallationId,
-      appId: String(ghInstall.app_id),
-      appSlug: ghInstall.app_slug,
-      encryptedAccessToken: await encryptPersistentSecretValue(
-        token,
-        featureSwitchContext,
-      ),
-      status: "active",
-      orgId,
-      targetType: ghInstall.account.type,
-      targetId: String(ghInstall.account.id),
-      targetName: ghInstall.account.login,
-      adminGithubUserId,
-    })
-    .returning({ id: githubInstallations.id });
-  signal.throwIfAborted();
-
-  if (!newInstall) {
-    L.error("Failed to create GitHub installation record", {
-      ghInstallationId,
-    });
-    return false;
-  }
-
-  await linkGithubUser(
-    {
-      db: args.db,
-      installRecordId: newInstall.id,
-      userId: args.userId,
-      knownGithubUserId: adminGithubUserId,
-    },
-    signal,
-  );
-
-  return true;
-}
+    return true;
+  },
+);
 
 export const findGithubInstallationByInstallationId$ = command(
   async (
