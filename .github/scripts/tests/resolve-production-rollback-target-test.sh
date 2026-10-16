@@ -1099,7 +1099,9 @@ ruby -e '
     raise "release bodies, changelogs, and complete outputs must not enter the release target resolver environment"
   end
 
-  configured_paths = JSON.parse(File.read(ARGV[1])).fetch("packages").keys
+  # Version-managed private packages do not emit a release SHA or tag.
+  configured_paths = JSON.parse(File.read(ARGV[1])).fetch("packages")
+    .reject { |_, config| config["skip-github-release"] == true }.keys
   missing_paths = configured_paths - projected_paths
   unknown_paths = projected_paths - configured_paths
   duplicate_paths = projected_paths.group_by(&:itself).select { |_, paths| paths.length > 1 }.keys
@@ -1172,7 +1174,9 @@ ruby -e '
     raise "release bodies, changelogs, and complete outputs must not enter the release tag resolver environment"
   end
 
-  configured_paths = JSON.parse(File.read(ARGV[1])).fetch("packages").keys
+  # Version-managed private packages do not emit a release SHA or tag.
+  configured_paths = JSON.parse(File.read(ARGV[1])).fetch("packages")
+    .reject { |_, config| config["skip-github-release"] == true }.keys
   missing_paths = configured_paths - projected_paths
   unknown_paths = projected_paths - configured_paths
   duplicate_paths = projected_paths.group_by(&:itself).select { |_, paths| paths.length > 1 }.keys
