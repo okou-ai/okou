@@ -3,6 +3,22 @@
   "baseUrlTemplateResolutionCases": [
     {
       "category": "authority-fragment",
+      "name": "partial alabel rejects an invalid resolved payload",
+      "base": "https://xn--${{ vars.SUFFIX }}.example.com",
+      "vars": { "SUFFIX": "a" },
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "authority-fragment",
+      "name": "partial alabel rejects an overlong resolved payload",
+      "base": "https://xn--${{ vars.SUFFIX }}.example.com",
+      "vars": {
+        "SUFFIX": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "authority-fragment",
       "name": "host suffix cannot extend a full literal label",
       "base": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa${{ vars.SUFFIX }}/v1/{resource}",
       "vars": {
@@ -239,6 +255,54 @@
       },
       "expectedValid": true,
       "expectedResolvedBase": "https://xn--bcher-kva.example.com/v1/{resource}"
+    },
+    {
+      "category": "valid",
+      "name": "host variable completes an alabel prefix",
+      "base": "https://xn--${{ vars.SUFFIX }}.example.com/v1/{resource}",
+      "vars": { "SUFFIX": "bcher-kva" },
+      "expectedValid": true,
+      "expectedResolvedBase": "https://xn--bcher-kva.example.com/v1/{resource}"
+    },
+    {
+      "category": "valid",
+      "name": "host variable completes a split punycode payload",
+      "base": "https://xn--b${{ vars.SUFFIX }}.example.com/v1/{resource}",
+      "vars": { "SUFFIX": "cher-kva" },
+      "expectedValid": true,
+      "expectedResolvedBase": "https://xn--bcher-kva.example.com/v1/{resource}"
+    },
+    {
+      "category": "valid",
+      "name": "partial alabel preserves a basic ascii underscore",
+      "base": "https://xn--b_${{ vars.SUFFIX }}.example.com/v1/{resource}",
+      "vars": { "SUFFIX": "cher-3ya" },
+      "expectedValid": true,
+      "expectedResolvedBase": "https://xn--b_cher-3ya.example.com/v1/{resource}"
+    },
+    {
+      "category": "valid",
+      "name": "partial alabel preserves basic ascii punctuation",
+      "base": "https://xn--b!${{ vars.SUFFIX }}.example.com/v1/{resource}",
+      "vars": { "SUFFIX": "cher-3ya" },
+      "expectedValid": true,
+      "expectedResolvedBase": "https://xn--b!cher-3ya.example.com/v1/{resource}"
+    },
+    {
+      "category": "valid",
+      "name": "adjacent host variables complete an alabel prefix",
+      "base": "https://xn--${{ vars.FIRST }}${{ vars.SECOND }}.example.com/v1/{resource}",
+      "vars": { "FIRST": "bcher", "SECOND": "-kva" },
+      "expectedValid": true,
+      "expectedResolvedBase": "https://xn--bcher-kva.example.com/v1/{resource}"
+    },
+    {
+      "category": "valid",
+      "name": "repeated host variable completes each alabel prefix",
+      "base": "https://xn--${{ vars.SUFFIX }}.xn--${{ vars.SUFFIX }}.example.com/v1/{resource}",
+      "vars": { "SUFFIX": "bcher-kva" },
+      "expectedValid": true,
+      "expectedResolvedBase": "https://xn--bcher-kva.xn--bcher-kva.example.com/v1/{resource}"
     },
     {
       "category": "authority",

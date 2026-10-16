@@ -6,6 +6,7 @@ import { z } from "zod";
 import { FIREWALL_HOSTNAME_POLICY_VERSION } from "../firewall-hostname-policy";
 import {
   canonicalizeFirewallBaseUrl,
+  firewallsSchema,
   resolveFirewallBaseUrlTemplate,
   validateBaseUrl,
 } from "../firewall-types";
@@ -138,6 +139,12 @@ function assertCatalogValidationResult(
   testCase: CatalogBaseUrlValidationCase,
 ): void {
   const validate = (): string => {
+    firewallsSchema.parse([
+      {
+        name: "contract",
+        apis: [{ base: testCase.base, auth: {} }],
+      },
+    ]);
     validateBaseUrl(testCase.base, "contract");
     return resolveFirewallBaseUrlTemplate({
       serviceName: "contract",
