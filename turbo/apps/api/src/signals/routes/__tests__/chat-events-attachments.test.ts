@@ -15,6 +15,7 @@ import {
   WEBSITE_TEMPLATE_ITEMS,
   WORKFLOW_TEMPLATE_ITEMS,
 } from "@okouai/core";
+import { DOCUMENT_TEMPLATE_ITEMS } from "@okouai/core/document-template-items";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   formatUserPresentationTemplateId,
@@ -1565,29 +1566,33 @@ describe("CHAT-02: generation templates and attachments", () => {
     if (!systemPrompt) {
       throw new Error("Expected document template guidance");
     }
-    for (const [index, reference] of references.entries()) {
-      const section = `## Template #${index + 1} (document)`;
-      const source = `Public upstream original (fixed commit/path): https://raw.githubusercontent.com/${reference.source}`;
-      expect(systemPrompt).toContain(section);
-      expect(systemPrompt).toContain(source);
-      expect(systemPrompt.indexOf(section)).toBeLessThan(
-        systemPrompt.indexOf(source),
-      );
-      if (references[index + 1]) {
-        expect(systemPrompt.indexOf(source)).toBeLessThan(
-          systemPrompt.indexOf(`## Template #${index + 2} (document)`),
-        );
-      }
-    }
-    expect(systemPrompt).toContain(
-      "Read the original file and its references at that fixed commit",
+    const documentSections = systemPrompt
+      .split(/(?=^#)/m)
+      .filter((section) => {
+        return section.startsWith("## Template #");
+      })
+      .map((section) => {
+        return section.trim();
+      });
+    expect(documentSections).toStrictEqual(
+      references.map((reference, index) => {
+        const item = DOCUMENT_TEMPLATE_ITEMS.find((candidate) => {
+          return candidate.id === reference.id;
+        });
+        if (!item) {
+          throw new Error(`Expected document template ${reference.id}`);
+        }
+        return [
+          `## Template #${index + 1} (document)`,
+          "",
+          `Selected document template: ${item.title}`,
+          `- Public upstream original (fixed commit/path): https://raw.githubusercontent.com/${reference.source}`,
+          `- Layout previews: ${item.previewPages.join(", ")}`,
+          "- Read the original file and its references at that fixed commit. Use the source for content and structure, and the previews for layout.",
+          "- Replace sample content with the user's facts; leave missing business details as placeholders.",
+        ].join("\n");
+      }),
     );
-    expect(systemPrompt).toContain(
-      "leave missing business details as placeholders",
-    );
-    expect(systemPrompt).not.toContain("License:");
-    expect(systemPrompt).not.toContain("office-files");
-    expect(systemPrompt).not.toContain("SKILL.md");
     const events = await chat.listThreadEvents(actor, sent.threadId);
     const launched = events.events.find((event) => {
       return event.eventType === "input.prompt" && event.runId === sent.runId;
