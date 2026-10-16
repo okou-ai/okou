@@ -26,7 +26,7 @@ export function OfficeDocumentPreview({
 
   if (resourceUrl === null) {
     return (
-      <div className="flex h-full items-center justify-center text-muted-foreground">
+      <div className="flex h-full w-full items-center justify-center text-muted-foreground">
         <Loader2 size={20} className="animate-spin" />
       </div>
     );
