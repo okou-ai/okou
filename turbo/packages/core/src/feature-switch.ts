@@ -44,6 +44,14 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.SlackOpenGraphPreviews]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Slack Open Graph previews",
+    description:
+      "Use public page metadata and bounded thumbnails for Slack link previews across the organization.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.DesktopShell]: {
     maintainer: "lancy@okou.ai",
     displayName: "Desktop Shell",

@@ -12,6 +12,8 @@ export const ORG_SENTINEL_USER_ID = "__org__";
 export const ORG_SCOPED_FEATURE_SWITCH_KEYS: readonly string[] = [
   // Bot setup and native command availability must agree for all members.
   FeatureSwitchKey.LarkIntegration,
+  // Slack previews belong to the workspace installation, not its author.
+  FeatureSwitchKey.SlackOpenGraphPreviews,
 ];
 
 function isOrgScopedFeatureSwitchKey(key: string): boolean {
