@@ -89,7 +89,7 @@ test("Folder expansion and entry are distinct and every ancestor navigates the r
 
 test("Mobile folder entry and return home work without a hover event", async () => {
   await setupFilesPage(context, { mobile: true, handler: navigationListing });
-  const panel = await openFiles(true);
+  const panel = await openFiles();
   const enter = await waitFor(() => {
     return filesButton("Open workspace as current folder", panel);
   });

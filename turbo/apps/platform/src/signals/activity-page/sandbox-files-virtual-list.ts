@@ -4,7 +4,7 @@ import {
   createFixedVirtualScrollSignals,
   getFixedVirtualRange,
 } from "../fixed-virtual-list.ts";
-import type { FilesDirectory, FilesEntry } from "./sandbox-files-sidebar.ts";
+import type { FilesDirectory, FilesEntry } from "./sandbox-files.ts";
 
 export function filesDirectoryKey(path: readonly string[]): string {
   return JSON.stringify(path);

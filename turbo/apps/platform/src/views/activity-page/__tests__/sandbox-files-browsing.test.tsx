@@ -1,11 +1,12 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { click } from "../../../__tests__/page-helper.ts";
+import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   entry,
   filesButton,
+  filesTab,
   listing,
   openFiles,
   setupFilesPage,
@@ -13,7 +14,7 @@ import {
 
 const context = testContext();
 
-test("Files connects on demand, preserves browsing through fullscreen and releases on close", async () => {
+test("Files connects on demand, supports browsing and releases on close", async () => {
   const fixture = await setupFilesPage(context, {
     handler: (request) => {
       if (request.params.cursor) {
@@ -97,35 +98,23 @@ test("Files connects on demand, preserves browsing through fullscreen and releas
   await expect(
     within(panel).findByText("inside.txt"),
   ).resolves.toBeInTheDocument();
-  const fullscreen = filesButton("Enter fullscreen", panel);
-  fullscreen.focus();
+  filesButton("Close files", panel).focus();
   await userEvent.keyboard("{Enter}");
-  expect(filesButton("Exit fullscreen", panel)).toHaveFocus();
-  expect(within(panel).getByText("inside.txt")).toBeInTheDocument();
-  expect(refreshedFolder).toHaveAttribute("aria-expanded", "true");
-  expect(fixture.sockets).toHaveLength(1);
-  await userEvent.keyboard("{Enter}");
-  expect(filesButton("Enter fullscreen", panel)).toHaveFocus();
-  expect(within(panel).getByText("inside.txt")).toBeInTheDocument();
-  expect(fixture.sockets).toHaveLength(1);
-  await expect(
-    screen.findByRole("separator", { name: "Resize sidebar" }),
-  ).resolves.toBeInTheDocument();
-  click(filesButton("Close files", panel));
   await waitFor(() => {
     expect(screen.queryByRole("region", { name: "Files" })).toBeNull();
+    expect(filesTab("Steps")).toHaveFocus();
   });
   expect(fixture.sockets[0]?.readyState).toBe(WebSocket.CLOSED);
 });
 
-test("The mobile menu opens the same readonly panel", async () => {
+test("The mobile Activity Files tab opens the readonly browser", async () => {
   const fixture = await setupFilesPage(context, {
     mobile: true,
     handler: () => {
       return listing([]);
     },
   });
-  const panel = await openFiles(true);
+  const panel = await openFiles();
   await expect(
     within(panel).findByText("This folder is empty."),
   ).resolves.toBeInTheDocument();
@@ -141,18 +130,26 @@ test("The mobile menu opens the same readonly panel", async () => {
   });
 });
 
-test("A disabled Files switch hides entries and starts no Files work", async () => {
-  const fixture = await setupFilesPage(context, { enabled: false });
-  expect(screen.getByTestId("chat-thread-header-title")).toHaveTextContent(
-    "Files test thread",
-  );
-  expect(screen.queryByLabelText("Open files")).toBeNull();
+test("Debug off hides Files and starts no Files work, including a direct Files URL", async () => {
+  const fixture = await setupFilesPage(context, {
+    enabled: false,
+    initialTab: "files",
+  });
+  await expect(
+    screen.findByRole("heading", { name: "Files test activity" }),
+  ).resolves.toBeInTheDocument();
+  expect(
+    queryAllByRoleFast("tab").find((tab) => {
+      return tab.textContent?.trim() === "Files";
+    }),
+  ).toBeUndefined();
+  expect(screen.queryByRole("region", { name: "Files" })).toBeNull();
   expect(fixture.bootstraps).toHaveLength(0);
   expect(fixture.sockets).toHaveLength(0);
 });
 
 test.each([false, true])(
-  "An inactive thread shows its pending context (%s) without bootstrap",
+  "An inactive Activity shows its pending context (%s) without bootstrap",
   async (queued) => {
     const fixture = await setupFilesPage(context, { active: false, queued });
     const panel = await openFiles();

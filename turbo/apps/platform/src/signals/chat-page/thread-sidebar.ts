@@ -4,12 +4,6 @@ import {
   type AttachmentPreviewSignals,
 } from "../attachment-resource-url.ts";
 import { command, computed, state, type Command, type Computed } from "ccstate";
-import { authenticatedSessionKey$ } from "../auth.ts";
-import type { ChatEvent } from "./chat-event-types.ts";
-import {
-  createSandboxFilesSidebarSignals,
-  type SandboxFilesSidebarSignals,
-} from "./sandbox-files-sidebar.ts";
 
 import {
   createArtifactCatalogSignals,
@@ -191,7 +185,6 @@ export type ThreadSidebarTarget =
   | { readonly type: "artifact"; readonly source: ThreadSidebarArtifactSource }
   | { readonly type: "email-draft"; readonly signals: MailDraftSignals }
   | { readonly type: "browser" }
-  | { readonly type: "files" }
   | { readonly type: "automations" };
 
 export type ThreadSidebarOpenTarget = Exclude<
@@ -200,7 +193,6 @@ export type ThreadSidebarOpenTarget = Exclude<
 >;
 
 export interface ThreadSidebarSignals {
-  readonly files: SandboxFilesSidebarSignals;
   readonly target$: Computed<ThreadSidebarTarget | null>;
   readonly open$: Command<void, [ThreadSidebarOpenTarget, AbortSignal]>;
   readonly openCatalogArtifact$: Command<Promise<void>, [string, AbortSignal]>;
@@ -218,7 +210,7 @@ export interface ThreadSidebarSignals {
   readonly editingAutomationId$: Computed<string | null>;
   readonly setEditingAutomationId$: Command<void, [string | null]>;
   /**
-   * Sidebar fullscreen. Artifacts and Files render a fullscreen toggle;
+   * Sidebar fullscreen. Artifacts render a fullscreen toggle;
    * the state belongs to the current sidebar session and
    * clears whenever the target type changes or the sidebar closes.
    */
@@ -237,30 +229,25 @@ export interface ThreadSidebarSignals {
 }
 
 function createThreadSidebarSessionSignals(dispose$: Command<void, []>) {
-  const sessionKey$ = state<string | null>(null);
   const resetSidebarSessionSignal$ = resetSignal();
-  const startSession$ = command(
-    ({ get, set }, signal: AbortSignal): AbortSignal => {
-      signal.throwIfAborted();
-      set(sessionKey$, get(authenticatedSessionKey$));
-      set(dispose$);
-      const sessionSignal = set(resetSidebarSessionSignal$, signal);
-      sessionSignal.addEventListener(
-        "abort",
-        () => {
-          set(dispose$);
-        },
-        { once: true },
-      );
-      return sessionSignal;
-    },
-  );
-  return { sessionKey$, resetSidebarSessionSignal$, startSession$ };
+  const startSession$ = command(({ set }, signal: AbortSignal): AbortSignal => {
+    signal.throwIfAborted();
+    set(dispose$);
+    const sessionSignal = set(resetSidebarSessionSignal$, signal);
+    sessionSignal.addEventListener(
+      "abort",
+      () => {
+        set(dispose$);
+      },
+      { once: true },
+    );
+    return sessionSignal;
+  });
+  return { resetSidebarSessionSignal$, startSession$ };
 }
 
 export function createThreadSidebarSignals(
   threadId: string,
-  chatEvents$: Computed<ChatEvent[]>,
 ): ThreadSidebarSignals {
   const internalTarget$ = state<ThreadSidebarTarget | null>(null);
   const internalEntryAnimationsEnabled$ = state(false);
@@ -269,7 +256,7 @@ export function createThreadSidebarSignals(
   const internalEditingAutomationId$ = state<string | null>(null);
   const imageCanvas = createZoomableImageCanvasSignals();
   const diagram = createArtifactDiagramPreviewSignals();
-  const { sessionKey$, resetSidebarSessionSignal$, startSession$ } =
+  const { resetSidebarSessionSignal$, startSession$ } =
     createThreadSidebarSessionSignals(diagram.dispose$);
   const artifactCatalog = createArtifactCatalogSignals({
     chatThreadId: threadId,
@@ -344,17 +331,8 @@ export function createThreadSidebarSignals(
   });
 
   return {
-    files: createSandboxFilesSidebarSignals(chatEvents$, close$),
     target$: computed((get) => {
-      const target = get(internalTarget$);
-      if (
-        target?.type === "files" &&
-        (!get(sessionKey$) ||
-          get(sessionKey$) !== get(authenticatedSessionKey$))
-      ) {
-        return null;
-      }
-      return target;
+      return get(internalTarget$);
     }),
     open$,
     openCatalogArtifact$,

@@ -1,4 +1,7 @@
-import { command, computed, state, type Command, type Computed } from "ccstate";
+import { command, computed, state, type Command } from "ccstate";
+import { animationFrame } from "signal-timers";
+import { runsByIdContract } from "@okouai/api-contracts/contracts/run-routes";
+import type { RunStatus } from "@okouai/api-contracts/contracts/runs";
 import type { z } from "zod";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type {
@@ -13,6 +16,7 @@ import {
   type sandboxFsListResultSchema,
 } from "@okouai/api-contracts/contracts/sandbox-channel-fs";
 import { createBrowserSandboxChannelPeer } from "../../lib/sandbox-channel-peer.ts";
+import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { authenticatedSessionKey$ } from "../auth.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
@@ -21,6 +25,7 @@ import {
   bestEffort,
   detach,
   onDomEventFn,
+  onRejection,
   onRef,
   Reason,
   resetSignal,
@@ -28,12 +33,8 @@ import {
   tapError,
   withCleanup,
 } from "../utils.ts";
-import { createActiveRunSubscription } from "./active-run-subscription.ts";
-import {
-  liveRunIdsFromChatEvents,
-  deriveServerRunStateFromChatEvents,
-} from "./chat-event-state.ts";
-import type { ChatEvent } from "./chat-event-types.ts";
+import { searchParams$, updateSearchParams$ } from "../route.ts";
+import { activityDetail$, currentRunId$ } from "./activity-signals.ts";
 import {
   createSandboxFilesVirtualListSignals,
   filesDirectoryKey,
@@ -72,6 +73,7 @@ interface Connection {
   readonly peer: SandboxChannelPeer;
   readonly epoch: number;
   readonly sessionKey: string;
+  readonly runId: string;
 }
 interface NavigationRequest {
   readonly connection: Connection;
@@ -137,12 +139,16 @@ interface ListingRequest {
 }
 type ListResult = z.infer<typeof sandboxFsListResultSchema>;
 
-function createFilesGraph(chatEvents$: Computed<ChatEvent[]>) {
+function createFilesGraph() {
   const directories$ = state<ReadonlyMap<string, FilesDirectory>>(new Map());
   const directoriesView$ = computed((get) => {
     return get(directories$);
   });
+  const targetRunId$ = state<string | null>(null);
+  const status$ = state<RunStatus | null>(null);
   return {
+    targetRunId$,
+    status$,
     directories$,
     directoriesView$,
     virtual: createSandboxFilesVirtualListSignals(directoriesView$),
@@ -165,10 +171,12 @@ function createFilesGraph(chatEvents$: Computed<ChatEvent[]>) {
       readonly error: FilesError;
     } | null>(null),
     activeRunId$: computed((get) => {
-      return liveRunIdsFromChatEvents(get(chatEvents$)).at(-1) ?? null;
+      const status = get(status$);
+      return status === null || status === "running" ? get(targetRunId$) : null;
     }),
     pending$: computed((get) => {
-      return deriveServerRunStateFromChatEvents(get(chatEvents$)) === "queued";
+      const status = get(status$);
+      return status === "queued" || status === "pending";
     }),
   };
 }
@@ -178,8 +186,9 @@ function createCursorCommands(graph: FilesGraph) {
   const live$ = command(({ get }, connection: Connection) => {
     return (
       connection === get(graph.connection$) &&
+      connection.runId === get(currentRunId$) &&
       connection.sessionKey === get(authenticatedSessionKey$) &&
-      get(featureSwitch$)[FeatureSwitchKey.SandboxFilesSidebar]
+      get(featureSwitch$)[FeatureSwitchKey.OkouDebug]
     );
   });
   const current$ = command(({ get, set }, request: ListingRequest) => {
@@ -257,8 +266,9 @@ function createPrepareListingCommand(graph: FilesGraph) {
       const connection = get(graph.connection$);
       if (
         !connection ||
+        connection.runId !== get(currentRunId$) ||
         connection.peer.state !== "ready" ||
-        !get(featureSwitch$)[FeatureSwitchKey.SandboxFilesSidebar] ||
+        !get(featureSwitch$)[FeatureSwitchKey.OkouDebug] ||
         connection.sessionKey !== get(authenticatedSessionKey$)
       ) {
         return null;
@@ -1302,12 +1312,13 @@ function createConnectionCommands(
   const peerState$ = command(
     (
       { get, set },
-      peer: SandboxChannelPeer,
+      owner: { readonly peer: SandboxChannelPeer; readonly runId: string },
       state: SandboxChannelState,
       error: unknown,
       signal: AbortSignal,
     ): void => {
-      if (signal.aborted) {
+      const { peer, runId } = owner;
+      if (signal.aborted || runId !== get(currentRunId$)) {
         return;
       }
       if (state === "connecting" || state === "reconnecting") {
@@ -1324,7 +1335,7 @@ function createConnectionCommands(
         if (!sessionKey || sessionKey !== get(authenticatedSessionKey$)) {
           return;
         }
-        set(graph.connection$, { peer, epoch, sessionKey });
+        set(graph.connection$, { peer, epoch, sessionKey, runId });
         set(graph.phase$, "connecting");
       } else if (state === "ready") {
         if (get(graph.connection$)?.peer !== peer) {
@@ -1363,23 +1374,17 @@ function createConnectionCommands(
     ({ get, set }, runId: string, signal: AbortSignal): void => {
       if (
         signal.aborted ||
-        !get(featureSwitch$)[FeatureSwitchKey.SandboxFilesSidebar] ||
+        runId !== get(currentRunId$) ||
+        !get(featureSwitch$)[FeatureSwitchKey.OkouDebug] ||
         !get(graph.ownerKey$) ||
         get(graph.ownerKey$) !== get(authenticatedSessionKey$)
       ) {
         return;
       }
-      const owner = `${get(graph.ownerKey$)}:${runId}`;
-      if (get(graph.locationOwner$) !== owner) {
-        set(graph.locationOwner$, owner);
-        set(graph.location$, FILES_HOME_LOCATION);
-        set(graph.preferences$, new Map());
-        set(graph.navigationFailure$, null);
-      }
       const peer = createBrowserSandboxChannelPeer(runId, get(apiClient$), {
         categories: [sandboxFsCategory],
         onStateChange: (state, error) => {
-          set(peerState$, peer, state, error, signal);
+          set(peerState$, { peer, runId }, state, error, signal);
         },
       });
       signal.addEventListener(
@@ -1403,28 +1408,192 @@ function createConnectionCommands(
   return { startRun$ };
 }
 
+function isTerminalRun(status: RunStatus | null): boolean {
+  return (
+    status !== null &&
+    status !== "queued" &&
+    status !== "pending" &&
+    status !== "running"
+  );
+}
+
+function createRunLifecycleCommands(
+  graph: FilesGraph,
+  startRun$: Command<void, [string, AbortSignal]>,
+) {
+  const resetRun$ = resetSignal();
+  const started$ = state(false);
+  const owned$ = command(({ get }, runId: string, signal: AbortSignal) => {
+    return (
+      !signal.aborted &&
+      get(graph.mounted$) &&
+      get(currentRunId$) === runId &&
+      get(graph.targetRunId$) === runId &&
+      get(graph.ownerKey$) === get(authenticatedSessionKey$) &&
+      get(featureSwitch$)[FeatureSwitchKey.OkouDebug]
+    );
+  });
+  const stop$ = command(({ set }) => {
+    set(resetRun$);
+    set(started$, false);
+    set(graph.resetPolling$);
+    set(graph.connection$, null);
+    set(graph.navigation$, null);
+    set(graph.navigationFailure$, null);
+    set(graph.directories$, new Map());
+    set(graph.limit$, false);
+  });
+  const load$ = command(
+    async ({ get, set }, runId: string, signal: AbortSignal) => {
+      if (!set(owned$, runId, signal) || isTerminalRun(get(graph.status$))) {
+        return true;
+      }
+      const result = await accept(
+        get(apiClient$)(runsByIdContract).getById({
+          params: { id: runId },
+          fetchOptions: { signal },
+        }),
+        [200],
+        signal,
+      );
+      if (!set(owned$, runId, signal)) {
+        return true;
+      }
+      if (result.body.runId !== runId) {
+        throw new Error("Activity Files status returned a different Run");
+      }
+      const status = result.body.status;
+      set(graph.status$, status);
+      if (status === "running") {
+        if (!get(started$)) {
+          set(started$, true);
+          set(startRun$, runId, set(resetRun$, signal));
+        }
+      } else {
+        set(stop$);
+      }
+      return isTerminalRun(status);
+    },
+  );
+  return { owned$, stop$, load$ };
+}
+
+function createRunObservationCommands(
+  graph: FilesGraph,
+  lifecycle: ReturnType<typeof createRunLifecycleCommands>,
+) {
+  const checking$ = state<number | null>(null);
+  const version$ = state(0);
+  const failed$ = state(false);
+  const fail$ = command(({ set }, runId: string, signal: AbortSignal) => {
+    if (!set(lifecycle.owned$, runId, signal)) {
+      return;
+    }
+    set(lifecycle.stop$);
+    set(graph.status$, null);
+    set(graph.phase$, "unavailable");
+    set(failed$, true);
+  });
+  const check$ = command(
+    async (
+      { get, set },
+      runId: string,
+      version: number,
+      signal: AbortSignal,
+    ) => {
+      if (get(version$) !== version) {
+        return true;
+      }
+      if (get(checking$) === version) {
+        return false;
+      }
+      set(checking$, version);
+      return await withCleanup(
+        onRejection(set(lifecycle.load$, runId, signal), () => {
+          set(fail$, runId, signal);
+        }),
+        () => {
+          if (get(checking$) === version) {
+            set(checking$, null);
+          }
+        },
+      );
+    },
+  );
+  const start$ = command(
+    async ({ get, set }, runId: string, signal: AbortSignal) => {
+      const version = get(version$) + 1;
+      set(version$, version);
+      set(failed$, false);
+      const detail = await onRejection(get(activityDetail$), () => {
+        set(fail$, runId, signal);
+      });
+      signal.throwIfAborted();
+      if (!set(lifecycle.owned$, runId, signal) || get(failed$)) {
+        return;
+      }
+      if (detail?.id === runId && isTerminalRun(detail.status)) {
+        set(graph.status$, detail.status);
+        return;
+      }
+      setLoop(
+        async (loopSignal) => {
+          if (get(failed$)) {
+            return true;
+          }
+          return await set(check$, runId, version, loopSignal);
+        },
+        REFRESH_INTERVAL_MS,
+        signal,
+        {
+          retryTransientErrors: false,
+          testIntervalMs: REFRESH_INTERVAL_MS,
+        },
+      );
+      document.addEventListener(
+        "visibilitychange",
+        onDomEventFn(async () => {
+          if (!document.hidden && !get(failed$)) {
+            await set(check$, runId, version, signal);
+          }
+        }),
+        { signal },
+      );
+    },
+  );
+  return { start$, stop$: lifecycle.stop$ };
+}
+
 function createDemandCommands(
   graph: FilesGraph,
-  chatEvents$: Computed<ChatEvent[]>,
   startRun$: Command<void, [string, AbortSignal]>,
-  closeSidebar$: Command<void, []>,
   rememberView$: Command<void, []>,
 ) {
-  const subscription = createActiveRunSubscription(
-    chatEvents$,
-    graph.activeRunId$,
-    startRun$,
+  const observation = createRunObservationCommands(
+    graph,
+    createRunLifecycleCommands(graph, startRun$),
   );
   const mount$ = onRef(
     command(({ get, set }, _element: HTMLElement, signal: AbortSignal) => {
-      if (!get(featureSwitch$)[FeatureSwitchKey.SandboxFilesSidebar]) {
+      if (!get(featureSwitch$)[FeatureSwitchKey.OkouDebug]) {
         return;
       }
       const sessionKey = get(authenticatedSessionKey$);
-      if (!sessionKey) {
+      const runId = get(currentRunId$);
+      if (!sessionKey || !runId) {
         return;
       }
       set(graph.ownerKey$, sessionKey);
+      const locationOwner = `${sessionKey}:${runId}`;
+      if (get(graph.locationOwner$) !== locationOwner) {
+        set(graph.locationOwner$, locationOwner);
+        set(graph.location$, FILES_HOME_LOCATION);
+        set(graph.preferences$, new Map());
+        set(graph.navigationFailure$, null);
+      }
+      set(graph.targetRunId$, runId);
+      set(graph.status$, null);
+      set(graph.phase$, "connecting");
       const version = get(graph.mountVersion$) + 1;
       set(graph.mountVersion$, version);
       set(graph.mounted$, true);
@@ -1437,32 +1606,49 @@ function createDemandCommands(
           }
           set(rememberView$);
           set(graph.resetDemand$);
+          set(observation.stop$);
           set(graph.mounted$, false);
+          set(graph.targetRunId$, null);
+          set(graph.status$, null);
           set(graph.navigation$, null);
           set(graph.navigationFailure$, null);
           set(graph.directories$, new Map());
           if (
-            !get(featureSwitch$)[FeatureSwitchKey.SandboxFilesSidebar] ||
+            !get(featureSwitch$)[FeatureSwitchKey.OkouDebug] ||
             sessionKey !== get(authenticatedSessionKey$)
           ) {
             set(graph.location$, FILES_HOME_LOCATION);
             set(graph.preferences$, new Map());
             set(graph.locationOwner$, null);
-            set(closeSidebar$);
           }
         },
         { once: true },
       );
-      set(subscription.subscribe$, owner);
+      detach(
+        set(observation.start$, runId, owner),
+        Reason.Daemon,
+        "visible Activity Files status",
+      );
     }),
   );
   const retry$ = command(({ get, set }, signal: AbortSignal): void => {
     signal.throwIfAborted();
     if (
       get(graph.mounted$) &&
-      get(featureSwitch$)[FeatureSwitchKey.SandboxFilesSidebar]
+      get(featureSwitch$)[FeatureSwitchKey.OkouDebug]
     ) {
-      set(subscription.restart$, signal);
+      const runId = get(graph.targetRunId$);
+      if (runId) {
+        set(observation.stop$);
+        set(graph.status$, null);
+        set(graph.phase$, "connecting");
+        const owner = set(graph.resetDemand$, signal, get(pageSignal$));
+        detach(
+          set(observation.start$, runId, owner),
+          Reason.Daemon,
+          "retry Activity Files status",
+        );
+      }
     }
   });
   return { mount$, retry$ };
@@ -1558,25 +1744,46 @@ function createFilesActions(
   return { toggle$, refresh$, refreshing$, more$ };
 }
 
-/** Construct the thread graph without network work; its visible ref owns demand. */
-export function createSandboxFilesSidebarSignals(
-  chatEvents$: Computed<ChatEvent[]>,
-  closeSidebar$: Command<void, []>,
-) {
-  const graph = createFilesGraph(chatEvents$);
+/** Construct the Activity graph without network work; its visible ref owns demand. */
+function createSandboxFilesSignals() {
+  const graph = createFilesGraph();
+  const stepsTab$ = state<HTMLElement | null>(null);
   const cursors = createCursorCommands(graph);
   const listing = createListingCommands(graph, cursors);
   const navigation = createNavigationCommands(graph, listing, cursors);
   const connection = createConnectionCommands(graph, listing, navigation);
   return {
-    ...createDemandCommands(
-      graph,
-      chatEvents$,
-      connection.startRun$,
-      closeSidebar$,
-      navigation.remember$,
-    ),
+    ...createDemandCommands(graph, connection.startRun$, navigation.remember$),
     ...createFilesActions(graph, listing, navigation),
+    stepsTabRef$: onRef(
+      command(({ get, set }, element: HTMLElement, signal: AbortSignal) => {
+        set(stepsTab$, element);
+        signal.addEventListener(
+          "abort",
+          () => {
+            if (get(stepsTab$) === element) {
+              set(stepsTab$, null);
+            }
+          },
+          { once: true },
+        );
+      }),
+    ),
+    close$: command(({ get, set }, signal: AbortSignal) => {
+      signal.throwIfAborted();
+      const runId = get(currentRunId$);
+      const params = new URLSearchParams(get(searchParams$));
+      params.delete("tab");
+      set(updateSearchParams$, params);
+      animationFrame(
+        () => {
+          if (get(currentRunId$) === runId && !get(searchParams$).has("tab")) {
+            get(stepsTab$)?.focus({ preventScroll: true });
+          }
+        },
+        { signal },
+      );
+    }),
     enter$: navigation.enter$,
     navigate$: navigation.navigate$,
     location$: computed((get) => {
@@ -1609,6 +1816,5 @@ export function createSandboxFilesSidebarSignals(
     }),
   };
 }
-export type SandboxFilesSidebarSignals = ReturnType<
-  typeof createSandboxFilesSidebarSignals
->;
+export type SandboxFilesSignals = ReturnType<typeof createSandboxFilesSignals>;
+export const activityFiles = createSandboxFilesSignals();

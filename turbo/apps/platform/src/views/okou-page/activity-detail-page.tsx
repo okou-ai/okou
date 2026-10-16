@@ -35,6 +35,7 @@ import {
   isSupportedFramework,
 } from "@okouai/core/frameworks";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { activityFiles } from "../../signals/activity-page/sandbox-files.ts";
 import { fetchDownloadExtra$ } from "../../signals/activity-page/activity-download.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { searchParams$, updateSearchParams$ } from "../../signals/route.ts";
@@ -82,6 +83,7 @@ import { NoPermissionIllustration } from "./components/no-permission-illustratio
 import { formatAppNumber } from "../../i18n/format.ts";
 import { localizedRunError } from "../../lib/run-error.ts";
 import { DiscordMark } from "./components/discord-mark.tsx";
+import { ActivityFilesTab } from "../activity-page/activity-files.tsx";
 
 // ---------------------------------------------------------------------------
 // Error Banner
@@ -499,7 +501,7 @@ function resolveDisplayName(
   return detail.displayName ?? detail.agentId ?? fallback;
 }
 
-type ActivityTab = "steps" | "context" | "runner" | "network";
+type ActivityTab = "steps" | "context" | "runner" | "network" | "files";
 
 function ActivityStepsContent({
   detail,
@@ -953,6 +955,9 @@ function ActivityTabContent({
   if (activeTab === "runner") {
     return <ActivityRunnerTab detail={detail} />;
   }
+  if (activeTab === "files") {
+    return <ActivityFilesTab />;
+  }
   return <ActivityNetworkTab detailId={detail.id} />;
 }
 
@@ -970,11 +975,15 @@ function ActivityDetailContent({
   const { t } = useTranslation();
   const params = useGet(searchParams$);
   const updateParams = useSet(updateSearchParams$);
+  const stepsTabRef = useSet(activityFiles.stepsTabRef$);
   const showDebugTabs = features?.[FeatureSwitchKey.OkouDebug] ?? false;
   const rawTab = params.get("tab");
   const activeTab: ActivityTab =
     showDebugTabs &&
-    (rawTab === "context" || rawTab === "runner" || rawTab === "network")
+    (rawTab === "context" ||
+      rawTab === "runner" ||
+      rawTab === "network" ||
+      rawTab === "files")
       ? rawTab
       : "steps";
   const setActiveTab = (tab: ActivityTab) => {
@@ -1032,13 +1041,14 @@ function ActivityDetailContent({
           {showDebugTabs && (
             <div className="mt-4">
               <Tabs
+                className="max-w-full overflow-x-auto"
                 value={activeTab}
                 onValueChange={(v) => {
                   setActiveTab(v as ActivityTab);
                 }}
               >
                 <TabsList>
-                  <TabsTrigger value="steps">
+                  <TabsTrigger ref={stepsTabRef} value="steps">
                     {t(($) => {
                       return $.activity.detail.tabs.steps;
                     })}
@@ -1056,6 +1066,11 @@ function ActivityDetailContent({
                   <TabsTrigger value="network">
                     {t(($) => {
                       return $.activity.detail.tabs.network;
+                    })}
+                  </TabsTrigger>
+                  <TabsTrigger value="files">
+                    {t(($) => {
+                      return $.activity.detail.files.title;
                     })}
                   </TabsTrigger>
                 </TabsList>

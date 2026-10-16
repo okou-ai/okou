@@ -49,7 +49,6 @@ import {
   Image,
   ChartLine,
   Globe,
-  Folder,
   Video,
   File,
   Copy,
@@ -228,7 +227,6 @@ import {
   activeThreadSidebar$,
   openThreadAutomations$,
   openThreadBrowserSession$,
-  openThreadFiles$,
 } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import type { ThreadSidebarSignals } from "../../signals/chat-page/thread-sidebar.ts";
 import {
@@ -679,28 +677,6 @@ function BrowserMenuButton({ thread }: { thread: ChatPanelSignals }) {
   );
 }
 
-function FilesMenuButton({ thread }: { thread: ChatPanelSignals }) {
-  const { t } = useTranslation();
-  const enabled = useGet(featureSwitch$)[FeatureSwitchKey.SandboxFilesSidebar];
-  const target = useGet(thread.sidebar.target$);
-  const open = useSet(openThreadFiles$);
-  if (!enabled) {
-    return null;
-  }
-  return (
-    <ChatThreadHeaderIconButton
-      icon={<Folder size={18} />}
-      label={t(($) => {
-        return $.chat.files.open;
-      })}
-      open={target?.type === "files"}
-      onClick={() => {
-        open(thread);
-      }}
-    />
-  );
-}
-
 export function ChatThreadHeaderTitle({
   thread,
 }: {
@@ -850,7 +826,6 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
           </TooltipProvider>
           <AutomationMenuButton thread={thread} />
           <BrowserMenuButton thread={thread} />
-          <FilesMenuButton thread={thread} />
           <ArtifactsButton thread={thread} />
         </div>
       </SettledChatThreadActions>

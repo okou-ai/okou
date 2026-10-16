@@ -5,6 +5,7 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   entry,
   filesButton,
+  filesTab,
   listing,
   openFiles,
   setupFilesPage,
@@ -12,7 +13,7 @@ import {
 
 const context = testContext();
 
-test("An unsupported schema is a stable update state while chat remains usable", async () => {
+test("An unsupported schema is a stable update state while Activity Steps remain usable", async () => {
   const fixture = await setupFilesPage(context, {
     helloError: {
       code: "unsupported_schema",
@@ -26,10 +27,14 @@ test("An unsupported schema is a stable update state while chat remains usable",
       "This run does not support files. Start a new run after the sandbox is updated.",
     ),
   ).resolves.toBeInTheDocument();
-  expect(screen.getByTestId("chat-thread-header-title")).toHaveTextContent(
-    "Files test thread",
-  );
+  expect(
+    screen.getByRole("heading", { name: "Files test activity" }),
+  ).toBeInTheDocument();
   expect(fixture.requests).toHaveLength(0);
+  click(filesTab("Steps"));
+  await expect(
+    screen.findByText("Inspect sandbox files", { selector: "summary span" }),
+  ).resolves.toBeInTheDocument();
 });
 
 test.each<Record<string, number>>([{}, { fs: 1 }, { fs: 3 }])(
@@ -43,9 +48,13 @@ test.each<Record<string, number>>([{}, { fs: 1 }, { fs: 3 }])(
       ),
     ).resolves.toBeInTheDocument();
     expect(fixture.requests).toHaveLength(0);
-    expect(screen.getByTestId("chat-thread-header-title")).toHaveTextContent(
-      "Files test thread",
-    );
+    expect(
+      screen.getByRole("heading", { name: "Files test activity" }),
+    ).toBeInTheDocument();
+    click(filesTab("Steps"));
+    await expect(
+      screen.findByText("Inspect sandbox files", { selector: "summary span" }),
+    ).resolves.toBeInTheDocument();
   },
 );
 
