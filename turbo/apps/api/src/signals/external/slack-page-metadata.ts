@@ -7,6 +7,7 @@ async function readPublicHtml(url: URL, signal: AbortSignal) {
   const response = await fetch(url, {
     headers: { Accept: "text/html, application/xhtml+xml" },
     credentials: "omit",
+    cache: "no-store",
     redirect: "manual",
     signal,
   });
@@ -20,7 +21,6 @@ async function readPublicHtml(url: URL, signal: AbortSignal) {
     !["text/html", "application/xhtml+xml"].includes(contentType ?? "") ||
     Number(response.headers.get("content-length")) > MAX_HTML_BYTES
   ) {
-    await response.body?.cancel();
     return null;
   }
   if (!response.body) {
@@ -46,7 +46,6 @@ async function readHtmlBody(
     }
     size += value.byteLength;
     if (size > MAX_HTML_BYTES) {
-      await reader.cancel();
       return null;
     }
     chunks.push(value);
@@ -54,13 +53,20 @@ async function readHtmlBody(
   return Buffer.concat(chunks).toString("utf8");
 }
 
-/** The caller authorizes the exact origin and resource before this anonymous read. */
+/** The caller restricts the destination to a supported origin before this anonymous read. */
 export async function fetchSlackPageMetadata(url: URL, signal: AbortSignal) {
   // A failed optional page read must not discard previews for sibling links.
-  // Never follow redirects out of the caller's checked resource or send auth.
+  // Never follow redirects out of the caller's checked origin or send auth.
+  const controller = new AbortController();
   const result = await settleIncludingAbort(
-    readPublicHtml(url, AbortSignal.any([signal, AbortSignal.timeout(5000)])),
-  );
+    readPublicHtml(
+      url,
+      AbortSignal.any([signal, controller.signal, AbortSignal.timeout(5000)]),
+    ),
+  ).finally(() => {
+    // Abort rejected bodies without waiting for a cloned stream to cancel.
+    controller.abort();
+  });
   signal.throwIfAborted();
   return result.ok && result.value !== null
     ? htmlOpenGraphMetadata(result.value, url.href)

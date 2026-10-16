@@ -9,6 +9,7 @@ import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
 import { hostedDeployments, hostedSites } from "@okouai/db/runtime/hosted-site";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
+import { apiBackendUrl } from "../../lib/api-backend-url";
 import { env } from "../../lib/env";
 import { hostedLinkDomain } from "../../lib/link-layout";
 import { SLACK_PREVIEW_IMAGE_HEIGHT } from "../../lib/slack-preview-image";
@@ -25,7 +26,6 @@ import {
   resolvePublicArtifactSource$,
 } from "./artifact-shares.service";
 import { decryptPersistentSecretValue } from "./crypto.utils";
-import { readSharedThreadMeta$ } from "./shared-thread.service";
 
 export const slackLinkSharedEventSchema = z.object({
   type: z.literal("link_shared"),
@@ -55,11 +55,7 @@ function parseSlackLinkUrl(value: string): URL | null {
 
 function hostedArtifactAlias(url: URL): string | null {
   const suffix = `.${hostedLinkDomain("current")}`;
-  if (
-    url.port ||
-    !url.hostname.endsWith(suffix) ||
-    (url.pathname !== "/" && url.pathname !== "/index.html")
-  ) {
+  if (url.port || !url.hostname.endsWith(suffix)) {
     return null;
   }
   const alias = url.hostname.slice(0, -suffix.length);
@@ -153,7 +149,7 @@ const slackArtifactOgTarget$ = command(
         : null;
     }
     const alias = hostedArtifactAlias(url);
-    if (!alias) {
+    if (!alias || (url.pathname !== "/" && url.pathname !== "/index.html")) {
       return null;
     }
     const record = await get(
@@ -184,24 +180,6 @@ const slackArtifactOgTarget$ = command(
   },
 );
 
-const slackAppPageMetadata$ = command(
-  async ({ set }, url: URL, signal: AbortSignal) => {
-    if (!url.pathname.toLowerCase().startsWith("/share/threads/")) {
-      return { available: true as const, ...ARTIFACT_OG_BRAND };
-    }
-    const match = /^\/share\/threads\/([^/]+)\/?$/iu.exec(url.pathname);
-    const id = z.uuid().safeParse(match?.[1]);
-    if (!id.success) {
-      return { available: false as const };
-    }
-    // Check live sharing authority before a public page or CDN can supply OG.
-    const shared = await set(readSharedThreadMeta$, id.data, signal);
-    return shared
-      ? { available: true as const, ...ARTIFACT_OG_BRAND, title: shared.title }
-      : { available: false as const };
-  },
-);
-
 const slackArtifactUnfurl$ = command(
   async (
     { set },
@@ -209,39 +187,49 @@ const slackArtifactUnfurl$ = command(
     signal: AbortSignal,
   ): Promise<SlackLinkUnfurl | null> => {
     const pageUrl = parseSlackLinkUrl(url);
-    if (!pageUrl) {
-      return null;
-    }
-    const target = await set(slackArtifactOgTarget$, pageUrl, signal);
-    // Only configured App pages and resolved artifacts may be fetched.
-    if (!target && pageUrl.origin !== new URL(env("APP_URL")).origin) {
-      return null;
-    }
-    const metadata = target
-      ? await set(artifactOgMetadata$, target, signal)
-      : await set(slackAppPageMetadata$, pageUrl, signal);
-    signal.throwIfAborted();
-    if (!metadata.available) {
+    const appOrigin = new URL(env("APP_URL")).origin;
+    // Restrict network destinations, but let any path supply its public OG.
+    if (
+      !pageUrl ||
+      (pageUrl.origin !== appOrigin && !hostedArtifactAlias(pageUrl))
+    ) {
       return null;
     }
     const page = await fetchSlackPageMetadata(pageUrl, signal);
     if (!page) {
       return null;
     }
-    const title =
-      (page.title ?? metadata.title).trim().slice(0, 150) || "Okou artifact";
+    let title = page.title ?? ARTIFACT_OG_BRAND.title;
+    let sourceImageUrl = page.imageUrl ?? ARTIFACT_OG_BRAND.imageUrl;
+    // Only pages without usable OG need resource-specific fallback metadata.
+    if (!page.title && !page.description && !page.imageUrl) {
+      const target = await set(slackArtifactOgTarget$, pageUrl, signal);
+      if (target) {
+        const metadata = await set(artifactOgMetadata$, target, signal);
+        signal.throwIfAborted();
+        if (!metadata.available) {
+          return null;
+        }
+        title = metadata.title;
+        sourceImageUrl = metadata.imageUrl;
+      } else if (pageUrl.origin !== appOrigin) {
+        return null;
+      }
+    }
+    title = title.trim().slice(0, 150) || "Okou artifact";
     // A pipe in the URL must not become Slack's link-label separator.
     const href = escapeSlackLinkText(pageUrl.href.replaceAll("|", "%7C"));
-    const sourceImageUrl = page.imageUrl ?? metadata.imageUrl;
-    const artifactImage = target && sourceImageUrl === metadata.imageUrl;
     const imageUrl = new URL(
-      artifactImage
-        ? sourceImageUrl
-        : r2ImageTransformUrl(sourceImageUrl, {
-            height: SLACK_PREVIEW_IMAGE_HEIGHT,
-          }),
+      r2ImageTransformUrl(sourceImageUrl, {
+        height: SLACK_PREVIEW_IMAGE_HEIGHT,
+      }),
     );
-    if (artifactImage) {
+    const backendUrl = apiBackendUrl();
+    if (
+      backendUrl &&
+      imageUrl.origin === new URL(backendUrl).origin &&
+      imageUrl.pathname === "/api/artifact-og/image"
+    ) {
       imageUrl.searchParams.set("variant", "slack");
     }
     return {
