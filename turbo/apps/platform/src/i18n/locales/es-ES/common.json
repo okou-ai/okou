@@ -1802,6 +1802,7 @@
       "selectedModelUnavailableToast": "El modelo seleccionado no está disponible",
       "selectModel": "Seleccionar modelo",
       "slashActions": {
+        "actions": "Acciones",
         "archive": "Archivar chat",
         "back": "Atrás",
         "connect": "Conectar una herramienta",

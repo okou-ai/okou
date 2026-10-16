@@ -66,6 +66,9 @@ interface ComposerModelPanelProps {
   triggerClassName: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** False leaves the opening focus to the effort bar's own ref. */
+  initialFocus: () => boolean;
+  effortInputRef: (input: HTMLInputElement | null) => void;
 }
 
 /**
@@ -80,8 +83,9 @@ interface ComposerModelPanelProps {
 function ComposerModelPanelBody({
   value,
   onChange,
+  effortInputRef,
   onClose,
-}: Pick<ComposerModelPanelProps, "value" | "onChange"> & {
+}: Pick<ComposerModelPanelProps, "value" | "onChange" | "effortInputRef"> & {
   onClose: () => void;
 }) {
   const { t } = useTranslation();
@@ -183,6 +187,7 @@ function ComposerModelPanelBody({
         <ComposerModelPanelOptions
           value={value}
           onChange={onChange}
+          effortInputRef={effortInputRef}
           disabled={!configurable}
           fastImpact={
             fastAvailable ? (
@@ -462,11 +467,13 @@ function ComposerModelPlanActions({
 function ComposerModelPanelOptions({
   value,
   onChange,
+  effortInputRef,
   disabled,
   fastImpact,
 }: {
   value: ModelProviderSelection;
   onChange: (selection: ModelProviderSelection) => void;
+  effortInputRef: (input: HTMLInputElement | null) => void;
   disabled: boolean;
   fastImpact: ReactNode;
 }) {
@@ -479,6 +486,7 @@ function ComposerModelPanelOptions({
       <ChatEffortSettings
         selection={value}
         disabled={disabled}
+        inputRef={effortInputRef}
         onChange={onChange}
       />
       {fastImpact !== null && (
@@ -534,6 +542,8 @@ export function ComposerModelPanel({
   triggerClassName,
   open,
   onOpenChange,
+  initialFocus,
+  effortInputRef,
 }: ComposerModelPanelProps) {
   const { t } = useTranslation();
   const { effort } = useChatEffort(value);
@@ -593,10 +603,12 @@ export function ComposerModelPanel({
           return $.settings.models.picker.chatModels;
         })}
         className="flex max-h-[var(--available-height)] w-[304px] max-w-[var(--available-width)] flex-col overflow-y-auto p-1"
+        initialFocus={initialFocus}
       >
         <ComposerModelPanelBody
           value={value}
           onChange={onChange}
+          effortInputRef={effortInputRef}
           onClose={() => {
             onOpenChange(false);
           }}

@@ -1770,6 +1770,7 @@
       "selectedModelUnavailableToast": "所选模型当前不可用",
       "selectModel": "选择模型",
       "slashActions": {
+        "actions": "操作",
         "archive": "归档对话",
         "back": "返回",
         "connect": "连接工具",

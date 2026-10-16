@@ -116,10 +116,12 @@ function EffortScaleLabels() {
 export function ChatEffortSettings({
   selection,
   disabled,
+  inputRef,
   onChange,
 }: {
   selection: ModelProviderSelection;
   disabled: boolean;
+  inputRef: (input: HTMLInputElement | null) => void;
   onChange: (selection: ModelProviderSelection) => void;
 }) {
   const { t } = useTranslation();
@@ -145,6 +147,7 @@ export function ChatEffortSettings({
             disabled={disabled}
             label={label}
             valueText={displayValue}
+            inputRef={inputRef}
             onValueChange={(next) => {
               const effort = efforts[next];
               const model = selection.selectedModel;

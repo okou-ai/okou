@@ -32,26 +32,25 @@ import {
   SLASH_PANEL_MANAGE_WORKFLOWS_ID,
   SLASH_PANEL_NEW_WORKFLOW_ID,
   SLASH_ROW_MARKED,
+  SlashActionRow,
   SlashTemplateCovers,
+  slashActionOptionId,
   slashTemplateCategoryLabel,
+  useSlashTemplateCount,
 } from "./slash-template-panel.tsx";
-import {
-  slashTemplatePreviews,
-  type SlashTemplateCategory,
-  type SlashTemplatePreview,
+import type {
+  SlashTemplateCategory,
+  SlashTemplatePreview,
 } from "./composer-template-catalog.ts";
 import {
   type SlashAction,
+  slashActionMatches,
   useSlashActions,
   useSlashActionsEnabled,
 } from "./slash-actions.ts";
 
 const WORKFLOWS_ENTRY_ID = "workflows-entry";
 const TEMPLATES_ENTRY_ID = "templates-entry";
-
-function actionOptionId(id: string): string {
-  return `action-${id}`;
-}
 
 /**
  * Where each row sits in the editor's shared suggestion index: the actions,
@@ -118,7 +117,7 @@ function useSlashActionsOverview({
   function scrollTarget(index: number): { readonly id: string } {
     const action = actions.at(index);
     if (index < layout.workflowsEntry && action) {
-      return { id: actionOptionId(action.id) };
+      return { id: slashActionOptionId(action.id) };
     }
     if (index === layout.workflowsEntry) {
       return { id: WORKFLOWS_ENTRY_ID };
@@ -202,46 +201,6 @@ function rowState(marked: boolean): string {
 
 const ROW =
   "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-foreground transition-colors";
-
-/** A command reads like GPT's: its name, then what it does, quieter. */
-function SlashActionRow({
-  action,
-  index,
-  marked,
-  onPreview,
-}: {
-  readonly action: SlashAction;
-  readonly index: number;
-  readonly marked: boolean;
-  readonly onPreview: (index: number) => void;
-}) {
-  const { Icon } = action;
-  return (
-    <button
-      id={slashWorkflowOptionId(actionOptionId(action.id))}
-      type="button"
-      data-active={marked ? "true" : undefined}
-      className={cn(ROW, rowState(marked))}
-      onMouseMove={() => {
-        onPreview(index);
-      }}
-      onClick={action.run}
-    >
-      <Icon size={16} className="shrink-0 text-muted-foreground" aria-hidden />
-      <span className="min-w-0 flex-1 truncate">
-        {action.label}
-        {action.hint && (
-          <>
-            {" "}
-            <span className="ml-1 text-[13px] text-muted-foreground/50">
-              {action.hint}
-            </span>
-          </>
-        )}
-      </span>
-    </button>
-  );
-}
 
 /**
  * A row whose list opens as the second level. The count shares the label's
@@ -553,10 +512,13 @@ function WorkflowPage({
  */
 function TemplatesPane({
   categories,
+  templateCount,
   onSelectTemplate,
   onBrowseAll,
 }: {
   readonly categories: readonly SlashTemplateCategory[];
+  /** The panel's counts, so a type reads the same number as its entry. */
+  readonly templateCount: (category: SlashTemplateCategory) => number;
   readonly onSelectTemplate: (
     preview: SlashTemplatePreview,
     category: SlashTemplateCategory,
@@ -606,7 +568,7 @@ function TemplatesPane({
               >
                 {slashTemplateCategoryLabel(category)}{" "}
                 <span className="text-muted-foreground/50">
-                  {slashTemplatePreviews(category).length}
+                  {templateCount(category)}
                 </span>
               </button>
             );
@@ -676,6 +638,7 @@ export function SlashActionsPanel({
 }) {
   const { t } = useTranslation();
   const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
+  const templateCount = useSlashTemplateCount();
   const { actions, layout } = overview;
   // The pointer owns the mark while it is inside the panel; the keyboard's
   // selection shows otherwise.
@@ -711,7 +674,7 @@ export function SlashActionsPanel({
     );
   }
   const templateTotal = categories.reduce((total, category) => {
-    return total + slashTemplatePreviews(category).length;
+    return total + templateCount(category);
   }, 0);
   return (
     <div {...panelProps}>
@@ -763,6 +726,7 @@ export function SlashActionsPanel({
       {isDesktop && templatesOpen && (
         <TemplatesPane
           categories={categories}
+          templateCount={templateCount}
           onSelectTemplate={onSelectTemplate}
           onBrowseAll={onBrowseAll}
         />
@@ -771,18 +735,26 @@ export function SlashActionsPanel({
   );
 }
 
+export interface SlashActionsMenu {
+  /** The overview's model while the token is bare; null otherwise. */
+  readonly overview: SlashActionsOverview | null;
+  /** The actions a typed query names, listed beside its other matches. */
+  readonly searchActions: readonly SlashAction[];
+}
+
 /**
- * The overview's model when the slash-actions switch is on and the token is
- * bare; null otherwise, so the existing panel and its navigation apply.
+ * The slash-actions half of the menu. With the switch off both parts are
+ * empty, so the existing panel and its navigation apply unchanged.
  */
 export function useSlashActionsMenu({
   composer,
-  active,
+  query,
   workflows,
   panel,
 }: {
   readonly composer: ComposerSignals;
-  readonly active: boolean;
+  /** The typed slash query; undefined while no slash token is active. */
+  readonly query: string | undefined;
   readonly workflows: readonly ComposerSlashWorkflowMatch[];
   readonly panel: {
     readonly leave: () => void;
@@ -790,7 +762,7 @@ export function useSlashActionsMenu({
     readonly manageWorkflows: () => void;
     readonly browseAll: () => void;
   };
-}): SlashActionsOverview | null {
+}): SlashActionsMenu {
   const enabled = useSlashActionsEnabled();
   const selectedIndex = useGet(composer.suggestion.selectedSuggestionIndex$);
   const insertWorkflow = useSet(composer.workflow.insertWorkflow$);
@@ -805,5 +777,16 @@ export function useSlashActionsMenu({
     manageWorkflows: panel.manageWorkflows,
     browseTemplates: panel.browseAll,
   });
-  return enabled && active ? overview : null;
+  if (!enabled || query === undefined) {
+    return { overview: null, searchActions: [] };
+  }
+  if (query === "") {
+    return { overview, searchActions: [] };
+  }
+  return {
+    overview: null,
+    searchActions: actions.filter((action) => {
+      return slashActionMatches(action, query);
+    }),
+  };
 }

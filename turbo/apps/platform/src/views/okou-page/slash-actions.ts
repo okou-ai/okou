@@ -38,6 +38,7 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { useChatEffort } from "./components/chat-effort-controls.tsx";
 
 export interface SlashAction {
   readonly id: string;
@@ -45,7 +46,33 @@ export interface SlashAction {
   readonly label: string;
   /** What the action does, read after its name in a quieter ink. */
   readonly hint?: string;
+  /**
+   * The command words a typed slash also finds it by. They stay English,
+   * like the commands of other chat apps, while the label is translated.
+   */
+  readonly keywords: readonly string[];
   readonly run: () => void;
+}
+
+/**
+ * Whether a typed slash query names the action: the label or one of its
+ * keywords starts with it, or one of their words does, so `/re` finds Rename
+ * chat but not Share chat.
+ */
+export function slashActionMatches(action: SlashAction, query: string) {
+  const normalized = query.toLowerCase().trim();
+  if (normalized === "") {
+    return false;
+  }
+  return [action.label, ...action.keywords].some((name) => {
+    const lower = name.toLowerCase();
+    return (
+      lower.startsWith(normalized) ||
+      lower.split(/\s+/u).some((word) => {
+        return word.startsWith(normalized);
+      })
+    );
+  });
 }
 
 /** Whether the overview leads with actions instead of the workflow rows. */
@@ -70,48 +97,69 @@ function useModelPickerShown(composer: ComposerSignals): boolean {
   );
 }
 
+/** Whether the chat model offers effort levels, so the picker shows its bar. */
+function useEffortShown(composer: ComposerSignals): boolean {
+  const selection = useLastResolved(composer.model.modelSelection$);
+  return useChatEffort(selection).efforts.length > 0;
+}
+
+/** Model, and Effort when the model has levels; both need the picker. */
+function useModelActions(
+  composer: ComposerSignals,
+  leave: () => void,
+): SlashAction[] {
+  const { t } = useTranslation();
+  const openModelPicker = useSet(composer.model.setModelPickerOpen$);
+  const openEffort = useSet(composer.model.openModelPickerAtEffort$);
+  const pickerShown = useModelPickerShown(composer);
+  const effortShown = useEffortShown(composer);
+  if (!pickerShown) {
+    return [];
+  }
+  const model: SlashAction = {
+    id: "model",
+    Icon: Box,
+    label: t(($) => {
+      return $.chat.composer.slashActions.model;
+    }),
+    hint: t(($) => {
+      return $.chat.composer.slashActions.modelHint;
+    }),
+    keywords: ["model", "switch"],
+    run: () => {
+      leave();
+      openModelPicker(true);
+    },
+  };
+  const effort: SlashAction = {
+    // Effort lives in the model picker, so it opens that panel on its bar.
+    id: "effort",
+    Icon: Gauge,
+    label: t(($) => {
+      return $.chat.composer.slashActions.effort;
+    }),
+    hint: t(($) => {
+      return $.chat.composer.slashActions.effortHint;
+    }),
+    keywords: ["effort", "reasoning", "think"],
+    run: () => {
+      leave();
+      openEffort();
+    },
+  };
+  return effortShown ? [model, effort] : [model];
+}
+
 /** The actions that change how this chat runs. */
 function useComposerActions(
   composer: ComposerSignals,
   leave: () => void,
 ): SlashAction[] {
   const { t } = useTranslation();
-  const openModelPicker = useSet(composer.model.setModelPickerOpen$);
   const openConnectors = useSet(composer.connector.openAddConnectorsDialog$);
   const insertText = useSet(composer.editor.insertText$);
-  const modelActions: SlashAction[] = [
-    {
-      id: "model",
-      Icon: Box,
-      label: t(($) => {
-        return $.chat.composer.slashActions.model;
-      }),
-      hint: t(($) => {
-        return $.chat.composer.slashActions.modelHint;
-      }),
-      run: () => {
-        leave();
-        openModelPicker(true);
-      },
-    },
-    {
-      // Effort lives in the model picker, so it opens the same panel.
-      id: "effort",
-      Icon: Gauge,
-      label: t(($) => {
-        return $.chat.composer.slashActions.effort;
-      }),
-      hint: t(($) => {
-        return $.chat.composer.slashActions.effortHint;
-      }),
-      run: () => {
-        leave();
-        openModelPicker(true);
-      },
-    },
-  ];
   return [
-    ...(useModelPickerShown(composer) ? modelActions : []),
+    ...useModelActions(composer, leave),
     {
       id: "connect",
       Icon: Plug,
@@ -121,6 +169,7 @@ function useComposerActions(
       hint: t(($) => {
         return $.chat.composer.slashActions.connectHint;
       }),
+      keywords: ["connect", "tool", "connector", "integration", "app"],
       run: () => {
         leave();
         openConnectors();
@@ -137,6 +186,7 @@ function useComposerActions(
       hint: t(($) => {
         return $.chat.composer.slashActions.scheduleHint;
       }),
+      keywords: ["schedule", "automation", "recurring", "every"],
       run: () => {
         leave();
         insertText(CREATE_AUTOMATION_CHAT_PROMPT);
@@ -176,6 +226,7 @@ function useThreadActions(
       hint: t(($) => {
         return $.chat.composer.slashActions.newChatHint;
       }),
+      keywords: ["new", "chat"],
       run: () => {
         leave();
         navigate(ROUTES.agentChat, {
@@ -189,6 +240,7 @@ function useThreadActions(
       label: t(($) => {
         return $.chat.composer.slashActions.rename;
       }),
+      keywords: ["rename", "title"],
       run: () => {
         leave();
         openRename(threadId, pageSignal);
@@ -204,6 +256,7 @@ function useThreadActions(
         : t(($) => {
             return $.chat.composer.slashActions.pin;
           }),
+      keywords: pinned ? ["unpin"] : ["pin"],
       run: () => {
         leave();
         detach(
@@ -220,6 +273,7 @@ function useThreadActions(
       label: t(($) => {
         return $.chat.composer.slashActions.archive;
       }),
+      keywords: ["archive"],
       run: () => {
         leave();
         detach(
@@ -238,6 +292,7 @@ function useThreadActions(
     hint: t(($) => {
       return $.chat.composer.slashActions.shareHint;
     }),
+    keywords: ["share", "link"],
     run: () => {
       leave();
       detach(startSharing(threadId, pageSignal), Reason.DomCallback);

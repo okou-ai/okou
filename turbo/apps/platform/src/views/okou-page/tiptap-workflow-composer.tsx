@@ -43,8 +43,10 @@ import {
   SLASH_PANEL_MANAGE_WORKFLOWS_ID,
   SLASH_PANEL_NEW_WORKFLOW_ID,
   SLASH_PANEL_SHOW_MORE_ID,
+  slashActionOptionId,
   slashTemplateCategoryLabel,
 } from "./slash-template-panel.tsx";
+import type { SlashAction } from "./slash-actions.ts";
 import {
   SLASH_TEMPLATE_CATEGORIES,
   type SlashTemplateCategory,
@@ -362,6 +364,8 @@ interface ComposerSuggestionMenuState {
   readonly newWorkflow: () => void;
   /** The slash-actions overview, when it replaces the panel's own. */
   readonly actionsOverview: SlashActionsOverview | null;
+  /** The chat actions a typed slash query names. */
+  readonly searchActions: readonly SlashAction[];
   readonly showWorkflows: boolean;
   readonly agents: readonly ComposerAgentSuggestion[];
   readonly chatThreads: readonly ComposerChatThreadSuggestion[];
@@ -565,6 +569,8 @@ function useComposerMentionSuggestions(
 interface SuggestionRows {
   readonly showWorkflows: boolean;
   readonly panelCategories: readonly SlashTemplateCategory[];
+  /** The typed query's chat actions, indexed after the categories. */
+  readonly actions: readonly SlashAction[];
   /** How many rows sit above the workflow suggestions. */
   readonly headCount: number;
   readonly expandIndex: number | null;
@@ -591,7 +597,7 @@ function buildSuggestionRows({
 }: Omit<SuggestionRows, "headCount" | "expandIndex"> & {
   readonly collapseWorkflows: boolean;
 }): SuggestionRows {
-  const headCount = rows.panelCategories.length;
+  const headCount = rows.panelCategories.length + rows.actions.length;
   const expandIndex =
     collapseWorkflows &&
     rows.workflows.length > SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT
@@ -629,6 +635,15 @@ function suggestionHeadRow(
   return rows.panelCategories[index];
 }
 
+/** The chat action row for an index, if it is one. */
+function suggestionActionRow(
+  index: number,
+  rows: SuggestionRows,
+): SlashAction | undefined {
+  const offset = index - rows.panelCategories.length;
+  return offset < 0 ? undefined : rows.actions[offset];
+}
+
 function selectSlashSuggestionRow(
   index: number,
   rows: SuggestionRows,
@@ -643,6 +658,11 @@ function selectSlashSuggestionRow(
   const category = rows.panelCategories[index];
   if (category) {
     actions.selectCategory(category);
+    return;
+  }
+  const chatAction = suggestionActionRow(index, rows);
+  if (chatAction) {
+    chatAction.run();
     return;
   }
   const action = workflowActionRow(index, rows);
@@ -686,6 +706,10 @@ function suggestionRowScrollTarget(
   const head = suggestionHeadRow(index, rows);
   if (head !== undefined) {
     return { id: head };
+  }
+  const chatAction = suggestionActionRow(index, rows);
+  if (chatAction !== undefined) {
+    return { id: slashActionOptionId(chatAction.id) };
   }
   const action = workflowActionRow(index, rows);
   if (action !== undefined) {
@@ -775,20 +799,22 @@ function useComposerSuggestionMenu({
   const mentions = useComposerMentionSuggestions(composer, slashRange);
   const { agents, chatThreads, showMentions } = mentions;
   const open = showWorkflows || showMentions;
+  const slashActions = useSlashActionsMenu({
+    composer,
+    query: slashRange?.query,
+    workflows: workflowSuggestions,
+    panel: templatePanel,
+  });
+  const actionsOverview = slashActions.overview;
   const rows = buildSuggestionRows({
     showWorkflows,
     panelCategories,
+    actions: slashActions.searchActions,
     collapseWorkflows,
     workflows: workflowSuggestions,
     workflowActions: workflowOverview && workflowsExpanded,
     agents,
     chatThreads,
-  });
-  const actionsOverview = useSlashActionsMenu({
-    composer,
-    active: showWorkflows && workflowOverview,
-    workflows: workflowSuggestions,
-    panel: templatePanel,
   });
   const suggestionOrder =
     actionsOverview?.order ??
@@ -850,6 +876,7 @@ function useComposerSuggestionMenu({
     showWorkflowActions: rows.workflowActions,
     newWorkflow: templatePanel.newWorkflow,
     actionsOverview,
+    searchActions: slashActions.searchActions,
     showWorkflows,
     agents,
     chatThreads,
@@ -977,6 +1004,7 @@ function ComposerSuggestionMenu({
           ) : (
             <SlashTemplatePanel
               categories={suggestionMenu.panelCategories}
+              actions={suggestionMenu.searchActions}
               reversed={suggestionMenu.reversed}
               reverseWorkflows={suggestionMenu.reverseWorkflows}
               workflows={suggestionMenu.workflows}

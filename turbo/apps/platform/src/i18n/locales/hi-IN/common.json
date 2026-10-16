@@ -1773,6 +1773,7 @@
       "selectedModelUnavailableToast": "चयनित मॉडल उपलब्ध नहीं है",
       "selectModel": "मॉडल चुनें",
       "slashActions": {
+        "actions": "कार्रवाइयाँ",
         "archive": "चैट संग्रहित करें",
         "back": "वापस",
         "connect": "टूल कनेक्ट करें",

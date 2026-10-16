@@ -1770,6 +1770,7 @@
       "selectedModelUnavailableToast": "選択したモデルは利用できません",
       "selectModel": "モデルを選択してください",
       "slashActions": {
+        "actions": "アクション",
         "archive": "チャットをアーカイブ",
         "back": "戻る",
         "connect": "ツールを接続",
