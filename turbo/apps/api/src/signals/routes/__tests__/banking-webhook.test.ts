@@ -284,6 +284,78 @@ describe("Finicity webhook outcomes", () => {
     expect(completed.body.connection?.accounts).toHaveLength(1);
   });
 
+  it("updates account metadata, removes absent accounts and restores their identities", async () => {
+    const fixture = await pendingConnect();
+    server.use(
+      http.get(fixture.accountsUrl, () => {
+        return HttpResponse.json({
+          accounts: [account("bank", true), account("other")],
+        });
+      }),
+    );
+    expect((await postWebhook(fixture.event("added"))).status).toBe(200);
+    const initial = await fixture.status();
+    expect(initial.body.connection?.status).toBe("repair_required");
+    const bank = initial.body.connection?.accounts.find((entry) => {
+      return entry.institutionName === "bank";
+    });
+    const other = initial.body.connection?.accounts.find((entry) => {
+      return entry.institutionName === "other";
+    });
+    if (!bank || !other) {
+      throw new Error("Expected both provider accounts in public status");
+    }
+    expect(bank.repairRequired).toBeTruthy();
+
+    server.use(
+      http.get(fixture.accountsUrl, () => {
+        return HttpResponse.json({
+          accounts: [{ ...account("other"), name: "Savings", type: "savings" }],
+        });
+      }),
+    );
+    expect((await postWebhook(fixture.event("added"))).status).toBe(200);
+    const removed = await fixture.status();
+    expect(removed.body.session?.status).toBe("pending");
+    expect(removed.body.connection?.status).toBe("active");
+    expect(removed.body.connection?.repairInstitutions).toStrictEqual([]);
+    expect(removed.body.connection?.accounts).toStrictEqual([
+      expect.objectContaining({
+        id: other.id,
+        name: "Savings",
+        type: "savings",
+        repairRequired: false,
+      }),
+    ]);
+
+    server.use(
+      http.get(fixture.accountsUrl, () => {
+        return HttpResponse.json({
+          accounts: [
+            { ...account("bank"), name: "Restored Checking" },
+            { ...account("other"), name: "Savings", type: "savings" },
+          ],
+        });
+      }),
+    );
+    expect((await postWebhook(fixture.event("done"))).status).toBe(200);
+    const restored = await fixture.status();
+    expect(restored.body.session?.status).toBe("completed");
+    expect(restored.body.connection?.status).toBe("active");
+    expect(restored.body.connection?.repairInstitutions).toStrictEqual([]);
+    expect(restored.body.connection?.accounts).toHaveLength(2);
+    expect(restored.body.connection?.accounts).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: bank.id,
+          name: "Restored Checking",
+          repairRequired: false,
+        }),
+        expect.objectContaining({ id: other.id, name: "Savings" }),
+      ]),
+    );
+  });
+
   it("cancels connect when added and done return only unhealthy accounts", async () => {
     const fixture = await pendingConnect();
     server.use(

@@ -614,42 +614,30 @@ async function fetchCustomerAccounts(
   });
 }
 
-async function syncCustomerAccounts(
-  db: Db,
-  connection: BankingConnectionRow,
-  owner: BankingOwner,
-  providerAccounts: readonly ProviderAccount[],
-): Promise<void> {
-  const providerIds = new Set(
-    providerAccounts.map((account) => {
-      return account.providerAccountId;
-    }),
-  );
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0060; new non-billing transactions are prohibited.
-  await db.transaction(async (tx) => {
-    for (const account of providerAccounts) {
-      const repairRequiredAt = account.repairRequired ? nowDate() : null;
-      await tx
-        .insert(bankingAccounts)
-        .values({
-          connectionId: connection.id,
-          orgId: owner.orgId,
-          userId: owner.userId,
-          providerAccountId: account.providerAccountId,
-          displayName: account.displayName,
-          institutionName: account.institutionName,
-          institutionLoginId: account.institutionLoginId,
-          accountType: account.accountType,
-          accountNumberLast4: account.accountNumberLast4,
-          enabled: true,
-          repairRequiredAt,
-        })
-        .onConflictDoUpdate({
-          target: [
-            bankingAccounts.connectionId,
-            bankingAccounts.providerAccountId,
-          ],
-          set: {
+const syncCustomerAccounts = command(
+  async (
+    { set },
+    connection: BankingConnectionRow,
+    owner: BankingOwner,
+    providerAccounts: readonly ProviderAccount[],
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const providerIds = new Set(
+      providerAccounts.map((account) => {
+        return account.providerAccountId;
+      }),
+    );
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0060; new non-billing transactions are prohibited.
+    await db.transaction(async (tx) => {
+      for (const account of providerAccounts) {
+        const repairRequiredAt = account.repairRequired ? nowDate() : null;
+        await tx
+          .insert(bankingAccounts)
+          .values({
+            connectionId: connection.id,
+            orgId: owner.orgId,
+            userId: owner.userId,
+            providerAccountId: account.providerAccountId,
             displayName: account.displayName,
             institutionName: account.institutionName,
             institutionLoginId: account.institutionLoginId,
@@ -657,52 +645,67 @@ async function syncCustomerAccounts(
             accountNumberLast4: account.accountNumberLast4,
             enabled: true,
             repairRequiredAt,
-            updatedAt: nowDate(),
-          },
+          })
+          .onConflictDoUpdate({
+            target: [
+              bankingAccounts.connectionId,
+              bankingAccounts.providerAccountId,
+            ],
+            set: {
+              displayName: account.displayName,
+              institutionName: account.institutionName,
+              institutionLoginId: account.institutionLoginId,
+              accountType: account.accountType,
+              accountNumberLast4: account.accountNumberLast4,
+              enabled: true,
+              repairRequiredAt,
+              updatedAt: nowDate(),
+            },
+          });
+      }
+
+      const existing = await tx
+        .select({
+          id: bankingAccounts.id,
+          providerAccountId: bankingAccounts.providerAccountId,
+        })
+        .from(bankingAccounts)
+        .where(
+          and(
+            eq(bankingAccounts.connectionId, connection.id),
+            eq(bankingAccounts.orgId, owner.orgId),
+            eq(bankingAccounts.userId, owner.userId),
+            eq(bankingAccounts.enabled, true),
+          ),
+        );
+      const removedIds = existing
+        .filter((account) => {
+          return !providerIds.has(account.providerAccountId);
+        })
+        .map((account) => {
+          return account.id;
         });
-    }
+      if (removedIds.length > 0) {
+        await tx
+          .update(bankingAccounts)
+          .set({ enabled: false, updatedAt: nowDate() })
+          .where(inArray(bankingAccounts.id, removedIds));
+      }
 
-    const existing = await tx
-      .select({
-        id: bankingAccounts.id,
-        providerAccountId: bankingAccounts.providerAccountId,
-      })
-      .from(bankingAccounts)
-      .where(
-        and(
-          eq(bankingAccounts.connectionId, connection.id),
-          eq(bankingAccounts.orgId, owner.orgId),
-          eq(bankingAccounts.userId, owner.userId),
-          eq(bankingAccounts.enabled, true),
-        ),
-      );
-    const removedIds = existing
-      .filter((account) => {
-        return !providerIds.has(account.providerAccountId);
-      })
-      .map((account) => {
-        return account.id;
+      const hasRepairRequired = providerAccounts.some((account) => {
+        return account.repairRequired;
       });
-    if (removedIds.length > 0) {
       await tx
-        .update(bankingAccounts)
-        .set({ enabled: false, updatedAt: nowDate() })
-        .where(inArray(bankingAccounts.id, removedIds));
-    }
-
-    const hasRepairRequired = providerAccounts.some((account) => {
-      return account.repairRequired;
+        .update(bankingConnections)
+        .set({
+          status: hasRepairRequired ? "repair_required" : "active",
+          repairRequiredAt: hasRepairRequired ? nowDate() : null,
+          updatedAt: nowDate(),
+        })
+        .where(eq(bankingConnections.id, connection.id));
     });
-    await tx
-      .update(bankingConnections)
-      .set({
-        status: hasRepairRequired ? "repair_required" : "active",
-        repairRequiredAt: hasRepairRequired ? nowDate() : null,
-        updatedAt: nowDate(),
-      })
-      .where(eq(bankingConnections.id, connection.id));
-  });
-}
+  },
+);
 
 function webhookData(
   payload: Record<string, unknown>,
@@ -944,8 +947,8 @@ export const handleFinicityWebhook$ = command(
         return { kind: "processing_failed" };
       }
       providerAccounts = providerResult;
-      await syncCustomerAccounts(
-        db,
+      await set(
+        syncCustomerAccounts,
         row.connection,
         { orgId: row.session.orgId, userId: row.session.userId },
         providerAccounts,
