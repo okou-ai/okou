@@ -38,22 +38,16 @@ impl FinalizationMode {
             Self::Recovery => "recovery finalization",
         }
     }
-
-    fn can_prune_history(self) -> bool {
-        matches!(self, Self::Success)
-    }
 }
 
 struct FinalizationInputs<'a> {
     run_id: &'a str,
     framework: env::Framework,
-    session_history_limits: session_history::SessionHistoryLimits,
     artifact_entries: &'a [env::ArtifactEnv],
     session_metadata: &'a CapturedSessionMetadata,
     final_session_history_identity_file: Cow<'a, str>,
     pi_launch_config: &'a str,
     pi_launch_payload_file: &'a str,
-    native_only: bool,
 }
 
 impl<'a> FinalizationInputs<'a> {
@@ -64,7 +58,6 @@ impl<'a> FinalizationInputs<'a> {
         Self {
             run_id: &runtime.config.run_id,
             framework: runtime.config.framework,
-            session_history_limits: session_history::SessionHistoryLimits::Production,
             artifact_entries: &runtime.config.artifacts,
             session_metadata,
             final_session_history_identity_file: Cow::Borrowed(
@@ -72,7 +65,6 @@ impl<'a> FinalizationInputs<'a> {
             ),
             pi_launch_config: &runtime.config.pi_launch_config,
             pi_launch_payload_file: runtime.paths.pi_launch_payload_file(),
-            native_only: runtime.config.native_continuation.is_some(),
         }
     }
 }
@@ -81,7 +73,7 @@ impl<'a> FinalizationInputs<'a> {
 pub struct PreparedFinalization {
     request: complete::RequestCompletion,
     mode: FinalizationMode,
-    uploaded_history: Option<session_history::UploadedSessionHistory>,
+    retained_history: Option<session_history::RetainedSessionHistory>,
     framework: env::Framework,
     final_session_history_identity_file: String,
     total_started_at: Instant,
@@ -94,22 +86,16 @@ impl PreparedFinalization {
 
     pub(crate) fn acknowledge(self, api_elapsed: Duration) {
         record_sandbox_op("completion_api_call", api_elapsed, true, None);
-        if let Some(uploaded_history) = self.uploaded_history
-            && session_history::reconcile_live_history_after_finalization(
-                uploaded_history.live_history,
-            )
-        {
+        if let Some(history) = self.retained_history {
             session_history::write_final_session_history_identity(
-                self.mode,
                 build_final_session_history_identity(
                     self.framework,
-                    &uploaded_history.cli_agent_session_id,
-                    &uploaded_history.history_hash,
-                    uploaded_history.history_size,
-                    &uploaded_history.history_source,
+                    &history.cli_agent_session_id,
+                    &history.history_hash,
+                    history.history_size,
+                    &history.history_source,
                 ),
                 &self.final_session_history_identity_file,
-                uploaded_history.ref_kind,
             );
         }
         log_info!(LOG_TAG, "{} persisted successfully", self.mode.log_label());
@@ -143,19 +129,6 @@ pub async fn prepare_finalization_for_runtime(
 
 /// Prepare finalization with bounded session-history limits for integration tests.
 #[doc(hidden)]
-pub async fn prepare_finalization_for_runtime_with_history_limits_for_test(
-    runtime: &GuestRuntime,
-    session_metadata: &CapturedSessionMetadata,
-    candidate_max_bytes: u64,
-    history_max_bytes: u64,
-) -> Result<PreparedFinalization, AgentError> {
-    let mut inputs = FinalizationInputs::from_runtime(runtime, session_metadata);
-    inputs.session_history_limits = session_history::SessionHistoryLimits::BoundedForTest {
-        candidate_max_bytes,
-        history_max_bytes,
-    };
-    prepare_finalization_with_inputs(&runtime.http, &inputs).await
-}
 
 /// Prepare best-effort recovery finalization using the explicit runtime snapshot.
 pub async fn prepare_recovery_finalization_for_runtime(
@@ -168,19 +141,6 @@ pub async fn prepare_recovery_finalization_for_runtime(
 
 /// Prepare recovery finalization with bounded session-history limits for integration tests.
 #[doc(hidden)]
-pub async fn prepare_recovery_finalization_for_runtime_with_history_limits_for_test(
-    runtime: &GuestRuntime,
-    session_metadata: &CapturedSessionMetadata,
-    candidate_max_bytes: u64,
-    history_max_bytes: u64,
-) -> Result<PreparedFinalization, AgentError> {
-    let mut inputs = FinalizationInputs::from_runtime(runtime, session_metadata);
-    inputs.session_history_limits = session_history::SessionHistoryLimits::BoundedForTest {
-        candidate_max_bytes,
-        history_max_bytes,
-    };
-    prepare_recovery_finalization_with_inputs(&runtime.http, &inputs).await
-}
 
 async fn prepare_finalization_with_inputs(
     http: &HttpClient,
@@ -209,7 +169,7 @@ async fn prepare_finalization_for_mode(
     result.map(|prepared| PreparedFinalization {
         request: prepared.request,
         mode,
-        uploaded_history: prepared.uploaded_history,
+        retained_history: prepared.retained_history,
         framework: inputs.framework,
         final_session_history_identity_file: inputs.final_session_history_identity_file.to_string(),
         total_started_at,
@@ -218,7 +178,7 @@ async fn prepare_finalization_for_mode(
 
 struct PreparedFinalizationParts {
     request: complete::RequestCompletion,
-    uploaded_history: Option<session_history::UploadedSessionHistory>,
+    retained_history: Option<session_history::RetainedSessionHistory>,
 }
 
 fn completion_missing_root_policy(
@@ -241,13 +201,12 @@ async fn prepare_finalization_impl(
 ) -> Result<PreparedFinalizationParts, AgentError> {
     log_info!(LOG_TAG, "Preparing {}...", mode.log_label());
 
-    // History upload and artifact snapshots are independent pre-requisites
+    // Local history evidence and artifact snapshots are independent prerequisites
     // of the final combined completion, so run them concurrently. The history
-    // path performs blocking local preparation before web API work; the
+    // path performs bounded blocking local preparation; the
     // artifact path performs blocking file preparation before VAS work. Wait
     // for both results even after one fails so a started blocking operation is
     // not detached from the finalization future.
-    let history_inputs = session_history::SessionHistoryInputs::from_finalization(mode, inputs);
     let (artifact_snapshots, finalization_history) = tokio::join!(
         artifact::snapshot_artifact_entries(
             http,
@@ -257,70 +216,33 @@ async fn prepare_finalization_impl(
             inputs.pi_launch_config,
             inputs.pi_launch_payload_file,
         ),
-        session_history::prepare_and_upload_session_history(http, inputs.run_id, history_inputs),
+        session_history::prepare_retained_session_history(inputs.session_metadata),
     );
     let finalization_history = finalization_history?;
     let artifact_snapshots = artifact_snapshots?;
 
     let cli_agent_type = inputs.framework.agent_type();
-    let (
-        cli_agent_session_id,
-        cli_agent_session_history_hash,
-        cli_agent_session_history_disposition,
-        uploaded_history,
-    ) = match finalization_history {
-        session_history::SessionHistoryOutcome::Uploaded(history) => {
-            let session_id = history.cli_agent_session_id.clone();
-            let history_hash = history.history_hash.clone();
-            (session_id, Some(history_hash), None, Some(history))
-        }
-        session_history::SessionHistoryOutcome::NativeOnly {
-            cli_agent_session_id,
-            history,
-        } => (
-            cli_agent_session_id,
-            None,
-            Some(complete::RequestCompletionCliAgentSessionHistoryDisposition::NativeOnly),
-            history,
-        ),
-        session_history::SessionHistoryOutcome::DiscardedOversized {
-            cli_agent_session_id,
-        } => (
-            cli_agent_session_id,
-            None,
-            Some(complete::RequestCompletionCliAgentSessionHistoryDisposition::DiscardedOversized),
-            None,
-        ),
-        session_history::SessionHistoryOutcome::Unavailable {
-            cli_agent_session_id,
-        } => (
-            cli_agent_session_id,
-            None,
-            Some(complete::RequestCompletionCliAgentSessionHistoryDisposition::Unavailable),
-            None,
-        ),
-    };
+    let cli_agent_session_id = inputs.session_metadata.cli_agent_session_id().to_string();
+    let retained_history = finalization_history;
     let request = complete::RequestCompletion {
         cli_agent_type: cli_agent_type.to_string(),
         cli_agent_session_id,
-        cli_agent_session_history_hash,
-        cli_agent_session_history_disposition,
+        cli_agent_session_history_disposition:
+            complete::RequestCompletionCliAgentSessionHistoryDisposition::NativeOnly,
         artifact_snapshots,
         volume_versions_snapshot: None,
     };
     Ok(PreparedFinalizationParts {
         request,
-        uploaded_history,
+        retained_history,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use api_contracts::generated::constants::runners::SESSION_HISTORY_ENCODING_ZSTD;
     use httpmock::prelude::*;
     use serde_json::json;
-    use sha2::{Digest, Sha256};
     #[cfg(unix)]
     use std::process::Stdio;
     use std::time::Duration;
@@ -350,38 +272,10 @@ mod tests {
         let _ = std::fs::remove_file(guest_paths.session_id_file());
     }
 
-    fn http_status(status: u16) -> HttpMockResponse {
-        HttpMockResponse::builder().status(status).build()
-    }
-
-    fn request_header_eq(req: &HttpMockRequest, name: &str, expected: &str) -> bool {
-        req.headers_vec()
-            .iter()
-            .any(|(key, value)| key.eq_ignore_ascii_case(name) && value == expected)
-    }
-
-    fn session_history_upload_response(
-        req: &HttpMockRequest,
-        expected_body: &[u8],
-    ) -> HttpMockResponse {
-        if request_header_eq(req, "content-type", "application/octet-stream")
-            && req.body_ref() == expected_body
-        {
-            http_status(200)
-        } else {
-            http_status(400)
-        }
-    }
-
     #[tokio::test]
-    async fn native_finalization_reports_identity_without_preparing_an_archive() {
+    async fn finalization_reports_native_identity_for_success_and_recovery() {
         let _sandbox_ops_guard = crate::SandboxOpsTestGuard::lock().await;
         let server = MockServer::start();
-        let history_prepare = server.mock(|when, then| {
-            when.method(POST)
-                .path("/api/webhooks/agent/session-history/prepare");
-            then.status(500);
-        });
         let http = HttpClient::with_api_config(
             server.base_url(),
             "test-token",
@@ -394,10 +288,8 @@ mod tests {
         let guest_paths = crate::paths::GuestPaths::from_runtime_dir(dir.path().join("runtime"));
         let session_metadata = CapturedSessionMetadata::for_test("native-session", None);
         let inputs = FinalizationInputs {
-            native_only: true,
             run_id: "native-finalization",
             framework: env::Framework::ClaudeCode,
-            session_history_limits: session_history::SessionHistoryLimits::Production,
             artifact_entries: &[],
             session_metadata: &session_metadata,
             final_session_history_identity_file: guest_paths
@@ -411,13 +303,11 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(prepared.request.cli_agent_session_id, "native-session");
-            assert_eq!(prepared.request.cli_agent_session_history_hash, None);
             assert_eq!(
                 prepared.request.cli_agent_session_history_disposition,
-                Some(complete::RequestCompletionCliAgentSessionHistoryDisposition::NativeOnly)
+                complete::RequestCompletionCliAgentSessionHistoryDisposition::NativeOnly
             );
         }
-        history_prepare.assert_calls(0);
     }
 
     #[tokio::test]
@@ -428,11 +318,6 @@ mod tests {
         let guest_paths = crate::paths::GuestPaths::from_runtime_dir(dir.path().join("runtime"));
         let _files_guard = FinalizationFilesGuard::new(&guest_paths);
 
-        let _history_prepare = server.mock(|when, then| {
-            when.method(POST)
-                .path("/api/webhooks/agent/session-history/prepare");
-            then.status(200).json_body(json!({"existing": true}));
-        });
         let prepare = server.mock(|when, then| {
             when.method(POST)
                 .path("/api/webhooks/agent/storages/prepare");
@@ -463,10 +348,8 @@ mod tests {
             CapturedSessionMetadata::for_test("session-finalization-missing-mount", None);
 
         let inputs = FinalizationInputs {
-            native_only: false,
             run_id: "finalization-missing-mount",
             framework: env::Framework::ClaudeCode,
-            session_history_limits: session_history::SessionHistoryLimits::Production,
             artifact_entries: &entries,
             session_metadata: &session_metadata,
             final_session_history_identity_file: guest_paths
@@ -541,10 +424,8 @@ mod tests {
         let session_metadata = CapturedSessionMetadata::for_test("maintenance-run-success", None);
         let launch_json = launch.to_string();
         let inputs = FinalizationInputs {
-            native_only: false,
             run_id: "maintenance-run-success",
             framework: env::Framework::Pi,
-            session_history_limits: session_history::SessionHistoryLimits::Production,
             artifact_entries: &entries,
             session_metadata: &session_metadata,
             final_session_history_identity_file: guest_paths
@@ -669,10 +550,8 @@ printf late > "$1/memory_summary.md""#,
         let session_metadata = CapturedSessionMetadata::for_test("maintenance-run-recovery", None);
         let launch_json = launch.to_string();
         let inputs = FinalizationInputs {
-            native_only: false,
             run_id: "maintenance-run-recovery",
             framework: env::Framework::Pi,
-            session_history_limits: session_history::SessionHistoryLimits::Production,
             artifact_entries: &entries,
             session_metadata: &session_metadata,
             final_session_history_identity_file: guest_paths
@@ -734,10 +613,8 @@ printf late > "$1/memory_summary.md""#,
         }];
         let session_metadata = CapturedSessionMetadata::for_test("ordinary-recovery-run", None);
         let inputs = FinalizationInputs {
-            native_only: false,
             run_id: "ordinary-recovery-run",
             framework: env::Framework::ClaudeCode,
-            session_history_limits: session_history::SessionHistoryLimits::Production,
             artifact_entries: &entries,
             session_metadata: &session_metadata,
             final_session_history_identity_file: guest_paths
@@ -754,100 +631,5 @@ printf late > "$1/memory_summary.md""#,
 
         assert!(prepare.calls() > 0);
         commit.assert_calls(0);
-    }
-
-    #[tokio::test]
-    async fn finalization_reuses_codex_zstd_session_history() {
-        let server = MockServer::start();
-        let dir = tempfile::tempdir().unwrap();
-        let guest_paths = crate::paths::GuestPaths::from_runtime_dir(dir.path().join("runtime"));
-        let _files_guard = FinalizationFilesGuard::new(&guest_paths);
-        let thread_id = "019e9154-c304-70f0-adde-36efb1be1701";
-        let history =
-            b"{\"type\":\"session_meta\",\"payload\":{\"timestamp\":\"2026-07-02T10:00:00Z\"}}\n";
-        let compressed = zstd::encode_all(history.as_slice(), 0).unwrap();
-        let history_hash = hex::encode(Sha256::digest(history));
-        let home_dir = dir.path().join("home");
-        let codex_day_dir = home_dir
-            .join(".codex")
-            .join("sessions")
-            .join("2026")
-            .join("07")
-            .join("02");
-        std::fs::create_dir_all(&codex_day_dir).unwrap();
-        std::fs::write(
-            codex_day_dir.join("rollout-019e9154c30470f0adde36efb1be1701.jsonl.zst"),
-            &compressed,
-        )
-        .unwrap();
-        let upload_url = server.url("/test/session-history-upload");
-        let prepare = server.mock(|when, then| {
-            when.method(POST)
-                .path("/api/webhooks/agent/session-history/prepare")
-                .json_body(json!({
-                    "runId": "finalization-codex-zstd-reuse",
-                    "hash": history_hash,
-                    "rawSize": history.len() as u64,
-                    "encodedSize": compressed.len() as u64,
-                    "encoding": SESSION_HISTORY_ENCODING_ZSTD,
-                }));
-            then.status(200).json_body(json!({
-                "presignedUrl": upload_url,
-                "existing": false,
-                "encoding": SESSION_HISTORY_ENCODING_ZSTD,
-            }));
-        });
-        let expected_upload = compressed.clone();
-        let upload = server.mock(|when, then| {
-            when.method(PUT).path("/test/session-history-upload");
-            then.respond_with(move |req| session_history_upload_response(req, &expected_upload));
-        });
-        let http = HttpClient::with_api_config(
-            server.base_url(),
-            "test-token",
-            "",
-            "test-run-001",
-            Duration::ZERO,
-        )
-        .unwrap();
-        let home_dir = home_dir.to_string_lossy().into_owned();
-        let session_metadata = CapturedSessionMetadata::for_test(
-            thread_id,
-            Some(
-                guest_contracts::session_history_identity::SessionHistorySourceRef::Codex {
-                    sessions_dir: std::path::Path::new(&home_dir)
-                        .join(".codex/sessions")
-                        .to_string_lossy()
-                        .into_owned(),
-                    thread_id: thread_id.to_string(),
-                },
-            ),
-        );
-        let inputs = FinalizationInputs {
-            native_only: false,
-            run_id: "finalization-codex-zstd-reuse",
-            framework: env::Framework::Codex,
-            session_history_limits: session_history::SessionHistoryLimits::Production,
-            artifact_entries: &[],
-            session_metadata: &session_metadata,
-            final_session_history_identity_file: guest_paths
-                .final_session_history_identity_file()
-                .into(),
-            pi_launch_config: "",
-            pi_launch_payload_file: guest_paths.pi_launch_payload_file(),
-        };
-
-        let prepared = prepare_finalization_impl(&http, FinalizationMode::Success, &inputs)
-            .await
-            .unwrap();
-
-        prepare.assert_calls(1);
-        upload.assert_calls(1);
-        assert_eq!(prepared.request.cli_agent_type, "codex");
-        assert_eq!(prepared.request.cli_agent_session_id, thread_id);
-        assert_eq!(
-            prepared.request.cli_agent_session_history_hash.as_deref(),
-            Some(history_hash.as_str())
-        );
     }
 }

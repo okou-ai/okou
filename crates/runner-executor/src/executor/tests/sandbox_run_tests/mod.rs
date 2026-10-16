@@ -50,9 +50,7 @@ use crate::home_image_cache::{
 use runner_host::paths::{RunnerPaths, scoped_home_image_cache_key};
 use runner_types::ids::RunId;
 use runner_types::storage_manifest::StorageManifest;
-use runner_types::types::{
-    ConnectorRuntimeTargetRegistration, FirewallEntry, ResumeSession, SandboxReuseResult,
-};
+use runner_types::types::{ConnectorRuntimeTargetRegistration, FirewallEntry, SandboxReuseResult};
 use tracing::Level;
 use tracing_subscriber::prelude::*;
 

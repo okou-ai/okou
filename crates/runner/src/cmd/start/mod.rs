@@ -48,7 +48,7 @@ use uuid::Uuid;
 use crate::config::RootfsSnapshotPathsExt;
 use crate::config::{self, ProfileConfig};
 use crate::error::{RunnerError, RunnerResult};
-use crate::executor::{ExecutorConfig, SessionHistoryCpuPool, SessionHistoryProbe};
+use crate::executor::ExecutorConfig;
 use crate::home_image_cache::HomeImageCache;
 use crate::http::{HttpClient, HttpClientConfig};
 use crate::idle_pool::{IdlePool, IdlePoolConfig, ParkingGate};
@@ -783,8 +783,6 @@ async fn run_start_observed(
         connector_runtime_sync,
         guest_rpc,
         guest_duplex: runner_remote::guest_duplex::RunGuestChannels::default(),
-        session_history_cpu: SessionHistoryCpuPool::for_host_cpus(host_cpus),
-        session_history_probe: SessionHistoryProbe::default(),
         fresh_archive_delivery: crate::storage_cache::FreshArchiveDeliveryAdmission::new(),
         decoded_cache: crate::storage_cache::decoded::DecodedCache::new(home.clone()),
         background_fill,

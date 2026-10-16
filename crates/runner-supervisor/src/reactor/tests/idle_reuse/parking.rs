@@ -17,10 +17,7 @@ fn context_with_session_opt(
     let mut ctx = minimal_context(run_id);
     if let Some(sid) = session_id {
         ctx.reuse_key = Some(format!("thread:idle-{sid}"));
-        ctx.resume_session = Some(runner_types::types::ResumeSession::inline(
-            sid.to_string(),
-            String::new(),
-        ));
+        ctx.local_resume_session_id = Some(sid.to_string());
     }
     ctx
 }

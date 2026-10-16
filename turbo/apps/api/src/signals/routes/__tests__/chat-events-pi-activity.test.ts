@@ -123,7 +123,7 @@ describe("CHAT-02: model-first routing", () => {
     expect(claimed.claim.cliAgentType).toBe("pi");
     expect(claimed.claim.piSessionId).toBe(run.threadId);
     // The first turn has no stored history, so the Sandbox starts fresh.
-    expect(claimed.claim.resumeSession).toBeNull();
+
     expect(claimed.claim.nativeContinuation).toStrictEqual({
       sessionId: null,
       generationRunId: null,
@@ -340,23 +340,13 @@ describe("CHAT-02: model-first routing", () => {
       committedResult,
     );
 
-    // Native Runs cannot reintroduce durable archives or change Frameworks.
+    // Native Runs retain their captured Framework.
     const failedRun = await sendChatRunAfterPick(actor, {
       agentId,
       threadId: run.threadId,
-      prompt: "reject an archived native completion",
+      prompt: "reject a changed native Framework",
     });
     const failedClaim = await claimChatRun(runnerGroup, failedRun.runId);
-    await webhooks.requestAgentRunOutputs(
-      {
-        runId: failedRun.runId,
-        cliAgentType: "pi",
-        cliAgentSessionId: run.threadId,
-        cliAgentSessionHistoryHash: "a".repeat(64),
-      },
-      failedClaim.sandboxHeaders,
-      [400],
-    );
     await webhooks.requestAgentRunOutputs(
       {
         runId: failedRun.runId,
@@ -487,7 +477,7 @@ describe("CHAT-02: model-first routing", () => {
     });
     const explicitResumeClaim = await api.claimRunnerJob(explicitResume.runId);
     expect(explicitResumeClaim.cliAgentType).toBe("claude-code");
-    expect(explicitResumeClaim.resumeSession).toBeNull();
+
     expect(explicitResumeClaim.nativeContinuation).toMatchObject({
       sessionId: null,
       generationRunId: null,

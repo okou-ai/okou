@@ -34,7 +34,6 @@ impl JobTelemetry {
             success,
             (!success).then_some(attempt.outcome.as_str()),
             Some(attempt.outcome.as_str()),
-            None,
             attempt.completed_at.into(),
         );
         operation.dns_readiness = Some(DnsReadinessTelemetryFields {

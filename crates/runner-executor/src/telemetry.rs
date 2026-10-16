@@ -21,28 +21,13 @@ use runner_provider::http::HttpClient;
 use runner_storage::ArchiveConnectionAttempt;
 use runner_types::ids::RunId;
 use runner_types::types::{HomeReuseResult, SandboxReuseResult};
-pub(crate) use session_history::{
-    SessionHistoryCacheProbeMetadata, SessionHistoryContentEncodingState,
-    SessionHistoryContentLengthState, SessionHistoryResponseTelemetryMetadata,
-    SessionHistoryTelemetryFields, SessionHistoryTelemetryMetadata,
-    SessionHistoryTransferEncodingState, session_history_prefix_extension_action_type,
-};
 
 mod dns_readiness;
-mod history_transfer;
 mod rejection;
-mod session_history;
-mod session_history_download;
 mod storage_batch;
 
-pub(crate) use session_history_download::{
-    SessionHistoryDownloadFields, SessionHistoryDownloadRecord, SessionHistoryObservationStage,
-};
 pub(crate) use storage_batch::StorageBatchDimensions;
 
-pub(crate) use history_transfer::{
-    HistoryCodecDecision, HistoryTransferMeasurements, HistoryTransferSource,
-};
 pub(crate) use runner_storage::ArchiveSizeMismatch;
 pub(crate) use runner_storage::SandboxOpRecord;
 
@@ -327,12 +312,6 @@ struct SandboxOp {
     #[serde(skip_serializing_if = "Option::is_none")]
     runner_resource_budget_lease_count_bucket: Option<RunnerResourceBudgetLeaseCountBucket>,
     #[serde(flatten)]
-    session_history: Option<SessionHistoryTelemetryFields>,
-    #[serde(flatten)]
-    session_history_download: Option<SessionHistoryDownloadFields>,
-    #[serde(flatten)]
-    history_transfer: Option<history_transfer::HistoryTransferTelemetry>,
-    #[serde(flatten)]
     dns_readiness: Option<dns_readiness::DnsReadinessTelemetryFields>,
     #[serde(flatten)]
     storage_batch: Option<StorageBatchTelemetryFields>,
@@ -508,14 +487,7 @@ impl JobTelemetry {
         reuse_key: Option<&str>,
     ) {
         let mut phase = self.fork_concurrent_phase();
-        let mut op = sandbox_op(
-            "runner_sandbox_startup",
-            Duration::ZERO,
-            true,
-            None,
-            None,
-            None,
-        );
+        let mut op = sandbox_op("runner_sandbox_startup", Duration::ZERO, true, None, None);
         op.runner_startup_path = Some(path);
         op.sandbox_reuse_result = Some(sandbox_reuse_result);
         op.home_reuse_result = Some(home_reuse_result);
@@ -577,7 +549,7 @@ impl JobTelemetry {
         success: bool,
         error: Option<&str>,
     ) {
-        self.record_inner(action_type, duration, success, error, None, None);
+        self.record_inner(action_type, duration, success, error, None);
     }
 
     /// Record a timed operation with an optional bounded terminal outcome.
@@ -589,7 +561,7 @@ impl JobTelemetry {
         error: Option<&str>,
         outcome: Option<&str>,
     ) {
-        self.record_inner(action_type, duration, success, error, outcome, None);
+        self.record_inner(action_type, duration, success, error, outcome);
     }
 
     /// Record a timed operation using the timestamp captured when it completed.
@@ -610,7 +582,6 @@ impl JobTelemetry {
             success,
             error,
             None,
-            None,
             completed_at,
         ));
     }
@@ -627,7 +598,6 @@ impl JobTelemetry {
             record.duration,
             record.success,
             record.error,
-            None,
             None,
             completed_at,
         );
@@ -671,7 +641,7 @@ impl JobTelemetry {
         runner_startup_path: RunnerStartupPath,
         sandbox_reuse_result: SandboxReuseResult,
     ) {
-        let mut op = sandbox_op(action_type, duration, true, None, None, None);
+        let mut op = sandbox_op(action_type, duration, true, None, None);
         op.runner_startup_path = Some(runner_startup_path);
         op.sandbox_reuse_result = Some(sandbox_reuse_result);
         self.push_operation(op);
@@ -696,7 +666,7 @@ impl JobTelemetry {
         outcome: &'static str,
         reason: Option<&'static str>,
     ) {
-        let mut op = sandbox_op(action_type, Duration::ZERO, success, error, None, None);
+        let mut op = sandbox_op(action_type, Duration::ZERO, success, error, None);
         op.outcome = Some(outcome.to_string());
         op.reason = reason.map(str::to_string);
         self.push_operation(op);
@@ -720,7 +690,6 @@ impl JobTelemetry {
             success,
             (!success).then_some("storage_batch_apply_failed"),
             Some(dimensions.transport_position),
-            None,
         );
         op.reason = Some(dimensions.manifest_size_bucket.to_string());
         let residual =
@@ -743,16 +712,6 @@ impl JobTelemetry {
 
     /// Record a timed operation with low-cardinality session-history transport
     /// dimensions derived from the hash-backed resume history ref.
-    pub fn record_with_session_history_metadata(
-        &mut self,
-        action_type: &str,
-        duration: Duration,
-        success: bool,
-        error: Option<&str>,
-        metadata: Option<SessionHistoryTelemetryMetadata>,
-    ) {
-        self.record_inner(action_type, duration, success, error, None, metadata);
-    }
 
     pub(crate) fn reporter(&self) -> SandboxOpReporter {
         SandboxOpReporter {
@@ -765,49 +724,8 @@ impl JobTelemetry {
         }
     }
 
-    pub(crate) fn record_session_history_download_attribution(
-        &mut self,
-        record: SessionHistoryDownloadRecord,
-        metadata: Option<SessionHistoryTelemetryMetadata>,
-    ) {
-        let mut op = sandbox_op_at(
-            record.action_type,
-            record.duration,
-            record.success,
-            None,
-            Some(record.outcome),
-            metadata,
-            record.completed_at,
-        );
-        op.session_history_download = Some(record.fields);
-        self.push_operation(op);
-    }
-
     /// Record the existing local restore interval with validated payload
     /// measurements. Only successful restores report completed guest bytes.
-    pub(crate) fn record_history_transfer(
-        &mut self,
-        duration: Duration,
-        source: HistoryTransferSource,
-        framework: &'static str,
-        measurements: Option<HistoryTransferMeasurements>,
-    ) {
-        let success = measurements.is_some();
-        let mut op = sandbox_op(
-            "session_history_transfer",
-            duration,
-            success,
-            (!success).then_some("restore_error"),
-            None,
-            None,
-        );
-        op.history_transfer = Some(history_transfer::HistoryTransferTelemetry {
-            session_history_transfer_source: source,
-            session_history_framework: framework,
-            measurements,
-        });
-        self.push_operation(op);
-    }
 
     pub(crate) async fn upload_oom_evidence(
         &self,
@@ -886,16 +804,8 @@ impl JobTelemetry {
         success: bool,
         error: Option<&str>,
         outcome: Option<&str>,
-        metadata: Option<SessionHistoryTelemetryMetadata>,
     ) {
-        self.push_operation(sandbox_op(
-            action_type,
-            duration,
-            success,
-            error,
-            outcome,
-            metadata,
-        ));
+        self.push_operation(sandbox_op(action_type, duration, success, error, outcome));
     }
 
     fn push_operation(&mut self, mut operation: SandboxOp) {
@@ -997,15 +907,6 @@ impl JobTelemetry {
     }
 
     #[cfg(test)]
-    pub(crate) fn pending_history_transfer_payloads(&self) -> Vec<serde_json::Value> {
-        self.pending_ops
-            .iter()
-            .filter(|op| op.history_transfer.is_some())
-            .map(|op| serde_json::to_value(op).expect("serialize history transfer operation"))
-            .collect()
-    }
-
-    #[cfg(test)]
     pub(crate) fn pending_storage_batch_payloads(&self) -> Vec<serde_json::Value> {
         self.pending_ops
             .iter()
@@ -1065,21 +966,6 @@ impl JobTelemetry {
                     home.reason = op.reason.clone();
                     home
                 })
-            })
-            .collect()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn pending_ops_with_session_history_metadata_snapshot(
-        &self,
-    ) -> Vec<SessionHistoryTelemetrySnapshot> {
-        self.pending_ops
-            .iter()
-            .map(|op| SessionHistoryTelemetrySnapshot {
-                action_type: op.action_type.clone(),
-                success: op.success,
-                error: op.error.clone(),
-                session_history: op.session_history,
             })
             .collect()
     }
@@ -1226,15 +1112,6 @@ impl runner_storage::StorageTelemetry for JobTelemetry {
 
 #[cfg(test)]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct SessionHistoryTelemetrySnapshot {
-    pub(crate) action_type: String,
-    pub(crate) success: bool,
-    pub(crate) error: Option<String>,
-    pub(crate) session_history: Option<SessionHistoryTelemetryFields>,
-}
-
-#[cfg(test)]
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct RunnerStartupTelemetrySnapshot {
     pub(crate) action_type: String,
     pub(crate) runner_startup_path: Option<RunnerStartupPath>,
@@ -1254,17 +1131,8 @@ fn sandbox_op(
     success: bool,
     error: Option<&str>,
     outcome: Option<&str>,
-    metadata: Option<SessionHistoryTelemetryMetadata>,
 ) -> SandboxOp {
-    sandbox_op_at(
-        action_type,
-        duration,
-        success,
-        error,
-        outcome,
-        metadata,
-        Utc::now(),
-    )
+    sandbox_op_at(action_type, duration, success, error, outcome, Utc::now())
 }
 
 fn sandbox_op_from_record(record: SandboxOpRecord, run_id: Option<RunId>) -> SandboxOp {
@@ -1273,7 +1141,6 @@ fn sandbox_op_from_record(record: SandboxOpRecord, run_id: Option<RunId>) -> San
         record.duration,
         record.success,
         record.error,
-        None,
         None,
     );
     if let Some(mut home) = record.home {
@@ -1317,7 +1184,6 @@ fn sandbox_op_at(
     success: bool,
     error: Option<&str>,
     outcome: Option<&str>,
-    metadata: Option<SessionHistoryTelemetryMetadata>,
     completed_at: DateTime<Utc>,
 ) -> SandboxOp {
     SandboxOp {
@@ -1340,9 +1206,6 @@ fn sandbox_op_at(
         runner_resource_budget_vcpu_utilization_bucket: None,
         runner_resource_budget_memory_utilization_bucket: None,
         runner_resource_budget_lease_count_bucket: None,
-        session_history: metadata.map(SessionHistoryTelemetryFields::from),
-        session_history_download: None,
-        history_transfer: None,
         dns_readiness: None,
         storage_batch: None,
         archive_size_mismatch: None,
@@ -1434,10 +1297,6 @@ mod tests {
 
     use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer, json_response};
     use runner_provider::http::HttpClientConfig;
-    use runner_types::types::{
-        ResumeSessionHistoryDownloadSource, ResumeSessionHistoryEncoding, ResumeSessionHistoryRef,
-        ResumeSessionHistoryRefKind,
-    };
 
     fn http_client() -> HttpClient {
         http_client_for_api_url("http://localhost")
@@ -1730,18 +1589,6 @@ mod tests {
         );
     }
 
-    fn session_history_metadata() -> SessionHistoryTelemetryMetadata {
-        SessionHistoryTelemetryMetadata::from_ref(&ResumeSessionHistoryRef {
-            kind: ResumeSessionHistoryRefKind::Blob,
-            hash: "hash".to_string(),
-            url: "https://example.com/history".to_string(),
-            encoding: ResumeSessionHistoryEncoding::Gzip,
-            raw_size: 128 * 1024,
-            encoded_size: 16 * 1024,
-            download_source: Some(ResumeSessionHistoryDownloadSource::ConfiguredPublicEndpoint),
-        })
-    }
-
     fn oom_evidence_for_test() -> guest_contracts::oom_evidence::OomEvidence {
         serde_json::from_str(include_str!(
             "../../guest-contracts/tests/fixtures/oom-evidence-v1.json"
@@ -1783,9 +1630,6 @@ mod tests {
             runner_resource_budget_vcpu_utilization_bucket: None,
             runner_resource_budget_memory_utilization_bucket: None,
             runner_resource_budget_lease_count_bucket: None,
-            session_history: None,
-            session_history_download: None,
-            history_transfer: None,
             dns_readiness: None,
             storage_batch: None,
             archive_size_mismatch: None,
@@ -2123,64 +1967,6 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn history_transfer_measurements_reach_the_webhook_without_rounding_away_zero_fields() {
-        use httpmock::prelude::*;
-        use sandbox::{FileCompression, FileWriteMeasurements};
-
-        let server = MockServer::start_async().await;
-        let telemetry_mock = server
-            .mock_async(|when, then| {
-                when.method(POST)
-                    .path("/api/webhooks/agent/telemetry")
-                    .body_includes(r#""action_type":"session_history_transfer""#)
-                    .body_includes(r#""session_history_transfer_source":"downloaded""#)
-                    .body_includes(r#""session_history_framework":"codex""#)
-                    .body_includes(r#""session_history_wire_codec":"zstd""#)
-                    .body_includes(r#""session_history_codec_decision":"above_threshold""#)
-                    .body_includes(r#""session_history_restore_representation":"raw""#)
-                    .body_includes(r#""session_history_transfer_bytes":17825792"#)
-                    .body_includes(r#""session_history_wire_bytes":2048"#)
-                    .body_includes(r#""session_history_write_requests":2"#)
-                    .body_includes(r#""session_history_selection_ms":1"#)
-                    .body_includes(r#""session_history_file_gate_wait_ms":0"#)
-                    .body_includes(r#""session_history_requests_ms":4"#)
-                    .body_includes(r#""session_history_encoder_pipeline_ms":3"#)
-                    .body_includes(r#""session_history_publication_ms":2"#);
-                then.status(200)
-                    .json_body(serde_json::json!({"success": true, "id": "ok"}));
-            })
-            .await;
-        let mut telemetry = JobTelemetry::new(
-            http_client_for_api_url(&server.base_url()),
-            RunId::from(uuid::Uuid::nil()),
-            "tok".into(),
-            None,
-        );
-        telemetry.record_history_transfer(
-            Duration::from_millis(10),
-            HistoryTransferSource::Downloaded,
-            "codex",
-            Some(HistoryTransferMeasurements::new(
-                FileCompression::Zstd,
-                HistoryCodecDecision::AboveThreshold,
-                Duration::from_millis(1),
-                17 * 1024 * 1024,
-                false,
-                Some(FileWriteMeasurements {
-                    wire_payload_bytes: 2048,
-                    requests: 2,
-                    file_gate_wait: Duration::from_micros(999),
-                    requests_elapsed: Duration::from_millis(4),
-                    encoder_pipeline_elapsed: Duration::from_millis(3),
-                    publication_elapsed: Duration::from_millis(2),
-                }),
-            )),
-        );
-        telemetry.flush().await;
-        telemetry_mock.assert_calls_async(1).await;
-    }
-
     #[test]
     fn resource_budget_occupancy_uses_fixed_buckets() {
         for (allocated, effective, expected) in [
@@ -2255,75 +2041,6 @@ mod tests {
     }
 
     #[test]
-    fn telemetry_payload_flattens_session_history_fields() {
-        let metadata = session_history_metadata()
-            .with_cache_probe(SessionHistoryCacheProbeMetadata::new(true, false))
-            .with_response(SessionHistoryResponseTelemetryMetadata::new(
-                SessionHistoryContentLengthState::MatchesExpected,
-                SessionHistoryContentEncodingState::Absent,
-                SessionHistoryTransferEncodingState::Absent,
-            ));
-        let payload = TelemetryPayload {
-            run_id: Some("abc-123".to_string()),
-            runner_hostname: None,
-            runner_version: RUNNER_VERSION,
-            sandbox_operations: vec![SandboxOp {
-                ts: "2026-01-15T10:00:00+00:00".to_string(),
-                action_type: "test".to_string(),
-                duration_ms: 100,
-                success: true,
-                error: None,
-                outcome: None,
-                reason: None,
-                runner_startup_path: None,
-                is_first_run: None,
-                reuse_key: None,
-                cache_key: None,
-                profile_name: None,
-                image_generation: None,
-                home_reuse_result: None,
-                sandbox_reuse_result: None,
-                runner_pre_spawn_concurrency_bucket: None,
-                runner_resource_budget_vcpu_utilization_bucket: None,
-                runner_resource_budget_memory_utilization_bucket: None,
-                runner_resource_budget_lease_count_bucket: None,
-                session_history: Some(metadata.into()),
-                session_history_download: None,
-                history_transfer: None,
-                dns_readiness: None,
-                storage_batch: None,
-                archive_size_mismatch: None,
-                archive_connection_attempt: None,
-                home: None,
-            }],
-        };
-        let json = serde_json::to_value(&payload).unwrap();
-        assert_eq!(
-            json,
-            serde_json::json!({
-                "runId": "abc-123",
-                "runnerVersion": RUNNER_VERSION,
-                "sandboxOperations": [{
-                    "ts": "2026-01-15T10:00:00+00:00",
-                    "action_type": "test",
-                    "duration_ms": 100,
-                    "success": true,
-                    "encoding": "gzip",
-                    "session_history_raw_size_bucket": "64_256_kib",
-                    "session_history_encoded_size_bucket": "lt_64_kib",
-                    "session_history_compression_ratio_bucket": "lt_0_25",
-                    "session_history_ref_seen_recently": "true",
-                    "session_history_ref_download_inflight": "false",
-                    "session_history_content_length_state": "matches_expected",
-                    "session_history_content_encoding_state": "absent",
-                    "session_history_transfer_encoding_state": "absent",
-                    "session_history_download_source": "configured_public_endpoint",
-                }],
-            })
-        );
-    }
-
-    #[test]
     fn telemetry_payload_includes_canonical_attribution() {
         let payload = TelemetryPayload {
             run_id: Some("abc-123".to_string()),
@@ -2384,42 +2101,6 @@ mod tests {
         assert!(!telemetry.pending_ops[1].success);
         assert_eq!(telemetry.pending_ops[1].error.as_deref(), Some("timeout"));
         assert!(telemetry.oldest_pending.is_some());
-    }
-
-    #[test]
-    fn record_with_session_history_metadata_buffers_low_cardinality_buckets() {
-        let http = http_client();
-        let mut telemetry = JobTelemetry::new(
-            http,
-            RunId::from(uuid::Uuid::nil()),
-            "tok".to_string(),
-            None,
-        );
-        let metadata = session_history_metadata()
-            .with_cache_probe(SessionHistoryCacheProbeMetadata::new(false, true))
-            .with_response(SessionHistoryResponseTelemetryMetadata::new(
-                SessionHistoryContentLengthState::MatchesExpected,
-                SessionHistoryContentEncodingState::Absent,
-                SessionHistoryTransferEncodingState::Chunked,
-            ));
-
-        telemetry.record_with_session_history_metadata(
-            "session_history_download",
-            Duration::from_millis(500),
-            true,
-            None,
-            Some(metadata),
-        );
-
-        assert_eq!(
-            telemetry.pending_ops_with_session_history_metadata_snapshot(),
-            vec![SessionHistoryTelemetrySnapshot {
-                action_type: "session_history_download".to_string(),
-                success: true,
-                error: None,
-                session_history: Some(metadata.into()),
-            }]
-        );
     }
 
     #[test]
@@ -2773,86 +2454,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn history_download_attribution_payload_matches_shared_contract_fixture() {
-        let server = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(json_response(
-            "200 OK",
-            r#"{"success":true}"#,
-        ))])
-        .await;
-        let mut telemetry = JobTelemetry::new(
-            http_client_for_api_url(&server.url()),
-            RunId::from(uuid::Uuid::nil()),
-            "history-attribution-token".to_owned(),
-            None,
-        );
-        let origin = DateTime::parse_from_rfc3339("2026-01-15T10:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc);
-        telemetry.record_session_history_download_attribution(
-            SessionHistoryDownloadRecord {
-                action_type: "session_history_download_attempt",
-                duration: Duration::from_millis(10),
-                success: true,
-                outcome: "succeeded",
-                completed_at: origin + chrono::Duration::milliseconds(10),
-                fields: SessionHistoryDownloadFields {
-                    session_history_timing_origin_unix_ms: origin.timestamp_millis() as u64,
-                    session_history_download_attempt: Some(1),
-                    session_history_request_start_offset_ms: Some(0),
-                    session_history_request_end_offset_ms: Some(4),
-                    session_history_body_start_offset_ms: Some(5),
-                    session_history_body_end_offset_ms: Some(10),
-                    session_history_chunk_wait_ms: Some(4),
-                    session_history_chunk_wait_max_ms: Some(3),
-                    session_history_chunk_count: Some(2),
-                    session_history_body_copy_ms: Some(1),
-                    session_history_body_allocation_ms: Some(0),
-                    ..Default::default()
-                },
-            },
-            None,
-        );
-        telemetry.record_session_history_download_attribution(
-            SessionHistoryDownloadRecord {
-                action_type: "session_history_download_attribution",
-                duration: Duration::from_millis(13),
-                success: true,
-                outcome: "succeeded",
-                completed_at: origin + chrono::Duration::milliseconds(13),
-                fields: SessionHistoryDownloadFields {
-                    session_history_timing_origin_unix_ms: origin.timestamp_millis() as u64,
-                    session_history_attempt_count: Some(1),
-                    session_history_observation_stage: Some(
-                        SessionHistoryObservationStage::Restore,
-                    ),
-                    session_history_failed_attempt_count: Some(0),
-                    session_history_interrupted_attempt_count: Some(0),
-                    session_history_retry_count: Some(0),
-                    session_history_retry_backoff_ms: Some(0),
-                    session_history_cpu_admission_start_offset_ms: Some(10),
-                    session_history_cpu_admission_end_offset_ms: Some(11),
-                    session_history_cpu_queue_start_offset_ms: Some(11),
-                    session_history_cpu_queue_end_offset_ms: Some(12),
-                    session_history_restore_wait_start_offset_ms: Some(2),
-                    session_history_restore_wait_end_offset_ms: Some(13),
-                    ..Default::default()
-                },
-            },
-            None,
-        );
-        telemetry.flush().await;
-        let requests = server.assert_finished_with_requests().await;
-        assert_eq!(requests.len(), 1);
-        let (_, body) = requests[0].split_once("\r\n\r\n").unwrap();
-        let actual: serde_json::Value = serde_json::from_str(body).unwrap();
-        let mut expected: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../turbo/packages/api-contracts/src/contracts/__tests__/fixtures/runner-history-download-attribution.json"
-        )).unwrap();
-        expected["runnerVersion"] = serde_json::json!(RUNNER_VERSION);
-        assert_eq!(actual, expected);
-    }
-
-    #[tokio::test]
     async fn home_startup_http_payload_matches_shared_contract_fixture() {
         let server = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(json_response(
             "200 OK",
@@ -3080,7 +2681,6 @@ mod tests {
                 "telemetry-sensitive-action",
                 Duration::from_millis(1),
                 true,
-                None,
                 None,
                 None,
             )],

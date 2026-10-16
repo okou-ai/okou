@@ -46,9 +46,6 @@ pub(in super::super) fn context_with_session(
 ) -> runner_types::types::ExecutionContext {
     let mut ctx = minimal_context(run_id);
     ctx.reuse_key = Some(session_id.into());
-    ctx.resume_session = Some(runner_types::types::ResumeSession::inline(
-        session_id.into(),
-        String::new(),
-    ));
+    ctx.local_resume_session_id = Some(session_id.into());
     ctx
 }

@@ -25,24 +25,11 @@ async fn success_finalization_uses_captured_startup_environment() {
     )
     .unwrap();
 
-    let prepare = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/agent/session-history/prepare")
-            .header("authorization", "Bearer startup-token")
-            .header("x-vercel-protection-bypass", "startup-bypass")
-            .json_body_includes(r#"{"runId":"startup-run"}"#);
-        then.status(200).json_body(json!({
-            "presignedUrl": server.url("/test/startup-history"),
-            "existing": false
-        }));
-    });
-    let upload = server.mock(|when, then| {
-        when.method(PUT).path("/test/startup-history").body(history);
-        then.status(200);
-    });
     let complete = server.mock(|when, then| {
         when.method(POST)
             .path("/api/webhooks/agent/complete")
+            .header("authorization", "Bearer startup-token")
+            .header("x-vercel-protection-bypass", "startup-bypass")
             .json_body_includes(r#"{"runId":"startup-run"}"#)
             .json_body_includes(r#"{"completion":{"cliAgentType":"claude-code"}}"#)
             .json_body_includes(r#"{"completion":{"cliAgentSessionId":"startup-session"}}"#);
@@ -81,8 +68,6 @@ async fn success_finalization_uses_captured_startup_environment() {
         .env("OKOU_TEST_CLAUDE_CONFIG_DIR", &history_dir);
     run_finalization_child(&mut command).await.unwrap();
 
-    prepare.assert_calls_async(1).await;
-    upload.assert_calls_async(1).await;
     complete.assert_calls_async(1).await;
     assert!(std::path::Path::new(paths.final_session_history_identity_file()).exists());
     assert!(std::path::Path::new(paths.system_log_file()).exists());

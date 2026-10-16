@@ -1284,7 +1284,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
           3501,
           "Long DM answer. ".repeat(350),
         );
-        expect(branch.claim.resumeSession).toBeNull();
+
         expect(branch.replyCount).toBeGreaterThan(1);
         const branchFollowUp = await dm.completeDm(
           "continue the reply chain",
@@ -1331,7 +1331,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
 
     it(`routes ${ownerKind} Telegram DM ${scenario}`, async () => {
       const { completeDm, main } = dm;
-      expect(main.claim.resumeSession).toBeNull();
+
       if (scenario !== "models") {
         if (!replyChain) {
           throw new Error("Expected a completed Telegram reply chain");

@@ -47,7 +47,7 @@ describe("CHAT-02: model-first routing", () => {
     const run = await waiting.launchedRun();
     const claimed = await claimChatRun(runnerGroup, run.runId);
     expect(claimed.claim.prompt).toBe(prompt);
-    expect(claimed.claim.resumeSession).toBeNull();
+
     expect(claimed.claim.piSessionId).toBe(run.threadId);
     expect(claimed.claim.piLaunchConfig).toMatchObject({ schemaVersion: 2 });
     await own(async () => {

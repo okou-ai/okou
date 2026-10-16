@@ -913,7 +913,7 @@ async function claimContinuedSlackPiTurn(args: {
   expect(claim.cliAgentType).toBe("pi");
   expect(claim.piLaunchConfig).toBeDefined();
   expect(claim.piSessionId).toBe(args.scenario.chatThreadId);
-  expect(claim.resumeSession).toBeNull();
+
   expect(claim.nativeContinuation).toMatchObject({
     sessionId: args.scenario.chatThreadId,
     generationRunId: expect.any(String),
@@ -988,7 +988,7 @@ async function runSuccessfulContinuedSlackPiTurn(args: {
     capabilities: { piModelConfigGenerations: [1, 2] },
     nativeContinuationSupported: true,
   });
-  expect(claim.resumeSession).toBeNull();
+
   expect(claim.nativeContinuation?.sessionId).toBe(args.scenario.chatThreadId);
   await completeSlackPiTurnInSandbox({
     scenario: args.scenario,

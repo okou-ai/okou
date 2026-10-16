@@ -57,7 +57,6 @@ describe("CHAT-02: personal subscription model selection", () => {
       const claim = await claimChatRun(runnerGroup, run.runId);
       expect(claim.claim.piModelConfig).toMatchObject({ model });
       if (index === 0) {
-        expect(claim.claim.resumeSession).toBeNull();
         expect(claim.claim.piSessionId).toBe(run.threadId);
         expect(claim.claim.piModelConfig).toMatchObject({
           thinkingLevel:
@@ -156,7 +155,7 @@ describe("CHAT-02: personal subscription model selection", () => {
       claimEnvironment(firstCodexClaim.claim).OKOU_CODEX_SERVICE_TIER,
     ).toBe("fast");
     expect(firstCodexClaim.claim.piLaunchConfig).toBeUndefined();
-    expect(firstCodexClaim.claim.resumeSession).toBeNull();
+
     expect(firstCodexClaim.claim.nativeContinuation).toMatchObject({
       sessionId: null,
       generationRunId: null,
@@ -196,7 +195,7 @@ describe("CHAT-02: personal subscription model selection", () => {
     });
     await flushWaitUntilForTest();
     const returnedPiClaim = await claimChatRun(runnerGroup, returnedPi.runId);
-    expect(returnedPiClaim.claim.resumeSession).toBeNull();
+
     expect(returnedPiClaim.claim.prompt).toBe(returnedPiPrompt);
     expect(returnedPiClaim.claim.nativeContinuation).toMatchObject({
       sessionId: null,
@@ -241,7 +240,7 @@ describe("CHAT-02: personal subscription model selection", () => {
     expect(piFollowUpAppend).not.toContain(firstPiPrompt);
     expect(piFollowUpAppend).not.toContain(firstCodexPrompt);
     const piFollowUpClaim = await claimChatRun(runnerGroup, piFollowUp.runId);
-    expect(piFollowUpClaim.claim.resumeSession).toBeNull();
+
     expect(piFollowUpClaim.claim.nativeContinuation).toMatchObject({
       sessionId: firstPi.threadId,
       generationRunId: returnedPi.runId,
@@ -276,7 +275,7 @@ describe("CHAT-02: personal subscription model selection", () => {
       claimEnvironment(repeatedCodexClaim.claim).OKOU_CODEX_SERVICE_TIER,
     ).toBe("fast");
     expect(repeatedCodexClaim.claim.piLaunchConfig).toBeUndefined();
-    expect(repeatedCodexClaim.claim.resumeSession).toBeNull();
+
     const repeatedCodexRun = await api.readRun(actor, repeatedCodex.runId);
     expect(repeatedCodexRun.appendSystemPrompt).toContain(piFollowUpPrompt);
     expect(repeatedCodexRun.appendSystemPrompt).toContain("Run cancelled");
@@ -311,7 +310,7 @@ describe("CHAT-02: personal subscription model selection", () => {
     });
     await flushWaitUntilForTest();
     const repeatedPiClaim = await claimChatRun(runnerGroup, repeatedPi.runId);
-    expect(repeatedPiClaim.claim.resumeSession).toBeNull();
+
     expect(repeatedPiClaim.claim.prompt).toBe(repeatedPiPrompt);
     const repeatedPiRun = await api.readRun(actor, repeatedPi.runId);
     const repeatedPiAppend = repeatedPiRun.appendSystemPrompt ?? "";

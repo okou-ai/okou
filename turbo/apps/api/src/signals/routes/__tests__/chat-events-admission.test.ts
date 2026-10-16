@@ -638,7 +638,7 @@ describe("CHAT-02: interrupting active chat runs", () => {
     expect(appended).toContain("User: cancelled through the cancel api");
     expect(appended).not.toContain("# Web Chat Run Context");
     const thirdClaim = await claimChatRun(runnerGroup, third.runId);
-    expect(thirdClaim.claim.resumeSession).toBeNull();
+
     await cancelChatRun(actor, third.runId);
   }, 90_000);
 });

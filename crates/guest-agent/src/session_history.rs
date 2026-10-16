@@ -20,7 +20,7 @@ use guest_contracts::session_history_identity::SessionHistorySourceRef;
 use sha2::{Digest, Sha256};
 use std::ffi::{OsStr, OsString};
 use std::fs::File;
-use std::io::{self, BufReader, Read, Seek, Write};
+use std::io::{self, BufReader, Read, Seek};
 use std::path::{Path, PathBuf};
 
 // Finalization must resolve Codex history from user-controlled guest-home state.
@@ -38,102 +38,23 @@ pub(crate) struct SessionHistoryDigest {
     pub(crate) sha256_hex: String,
 }
 
-pub(crate) enum SessionHistoryUploadSource {
+pub(crate) enum SessionHistoryContent {
     Decoded(Vec<u8>),
     CodexZstd { encoded: Vec<u8> },
 }
 
-pub(crate) struct SafeHistoryReplacementTarget {
+pub(crate) struct SessionHistoryLocation {
     #[cfg(target_os = "linux")]
     parent: Dir,
     parent_path: PathBuf,
     leaf_name: OsString,
 }
 
-impl SafeHistoryReplacementTarget {
-    #[cfg(target_os = "linux")]
-    pub(crate) fn stage(&self, candidate: &[u8]) -> io::Result<SafeHistoryReplacement> {
-        let parent = self.parent.try_clone()?;
-        let staged_name =
-            OsString::from(format!(".vm0-session-history-{}.tmp", uuid::Uuid::new_v4()));
-        let mut staged_file = parent.create_child_file(&staged_name)?;
-        let replacement = SafeHistoryReplacement {
-            parent,
-            parent_path: self.parent_path.clone(),
-            staged_name,
-            target_name: self.leaf_name.clone(),
-            persisted: false,
-        };
-        staged_file.write_all(candidate)?;
-        staged_file.flush()?;
-        drop(staged_file);
-        Ok(replacement)
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    pub(crate) fn stage(&self, _candidate: &[u8]) -> io::Result<SafeHistoryReplacement> {
-        Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "safe session history replacement is unsupported on this platform",
-        ))
-    }
-}
-
-pub(crate) struct SafeHistoryReplacement {
-    #[cfg(target_os = "linux")]
-    parent: Dir,
-    parent_path: PathBuf,
-    staged_name: OsString,
-    target_name: OsString,
-    persisted: bool,
-}
-
-impl SafeHistoryReplacement {
-    #[cfg(target_os = "linux")]
-    pub(crate) fn persist(mut self) -> io::Result<()> {
-        self.ensure_parent_path_still_matches()?;
-        self.parent
-            .rename_child(&self.staged_name, &self.target_name)?;
-        self.persisted = true;
-        self.ensure_parent_path_still_matches()
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    pub(crate) fn persist(self) -> io::Result<()> {
-        Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "safe session history replacement is unsupported on this platform",
-        ))
-    }
-
-    #[cfg(target_os = "linux")]
-    fn ensure_parent_path_still_matches(&self) -> io::Result<()> {
-        let current = Dir::open_absolute(&self.parent_path)?;
-        if current.identity()? == self.parent.identity()? {
-            Ok(())
-        } else {
-            Err(io::Error::new(
-                io::ErrorKind::NotFound,
-                "session history parent path changed before replacement",
-            ))
-        }
-    }
-}
-
-#[cfg(target_os = "linux")]
-impl Drop for SafeHistoryReplacement {
-    fn drop(&mut self) {
-        if !self.persisted {
-            let _ = self.parent.unlink_child_file(&self.staged_name);
-        }
-    }
-}
-
 pub(crate) struct ResolvedSessionHistory {
     path: PathBuf,
     file: File,
     is_zstd: bool,
-    replacement_target: SafeHistoryReplacementTarget,
+    location: SessionHistoryLocation,
 }
 
 impl ResolvedSessionHistory {
@@ -141,15 +62,11 @@ impl ResolvedSessionHistory {
         (!self.is_zstd).then_some(&mut self.file)
     }
 
-    pub(crate) fn replacement_target(&self) -> &SafeHistoryReplacementTarget {
-        &self.replacement_target
-    }
-
-    pub(crate) fn into_upload_source_bounded(
+    pub(crate) fn into_content_bounded(
         self,
         max_bytes: u64,
-    ) -> Result<SessionHistoryUploadSource, AgentError> {
-        read_open_codex_upload_source_bounded(self.path, self.file, self.is_zstd, max_bytes)
+    ) -> Result<SessionHistoryContent, AgentError> {
+        read_open_codex_content_bounded(self.path, self.file, self.is_zstd, max_bytes)
     }
 
     fn into_decoded_reader(self) -> Result<DecodedSessionHistoryReader, AgentError> {
@@ -175,7 +92,7 @@ impl ResolvedSessionHistory {
             identity
                 .ensure_same_mount(home_identity)
                 .map_err(|error| read_history_error(&self.path, error))?;
-            self.replacement_target
+            self.location
                 .parent
                 .identity()
                 .and_then(|parent| parent.ensure_same_mount(home_identity))
@@ -190,10 +107,10 @@ impl ResolvedSessionHistory {
                 .map_err(|error| read_history_error(&self.path, error))?;
             let digest =
                 DecodedSessionHistoryReader::open(self.path.clone(), file)?.digest(max_bytes)?;
-            let current_parent = Dir::open_absolute(&self.replacement_target.parent_path)
+            let current_parent = Dir::open_absolute(&self.location.parent_path)
                 .map_err(|error| read_history_error(&self.path, error))?;
             let named = current_parent
-                .open_child_file(&self.replacement_target.leaf_name)
+                .open_child_file(&self.location.leaf_name)
                 .map_err(|error| read_history_error(&self.path, error))?;
             let after = named
                 .metadata()
@@ -202,7 +119,7 @@ impl ResolvedSessionHistory {
                 .identity()
                 .map_err(|error| read_history_error(&self.path, error))?
                 != self
-                    .replacement_target
+                    .location
                     .parent
                     .identity()
                     .map_err(|error| read_history_error(&self.path, error))?
@@ -359,7 +276,7 @@ fn open_exact_session_history(
         return Err(AgentError::SessionHistoryNotRegular { path });
     }
     Ok(ResolvedSessionHistory {
-        replacement_target: SafeHistoryReplacementTarget {
+        location: SessionHistoryLocation {
             parent,
             parent_path: path.parent().unwrap_or(root).to_path_buf(),
             leaf_name: leaf_name.to_os_string(),
@@ -394,12 +311,12 @@ impl From<AgentError> for SessionHistoryDigestError {
     }
 }
 
-fn read_open_codex_upload_source_bounded(
+fn read_open_codex_content_bounded(
     path: PathBuf,
     mut file: File,
     is_zstd: bool,
     max_bytes: u64,
-) -> Result<SessionHistoryUploadSource, AgentError> {
+) -> Result<SessionHistoryContent, AgentError> {
     file.rewind()
         .map_err(|error| read_history_error(&path, error))?;
     let source_len = file
@@ -409,7 +326,7 @@ fn read_open_codex_upload_source_bounded(
     if is_zstd {
         if source_len <= max_bytes {
             let encoded = read_zstd_encoded_session_history(file, &path, max_bytes)?;
-            return Ok(SessionHistoryUploadSource::CodexZstd { encoded });
+            return Ok(SessionHistoryContent::CodexZstd { encoded });
         }
     } else if source_len > max_bytes {
         return Err(session_history_exceeds_max_error(max_bytes));
@@ -417,7 +334,7 @@ fn read_open_codex_upload_source_bounded(
 
     DecodedSessionHistoryReader::open(path, file)?
         .read(Some(max_bytes))
-        .map(SessionHistoryUploadSource::Decoded)
+        .map(SessionHistoryContent::Decoded)
 }
 
 fn resolve_codex_session_history(
@@ -716,7 +633,7 @@ impl ResolvedCodexSession {
             leaf_name,
         } = self;
         ResolvedSessionHistory {
-            replacement_target: SafeHistoryReplacementTarget {
+            location: SessionHistoryLocation {
                 parent,
                 parent_path: path
                     .parent()
@@ -986,7 +903,7 @@ mod tests {
                 .map_err(|error| read_history_error(path, error))?;
             let is_zstd = is_zstd_session_history(path);
             Ok(ResolvedSessionHistory {
-                replacement_target: SafeHistoryReplacementTarget {
+                location: SessionHistoryLocation {
                     parent,
                     parent_path: parent_path.to_path_buf(),
                     leaf_name: leaf_name.to_os_string(),
@@ -1006,9 +923,9 @@ mod tests {
         payload: &str,
         max_bytes: u64,
     ) -> Result<Vec<u8>, AgentError> {
-        match resolve_test_payload(payload)?.into_upload_source_bounded(max_bytes)? {
-            SessionHistoryUploadSource::Decoded(bytes) => Ok(bytes),
-            SessionHistoryUploadSource::CodexZstd { encoded } => {
+        match resolve_test_payload(payload)?.into_content_bounded(max_bytes)? {
+            SessionHistoryContent::Decoded(bytes) => Ok(bytes),
+            SessionHistoryContent::CodexZstd { encoded } => {
                 let decoder = zstd::stream::read::Decoder::new(encoded.as_slice())
                     .map_err(zstd_session_history_error)?;
                 read_history_reader(decoder, Some(max_bytes), zstd_session_history_error)
@@ -1020,9 +937,9 @@ mod tests {
         source: &SessionHistorySourceRef,
         max_bytes: u64,
     ) -> Result<Vec<u8>, AgentError> {
-        match resolve_session_history_from_source(source)?.into_upload_source_bounded(max_bytes)? {
-            SessionHistoryUploadSource::Decoded(bytes) => Ok(bytes),
-            SessionHistoryUploadSource::CodexZstd { encoded } => {
+        match resolve_session_history_from_source(source)?.into_content_bounded(max_bytes)? {
+            SessionHistoryContent::Decoded(bytes) => Ok(bytes),
+            SessionHistoryContent::CodexZstd { encoded } => {
                 let decoder = zstd::stream::read::Decoder::new(encoded.as_slice())
                     .map_err(zstd_session_history_error)?;
                 read_history_reader(decoder, Some(max_bytes), zstd_session_history_error)
@@ -1054,9 +971,9 @@ mod tests {
         std::fs::write(&history_path, b"custom history").unwrap();
 
         let source = resolve_session_history_from_source(&claude_source(&config_dir)).unwrap();
-        let bytes = match source.into_upload_source_bounded(32).unwrap() {
-            SessionHistoryUploadSource::Decoded(bytes) => bytes,
-            SessionHistoryUploadSource::CodexZstd { .. } => {
+        let bytes = match source.into_content_bounded(32).unwrap() {
+            SessionHistoryContent::Decoded(bytes) => bytes,
+            SessionHistoryContent::CodexZstd { .. } => {
                 panic!("Claude history must use decoded bytes")
             }
         };
@@ -1203,7 +1120,7 @@ mod tests {
         let mut observed_file = resolved.file.try_clone().unwrap();
 
         let err = resolved
-            .into_upload_source_bounded(4)
+            .into_content_bounded(4)
             .err()
             .expect("bounded literal read must reject over-limit history");
 
@@ -1271,12 +1188,12 @@ mod tests {
 
         let source = resolve_session_history_from_source(&source)
             .unwrap()
-            .into_upload_source_bounded(history.len() as u64)
+            .into_content_bounded(history.len() as u64)
             .unwrap();
 
         match source {
-            SessionHistoryUploadSource::Decoded(bytes) => assert_eq!(bytes, history),
-            SessionHistoryUploadSource::CodexZstd { .. } => {
+            SessionHistoryContent::Decoded(bytes) => assert_eq!(bytes, history),
+            SessionHistoryContent::CodexZstd { .. } => {
                 panic!("oversized encoded body should fall back to decoded history")
             }
         }

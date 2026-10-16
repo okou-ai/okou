@@ -1690,7 +1690,7 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       return runsApi.heartbeatRunner(runnerGroup);
     });
     const initialClaim = await claimRun(initialRun.id);
-    expect(initialClaim.resumeSession).toBeNull();
+
     const mainSessionId = randomUUID();
     await completeRunSession({
       runId: initialRun.id,
@@ -6261,7 +6261,7 @@ export function registerFeishuIntegrationTests(
           return runsApi.heartbeatRunner(runnerGroup);
         });
         const claim = await claimRun(run.id);
-        expect(claim.resumeSession).toBeNull();
+
         const events = await own(() => {
           return readProjectedChatEvents(context, {
             threadId: thread.chatThreadId,
@@ -7436,7 +7436,7 @@ export function registerSharedFeishuConversationTests(): void {
           return runsApi.heartbeatRunner(runnerGroup);
         });
         const initialClaim = await claimRun(initialRun.id);
-        expect(initialClaim.resumeSession).toBeNull();
+
         const mainSessionId = randomUUID();
         await completeRunSession({
           runId: initialRun.id,
@@ -7464,7 +7464,7 @@ export function registerSharedFeishuConversationTests(): void {
           return runsApi.heartbeatRunner(runnerGroup);
         });
         const threadClaim = await claimRun(threadRun.id);
-        expect(threadClaim.resumeSession).toBeNull();
+
         const threadSessionId = randomUUID();
         await completeRunSession({
           runId: threadRun.id,
@@ -7536,7 +7536,7 @@ export function registerSharedFeishuConversationTests(): void {
         return runsApi.heartbeatRunner(runnerGroup);
       });
       const threadClaim = await claimRun(threadRun.id);
-      expect(threadClaim.resumeSession).toBeNull();
+
       const threadSessionId = randomUUID();
       await completeRunSession({
         runId: threadRun.id,

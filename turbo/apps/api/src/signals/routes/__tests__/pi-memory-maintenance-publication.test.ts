@@ -321,7 +321,7 @@ describe("Pi maintenance publication ownership", () => {
           completion: {
             cliAgentType: "pi",
             cliAgentSessionId: ordinary.runId,
-            cliAgentSessionHistoryDisposition: "unavailable",
+            cliAgentSessionHistoryDisposition: "native_only",
             artifactSnapshots: [
               {
                 name: run.memory.name,

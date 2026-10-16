@@ -23,8 +23,8 @@ use super::super::{
     BlankPoolSelection, BlankPoolSelectionReason, ExactReuseSpeculationTiming, ExecutionHooks,
     FinalizingHandoffOutcome, FinalizingHandoffReason, NewSandboxDispatch,
     RunnerPreSpawnConcurrency, RunnerPreSpawnOperationTiming, RunnerPreSpawnTiming,
-    SandboxReuseDisposition, SandboxReuseRejection, SessionHistoryRestorePlan, execute_job,
-    execute_job_reuse_with_hooks, execute_job_with_prepared_notifier,
+    SandboxReuseDisposition, SandboxReuseRejection, execute_job, execute_job_reuse_with_hooks,
+    execute_job_with_prepared_notifier,
 };
 use super::support::{
     context_with_env, default_params, make_reusable_idle_sandbox, minimal_context,
@@ -789,11 +789,6 @@ const RUNNER_PRE_SPAWN_PHASE_CASES: &[(RunnerPreSpawnPhase, &str, u64)] = &[
         2,
     ),
     (
-        RunnerPreSpawnPhase::SessionHistoryMaterializerStart,
-        "runner_claim_session_history_materializer_start",
-        3,
-    ),
-    (
         RunnerPreSpawnPhase::DeviceRateLimits,
         "runner_claim_device_rate_limits",
         4,
@@ -989,7 +984,6 @@ async fn execute_job_records_runner_pre_spawn_and_fresh_path_timing() {
             sandbox_prepared: None,
             active_input_source: None,
             pre_spawn_timing: Some(pre_spawn_timing_with_phases()),
-            session_history_restore_plan: SessionHistoryRestorePlan::Default,
         },
     )
     .await;
@@ -1142,7 +1136,6 @@ async fn execute_job_attributes_overlapping_pre_spawn_work_and_releases_membersh
                 sandbox_prepared: None,
                 active_input_source: None,
                 pre_spawn_timing: Some(pre_spawn_timing_with_phases_and_concurrency(&concurrency)),
-                session_history_restore_plan: SessionHistoryRestorePlan::Default,
             },
         )
         .await;
@@ -1178,7 +1171,6 @@ async fn execute_job_attributes_overlapping_pre_spawn_work_and_releases_membersh
             sandbox_prepared: None,
             active_input_source: None,
             pre_spawn_timing: Some(pre_spawn_timing_with_phases_and_concurrency(&concurrency)),
-            session_history_restore_plan: SessionHistoryRestorePlan::Default,
         },
     )
     .await;
@@ -1223,7 +1215,6 @@ async fn execute_job_attributes_resource_budget_occupancy_until_agent_ready() {
             sandbox_prepared: None,
             active_input_source: None,
             pre_spawn_timing: Some(pre_spawn_timing),
-            session_history_restore_plan: SessionHistoryRestorePlan::Default,
         },
     )
     .await;
@@ -1266,7 +1257,6 @@ async fn execute_job_records_exact_reuse_speculation_timing() {
             sandbox_prepared: None,
             active_input_source: None,
             pre_spawn_timing: Some(pre_spawn_timing_with_exact_reuse_speculation()),
-            session_history_restore_plan: SessionHistoryRestorePlan::Default,
         },
     )
     .await;
@@ -1610,7 +1600,6 @@ async fn execute_job_reuse_records_runner_pre_spawn_and_reuse_path_timing() {
             sandbox_prepared: None,
             active_input_source: None,
             pre_spawn_timing: Some(pre_spawn_timing_with_phases()),
-            session_history_restore_plan: SessionHistoryRestorePlan::Default,
         },
     )
     .await;
@@ -1840,7 +1829,6 @@ async fn execute_job_claims_blank_sandbox_with_distinct_startup_attribution() {
             sandbox_prepared: None,
             active_input_source: None,
             pre_spawn_timing: Some(pre_spawn_timing),
-            session_history_restore_plan: SessionHistoryRestorePlan::Default,
         },
     )
     .await;
@@ -1915,7 +1903,6 @@ async fn assert_reused_private_write_timeout_telemetry(
             sandbox_prepared: None,
             active_input_source: None,
             pre_spawn_timing: Some(pre_spawn_timing_with_phases()),
-            session_history_restore_plan: SessionHistoryRestorePlan::Default,
         },
     )
     .await;
@@ -1972,7 +1959,6 @@ async fn assert_reused_required_private_batch_failure(
             sandbox_prepared: None,
             active_input_source: None,
             pre_spawn_timing: Some(pre_spawn_timing_with_phases()),
-            session_history_restore_plan: SessionHistoryRestorePlan::Default,
         },
     )
     .await;
@@ -2126,7 +2112,6 @@ async fn start_process_failure_records_phase_failure_without_spawn_completion() 
                 None,
                 &concurrency,
             )),
-            session_history_restore_plan: SessionHistoryRestorePlan::Default,
         },
     )
     .await;
@@ -2163,7 +2148,6 @@ async fn start_process_failure_records_phase_failure_without_spawn_completion() 
             sandbox_prepared: None,
             active_input_source: None,
             pre_spawn_timing: Some(pre_spawn_timing_with_phases_and_concurrency(&concurrency)),
-            session_history_restore_plan: SessionHistoryRestorePlan::Default,
         },
     )
     .await;

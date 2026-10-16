@@ -893,7 +893,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       const continuedClaim = await api.claimRunnerJob(continued.runId);
       fixture.registerClaim(continued.runId, continuedClaim.sandboxToken);
       expect(continuedClaim.vars).toStrictEqual(claim1.vars);
-      expect(continuedClaim.resumeSession).toBeNull();
+
       expect(continuedClaim.nativeContinuation).toMatchObject({
         sessionId: `bdd-cli-${r1.runId}`,
         generationRunId: r1.runId,

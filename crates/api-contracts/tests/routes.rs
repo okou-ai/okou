@@ -10,17 +10,6 @@ fn exposes_generated_webhook_route_constants() {
 }
 
 #[test]
-fn exposes_nested_generated_webhook_route_constants() {
-    let prepare_history = routes::webhooks::agent::session_history::prepare::PREPARE;
-
-    assert_eq!(prepare_history.method, Method::Post);
-    assert_eq!(
-        prepare_history.path,
-        "/api/webhooks/agent/session-history/prepare"
-    );
-}
-
-#[test]
 fn exposes_generated_runner_route_constants() {
     let poll = routes::runners::poll::POLL;
     let claim: RouteTemplate = routes::runners::jobs::by_id::claim::CLAIM;

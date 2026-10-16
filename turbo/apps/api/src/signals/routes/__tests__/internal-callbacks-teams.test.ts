@@ -1081,7 +1081,7 @@ describe("Teams chat callbacks", () => {
         runnerGroup: teams.runnerGroup,
         runId: mainRunId,
       });
-      expect(mainClaim.resumeSession).toBeNull();
+
       clearTeamsApiCalls(teamsApi);
       const mainSessionId = await completeSandboxRun({
         runId: mainRunId,
@@ -1102,7 +1102,7 @@ describe("Teams chat callbacks", () => {
         runnerGroup: teams.runnerGroup,
         runId: threadRunId,
       });
-      expect(threadClaim.resumeSession).toBeNull();
+
       clearTeamsApiCalls(teamsApi);
       const threadSessionId = await completeSandboxRun({
         runId: threadRunId,
@@ -1439,7 +1439,6 @@ describe("Teams chat callbacks", () => {
 
     it("starts a separate session for the new participant", async () => {
       const { claim } = await claimParticipantRun();
-      expect(claim.resumeSession).toBeNull();
     });
 
     it("resumes the original session after another participant completes", async () => {
@@ -1514,7 +1513,6 @@ describe("Teams chat callbacks", () => {
         "activity-failed-follow-up",
       ),
     });
-    expect(followUpClaim.resumeSession).toBeNull();
   });
 
   it("does not post replies when the Teams installation is missing", async () => {
@@ -1565,7 +1563,6 @@ describe("Teams chat callbacks", () => {
         "activity-missing-install-follow-up",
       ),
     });
-    expect(followUpClaim.resumeSession).toBeNull();
   });
 
   it("keeps the canonical thread session when the Teams API rejects the reply", async () => {

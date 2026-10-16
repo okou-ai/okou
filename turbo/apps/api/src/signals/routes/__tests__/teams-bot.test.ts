@@ -2768,7 +2768,7 @@ describe("POST /api/webhooks/teams/bot", () => {
         "# Microsoft Teams Run Context",
       );
       expect(followUpClaim.cliAgentType).toBe(initialClaim.cliAgentType);
-      expect(followUpClaim.resumeSession).toBeNull();
+
       expect(followUpClaim.modelUsageProvider).toBe("claude-fable-5-1");
       await runsApi.requestCancelRun(actor, followUpRunId, [200]);
     });

@@ -25,7 +25,6 @@ use crate::blank_pool::BlankPoolDiagnostics;
 use crate::claimed_activation::ClaimedActivationError;
 use crate::executor::{
     self, ExecutorConfig, RunnerPreSpawnConcurrency, RunnerPreSpawnPhase, RunnerPreSpawnTiming,
-    SessionHistoryRestorePlan,
 };
 use crate::guest_timezone::GuestTimezoneIntent;
 use crate::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool};
@@ -113,7 +112,6 @@ pub(super) struct SpawnJobRequest {
     pub(super) reuse_entry: Option<ReusableIdleSandbox>,
     pub(super) reuse_result: SandboxReuseResult,
     pub(super) pre_spawn_timing: RunnerPreSpawnTiming,
-    pub(super) session_history_restore_plan: SessionHistoryRestorePlan,
     pub(super) active_run_guard: ActiveRunGuard,
 }
 
@@ -127,7 +125,6 @@ struct ExecutorInvocation {
     reuse_entry: Option<ReusableIdleSandbox>,
     reuse_result: SandboxReuseResult,
     pre_spawn_timing: RunnerPreSpawnTiming,
-    session_history_restore_plan: SessionHistoryRestorePlan,
     cancellation: RunCancellationSignals,
     sandbox_token: String,
     sandbox_prepared: Option<executor::SandboxPreparedNotifier>,
@@ -153,7 +150,6 @@ impl ExecutorInvocation {
             reuse_entry,
             reuse_result,
             pre_spawn_timing,
-            session_history_restore_plan,
             cancellation,
             sandbox_token,
             sandbox_prepared,
@@ -181,7 +177,6 @@ impl ExecutorInvocation {
                         sandbox_prepared: None,
                         active_input_source,
                         pre_spawn_timing: Some(pre_spawn_timing),
-                        session_history_restore_plan,
                     },
                 )
                 .await
@@ -200,7 +195,6 @@ impl ExecutorInvocation {
                         sandbox_prepared,
                         active_input_source,
                         pre_spawn_timing: Some(pre_spawn_timing),
-                        session_history_restore_plan,
                     },
                 )
                 .await
@@ -494,7 +488,6 @@ pub(super) async fn run_job(
         reuse_entry,
         reuse_result,
         pre_spawn_timing,
-        session_history_restore_plan,
         active_run_guard,
     } = request;
     let active_run_reuse = active_run_guard.reuse_publisher();
@@ -595,7 +588,6 @@ pub(super) async fn run_job(
         reuse_entry,
         reuse_result,
         pre_spawn_timing,
-        session_history_restore_plan,
         cancellation: job_cancel.signals(),
         sandbox_token: sandbox_token.clone(),
         sandbox_prepared,

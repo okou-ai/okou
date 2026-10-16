@@ -37,12 +37,7 @@ mod guest_state;
 mod home_history;
 mod reused_sandbox;
 mod sandbox_run;
-mod session_history_attribution;
-mod session_history_cpu;
-mod session_history_download;
-mod session_history_restore_plan;
 mod session_id;
-mod session_restore;
 mod startup;
 mod storage;
 mod telemetry;
@@ -52,12 +47,6 @@ pub(crate) use cli_framework::effective_cli_framework;
 pub use guest_state::{
     GuestTimezoneSyncOutcome, is_shell_safe_guest_timezone_name, restore_guest_state_with_intent,
     restore_guest_state_with_timezone, try_sync_guest_timezone_intent,
-};
-pub use session_history_cpu::SessionHistoryCpuPool;
-pub use session_history_download::{SessionHistoryMaterializer, SessionHistoryProbe};
-pub use session_history_restore_plan::{
-    SessionHistoryRestoreFallback, SessionHistoryRestorePlan, SessionHistoryRestorePlanInput,
-    build_session_history_restore_plan,
 };
 pub use startup::StartupReport;
 
@@ -209,8 +198,6 @@ pub struct ExecutorConfig {
     pub guest_rpc: Option<crate::guest_rpc::Runtime>,
     /// Live executor-held Guest assignments, shared with the owning Runner listener.
     pub guest_duplex: runner_remote::guest_duplex::RunGuestChannels,
-    pub session_history_cpu: SessionHistoryCpuPool,
-    pub session_history_probe: SessionHistoryProbe,
     pub fresh_archive_delivery: crate::storage_cache::FreshArchiveDeliveryAdmission,
     pub background_fill: crate::storage_cache::StorageCacheBackgroundFillCoordinator,
     pub decoded_cache: crate::storage_cache::decoded::DecodedCache,
@@ -257,7 +244,6 @@ pub struct ExecutionHooks {
     pub sandbox_prepared: Option<SandboxPreparedNotifier>,
     pub active_input_source: Option<ActiveInputSource>,
     pub pre_spawn_timing: Option<RunnerPreSpawnTiming>,
-    pub session_history_restore_plan: SessionHistoryRestorePlan,
 }
 
 impl ExecutionHooks {
@@ -267,7 +253,6 @@ impl ExecutionHooks {
             sandbox_prepared: None,
             active_input_source: None,
             pre_spawn_timing: None,
-            session_history_restore_plan: SessionHistoryRestorePlan::Default,
         }
     }
 }
@@ -659,7 +644,6 @@ pub async fn execute_job_with_prepared_notifier(
         sandbox_prepared,
         active_input_source,
         pre_spawn_timing,
-        session_history_restore_plan,
     } = hooks;
     let spawn_timing = RunnerSpawnTiming::start(pre_spawn_timing);
     let run_id = context.run_id;
@@ -699,8 +683,7 @@ pub async fn execute_job_with_prepared_notifier(
                 NewSandboxHooks {
                     preparation: FreshPreparation::Initial,
                     controls: RunControls::from_cancellation(cancellation, active_input_source)
-                        .with_spawn_timing(spawn_timing)
-                        .with_session_history_restore_plan(session_history_restore_plan),
+                        .with_spawn_timing(spawn_timing),
                     prepared_run_payload,
                     sandbox_prepared: sandbox_prepared.as_ref(),
                 },
@@ -779,7 +762,6 @@ pub async fn execute_job_reuse_with_hooks(
         sandbox_prepared: _,
         active_input_source,
         pre_spawn_timing,
-        session_history_restore_plan,
     } = hooks;
     let spawn_timing = RunnerSpawnTiming::start(pre_spawn_timing);
     let run_id = context.run_id;
@@ -933,7 +915,6 @@ pub async fn execute_job_reuse_with_hooks(
                 PreparedRunInputs::new(
                     RunControls::from_cancellation(cancellation, active_input_source)
                         .with_spawn_timing(spawn_timing)
-                        .with_session_history_restore_plan(session_history_restore_plan)
                         .with_guest_state_prepared(guest_state_prepared),
                     prepared_run_payload,
                 ),

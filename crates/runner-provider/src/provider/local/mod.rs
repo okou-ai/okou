@@ -271,10 +271,7 @@ impl JobProvider for LocalProvider {
             environment: environment_merge.environment,
             platform_environment: HashMap::new(),
             native_continuation: None,
-            resume_session: req
-                .session_id
-                .as_ref()
-                .map(|id| runner_types::types::ResumeSession::inline(id.clone(), String::new())),
+            local_resume_session_id: req.session_id,
             secret_values: environment_merge.secret_values,
             local_secret_env_keys: environment_merge.local_secret_env_keys,
             encrypted_secrets: None,

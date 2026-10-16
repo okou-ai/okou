@@ -123,11 +123,9 @@ use crate::claimed_resource_activation::{
     try_reuse_from_pool,
 };
 use crate::executor::{
-    BlankPoolSelection, RunnerPreSpawnPhase, RunnerPreSpawnTiming, SessionHistoryRestorePlanInput,
-    build_session_history_restore_plan, validate_resume_session_id,
+    BlankPoolSelection, RunnerPreSpawnPhase, RunnerPreSpawnTiming, validate_resume_session_id,
 };
 use crate::idle_lifecycle::SharedIdlePool;
-use crate::idle_pool::ReusableIdleSandbox;
 use crate::lifecycle::RunnerMode;
 use crate::pre_claim_admission::{
     AdmittedClaim, AdmittedResource, PreClaimResources, SandboxAdmittedResource,
@@ -701,28 +699,6 @@ pub(super) async fn build_spawn_job_request(
     #[cfg(test)]
     ctx.test_observer.notify_active_run_status_published(run_id);
 
-    let setup = activation.setup()?;
-    let session_history_restore_plan =
-        build_session_history_restore_plan(SessionHistoryRestorePlanInput {
-            http: &ctx.exec_config.http,
-            cpu: &ctx.exec_config.session_history_cpu,
-            context: setup.claimed.context(),
-            cancel: setup.cancellation.token(),
-            reuse_result: setup.resource.reuse_result,
-            idle_kind: setup
-                .resource
-                .reuse_entry
-                .as_ref()
-                .map(ReusableIdleSandbox::kind),
-            restored_identity: setup
-                .resource
-                .reuse_entry
-                .as_ref()
-                .and_then(ReusableIdleSandbox::restored_session_identity),
-            pre_spawn_timing: &mut setup.pre_spawn_timing,
-            probe: Some(&ctx.exec_config.session_history_probe),
-        });
-
     let ClaimedJobSetup {
         claimed,
         rootfs_hash,
@@ -765,7 +741,6 @@ pub(super) async fn build_spawn_job_request(
         reuse_entry,
         reuse_result,
         pre_spawn_timing,
-        session_history_restore_plan,
         active_run_guard,
     })
 }

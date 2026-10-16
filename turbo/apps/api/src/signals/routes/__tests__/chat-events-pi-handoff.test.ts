@@ -96,7 +96,7 @@ describe("CHAT-02: model-first routing", () => {
             piSessionId: run.threadId,
             prompt: originalPrompt,
           });
-          expect(claim.claim.resumeSession).toBeNull();
+
           expect(claim.claim.nativeContinuation).toMatchObject({
             sessionId: turn === 1 ? null : run.threadId,
             generationRunId: previousRunId ?? null,

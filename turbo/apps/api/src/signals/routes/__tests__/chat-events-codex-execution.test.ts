@@ -96,7 +96,7 @@ describe("Codex execution switch", () => {
         expect(claim.piModelConfig).toBeUndefined();
         expect(claim.piLaunchConfig).toBeUndefined();
         expect(claim.piSessionId).toBeUndefined();
-        expect(claim.resumeSession).toBeNull();
+
         expect(claim.billableFirewalls).toStrictEqual([]);
         expect(claimEnvironment(claim)).toMatchObject({
           OPENAI_MODEL: model,
@@ -201,7 +201,7 @@ describe("Codex execution switch", () => {
       });
       const secondClaim = await claimChatRun(runnerGroup, second.runId);
       expect(secondClaim.claim.cliAgentType).toBe("codex");
-      expect(secondClaim.claim.resumeSession).toBeNull();
+
       expect(secondClaim.claim.appendSystemPrompt).not.toContain(
         "The earlier Pi answer",
       );
@@ -239,7 +239,7 @@ describe("Codex execution switch", () => {
       });
       const thirdClaim = await claimChatRun(runnerGroup, third.runId);
       expect(thirdClaim.claim.cliAgentType).toBe("pi");
-      expect(thirdClaim.claim.resumeSession).toBeNull();
+
       expect(thirdClaim.claim.appendSystemPrompt).not.toContain(
         "The later Codex answer",
       );

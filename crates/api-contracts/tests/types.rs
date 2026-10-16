@@ -8,7 +8,6 @@ use api_contracts::generated::types::{
     },
     webhooks::agent::{
         complete,
-        session_history::prepare as prepare_history,
         storages::{FileEntryWithHash, commit, prepare},
     },
 };
@@ -270,12 +269,11 @@ fn generated_pi_model_config_v2_round_trips_both_dialects() {
 
 #[test]
 fn generated_completion_metadata_omits_absent_snapshots() {
-    let history_hash = "a".repeat(64);
     let request = complete::RequestCompletion {
         cli_agent_type: "claude-code".to_string(),
         cli_agent_session_id: "session-1".to_string(),
-        cli_agent_session_history_hash: Some(history_hash.clone()),
-        cli_agent_session_history_disposition: None,
+        cli_agent_session_history_disposition:
+            complete::RequestCompletionCliAgentSessionHistoryDisposition::NativeOnly,
         artifact_snapshots: None,
         volume_versions_snapshot: None,
     };
@@ -286,7 +284,7 @@ fn generated_completion_metadata_omits_absent_snapshots() {
         json!({
             "cliAgentType": "claude-code",
             "cliAgentSessionId": "session-1",
-            "cliAgentSessionHistoryHash": history_hash,
+            "cliAgentSessionHistoryDisposition": "native_only",
         })
     );
     assert!(value.get("artifactSnapshots").is_none());
@@ -298,8 +296,8 @@ fn generated_completion_metadata_round_trips_preserve_parent_snapshot() {
     let request = complete::RequestCompletion {
         cli_agent_type: "codex".to_string(),
         cli_agent_session_id: "session-1".to_string(),
-        cli_agent_session_history_hash: Some("b".repeat(64)),
-        cli_agent_session_history_disposition: None,
+        cli_agent_session_history_disposition:
+            complete::RequestCompletionCliAgentSessionHistoryDisposition::NativeOnly,
         artifact_snapshots: Some(vec![complete::RequestCompletionArtifactSnapshot {
             name: "memory".to_string(),
             version: "version-1".to_string(),
@@ -317,7 +315,7 @@ fn generated_completion_metadata_round_trips_preserve_parent_snapshot() {
         json!({
             "cliAgentType": "codex",
             "cliAgentSessionId": "session-1",
-            "cliAgentSessionHistoryHash": "b".repeat(64),
+            "cliAgentSessionHistoryDisposition": "native_only",
             "artifactSnapshots": [{
                 "name": "memory",
                 "version": "version-1",
@@ -329,143 +327,6 @@ fn generated_completion_metadata_round_trips_preserve_parent_snapshot() {
 
     let round_trip: complete::RequestCompletion = serde_json::from_value(value).unwrap();
     assert_eq!(round_trip, request);
-}
-
-#[test]
-fn generated_completion_metadata_serializes_discarded_oversized_history() {
-    let request = complete::RequestCompletion {
-        cli_agent_type: "codex".to_string(),
-        cli_agent_session_id: "session-1".to_string(),
-        cli_agent_session_history_hash: None,
-        cli_agent_session_history_disposition: Some(
-            complete::RequestCompletionCliAgentSessionHistoryDisposition::DiscardedOversized,
-        ),
-        artifact_snapshots: None,
-        volume_versions_snapshot: None,
-    };
-
-    assert_eq!(
-        serde_json::to_value(request).unwrap(),
-        json!({
-            "cliAgentType": "codex",
-            "cliAgentSessionId": "session-1",
-            "cliAgentSessionHistoryDisposition": "discarded_oversized",
-        })
-    );
-}
-
-#[test]
-fn generated_completion_metadata_serializes_unavailable_history() {
-    let request = complete::RequestCompletion {
-        cli_agent_type: "claude-code".to_string(),
-        cli_agent_session_id: "session-1".to_string(),
-        cli_agent_session_history_hash: None,
-        cli_agent_session_history_disposition: Some(
-            complete::RequestCompletionCliAgentSessionHistoryDisposition::Unavailable,
-        ),
-        artifact_snapshots: None,
-        volume_versions_snapshot: None,
-    };
-
-    assert_eq!(
-        serde_json::to_value(request).unwrap(),
-        json!({
-            "cliAgentType": "claude-code",
-            "cliAgentSessionId": "session-1",
-            "cliAgentSessionHistoryDisposition": "unavailable",
-        })
-    );
-}
-
-#[test]
-fn generated_session_history_prepare_request_serializes_wire_shape() {
-    let request = prepare_history::Request {
-        run_id: "run-1".to_string(),
-        hash: "a".repeat(64),
-        raw_size: 4096,
-        encoded_size: 1024,
-        encoding: Some(prepare_history::SessionHistoryEncoding::Zstd),
-    };
-    assert_eq!(
-        serde_json::to_value(request).unwrap(),
-        json!({
-            "runId": "run-1",
-            "hash": "a".repeat(64),
-            "rawSize": 4096,
-            "encodedSize": 1024,
-            "encoding": "zstd",
-        })
-    );
-
-    let request_without_encoding = prepare_history::Request {
-        run_id: "run-2".to_string(),
-        hash: "b".repeat(64),
-        raw_size: 64,
-        encoded_size: 64,
-        encoding: None,
-    };
-    let value = serde_json::to_value(request_without_encoding).unwrap();
-    assert!(value.get("encoding").is_none());
-}
-
-#[test]
-fn generated_session_history_prepare_encoding_serializes_wire_values() {
-    for (encoding, wire_value) in [
-        (
-            prepare_history::SessionHistoryEncoding::Identity,
-            "identity",
-        ),
-        (prepare_history::SessionHistoryEncoding::Gzip, "gzip"),
-        (prepare_history::SessionHistoryEncoding::Zstd, "zstd"),
-    ] {
-        assert_eq!(serde_json::to_value(encoding).unwrap(), json!(wire_value));
-        assert_eq!(
-            serde_json::from_value::<prepare_history::SessionHistoryEncoding>(json!(wire_value))
-                .unwrap(),
-            encoding
-        );
-    }
-}
-
-#[test]
-fn generated_session_history_prepare_response_deserializes_canonical_shapes() {
-    let existing: prepare_history::Response = serde_json::from_value(json!({
-        "existing": true,
-        "encoding": "gzip",
-    }))
-    .unwrap();
-    assert!(existing.existing);
-    assert!(existing.presigned_url.is_none());
-    assert_eq!(
-        existing.encoding,
-        Some(prepare_history::SessionHistoryEncoding::Gzip)
-    );
-
-    let upload: prepare_history::Response = serde_json::from_value(json!({
-        "presignedUrl": "https://storage.example.test/session-history",
-        "existing": false,
-        "encoding": "zstd",
-    }))
-    .unwrap();
-    assert!(!upload.existing);
-    assert_eq!(
-        upload.presigned_url.as_deref(),
-        Some("https://storage.example.test/session-history")
-    );
-    assert_eq!(
-        upload.encoding,
-        Some(prepare_history::SessionHistoryEncoding::Zstd)
-    );
-}
-
-#[test]
-fn generated_session_history_prepare_response_rejects_invalid_existing() {
-    for response in [
-        json!({"presignedUrl": "https://storage.example.test/session-history"}),
-        json!({"existing": "false"}),
-    ] {
-        assert!(serde_json::from_value::<prepare_history::Response>(response).is_err());
-    }
 }
 
 #[test]

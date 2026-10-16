@@ -102,10 +102,7 @@ async fn invalid_reserved_resume_session_fails_before_reuse() {
     let run_id = RunId::new_v4();
     let mut context = minimal_context(run_id);
     context.reuse_key = Some(reuse_key.to_string());
-    context.resume_session = Some(runner_types::types::ResumeSession::inline(
-        invalid_session_id.to_string(),
-        String::new(),
-    ));
+    context.local_resume_session_id = Some(invalid_session_id.to_string());
     env.provider.set_claim_result(run_id, Some(context));
     env.handle
         .discover_tx
@@ -147,10 +144,7 @@ async fn invalid_resume_session_fails_before_fresh_sandbox_creation() {
     let invalid_session_id = "../invalid-fresh-session";
     let mut context = minimal_context(run_id);
     context.reuse_key = Some(reuse_key.to_string());
-    context.resume_session = Some(runner_types::types::ResumeSession::inline(
-        invalid_session_id.to_string(),
-        String::new(),
-    ));
+    context.local_resume_session_id = Some(invalid_session_id.to_string());
 
     push_job(&env, run_id, "vm0/default", Some(context));
 

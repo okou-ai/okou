@@ -45,10 +45,6 @@ describe("Genuine Pi maintenance publication results", () => {
         { ...completed.body.completion, cliAgentType: "claude-code" },
         {
           ...completed.body.completion,
-          cliAgentSessionHistoryDisposition: "discarded_oversized" as const,
-        },
-        {
-          ...completed.body.completion,
           artifactSnapshots: [
             {
               name: run.memory.name,

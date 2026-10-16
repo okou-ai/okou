@@ -176,14 +176,6 @@ async fn unchanged_artifact_finalization_records_content_hash_timing()
         ),
     );
 
-    let history_prepare = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/agent/session-history/prepare")
-            .json_body_includes(format!(r#"{{"runId":"{RUN_ID}"}}"#));
-        then.status(200)
-            .header("Content-Type", "application/json")
-            .json_body(json!({"existing": true}));
-    });
     let storage_prepare = server.mock(|when, then| {
         when.method(POST)
             .path("/api/webhooks/agent/storages/prepare");
@@ -223,7 +215,6 @@ async fn unchanged_artifact_finalization_records_content_hash_timing()
     guest_agent::complete::report_finalization_for_run(&runtime, 0, None, None, None, finalization)
         .await?;
 
-    history_prepare.assert_calls_async(1).await;
     storage_prepare.assert_calls_async(0).await;
     storage_commit.assert_calls_async(0).await;
     complete.assert_calls_async(1).await;

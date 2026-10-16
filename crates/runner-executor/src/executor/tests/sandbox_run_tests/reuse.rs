@@ -534,7 +534,7 @@ async fn execute_job_reuse_invalid_resume_session_does_not_lease_home_image() {
         make_reusable_idle_sandbox(sandbox, source_ip, "bad-session").await;
     let raw_session_id = "../bad-session";
     let mut ctx = minimal_context();
-    ctx.resume_session = Some(ResumeSession::inline(raw_session_id.into(), "{}".into()));
+    ctx.local_resume_session_id = Some(raw_session_id.into());
 
     let cancel = tokio_util::sync::CancellationToken::new();
     let (reuse_outcome, _telemetry) =
@@ -592,10 +592,7 @@ async fn execute_job_reuse_with_session_context() {
 
     // First turn: execute with resume_session
     let mut ctx = minimal_context();
-    ctx.resume_session = Some(ResumeSession::inline(
-        "test-session-abc".into(),
-        r#"{"type":"human","text":"hello"}"#.into(),
-    ));
+    ctx.local_resume_session_id = Some("test-session-abc".into());
     assert_eq!(ctx.cli_agent_session_id(), Some("test-session-abc"));
 
     let cancel = tokio_util::sync::CancellationToken::new();
@@ -616,13 +613,7 @@ async fn execute_job_reuse_with_session_context() {
 
     // Second turn: reuse with new session history
     let mut ctx2 = minimal_context();
-    ctx2.resume_session = Some(ResumeSession::inline(
-        "test-session-abc".into(),
-        r#"{"type":"human","text":"hello"}
-{"type":"assistant","text":"hi"}
-{"type":"human","text":"do something"}"#
-            .into(),
-    ));
+    ctx2.local_resume_session_id = Some("test-session-abc".into());
 
     let cancel = tokio_util::sync::CancellationToken::new();
     let (idle_sandbox, _lease) =
@@ -747,10 +738,7 @@ async fn execute_job_reuse_session_restore_failure_returns_sandbox() {
     sandbox.push_write_file_result(Err(sandbox_write_file_error("disk full")));
 
     let mut ctx = minimal_context();
-    ctx.resume_session = Some(ResumeSession::inline(
-        "sess-abc".into(),
-        r#"{"type":"init"}"#.into(),
-    ));
+    ctx.local_resume_session_id = Some("sess-abc".into());
 
     let cancel = tokio_util::sync::CancellationToken::new();
     let (idle_sandbox, _lease) =
