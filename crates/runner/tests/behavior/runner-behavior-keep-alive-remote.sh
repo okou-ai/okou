@@ -14,19 +14,51 @@ TAMPER_CHAT_THREAD_ID=$(cat /proc/sys/kernel/random/uuid)
 OVERLAP_CHAT_THREAD_ID=$(cat /proc/sys/kernel/random/uuid)
 OVERLAP_SUBMIT_PID=""
 OVERLAP_EXEC_PID=""
+INVOCATION_ID=""
 
 fail() { echo "FAIL: $1"; exit 1; }
 wait_for_unit_inactive() {
+  local active_state
   for _ in $(seq 1 30); do
-    if ! sudo systemctl is-active --quiet "$UNIT"; then
-      return 0
+    if active_state=$(sudo systemctl show "$UNIT" \
+      --property=ActiveState --value); then
+      case "$active_state" in
+        inactive | failed) return 0 ;;
+      esac
     fi
     sleep 1
   done
-  fail "$UNIT is still active after stop"
+  echo "FAIL: $UNIT did not confirm inactivity after stop" >&2
+  return 1
+}
+
+report_failure_diagnostics() {
+  echo "--- Keep-alive failure context ---"
+  printf 'service=%s chat_thread_id=%s isolated_chat_thread_id=%s tamper_chat_thread_id=%s overlap_chat_thread_id=%s\n' \
+    "$SVC" "$CHAT_THREAD_ID" "$ISOLATED_CHAT_THREAD_ID" \
+    "$TAMPER_CHAT_THREAD_ID" "$OVERLAP_CHAT_THREAD_ID"
+  if [ -z "$INVOCATION_ID" ]; then
+    echo "Runner invocation was not captured; no journal queried."
+    return
+  fi
+
+  echo "--- Runner invocation $INVOCATION_ID (last 300 lines, at most 64 KiB, redacted) ---"
+  if ! timeout 10 sudo journalctl --no-pager --output=cat --lines=300 \
+    "_SYSTEMD_INVOCATION_ID=$INVOCATION_ID" 2>&1 \
+    | sed -E \
+      -e 's/vm0_(official|sandbox)_[^[:space:]"]+/[redacted]/g' \
+      -e 's/(Authorization:[[:space:]]*Bearer[[:space:]]+)[^[:space:]"]+/\1[redacted]/Ig' \
+    | tail -c 65536; then
+    echo "Runner invocation journal collection failed."
+  fi
 }
 
 cleanup() {
+  local status=$?
+  trap - EXIT
+  if [ "$status" -ne 0 ]; then
+    report_failure_diagnostics || true
+  fi
   echo "--- Cleanup ---"
   if [ -n "$OVERLAP_EXEC_PID" ]; then
     kill "$OVERLAP_EXEC_PID" 2>/dev/null || true
@@ -36,9 +68,18 @@ cleanup() {
     kill "$OVERLAP_SUBMIT_PID" 2>/dev/null || true
     wait "$OVERLAP_SUBMIT_PID" 2>/dev/null || true
   fi
-  sudo "$BIN_DIR/runner" service stop --name "$SVC" --force || true
-  wait_for_unit_inactive
-  sudo rm -rf "$GROUP_DIR" "$RUNNER_DIR"
+  if ! sudo "$BIN_DIR/runner" service stop --name "$SVC" --force; then
+    [ "$status" -ne 0 ] || status=1
+  fi
+  if wait_for_unit_inactive; then
+    if ! sudo rm -rf "$GROUP_DIR" "$RUNNER_DIR"; then
+      [ "$status" -ne 0 ] || status=1
+    fi
+  else
+    echo "Preserving $GROUP_DIR and $RUNNER_DIR because service inactivity was not confirmed." >&2
+    [ "$status" -ne 0 ] || status=1
+  fi
+  exit "$status"
 }
 trap cleanup EXIT
 
@@ -204,7 +245,6 @@ echo "--- Starting runner ---"
 sudo "$BIN_DIR/runner" service start --name "$SVC" \
   --config "$RUNNER_DIR/runner.yaml" --local --env USE_MOCK_CLAUDE=true --env USE_MOCK_CODEX=true
 
-INVOCATION_ID=""
 for _ in $(seq 1 30); do
   INVOCATION_ID=$(sudo systemctl show "$UNIT" \
     --property=InvocationID --value 2>/dev/null) || true
@@ -231,7 +271,7 @@ sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
   --session-id "$SESSION_ID" \
   --feature-flag sandboxReuse=true \
   --prompt 'test -f /tmp/keepalive-marker && test -f /home/user/keepalive-home-marker && test -f /home/user/workspace/keepalive-cwd-marker' \
-  || fail "Turn 2: marker file not found — sandbox was not reused"
+  || fail "Turn 2: marker checks or execution failed; inspect completion and invocation diagnostics"
 echo "PASS: Turn 2 completed (sandbox reused, filesystem persisted)"
 
 # Turn 3: keep the provider session but use a different chat thread — should create a new sandbox.
