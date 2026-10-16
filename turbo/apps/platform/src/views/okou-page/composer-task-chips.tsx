@@ -486,6 +486,7 @@ function ComposerDocumentRecommendations({
       </div>
       <TemplateFilterPillRow
         active={category}
+        layout="scroll"
         label={t(($) => {
           return $.documentTemplates.filter;
         })}

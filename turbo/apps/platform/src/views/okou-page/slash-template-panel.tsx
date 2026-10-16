@@ -193,11 +193,7 @@ function SlashTemplateDetailPane({
   const nativeAspect = isSlashTemplateNativeAspectCategory(category);
   return (
     <div
-      className={cn(
-        "relative w-[400px] max-w-1/2 shrink-0 overflow-hidden border-l border-border/60",
-        // A filtered Document row still needs room for a whole portrait cover.
-        category === "document" && "min-h-[min(320px,var(--available-height))]",
-      )}
+      className="relative w-[400px] max-w-1/2 shrink-0 overflow-hidden border-l border-border/60"
       role="region"
       aria-label={slashTemplateCategoryLabel(category)}
       data-slot="slash-template-detail"
@@ -210,7 +206,7 @@ function SlashTemplateDetailPane({
         space live inside the scroller.
       */}
       <div
-        // Previews scroll within the menu, including the portrait minimum.
+        // The command list owns the menu height; previews scroll within it.
         className="absolute inset-0 flex flex-col px-4"
       >
         {/*
