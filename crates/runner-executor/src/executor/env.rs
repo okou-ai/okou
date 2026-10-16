@@ -631,9 +631,6 @@ fn for_each_guest_user_env_entry<'a>(
     for (key, value) in &context.platform_environment {
         visit(key, value);
     }
-    // The helper and remote owner ship with this Runner. A captured older CLI
-    // ignores the marker; a new CLI on an older Runner makes a legacy call.
-    visit("OKOU_REMOTE_DIAGNOSTIC_TEXT", "1");
 }
 
 fn for_each_filtered_environment_entry<'a>(

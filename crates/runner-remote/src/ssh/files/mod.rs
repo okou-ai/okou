@@ -27,7 +27,6 @@ pub(super) fn capacity() -> Arc<Semaphore> {
 }
 
 pub(super) struct Dispatch {
-    pub(super) diagnosed: bool,
     pub(super) input: GuestIo,
     pub(super) lease: Arc<OwnedSemaphorePermit>,
     pub(super) run: RunId,
@@ -38,7 +37,6 @@ pub(super) struct Dispatch {
 
 pub(super) async fn dispatch(runtime: &SshRuntime, sessions: &sessions::Manager, args: Dispatch) {
     let Dispatch {
-        diagnosed,
         input,
         lease,
         run,
@@ -219,7 +217,6 @@ pub(super) async fn dispatch(runtime: &SshRuntime, sessions: &sessions::Manager,
             }
             let value = crate::diagnostics::text::result(
                 &outcome,
-                diagnosed,
                 diagnostic.as_ref(),
                 &sessions.registration.diagnostics(),
             )

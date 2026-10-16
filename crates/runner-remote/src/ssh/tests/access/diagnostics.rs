@@ -7,11 +7,10 @@ use super::{
     gateway::{self, Mode, SECRET},
 };
 use crate::test_fixtures::diagnostic_report;
-use serde_json::json;
 use std::sync::atomic::Ordering;
 
 #[tokio::test]
-async fn opted_access_results_separate_tls_rejection_upgrade_and_interruption() {
+async fn access_results_separate_tls_rejection_upgrade_and_interruption() {
     for (mode, cert_host, cause, action) in [
         (
             Mode::Proxy,
@@ -43,9 +42,7 @@ async fn opted_access_results_separate_tls_rejection_upgrade_and_interruption() 
         let (mut h, gateway) = gateway::setup(Reply::default(), mode, cert_host).await;
         h.enable_diagnostics().await;
         let _resolve = h.resolve(credential(&h, true, true)).await;
-        let mut diagnostic_params = params();
-        diagnostic_params["diagnosticText"] = true.into();
-        let frames=h.raw(json!({"version":1,"method":"ssh.exec","remaining_ms":60000,"params":diagnostic_params}).to_string()).await;
+        let frames = h.request(params()).await;
         let result = terminal(&frames);
         assert_eq!(result["type"], "failed");
         assert_eq!(result["effects"], "not_started");

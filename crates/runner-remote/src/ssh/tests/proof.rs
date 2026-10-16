@@ -62,9 +62,7 @@ async fn corrupt_host_proof_never_pins_or_authenticates_even_with_matching_key_i
                     .json_body(serde_json::json!({"outcome":"pinned","generation":8}));
             })
             .await;
-        let mut diagnostic_params = params();
-        diagnostic_params["diagnosticText"] = true.into();
-        let frames = h.raw(serde_json::json!({"version":1,"method":"ssh.exec","remaining_ms":60000,"params":diagnostic_params}).to_string()).await;
+        let frames = h.request(params()).await;
         assert_eq!(terminal(&frames)["failure_reason"], "protocol");
         assert_eq!(terminal(&frames)["effects"], "not_started");
         pin.assert_calls_async(0).await;

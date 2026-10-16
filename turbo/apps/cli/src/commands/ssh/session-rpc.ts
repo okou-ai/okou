@@ -1,8 +1,5 @@
 import { z } from "zod";
-import {
-  diagnosticParams,
-  diagnosticTextSchema,
-} from "../../lib/ssh-diagnostics";
+import { diagnosticTextSchema } from "../../lib/ssh-diagnostics";
 import { invokeRunnerRpc, rpcErrorSchema } from "../../lib/runner-rpc";
 import { failureReasonSchema, remoteExitSchema, SshProtocolError } from "./rpc";
 
@@ -274,7 +271,7 @@ export async function sessionRpc(
 ) {
   return invokeRunnerRpc(
     `ssh.session.${method}`,
-    method === "list" ? params : diagnosticParams(params),
+    params,
     new SessionResponse(method, params),
     true,
     signal,

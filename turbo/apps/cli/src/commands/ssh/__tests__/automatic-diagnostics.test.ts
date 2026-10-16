@@ -30,7 +30,6 @@ vi.mock("node:child_process", async (importOriginal) => {
       function reply(){
         if(done)return;done=true;process.send(request);
         if(mode==='hold'){setInterval(()=>{},1000);return;}
-        if(mode==='old'&&request.params.diagnosticText!==undefined){emit({type:'error',code:'invalid_request',delivery:'not_dispatched'});process.stdout.end(()=>process.exit(1));return;}
         const method=request.method, file=method.startsWith('ssh.file.'),session=method.startsWith('ssh.session.');
         let data={type:'failed',failure_reason:'authentication_failed',effects:'not_started'};
         if(file)data={...data,direction:method.includes('download')?'download':'upload',ssh_connection_id:host,bytes:0,sha256:null,residue:null,actual_bytes:request.params.size??null,limits:{max_file_bytes:1073741824,timeout_ms:900000,max_concurrent_transfers:2}};
@@ -40,7 +39,7 @@ vi.mock("node:child_process", async (importOriginal) => {
         }else if(!session)Object.assign(data,{stdout_bytes:0,stderr_bytes:0,stdout_truncated:false,stderr_truncated:false});
         if(mode==='nonzero'){
           emit({type:'event',data:{type:'accepted'}});data={type:'finished',exit:{type:'status',code:9},effects:'completed',stdout_bytes:0,stderr_bytes:0,stdout_truncated:false,stderr_truncated:false};
-        }else if(request.params.diagnosticText&& !['missing','disabled'].includes(mode)){
+        }else if(!['missing','disabled'].includes(mode)){
           data.diagnostic_text=mode==='malformed'?{unexpected:true}:mode==='oversized'?'x'.repeat(8193):mode==='unsafe'?String.fromCharCode(27)+'[2J':process.env.DIAGNOSTIC_TEXT;
         }
         if(mode==='bad_business')data.effects='completed';
@@ -103,7 +102,6 @@ beforeEach(async () => {
   helper.requests.length = 0;
   output.mockClear();
   errors.mockClear();
-  vi.stubEnv("OKOU_REMOTE_DIAGNOSTIC_TEXT", "1");
   vi.stubEnv(
     "DIAGNOSTIC_TEXT",
     "An arbitrary Runner explanation: credential rejected. 认证失败 🧭",
@@ -163,7 +161,6 @@ it.each(["exec", "session", "upload", "download"])(
         "An arbitrary Runner explanation: credential rejected. 认证失败 🧭",
     });
     expect(helper.requests).toHaveLength(1);
-    expect(helper.requests[0]?.params.diagnosticText).toBe(true);
     expect(helper.requests[0]?.method).toBe(
       kind === "exec"
         ? "ssh.exec"
@@ -180,11 +177,10 @@ it("prints Runner wording unchanged in human output", async () => {
   );
   expect(helper.requests).toHaveLength(1);
 });
-it.each(["old", "disabled", "missing"])(
+it.each(["disabled", "missing"])(
   "preserves the original failure without diagnostic text on %s owners",
   async (mode) => {
     helper.mode = mode;
-    if (mode === "old") vi.stubEnv("OKOU_REMOTE_DIAGNOSTIC_TEXT", "");
     await exec();
     expect(result()).toMatchObject({
       type: "failed",
@@ -194,8 +190,6 @@ it.each(["old", "disabled", "missing"])(
     expect(result()).not.toHaveProperty("diagnostic_text");
     expect(helper.requests).toHaveLength(1);
     expect(helper.requests[0]?.method).toBe("ssh.exec");
-    if (mode === "old")
-      expect(helper.requests[0]?.params).not.toHaveProperty("diagnosticText");
   },
 );
 it.each(["malformed", "oversized", "unsafe"])(

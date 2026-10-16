@@ -6,19 +6,13 @@ schema or remediation-code translation.
 
 ## Automatic SSH explanations
 
-The owning Runner adds `OKOU_REMOTE_DIAGNOSTIC_TEXT=1` to its reserved per-Run
-environment alongside its bundled helper. New CLI adds `diagnosticText=true`
-to parameters of existing SSH exec, session and file methods only when that
-marker exists. Guest RPC validates/removes it before strict business parsing.
-No capability request, diagnostic method alias or business retry is needed.
-
-Old CLIs do not opt in, so their strict responses stay unchanged. A new CLI
-on an older Runner sees no marker and makes one ordinary business call.
-The marker declares support, never authority. The default-off
+Guest always uses the latest CLI. Existing SSH exec, session and file requests
+use their ordinary methods and parameters, without a version marker, opt-in,
+capability request or business retry. The default-off
 `remoteConnectionDiagnostics` switch and current assignment/subject checks
-still gate evidence. Disabled diagnostics omit explanation text.
+gate evidence. Disabled diagnostics omit explanation text.
 
-An opted-in failed result may contain one `diagnostic_text` string, at most
+A failed result may contain one `diagnostic_text` string, at most
 8192 UTF-8 bytes. Runner renders the exact committed report, observed route,
 selected address/family, fresh/reused stages, source/dependency cause, uncertainty
 and guidance. Formatting can change without CLI changes. Human output and JSON

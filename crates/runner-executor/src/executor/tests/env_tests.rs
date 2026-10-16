@@ -566,7 +566,6 @@ fn platform_environment_claim_filters_reserved_keys_and_applies_trusted_last() {
         ("DUPLICATE".into(), "untrusted".into()),
         ("OKOU_TOKEN".into(), "untrusted-token".into()),
         ("OKOU_FUTURE_PLATFORM_KEY".into(), "untrusted".into()),
-        ("OKOU_REMOTE_DIAGNOSTIC_TEXT".into(), "untrusted".into()),
         ("CUSTOM_USER_KEY".into(), "untrusted".into()),
         (
             guest_contracts::env::VERCEL_PROTECTION_BYPASS_ENV.into(),
@@ -577,7 +576,6 @@ fn platform_environment_claim_filters_reserved_keys_and_applies_trusted_last() {
         ("DUPLICATE".into(), "trusted".into()),
         ("OKOU_TOKEN".into(), "trusted-token".into()),
         ("OKOU_PLATFORM_ONLY".into(), "trusted-platform".into()),
-        ("OKOU_REMOTE_DIAGNOSTIC_TEXT".into(), "stale".into()),
         (
             guest_contracts::env::VERCEL_PROTECTION_BYPASS_ENV.into(),
             "trusted-bypass".into(),
@@ -592,7 +590,6 @@ fn platform_environment_claim_filters_reserved_keys_and_applies_trusted_last() {
             ("CUSTOM_USER_KEY".into(), "untrusted".into()),
             ("OKOU_TOKEN".into(), "trusted-token".into()),
             ("OKOU_PLATFORM_ONLY".into(), "trusted-platform".into()),
-            ("OKOU_REMOTE_DIAGNOSTIC_TEXT".into(), "1".into()),
             (
                 guest_contracts::env::VERCEL_PROTECTION_BYPASS_ENV.into(),
                 "trusted-bypass".into(),

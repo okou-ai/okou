@@ -1,9 +1,6 @@
 import type { Writable } from "node:stream";
 import { z } from "zod";
-import {
-  diagnosticParams,
-  diagnosticTextSchema,
-} from "../../lib/ssh-diagnostics";
+import { diagnosticTextSchema } from "../../lib/ssh-diagnostics";
 
 import {
   invokeRunnerRpc,
@@ -291,7 +288,7 @@ export async function executeSsh(
 ) {
   return invokeRunnerRpc(
     "ssh.exec",
-    diagnosticParams({ sshConnectionId: connectionId, command }),
+    { sshConnectionId: connectionId, command },
     new SshResponse(),
     json,
   );

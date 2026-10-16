@@ -1,5 +1,4 @@
 import { spawn } from "node:child_process";
-import { diagnosticParams } from "../../lib/ssh-diagnostics";
 import type { Writable } from "node:stream";
 import { DownloadDestination, UploadSource, fileReason } from "./file-local";
 import {
@@ -149,11 +148,11 @@ export async function transferFile(args: TransferArgs): Promise<FileOutcome> {
   });
 
   const sender = (async () => {
-    const params = diagnosticParams({
+    const params = {
       sshConnectionId: connectionId,
       remotePath: args.remotePath,
       ...(source ? { size: source.size, overwrite: args.overwrite } : {}),
-    });
+    };
     // The helper attaches its own remaining lifetime; clients cannot extend it.
     const request = frame(
       Buffer.from(

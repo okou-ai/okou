@@ -4,46 +4,6 @@ use super::{Cause, Handle, Report};
 use serde::Serialize;
 use serde_json::{Value, value::RawValue};
 
-/// Remove the presentation opt-in without normalizing business JSON. In
-/// particular, duplicate fields must not become last-wins before strict parsing.
-pub(crate) fn params(raw: &str) -> Result<(bool, Box<RawValue>), serde_json::Error> {
-    struct Params(bool, std::collections::BTreeMap<String, Box<RawValue>>);
-    impl<'de> serde::Deserialize<'de> for Params {
-        fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-            struct Visitor;
-            impl<'de> serde::de::Visitor<'de> for Visitor {
-                type Value = Params;
-                fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                    formatter.write_str("SSH parameters")
-                }
-                fn visit_map<M: serde::de::MapAccess<'de>>(
-                    self,
-                    mut map: M,
-                ) -> Result<Params, M::Error> {
-                    let mut params = std::collections::BTreeMap::new();
-                    while let Some((key, value)) = map.next_entry::<String, Box<RawValue>>()? {
-                        if params.insert(key, value).is_some() {
-                            return Err(serde::de::Error::custom("duplicate SSH parameter"));
-                        }
-                    }
-                    let requested = params
-                        .remove("diagnosticText")
-                        .map(|value| {
-                            serde_json::from_str::<bool>(value.get())
-                                .map_err(serde::de::Error::custom)
-                        })
-                        .transpose()?
-                        .unwrap_or(false);
-                    Ok(Params(requested, params))
-                }
-            }
-            deserializer.deserialize_map(Visitor)
-        }
-    }
-    let Params(requested, params) = serde_json::from_str(raw)?;
-    Ok((requested, serde_json::value::to_raw_value(&params)?))
-}
-
 impl Report {
     pub(crate) fn evidence(&self) -> Option<Value> {
         let mut value = serde_json::to_value(self).ok()?;
@@ -117,11 +77,10 @@ impl Report {
 
 pub(crate) fn result(
     data: &impl Serialize,
-    requested: bool,
     report: Option<&Report>,
     handle: &Handle,
 ) -> Result<Box<RawValue>, serde_json::Error> {
-    if !requested || !handle.enabled() || !handle.current() {
+    if !handle.enabled() || !handle.current() {
         return serde_json::value::to_raw_value(data);
     }
     let mut value = serde_json::to_value(data)?;

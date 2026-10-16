@@ -149,7 +149,6 @@ describe("okou ssh session read", () => {
   it.each(["json", "human"])(
     "passes retained Runner text through %s output",
     async (format) => {
-      vi.stubEnv("OKOU_REMOTE_DIAGNOSTIC_TEXT", "1");
       const message =
         "Runner retained this session's authentication failure. 认证失败 🧭";
       helper.replies.push({
@@ -177,7 +176,7 @@ describe("okou ssh session read", () => {
       expect(requests()).toHaveLength(1);
       expect(requests()[0]).toMatchObject({
         method: "ssh.session.read",
-        params: { diagnosticText: true },
+        params: { sessionId: id },
       });
       expect(process.exitCode).toBe(0);
     },

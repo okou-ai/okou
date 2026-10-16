@@ -138,7 +138,6 @@ impl Output {
         writer: &mut ResponseWriter<GuestIo>,
         terminal: Terminal,
         diagnostics: &crate::diagnostics::Handle,
-        diagnosed: bool,
         report: Option<&crate::diagnostics::Report>,
     ) -> Result<(), FailureReason> {
         self.flush(writer).await?;
@@ -166,7 +165,6 @@ impl Output {
                 stdout_truncated: self.stdout.truncated,
                 stderr_truncated: self.stderr.truncated,
             },
-            diagnosed,
             report,
             diagnostics,
         )

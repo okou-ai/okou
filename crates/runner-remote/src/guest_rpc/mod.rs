@@ -56,7 +56,6 @@ impl runner_provider::AblySideMessageHandler for Runtime {
 /// The stream and permit move together into a consumer. Host work may retain
 /// the permit independently after releasing guest I/O and its park reservation.
 pub(crate) struct Request {
-    pub(crate) diagnostics: bool,
     pub(crate) input: Box<dyn GuestRpcStream>,
     pub(crate) lease: Arc<OwnedSemaphorePermit>,
     pub(crate) run: RunId,
@@ -290,7 +289,7 @@ async fn dispatch(
     } = consumers;
     let _cancel_on_drop = scope.cancelled.clone().drop_guard();
     let started = Instant::now();
-    let mut request = match scope.wait(runner_rpc_proto::read_request(&mut input)).await {
+    let request = match scope.wait(runner_rpc_proto::read_request(&mut input)).await {
         Some(Ok(request)) => request,
         _ => {
             scope.error(input, ErrorCode::InvalidRequest).await;
@@ -301,7 +300,6 @@ async fn dispatch(
         diagnostics
             .dispatch(
                 Request {
-                    diagnostics: false,
                     input,
                     lease,
                     run,
@@ -319,16 +317,10 @@ async fn dispatch(
         "ssh.exec" | "ssh.file.upload" | "ssh.file.download"
     ) || request.method.starts_with("ssh.session.")
     {
-        let Ok((requested, params)) = crate::diagnostics::text::params(request.params.get()) else {
-            scope.error(input, ErrorCode::InvalidRequest).await;
-            return;
-        };
-        request.params = params;
         if let Some(ssh) = ssh {
             // Only request parsing uses the setup deadline here. The consumer
             // owns execution budgets, including the longer file-transfer bound.
             ssh.dispatch(Request {
-                diagnostics: requested,
                 input,
                 lease,
                 run,
@@ -353,7 +345,6 @@ async fn dispatch(
     ) {
         if let Some(vnc) = vnc {
             vnc.dispatch(Request {
-                diagnostics: false,
                 input,
                 lease,
                 run,
@@ -371,7 +362,6 @@ async fn dispatch(
         if let Some(usage) = usage {
             usage
                 .dispatch(Request {
-                    diagnostics: false,
                     input,
                     lease,
                     run,

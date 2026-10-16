@@ -61,7 +61,6 @@ fn session_scope(scope: &Scope, session: &Session) -> Scope {
 impl Run {
     pub(crate) async fn dispatch(&self, request: crate::guest_rpc::Request) {
         let crate::guest_rpc::Request {
-            diagnostics: _,
             mut input,
             lease,
             run: _,

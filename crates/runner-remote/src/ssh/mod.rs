@@ -167,7 +167,6 @@ impl SshRuntime {
         sessions: Arc<sessions::Manager>,
     ) {
         let crate::guest_rpc::Request {
-            diagnostics: diagnosed,
             input,
             lease,
             run,
@@ -190,7 +189,6 @@ impl SshRuntime {
                 &self,
                 &sessions,
                 files::Dispatch {
-                    diagnosed,
                     input,
                     lease,
                     run,
@@ -219,7 +217,6 @@ impl SshRuntime {
                 .dispatch(
                     &request.method,
                     request.params.get(),
-                    diagnosed,
                     &work,
                     &scope,
                     &mut writer,
@@ -279,7 +276,6 @@ impl SshRuntime {
                 &mut writer,
                 outcome,
                 &sessions.registration.diagnostics(),
-                diagnosed,
                 diagnostic.as_ref(),
             ))
             .await

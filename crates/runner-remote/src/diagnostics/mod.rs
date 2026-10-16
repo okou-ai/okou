@@ -166,7 +166,6 @@ fn serialize_evidence<S: serde::Serializer>(
 
 #[derive(Clone, Serialize)]
 pub(crate) struct Report {
-    schema_version: u8,
     run_id: RunId,
     assignment_id: Uuid,
     pub(crate) attempt_id: Uuid,
@@ -405,7 +404,6 @@ impl Handle {
         }
         state.sequence = state.sequence.saturating_add(1).min((1 << 53) - 1);
         let report = Report {
-            schema_version: 1,
             run_id: self.store.run,
             assignment_id: self.assignment,
             attempt_id: Uuid::new_v4(),

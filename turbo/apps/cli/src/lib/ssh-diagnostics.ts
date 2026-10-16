@@ -21,16 +21,6 @@ export const diagnosticTextSchema = z
   })
   .optional();
 
-/** This marker comes from the owning Runner, alongside its bundled helper.
- * Older Runners omit it; older CLIs never request extra result fields.
- * Keep the absent-marker path until captured CLI/Runner consumers and retained
- * rollback builds have drained; #40283 owns that compatibility removal review. */
-export function diagnosticParams(params: Readonly<Record<string, unknown>>) {
-  return process.env.OKOU_REMOTE_DIAGNOSTIC_TEXT === "1"
-    ? { ...params, diagnosticText: true }
-    : params;
-}
-
 export function printSshDiagnostics(result: {
   type: string;
   diagnostic_text?: string;

@@ -6,10 +6,7 @@ use crate::test_fixtures::{diagnostic_report, remote_inventory};
 use serde_json::{Value, json};
 use std::sync::atomic::Ordering;
 
-async fn rpc(h: &Harness, method: &str, mut params: Value) -> Value {
-    if method != "ssh.diagnose" {
-        params["diagnosticText"] = true.into();
-    }
+async fn rpc(h: &Harness, method: &str, params: Value) -> Value {
     terminal(
         &h.raw(
             json!({"version":1,"method":method,"remaining_ms":60000,"params":params}).to_string(),
@@ -29,7 +26,7 @@ fn stage(report: &Value, name: &str) -> Value {
 }
 
 #[tokio::test]
-async fn local_opt_in_preserves_legacy_and_disabled_results_and_nonzero_exit() {
+async fn successful_results_preserve_nonzero_exit_with_diagnostics_enabled_or_disabled() {
     let mut h = Harness::new(Reply::default()).await;
     let resolve = h.resolve(h.credential(true)).await;
     let disabled = rpc(&h, "ssh.exec", params()).await;
@@ -37,14 +34,10 @@ async fn local_opt_in_preserves_legacy_and_disabled_results_and_nonzero_exit() {
     assert!(disabled.get("diagnostic_text").is_none());
     resolve.assert_calls_async(1).await;
     h.enable_diagnostics().await;
-    let legacy = terminal(&h.request(params()).await).clone();
-    assert_eq!(legacy["type"], "finished");
-    assert_eq!(legacy["exit"]["code"], 7);
-    assert!(legacy.get("diagnostic_text").is_none());
-    let opted = rpc(&h, "ssh.exec", params()).await;
-    assert_eq!(opted["type"], "finished");
-    assert_eq!(opted["exit"]["code"], 7);
-    assert!(opted.get("diagnostic_text").is_none());
+    let enabled = rpc(&h, "ssh.exec", params()).await;
+    assert_eq!(enabled["type"], "finished");
+    assert_eq!(enabled["exit"]["code"], 7);
+    assert!(enabled.get("diagnostic_text").is_none());
     h.shutdown().await;
 }
 
@@ -93,35 +86,30 @@ async fn concurrent_failures_return_their_own_committed_report_and_exact_query()
 }
 
 #[tokio::test]
-async fn text_opt_in_keeps_strict_parameters_and_legacy_failures() {
+async fn strict_parameters_prevent_dispatch_and_feature_gate_controls_failure_text() {
     let mut h = Harness::new(Reply::default()).await;
-    h.enable_diagnostics().await;
     let resolve = h.resolve(json!({"outcome":"unavailable"})).await;
     for params in [
-        r#"{"diagnosticText":"true"}"#.to_owned(),
-        format!(
-            r#"{{"sshConnectionId":"{CONNECTION}","command":"first","command":"second","diagnosticText":true}}"#
-        ),
-        format!(
-            r#"{{"sshConnectionId":"{CONNECTION}","command":"first","diagnosticText":false,"diagnosticText":true}}"#
-        ),
+        format!(r#"{{"sshConnectionId":"{CONNECTION}","command":true}}"#),
+        format!(r#"{{"sshConnectionId":"{CONNECTION}","command":"first","command":"second"}}"#),
     ] {
         let frames = h
             .raw(format!(
-                r#"{{"version":1,"method":"ssh.exec","params":{params}}}"#
+                r#"{{"version":1,"method":"ssh.exec","remaining_ms":60000,"params":{params}}}"#
             ))
             .await;
         assert_eq!(frames.last().unwrap()["code"], "invalid_request");
         assert_eq!(frames.last().unwrap()["delivery"], "not_dispatched");
     }
     resolve.assert_calls_async(0).await;
-    let legacy = terminal(&h.request(params()).await).clone();
-    assert_eq!(legacy["failure_reason"], "unavailable");
-    assert!(legacy.get("diagnostic_text").is_none());
-    let opted = rpc(&h, "ssh.exec", params()).await;
-    assert_eq!(opted["failure_reason"], "unavailable");
-    assert_eq!(diagnostic_report(&opted)["connection_id"], CONNECTION);
-    resolve.assert_calls_async(2).await;
+    let disabled = terminal(&h.request(params()).await).clone();
+    assert_eq!(disabled["failure_reason"], "unavailable");
+    assert!(disabled.get("diagnostic_text").is_none());
+    resolve.assert_calls_async(1).await;
+    h.enable_diagnostics().await;
+    let enabled = rpc(&h, "ssh.exec", params()).await;
+    assert_eq!(enabled["failure_reason"], "unavailable");
+    assert_eq!(diagnostic_report(&enabled)["connection_id"], CONNECTION);
     h.shutdown().await;
 }
 
@@ -305,7 +293,7 @@ async fn binary_file_failure_keeps_file_cause_and_matching_history_text() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("absent");
     let mut guest = h.open().await;
-    let request=json!({"version":1,"method":"ssh.file.download","remaining_ms":900000,"params":{"sshConnectionId":CONNECTION,"remotePath":path,"diagnosticText":true}}).to_string();
+    let request=json!({"version":1,"method":"ssh.file.download","remaining_ms":900000,"params":{"sshConnectionId":CONNECTION,"remotePath":path}}).to_string();
     guest.write_u32(request.len() as u32).await.unwrap();
     guest.write_all(request.as_bytes()).await.unwrap();
     let (read, write) = tokio::io::split(guest);

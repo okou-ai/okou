@@ -360,7 +360,6 @@ impl Manager {
         &self,
         method: &str,
         raw: &str,
-        diagnosed: bool,
         scope: &Scope,
         terminal: &Scope,
         writer: &mut ResponseWriter<GuestIo>,
@@ -368,7 +367,6 @@ impl Manager {
         let response = match scope.wait(self.handle(method, raw, scope)).await {
             Ok(Ok(data)) => crate::diagnostics::text::result(
                 &data,
-                diagnosed,
                 self.diagnostic_report(raw, &data).as_ref(),
                 &self.registration.diagnostics(),
             )
@@ -387,7 +385,6 @@ impl Manager {
                     let response = Response::failed(reason, Effects::Unknown);
                     crate::diagnostics::text::result(
                         &response,
-                        diagnosed,
                         self.diagnostic_report(raw, &response).as_ref(),
                         &self.registration.diagnostics(),
                     )
