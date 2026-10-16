@@ -713,6 +713,45 @@ suppression, paced recovery and cancellation/late-result integration remain
 #39998 and the parents/P4. No calibrated RAM relief, OOM protection or production
 composition-root activation follows from these supplied test-policy observations.
 
+## Actual create cancellation and rollback
+
+`native_create_cancellation_retains_actual_transaction_through_rollback` selects
+`CreateCancellation-fresh` and `CreateCancellation-snapshot`. It creates the
+actual provider home image, reads its complete 1 KiB ext4 superblock, and holds
+the original transaction inside a separate blocking Unix read. The non-default
+`sandbox-firecracker/test-support` checkpoint is invocation-owned; default
+production factories expose no checkpoint. This establishes accepted physical
+creation custody after real file preparation, without claiming stalled storage.
+
+Cancellation must leave both original and creating full leases and the same P2
+Fresh allowance alive through positively Pending dropped/replacement observers,
+foreground CPU admission, an acknowledged heartbeat and an independent actual
+host-memory read. Positive workspace deletion is observed before the final
+custody drops. No new Guest is returned or published. The cancelled Fresh row
+remains registered and uncertain with its entire original growth allowance,
+including at P2 shutdown; cleanup is not numerical memory credit. The existing
+original immutable snapshot/home, exact backing exit, durable 64 MiB tail,
+restored original data and all provider/factory/runtime joins remain required.
+
+Use the existing optional input file and supply exact raw metadata fields
+`native_create_cancellation_policy_json`,
+`native_create_cancellation_inputs_json`,
+`native_create_cancellation_snapshot_bytes` and `native_terminal_artifacts`.
+Validate all bounded P1 files with:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/create_cancellation_report.py <p1-directory>
+```
+
+The report checks actual superblock bytes/hash, distinct new workspace identity,
+original source/input identity, fresh sustained observations, cancellation and
+cleanup clocks, original full resources, pending observers and preserved Fresh
+uncertainty. Real-file/CLI refusal tests run in default CI; actual KVM/NBD remains
+opt-in. This completes only #40786. Returned actual Guest/late results (#40787)
+and post-merge reconciliation (#40788), production activation, numerical relief,
+full residency, calibrated envelopes, unknown bootstrap provenance and OOM
+protection remain open under #40760 and the delivery parents.
+
 ## Native observation gaps and recovery
 
 For a bounded native run using the local profile, optimize the verification hash

@@ -3,6 +3,9 @@ name = "sandbox-firecracker"
 version = "0.52.3"
 edition.workspace = true
 
+[features]
+test-support = []
+
 [dependencies]
 async-trait.workspace = true
 futures-util = { workspace = true, features = ["async-await", "async-await-macro", "std"] }
