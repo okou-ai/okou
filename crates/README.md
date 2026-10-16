@@ -219,6 +219,12 @@ After parsing, the raw buffer and byte budget are released before executing the
 command or waiting for termination acknowledgment. Execution retains its own
 timeout; the existing 64 MiB per-frame ceiling and exec response limits still apply.
 
+An exec response, including an error, must be fully written and flushed within
+5 seconds of becoming available. This separate response deadline is not extended
+by write progress. Expiry closes the connection and releases the completed output
+and handler slot, even when the peer stays connected. A slow reader can receive an
+incomplete response and a transport error; the command's execution budget is unchanged.
+
 Saturated or unusually slow local clients can therefore receive connection errors.
 These limits apply per socket. The payload budget does not include parsed commands,
 responses, allocator overhead, or kernel socket buffers, and does not bound host-wide RSS.
