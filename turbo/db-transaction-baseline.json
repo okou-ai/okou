@@ -147,11 +147,6 @@
       "owner": "clearChatThreadConnectorSelection"
     },
     {
-      "id": "TX-0094",
-      "file": "turbo/apps/api/src/signals/services/chat-thread-metadata-update.service.ts",
-      "owner": "commitMetadata$"
-    },
-    {
       "id": "TX-0095",
       "file": "turbo/apps/api/src/signals/services/chat-thread.service.ts",
       "owner": "createChatThread$"
