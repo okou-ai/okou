@@ -19,6 +19,124 @@ use crate::vnc::{
 
 struct BridgeTask(JoinHandle<()>);
 
+#[tokio::test]
+async fn apple_endpoint_refusal_precedes_invalid_password_without_opening_ssh() {
+    let mut h = Harness::new(Reply::default()).await;
+    let vnc = VncRuntime::official(
+        http_client(HttpClientConfig {
+            api_url: h.api.base_url(),
+            vercel_bypass: None,
+            client_session_id: "apple-endpoint-refusal".into(),
+        }),
+        TOKEN,
+        h.identity,
+    )
+    .unwrap()
+    .unwrap();
+    h.restart_with_vnc(vnc).await;
+    let ssh_resolve = h.resolve(h.credential(true)).await;
+
+    for (outcome, method, security) in [
+        (
+            "resolved_apple_vnc_password",
+            "vnc_password",
+            "apple_vnc_password",
+        ),
+        (
+            "resolved_apple_dh",
+            "apple_dh_username_password",
+            "apple_dh",
+        ),
+        (
+            "resolved_apple_srp",
+            "apple_srp_username_password",
+            "apple_srp",
+        ),
+        (
+            "resolved_apple_rsa_srp",
+            "apple_rsa_srp_username_password",
+            "apple_rsa_srp",
+        ),
+    ] {
+        for (pointer, value, reason) in [
+            ("/host", json!("127.0.0.1"), "invalid_credential"),
+            ("/host", json!("::1"), "invalid_credential"),
+            ("/host", json!("localhost"), "authority_failure"),
+            ("/host", json!("127.0.0.2"), "authority_failure"),
+            ("/host", json!("0:0:0:0:0:0:0:1"), "authority_failure"),
+            ("/port", json!(0), "authority_failure"),
+            ("/port", json!(65536), "authority_failure"),
+            ("/generation", json!(0), "authority_failure"),
+            ("/generation", json!(-1), "authority_failure"),
+            (
+                "/generation",
+                json!(i64::from(i32::MAX) + 1),
+                "authority_failure",
+            ),
+            ("/transport", json!({"type":"direct"}), "authority_failure"),
+            (
+                "/transport/connectionId",
+                json!("not-a-uuid"),
+                "authority_failure",
+            ),
+            ("/transport/generation", json!(0), "authority_failure"),
+            ("/transport/generation", json!(-1), "authority_failure"),
+            (
+                "/transport/generation",
+                json!(i64::from(i32::MAX) + 1),
+                "authority_failure",
+            ),
+        ] {
+            // NUL passes the bounded handoff decoder but every Apple password
+            // constructor rejects it, so endpoint-first validation is observable.
+            let mut authentication = json!({"method":method,"password":"invalid\0password"});
+            if method != "vnc_password" {
+                authentication["username"] = json!("operator");
+            }
+            let mut response = json!({
+                "outcome":outcome,"host":"127.0.0.1","port":5900,"generation":11,
+                "transport":{"type":"ssh","connectionId":CONNECTION,"generation":7},
+                "authentication":authentication,"security":{"type":security}
+            });
+            *response.pointer_mut(pointer).unwrap() = value;
+            let vnc_resolve = h.api.mock_async(|when, then| {
+                when.method("POST")
+                    .path(format!("/api/runners/runs/{}/vnc/resolve", h.run))
+                    .header("authorization", format!("Bearer {TOKEN}"))
+                    .is_true(optional_kerberos_request(json!({
+                        "connectionId":CONNECTION,
+                        "runnerIdentity":{"runnerId":h.identity.runner_id(),"heartbeatGeneration":27},
+                        "supportedProfiles":supported_profiles(true)
+                    }), true));
+                then.status(200)
+                    .header("X-VNC-Connection-Created-At", super::harness::CREATED_AT)
+                    .json_body(response);
+            }).await;
+            let frames = h
+                .raw(
+                    json!({
+                        "version":1,"method":"vnc.session.start","remaining_ms":60000,
+                        "params":{"connectionId":CONNECTION,"mode":"shared"}
+                    })
+                    .to_string(),
+                )
+                .await;
+            assert_eq!(
+                terminal(&frames),
+                &json!({"outcome":"failed","reason":reason}),
+                "{outcome} {pointer}"
+            );
+            assert!(h.observed.queries.lock().unwrap().is_empty());
+            assert!(h.observed.attempts.lock().unwrap().is_empty());
+            assert!(h.observed.forwards.lock().unwrap().is_empty());
+            vnc_resolve.assert_calls_async(1).await;
+            vnc_resolve.delete_async().await;
+        }
+    }
+    ssh_resolve.assert_calls_async(0).await;
+    h.shutdown().await;
+}
+
 async fn desktop(
     h: &Harness,
     peer: &Peer,
