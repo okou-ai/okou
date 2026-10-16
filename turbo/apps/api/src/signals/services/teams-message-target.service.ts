@@ -3,7 +3,7 @@ import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation"
 import { and, eq } from "drizzle-orm";
 import { command, computed, type Computed } from "ccstate";
 
-import { db$, type ReadonlyDb } from "../external/db";
+import { db$ } from "../external/db";
 import { createTeamsPersonalConversation } from "../external/teams-bot-client";
 
 interface TeamsInstallation {
@@ -58,42 +58,13 @@ export function teamsErrorResponse(result: {
   );
 }
 
-async function resolveConnectedTeamsUser(args: {
-  readonly db: ReadonlyDb;
-  readonly tenantId: string;
-  readonly userId: string;
-}): Promise<
+type ConnectedTeamsUser =
   | {
       readonly kind: "ok";
       readonly teamsUserId: string;
       readonly teamsUserDisplayName: string | null;
     }
-  | { readonly kind: "not_found" }
-> {
-  const [connection] = await args.db
-    .select({
-      teamsUserId: teamsOrgConnections.teamsUserId,
-      teamsUserDisplayName: teamsOrgConnections.teamsUserDisplayName,
-    })
-    .from(teamsOrgConnections)
-    .where(
-      and(
-        eq(teamsOrgConnections.teamsTenantId, args.tenantId),
-        eq(teamsOrgConnections.userId, args.userId),
-      ),
-    )
-    .limit(1);
-
-  if (!connection?.teamsUserId) {
-    return { kind: "not_found" };
-  }
-
-  return {
-    kind: "ok",
-    teamsUserId: connection.teamsUserId,
-    teamsUserDisplayName: connection.teamsUserDisplayName,
-  };
-}
+  | { readonly kind: "not_found" };
 
 /**
  * Resolve a Teams delivery target. A `conversationId` is used as-is; a `user`
@@ -139,18 +110,43 @@ export const resolveTeamsMessageTarget$ = command(
       return routeError(400, "Teams user ID is required", "BAD_REQUEST");
     }
 
-    const targetUser =
-      args.body.user === "me"
-        ? await resolveConnectedTeamsUser({
-            db: get(db$),
-            tenantId: args.installation.teamsTenantId,
-            userId: args.userId,
+    let targetUser: ConnectedTeamsUser;
+    if (args.body.user === "me") {
+      const db = get(db$);
+      const tenantId = args.installation.teamsTenantId;
+      const userId = args.userId;
+      targetUser = await (async (): Promise<ConnectedTeamsUser> => {
+        const [connection] = await db
+          .select({
+            teamsUserId: teamsOrgConnections.teamsUserId,
+            teamsUserDisplayName: teamsOrgConnections.teamsUserDisplayName,
           })
-        : {
-            kind: "ok" as const,
-            teamsUserId: args.body.user,
-            teamsUserDisplayName: null,
-          };
+          .from(teamsOrgConnections)
+          .where(
+            and(
+              eq(teamsOrgConnections.teamsTenantId, tenantId),
+              eq(teamsOrgConnections.userId, userId),
+            ),
+          )
+          .limit(1);
+
+        if (!connection?.teamsUserId) {
+          return { kind: "not_found" };
+        }
+
+        return {
+          kind: "ok",
+          teamsUserId: connection.teamsUserId,
+          teamsUserDisplayName: connection.teamsUserDisplayName,
+        };
+      })();
+    } else {
+      targetUser = {
+        kind: "ok",
+        teamsUserId: args.body.user,
+        teamsUserDisplayName: null,
+      };
+    }
     signal.throwIfAborted();
 
     if (targetUser.kind === "not_found") {
