@@ -2909,22 +2909,22 @@ function validateBaseUrlParams(base: string, serviceName: string): string {
     canonicalAuthority.normalizedHost,
   );
   const parsedHostSegments = canonicalHostSegments.map(parseSegment);
-  const minimumHostSegments = parsedHostSegments.filter(
-    (segment) => segment.kind !== "param" || segment.greedy !== "*",
-  ).length;
+  const minimumHostSegments = parsedHostSegments.filter((segment) => {
+    return segment.kind !== "param" || segment.greedy !== "*";
+  }).length;
   if (
     hasBaseUrlParams(canonicalAuthority.normalizedHost) &&
     minimumHostSegments <= 4 &&
-    parsedHostSegments.some(
-      (segment) =>
-        segment.kind === "literal" && isIpv4NumberComponent(segment.value),
-    ) &&
-    parsedHostSegments.every(
-      (segment) =>
+    parsedHostSegments.some((segment) => {
+      return segment.kind === "literal" && isIpv4NumberComponent(segment.value);
+    }) &&
+    parsedHostSegments.every((segment) => {
+      return (
         (segment.kind === "literal" && isIpv4NumberComponent(segment.value)) ||
         (segment.kind === "param" &&
-          /^[0-9]*$/.test(segment.prefix + segment.suffix)),
-    )
+          /^[0-9]*$/.test(segment.prefix + segment.suffix))
+      );
+    })
   ) {
     throw new Error(errMsg(base, serviceName, "not a valid URL authority"));
   }
