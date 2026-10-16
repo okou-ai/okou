@@ -937,48 +937,90 @@ describe("google editor conversion", () => {
     },
   );
 
-  it("offers an unchanged original and blocks repeated upload while converting", async () => {
-    mockWideScreen();
-    const upload = context.mocks.deferred<void>();
-    const drive = installDriveMocks(context, "connected", {
-      filename: "report.txt",
-      contentType: "text/plain",
-      selectedAccountReady: true,
-      waitForSync: () => {
-        return upload.promise;
+  it.each(
+    [
+      { filename: "report.txt", contentType: "text/plain", app: "Docs" },
+      { filename: "table.csv", contentType: "text/csv", app: "Sheets" },
+      {
+        filename: "deck.pptx",
+        contentType:
+          "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        app: "Slides",
       },
-    });
-    await setupPage({
-      context,
-      path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-      host: "app.okou.ai",
-      featureSwitches: { [FeatureSwitchKey.GoogleDocsSheetsConversion]: true },
-    });
-    await openDriveArtifactMenu("Upload to Google Docs", "report.txt");
-    expect(
-      roleItemNamed("menuitem", "Upload to Google Drive"),
-    ).toBeInTheDocument();
-    click(roleItemNamed("menuitem", "Upload to Google Docs"));
-    await waitFor(() => {
-      expect(drive.syncRequests).toHaveLength(1);
-    });
-    click(buttonNamed("Download artifact", artifactPreview()));
-    await waitFor(() => {
+    ].flatMap((file) => {
+      return (["google", "original"] as const).map((mode) => {
+        return { ...file, mode };
+      });
+    }),
+  )(
+    "separates $app and Drive progress during a $mode upload",
+    async ({ filename, contentType, app, mode }) => {
+      mockWideScreen();
+      const upload = context.mocks.deferred<void>();
+      installDriveMocks(context, "connected", {
+        filename,
+        contentType,
+        selectedAccountReady: true,
+        waitForSync: () => {
+          return upload.promise;
+        },
+      });
+      await setupPage({
+        context,
+        path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+        host: "app.okou.ai",
+        featureSwitches: {
+          [FeatureSwitchKey.GoogleDocsSheetsConversion]: app !== "Slides",
+          [FeatureSwitchKey.GoogleSlidesConversion]: app === "Slides",
+        },
+      });
+      const activeLabel = `Upload to Google ${mode === "google" ? app : "Drive"}`;
+      const idleLabel = `Upload to Google ${mode === "google" ? "Drive" : app}`;
+      await openDriveArtifactMenu(activeLabel, filename);
+      expect(roleItemNamed("menuitem", idleLabel)).not.toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+      click(roleItemNamed("menuitem", activeLabel));
+      await waitFor(() => {
+        expect(
+          buttonNamed("Download artifact", artifactPreview()),
+        ).toHaveAttribute("aria-expanded", "false");
+      });
+      click(buttonNamed("Download artifact", artifactPreview()));
+      await waitFor(() => {
+        expect(roleItemNamed("menuitem", idleLabel)).toHaveAttribute(
+          "aria-disabled",
+          "true",
+        );
+      });
       const pending = queryAllByRoleFast("menuitem").filter((item) => {
         return item.textContent?.trim() === "Syncing artifact...";
       });
-      expect(pending).toHaveLength(2);
-      for (const item of pending) {
-        expect(item).toHaveAttribute("aria-disabled", "true");
-      }
-    });
-    upload.resolve();
-    await waitFor(() => {
-      expect(
-        roleItemNamed("menuitem", "Open in Google Docs"),
-      ).toBeInTheDocument();
-    });
-  });
+      expect(pending).toHaveLength(1);
+      expect(pending[0]).toHaveAttribute("aria-disabled", "true");
+      expect(roleItemNamed("menuitem", "Download")).not.toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+
+      upload.resolve();
+      await waitFor(() => {
+        expect(
+          roleItemNamed(
+            "menuitem",
+            mode === "google"
+              ? `Open in Google ${app}`
+              : "Synced to Google Drive",
+          ),
+        ).toBeInTheDocument();
+      });
+      expect(roleItemNamed("menuitem", idleLabel)).not.toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+    },
+  );
 
   it("connects Drive from the document preview dialog and resumes the requested conversion", async () => {
     const popup = installAuthorizationPopup();
@@ -1064,6 +1106,15 @@ describe("google editor conversion", () => {
       ).toBeInTheDocument();
     });
     expect(drive.syncRequests).toHaveLength(0);
+    click(buttonNamed("Download artifact", artifactPreview()));
+    await waitFor(() => {
+      expect(
+        roleItemNamed("menuitem", "Upload to Google Docs"),
+      ).not.toHaveAttribute("aria-disabled", "true");
+    });
+    expect(
+      roleItemNamed("menuitem", "Upload to Google Drive"),
+    ).not.toHaveAttribute("aria-disabled", "true");
   });
 
   it("does not mark an unconverted response as a successful native document", async () => {
