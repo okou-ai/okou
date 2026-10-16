@@ -528,7 +528,7 @@ describe("workflow queue", () => {
     }
   });
 
-  it("starts a promoted webhook run's API clock at dequeue time", async () => {
+  it("omits the API clock for a promoted webhook run", async () => {
     const scenario = await setup();
     const automation = await createWebhookAutomation(scenario);
     const firstRunId = await expectAcceptedRunId(
@@ -546,7 +546,8 @@ describe("workflow queue", () => {
     expect(runIds).toHaveLength(2);
     await runsApi.heartbeatRunner(scenario.runnerGroup);
     const secondClaim = await runsApi.claimRunnerJob(runIds[1]!);
-    expect(secondClaim.apiStartTime).toBe(dequeuedAt);
+    // API start is anchored only for runs picked by POST /api/chat/events.
+    expect(secondClaim.apiStartTime).toBeUndefined();
   });
 
   it("keeps user-friendly automation prompts across queue drain", async () => {

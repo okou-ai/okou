@@ -46,6 +46,7 @@ import { buildGenerationTemplatePrompt } from "../../lib/generation-template-pro
 import { now, nowDate } from "../../lib/time";
 import type { AuthContext } from "../../types/auth";
 import { organizationAuthContext$ } from "../auth/auth-context";
+import { apiStartTime$ } from "../context/hono";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
 import {
@@ -195,6 +196,11 @@ interface NormalSendArgs {
    * send and its model selection share one read.
    */
   readonly orgPlanCapabilities?: OrgPlanCapabilities | null;
+  /**
+   * Route-entry time of `POST /api/chat/events`. A run picked by this request
+   * for this input is measured from it; other callers omit it.
+   */
+  readonly requestReceivedAt?: number;
 }
 type NormalSendFailure =
   | ReturnType<typeof notFound>
@@ -1429,6 +1435,20 @@ function missingNormalSendInput(thread: SendThread): null {
   return null;
 }
 
+/** The request-local receipt observed right after the input commit resolves. */
+function normalSendEnqueueCommit(
+  args: Pick<NormalSendArgs, "requestReceivedAt">,
+  eventId: string,
+): ChatInputEnqueueCommit {
+  return {
+    eventId,
+    committedAt: now(),
+    ...(args.requestReceivedAt === undefined
+      ? {}
+      : { requestReceivedAt: args.requestReceivedAt }),
+  };
+}
+
 const appendNormalSendInput$ = command(
   async (
     { set },
@@ -1555,7 +1575,7 @@ const appendNormalSendInput$ = command(
       ? null
       : {
           inserted,
-          enqueueCommit: { eventId: inserted.id, committedAt: now() },
+          enqueueCommit: normalSendEnqueueCommit(args, inserted.id),
         };
   },
 );
@@ -2485,6 +2505,7 @@ export const handleSendChatEvent$ = command(
         auth: auth.tokenType === "oauth" ? { ...auth, clientName } : auth,
         userId: auth.userId,
         orgId: auth.orgId,
+        requestReceivedAt: get(apiStartTime$),
       },
       signal,
     );

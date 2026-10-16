@@ -824,7 +824,7 @@ describe("CHAT-02: completed chat callback", () => {
     await waitForRunStatus(actor, claimed.runId, "cancelled");
   }, 90_000);
 
-  it("starts the queued chat run's API clock at its dequeue", async () => {
+  it("omits the API clock for a chat run picked from the queue", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
@@ -877,7 +877,8 @@ describe("CHAT-02: completed chat callback", () => {
       throw new Error("Expected the queued Web message to auto-send");
     }
     const secondClaim = await claimChatRunJob(runnerGroup, claimed.runId);
-    expect(secondClaim.apiStartTime).toBe(dequeuedAt);
+    // Only a pick inside its own send request is anchored at receipt.
+    expect(secondClaim.apiStartTime).toBeUndefined();
 
     await api.requestCancelRun(actor, claimed.runId, [200]);
     await waitForRunStatus(actor, claimed.runId, "cancelled");
