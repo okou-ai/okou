@@ -1193,7 +1193,28 @@ describe("Morning Brief catalog reconciliation", () => {
         // Publication and the scheduler are explicitly scoped authenticated
         // system boundaries; this first request selects the case-owned DB.
         installCatalogStorageFixture();
-        await syncDeployedCatalog();
+        const initialBlueprint: OfficialWorkflowBlueprint = {
+          key: "daily-delivery",
+          parameters: [],
+          desiredState: {
+            kind: "schedule",
+            schedule: { type: "cron", cronExpression: "0 7 * * *" },
+          },
+        };
+        // One accepted catalog supplies the initial schedules and the
+        // Definition that reconciliation retires below.
+        expect(
+          (
+            await syncCatalog(
+              catalog([
+                ...MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.map((name) => {
+                  return activeDefinition(name, [initialBlueprint]);
+                }),
+                connectorDoctorDefinition(),
+              ]),
+            )
+          ).body.outcome,
+        ).toBe("accepted");
         const { actor } = await workflowBdd.setupWorkflowOrg({
           timezone: "Asia/Tokyo",
         });
