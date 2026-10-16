@@ -551,54 +551,71 @@ test.each([true, false])(
   },
 );
 
-test("Keyboard navigation reveals the hidden workflows instead of stopping on them", async () => {
+test("Desktop arrow navigation passes Show more without revealing hidden workflows", async () => {
   const user = userEvent.setup();
-  const editor = await openManyWorkflows();
+  await openManyWorkflows();
+  await user.keyboard("{ArrowDown>5/}");
+  expect(slashButton("Show 8 more")).toHaveAttribute("data-active", "true");
 
-  await user.keyboard("{ArrowDown>4/}");
-  expect(slashButton("/daily-12")).toHaveAttribute("data-active", "true");
-  expect(querySlashButton("/daily-2")).toBeNull();
-
-  // Passing the last visible workflow reveals the rest and lands on the first
-  // one revealed, in Show more's place; the keyboard never stops on it.
   await user.keyboard("{ArrowDown}");
-  expect(slashButton("/daily-2")).toHaveAttribute("data-active", "true");
-  expect(querySlashButton("Show 8 more")).toBeNull();
-  expect(editor).toHaveFocus();
-  expect(editor).toHaveTextContent(/^Draft \/$/);
-  await user.keyboard("{ArrowDown}");
-  expect(slashButton("/daily-3")).toHaveAttribute("data-active", "true");
-  await user.keyboard("{Enter}");
-  expect(editor).toHaveTextContent("Draft /daily-3");
-  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
-
-  // Coming up from the categories lands on Manage workflows, the row just
-  // above them once the rest are revealed.
-  await fill(editor, "Draft /");
-  expect(slashButton("Show 8 more")).toBeInTheDocument();
-  await user.keyboard("{ArrowUp>3/}");
   expect(slashButton("Website")).toHaveAttribute("data-active", "true");
-  expect(querySlashButton("/daily-9")).toBeNull();
-  await user.keyboard("{ArrowUp}");
-  expect(manageWorkflowsLink()).toHaveAttribute("data-active", "true");
-  await user.keyboard("{ArrowUp}");
-  expect(slashButton("New workflow")).toHaveAttribute("data-active", "true");
-  await user.keyboard("{ArrowUp}");
-  expect(slashButton("/daily-9")).toHaveAttribute("data-active", "true");
-  expect(querySlashButton("Show 8 more")).toBeNull();
-
-  await fill(editor, "Draft /");
-  await user.keyboard("{Escape}");
-  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
-  await fill(editor, "Draft /");
-  expect(slashButton("Show 8 more")).toBeInTheDocument();
-  expect(querySlashButton("/daily-9")).toBeNull();
-
-  await fill(editor, "Draft /daily");
-  expect(querySlashButton("Show 8 more")).toBeNull();
-  expect(querySlashButton("New workflow")).toBeNull();
-  expect(slashButton("/daily-12")).toBeInTheDocument();
+  expect(querySlashButton("/daily-2")).toBeNull();
+  await user.keyboard("{ArrowDown}");
+  expect(slashButton("Illustration")).toHaveAttribute("data-active", "true");
+  await user.keyboard("{ArrowUp>2/}");
+  expect(slashButton("Show 8 more")).toHaveAttribute("data-active", "true");
+  expect(querySlashButton("/daily-2")).toBeNull();
 });
+
+test.each([true, false])(
+  "Keyboard navigation selects Show more without expanding until activation with desktop=%s",
+  async (desktop) => {
+    context.mocks.browser.matchMedia(desktop);
+    const user = userEvent.setup();
+    const editor = await openManyWorkflows();
+
+    await user.keyboard(desktop ? "{ArrowDown>4/}" : "{ArrowDown>7/}");
+    expect(slashButton("/daily-12")).toHaveAttribute("data-active", "true");
+    expect(querySlashButton("/daily-2")).toBeNull();
+
+    await user.keyboard("{ArrowDown}");
+    expect(slashButton("Show 8 more")).toHaveAttribute("data-active", "true");
+    expect(slashButton("Show 8 more")).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(querySlashButton("/daily-2")).toBeNull();
+    expect(editor).toHaveFocus();
+    expect(editor).toHaveTextContent(/^Draft \/$/);
+
+    await user.keyboard("{ArrowUp}");
+    expect(slashButton("/daily-12")).toHaveAttribute("data-active", "true");
+    await user.keyboard("{ArrowDown}{Enter}");
+    expect(slashButton("/daily-2")).toHaveAttribute("data-active", "true");
+    expect(querySlashButton("Show 8 more")).toBeNull();
+    expect(editor).toHaveFocus();
+    expect(editor).toHaveTextContent(/^Draft \/$/);
+    await user.keyboard("{ArrowDown}");
+    expect(slashButton("/daily-3")).toHaveAttribute("data-active", "true");
+    await user.keyboard("{Enter}");
+    expect(editor).toHaveTextContent("Draft /daily-3");
+    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+
+    await fill(editor, "Draft /");
+    expect(slashButton("Show 8 more")).toBeInTheDocument();
+    expect(querySlashButton("/daily-9")).toBeNull();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+    await fill(editor, "Draft /");
+    expect(slashButton("Show 8 more")).toBeInTheDocument();
+    expect(querySlashButton("/daily-9")).toBeNull();
+
+    await fill(editor, "Draft /daily");
+    expect(querySlashButton("Show 8 more")).toBeNull();
+    expect(querySlashButton("New workflow")).toBeNull();
+    expect(slashButton("/daily-12")).toBeInTheDocument();
+  },
+);
 
 test("New workflow writes the create-workflow request where the slash was", async () => {
   const user = userEvent.setup();

@@ -43,7 +43,8 @@ const SLASH_TEMPLATE_CATEGORY_ICONS = {
 // place, from a row directly beneath them.
 export const SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT = 4;
 
-// Option ids for the rows after the revealed workflows.
+// Option ids for the controls following the visible workflows.
+export const SLASH_PANEL_SHOW_MORE_ID = "show-more-workflows";
 export const SLASH_PANEL_NEW_WORKFLOW_ID = "new-workflow";
 export const SLASH_PANEL_MANAGE_WORKFLOWS_ID = "manage-workflows";
 
@@ -398,12 +399,14 @@ function SlashPanelWorkflowList({
  * position, so the first of them lands under the pointer that clicked it.
  */
 function SlashPanelShowMore({
+  id,
   index,
   hiddenCount,
   marked,
   onPreview,
   onExpand,
 }: {
+  readonly id: string;
   readonly index: number;
   readonly hiddenCount: number;
   readonly marked: boolean;
@@ -413,6 +416,7 @@ function SlashPanelShowMore({
   const { t } = useTranslation();
   return (
     <button
+      id={id}
       type="button"
       aria-expanded={false}
       data-active={marked ? "true" : undefined}
@@ -545,13 +549,14 @@ function SlashPanelWorkflowSection({
       <SlashPanelWorkflowList {...listProps} workflows={visibleWorkflows} />
       {/*
         The control sits directly beneath the rows it continues, in the
-        position the first revealed row takes. The keyboard never stops on
-        it: arrowing past the last visible workflow reveals the rest.
+        position the first revealed row takes. Arrow keys select it without
+        expanding; activation reveals the rest.
       */}
       {(hasCollapsedWorkflows || showWorkflowActions) && (
         <div className="px-1">
           {hasCollapsedWorkflows && (
             <SlashPanelShowMore
+              id={listProps.workflowOptionId(SLASH_PANEL_SHOW_MORE_ID)}
               index={SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT}
               hiddenCount={
                 workflows.length - SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT
