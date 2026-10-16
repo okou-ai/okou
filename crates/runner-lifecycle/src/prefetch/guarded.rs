@@ -50,7 +50,7 @@ impl MemoryPrefetchTasks {
         Self::spawn_guarded_with(candidates, budget_mb, config, read_bounded)
     }
 
-    fn spawn_guarded_with<F>(
+    pub(super) fn spawn_guarded_with<F>(
         candidates: impl IntoIterator<Item = MemoryPrefetchCandidate>,
         budget_mb: u64,
         config: GuardedPrefetchConfig,
@@ -314,6 +314,23 @@ fn read_bounded(
     cancel: &CancellationToken,
     pressure: &OptionalPressureControl,
 ) -> PrefetchOutcome {
+    read_bounded_observed(
+        path,
+        max_bytes,
+        cancel,
+        pressure,
+        #[cfg(any(test, feature = "test-support"))]
+        None,
+    )
+}
+
+pub(super) fn read_bounded_observed(
+    path: &Path,
+    max_bytes: u64,
+    cancel: &CancellationToken,
+    pressure: &OptionalPressureControl,
+    #[cfg(any(test, feature = "test-support"))] checkpoint: Option<&PrefetchReadCheckpoint>,
+) -> PrefetchOutcome {
     if cancel.is_cancelled() || suppressed(pressure) {
         return PrefetchOutcome::Cancelled { bytes: 0 };
     }
@@ -355,6 +372,16 @@ fn read_bounded(
             Ok(count) => count,
             Err(error) => return PrefetchOutcome::ReadFailed { bytes, error },
         };
+        #[cfg(any(test, feature = "test-support"))]
+        if count > 0
+            && let Some(checkpoint) = checkpoint
+            && let Err(error) = checkpoint(bytes + count as u64)
+        {
+            return PrefetchOutcome::ReadFailed {
+                bytes: bytes + count as u64,
+                error,
+            };
+        }
         if cancel.is_cancelled() || suppressed(pressure) {
             return PrefetchOutcome::Cancelled {
                 bytes: bytes + count as u64,
