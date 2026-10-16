@@ -9,6 +9,25 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.750.0](https://github.com/okou-ai/okou/compare/api-v1.749.2...api-v1.750.0) (2026-10-16)
+
+
+### Features
+
+* **api:** prepare native vnc private authority ([#40751](https://github.com/okou-ai/okou/issues/40751)) ([a54c5bc](https://github.com/okou-ai/okou/commit/a54c5bc6b847356855e3f99ac3c80ed1621cdd87))
+
+
+### Bug Fixes
+
+* **wallet:** decouple grant migration from production releases ([#40762](https://github.com/okou-ai/okou/issues/40762)) ([97021db](https://github.com/okou-ai/okou/commit/97021dbcf3994656c219a02139bcfde137904b26))
+* **wechat:** resume polling after idle receive deadlines ([#40763](https://github.com/okou-ai/okou/issues/40763)) ([5ef9297](https://github.com/okou-ai/okou/commit/5ef9297f8ee8fd04b5b6b3fe03dfc28c4e4c73f7))
+
+
+### Refactoring
+
+* **api:** own banking webhook account synchronization ([#40686](https://github.com/okou-ai/okou/issues/40686)) ([49ec347](https://github.com/okou-ai/okou/commit/49ec3475c3dd4650fc233c58d3e98a6310225fff))
+* **api:** own github installation deletion cleanup ([#40758](https://github.com/okou-ai/okou/issues/40758)) ([7e09248](https://github.com/okou-ai/okou/commit/7e092481c407dd0af8cd984ff0ec60aefe12397b))
+
 ## [1.749.2](https://github.com/okou-ai/okou/compare/api-v1.749.1...api-v1.749.2) (2026-10-16)
 
 

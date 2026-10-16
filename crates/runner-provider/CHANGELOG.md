@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.10](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.9...runner-provider-v0.8.10) (2026-10-16)
+
+
+### Refactoring
+
+* **runner-provider:** own ably disconnect episodes ([#40742](https://github.com/okou-ai/okou/issues/40742)) ([eaec130](https://github.com/okou-ai/okou/commit/eaec1301db7352859f5c6eccc03d38960e0173fb))
+
 ## [0.8.9](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.8...runner-provider-v0.8.9) (2026-10-16)
 
 
