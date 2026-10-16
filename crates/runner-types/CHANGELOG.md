@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.5](https://github.com/okou-ai/okou/compare/runner-types-v0.7.4...runner-types-v0.7.5) (2026-10-16)
+
+
+### Refactoring
+
+* retire session history archive protocol ([#40528](https://github.com/okou-ai/okou/issues/40528)) ([1e9a4cf](https://github.com/okou-ai/okou/commit/1e9a4cf4fa6fb43dad8fad1caedc480df0ef7a41))
+
 ## [0.7.4](https://github.com/okou-ai/okou/compare/runner-types-v0.7.3...runner-types-v0.7.4) (2026-10-15)
 
 ## [0.7.3](https://github.com/okou-ai/okou/compare/runner-types-v0.7.2...runner-types-v0.7.3) (2026-10-15)

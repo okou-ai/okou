@@ -9,6 +9,43 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.745.0](https://github.com/okou-ai/okou/compare/api-v1.744.0...api-v1.745.0) (2026-10-16)
+
+
+### Features
+
+* add workspace-scoped link wallets and transaction history ([#40192](https://github.com/okou-ai/okou/issues/40192)) ([12a55d1](https://github.com/okou-ai/okou/commit/12a55d1c8892076fbb608eb3116573e7011c060a))
+* **vnc:** prepare additive native network storage ([#40524](https://github.com/okou-ai/okou/issues/40524)) ([4fa07c7](https://github.com/okou-ai/okou/commit/4fa07c7f092a0f1cae99d8297d58834cc1258ccf))
+
+
+### Bug Fixes
+
+* **api:** retry transient google sheets token refresh failures ([#40522](https://github.com/okou-ai/okou/issues/40522)) ([8f79d3c](https://github.com/okou-ai/okou/commit/8f79d3cb72a3773a8502e68ba3f437718a222dbf))
+* **slack:** finish app home settings link migration ([#40541](https://github.com/okou-ai/okou/issues/40541)) ([03a4b0a](https://github.com/okou-ai/okou/commit/03a4b0a8f269e72e87e576762d87ab3f207c0cea))
+
+
+### Refactoring
+
+* **api:** own allocation confirmation billing read ([#40527](https://github.com/okou-ai/okou/issues/40527)) ([088c8e6](https://github.com/okou-ai/okou/commit/088c8e69bb01d0097e97229917dadfb7dc6819ac)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** own banking connection management reads ([#40519](https://github.com/okou-ai/okou/issues/40519)) ([c559abc](https://github.com/okou-ai/okou/commit/c559abc8fd545b5efaf9026a4441a0ec8d39ac4b))
+* **api:** remove billing thread run fallback ([#40534](https://github.com/okou-ai/okou/issues/40534)) ([fa2fb32](https://github.com/okou-ai/okou/commit/fa2fb32ab1bc227e6d000890f1826c6e2a7059b8))
+* retire session history archive protocol ([#40528](https://github.com/okou-ai/okou/issues/40528)) ([1e9a4cf](https://github.com/okou-ai/okou/commit/1e9a4cf4fa6fb43dad8fad1caedc480df0ef7a41))
+
+
+### Performance Improvements
+
+* **api:** deduplicate discord prompt authorization reads ([#40359](https://github.com/okou-ai/okou/issues/40359)) ([3f70796](https://github.com/okou-ai/okou/commit/3f70796bc72458da61ee858d484c2ccaeba98b4d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.570.0
+    * @okouai/core bumped to 8.763.0
+    * @okouai/db bumped to 1.343.0
+    * @okouai/pi-agent-runtime bumped to 1.50.10
+
 ## [1.744.0](https://github.com/okou-ai/okou/compare/api-v1.743.2...api-v1.744.0) (2026-10-16)
 
 

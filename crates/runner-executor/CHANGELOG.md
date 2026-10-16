@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.9](https://github.com/okou-ai/okou/compare/runner-executor-v0.13.8...runner-executor-v0.13.9) (2026-10-16)
+
+
+### Refactoring
+
+* retire session history archive protocol ([#40528](https://github.com/okou-ai/okou/issues/40528)) ([1e9a4cf](https://github.com/okou-ai/okou/commit/1e9a4cf4fa6fb43dad8fad1caedc480df0ef7a41))
+
 ## [0.13.8](https://github.com/okou-ai/okou/compare/runner-executor-v0.13.7...runner-executor-v0.13.8) (2026-10-16)
 
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.5](https://github.com/okou-ai/okou/compare/runner-host-v0.9.4...runner-host-v0.9.5) (2026-10-16)
+
+
+### Refactoring
+
+* **runner-host:** converge bounded command failure retirement ([#40523](https://github.com/okou-ai/okou/issues/40523)) ([21ef334](https://github.com/okou-ai/okou/commit/21ef334c7f7d3e03f09108bce8ccfa2b6cd24a31))
+* **runner-host:** pair wss journal evidence with its inode pin ([#40521](https://github.com/okou-ai/okou/issues/40521)) ([2171c70](https://github.com/okou-ai/okou/commit/2171c70b80788151667065f12fc56b909d325c2e))
+
 ## [0.9.4](https://github.com/okou-ai/okou/compare/runner-host-v0.9.3...runner-host-v0.9.4) (2026-10-15)
 
 ## [0.9.3](https://github.com/okou-ai/okou/compare/runner-host-v0.9.2...runner-host-v0.9.3) (2026-10-15)
