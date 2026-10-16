@@ -183,7 +183,7 @@ impl Run {
         cancelled: CancellationToken,
         deadline: Instant,
     ) -> Result<DirectTcpIpStream, Box<ForwardingFailure>> {
-        let mut attempt = observation::Attempt::new(&self.sessions.registration.diagnostics());
+        let mut attempt = observation::Attempt::new(&self.diagnostics());
         let result = self
             .open_direct_tcpip_inner(
                 Target {
@@ -198,7 +198,7 @@ impl Run {
             )
             .await;
         let _ = attempt.record(
-            &self.sessions.registration.diagnostics(),
+            &self.diagnostics(),
             connection,
             crate::diagnostics::Operation::Forwarding,
             None,
@@ -244,7 +244,11 @@ impl Run {
             deadline: deadline.min(Instant::now() + SETUP_TIMEOUT),
         };
         scope.check()?;
-        let access = self.sessions.registration.lookup(connection)?;
+        let access = self
+            .sessions
+            .registration
+            .lookup(connection)?
+            .with_diagnostics(self.diagnostics());
         let result = async {
             let credential = scope
                 .wait(access.prepare(self.runtime.prepare(
@@ -341,9 +345,10 @@ impl Run {
             })
         }
         .await;
-        if result
-            .as_ref()
-            .is_err_and(|failure| invalidates_access(*failure))
+        if !self.diagnostics().is_check()
+            && result
+                .as_ref()
+                .is_err_and(|failure| invalidates_access(*failure))
         {
             access.invalidate();
         }
@@ -357,6 +362,9 @@ impl Run {
         attempt: &observation::Attempt,
         failure: Option<FailureReason>,
     ) {
+        if self.diagnostics().is_check() {
+            return;
+        }
         let Some(observation) = attempt.finish(failure) else {
             return;
         };

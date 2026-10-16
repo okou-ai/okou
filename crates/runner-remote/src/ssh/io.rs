@@ -11,6 +11,7 @@ use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
     sync::OwnedSemaphorePermit,
 };
+use tokio_util::sync::{CancellationToken, DropGuard};
 
 pub(super) type GuestIo = Box<dyn GuestRpcStream>;
 
@@ -18,6 +19,9 @@ pub(super) type GuestIo = Box<dyn GuestRpcStream>;
 pub(super) struct HostLease {
     operation: Mutex<Option<Arc<OwnedSemaphorePermit>>>,
     _transport: OwnedSemaphorePermit,
+    pub(super) closed: CancellationToken,
+    // Last field: signal only after operation/physical permits have been released.
+    _completion: DropGuard,
 }
 
 impl HostLease {
@@ -25,9 +29,12 @@ impl HostLease {
         operation: Arc<OwnedSemaphorePermit>,
         transport: OwnedSemaphorePermit,
     ) -> Arc<Self> {
+        let closed = CancellationToken::new();
         Arc::new(Self {
             operation: Mutex::new(Some(operation)),
             _transport: transport,
+            _completion: closed.clone().drop_guard(),
+            closed,
         })
     }
 

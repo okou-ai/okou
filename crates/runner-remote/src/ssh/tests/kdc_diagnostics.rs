@@ -35,7 +35,24 @@ async fn vnc_history_retains_kdc_ssh_failure_before_kerberos_conversion() {
     .unwrap()
     .unwrap();
     h.restart_with_vnc(vnc).await;
-    h.enable_diagnostics().await;
+    h.enable_checks(&["ssh:write", "vnc:write"]).await;
+    let dispatcher = h.take_dispatcher();
+    let ssh_observations = h
+        .api
+        .mock_async(|when, then| {
+            when.method("POST")
+                .path(format!("/api/runners/runs/{}/ssh/observations", h.run));
+            then.status(200).json_body(json!({"outcome":"recorded"}));
+        })
+        .await;
+    let vnc_observations = h
+        .api
+        .mock_async(|when, then| {
+            when.method("POST")
+                .path(format!("/api/runners/runs/{}/vnc/observations", h.run));
+            then.status(200).json_body(json!({"outcome":"recorded"}));
+        })
+        .await;
     let rfb = h.resolve(h.credential(true)).await;
     let mut credential = h.credential(true);
     credential["learnedHostKey"]["fingerprint"] = json!(format!(
@@ -121,11 +138,42 @@ async fn vnc_history_retains_kdc_ssh_failure_before_kerberos_conversion() {
         1,
         "KDC trust refusal must not open its forwarding channel"
     );
-    resolve.assert_calls_async(1).await;
+    let ssh_before = h
+        .raw(json!({"version":1,"method":"ssh.diagnose","params":{}}).to_string())
+        .await;
+    let check = h.raw(
+        json!({"version":1,"method":"vnc.check","remaining_ms":10000,
+        "params":{"connectionId":VNC,"mode":"shared"}})
+        .to_string(),
+    );
+    let bridge = async {
+        let mut forwarded = h.accept_forwarded().await;
+        let mut target = TcpStream::connect(peer.address).await.unwrap();
+        let _ = tokio::io::copy_bidirectional(&mut forwarded, &mut target).await;
+    };
+    let (checked, ()) = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::join!(check, bridge)
+    })
+    .await
+    .unwrap();
+    let checked = terminal(&checked);
+    assert_eq!(checked["status"], "failed", "{checked}");
+    assert!(diagnostic_text(checked).contains("independent KDC route: ssh."));
+    assert!(diagnostic_text(checked).contains("SSH host key mismatch"));
+    let vnc_after = h
+        .raw(json!({"version":1,"method":"vnc.diagnose","params":{}}).to_string())
+        .await;
+    let ssh_after = h
+        .raw(json!({"version":1,"method":"ssh.diagnose","params":{}}).to_string())
+        .await;
+    assert_eq!(terminal(&vnc_after), report);
+    assert_eq!(terminal(&ssh_after), terminal(&ssh_before));
+    assert_eq!(h.observed.forwards.lock().unwrap().len(), 2);
+    resolve.assert_calls_async(2).await;
     rfb.assert_calls_async(1).await;
-    kdc.assert_calls_async(1).await;
-    inventory.assert_calls_async(1).await;
-    ssh_inventory.assert_calls_async(1).await;
+    kdc.assert_calls_async(2).await;
+    inventory.assert_calls_async(2).await;
+    ssh_inventory.assert_calls_async(4).await;
     ssh_inventory.delete_async().await;
     let recreated = h
         .api
@@ -140,5 +188,7 @@ async fn vnc_history_retains_kdc_ssh_failure_before_kerberos_conversion() {
     assert_eq!(terminal(&hidden)["status"], "authority_unavailable");
     assert!(!diagnostic_text(terminal(&hidden)).contains(KDC));
     recreated.assert_calls_async(1).await;
-    h.shutdown().await;
+    dispatcher.shutdown().await.unwrap();
+    ssh_observations.assert_calls_async(2).await;
+    vnc_observations.assert_calls_async(1).await;
 }

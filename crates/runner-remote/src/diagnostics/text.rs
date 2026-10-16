@@ -14,10 +14,19 @@ impl Report {
     }
 
     pub(crate) fn message(&self) -> Option<String> {
+        let summary = match self.cause {
+            Some(failure) => format!(
+                "Failure: {} during {}.",
+                cause(failure)?,
+                words(self.operation)?
+            ),
+            None => format!(
+                "Active check: {} connection setup passed.",
+                words(self.protocol)?
+            ),
+        };
         let mut text = format!(
-            "Failure: {} during {}.\n\nEvidence:\n- Source boundary: {}; detail: {}.\n",
-            cause(self.cause)?,
-            words(self.operation)?,
+            "{summary}\n\nEvidence:\n- Source boundary: {}; detail: {}.\n",
             words(self.stage)?,
             words(self.detail)?,
         );
@@ -119,8 +128,13 @@ impl Report {
                 self.native_connection.as_ref(),
             )?;
         }
+        let boundary = if self.operation == super::Operation::ActiveCheck {
+            "This active check verifies only newly passed connection stages at the recorded time. SSH authentication or VNC initialization does not establish later command, framebuffer or input health."
+        } else {
+            "This is retained evidence; current connectivity has not been checked."
+        };
         text.push_str(&format!(
-            "\nUnknown: Stages marked not reached, unknown or reused do not establish current health. Finer unobserved stages and the remote/network trigger remain unknown. This is retained evidence; current connectivity has not been checked.\n\nNext step: {}\n\nContext:\nRun: {}\nAssignment: {}\nAttempt: {}\nSequence: {}\nConnection: {}\nObserved at: {}\nConfiguration: created at {}; generation {}.\n",
+            "\nUnknown: Stages marked not reached, unknown or reused do not establish current health. Finer unobserved stages and the remote/network trigger remain unknown. {boundary}\n\nNext step: {}\n\nContext:\nRun: {}\nAssignment: {}\nAttempt: {}\nSequence: {}\nConnection: {}\nObserved at: {}\nConfiguration: created at {}; generation {}.\n",
             self.guidance(),
             self.run_id,
             self.assignment_id,
@@ -140,7 +154,10 @@ impl Report {
     fn guidance(&self) -> &'static str {
         use super::trace::Stage;
         use crate::ssh::FailureReason as S;
-        if matches!(self.cause, Cause::Vnc(_)) {
+        let Some(cause) = self.cause else {
+            return "Use an ordinary operation when needed; a completed connection check does not guarantee later business work. No command, screenshot or input was performed by this check.";
+        };
+        if matches!(cause, Cause::Vnc(_)) {
             if self.dependencies.iter().any(|dependency| {
                 matches!(
                     dependency.cause,
@@ -165,7 +182,7 @@ impl Report {
             }
         }
         if matches!(
-            self.cause,
+            cause,
             Cause::Native(crate::tailscale::Failure::DomainFailed)
                 | Cause::Ssh(S::NetworkFailure | S::Cancelled | S::AuthorityFailure)
         ) && let Some(root) = self.native_layers.as_ref().and_then(|s| s.root)
@@ -185,7 +202,7 @@ impl Report {
                 }
             };
         }
-        if matches!(self.cause, Cause::Ssh(S::NetworkFailure))
+        if matches!(cause, Cause::Ssh(S::NetworkFailure))
             && self.native_connection.as_ref().is_some_and(|snapshot| {
                 snapshot.steps.iter().any(|s| {
                     matches!(
@@ -214,7 +231,7 @@ impl Report {
                 }
             };
         }
-        match self.cause {
+        match cause {
             Cause::Ssh(S::HostKeyMismatch | S::UnsupportedHostKey) => {
                 "Verify the server host key through a trusted channel before updating trust."
             }

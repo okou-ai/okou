@@ -1,3 +1,4 @@
+mod active_check;
 mod authority_cache;
 mod boundaries;
 mod delivery;

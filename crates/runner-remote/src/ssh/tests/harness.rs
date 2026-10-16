@@ -531,6 +531,16 @@ impl Harness {
     }
 
     pub(crate) async fn enable_diagnostics(&mut self) {
+        self.enable_diagnostics_token("diagnostic-agent-token")
+            .await;
+    }
+
+    pub(crate) async fn enable_checks(&mut self, capabilities: &[&str]) {
+        self.enable_diagnostics_token(&crate::test_fixtures::check_token(self.run, capabilities))
+            .await;
+    }
+
+    async fn enable_diagnostics_token(&mut self, token: &str) {
         self.shutdown().await;
         let (incoming, receiver) = mpsc::channel(32);
         self.incoming = incoming;
@@ -542,7 +552,7 @@ impl Harness {
             None,
             Some(Arc::new(crate::diagnostics::Authority::new(
                 self.runtime.http_client(),
-                "diagnostic-agent-token",
+                token,
             ))),
         ));
     }

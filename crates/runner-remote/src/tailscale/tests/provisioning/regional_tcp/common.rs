@@ -178,7 +178,7 @@ async fn native_common_rejected_home_announcement_never_sends_login_or_command()
     let dispatch = tracing::Dispatch::new(tracing_subscriber::registry().with(captured.clone()));
     let _parent = tracing::dispatcher::set_default(&dispatch);
     let mut h = Harness::new(Reply::default()).await;
-    h.enable_diagnostics().await;
+    h.enable_checks(&["ssh:write"]).await;
     let api = Api::secure(None).await;
     let home = Server::secure().await;
     let control = Control::new(ACCEPTED.to_vec(), map(&home), KeyReply::Valid, false).await;
@@ -257,13 +257,35 @@ async fn native_common_rejected_home_announcement_never_sends_login_or_command()
             .find(|line| line.starts_with("- Native source:"))
     );
     assert!(retained.contains("first terminal failure domain failed;"));
+    let active = h
+        .raw(
+            json!({"version":1,"method":"ssh.check","remaining_ms":10000,
+        "params":{"connectionId":OTHER}})
+            .to_string(),
+        )
+        .await;
+    let active = &active.last().unwrap()["data"];
+    assert_eq!(active["status"], "blocked", "{active}");
+    assert!(
+        crate::test_fixtures::diagnostic_text(active)
+            .contains("first terminal failure domain failed;")
+    );
+    let after_check = h
+        .raw(json!({"version":1,"method":"ssh.diagnose","params":{}}).to_string())
+        .await;
+    assert_eq!(
+        crate::test_fixtures::diagnostic_text(&after_check.last().unwrap()["data"]),
+        retained
+    );
     assert_eq!(h.observed.auth.load(Ordering::SeqCst), 0);
     assert!(h.observed.commands.lock().unwrap().is_empty());
     assert!(h.observed.queries.lock().unwrap().is_empty());
     assert_eq!(control.announced_home(), vec![1]);
     resolve.assert_calls_async(1).await;
-    second.assert_calls_async(1).await;
-    inventory.assert_calls_async(2).await;
+    // The failed ordinary attempt evicts its authority fill. The check may
+    // resolve it again, but must not provision/restart the failed native node.
+    second.assert_calls_async(2).await;
+    inventory.assert_calls_async(3).await;
     bounded(h.shutdown()).await;
     assert!(descriptors.lock().unwrap().is_empty());
     control.assert_control_closed();
@@ -430,7 +452,11 @@ async fn run_case(case: Case) {
         case,
         Case::WrongPin | Case::BadPassword | Case::RejectedIdentity | Case::ReusedDiagnostics
     ) {
-        h.enable_diagnostics().await;
+        if matches!(case, Case::ReusedDiagnostics) {
+            h.enable_checks(&["ssh:write"]).await;
+        } else {
+            h.enable_diagnostics().await;
+        }
     }
     h.observed.allow_none_auth.store(
         matches!(
@@ -703,7 +729,37 @@ async fn reused_diagnostics(peers: &mut Peers, h: &Harness) {
     assert_eq!(retained["status"], "found");
     assert_eq!(crate::test_fixtures::diagnostic_text(retained), first_text);
     assert!(!first_text.contains("unopened-private-file-canary"));
-    inventory.assert_calls_async(1).await;
+    let active = peers
+        .finish(
+            h.raw(
+                json!({"version":1,"method":"ssh.check","remaining_ms":10000,
+        "params":{"connectionId":CONNECTION}})
+                .to_string(),
+            ),
+        )
+        .await;
+    let active = &active.last().unwrap()["data"];
+    assert_eq!(active["status"], "passed", "{active}");
+    let check_text = crate::test_fixtures::diagnostic_text(active);
+    assert!(check_text.contains("transport: fresh."), "{check_text}");
+    assert_eq!(
+        source(check_text, "- Native source:"),
+        source(fresh_text, "- Native source:")
+    );
+    assert_ne!(
+        source(check_text, "- Native connection evidence:"),
+        source(fresh_text, "- Native connection evidence:")
+    );
+    assert_eq!(h.observed.auth.load(Ordering::SeqCst), 4);
+    assert_eq!(h.observed.commands.lock().unwrap().len(), 2);
+    let latest = peers
+        .finish(h.raw(json!({"version":1,"method":"ssh.diagnose","params":{}}).to_string()))
+        .await;
+    assert_eq!(
+        crate::test_fixtures::diagnostic_text(&latest.last().unwrap()["data"]),
+        fresh_text
+    );
+    inventory.assert_calls_async(2).await;
 }
 
 async fn exercise(peers: &mut Peers, h: &Harness, case: Case) {

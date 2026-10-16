@@ -3,6 +3,19 @@ pub(crate) mod http;
 pub(crate) use raw_http_test_support::raw_http;
 pub(crate) mod vnc;
 
+/// API-installed execution-context claims; never accepted from guest RPC params.
+pub(crate) fn check_token(run: runner_types::ids::RunId, capabilities: &[&str]) -> String {
+    use base64::Engine;
+    let claims = serde_json::json!({
+        "scope":"okou", "runId":run, "capabilities":capabilities,
+        "exp":chrono::Utc::now().timestamp() + 3600
+    });
+    format!(
+        "vm0_sandbox_e30.{}.signature",
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(claims.to_string())
+    )
+}
+
 pub(crate) fn diagnostic_text(value: &serde_json::Value) -> &str {
     value
         .get("diagnostic_text")
