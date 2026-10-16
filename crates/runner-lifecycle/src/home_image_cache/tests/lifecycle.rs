@@ -239,20 +239,24 @@ async fn unused_selection_release_revalidates_same_generation_without_a_root_sca
         .await
         .unwrap()
         .unwrap();
-    assert!(change.selection_release_only);
+    assert!(!change.requires_full_reconcile);
     assert_eq!(
-        change.committed_cache_keys,
+        change.dirty_cache_keys,
         std::collections::BTreeSet::from([f.key("thread")])
     );
     f.cache.reset_held_state_root_scan_count();
     let states = f
         .cache
-        .held_home_states_for_released_selections(
+        .revalidate_home_cache_keys(
             &std::collections::BTreeMap::from([(PROFILE, SIZE)]),
-            &change.committed_cache_keys,
+            &change.dirty_cache_keys,
+            tokio::time::Instant::now(),
         )
         .await
-        .unwrap();
+        .entries
+        .into_values()
+        .flatten()
+        .collect::<Vec<_>>();
     assert_eq!(states.len(), 1);
     assert_eq!(states[0].reuse_key, "thread");
     assert_eq!(f.cache.held_state_root_scan_count(), 0);
@@ -269,6 +273,228 @@ async fn unused_selection_release_revalidates_same_generation_without_a_root_sca
             .unwrap()[4096..4102],
         b"unused"
     );
+}
+
+#[tokio::test]
+async fn bounded_inventory_preserves_profile_caps_and_completion_order_across_root_refill() {
+    use runner_types::types::{
+        HOME_AFFINITY_VERSION, HeldHomeState, HomeCacheCapability, MAX_HELD_HOME_STATES,
+        MAX_HOME_CACHES_PER_REUSE_KEY,
+    };
+    use std::collections::BTreeMap;
+
+    let f = Fixture::new().await;
+    let original = f.commit("template", b"home", "2026-01-01T00:00:00Z").await;
+    let mut expected = vec![HeldHomeState {
+        reuse_key: "template".into(),
+        last_completed_at: original.last_completed_at.clone(),
+        home_caches: vec![HomeCacheCapability {
+            profile: PROFILE.into(),
+            home_affinity_version: HOME_AFFINITY_VERSION,
+        }],
+    }];
+    let profiles = (0..=MAX_HOME_CACHES_PER_REUSE_KEY)
+        .map(|index| format!("vm0/profile-{index:02}"))
+        .collect::<Vec<_>>();
+    let mut seed = |reuse_key: &str, profile: &str, completed_at: &str| {
+        let key = f.cache.scoped_cache_key(profile, reuse_key, SIZE);
+        let paths = f.cache.entry_paths(&key);
+        std::fs::create_dir_all(paths.entry_dir()).unwrap();
+        // Real sparse images and metadata exercise the disk validator without
+        // invoking unrelated publication capacity/GC policy for every fixture.
+        let image = paths.image(&original.image_generation).unwrap();
+        write_image(&image, b"home", SIZE);
+        let mut metadata = original.clone();
+        metadata.profile_name = profile.into();
+        metadata.reuse_key = reuse_key.into();
+        metadata.last_completed_at = completed_at.into();
+        metadata.current_image = super::super::metadata::HomeImageFileIdentity::from_metadata(
+            &std::fs::symlink_metadata(&image).unwrap(),
+        );
+        std::fs::write(paths.metadata(), serde_json::to_vec(&metadata).unwrap()).unwrap();
+        expected.push(HeldHomeState {
+            reuse_key: reuse_key.into(),
+            last_completed_at: completed_at.into(),
+            home_caches: vec![HomeCacheCapability {
+                profile: profile.into(),
+                home_affinity_version: HOME_AFFINITY_VERSION,
+            }],
+        });
+    };
+    for index in 0..=MAX_HELD_HOME_STATES {
+        seed(
+            &format!("group-{index:04}"),
+            PROFILE,
+            "2026-02-01T00:00:00Z",
+        );
+    }
+    for (index, profile) in profiles.iter().enumerate() {
+        seed(
+            "shared",
+            profile,
+            if index == MAX_HOME_CACHES_PER_REUSE_KEY {
+                "2026-04-01T00:00:00Z"
+            } else {
+                "2026-03-01T00:00:00Z"
+            },
+        );
+    }
+    let configured = profiles
+        .iter()
+        .map(|profile| (profile.as_str(), SIZE))
+        .chain([(PROFILE, SIZE)])
+        .collect::<BTreeMap<_, _>>();
+    f.cache.reset_held_state_root_scan_count();
+    let inventory = f.cache.home_cache_inventory_for_profiles(&configured).await;
+    assert!(!inventory.incomplete);
+    assert!(inventory.truncated);
+    assert_eq!(inventory.states(), cap_held_home_states(expected));
+    assert_eq!(f.cache.held_state_root_scan_count(), 2);
+    assert!(inventory.completion_times.len() <= MAX_HELD_HOME_STATES);
+    assert!(inventory.entries.len() <= MAX_HELD_HOME_STATES * MAX_HOME_CACHES_PER_REUSE_KEY);
+    assert_eq!(inventory.projected_cache_keys().len(), MAX_HELD_HOME_STATES);
+    let shared = inventory
+        .states()
+        .into_iter()
+        .find(|state| state.reuse_key == "shared")
+        .unwrap();
+    assert_eq!(shared.last_completed_at, "2026-04-01T00:00:00Z");
+    assert_eq!(shared.home_caches.len(), MAX_HOME_CACHES_PER_REUSE_KEY);
+}
+
+#[tokio::test]
+async fn keyed_inventory_validates_current_authority_without_scanning_independent_entries() {
+    use super::super::snapshot::HomeCacheStateSnapshot;
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::time::Duration;
+
+    #[derive(Debug, PartialEq, Eq)]
+    enum Scenario {
+        Removed,
+        Malformed,
+        Foreign,
+        Replaced,
+        SymlinkedEntry,
+        Busy,
+        OldGeneration,
+    }
+    for scenario in [
+        Scenario::Removed,
+        Scenario::Malformed,
+        Scenario::Foreign,
+        Scenario::Replaced,
+        Scenario::SymlinkedEntry,
+        Scenario::Busy,
+        Scenario::OldGeneration,
+    ] {
+        let f = Fixture::new().await;
+        let committed = f.commit("changed", b"home", "2026-10-09T09:00:00Z").await;
+        f.commit("independent", b"other", "2026-10-09T09:01:00Z")
+            .await;
+        let profiles = BTreeMap::from([(PROFILE, SIZE)]);
+        let snapshot = HomeCacheStateSnapshot::new();
+        let token = snapshot.begin_home_cache_refresh();
+        snapshot.finish_home_cache_refresh(
+            token,
+            f.cache.home_cache_inventory_for_profiles(&profiles).await,
+        );
+        let key = f.key("changed");
+        let metadata = f.cache.entry_paths(&key).metadata();
+        let mut watcher = HomeCacheWatcher::new(f.cache.clone()).await.unwrap();
+        let mut busy_lease = None;
+        match scenario {
+            Scenario::Removed => tokio::fs::remove_file(&metadata).await.unwrap(),
+            Scenario::Malformed => tokio::fs::write(&metadata, b"{broken").await.unwrap(),
+            Scenario::Foreign => {
+                let mut value = serde_json::to_value(&committed).unwrap();
+                value["cacheScope"] = serde_json::json!("another-group");
+                tokio::fs::write(&metadata, serde_json::to_vec(&value).unwrap())
+                    .await
+                    .unwrap();
+            }
+            Scenario::Replaced => {
+                let image = f.image("changed", &committed);
+                tokio::fs::rename(&image, f.dir.path().join("old-image"))
+                    .await
+                    .unwrap();
+                write_image(&image, b"replacement", SIZE);
+            }
+            Scenario::SymlinkedEntry => {
+                let entry = f.cache.entry_paths(&key).entry_dir().to_owned();
+                let relocated = f.dir.path().join("relocated-entry");
+                tokio::fs::rename(&entry, &relocated).await.unwrap();
+                tokio::fs::symlink(&relocated, &entry).await.unwrap();
+                let change = tokio::time::timeout(Duration::from_secs(5), watcher.next_change())
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(change.dirty_cache_keys, BTreeSet::from([key.clone()]));
+                assert!(!change.requires_full_reconcile);
+                let full = f.cache.home_cache_inventory_for_profiles(&profiles).await;
+                assert_eq!(full.states().len(), 1);
+                assert_eq!(full.states()[0].reuse_key, "independent");
+            }
+            Scenario::Busy => busy_lease = Some(f.lease("changed").await),
+            Scenario::OldGeneration => {
+                let old = f
+                    .cache
+                    .entry_paths(&key)
+                    .image(&RunId::new_v4().to_string())
+                    .unwrap();
+                write_image(&old, b"old", SIZE);
+                tokio::fs::remove_file(old).await.unwrap();
+                let change = tokio::time::timeout(Duration::from_secs(5), watcher.next_change())
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(change.dirty_cache_keys, BTreeSet::from([key.clone()]));
+                assert!(!change.requires_full_reconcile);
+            }
+        }
+        let change = HomeCacheChange {
+            observed_at: tokio::time::Instant::now(),
+            dirty_cache_keys: BTreeSet::from([key.clone()]),
+            requires_full_reconcile: false,
+        };
+        snapshot.note_home_cache_change(&change);
+        let token = snapshot.begin_home_cache_refresh();
+        f.cache.reset_held_state_root_scan_count();
+        let updates = f
+            .cache
+            .revalidate_home_cache_keys(
+                &profiles,
+                &change.dirty_cache_keys,
+                tokio::time::Instant::now(),
+            )
+            .await;
+        assert_eq!(updates.busy_keys.contains(&key), scenario == Scenario::Busy);
+        let result = snapshot.finish_home_cache_key_updates(token, updates);
+        let keys = result
+            .states
+            .iter()
+            .map(|state| state.reuse_key.as_str())
+            .collect::<BTreeSet<_>>();
+        let expected = if scenario == Scenario::OldGeneration {
+            BTreeSet::from(["changed", "independent"])
+        } else {
+            BTreeSet::from(["independent"])
+        };
+        assert_eq!(keys, expected, "{scenario:?}");
+        assert!(!result.needs_reconcile, "{scenario:?}");
+        assert_eq!(f.cache.held_state_root_scan_count(), 0, "{scenario:?}");
+        if let Some(lease) = busy_lease {
+            drop(lease);
+            let updates = f
+                .cache
+                .revalidate_home_cache_keys(
+                    &profiles,
+                    &change.dirty_cache_keys,
+                    tokio::time::Instant::now(),
+                )
+                .await;
+            assert!(updates.entries.get(&key).unwrap().is_some());
+        }
+    }
 }
 
 #[tokio::test]

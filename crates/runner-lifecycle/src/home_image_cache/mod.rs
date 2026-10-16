@@ -26,6 +26,7 @@ mod fs;
 mod gc;
 mod gc_metadata;
 mod inspection;
+mod inventory;
 mod io_context;
 mod lifecycle;
 mod metadata;
@@ -40,6 +41,7 @@ mod types;
 mod watcher;
 #[cfg(any(test, feature = "test-support"))]
 pub use entry::CacheEntryPaths;
+pub use inventory::{HomeCacheInventory, HomeCacheKeyUpdates};
 pub use lifecycle::{
     HomeImageLease, HomeImagePromotionContext, HomeImagePromotionIdentityFailure,
     HomeImagePromotionOutcome, cap_held_home_states,
@@ -78,6 +80,8 @@ pub struct HomeImageCache {
     idle_home_reclamation: Arc<IdleHomeReclamation>,
     #[cfg(any(test, feature = "test-support"))]
     prepare_lock_test_gate: Option<HomeImagePrepareLockTestGate>,
+    #[cfg(any(test, feature = "test-support"))]
+    inventory_test_gate: Option<HomeImagePrepareLockTestGate>,
     #[cfg(any(test, feature = "test-support"))]
     handoff_test_gate: Option<HomeImageHandoffTestGate>,
     #[cfg(any(test, feature = "test-support"))]
@@ -285,6 +289,7 @@ impl HomeImageCache {
                 MAX_HOME_PROMOTION_CONCURRENCY,
             )),
             prepare_lock_test_gate: None,
+            inventory_test_gate: None,
             handoff_test_gate: None,
             routine_gc_test_gate: None,
             #[cfg(test)]
@@ -345,6 +350,12 @@ impl HomeImageCache {
     #[cfg(any(test, feature = "test-support"))]
     pub fn with_prepare_lock_test_gate(mut self, gate: HomeImagePrepareLockTestGate) -> Self {
         self.prepare_lock_test_gate = Some(gate);
+        self
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_inventory_test_gate(mut self, gate: HomeImagePrepareLockTestGate) -> Self {
+        self.inventory_test_gate = Some(gate);
         self
     }
     #[cfg(test)]

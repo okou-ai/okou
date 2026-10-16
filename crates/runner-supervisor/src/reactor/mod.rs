@@ -44,7 +44,6 @@ use tracing::{error, info, warn};
 use crate::dns;
 use crate::duration::duration_ms as saturated_duration_ms;
 use crate::executor::{ExecutorConfig, RunnerPreSpawnConcurrency};
-use crate::home_image_cache::HomeCacheChange;
 #[cfg(test)]
 use crate::home_image_cache::HomeImageCache;
 use crate::idle_pool::ParkingGate;
@@ -78,6 +77,7 @@ mod factory_lifecycle;
 mod finalizing_claim;
 mod heartbeat;
 mod home_cache_observation;
+mod home_cache_refresh;
 mod job_discovery;
 mod job_spawn;
 mod job_terminal_log;
@@ -417,6 +417,7 @@ enum StartLoopEvent {
     RoutineHeartbeatRequested { mode: RunnerMode },
     HomeCacheChangeObserved,
     MaintenanceDrainEntered,
+    HomeInventoryDrainEntered,
     RunningJobsDrainEntered,
     DestroyTasksDrainEntered,
     DestroyTasksDrainCompleted,
@@ -1112,7 +1113,6 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         profiles: &projected_heartbeat_profiles,
         budget: &capacity.budget,
         provider: Arc::clone(&provider_state.provider),
-        home_cache: exec_config.home_cache.clone(),
         active_runs: &active_runs,
         home_cache_snapshot: home_cache_snapshot.clone(),
         wss_ingress_service_probe,
@@ -1480,11 +1480,27 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                             .notify_home_cache_change_observed();
                         let live_mode = *mode_rx.borrow();
                         if matches!(live_mode, RunnerMode::Running | RunnerMode::Draining) {
+                            home_cache_observation.request_refresh(change);
+                        }
+                    }
+                    HomeCacheObservationEvent::Refreshed(change) => {
+                        let live_mode = *mode_rx.borrow();
+                        if matches!(live_mode, RunnerMode::Running | RunnerMode::Draining) {
                             heartbeat.request_home_cache(live_mode, change)?;
                         }
                     }
                     HomeCacheObservationEvent::Unavailable(error) => {
                         warn!(error = %error, "home cache watcher failed; using periodic reconciliation");
+                    }
+                    HomeCacheObservationEvent::RefreshFailed(error) => {
+                        handle_stopping_signal(
+                            "home cache refresh task failure",
+                            &provider_state.cancel,
+                            &provider_state.cancel_tokens,
+                            &lifecycle,
+                        ).await;
+                        terminal_error = Some(error);
+                        break;
                     }
                 }
             }
@@ -1493,14 +1509,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             {
                 let live_mode = *mode_rx.borrow();
                 if matches!(live_mode, RunnerMode::Running | RunnerMode::Draining) {
-                    heartbeat.request_home_cache(
-                        live_mode,
-                        HomeCacheChange {
-                            observed_at: tokio::time::Instant::now(),
-                            committed_cache_keys: std::collections::BTreeSet::new(),
-                            selection_release_only: false,
-                        },
-                    )?;
+                    home_cache_observation.request_reconciliation();
                 }
             }
             completion = maintenance.wait() => {
@@ -1691,7 +1700,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     // outcomes still enter the existing activation/executor ownership path.
     drop(discover_fut);
     teardown.event("drop_discover_fut");
-    drop(home_cache_observation);
+    home_cache_observation.stop_watching();
     let phase = teardown.phase_start("claims_drain");
     while let Some(result) = claim_tasks.next().await {
         if let Err(failure) = claim_tasks.consume(result, &mut jobs).await {
@@ -1712,6 +1721,16 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     let phase = teardown.phase_start("blank_pool_shutdown");
     blank_pool.shutdown(&idle_destroy_tracker).await;
     teardown.phase_complete("blank_pool_shutdown", phase);
+
+    let phase = teardown.phase_start("home_inventory_drain");
+    #[cfg(test)]
+    test_hooks
+        .test_observer
+        .record(StartLoopEvent::HomeInventoryDrainEntered);
+    if let Err(error) = home_cache_observation.drain().await {
+        terminal_error.get_or_insert(error);
+    }
+    teardown.phase_complete("home_inventory_drain", phase);
 
     let phase = teardown.phase_start("heartbeat_drain");
     if let Err(error) = heartbeat.drain().await {

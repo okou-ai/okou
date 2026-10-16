@@ -53,7 +53,7 @@ async fn external_home_cache_publication_and_removal_trigger_immediate_heartbeat
     let group = config.runner.group.clone();
     let observer_paths = RunnerPaths::new(config.paths.base_dir.clone());
     let observer_cache = HomeImageCache::shared(observer_paths, &home, &group);
-    Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(observer_cache);
+    Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(observer_cache.clone());
 
     let publisher_paths = RunnerPaths::new(env._temp_dir.path().join("publisher"));
     tokio::fs::create_dir_all(publisher_paths.base_dir())
@@ -68,6 +68,7 @@ async fn external_home_cache_publication_and_removal_trigger_immediate_heartbeat
         HomeImageCache::shared(foreign_publisher_paths.clone(), &home, "foreign-group");
     let run_handle = tokio::spawn(run(config));
     wait_discover_entered(&env, Duration::from_secs(5)).await;
+    observer_cache.reset_held_state_root_scan_count();
     let before_publication = env.handle.heartbeat_count();
     env.handle.block_heartbeats();
     let watcher_cursor = env.start_observer.cursor();
@@ -204,7 +205,233 @@ async fn external_home_cache_publication_and_removal_trigger_immediate_heartbeat
         "duplicate unchanged publication must coalesce with the effective removal",
     );
 
+    assert_eq!(
+        observer_cache.held_state_root_scan_count(),
+        0,
+        "complete named publications and removals must not scan the inventory root"
+    );
     shutdown(&env, run_handle).await;
+}
+
+#[tokio::test]
+async fn repeated_periodic_requests_do_not_invalidate_an_accepted_full_refresh() {
+    use super::super::super::home_cache_refresh::HomeCacheRefresh;
+    use runner_lifecycle::home_image_cache::HomeImagePrepareLockTestGate;
+
+    let temp = tempfile::tempdir().unwrap();
+    let home = HomePaths::with_root(temp.path().join("home"));
+    let paths = RunnerPaths::new(temp.path().join("runner"));
+    tokio::fs::create_dir_all(paths.base_dir()).await.unwrap();
+    let gate = HomeImagePrepareLockTestGate::default();
+    let cache = HomeImageCache::shared(paths.clone(), &home, "group-a")
+        .with_inventory_test_gate(gate.clone());
+    seed_home_cache_state(&cache, &paths, "periodic", "vm0/default", 1024 * 1024).await;
+    let snapshot = HomeCacheStateSnapshot::new();
+    let mut profiles = test_profiles();
+    profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
+    let mut refresh = HomeCacheRefresh::new(
+        Some(cache.clone()),
+        snapshot.clone(),
+        heartbeat_profiles(&profiles),
+    );
+    refresh.request_reconciliation();
+    gate.wait_entered(Duration::from_secs(5)).await;
+    for _ in 0..3 {
+        refresh.request_reconciliation();
+    }
+    gate.release();
+    assert!(
+        tokio::time::timeout(Duration::from_secs(5), refresh.wait())
+            .await
+            .unwrap()
+            .unwrap()
+            .is_some(),
+        "an accepted full refresh must still commit after later timer requests"
+    );
+    let states = snapshot.loaded_home_cache_snapshot().states;
+    assert_eq!(states.len(), 1);
+    assert_eq!(states[0].reuse_key, "periodic");
+    tokio::time::timeout(Duration::from_secs(5), refresh.drain())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(cache.held_state_root_scan_count(), 1);
+}
+
+#[tokio::test]
+async fn busy_key_saturation_reconciles_once_and_retires_stale_busy_history() {
+    use super::super::super::home_cache_refresh::HomeCacheRefresh;
+    use crate::heartbeat::refresh_initial_home_cache_snapshot;
+    use runner_host::paths::{home_image_cache_lock_path, scoped_home_image_cache_key};
+    use runner_lifecycle::home_image_cache::{HomeCacheChange, HomeImagePrepareLockTestGate};
+    use runner_types::types::MAX_HELD_HOME_STATES;
+    use std::collections::BTreeSet;
+
+    let temp = tempfile::tempdir().unwrap();
+    let home = HomePaths::with_root(temp.path().join("home"));
+    let paths = RunnerPaths::new(temp.path().join("runner"));
+    tokio::fs::create_dir_all(paths.base_dir()).await.unwrap();
+    let cache = HomeImageCache::shared(paths.clone(), &home, "group-a");
+    let snapshot = HomeCacheStateSnapshot::new();
+    let mut profiles = test_profiles();
+    profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
+    let profiles = heartbeat_profiles(&profiles);
+    refresh_initial_home_cache_snapshot(&snapshot, Some(&cache), &profiles).await;
+    assert!(snapshot.home_cache_loaded());
+    seed_home_cache_state(&cache, &paths, "still-busy", "vm0/default", 1024 * 1024).await;
+    let busy_key = scoped_home_image_cache_key("group-a", "vm0/default", "still-busy", 1024 * 1024);
+    let blocker =
+        runner_host::lock::acquire(home_image_cache_lock_path(&home.locks_dir(), &busy_key))
+            .await
+            .unwrap();
+    let gate = HomeImagePrepareLockTestGate::default();
+    let cache = cache.with_inventory_test_gate(gate.clone());
+    cache.reset_held_state_root_scan_count();
+    let mut refresh = HomeCacheRefresh::new(Some(cache.clone()), snapshot.clone(), profiles);
+
+    // Accumulate real busy observations in small FD-bounded batches. Each
+    // external holder then releases its lock without publishing metadata.
+    let keys = (0..MAX_HELD_HOME_STATES)
+        .map(|index| format!("{index:064x}"))
+        .collect::<Vec<_>>();
+    for keys in keys.chunks(32) {
+        let mut locks = Vec::new();
+        for key in keys {
+            tokio::fs::create_dir_all(home.home_image_cache_dir().join(key))
+                .await
+                .unwrap();
+            locks.push(
+                runner_host::lock::acquire(home_image_cache_lock_path(&home.locks_dir(), key))
+                    .await
+                    .unwrap(),
+            );
+        }
+        refresh.request(HomeCacheChange {
+            observed_at: tokio::time::Instant::now() - Duration::from_secs(3),
+            dirty_cache_keys: keys.iter().cloned().collect(),
+            requires_full_reconcile: false,
+        });
+        assert!(
+            tokio::time::timeout(Duration::from_secs(5), refresh.wait())
+                .await
+                .unwrap()
+                .unwrap()
+                .is_none()
+        );
+        drop(locks);
+    }
+    assert_eq!(cache.held_state_root_scan_count(), 0);
+
+    refresh.request(HomeCacheChange {
+        observed_at: tokio::time::Instant::now() - Duration::from_secs(3),
+        dirty_cache_keys: BTreeSet::from([busy_key.clone()]),
+        requires_full_reconcile: false,
+    });
+    assert!(
+        tokio::time::timeout(Duration::from_secs(5), refresh.wait())
+            .await
+            .unwrap()
+            .unwrap()
+            .is_none()
+    );
+    gate.wait_entered(Duration::from_secs(5)).await;
+    gate.release();
+    assert!(
+        tokio::time::timeout(Duration::from_secs(5), refresh.wait())
+            .await
+            .unwrap()
+            .unwrap()
+            .is_none(),
+        "the still-locked publication remains unavailable"
+    );
+    tokio::select! {
+        result = refresh.drain() => result.unwrap(),
+        () = gate.wait_entered(Duration::from_secs(5)) => {
+            panic!("a complete reconciliation must not launch another scan for stale busy keys");
+        }
+    }
+    assert!(snapshot.loaded_home_cache_snapshot().states.is_empty());
+    assert_eq!(cache.held_state_root_scan_count(), 1);
+
+    drop(blocker);
+    refresh.request(HomeCacheChange {
+        observed_at: tokio::time::Instant::now(),
+        dirty_cache_keys: BTreeSet::from([busy_key]),
+        requires_full_reconcile: false,
+    });
+    assert!(
+        tokio::time::timeout(Duration::from_secs(5), refresh.wait())
+            .await
+            .unwrap()
+            .unwrap()
+            .is_some()
+    );
+    let states = snapshot.loaded_home_cache_snapshot().states;
+    assert_eq!(states.len(), 1);
+    assert_eq!(states[0].reuse_key, "still-busy");
+    assert_eq!(cache.held_state_root_scan_count(), 1);
+    refresh.drain().await.unwrap();
+}
+
+#[tokio::test]
+async fn blocked_inventory_refresh_allows_heartbeat_and_claim_then_is_joined_on_shutdown() {
+    use runner_lifecycle::home_image_cache::HomeImagePrepareLockTestGate;
+
+    let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
+    let gate = HomeImagePrepareLockTestGate::default();
+    let cache = HomeImageCache::shared(
+        RunnerPaths::new(config.paths.base_dir.clone()),
+        &config.paths.home,
+        &config.runner.group,
+    )
+    .with_inventory_test_gate(gate.clone());
+    Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(cache.clone());
+    let (heartbeat_trigger, heartbeat_rx) = tokio::sync::mpsc::unbounded_channel();
+    config.test_hooks.manual_routine_heartbeat_rx = Some(heartbeat_rx);
+    // Allow bootstrap, then hold the independently accepted recovery scan.
+    gate.release();
+    let mut run_handle = tokio::spawn(run(config));
+    gate.wait_entered(Duration::from_secs(5)).await;
+    wait_discover_entered(&env, Duration::from_secs(5)).await;
+    tokio::time::pause();
+    tokio::time::advance(HOME_CACHE_RECONCILIATION_INITIAL_DELAY).await;
+    tokio::time::resume();
+    gate.wait_entered(Duration::from_secs(5)).await;
+
+    let before = env.handle.heartbeat_count();
+    heartbeat_trigger.send(()).unwrap();
+    assert!(
+        env.handle
+            .wait_heartbeat_past(before, Duration::from_secs(5))
+            .await,
+        "ordinary heartbeat must pass the held inventory scan"
+    );
+    let run_id = RunId::new_v4();
+    push_job(&env, run_id, "vm0/default", Some(minimal_context(run_id)));
+    assert!(
+        env.handle
+            .wait_completion(run_id, Duration::from_secs(5))
+            .await
+            .is_some(),
+        "unrelated claim and startup must pass the held inventory scan"
+    );
+    assert_eq!(env.handle.claim_candidates().len(), 1);
+
+    env.trigger_stopping().await;
+    tokio::select! {
+        result = &mut run_handle => panic!("shutdown abandoned accepted inventory work: {result:?}"),
+        () = env.start_observer.wait_for(Duration::from_secs(5), "inventory drain", |event| {
+            matches!(event, StartLoopEvent::HomeInventoryDrainEntered).then_some(())
+        }) => {}
+    }
+    assert!(!run_handle.is_finished());
+    gate.release();
+    assert_run_exits_within(
+        run_handle,
+        Duration::from_secs(5),
+        "inventory completion must release shutdown",
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -261,9 +488,8 @@ async fn home_cache_change_while_draining_is_preserved_after_resume() {
     observer_cache.reset_held_state_root_scan_count();
     let before_change = env.handle.heartbeat_count();
     let watcher_cursor = env.start_observer.cursor();
-    // Publish a complete entry in one watched operation. Creating the directory
-    // and committing metadata in place can be observed in separate batches,
-    // legitimately requesting two scans even though the snapshot is unchanged.
+    // Publish a complete entry in one watched operation. The named entry is
+    // authoritatively revalidated without a root scan, including while draining.
     tokio::fs::rename(
         publisher_home.home_image_cache_dir().join(&cache_key),
         home.home_image_cache_dir().join(&cache_key),
@@ -289,7 +515,7 @@ async fn home_cache_change_while_draining_is_preserved_after_resume() {
         .await,
         "a cache change consumed while draining should refresh the published snapshot",
     );
-    assert_eq!(observer_cache.held_state_root_scan_count(), 1);
+    assert_eq!(observer_cache.held_state_root_scan_count(), 0);
 
     env.resume();
     wait_status_mode(&status_path, "running", Duration::from_secs(5)).await;
@@ -325,7 +551,7 @@ async fn home_cache_change_while_draining_is_preserved_after_resume() {
     );
     assert_eq!(
         observer_cache.held_state_root_scan_count(),
-        1,
+        0,
         "the post-resume routine heartbeat should reuse the refreshed snapshot",
     );
 

@@ -13,6 +13,7 @@ use runner_lifecycle::home_image_cache::snapshot::HomeCacheStateSnapshot;
 use runner_storage::{SandboxOpRecord, SandboxOpReporter};
 use tracing::warn;
 
+use super::home_cache_refresh::{HomeCacheRefresh, refresh_bootstrap_change};
 use super::{RunnerError, RunnerResult};
 use crate::heartbeat::{HeartbeatProfile, refresh_initial_home_cache_snapshot};
 use crate::home_image_cache::{HomeCacheChange, HomeCacheWatcher, HomeImageCache};
@@ -21,6 +22,7 @@ type HomeCacheChangeFuture = BoxFuture<'static, (HomeCacheWatcher, RunnerResult<
 
 pub(super) struct HomeCacheObservation {
     next_change: Option<HomeCacheChangeFuture>,
+    refresh: HomeCacheRefresh,
 }
 
 pub(super) enum InitialHomeCacheObservation {
@@ -31,7 +33,9 @@ pub(super) enum InitialHomeCacheObservation {
 
 pub(super) enum HomeCacheObservationEvent {
     Change(HomeCacheChange),
+    Refreshed(HomeCacheChange),
     Unavailable(RunnerError),
+    RefreshFailed(RunnerError),
 }
 
 impl HomeCacheObservation {
@@ -78,7 +82,6 @@ impl HomeCacheObservation {
         if let Some(gate) = &test_hooks.after_initial_home_cache_scan {
             gate.enter_and_wait().await;
         }
-        debug_assert!(snapshot.home_cache_loaded());
         let mut relevant_keys = initial.loaded_cache_keys;
         relevant_keys.extend(initial.locked_commit_keys.iter().cloned());
         let mut change = match home_cache_watcher.as_mut() {
@@ -92,8 +95,8 @@ impl HomeCacheObservation {
                     home_cache_watcher = None;
                     Some(HomeCacheChange {
                         observed_at: tokio::time::Instant::now(),
-                        committed_cache_keys: BTreeSet::new(),
-                        selection_release_only: false,
+                        dirty_cache_keys: BTreeSet::new(),
+                        requires_full_reconcile: true,
                     })
                 }
             },
@@ -102,16 +105,26 @@ impl HomeCacheObservation {
         if !initial.locked_commit_keys.is_empty() {
             let locked_change = HomeCacheChange {
                 observed_at: tokio::time::Instant::now(),
-                committed_cache_keys: initial.locked_commit_keys,
-                selection_release_only: false,
+                dirty_cache_keys: initial.locked_commit_keys,
+                requires_full_reconcile: true,
             };
             match change.as_mut() {
                 Some(change) => change.merge(locked_change),
                 None => change = Some(locked_change),
             }
         }
+        if let Some(change) = &change {
+            refresh_bootstrap_change(
+                home_cache.cloned(),
+                snapshot.clone(),
+                profiles.clone(),
+                change.clone(),
+            )
+            .await;
+        }
         let observation = Self {
             next_change: home_cache_watcher.map(home_cache_change_future),
+            refresh: HomeCacheRefresh::new(home_cache.cloned(), snapshot.clone(), profiles.clone()),
         };
         let initialized = match change {
             Some(change) => InitialHomeCacheObservation::Change(change),
@@ -121,25 +134,57 @@ impl HomeCacheObservation {
         (observation, initialized)
     }
 
-    /// Borrow the retained continuation: losing select turns must not discard
-    /// kernel events already drained before asynchronous metadata classification.
+    pub(super) fn request_refresh(&mut self, change: HomeCacheChange) {
+        self.refresh.request(change);
+    }
+
+    pub(super) fn request_reconciliation(&mut self) {
+        self.refresh.request_reconciliation();
+    }
+
+    pub(super) fn stop_watching(&mut self) {
+        self.next_change = None;
+    }
+
+    pub(super) async fn drain(&mut self) -> RunnerResult<()> {
+        self.refresh.drain().await
+    }
+
+    /// Both observers survive losing reactor turns. No await separates a
+    /// selected completion from its rearm/retirement.
     pub(super) async fn wait(&mut self) -> HomeCacheObservationEvent {
-        let (watcher, result) = match self.next_change.as_mut() {
-            Some(future) => future.await,
-            None => std::future::pending().await,
-        };
-        // No await between completion and rearm/retirement. An unavailable
-        // observer stays pending; Reactor reconciles independently.
-        match result {
-            Ok(change) => {
-                self.next_change = Some(home_cache_change_future(watcher));
-                HomeCacheObservationEvent::Change(change)
-            }
-            Err(error) => {
-                self.next_change = None;
-                HomeCacheObservationEvent::Unavailable(error)
+        loop {
+            tokio::select! {
+                result = self.refresh.wait() => match result {
+                    Ok(Some(change)) => return HomeCacheObservationEvent::Refreshed(change),
+                    Ok(None) => continue,
+                    Err(error) => return HomeCacheObservationEvent::RefreshFailed(error),
+                },
+                result = next_watch(&mut self.next_change) => {
+                    let (watcher, result) = result;
+                    match result {
+                        Ok(change) => {
+                            self.next_change = Some(home_cache_change_future(watcher));
+                            return HomeCacheObservationEvent::Change(change);
+                        }
+                        Err(error) => {
+                            self.next_change = None;
+                            self.refresh.invalidate();
+                            return HomeCacheObservationEvent::Unavailable(error);
+                        }
+                    }
+                }
             }
         }
+    }
+}
+
+async fn next_watch(
+    next: &mut Option<HomeCacheChangeFuture>,
+) -> (HomeCacheWatcher, RunnerResult<HomeCacheChange>) {
+    match next {
+        Some(future) => future.await,
+        None => std::future::pending().await,
     }
 }
 
