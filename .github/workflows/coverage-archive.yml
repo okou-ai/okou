@@ -1,0 +1,228 @@
+name: Coverage archive validation
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/coverage-archive.yml
+      - .github/scripts/artifacts/coverage-archive.py
+      - .github/scripts/tests/coverage-archive-test.sh
+      - .github/scripts/tests/coverage_archive_test.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/coverage-archive.yml
+      - .github/scripts/artifacts/coverage-archive.py
+      - .github/scripts/tests/coverage-archive-test.sh
+      - .github/scripts/tests/coverage_archive_test.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: coverage-archive-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_PROFILE_TEST_DEBUG: line-tables-only
+  LLVM_PROFILE_FILE_NAME: crates-%b-%8m.profraw
+  COVERAGE_ARCHIVE_PRODUCER_ATTEMPT: ${{ github.run_attempt }}
+  COVERAGE_ARCHIVE_IMAGE: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+  KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+
+jobs:
+  produce:
+    runs-on: ubuntu-latest-8-cores
+    timeout-minutes: 30
+    outputs:
+      artifact-id: ${{ steps.transfer.outputs.artifact-id }}
+      attempt: ${{ steps.seal.outputs.attempt }}
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Setup R2 sccache
+        if: >-
+          github.event_name != 'pull_request' ||
+          (github.event.pull_request.user.login != 'dependabot[bot]' &&
+          github.event.pull_request.head.repo.full_name == github.repository)
+        uses: ./.github/actions/setup-r2-sccache
+        with:
+          architecture: x86_64
+          r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          r2-account-id: ${{ vars.R2_ACCOUNT_ID }}
+          r2-bucket-name: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: crates -> target
+          shared-key: coverage-line-tables-only
+          save-if: "false"
+
+      - name: Configure pinned Kerberos cache
+        run: echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
+
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
+          key: kerberos-native-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/*') }}
+
+      - name: Install coverage tools
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        with:
+          tool: cargo-llvm-cov@0.9.1,cargo-nextest@0.9.148
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          working-directory: crates/runner/mitm-addon
+          enable-cache: true
+
+      - name: Sync locked addon
+        working-directory: crates/runner/mitm-addon
+        run: uv sync --locked
+
+      - name: Run complete coverage control
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/coverage-archive"
+          cd crates
+          cargo llvm-cov nextest --all-targets --all-features --test-threads 8 --lcov --output-path "$RUNNER_TEMP/coverage-archive/control-lcov.info" --timings
+          cp target/llvm-cov-target/cargo-timings/cargo-timing.html "$RUNNER_TEMP/coverage-archive/control-cargo-timing.html"
+
+      - name: Record tested workload
+        working-directory: crates
+        run: |
+          set -euo pipefail
+          eval "$(cargo llvm-cov show-env --export-prefix)"
+          cargo nextest list --all-targets --all-features --target-dir "$GITHUB_WORKSPACE/crates/target/llvm-cov-target" --message-format json > "$RUNNER_TEMP/coverage-archive/control-tests.json"
+
+      - name: Archive validated instrumented programs
+        working-directory: crates
+        run: cargo llvm-cov nextest-archive --no-clean --all-targets --all-features --archive-file "$RUNNER_TEMP/coverage-archive/tests.tar.zst"
+
+      - name: Seal producer identity and bytes
+        id: seal
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/artifacts/coverage-archive.py seal "$RUNNER_TEMP/coverage-archive"
+          echo "attempt=$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+
+      - name: Transfer successful archive
+        id: transfer
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-archive-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/coverage-archive/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+      - name: Report peak memory
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/report-memory-peak
+
+  consume:
+    needs: produce
+    runs-on: ubuntu-latest-8-cores
+    timeout-minutes: 30
+    env:
+      COVERAGE_ARCHIVE_PRODUCER_ATTEMPT: ${{ needs.produce.outputs.attempt }}
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Setup R2 sccache
+        if: >-
+          github.event_name != 'pull_request' ||
+          (github.event.pull_request.user.login != 'dependabot[bot]' &&
+          github.event.pull_request.head.repo.full_name == github.repository)
+        uses: ./.github/actions/setup-r2-sccache
+        with:
+          architecture: x86_64
+          r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          r2-account-id: ${{ vars.R2_ACCOUNT_ID }}
+          r2-bucket-name: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+
+      - name: Configure pinned Kerberos cache
+        run: echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
+
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
+          key: kerberos-native-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/*') }}
+
+      - name: Install coverage tools
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        with:
+          tool: cargo-llvm-cov@0.9.1,cargo-nextest@0.9.148
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          working-directory: crates/runner/mitm-addon
+          enable-cache: true
+
+      - name: Sync locked addon
+        working-directory: crates/runner/mitm-addon
+        run: uv sync --locked
+
+      - name: Download current-run archive
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.produce.outputs.artifact-id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/coverage-archive/
+
+      - name: Verify current producer identity and bytes
+        run: python3 .github/scripts/artifacts/coverage-archive.py verify "$RUNNER_TEMP/coverage-archive"
+
+      - name: Execute restored tests with fresh coverage
+        working-directory: crates
+        run: |
+          set -euo pipefail
+          test ! -e target/llvm-cov-target
+          cargo llvm-cov nextest --archive-file "$RUNNER_TEMP/coverage-archive/tests.tar.zst" --test-threads 8 --lcov --output-path "$RUNNER_TEMP/restored-lcov.info"
+
+      - name: List restored workload without extracting again
+        working-directory: crates
+        run: |
+          set -euo pipefail
+          metadata="$GITHUB_WORKSPACE/crates/target/llvm-cov-target/target/nextest"
+          cargo nextest list --cargo-metadata "$metadata/cargo-metadata.json" --binaries-metadata "$metadata/binaries-metadata.json" --target-dir-remap "$GITHUB_WORKSPACE/crates/target/llvm-cov-target/target" --message-format json > "$RUNNER_TEMP/restored-tests.json"
+
+      - name: Compare complete tests and fresh coverage sources
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/artifacts/coverage-archive.py compare "$RUNNER_TEMP/coverage-archive" "$RUNNER_TEMP/restored-tests.json" "$RUNNER_TEMP/restored-lcov.info" | tee "$RUNNER_TEMP/archive-comparison.json"
+
+      - name: Retain consumer evidence
+        if: success() || failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-archive-consumer-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/coverage-archive/identity.json
+            ${{ runner.temp }}/restored-tests.json
+            ${{ runner.temp }}/restored-lcov.info
+            ${{ runner.temp }}/archive-comparison.json
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Report peak memory
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/report-memory-peak

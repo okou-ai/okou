@@ -15,6 +15,14 @@ CLI build and verification share `read-okou-cli-package-identity.py`, which read
 the bounded identity of the actual packaged bytes. Verification protects the
 producer/consumer boundary even when a producer already checked its output.
 
+`coverage-archive.py` seals and verifies the source/tool/current-run identity and
+bytes of an instrumented nextest archive. Its comparison checks every discovered
+test (including ignored/filter metadata and empty suites) and the fresh LCOV
+source set. The separate `coverage-archive.yml` producer and consumer execute the
+complete workload in separate jobs, without changing required Crates coverage
+or deploying a cross-run cache. Job steps expose control, export, transfer and
+restored execution costs; matching inventories alone do not prove a speedup.
+
 The App/Desktop fetch commands source `r2-copy.sh`. They own their temporary
 diagnostics and cleanup, and supply their distinct retry environment settings and
 artifact layouts. The helper copies one object, retries transient failures within

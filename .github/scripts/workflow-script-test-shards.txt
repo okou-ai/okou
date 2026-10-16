@@ -127,6 +127,7 @@
 4 runner-lifecycle-lock-test.sh
 4 runner-lifecycle-ownership-workflow-test.sh
 4 rust-coverage-cache-workflow-test.sh
+4 coverage-archive-test.sh
 4 toolchain-image-references-test.sh
 4 update-rollback-dashboard-body-test.sh
 4 verify-okou-app-artifact-test.sh
