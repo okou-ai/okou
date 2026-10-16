@@ -14,6 +14,7 @@ import {
   filesButton,
   filesMenuItem,
   filesPath,
+  filesTab,
   listing,
   navigationListing,
   openFiles,
@@ -22,7 +23,7 @@ import {
 
 const context = testContext();
 
-test("Closing and reconnecting reload the selected same-Run directory", async () => {
+test("Returning to Files and reconnecting reload the selected same-Run directory", async () => {
   const fixture = await setupFilesPage(context, { handler: navigationListing });
   let panel = await openFiles();
   await expect(
@@ -32,7 +33,7 @@ test("Closing and reconnecting reload the selected same-Run directory", async ()
   await expect(
     within(panel).findByText("workspace.txt"),
   ).resolves.toBeInTheDocument();
-  click(filesButton("Close files", panel));
+  click(filesTab("Steps"));
   await waitFor(() => {
     expect(screen.queryByRole("region", { name: "Files" })).toBeNull();
   });

@@ -291,10 +291,19 @@ export function createBddApi(context: TestContext) {
 
     async bootstrapLimitedFreeOnboarding(
       nextUser: ApiTestUser,
-      options: OnboardingBootstrapOptions,
+      options: OnboardingBootstrapOptions & { readonly isolatePg?: boolean },
     ): Promise<string> {
       const headers = authenticate(nextUser);
-      await accept(agentsClient().list({ headers }), [200]);
+      if (options.isolatePg) {
+        const app = await setupApp({
+          context,
+          routes: agentsRoutes,
+          isolatePg: true,
+        });
+        await accept(app(agentsMainContract).list({ headers }), [200]);
+      } else {
+        await accept(agentsClient().list({ headers }), [200]);
+      }
       const statusResponse = await accept(
         onboardingStatusClient().getStatus({
           headers,

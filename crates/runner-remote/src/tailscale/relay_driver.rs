@@ -165,7 +165,9 @@ impl Driver {
                     .acquire_owned()
                     .await
                     .map_err(|_| Failure::Cancelled)?;
-                let packet = relay.receive().await?;
+                let packet =
+                    super::evidence::observe(super::evidence::Stage::RelayRead, relay.receive())
+                        .await?;
                 // One bounded current SDK packet can wait behind the finite
                 // receive queue. Stop reading before any next allocation.
                 self.incoming
@@ -183,7 +185,11 @@ impl Driver {
                 if !packet.stamp.current() {
                     continue;
                 }
-                let result = relay.send(packet).await;
+                let result = super::evidence::observe(
+                    super::evidence::Stage::RelayWrite,
+                    relay.send(packet),
+                )
+                .await;
                 if result.is_err() && relay.poisoned() {
                     return result;
                 }

@@ -124,7 +124,7 @@
         "other": "其他",
         "parentFolders": "上级文件夹",
         "pending": "排队中的运行开始后即可浏览文件。",
-        "readonly": "仅浏览当前运行的文件。关闭面板会释放连接。",
+        "readonly": "仅浏览当前运行的文件。",
         "refresh": "刷新",
         "retry": "重试",
         "root": "根目录",
@@ -1771,6 +1771,7 @@
       "selectModel": "选择模型",
       "slashPanel": {
         "browseAll": "浏览全部模板",
+        "make": "制作",
         "useTemplate": "使用模板 {{title}}"
       },
       "temporarilySwitchTo": "临时切换到",
@@ -1780,7 +1781,8 @@
         "loading": "正在加载工作流…",
         "manage": "管理工作流",
         "newWorkflow": "新建工作流",
-        "showMore": "再显示 {{total}} 个"
+        "showMore": "再显示 {{total}} 个",
+        "title": "工作流"
       }
     },
     "computerUse": {
@@ -4009,6 +4011,7 @@
   "onboarding": {
     "common": {
       "next": "下一步",
+      "skip": "跳过",
       "stepProgress": "第 {{current}} 步，共 {{total}} 步"
     },
     "documentTitles": {

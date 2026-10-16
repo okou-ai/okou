@@ -652,7 +652,7 @@ export const upsertPersonalModelProviderAccount$ = command(
     const db = set(writeDb$);
     const identities =
       args.type === CLAUDE_CODE_TYPE
-        ? await prepareClaudeAccountIdentities(db, args, signal)
+        ? await set(prepareClaudeAccountIdentities$, args, signal)
         : null;
     signal.throwIfAborted();
     const expiryBindings = new Set<string | null>();
@@ -692,58 +692,60 @@ function hasClaudeIdentity(identity: PersonalProviderAccountMetadata): boolean {
 
 /** Profile identity for older Claude accounts is fetched outside any
  * transaction. */
-async function prepareClaudeAccountIdentities(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly featureSwitchContext: FeatureSwitchContext;
+const prepareClaudeAccountIdentities$ = command(
+  async (
+    { get },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly featureSwitchContext: FeatureSwitchContext;
+    },
+    signal: AbortSignal,
+  ): Promise<ReadonlyMap<string, PersonalProviderAccountMetadata> | null> => {
+    const rows = await get(db$)
+      .select({
+        account: modelProviderAccounts,
+        encryptedValue: modelProviderAccountSecrets.encryptedValue,
+      })
+      .from(modelProviderAccounts)
+      .innerJoin(
+        modelProviderAccountSecrets,
+        eq(
+          modelProviderAccountSecrets.modelProviderAccountId,
+          modelProviderAccounts.id,
+        ),
+      )
+      .where(
+        and(
+          eq(modelProviderAccounts.orgId, args.orgId),
+          eq(modelProviderAccounts.userId, args.userId),
+          eq(modelProviderAccounts.type, CLAUDE_CODE_TYPE),
+          isNull(modelProviderAccounts.disconnectedAt),
+          eq(modelProviderAccountSecrets.name, "CLAUDE_CODE_OAUTH_TOKEN"),
+        ),
+      );
+    signal.throwIfAborted();
+    const identities = new Map<string, PersonalProviderAccountMetadata>();
+    for (const row of rows) {
+      if (hasClaudeIdentity(row.account)) {
+        continue;
+      }
+      const accessToken = await decryptStoredSecretValue(
+        row.encryptedValue,
+        args.featureSwitchContext,
+      );
+      signal.throwIfAborted();
+      const result = await settle(
+        fetchClaudeCodeProfileMetadata({ accessToken }, signal),
+      );
+      signal.throwIfAborted();
+      if (result.ok && hasClaudeIdentity(result.value)) {
+        identities.set(row.account.id, result.value);
+      }
+    }
+    return identities.size === 0 ? null : identities;
   },
-  signal: AbortSignal,
-): Promise<ReadonlyMap<string, PersonalProviderAccountMetadata> | null> {
-  const rows = await db
-    .select({
-      account: modelProviderAccounts,
-      encryptedValue: modelProviderAccountSecrets.encryptedValue,
-    })
-    .from(modelProviderAccounts)
-    .innerJoin(
-      modelProviderAccountSecrets,
-      eq(
-        modelProviderAccountSecrets.modelProviderAccountId,
-        modelProviderAccounts.id,
-      ),
-    )
-    .where(
-      and(
-        eq(modelProviderAccounts.orgId, args.orgId),
-        eq(modelProviderAccounts.userId, args.userId),
-        eq(modelProviderAccounts.type, CLAUDE_CODE_TYPE),
-        isNull(modelProviderAccounts.disconnectedAt),
-        eq(modelProviderAccountSecrets.name, "CLAUDE_CODE_OAUTH_TOKEN"),
-      ),
-    );
-  signal.throwIfAborted();
-  const identities = new Map<string, PersonalProviderAccountMetadata>();
-  for (const row of rows) {
-    if (hasClaudeIdentity(row.account)) {
-      continue;
-    }
-    const accessToken = await decryptStoredSecretValue(
-      row.encryptedValue,
-      args.featureSwitchContext,
-    );
-    signal.throwIfAborted();
-    const result = await settle(
-      fetchClaudeCodeProfileMetadata({ accessToken }, signal),
-    );
-    signal.throwIfAborted();
-    if (result.ok && hasClaudeIdentity(result.value)) {
-      identities.set(row.account.id, result.value);
-    }
-  }
-  return identities.size === 0 ? null : identities;
-}
+);
 
 function exactConnectedPersonalAccountCondition(args: {
   readonly orgId: string;
@@ -910,7 +912,7 @@ export const disconnectPersonalModelProviderAccounts$ = command(
     const providerId = first.modelProviderId;
     const identities =
       first.type === CLAUDE_CODE_TYPE
-        ? await prepareClaudeAccountIdentities(db, args, signal)
+        ? await set(prepareClaudeAccountIdentities$, args, signal)
         : null;
     signal.throwIfAborted();
     const result = await withAccountConflict(

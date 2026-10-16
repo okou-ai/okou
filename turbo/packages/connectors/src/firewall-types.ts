@@ -2908,20 +2908,21 @@ function validateBaseUrlParams(base: string, serviceName: string): string {
   const canonicalHostSegments = splitAuthorityHostSegments(
     canonicalAuthority.normalizedHost,
   );
+  const parsedHostSegments = canonicalHostSegments.map(parseSegment);
+  const minimumHostSegments = parsedHostSegments.filter((segment) => {
+    return segment.kind !== "param" || segment.greedy !== "*";
+  }).length;
   if (
     hasBaseUrlParams(canonicalAuthority.normalizedHost) &&
-    canonicalHostSegments.length <= 4 &&
-    canonicalHostSegments.some((segment) => {
-      const parsed = parseSegment(segment);
-      return parsed.kind === "literal" && isIpv4NumberComponent(parsed.value);
+    minimumHostSegments <= 4 &&
+    parsedHostSegments.some((segment) => {
+      return segment.kind === "literal" && isIpv4NumberComponent(segment.value);
     }) &&
-    canonicalHostSegments.every((segment) => {
-      const parsed = parseSegment(segment);
+    parsedHostSegments.every((segment) => {
       return (
-        (parsed.kind === "literal" && isIpv4NumberComponent(parsed.value)) ||
-        (parsed.kind === "param" &&
-          parsed.prefix === "" &&
-          parsed.suffix === "")
+        (segment.kind === "literal" && isIpv4NumberComponent(segment.value)) ||
+        (segment.kind === "param" &&
+          /^[0-9]*$/.test(segment.prefix + segment.suffix))
       );
     })
   ) {

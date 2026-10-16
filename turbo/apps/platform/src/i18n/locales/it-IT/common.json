@@ -126,7 +126,7 @@
         "other": "Altro",
         "parentFolders": "Cartelle superiori",
         "pending": "I file saranno disponibili all’avvio dell’esecuzione in coda.",
-        "readonly": "File di sola lettura dell’esecuzione corrente. Chiudendo il pannello si libera la connessione.",
+        "readonly": "File di sola lettura dell’esecuzione corrente.",
         "refresh": "Aggiorna",
         "retry": "Riprova",
         "root": "Cartella radice",
@@ -1803,6 +1803,7 @@
       "selectModel": "Seleziona modello",
       "slashPanel": {
         "browseAll": "Sfoglia tutti i modelli",
+        "make": "Crea",
         "useTemplate": "Usa il modello {{title}}"
       },
       "temporarilySwitchTo": "Passa temporaneamente a",
@@ -1812,7 +1813,8 @@
         "loading": "Caricamento flussi di lavoro...",
         "manage": "Gestisci flussi di lavoro",
         "newWorkflow": "Nuovo flusso di lavoro",
-        "showMore": "Mostra altri {{total}}"
+        "showMore": "Mostra altri {{total}}",
+        "title": "Flussi di lavoro"
       }
     },
     "computerUse": {
@@ -4086,6 +4088,7 @@
   "onboarding": {
     "common": {
       "next": "Avanti",
+      "skip": "Salta",
       "stepProgress": "Passaggio {{current}} di {{total}}"
     },
     "documentTitles": {

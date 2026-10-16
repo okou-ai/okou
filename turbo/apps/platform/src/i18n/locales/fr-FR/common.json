@@ -126,7 +126,7 @@
         "other": "Autre",
         "parentFolders": "Dossiers parents",
         "pending": "Les fichiers seront disponibles au démarrage de l’exécution en attente.",
-        "readonly": "Fichiers en lecture seule de l’exécution actuelle. Fermer ce panneau libère la connexion.",
+        "readonly": "Fichiers en lecture seule de l’exécution actuelle.",
         "refresh": "Actualiser",
         "retry": "Réessayer",
         "root": "Dossier racine",
@@ -1803,6 +1803,7 @@
       "selectModel": "Sélectionner le modèle",
       "slashPanel": {
         "browseAll": "Parcourir tous les modèles",
+        "make": "Créer",
         "useTemplate": "Utiliser le modèle {{title}}"
       },
       "temporarilySwitchTo": "Passer temporairement à",
@@ -1812,7 +1813,8 @@
         "loading": "Chargement des workflows...",
         "manage": "Gérer les workflows",
         "newWorkflow": "Nouveau workflow",
-        "showMore": "Afficher {{total}} de plus"
+        "showMore": "Afficher {{total}} de plus",
+        "title": "Workflows"
       }
     },
     "computerUse": {
@@ -4086,6 +4088,7 @@
   "onboarding": {
     "common": {
       "next": "Suivant",
+      "skip": "Passer",
       "stepProgress": "Étape {{current}} sur {{total}}"
     },
     "documentTitles": {

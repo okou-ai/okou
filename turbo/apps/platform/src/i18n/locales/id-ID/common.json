@@ -124,7 +124,7 @@
         "other": "Lainnya",
         "parentFolders": "Folder induk",
         "pending": "File tersedia saat proses dalam antrean dimulai.",
-        "readonly": "File hanya baca dari proses saat ini. Menutup panel akan melepaskan koneksi.",
+        "readonly": "File hanya baca dari proses saat ini.",
         "refresh": "Segarkan",
         "retry": "Coba lagi",
         "root": "Folder akar",
@@ -1771,6 +1771,7 @@
       "selectModel": "Pilih model",
       "slashPanel": {
         "browseAll": "Jelajahi semua templat",
+        "make": "Buat",
         "useTemplate": "Gunakan templat {{title}}"
       },
       "temporarilySwitchTo": "Beralih sementara ke",
@@ -1780,7 +1781,8 @@
         "loading": "Memuat alur kerja...",
         "manage": "Kelola alur kerja",
         "newWorkflow": "Alur kerja baru",
-        "showMore": "Tampilkan {{total}} lagi"
+        "showMore": "Tampilkan {{total}} lagi",
+        "title": "Alur kerja"
       }
     },
     "computerUse": {
@@ -4009,6 +4011,7 @@
   "onboarding": {
     "common": {
       "next": "Berikutnya",
+      "skip": "Lewati",
       "stepProgress": "Langkah {{current}} dari {{total}}"
     },
     "documentTitles": {

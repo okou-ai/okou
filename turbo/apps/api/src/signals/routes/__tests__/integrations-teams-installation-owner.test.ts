@@ -125,7 +125,10 @@ describe("Teams installation read ownership", () => {
   it("sends a personal card using the publicly connected installation", async () => {
     const owner = createPublicTeamsDispatchFixture(context);
     await owner.run(async () => {
-      const fixture = await owner.create({ withDefaultAgent: true });
+      const fixture = await owner.create({
+        withDefaultAgent: true,
+        isolatePg: true,
+      });
       const installation = fixture.installation;
       const conversationId = `a:personal-${installation.teamsUserId}`;
       const requests = captureTeamsRequests(
@@ -184,7 +187,10 @@ describe("Teams installation read ownership", () => {
   it("uploads public request bytes and delivers a personal attachment", async () => {
     const owner = createPublicTeamsDispatchFixture(context);
     await owner.run(async () => {
-      const fixture = await owner.create({ withDefaultAgent: true });
+      const fixture = await owner.create({
+        withDefaultAgent: true,
+        isolatePg: true,
+      });
       const installation = fixture.installation;
       const conversationId = `a:personal-${installation.teamsUserId}`;
       const requests = captureTeamsRequests(
@@ -280,7 +286,10 @@ describe("Teams installation read ownership", () => {
   it("rejects an authenticated message with both target forms", async () => {
     const owner = createPublicTeamsDispatchFixture(context);
     await owner.run(async () => {
-      const fixture = await owner.create({ withDefaultAgent: true });
+      const fixture = await owner.create({
+        withDefaultAgent: true,
+        isolatePg: true,
+      });
       const requests = captureTeamsRequests(
         fixture.installation.serviceUrl,
         "unused",
@@ -308,7 +317,10 @@ describe("Teams installation read ownership", () => {
   it("rejects an authenticated upload with both target forms", async () => {
     const owner = createPublicTeamsDispatchFixture(context);
     await owner.run(async () => {
-      const fixture = await owner.create({ withDefaultAgent: true });
+      const fixture = await owner.create({
+        withDefaultAgent: true,
+        isolatePg: true,
+      });
       const requests = captureTeamsRequests(
         fixture.installation.serviceUrl,
         "unused",
@@ -338,6 +350,7 @@ describe("Teams installation read ownership", () => {
     await owner.run(async () => {
       await createBddApi(context).bootstrapLimitedFreeOnboarding(owner.actor, {
         displayName: "No Teams installation",
+        isolatePg: true,
       });
       const response = await accept(
         setupApp({ context, routes: integrationsTeamsMessageRoutes })(
@@ -363,6 +376,7 @@ describe("Teams installation read ownership", () => {
     await owner.run(async () => {
       await createBddApi(context).bootstrapLimitedFreeOnboarding(owner.actor, {
         displayName: "No Teams installation",
+        isolatePg: true,
       });
       const response = await accept(
         setupApp({ context, routes: integrationsTeamsUploadCompleteRoutes })(
@@ -385,7 +399,10 @@ describe("Teams target command ownership", () => {
   it("reports a disconnected personal message recipient while retaining the installation", async () => {
     const owner = createPublicTeamsDispatchFixture(context);
     await owner.run(async () => {
-      const fixture = await owner.create({ withDefaultAgent: true });
+      const fixture = await owner.create({
+        withDefaultAgent: true,
+        isolatePg: true,
+      });
       await owner.disconnect(fixture);
       expectDisconnectedInstallation(
         await owner.status(fixture),
@@ -413,7 +430,10 @@ describe("Teams target command ownership", () => {
   it("materializes an upload before resolving a disconnected personal recipient", async () => {
     const owner = createPublicTeamsDispatchFixture(context);
     await owner.run(async () => {
-      const fixture = await owner.create({ withDefaultAgent: true });
+      const fixture = await owner.create({
+        withDefaultAgent: true,
+        isolatePg: true,
+      });
       await owner.disconnect(fixture);
       expectDisconnectedInstallation(
         await owner.status(fixture),
@@ -478,7 +498,10 @@ describe("Teams target command ownership", () => {
   it("sends to an explicit Teams user after the authenticated user disconnects", async () => {
     const owner = createPublicTeamsDispatchFixture(context);
     await owner.run(async () => {
-      const fixture = await owner.create({ withDefaultAgent: true });
+      const fixture = await owner.create({
+        withDefaultAgent: true,
+        isolatePg: true,
+      });
       const installation = fixture.installation;
       await owner.disconnect(fixture);
       expectDisconnectedInstallation(
@@ -525,7 +548,10 @@ describe("Teams explicit target delivery", () => {
   it("uploads to an explicit Teams user after the authenticated user disconnects", async () => {
     const owner = createPublicTeamsDispatchFixture(context);
     await owner.run(async () => {
-      const fixture = await owner.create({ withDefaultAgent: true });
+      const fixture = await owner.create({
+        withDefaultAgent: true,
+        isolatePg: true,
+      });
       const installation = fixture.installation;
       await owner.disconnect(fixture);
       expectDisconnectedInstallation(
@@ -601,7 +627,10 @@ describe("Teams explicit target delivery", () => {
   it("replies to an explicit Teams activity after the authenticated user disconnects", async () => {
     const owner = createPublicTeamsDispatchFixture(context);
     await owner.run(async () => {
-      const fixture = await owner.create({ withDefaultAgent: true });
+      const fixture = await owner.create({
+        withDefaultAgent: true,
+        isolatePg: true,
+      });
       const installation = fixture.installation;
       await owner.disconnect(fixture);
       expectDisconnectedInstallation(
@@ -654,7 +683,10 @@ describe("Teams explicit target delivery", () => {
   it("uploads a reply to an explicit Teams activity after disconnect", async () => {
     const owner = createPublicTeamsDispatchFixture(context);
     await owner.run(async () => {
-      const fixture = await owner.create({ withDefaultAgent: true });
+      const fixture = await owner.create({
+        withDefaultAgent: true,
+        isolatePg: true,
+      });
       const installation = fixture.installation;
       await owner.disconnect(fixture);
       expectDisconnectedInstallation(

@@ -119,7 +119,11 @@ export async function createPgliteSnapshot(): Promise<Blob> {
         );
         if (sql.includes("-- vm0:non-transactional")) {
           for (const statement of sql.split("--> statement-breakpoint")) {
-            await engine.exec(statement);
+            if (statement.includes("-- vm0:batch-by-uuid")) {
+              await replayUuidBatch(statement, name);
+            } else {
+              await engine.exec(statement);
+            }
           }
         } else if (
           /\b(?:CREATE|DROP) (?:UNIQUE )?INDEX CONCURRENTLY\b/.test(sql)

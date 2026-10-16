@@ -79,3 +79,52 @@ async fn an_allowed_length_with_a_truncated_body_reports_unexpected_eof() {
     );
     assert!(output.is_empty());
 }
+
+#[tokio::test]
+async fn interleaved_map_readers_retain_only_their_own_failure_and_disabled_collects_nothing() {
+    use crate::tailscale::evidence::{Detail, Stage, Status, Trace};
+    let first = Trace::new(true);
+    let second = Trace::new(true);
+    let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(2));
+    let a = first.clone().scope(async {
+        let mut reader = MapReader::new(Cursor::new(2u32.to_le_bytes()));
+        barrier.wait().await;
+        let mut output = Vec::new();
+        assert_eq!(
+            reader.read_to_end(&mut output).await.unwrap_err().kind(),
+            io::ErrorKind::UnexpectedEof
+        );
+        assert!(output.is_empty());
+    });
+    let b = second.clone().scope(async {
+        let mut reader = MapReader::new(Cursor::new(1_048_577u32.to_le_bytes()));
+        barrier.wait().await;
+        let mut output = Vec::new();
+        assert_eq!(
+            reader.read_to_end(&mut output).await.unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+        assert!(output.is_empty());
+    });
+    tokio::join!(a, b);
+    let a = first.snapshot().unwrap();
+    let b = second.snapshot().unwrap();
+    assert_ne!(a.attempt_id, b.attempt_id);
+    assert!(a.steps.iter().any(|s| s.stage == Stage::MapBody
+        && s.status == Status::Failed
+        && s.detail == Detail::Truncated));
+    assert!(b.steps.iter().any(|s| s.stage == Stage::MapHeader
+        && s.status == Status::Failed
+        && s.detail == Detail::Limit));
+    assert!(!b.steps.iter().any(|s| s.stage == Stage::MapBody));
+    assert!(Trace::current().snapshot().is_none());
+    let disabled = Trace::new(false);
+    disabled
+        .clone()
+        .scope(async {
+            let mut reader = MapReader::new(Cursor::new(0u32.to_le_bytes()));
+            assert!(reader.read_u32_le().await.is_err());
+        })
+        .await;
+    assert!(disabled.snapshot().is_none());
+}

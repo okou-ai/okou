@@ -379,6 +379,7 @@ struct FirewallRuleSegmentParam<'a> {
 }
 
 const DNS_LABEL_MAX_LENGTH: usize = 63;
+const IPV4_MAX_HOST_SEGMENTS: usize = 4;
 
 fn validate_firewall_permission_rule(rule: &str, allow_aws_predicates: bool) -> Result<(), String> {
     let Some((method, remainder)) = rule.split_once(' ') else {
@@ -922,6 +923,9 @@ fn validate_parameterized_firewall_base_host(
     }
 
     let mut has_static_segment = false;
+    let mut has_host_parameter = false;
+    let mut minimum_host_segments = segments.len();
+    let mut ipv4_capable = true;
     let mut materialized_host = String::with_capacity(host.len());
     for (index, segment) in segments.iter().enumerate() {
         if segment.is_empty() {
@@ -931,6 +935,7 @@ fn validate_parameterized_firewall_base_host(
             materialized_host.push('.');
         }
         if let Some(param) = parse_firewall_rule_segment(segment)? {
+            has_host_parameter = true;
             if !param_names.insert(param.name.to_string()) {
                 return Err(format!(
                     "duplicate parameter name {:?} in base URL host",
@@ -951,17 +956,29 @@ fn validate_parameterized_firewall_base_host(
             }
             validate_parameterized_firewall_base_host_literal(param.prefix)?;
             validate_parameterized_firewall_base_host_literal(param.suffix)?;
+            if param.greedy && segment.ends_with("*}") {
+                minimum_host_segments -= 1;
+            }
+            ipv4_capable &= param
+                .prefix
+                .bytes()
+                .chain(param.suffix.bytes())
+                .all(|byte| byte.is_ascii_digit());
             materialized_host.push_str(param.prefix);
             materialized_host.push('x');
             materialized_host.push_str(param.suffix);
         } else {
             validate_parameterized_firewall_base_host_literal(segment)?;
             has_static_segment = true;
+            ipv4_capable &= crate::firewall_hostname_policy::is_ipv4_literal_like(segment);
             materialized_host.push_str(segment);
         }
     }
     if !has_static_segment {
         return Err("base URL host must have at least one static segment".to_string());
+    }
+    if has_host_parameter && minimum_host_segments <= IPV4_MAX_HOST_SEGMENTS && ipv4_capable {
+        return Err("base URL host must not be an IPv4 parameter pattern".to_string());
     }
     if has_trailing_dot {
         materialized_host.push('.');

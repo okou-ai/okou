@@ -104,6 +104,20 @@ impl Core {
         cancelled: tokio_util::sync::CancellationToken,
         lease: Option<super::Lease>,
     ) -> Result<oneshot::Receiver<Result<Stream, Failure>>, Failure> {
+        let observation =
+            super::evidence::Observation::start(super::evidence::Stage::PeerSelection);
+        let result = self.dial_owned(target, port, cancelled, lease);
+        observation.finish(result.is_ok());
+        result
+    }
+
+    fn dial_owned(
+        &mut self,
+        target: &str,
+        port: u16,
+        cancelled: tokio_util::sync::CancellationToken,
+        lease: Option<super::Lease>,
+    ) -> Result<oneshot::Receiver<Result<Stream, Failure>>, Failure> {
         self.peers.maintain()?;
         self.retire();
         let local_port = self.next_port.ok_or(Failure::ResourceExhausted)?;
@@ -135,6 +149,9 @@ impl Core {
             }
         }
         self.next_port = local_port.checked_add(1);
+        if let Some(region) = self.peers.region(&binding) {
+            super::evidence::Trace::current().region(region.0.get());
+        }
         self.peers.endpoint(
             &binding,
             UnderlayTransportId(1),

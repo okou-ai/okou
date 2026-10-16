@@ -404,12 +404,8 @@ function SlackCard({ displayName }: { displayName: string }) {
             isConnected={isConnected}
             isInstalled={isInstalled}
             isAdmin={isAdmin}
-            installUrl={
-              slackData?.installUrl ? INTEGRATION_SETTINGS_PATHS.slack : null
-            }
-            connectUrl={
-              slackData?.connectUrl ? INTEGRATION_SETTINGS_PATHS.slack : null
-            }
+            installUrl={slackData?.installUrl}
+            connectUrl={slackData?.connectUrl}
             connectedDetail={slackData?.workspaceName}
             connectedTestId="slack-connected-indicator"
             installTestId="slack-install-button"
@@ -436,11 +432,7 @@ function SlackCard({ displayName }: { displayName: string }) {
         </div>
 
         <PermissionWarning
-          reinstallUrl={
-            scopeMismatch && isAdmin && reinstallUrl
-              ? INTEGRATION_SETTINGS_PATHS.slack
-              : null
-          }
+          reinstallUrl={scopeMismatch && isAdmin ? reinstallUrl : null}
           message={t(($) => {
             return $.works.slack.permissionsUpdated;
           })}

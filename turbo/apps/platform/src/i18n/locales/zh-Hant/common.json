@@ -124,7 +124,7 @@
         "other": "其他",
         "parentFolders": "上層資料夾",
         "pending": "排隊中的執行開始後即可瀏覽檔案。",
-        "readonly": "僅瀏覽目前執行的檔案。關閉面板會釋放連線。",
+        "readonly": "僅瀏覽目前執行的檔案。",
         "refresh": "重新整理",
         "retry": "重試",
         "root": "根目錄",
@@ -1771,6 +1771,7 @@
       "selectModel": "選擇模型",
       "slashPanel": {
         "browseAll": "瀏覽全部模板",
+        "make": "製作",
         "useTemplate": "使用模板 {{title}}"
       },
       "temporarilySwitchTo": "臨時切換到",
@@ -1780,7 +1781,8 @@
         "loading": "正在載入工作流…",
         "manage": "管理工作流",
         "newWorkflow": "新增工作流",
-        "showMore": "再顯示 {{total}} 個"
+        "showMore": "再顯示 {{total}} 個",
+        "title": "工作流"
       }
     },
     "computerUse": {
@@ -4009,6 +4011,7 @@
   "onboarding": {
     "common": {
       "next": "下一步",
+      "skip": "跳過",
       "stepProgress": "第 {{current}} 步，共 {{total}} 步"
     },
     "documentTitles": {

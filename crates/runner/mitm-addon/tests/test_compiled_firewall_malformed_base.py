@@ -513,10 +513,22 @@ def test_malformed_parameterized_base_query_or_fragment_respects_base_path_scope
         ("https://{sub}.github.com:99999", REPO_URL),
         ("https://127.{octet}.0.1", "https://127.0.0.1/repos/org/repo"),
         ("https://{a}.0.0.1", "https://127.0.0.1/repos/org/repo"),
+        ("https://{a+}.0.1", "https://127.0.0.1/repos/org/repo"),
+        ("https://{a*}.0.1", "https://127.0.0.1/repos/org/repo"),
+        ("https://{a}.{b}.0.1", "https://127.0.0.1/repos/org/repo"),
+        ("https://127.0.{a}.{b}", "https://127.0.0.1/repos/org/repo"),
+        ("https://{prefix}7.0.0.1", "https://127.0.0.1/repos/org/repo"),
+        ("https://127.0.0.1{suffix}", "https://127.0.0.11/repos/org/repo"),
+        ("https://1{octet}7.0.0.1", "https://127.0.0.1/repos/org/repo"),
+        ("https://{sub*}.127.0.0.1", "https://127.0.0.1/repos/org/repo"),
+        ("https://{octets+}.0.0.{suffix}1", "https://127.0.0.11/repos/org/repo"),
         ("https://\u212a.example", "https://k.example/repos/org/repo"),
     ],
 )
 def test_malformed_base_authority_fails_closed_after_base_match(base, url):
+    assert not matching.firewall_base_config_is_valid(base)
+    assert matching.match_base_url(url, base) is None
+
     compiled_firewalls = compile_firewalls_or_fail(_github_firewalls(base))
     policies = _github_policies()
 

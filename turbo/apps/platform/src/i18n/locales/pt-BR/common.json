@@ -126,7 +126,7 @@
         "other": "Outro",
         "parentFolders": "Pastas superiores",
         "pending": "Os arquivos estarão disponíveis quando a execução na fila começar.",
-        "readonly": "Arquivos somente para leitura da execução atual. Fechar o painel libera a conexão.",
+        "readonly": "Arquivos somente para leitura da execução atual.",
         "refresh": "Atualizar",
         "retry": "Tentar novamente",
         "root": "Pasta raiz",
@@ -1803,6 +1803,7 @@
       "selectModel": "Selecionar modelo",
       "slashPanel": {
         "browseAll": "Ver todos os modelos",
+        "make": "Criar",
         "useTemplate": "Usar o modelo {{title}}"
       },
       "temporarilySwitchTo": "Mudar temporariamente para",
@@ -1812,7 +1813,8 @@
         "loading": "Carregando fluxos de trabalho...",
         "manage": "Gerenciar fluxos de trabalho",
         "newWorkflow": "Novo fluxo de trabalho",
-        "showMore": "Mostrar mais {{total}}"
+        "showMore": "Mostrar mais {{total}}",
+        "title": "Fluxos de trabalho"
       }
     },
     "computerUse": {
@@ -4086,6 +4088,7 @@
   "onboarding": {
     "common": {
       "next": "Próximo",
+      "skip": "Pular",
       "stepProgress": "Passo {{current}} de {{total}}"
     },
     "documentTitles": {

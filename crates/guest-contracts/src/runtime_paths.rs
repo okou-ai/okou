@@ -1006,10 +1006,21 @@ fn validate_replace_target(parent: &OwnedFd, name: &OsStr, path: &Path) -> io::R
 }
 
 #[cfg(unix)]
+fn sync_private_replacement_directory(parent: &OwnedFd) -> io::Result<()> {
+    // SAFETY: `parent` owns a live directory descriptor.
+    if unsafe { libc::fsync(parent.as_raw_fd()) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
 fn replace_private_atomic_unix(
     path: &Path,
     bytes: &[u8],
     target: PrivateFileReplacementTarget,
+    sync_file: impl FnOnce(&File) -> io::Result<()>,
+    sync_directory: impl FnOnce(&OwnedFd) -> io::Result<()>,
 ) -> io::Result<()> {
     let name = file_name(path)?;
     let name_c = component_cstring(name, path)?;
@@ -1043,7 +1054,7 @@ fn replace_private_atomic_unix(
     let operation = (|| {
         set_file_private(&file)?;
         file.write_all(bytes)?;
-        file.sync_all()?;
+        sync_file(&file)?;
         // SAFETY: both names are NUL-terminated and `parent` pins the source
         // and destination directory for the atomic replacement.
         let result = unsafe {
@@ -1060,13 +1071,15 @@ fn replace_private_atomic_unix(
                 path.display()
             )));
         }
-        // SAFETY: `parent` owns a live directory descriptor.
-        if unsafe { libc::fsync(parent.as_raw_fd()) } != 0 {
-            return Err(wrap_last_os_error(format!(
-                "sync atomic private replacement directory for {}",
-                path.display()
-            )));
-        }
+        sync_directory(&parent).map_err(|error| {
+            wrap_io_error(
+                error,
+                format!(
+                    "sync atomic private replacement directory for {}",
+                    path.display()
+                ),
+            )
+        })?;
         Ok(())
     })();
     if operation.is_err() {
@@ -1122,7 +1135,13 @@ pub fn replace_private_atomic(
 ) -> io::Result<()> {
     #[cfg(unix)]
     {
-        replace_private_atomic_unix(path.as_ref(), bytes.as_ref(), target)
+        replace_private_atomic_unix(
+            path.as_ref(),
+            bytes.as_ref(),
+            target,
+            File::sync_all,
+            sync_private_replacement_directory,
+        )
     }
     #[cfg(not(unix))]
     {
@@ -1529,6 +1548,101 @@ mod tests {
             .map(|entry| entry.unwrap().file_name())
             .collect::<Vec<_>>();
         assert_eq!(entries, vec![OsString::from("state.json")]);
+    }
+
+    #[cfg(unix)]
+    fn assert_private_replacement_state(path: &Path, expected: Option<&[u8]>) {
+        let parent = path.parent().unwrap();
+        let expected_entries = if let Some(bytes) = expected {
+            assert_eq!(std::fs::read(path).unwrap(), bytes);
+            assert_eq!(mode(path), 0o600);
+            vec![path.file_name().unwrap().to_owned()]
+        } else {
+            assert_eq!(
+                std::fs::read(path).unwrap_err().kind(),
+                io::ErrorKind::NotFound
+            );
+            Vec::new()
+        };
+        let entries = std::fs::read_dir(parent)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect::<Vec<_>>();
+        assert_eq!(entries, expected_entries);
+        assert_eq!(mode(parent), 0o700);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn private_atomic_replacement_preserves_target_on_file_sync_failure() {
+        for target in [
+            PrivateFileReplacementTarget::PrivateFileOrMissing,
+            PrivateFileReplacementTarget::ReplaceFinalEntry,
+        ] {
+            for existing in [false, true] {
+                let temp = tempfile::tempdir().unwrap();
+                let path = temp.path().join("run/state.json");
+                if existing {
+                    write_private(&path, b"old private contents").unwrap();
+                }
+
+                let error = replace_private_atomic_unix(
+                    &path,
+                    b"complete new private contents",
+                    target,
+                    |_| Err(io::Error::other("injected file sync failure")),
+                    sync_private_replacement_directory,
+                )
+                .unwrap_err();
+
+                assert_eq!(error.kind(), io::ErrorKind::Other);
+                assert_eq!(error.to_string(), "injected file sync failure");
+                let old_bytes = existing.then_some(b"old private contents".as_slice());
+                assert_private_replacement_state(&path, old_bytes);
+
+                replace_private_atomic(&path, b"healthy retry contents", target).unwrap();
+                assert_private_replacement_state(&path, Some(b"healthy retry contents"));
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn private_atomic_replacement_keeps_published_target_on_directory_sync_failure() {
+        for target in [
+            PrivateFileReplacementTarget::PrivateFileOrMissing,
+            PrivateFileReplacementTarget::ReplaceFinalEntry,
+        ] {
+            for existing in [false, true] {
+                let temp = tempfile::tempdir().unwrap();
+                let path = temp.path().join("run/state.json");
+                if existing {
+                    write_private(&path, b"old private contents").unwrap();
+                }
+
+                let error = replace_private_atomic_unix(
+                    &path,
+                    b"complete new private contents",
+                    target,
+                    File::sync_all,
+                    |_| Err(io::Error::other("injected directory sync failure")),
+                )
+                .unwrap_err();
+
+                assert_eq!(error.kind(), io::ErrorKind::Other);
+                assert_eq!(
+                    error.to_string(),
+                    format!(
+                        "sync atomic private replacement directory for {}: injected directory sync failure",
+                        path.display()
+                    )
+                );
+                assert_private_replacement_state(&path, Some(b"complete new private contents"));
+
+                replace_private_atomic(&path, b"healthy retry contents", target).unwrap();
+                assert_private_replacement_state(&path, Some(b"healthy retry contents"));
+            }
+        }
     }
 
     #[test]

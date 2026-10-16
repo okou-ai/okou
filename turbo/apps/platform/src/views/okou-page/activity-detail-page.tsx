@@ -35,7 +35,6 @@ import {
   isSupportedFramework,
 } from "@okouai/core/frameworks";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
-import { activityFiles } from "../../signals/activity-page/sandbox-files.ts";
 import { fetchDownloadExtra$ } from "../../signals/activity-page/activity-download.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { searchParams$, updateSearchParams$ } from "../../signals/route.ts";
@@ -975,7 +974,6 @@ function ActivityDetailContent({
   const { t } = useTranslation();
   const params = useGet(searchParams$);
   const updateParams = useSet(updateSearchParams$);
-  const stepsTabRef = useSet(activityFiles.stepsTabRef$);
   const showDebugTabs = features?.[FeatureSwitchKey.OkouDebug] ?? false;
   const rawTab = params.get("tab");
   const activeTab: ActivityTab =
@@ -1048,7 +1046,7 @@ function ActivityDetailContent({
                 }}
               >
                 <TabsList>
-                  <TabsTrigger ref={stepsTabRef} value="steps">
+                  <TabsTrigger value="steps">
                     {t(($) => {
                       return $.activity.detail.tabs.steps;
                     })}

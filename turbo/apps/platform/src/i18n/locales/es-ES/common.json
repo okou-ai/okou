@@ -126,7 +126,7 @@
         "other": "Otro",
         "parentFolders": "Carpetas superiores",
         "pending": "Los archivos estarán disponibles cuando comience la ejecución en cola.",
-        "readonly": "Archivos de solo lectura de la ejecución actual. Cerrar el panel libera la conexión.",
+        "readonly": "Archivos de solo lectura de la ejecución actual.",
         "refresh": "Actualizar",
         "retry": "Reintentar",
         "root": "Carpeta raíz",
@@ -1803,6 +1803,7 @@
       "selectModel": "Seleccionar modelo",
       "slashPanel": {
         "browseAll": "Ver todas las plantillas",
+        "make": "Crear",
         "useTemplate": "Usar la plantilla {{title}}"
       },
       "temporarilySwitchTo": "Cambiar temporalmente a",
@@ -1812,7 +1813,8 @@
         "loading": "Cargando flujos de trabajo...",
         "manage": "Gestionar flujos de trabajo",
         "newWorkflow": "Nuevo flujo de trabajo",
-        "showMore": "Mostrar {{total}} más"
+        "showMore": "Mostrar {{total}} más",
+        "title": "Flujos de trabajo"
       }
     },
     "computerUse": {
@@ -4086,6 +4088,7 @@
   "onboarding": {
     "common": {
       "next": "Siguiente",
+      "skip": "Omitir",
       "stepProgress": "Paso {{current}} de {{total}}"
     },
     "documentTitles": {

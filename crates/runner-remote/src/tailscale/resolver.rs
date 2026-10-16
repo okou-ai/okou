@@ -21,6 +21,11 @@ impl Resolver {
     }
 
     pub(super) async fn resolve(&self, host: &str, port: u16) -> Result<Vec<SocketAddr>, Failure> {
+        let stage = super::evidence::Trace::current().role().network_stages().0;
+        super::evidence::observe(stage, self.resolve_owned(host, port)).await
+    }
+
+    async fn resolve_owned(&self, host: &str, port: u16) -> Result<Vec<SocketAddr>, Failure> {
         if !super::diagnostics::in_domain() || !super::region_map::hostname(host) || port == 0 {
             return Err(Failure::DomainFailed);
         }
@@ -49,8 +54,15 @@ impl Resolver {
         host: &str,
         port: u16,
     ) -> Result<tokio::net::TcpStream, Failure> {
+        let trace = super::evidence::Trace::current();
         for address in self.resolve(host, port).await? {
-            if let Ok(io) = tokio::net::TcpStream::connect(address).await {
+            trace.endpoint(address);
+            if let Ok(io) = super::evidence::observe(
+                trace.role().network_stages().1,
+                tokio::net::TcpStream::connect(address),
+            )
+            .await
+            {
                 return Ok(io);
             }
         }

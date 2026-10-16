@@ -124,7 +124,7 @@
         "other": "その他",
         "parentFolders": "親フォルダー",
         "pending": "待機中の実行が開始するとファイルを閲覧できます。",
-        "readonly": "現在の実行のファイルを読み取り専用で表示します。パネルを閉じると接続が解放されます。",
+        "readonly": "現在の実行のファイルを読み取り専用で表示します。",
         "refresh": "更新",
         "retry": "再試行",
         "root": "ルートフォルダー",
@@ -1771,6 +1771,7 @@
       "selectModel": "モデルを選択してください",
       "slashPanel": {
         "browseAll": "すべてのテンプレートを見る",
+        "make": "作成",
         "useTemplate": "テンプレート {{title}} を使う"
       },
       "temporarilySwitchTo": "一時的な切り替え先",
@@ -1780,7 +1781,8 @@
         "loading": "ワークフローを読み込んでいます...",
         "manage": "ワークフローを管理",
         "newWorkflow": "新しいワークフロー",
-        "showMore": "さらに {{total}} 件を表示"
+        "showMore": "さらに {{total}} 件を表示",
+        "title": "ワークフロー"
       }
     },
     "computerUse": {
@@ -4009,6 +4011,7 @@
   "onboarding": {
     "common": {
       "next": "次へ",
+      "skip": "スキップ",
       "stepProgress": "ステップ {{current}}/{{total}}"
     },
     "documentTitles": {

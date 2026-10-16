@@ -1,6 +1,7 @@
 //! A single retained native map, dial, TCP and relay composition.
 //! All SDK futures are polled inside the same physical domain and dropped there.
 
+use super::evidence::{self, Detail, Root as Boundary, Stage, Trace};
 use super::registration::Registration;
 #[cfg(test)]
 use super::relay_driver::{Connector, Driver};
@@ -28,6 +29,7 @@ type Completing = Pin<Box<dyn Future<Output = ()>>>;
 struct RelaySignals<'a> {
     ready: oneshot::Receiver<()>,
     changed: Option<&'a tokio::sync::Notify>,
+    trace: Trace,
 }
 
 struct Dial {
@@ -36,6 +38,7 @@ struct Dial {
     answer: Answer,
     cancelled: CancellationToken,
     lease: Option<super::Lease>,
+    trace: super::evidence::Trace,
 }
 
 pub(super) struct Opening {
@@ -78,9 +81,9 @@ pub(super) struct Client {
 }
 
 impl Client {
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(test)]
     pub(super) fn dial(&self, target: &str, port: u16) -> Result<Opening, Failure> {
-        self.dial_retained(target, port, None)
+        self.dial_retained(target, port, None, super::evidence::Trace::default())
     }
 
     pub(super) fn dial_retained(
@@ -88,6 +91,7 @@ impl Client {
         target: &str,
         port: u16,
         lease: Option<super::Lease>,
+        trace: super::evidence::Trace,
     ) -> Result<Opening, Failure> {
         if self.cancelled.is_cancelled() {
             return Err(Failure::Cancelled);
@@ -104,6 +108,7 @@ impl Client {
                 answer,
                 cancelled: cancelled.clone(),
                 lease,
+                trace,
             })
             .map_err(|error| match error {
                 mpsc::error::TrySendError::Full(_) => Failure::ResourceExhausted,
@@ -241,7 +246,8 @@ impl Root {
         let ready = port.ready.take().ok_or(Failure::DomainFailed)?;
         let mut core = Core::new(keys, local, port)?;
         core.update(first)?;
-        let driver = driver.run(connector);
+        let trace = Trace::current().fork();
+        let driver = trace.clone().scope(driver.run(connector));
         self.serve(
             core,
             maps,
@@ -249,6 +255,7 @@ impl Root {
             RelaySignals {
                 ready,
                 changed: None,
+                trace,
             },
             control,
             |core, update| update.map_or(Ok(()), |update| core.update(update)),
@@ -269,50 +276,67 @@ impl Root {
         let maps = registration.maps(&client).await?;
         tokio::pin!(maps);
         super::diagnostics::Stage::MapResponse.record();
-        let mut first = maps.next().await.ok_or(Failure::DomainFailed)?;
+        let mut first = evidence::observe(Stage::MapRead, async {
+            maps.next().await.ok_or(Failure::DomainFailed)
+        })
+        .await?;
+        Trace::current().set(
+            Stage::MapDecode,
+            evidence::Status::Passed,
+            Detail::NotExposed,
+        );
         if first.pop_browser_url.is_some() {
+            evidence::failed(Stage::MapAuthority, Detail::AuthenticationRequired);
             return Err(Failure::DomainFailed);
         }
-        let local = first.node.take().ok_or(Failure::DomainFailed)?;
+        let local = evidence::check(Stage::LocalNode, || {
+            first.node.take().ok_or(Failure::DomainFailed)
+        })?;
         let keys = registration.keys().node_keys.clone();
         super::diagnostics::Stage::DerpMap.record();
-        let map = first.derp.take().ok_or(Failure::DomainFailed)?;
+        let map = evidence::check(Stage::DerpMap, || {
+            first.derp.take().ok_or(Failure::DomainFailed)
+        })?;
         let regions = map.keys().copied().collect();
-        let (driver, mut port, routes, home) = super::regional_driver::RegionalDriver::new(
-            keys.clone(),
-            self.cancelled.clone(),
-            map,
-            local.derp_region,
-            dial,
-        )?;
+        let (driver, mut port, routes, home) = evidence::check(Stage::DerpMap, || {
+            super::regional_driver::RegionalDriver::new(
+                keys.clone(),
+                self.cancelled.clone(),
+                map,
+                local.derp_region,
+                dial,
+            )
+        })?;
         let ready = port.ready.take().ok_or(Failure::DomainFailed)?;
         super::diagnostics::Stage::LocalNode.record();
-        let mut core = Core::new(keys, local, port)?;
+        let mut core = evidence::check(Stage::LocalNode, || Core::new(keys, local, port))?;
         core.set_regions(home, regions);
         super::diagnostics::Stage::Peers.record();
-        core.update(first)?;
-        routes.update(None, core.relay_peers())?;
+        evidence::check(Stage::Peers, || core.update(first))?;
+        evidence::check(Stage::Peers, || routes.update(None, core.relay_peers()))?;
         registration.announce_home(&client, home).await?;
         let changed = routes.changed();
         super::diagnostics::Stage::Relay.record();
+        let trace = Trace::current().fork();
         self.serve(
             core,
             maps,
-            driver.run(),
+            trace.clone().scope(driver.run()),
             RelaySignals {
                 ready,
                 changed: Some(&changed),
+                trace,
             },
             control,
             move |core, update| {
                 let map = if let Some(mut update) = update {
                     let map = update.derp.take();
-                    core.update(update)?;
+                    evidence::check(Stage::Peers, || core.update(update))?;
                     map
                 } else {
                     None
                 };
-                routes.update(map, core.relay_peers())?;
+                evidence::check(Stage::DerpMap, || routes.update(map, core.relay_peers()))?;
                 core.set_regions(home, routes.available());
                 routes.update(None, core.relay_peers())
             },
@@ -331,7 +355,12 @@ impl Root {
     ) -> Result<(), Failure> {
         tokio::pin!(maps);
         tokio::pin!(driver);
-        let RelaySignals { mut ready, changed } = signals;
+        let RelaySignals {
+            mut ready,
+            changed,
+            trace,
+        } = signals;
+        let source = Trace::current();
         let mut announced = false;
         let mut completing = FuturesUnordered::<Completing>::new();
         loop {
@@ -342,28 +371,33 @@ impl Root {
             // Map changes and cancellation remain live during relay/bridge IO.
             tokio::select! {
                 _ = self.cancelled.cancelled() => return Err(Failure::Cancelled),
-                result = &mut driver => return result,
+                result = &mut driver => {
+                    if result.is_err() { source.adopt(&trace); source.root(Boundary::Relay); }
+                    return result;
+                },
                 _ = async {
                     if let Some(changed) = changed { changed.notified().await; }
                     else { std::future::pending::<()>().await; }
                 } => {},
                 result = &mut ready, if !announced => {
-                    result.map_err(|_| Failure::DomainFailed)?;
+                    result.map_err(|_| { source.root(Boundary::Readiness); Failure::DomainFailed })?;
                     announced = true;
                     // Carrier readiness precedes each host's SSH trust and login.
                     super::diagnostics::Stage::Ready.record();
                     control.ready();
                 }
                 update = maps.next() => {
-                    let update = update.ok_or(Failure::DomainFailed)?;
-                    if update.pop_browser_url.is_some() { return Err(Failure::DomainFailed); }
-                    update_core(&mut core, Some(update))?;
+                    let update = update.ok_or_else(|| { source.root(Boundary::MapStream); evidence::failed(Stage::MapRead, Detail::NotExposed); Failure::DomainFailed })?;
+                    source.set(Stage::MapRead, evidence::Status::Passed, Detail::NotExposed);
+                    source.set(Stage::MapDecode, evidence::Status::Passed, Detail::NotExposed);
+                    if update.pop_browser_url.is_some() { source.root(Boundary::MapStream); evidence::failed(Stage::MapAuthority, Detail::AuthenticationRequired); return Err(Failure::DomainFailed); }
+                    update_core(&mut core, Some(update)).inspect_err(|_| source.root(Boundary::MapStream))?;
                 }
                 command = self.commands.recv(), if completing.len() < CONNECTIONS => {
                     let mut command = command.ok_or(Failure::Cancelled)?;
                     if command.answer.is_closed() || command.cancelled.is_cancelled() {
                         command.cancelled.cancel();
-                    } else { match core.dial(&command.target, command.port, command.cancelled.clone(), command.lease.take()) {
+                    } else { match command.trace.sync(|| core.dial(&command.target, command.port, command.cancelled.clone(), command.lease.take())) {
                         Err(failure) => { let _ = command.answer.send(Err(failure)); }
                         Ok(response) => {
                             completing.push(Box::pin(async move {
@@ -379,9 +413,9 @@ impl Root {
                     }
                 }
                 _ = completing.next(), if !completing.is_empty() => {},
-                result = core.wait() => { result?; },
+                result = core.wait() => { result.inspect_err(|_| source.root(Boundary::DataPlane))?; },
             }
-            update_core(&mut core, None)?;
+            update_core(&mut core, None).inspect_err(|_| source.root(Boundary::DataPlane))?;
             // Public synchronous SDK work and immediately ready map/dial work
             // must return control to the runtime between bounded owner turns.
             tokio::task::yield_now().await;

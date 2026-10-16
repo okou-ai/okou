@@ -6,7 +6,6 @@ members = [
     "cli-test-support",
     "guest-agent",
     "guest-contracts",
-    "session-history-selector",
     "runner-rpc-client",
     "guest-tool-exec",
     "guest-task-exec",
@@ -60,7 +59,6 @@ api-contracts = { path = "api-contracts" }
 cli-test-support = { path = "cli-test-support" }
 guest-agent = { path = "guest-agent" }
 guest-contracts = { path = "guest-contracts" }
-session-history-selector = { path = "session-history-selector" }
 runner-rpc-client = { path = "runner-rpc-client" }
 guest-tool-exec = { path = "guest-tool-exec" }
 guest-task-exec = { path = "guest-task-exec" }

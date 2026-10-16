@@ -124,7 +124,7 @@
         "other": "Other",
         "parentFolders": "Parent folders",
         "pending": "Files will be available when the queued run starts.",
-        "readonly": "Read-only files from the current run. Closing this panel releases its connection.",
+        "readonly": "Read-only files from the current run.",
         "refresh": "Refresh",
         "retry": "Retry",
         "root": "Root folder",
@@ -1774,6 +1774,7 @@
       "selectModel": "Select model",
       "slashPanel": {
         "browseAll": "Browse all templates",
+        "make": "Make",
         "useTemplate": "Use template {{title}}"
       },
       "temporarilySwitchTo": "Temporarily switch to",
@@ -1783,7 +1784,8 @@
         "loading": "Loading workflows...",
         "manage": "Manage workflows",
         "newWorkflow": "New workflow",
-        "showMore": "Show {{total}} more"
+        "showMore": "Show {{total}} more",
+        "title": "Workflows"
       }
     },
     "computerUse": {
@@ -4019,6 +4021,7 @@
   "onboarding": {
     "common": {
       "next": "Next",
+      "skip": "Skip",
       "stepProgress": "Step {{current}} of {{total}}"
     },
     "documentTitles": {

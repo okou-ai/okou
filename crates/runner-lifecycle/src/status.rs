@@ -375,6 +375,8 @@ pub struct StatusTracker {
     write_gate: Option<StatusWriteGate>,
     #[cfg(any(test, feature = "test-support"))]
     idle_info_update_requests: AtomicU64,
+    #[cfg(any(test, feature = "test-support"))]
+    idle_snapshot_waits: tokio::sync::watch::Sender<u64>,
 }
 
 struct MutableState {
@@ -428,6 +430,8 @@ impl StatusTracker {
             write_gate: None,
             #[cfg(any(test, feature = "test-support"))]
             idle_info_update_requests: AtomicU64::new(0),
+            #[cfg(any(test, feature = "test-support"))]
+            idle_snapshot_waits: tokio::sync::watch::channel(0).0,
         }
     }
 
@@ -473,6 +477,23 @@ impl StatusTracker {
     #[cfg(any(test, feature = "test-support"))]
     pub async fn hold_state_for_test(&self) -> impl Drop + '_ {
         self.state.lock().await
+    }
+
+    /// Observe only a positively polled idle-snapshot state-lock wait.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn idle_snapshot_waits_for_test(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.idle_snapshot_waits.subscribe()
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    async fn lock_idle_snapshot_for_test(&self) -> tokio::sync::MutexGuard<'_, MutableState> {
+        let lock = self.state.lock();
+        tokio::pin!(lock);
+        match futures_util::poll!(&mut lock) {
+            std::task::Poll::Ready(state) => return state,
+            std::task::Poll::Pending => self.idle_snapshot_waits.send_modify(|count| *count += 1),
+        }
+        lock.await
     }
 
     /// Resolve only a *current in-memory* running Run-to-sandbox assignment.
@@ -681,6 +702,9 @@ impl StatusTracker {
         self.idle_info_update_requests
             .fetch_add(1, Ordering::Relaxed);
         let snapshot = {
+            #[cfg(any(test, feature = "test-support"))]
+            let mut state = self.lock_idle_snapshot_for_test().await;
+            #[cfg(not(any(test, feature = "test-support")))]
             let mut state = self.state.lock().await;
             let applied = apply_idle_snapshot(&mut state, idle_snapshot);
             if !applied {
@@ -893,6 +917,35 @@ mod tests {
                 .load(Ordering::Acquire),
             requested_generation,
         );
+    }
+
+    #[tokio::test]
+    async fn idle_snapshot_wait_observer_requires_a_polled_held_lock() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("status.json");
+        let tracker = StatusTracker::new(path.clone(), 1, None, None);
+        tracker.write_initial().await.unwrap();
+        let mut waits = tracker.idle_snapshot_waits_for_test();
+        tracker
+            .set_idle_snapshot(IdlePoolSnapshot::default())
+            .await
+            .unwrap();
+        assert_eq!(*waits.borrow_and_update(), 0);
+        let before = std::fs::read(&path).unwrap();
+        let holder = tracker.hold_state_for_test().await;
+        let write = tracker.set_idle_snapshot(IdlePoolSnapshot {
+            revision: 1,
+            ..IdlePoolSnapshot::default()
+        });
+        tokio::pin!(write);
+        assert!(futures_util::poll!(&mut write).is_pending());
+        waits.changed().await.unwrap();
+        assert_eq!(*waits.borrow_and_update(), 1);
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        drop(holder);
+        assert!(write.await.unwrap());
+        assert_eq!(*waits.borrow_and_update(), 1);
+        assert_latest_generation_published(&tracker).await;
     }
 
     #[tokio::test]

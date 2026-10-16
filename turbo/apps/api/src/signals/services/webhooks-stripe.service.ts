@@ -1,6 +1,8 @@
-import { canceledPlanSubscriptionPlan } from "./usage-pack-subscription-deletion-plan";
-import { parseRawRows } from "../../lib/db-raw-rows";
-import { z } from "zod";
+import {
+  canceledPlanEntitlementConflictValues,
+  canceledPlanEntitlementInsertSql,
+  canceledPlanEntitlementProjection,
+} from "./subscription-deletion-projection";
 import { publishLegacyPlanInvoice$ } from "./legacy-plan-invoice.service";
 import { legacyPlanInvoiceAdmission } from "./legacy-plan-invoice";
 import {
@@ -107,7 +109,6 @@ import {
   isArchivedUsageAllowanceMetadata,
   survivingStripeBillingInvoiceLines,
 } from "./archived-allowance";
-const retainedSubscriptionDeletionRow = z.record(z.string(), z.unknown());
 
 const L = logger("WebhookStripe");
 
@@ -4114,27 +4115,92 @@ const handleSubscriptionDeletedLegacy$ = command(
         return row.orgId;
       });
     }
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0331; new non-billing transactions are prohibited.
-    const planRows = await db.transaction(async (tx) => {
-      const plan = canceledPlanSubscriptionPlan(subscription);
-      let step = plan.next();
-      while (!step.done) {
-        const statement = step.value;
-        let rows: readonly unknown[] = [];
-        if (statement.kind === "timestamp") {
-          rows = [nowDate()];
-        } else if (statement.kind === "read") {
-          rows = parseRawRows(
-            retainedSubscriptionDeletionRow,
-            await tx.execute(statement.sql),
-          );
-        } else {
-          await tx.execute(statement.sql);
-        }
-        step = plan.next(rows);
+    // Normal metadata and entitlement writes share this application timestamp.
+    const planAt = nowDate();
+    const projection = canceledPlanEntitlementProjection(
+      retireMarketingMetadata(subscription.metadata ?? {}),
+      planAt,
+    );
+    const canceledParent = db.$with("canceled_plan_parent").as(
+      db
+        .update(orgMetadata)
+        .set({
+          tier: CANCELED_SUBSCRIPTION_TARGET_TIER,
+          subscriptionStatus: "canceled",
+          stripeSubscriptionId: null,
+          cancelAtPeriodEnd: false,
+          currentPeriodEnd: null,
+          pendingSubscriptionScheduleId: null,
+          pendingSubscriptionTargetTier: null,
+          pendingSubscriptionChangeAt: null,
+          updatedAt: planAt,
+        })
+        .where(eq(orgMetadata.stripeSubscriptionId, subscription.id))
+        .returning({ orgId: orgMetadata.orgId }),
+    );
+    const canceledEntitlements = db
+      .$with("canceled_plan_entitlements", {})
+      .as(
+        canceledPlanEntitlementInsertSql(
+          db
+            .select({ orgId: canceledParent.orgId })
+            .from(canceledParent)
+            .getSQL(),
+          projection,
+        ),
+      );
+    let planRows = await db
+      .with(canceledParent, canceledEntitlements)
+      .select({ orgId: canceledParent.orgId })
+      .from(canceledParent);
+
+    // Replay retains the original later snapshots and unconditional upsert.
+    if (planRows.length === 0) {
+      const [owner] = await db
+        .select({ orgId: orgPlanEntitlements.orgId })
+        .from(orgPlanEntitlements)
+        .where(eq(orgPlanEntitlements.stripeSubscriptionId, subscription.id))
+        .limit(1);
+      const persistedOrgId = owner?.orgId ?? null;
+      const [persistedOrg] = persistedOrgId
+        ? await db
+            .select({
+              tier: orgMetadata.tier,
+              stripeSubscriptionId: orgMetadata.stripeSubscriptionId,
+            })
+            .from(orgMetadata)
+            .where(eq(orgMetadata.orgId, persistedOrgId))
+            .limit(1)
+        : [];
+      const replayedDowngradeOrgId =
+        persistedOrg?.tier === CANCELED_SUBSCRIPTION_TARGET_TIER &&
+        persistedOrg.stripeSubscriptionId === null
+          ? persistedOrgId
+          : null;
+      if (replayedDowngradeOrgId) {
+        const sourceMetadata = retireMarketingMetadata(
+          subscription.metadata ?? {},
+        );
+        const values = orgPlanEntitlementValues(
+          {
+            orgId: replayedDowngradeOrgId,
+            tier: CANCELED_SUBSCRIPTION_TARGET_TIER,
+            source: "stripe_subscription",
+            sourceMetadata: subscription.metadata ?? {},
+          },
+          { stripeSubscriptionId: null, sourceMetadata },
+          nowDate(),
+        );
+        await db
+          .insert(orgPlanEntitlements)
+          .values(values)
+          .onConflictDoUpdate({
+            target: orgPlanEntitlements.orgId,
+            set: canceledPlanEntitlementConflictValues(values),
+          });
+        planRows = [{ orgId: replayedDowngradeOrgId }];
       }
-      return step.value;
-    });
+    }
     return [
       ...new Set([
         ...concurrencyRows.map((row) => {

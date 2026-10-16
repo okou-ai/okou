@@ -72,12 +72,14 @@ pub(crate) struct NativeEvidence {
     pub(crate) resource_id: Uuid,
     state: Mutex<NativeSnapshot>,
     watchers: Mutex<Vec<NativeWatch>>,
+    layers: Mutex<Option<crate::tailscale::evidence::Trace>>,
 }
 
 #[derive(Clone, Copy, Default, Serialize)]
 pub(crate) struct NativeSnapshot {
     ready: bool,
     terminal: Option<crate::tailscale::Failure>,
+    terminal_at: Option<DateTime<Utc>>,
     cleanup_complete: bool,
     cleanup_failure: Option<crate::tailscale::Failure>,
 }
@@ -97,7 +99,21 @@ impl NativeEvidence {
             resource_id: Uuid::new_v4(),
             state: Mutex::new(NativeSnapshot::default()),
             watchers: Mutex::new(Vec::new()),
+            layers: Mutex::new(None),
         }
+    }
+    pub(crate) fn enable_layers(&self) {
+        self.layers
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get_or_insert_with(|| crate::tailscale::evidence::Trace::new(true));
+    }
+    pub(crate) fn layers(&self) -> crate::tailscale::evidence::Trace {
+        self.layers
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
+            .unwrap_or_default()
     }
     pub(crate) fn ready(&self) {
         self.state.lock().unwrap_or_else(|p| p.into_inner()).ready = true;
@@ -109,6 +125,7 @@ impl NativeEvidence {
             .terminal
     }
     pub(crate) fn observe(self: &Arc<Self>, watch: NativeWatch) {
+        self.enable_layers();
         let mut watchers = self.watchers.lock().unwrap_or_else(|p| p.into_inner());
         watchers.retain(NativeWatch::active);
         if watchers
@@ -129,12 +146,14 @@ impl NativeEvidence {
         self: &Arc<Self>,
         failure: crate::tailscale::Failure,
     ) -> crate::tailscale::Failure {
+        self.layers().seal();
         let watchers = self.watchers.lock().unwrap_or_else(|p| p.into_inner());
         let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
         if let Some(first) = state.terminal {
             return first;
         }
         state.terminal = Some(failure);
+        state.terminal_at = Some(Utc::now());
         drop(state);
         for watch in watchers.iter() {
             watch.failed(self, failure);
@@ -155,6 +174,8 @@ pub(crate) struct NativeSource {
     pub(crate) resource_id: Uuid,
     #[serde(serialize_with = "serialize_evidence")]
     pub(crate) evidence: Arc<NativeEvidence>,
+    #[serde(skip)]
+    pub(crate) connection: Option<crate::tailscale::evidence::Trace>,
 }
 
 fn serialize_evidence<S: serde::Serializer>(
@@ -181,6 +202,8 @@ pub(crate) struct Report {
     cause: Cause,
     pub(crate) dependencies: Vec<Dependency>,
     native: Option<NativeSource>,
+    native_layers: Option<crate::tailscale::evidence::Snapshot>,
+    native_connection: Option<crate::tailscale::evidence::Snapshot>,
     #[serde(skip)]
     ssh: Option<trace::Snapshot>,
     // Finer stages are deliberately not inferred from an operation's final code.
@@ -291,6 +314,7 @@ impl NativeWatch {
                     generation: self.generation,
                     resource_id: evidence.resource_id,
                     evidence: Arc::clone(evidence),
+                    connection: None,
                 }),
                 ssh: None,
             });
@@ -403,6 +427,15 @@ impl Handle {
             return None;
         }
         state.sequence = state.sequence.saturating_add(1).min((1 << 53) - 1);
+        // Freeze operational stage facts now. Later node lifecycle/cleanup facts
+        // remain observable without rewriting this operation's explanation.
+        let native_layers = native
+            .as_ref()
+            .and_then(|source| source.evidence.layers().snapshot());
+        let native_connection = native
+            .as_ref()
+            .and_then(|source| source.connection.as_ref())
+            .and_then(crate::tailscale::evidence::Trace::snapshot);
         let report = Report {
             run_id: self.store.run,
             assignment_id: self.assignment,
@@ -425,6 +458,8 @@ impl Handle {
             cause,
             dependencies: dependency.into_iter().collect(),
             native,
+            native_layers,
+            native_connection,
             detail: if ssh.is_some() {
                 Detail::Partial
             } else {

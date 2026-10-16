@@ -37,6 +37,7 @@ import {
   SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT,
   SLASH_PANEL_MANAGE_WORKFLOWS_ID,
   SLASH_PANEL_NEW_WORKFLOW_ID,
+  SLASH_PANEL_SHOW_MORE_ID,
   slashTemplateCategoryLabel,
 } from "./slash-template-panel.tsx";
 import {
@@ -185,8 +186,6 @@ interface ComposerKeyDownContext {
   readonly closeSuggestionMenu: () => void;
   readonly selectSuggestion: (index: number) => void;
   readonly scrollSuggestionIntoView: (index: number) => void;
-  /** The row keyboard navigation should land on when it arrives at `index`. */
-  readonly revealSuggestion: (index: number, direction: 1 | -1) => number;
   readonly onKeyDown: (event: KeyboardEventLike) => void;
 }
 
@@ -275,9 +274,8 @@ function handleComposerKeyDownCapture(
       direction,
     );
     if (next !== undefined) {
-      const target = context.revealSuggestion(next, direction);
-      context.setSelectedSuggestionIndex(target);
-      context.scrollSuggestionIntoView(target);
+      context.setSelectedSuggestionIndex(next);
+      context.scrollSuggestionIntoView(next);
     }
     return true;
   }
@@ -604,6 +602,9 @@ function suggestionRowScrollTarget(
   index: number,
   rows: SuggestionRows,
 ): { readonly id: string } | undefined {
+  if (index === rows.expandIndex) {
+    return { id: SLASH_PANEL_SHOW_MORE_ID };
+  }
   const head = suggestionHeadRow(index, rows);
   if (head !== undefined) {
     return { id: head };
@@ -722,18 +723,6 @@ function useComposerSuggestionMenu({
     }
   }
 
-  // The keyboard never stops on Show more, only on its slot in the navigation
-  // order. Arriving there reveals the rest: coming down past the last visible
-  // workflow lands on the first one revealed, in Show more's place, and coming
-  // up from the categories lands on Manage workflows, the row just above them.
-  function revealSuggestion(index: number, direction: 1 | -1): number {
-    if (!showWorkflows || index !== rows.expandIndex) {
-      return index;
-    }
-    expandWorkflows();
-    return direction > 0 ? index : rows.headCount + rows.workflows.length + 1;
-  }
-
   function handleKeyDown(event: KeyboardEvent): boolean {
     return handleComposerKeyDownCapture(event, {
       composer,
@@ -746,7 +735,6 @@ function useComposerSuggestionMenu({
       closeSuggestionMenu: close,
       selectSuggestion,
       scrollSuggestionIntoView,
-      revealSuggestion,
       onKeyDown,
     });
   }

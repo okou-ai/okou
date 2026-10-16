@@ -695,11 +695,12 @@ on the code's limited-free restricted-model rule; it stores no model IDs, so
 The following patterns no longer have a surviving migration example, so keep
 the complete SQL here.
 
-### Bound a transactional backfill by UUID
+### Bound a backfill by UUID
 
 Mark a statement with `-- vm0:batch-by-uuid` to have the migration runner send
-one SQL query per batch inside the existing migration transaction. Each query
-gets the migration's statement timeout independently. The entire migration and
+one SQL query per batch. In a transactional migration, each query runs inside
+the existing migration transaction and gets its statement timeout independently.
+The entire migration and
 journal still commit together; batching does not release transaction-held locks.
 A loop inside one `DO` or `CALL` statement does not reset `statement_timeout`.
 
@@ -708,7 +709,13 @@ bounded, materialized batch before joining other tables. Return exactly one
 `next_cursor` UUID: the greatest selected ID, or SQL `NULL` when no targets
 remain. Advance by selected rows even when none qualify for an update, so a gap
 cannot skip later targets. Non-null cursors must strictly increase. This marker
-is supported only in transactional migrations.
+also works in migrations marked `-- vm0:non-transactional`. In that mode each
+batch is a separately committed, atomic statement; earlier batches survive a
+failure, and retry starts the cursor at SQL `NULL`. Every batch must therefore
+be idempotent, including after a lost response or a journal failure. Keep related
+writes in the same statement, manage the migration's statement timeout, and
+advance by selected rows even when a batch changes nothing. No automatic retry
+is performed. The journal is written only after all statements finish.
 
 ```sql
 -- vm0:batch-by-uuid

@@ -1,5 +1,41 @@
 # Guarded idle terminal fixture
 
+## Native logical substitution progress
+
+`native_logical_records_reader_heartbeat_and_cleanup_contention` starts with the
+original full logical budget and an independently granted Fresh physical allowance
+in the same P2. The actual guarded logical caller positively waits on the held
+pool. Startup completes every original 4 GiB under Unknown; guarded runtime then
+completes every byte under actual sustained Ready while the pool remains held.
+
+After pool release, a non-default Lifecycle observer identifies the actual
+`set_idle_snapshot` state-lock future polling Pending after accepted old cleanup
+and atomic full-profile logical transfer. Independent actual observation and
+acknowledged heartbeat complete during that held status wait. The original Fresh
+allowance refreshes after status release, funds a different real Guest and settles
+its actual RPC phase. Its exact physical exit is joined before requesting the old
+cleanup join; no old-exit dependency or still-live overlap is claimed. The same
+original lease witness survives the one-for-one logical transfer and remains
+active through the blocked kernel read, complete durable old tail and all joins.
+Logical capacity never supplies physical memory credit.
+
+Select that ignored test with the exact-source bounded P1 invocation below.
+Metadata additionally requires `native_logical_policy_json`,
+`native_logical_inputs_json` and `native_logical_snapshot_bytes` (4294967296),
+binding the exact supplied policy and original immutable snapshot inputs. Then run:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/logical_report.py "$P1_OUTPUT_DIRECTORY"
+```
+
+Ordinary Cargo runs the real-file/CLI refusal contract and the status observer's
+real-file owner test. Native execution requires owned KVM/NBD inputs in fresh and
+matching-snapshot factories. #40595 retains replacement/restoration/aged progress,
+#40597 retains remaining Critical contention and full #40412/#40353 mapping, and
+#40355 retains accepted cancellation/provider late results. Full production
+Reactor/P2 installation, numerical relief, full/cold residency, calibrated
+envelopes, unknown template producer and OOM protection remain unverified.
+
 ## Native retirement fences
 
 `native_foreground_records_retirement_fences_before_detach` first grants real

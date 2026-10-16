@@ -48,8 +48,8 @@
 //! from `turbo/packages/api-contracts/src/contracts/runners.ts` for both Rust
 //! and Python. The shared base URL cases live in
 //! `turbo/packages/connectors/src/__tests__/firewall-base-url-validation-contract.json`
-//! and are exercised by TypeScript and Python. Keep individual parser rules in
-//! executable validation and tests rather than duplicating them here.
+//! and are exercised by TypeScript, Python, and Rust. Keep individual parser
+//! rules in executable validation and tests rather than duplicating them here.
 
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -1851,6 +1851,9 @@ mod tests {
             "https://{tenant}.example.com:0".to_string(),
             "https://{tenant}.example.com:65535".to_string(),
             "https://{tenant}.example.com/items/{item}".to_string(),
+            "https://{tenant}.123.example.com".to_string(),
+            "https://{tenant}.0123.example.com".to_string(),
+            "https://{tenant}.0XABC.example.com".to_string(),
             "https://api-{tenant}.example.com".to_string(),
             "https://{tenant*}.example.com".to_string(),
             format!("https://{}{{tenant}}.example.com", "a".repeat(62)),
