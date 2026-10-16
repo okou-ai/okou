@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use api_contracts::generated::types::runners::runs::CodexRuntimeConfig;
 use sandbox::{
@@ -551,6 +551,7 @@ async fn codex_catalog_prefetch_prefers_guest_duration_and_falls_back_to_host_el
         Arc::clone(&overrides),
     ));
     let mut telemetry = test_telemetry(&config, &context);
+    let before_start = Instant::now();
     let started = expect_usable_prefetch(
         StartedCodexModelCatalogPrefetch::start(
             &*sandbox,
@@ -560,9 +561,24 @@ async fn codex_catalog_prefetch_prefers_guest_duration_and_falls_back_to_host_el
         )
         .await,
     );
+    let after_start = Instant::now();
     tokio::time::sleep(Duration::from_millis(5)).await;
+    let before_supervise = Instant::now();
     let prefetch = started.supervise(&*sandbox);
+    let after_supervise = Instant::now();
     prefetch.finish(&mut telemetry).await;
+    let waits = overrides.wait_process_calls();
+    assert_eq!(waits.len(), 1);
+    let timeout = waits[0].timeout;
+    let original_budget = Duration::from_secs(18);
+    assert!(
+        timeout <= original_budget.saturating_sub(before_supervise.duration_since(after_start)),
+        "supervision must retain the wait budget consumed during preparation",
+    );
+    assert!(
+        timeout >= original_budget.saturating_sub(after_supervise.duration_since(before_start)),
+        "supervision must retain the remaining original wait budget",
+    );
     assert_prefetch_outcome(&telemetry, true, None, "host_duration");
     let host_duration_ops: Vec<_> = telemetry
         .pending_ops_with_duration_snapshot()
