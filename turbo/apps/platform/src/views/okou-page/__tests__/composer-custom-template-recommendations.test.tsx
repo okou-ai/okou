@@ -16,7 +16,12 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { findComposerEditor, tabByText } from "./chat-composer-test-helpers.ts";
+import {
+  buildRunModel,
+  CLAUDE_SUBSCRIPTION_PROVIDER_ID,
+  findComposerEditor,
+  tabByText,
+} from "./chat-composer-test-helpers.ts";
 import {
   AGENT_ID,
   context,
@@ -203,6 +208,12 @@ test.each([
   "Selecting a custom $kind template updates the slash task",
   async ({ kind, entry, tasks, instructions }) => {
     const capture = mockTemplateChat();
+    context.mocks.data.availableRunModels([
+      buildRunModel({
+        model: "claude-sonnet-5",
+        modelProviderId: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
+      }),
+    ]);
     const own = template(kind);
     context.mocks.api(userTemplatesContract.list, ({ respond }) => {
       return respond(200, [own]);
@@ -221,7 +232,7 @@ test.each([
     await within(dialog).findByText(own.title);
     click(button("Use", dialog));
     await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(dialog).not.toBeInTheDocument();
     });
     await waitFor(() => {
       expect(
