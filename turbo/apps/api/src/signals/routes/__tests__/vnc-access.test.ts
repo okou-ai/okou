@@ -392,6 +392,13 @@ describe("live chat VNC Run inventory", () => {
           availability: { status: "ready" },
         },
       ],
+      identities: [
+        {
+          id: f.connectionId,
+          createdAt: expect.stringMatching(/\.\d{6}Z$/),
+          generation: 1,
+        },
+      ],
     });
     const kms = useSecretKmsProbe();
     await accept(inventory().list({ headers: claimed.agentHeaders(f) }), [200]);
@@ -560,6 +567,13 @@ describe("live chat VNC Run inventory", () => {
           availability: { status: "ready" },
         },
       ],
+      identities: [
+        {
+          id: saved.body.id,
+          createdAt: expect.stringMatching(/\.\d{6}Z$/),
+          generation: saved.body.generation,
+        },
+      ],
     });
     expect(JSON.stringify(listed.body)).not.toContain("testpass");
     expect(kms.decryptCalls).toBe(0);
@@ -624,6 +638,13 @@ describe("live chat VNC Run inventory", () => {
           availability: { status: "ready" },
         },
       ],
+      identities: [
+        {
+          id: plain.body.id,
+          createdAt: expect.stringMatching(/\.\d{6}Z$/),
+          generation: plain.body.generation,
+        },
+      ],
     });
 
     const supported = await createHost("supported.example.com");
@@ -654,6 +675,18 @@ describe("live chat VNC Run inventory", () => {
           authMethod: "vnc_password",
           securityType: "x509_vnc",
           availability: { status: "ready" },
+        },
+      ],
+      identities: [
+        {
+          id: plain.body.id,
+          createdAt: expect.stringMatching(/\.\d{6}Z$/),
+          generation: plain.body.generation,
+        },
+        {
+          id: supported.body.id,
+          createdAt: expect.stringMatching(/\.\d{6}Z$/),
+          generation: supported.body.generation,
         },
       ],
     });
