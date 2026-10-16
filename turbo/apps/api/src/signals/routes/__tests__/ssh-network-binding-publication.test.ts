@@ -131,7 +131,7 @@ async function latestHost(id: string) {
 }
 
 test.each(["cloudflare_access", "tailscale"] as const)(
-  "%s binding creation and retained edits preserve logical configuration metadata",
+  "%s creation, retained edits and rebind preserve logical configuration metadata",
   async (provider) => {
     const config = await createConfig(provider);
     const first = await createHost(provider, config.id);
@@ -186,6 +186,40 @@ test.each(["cloudflare_access", "tailscale"] as const)(
         sshHosts: [{ id: unrelated.id, displayName: unrelated.displayName }],
       },
     ]);
+    await expect(latestHost(unrelated.id)).resolves.toStrictEqual(unrelated);
+    const rebound = (
+      await accept(
+        hosts().update({
+          headers,
+          params: { connectionId: first.id },
+          body: {
+            expectedGeneration: retained.generation,
+            transport: selectedTransport(provider, unrelatedConfig.id),
+          },
+        }),
+        [200],
+      )
+    ).body;
+    expect(rebound).toMatchObject({
+      id: first.id,
+      generation: first.generation + 3,
+      transport: selectedTransport(provider, unrelatedConfig.id),
+    });
+    const migratedConfig = (await configList(provider)).find((item) => {
+      return item.id === unrelatedConfig.id;
+    });
+    expect(migratedConfig).toStrictEqual({
+      ...unrelatedConfig,
+      sshHosts: expect.arrayContaining([
+        { id: first.id, displayName: retained.displayName },
+        { id: unrelated.id, displayName: unrelated.displayName },
+      ]),
+    });
+    expect(migratedConfig?.sshHosts).toHaveLength(2);
+    await expect(configList(provider)).resolves.toContainEqual({
+      ...config,
+      sshHosts: [],
+    });
     await expect(latestHost(unrelated.id)).resolves.toStrictEqual(unrelated);
   },
 );

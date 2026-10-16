@@ -27,6 +27,7 @@ import {
 import {
   createSshCreationReads,
   createSshUpdateReads,
+  selectedSshNetworkConfig,
   stampedSshNetworkConfig,
   stampedSshCredential,
   ownedSshConnection,
@@ -738,11 +739,21 @@ function sshConnectionUpdateAdmission(args: PreparedSshConnectionUpdate) {
   if (predicate === undefined) {
     throw new Error("SSH Tailscale admission predicate is missing");
   }
-  const stamp = stampedSshNetworkConfig(
+  const selection = selectedSshNetworkConfig(
     reads.qb,
-    "stamped_ssh_binding_tailscale",
+    "selected_ssh_binding_tailscale",
     "tailscale",
     predicate,
+    exists(
+      reads.qb
+        .select({ id: reads.current.id })
+        .from(reads.current)
+        .where(
+          selectedId === null
+            ? sql`false`
+            : eq(reads.current.tailscaleId, selectedId),
+        ),
+    ),
   );
   const networkReady = reads.qb.$with("complete_ssh_binding_admission").as(
     reads.qb
@@ -751,7 +762,11 @@ function sshConnectionUpdateAdmission(args: PreparedSshConnectionUpdate) {
       .where(
         selectedId === null
           ? sql`true`
-          : exists(reads.qb.select({ id: stamp.id }).from(stamp)),
+          : exists(
+              reads.qb
+                .select({ id: selection.selected.id })
+                .from(selection.selected),
+            ),
       ),
   );
   const selectedCredentialId = args.preparedCredential?.id;
@@ -781,7 +796,7 @@ function sshConnectionUpdateAdmission(args: PreparedSshConnectionUpdate) {
             ),
       ),
   );
-  return { reads, selectedId, stamp, networkReady, credentialStamp, ready };
+  return { reads, selectedId, selection, networkReady, credentialStamp, ready };
 }
 const commitSshConnectionUpdateAttempt$ = command(
   async (
@@ -789,8 +804,14 @@ const commitSshConnectionUpdateAttempt$ = command(
     args: PreparedSshConnectionUpdate,
   ): Promise<SshConnectionMutationResult<SshConnectionResponse>> => {
     const db = set(writeDb$);
-    const { reads, selectedId, stamp, networkReady, credentialStamp, ready } =
-      sshConnectionUpdateAdmission(args);
+    const {
+      reads,
+      selectedId,
+      selection,
+      networkReady,
+      credentialStamp,
+      ready,
+    } = sshConnectionUpdateAdmission(args);
     const prepared = args.preparedCredential;
     const credential =
       prepared !== undefined && prepared.id === undefined
@@ -870,7 +891,7 @@ const commitSshConnectionUpdateAttempt$ = command(
     const [captured] = await db
       .with(
         ...reads.ctes,
-        stamp,
+        ...selection.ctes,
         networkReady,
         credentialStamp,
         ready,
@@ -895,7 +916,7 @@ const commitSshConnectionUpdateAttempt$ = command(
             pgBooleanDecoder,
           ),
         tailscale:
-          sql`${exists(db.select({ id: stamp.id }).from(stamp))}`.mapWith(
+          sql`${exists(db.select({ id: selection.selected.id }).from(selection.selected))}`.mapWith(
             pgBooleanDecoder,
           ),
         complete,

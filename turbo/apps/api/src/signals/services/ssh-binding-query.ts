@@ -22,8 +22,8 @@ import type {
 
 // Drizzle's sessionless QueryBuilder cannot construct UPDATE. Keep this one
 // DML leaf as SQL, with schema-owned identifiers, projection and predicates.
-// Every selected publication, including retained bindings, changes xmin without
-// changing logical configuration metadata. Atomic fanout relies on that stamp.
+// An entering reference can be absent from a concurrent fanout's host snapshot.
+// Advance only its config version; retained references use their real host write.
 export function stampedSshNetworkConfig(
   qb: QueryBuilder,
   alias: string,
@@ -37,6 +37,42 @@ export function stampedSshNetworkConfig(
     .as(
       sql`UPDATE ${config} SET ${sql.identifier(config.name.name)} = ${config.name} WHERE ${predicate} RETURNING ${config.id}`,
     );
+}
+
+export function selectedSshNetworkConfig(
+  qb: QueryBuilder,
+  alias: string,
+  provider: "cloudflare_access" | "tailscale",
+  predicate: SQL,
+  retaining: SQL,
+) {
+  const entering = and(predicate, not(retaining));
+  if (entering === undefined) {
+    throw new Error("SSH network entry predicate is missing");
+  }
+  const entered = stampedSshNetworkConfig(
+    qb,
+    `${alias}_entered`,
+    provider,
+    entering,
+  );
+  const config =
+    provider === "tailscale" ? tailscaleConfigs : cloudflareAccessConfigs;
+  const retained = qb
+    .$with(`${alias}_retained`)
+    .as(
+      qb
+        .select({ id: config.id })
+        .from(config)
+        .where(and(predicate, retaining)),
+    );
+  const selected = qb.$with(alias).as(
+    qb
+      .select({ id: entered.id })
+      .from(entered)
+      .unionAll(qb.select({ id: retained.id }).from(retained)),
+  );
+  return { selected, ctes: [entered, retained, selected] };
 }
 type Owner = { readonly orgId: string; readonly userId: string };
 export function visibleSshAccessConfig(owner: Owner, id: string) {
@@ -60,6 +96,22 @@ export function ownedSshConnection(
     eq(sshConnections.orgId, owner.orgId),
     eq(sshConnections.userId, owner.userId),
   );
+}
+
+function sshAccessAdmissionPredicate(
+  args: Owner & { readonly accessId: string | null },
+  eligible: SQL,
+) {
+  const predicate = and(
+    args.accessId === null
+      ? sql`false`
+      : visibleSshAccessConfig(args, args.accessId),
+    eligible,
+  );
+  if (predicate === undefined) {
+    throw new Error("SSH Cloudflare admission predicate is missing");
+  }
+  return predicate;
 }
 
 export function stampedSshCredential(
@@ -142,15 +194,10 @@ export function createSshCreationReads(
           : exists(qb.select({ id: credential.id }).from(credential)),
       ),
   );
-  const accessPredicate = and(
-    args.accessId === null
-      ? sql`false`
-      : visibleSshAccessConfig(args, args.accessId),
+  const accessPredicate = sshAccessAdmissionPredicate(
+    args,
     exists(qb.select({ id: ready.id }).from(ready)),
   );
-  if (accessPredicate === undefined) {
-    throw new Error("SSH Cloudflare admission predicate is missing");
-  }
   const access = stampedSshNetworkConfig(
     qb,
     "selected_ssh_creation_access",
@@ -257,21 +304,27 @@ export function createSshUpdateReads(
           : exists(qb.select({ id: credential.id }).from(credential)),
       ),
   );
-  const accessPredicate = and(
-    args.accessId === null
-      ? sql`false`
-      : visibleSshAccessConfig(args, args.accessId),
+  const accessPredicate = sshAccessAdmissionPredicate(
+    args,
     exists(qb.select({ id: ready.id }).from(ready)),
   );
-  if (accessPredicate === undefined) {
-    throw new Error("SSH Cloudflare admission predicate is missing");
-  }
-  const access = stampedSshNetworkConfig(
+  const accessSelection = selectedSshNetworkConfig(
     qb,
     "selected_ssh_binding_access",
     "cloudflare_access",
     accessPredicate,
+    exists(
+      qb
+        .select({ id: current.id })
+        .from(current)
+        .where(
+          args.accessId === null
+            ? sql`false`
+            : eq(current.cloudflareAccessId, args.accessId),
+        ),
+    ),
   );
+  const access = accessSelection.selected;
   const admission = qb.$with("admitted_ssh_binding_host").as(
     qb
       .select({ id: ready.id })
@@ -290,6 +343,13 @@ export function createSshUpdateReads(
     ready,
     access,
     admission,
-    ctes: [current, base, credential, ready, access, admission],
+    ctes: [
+      current,
+      base,
+      credential,
+      ready,
+      ...accessSelection.ctes,
+      admission,
+    ],
   };
 }
