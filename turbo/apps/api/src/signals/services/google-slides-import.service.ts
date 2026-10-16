@@ -485,7 +485,11 @@ async function measureGroup(
     }
     previousSourceEnd = item.bounds.x + sourceWidth;
   }
-  return requiredWidth;
+  // An exact-fit frame can still wrap in the editor while Google's server
+  // renderer keeps the line intact. Reserve one point of layout tolerance
+  // (more than one CSS pixel at 96dpi), without changing the glyph sizes.
+  // applyGroup includes this capacity in its collision and page-edge checks.
+  return requiredWidth + EMU_PER_POINT;
 }
 
 interface SlideContext {

@@ -63,6 +63,11 @@ export function slidesImportFixture(): Buffer {
       size: 20,
       family: "Unlisted Font",
     }),
+    // The untracked text fits exactly, but there is less than one point of
+    // clearance before the neighbor and the slide edge, respectively.
+    shape(12, "05", { x: 700, y: 20, width: 27, size: 20 }),
+    shape(13, "Neighbor", { x: 727.5, y: 20, width: 100, size: 20 }),
+    shape(14, "05", { x: 932.5, y: 250, width: 27, size: 20 }),
   ].join("");
   const archive = new AdmZip();
   archive.addFile(

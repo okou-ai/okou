@@ -3110,7 +3110,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       const uploaded = mockGoogleDriveArtifactUpload(native);
       if (mode !== "original") {
         mockGoogleWorkspaceReadback(native);
-        mockGoogleSlidesReadback([{ pageElementCount: 9 }]);
+        mockGoogleSlidesReadback([{ pageElementCount: 12 }]);
       }
       const response =
         mode === "legacy"
@@ -3126,17 +3126,24 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         expect(Buffer.from(uploaded.bodies[0]!)).toStrictEqual(bytes);
       } else {
         const text = uploadedSlidesText(uploaded.bodies[0]!);
-        expect(text).toHaveLength(9);
+        expect(text).toHaveLength(12);
         expect(
           text.find((item) => {
             return item.id === "2";
           }),
-        ).toMatchObject({ text: "05", width: 259.2, sizes: [192] });
+        ).toMatchObject({ text: "05", sizes: [192] });
+        // The 259.2pt glyph advance needs spare capacity in the editor;
+        // preserving only that exact width is not a successful reservation.
+        const numberWidth = text.find((item) => {
+          return item.id === "2";
+        })!.width;
+        expect(numberWidth).toBeGreaterThanOrEqual(259.2 + 0.75);
+        expect(numberWidth).toBeLessThanOrEqual(259.2 + 2);
         expect(
           text.find((item) => {
             return item.id === "3";
           })?.width,
-        ).toBeCloseTo(299.52, 4);
+        ).toBeCloseTo(300.52, 4);
         expect(
           text.find((item) => {
             return item.id === "4";
@@ -3166,6 +3173,16 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
             return item.id === "11";
           }),
         ).toMatchObject({ text: "Unknown font", width: 100 });
+        expect(
+          text.find((item) => {
+            return item.id === "12";
+          }),
+        ).toMatchObject({ text: "05", width: 27, sizes: [20] });
+        expect(
+          text.find((item) => {
+            return item.id === "14";
+          }),
+        ).toMatchObject({ text: "05", width: 27, sizes: [20] });
       }
       await fixture.finish();
     },
@@ -3188,7 +3205,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     };
     const uploaded = mockGoogleDriveArtifactUpload(native);
     mockGoogleWorkspaceReadback(native);
-    mockGoogleSlidesReadback([{ pageElementCount: 10 }]);
+    mockGoogleSlidesReadback([{ pageElementCount: 13 }]);
     const response = await fixture.upload("google");
     expect(response.status).toBe(200);
     expect(Buffer.from(uploaded.bodies[0]!)).toStrictEqual(bytes);
