@@ -24,6 +24,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
+  npm_config_audit: "false"
   CARGO_PROFILE_TEST_DEBUG: line-tables-only
   LLVM_PROFILE_FILE_NAME: crates-%b-%8m.profraw
   COVERAGE_ARCHIVE_PRODUCER_ATTEMPT: ${{ github.run_attempt }}
