@@ -1,5 +1,29 @@
 # Changelog
 
+## [8.763.0](https://github.com/okou-ai/okou/compare/core-v8.762.0...core-v8.763.0) (2026-10-16)
+
+
+### Features
+
+* add workspace-scoped link wallets and transaction history ([#40192](https://github.com/okou-ai/okou/issues/40192)) ([12a55d1](https://github.com/okou-ai/okou/commit/12a55d1c8892076fbb608eb3116573e7011c060a))
+
+
+### Bug Fixes
+
+* **app:** align document template details and remove resume templates ([#40526](https://github.com/okou-ai/okou/issues/40526)) ([abed2a5](https://github.com/okou-ai/okou/commit/abed2a5f9f2036552cce2ca3cd27950e14b2c4b4))
+
+
+### Refactoring
+
+* retire session history archive protocol ([#40528](https://github.com/okou-ai/okou/issues/40528)) ([1e9a4cf](https://github.com/okou-ai/okou/commit/1e9a4cf4fa6fb43dad8fad1caedc480df0ef7a41))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.570.0
+
 ## [8.762.0](https://github.com/okou-ai/okou/compare/core-v8.761.0...core-v8.762.0) (2026-10-16)
 
 
