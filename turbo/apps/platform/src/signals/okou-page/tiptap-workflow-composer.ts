@@ -2128,14 +2128,24 @@ function createSuggestionMenuBoundary() {
   };
 }
 
-function createSlashHintPlugin(key: PluginKey): Plugin {
-  let hint: HTMLElement | null = null;
-  return new Plugin({
+function createSlashHintPlugin(key: PluginKey<boolean>): Plugin<boolean> {
+  return new Plugin<boolean>({
     key,
+    state: {
+      init: () => {
+        return false;
+      },
+      apply(transaction, composing) {
+        const next = transaction.getMeta(key);
+        return typeof next === "boolean" ? next : composing;
+      },
+    },
     props: {
-      decorations({ doc, selection }) {
+      decorations(state) {
+        const { doc, selection } = state;
         const { $head } = selection;
         if (
+          key.getState(state) ||
           !selection.empty ||
           !$head.parent.isTextblock ||
           $head.parentOffset !== $head.parent.content.size
@@ -2147,39 +2157,28 @@ function createSlashHintPlugin(key: PluginKey): Plugin {
           return DecorationSet.empty;
         }
         return DecorationSet.create(doc, [
-          Decoration.widget(
-            $head.pos,
-            () => {
-              hint = document.createElement("span");
-              // Generated content stays out of the editable text, clipboard,
-              // draft and message. Keep the widget key stable beside the caret.
-              hint.className =
-                "pointer-events-none select-none text-muted-foreground/80 " +
-                "after:content-[attr(data-placeholder)] data-composing:hidden";
-              hint.setAttribute("aria-hidden", "true");
-              hint.dataset.placeholder = ` ${i18n.t(($) => {
-                return $.chat.composer.slashPanel.hint;
-              })}`;
-              return hint;
-            },
-            {
-              key: `composer-slash-hint-${i18n.language}`,
-              side: 1,
-              ignoreSelection: true,
-            },
-          ),
+          // Decorate the existing paragraph instead of inserting a widget:
+          // ArrowRight must never move the DOM caret past the hint and then
+          // snap back to the real text. Generated content also stays out of
+          // the clipboard, draft and sent message.
+          Decoration.node($head.before(), $head.after(), {
+            class:
+              "after:pointer-events-none after:select-none " +
+              "after:text-muted-foreground/80 after:content-[attr(data-placeholder)]",
+            "data-placeholder": ` ${i18n.t(($) => {
+              return $.chat.composer.slashPanel.hint;
+            })}`,
+          }),
         ]);
       },
       handleDOMEvents: {
-        compositionstart() {
-          // Hide the decoration without replacing a DOM node during IME start.
-          if (hint) {
-            hint.dataset.composing = "";
-          }
+        compositionstart(view) {
+          // Only paragraph attributes change; the IME keeps its text node.
+          view.dispatch(view.state.tr.setMeta(key, true));
           return false;
         },
-        compositionend() {
-          delete hint?.dataset.composing;
+        compositionend(view) {
+          view.dispatch(view.state.tr.setMeta(key, false));
           return false;
         },
       },
@@ -2194,7 +2193,7 @@ function createSuggestionMenuRefs(
   const setSlashHintMenuRef$ = onRef(
     command(({ set }, element: HTMLElement, signal: AbortSignal) => {
       const releaseMenu = set(menuRef$, element);
-      const key = new PluginKey("composerSlashHint");
+      const key = new PluginKey<boolean>("composerSlashHint");
       const plugin = createSlashHintPlugin(key);
       // The slash menu owns the hint's lifetime, including Escape, outside
       // dismissal and feature-switch changes. Editor transactions own position.

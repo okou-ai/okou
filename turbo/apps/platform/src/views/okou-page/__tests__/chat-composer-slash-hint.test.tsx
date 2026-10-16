@@ -146,6 +146,7 @@ test("Preserve IME confirmation while the slash hint is present", async () => {
     expect(slashHint(editor)).toBeInTheDocument();
   });
   fireEvent.compositionStart(editor, { data: "周报" });
+  expect(slashHint(editor)).toBeNull();
   fireEvent.keyDown(editor, {
     key: "Enter",
     isComposing: true,
@@ -156,6 +157,7 @@ test("Preserve IME confirmation while the slash hint is present", async () => {
   expect(sentPrompts).toStrictEqual([]);
   expect(screen.getByTestId("slash-workflow-menu")).toBeInTheDocument();
   fireEvent.compositionEnd(editor, { data: "周报" });
+  expect(slashHint(editor)).toBeInTheDocument();
   await user.keyboard("周报");
   expect(editor.textContent).toBe("Draft /周报");
   expect(slashHint(editor)).toBeNull();

@@ -10,7 +10,14 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
+import jaJPCommon from "../../../i18n/locales/ja-JP/common.json";
+import jaJPCommonUrl from "../../../i18n/locales/ja-JP/common.json?url";
+import zhHansCommon from "../../../i18n/locales/zh-Hans/common.json";
+import zhHansCommonUrl from "../../../i18n/locales/zh-Hans/common.json?url";
+import zhHantCommon from "../../../i18n/locales/zh-Hant/common.json";
+import zhHantCommonUrl from "../../../i18n/locales/zh-Hant/common.json?url";
 import {
   fill,
   queryAllByRoleFast,
@@ -115,6 +122,66 @@ function slashButton(name: string): HTMLElement {
   }
   return result;
 }
+
+test.each([
+  { locale: "en-US", query: "Web", label: "Website" },
+  {
+    locale: "zh-Hans",
+    query: "网",
+    label: "网站",
+    resource: zhHansCommon,
+    resourceUrl: zhHansCommonUrl,
+  },
+  {
+    locale: "zh-Hant",
+    query: "網",
+    label: "網站",
+    resource: zhHantCommon,
+    resourceUrl: zhHantCommonUrl,
+  },
+  {
+    locale: "ja-JP",
+    query: "ウェブ",
+    label: "ウェブサイト",
+    resource: jaJPCommon,
+    resourceUrl: jaJPCommonUrl,
+  },
+] as const)(
+  "Search template categories by their displayed name in $locale",
+  async (scenario) => {
+    const { locale, query, label } = scenario;
+    const user = userEvent.setup({ delay: null });
+    setupModels();
+    mockChatLifecycle(context, { threadId: THREAD_ID });
+    if (scenario.resourceUrl) {
+      // These searches depend on the real translated labels; the default
+      // locale fixture intentionally falls back to English copy.
+      context.mocks.http.get(scenario.resourceUrl, () => {
+        return HttpResponse.json(scenario.resource);
+      });
+    }
+    await setupPage({ context, path: `/agents/${AGENT_ID}/chat`, locale });
+    const editor = await findComposerEditor();
+    await fill(editor, "Draft /");
+    await screen.findByTestId("slash-workflow-menu");
+    await user.keyboard(query);
+    expect(editor.textContent).toBe(`Draft /${query}`);
+    await waitFor(() => {
+      expect(slashButton(label)).toBeInTheDocument();
+      expect(detailPane()).toHaveAttribute("data-category", "website");
+    });
+    await user.keyboard(label.slice(query.length));
+    expect(editor.textContent).toBe(`Draft /${label}`);
+    await waitFor(() => {
+      expect(slashButton(label)).toBeInTheDocument();
+    });
+    await user.click(slashButton(label));
+    await screen.findByRole("dialog");
+    expect(tabByText(label)).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+    expect(editor.textContent).toBe("Draft ");
+  },
+);
 
 test("Illustration covers keep their own proportion; decks keep the 16:9 tile", async () => {
   const user = userEvent.setup();
