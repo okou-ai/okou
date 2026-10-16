@@ -1,4 +1,4 @@
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import type {
   GithubConnectUserBody,
   GithubInstallationResponse,
@@ -11,7 +11,7 @@ import { and, eq } from "drizzle-orm";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { request$ } from "../context/hono";
-import { writeDb$, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import { env, optionalEnv } from "../../lib/env";
 import { getOAuthApiOrigin } from "../../lib/oauth-origin";
@@ -33,34 +33,42 @@ function githubConnectStartUrl(origin: string): string {
   return new URL("/api/github/oauth/connect", origin).toString();
 }
 
-async function githubInstallUrl(
-  args: {
-    readonly db: ReadonlyDb;
-    readonly userId: string;
-    readonly orgId: string;
-    readonly callbackOrigin: string;
-    readonly providerCallbackOrigin: string;
+const githubInstallUrl$ = command(
+  async (
+    { get },
+    args: {
+      readonly userId: string;
+      readonly orgId: string;
+      readonly callbackOrigin: string;
+      readonly providerCallbackOrigin: string;
+    },
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    const appSlug = optionalEnv("GITHUB_APP_SLUG");
+    if (!appSlug) {
+      return null;
+    }
+
+    const db = get(db$);
+    const [orgRow] = await db
+      .select({ defaultAgentId: orgMetadata.defaultAgentId })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, args.orgId))
+      .limit(1);
+    signal.throwIfAborted();
+    const composeId = orgRow?.defaultAgentId ?? null;
+
+    return await buildGithubAppInstallUrl({
+      appSlug,
+      userId: args.userId,
+      orgId: args.orgId,
+      composeId: composeId ?? undefined,
+      callbackOrigin: args.callbackOrigin,
+      providerCallbackOrigin: args.providerCallbackOrigin,
+      secretsEncryptionKey: env("SECRETS_ENCRYPTION_KEY"),
+    });
   },
-  signal: AbortSignal,
-): Promise<string | null> {
-  const appSlug = optionalEnv("GITHUB_APP_SLUG");
-  if (!appSlug) {
-    return null;
-  }
-
-  const composeId = await loadOrgDefaultComposeId(args.db, args.orgId);
-  signal.throwIfAborted();
-
-  return await buildGithubAppInstallUrl({
-    appSlug,
-    userId: args.userId,
-    orgId: args.orgId,
-    composeId: composeId ?? undefined,
-    callbackOrigin: args.callbackOrigin,
-    providerCallbackOrigin: args.providerCallbackOrigin,
-    secretsEncryptionKey: env("SECRETS_ENCRYPTION_KEY"),
-  });
-}
+);
 
 async function publishGithubChanged(userIds: readonly string[]): Promise<void> {
   const uniqueUserIds = Array.from(new Set(userIds));
@@ -83,78 +91,73 @@ function canManageInstallation(args: {
   return args.orgRole === "admin";
 }
 
-async function loadOrgDefaultComposeId(
-  db: ReadonlyDb,
-  orgId: string,
-): Promise<string | null> {
-  const [orgRow] = await db
-    .select({ defaultAgentId: orgMetadata.defaultAgentId })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, orgId))
-    .limit(1);
+const orgGithubInstallation$ = computed(
+  async (get): Promise<GitHubInstallationRecord | null> => {
+    const auth = get(organizationAuthContext$);
+    const db = get(db$);
+    const [installation] = await db
+      .select()
+      .from(githubInstallations)
+      .where(
+        and(
+          eq(githubInstallations.orgId, auth.orgId),
+          eq(githubInstallations.status, "active"),
+        ),
+      )
+      .limit(1);
 
-  return orgRow?.defaultAgentId ?? null;
-}
+    return installation ?? null;
+  },
+);
 
-async function loadOrgGithubInstallation(
-  db: ReadonlyDb,
-  orgId: string,
-): Promise<GitHubInstallationRecord | null> {
-  const [installation] = await db
-    .select()
-    .from(githubInstallations)
-    .where(
-      and(
-        eq(githubInstallations.orgId, orgId),
-        eq(githubInstallations.status, "active"),
-      ),
-    )
-    .limit(1);
+const userGithubLink$ = computed(
+  async (get): Promise<GitHubUserLinkRecord | null> => {
+    const auth = get(organizationAuthContext$);
+    const db = get(db$);
+    const installation = await get(orgGithubInstallation$);
+    if (!installation) {
+      return null;
+    }
+    const [link] = await db
+      .select({ githubUserId: githubUserLinks.githubUserId })
+      .from(githubUserLinks)
+      .where(
+        and(
+          eq(githubUserLinks.installationId, installation.id),
+          eq(githubUserLinks.userId, auth.userId),
+        ),
+      )
+      .limit(1);
 
-  return installation ?? null;
-}
+    return link ?? null;
+  },
+);
 
-async function loadUserGithubLink(args: {
-  readonly db: ReadonlyDb;
-  readonly installationId: string;
-  readonly userId: string;
-}): Promise<GitHubUserLinkRecord | null> {
-  const [link] = await args.db
-    .select({ githubUserId: githubUserLinks.githubUserId })
-    .from(githubUserLinks)
-    .where(
-      and(
-        eq(githubUserLinks.installationId, args.installationId),
-        eq(githubUserLinks.userId, args.userId),
-      ),
-    )
-    .limit(1);
+const userGithubConnectorUsername$ = computed(
+  async (get): Promise<string | null> => {
+    const auth = get(organizationAuthContext$);
+    const db = get(db$);
+    const link = await get(userGithubLink$);
+    if (!link) {
+      return null;
+    }
+    const [connector] = await db
+      .select({ externalUsername: connectors.externalUsername })
+      .from(connectors)
+      .where(
+        and(
+          eq(connectors.orgId, auth.orgId),
+          eq(connectors.userId, auth.userId),
+          eq(connectors.connectorSlug, "github"),
+          eq(connectors.isDefault, true),
+          eq(connectors.externalId, link.githubUserId),
+        ),
+      )
+      .limit(1);
 
-  return link ?? null;
-}
-
-async function loadUserGithubConnectorUsername(args: {
-  readonly db: ReadonlyDb;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly githubUserId: string;
-}): Promise<string | null> {
-  const [connector] = await args.db
-    .select({ externalUsername: connectors.externalUsername })
-    .from(connectors)
-    .where(
-      and(
-        eq(connectors.orgId, args.orgId),
-        eq(connectors.userId, args.userId),
-        eq(connectors.connectorSlug, "github"),
-        eq(connectors.isDefault, true),
-        eq(connectors.externalId, args.githubUserId),
-      ),
-    )
-    .limit(1);
-
-  return connector?.externalUsername ?? null;
-}
+    return connector?.externalUsername ?? null;
+  },
+);
 
 export const connectGithubUser$ = command(
   async ({ get, set }, body: GithubConnectUserBody, signal: AbortSignal) => {
@@ -188,7 +191,7 @@ export const connectGithubUser$ = command(
           },
           signal,
         )
-      : await loadOrgGithubInstallation(db, auth.orgId);
+      : await get(orgGithubInstallation$);
     signal.throwIfAborted();
 
     if (!installation) {
@@ -233,15 +236,15 @@ export const getGithubInstallation$ = command(
     const apiOrigin = getOAuthApiOrigin(get(request$).raw);
     const callbackOrigin = apiOrigin;
     const providerCallbackOrigin = apiOrigin;
-    const db = set(writeDb$);
-    const installation = await loadOrgGithubInstallation(db, auth.orgId);
+    set(writeDb$);
+    const installation = await get(orgGithubInstallation$);
     signal.throwIfAborted();
 
     if (!installation) {
       const installUrl = canManageInstallation({ orgRole: auth.orgRole })
-        ? await githubInstallUrl(
+        ? await set(
+            githubInstallUrl$,
             {
-              db,
               userId: auth.userId,
               orgId: auth.orgId,
               callbackOrigin,
@@ -264,22 +267,11 @@ export const getGithubInstallation$ = command(
       };
     }
 
-    const link = await loadUserGithubLink({
-      db,
-      installationId: installation.id,
-      userId: auth.userId,
-    });
+    const link = await get(userGithubLink$);
     signal.throwIfAborted();
 
     const connectedGithubUsername =
-      link === null
-        ? null
-        : await loadUserGithubConnectorUsername({
-            db,
-            orgId: auth.orgId,
-            userId: auth.userId,
-            githubUserId: link.githubUserId,
-          });
+      link === null ? null : await get(userGithubConnectorUsername$);
     signal.throwIfAborted();
 
     const resolver = await get(connectorActionResolver(["github"]));
