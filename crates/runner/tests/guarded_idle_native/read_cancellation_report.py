@@ -40,11 +40,19 @@ def samples(values, begin, end, policy):
     if not isinstance(values, list):
         raise ValueError("actual read source samples missing")
     previous = -1
+    epoch_lower, epoch_upper = 0, None
     for value in values:
         logical_report.sample(value, begin, end, policy)
         if value["read_start_offset_ns"] <= previous:
             raise ValueError("actual read observation was replayed")
         previous = value["read_start_offset_ns"]
+        # The source epoch is shared. Each actual read start must fit inside
+        # its enclosing CLOCK_MONOTONIC interval, including concurrent reads.
+        epoch_lower = max(epoch_lower, value["started_ns"]-previous)
+        upper = value["finished_ns"]-previous
+        epoch_upper = upper if epoch_upper is None else min(epoch_upper, upper)
+        if epoch_lower > epoch_upper:
+            raise ValueError("actual read offsets contradict their monotonic windows")
 
 
 def validate(directory):
@@ -95,8 +103,13 @@ def validate(directory):
             samples(actual, events[0]["monotonic_ns"], accepted["monotonic_ns"], policy)
             available = value.get("available_bytes")
             if guarded:
-                fresh = [v for v in actual if pressure.integer(v["available_bytes"], policy["recovery_available_bytes"])
-                    and v["age_ns"]+accepted["monotonic_ns"]-v["finished_ns"] < policy["max_sample_age_millis"]*1_000_000]
+                fresh = []
+                for observed in actual:
+                    if (pressure.integer(observed["available_bytes"], policy["recovery_available_bytes"])
+                            and observed["age_ns"]+accepted["monotonic_ns"]-observed["finished_ns"] < policy["max_sample_age_millis"]*1_000_000):
+                        fresh.append(observed)
+                    else:
+                        fresh = []
                 if (not pressure.integer(available, policy["recovery_available_bytes"]) or len(fresh) < 2
                         or not any(v["available_bytes"] == available for v in fresh)
                         or fresh[-1]["read_start_offset_ns"]-fresh[0]["read_start_offset_ns"] < policy["pressure_recovery_sustain_millis"]*1_000_000):

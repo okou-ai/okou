@@ -153,6 +153,37 @@ class ReadCancellationTests(unittest.TestCase):
             lambda:self.witnesses[4]["evidence"]["samples"][1].update(read_start_offset_ns=210_000_000),
             lambda:self.witnesses[4]["evidence"]["samples"][0].update(age_ns=2_000_000_000)))
 
+    def test_ready_cannot_bridge_critical_unknown_or_incomplete_recovery(self):
+        original=copy.deepcopy(self.witnesses)
+        for available in (1, None, self.policy["recovery_available_bytes"]-1):
+            with self.subTest(available=available):
+                self.witnesses=copy.deepcopy(original)
+                for index in (4,6):
+                    values=self.witnesses[index]["evidence"]["samples"]
+                    interrupted=copy.deepcopy(values[0])
+                    for key in ("started_ns","finished_ns","read_start_offset_ns"):
+                        interrupted[key]+=100_000_000
+                    interrupted["available_bytes"]=available
+                    values.insert(1,interrupted)
+                with self.assertRaises(ValueError):self.validate()
+
+    def test_ready_offsets_must_share_the_actual_monotonic_read_windows(self):
+        original=copy.deepcopy(self.witnesses)
+        for shift in (10,-10):
+            with self.subTest(shift=shift):
+                self.witnesses=copy.deepcopy(original)
+                for index in (4,6):
+                    values=self.witnesses[index]["evidence"]["samples"]
+                    for key in ("started_ns","finished_ns"):
+                        values[1][key]=values[0][key]+shift
+                with self.assertRaises(ValueError):self.validate()
+
+    def test_concurrent_read_windows_can_overlap_with_ordered_actual_starts(self):
+        for index in (4,6):
+            values=self.witnesses[index]["evidence"]["samples"]
+            values[1]["started_ns"]=values[0]["started_ns"]-10
+        self.assertTrue(self.validate()["native_read_cancellation_complete"])
+
     def test_startup_stays_unguarded_unknown_and_no_fake_source(self):
         self.refused((lambda:self.witnesses[1]["evidence"].update(state="Ready"),
             lambda:self.witnesses[1]["evidence"].update(available_bytes=1),
