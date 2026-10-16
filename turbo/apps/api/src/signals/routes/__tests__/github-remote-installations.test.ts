@@ -150,6 +150,11 @@ describe("GitHub remote installation association", () => {
       isConnected: true,
       connectedGithubUserId: "502",
       connectedGithubUsername: "default-github-identity",
+      installation: { installationId: String(remote.id), isAdmin: true },
+    });
+    const member = bdd.user({ orgId, orgRole: "org:member" });
+    await expect(github.readInstallation(member)).resolves.toMatchObject({
+      isConnected: false,
       installation: { installationId: String(remote.id), isAdmin: false },
     });
     await expect(github.readInstallation(foreign)).resolves.toMatchObject({
