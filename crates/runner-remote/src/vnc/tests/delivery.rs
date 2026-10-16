@@ -320,6 +320,7 @@ async fn x509_none_rejects_the_wrong_tls_server_identity_before_session_start() 
 #[tokio::test]
 async fn input_write_to_reset_socket_is_unknown_and_never_replayed() {
     let mut h = Harness::new().await;
+    h.run.enable_diagnostics(&h.runtime).await;
     let resolve = h.resolve().await;
     let _check = h.check("valid", 200).await;
     let session = h.start("shared").await.session();
@@ -333,10 +334,11 @@ async fn input_write_to_reset_socket_is_unknown_and_never_replayed() {
             json!({"sessionId":session,"input":{"type":"text","text":"a"}}),
         )
         .await;
-    assert_eq!(
-        reply.result(),
-        &json!({"outcome":"unknown","reason":"disconnected"})
-    );
+    assert_eq!(reply.result()["outcome"], "unknown");
+    assert_eq!(reply.result()["reason"], "disconnected");
+    let text = crate::test_fixtures::diagnostic_text(reply.result());
+    assert!(text.contains("VNC input: failed."), "{text}");
+    assert!(text.contains(&format!("Session: {session}\n")), "{text}");
     resolve.assert_calls_async(1).await;
     assert_eq!(h.network.attempts.lock().unwrap().len(), 1);
     h.run.shutdown().await;

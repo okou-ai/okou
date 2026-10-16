@@ -99,12 +99,18 @@ async fn early_error_or_failure_after_data_does_not_require_end() {
         if started {
             writer.send(&Frame::Data(vec![42])).await.unwrap();
         }
+        let delivery = if started {
+            Delivery::Unknown
+        } else {
+            Delivery::NotDispatched
+        };
+        let explanation = "Runner-owned capture evidence; no automatic replay.";
         writer
-            .send(&error(if started {
-                Delivery::Unknown
-            } else {
-                Delivery::NotDispatched
-            }))
+            .send(&Frame::Control(Response::error_with_diagnostic(
+                ErrorCode::Protocol,
+                delivery,
+                Some(explanation.into()),
+            )))
             .await
             .unwrap();
         let mut reader = Reader::responses(wire.as_slice());
@@ -113,7 +119,7 @@ async fn early_error_or_failure_after_data_does_not_require_end() {
         }
         assert!(matches!(
             reader.next().await.unwrap(),
-            Some(Frame::Control(Response::Error { .. }))
+            Some(Frame::Control(Response::Error { delivery: actual, diagnostic_text: Some(text), .. })) if actual == delivery && text == explanation
         ));
         assert!(reader.next().await.unwrap().is_none());
     }

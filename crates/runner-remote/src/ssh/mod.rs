@@ -35,6 +35,7 @@ use runner_types::ids::RunId;
 
 use crate::RemoteInitError;
 use authority::{Authority, CredentialAuth, PreparedAuth, PreparedCredential, Trust};
+pub(crate) use forwarding::ForwardingTrace;
 pub(crate) use forwarding::{DirectTcpIpStream, ForwardingFailure};
 use io::GuestIo;
 use network::{Network, PublicNetwork};

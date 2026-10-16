@@ -47,6 +47,34 @@ impl Report {
                 ));
             }
         }
+        if let Some(vnc) = &self.vnc {
+            if let (Some(failure), Some(at)) = (vnc.first_failure, vnc.first_failure_at) {
+                text.push_str(&format!("- VNC session first terminal failure: {}; observed at {}. This operation retains that source cause.\n", words(failure)?, timestamp(at)));
+            }
+            text.push_str(&format!(
+                "- VNC RFB route: {}; authentication profile: {}; independent KDC route: {}.\n",
+                vnc.route,
+                observed(vnc.profile),
+                observed(vnc.kdc_route)
+            ));
+            for (subject, address) in [("VNC RFB", vnc.address), ("VNC KDC", vnc.kdc_address)] {
+                if let Some(address) = address {
+                    text.push_str(&format!(
+                        "- {subject} selected endpoint: {address}; family: {}.\n",
+                        if address.is_ipv4() { "ipv4" } else { "ipv6" }
+                    ));
+                }
+            }
+            for step in &vnc.steps {
+                text.push_str(&format!(
+                    "- VNC {}: {}.\n",
+                    words(step.stage)?,
+                    words(step.status)?
+                ));
+            }
+            text.push_str(&format!("- VNC RFB error: {}; authentication stage: {}; Apple DH check: {}; generator: {}; key bytes: {}.\n",
+                observed(vnc.rfb_error_code), observed(vnc.authentication_stage), observed(vnc.dh_check), observed(vnc.dh_generator), observed(vnc.dh_key_bytes)));
+        }
         for dependency in &self.dependencies {
             let failure = match dependency.cause {
                 Some(failure) => cause(failure)?,
@@ -112,6 +140,30 @@ impl Report {
     fn guidance(&self) -> &'static str {
         use super::trace::Stage;
         use crate::ssh::FailureReason as S;
+        if matches!(self.cause, Cause::Vnc(_)) {
+            if self.dependencies.iter().any(|dependency| {
+                matches!(
+                    dependency.cause,
+                    Some(Cause::Ssh(S::HostKeyMismatch | S::UnsupportedHostKey))
+                )
+            }) {
+                return "Verify the dependency's SSH server host key through a trusted channel before updating trust; VNC credentials cannot fix an SSH trust refusal.";
+            }
+            if self.vnc.as_ref().is_some_and(|snapshot| {
+                snapshot.steps.iter().any(|step| {
+                    matches!(
+                        step.stage,
+                        crate::vnc::evidence::Stage::KdcTransport
+                            | crate::vnc::evidence::Stage::KdcExchange
+                    ) && matches!(
+                        step.status,
+                        super::trace::Progress::Failed | super::trace::Progress::Unknown
+                    )
+                })
+            }) {
+                return "Inspect the independently routed KDC and its authorization/source evidence. A ticket request may have been delivered; preserve its uncertainty and do not replay automatically.";
+            }
+        }
         if matches!(
             self.cause,
             Cause::Native(crate::tailscale::Failure::DomainFailed)
@@ -184,6 +236,32 @@ impl Report {
             Cause::File(_) => "Check the remote path, permissions and file-operation outcome.",
             Cause::Native(_) => {
                 "Inspect the retained native source before starting another operation."
+            }
+            Cause::Vnc(
+                crate::vnc::Failure::AuthenticationFailed | crate::vnc::Failure::InvalidCredential,
+            ) => {
+                "Check the configured VNC authentication profile and trusted server identity using the observed RFB stage."
+            }
+            Cause::Vnc(crate::vnc::Failure::UnsafeDestination) => {
+                "Check the configured destination and its complete DNS answer set against the public-address policy."
+            }
+            Cause::Vnc(
+                crate::vnc::Failure::Authority
+                | crate::vnc::Failure::Unavailable
+                | crate::vnc::Failure::ConfigurationChanged,
+            ) => "Check current Run, chat, VNC host and dependency permissions and configuration.",
+            Cause::Vnc(crate::vnc::Failure::ResourceExhausted) => {
+                "Check Run and host VNC session capacity before starting another connection."
+            }
+            Cause::Vnc(
+                crate::vnc::Failure::TimedOut
+                | crate::vnc::Failure::Network
+                | crate::vnc::Failure::Disconnected,
+            ) => {
+                "Inspect the observed VNC transport/RFB stage and server path. A timeout or disconnect alone does not identify an offline host or firewall block."
+            }
+            Cause::Vnc(crate::vnc::Failure::DeliveryUnknown) => {
+                "Preserve the operation's unknown delivery outcome; inspect the session and take a fresh screenshot before considering another action."
             }
             _ if self.ssh.as_ref().is_some_and(|s| s.failed_at(Stage::Dns)) => {
                 "Check destination DNS resolution."
