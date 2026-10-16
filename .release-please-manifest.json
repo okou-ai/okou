@@ -17,7 +17,6 @@
   "crates/process-launch": "0.1.2",
   "crates/guest-agent": "0.107.7",
   "crates/guest-contracts": "0.25.4",
-  "crates/session-history-selector": "0.3.162",
   "crates/guest-tool-exec": "0.3.13",
   "crates/guest-task-exec": "0.2.15",
   "crates/guest-telemetry": "0.3.148",
