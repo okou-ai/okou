@@ -599,12 +599,7 @@ async fn run_supervisor(config: SupervisorTaskConfig) {
             }
             () = sleep_until_retry(&ably_retry.restart_at) => {}
             () = sleep_until_optional(disconnect_error_at), if disconnect_error_at.is_some() => {
-                disconnect.mark_error_logged();
-                error!(
-                    reason = %disconnect.reason(),
-                    disconnected_secs = disconnect.disconnected_secs(),
-                    "ably disconnected for too long, continuing fast poll"
-                );
+                disconnect.log_persistent_disconnect();
             }
         }
     }
@@ -1150,64 +1145,65 @@ fn handle_ably_connect_result(
     }
 }
 
-struct AblyDisconnectState {
-    connected: bool,
-    disconnected_at: Option<tokio::time::Instant>,
-    error_logged: bool,
-    reason: Option<String>,
+enum AblyDisconnectState {
+    Connected,
+    Disconnected {
+        since: tokio::time::Instant,
+        reason: String,
+        error_logged: bool,
+    },
 }
 
 impl AblyDisconnectState {
     fn disconnected(reason: String) -> Self {
-        Self {
-            connected: false,
-            disconnected_at: Some(tokio::time::Instant::now()),
+        Self::Disconnected {
+            since: tokio::time::Instant::now(),
+            reason,
             error_logged: false,
-            reason: Some(reason),
         }
     }
 
     fn is_connected(&self) -> bool {
-        self.connected
+        matches!(self, Self::Connected)
     }
 
     fn mark_connected(&mut self) {
-        self.connected = true;
-        self.disconnected_at = None;
-        self.error_logged = false;
-        self.reason = None;
+        *self = Self::Connected;
     }
 
     fn record_disconnected(&mut self, reason: String) {
-        if self.connected || self.disconnected_at.is_none() {
-            self.disconnected_at = Some(tokio::time::Instant::now());
-            self.error_logged = false;
+        match self {
+            Self::Connected => *self = Self::disconnected(reason),
+            Self::Disconnected { reason: latest, .. } => *latest = reason,
         }
-        self.connected = false;
-        self.reason = Some(reason);
     }
 
     fn error_deadline(&self) -> Option<tokio::time::Instant> {
-        if self.connected || self.error_logged {
-            None
-        } else {
-            self.disconnected_at
-                .map(|at| at + ABLY_DISCONNECT_ERROR_AFTER)
+        match self {
+            Self::Disconnected {
+                since,
+                error_logged: false,
+                ..
+            } => Some(*since + ABLY_DISCONNECT_ERROR_AFTER),
+            _ => None,
         }
     }
 
-    fn mark_error_logged(&mut self) {
-        self.error_logged = true;
-    }
-
-    fn disconnected_secs(&self) -> u64 {
-        self.disconnected_at
-            .map(|at| at.elapsed().as_secs())
-            .unwrap_or_else(|| ABLY_DISCONNECT_ERROR_AFTER.as_secs())
-    }
-
-    fn reason(&self) -> &str {
-        self.reason.as_deref().unwrap_or("unknown")
+    fn log_persistent_disconnect(&mut self) {
+        if let Self::Disconnected {
+            since,
+            reason,
+            error_logged,
+        } = self
+            && !*error_logged
+        {
+            *error_logged = true;
+            error!(
+                reason = %reason,
+                disconnected_secs = since.elapsed().as_secs(),
+                "ably disconnected for too long, continuing fast poll"
+            );
+        }
     }
 }
 
@@ -1857,30 +1853,57 @@ mod tests {
         assert!(wakeups.snapshot().deferred_poll_at.is_none());
     }
 
-    #[test]
-    fn disconnect_state_preserves_one_shot_escalation_window() {
-        let mut state = AblyDisconnectState {
-            connected: true,
-            disconnected_at: None,
-            error_logged: false,
-            reason: None,
-        };
+    #[tokio::test(start_paused = true)]
+    async fn disconnect_state_preserves_one_shot_escalation_window() {
+        let captured = CapturedEvents::default();
+        let dispatch =
+            tracing::Dispatch::new(tracing_subscriber::registry().with(captured.clone()));
+        let mut state = AblyDisconnectState::disconnected("connecting".to_string());
+        state.mark_connected();
 
         state.record_disconnected("first disconnect".to_string());
-        let first_disconnected_at = state.disconnected_at;
-        state.mark_error_logged();
+        let first_deadline = state.error_deadline().unwrap();
+        tokio::time::advance(Duration::from_secs(20)).await;
         state.record_disconnected("second disconnect event".to_string());
 
-        assert!(!state.connected);
-        assert_eq!(state.disconnected_at, first_disconnected_at);
-        assert!(state.error_logged);
-        assert_eq!(state.reason(), "second disconnect event");
+        assert!(!state.is_connected());
+        assert_eq!(state.error_deadline(), Some(first_deadline));
+        tokio::time::advance(Duration::from_secs(40)).await;
+        tracing::dispatcher::with_default(&dispatch, || state.log_persistent_disconnect());
         assert!(state.error_deadline().is_none());
 
+        state.record_disconnected("third disconnect event".to_string());
+        assert!(state.error_deadline().is_none());
+        tokio::time::advance(ABLY_DISCONNECT_ERROR_AFTER).await;
+        tracing::dispatcher::with_default(&dispatch, || state.log_persistent_disconnect());
+        assert_eq!(captured.entries().len(), 1);
+
         state.mark_connected();
+        assert!(state.is_connected());
+        assert!(state.error_deadline().is_none());
         state.record_disconnected("new window".to_string());
-        assert!(!state.error_logged);
-        assert!(state.error_deadline().is_some());
+        assert_eq!(
+            state.error_deadline(),
+            Some(tokio::time::Instant::now() + ABLY_DISCONNECT_ERROR_AFTER)
+        );
+        tokio::time::advance(ABLY_DISCONNECT_ERROR_AFTER).await;
+        tracing::dispatcher::with_default(&dispatch, || state.log_persistent_disconnect());
+        assert!(state.error_deadline().is_none());
+
+        let events = captured.entries();
+        assert_eq!(events.len(), 2);
+        for (event, reason) in events.iter().zip(["second disconnect event", "new window"]) {
+            assert_eq!(event.level, Level::ERROR);
+            assert_eq!(
+                event.fields.get("message").map(String::as_str),
+                Some("ably disconnected for too long, continuing fast poll")
+            );
+            assert_eq!(event.fields.get("reason").map(String::as_str), Some(reason));
+            assert_eq!(
+                event.fields.get("disconnected_secs").map(String::as_str),
+                Some("60")
+            );
+        }
     }
 
     #[tokio::test(start_paused = true)]
