@@ -1334,6 +1334,21 @@ const connectors = [
     ],
   }),
   connector({
+    connectorSlug: "google-sheets",
+    label: "Google Sheets",
+    authMethods: [
+      standardOauthMethod({
+        connectorSlug: "google-sheets",
+        prefix: "GOOGLE_SHEETS",
+        tokenEnvironmentNames: ["GOOGLE_SHEETS_TOKEN"],
+        scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+      }),
+    ],
+    firewall: generatedFirewall([
+      bearerApi("https://sheets.googleapis.com", "GOOGLE_SHEETS_TOKEN"),
+    ]),
+  }),
+  connector({
     connectorSlug: "gumroad",
     label: "Gumroad",
     authMethods: [

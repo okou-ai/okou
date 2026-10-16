@@ -956,7 +956,7 @@ function refreshFailureDiagnostic(
   return { errorKind: "other", providerStatus: null };
 }
 
-function isRetryableGmailRefreshResponse(error: unknown): boolean {
+function isRetryableOAuthRefreshResponse(error: unknown): boolean {
   if (
     !isOAuthProviderHttpError(error) ||
     error.oauthError === "invalid_grant" ||
@@ -2315,14 +2315,16 @@ async function markRefreshTokenMissing(
 }
 
 // Refresh-failure diagnostics follow one rule: a `reconnect_required` outcome
-// is already visible as persisted reconnect state, so it writes no log, and an
-// `upstream_provider` outcome writes one warn without provider message text.
+// is already visible as persisted reconnect state, so it writes no log. An
+// `upstream_provider` outcome is logged only after bounded recovery finishes,
+// as an error for Google Sheets and a warning for other sources.
 async function markAndReturnRefreshFailure(
   args: RefreshAccessTokenArgs,
   context: RefreshTokenContext,
   retry: {
     readonly error: unknown;
     readonly attempted: boolean;
+    readonly attemptCount: number;
     readonly firstProviderStatus: number | null;
   },
   signal: AbortSignal,
@@ -2346,7 +2348,12 @@ async function markAndReturnRefreshFailure(
   }
   const { errorCode, failureReason } = classifyRefreshFailure(error, signal);
   if (failureReason === "upstream_provider") {
-    L.warn(`${args.accessSourceKey} token refresh failed`, {
+    const logFailure =
+      args.sourceType === "connector" &&
+      args.accessSourceKey === "google-sheets"
+        ? L.error
+        : L.warn;
+    logFailure(`${args.accessSourceKey} token refresh failed`, {
       accessSourceKey: args.accessSourceKey,
       orgId: args.orgId,
       userId: args.userId,
@@ -2354,6 +2361,7 @@ async function markAndReturnRefreshFailure(
       failureReason,
       ...refreshFailureDiagnostic(error, signal),
       retryAttempted: retry.attempted,
+      attemptCount: retry.attemptCount,
       firstProviderStatus: retry.firstProviderStatus,
     });
   }
@@ -2626,33 +2634,47 @@ async function refreshPreparedStoredAccessToken(args: {
     accessSourceKey: refreshArgs.accessSourceKey,
     state,
   });
-  let retryAttempted = false;
+  const isGoogleSheetsRefresh =
+    refreshArgs.sourceType === "connector" &&
+    refreshArgs.accessSourceKey === "google-sheets";
+  let maxAttempts = 1;
+  if (isGoogleSheetsRefresh) {
+    maxAttempts = 3;
+  } else if (
+    refreshArgs.sourceType === "connector" &&
+    refreshArgs.accessSourceKey === "gmail"
+  ) {
+    maxAttempts = 2;
+  }
+  let attemptCount = 1;
   let firstProviderStatus: number | null = null;
   let refreshResult = await settle(
     refreshPreparedAccessToken({ prepared, inputs }, refreshSignal),
   );
-  if (
+  while (
     !refreshResult.ok &&
-    refreshArgs.sourceType === "connector" &&
-    refreshArgs.accessSourceKey === "gmail" &&
+    attemptCount < maxAttempts &&
     !refreshSignal.aborted &&
-    isRetryableGmailRefreshResponse(refreshResult.error)
+    (isRetryableOAuthRefreshResponse(refreshResult.error) ||
+      (isGoogleSheetsRefresh && isFetchNetworkError(refreshResult.error)))
   ) {
-    firstProviderStatus = isOAuthProviderHttpError(refreshResult.error)
-      ? refreshResult.error.status
-      : null;
-    const retryDelay = await settleIncludingAbort(
-      delay(250, { signal: refreshSignal }),
-    );
+    if (attemptCount === 1 && isOAuthProviderHttpError(refreshResult.error)) {
+      firstProviderStatus = refreshResult.error.status;
+    }
+    const retryDelay = await settleIncludingAbort(async () => {
+      await delay(250 * attemptCount, { signal: refreshSignal });
+      refreshSignal.throwIfAborted();
+    });
     if (!retryDelay.ok) {
       refreshResult = retryDelay;
-    } else {
-      retryAttempted = true;
-      refreshResult = await settle(
-        refreshPreparedAccessToken({ prepared, inputs }, refreshSignal),
-      );
+      break;
     }
+    attemptCount += 1;
+    refreshResult = await settle(
+      refreshPreparedAccessToken({ prepared, inputs }, refreshSignal),
+    );
   }
+  const retryAttempted = attemptCount > 1;
   if (!refreshResult.ok) {
     return markAndReturnRefreshFailure(
       refreshArgs,
@@ -2660,6 +2682,7 @@ async function refreshPreparedStoredAccessToken(args: {
       {
         error: refreshResult.error,
         attempted: retryAttempted,
+        attemptCount,
         firstProviderStatus,
       },
       refreshSignal,
@@ -2672,7 +2695,8 @@ async function refreshPreparedStoredAccessToken(args: {
     result: refreshResult.value,
   });
   if (!outputValidation.ok) {
-    L.warn(`${refreshArgs.accessSourceKey} token refresh output invalid`, {
+    const logFailure = isGoogleSheetsRefresh ? L.error : L.warn;
+    logFailure(`${refreshArgs.accessSourceKey} token refresh output invalid`, {
       accessSourceKey: refreshArgs.accessSourceKey,
       orgId: refreshArgs.orgId,
       userId: refreshArgs.userId,
@@ -2681,6 +2705,7 @@ async function refreshPreparedStoredAccessToken(args: {
       errorKind: "provider_response",
       providerStatus: null,
       retryAttempted,
+      attemptCount,
     });
     await markRefreshFailure(refreshArgs, prepared.context, {
       errorCode: null,
@@ -2697,7 +2722,7 @@ async function refreshPreparedStoredAccessToken(args: {
     outputValidation.outputs,
     refreshResult.value,
   );
-  if (retryAttempted) {
+  if (retryAttempted && refreshArgs.accessSourceKey === "gmail") {
     L.info("gmail token refresh recovered", {
       accessSourceKey: "gmail",
       orgId: refreshArgs.orgId,

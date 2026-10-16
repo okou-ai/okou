@@ -372,26 +372,28 @@ async function exactSecretConnectorSources(
   };
 }
 
-async function publicGmailRefreshFixture() {
+async function publicGoogleRefreshFixture(slug: "gmail" | "google-sheets") {
   const fw = createFirewallApi(context);
   const { actor, headers } = await publicConnections.run();
+  const secretName = slug === "gmail" ? "GMAIL_TOKEN" : "GOOGLE_SHEETS_TOKEN";
+  const accessToken = `stale-${slug}-access`;
   mockOptionalEnv("GOOGLE_OAUTH_CLIENT_ID", "google-client-id");
   mockOptionalEnv("GOOGLE_OAUTH_CLIENT_SECRET", "google-client-secret");
-  await publicConnections.googleOAuth(actor, "gmail", {
-    accessToken: "stale-gmail-access",
-    refreshToken: "synthetic-gmail-refresh-secret",
+  await publicConnections.googleOAuth(actor, slug, {
+    accessToken,
+    refreshToken: `synthetic-${slug}-refresh-secret`,
     expiresIn: -60,
   });
   const body = {
     encryptedSecrets: fw.encryptedSecretsBody({
-      GMAIL_TOKEN: "stale-gmail-access",
+      [secretName]: accessToken,
     }),
     authHeaders: {
-      Authorization: `Bearer ${secretTemplate("GMAIL_TOKEN")}`,
+      Authorization: `Bearer ${secretTemplate(secretName)}`,
     },
-    ...(await exactSecretConnectorSources(actor, { GMAIL_TOKEN: "gmail" })),
+    ...(await exactSecretConnectorSources(actor, { [secretName]: slug })),
   };
-  return { fw, headers, body };
+  return { fw, actor, headers, body };
 }
 
 function gateFirstStoredSecretDecrypt(): {
@@ -2247,7 +2249,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
   });
 
   it("recovers a temporary Gmail OAuth response within the same refresh", async () => {
-    const { fw, headers, body } = await publicGmailRefreshFixture();
+    const { fw, headers, body } = await publicGoogleRefreshFixture("gmail");
     let attempts = 0;
     server.use(
       http.post("https://oauth2.googleapis.com/token", () => {
@@ -2278,7 +2280,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
   });
 
   it("preserves the Gmail grant after an exhausted temporary retry", async () => {
-    const { fw, headers, body } = await publicGmailRefreshFixture();
+    const { fw, headers, body } = await publicGoogleRefreshFixture("gmail");
     let attempts = 0;
     server.use(
       http.post("https://oauth2.googleapis.com/token", () => {
@@ -2320,7 +2322,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
   });
 
   it("does not retry a Gmail invalid_grant response", async () => {
-    const { fw, headers, body } = await publicGmailRefreshFixture();
+    const { fw, headers, body } = await publicGoogleRefreshFixture("gmail");
     let attempts = 0;
     server.use(
       http.post("https://oauth2.googleapis.com/token", () => {
@@ -2338,7 +2340,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
   });
 
   it("does not retry a rate-limited Gmail refresh without Retry-After handling", async () => {
-    const { fw, headers, body } = await publicGmailRefreshFixture();
+    const { fw, headers, body } = await publicGoogleRefreshFixture("gmail");
     let attempts = 0;
     server.use(
       http.post("https://oauth2.googleapis.com/token", () => {
@@ -2359,7 +2361,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
   });
 
   it("does not replay a Gmail refresh after an ambiguous network failure", async () => {
-    const { fw, headers, body } = await publicGmailRefreshFixture();
+    const { fw, headers, body } = await publicGoogleRefreshFixture("gmail");
     let attempts = 0;
     server.use(
       http.post("https://oauth2.googleapis.com/token", () => {
@@ -2374,6 +2376,242 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     }
     expect(attempts).toBe(1);
     expect(failed.body.error.failureReason).toBe("upstream_provider");
+  });
+
+  it.each([1, 2, 3])(
+    "recovers Google Sheets network failures on attempt %i",
+    async (successfulAttempt) => {
+      const { fw, headers, body } =
+        await publicGoogleRefreshFixture("google-sheets");
+      let attempts = 0;
+      server.use(
+        http.post("https://oauth2.googleapis.com/token", () => {
+          attempts += 1;
+          return attempts < successfulAttempt
+            ? HttpResponse.error()
+            : HttpResponse.json({
+                access_token: "recovered-sheets-access",
+                expires_in: 3600,
+              });
+        }),
+      );
+
+      const refreshed = await fw.requestFirewallAuth(headers, body, [200]);
+      if (refreshed.status !== 200) {
+        throw new Error("Expected Google Sheets refresh to recover");
+      }
+      expect(refreshed.body.headers.Authorization).toBe(
+        "Bearer recovered-sheets-access",
+      );
+      expect(refreshed.body.refreshedConnectors).toStrictEqual([
+        "google-sheets",
+      ]);
+      expect(attempts).toBe(successfulAttempt);
+    },
+  );
+
+  it("recovers Google Sheets temporary OAuth responses on the third attempt", async () => {
+    const { fw, headers, body } =
+      await publicGoogleRefreshFixture("google-sheets");
+    let attempts = 0;
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", () => {
+        attempts += 1;
+        if (attempts === 1) {
+          return new HttpResponse(null, { status: 503 });
+        }
+        if (attempts === 2) {
+          return HttpResponse.json(
+            { error: "temporarily_unavailable" },
+            { status: 400 },
+          );
+        }
+        return HttpResponse.json({
+          access_token: "recovered-sheets-access",
+          expires_in: 3600,
+        });
+      }),
+    );
+
+    const refreshed = await fw.requestFirewallAuth(headers, body, [200]);
+    if (refreshed.status !== 200) {
+      throw new Error("Expected Google Sheets temporary responses to recover");
+    }
+    expect(refreshed.body.headers.Authorization).toBe(
+      "Bearer recovered-sheets-access",
+    );
+    expect(attempts).toBe(3);
+  });
+
+  it.each(["network", "temporary-response"])(
+    "preserves the Google Sheets grant after three %s failures",
+    async (failureKind) => {
+      const { fw, actor, headers, body } =
+        await publicGoogleRefreshFixture("google-sheets");
+      let attempts = 0;
+      server.use(
+        http.post("https://oauth2.googleapis.com/token", () => {
+          attempts += 1;
+          return failureKind === "network"
+            ? HttpResponse.error()
+            : HttpResponse.json(
+                {
+                  error: "server_error",
+                  error_description: "synthetic-provider-private-text",
+                },
+                { status: 503 },
+              );
+        }),
+      );
+
+      const failed = await fw.requestFirewallAuth(headers, body, [502]);
+      if (failed.status !== 502) {
+        throw new Error("Expected exhausted Google Sheets refresh to fail");
+      }
+      expect(failed.body.error.code).toBe("TOKEN_REFRESH_FAILED");
+      expect(failed.body.error.failureReason).toBe("upstream_provider");
+      expect(failed.body.error.connectors).toStrictEqual(["google-sheets"]);
+      expect(attempts).toBe(3);
+      expect(JSON.stringify(failed.body)).not.toContain(
+        "synthetic-provider-private-text",
+      );
+      const connector = await createConnectorBddApi(
+        context,
+      ).readConnectorBySlug(actor, "google-sheets");
+      expect(connector.connectionStatus).toBe("connected");
+
+      server.use(
+        http.post("https://oauth2.googleapis.com/token", () => {
+          return HttpResponse.json({
+            access_token: "later-sheets-access",
+            expires_in: 3600,
+          });
+        }),
+      );
+      const recovered = await fw.requestFirewallAuth(headers, body, [200]);
+      if (recovered.status !== 200) {
+        throw new Error("Expected the Google Sheets grant to remain usable");
+      }
+      expect(recovered.body.headers.Authorization).toBe(
+        "Bearer later-sheets-access",
+      );
+    },
+  );
+
+  it.each([0, 1])(
+    "stops Google Sheets retries at invalid_grant after %i transient failures",
+    async (transientFailures) => {
+      const { fw, actor, headers, body } =
+        await publicGoogleRefreshFixture("google-sheets");
+      let attempts = 0;
+      server.use(
+        http.post("https://oauth2.googleapis.com/token", () => {
+          attempts += 1;
+          return attempts <= transientFailures
+            ? HttpResponse.error()
+            : HttpResponse.json(
+                { error: "invalid_grant" },
+                { status: transientFailures === 0 ? 400 : 503 },
+              );
+        }),
+      );
+
+      const failed = await fw.requestFirewallAuth(headers, body, [502]);
+      if (failed.status !== 502) {
+        throw new Error("Expected the revoked Google Sheets grant to fail");
+      }
+      expect(failed.body.error.failureReason).toBe("reconnect_required");
+      expect(attempts).toBe(transientFailures + 1);
+      const connector = await createConnectorBddApi(
+        context,
+      ).readConnectorBySlug(actor, "google-sheets");
+      expect(connector.connectionStatus).toBe("reconnect-required");
+    },
+  );
+
+  it("does not retry a rate-limited Google Sheets refresh", async () => {
+    const { fw, headers, body } =
+      await publicGoogleRefreshFixture("google-sheets");
+    let attempts = 0;
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", () => {
+        attempts += 1;
+        return HttpResponse.json(
+          { error: "temporarily_unavailable" },
+          { status: 429 },
+        );
+      }),
+    );
+
+    const failed = await fw.requestFirewallAuth(headers, body, [502]);
+    if (failed.status !== 502) {
+      throw new Error("Expected the Google Sheets rate limit to fail");
+    }
+    expect(failed.body.error.failureReason).toBe("upstream_provider");
+    expect(attempts).toBe(1);
+  });
+
+  it("does not retry malformed Google Sheets refresh output", async () => {
+    const { fw, headers, body } =
+      await publicGoogleRefreshFixture("google-sheets");
+    let attempts = 0;
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", () => {
+        attempts += 1;
+        return HttpResponse.json({ expires_in: 3600 });
+      }),
+    );
+
+    const failed = await fw.requestFirewallAuth(headers, body, [502]);
+    if (failed.status !== 502) {
+      throw new Error(
+        "Expected malformed Google Sheets refresh output to fail",
+      );
+    }
+    expect(failed.body.error.code).toBe("TOKEN_REFRESH_FAILED");
+    expect(attempts).toBe(1);
+  });
+
+  it("stops Google Sheets retry backoff at the shared refresh deadline", async () => {
+    const { fw, headers, body } =
+      await publicGoogleRefreshFixture("google-sheets");
+    mockOptionalEnv("FIREWALL_AUTH_REFRESH_TIMEOUT_MS", "25");
+    let attempts = 0;
+    onTestFinished(() => {
+      mockOptionalEnv("FIREWALL_AUTH_REFRESH_TIMEOUT_MS", undefined);
+    });
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", () => {
+        attempts += 1;
+        return HttpResponse.error();
+      }),
+    );
+
+    const failed = await fw.requestFirewallAuth(headers, body, [502]);
+    if (failed.status !== 502) {
+      throw new Error(
+        "Expected the Google Sheets refresh deadline to stop retries",
+      );
+    }
+    expect(failed.body.error.failureReason).toBe("upstream_provider");
+    expect(attempts).toBe(1);
+
+    mockOptionalEnv("FIREWALL_AUTH_REFRESH_TIMEOUT_MS", undefined);
+    server.use(
+      http.post("https://oauth2.googleapis.com/token", () => {
+        return HttpResponse.json({
+          access_token: "after-sheets-timeout",
+          expires_in: 3600,
+        });
+      }),
+    );
+    const recovered = await fw.requestFirewallAuth(headers, body, [200]);
+    if (recovered.status !== 200) {
+      throw new Error("Expected the timed-out Google Sheets grant to recover");
+    }
+    expect(recovered.body.headers.Authorization).toBe(
+      "Bearer after-sheets-timeout",
+    );
   });
 
   it("treats refresh responses without an access token as upstream failures", async () => {
