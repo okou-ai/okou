@@ -119,7 +119,7 @@ async fn multi_entry_inventory_scans_once_without_holding_capacity() {
     assert!(pending.await.unwrap().unwrap().is_some());
     assert!(fixture.image("first", &first).exists());
     assert!(fixture.image("second", &second).exists());
-    let candidates = fixture.cache.gc_candidates().await.unwrap();
+    let candidates = fixture.cache.gc_candidates(|| true).await.unwrap().unwrap();
     assert_eq!(candidates.len(), 2);
     assert_eq!(fixture.cache.held_home_states().await.len(), 2);
 }

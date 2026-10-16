@@ -21,6 +21,7 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio_util::task::TaskTracker;
 
+mod background;
 mod entry;
 mod fs;
 mod gc;
@@ -41,6 +42,7 @@ pub mod snapshot;
 mod tests;
 mod types;
 mod watcher;
+use background::BackgroundGcActivity;
 #[cfg(any(test, feature = "test-support"))]
 pub use entry::CacheEntryPaths;
 pub use gc_pressure::{HomeCacheReclaimOutcome, HomeCacheReclaimStatus};
@@ -82,6 +84,7 @@ pub struct HomeImageCache {
     is_first_run: Option<bool>,
     inner: Arc<HomeImageCacheInner>,
     idle_home_reclamation: Arc<IdleHomeReclamation>,
+    background_gc: BackgroundGcActivity,
     #[cfg(any(test, feature = "test-support"))]
     prepare_lock_test_gate: Option<HomeImagePrepareLockTestGate>,
     #[cfg(any(test, feature = "test-support"))]
@@ -102,6 +105,10 @@ pub struct HomeImageCache {
     pressure_reserve_override: Option<sandbox::HomeDriveSpaceReserve>,
     #[cfg(any(test, feature = "test-support"))]
     pressure_turn_test_gate: Option<HomeImagePrepareLockTestGate>,
+    #[cfg(test)]
+    pressure_completion_test_gate: Option<HomeImagePrepareLockTestGate>,
+    #[cfg(test)]
+    pressure_inventory_stopped_test_gate: Option<HomeImagePrepareLockTestGate>,
 }
 #[cfg(any(test, feature = "test-support"))]
 #[derive(Clone, Default)]
@@ -176,6 +183,8 @@ struct HomeImageCacheInner {
     checkout_io: TaskTracker,
     selection_releases: SelectionReleases,
     pressure_reclamation: PressureReclamation,
+    #[cfg(test)]
+    pressure_demand_accepted: tokio::sync::Notify,
     #[cfg(test)]
     publication_admission_entered: Semaphore,
     #[cfg(any(test, feature = "test-support"))]
@@ -265,6 +274,7 @@ impl HomeImageCache {
                 idle_home_reclamation: Arc::new(IdleHomeReclamation::new(
                     MAX_HOME_PROMOTION_CONCURRENCY,
                 )),
+                background_gc: BackgroundGcActivity::default(),
             }
         }
     }
@@ -290,6 +300,8 @@ impl HomeImageCache {
                 selection_releases: SelectionReleases::default(),
                 pressure_reclamation: PressureReclamation::new(),
                 #[cfg(test)]
+                pressure_demand_accepted: tokio::sync::Notify::new(),
+                #[cfg(test)]
                 publication_admission_entered: Semaphore::new(0),
                 fs_stats_override: Mutex::new(stats),
                 gc_root_scan_count: AtomicUsize::new(0),
@@ -301,6 +313,7 @@ impl HomeImageCache {
             idle_home_reclamation: Arc::new(IdleHomeReclamation::new(
                 MAX_HOME_PROMOTION_CONCURRENCY,
             )),
+            background_gc: BackgroundGcActivity::default(),
             prepare_lock_test_gate: None,
             inventory_test_gate: None,
             handoff_test_gate: None,
@@ -315,10 +328,27 @@ impl HomeImageCache {
             #[cfg(test)]
             pressure_reserve_override: None,
             pressure_turn_test_gate: None,
+            #[cfg(test)]
+            pressure_completion_test_gate: None,
+            #[cfg(test)]
+            pressure_inventory_stopped_test_gate: None,
         }
     }
     pub fn with_telemetry(mut self, telemetry: SandboxOpReporter) -> Self {
         self.telemetry = Some(telemetry);
+        self
+    }
+
+    /// Bind only background collection to the current Running generation.
+    /// Foreground demand, publication and explicit manual GC keep their authority.
+    /// A later mode change expires this clone's background work permanently;
+    /// resumed admission must bind a fresh clone to the new generation.
+    pub fn with_background_gc_lifecycle(
+        mut self,
+        mut mode: tokio::sync::watch::Receiver<crate::lifecycle::RunnerMode>,
+    ) -> Self {
+        mode.borrow_and_update();
+        self.background_gc = BackgroundGcActivity::Running(mode);
         self
     }
 

@@ -398,6 +398,7 @@ struct RunTestHooks {
     after_initial_home_cache_scan: Option<StartLoopTestGate>,
     manual_routine_heartbeat_rx: Option<mpsc::UnboundedReceiver<()>>,
     manual_home_cache_gc_rx: Option<mpsc::UnboundedReceiver<()>>,
+    manual_home_cache_pressure_rx: Option<mpsc::UnboundedReceiver<()>>,
 }
 
 pub enum SignalSource {
@@ -417,6 +418,8 @@ enum StartLoopEvent {
     BudgetExhaustedReactorEntered,
     RoutineHeartbeatRequested { mode: RunnerMode },
     HomeCacheChangeObserved,
+    HomeCacheGcTickConsumed,
+    HomeCachePressureTickConsumed,
     MaintenanceDrainEntered,
     HomeInventoryDrainEntered,
     RunningJobsDrainEntered,
@@ -1214,11 +1217,13 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     };
     #[cfg(not(test))]
     let mut home_cache_gc_tick = MaintenanceTrigger::interval(HOME_CACHE_GC_PERIOD);
-    let mut home_cache_pressure_tick = tokio::time::interval_at(
-        tokio::time::Instant::now() + HOME_CACHE_PRESSURE_PERIOD,
-        HOME_CACHE_PRESSURE_PERIOD,
-    );
-    home_cache_pressure_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    #[cfg(test)]
+    let mut home_cache_pressure_tick = match test_hooks.manual_home_cache_pressure_rx.take() {
+        Some(receiver) => MaintenanceTrigger::Manual(receiver),
+        None => MaintenanceTrigger::interval(HOME_CACHE_PRESSURE_PERIOD),
+    };
+    #[cfg(not(test))]
+    let mut home_cache_pressure_tick = MaintenanceTrigger::interval(HOME_CACHE_PRESSURE_PERIOD);
     let mut home_cache_reconciliation_tick = tokio::time::interval_at(
         tokio::time::Instant::now() + HOME_CACHE_RECONCILIATION_INITIAL_DELAY,
         HOME_CACHE_RECONCILIATION_PERIOD,
@@ -1543,10 +1548,14 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                 }
             }
             _ = home_cache_gc_tick.tick() => {
-                maintenance.request_home_cache_gc(exec_config.home_cache.as_ref());
+                maintenance.request_home_cache_gc(exec_config.home_cache.as_ref(), &mode_rx);
+                #[cfg(test)]
+                test_hooks.test_observer.record(StartLoopEvent::HomeCacheGcTickConsumed);
             }
             _ = home_cache_pressure_tick.tick(), if exec_config.home_cache.is_some() => {
-                maintenance.request_home_cache_pressure(exec_config.home_cache.as_ref());
+                maintenance.request_home_cache_pressure(exec_config.home_cache.as_ref(), &mode_rx);
+                #[cfg(test)]
+                test_hooks.test_observer.record(StartLoopEvent::HomeCachePressureTickConsumed);
             }
             // Mode changes (signals)
             _ = mode_rx.changed() => {}
