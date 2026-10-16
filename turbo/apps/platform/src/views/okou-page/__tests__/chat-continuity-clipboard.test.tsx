@@ -1,6 +1,11 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
+import {
+  chatThreadByIdContract,
+  type ComposerDraft,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 
 import { setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -158,6 +163,149 @@ test("Paste copied chat text and attachments safely", async () => {
   expect(composer).toHaveTextContent("Text kept from an inaccessible copy");
   expect(document.body).not.toHaveTextContent("Remove missing-copy.txt");
   expect(fastButton("Remove available-copy.txt")).toBeVisible();
+});
+
+test("Persist pasted text and attachments after the copied file resolves", async () => {
+  const thread = continuityThread(19, 1, "Persist clipboard attachments");
+  const attachment = continuityAttachment(19, 1, "copied-notes.txt");
+  const resolutionStarted = context.mocks.deferred<void>();
+  const resolveFile = context.mocks.deferred<void>();
+  const saved = context.mocks.deferred<{
+    draftUserMessage: ComposerDraft["draftUserMessage"];
+    draftAttachments?: ComposerDraft["draftAttachments"];
+  }>();
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 19,
+    threads: [thread],
+    async resolveAttachment(): Promise<"available" | "missing"> {
+      resolutionStarted.resolve();
+      await resolveFile.promise;
+      return "available";
+    },
+  });
+  context.mocks.api(chatThreadByIdContract.patch, ({ body, respond }) => {
+    if (
+      body.draftAttachments?.some((file) => {
+        return file.id === attachment.id;
+      })
+    ) {
+      saved.resolve(body);
+    }
+    return respond(204);
+  });
+
+  await setupPage({
+    context,
+    path: `/chats/${thread.id}`,
+    ...workspace.pageOptions,
+  });
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  fireEvent.paste(composer, {
+    clipboardData: richClipboard({
+      text: "Copied notes to keep",
+      attachments: [attachment],
+      userMessage: {
+        version: 1,
+        parts: [{ type: "text", text: "Copied notes to keep" }],
+      },
+    }),
+  });
+  await resolutionStarted.promise;
+  expect(composer).toHaveTextContent("Copied notes to keep");
+  expect(fastButton("Remove copied-notes.txt")).toBeInTheDocument();
+  resolveFile.resolve();
+  const savedDraft = await saved.promise;
+  expect(savedDraft.draftUserMessage?.parts).toStrictEqual(
+    expect.arrayContaining([
+      { type: "text", text: "Copied notes to keep" },
+      expect.objectContaining({ type: "file", fileId: attachment.id }),
+    ]),
+  );
+  await expect(screen.findByLabelText("Send")).resolves.toBeEnabled();
+});
+
+async function pasteWithUnavailableAttachment(
+  status: 404 | 403,
+): Promise<HTMLElement> {
+  const thread = continuityThread(
+    20,
+    1,
+    "Preserve pasted text on restore failure",
+  );
+  const attachment = continuityAttachment(20, 1, "unreadable-copy.txt");
+  const saved = context.mocks.deferred<{
+    draftUserMessage: ComposerDraft["draftUserMessage"];
+    draftAttachments?: ComposerDraft["draftAttachments"];
+  }>();
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 20,
+    threads: [thread],
+  });
+  context.mocks.api(webFilesContract.fileUrl, ({ respond }) => {
+    return respond(status, {
+      error: { code: "FILE_UNAVAILABLE", message: "File cannot be read" },
+    });
+  });
+  context.mocks.api(chatThreadByIdContract.patch, ({ body, respond }) => {
+    const text = body.draftUserMessage?.parts
+      .flatMap((part) => {
+        return part.type === "text" ? [part.text] : [];
+      })
+      .join("");
+    if (text?.includes("Pasted text survives")) {
+      saved.resolve(body);
+    }
+    return respond(204);
+  });
+
+  await setupPage({
+    context,
+    path: `/chats/${thread.id}`,
+    ...workspace.pageOptions,
+  });
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  await userEvent.type(composer, "Keep the earlier draft. ");
+  placeCaretAtEnd(composer);
+  fireEvent.paste(composer, {
+    clipboardData: richClipboard({
+      text: "Pasted text survives",
+      attachments: [attachment],
+      userMessage: {
+        version: 1,
+        parts: [{ type: "text", text: "Pasted text survives" }],
+      },
+    }),
+  });
+  const savedDraft = await saved.promise;
+  expect(savedDraft.draftAttachments).toBeNull();
+  expect(
+    savedDraft.draftUserMessage?.parts
+      .flatMap((part) => {
+        return part.type === "text" ? [part.text] : [];
+      })
+      .join(""),
+  ).toContain("Keep the earlier draft");
+  return composer;
+}
+
+test("Pasted text is saved when attachment restoration returns 404", async () => {
+  const composer = await pasteWithUnavailableAttachment(404);
+  expect(composer).toHaveTextContent(
+    "Keep the earlier draft. Pasted text survives",
+  );
+  await expect(
+    screen.findByText(
+      "unreadable-copy.txt is no longer available. Upload it again to send.",
+    ),
+  ).resolves.toBeInTheDocument();
+  expect(document.body).not.toHaveTextContent("Remove unreadable-copy.txt");
+});
+
+test("Pasted text is saved when attachment restoration returns 403", async () => {
+  const composer = await pasteWithUnavailableAttachment(403);
+  expect(composer).toHaveTextContent(
+    "Keep the earlier draft. Pasted text survives",
+  );
 });
 
 test("Paste plain and multi-line text at the current draft position", async () => {

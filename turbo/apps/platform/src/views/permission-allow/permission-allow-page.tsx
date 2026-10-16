@@ -25,7 +25,7 @@ import {
   permissionAllowFirewallPermissionMetadata$,
   resolveUserPermissionGrantPolicy,
   type Permission,
-  applyUserPermissionGrant$,
+  applyPermissionAndResumeChat$,
 } from "../../signals/permission-allow/permission-allow-signals.ts";
 import {
   DEFAULT_USER_PERMISSION_GRANT_EXPIRES_IN,
@@ -41,7 +41,6 @@ import { ConnectorIcon } from "../okou-page/components/settings/connector-icons.
 import { AvatarFromUrl } from "../okou-page/sidebar-shared.tsx";
 import {
   routeChatActionCallback$,
-  runChatActionCallback$,
   type ChatActionCallback,
 } from "../../signals/chat-page/action-callback.ts";
 import { i18n } from "../../i18n/index.ts";
@@ -350,6 +349,7 @@ interface ConfirmGrantCardProps {
       action: "allow" | "deny";
       expiresIn?: UserPermissionGrantExpiresIn;
     },
+    callback: ChatActionCallback,
     signal: AbortSignal,
   ) => Promise<PlatformUserPermissionGrant>;
   actionCallback: ChatActionCallback;
@@ -410,31 +410,19 @@ function ConfirmGrantCard({
   const saving = grantLoadable.state === "loading";
   const saveError = grantLoadable.state === "hasError";
 
-  const runCallback = useSet(runChatActionCallback$);
   const handleSave = () => {
     detach(
-      (async () => {
-        await applyGrant(
-          {
-            agentId: target.id,
-            connectorSlug,
-            permission: permission.name,
-            action,
-            ...(expirationAvailable ? { expiresIn } : {}),
-          },
-          pageSignal,
-        );
-        if (actionCallback.callbackPrompt && actionCallback.threadId) {
-          await runCallback(
-            {
-              threadId: actionCallback.threadId,
-              agentId: target.id,
-              callbackPrompt: actionCallback.callbackPrompt,
-            },
-            pageSignal,
-          );
-        }
-      })(),
+      applyGrant(
+        {
+          agentId: target.id,
+          connectorSlug,
+          permission: permission.name,
+          action,
+          ...(expirationAvailable ? { expiresIn } : {}),
+        },
+        actionCallback,
+        pageSignal,
+      ),
       Reason.DomCallback,
     );
   };
@@ -535,7 +523,9 @@ function PermissionAllowDoctorPage({
   const metadataLoadable = useLoadable(
     permissionAllowFirewallPermissionMetadata$,
   );
-  const [grantLoadable, applyGrant] = useLoadableSet(applyUserPermissionGrant$);
+  const [grantLoadable, applyGrant] = useLoadableSet(
+    applyPermissionAndResumeChat$,
+  );
   const grants = grantsLoadable.state === "hasData" ? grantsLoadable.data : [];
   const savedGrant =
     grantLoadable.state === "hasData" ? grantLoadable.data : null;
@@ -614,7 +604,11 @@ function PermissionAllowDoctorPage({
     grants,
     metadata,
   });
-  if (existingGrantResult) {
+  if (
+    existingGrantResult &&
+    grantLoadable.state !== "loading" &&
+    grantLoadable.state !== "hasError"
+  ) {
     return (
       <ResultCard
         action={action}

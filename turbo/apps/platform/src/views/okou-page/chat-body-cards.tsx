@@ -1,7 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
 import { now } from "../../lib/time.ts";
-import { runChatActionCallback$ } from "../../signals/chat-page/action-callback.ts";
 import type { ArtifactSignals } from "../../signals/chat-page/artifact-card-signals.ts";
 import type { ComputerUseAuthorizationSignals } from "../../signals/chat-page/computer-use-authorization-block.ts";
 import type {
@@ -19,7 +18,7 @@ import type {
 } from "../../signals/connector-domain.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import {
-  applyUserPermissionGrant$,
+  applyPermissionAndResumeChat$,
   findPermissionInMetadata,
   resolveUserPermissionGrantPolicy,
 } from "../../signals/permission-allow/permission-allow-signals.ts";
@@ -796,18 +795,6 @@ interface LoadableLike<T> {
   data?: T;
 }
 
-type ApplyUserPermissionGrantFn = (
-  params: {
-    agentId?: string;
-    workflowId?: string;
-    connectorSlug: string;
-    permission: string;
-    action: PermissionAction;
-    expiresIn?: UserPermissionGrantExpiresIn;
-  },
-  signal: AbortSignal,
-) => Promise<PlatformUserPermissionGrant>;
-
 function loadableData<T>(loadable: LoadableLike<T>): T | undefined {
   return loadable.state === "hasData" ? loadable.data : undefined;
 }
@@ -1159,11 +1146,11 @@ function createPermissionActionCardStatus(params: {
   if (!params.hasPermission) {
     return { kind: "missing-permission" };
   }
-  if (params.alreadyApplied) {
-    return { kind: "already-applied" };
-  }
   if (params.saveError) {
     return { kind: "save-error" };
+  }
+  if (params.alreadyApplied) {
+    return { kind: "already-applied" };
   }
   return { kind: "ready" };
 }
@@ -1228,78 +1215,6 @@ function createPermissionActionCardViewState(params: {
     actionLabel,
     status,
     focusedPermission,
-  };
-}
-
-function runPermissionAction(params: {
-  status: PermissionActionCardStatus;
-  runUserGrant: () => void;
-}): void {
-  if (params.status.kind !== "ready" && params.status.kind !== "save-error") {
-    return;
-  }
-
-  params.runUserGrant();
-}
-
-function createPermissionActionHandler(
-  params: {
-    block: PermissionSignals;
-    focusedPermission:
-      | {
-          name: string;
-        }
-      | undefined;
-    status: PermissionActionCardStatus;
-    expirationAvailable: boolean;
-    expiresIn: UserPermissionGrantExpiresIn;
-    applyGrant: ApplyUserPermissionGrantFn;
-    runCallback: (
-      args: {
-        readonly threadId: string;
-        readonly agentId: string;
-        readonly callbackPrompt: string;
-      },
-      signal: AbortSignal,
-    ) => Promise<void>;
-  },
-  pageSignal: AbortSignal,
-): () => void {
-  return () => {
-    const permissionName =
-      params.focusedPermission?.name ?? params.block.permission;
-    runPermissionAction({
-      status: params.status,
-      runUserGrant: () => {
-        detach(
-          (async () => {
-            await params.applyGrant(
-              {
-                agentId: params.block.agentId,
-                connectorSlug: params.block.connectorSlug,
-                permission: permissionName,
-                action: params.block.action,
-                ...(params.expirationAvailable
-                  ? { expiresIn: params.expiresIn }
-                  : {}),
-              },
-              pageSignal,
-            );
-            if (params.block.callbackPrompt && params.block.threadId) {
-              await params.runCallback(
-                {
-                  threadId: params.block.threadId,
-                  agentId: params.block.agentId,
-                  callbackPrompt: params.block.callbackPrompt,
-                },
-                pageSignal,
-              );
-            }
-          })(),
-          Reason.DomCallback,
-        );
-      },
-    });
   };
 }
 
@@ -1475,8 +1390,9 @@ function PermissionActionCardForTarget({
     signals.expiresIn ??
     DEFAULT_USER_PERMISSION_GRANT_EXPIRES_IN;
   const permissionMetadataLoadable = useLoadable(signals.metadata$);
-  const [grantLoadable, applyGrant] = useLoadableSet(applyUserPermissionGrant$);
-  const runCallback = useSet(runChatActionCallback$);
+  const [grantLoadable, applyGrant] = useLoadableSet(
+    applyPermissionAndResumeChat$,
+  );
   const savedGrant =
     grantLoadable.state === "hasData" ? grantLoadable.data : null;
   const savedGrantActive = savedGrant
@@ -1524,18 +1440,29 @@ function PermissionActionCardForTarget({
         setExpiresInForScope(durationScope, value);
       }}
       expiresAt={grantExpiresAt}
-      onClick={createPermissionActionHandler(
-        {
-          block: signals,
-          focusedPermission: actionState.focusedPermission,
-          status: actionState.status,
-          expirationAvailable,
-          expiresIn,
-          applyGrant,
-          runCallback,
-        },
-        pageSignal,
-      )}
+      onClick={() => {
+        if (
+          actionState.status.kind !== "ready" &&
+          actionState.status.kind !== "save-error"
+        ) {
+          return;
+        }
+        detach(
+          applyGrant(
+            {
+              agentId: signals.agentId,
+              connectorSlug: signals.connectorSlug,
+              permission:
+                actionState.focusedPermission?.name ?? signals.permission,
+              action: signals.action,
+              ...(expirationAvailable ? { expiresIn } : {}),
+            },
+            signals,
+            pageSignal,
+          ),
+          Reason.DomCallback,
+        );
+      }}
     />
   );
 }

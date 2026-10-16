@@ -11,6 +11,11 @@ import {
   type FirewallPolicyValue,
 } from "@okouai/connectors/firewall-contracts";
 import { apiClient$ } from "../api-client.ts";
+import {
+  runChatActionCallback$,
+  type ChatActionCallback,
+  type ChatActionCallbackIds,
+} from "../chat-page/action-callback.ts";
 import { pathParams$, searchParams$ } from "../route.ts";
 import { accept } from "../../lib/accept.ts";
 import { agentById, currentAgentId$ } from "../agent.ts";
@@ -220,16 +225,18 @@ export const applyUserPermissionGrants$ = command(
   },
 );
 
+interface ApplyUserPermissionGrantParams {
+  agentId?: string;
+  connectorSlug: string;
+  permission: string;
+  action: UserPermissionGrantAction;
+  expiresIn?: UserPermissionGrantExpiresIn;
+}
+
 export const applyUserPermissionGrant$ = command(
   async (
     { set },
-    params: {
-      agentId?: string;
-      connectorSlug: string;
-      permission: string;
-      action: UserPermissionGrantAction;
-      expiresIn?: UserPermissionGrantExpiresIn;
-    },
+    params: ApplyUserPermissionGrantParams,
     signal: AbortSignal,
   ): Promise<PlatformUserPermissionGrant> => {
     const grants = await set(
@@ -256,6 +263,33 @@ export const applyUserPermissionGrant$ = command(
     const grant = grants[0];
     if (!grant) {
       throw new Error("User permission grant apply did not return a grant");
+    }
+    return grant;
+  },
+);
+
+export const applyPermissionAndResumeChat$ = command(
+  async (
+    { set },
+    params: ApplyUserPermissionGrantParams & { agentId: string },
+    callback: ChatActionCallback & {
+      readonly callbackIds?: ChatActionCallbackIds;
+    },
+    signal: AbortSignal,
+  ): Promise<PlatformUserPermissionGrant> => {
+    const grant = await set(applyUserPermissionGrant$, params, signal);
+    signal.throwIfAborted();
+    if (callback.callbackPrompt && callback.threadId) {
+      await set(
+        runChatActionCallback$,
+        {
+          agentId: params.agentId,
+          threadId: callback.threadId,
+          callbackPrompt: callback.callbackPrompt,
+          callbackIds: callback.callbackIds,
+        },
+        signal,
+      );
     }
     return grant;
   },

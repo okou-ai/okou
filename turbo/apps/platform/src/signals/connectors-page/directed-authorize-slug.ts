@@ -13,7 +13,21 @@ import {
   agentConnectorAuthorizations,
   reloadAgentConnectorAuthorizations$,
 } from "../okou-page/agent-connector-authorizations.ts";
-import { resetBuiltinManualGrantForm$ } from "../okou-page/settings/connectors.ts";
+import {
+  resetBuiltinManualGrantForm$,
+  connectBuiltinConnectorOAuthAuthCodeAndSettle$,
+  connectBuiltinConnectorNoAuthAndSettle$,
+  getBuiltinConnectorStatusConnectLaunchMode,
+  getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail,
+  getOnlyAvailableBuiltinConnectorStatusNoAuthMethod,
+} from "../okou-page/settings/connectors.ts";
+import type { PlatformConnectorCatalogStatusItem } from "../connector-domain.ts";
+import { defaultBuiltinConnectorAccountOptions } from "../okou-page/settings/connector-account-dialogs.ts";
+import { completeDirectedConnectorAction$ } from "./directed-connector-callback.ts";
+import {
+  routeChatActionCallback$,
+  type ChatActionCallback,
+} from "../chat-page/action-callback.ts";
 import { connectorCatalogItemForSlug } from "../external/connectors.ts";
 
 /**
@@ -69,9 +83,12 @@ export const agentEnabledConnectorSlugs$ = computed(async (get) => {
   };
 });
 
-type DirectedAuthorizeConnectModalKey = {
+interface DirectedAuthorizeConnectTarget {
   readonly connectorSlug: ConnectorSlug;
   readonly agentId: string;
+}
+
+type DirectedAuthorizeConnectModalKey = DirectedAuthorizeConnectTarget & {
   readonly signal: AbortSignal;
 };
 
@@ -81,11 +98,108 @@ export const directedAuthorizeConnectModalKey$ = computed((get) => {
   return get(internalDirectedAuthorizeConnectModalKey$);
 });
 export const setDirectedAuthorizeConnectModalKey$ = command(
-  ({ set }, key: DirectedAuthorizeConnectModalKey | null) => {
+  (
+    { set },
+    key: DirectedAuthorizeConnectTarget | null,
+    signal: AbortSignal,
+  ) => {
     if (key) {
       set(resetBuiltinManualGrantForm$, key.connectorSlug);
     }
-    set(internalDirectedAuthorizeConnectModalKey$, key);
+    set(
+      internalDirectedAuthorizeConnectModalKey$,
+      key ? { ...key, signal } : null,
+    );
+  },
+);
+
+export const completeDirectedConnectorAuthorization$ = command(
+  async (
+    { set },
+    agentId: string,
+    callback: ChatActionCallback,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    set(reloadAgentConnectorAuthorizations$);
+    await set(completeDirectedConnectorAction$, agentId, callback, signal);
+  },
+);
+
+/** Connect if needed, authorize the requested agent, then continue its chat. */
+export const authorizeDirectedConnector$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly connectorSlug: ConnectorSlug;
+      readonly agentId: string;
+      readonly item: PlatformConnectorCatalogStatusItem | undefined;
+      readonly isConnected: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const { connectorSlug, agentId, item, isConnected } = args;
+    const callback = get(routeChatActionCallback$);
+    if (isConnected) {
+      await set(authorizeConnector$, connectorSlug, agentId, signal);
+      await set(completeDirectedConnectorAction$, agentId, callback, signal);
+      return;
+    }
+    if (!item) {
+      return;
+    }
+    const accountOptions = defaultBuiltinConnectorAccountOptions(item);
+    if (!accountOptions) {
+      return;
+    }
+    const options = { connectorLabel: item.label, agentId, ...accountOptions };
+    const launchMode = getBuiltinConnectorStatusConnectLaunchMode(item);
+    const onSuccess = (
+      _connectionId: string | null,
+      attemptSignal: AbortSignal,
+    ) => {
+      return set(
+        completeDirectedConnectorAuthorization$,
+        agentId,
+        callback,
+        attemptSignal,
+      );
+    };
+    const method =
+      launchMode === "browser-auth"
+        ? getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail(item)
+        : null;
+    if (method) {
+      await set(
+        connectBuiltinConnectorOAuthAuthCodeAndSettle$,
+        {
+          connectorSlug,
+          method,
+          options: { ...options, connectorIcon: item.icon },
+          onSuccess,
+        },
+        signal,
+      );
+      return;
+    }
+    const authMethod =
+      launchMode === "no-auth"
+        ? getOnlyAvailableBuiltinConnectorStatusNoAuthMethod(item)
+        : null;
+    if (authMethod) {
+      await set(
+        connectBuiltinConnectorNoAuthAndSettle$,
+        { connectorSlug, authMethod, options, onSuccess },
+        signal,
+      );
+      return;
+    }
+    if (item.authMethods.length > 0) {
+      set(
+        setDirectedAuthorizeConnectModalKey$,
+        { connectorSlug, agentId },
+        signal,
+      );
+    }
   },
 );
 

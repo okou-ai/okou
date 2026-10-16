@@ -2140,6 +2140,93 @@ test("Move a workflow to another agent", async () => {
   ).toBeFalsy();
 });
 
+test.each(["pause", "delete"])(
+  "Keep the source and committed copy available when move fails during %s",
+  async (stage) => {
+    const user = userEvent.setup({ delay: null });
+    const workflows = [salesResearch()];
+    const copiedWorkflow: WorkflowDetailResponse = {
+      ...salesResearch(),
+      id: COPIED_WORKFLOW_ID,
+      agentId: OTHER_AGENT_ID,
+      agentName: "support-bot",
+      agentDisplayName: "Support Bot",
+      displayName: "Copied Sales Research",
+      visibility: "private",
+      automations: [],
+    };
+    mockAgentPageApis();
+    mockWorkflowApis(workflows);
+    context.mocks.api(workflowsDetailContract.copy, ({ respond }) => {
+      workflows.push(copiedWorkflow);
+      return respond(201, summary(copiedWorkflow));
+    });
+    const message = `Cannot ${stage} original workflow`;
+    if (stage === "pause") {
+      context.mocks.api(workflowAutomationsContract.disable, ({ respond }) => {
+        return respond(409, { error: { code: "CONFLICT", message } });
+      });
+    }
+    context.mocks.api(workflowsDetailContract.delete, ({ respond }) => {
+      return respond(409, { error: { code: "CONFLICT", message } });
+    });
+
+    await setupWorkflowDetailPage(workflowDetailPath("info"));
+    const dialog = await openCopyDialog();
+    selectOptionByLabel("Copy to", "Support Bot", dialog);
+    await user.click(within(dialog).getByRole("checkbox"));
+    click(buttonByText(/^Copy and remove$/, dialog));
+
+    await expect(screen.findByText(message)).resolves.toBeInTheDocument();
+    expect(pathname()).toBe(workflowDetailPath("info"));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(buttonByText(/^Copy and remove$/, dialog)).toBeEnabled();
+    expect(screen.queryByText("Moved to Support Bot")).not.toBeInTheDocument();
+    click(buttonByText("Cancel", dialog));
+    click(linkByText("Workflows"));
+    await expect(
+      screen.findByText("Copied Sales Research"),
+    ).resolves.toBeInTheDocument();
+    expect(screen.getByText("Sales Research")).toBeInTheDocument();
+  },
+);
+
+test("Delete a workflow only navigates after success and keeps the dialog available on failure", async () => {
+  const workflows = [salesResearch(), opsPlaybook()];
+  let rejectDelete = true;
+  mockWorkflowApis(workflows);
+  context.mocks.api(workflowsDetailContract.delete, ({ params, respond }) => {
+    if (rejectDelete) {
+      return respond(409, {
+        error: { code: "CONFLICT", message: "Workflow is still in use" },
+      });
+    }
+    const index = workflows.findIndex((workflow) => {
+      return workflow.id === params.workflowId;
+    });
+    workflows.splice(index, 1);
+    return respond(204);
+  });
+  await setupWorkflowDetailPage(workflowDetailPath("info"));
+  click(buttonByText("Delete workflow"));
+  const dialog = await screen.findByRole("dialog", { name: "Delete workflow" });
+  click(buttonByText("Delete", dialog));
+
+  await expect(
+    screen.findByText("Workflow is still in use"),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe(workflowDetailPath("info"));
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+  expect(buttonByText("Delete", dialog)).toBeEnabled();
+
+  rejectDelete = false;
+  click(buttonByText("Delete", dialog));
+  await expect(screen.findByText("Ops Playbook")).resolves.toBeInTheDocument();
+  expect(pathname()).toBe("/workflows");
+  expect(screen.queryByText("Sales Research")).not.toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
 test("Edit workflow metadata", async () => {
   const updateBodies: WorkflowUpdateRequest[] = [];
   mockWorkflowApis([salesResearch()], (body) => {
@@ -4037,6 +4124,50 @@ test("Reach workflow file actions with arrows and typeahead, then delete with En
   });
 });
 
+test.each(["upload", "delete"])(
+  "Keep the selected workflow file and its content when %s fails",
+  async (operation) => {
+    const user = userEvent.setup({ delay: null });
+    mockWorkflowApis([salesResearch()]);
+    context.mocks.api(workflowsDetailContract.update, ({ respond }) => {
+      return respond(409, {
+        error: {
+          code: "CONFLICT",
+          message: "Workflow files could not be saved",
+        },
+      });
+    });
+    await setupWorkflowDetailPage(
+      `${workflowDetailPath("instructions")}?file=config%2Fsettings.json`,
+    );
+    await expect(
+      screen.findByDisplayValue('{ "risk": "low", "tone": "direct" }'),
+    ).resolves.toBeInTheDocument();
+
+    if (operation === "upload") {
+      await user.upload(
+        screen.getByLabelText("Upload workflow files"),
+        new File(["new notes"], "notes.md", { type: "text/markdown" }),
+      );
+    } else {
+      click(screen.getByLabelText("Workflow files"));
+      click(menuItemByText("Delete selected file"));
+    }
+
+    await expect(
+      screen.findByText("Workflow files could not be saved"),
+    ).resolves.toBeInTheDocument();
+    expect(screen.getByLabelText("Workflow files")).toHaveTextContent(
+      "config/settings.json",
+    );
+    expect(screen.getByLabelText("Workflow file content")).toHaveValue(
+      '{ "risk": "low", "tone": "direct" }',
+    );
+    expect(search()).toBe("?file=config%2Fsettings.json");
+    expect(screen.getByLabelText("Upload workflow files")).toBeEnabled();
+  },
+);
+
 test("Upload after the file menu closes and reselect the same file after an empty selection", async () => {
   const user = userEvent.setup();
   const updateBodies: WorkflowUpdateRequest[] = [];
@@ -4089,6 +4220,37 @@ test("Upload after the file menu closes and reselect the same file after an empt
       "notes.md",
     );
   });
+});
+
+test("Replace an uploaded workflow file by path without dropping its siblings", async () => {
+  const user = userEvent.setup({ delay: null });
+  const workflow = salesResearch();
+  mockWorkflowApis([workflow]);
+  await setupWorkflowDetailPage(workflowDetailPath("instructions"));
+  await screen.findByLabelText("Workflow instruction");
+
+  const file = new File(["Updated prompt instructions"], "prompt.md", {
+    type: "text/markdown",
+  });
+  Object.defineProperty(file, "webkitRelativePath", {
+    value: "./examples/prompt.md",
+  });
+  await user.upload(screen.getByLabelText("Upload workflow files"), file);
+
+  await expect(
+    screen.findByText("Updated prompt instructions"),
+  ).resolves.toBeInTheDocument();
+  expect(search()).toBe("?file=examples%2Fprompt.md");
+  click(screen.getByLabelText("Workflow files"));
+  expect(
+    queryAllByRoleFast("menuitemradio").filter((item) => {
+      return item.textContent?.includes("examples/prompt.md");
+    }),
+  ).toHaveLength(1);
+  click(workflowFileItemByText(/config\/settings\.json/));
+  await expect(
+    screen.findByDisplayValue('{ "risk": "low", "tone": "direct" }'),
+  ).resolves.toBeInTheDocument();
 });
 
 test("Load workflow authors only after a title tooltip opens and reuse on reopen", async () => {

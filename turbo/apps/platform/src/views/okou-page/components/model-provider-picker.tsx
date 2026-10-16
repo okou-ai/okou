@@ -34,12 +34,8 @@ import {
   type ModelCatalog,
 } from "../../../signals/external/model-catalog.ts";
 import { availableRunModels$ } from "../../../signals/external/run-models";
-import { resolveExplicitModelSelection$ } from "../../../signals/okou-page/model-default-selection";
+import { selectExplicitModel$ } from "../../../signals/okou-page/model-default-selection";
 import { memberRunModelAllowedForPlan } from "../../../signals/okou-page/model-plan-capabilities";
-import {
-  openSettingsBillingPlans$,
-  setSettingsDialogOpen$,
-} from "../../../signals/okou-page/settings/settings-dialog.ts";
 import { pageSignal$ } from "../../../signals/page-signal";
 import { detach, Reason } from "../../../signals/utils";
 import { ProviderIcon } from "./settings/provider-icons";
@@ -336,26 +332,18 @@ export function resolveModelFirstModelPickerState({
 export function useExplicitModelSelectionChange(
   props: Pick<ModelProviderPickerProps, "value" | "onChange">,
 ) {
-  const resolveSelection = useSet(resolveExplicitModelSelection$);
-  const openBillingPlans = useSet(openSettingsBillingPlans$);
-  const openSettings = useSet(setSettingsDialogOpen$);
+  const selectModel = useSet(selectExplicitModel$);
   const pageSignal = useGet(pageSignal$);
   return (selection: ModelProviderSelection | null) => {
     detach(
       (async () => {
-        const result = await resolveSelection(
-          {
-            selection,
-            previousSelection: props.value,
-          },
+        const result = await selectModel(
+          { selection, previousSelection: props.value },
           pageSignal,
         );
-        if (result.kind === "compare-plans") {
-          openBillingPlans();
-          await openSettings(true, pageSignal);
-          return;
+        if (result.kind === "select") {
+          props.onChange(result.selection);
         }
-        props.onChange(result.selection);
       })(),
       Reason.DomCallback,
     );

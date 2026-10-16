@@ -1347,6 +1347,8 @@ test("Connect a manual grant and continue the originating chat", async () => {
   let submittedValues: Record<string, string> | null = null;
   const threadId = "00000000-0000-4000-a000-000000000103";
   const callbackPrompt = "Re-check Axiom, then continue";
+  const callbackStarted = context.mocks.deferred<void>();
+  const releaseCallback = context.mocks.deferred<void>();
   let continuationPrompt: string | null = null;
   context.mocks.api(
     builtinConnectorManualGrantContract.connect,
@@ -1370,8 +1372,10 @@ test("Connect a manual grant and continue the originating chat", async () => {
       });
     },
   );
-  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+  context.mocks.api(chatEventsContract.send, async ({ body, respond }) => {
     continuationPrompt = body.prompt ?? null;
+    callbackStarted.resolve();
+    await releaseCallback.promise;
     return respond(201, {
       runId: "00000000-0000-4000-a000-000000000203",
       threadId,
@@ -1397,6 +1401,11 @@ test("Connect a manual grant and continue the originating chat", async () => {
     "xaat-directed-connect",
   );
   click(getButtonByText("Save"));
+
+  await callbackStarted.promise;
+  expect(getButtonByText("Saving...")).toBeDisabled();
+  expect(axiomDialog).toBeInTheDocument();
+  releaseCallback.resolve();
 
   await waitFor(() => {
     expect(submittedValues).toStrictEqual({

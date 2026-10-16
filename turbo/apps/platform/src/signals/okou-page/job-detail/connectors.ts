@@ -89,38 +89,23 @@ const clearAgentConnectorDraft$ = command(({ set }, agentId: string): void => {
   });
 });
 
-export const authorizeAgentConnector$ = command(
-  async ({ set }, name: string, signal: AbortSignal) => {
-    await set(setAgentConnectorDraft$, { name, operation: "add" }, signal);
-  },
-);
-
-export const deauthorizeAgentConnector$ = command(
-  async ({ set }, name: string, signal: AbortSignal) => {
-    await set(setAgentConnectorDraft$, { name, operation: "remove" }, signal);
-  },
-);
-
 export const discardAgentConnectorsDraft$ = command(({ set }) => {
   set(internalAuthorizedConnectors$, null);
 });
 
-export const saveAgentConnectors$ = command(
-  async (
-    { get, set },
-    name: string,
-    operation: "add" | "remove",
-    signal: AbortSignal,
-  ) => {
+export const toggleAgentConnector$ = command(
+  async ({ get, set }, name: string, enabled: boolean, signal: AbortSignal) => {
     const detail = await get(agentDetail$);
     signal.throwIfAborted();
     if (!detail?.agentId) {
       throw new Error("No agent detail loaded");
     }
 
+    const operation = enabled ? "add" : "remove";
     const client = get(apiClient$)(userBuiltinConnectorsContract);
     await withCleanup(
       (async () => {
+        await set(setAgentConnectorDraft$, { name, operation }, signal);
         await accept(
           client.update({
             params: { id: detail.agentId },

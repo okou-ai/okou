@@ -42,7 +42,6 @@ import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
 import type { PlatformConnectorAccountMutationIntent } from "../../signals/connector-domain.ts";
 import { downloadAttachment$ } from "../../signals/attachment-download.ts";
-import { apiClient$ } from "../../signals/api-client.ts";
 import {
   builtinConnectors$,
   connectorCatalogItemBySlug,
@@ -51,8 +50,7 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { connectorConnectionPending$ } from "../../signals/connector-connection-progress.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
-  authorizeGoogleDriveForAgent,
-  syncArtifactFileToGoogleDrive$,
+  syncArtifactAndRefresh$,
   googleDriveSyncPending$,
 } from "../../signals/chat-page/artifact-google-drive-sync.ts";
 import {
@@ -399,8 +397,7 @@ function useGoogleDriveMenuAction(
   availability: ReturnType<typeof useGoogleDriveAvailability>,
   mode: GoogleDriveUploadMode,
 ): () => void {
-  const createClient = useGet(apiClient$);
-  const syncArtifact = useSet(syncArtifactFileToGoogleDrive$);
+  const syncArtifact = useSet(syncArtifactAndRefresh$);
   const pageSignal = useGet(pageSignal$);
   const connectGoogleDrive = useSet(
     connectBuiltinConnectorOAuthAuthCodeWithDialogAndSettle$,
@@ -410,31 +407,33 @@ function useGoogleDriveMenuAction(
     if (!syncTarget) {
       return;
     }
-    const run = async (
+    const run = (
+      connectedAccountId: string | undefined,
+      authorize: boolean,
       signal: AbortSignal,
-      connectedAccountId = syncTarget.connectionId,
     ) => {
       if (!syncTarget.agentId) {
-        return;
+        return Promise.resolve();
       }
-      const success = await syncArtifact(
+      return syncArtifact(
         {
-          createClient,
           agentId: syncTarget.agentId,
           artifactId: syncTarget.artifactId,
           ...(connectedAccountId ? { connectionId: connectedAccountId } : {}),
           filename: syncTarget.filename,
           mode,
+          authorize,
+          onSyncSuccess: syncTarget.onSyncSuccess,
         },
         signal,
       );
-      signal.throwIfAborted();
-      if (success) {
-        syncTarget.onSyncSuccess();
-      }
     };
     if (availability.googleDriveReady) {
-      detach(run(pageSignal), Reason.DomCallback, "artifact google drive sync");
+      detach(
+        run(syncTarget.connectionId, false, pageSignal),
+        Reason.DomCallback,
+        "artifact google drive sync",
+      );
       return;
     }
     const action = resolveGoogleDrivePendingAction({
@@ -458,13 +457,7 @@ function useGoogleDriveMenuAction(
     const agentId = syncTarget.agentId;
     if (action.kind === "authorize") {
       detach(
-        (async () => {
-          await authorizeGoogleDriveForAgent(
-            { agentId, createClient },
-            pageSignal,
-          );
-          await run(pageSignal);
-        })(),
+        run(syncTarget.connectionId, true, pageSignal),
         Reason.DomCallback,
         "artifact google drive authorize sync",
       );
@@ -482,7 +475,7 @@ function useGoogleDriveMenuAction(
           connectorSlug: GOOGLE_DRIVE_CONNECTOR_SLUG,
           method: availability.googleDriveAuthMethod,
           onSuccess: (connectionId, signal) => {
-            return run(signal, connectionId ?? syncTarget.connectionId);
+            return run(connectionId ?? syncTarget.connectionId, false, signal);
           },
           options: {
             account: action.account,

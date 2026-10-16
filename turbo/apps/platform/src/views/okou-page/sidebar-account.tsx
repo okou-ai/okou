@@ -8,6 +8,7 @@ import {
   useSet,
 } from "ccstate-react";
 import { useTranslation } from "react-i18next";
+import { useLoadableSet } from "ccstate-react/experimental";
 import {
   LogOut,
   Plus,
@@ -33,6 +34,7 @@ import {
 import { clerk$, currentUserInfo$ } from "../../signals/auth.ts";
 import { openClerkAddAccount$ } from "../../signals/clerk-add-account.ts";
 import {
+  confirmAccountMenuCodexUsageReset$,
   reloadAccountMenuSubscriptionUsageRows$,
   type AccountMenuSubscriptionUsageRowsCacheKey,
 } from "../../signals/okou-page/account-menu-subscriptions.ts";
@@ -56,7 +58,6 @@ import {
 import {
   accountMenuCodexResetDialog$,
   personalActionPromise$,
-  resetPersonalCodexSubscriptionUsage$,
   setAccountMenuCodexResetDialog$,
 } from "../../signals/okou-page/settings/personal-model-providers.ts";
 import { CodexResetUsageDialog } from "./components/preferences/codex-reset-usage-dialog.tsx";
@@ -703,15 +704,17 @@ export function useAccountActions(
 export function useAccountCodexReset(
   subscriptionRowsCacheKey: AccountMenuSubscriptionUsageRowsCacheKey,
 ) {
-  const reloadSubscriptions = useSet(reloadAccountMenuSubscriptionUsageRows$);
-  const resetCodexSubscriptionUsage = useSet(
-    resetPersonalCodexSubscriptionUsage$,
+  const [resetLoadable, confirmReset] = useLoadableSet(
+    confirmAccountMenuCodexUsageReset$,
   );
   const resetDialog = useGet(accountMenuCodexResetDialog$);
   const setResetDialog = useSet(setAccountMenuCodexResetDialog$);
   const actionLoadable = useLoadable(personalActionPromise$);
   const pageSignal = useGet(pageSignal$);
-  const actionPending = actionLoadable.state === "loading";
+  const actionPending =
+    actionLoadable.state === "loading" || resetLoadable.state === "loading";
+  const resetError =
+    resetLoadable.state === "hasError" ? String(resetLoadable.error) : null;
 
   const handleOpenCodexReset = (resetCredits: number | null) => {
     setResetDialog({ open: true, resetCredits });
@@ -719,11 +722,7 @@ export function useAccountCodexReset(
 
   const handleConfirmCodexReset = () => {
     detach(
-      (async () => {
-        await resetCodexSubscriptionUsage(pageSignal);
-        await reloadSubscriptions(subscriptionRowsCacheKey, pageSignal);
-        setResetDialog({ ...resetDialog, open: false });
-      })(),
+      confirmReset(subscriptionRowsCacheKey, pageSignal),
       Reason.DomCallback,
     );
   };
@@ -737,6 +736,7 @@ export function useAccountCodexReset(
 
   return {
     resetDialog,
+    resetError,
     actionPending,
     handleOpenCodexReset,
     handleConfirmCodexReset,
@@ -777,6 +777,7 @@ export function AccountDropdown({
   } = useAccountActions(profile, onAccountAction);
   const {
     resetDialog,
+    resetError,
     actionPending,
     handleOpenCodexReset,
     handleConfirmCodexReset,
@@ -869,6 +870,7 @@ export function AccountDropdown({
           open={resetDialog.open}
           resetCredits={resetDialog.resetCredits}
           resetting={actionPending}
+          error={resetError}
           onOpenChange={handleCodexResetOpenChange}
           onConfirm={handleConfirmCodexReset}
         />

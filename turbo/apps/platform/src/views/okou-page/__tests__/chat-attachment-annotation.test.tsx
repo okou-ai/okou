@@ -2,6 +2,10 @@ import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { expect, test, vi } from "vitest";
+import {
+  chatThreadByIdContract,
+  type UserMessageInputPart,
+} from "@okouai/api-contracts/contracts/chat-threads";
 
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -400,6 +404,48 @@ test("A user can attach marks to a private image through its public URL", async 
       "Failed to upload annotated-billing.png. Try again.",
     ),
   ).toBeNull();
+});
+
+test("Confirmed marks persist with their completed annotated file", async () => {
+  const image = draftAttachment("persist-marks.png");
+  const annotatedFileId = "a0000000-0000-4000-a000-000000000095";
+  const saved =
+    context.mocks.deferred<Extract<UserMessageInputPart, { type: "file" }>>();
+  mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
+  context.mocks.http.get(image.url, () => {
+    return HttpResponse.arrayBuffer(new Uint8Array([1, 2, 3]).buffer, {
+      headers: { "Content-Type": "image/png" },
+    });
+  });
+  context.mocks.browser.imageDimensions({ width: 800, height: 500 });
+  context.mocks.browser.canvasRendering();
+  context.mocks.upload.success({
+    id: annotatedFileId,
+    filename: "persist-marks.annotated.png",
+    contentType: "image/png",
+    size: 11,
+    url: "https://files.example.test/persist-marks.annotated.png",
+  });
+  context.mocks.api(chatThreadByIdContract.patch, ({ body, respond }) => {
+    const part = body.draftUserMessage?.parts.find((candidate) => {
+      return candidate.type === "file" && candidate.fileId === image.id;
+    });
+    if (part?.type === "file" && part.annotations) {
+      saved.resolve(part);
+    }
+    return respond(204);
+  });
+
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+  drawBox(await openAnnotationEditor("persist-marks.png"));
+  click(await findNamedButton("Attach marks"));
+  const savedPart = await saved.promise;
+  expect(savedPart).toMatchObject({ type: "file", annotatedFileId });
+  expect(savedPart.annotations?.marks).toHaveLength(1);
+  expect(
+    screen.getByTestId("composer-attachment-mark-count"),
+  ).toHaveTextContent("1");
+  expect(screen.getByLabelText("Send")).toBeEnabled();
 });
 
 test("A user can attach marks after previewing a public image", async () => {
