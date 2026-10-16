@@ -1125,6 +1125,12 @@ impl HomeImageCache {
         profile_image_sizes_bytes: Option<&BTreeMap<&str, u64>>,
         _lock: &Flock<std::fs::File>,
     ) -> Option<HeldHomeState> {
+        if !fs::symlink_metadata(self.home_image_cache_entry_dir(cache_key))
+            .await
+            .is_ok_and(|metadata| metadata.is_dir())
+        {
+            return None;
+        }
         let metadata = self
             .read_metadata_file(&self.home_image_cache_metadata(cache_key))
             .await

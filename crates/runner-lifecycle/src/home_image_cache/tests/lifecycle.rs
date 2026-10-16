@@ -374,6 +374,7 @@ async fn keyed_inventory_validates_current_authority_without_scanning_independen
         Malformed,
         Foreign,
         Replaced,
+        SymlinkedEntry,
         Busy,
         OldGeneration,
     }
@@ -382,6 +383,7 @@ async fn keyed_inventory_validates_current_authority_without_scanning_independen
         Scenario::Malformed,
         Scenario::Foreign,
         Scenario::Replaced,
+        Scenario::SymlinkedEntry,
         Scenario::Busy,
         Scenario::OldGeneration,
     ] {
@@ -416,6 +418,21 @@ async fn keyed_inventory_validates_current_authority_without_scanning_independen
                     .await
                     .unwrap();
                 write_image(&image, b"replacement", SIZE);
+            }
+            Scenario::SymlinkedEntry => {
+                let entry = f.cache.entry_paths(&key).entry_dir().to_owned();
+                let relocated = f.dir.path().join("relocated-entry");
+                tokio::fs::rename(&entry, &relocated).await.unwrap();
+                tokio::fs::symlink(&relocated, &entry).await.unwrap();
+                let change = tokio::time::timeout(Duration::from_secs(5), watcher.next_change())
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(change.dirty_cache_keys, BTreeSet::from([key.clone()]));
+                assert!(!change.requires_full_reconcile);
+                let full = f.cache.home_cache_inventory_for_profiles(&profiles).await;
+                assert_eq!(full.states().len(), 1);
+                assert_eq!(full.states()[0].reuse_key, "independent");
             }
             Scenario::Busy => busy_lease = Some(f.lease("changed").await),
             Scenario::OldGeneration => {
