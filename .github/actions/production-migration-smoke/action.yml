@@ -70,7 +70,7 @@ runs:
       working-directory: turbo
       env:
         DATABASE_URL: ${{ steps.create-migration-smoke-branch.outputs.database-url }}
-      run: pnpm -F @okouai/db db:migrate
+      run: pnpm -F @okouai/db db:migrate:smoke
 
     - name: Delete Production Migration Smoke Branch
       if: ${{ always() && steps.create-migration-smoke-branch.outputs.branch-id != '' }}

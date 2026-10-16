@@ -117,9 +117,9 @@ export async function createPgliteSnapshot(): Promise<Blob> {
           "CREATE EXTENSION IF NOT EXISTS pgstattuple WITH SCHEMA public;",
           "",
         );
-        if (sql.includes("-- vm0:non-transactional")) {
+        if (sql.includes("-- okou:non-transactional")) {
           for (const statement of sql.split("--> statement-breakpoint")) {
-            if (statement.includes("-- vm0:batch-by-uuid")) {
+            if (statement.includes("-- okou:batch-by-uuid")) {
               await replayUuidBatch(statement, name);
             } else {
               await engine.exec(statement);
@@ -138,9 +138,9 @@ export async function createPgliteSnapshot(): Promise<Blob> {
               await engine.exec(statement);
             }
           }
-        } else if (sql.includes("-- vm0:batch-by-uuid")) {
+        } else if (sql.includes("-- okou:batch-by-uuid")) {
           for (const statement of sql.split("--> statement-breakpoint")) {
-            if (!statement.includes("-- vm0:batch-by-uuid")) {
+            if (!statement.includes("-- okou:batch-by-uuid")) {
               await engine.exec(statement);
               continue;
             }

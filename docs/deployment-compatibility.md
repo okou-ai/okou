@@ -61,7 +61,7 @@ migration stops promotion. Staged builds, host provisioning, and other
 non-serving preparation may finish before migrations; they do not establish
 that traffic has moved.
 
-Migrations marked `-- vm0:non-transactional` execute one statement at a time.
+Migrations marked `-- okou:non-transactional` execute one statement at a time.
 Earlier successful statements survive a later failure, and a retry starts the
 migration again. Every statement must be idempotent under a full retry.
 

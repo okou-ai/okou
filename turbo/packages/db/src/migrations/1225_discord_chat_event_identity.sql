@@ -1,4 +1,4 @@
--- vm0:non-transactional
+-- okou:non-transactional
 -- Build the delivery FK's event/thread identity without blocking Chat writers.
 -- The FK is added only by the following transactional migration, so a retry
 -- after an interrupted build or journal write can safely recreate this index.
