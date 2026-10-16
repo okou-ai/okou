@@ -23,8 +23,7 @@ runner_image_validate_target "$TARGET_TRIPLE"
 [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]] || fail "invalid source SHA"
 [[ "$GITHUB_RUN_ID" =~ ^[1-9][0-9]*$ && "$PRODUCER_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || fail "invalid producer identity"
 case "$TEST_NAME" in
-  host_cpu_fairness) profile=release; profile_args=(--release) ;;
-  guest_rpc) profile=ci; profile_args=(--profile ci) ;;
+  host_cpu_fairness|guest_rpc) profile=ci; profile_args=(--profile ci) ;;
   *) fail "unsupported integration test: $TEST_NAME" ;;
 esac
 

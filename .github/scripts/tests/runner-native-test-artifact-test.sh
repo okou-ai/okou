@@ -19,8 +19,7 @@ Dir.mktmpdir("native-test-artifact") do |dir|
     #!/usr/bin/env bash
     set -euo pipefail
     case "$TEST_NAME" in
-      host_cpu_fairness) profile='--release' ;;
-      guest_rpc) profile='--profile ci' ;;
+      host_cpu_fairness|guest_rpc) profile='--profile ci' ;;
       *) exit 91 ;;
     esac
     [ "$*" = "test --no-run $profile --target $TARGET_TRIPLE -p sandbox-firecracker --test $TEST_NAME --message-format=json-render-diagnostics" ]
@@ -148,7 +147,7 @@ Dir.mktmpdir("native-test-artifact") do |dir|
         when "wrong-attempt" then manifest["attempt"] = "2"
         when "wrong-test" then manifest["test"] = "other_test"
         when "wrong-target" then manifest["target"] = "other_target"
-        when "wrong-profile" then manifest["profile"] = "other_profile"
+        when "wrong-profile" then manifest["profile"] = "release"
         when "raw-size" then manifest["sizeBytes"] = 134217729
         when "compressed-size" then manifest["compressedSizeBytes"] = 67108865
         when "truncated-binary" then File.binwrite(remote_binary, valid_binary[0, 8])
@@ -198,7 +197,7 @@ Dir.mktmpdir("native-test-artifact") do |dir|
         "repository" => "other/repository", "sha" => "b" * 40, "run" => "456", "attempt" => "2",
         "target" => target.start_with?("aarch64") ? "x86_64-unknown-linux-musl" : "aarch64-unknown-linux-musl",
         "test" => name == "guest_rpc" ? "host_cpu_fairness" : "guest_rpc",
-        "profile" => name == "guest_rpc" ? "release" : "ci", "sha256" => "0" * 64, "version" => 2,
+        "profile" => "release", "sha256" => "0" * 64, "version" => 2,
         "sizeBytes" => 0
       }
       (mutations.keys + %w[corrupt missing-manifest missing-binary symlink-binary producer-output]).each do |bad|
