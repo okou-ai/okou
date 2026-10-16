@@ -26,7 +26,7 @@ import { githubUserLinks } from "@okouai/db/schema/github-user-link";
 import { z } from "zod";
 import { command } from "ccstate";
 
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { safeJsonParse, tapError } from "../utils";
 import {
   connectorOAuthStateExpiresAt,
@@ -833,43 +833,47 @@ export const tryLinkGithubFromLocalRecord$ = command(
   },
 );
 
-export async function loadComposeFeatureSwitchContext(
-  args: {
-    readonly db: Db;
-    readonly composeId: string;
-    readonly userId?: string | null;
-  },
-  signal: AbortSignal,
-): Promise<FeatureSwitchContext> {
-  const [compose] = await args.db
-    .select({ orgId: agents.orgId, userId: agents.owner })
-    .from(agents)
-    .where(eq(agents.id, args.composeId))
-    .limit(1);
-  signal.throwIfAborted();
+export const loadComposeFeatureSwitchContext$ = command(
+  async (
+    { get },
+    args: {
+      readonly composeId: string;
+      readonly userId?: string | null;
+    },
+    signal: AbortSignal,
+  ): Promise<FeatureSwitchContext> => {
+    const db = get(db$);
+    const [compose] = await db
+      .select({ orgId: agents.orgId, userId: agents.owner })
+      .from(agents)
+      .where(eq(agents.id, args.composeId))
+      .limit(1);
+    signal.throwIfAborted();
 
-  if (!compose) {
-    throw new Error(`Agent compose not found: composeId=${args.composeId}`);
-  }
+    if (!compose) {
+      throw new Error(`Agent compose not found: composeId=${args.composeId}`);
+    }
 
-  const featureSwitchContextRows0 = await args.db
-    .select({
-      userId: userFeatureSwitches.userId,
-      switches: userFeatureSwitches.switches,
-    })
-    .from(userFeatureSwitches)
-    .where(
-      userFeatureSwitchRowCondition(
-        compose.orgId,
-        args.userId ?? compose.userId,
-      ),
+    const featureSwitchContextRows0 = await db
+      .select({
+        userId: userFeatureSwitches.userId,
+        switches: userFeatureSwitches.switches,
+      })
+      .from(userFeatureSwitches)
+      .where(
+        userFeatureSwitchRowCondition(
+          compose.orgId,
+          args.userId ?? compose.userId,
+        ),
+      );
+    signal.throwIfAborted();
+    return featureSwitchContextFromRows(
+      compose.orgId,
+      args.userId ?? compose.userId,
+      featureSwitchContextRows0,
     );
-  return featureSwitchContextFromRows(
-    compose.orgId,
-    args.userId ?? compose.userId,
-    featureSwitchContextRows0,
-  );
-}
+  },
+);
 
 export const resolveGithubOauthOrgId$ = command(
   async (
@@ -1004,7 +1008,7 @@ export const tryLinkGithubFromRemoteInstallations$ = command(
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const db = set(writeDb$);
+    set(writeDb$);
     const installations = await set(
       discoverGithubAppInstallations$,
       { appId: args.appId, privateKey: args.privateKey },
@@ -1062,9 +1066,9 @@ export const tryLinkGithubFromRemoteInstallations$ = command(
       { orgId: args.orgId, composeId: args.composeId },
       signal,
     );
-    const featureSwitchContext = await loadComposeFeatureSwitchContext(
+    const featureSwitchContext = await set(
+      loadComposeFeatureSwitchContext$,
       {
-        db,
         composeId: args.composeId,
         userId: args.userId,
       },
