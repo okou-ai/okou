@@ -127,8 +127,7 @@ async fn vnc_history_retains_kdc_ssh_failure_before_kerberos_conversion() {
         .mock_async(|when, then| {
             when.method("GET").path("/api/ssh/hosts");
             let mut hosts = remote_inventory(&[(CONNECTION, 7), (KDC, 7)], CREATED_AT);
-            hosts["diagnostics"]["identities"][1]["createdAt"] =
-                json!("2026-09-01T00:00:00.123457Z");
+            hosts["identities"][1]["createdAt"] = json!("2026-09-01T00:00:00.123457Z");
             then.status(200).json_body(hosts);
         })
         .await;
