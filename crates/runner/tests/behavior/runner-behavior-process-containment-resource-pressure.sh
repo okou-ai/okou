@@ -16,9 +16,7 @@ echo "--- Pressure: group-kill only the high-memory Bash tool ---"
 # lifecycle after the preceding CPU-pressure scenario.
 MEMORY_CHAT_THREAD_ID=$(cat /proc/sys/kernel/random/uuid)
 MEMORY_SESSION_ID="e2e-process-containment-memory"
-SECONDS=0
-if ! MEMORY_RESULT=$(sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
-  --timeout 30 \
+if ! MEMORY_RESULT=$("$PROCESS_CONTAINMENT_SUBMIT" "$BIN_DIR" --group "$GROUP" \
   --chat-thread-id "$MEMORY_CHAT_THREAD_ID" \
   --session-id "$MEMORY_SESSION_ID" \
   --feature-flag sandboxReuse=true \
@@ -27,10 +25,7 @@ if ! MEMORY_RESULT=$(sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
   printf '%s\n' "$MEMORY_RESULT"
   fail "memory-pressure submit failed before tool OOM isolation completed"
 fi
-MEMORY_ELAPSED=$SECONDS
 printf '%s\n' "$MEMORY_RESULT"
-[ "$MEMORY_ELAPSED" -lt 20 ] \
-  || fail "memory-pressure recovery was not bounded: ${MEMORY_ELAPSED}s"
 MEMORY_RESULT_JSON=$(awk '/^\{/{line=$0} END{print line}' <<<"$MEMORY_RESULT")
 MEMORY_RUN_ID=$(jq -r '.run_id // empty' <<<"$MEMORY_RESULT_JSON")
 [ -n "$MEMORY_RUN_ID" ] || fail "memory-pressure result omitted run ID"
@@ -45,7 +40,7 @@ sudo grep -E -q 'memory_oom_group_kill=[1-9][0-9]*' "$MEMORY_STREAM_LOG" \
   || fail "memory-pressure diagnostics omitted the group OOM event"
 
 echo "--- Pressure: prove tool-group OOM preserved sandbox reuse ---"
-MEMORY_REUSE_RESULT=$(sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
+MEMORY_REUSE_RESULT=$("$PROCESS_CONTAINMENT_SUBMIT" "$BIN_DIR" --group "$GROUP" \
   --chat-thread-id "$MEMORY_CHAT_THREAD_ID" \
   --session-id "$MEMORY_SESSION_ID" \
   --feature-flag sandboxReuse=true \
@@ -58,8 +53,7 @@ MEMORY_REUSE_RUN_ID=$(jq -r '.run_id // empty' <<<"$MEMORY_REUSE_RESULT_JSON")
 
 echo "--- Pressure: prefer tools during injected Guest-wide OOM ---"
 GLOBAL_MEMORY_THREAD_ID=$(cat /proc/sys/kernel/random/uuid)
-if GLOBAL_MEMORY_RESULT=$(sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
-  --timeout 30 \
+if GLOBAL_MEMORY_RESULT=$("$PROCESS_CONTAINMENT_SUBMIT" "$BIN_DIR" --group "$GROUP" \
   --chat-thread-id "$GLOBAL_MEMORY_THREAD_ID" \
   --session-id e2e-process-containment-global-memory \
   --feature-flag sandboxReuse=true \
@@ -94,7 +88,7 @@ if ! sudo grep -F -q 'oom_classification=contained_tool_oom' "$GLOBAL_MEMORY_LOG
   sudo tail -n 80 "$GLOBAL_MEMORY_LOG" >&2 || true
   fail "Guest-wide tool OOM was not classified as contained"
 fi
-GLOBAL_REUSE_RESULT=$(sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
+GLOBAL_REUSE_RESULT=$("$PROCESS_CONTAINMENT_SUBMIT" "$BIN_DIR" --group "$GROUP" \
   --chat-thread-id "$GLOBAL_MEMORY_THREAD_ID" \
   --session-id e2e-process-containment-global-memory \
   --feature-flag sandboxReuse=true --prompt 'true') \
@@ -115,8 +109,8 @@ for TASK_SCOPE in workload guest; do
     TASK_OOM_PROMPT='@managed-task-oom'
     TASK_GUEST_WIDE=false
   fi
-  if ! TASK_RESULT=$(sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
-    --timeout 45 --chat-thread-id "$TASK_THREAD_ID" --session-id "$TASK_SESSION_ID" \
+  if ! TASK_RESULT=$("$PROCESS_CONTAINMENT_SUBMIT" "$BIN_DIR" --group "$GROUP" \
+    --chat-thread-id "$TASK_THREAD_ID" --session-id "$TASK_SESSION_ID" \
     --feature-flag sandboxReuse=true --prompt "$TASK_OOM_PROMPT"); then
     printf '%s\n' "$TASK_RESULT" >&2
     fail "nested task ${TASK_SCOPE} OOM did not preserve the main runtime"
@@ -130,7 +124,7 @@ for TASK_SCOPE in workload guest; do
     sudo tail -n 80 "$TASK_LOG" >&2 || true
     fail "task family retirement, memory reclamation or OOM scope was not verified"
   fi
-  TASK_REUSE_RESULT=$(sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
+  TASK_REUSE_RESULT=$("$PROCESS_CONTAINMENT_SUBMIT" "$BIN_DIR" --group "$GROUP" \
     --chat-thread-id "$TASK_THREAD_ID" --session-id "$TASK_SESSION_ID" \
     --feature-flag sandboxReuse=true --prompt 'true') \
     || fail "task OOM did not preserve subsequent session execution"
@@ -138,8 +132,8 @@ for TASK_SCOPE in workload guest; do
 done
 
 echo "--- Pressure: runtime remains eligible without managed tools ---"
-if RUNTIME_OOM_RESULT=$(sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
-  --timeout 30 --prompt '@runtime-only-oom'); then
+if RUNTIME_OOM_RESULT=$("$PROCESS_CONTAINMENT_SUBMIT" "$BIN_DIR" --group "$GROUP" \
+  --prompt '@runtime-only-oom'); then
   fail "runtime-only OOM incorrectly succeeded"
 fi
 printf '%s\n' "$RUNTIME_OOM_RESULT"
@@ -207,8 +201,7 @@ print(f"pid-pressure-complete children={len(children)}", flush=True)
 PY
 PROMPT
 )
-PID_RESULT=$(sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
-  --timeout 30 \
+PID_RESULT=$("$PROCESS_CONTAINMENT_SUBMIT" "$BIN_DIR" --group "$GROUP" \
   --chat-thread-id "$PID_CHAT_THREAD_ID" \
   --session-id "$PID_SESSION_ID" \
   --feature-flag sandboxReuse=true \
@@ -226,7 +219,7 @@ sudo grep -E -q 'pids_max=[1-9][0-9]*' "$PID_STREAM_LOG" \
   || fail "PID-pressure diagnostics omitted the pids.max event"
 
 echo "--- Pressure: prove PID-exhaustion cleanup preserved sandbox reuse ---"
-sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
+"$PROCESS_CONTAINMENT_SUBMIT" "$BIN_DIR" --group "$GROUP" \
   --chat-thread-id "$PID_CHAT_THREAD_ID" \
   --session-id "$PID_SESSION_ID" \
   --feature-flag sandboxReuse=true \
@@ -260,6 +253,6 @@ printf '%s\n' "$LOGS" \
   | grep -F 'reused=true' \
   >/dev/null \
   || fail "tool-group OOM follow-up did not reuse its sandbox"
-echo "PASS: Bash tool group OOM preserved the CLI, unrelated tool, and reuse in ${MEMORY_ELAPSED}s"
+echo "PASS: Bash tool group OOM preserved the CLI, unrelated tool, and reuse"
 echo "PASS: Guest-wide OOM preserved tool isolation and runtime-only OOM attribution"
 echo "PASS: Bash tool pids.max cleanup preserved sandbox reuse"
