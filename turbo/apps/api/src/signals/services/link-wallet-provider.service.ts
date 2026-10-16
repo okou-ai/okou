@@ -83,9 +83,9 @@ export const linkCredentialsSchema = z.object({
   accessToken: z.string().min(1),
   refreshToken: z.string().min(1),
   expiresAt: z.number().int(),
-  scope: z.string().optional(),
+  scope: z.string(),
   authorizationDetails: walletAuthorizationDetailsSchema.optional(),
-  readOnly: z.boolean().optional(),
+  readOnly: z.boolean(),
 });
 
 function isLinkActionUrl(value: string): boolean {

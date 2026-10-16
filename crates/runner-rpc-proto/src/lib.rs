@@ -125,6 +125,8 @@ pub enum Response {
     Error {
         code: ErrorCode,
         delivery: Delivery,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        diagnostic_text: Option<String>,
     },
 }
 
@@ -151,6 +153,8 @@ impl<'de> Deserialize<'de> for Response {
             code: Option<ErrorCode>,
             #[serde(default, deserialize_with = "present")]
             delivery: Option<Delivery>,
+            #[serde(default, deserialize_with = "present")]
+            diagnostic_text: Option<Box<RawValue>>,
         }
 
         let envelope = Envelope::deserialize(deserializer)?;
@@ -159,10 +163,17 @@ impl<'de> Deserialize<'de> for Response {
             envelope.data,
             envelope.code,
             envelope.delivery,
+            envelope.diagnostic_text,
         ) {
-            (Kind::Event, Some(data), None, None) => Ok(Self::Event { data }),
-            (Kind::Result, Some(data), None, None) => Ok(Self::Result { data }),
-            (Kind::Error, None, Some(code), Some(delivery)) => Ok(Self::Error { code, delivery }),
+            (Kind::Event, Some(data), None, None, None) => Ok(Self::Event { data }),
+            (Kind::Result, Some(data), None, None, None) => Ok(Self::Result { data }),
+            (Kind::Error, None, Some(code), Some(delivery), diagnostic_text) => Ok(Self::Error {
+                code,
+                delivery,
+                diagnostic_text: diagnostic_text
+                    .and_then(|raw| serde_json::from_str::<String>(raw.get()).ok())
+                    .filter(|text| text.len() <= 8192),
+            }),
             _ => Err(serde::de::Error::custom("invalid RPC response envelope")),
         }
     }
@@ -183,7 +194,20 @@ impl Response {
     }
 
     pub fn error(code: ErrorCode, delivery: Delivery) -> Self {
-        Self::Error { code, delivery }
+        Self::error_with_diagnostic(code, delivery, None)
+    }
+
+    /// Optional consumer-authored explanation; never changes delivery or completion.
+    pub fn error_with_diagnostic(
+        code: ErrorCode,
+        delivery: Delivery,
+        diagnostic_text: Option<String>,
+    ) -> Self {
+        Self::Error {
+            code,
+            delivery,
+            diagnostic_text: diagnostic_text.filter(|text| text.len() <= 8192),
+        }
     }
 
     /// Compact only JSON whitespace outside strings. Raw payload keys, numeric

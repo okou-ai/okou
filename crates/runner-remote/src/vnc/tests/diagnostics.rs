@@ -124,12 +124,15 @@ async fn post_authentication_authority_failure_keeps_its_stage_without_provider_
         .with(captured.clone());
     let _subscriber = tracing::subscriber::set_default(subscriber);
     let mut h = Harness::new().await;
+    h.run.enable_diagnostics(&h.runtime).await;
     let _resolve = h.resolve().await;
     let _check = h.check("provider-error-canary", 500).await;
-    assert_eq!(
-        h.start("shared").await.result()["reason"],
-        "authority_failure"
-    );
+    let failed = h.start("shared").await;
+    assert_eq!(failed.result()["reason"], "authority_failure");
+    let explanation = crate::test_fixtures::diagnostic_text(failed.result());
+    assert!(explanation.contains("VNC authority recheck: failed."));
+    assert!(explanation.contains("VNC initialization: passed."));
+    assert!(!explanation.contains("provider-error-canary"));
     h.run.shutdown().await;
     let records = attempts(&captured);
     assert_eq!(records.len(), 1);
@@ -155,6 +158,7 @@ async fn invalid_server_init_preserves_the_engine_category_and_initialization_st
         .with(captured.clone());
     let _subscriber = tracing::subscriber::set_default(subscriber);
     let mut h = Harness::with_authority(Peer::invalid_framebuffer().await, None).await;
+    h.run.enable_diagnostics(&h.runtime).await;
     let _resolve = h
         .resolve_response(json!({
             "outcome":"resolved_transport", "host":"vnc.example.test", "port":5900, "generation":7,
@@ -163,7 +167,12 @@ async fn invalid_server_init_preserves_the_engine_category_and_initialization_st
             "security":{"type":"x509_none", "trust":{"mode":"custom_ca","caBundle":h.peer.ca}}
         }))
         .await;
-    assert_eq!(h.start("shared").await.result()["reason"], "protocol");
+    let failed = h.start("shared").await;
+    assert_eq!(failed.result()["reason"], "protocol");
+    let explanation = crate::test_fixtures::diagnostic_text(failed.result());
+    assert!(explanation.contains("VNC initialization: failed."));
+    assert!(explanation.contains("VNC authentication: passed."));
+    assert!(explanation.contains("VNC RFB error: invalid_framebuffer;"));
     h.run.shutdown().await;
     let records = attempts(&captured);
     assert_eq!(records.len(), 1);

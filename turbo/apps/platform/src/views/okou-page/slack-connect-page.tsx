@@ -6,10 +6,9 @@ import { Button, BrandSlack, buttonVariants, cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { detach, Reason } from "../../signals/utils.ts";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
-import { searchParams$ } from "../../signals/route.ts";
 import {
   effectiveError$,
-  reloadSlackConnectStatus$,
+  initSlackConnectPage$,
   slackReturnUrl$,
   slackConnectStatus$,
   type SlackConnectStatus,
@@ -36,16 +35,15 @@ type PageStatus =
 export function SlackConnectPage() {
   return (
     <PageShell>
-      <SlackAttemptNotice />
+      <SlackAuthorizationError />
       <PageContent />
     </PageShell>
   );
 }
 
-function SlackAttemptNotice() {
+function SlackAuthorizationError() {
   const { t } = useTranslation();
   const error = useGet(effectiveError$);
-  const params = useGet(searchParams$);
   if (error) {
     return (
       <ConnectErrorAlert
@@ -57,20 +55,6 @@ function SlackAttemptNotice() {
             : error
         }
       />
-    );
-  }
-  if (
-    params.get("status") === "connected" ||
-    ["updated", "installed", "connected"].some((key) => {
-      return params.get(key) === "1";
-    })
-  ) {
-    return (
-      <p className="text-sm text-muted-foreground" role="status">
-        {t(($) => {
-          return $.connectors.providerConnect.slack.authorizationReturned;
-        })}
-      </p>
     );
   }
   return null;
@@ -95,7 +79,7 @@ function PageContent() {
               ),
             }
           : { kind: "checking" };
-  const reload = useSet(reloadSlackConnectStatus$);
+  const reload = useSet(initSlackConnectPage$);
   const [connectLoadable, connect] = useLoadableSet(connectSlackAccount$);
   const connectLoading = connectLoadable.state === "loading";
   const connectError =
@@ -120,7 +104,7 @@ function PageContent() {
         <ConnectErrorState message={status.message} />
         <Button
           onClick={() => {
-            return reload();
+            return detach(reload(pageSignal), Reason.DomCallback);
           }}
         >
           {t(($) => {
@@ -290,18 +274,6 @@ function SlackSuccessState({
               })
         }
       />
-      {slackUserId && (
-        <p className="text-sm text-muted-foreground">
-          {t(
-            ($) => {
-              return $.connectors.providerConnect.slack.connectedAccount;
-            },
-            {
-              account: slackUserId,
-            },
-          )}
-        </p>
-      )}
       <div className="flex flex-col gap-3 w-full">
         <a
           href={slackUserId ? returnUrl : "slack://open"}

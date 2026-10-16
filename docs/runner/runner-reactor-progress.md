@@ -198,11 +198,13 @@ that entry's nonblocking exclusive flock, so active checkout, generation staging
 publication cannot be cleaned concurrently. No entry flock survives inventory.
 
 Afterward routine GC attempts capacity nonblockingly, rechecks the completion
-interval and reads fresh filesystem stats. Byte/count pressure observed in the
-unlocked inventory, or current free-space pressure, invokes the existing full
-collector with a **fresh inventory under capacity**. Unlocked candidates never
-authorize budget eviction. Failed work or busy final capacity admission writes no
-new completion marker and is eligible for a later retry.
+interval and reads fresh filesystem stats. Count pressure observed in the
+unlocked inventory, or current free-space pressure, uses that retained inventory
+as hints for bounded mutation turns. Each victim needs its entry lock and current
+generation, inode and last-use revalidation. Cooperative exhaustion releases both
+global owners; continuation tries them again and rechecks the completion interval.
+Unlocked candidates alone never authorize eviction. Failed work or busy final
+capacity admission writes no new completion marker and is eligible for a later retry.
 
 Other processes using the same canonical home-cache domain can overlap the
 unlocked pass. Shared entry flocks protect mutations, and the second interval
@@ -210,10 +212,17 @@ check observes another collector's intervening completion. Manual and
 promotion-triggered pressure GC retain capacity ownership and can still contend
 with promotion. This removes the routine inventory/entry-cleanup collision
 window, not pressure contention. The inventory covers the canonical home-cache
-domain. Cache byte/count targets
-remain periodic GC policy, not a strict per-promotion whole-cache admission
-bound. Profile-bound image eligibility, fresh allocation/reserve and cross-device
+domain. Count limits and observed free-space targets are independent; count-only
+cleanup does not activate a byte target. Profile-bound image eligibility, fresh allocation/reserve and cross-device
 copy headroom remain mandatory.
+
+Cheap pressure probes and completed invalid/temp maintenance have independent
+cadences. A probe or cooperative reclaim turn never advances the maintenance
+completion marker. Pressure discovery retains its owner while releasing capacity;
+each mutation turn tries capacity and entries again, revalidates generation,
+inode and last-use authority, and retains its LRU continuation between turns.
+Only actual available space establishes recovery: an unlinked image can remain
+allocated while another descriptor is open.
 
 Stopped publishers share one fair process-local publication permit, separate
 from Guest reclamation admission. They retain entry ownership while queued for
@@ -234,10 +243,13 @@ refill and joined shutdown; its contention deadline does not bound filesystem I/
 
 Checkout protects and examines the requested entry before considering disk
 pressure, with the existing short entry wait or immediate fallback. It never
-acquires capacity or runs a whole-cache GC on startup. A valid Move seed can be
-consumed by same-filesystem rename even below the reserve; periodic maintenance
-owns reclamation. A pressure miss may therefore fail promptly until maintenance
-frees space.
+acquires capacity or runs a whole-cache GC during cache selection. A valid Move
+seed can be consumed by same-filesystem rename even below the reserve. Provider
+Fresh/Copy preparation may offer low-space demand to the cache's independently
+owned reclaimer when both use the same receiving device. Healthy preparation
+does not join a global allocation queue. Its bounded observation deadline never
+cancels accepted physical work; shutdown joins that work after producers and
+factory-owned creation tails stop.
 
 Selection retains the immutable selecting commit under its entry guard until
 fallible storage/history preparation finishes. Factory handoff revalidates the
@@ -250,19 +262,24 @@ image-derived storage/history preparation before creating the replacement.
 
 Runtime home configurations carry the same max(10% capacity, 50 GiB) reserve as
 cache publication. Firecracker queries the actual destination filesystem before
-fresh creation, Copy or EXDEV copy. Sparse seeds need their allocated bytes plus
-metadata headroom, while fresh images conservatively need their logical size.
+fresh creation, Copy or EXDEV copy. Copy demand includes rounded logical data
+extents and per-extent allocation metadata, with a full-logical bound when
+observation is unavailable;
+source physical block counts alone are not a destination allocation bound.
+Fresh images conservatively need their logical size, and both need metadata
+headroom. A reclaim result never grants allocation: the provider rereads actual
+destination space before proceeding or returning insufficient headroom.
 Refusal precedes image truncation, copying and source removal. Pristine retries
 retain the reserve policy. This is an observed allocation check, not a reservation
 against other writers or a guarantee about future guest growth. Same-filesystem
 rename still performs ordinary filesystem I/O and can fail.
 
 Successful routine completion emits `entry_count` (the unlocked candidate
-count), `inventory_us`, cumulative `capacity_lock_held_us` (both held phases,
-excluding acquisition waits), `budget_gc` and `freed_bytes`. Deferred final
-admission reports the inventory and initial held durations. Pressure collection
-includes its fresh scan in the held duration. These are phase observations, not
-production cold-start savings or wall-clock performance guarantees. The ignored
+count), `inventory_us`, cumulative `capacity_lock_held_us` (all held phases,
+excluding acquisition waits and unlocked inventory), `budget_gc` and `freed_bytes`.
+Deferred final admission reports the inventory and initial held durations. These
+are phase observations, not production cold-start savings or wall-clock
+performance guarantees. The ignored
 `measure_routine_gc_inventory_and_capacity_hold` owner test prints representative
 local measurements without latency thresholds. It uses temporary files and the
 owner tests' injected filesystem budget, so it does not measure production

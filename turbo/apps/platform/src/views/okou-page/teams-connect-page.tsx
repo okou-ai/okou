@@ -1,6 +1,6 @@
-import { useGet, useLoadable } from "ccstate-react";
+import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { Button, surfaceVariants } from "@okouai/ui";
+import { Button, buttonVariants, cn } from "@okouai/ui";
 import { CircleCheck } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -11,6 +11,7 @@ import {
   type TeamsConnectPageState,
 } from "../../signals/okou-page/teams-connect-signals.ts";
 import { teamsCompletionUrl } from "../../signals/okou-page/teams-connect-context.ts";
+import { refreshTeamsOrg$ } from "../../signals/okou-page/teams.ts";
 import { openFreshOAuth } from "../../lib/oauth-window.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
@@ -19,10 +20,10 @@ import {
   ConnectCheckingState,
   ConnectErrorAlert,
   ConnectSubmitButton,
+  PageShell,
   SettingsBackLink,
   connectErrorMessage,
 } from "./connect-page-shell.tsx";
-import { TeamsStatusRefresh } from "./teams-status-refresh.tsx";
 
 type PageProps = { readonly page: TeamsConnectPageState };
 type BindingProps = {
@@ -32,16 +33,9 @@ type BindingProps = {
 
 export function TeamsConnectPage() {
   return (
-    <div className="h-full min-h-0 overflow-y-auto bg-background p-4 pb-safe">
-      <div
-        className={surfaceVariants({
-          className:
-            "mx-auto my-4 flex w-full max-w-sm flex-col items-center gap-5 p-5 sm:p-8",
-        })}
-      >
-        <PageContent />
-      </div>
-    </div>
+    <PageShell>
+      <PageContent />
+    </PageShell>
   );
 }
 
@@ -49,6 +43,7 @@ function PageContent() {
   const { t } = useTranslation();
   const params = useGet(searchParams$);
   const status = useLoadable(teamsConnectPageState$);
+  const refresh = useSet(refreshTeamsOrg$);
   const [binding, connect] = useLoadableSet(connectTeamsAccount$);
   const signal = useGet(pageSignal$);
   const failure = t(($) => {
@@ -82,8 +77,45 @@ function PageContent() {
           })}
         />
       )}
-      <TeamsStatusRefresh />
-      <SettingsBackLink />
+      <div className="flex w-full flex-col gap-3">
+        {status.state === "hasData" && (
+          <a
+            href={status.data.returnUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn(
+              buttonVariants({
+                variant: status.data.success ? "default" : "outline",
+              }),
+              "w-full gap-2",
+            )}
+          >
+            <img
+              src={settingsIconAssetUrl("teams")}
+              alt=""
+              className="h-4 w-4"
+            />
+            {t(($) => {
+              return $.connectors.providerConnect.teams.open;
+            })}
+          </a>
+        )}
+        {status.state === "hasError" && (
+          <Button
+            className="w-full"
+            onClick={() => {
+              detach(refresh(signal), Reason.DomCallback);
+            }}
+          >
+            {t(($) => {
+              return $.connectors.actions.tryAgain;
+            })}
+          </Button>
+        )}
+        <div className="flex justify-center">
+          <SettingsBackLink />
+        </div>
+      </div>
     </>
   );
 }
@@ -93,10 +125,6 @@ function ConnectionResult({
   connecting,
   onConnect,
 }: PageProps & BindingProps) {
-  const { t } = useTranslation();
-  const params = useGet(searchParams$);
-  const requestedName =
-    params.get("teamsUserDisplayName") ?? params.get("displayName");
   return (
     <>
       {page.success ? (
@@ -106,17 +134,6 @@ function ConnectionResult({
       )}
       <ConnectionHeading page={page} />
       <TargetNotice page={page} />
-      {!page.success && requestedName && (
-        <p className="text-sm text-muted-foreground">
-          {t(
-            ($) => {
-              return $.connectors.providerConnect.teams.requestedAccount;
-            },
-            { name: requestedName },
-          )}
-        </p>
-      )}
-      <CurrentTeamsState page={page} />
       <PermissionActions page={page} />
       <BindingAndInstallActions
         page={page}
@@ -124,16 +141,6 @@ function ConnectionResult({
         onConnect={onConnect}
       />
       <AuthorizationHelp page={page} />
-      <a
-        href={page.returnUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-sm text-primary underline"
-      >
-        {t(($) => {
-          return $.connectors.providerConnect.teams.open;
-        })}
-      </a>
     </>
   );
 }
@@ -151,7 +158,6 @@ function ConnectionHeading({ page }: PageProps) {
             team:
               data.teamName ??
               data.tenantName ??
-              data.tenantId ??
               t(($) => {
                 return $.connectors.providerConnect.teams.providerName;
               }),
@@ -218,7 +224,7 @@ function TargetNotice({ page }: PageProps) {
     }
     case "unknown": {
       return (
-        <p role="status" className="text-sm text-muted-foreground">
+        <p role="status" className="text-center text-sm text-muted-foreground">
           {t(($) => {
             return $.connectors.providerConnect.teams.identityUnknown;
           })}
@@ -227,7 +233,7 @@ function TargetNotice({ page }: PageProps) {
     }
     case "different": {
       return (
-        <p role="status" className="text-sm text-muted-foreground">
+        <p role="status" className="text-center text-sm text-muted-foreground">
           {t(($) => {
             return $.connectors.providerConnect.teams.identityMismatch;
           })}
@@ -241,53 +247,6 @@ function TargetNotice({ page }: PageProps) {
   }
 }
 
-function CurrentTeamsState({ page }: PageProps) {
-  const { t } = useTranslation();
-  const { data } = page;
-  if (!page.connected && !data.linkedAccounts?.length && !data.tenantId) {
-    return null;
-  }
-  return (
-    <section className="w-full space-y-2 break-words text-sm">
-      <h3 className="font-medium">
-        {t(($) => {
-          return $.connectors.providerConnect.teams.currentState;
-        })}
-      </h3>
-      {data.tenantId && (
-        <p>{[data.tenantName, data.tenantId].filter(Boolean).join(" · ")}</p>
-      )}
-      {data.teamId && (
-        <p>{[data.teamName, data.teamId].filter(Boolean).join(" · ")}</p>
-      )}
-      {data.linkedAccounts?.map((account) => {
-        return (
-          <p
-            key={`${account.tenantId}:${account.teamsUserId}:${account.teamsAadObjectId}`}
-          >
-            {[
-              account.displayName,
-              account.userPrincipalName,
-              account.teamsUserId,
-              account.teamsAadObjectId,
-              account.tenantId,
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </p>
-        );
-      })}
-      {page.connected && !page.success && (
-        <p>
-          {t(($) => {
-            return $.connectors.providerConnect.teams.existingConnection;
-          })}
-        </p>
-      )}
-    </section>
-  );
-}
-
 function PermissionActions({ page }: PageProps) {
   const { t } = useTranslation();
   const { data } = page;
@@ -296,7 +255,7 @@ function PermissionActions({ page }: PageProps) {
   }
   return (
     <>
-      <p role="status" className="text-sm text-muted-foreground">
+      <p role="status" className="text-center text-sm text-muted-foreground">
         {t(($) => {
           return $.works.teams.permissionsUpdated;
         })}
@@ -353,7 +312,7 @@ function AuthorizationHelp({ page }: PageProps) {
         </Button>
       )}
       {!data.isInstalled && !data.isAdmin && (
-        <p role="status" className="text-sm text-muted-foreground">
+        <p role="status" className="text-center text-sm text-muted-foreground">
           {t(($) => {
             return $.works.teams.adminInstall;
           })}
@@ -364,7 +323,10 @@ function AuthorizationHelp({ page }: PageProps) {
         !canAuthorize &&
         !page.canBind &&
         !data.installUrl && (
-          <p role="status" className="text-sm text-muted-foreground">
+          <p
+            role="status"
+            className="text-center text-sm text-muted-foreground"
+          >
             {t(($) => {
               return $.connectors.providerConnect.teams.unavailable;
             })}
@@ -387,7 +349,7 @@ function TeamsInstallLink({
       href={url}
       target="_blank"
       rel="noopener noreferrer"
-      className="text-sm text-primary underline"
+      className={cn(buttonVariants(), "w-full")}
     >
       {reinstall
         ? t(($) => {

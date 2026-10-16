@@ -51,10 +51,10 @@ pub(super) async fn dispatch(runtime: &SshRuntime, sessions: &sessions::Manager,
     let (Some(request), Some(remaining)) = (parsed, request.remaining_ms.filter(|ms| *ms > 2000))
     else {
         let _ = scope
-            .wait(output.send(&Frame::Control(Response::Error {
-                code: ErrorCode::InvalidRequest,
-                delivery: Delivery::NotDispatched,
-            })))
+            .wait(output.send(&Frame::Control(Response::error(
+                ErrorCode::InvalidRequest,
+                Delivery::NotDispatched,
+            ))))
             .await;
         return;
     };

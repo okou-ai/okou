@@ -103,6 +103,7 @@ impl Attempt {
             dependency: None,
             native: self.native.clone(),
             ssh: self.trace.snapshot(),
+            vnc: None,
         })
     }
     pub(super) fn finish(&self, failure: Option<FailureReason>) -> Option<Observation> {

@@ -338,6 +338,7 @@ mod tests {
             }),
             native: None,
             ssh: None,
+            vnc: None,
         });
         let hidden = handle
             .query(Protocol::Vnc, Selector::default(), Some(&authority))
@@ -404,6 +405,7 @@ mod tests {
             dependency: None,
             native: None,
             ssh: None,
+            vnc: None,
         });
         for created_at in ["2026-09-01T00:00:00.123457Z", CREATED_AT] {
             let inventory = api

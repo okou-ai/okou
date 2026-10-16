@@ -25,6 +25,30 @@ pub(crate) struct ForwardingFailure {
     pub(crate) reason: FailureReason,
     pub(crate) native: Option<crate::diagnostics::NativeSource>,
     pub(crate) identity: crate::diagnostics::Identity,
+    pub(crate) trace: Option<crate::diagnostics::trace::Snapshot>,
+}
+
+/// Pure source handles, independent of the forwarded channel and physical lease.
+#[derive(Clone)]
+pub(crate) struct ForwardingTrace {
+    trace: crate::diagnostics::trace::Trace,
+    carrier: Option<crate::diagnostics::trace::Trace>,
+}
+impl ForwardingTrace {
+    pub(crate) fn snapshot(&self) -> Option<crate::diagnostics::trace::Snapshot> {
+        if let Some(failure) = self
+            .carrier
+            .as_ref()
+            .and_then(crate::diagnostics::trace::Trace::access_cause)
+        {
+            self.trace.access_failure(failure);
+            self.trace.set(
+                crate::diagnostics::trace::Stage::AccessWebsocket,
+                crate::diagnostics::trace::Progress::Failed,
+            );
+        }
+        self.trace.snapshot()
+    }
 }
 
 struct Target<'a> {
@@ -47,9 +71,13 @@ pub(crate) struct DirectTcpIpStream {
     lease: Option<pool::Lease>,
     native: Option<crate::diagnostics::NativeSource>,
     identity: crate::diagnostics::Identity,
+    trace: ForwardingTrace,
 }
 
 impl DirectTcpIpStream {
+    pub(crate) fn diagnostic_trace(&self) -> ForwardingTrace {
+        self.trace.clone()
+    }
     pub(crate) fn diagnostic_identity(&self) -> crate::diagnostics::Identity {
         self.identity.clone()
     }
@@ -154,7 +182,7 @@ impl Run {
         port: u16,
         cancelled: CancellationToken,
         deadline: Instant,
-    ) -> Result<DirectTcpIpStream, ForwardingFailure> {
+    ) -> Result<DirectTcpIpStream, Box<ForwardingFailure>> {
         let mut attempt = observation::Attempt::new(&self.sessions.registration.diagnostics());
         let result = self
             .open_direct_tcpip_inner(
@@ -176,14 +204,17 @@ impl Run {
             None,
             result.as_ref().err().copied(),
         );
-        result.map_err(|reason| ForwardingFailure {
-            reason,
-            native: attempt.native,
-            identity: crate::diagnostics::Identity {
-                created_at: attempt.created_at,
-                generation: attempt.generation,
-                session: None,
-            },
+        result.map_err(|reason| {
+            Box::new(ForwardingFailure {
+                reason,
+                trace: attempt.trace.snapshot(),
+                native: attempt.native,
+                identity: crate::diagnostics::Identity {
+                    created_at: attempt.created_at,
+                    generation: attempt.generation,
+                    session: None,
+                },
+            })
         })
     }
 
@@ -298,6 +329,10 @@ impl Run {
                 monitor_done,
                 lease: Some(lease),
                 native: attempt.native.clone(),
+                trace: ForwardingTrace {
+                    trace: attempt.trace.clone(),
+                    carrier: attempt.carrier_trace.clone(),
+                },
                 identity: crate::diagnostics::Identity {
                     created_at: attempt.created_at,
                     generation: Some(actual_generation),

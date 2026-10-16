@@ -10,11 +10,15 @@ import {
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { agents } from "@okouai/db/schema/agent";
-import { db$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import { wechatEnabled$ } from "./wechat-config";
 import type { WechatDeliveryTarget } from "./wechat-chat-callback-payload";
+import {
+  resolveIntegrationAdmissionFailurePresentation,
+  resolveIntegrationAgentResponsePresentation,
+} from "./integration-agent-response-presentation.service";
 export interface WechatReplyRequest {
   readonly chatEventId: string;
   readonly chatThreadId: string;
@@ -23,14 +27,15 @@ export interface WechatReplyRequest {
   readonly target: WechatDeliveryTarget;
 }
 export const sendWechatChatReply$ = command(
-  async ({ get, set }, args: WechatReplyRequest, signal: AbortSignal) => {
+  async ({ set }, args: WechatReplyRequest, signal: AbortSignal) => {
     if (!(await set(wechatEnabled$, args.orgId, args.userId, signal))) {
       return;
     }
-    const db = get(db$);
+    const db = set(writeDb$);
     const [binding] = await db
       .select({
         id: wechatConnections.id,
+        agentId: agents.id,
       })
       .from(wechatConnections)
       .innerJoin(
@@ -73,7 +78,10 @@ export const sendWechatChatReply$ = command(
       return;
     }
     const [event] = await db
-      .select({ content: canonicalChatEventContent() })
+      .select({
+        content: canonicalChatEventContent(),
+        runId: chatEvents.runId,
+      })
       .from(chatEvents)
       .where(
         and(
@@ -92,10 +100,27 @@ export const sendWechatChatReply$ = command(
     if (!event?.content) {
       return;
     }
-    const points = Array.from(event.content);
-    const requestHash = createHash("sha256")
-      .update(event.content)
-      .digest("hex");
+    const presentationArgs = {
+      db,
+      orgId: args.orgId,
+      agentId: binding.agentId,
+    };
+    const presentation =
+      event.runId === null
+        ? await resolveIntegrationAdmissionFailurePresentation(
+            presentationArgs,
+            signal,
+          )
+        : await resolveIntegrationAgentResponsePresentation(
+            { ...presentationArgs, runId: event.runId },
+            signal,
+          );
+    signal.throwIfAborted();
+    const content = presentation.footerText
+      ? `${event.content}\n\n${presentation.footerText}`
+      : event.content;
+    const points = Array.from(content);
+    const requestHash = createHash("sha256").update(content).digest("hex");
     for (let offset = 0; offset < points.length; offset += 2000) {
       const result = await set(
         sendArchivedWechatText$,

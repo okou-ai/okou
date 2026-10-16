@@ -16,7 +16,16 @@ import {
 } from "lucide-react";
 import { cn, useMediaQuery } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
+import { useGet, useLastLoadable } from "ccstate-react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import {
+  customTemplateCatalog$,
+  projectCustomTemplate$,
+  slashCustomTemplatesEnabled$,
+} from "../../signals/okou-page/custom-template-library.ts";
 import { SlashWorkflowName } from "./slash-workflow.tsx";
+import { CustomTemplatesLoadError } from "./custom-template-preview-dialog.tsx";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
 import { i18n } from "../../i18n/index.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
@@ -24,6 +33,7 @@ import type { ComposerSlashWorkflowMatch } from "../../signals/okou-page/workflo
 import { Link } from "../router/link.tsx";
 import {
   isSlashTemplateNativeAspectCategory,
+  customSlashTemplatePreview,
   slashTemplatePreviews,
   type SlashTemplateCategory,
   type SlashTemplatePreview,
@@ -153,13 +163,16 @@ function SectionLabel({ children }: { readonly children: string }) {
  */
 function SlashTemplateCover({
   preview,
+  category,
   onSelectTemplate,
 }: {
   readonly preview: SlashTemplatePreview;
+  readonly category: SlashTemplateCategory;
   readonly onSelectTemplate: () => void;
 }) {
   const { t } = useTranslation();
   const aspect = preview.aspect;
+  const Icon = SLASH_TEMPLATE_CATEGORY_ICONS[category];
   return (
     <button
       type="button"
@@ -179,7 +192,7 @@ function SlashTemplateCover({
     >
       <span
         className={cn(
-          "block overflow-hidden rounded-lg bg-muted ring-1 ring-border/60",
+          "flex items-center justify-center overflow-hidden rounded-lg bg-muted ring-1 ring-border/60 transition-colors group-hover:bg-state-hover",
           !aspect && "aspect-video",
         )}
         style={
@@ -190,23 +203,68 @@ function SlashTemplateCover({
             : undefined
         }
       >
-        <img
-          src={preview.coverUrl}
-          alt=""
-          loading="lazy"
-          className={cn(
-            "h-full w-full",
-            preview.template.type === "document"
-              ? "object-contain"
-              : "object-cover transition-transform duration-200 group-hover:scale-[1.04]",
-          )}
-        />
+        {preview.coverUrl ? (
+          <img
+            src={preview.coverUrl}
+            alt=""
+            loading="lazy"
+            className={cn(
+              "h-full w-full",
+              preview.template.type === "document" ||
+                preview.template.type === "custom"
+                ? "object-contain"
+                : "object-cover transition-transform duration-200 group-hover:scale-[1.04]",
+            )}
+          />
+        ) : (
+          <Icon className="size-6 text-muted-foreground" aria-hidden />
+        )}
       </span>
       <span className="mt-1 block truncate text-[12px] text-muted-foreground">
         {preview.title}
       </span>
     </button>
   );
+}
+
+/** Mounted only while a category can show custom templates. */
+function SlashCustomTemplateCovers({
+  category,
+  onSelectTemplate,
+}: {
+  readonly category: Exclude<SlashTemplateCategory, "website">;
+  readonly onSelectTemplate: SlashTemplatePanelProps["onSelectTemplate"];
+}) {
+  const catalog = useLastLoadable(customTemplateCatalog$);
+  const project = useGet(projectCustomTemplate$);
+  const kind = category === "slides" ? "presentation" : category;
+  if (catalog.state === "hasError") {
+    return (
+      <div className="col-span-full break-inside-avoid pb-2.5">
+        <CustomTemplatesLoadError />
+      </div>
+    );
+  }
+  if (catalog.state !== "hasData") {
+    return null;
+  }
+  return catalog.data.flatMap((template) => {
+    const projected = project(template);
+    if (projected?.kind !== kind) {
+      return [];
+    }
+    const preview = customSlashTemplatePreview(projected);
+    return [
+      <SlashTemplateCover
+        key={preview.slug}
+        preview={preview}
+        category={category}
+        onSelectTemplate={() => {
+          onSelectTemplate(preview, category);
+        }}
+      />,
+    ];
+  });
 }
 
 /**
@@ -223,7 +281,13 @@ export function SlashTemplateCovers({
     category: SlashTemplateCategory,
   ) => void;
 }) {
-  const previews = slashTemplatePreviews(category);
+  const customTemplatesEnabled = useGet(slashCustomTemplatesEnabled$);
+  const documentTemplatesEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.BuiltinDocumentTemplates] === true;
+  const previews =
+    category === "document" && !documentTemplatesEnabled
+      ? []
+      : slashTemplatePreviews(category);
   const nativeAspect = isSlashTemplateNativeAspectCategory(category);
   return (
     <>
@@ -274,11 +338,18 @@ export function SlashTemplateCovers({
                 : "grid grid-cols-2 gap-2.5 pb-4",
             )}
           >
+            {customTemplatesEnabled && category !== "website" && (
+              <SlashCustomTemplateCovers
+                category={category}
+                onSelectTemplate={onSelectTemplate}
+              />
+            )}
             {previews.map((preview) => {
               return (
                 <SlashTemplateCover
                   key={preview.slug}
                   preview={preview}
+                  category={category}
                   onSelectTemplate={() => {
                     onSelectTemplate(preview, category);
                   }}

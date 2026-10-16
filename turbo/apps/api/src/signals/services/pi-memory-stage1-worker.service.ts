@@ -6,6 +6,7 @@ import {
 } from "./pi-memory-stage1-claim-plan";
 import {
   piMemoryStage1SelectionLockPlans,
+  piMemoryStage1SelectionLockConditions,
   piMemoryStage1SelectionSourcePlans,
   piMemoryStage1SelectionThreadEligible,
   piMemoryStage1SelectionRunEligible,
@@ -39,7 +40,10 @@ import {
   PiMemoryStage1CredentialError,
   type PiMemoryStage1CredentialResult,
 } from "./pi-memory-stage1-credential.service";
-import { piMemoryStage1Selections } from "@okouai/db/schema/pi-memory-stage1-schedule";
+import {
+  piMemoryStage1Days,
+  piMemoryStage1Selections,
+} from "@okouai/db/schema/pi-memory-stage1-schedule";
 import {
   consumePiMemoryStage1Days$,
   piMemoryStage1UtcDay,
@@ -58,13 +62,24 @@ import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
 import { blobs } from "@okouai/db/schema/blob";
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 import { storages } from "@okouai/db/schema/storage";
-import { command } from "ccstate";
-import { and, asc, eq, getTableColumns, gt } from "drizzle-orm";
+import { command, computed, state } from "ccstate";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import {
+  and,
+  asc,
+  eq,
+  getTableColumns,
+  gt,
+  isNotNull,
+  ne,
+  notExists,
+} from "drizzle-orm";
 import { z } from "zod";
 
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
+import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { db$, writeDb$ } from "../external/db";
 
 import {
@@ -845,35 +860,83 @@ const prepareSourceWork$ = command(
   },
 );
 
-const validatePreparedWork$ = command(
-  async (
-    { set },
-    work: ClaimedPiMemoryStage1Work,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const currentTime = nowDate();
-    const selection = work.selection;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0230; new non-billing transactions are prohibited.
-    const valid = await set(writeDb$).transaction(async (tx) => {
+// The state is the exact successful claim-write product, never validation input.
+const stage1ClaimWriteResult$ = state<ClaimResult | null>(null);
+
+// Construct the bounded private graph once, before any command is executed.
+const stage1ValidationByClaimSlot = Array.from(
+  { length: PI_MEMORY_STAGE1_CLAIM_LIMIT },
+  (_, slot) => {
+    return computed(async (get): Promise<boolean> => {
+      const claim = get(stage1ClaimWriteResult$);
+      const work = claim?.claimed[slot];
+      if (!work) {
+        return false;
+      }
+      const currentTime = nowDate();
+      const selection = work.selection;
       if (selection.day !== piMemoryStage1UtcDay(currentTime)) {
         return false;
       }
-      const locks = piMemoryStage1SelectionLockPlans(selection);
-      const [lockedThread] = await tx.select().from(locks.thread);
-      if (!lockedThread) {
+      const db = get(db$);
+      const conditions = piMemoryStage1SelectionLockConditions(selection);
+      const [threadExists] = await db
+        .select({ id: chatThreads.id })
+        .from(chatThreads)
+        .where(conditions.thread);
+      if (!threadExists) {
         return false;
       }
-      await tx.select().from(locks.storage);
-      const [day] = await tx.select().from(locks.day);
+      await db
+        .select({ id: storages.id })
+        .from(storages)
+        .where(conditions.storage);
+      const [day] = await db
+        .select()
+        .from(piMemoryStage1Days)
+        .where(conditions.day);
       if (!day?.consumedAt || day.triggerThreadId === selection.chatThreadId) {
         return false;
       }
-      const [frozen] = await tx.select().from(locks.frozen);
-      // A blocked lock acquisition may cross midnight after the initial check.
+      const [frozen] = await db
+        .select()
+        .from(piMemoryStage1Selections)
+        .where(conditions.frozen);
       if (!frozen || selection.day !== piMemoryStage1UtcDay(nowDate())) {
         return false;
       }
-      const features = await tx.select().from(locks.features);
+      const sourcePlans = piMemoryStage1SelectionSourcePlans(selection);
+      // One READ COMMITTED statement observes day/frozen, scoped features
+      // and absence of an active source together. Project the boolean so
+      // scoped feature errors retain their original priority over active refusal.
+      // A valid pair with no overrides retains feature defaults; no pair is false.
+      const coherent = await db
+        .select({
+          feature: {
+            userId: userFeatureSwitches.userId,
+            switches: userFeatureSwitches.switches,
+          },
+          noActive: notExists(
+            db.select({ id: sourcePlans.active.id }).from(sourcePlans.active),
+          ).mapWith(pgBooleanDecoder),
+        })
+        .from(piMemoryStage1Days)
+        .innerJoin(piMemoryStage1Selections, conditions.frozen)
+        .leftJoin(userFeatureSwitches, conditions.features)
+        .where(
+          and(
+            conditions.day,
+            isNotNull(piMemoryStage1Days.consumedAt),
+            ne(piMemoryStage1Days.triggerThreadId, selection.chatThreadId),
+          ),
+        );
+      const [observation] = coherent;
+      if (!observation) {
+        return false;
+      }
+      const features = coherent.flatMap((row) => {
+        return row.feature === null ? [] : [row.feature];
+      });
       const context = featureSwitchContextFromRows(
         selection.orgId,
         selection.userId,
@@ -882,22 +945,25 @@ const validatePreparedWork$ = command(
       if (!isFeatureEnabled(FeatureSwitchKey.PiMemory, context)) {
         return false;
       }
-      const sourcePlans = piMemoryStage1SelectionSourcePlans(selection);
-      const [thread] = await tx.select().from(sourcePlans.thread);
+      // Preserve feature decode/evaluation errors before active refusal.
+      if (!observation.noActive) {
+        return false;
+      }
+      const [thread] = await db.select().from(sourcePlans.thread);
       if (!thread) {
         return false;
       }
-      const [active] = await tx.select().from(sourcePlans.active);
+      const [active] = await db.select().from(sourcePlans.active);
       if (
         !piMemoryStage1SelectionThreadEligible(thread, !!active, currentTime)
       ) {
         return false;
       }
-      const [latest] = await tx.select().from(sourcePlans.latest);
+      const [latest] = await db.select().from(sourcePlans.latest);
       if (!piMemoryStage1SelectionRunEligible(latest, selection, currentTime)) {
         return false;
       }
-      const [source] = await tx
+      const [source] = await db
         .select()
         .from(piMemoryStage1SelectionConversationPlan(selection, latest));
       if (
@@ -905,7 +971,7 @@ const validatePreparedWork$ = command(
       ) {
         return false;
       }
-      const [fenced] = await tx
+      const [fenced] = await db
         .select({ token: piMemoryStage1Candidates.leaseToken })
         .from(piMemoryStage1Candidates)
         .where(
@@ -927,6 +993,22 @@ const validatePreparedWork$ = command(
         );
       return !!fenced;
     });
+  },
+);
+
+const validatePreparedWork$ = command(
+  async (
+    { get },
+    work: ClaimedPiMemoryStage1Work,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const claim = get(stage1ClaimWriteResult$);
+    const slot = claim?.claimed.indexOf(work) ?? -1;
+    const validation = slot < 0 ? undefined : stage1ValidationByClaimSlot[slot];
+    if (!validation) {
+      throw new StaleWorkError();
+    }
+    const valid = await get(validation);
     signal.throwIfAborted();
     if (!valid || work.selection.day !== piMemoryStage1UtcDay(nowDate())) {
       throw new StaleWorkError();
@@ -1210,6 +1292,7 @@ export const executePiMemoryStage1Work$ = command(
   ): Promise<PiMemoryStage1WorkerResult> => {
     const startedAt = performance.now();
     const claim = await set(claimPiMemoryStage1Work$, input, signal);
+    set(stage1ClaimWriteResult$, claim);
     if (signal.aborted) {
       await set(
         retryOwnedWorkAfterAbort$,

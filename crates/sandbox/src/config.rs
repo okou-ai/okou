@@ -148,7 +148,9 @@ impl HomeDriveSpaceReserve {
 
     /// Calculate the reserve for the filesystem that will receive the image.
     pub fn bytes_for_capacity(self, capacity_bytes: u64) -> u64 {
-        (capacity_bytes.saturating_mul(u64::from(self.percent)) / 100).max(self.minimum_bytes)
+        let percent = u64::from(self.percent);
+        (capacity_bytes / 100 * percent + capacity_bytes % 100 * percent / 100)
+            .max(self.minimum_bytes)
     }
 }
 
@@ -206,7 +208,7 @@ pub struct SnapshotRef {
 }
 
 /// Configuration for creating a sandbox factory for a specific profile.
-/// This is clonable path/data input, not ownership of a running factory.
+/// This carries factory inputs and optional host policy, not a running factory.
 #[derive(Clone)]
 pub struct FactoryConfig {
     /// Profile name (e.g., "vm0/default").
@@ -221,6 +223,9 @@ pub struct FactoryConfig {
     pub base_dir: PathBuf,
     /// Snapshot to restore from. When set, VMs boot via snapshot restore.
     pub snapshot: Option<SnapshotRef>,
+    /// Best-effort reclamation on the home image's receiving filesystem.
+    /// The provider still checks actual free space after observing this policy.
+    pub home_drive_pressure: Option<std::sync::Arc<dyn crate::HomeDrivePressurePolicy>>,
 }
 
 /// Whether a sandbox runtime must establish managed host CPU placement.

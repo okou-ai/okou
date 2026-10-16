@@ -487,11 +487,6 @@
       "owner": "claimPiMemoryStage1Selection$"
     },
     {
-      "id": "TX-0230",
-      "file": "turbo/apps/api/src/signals/services/pi-memory-stage1-worker.service.ts",
-      "owner": "validatePreparedWork$"
-    },
-    {
       "id": "TX-0234",
       "file": "turbo/apps/api/src/signals/services/provider-usage-publication.service.ts",
       "owner": "recordRunnerUsageBatch$"

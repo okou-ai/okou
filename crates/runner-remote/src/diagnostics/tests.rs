@@ -13,6 +13,7 @@ fn failure(handle: &Handle, protocol: Protocol, connection: Uuid) {
         dependency: None,
         native: None,
         ssh: None,
+        vnc: None,
     });
 }
 

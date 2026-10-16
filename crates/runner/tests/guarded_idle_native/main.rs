@@ -603,6 +603,7 @@ async fn exercise_selected_factories(
             };
             let factory = runtime
                 .create_factory(FactoryConfig {
+                    home_drive_pressure: None,
                     profile: fixture::PROFILE.into(),
                     binary_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_FIRECRACKER")?),
                     kernel_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_KERNEL")?),

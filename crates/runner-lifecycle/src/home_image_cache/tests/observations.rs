@@ -157,9 +157,18 @@ async fn gc_reports_the_removed_current_generation_and_dry_run_has_no_deletion_f
     assert_eq!(events[0].outcome, Outcome::Deleted);
     assert_eq!(events[0].image_generation, Some(old.image_generation));
     assert_eq!(events[0].allocated_bytes, Some(freed));
-    assert_eq!(events[0].reason.as_deref(), Some("cache_budget"));
+    assert_eq!(events[0].reason.as_deref(), Some("filesystem_pressure"));
     assert!(events[0].run_id.is_none());
-    let local = local.entries();
+    let records = local.entries();
+    let local: Vec<_> = records
+        .iter()
+        .filter(|record| {
+            record
+                .fields
+                .get("op_type")
+                .is_some_and(|op| op == "runner_home_image_removal")
+        })
+        .collect();
     assert_eq!(
         local.len(),
         1,
@@ -171,6 +180,17 @@ async fn gc_reports_the_removed_current_generation_and_dry_run_has_no_deletion_f
         local[0].fields["image_generation"],
         events[0].image_generation.as_deref().unwrap()
     );
+    let recovery = records
+        .iter()
+        .find(|record| {
+            record
+                .fields
+                .get("message")
+                .is_some_and(|message| message == "home cache reclaim turn completed")
+        })
+        .unwrap();
+    assert_eq!(recovery.fields["available_before"], "1");
+    assert_eq!(recovery.fields["available_after"], "1");
 }
 
 #[tokio::test]

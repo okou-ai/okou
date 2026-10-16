@@ -200,9 +200,6 @@ test("The v2 tab waits for one real binding, acknowledges duplicates and leaves 
   expect(posts).toBe(1);
   expect({ value: bridge.popup.closed }).toStrictEqual({ value: false });
   expect(window.location.pathname).toBe("/works");
-  expect(
-    getAction("link", "View Telegram settings", getIntegrationCard("Telegram")),
-  ).toHaveAttribute("href", "/settings/telegram");
 });
 
 test("Native identity can bind first and deliver the owned result when the callback becomes ready later", async () => {

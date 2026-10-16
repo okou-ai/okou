@@ -119,6 +119,7 @@ const READY_DIRECT_CANDIDATE_DRAIN_LIMIT: usize = 8;
 const HOME_CACHE_GC_PERIOD: Duration = Duration::from_secs(60);
 /// Bounds authoritative state recovery from missed home-cache observations.
 const HOME_CACHE_RECONCILIATION_PERIOD: Duration = Duration::from_secs(60);
+const HOME_CACHE_PRESSURE_PERIOD: Duration = Duration::from_secs(5);
 /// Staggers the first state inventory from the first routine cache GC.
 const HOME_CACHE_RECONCILIATION_INITIAL_DELAY: Duration = Duration::from_secs(30);
 
@@ -1213,6 +1214,11 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     };
     #[cfg(not(test))]
     let mut home_cache_gc_tick = MaintenanceTrigger::interval(HOME_CACHE_GC_PERIOD);
+    let mut home_cache_pressure_tick = tokio::time::interval_at(
+        tokio::time::Instant::now() + HOME_CACHE_PRESSURE_PERIOD,
+        HOME_CACHE_PRESSURE_PERIOD,
+    );
+    home_cache_pressure_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut home_cache_reconciliation_tick = tokio::time::interval_at(
         tokio::time::Instant::now() + HOME_CACHE_RECONCILIATION_INITIAL_DELAY,
         HOME_CACHE_RECONCILIATION_PERIOD,
@@ -1514,6 +1520,9 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             }
             completion = maintenance.wait() => {
                 let (result, stopping_reason) = match completion {
+                    MaintenanceCompletion::HomeCachePressure(result) => {
+                        (result, "home cache pressure task failure")
+                    }
                     MaintenanceCompletion::HomeCacheGc(result) => {
                         home_cache_gc_tick.reset();
                         (result, "home cache GC task failure")
@@ -1535,6 +1544,9 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             }
             _ = home_cache_gc_tick.tick() => {
                 maintenance.request_home_cache_gc(exec_config.home_cache.as_ref());
+            }
+            _ = home_cache_pressure_tick.tick(), if exec_config.home_cache.is_some() => {
+                maintenance.request_home_cache_pressure(exec_config.home_cache.as_ref());
             }
             // Mode changes (signals)
             _ = mode_rx.changed() => {}
@@ -1873,6 +1885,11 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     let phase = teardown.phase_start("shutdown_factory_instances");
     shutdown_factory_instances(&mut factories, Some(&teardown)).await?;
     teardown.phase_complete("shutdown_factory_instances", phase);
+    if let Some(cache) = &exec_config.home_cache {
+        let phase = teardown.phase_start("home_pressure_reclamation_drain");
+        cache.drain_pressure_reclamation().await;
+        teardown.phase_complete("home_pressure_reclamation_drain", phase);
+    }
 
     // Keep the pool-scoped INPUT filters installed until dnsmasq is gone.
     // Runtime shutdown owns those filters, so it must follow DNS shutdown to

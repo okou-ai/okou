@@ -620,7 +620,7 @@ const refreshWalletConnection$ = command(
         readonly encryptedCredentials: string;
       };
       readonly refreshToken: string;
-      readonly readOnly?: boolean;
+      readonly readOnly: boolean;
     },
   ): Promise<{
     connection: Connection;
@@ -682,9 +682,7 @@ const refreshWalletConnection$ = command(
       expiresAt: now() + refreshed.expires_in * 1000,
       scope: refreshed.scope,
       authorizationDetails: refreshed.authorization_details,
-      // Legacy credentials came from payment consent; persist the missing marker
-      // on refresh until the old-writer/data retirement gates in #40206 close.
-      readOnly: input.readOnly ?? false,
+      readOnly: input.readOnly,
     };
     const encryptedCredentials = await encryptStoredSecretValue(
       JSON.stringify(credentials),
@@ -763,15 +761,7 @@ const walletAccess$ = command(
     const credentials = linkCredentialsSchema.parse(
       JSON.parse(plaintext) as unknown,
     );
-    // Old encrypted credentials lack scope metadata. Until old writers/rollback
-    // targets and those credentials are gone, refresh before provider reads.
-    // Remove this metadata branch with the legacy schema handling in #40206.
-    if (
-      credentials.expiresAt > now() + 60_000 &&
-      (credentials.scope !== undefined ||
-        permission === "payments" ||
-        permission === "spendHistory")
-    ) {
+    if (credentials.expiresAt > now() + 60_000) {
       requireWalletPermission(credentials, permission);
       return { connection, token: credentials.accessToken, credentials };
     }

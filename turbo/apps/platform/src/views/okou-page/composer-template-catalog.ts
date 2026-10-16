@@ -20,6 +20,7 @@ import {
 } from "@okouai/core/website-template-items";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
+import type { UserTemplateCatalogEntry } from "@okouai/api-contracts/contracts/user-templates";
 import type { ComposerTemplateAttachment } from "../../signals/okou-page/tiptap-workflow-composer.ts";
 
 export function defaultPresentationTemplateThemeId(
@@ -134,7 +135,7 @@ export function isSlashTemplateNativeAspectCategory(
 export interface SlashTemplatePreview {
   readonly slug: string;
   readonly title: string;
-  readonly coverUrl: string;
+  readonly coverUrl: string | null;
   /**
    * The cover's own pixel proportion, for categories that render it uncropped.
    * Absent when the category uses the shared 16:9 tile.
@@ -142,6 +143,36 @@ export interface SlashTemplatePreview {
   readonly aspect?: { readonly width: number; readonly height: number };
   readonly template: GenerationTemplateRequest;
   readonly attachment: ComposerTemplateAttachment;
+}
+
+export function customSlashTemplatePreview(
+  template: UserTemplateCatalogEntry,
+): SlashTemplatePreview {
+  return {
+    slug: `custom:${template.id}`,
+    title: template.title,
+    coverUrl:
+      template.kind === "illustration"
+        ? (template.previewAssets[0]?.url ?? template.coverUrl)
+        : template.coverUrl,
+    ...(template.kind === "document"
+      ? { aspect: { width: 210, height: 297 } }
+      : template.kind === "illustration"
+        ? { aspect: { width: 1, height: 1 } }
+        : {}),
+    template: {
+      type: "custom",
+      selection: { userTemplateId: template.id },
+    },
+    attachment: {
+      type: "custom",
+      title: template.title,
+      category: "custom",
+      ...(template.coverUrl === null || template.kind === "document"
+        ? {}
+        : { previewImageUrl: template.coverUrl }),
+    },
+  };
 }
 
 function coverUrl(source: string): string {

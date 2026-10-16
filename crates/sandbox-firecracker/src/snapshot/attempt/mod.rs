@@ -257,6 +257,7 @@ impl SnapshotAttempt {
                 seed_image: None,
             },
             None,
+            None,
         )
         .await
         {

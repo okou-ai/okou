@@ -92,6 +92,8 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
     options: {
       independentOwner?: true;
       peerScope?: "same-org" | "same-user-other-org" | "foreign";
+      sourceEvidence?: { readonly prompt: string; readonly answer: string };
+      peerEvidence?: { readonly prompt: string; readonly answer: string };
     } = {},
   ) {
     mockNow(now());
@@ -187,42 +189,39 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
       }
       return transport(command);
     });
-    const prompt = "Remember that this user prefers focused public API tests.";
-    const source = await chat.sendChatRun(actor.actor, {
-      agentId: actor.agentId,
-      prompt,
-      model: "gpt-6-luna",
-    });
-    const sourceClaim = await claimOrdinaryRun(source.runId);
-    await chat.completeSandboxFirstPiRun({
-      actor: actor.actor,
-      run: source,
-      claim: sourceClaim,
-      historyObjects: objects,
-      prompt,
-      answer: "I will use focused public API tests.",
-    });
-
-    const peerSource = peerActor
-      ? await chat.sendChatRun(peerActor.actor, {
-          agentId: peerActor.agentId,
-          prompt,
-          model: "gpt-6-luna",
-        })
-      : undefined;
-    const peerSourceClaim = peerSource
-      ? await claimOrdinaryRun(peerSource.runId)
-      : undefined;
-    if (peerActor && peerSource && peerSourceClaim) {
-      await chat.completeSandboxFirstPiRun({
-        actor: peerActor.actor,
-        run: peerSource,
-        claim: peerSourceClaim,
-        historyObjects: objects,
-        prompt,
-        answer: "I will use focused public API tests.",
+    async function createSource(
+      owner: typeof actor,
+      evidence: { readonly prompt: string; readonly answer: string },
+    ) {
+      const source = await chat.sendChatRun(owner.actor, {
+        agentId: owner.agentId,
+        prompt: evidence.prompt,
+        model: "gpt-6-luna",
       });
+      const sourceClaim = await claimOrdinaryRun(source.runId);
+      await chat.completeSandboxFirstPiRun({
+        actor: owner.actor,
+        run: source,
+        claim: sourceClaim,
+        historyObjects: objects,
+        ...evidence,
+      });
+      return { source, sourceClaim };
     }
+    const defaultEvidence = {
+      prompt: "Remember that this user prefers focused public API tests.",
+      answer: "I will use focused public API tests.",
+    };
+    const { source, sourceClaim } = await createSource(
+      actor,
+      options.sourceEvidence ?? defaultEvidence,
+    );
+
+    const peer = peerActor
+      ? await createSource(peerActor, options.peerEvidence ?? defaultEvidence)
+      : undefined;
+    const peerSource = peer?.source;
+    const peerSourceClaim = peer?.sourceClaim;
 
     server.use(
       http.post("https://openrouter.ai/api/v1/chat/completions", () => {
@@ -365,6 +364,7 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
       claimMaintenance,
       claimOrdinaryRun,
       heartbeatRunner,
+      createSource,
     };
   }
 

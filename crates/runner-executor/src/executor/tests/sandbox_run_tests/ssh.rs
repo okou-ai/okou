@@ -187,7 +187,8 @@ impl Sandbox for RpcSandbox {
                 responses.next().await.unwrap(),
                 Some(runner_rpc_proto::Response::Error {
                     code: runner_rpc_proto::ErrorCode::UnknownMethod,
-                    delivery: runner_rpc_proto::Delivery::NotDispatched
+                    delivery: runner_rpc_proto::Delivery::NotDispatched,
+                    ..
                 })
             ));
             assert!(responses.next().await.unwrap().is_none());

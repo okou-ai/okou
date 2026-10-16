@@ -1,7 +1,6 @@
 use std::os::unix::fs::symlink;
 use std::path::Path;
 
-use super::super::write_abandoned_result_marker;
 use super::support::{submit_queue_entry, write_queue_job_file};
 use runner_provider::local_queue::{self, JobResponse};
 use runner_types::ids::RunId;
@@ -154,8 +153,9 @@ fn abandoned_cleanup_removes_marker_when_job_already_absent() {
     std::fs::create_dir_all(queue.cancel.parent().unwrap()).unwrap();
 
     std::fs::write(&queue.cancel, b"").unwrap();
-    let marker =
-        write_abandoned_result_marker(&queue.result, job_id, "local submit abandoned").unwrap();
+    let marker = local_queue::LocalQueue::new(group_dir.to_path_buf())
+        .write_abandoned_result_marker_sync(job_id, "local submit abandoned")
+        .unwrap();
 
     queue.cleanup_abandoned(Some(&marker));
 
@@ -172,8 +172,9 @@ fn abandoned_cleanup_removes_unclaimed_active_inputs_when_job_already_absent() {
     let queue = submit_queue_entry(group_dir, job_id);
     std::fs::create_dir_all(queue.cancel.parent().unwrap()).unwrap();
     std::fs::write(&queue.cancel, b"").unwrap();
-    let marker =
-        write_abandoned_result_marker(&queue.result, job_id, "local submit abandoned").unwrap();
+    let marker = local_queue::LocalQueue::new(group_dir.to_path_buf())
+        .write_abandoned_result_marker_sync(job_id, "local submit abandoned")
+        .unwrap();
     write_orphaned_active_input(group_dir, job_id);
 
     queue.cleanup_abandoned(Some(&marker));
@@ -284,7 +285,8 @@ fn abandoned_cleanup_keeps_runner_result_published_over_empty_result() {
     std::fs::write(&queue.job, b"{}").unwrap();
     std::fs::write(&queue.result, b"").unwrap();
     std::fs::write(&queue.cancel, b"").unwrap();
-    let marker = write_abandoned_result_marker(&queue.result, job_id, "local submit abandoned");
+    let marker = local_queue::LocalQueue::new(group_dir.to_path_buf())
+        .write_abandoned_result_marker_sync(job_id, "local submit abandoned");
     assert!(marker.is_none());
 
     let runner_queue = local_queue::LocalQueue::new(group_dir.to_path_buf());

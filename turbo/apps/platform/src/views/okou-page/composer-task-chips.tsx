@@ -596,6 +596,7 @@ function ComposerTaskTabs({
 }) {
   const { t } = useTranslation();
   const browseTask = useSet(signals.taskChips.browseTask$);
+  const selectTask = useSet(signals.taskChips.selectTask$);
   const labels = t(
     ($) => {
       return $.chat.taskChips.tasks;
@@ -609,8 +610,10 @@ function ComposerTaskTabs({
         const task = tasks.find((candidate) => {
           return candidate === value;
         });
-        if (task) {
+        if (task === "suggestions") {
           browseTask(task);
+        } else if (task) {
+          selectTask(task);
         }
       }}
       className="flex min-w-0 flex-col gap-5"
@@ -702,7 +705,9 @@ export function ComposerTaskChips({
       signals.create.modes.includes(task)
     );
   });
-  if (suggestionsEnabled) {
+  // Suggestions is the starting panel; selecting a task moves its chip into
+  // the composer and hides the choices in either rollout.
+  if (suggestionsEnabled && (selected === null || selected === "suggestions")) {
     return (
       <ComposerTaskTabs signals={signals} selected={selected} tasks={tasks} />
     );
