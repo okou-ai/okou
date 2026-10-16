@@ -86,6 +86,8 @@ pub struct IdleDestroyTracker {
     finalizing_owners:
         Arc<std::sync::Mutex<Vec<crate::finalizing_admission::GuardedFinalizingRecovery>>>,
     pressure_owners: Arc<std::sync::Mutex<Vec<RetainedActivationCleanup>>>,
+    #[cfg(any(test, feature = "test-support"))]
+    pressure_pool_waits: tokio::sync::watch::Sender<u64>,
     pub(crate) optional_blank_owners:
         Arc<std::sync::Mutex<Vec<crate::blank_pool::OptionalBlankResult>>>,
 }
@@ -102,6 +104,8 @@ impl IdleDestroyTracker {
             activation_owners: Arc::new(std::sync::Mutex::new(Vec::new())),
             finalizing_owners: Arc::new(std::sync::Mutex::new(Vec::new())),
             pressure_owners: Arc::new(std::sync::Mutex::new(Vec::new())),
+            #[cfg(any(test, feature = "test-support"))]
+            pressure_pool_waits: tokio::sync::watch::channel(0).0,
             optional_blank_owners: Arc::new(std::sync::Mutex::new(Vec::new())),
         }
     }

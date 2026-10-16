@@ -1,5 +1,43 @@
 # Guarded idle terminal fixture
 
+## Native Critical contention progress
+
+`native_critical_records_independent_contention_progress` supplements the actual
+three-wave Critical corpus in fresh and matching-snapshot factories. Startup
+completely reads the original 4 GiB under held Unknown. Runtime preparation stays
+suppressed throughout actual Critical observations from the supplied policy.
+
+The pressure owner's actual initial pool-lock future must poll Pending before
+independent host observation completes. After pool release and the first blank's
+joined cleanup, its actual status publication must poll Pending; acknowledged API
+heartbeat and new host observation complete while that status lock remains held.
+This preserves production cleanup-before-publication ordering.
+
+After two resolved single-entry waves, the original required durable-tail IO stays
+blocked in the kernel. A separate fitting Fresh foreground caller positively waits
+on the held pool and status locks, then completes real Guest RPC, its original P2
+phase and exact new-backing exit while the original full lease and IO gate remain
+held. Observation completes during the pool wait; acknowledged heartbeat and new
+observation complete during status and IO waits. Only then is the original IO
+released. The final wave requires a new actual post-completion sample and all
+original physical, data, durable-tail and producer joins.
+
+Select the ignored test with the exact-source bounded P1 invocation below.
+Metadata additionally requires `native_critical_policy_json`,
+`native_critical_inputs_json` and `native_critical_snapshot_bytes` (4294967296).
+Validate both cases and their inherited complete physical proof:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/critical_progress_report.py "$P1_OUTPUT_DIRECTORY"
+```
+
+Ordinary Cargo runs the real-file/CLI refusal contracts and actual pool Pending
+observer regression without KVM. The supplied policy classifies actual host reads
+as Critical without inducing host pressure. Numerical relief, full production
+Reactor/P2 installation, full/cold residency, calibrated envelopes, original
+template provenance and OOM protection remain unverified. Accepted cancellation,
+provider late results and final ancestor reconciliation remain separate.
+
 ## Native incoming inventory progress
 
 `native_incoming_records_reader_heartbeat_and_cleanup_contention` runs actual
