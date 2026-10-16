@@ -40,11 +40,20 @@ async fn terminal(writer: &mut Output, scope: &Scope, data: Value) -> bool {
         .is_ok_and(|r| r.is_ok())
 }
 
-async fn lock<'a>(session: &'a Session, scope: &Scope) -> Result<MutexGuard<'a, Engine>, Failure> {
+async fn lock<'a>(
+    session: &'a Session,
+    scope: &Scope,
+    operation: crate::diagnostics::Operation,
+    report: &mut Option<crate::diagnostics::Report>,
+) -> Result<MutexGuard<'a, Engine>, Failure> {
     match scope.wait(session.engine.lock()).await {
         Ok(engine) if !engine.is_closed() => Ok(engine),
         Ok(_) => Err(Failure::Disconnected),
         Err(error) => {
+            // Commit the observed failure before cancellation wakes other callers.
+            if !session.cancel.is_cancelled() {
+                *report = session.failed(operation, error);
+            }
             session.retire();
             Err(error)
         }
@@ -163,22 +172,35 @@ impl Run {
                     let mut admitted = Vec::<Arc<Session>>::new();
                     for session in self.snapshot()? {
                         let operation = session_scope(&scope, &session);
+                        let mut operation_report = None;
                         let result = async {
-                            let _engine = lock(&session, &operation).await?;
+                            let _engine = lock(
+                                &session,
+                                &operation,
+                                crate::diagnostics::Operation::Session,
+                                &mut operation_report,
+                            )
+                            .await?;
                             self.authorize(&session, &operation)
                         }
                         .await;
                         // Closing a snapshot member must not cancel the list,
                         // but cancellation/deadline of the request still wins.
-                        scope.check()?;
+                        if let Err(error) = scope.check() {
+                            report = operation_report.or_else(|| {
+                                session.failed(crate::diagnostics::Operation::Session, error)
+                            });
+                            return Err(error);
+                        }
                         match result {
                             Ok(()) => admitted.push(Arc::clone(&session)),
                             // A revoked or expired member cannot hide siblings.
                             Err(Failure::Cancelled | Failure::Disconnected | Failure::TimedOut)
                                 if session.cancel.is_cancelled() => {}
                             Err(error) => {
-                                report =
-                                    session.failed(crate::diagnostics::Operation::Session, error);
+                                report = operation_report.or_else(|| {
+                                    session.failed(crate::diagnostics::Operation::Session, error)
+                                });
                                 return Err(error);
                             }
                         }
@@ -205,6 +227,7 @@ impl Run {
             }
             "vnc.session.status" | "vnc.session.close" => {
                 let mut subject = None;
+                let mut report = None;
                 let result = async {
                     let params = parse::<protocol::SessionId>(raw)?;
                     let session = self.lookup(params.session_id)?;
@@ -215,15 +238,23 @@ impl Run {
                         Ok(json!({"outcome":"closed"}))
                     } else {
                         let scope = session_scope(&scope, &session);
-                        let _engine = lock(&session, &scope).await?;
+                        let _engine = lock(
+                            &session,
+                            &scope,
+                            crate::diagnostics::Operation::Session,
+                            &mut report,
+                        )
+                        .await?;
                         self.authorize(&session, &scope)?;
                         Ok(json!({"outcome":"status","session":session.info}))
                     }
                 }
                 .await;
                 let data = result.unwrap_or_else(|error| {
-                    let report = subject.and_then(|session| {
-                        session.failed(crate::diagnostics::Operation::Session, error)
+                    let report = report.or_else(|| {
+                        subject.and_then(|session| {
+                            session.failed(crate::diagnostics::Operation::Session, error)
+                        })
                     });
                     self.diagnosed(failed(error), report)
                 });
@@ -245,12 +276,15 @@ impl Run {
     async fn capture(&self, raw: &str, scope: &Scope, writer: &mut Output) {
         let mut streaming = false;
         let mut subject = None;
+        let mut report = None;
         let result = async {
             let params = parse::<protocol::SessionId>(raw)?;
             let session = self.lookup(params.session_id)?;
             subject = Some(Arc::clone(&session));
             let operation = session_scope(scope, &session);
-            let mut engine = lock(&session, &operation).await?;
+            let mut engine = lock(
+                &session, &operation, crate::diagnostics::Operation::Capture, &mut report
+            ).await?;
             self.authorize(&session, &operation)?;
             let result = async {
                 let capture = operation
@@ -288,15 +322,19 @@ impl Run {
                 }
                 Ok::<_, Failure>(())
             }.await;
-            if result.is_err() {
+            if let Err(error) = result {
+                report = session.failed(crate::diagnostics::Operation::Capture, error);
                 session.retire();
                 engine.close();
             }
             result
         }.await;
         if let Err(error) = result {
-            let report = subject
-                .and_then(|session| session.failed(crate::diagnostics::Operation::Capture, error));
+            let report = report.or_else(|| {
+                subject.and_then(|session| {
+                    session.failed(crate::diagnostics::Operation::Capture, error)
+                })
+            });
             if streaming {
                 // A Result requires End after binary data. Error is the explicit
                 // incomplete-stream terminal, including cancellation between
@@ -325,13 +363,20 @@ impl Run {
     async fn input(&self, raw: &str, scope: &Scope, writer: &mut Output) {
         let mut outcome = InputOutcome::NotStarted;
         let mut subject = None;
+        let mut report = None;
         let result = async {
             let params = parse::<protocol::InputRequest>(raw)?;
             let keys = params.input.keys()?;
             let session = self.lookup(params.session_id)?;
             subject = Some(Arc::clone(&session));
             let operation = session_scope(scope, &session);
-            let mut engine = lock(&session, &operation).await?;
+            let mut engine = lock(
+                &session,
+                &operation,
+                crate::diagnostics::Operation::Input,
+                &mut report,
+            )
+            .await?;
             self.authorize(&session, &operation)?;
             let result = operation
                 .wait(engine.input(
@@ -370,8 +415,10 @@ impl Run {
         }
         .await;
         if let Err(error) = result {
-            let report = subject
-                .and_then(|session| session.failed(crate::diagnostics::Operation::Input, error));
+            let report = report.or_else(|| {
+                subject
+                    .and_then(|session| session.failed(crate::diagnostics::Operation::Input, error))
+            });
             terminal(
                 writer,
                 scope,
