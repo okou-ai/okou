@@ -8,7 +8,6 @@ import {
   exists,
   isNull,
   lt,
-  ne,
   not,
   or,
   sql,
@@ -16,24 +15,72 @@ import {
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { pgTextDecoder } from "../../lib/db-structured-result";
-import { visibleTailscaleConfig } from "./tailscale-config-model";
 import type {
   PreparedSshConnectionCreation,
   PreparedSshConnectionUpdate,
 } from "./ssh-connection.service";
 
-// Drizzle's sessionless QueryBuilder cannot construct UPDATE. Keep this one
-// DML leaf as SQL, with schema-owned identifiers, projection and predicates.
-export function stampedSshTailscaleConfig(
+// Keep the current entering protocols while removing redundant retained fences.
+// Cloudflare config writes must follow the API authority-reader drain in #40577.
+// Drizzle's sessionless builder needs a schema-owned DML leaf for Tailscale.
+export function enteringSshNetworkConfig(
   qb: QueryBuilder,
   alias: string,
+  provider: "cloudflare_access" | "tailscale",
   predicate: SQL,
 ) {
+  if (provider === "cloudflare_access") {
+    return qb
+      .$with(alias)
+      .as(
+        qb
+          .select({ id: cloudflareAccessConfigs.id })
+          .from(cloudflareAccessConfigs)
+          .where(predicate)
+          .for("share"),
+      );
+  }
   return qb
     .$with(alias, { id: tailscaleConfigs.id })
     .as(
       sql`UPDATE ${tailscaleConfigs} SET ${sql.identifier(tailscaleConfigs.name.name)} = ${tailscaleConfigs.name} WHERE ${predicate} RETURNING ${tailscaleConfigs.id}`,
     );
+}
+
+export function selectedSshNetworkConfig(
+  qb: QueryBuilder,
+  alias: string,
+  provider: "cloudflare_access" | "tailscale",
+  predicate: SQL,
+  retaining: SQL,
+) {
+  const entering = and(predicate, not(retaining));
+  if (entering === undefined) {
+    throw new Error("SSH network entry predicate is missing");
+  }
+  const entered = enteringSshNetworkConfig(
+    qb,
+    `${alias}_entered`,
+    provider,
+    entering,
+  );
+  const config =
+    provider === "tailscale" ? tailscaleConfigs : cloudflareAccessConfigs;
+  const retained = qb
+    .$with(`${alias}_retained`)
+    .as(
+      qb
+        .select({ id: config.id })
+        .from(config)
+        .where(and(predicate, retaining)),
+    );
+  const selected = qb.$with(alias).as(
+    qb
+      .select({ id: entered.id })
+      .from(entered)
+      .unionAll(qb.select({ id: retained.id }).from(retained)),
+  );
+  return { selected, ctes: [entered, retained, selected] };
 }
 type Owner = { readonly orgId: string; readonly userId: string };
 export function visibleSshAccessConfig(owner: Owner, id: string) {
@@ -59,6 +106,22 @@ export function ownedSshConnection(
   );
 }
 
+function sshAccessAdmissionPredicate(
+  args: Owner & { readonly accessId: string | null },
+  eligible: SQL,
+) {
+  const predicate = and(
+    args.accessId === null
+      ? sql`false`
+      : visibleSshAccessConfig(args, args.accessId),
+    eligible,
+  );
+  if (predicate === undefined) {
+    throw new Error("SSH Cloudflare admission predicate is missing");
+  }
+  return predicate;
+}
+
 export function stampedSshCredential(
   qb: QueryBuilder,
   alias: string,
@@ -75,7 +138,7 @@ export function stampedSshCredential(
     );
 }
 
-// Sessionless reads only. Every dependent write belongs to the calling command.
+// Sessionless SQL construction; execution belongs to the calling command.
 export function createSshCreationReads(
   args: PreparedSshConnectionCreation,
   endpointValid: boolean,
@@ -139,19 +202,15 @@ export function createSshCreationReads(
           : exists(qb.select({ id: credential.id }).from(credential)),
       ),
   );
-  const access = qb.$with("selected_ssh_creation_access").as(
-    qb
-      .select({ id: cloudflareAccessConfigs.id })
-      .from(cloudflareAccessConfigs)
-      .where(
-        and(
-          args.accessId === null
-            ? sql`false`
-            : visibleSshAccessConfig(args, args.accessId),
-          exists(qb.select({ id: ready.id }).from(ready)),
-        ),
-      )
-      .for("share"),
+  const accessPredicate = sshAccessAdmissionPredicate(
+    args,
+    exists(qb.select({ id: ready.id }).from(ready)),
+  );
+  const access = enteringSshNetworkConfig(
+    qb,
+    "selected_ssh_creation_access",
+    "cloudflare_access",
+    accessPredicate,
   );
   const admission = qb.$with("admitted_ssh_creation").as(
     qb
@@ -176,7 +235,7 @@ export function createSshCreationReads(
   };
 }
 
-function createSshUpdateCoreReads(
+export function createSshUpdateReads(
   args: PreparedSshConnectionUpdate,
   endpointValid: boolean,
 ) {
@@ -253,20 +312,27 @@ function createSshUpdateCoreReads(
           : exists(qb.select({ id: credential.id }).from(credential)),
       ),
   );
-  const access = qb.$with("selected_ssh_binding_access").as(
-    qb
-      .select({ id: cloudflareAccessConfigs.id })
-      .from(cloudflareAccessConfigs)
-      .where(
-        and(
+  const accessPredicate = sshAccessAdmissionPredicate(
+    args,
+    exists(qb.select({ id: ready.id }).from(ready)),
+  );
+  const accessSelection = selectedSshNetworkConfig(
+    qb,
+    "selected_ssh_binding_access",
+    "cloudflare_access",
+    accessPredicate,
+    exists(
+      qb
+        .select({ id: current.id })
+        .from(current)
+        .where(
           args.accessId === null
             ? sql`false`
-            : visibleSshAccessConfig(args, args.accessId),
-          exists(qb.select({ id: ready.id }).from(ready)),
+            : eq(current.cloudflareAccessId, args.accessId),
         ),
-      )
-      .for("share"),
+    ),
   );
+  const access = accessSelection.selected;
   const admission = qb.$with("admitted_ssh_binding_host").as(
     qb
       .select({ id: ready.id })
@@ -285,54 +351,13 @@ function createSshUpdateCoreReads(
     ready,
     access,
     admission,
-    ctes: [current, base, credential, ready, access, admission],
+    ctes: [
+      current,
+      base,
+      credential,
+      ready,
+      ...accessSelection.ctes,
+      admission,
+    ],
   };
-}
-export function createSshUpdateReads(
-  args: PreparedSshConnectionUpdate,
-  endpointValid: boolean,
-) {
-  const reads = createSshUpdateCoreReads(args, endpointValid);
-  const { qb, current, admission } = reads;
-  const tailscaleId =
-    args.preparedTailscale === undefined ? args.tailscaleId : null;
-  const retained = qb.$with("retained_ssh_binding_tailscale").as(
-    qb
-      .select({ id: tailscaleConfigs.id })
-      .from(tailscaleConfigs)
-      .where(
-        and(
-          tailscaleId === null
-            ? sql`false`
-            : visibleTailscaleConfig(args, tailscaleId),
-          exists(
-            qb
-              .select({ id: admission.id })
-              .from(admission)
-              .innerJoin(current, eq(current.id, admission.id))
-              .where(
-                tailscaleId === null
-                  ? sql`false`
-                  : eq(current.tailscaleId, tailscaleId),
-              ),
-          ),
-        ),
-      )
-      .for("share"),
-  );
-  const entering = exists(
-    qb
-      .select({ id: admission.id })
-      .from(admission)
-      .innerJoin(current, eq(current.id, admission.id))
-      .where(
-        tailscaleId === null
-          ? sql`false`
-          : or(
-              isNull(current.tailscaleId),
-              ne(current.tailscaleId, tailscaleId),
-            ),
-      ),
-  );
-  return { ...reads, retained, entering, ctes: [...reads.ctes, retained] };
 }
