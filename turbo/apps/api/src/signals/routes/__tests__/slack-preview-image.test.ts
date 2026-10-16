@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { escapeAttribute } from "entities/escape";
 import { http, HttpResponse } from "msw";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
@@ -51,7 +52,7 @@ async function previewUrls(teamId: string, sources: readonly string[]) {
     server.use(
       http.get(url, () => {
         return HttpResponse.html(
-          `<head><meta property="og:title" content="Published title"><meta property="og:image" content="${source.replaceAll("&", "&amp;").replaceAll('"', "&quot;")}"></head>`,
+          `<head><meta property="og:title" content="Published title"><meta property="og:image" content="${escapeAttribute(source)}"></head>`,
         );
       }),
     );
