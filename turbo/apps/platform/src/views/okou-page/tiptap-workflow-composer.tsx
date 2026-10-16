@@ -19,7 +19,6 @@ import type { ComposerChatThreadSuggestion } from "../../signals/okou-page/chat-
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import type { ComposerTask } from "../../signals/okou-page/composer-task-chips.ts";
 import { ComposerMentionSuggestionMenu } from "./chat-thread-suggestion.tsx";
-import { START_PAGE_CENTRED_MEDIA_QUERY } from "./start-page-breakpoint.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
 import {
   buildComposerSlashWorkflows,
@@ -36,6 +35,8 @@ import {
 import {
   SlashTemplatePanel,
   SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT,
+  SLASH_PANEL_MANAGE_WORKFLOWS_ID,
+  SLASH_PANEL_NEW_WORKFLOW_ID,
   slashTemplateCategoryLabel,
 } from "./slash-template-panel.tsx";
 import {
@@ -50,6 +51,9 @@ import {
 } from "./composer-actions.ts";
 
 import { composerCreatePlaceholder } from "../../signals/okou-page/composer-create.ts";
+import { CREATE_WORKFLOW_WITH_CHAT_PROMPT } from "../../signals/chat-page/workflow-prompt-action.ts";
+import { ROUTES } from "../../signals/route-paths.ts";
+import { detachedNavigateTo$ } from "../../signals/route.ts";
 
 function isMacKeyboard(): boolean {
   return /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
@@ -313,6 +317,8 @@ interface ComposerSuggestionMenuState {
   readonly reverseWorkflows: boolean;
   readonly collapseWorkflows: boolean;
   readonly expandWorkflows: () => void;
+  readonly showWorkflowActions: boolean;
+  readonly newWorkflow: () => void;
   readonly showWorkflows: boolean;
   readonly agents: readonly ComposerAgentSuggestion[];
   readonly chatThreads: readonly ComposerChatThreadSuggestion[];
@@ -370,6 +376,8 @@ function useSlashTemplatePanelActions(
   const openTask = useSet(composer.taskChips.openTask$);
   const insertTemplate = useSet(composer.template.insertTemplate$);
   const openTemplatePicker = useSet(composer.template.openTemplatePicker$);
+  const insertText = useSet(composer.editor.insertText$);
+  const navigate = useSet(detachedNavigateTo$);
   const categories = useSlashTemplateCategorySuggestions(query);
   return {
     categories,
@@ -408,6 +416,23 @@ function useSlashTemplatePanelActions(
       clearSlashRange();
       close();
       openTemplatePicker({ kind: "insert", category: "slides" });
+    },
+    /**
+     * The same request the Workflows page's Create in chat starts a chat with,
+     * written where the token was so the user can still edit it before sending.
+     */
+    newWorkflow(): void {
+      clearSlashRange();
+      close();
+      insertText(CREATE_WORKFLOW_WITH_CHAT_PROMPT);
+    },
+    /**
+     * Leaves the draft as typed. Its debounced save belongs to this page, so
+     * an edit made on the way out would not persist past the navigation.
+     */
+    manageWorkflows(): void {
+      close();
+      navigate(ROUTES.workflows);
     },
   };
 }
@@ -483,12 +508,16 @@ interface SuggestionRows {
   readonly headCount: number;
   readonly expandIndex: number | null;
   readonly workflows: readonly ComposerSlashWorkflowMatch[];
+  /** New workflow and Manage workflows follow the revealed workflows. */
+  readonly workflowActions: boolean;
   readonly agents: readonly ComposerAgentSuggestion[];
   readonly chatThreads: readonly ComposerChatThreadSuggestion[];
 }
 
 interface SuggestionRowActions {
   readonly expandWorkflows: () => void;
+  readonly newWorkflow: () => void;
+  readonly manageWorkflows: () => void;
   readonly selectCategory: (category: SlashTemplateCategory) => void;
   readonly insertWorkflow: (workflow: ComposerSlashWorkflow) => void;
   readonly insertAgent: (agent: ComposerAgentSuggestion) => void;
@@ -500,8 +529,20 @@ function suggestionRowCount(rows: SuggestionRows): number {
     return rows.agents.length + rows.chatThreads.length;
   }
   return rows.expandIndex === null
-    ? rows.headCount + rows.workflows.length
+    ? rows.headCount + rows.workflows.length + (rows.workflowActions ? 2 : 0)
     : rows.expandIndex + 1;
+}
+
+/** New workflow or Manage workflows, when the index is one of them. */
+function workflowActionRow(
+  index: number,
+  rows: SuggestionRows,
+): "new" | "manage" | undefined {
+  if (!rows.workflowActions) {
+    return undefined;
+  }
+  const offset = index - rows.headCount - rows.workflows.length;
+  return offset === 0 ? "new" : offset === 1 ? "manage" : undefined;
 }
 
 /** The template category row for an index, if it is one. */
@@ -526,6 +567,11 @@ function selectSlashSuggestionRow(
   const category = rows.panelCategories[index];
   if (category) {
     actions.selectCategory(category);
+    return;
+  }
+  const action = workflowActionRow(index, rows);
+  if (action !== undefined) {
+    (action === "new" ? actions.newWorkflow : actions.manageWorkflows)();
     return;
   }
   const workflow = rows.workflows[index - rows.headCount];
@@ -559,9 +605,19 @@ function suggestionRowScrollTarget(
   rows: SuggestionRows,
 ): { readonly id: string } | undefined {
   const head = suggestionHeadRow(index, rows);
-  return head === undefined
-    ? rows.workflows[index - rows.headCount]
-    : { id: head };
+  if (head !== undefined) {
+    return { id: head };
+  }
+  const action = workflowActionRow(index, rows);
+  if (action !== undefined) {
+    return {
+      id:
+        action === "new"
+          ? SLASH_PANEL_NEW_WORKFLOW_ID
+          : SLASH_PANEL_MANAGE_WORKFLOWS_ID,
+    };
+  }
+  return rows.workflows[index - rows.headCount];
 }
 
 function suggestionNavigationOrder(
@@ -585,11 +641,9 @@ function suggestionNavigationOrder(
 
 function useComposerSuggestionMenu({
   composer,
-  suggestionsAbove,
   onKeyDown,
 }: {
   readonly composer: ComposerSignals;
-  readonly suggestionsAbove: boolean;
   readonly onKeyDown: (event: KeyboardEventLike) => void;
 }): ComposerSuggestionMenuState {
   const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
@@ -622,9 +676,10 @@ function useComposerSuggestionMenu({
   );
   const workflowSuggestions = workflowResult.workflows;
   const showWorkflows = slashRange !== null;
-  // Mobile keyboards leave little room above the composer. Keep Make first
-  // there, and use the same order for the rows and keyboard navigation.
-  const reversedSuggestions = suggestionsAbove && (!showWorkflows || isDesktop);
+  // The menus open above the composer, so their most relevant rows come last,
+  // nearest it. Mobile keyboards leave little room above the composer, so the
+  // slash menu keeps Make first there; rows and keyboard share one order.
+  const reversedSuggestions = !showWorkflows || isDesktop;
   const mentions = useComposerMentionSuggestions(composer, slashRange);
   const { agents, chatThreads, showMentions } = mentions;
   const open = showWorkflows || showMentions;
@@ -641,6 +696,7 @@ function useComposerSuggestionMenu({
     headCount,
     expandIndex,
     workflows: workflowSuggestions,
+    workflowActions: workflowOverview && workflowsExpanded,
     agents,
     chatThreads,
   };
@@ -652,8 +708,8 @@ function useComposerSuggestionMenu({
 
   function selectSuggestion(index: number): void {
     selectSuggestionRow(index, rows, {
+      ...templatePanel,
       expandWorkflows,
-      selectCategory: templatePanel.selectCategory,
       insertWorkflow,
       insertAgent,
       insertChatThread,
@@ -666,16 +722,16 @@ function useComposerSuggestionMenu({
     }
   }
 
-  // The collapsed overview has no row for its hidden workflows, only a slot
-  // in the navigation order. Arriving there reveals them: coming down past the
-  // last visible workflow lands on the first one revealed, and coming up from
-  // the categories lands on the last workflow, the row just above them.
+  // The keyboard never stops on Show more, only on its slot in the navigation
+  // order. Arriving there reveals the rest: coming down past the last visible
+  // workflow lands on the first one revealed, in Show more's place, and coming
+  // up from the categories lands on Manage workflows, the row just above them.
   function revealSuggestion(index: number, direction: 1 | -1): number {
     if (!showWorkflows || index !== rows.expandIndex) {
       return index;
     }
     expandWorkflows();
-    return direction > 0 ? index : rows.headCount + rows.workflows.length - 1;
+    return direction > 0 ? index : rows.headCount + rows.workflows.length + 1;
   }
 
   function handleKeyDown(event: KeyboardEvent): boolean {
@@ -711,6 +767,8 @@ function useComposerSuggestionMenu({
     reverseWorkflows: reversedSuggestions && !workflowOverview,
     collapseWorkflows,
     expandWorkflows,
+    showWorkflowActions: rows.workflowActions,
+    newWorkflow: templatePanel.newWorkflow,
     showWorkflows,
     agents,
     chatThreads,
@@ -775,22 +833,13 @@ function ComposerSuggestionMenu({
   readonly children: ReactNode;
 }) {
   const onKeyDown = useComposerKeyboard(composer, actions);
-  // Composer-anchored menus open on the side with the room. A docked composer
-  // sits on the floor of the screen, so its menus open above it. From `sm` up
-  // the start page centres its composer and the free space is below it, where
-  // a menu forced above was squeezed against the top of the window. Desktop
-  // rows follow the side; the mobile slash menu keeps Make at the top.
-  const startPageCentred = useMediaQuery(START_PAGE_CENTRED_MEDIA_QUERY);
-  const suggestionsBelow =
-    startPageCentred &&
-    !composer.editor.singleLineOnMobile &&
-    !composer.editor.forwardComposer;
-  const suggestionSide = suggestionsBelow ? "bottom" : "top";
   const suggestionMenu = useComposerSuggestionMenu({
     composer,
-    suggestionsAbove: !suggestionsBelow,
     onKeyDown,
   });
+  const expandedSlashHeight = useGet(
+    composer.suggestion.slashWorkflowsExpandedHeight$,
+  );
   const suggestionAnchor = () => {
     // Resolve the card belonging to this editor, not another chat's composer.
     return composer.editor.editor.view.dom.closest(
@@ -826,7 +875,6 @@ function ComposerSuggestionMenu({
         <SlashWorkflowMenu
           menuRef={setSuggestionMenuRef}
           anchor={suggestionAnchor}
-          side={suggestionSide}
         >
           <SlashTemplatePanel
             categories={suggestionMenu.panelCategories}
@@ -836,6 +884,12 @@ function ComposerSuggestionMenu({
             workflowsLoading={suggestionMenu.workflowsLoading}
             collapseWorkflows={suggestionMenu.collapseWorkflows}
             onExpandWorkflows={suggestionMenu.expandWorkflows}
+            expandedHeight={expandedSlashHeight}
+            showWorkflowActions={suggestionMenu.showWorkflowActions}
+            onNewWorkflow={suggestionMenu.newWorkflow}
+            onManageWorkflows={() => {
+              suggestionMenu.close();
+            }}
             selectedIndex={suggestionMenu.selectedIndex}
             previewIndex={suggestionMenu.previewIndex}
             onPreview={suggestionMenu.previewSuggestion}
@@ -852,7 +906,6 @@ function ComposerSuggestionMenu({
         <ComposerMentionSuggestionMenu
           menuRef={setSuggestionMenuRef}
           anchor={suggestionAnchor}
-          side={suggestionSide}
           reversed={suggestionMenu.reversed}
           agents={suggestionMenu.agents}
           chatThreads={suggestionMenu.chatThreads}

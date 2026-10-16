@@ -78,19 +78,19 @@ export function SlashWorkflowName({
 export function SlashWorkflowMenu({
   menuRef,
   anchor,
-  side,
   children,
 }: {
   readonly menuRef: Ref<HTMLDivElement>;
   readonly anchor?: ComponentProps<typeof PopoverContent>["anchor"];
-  readonly side: "top" | "bottom";
   readonly children: ReactNode;
 }) {
   return (
     <PopoverContent
       ref={menuRef}
       anchor={anchor}
-      side={side}
+      // Composer-anchored menus always open above the composer, on the home
+      // page as in a chat, and never flip below it.
+      side="top"
       align="start"
       sideOffset={8}
       collisionAvoidance={{ side: "none" }}

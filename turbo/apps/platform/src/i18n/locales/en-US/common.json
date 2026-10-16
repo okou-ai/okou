@@ -1774,7 +1774,6 @@
       "selectModel": "Select model",
       "slashPanel": {
         "browseAll": "Browse all templates",
-        "make": "Make",
         "useTemplate": "Use template {{title}}"
       },
       "temporarilySwitchTo": "Temporarily switch to",
@@ -1782,8 +1781,9 @@
       "useForFutureChats": "Use this for future chats",
       "workflows": {
         "loading": "Loading workflows...",
-        "showAllCount": "Show all {{total}}",
-        "title": "Workflows"
+        "manage": "Manage workflows",
+        "newWorkflow": "New workflow",
+        "showMore": "Show {{total}} more"
       }
     },
     "computerUse": {

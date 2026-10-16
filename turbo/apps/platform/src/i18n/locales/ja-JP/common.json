@@ -1771,7 +1771,6 @@
       "selectModel": "モデルを選択してください",
       "slashPanel": {
         "browseAll": "すべてのテンプレートを見る",
-        "make": "作成",
         "useTemplate": "テンプレート {{title}} を使う"
       },
       "temporarilySwitchTo": "一時的な切り替え先",
@@ -1779,8 +1778,9 @@
       "useForFutureChats": "今後のチャットでも使用",
       "workflows": {
         "loading": "ワークフローを読み込んでいます...",
-        "showAllCount": "すべて表示（{{total}}）",
-        "title": "ワークフロー"
+        "manage": "ワークフローを管理",
+        "newWorkflow": "新しいワークフロー",
+        "showMore": "さらに {{total}} 件を表示"
       }
     },
     "computerUse": {

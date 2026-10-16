@@ -1771,7 +1771,6 @@
       "selectModel": "选择模型",
       "slashPanel": {
         "browseAll": "浏览全部模板",
-        "make": "制作",
         "useTemplate": "使用模板 {{title}}"
       },
       "temporarilySwitchTo": "临时切换到",
@@ -1779,8 +1778,9 @@
       "useForFutureChats": "以后的对话都用这个",
       "workflows": {
         "loading": "正在加载工作流…",
-        "showAllCount": "显示全部 {{total}} 个",
-        "title": "工作流"
+        "manage": "管理工作流",
+        "newWorkflow": "新建工作流",
+        "showMore": "再显示 {{total}} 个"
       }
     },
     "computerUse": {

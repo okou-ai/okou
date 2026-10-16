@@ -1,22 +1,27 @@
 // The slash panel indexes creation types and workflows, with desktop previews
 // embedded on the right.
 // It renders inside the slash menu's popover shell from slash-workflow.tsx.
-import type { ComponentProps } from "react";
+import type { ComponentProps, CSSProperties, ReactNode } from "react";
 import {
+  ChevronDown,
   ChevronRight,
   FileText,
   Globe,
   Image,
   LayoutGrid,
+  Plus,
   Presentation,
   Route,
+  Settings2,
 } from "lucide-react";
 import { cn, useMediaQuery } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { SlashWorkflowName } from "./slash-workflow.tsx";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
 import { i18n } from "../../i18n/index.ts";
+import { ROUTES } from "../../signals/route-paths.ts";
 import type { ComposerSlashWorkflowMatch } from "../../signals/okou-page/workflow-composer-domain.ts";
+import { Link } from "../router/link.tsx";
 import {
   isSlashTemplateNativeAspectCategory,
   slashTemplatePreviews,
@@ -34,9 +39,23 @@ const SLASH_TEMPLATE_CATEGORY_ICONS = {
   website: Globe,
 } as const satisfies Record<SlashTemplateCategory, typeof Presentation>;
 
-// Four single-line rows fit within 128px, leaving room for both section
-// headings, creation categories and the footer in the 380px overview.
+// The overview lists the four most recent workflows and reveals the rest in
+// place, from a row directly beneath them.
 export const SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT = 4;
+
+// Option ids for the rows after the revealed workflows.
+export const SLASH_PANEL_NEW_WORKFLOW_ID = "new-workflow";
+export const SLASH_PANEL_MANAGE_WORKFLOWS_ID = "manage-workflows";
+
+// A full-width row whose label is quieter than a creation type's.
+const SLASH_QUIET_ROW =
+  "flex h-8 w-full items-center gap-2 rounded-lg px-2 text-[13px] transition-colors";
+
+function slashQuietRowState(marked: boolean): string {
+  return marked
+    ? cn(SLASH_ROW_MARKED, "text-foreground")
+    : "text-muted-foreground hover:bg-state-hover hover:text-foreground";
+}
 
 // The row the pointer or the keyboard has marked. Pointing at Browse all takes
 // the mark off it, so the only fill in the index is the one under the pointer,
@@ -62,6 +81,16 @@ interface SlashTemplatePanelProps {
   readonly workflowsLoading: boolean;
   readonly collapseWorkflows: boolean;
   readonly onExpandWorkflows: () => void;
+  /**
+   * The height the menu opened with, held while the overview's workflows are
+   * revealed so the row that revealed them does not move. Null otherwise.
+   */
+  readonly expandedHeight: number | null;
+  /** New workflow and Manage workflows follow the revealed workflows. */
+  readonly showWorkflowActions: boolean;
+  readonly onNewWorkflow: () => void;
+  /** Runs before the Manage workflows link navigates. */
+  readonly onManageWorkflows: () => void;
   /** The menu opens above the composer, so its most relevant row is last. */
   readonly reversed: boolean;
   readonly reverseWorkflows: boolean;
@@ -106,14 +135,6 @@ export function slashTemplateCategoryLabel(
       });
     }
   }
-}
-
-function SectionLabel({ children }: { readonly children: string }) {
-  return (
-    <div className="px-2.5 pt-2.5 pb-1 text-xs font-medium text-muted-foreground">
-      {children}
-    </div>
-  );
 }
 
 /**
@@ -372,14 +393,144 @@ function SlashPanelWorkflowList({
   );
 }
 
+/**
+ * Reveals the rest of the overview's workflows in place: they take this row's
+ * position, so the first of them lands under the pointer that clicked it.
+ */
+function SlashPanelShowMore({
+  index,
+  hiddenCount,
+  marked,
+  onPreview,
+  onExpand,
+}: {
+  readonly index: number;
+  readonly hiddenCount: number;
+  readonly marked: boolean;
+  readonly onPreview: (index: number) => void;
+  readonly onExpand: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <button
+      type="button"
+      aria-expanded={false}
+      data-active={marked ? "true" : undefined}
+      className={cn(SLASH_QUIET_ROW, slashQuietRowState(marked))}
+      onMouseMove={() => {
+        onPreview(index);
+      }}
+      onClick={onExpand}
+    >
+      <SlashQuietRowContent icon={<ChevronDown size={16} aria-hidden />}>
+        {t(
+          ($) => {
+            return $.chat.composer.workflows.showMore;
+          },
+          { total: hiddenCount },
+        )}
+      </SlashQuietRowContent>
+    </button>
+  );
+}
+
+function SlashQuietRowContent({
+  icon,
+  children,
+}: {
+  readonly icon: ReactNode;
+  readonly children: string;
+}) {
+  return (
+    <>
+      <span className="flex size-4 shrink-0 items-center justify-center">
+        {icon}
+      </span>
+      <span className="min-w-0 truncate">{children}</span>
+    </>
+  );
+}
+
+/** The two things to do besides picking one, after the whole list. */
+function SlashPanelWorkflowActions({
+  index,
+  markedIndex,
+  onPreview,
+  onNewWorkflow,
+  onManageWorkflows,
+  workflowOptionId,
+}: Pick<
+  SlashTemplatePanelProps,
+  "onNewWorkflow" | "onManageWorkflows" | "workflowOptionId"
+> & {
+  /** Relative index of New workflow; Manage workflows follows it. */
+  readonly index: number;
+  readonly markedIndex: number;
+  readonly onPreview: (index: number) => void;
+}) {
+  const { t } = useTranslation();
+  const manageIndex = index + 1;
+  return (
+    <>
+      <button
+        id={workflowOptionId(SLASH_PANEL_NEW_WORKFLOW_ID)}
+        type="button"
+        data-active={markedIndex === index ? "true" : undefined}
+        className={cn(
+          SLASH_QUIET_ROW,
+          slashQuietRowState(markedIndex === index),
+        )}
+        onMouseMove={() => {
+          onPreview(index);
+        }}
+        onClick={onNewWorkflow}
+      >
+        <SlashQuietRowContent icon={<Plus size={16} aria-hidden />}>
+          {t(($) => {
+            return $.chat.composer.workflows.newWorkflow;
+          })}
+        </SlashQuietRowContent>
+      </button>
+      <Link
+        id={workflowOptionId(SLASH_PANEL_MANAGE_WORKFLOWS_ID)}
+        pathname={ROUTES.workflows}
+        data-active={markedIndex === manageIndex ? "true" : undefined}
+        className={cn(
+          SLASH_QUIET_ROW,
+          slashQuietRowState(markedIndex === manageIndex),
+        )}
+        onMouseMove={() => {
+          onPreview(manageIndex);
+        }}
+        onClick={onManageWorkflows}
+      >
+        <SlashQuietRowContent icon={<Settings2 size={16} aria-hidden />}>
+          {t(($) => {
+            return $.chat.composer.workflows.manage;
+          })}
+        </SlashQuietRowContent>
+      </Link>
+    </>
+  );
+}
+
 function SlashPanelWorkflowSection({
   collapseWorkflows,
   onExpandWorkflows,
+  showWorkflowActions,
+  onNewWorkflow,
+  onManageWorkflows,
   workflows,
   ...listProps
 }: ComponentProps<typeof SlashPanelWorkflowList> &
-  Pick<SlashTemplatePanelProps, "collapseWorkflows" | "onExpandWorkflows">) {
-  const { t } = useTranslation();
+  Pick<
+    SlashTemplatePanelProps,
+    | "collapseWorkflows"
+    | "onExpandWorkflows"
+    | "showWorkflowActions"
+    | "onNewWorkflow"
+    | "onManageWorkflows"
+  >) {
   if (!listProps.loading && workflows.length === 0) {
     return null;
   }
@@ -391,41 +542,39 @@ function SlashPanelWorkflowSection({
     : workflows;
   return (
     <div>
+      <SlashPanelWorkflowList {...listProps} workflows={visibleWorkflows} />
       {/*
-        Showing the rest is an action on the section, so it sits on the
-        section's own line instead of taking a row of its own. The keyboard
-        never stops on it: arrowing past the last visible workflow reveals the
-        rest, so this control only serves the pointer.
+        The control sits directly beneath the rows it continues, in the
+        position the first revealed row takes. The keyboard never stops on
+        it: arrowing past the last visible workflow reveals the rest.
       */}
-      <div className="flex items-center justify-between">
-        <SectionLabel>
-          {t(($) => {
-            return $.chat.composer.workflows.title;
-          })}
-        </SectionLabel>
-        {hasCollapsedWorkflows && (
-          <button
-            type="button"
-            aria-expanded={false}
-            className="mr-1 rounded-md px-2 pt-2.5 pb-1 text-xs text-muted-foreground/50 transition-colors hover:text-foreground"
-            onClick={onExpandWorkflows}
-          >
-            {t(
-              ($) => {
-                return $.chat.composer.workflows.showAllCount;
-              },
-              { total: workflows.length },
-            )}
-          </button>
-        )}
-      </div>
-      <div
-        className={
-          hasCollapsedWorkflows ? "max-h-32 overflow-hidden" : undefined
-        }
-      >
-        <SlashPanelWorkflowList {...listProps} workflows={visibleWorkflows} />
-      </div>
+      {(hasCollapsedWorkflows || showWorkflowActions) && (
+        <div className="px-1">
+          {hasCollapsedWorkflows && (
+            <SlashPanelShowMore
+              index={SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT}
+              hiddenCount={
+                workflows.length - SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT
+              }
+              marked={
+                listProps.markedIndex === SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT
+              }
+              onPreview={listProps.onPreview}
+              onExpand={onExpandWorkflows}
+            />
+          )}
+          {showWorkflowActions && (
+            <SlashPanelWorkflowActions
+              index={workflows.length}
+              markedIndex={listProps.markedIndex}
+              onPreview={listProps.onPreview}
+              onNewWorkflow={onNewWorkflow}
+              onManageWorkflows={onManageWorkflows}
+              workflowOptionId={listProps.workflowOptionId}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -447,17 +596,11 @@ function SlashPanelCategoryList({
   | "onSelectCategory"
   | "categoryOptionId"
 > & { readonly markedIndex: number }) {
-  const { t } = useTranslation();
   if (categories.length === 0) {
     return null;
   }
   return (
     <div>
-      <SectionLabel>
-        {t(($) => {
-          return $.chat.composer.slashPanel.make;
-        })}
-      </SectionLabel>
       <div className="px-1">
         {(reversed ? [...categories].reverse() : categories).map(
           (category, visualIndex) => {
@@ -548,6 +691,10 @@ export function SlashTemplatePanel({
   workflowsLoading,
   collapseWorkflows,
   onExpandWorkflows,
+  expandedHeight,
+  showWorkflowActions,
+  onNewWorkflow,
+  onManageWorkflows,
   reversed,
   reverseWorkflows,
   selectedIndex,
@@ -587,6 +734,9 @@ export function SlashTemplatePanel({
       loading={workflowsLoading}
       collapseWorkflows={collapseWorkflows}
       onExpandWorkflows={onExpandWorkflows}
+      showWorkflowActions={showWorkflowActions}
+      onNewWorkflow={onNewWorkflow}
+      onManageWorkflows={onManageWorkflows}
       markedIndex={markedIndex - categories.length}
       selectedIndex={selectedIndex - categories.length}
       reversed={reverseWorkflows}
@@ -599,19 +749,32 @@ export function SlashTemplatePanel({
   );
   return (
     <div
-      className="group/slash-panel flex min-h-0 w-full flex-row overflow-hidden"
+      className={cn(
+        "group/slash-panel flex min-h-0 w-full flex-row overflow-hidden",
+        // Revealing the rest of the workflows keeps the menu's height, so the
+        // menu never grows away from the composer and moves the row that was
+        // clicked; the revealed rows scroll inside instead.
+        expandedHeight !== null && "h-(--slash-panel-expanded-height)",
+      )}
       data-slot="slash-panel"
+      style={
+        expandedHeight === null
+          ? undefined
+          : ({
+              "--slash-panel-expanded-height": `${String(expandedHeight)}px`,
+            } as CSSProperties)
+      }
       onMouseLeave={() => {
         onPreview(null);
       }}
     >
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/*
-          The compact overview keeps both section labels and Make in view.
-          Expanding Workflows restores the shared scroller so every row remains
-          reachable without introducing a nested scrolling region.
+          No section labels: the rows name themselves. Every row shares one
+          scroller, so revealing the rest of the workflows adds no nested
+          scrolling region.
         */}
-        <div className="min-h-0 flex-1 overflow-y-auto pb-1">
+        <div className="min-h-0 flex-1 overflow-y-auto py-1">
           {reversed
             ? [workflowSection, makeSection]
             : [makeSection, workflowSection]}

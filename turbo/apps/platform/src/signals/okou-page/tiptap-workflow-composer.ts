@@ -238,6 +238,8 @@ export interface WorkflowComposerSignals {
   readonly previewSuggestionIndex$: Computed<number | null>;
   readonly previewSuggestion$: Command<void, [number | null]>;
   readonly slashWorkflowsExpanded$: Computed<boolean>;
+  /** The open menu's inner height when its workflows were revealed. */
+  readonly slashWorkflowsExpandedHeight$: Computed<number | null>;
   readonly recentWorkflowIds$: Computed<Promise<readonly string[]>>;
   readonly expandSlashWorkflows$: Command<void, []>;
   readonly closeSuggestionMenu$: Command<void, [restoreEditorFocus?: boolean]>;
@@ -2117,6 +2119,11 @@ function createSuggestionMenuBoundary() {
             })))
       );
     },
+    /** The open menu's height inside its border, or null while none is open. */
+    innerHeight(): number | null {
+      const [menu] = elements;
+      return menu ? menu.clientHeight : null;
+    },
   };
 }
 
@@ -2957,25 +2964,42 @@ function createSelectedSuggestionIndex(
   });
 }
 
-function createSlashWorkflowExpansionSignals(
+function createSlashExpansionSignals(
   editor: Editor,
   activeSlashRange$: Computed<SlashWorkflowRange | null>,
+  suggestionMenu: ReturnType<typeof createSuggestionMenuBoundary>,
 ) {
   // Expansion belongs to one open slash interaction. Dismissing the menu or
   // editing its token produces a new range and restores the compact overview.
-  const expandedSlashRange$ = state<SlashWorkflowRange | null>(null);
+  const expansionState$ = state<{
+    readonly range: SlashWorkflowRange;
+    readonly height: number | null;
+  } | null>(null);
+  const expansion$ = computed((get) => {
+    const range = get(activeSlashRange$);
+    const expansion = get(expansionState$);
+    return range !== null && expansion?.range === range ? expansion : null;
+  });
   return {
     recentWorkflowIds$: createRecentWorkflowIds(activeSlashRange$),
     slashWorkflowsExpanded$: computed((get) => {
-      const range = get(activeSlashRange$);
-      return range !== null && range === get(expandedSlashRange$);
+      return get(expansion$) !== null;
+    }),
+    slashWorkflowsExpandedHeight$: computed((get) => {
+      return get(expansion$)?.height ?? null;
     }),
     expandSlashWorkflows$: command(({ get, set }) => {
-      // The show-all control leaves the DOM after activation. Return focus to
+      // The show-more control leaves the DOM after activation. Return focus to
       // the editor, which owns suggestion keyboard navigation, before removing
       // it.
       editor.view.focus();
-      set(expandedSlashRange$, get(activeSlashRange$));
+      const range = get(activeSlashRange$);
+      // Measured before the revealed rows render: the menu keeps the height it
+      // opened with rather than growing away from the composer.
+      set(
+        expansionState$,
+        range === null ? null : { range, height: suggestionMenu.innerHeight() },
+      );
     }),
   };
 }
@@ -3102,7 +3126,7 @@ export function createWorkflowComposerSignals<
     setSelectedSuggestionIndex$,
     previewSuggestionIndex$,
     previewSuggestion$,
-    ...createSlashWorkflowExpansionSignals(editor, activeSlashRange$),
+    ...createSlashExpansionSignals(editor, activeSlashRange$, suggestionMenu),
     closeSuggestionMenu$,
     setSuggestionMenuRef$: suggestionMenu.ref$,
     ...suggestionInsertionCommands,

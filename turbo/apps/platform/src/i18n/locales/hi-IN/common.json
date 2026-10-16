@@ -1774,7 +1774,6 @@
       "selectModel": "मॉडल चुनें",
       "slashPanel": {
         "browseAll": "सभी टेम्पलेट देखें",
-        "make": "बनाएँ",
         "useTemplate": "टेम्पलेट {{title}} इस्तेमाल करें"
       },
       "temporarilySwitchTo": "अस्थायी रूप से इस पर स्विच करें",
@@ -1782,8 +1781,9 @@
       "useForFutureChats": "भविष्य की चैट के लिए इस मॉडल का इस्तेमाल करें",
       "workflows": {
         "loading": "वर्कफ़्लो लोड हो रहा है...",
-        "showAllCount": "सभी {{total}} दिखाएँ",
-        "title": "वर्कफ़्लो"
+        "manage": "वर्कफ़्लो प्रबंधित करें",
+        "newWorkflow": "नया वर्कफ़्लो",
+        "showMore": "{{total}} और दिखाएँ"
       }
     },
     "computerUse": {

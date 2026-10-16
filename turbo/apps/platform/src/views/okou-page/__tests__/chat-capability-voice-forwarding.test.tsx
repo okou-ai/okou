@@ -30,7 +30,6 @@ import {
 } from "./chat-capability-test-helpers.ts";
 import { textContinuityDraft } from "./chat-continuity-test-helpers.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
-import { START_PAGE_CENTRED_MEDIA_QUERY } from "../start-page-breakpoint.ts";
 import {
   findEnabledButton,
   NEW_CHAT_PATH,
@@ -100,13 +99,8 @@ async function uploadedAudio(request: Request) {
 
 async function prepareForwardSuggestions() {
   installVoiceBoundaries();
-  // A desktop window also matches the start page's centred breakpoint, which
-  // the forward dialog's composer must not follow.
   context.mocks.browser.matchMedia((query) => {
-    return (
-      query === SIDEBAR_DESKTOP_MEDIA_QUERY ||
-      query === START_PAGE_CENTRED_MEDIA_QUERY
-    );
+    return query === SIDEBAR_DESKTOP_MEDIA_QUERY;
   });
   await setupPage({
     context,
