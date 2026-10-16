@@ -51,5 +51,7 @@ stage_runner_behavior_support "$REMOTE" \
   "$SCRIPT_DIR/runner-behavior-process-containment-lifecycle.sh" "$RUNNER_DIR/lifecycle.sh"
 stage_runner_behavior_support "$REMOTE" \
   "$SCRIPT_DIR/runner-behavior-process-containment-resource-pressure.sh" "$RUNNER_DIR/resource-pressure.sh"
+stage_runner_behavior_support "$REMOTE" \
+  "$SCRIPT_DIR/runner-behavior-process-containment-submit.sh" "$RUNNER_DIR/submit.sh"
 
 exec "$DURABLE_RUNNER" process-containment "$REMOTE_WORKER" "$RUNNER_DIR"

@@ -23,7 +23,8 @@ AGENT_READY_BENCHMARK_REMOTE_WORKER="$REPO_ROOT/crates/runner/tests/behavior/run
 PROCESS_CONTAINMENT_SUPPORT_WORKERS=$(printf '%s\n' \
   "$REPO_ROOT/crates/runner/tests/behavior/runner-behavior-process-containment-managed-tasks.sh" \
   "$REPO_ROOT/crates/runner/tests/behavior/runner-behavior-process-containment-lifecycle.sh" \
-  "$REPO_ROOT/crates/runner/tests/behavior/runner-behavior-process-containment-resource-pressure.sh")
+  "$REPO_ROOT/crates/runner/tests/behavior/runner-behavior-process-containment-resource-pressure.sh" \
+  "$REPO_ROOT/crates/runner/tests/behavior/runner-behavior-process-containment-submit.sh")
 SYSTEMD_RELOAD_DRIVER="$REPO_ROOT/crates/runner/tests/behavior/runner-behavior-systemd-reload.sh"
 SYSTEMD_RELOAD_REMOTE_WORKER="$REPO_ROOT/crates/runner/tests/behavior/runner-behavior-systemd-reload-remote.sh"
 UPGRADE_LOCAL_DRIVER="$REPO_ROOT/crates/runner/tests/behavior/runner-behavior-upgrade-local.sh"

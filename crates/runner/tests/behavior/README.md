@@ -26,6 +26,15 @@ and the complete leak/reuse/CPU lifecycle together. The lifecycle program owns
 its active pressure submit; the coordinator stops the Runner after success or a
 scenario failure. Support programs are checksum-verified before durable execution.
 
+All containment local submissions use the coordinator's same 240-second boot-time
+deadline through `runner-behavior-process-containment-submit.sh`. Each receives
+only the remaining budget, including sandbox finalization before the local result.
+The durable owner retains its 270-second result guard and the Actions step its
+five-minute bound. These are operational deadlines; elapsed cleanup/recovery or
+control-latency measurements do not decide functional success on shared hosts.
+The coordinator emits bounded invocation/run-scoped failure diagnostics before
+bounded transient-service cleanup and retains state if inactivity is unconfirmed.
+
 Home-cache restoration and Agent-ready measurements are **manual verification**,
 outside required per-PR CI. Different PRs can share a metal host and its global
 cache capacity/GC locks. Optional publication may correctly skip under contention,
