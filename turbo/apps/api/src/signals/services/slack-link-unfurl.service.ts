@@ -10,6 +10,7 @@ import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
 import { hostedDeployments, hostedSites } from "@okouai/db/runtime/hosted-site";
+import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { env } from "../../lib/env";
 import { hostedLinkDomain } from "../../lib/link-layout";
@@ -28,12 +29,12 @@ import {
 } from "./artifact-shares.service";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
-import { ORG_SENTINEL_USER_ID } from "./feature-switch-scope";
 import { slackPreviewImageUrl } from "./slack-preview-image.service";
 
 export const slackLinkSharedEventSchema = z.object({
   type: z.literal("link_shared"),
   channel: z.string().min(1),
+  user: z.string().min(1).optional(),
   message_ts: z.string().min(1),
   links: z.array(z.object({ url: z.string().min(1) })),
 });
@@ -190,7 +191,7 @@ interface SlackPageMetadata {
   readonly description?: string;
 }
 
-// Preserve the released preview behavior while the organization rollout is off.
+// Preserve the released preview behavior while the author's rollout is off.
 const legacySlackMetadata$ = command(
   async (
     { set },
@@ -327,17 +328,33 @@ export const unfurlSlackArtifactLinks$ = command(
     if (!scopes.includes("links:read") || !scopes.includes("links:write")) {
       return;
     }
-    const featureContext = await set(
-      loadUserFeatureSwitchContext$,
-      installation.orgId,
-      installation.installedByUserId ?? ORG_SENTINEL_USER_ID,
-      signal,
-    );
-    signal.throwIfAborted();
-    const openGraphEnabled = isFeatureEnabled(
-      FeatureSwitchKey.SlackOpenGraphPreviews,
-      featureContext,
-    );
+    // The installer owns the bot token, not another member's preview rollout.
+    let openGraphEnabled = false;
+    if (args.event.user) {
+      const [author] = await get(db$)
+        .select({ userId: slackOrgConnections.userId })
+        .from(slackOrgConnections)
+        .where(
+          and(
+            eq(slackOrgConnections.slackWorkspaceId, args.workspaceId),
+            eq(slackOrgConnections.slackUserId, args.event.user),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (author) {
+        const featureContext = await set(
+          loadUserFeatureSwitchContext$,
+          installation.orgId,
+          author.userId,
+          signal,
+        );
+        openGraphEnabled = isFeatureEnabled(
+          FeatureSwitchKey.SlackOpenGraphPreviews,
+          featureContext,
+        );
+      }
+    }
     const unfurls: Record<string, SlackLinkUnfurl> = {};
     const urls = new Set(
       args.event.links.map((link) => {

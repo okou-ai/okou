@@ -33,6 +33,7 @@ const integrations = createBddIntegrationApi(context);
 const host = createHostMapsBddApi(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const messageTs = "1791618140.315329";
+const authorSlackUserId = "U_LINK_SHARER";
 const html =
   '<html><head><title>Report &amp; &lt;!channel&gt;&nbsp;&quot;标题&quot;</title><meta name="description" content="A public report"></head><body>Report</body></html>';
 const previousBotScopes = [
@@ -79,6 +80,7 @@ async function fixture(
   const actor = { ...user, orgId: user.orgId };
   const { teamId } = await integrations.installSlackWorkspace(actor, {
     botScopes: options.scopes ?? `${previousBotScopes},links:read,links:write`,
+    installerSlackUserId: authorSlackUserId,
   });
   if (options.openGraph !== undefined) {
     await updateFeatureSwitchesForUser(context, actor, {
@@ -150,7 +152,7 @@ function postLinks(
     event: {
       type: "link_shared",
       channel: "C_PREVIEW",
-      user: "U_NOT_CONNECTED_TO_OKOU",
+      user: authorSlackUserId,
       is_bot_user_member: false,
       message_ts: messageTs,
       thread_ts: "1791618000.000001",
@@ -182,7 +184,12 @@ describe("Slack link previews", () => {
     const f = await fixture();
     const immutable = `https://dpl-${f.prepared.deploymentId}.okou.app/?source=slack&view=cover#cover|v1`;
     const alias = `https://${f.prepared.publicSlug}.okou.app/index.html`;
-    await accept(postLinks(f.teamId, [immutable, alias, immutable]), [200]);
+    await accept(
+      postLinks(f.teamId, [immutable, alias, immutable], {
+        event: { user: "U_NOT_CONNECTED_TO_OKOU" },
+      }),
+      [200],
+    );
     await flushWaitUntilForTest();
 
     const cover = {
@@ -237,8 +244,8 @@ describe("Slack link previews", () => {
     );
   });
 
-  it("rolls Open Graph previews on and off for the installation's organization", async () => {
-    const f = await fixture();
+  it("gates Open Graph by the linked author without enabling other workspace members", async () => {
+    const f = await fixture({ openGraph: true });
     const pageUrl = new URL("/works", env("APP_URL")).href;
     const requests: string[] = [];
     server.use(
@@ -249,21 +256,42 @@ describe("Slack link previews", () => {
         );
       }),
     );
-    // The override is written by a different member than the bot installer.
-    const peer = {
-      userId: `user_${randomUUID()}`,
+    const peer = createBddApi(context).user({
       orgId: f.actor.orgId,
-      orgRole: "org:member" as const,
-    };
-    for (const enabled of [undefined, true, false]) {
-      if (enabled !== undefined) {
-        await updateFeatureSwitchesForUser(context, peer, {
-          [FeatureSwitchKey.SlackOpenGraphPreviews]: enabled,
-        });
+      orgRole: "org:member",
+    });
+    const peerSlackUserId = "U_LINK_PEER";
+    await integrations.connectSlackUser(peer, {
+      workspaceId: f.teamId,
+      slackUserId: peerSlackUserId,
+    });
+    const cases = [
+      { user: peerSlackUserId, enabled: false },
+      { user: "U_NOT_CONNECTED_TO_OKOU", enabled: false },
+      { user: undefined, enabled: false },
+      { user: authorSlackUserId, enabled: true },
+      { user: peerSlackUserId, override: true, enabled: true },
+      { user: peerSlackUserId, override: false, enabled: false },
+      { user: authorSlackUserId, enabled: true },
+    ];
+    let expectedPageRequests = 0;
+    for (const scenario of cases) {
+      if (scenario.override !== undefined) {
+        await updateFeatureSwitchesForUser(
+          context,
+          { ...peer, orgId: f.actor.orgId },
+          {
+            [FeatureSwitchKey.SlackOpenGraphPreviews]: scenario.override,
+          },
+        );
       }
       context.mocks.slack.chat.unfurl.mockClear();
-      await accept(postLinks(f.teamId, [pageUrl]), [200]);
+      await accept(
+        postLinks(f.teamId, [pageUrl], { event: { user: scenario.user } }),
+        [200],
+      );
       await flushWaitUntilForTest();
+      const { enabled } = scenario;
       const title = enabled ? "Published title" : "Okou";
       expect(context.mocks.slack.chat.unfurl).toHaveBeenCalledExactlyOnceWith({
         channel: "C_PREVIEW",
@@ -291,7 +319,8 @@ describe("Slack link previews", () => {
           },
         },
       });
-      expect(requests).toHaveLength(enabled === undefined ? 0 : 1);
+      expectedPageRequests += Number(enabled);
+      expect(requests).toHaveLength(expectedPageRequests);
     }
   });
 

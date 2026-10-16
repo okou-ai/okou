@@ -48,9 +48,10 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "bingjie@okou.ai",
     displayName: "Slack Open Graph previews",
     description:
-      "Use public page metadata and bounded thumbnails for Slack link previews across the organization.",
+      "Use public page metadata and bounded thumbnails for links you share in Slack.",
     enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
+    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
   [FeatureSwitchKey.DesktopShell]: {
     maintainer: "lancy@okou.ai",

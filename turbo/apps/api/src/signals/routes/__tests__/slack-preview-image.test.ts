@@ -26,6 +26,7 @@ const imageClient = setupAppWithRoutes({ context, routes: artifactOgRoutes })(
   artifactOgContract,
 );
 const maxBytes = 5 * 1024 * 1024;
+const authorSlackUserId = "U_THUMBNAIL_SHARER";
 
 async function fixture() {
   integrations.configureSlackAppMocks();
@@ -36,6 +37,7 @@ async function fixture() {
   const actor = { ...user, orgId: user.orgId };
   const { teamId } = await integrations.installSlackWorkspace(actor, {
     botScopes: "chat:write,im:write,users:read,links:read,links:write",
+    installerSlackUserId: authorSlackUserId,
   });
   await updateFeatureSwitchesForUser(context, actor, {
     [FeatureSwitchKey.SlackOpenGraphPreviews]: true,
@@ -65,6 +67,7 @@ async function previewUrls(teamId: string, sources: readonly string[]) {
     event: {
       type: "link_shared",
       channel: "C_PREVIEW",
+      user: authorSlackUserId,
       message_ts: "1791618140.315329",
       links: pages.map((url) => {
         return { url };
