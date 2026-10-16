@@ -2,7 +2,7 @@ import type { ComponentProps, ReactNode, Ref } from "react";
 // Slash-workflow domain helpers and the suggestion menu's popover shell, shared
 // by the chat composer. Kept in its own module so the TipTap workflow composer
 // and the slash template panel can both reuse them without an import cycle.
-import { Image, Presentation } from "lucide-react";
+import { FileText, Image, Presentation } from "lucide-react";
 import { cn, PopoverContent } from "@okouai/ui";
 import type {
   ComposerSlashWorkflow,
@@ -12,6 +12,7 @@ import type {
 export const COMPOSER_CREATE_ICONS = {
   image: Image,
   presentation: Presentation,
+  document: FileText,
 } as const;
 
 export function slashWorkflowOptionId(workflowId: string): string {

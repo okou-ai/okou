@@ -1788,6 +1788,7 @@
       "create": {
         "addStyle": "Aggiungi stile",
         "addTemplate": "Aggiungi modello",
+        "documentPlaceholder": "Cosa vorresti includere nel tuo documento?",
         "imagePlaceholder": "Descrivi l’immagine che vuoi creare…",
         "presentationPlaceholder": "Di cosa tratta la tua presentazione?",
         "slideCount": "Numero di diapositive",
@@ -2285,6 +2286,24 @@
     "taskChips": {
       "chooseTask": "Scegli un’attività",
       "ideas": {
+        "document": {
+          "contract": {
+            "label": "Redigere un contratto per un nuovo cliente",
+            "prompt": "Redigere un contratto per un nuovo cliente"
+          },
+          "creativeBrief": {
+            "label": "Scrivere un brief creativo per un lancio",
+            "prompt": "Scrivere un brief creativo per un lancio"
+          },
+          "invoice": {
+            "label": "Creare una fattura dettagliata",
+            "prompt": "Creare una fattura dettagliata"
+          },
+          "serviceAgreement": {
+            "label": "Delineare un accordo di servizi",
+            "prompt": "Delineare un accordo di servizi"
+          }
+        },
         "image": {
           "birthdayInvitation": {
             "label": "Progettare un invito di compleanno",
@@ -2470,6 +2489,7 @@
       "shelf": {
         "browseStyles": "Sfoglia tutti gli stili",
         "browseTemplates": "Sfoglia tutti i modelli",
+        "document": "Modelli di documenti",
         "image": "Stili immagine",
         "nextPage": "Pagina successiva",
         "previousPage": "Pagina precedente",
@@ -2477,6 +2497,7 @@
         "workflows": "Flussi di lavoro"
       },
       "tasks": {
+        "document": "Documento",
         "image": "Immagine",
         "presentation": "Diapositive",
         "suggestions": "Suggerimenti",

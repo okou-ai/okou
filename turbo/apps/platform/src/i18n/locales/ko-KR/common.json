@@ -1756,6 +1756,7 @@
       "create": {
         "addStyle": "스타일 추가",
         "addTemplate": "템플릿 추가",
+        "documentPlaceholder": "문서에 어떤 내용을 포함하고 싶으신가요?",
         "imagePlaceholder": "만들고 싶은 이미지를 설명하세요…",
         "presentationPlaceholder": "프레젠테이션의 주제는 무엇인가요?",
         "slideCount": "슬라이드 수",
@@ -2226,6 +2227,24 @@
     "taskChips": {
       "chooseTask": "작업 선택",
       "ideas": {
+        "document": {
+          "contract": {
+            "label": "새 고객을 위한 계약서 초안 작성",
+            "prompt": "새 고객을 위한 계약서 초안 작성"
+          },
+          "creativeBrief": {
+            "label": "출시를 위한 크리에이티브 브리프 작성",
+            "prompt": "출시를 위한 크리에이티브 브리프 작성"
+          },
+          "invoice": {
+            "label": "항목별 청구서 작성",
+            "prompt": "항목별 청구서 작성"
+          },
+          "serviceAgreement": {
+            "label": "서비스 계약 개요 작성",
+            "prompt": "서비스 계약 개요 작성"
+          }
+        },
         "image": {
           "birthdayInvitation": {
             "label": "생일 초대장 디자인하기",
@@ -2411,6 +2430,7 @@
       "shelf": {
         "browseStyles": "모든 스타일 보기",
         "browseTemplates": "모든 템플릿 보기",
+        "document": "문서 템플릿",
         "image": "이미지 스타일",
         "nextPage": "다음 페이지",
         "previousPage": "이전 페이지",
@@ -2418,6 +2438,7 @@
         "workflows": "워크플로"
       },
       "tasks": {
+        "document": "문서",
         "image": "이미지",
         "presentation": "슬라이드",
         "suggestions": "제안",

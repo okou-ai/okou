@@ -1756,6 +1756,7 @@
       "create": {
         "addStyle": "添加风格",
         "addTemplate": "添加模板",
+        "documentPlaceholder": "你希望文档包含哪些内容？",
         "imagePlaceholder": "描述你想生成的图片…",
         "presentationPlaceholder": "你的演示文稿要讲什么？",
         "slideCount": "幻灯片数量",
@@ -2226,6 +2227,24 @@
     "taskChips": {
       "chooseTask": "选择任务",
       "ideas": {
+        "document": {
+          "contract": {
+            "label": "为新客户起草合同",
+            "prompt": "为新客户起草合同"
+          },
+          "creativeBrief": {
+            "label": "为发布活动撰写创意简报",
+            "prompt": "为发布活动撰写创意简报"
+          },
+          "invoice": {
+            "label": "创建明细发票",
+            "prompt": "创建明细发票"
+          },
+          "serviceAgreement": {
+            "label": "拟定服务协议",
+            "prompt": "拟定服务协议"
+          }
+        },
         "image": {
           "birthdayInvitation": {
             "label": "设计一张生日邀请函",
@@ -2411,6 +2430,7 @@
       "shelf": {
         "browseStyles": "浏览全部风格",
         "browseTemplates": "浏览全部模板",
+        "document": "文档模板",
         "image": "图片风格",
         "nextPage": "下一页",
         "previousPage": "上一页",
@@ -2418,6 +2438,7 @@
         "workflows": "工作流"
       },
       "tasks": {
+        "document": "文档",
         "image": "图片",
         "presentation": "演示文稿",
         "suggestions": "建议",

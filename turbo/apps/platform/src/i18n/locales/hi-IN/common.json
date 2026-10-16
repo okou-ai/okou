@@ -1759,6 +1759,7 @@
       "create": {
         "addStyle": "शैली जोड़ें",
         "addTemplate": "टेम्पलेट जोड़ें",
+        "documentPlaceholder": "आप अपने दस्तावेज़ में क्या शामिल करना चाहते हैं?",
         "imagePlaceholder": "आप जो छवि बनाना चाहते हैं उसका वर्णन करें…",
         "presentationPlaceholder": "आपकी प्रस्तुति का विषय क्या है?",
         "slideCount": "स्लाइड की संख्या",
@@ -2237,6 +2238,24 @@
     "taskChips": {
       "chooseTask": "काम चुनें",
       "ideas": {
+        "document": {
+          "contract": {
+            "label": "नए ग्राहक के लिए अनुबंध का मसौदा बनाएँ",
+            "prompt": "नए ग्राहक के लिए अनुबंध का मसौदा बनाएँ"
+          },
+          "creativeBrief": {
+            "label": "लॉन्च के लिए क्रिएटिव ब्रीफ़ लिखें",
+            "prompt": "लॉन्च के लिए क्रिएटिव ब्रीफ़ लिखें"
+          },
+          "invoice": {
+            "label": "मदवार इनवॉइस बनाएँ",
+            "prompt": "मदवार इनवॉइस बनाएँ"
+          },
+          "serviceAgreement": {
+            "label": "सेवा समझौते की रूपरेखा बनाएँ",
+            "prompt": "सेवा समझौते की रूपरेखा बनाएँ"
+          }
+        },
         "image": {
           "birthdayInvitation": {
             "label": "जन्मदिन का निमंत्रण डिज़ाइन करें",
@@ -2422,6 +2441,7 @@
       "shelf": {
         "browseStyles": "सभी शैलियाँ देखें",
         "browseTemplates": "सभी टेम्पलेट देखें",
+        "document": "दस्तावेज़ टेम्पलेट",
         "image": "चित्र शैलियाँ",
         "nextPage": "अगला पृष्ठ",
         "previousPage": "पिछला पृष्ठ",
@@ -2429,6 +2449,7 @@
         "workflows": "वर्कफ़्लो"
       },
       "tasks": {
+        "document": "दस्तावेज़",
         "image": "चित्र",
         "presentation": "स्लाइड",
         "suggestions": "सुझाव",

@@ -1,4 +1,8 @@
 import { command, computed, state } from "ccstate";
+import {
+  DOCUMENT_TEMPLATE_ITEMS,
+  type DocumentTemplateCategory,
+} from "@okouai/core/document-template-items";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ComposerTemplateAttachment } from "./tiptap-workflow-composer.ts";
 import {
@@ -23,13 +27,12 @@ export type ComposerIdeaTask = Exclude<
 /** The tasks whose ideas render as a prompt row; workflow has its own surface. */
 export type ComposerPromptRowTask = Exclude<ComposerIdeaTask, "workflow">;
 /**
- * The tasks served by the shared cover shelf. Presentation has ideas but not
- * this shelf: its catalog carries uploaded decks and an import tile, so it
- * builds its own row.
+ * The tasks served by the shared cover shelf. Presentation owns its import
+ * tile, while Document owns its purpose filters; both build their own rows.
  */
 export type ComposerTemplateTask = Exclude<
   ComposerPromptRowTask,
-  "presentation"
+  "presentation" | "document"
 >;
 
 /** A general task owns the chip row itself; the rest resolve to a create mode. */
@@ -44,6 +47,26 @@ function isComposerGeneralTask(
   );
 }
 
+function createDocumentCategorySignals() {
+  const internalDocumentCategory$ =
+    state<DocumentTemplateCategory>("creative-brief");
+  const documentCategory$ = computed((get) => {
+    return get(internalDocumentCategory$);
+  });
+  const documentItems$ = computed((get) => {
+    const category = get(documentCategory$);
+    return DOCUMENT_TEMPLATE_ITEMS.filter((item) => {
+      return item.category === category;
+    });
+  });
+  const setDocumentCategory$ = command(
+    ({ set }, category: DocumentTemplateCategory) => {
+      set(internalDocumentCategory$, category);
+    },
+  );
+  return { documentCategory$, documentItems$, setDocumentCategory$ };
+}
+
 export function createComposerTaskChipsSignals(
   create: ComposerCreateSignals,
   workflowActions: WorkflowRecommendationActions,
@@ -52,6 +75,8 @@ export function createComposerTaskChipsSignals(
     "workflow" | "website" | "visualization" | "suggestions" | null
   >(null);
   const visualization = createComposerVisualizationSignals();
+  const { documentCategory$, documentItems$, setDocumentCategory$ } =
+    createDocumentCategorySignals();
   /** The task selected through the chip row, slash panel or template picker. */
   const task$ = computed((get): ComposerTask | null => {
     return get(create.mode$) ?? get(internalGeneralTask$);
@@ -120,6 +145,7 @@ export function createComposerTaskChipsSignals(
       set(workflowActions.insertTemplate$, template, attachment);
       if (
         type === "presentation" ||
+        type === "document" ||
         type === "illustration" ||
         type === "website" ||
         type === "workflow"
@@ -175,6 +201,9 @@ export function createComposerTaskChipsSignals(
     bindRail$,
     workflows,
     visualization,
+    documentCategory$,
+    documentItems$,
+    setDocumentCategory$,
   };
 }
 

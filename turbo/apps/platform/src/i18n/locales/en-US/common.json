@@ -1759,6 +1759,7 @@
       "create": {
         "addStyle": "Add style",
         "addTemplate": "Add template",
+        "documentPlaceholder": "What would you like to include in your document?",
         "imagePlaceholder": "Describe the image you want to create…",
         "presentationPlaceholder": "What is your presentation about?",
         "slideCount": "Slide count",
@@ -2237,6 +2238,24 @@
     "taskChips": {
       "chooseTask": "Choose a task",
       "ideas": {
+        "document": {
+          "contract": {
+            "label": "Draft a contract for a new client",
+            "prompt": "Draft a contract for a new client"
+          },
+          "creativeBrief": {
+            "label": "Write a creative brief for a launch",
+            "prompt": "Write a creative brief for a launch"
+          },
+          "invoice": {
+            "label": "Create an itemized invoice",
+            "prompt": "Create an itemized invoice"
+          },
+          "serviceAgreement": {
+            "label": "Outline a service agreement",
+            "prompt": "Outline a service agreement"
+          }
+        },
         "image": {
           "birthdayInvitation": {
             "label": "Design a birthday invitation",
@@ -2422,6 +2441,7 @@
       "shelf": {
         "browseStyles": "Browse all styles",
         "browseTemplates": "Browse all templates",
+        "document": "Document templates",
         "image": "Image styles",
         "nextPage": "Next page",
         "previousPage": "Previous page",
@@ -2429,6 +2449,7 @@
         "workflows": "Workflows"
       },
       "tasks": {
+        "document": "Document",
         "image": "Image",
         "presentation": "Presentation",
         "suggestions": "Suggestions",

@@ -286,6 +286,7 @@ import {
 import {
   defaultPresentationTemplateThemeId,
   presentationTemplateColorSystemId,
+  toDocumentGenerationTemplate,
   toIllustrationGenerationTemplate,
   toPresentationGenerationTemplate,
   toWebsiteGenerationTemplate,
@@ -5107,10 +5108,7 @@ function TemplatePickerDialogFrame({
             signals={signals}
             item={documentPreview}
             onSelect={(item) => {
-              onChange({
-                type: "document",
-                selection: { documentTemplateId: item.id },
-              });
+              onChange(toDocumentGenerationTemplate(item));
               onClose();
             }}
           />
@@ -5421,10 +5419,7 @@ function TemplatePickerDialog({
                     handleSelectImportedPresentation
                   }
                   onSelectDocument={(item) => {
-                    onChange({
-                      type: "document",
-                      selection: { documentTemplateId: item.id },
-                    });
+                    onChange(toDocumentGenerationTemplate(item));
                     closeTemplatePicker();
                   }}
                   onSelectCustom={handleSelectCustom}

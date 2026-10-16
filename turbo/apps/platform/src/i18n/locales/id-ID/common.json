@@ -1756,6 +1756,7 @@
       "create": {
         "addStyle": "Tambahkan gaya",
         "addTemplate": "Tambahkan templat",
+        "documentPlaceholder": "Apa yang ingin Anda sertakan dalam dokumen?",
         "imagePlaceholder": "Jelaskan gambar yang ingin Anda buat…",
         "presentationPlaceholder": "Apa topik presentasi Anda?",
         "slideCount": "Jumlah slide",
@@ -2226,6 +2227,24 @@
     "taskChips": {
       "chooseTask": "Pilih tugas",
       "ideas": {
+        "document": {
+          "contract": {
+            "label": "Buat draf kontrak untuk klien baru",
+            "prompt": "Buat draf kontrak untuk klien baru"
+          },
+          "creativeBrief": {
+            "label": "Tulis arahan kreatif untuk peluncuran",
+            "prompt": "Tulis arahan kreatif untuk peluncuran"
+          },
+          "invoice": {
+            "label": "Buat faktur terperinci",
+            "prompt": "Buat faktur terperinci"
+          },
+          "serviceAgreement": {
+            "label": "Susun kerangka perjanjian layanan",
+            "prompt": "Susun kerangka perjanjian layanan"
+          }
+        },
         "image": {
           "birthdayInvitation": {
             "label": "Desain undangan ulang tahun",
@@ -2411,6 +2430,7 @@
       "shelf": {
         "browseStyles": "Jelajahi semua gaya",
         "browseTemplates": "Jelajahi semua templat",
+        "document": "Templat dokumen",
         "image": "Gaya gambar",
         "nextPage": "Halaman berikutnya",
         "previousPage": "Halaman sebelumnya",
@@ -2418,6 +2438,7 @@
         "workflows": "Alur kerja"
       },
       "tasks": {
+        "document": "Dokumen",
         "image": "Gambar",
         "presentation": "Slide",
         "suggestions": "Saran",

@@ -12,6 +12,8 @@ import { useEditorState } from "@tiptap/react";
 import { Popover, useMediaQuery, type KeyboardEventLike } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import type { ComposerAgentSuggestion } from "../../signals/okou-page/composer-agent-suggestion-domain.ts";
 import type { ComposerChatThreadSuggestion } from "../../signals/okou-page/chat-thread-suggestion-domain.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
@@ -329,6 +331,7 @@ interface ComposerSuggestionMenuState {
  */
 const SLASH_TEMPLATE_CATEGORY_TASK = {
   slides: "presentation",
+  document: "document",
   illustration: "image",
   website: "website",
 } as const satisfies Record<SlashTemplateCategory, ComposerTask>;
@@ -338,11 +341,16 @@ function useSlashTemplateCategorySuggestions(
   query: string | undefined,
 ): readonly SlashTemplateCategory[] {
   useTranslation();
+  const documentTemplatesEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.BuiltinDocumentTemplates] === true;
   if (query === undefined) {
     return [];
   }
   const normalized = query.toLowerCase().trim();
   return SLASH_TEMPLATE_CATEGORIES.filter((category) => {
+    if (category === "document" && !documentTemplatesEnabled) {
+      return false;
+    }
     return slashTemplateCategoryLabel(category)
       .toLowerCase()
       .includes(normalized);

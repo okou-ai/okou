@@ -3,6 +3,10 @@
 // template a message carries, so both surfaces select the same thing, and it
 // derives the small preview model the slash panel renders.
 import {
+  DOCUMENT_TEMPLATE_ITEMS,
+  type DocumentTemplateItem,
+} from "@okouai/core/document-template-items";
+import {
   ILLUSTRATION_TEMPLATE_ITEMS,
   type IllustrationTemplateItem,
 } from "@okouai/core/illustration-template-items";
@@ -64,8 +68,17 @@ export function toWebsiteGenerationTemplate(
   };
 }
 
+export function toDocumentGenerationTemplate(
+  item: DocumentTemplateItem,
+): GenerationTemplateRequest {
+  return {
+    type: "document",
+    selection: { documentTemplateId: item.id },
+  };
+}
+
 /**
- * The three things the slash panel's Make group indexes. These are the template
+ * The creation types the slash panel's Make group indexes. These are the template
  * picker's own categories, so opening the picker from a row lands on the same
  * tab.
  * Workflow is not one either — the panel lists the agent's own workflows right
@@ -74,6 +87,7 @@ export function toWebsiteGenerationTemplate(
  */
 export const SLASH_TEMPLATE_CATEGORIES = [
   "slides",
+  "document",
   "illustration",
   "website",
 ] as const;
@@ -81,8 +95,7 @@ export const SLASH_TEMPLATE_CATEGORIES = [
 export type SlashTemplateCategory = (typeof SLASH_TEMPLATE_CATEGORIES)[number];
 
 /** The catalogs that carry cover art, so they can fill a pane or a shelf. */
-export type SlashTemplatePreviewCategory =
-  "slides" | "illustration" | "website";
+export type SlashTemplatePreviewCategory = SlashTemplateCategory;
 
 /**
  * Covers render two across the 400px slash pane, about 180px each, and 200px
@@ -105,7 +118,10 @@ const SLASH_TEMPLATE_NATIVE_COVER_SIZE = { width: 416 } as const;
  * keeps only 37% of its height in a 16:9 box. A deck cover, by contrast, is a
  * slide and genuinely is 16:9.
  */
-const SLASH_TEMPLATE_NATIVE_ASPECT_CATEGORIES = ["illustration"] as const;
+const SLASH_TEMPLATE_NATIVE_ASPECT_CATEGORIES = [
+  "illustration",
+  "document",
+] as const;
 
 export function isSlashTemplateNativeAspectCategory(
   category: SlashTemplatePreviewCategory,
@@ -189,6 +205,21 @@ function websitePreview(item: WebsiteTemplateItem): SlashTemplatePreview {
   };
 }
 
+function documentPreview(item: DocumentTemplateItem): SlashTemplatePreview {
+  return {
+    slug: item.slug,
+    title: item.title,
+    coverUrl: nativeCoverUrl(item.previewImageUrl),
+    aspect: { width: 210, height: 297 },
+    template: toDocumentGenerationTemplate(item),
+    attachment: {
+      type: "document",
+      title: item.title,
+      category: "document",
+    },
+  };
+}
+
 /**
  * The whole category, in catalog order — the same curated order the picker
  * dialog leads with, since the client has no usage signal to rank by. Both
@@ -200,6 +231,9 @@ export function slashTemplatePreviews(
   category: SlashTemplatePreviewCategory,
 ): readonly SlashTemplatePreview[] {
   switch (category) {
+    case "document": {
+      return DOCUMENT_TEMPLATE_ITEMS.map(documentPreview);
+    }
     case "slides": {
       return PRESENTATION_TEMPLATE_PICKER_ITEMS.map(presentationPreview);
     }

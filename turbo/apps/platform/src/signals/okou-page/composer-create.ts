@@ -1,9 +1,11 @@
 import { command, computed, state } from "ccstate";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { i18n } from "../../i18n/index.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 import type { WorkflowComposerSignals } from "./tiptap-workflow-composer.ts";
 import type { ComposerUiSignalGroups } from "./chat-composer.ts";
 
-const COMPOSER_CREATE_MODES = ["presentation", "image"] as const;
+const COMPOSER_CREATE_MODES = ["presentation", "document", "image"] as const;
 
 export const PRESENTATION_SLIDE_COUNTS = [
   "auto",
@@ -20,6 +22,11 @@ export type ComposerCreateMode = (typeof COMPOSER_CREATE_MODES)[number];
 
 export function composerCreatePlaceholder(mode: ComposerCreateMode): string {
   switch (mode) {
+    case "document": {
+      return i18n.t(($) => {
+        return $.chat.composer.create.documentPlaceholder;
+      });
+    }
     case "image": {
       return i18n.t(($) => {
         return $.chat.composer.create.imagePlaceholder;
@@ -55,7 +62,11 @@ export function createComposerCreateSignals(
   const { presentationSlideCount$, setPresentationSlideCount$ } =
     createPresentationSlideCountSignals();
   const mode$ = computed((get) => {
-    return get(internalMode$);
+    const mode = get(internalMode$);
+    return mode === "document" &&
+      get(featureSwitch$)[FeatureSwitchKey.BuiltinDocumentTemplates] !== true
+      ? null
+      : mode;
   });
   const setMode$ = command(
     ({ set }, mode: ComposerCreateMode | null, focus = true) => {
