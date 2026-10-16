@@ -9,6 +9,16 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.743.2](https://github.com/okou-ai/okou/compare/api-v1.743.1...api-v1.743.2) (2026-10-16)
+
+
+### Refactoring
+
+* **api:** own allocation preview billing read ([#40484](https://github.com/okou-ai/okou/issues/40484)) ([2efbad9](https://github.com/okou-ai/okou/commit/2efbad9ffe46cfd736224105bd1bbc330035cfba)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** retire tx-0212 removed automation transaction ([#40490](https://github.com/okou-ai/okou/issues/40490)) ([2b2cbb7](https://github.com/okou-ai/okou/commit/2b2cbb776bc9bd59b8e37247676cd52fcd0edac7))
+* **api:** retire tx-0221 failed maintenance transaction ([#40486](https://github.com/okou-ai/okou/issues/40486)) ([05c2553](https://github.com/okou-ai/okou/commit/05c2553c8493f46c8e8ce1384516e93d22425ae3))
+* own stripe delivery projection repair ([#40487](https://github.com/okou-ai/okou/issues/40487)) ([333851a](https://github.com/okou-ai/okou/commit/333851a6a6ed7490bb993a3080a6f01a37ad666e)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+
 ## [1.743.1](https://github.com/okou-ai/okou/compare/api-v1.743.0...api-v1.743.1) (2026-10-15)
 
 
