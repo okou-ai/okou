@@ -1732,6 +1732,7 @@
       "create": {
         "addStyle": "新增風格",
         "addTemplate": "新增模板",
+        "documentPlaceholder": "你希望文件包含哪些內容？",
         "imagePlaceholder": "描述你想生成的圖片…",
         "presentationPlaceholder": "你的簡報要講什麼？",
         "slideCount": "投影片數量",
@@ -2227,6 +2228,24 @@
     "taskChips": {
       "chooseTask": "選擇任務",
       "ideas": {
+        "document": {
+          "contract": {
+            "label": "為新客戶起草合約",
+            "prompt": "為新客戶起草合約"
+          },
+          "creativeBrief": {
+            "label": "為發表活動撰寫創意簡報",
+            "prompt": "為發表活動撰寫創意簡報"
+          },
+          "invoice": {
+            "label": "建立明細發票",
+            "prompt": "建立明細發票"
+          },
+          "serviceAgreement": {
+            "label": "擬定服務協議",
+            "prompt": "擬定服務協議"
+          }
+        },
         "image": {
           "birthdayInvitation": {
             "label": "設計一張生日邀請函",
@@ -2412,6 +2431,7 @@
       "shelf": {
         "browseStyles": "瀏覽全部風格",
         "browseTemplates": "瀏覽全部模板",
+        "document": "文件模板",
         "image": "圖片風格",
         "nextPage": "下一頁",
         "previousPage": "上一頁",
@@ -2419,6 +2439,7 @@
         "workflows": "工作流"
       },
       "tasks": {
+        "document": "文件",
         "image": "圖片",
         "presentation": "簡報",
         "suggestions": "建議",

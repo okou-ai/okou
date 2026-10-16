@@ -52,6 +52,12 @@ async function setup(enabled = true) {
 
 test("Document remains hidden when its rollout switch is off", async () => {
   const { user } = await setup(false);
+  const tasks = screen.getByRole("group", { name: "Choose a task" });
+  expect(within(tasks).queryByText("Document")).not.toBeInTheDocument();
+  await fill(await findComposerEditor(), "/doc");
+  const menu = await screen.findByTestId("slash-workflow-menu");
+  expect(within(menu).queryByText("Document")).not.toBeInTheDocument();
+  await user.keyboard("{Escape}");
   const dialog = await openTemplatePicker(user);
   expect(
     queryAllByRoleFast("tab", dialog).map((tab) => {
@@ -129,6 +135,9 @@ test("Using a document template preserves the draft until the user sends it", as
   );
   expect(composerInlineTemplates()).toHaveLength(1);
   expect(composerInlineTemplates()[0]).toHaveTextContent("Simple invoice");
+  expect(
+    control(document.body, "button", "Remove Document"),
+  ).toBeInTheDocument();
   expect(capture.sentMessages).toHaveLength(0);
   click(await findComposerEditor());
   await user.keyboard("{Enter}");
@@ -143,6 +152,127 @@ test("Using a document template preserves the draft until the user sends it", as
       selection: { documentTemplateId: "document-template:simple-invoice" },
     },
   });
+});
+
+test("Document purposes are directly selectable without losing the draft or selected template", async () => {
+  const { user, capture } = await setup();
+  const editor = await findComposerEditor();
+  await fill(editor, "Prepare the invoice for my client.");
+  click(
+    control(
+      screen.getByRole("group", { name: "Choose a task" }),
+      "button",
+      "Document",
+    ),
+  );
+  const shelf = await screen.findByRole("group", {
+    name: "Document templates",
+  });
+  const categories = within(shelf).getByRole("group", {
+    name: "Document category",
+  });
+  expect(control(categories, "button", "Creative brief")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(within(categories).queryByText("All")).not.toBeInTheDocument();
+  expect(within(categories).queryByText("More")).not.toBeInTheDocument();
+  expect(within(categories).queryByRole("combobox")).not.toBeInTheDocument();
+  click(control(categories, "button", "Invoice"));
+  expect(control(categories, "button", "Invoice")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(within(shelf).getAllByLabelText(/^Use template /u)).toHaveLength(7);
+  click(control(shelf, "button", "Use template Itemized invoice"));
+  expect(composerInlineTemplates()[0]).toHaveTextContent("Itemized invoice");
+  click(control(categories, "button", "Reports"));
+  expect(within(shelf).getAllByLabelText(/^Use template /u)).toHaveLength(5);
+  expect(
+    control(shelf, "button", "Use template Two-column report"),
+  ).toBeInTheDocument();
+  expect(editor).toHaveTextContent("Prepare the invoice for my client.");
+  expect(composerInlineTemplates()[0]).toHaveTextContent("Itemized invoice");
+  expect(capture.sentMessages).toHaveLength(0);
+  click(control(shelf, "button", "More templates"));
+  const dialog = await screen.findByRole("dialog");
+  expect(control(dialog, "button", "Reports")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(within(dialog).getAllByLabelText(/^Preview /u)).toHaveLength(5);
+  await user.keyboard("{Escape}");
+  click(control(document.body, "button", "Remove Document"));
+  await screen.findByRole("group", { name: "Choose a task" });
+  expect(editor).toHaveTextContent("Prepare the invoice for my client.");
+  expect(composerInlineTemplates()[0]).toHaveTextContent("Itemized invoice");
+});
+
+test("Slash Document opens its picker with the keyboard", async () => {
+  const { user, capture } = await setup();
+  const editor = await findComposerEditor();
+  await fill(editor, "Keep this draft /doc");
+  const menu = await screen.findByTestId("slash-workflow-menu");
+  expect(control(menu, "button", "Document")).toBeInTheDocument();
+  await user.keyboard("{ArrowDown}{Enter}");
+  const dialog = await screen.findByRole("dialog");
+  expect(control(dialog, "tab", "Document")).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  expect(editor).toHaveTextContent("Keep this draft");
+  expect(editor).not.toHaveTextContent("/doc");
+  await user.keyboard("{Escape}");
+  expect(
+    control(document.body, "button", "Remove Document"),
+  ).toBeInTheDocument();
+  expect(capture.sentMessages).toHaveLength(0);
+});
+
+test("A slash document cover attaches its template and keeps the draft", async () => {
+  const { user, capture } = await setup();
+  const editor = await findComposerEditor();
+  await fill(editor, "Keep this draft /doc");
+  const menu = await screen.findByTestId("slash-workflow-menu");
+  await user.hover(control(menu, "button", "Document"));
+  const previews = await within(menu).findByRole("region", {
+    name: "Document",
+  });
+  click(control(previews, "button", "Use template Itemized invoice"));
+  expect(editor).toHaveTextContent("Keep this draft");
+  expect(editor).not.toHaveTextContent("/doc");
+  expect(composerInlineTemplates()[0]).toHaveTextContent("Itemized invoice");
+  expect(
+    control(document.body, "button", "Remove Document"),
+  ).toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(capture.sentMessages).toHaveLength(0);
+});
+
+test("Document sends its creation intent and keeps its task chip in the new thread", async () => {
+  const { capture } = await setup();
+  const editor = await findComposerEditor();
+  click(
+    control(
+      screen.getByRole("group", { name: "Choose a task" }),
+      "button",
+      "Document",
+    ),
+  );
+  await fill(editor, "Prepare a project brief.");
+  click(control(document.body, "button", "Send"));
+  await waitFor(() => {
+    expect(capture.sentMessages).toHaveLength(1);
+  });
+  expect(capture.runPrompts).toStrictEqual(["Prepare a project brief."]);
+  expect(capture.sentMessages[0]?.parts).toContainEqual({
+    type: "additional_info",
+    text: "Create a document.",
+  });
+  await findComposerEditor();
+  expect(
+    control(document.body, "button", "Remove Document"),
+  ).toBeInTheDocument();
 });
 
 test("Document failed preview pages can be retried", async () => {

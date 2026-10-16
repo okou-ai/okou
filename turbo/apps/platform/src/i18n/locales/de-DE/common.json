@@ -1735,6 +1735,7 @@
       "create": {
         "addStyle": "Stil hinzufügen",
         "addTemplate": "Vorlage hinzufügen",
+        "documentPlaceholder": "Was möchtest du in deinem Dokument festhalten?",
         "imagePlaceholder": "Beschreibe das gewünschte Bild…",
         "presentationPlaceholder": "Worum geht es in deiner Präsentation?",
         "slideCount": "Folienanzahl",
@@ -2238,6 +2239,24 @@
     "taskChips": {
       "chooseTask": "Aufgabe wählen",
       "ideas": {
+        "document": {
+          "contract": {
+            "label": "Einen Vertrag für einen neuen Kunden entwerfen",
+            "prompt": "Einen Vertrag für einen neuen Kunden entwerfen"
+          },
+          "creativeBrief": {
+            "label": "Ein Kreativbriefing für eine Markteinführung schreiben",
+            "prompt": "Ein Kreativbriefing für eine Markteinführung schreiben"
+          },
+          "invoice": {
+            "label": "Eine Rechnung mit Einzelpositionen erstellen",
+            "prompt": "Eine Rechnung mit Einzelpositionen erstellen"
+          },
+          "serviceAgreement": {
+            "label": "Eine Dienstleistungsvereinbarung skizzieren",
+            "prompt": "Eine Dienstleistungsvereinbarung skizzieren"
+          }
+        },
         "image": {
           "birthdayInvitation": {
             "label": "Eine Geburtstagseinladung gestalten",
@@ -2423,6 +2442,7 @@
       "shelf": {
         "browseStyles": "Alle Stile durchsuchen",
         "browseTemplates": "Alle Vorlagen durchsuchen",
+        "document": "Dokumentvorlagen",
         "image": "Bildstile",
         "nextPage": "Nächste Seite",
         "previousPage": "Vorherige Seite",
@@ -2430,6 +2450,7 @@
         "workflows": "Workflows"
       },
       "tasks": {
+        "document": "Dokument",
         "image": "Bild",
         "presentation": "Folien",
         "suggestions": "Vorschläge",

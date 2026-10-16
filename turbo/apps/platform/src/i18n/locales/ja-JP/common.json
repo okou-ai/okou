@@ -1732,6 +1732,7 @@
       "create": {
         "addStyle": "スタイルを追加",
         "addTemplate": "テンプレートを追加",
+        "documentPlaceholder": "ドキュメントにどのような内容を含めますか？",
         "imagePlaceholder": "作成したい画像を説明してください…",
         "presentationPlaceholder": "プレゼンテーションのテーマは何ですか？",
         "slideCount": "スライド数",
@@ -2227,6 +2228,24 @@
     "taskChips": {
       "chooseTask": "タスクを選ぶ",
       "ideas": {
+        "document": {
+          "contract": {
+            "label": "新しいクライアント向けの契約書を作成",
+            "prompt": "新しいクライアント向けの契約書を作成"
+          },
+          "creativeBrief": {
+            "label": "新製品発表のクリエイティブブリーフを作成",
+            "prompt": "新製品発表のクリエイティブブリーフを作成"
+          },
+          "invoice": {
+            "label": "明細付きの請求書を作成",
+            "prompt": "明細付きの請求書を作成"
+          },
+          "serviceAgreement": {
+            "label": "サービス契約書の概要を作成",
+            "prompt": "サービス契約書の概要を作成"
+          }
+        },
         "image": {
           "birthdayInvitation": {
             "label": "誕生日の招待状をデザインする",
@@ -2412,6 +2431,7 @@
       "shelf": {
         "browseStyles": "すべてのスタイルを見る",
         "browseTemplates": "すべてのテンプレートを見る",
+        "document": "ドキュメントのテンプレート",
         "image": "画像スタイル",
         "nextPage": "次のページ",
         "previousPage": "前のページ",
@@ -2419,6 +2439,7 @@
         "workflows": "ワークフロー"
       },
       "tasks": {
+        "document": "ドキュメント",
         "image": "画像",
         "presentation": "スライド",
         "suggestions": "提案",

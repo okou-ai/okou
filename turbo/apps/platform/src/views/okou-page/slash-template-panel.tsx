@@ -4,6 +4,7 @@
 import type { ComponentProps } from "react";
 import {
   ChevronRight,
+  FileText,
   Globe,
   Image,
   LayoutGrid,
@@ -28,6 +29,7 @@ import {
 // gutters are `p-1` (4px), so every hoverable row is `rounded-lg` (8px).
 const SLASH_TEMPLATE_CATEGORY_ICONS = {
   slides: Presentation,
+  document: FileText,
   illustration: Image,
   website: Globe,
 } as const satisfies Record<SlashTemplateCategory, typeof Presentation>;
@@ -83,6 +85,11 @@ export function slashTemplateCategoryLabel(
   category: SlashTemplateCategory,
 ): string {
   switch (category) {
+    case "document": {
+      return i18n.t(($) => {
+        return $.documentTemplates.title;
+      });
+    }
     case "slides": {
       return i18n.t(($) => {
         return $.artifacts.kinds.presentation;
@@ -157,7 +164,12 @@ function SlashTemplateCover({
           src={preview.coverUrl}
           alt=""
           loading="lazy"
-          className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.04]"
+          className={cn(
+            "h-full w-full",
+            preview.template.type === "document"
+              ? "object-contain"
+              : "object-cover transition-transform duration-200 group-hover:scale-[1.04]",
+          )}
         />
       </span>
       <span className="mt-1 block truncate text-[12px] text-muted-foreground">

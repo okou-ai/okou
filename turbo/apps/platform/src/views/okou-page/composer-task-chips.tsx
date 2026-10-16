@@ -5,6 +5,7 @@ import {
   ArrowRight,
   ChartNoAxesCombined,
   Globe,
+  FileText,
   Image,
   MessageSquare,
   Presentation,
@@ -19,6 +20,9 @@ import {
 import { AgentSuggestions } from "./agent-suggestions.tsx";
 import { cn } from "@okouai/ui/lib/utils";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { DOCUMENT_TEMPLATE_CATEGORIES } from "@okouai/core/document-template-items";
+import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
+import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import type {
@@ -39,11 +43,13 @@ import {
 } from "./composer-rail.tsx";
 import {
   slashTemplatePreviews,
+  toDocumentGenerationTemplate,
   type SlashTemplatePreviewCategory,
 } from "./composer-template-catalog.ts";
 import { useCustomTemplateRecommendations } from "./use-custom-template-recommendations.ts";
 import { ComposerWorkflowRecommendations } from "./composer-workflow-recommendations.tsx";
 import { ComposerVisualizationOptions } from "./composer-visualization-options.tsx";
+import { TemplateFilterPillRow } from "./template-filter-pill.tsx";
 
 /**
  * The task-type row. `outline` at its default size is a form button: `px-4`
@@ -97,6 +103,7 @@ const TASK_ICONS = {
   suggestions: Lightbulb,
   workflow: Route,
   presentation: Presentation,
+  document: FileText,
   image: Image,
   website: Globe,
   visualization: ChartNoAxesCombined,
@@ -138,6 +145,15 @@ const PRESENTATION_IDEAS = [
   "companyOverview",
   "eventTalk",
 ] as const;
+const DOCUMENT_IDEAS = [
+  "creativeBrief",
+  "contract",
+  "serviceAgreement",
+  "invoice",
+] as const;
+const DOCUMENT_CATEGORIES = DOCUMENT_TEMPLATE_CATEGORIES.filter((category) => {
+  return category !== "all";
+});
 const WEBSITE_IDEAS = [
   "businessSite",
   "portfolio",
@@ -181,12 +197,14 @@ function ComposerTemplateCover({
   coverUrl,
   width,
   ratio,
+  contain = false,
   onSelect,
 }: {
   readonly title: string;
   readonly coverUrl: string | null;
   readonly width: string;
   readonly ratio: string;
+  readonly contain?: boolean;
   readonly onSelect: () => void;
 }) {
   const { t } = useTranslation();
@@ -214,7 +232,12 @@ function ComposerTemplateCover({
             src={coverUrl}
             alt=""
             loading="lazy"
-            className="h-full w-full object-cover object-center transition-transform duration-200 group-hover/tile:scale-[1.04]"
+            className={cn(
+              "h-full w-full object-center",
+              contain
+                ? "object-contain"
+                : "object-cover transition-transform duration-200 group-hover/tile:scale-[1.04]",
+            )}
           />
         ) : (
           <Image size={24} aria-hidden />
@@ -366,6 +389,9 @@ function ComposerTaskIdeas({
     { returnObjects: true },
   );
   const ideas = {
+    document: DOCUMENT_IDEAS.map((key) => {
+      return copy.document[key];
+    }),
     image: IMAGE_IDEAS.map((key) => {
       return copy.image[key];
     }),
@@ -412,6 +438,106 @@ function ComposerTaskIdeas({
   );
 }
 
+function ComposerDocumentRecommendations({
+  signals,
+}: {
+  readonly signals: ComposerSignals;
+}) {
+  const { t } = useTranslation();
+  const category = useGet(signals.taskChips.documentCategory$);
+  const items = useGet(signals.taskChips.documentItems$);
+  const setCategory = useSet(signals.taskChips.setDocumentCategory$);
+  const selectTemplate = useSet(signals.taskChips.selectTemplate$);
+  const setPickerCategory = useSet(signals.template.setDocumentCategory$);
+  const openTemplates = useSet(signals.template.openTemplatePicker$);
+  const saveDraft = useSet(signals.draft.save$);
+  const pageSignal = useGet(pageSignal$);
+  const label = t(($) => {
+    return $.chat.taskChips.shelf.document;
+  });
+  return (
+    <div
+      className="flex min-w-0 flex-col gap-3"
+      role="group"
+      aria-label={label}
+    >
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <div className="flex min-w-0 items-baseline gap-2">
+          <p className="truncate text-base font-medium">{label}</p>
+          <span className="text-xs text-muted-foreground" aria-live="polite">
+            {formatLocalizedNumber(items.length)}
+          </span>
+        </div>
+        <Button
+          type="button"
+          variant="quiet"
+          size="xs"
+          className="shrink-0 gap-1.5 font-normal"
+          onClick={() => {
+            setPickerCategory(category);
+            openTemplates({ kind: "insert", category: "document" });
+          }}
+        >
+          {t(($) => {
+            return $.chat.taskChips.moreTemplates;
+          })}
+          <ArrowRight className="size-3" aria-hidden />
+        </Button>
+      </div>
+      <TemplateFilterPillRow
+        active={category}
+        label={t(($) => {
+          return $.documentTemplates.filter;
+        })}
+        pills={DOCUMENT_CATEGORIES.map((id) => {
+          return {
+            id,
+            label: t(($) => {
+              return $.documentTemplates.categories[id];
+            }),
+          };
+        })}
+        onSelect={(id) => {
+          const next = DOCUMENT_CATEGORIES.find((value) => {
+            return value === id;
+          });
+          if (next) {
+            setCategory(next);
+          }
+        }}
+      />
+      <ComposerRail
+        key={category}
+        signals={signals}
+        rail={`templates:document:${category}`}
+        gap="gap-4"
+        items={items.map((item) => {
+          return (
+            <ComposerTemplateCover
+              key={item.id}
+              title={item.title}
+              coverUrl={r2ImageTransformUrl(item.previewImageUrl, {
+                width: 284,
+              })}
+              width="w-[142px]"
+              ratio="aspect-[210/297]"
+              contain
+              onSelect={() => {
+                selectTemplate(toDocumentGenerationTemplate(item), {
+                  type: "document",
+                  title: item.title,
+                  category: "document",
+                });
+                detach(saveDraft(pageSignal), Reason.DomCallback);
+              }}
+            />
+          );
+        })}
+      />
+    </div>
+  );
+}
+
 function ComposerTaskPanel({
   signals,
   selected,
@@ -436,10 +562,17 @@ function ComposerTaskPanel({
       {selected === "workflow" && (
         <ComposerWorkflowRecommendations signals={signals} />
       )}
+      {selected === "document" && (
+        <>
+          <ComposerTaskIdeas signals={signals} task="document" />
+          <ComposerDocumentRecommendations signals={signals} />
+        </>
+      )}
       {selected === "visualization" && (
         <ComposerVisualizationOptions signals={signals} />
       )}
       {selected !== "presentation" &&
+        selected !== "document" &&
         selected !== "workflow" &&
         selected !== "visualization" && (
           <>
@@ -521,6 +654,8 @@ export function ComposerTaskChips({
   readonly signals: ComposerSignals;
 }) {
   const { t } = useTranslation();
+  const documentTemplatesEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.BuiltinDocumentTemplates] === true;
   const suggestions = useLoadable(agentSuggestionsEnabled$);
   const suggestionsEnabled =
     suggestions.state === "hasData" && suggestions.data;
@@ -547,11 +682,15 @@ export function ComposerTaskChips({
       "suggestions",
       "workflow",
       "presentation",
+      "document",
       "image",
       "website",
       "visualization",
     ] as const
   ).filter((task) => {
+    if (task === "document") {
+      return documentTemplatesEnabled;
+    }
     if (task === "suggestions") {
       return showSuggestions;
     }
