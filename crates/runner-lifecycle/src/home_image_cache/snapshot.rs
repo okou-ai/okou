@@ -175,6 +175,7 @@ impl HomeCacheStateSnapshot {
         // Omitted profiles may carry the group's newest completion or become
         // visible after this update. Reconcile instead of guessing that history.
         let needs_reconcile = inner.truncated && !updates.entries.is_empty();
+        let mut applied_keys = Vec::new();
         for (key, state) in updates.entries {
             if inner
                 .revisions
@@ -191,6 +192,11 @@ impl HomeCacheStateSnapshot {
                     inner.entries.remove(&key);
                 }
             }
+            applied_keys.push(key);
+        }
+        // Touching can roll the epoch and clear the journal. Preserve that
+        // history until every key has been checked for a newer publication.
+        for key in applied_keys {
             inner.touch(&key);
         }
         let truncated = inner.cap_entries();
@@ -544,6 +550,44 @@ mod tests {
         );
         assert_eq!(finished.states, vec![published]);
         assert!(!finished.changed);
+    }
+
+    #[test]
+    fn keyed_commit_revision_rollover_preserves_newer_confirmed_publications() {
+        let snapshot = HomeCacheStateSnapshot::new();
+        refresh_snapshot(&snapshot, Vec::new());
+        let previous_key = format!("{:064x}", MAX_HELD_HOME_STATES + 1);
+        snapshot.note_home_cache_change(&change(&[&previous_key]));
+        let keys = (0..MAX_HELD_HOME_STATES)
+            .map(|index| format!("{index:064x}"))
+            .collect::<Vec<_>>();
+        snapshot.note_home_cache_change(&HomeCacheChange {
+            observed_at: tokio::time::Instant::now(),
+            dirty_cache_keys: keys.iter().cloned().collect(),
+            requires_full_reconcile: false,
+        });
+        let pending = snapshot.begin_home_cache_refresh();
+        let outside = held_home_state("outside", "2026-06-01T00:00:02.000Z", &["vm0/default"]);
+        snapshot.upsert_home_cache_state(
+            format!("{:064x}", MAX_HELD_HOME_STATES + 2),
+            outside.clone(),
+        );
+        let published = held_home_state("published", "2026-06-01T00:00:03.000Z", &["vm0/default"]);
+        snapshot.upsert_home_cache_state(keys.last().unwrap().clone(), published.clone());
+        let finished = snapshot.finish_home_cache_key_updates(
+            pending,
+            HomeCacheKeyUpdates {
+                entries: keys.into_iter().map(|key| (key, None)).collect(),
+                busy_keys: BTreeSet::new(),
+                incomplete: false,
+            },
+        );
+        assert_eq!(
+            finished.states,
+            cap_held_home_states(vec![outside, published])
+        );
+        assert!(!finished.needs_reconcile);
+        assert!(snapshot.lock_inner().revisions.len() <= MAX_HELD_HOME_STATES);
     }
 
     #[test]
