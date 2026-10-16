@@ -283,6 +283,19 @@ impl TestRun {
     }
 
     pub(super) async fn enable_diagnostics(&mut self, runtime: &Arc<VncRuntime>) {
+        self.enable_diagnostics_token(runtime, "diagnostic-vnc-agent")
+            .await;
+    }
+
+    pub(super) async fn enable_checks(&mut self, runtime: &Arc<VncRuntime>, capabilities: &[&str]) {
+        self.enable_diagnostics_token(
+            runtime,
+            &crate::test_fixtures::check_token(self.id, capabilities),
+        )
+        .await;
+    }
+
+    async fn enable_diagnostics_token(&mut self, runtime: &Arc<VncRuntime>, token: &str) {
         self.shutdown().await;
         let (incoming, receiver) = mpsc::channel(16);
         self.incoming = incoming;
@@ -295,15 +308,37 @@ impl TestRun {
                 None,
                 Some(Arc::new(crate::diagnostics::Authority::new(
                     runtime.http_client(),
-                    "diagnostic-vnc-agent",
+                    token,
                 ))),
             ),
         );
     }
 
     pub(super) async fn passive(&self, method: &str, params: Value) -> Value {
+        self.diagnostic_rpc(method, params, None).await
+    }
+
+    pub(super) async fn active_check(&self, params: Value) -> Value {
+        self.active_check_budget(params, 60000).await
+    }
+
+    pub(super) async fn active_check_budget(&self, params: Value, remaining_ms: u64) -> Value {
+        self.diagnostic_rpc("vnc.check", params, Some(remaining_ms))
+            .await
+    }
+
+    async fn diagnostic_rpc(
+        &self,
+        method: &str,
+        params: Value,
+        remaining_ms: Option<u64>,
+    ) -> Value {
         let mut guest = self.open().await;
-        let request = json!({"version":1,"method":method,"params":params}).to_string();
+        let mut request = json!({"version":1,"method":method,"params":params});
+        if let Some(remaining_ms) = remaining_ms {
+            request["remaining_ms"] = json!(remaining_ms);
+        }
+        let request = request.to_string();
         guest.write_u32(request.len() as u32).await.unwrap();
         guest.write_all(request.as_bytes()).await.unwrap();
         let mut reader = runner_rpc_proto::ResponseReader::new(guest);

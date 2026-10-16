@@ -3,6 +3,7 @@
 mod access;
 mod authority;
 pub(crate) mod cache;
+mod check;
 mod engine;
 mod files;
 pub(crate) use files::FileFailure;
@@ -159,6 +160,7 @@ impl SshRuntime {
         Arc::new(Run {
             runtime: Arc::clone(self),
             sessions: sessions::Manager::new(Arc::clone(self), run, registration, cancel.clone()),
+            diagnostics: None,
         })
     }
 
@@ -609,9 +611,23 @@ impl Scope {
 pub(crate) struct Run {
     runtime: Arc<SshRuntime>,
     sessions: Arc<sessions::Manager>,
+    diagnostics: Option<crate::diagnostics::Handle>,
 }
 
 impl Run {
+    pub(crate) fn with_diagnostics(&self, handle: crate::diagnostics::Handle) -> Arc<Self> {
+        Arc::new(Self {
+            runtime: Arc::clone(&self.runtime),
+            sessions: Arc::clone(&self.sessions),
+            diagnostics: Some(handle),
+        })
+    }
+
+    fn diagnostics(&self) -> crate::diagnostics::Handle {
+        self.diagnostics
+            .clone()
+            .unwrap_or_else(|| self.sessions.registration.diagnostics())
+    }
     pub(crate) fn close(&self) {
         self.sessions.registration.close();
     }

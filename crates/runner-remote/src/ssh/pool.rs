@@ -88,6 +88,9 @@ pub(super) struct Lease {
 }
 
 impl Lease {
+    pub(super) fn closed(&self) -> CancellationToken {
+        self.transport.host_lease.closed.clone()
+    }
     pub(super) fn connected(&self) -> &engine::Connected {
         &self.transport.connected
     }
@@ -168,6 +171,29 @@ impl Pool {
         scope: &Scope,
         observation: &mut Attempt,
     ) -> Result<Lease, FailureReason> {
+        self.acquire_inner(runtime, request, scope, observation, false)
+            .await
+    }
+
+    pub(super) async fn acquire_fresh(
+        self: &Arc<Self>,
+        runtime: &SshRuntime,
+        request: Request,
+        scope: &Scope,
+        observation: &mut Attempt,
+    ) -> Result<Lease, FailureReason> {
+        self.acquire_inner(runtime, request, scope, observation, true)
+            .await
+    }
+
+    async fn acquire_inner(
+        self: &Arc<Self>,
+        runtime: &SshRuntime,
+        request: Request,
+        scope: &Scope,
+        observation: &mut Attempt,
+        fresh: bool,
+    ) -> Result<Lease, FailureReason> {
         use crate::diagnostics::trace::Route;
         observation
             .trace
@@ -184,7 +210,9 @@ impl Pool {
         self.prune();
         let generation = generation(&request.credential)?;
         observation.diagnostic_generation = Some(generation);
-        let found = {
+        let found = if fresh {
+            None
+        } else {
             let mut idle = self.idle.lock().unwrap_or_else(|p| p.into_inner());
             // A fresh authoritative generation cannot reuse an older idle snapshot.
             idle.retain(|entry| {

@@ -296,7 +296,48 @@ async fn dispatch(
             return;
         }
     };
-    if matches!(request.method.as_str(), "ssh.diagnose" | "vnc.diagnose") {
+    if matches!(request.method.as_str(), "ssh.check" | "vnc.check") {
+        let protocol = if request.method == "ssh.check" {
+            crate::diagnostics::Protocol::Ssh
+        } else {
+            crate::diagnostics::Protocol::Vnc
+        };
+        if !diagnostics.enabled()
+            || !diagnostics.current()
+            || !authority
+                .as_ref()
+                .is_some_and(|a| a.permits_check(run, protocol))
+        {
+            scope.error(input, ErrorCode::Unavailable).await;
+            return;
+        }
+        let request = Request {
+            input,
+            lease,
+            run,
+            started,
+            deadline: scope.deadline,
+            cancelled: scope.cancelled.clone(),
+            sandbox_cancelled: scope.sandbox_cancelled.clone(),
+            request,
+        };
+        match protocol {
+            crate::diagnostics::Protocol::Ssh => {
+                if let Some(ssh) = ssh {
+                    ssh.check(request).await;
+                } else {
+                    scope.error(request.input, ErrorCode::Unavailable).await;
+                }
+            }
+            crate::diagnostics::Protocol::Vnc => {
+                if let Some(vnc) = vnc {
+                    vnc.check(request).await;
+                } else {
+                    scope.error(request.input, ErrorCode::Unavailable).await;
+                }
+            }
+        }
+    } else if matches!(request.method.as_str(), "ssh.diagnose" | "vnc.diagnose") {
         diagnostics
             .dispatch(
                 Request {

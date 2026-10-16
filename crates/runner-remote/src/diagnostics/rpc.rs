@@ -32,6 +32,44 @@ struct Host {
 }
 
 impl Authority {
+    /// The token is from the authenticated install context, never the guest request.
+    pub(crate) fn permits_check(&self, run: runner_types::ids::RunId, protocol: Protocol) -> bool {
+        use base64::Engine;
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Claims {
+            scope: String,
+            run_id: String,
+            capabilities: Vec<String>,
+            exp: i64,
+        }
+        let Some(jwt) = self.token.strip_prefix("vm0_sandbox_") else {
+            return false;
+        };
+        let mut parts = jwt.split('.');
+        let _header = parts.next();
+        let Some(payload) = parts.next().filter(|p| p.len() <= 65536) else {
+            return false;
+        };
+        if parts.next().is_none() || parts.next().is_some() {
+            return false;
+        }
+        let Ok(bytes) = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(payload) else {
+            return false;
+        };
+        let Ok(claims) = serde_json::from_slice::<Claims>(&bytes) else {
+            return false;
+        };
+        let capability = match protocol {
+            Protocol::Ssh => "ssh:write",
+            Protocol::Vnc => "vnc:write",
+        };
+        claims.scope == "okou"
+            && claims.run_id == run.to_string()
+            && claims.exp > chrono::Utc::now().timestamp()
+            && claims.capabilities.iter().any(|c| c == capability)
+    }
+
     pub(crate) fn new(http: HttpClient, token: &str) -> Self {
         Self {
             http,
@@ -187,7 +225,7 @@ impl Handle {
             if report.configuration_created_at.is_none()
                 && (report.native.is_some()
                     || !report.dependencies.is_empty()
-                    || !unbound(report.cause))
+                    || !report.cause.is_some_and(unbound))
             {
                 return query;
             }
@@ -291,6 +329,43 @@ mod tests {
     const CREATED_AT: &str = "2026-09-01T00:00:00.123456Z";
 
     #[tokio::test]
+    async fn active_check_authority_is_bound_to_the_installed_run_execution_claims() {
+        use base64::Engine;
+        let api = MockServer::start_async().await;
+        let http = http_client(HttpClientConfig {
+            api_url: api.base_url(),
+            vercel_bypass: None,
+            client_session_id: "check-authority".into(),
+        });
+        let run = runner_types::ids::RunId::new_v4();
+        let valid = serde_json::json!({"scope":"okou","runId":run,"capabilities":["ssh:write"],"exp":chrono::Utc::now().timestamp()+3600});
+        for (field, value) in [
+            ("scope", serde_json::json!("other")),
+            (
+                "runId",
+                serde_json::json!(runner_types::ids::RunId::new_v4()),
+            ),
+            ("exp", serde_json::json!(0)),
+            ("capabilities", serde_json::json!(["ssh:read", "vnc:write"])),
+        ] {
+            let mut claims = valid.clone();
+            claims[field] = value;
+            let token = format!(
+                "vm0_sandbox_e30.{}.signature",
+                base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(claims.to_string())
+            );
+            assert!(
+                !Authority::new(http.clone(), &token).permits_check(run, Protocol::Ssh),
+                "{field}"
+            );
+        }
+        let token = crate::test_fixtures::check_token(run, &["ssh:write"]);
+        let authority = Authority::new(http, &token);
+        assert!(authority.permits_check(run, Protocol::Ssh));
+        assert!(!authority.permits_check(run, Protocol::Vnc));
+    }
+
+    #[tokio::test]
     async fn nested_evidence_requires_both_current_inventories_and_drops_provider_text() {
         let api = MockServer::start_async().await;
         let authority = Authority::new(
@@ -328,7 +403,7 @@ mod tests {
                 generation: Some(7),
                 session: None,
             },
-            cause: Cause::Vnc(crate::vnc::Failure::InvalidCredential),
+            cause: Some(Cause::Vnc(crate::vnc::Failure::InvalidCredential)),
             dependency: Some(Dependency {
                 protocol: Protocol::Ssh,
                 connection_id: ssh,
@@ -401,7 +476,7 @@ mod tests {
                 generation: Some(7),
                 session: None,
             },
-            cause: Cause::Ssh(crate::ssh::FailureReason::HostKeyMismatch),
+            cause: Some(Cause::Ssh(crate::ssh::FailureReason::HostKeyMismatch)),
             dependency: None,
             native: None,
             ssh: None,
