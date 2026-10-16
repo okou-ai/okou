@@ -42,6 +42,7 @@ pub struct Request<'a> {
     pub backing: Arc<dyn SandboxBackingProcess>,
     pub original_run: RunId,
     pub fresh: bool,
+    pub fences: bool,
 }
 
 pub async fn exercise(request: Request<'_>) -> TestResult<()> {
@@ -54,8 +55,13 @@ pub async fn exercise(request: Request<'_>) -> TestResult<()> {
         backing,
         original_run,
         fresh,
+        fences,
     } = request;
     let proof = proof.ok_or_else(|| io::Error::other("foreground requires measured owners"))?;
+    if fences {
+        super::fences::exercise(&context, inputs, source, proof, &backing).await?;
+    }
+    let first_sample = source.samples()?.len();
     let original = startup::original(&context.budget, inputs, proof).await?;
     let mut probe = foreground_probe::Probe::new(
         &context.pool,
@@ -190,7 +196,7 @@ pub async fn exercise(request: Request<'_>) -> TestResult<()> {
             "foreground_status_wait_polled": true,
             "status_held_ns": status_held_ns, "pool_released_ns": pool_released_ns,
             "status_wait_polled_ns": status_wait_polled_ns,
-            "samples": source.samples()?,
+            "samples": source.samples()?.into_iter().skip(first_sample).collect::<Vec<_>>(),
                 "reads": critical::read_evidence(&reads.borrow()), "runtime_drained": true,
             }),
         )?;

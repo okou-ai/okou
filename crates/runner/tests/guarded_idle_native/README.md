@@ -1,5 +1,37 @@
 # Guarded idle terminal fixture
 
+## Native retirement fences
+
+`native_foreground_records_retirement_fences_before_detach` first grants real
+paired retirement permissions for the original parked Guest. Each of four
+separate attempts positively polls a held pool lock and joins an actual host
+observation inside that wait. Actual elapsed expiry, reserve/restore insertion
+change, a foreign memory authority and changed coverage must return their exact
+refusal without accepting cleanup or changing the original Guest, full lease
+or final inventory revision. Unused claims are released outside the pool lock;
+the empty foreign authority is positively closed and joined.
+
+The same Guest and original P2 then run the complete Fresh/exact-reuse progress
+corpus below in fresh and matching-snapshot factories, retaining every original
+snapshot/home byte, exact backing wait, durable tail and producer/dependency
+join. Earlier grant observations remain in raw fence evidence; only actual reads
+from the foreground phase can establish its Ready progress. The ordinary Cargo
+target runs the new real-file/CLI refusal contract without KVM.
+
+Use the foreground metadata and bounded P1 invocation below with the fence test
+selected, then require both native refusals and the inherited physical proof:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/fence_report.py "$P1_OUTPUT_DIRECTORY"
+```
+
+This proves caller-orchestrated public admission and native component custody.
+Successful logical/replacement/restore/aged inventory growth and remaining
+Critical scheduling composition remain #40514 under #40412; accepted cancellation,
+provider late results and final reconciliation remain #40355. Full production
+Reactor/P2 installation, numerical relief, full/cold residency, calibrated
+envelopes, unknown template producer and OOM protection remain unverified.
+
 ## Native foreground progress
 
 `native_foreground_records_fresh_and_exact_reuse_progress` composes the actual
