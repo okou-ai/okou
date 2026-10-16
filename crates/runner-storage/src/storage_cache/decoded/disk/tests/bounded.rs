@@ -139,10 +139,7 @@ fn existing_v1_positive_entry_is_reused_without_republication() {
     fs::write(entry.join("index.json"), &index).unwrap();
     let cancel = CancellationToken::new();
     assert_eq!(
-        read(&home, "name", "v1", &cancel)
-            .unwrap()
-            .flatten()
-            .unwrap(),
+        read(&home, "name", "v1", &cancel).unwrap().unwrap(),
         files()
     );
     let replacement = vec![StorageFile {
@@ -155,10 +152,7 @@ fn existing_v1_positive_entry_is_reused_without_republication() {
     assert_eq!(fs::read(entry.join("index.json")).unwrap(), index);
     assert_eq!(fs::read(entry.join("files/nested/file")).unwrap(), b"hello");
     assert_eq!(
-        read(&home, "name", "v1", &cancel)
-            .unwrap()
-            .flatten()
-            .unwrap(),
+        read(&home, "name", "v1", &cancel).unwrap().unwrap(),
         files()
     );
 }
