@@ -1,20 +1,24 @@
-import { act, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { expect, test } from "vitest";
-import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
+import { click } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
-import { createChatEvent } from "../../../mocks/mock-helpers.ts";
-import {
-  normalizeMockChatEvents,
-  mockChatEventRows,
-} from "./chat-event-test-helpers.ts";
+import { detachedNavigateTo$ } from "../../../signals/route.ts";
 import {
   entry,
   filesButton,
+  filesTab,
   filesPath,
   listing,
   openFiles,
   setupFilesPage,
+  FILES_RUN_ID,
   type FilesReply,
 } from "./sandbox-files-test-helpers.ts";
 
@@ -142,9 +146,8 @@ test("Run completion clears files and releases demand without reconnecting", asy
   await expect(
     within(panel).findByText("workspace"),
   ).resolves.toBeInTheDocument();
-  act(() => {
-    fixture.lifecycle.completeRun();
-  });
+  fixture.setStatus("completed");
+  fireEvent(document, new Event("visibilitychange"));
   await expect(
     within(panel).findByText("Files are available while a run is active."),
   ).resolves.toBeInTheDocument();
@@ -152,16 +155,13 @@ test("Run completion clears files and releases demand without reconnecting", asy
   expect(fixture.sockets[0]?.readyState).toBe(WebSocket.CLOSED);
 });
 
-test("Replacing Files with another utility panel releases the connection", async () => {
+test("Switching from Files to Steps releases the connection", async () => {
   const fixture = await setupFilesPage(context);
   const panel = await openFiles();
   await expect(
     within(panel).findByText("workspace"),
   ).resolves.toBeInTheDocument();
-  click(filesButton("Open artifacts"));
-  await expect(
-    screen.findByTestId("thread-sidebar-artifacts"),
-  ).resolves.toBeInTheDocument();
+  click(filesTab("Steps"));
   expect(screen.queryByRole("region", { name: "Files" })).toBeNull();
   expect(fixture.sockets[0]?.readyState).toBe(WebSocket.CLOSED);
 });
@@ -183,117 +183,73 @@ test("Signing out tears down the mounted Files owner", async () => {
   expect(screen.queryByRole("region", { name: "Files" })).toBeNull();
 });
 
-test("Files follows its initiating pane and switching to the other thread releases the old peer", async () => {
+test("Navigating between Activity Runs closes the old peer and binds the exact route Run", async () => {
+  const nextRunId = "d0000000-0000-4000-a000-000000000965";
   const fixture = await setupFilesPage(context, {
-    twoThreads: true,
     handler: (_request, connection) => {
-      return listing([entry(connection === 0 ? "left.txt" : "right.txt")]);
+      return listing([
+        entry(connection === 0 ? "first-run.txt" : "second-run.txt"),
+      ]);
     },
   });
-  const [left, right] = screen.getAllByRole("region", { name: "Chat thread" });
-  if (!left || !right) {
-    throw new Error("both thread panes must be ready");
-  }
-  click(filesButton("Open files", left));
-  const panel = await screen.findByRole("region", { name: "Files" });
+  const firstPanel = await openFiles();
   await expect(
-    within(panel).findByText("left.txt"),
+    within(firstPanel).findByText("first-run.txt"),
   ).resolves.toBeInTheDocument();
-  click(filesButton("Open files", right));
-  await expect(
-    within(screen.getByRole("region", { name: "Files" })).findByText(
-      "right.txt",
-    ),
-  ).resolves.toBeInTheDocument();
-  expect(screen.queryByText("left.txt")).toBeNull();
-  expect(fixture.sockets[0]?.readyState).toBe(WebSocket.CLOSED);
-  expect(fixture.bootstraps).toStrictEqual([
-    "d0000000-0000-4000-a000-000000000964",
-    "d0000000-0000-4000-a000-000000000965",
-  ]);
-  const home = queryAllByRoleFast("link").find((link) => {
-    return link.getAttribute("href") === "/agents";
+  context.store.set(detachedNavigateTo$, "/activities/:activityRunId", {
+    pathParams: { activityRunId: nextRunId },
+    searchParams: new URLSearchParams({ tab: "files" }),
   });
-  if (!home) {
-    throw new Error("chat home navigation must exist");
-  }
-  click(home);
+  await expect(
+    screen.findByText("second-run.txt"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByText("first-run.txt")).toBeNull();
+  expect(fixture.sockets[0]?.readyState).toBe(WebSocket.CLOSED);
+  expect(fixture.bootstraps).toStrictEqual([FILES_RUN_ID, nextRunId]);
+  context.store.set(detachedNavigateTo$, "/activities/:activityRunId", {
+    pathParams: { activityRunId: nextRunId },
+  });
   await waitFor(() => {
     expect(screen.queryByRole("region", { name: "Files" })).toBeNull();
+    expect(fixture.sockets[1]?.readyState).toBe(WebSocket.CLOSED);
   });
-  expect(fixture.sockets[1]?.readyState).toBe(WebSocket.CLOSED);
 });
 
-test("An event-derived replacement Run clears the old directory and opens only the new peer", async () => {
+test("Late directory navigation from the previous Activity cannot replace a new Run's home", async () => {
+  const response = createDeferredPromise<FilesReply>(context.signal);
+  const nextRunId = "d0000000-0000-4000-a000-000000000966";
   const fixture = await setupFilesPage(context, {
-    twoThreads: true,
     handler: (request, connection) => {
       if (connection > 0) {
         return listing([entry("new-run.txt")]);
       }
       return Array.isArray(request.params.path) &&
         request.params.path.length > 2
-        ? listing([entry("selected-old-run.txt")])
+        ? response.promise
         : listing([entry("workspace", "directory"), entry("old-run.txt")]);
     },
   });
-  const leftPane = screen.getAllByRole("region", { name: "Chat thread" })[0];
-  const thread = fixture.threads[0];
-  if (!leftPane || !thread || !fixture.workspace) {
-    throw new Error("current thread fixture must be ready");
-  }
-  click(filesButton("Open files", leftPane));
-  const panel = await screen.findByRole("region", { name: "Files" });
+  const panel = await openFiles();
   await expect(
     within(panel).findByText("old-run.txt"),
   ).resolves.toBeInTheDocument();
   click(filesButton("Open workspace as current folder", panel));
-  await expect(
-    within(panel).findByText("selected-old-run.txt"),
-  ).resolves.toBeInTheDocument();
-  const rows = mockChatEventRows(
-    normalizeMockChatEvents(
-      [
-        {
-          id: "a0000000-0000-4000-a000-000000000960",
-          role: "user",
-          content: "Inspect thread 0",
-          runId: "d0000000-0000-4000-a000-000000000964",
-          seqId: 1,
-          createdAt: "2026-10-14T12:00:00.000Z",
-        },
-        {
-          id: "a0000000-0000-4000-a000-000000000970",
-          role: "assistant",
-          content: null,
-          runLifecycleEvent: "completed",
-          runId: "d0000000-0000-4000-a000-000000000964",
-          seqId: 2,
-          createdAt: "2026-10-14T12:00:01.000Z",
-        },
-        {
-          id: "a0000000-0000-4000-a000-000000000971",
-          role: "user",
-          content: "Start another run",
-          runId: "d0000000-0000-4000-a000-000000000966",
-          seqId: 3,
-          createdAt: "2026-10-14T12:00:02.000Z",
-        },
-      ],
-      thread.id,
-    ),
-  );
-  fixture.workspace.setChatEventRows(rows);
-  act(() => {
-    createChatEvent(thread.id);
+  await waitFor(() => {
+    expect(fixture.requests.at(-1)?.params.path).toStrictEqual(
+      filesPath("home", "user", "workspace"),
+    );
   });
-  await expect(
-    within(panel).findByText("new-run.txt"),
-  ).resolves.toBeInTheDocument();
-  expect(within(panel).queryByText("old-run.txt")).toBeNull();
-  expect(within(panel).queryByText("selected-old-run.txt")).toBeNull();
+  context.store.set(detachedNavigateTo$, "/activities/:activityRunId", {
+    pathParams: { activityRunId: nextRunId },
+    searchParams: new URLSearchParams({ tab: "files" }),
+  });
+  await expect(screen.findByText("new-run.txt")).resolves.toBeInTheDocument();
+  response.resolve(listing([entry("obsolete-old-run.txt")]));
+  expect(screen.queryByText("old-run.txt")).toBeNull();
+  expect(screen.queryByText("obsolete-old-run.txt")).toBeNull();
+  const nextPanel = screen.getByRole("region", { name: "Files" });
   expect(
-    within(panel)
+    within(nextPanel)
       .getByRole("navigation", { name: "Current folder" })
       .querySelector('[aria-current="location"]'),
   ).toHaveTextContent("user");
@@ -305,7 +261,5 @@ test("An event-derived replacement Run clears the old directory and opens only t
       .at(-1)?.params.path,
   ).toStrictEqual(filesPath("home", "user"));
   expect(fixture.sockets[0]?.readyState).toBe(WebSocket.CLOSED);
-  expect(fixture.bootstraps.at(-1)).toBe(
-    "d0000000-0000-4000-a000-000000000966",
-  );
+  expect(fixture.bootstraps.at(-1)).toBe(nextRunId);
 });

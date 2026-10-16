@@ -8,12 +8,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@okouai/ui";
-import type { SandboxFilesSidebarSignals } from "../../signals/chat-page/sandbox-files-sidebar.ts";
+import type { SandboxFilesSignals } from "../../signals/activity-page/sandbox-files.ts";
 import {
   filesLocationLabel,
   filesLocationTokens,
   type FilesLocation,
-} from "../../signals/chat-page/sandbox-files-location.ts";
+} from "../../signals/activity-page/sandbox-files-location.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
@@ -21,7 +21,7 @@ function FilesAncestorMenu({
   signals,
   location,
 }: {
-  readonly signals: SandboxFilesSidebarSignals;
+  readonly signals: SandboxFilesSignals;
   readonly location: FilesLocation;
 }) {
   const { t } = useTranslation();
@@ -36,7 +36,7 @@ function FilesAncestorMenu({
             variant="quiet"
             size="icon-xs"
             aria-label={t(($) => {
-              return $.chat.files.parentFolders;
+              return $.activity.detail.files.parentFolders;
             })}
           />
         }
@@ -66,7 +66,7 @@ function FilesAncestorMenu({
 export function SandboxFilesBreadcrumb({
   signals,
 }: {
-  readonly signals: SandboxFilesSidebarSignals;
+  readonly signals: SandboxFilesSignals;
 }) {
   const { t } = useTranslation();
   const location = useGet(signals.location$);
@@ -84,7 +84,7 @@ export function SandboxFilesBreadcrumb({
     <nav
       className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden"
       aria-label={t(($) => {
-        return $.chat.files.currentFolder;
+        return $.activity.detail.files.currentFolder;
       })}
     >
       {location.length === 0 ? (
@@ -102,7 +102,7 @@ export function SandboxFilesBreadcrumb({
           size="xs"
           className="shrink-0 px-1.5 text-xs"
           aria-label={t(($) => {
-            return $.chat.files.root;
+            return $.activity.detail.files.root;
           })}
           title="/"
           onClick={() => {

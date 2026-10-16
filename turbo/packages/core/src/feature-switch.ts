@@ -51,14 +51,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Use interactive shells on an authorized computer with local opt-in.",
     enabled: false,
   },
-  [FeatureSwitchKey.SandboxFilesSidebar]: {
-    maintainer: "liangyou@okou.ai",
-    displayName: "Sandbox files sidebar",
-    description:
-      "Browse the current run's sandbox home without modifying files.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.RemoteControlCliManagement]: {
     maintainer: "ethan@okou.ai",
     displayName: "Remote control CLI management",

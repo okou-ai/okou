@@ -6,7 +6,12 @@ import {
   type SandboxChannelWireError,
 } from "@okouai/api-contracts/contracts/sandbox-channel";
 import { runnerWssTicketsContract } from "@okouai/api-contracts/contracts/runner-wss-tickets";
-import { browserContract } from "@okouai/api-contracts/contracts/browser";
+import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
+import {
+  runAgentEventsContract,
+  runsByIdContract,
+} from "@okouai/api-contracts/contracts/run-routes";
+import type { RunStatus } from "@okouai/api-contracts/contracts/runs";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import {
@@ -17,18 +22,8 @@ import {
 import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
 import { detach, Reason } from "../../../signals/utils.ts";
 import { now } from "../../../lib/time.ts";
-import { mockChatLifecycle } from "./chat-test-helpers.ts";
-import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
-import {
-  continuityThread,
-  installContinuityWorkspace,
-} from "./chat-continuity-test-helpers.ts";
-import {
-  normalizeMockChatEvents,
-  mockChatEventRows,
-} from "./chat-event-test-helpers.ts";
+import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../../okou-page/sidebar-breakpoint.ts";
 
-export const FILES_THREAD_ID = "b0000000-0000-4000-a000-000000000964";
 export const FILES_RUN_ID = "d0000000-0000-4000-a000-000000000964";
 export type FilesRequest = Extract<SandboxChannelMessage, { type: "request" }>;
 export type FilesReply =
@@ -116,24 +111,90 @@ export async function setupFilesPage(
     readonly categories?: Record<string, number>;
     readonly active?: boolean;
     readonly queued?: boolean;
+    readonly status?: RunStatus;
     readonly enabled?: boolean;
     readonly mobile?: boolean;
     readonly viewportHeight?: number;
     readonly bootstrapUnavailable?: boolean;
-    readonly twoThreads?: boolean;
+    readonly runId?: string;
+    readonly initialTab?: string;
+    readonly statusHandler?: (runId: string) => RunStatus | Promise<RunStatus>;
     readonly helloError?: SandboxChannelWireError;
   } = {},
 ) {
   const sockets: Socket[] = [];
   const requests: FilesRequest[] = [];
   const bootstraps: string[] = [];
-  // Browsing an existing run's files does not need a model-switching catalog.
-  context.mocks.data.availableRunModels([]);
-  context.mocks.api(browserContract.get, ({ respond }) => {
-    return respond(404, {
-      error: {
-        code: "BROWSER_NOT_FOUND",
-        message: "Managed browser not found",
+  const statuses = new Map<string, RunStatus>([
+    [
+      FILES_RUN_ID,
+      options.status ??
+        (options.active === false
+          ? options.queued
+            ? "queued"
+            : "completed"
+          : "running"),
+    ],
+  ]);
+  const statusRequests: string[] = [];
+  const statusResponses: string[] = [];
+  let statusUnavailable = false;
+  const readStatus = (runId: string) => {
+    return statuses.get(runId) ?? "running";
+  };
+  context.mocks.api(logsByIdContract.getById, ({ params, respond }) => {
+    return respond(200, {
+      id: params.id,
+      sessionId: null,
+      agentId: null,
+      displayName: "Files test activity",
+      framework: "codex",
+      modelProvider: null,
+      selectedModel: null,
+      triggerSource: "slack",
+      status: readStatus(params.id),
+      prompt: "Inspect sandbox files",
+      appendSystemPrompt: null,
+      error: null,
+      createdAt: "2026-10-14T12:00:00.000Z",
+      startedAt: null,
+      completedAt: null,
+      artifact: { name: null, version: null },
+    });
+  });
+  context.mocks.api(
+    runAgentEventsContract.getAgentEvents,
+    ({ params, respond }) => {
+      return respond(200, {
+        events: [],
+        hasMore: false,
+        status: readStatus(params.id),
+        lastEventSequence: null,
+      });
+    },
+  );
+  context.mocks.api(runsByIdContract.getById, async ({ params, respond }) => {
+    statusRequests.push(params.id);
+    if (statusUnavailable) {
+      return respond(404, {
+        error: { code: "NOT_FOUND", message: "Run unavailable" },
+      });
+    }
+    const status = await (options.statusHandler?.(params.id) ??
+      readStatus(params.id));
+    statusResponses.push(params.id);
+    return respond(200, {
+      runId: params.id,
+      status,
+      prompt: "Inspect sandbox files",
+      appendSystemPrompt: null,
+      createdAt: "2026-10-14T12:00:00.000Z",
+      source: {
+        providerType: null,
+        runtimeProviderType: null,
+        model: null,
+        credentialScope: null,
+        account: { status: "unknown" },
       },
     });
   });
@@ -250,95 +311,41 @@ export async function setupFilesPage(
       });
     },
   );
-  const lifecycle = mockChatLifecycle(context, {
-    threadId: FILES_THREAD_ID,
-    threadTitle: "Files test thread",
-    activeRunIds: options.active === false ? [] : [FILES_RUN_ID],
-    chatEvents: [
-      {
-        id: "files-prompt",
-        role: "user",
-        content: "Inspect sandbox files",
-        runId:
-          options.active === false && options.queued ? undefined : FILES_RUN_ID,
-        seqId: 1,
-        createdAt: "2026-10-14T12:00:00.000Z",
-      },
-      ...(options.active === false && !options.queued
-        ? [
-            {
-              id: "files-completed",
-              role: "assistant" as const,
-              content: null,
-              runId: FILES_RUN_ID,
-              runLifecycleEvent: "completed" as const,
-              seqId: 2,
-              createdAt: "2026-10-14T12:00:01.000Z",
-            },
-          ]
-        : []),
-    ],
-  });
-  const threads = options.twoThreads
-    ? [
-        continuityThread(964, 1, "Left Files thread"),
-        continuityThread(964, 2, "Right Files thread"),
-      ]
-    : [];
-  const workspace = options.twoThreads
-    ? installContinuityWorkspace(context, {
-        caseId: 964,
-        threads,
-        chatEventRows: threads.flatMap((thread, index) => {
-          return mockChatEventRows(
-            normalizeMockChatEvents(
-              [
-                {
-                  id: `a0000000-0000-4000-a000-00000000096${index}`,
-                  role: "user",
-                  content: `Inspect thread ${index}`,
-                  runId:
-                    index === 0
-                      ? FILES_RUN_ID
-                      : "d0000000-0000-4000-a000-000000000965",
-                  seqId: 1,
-                  createdAt: "2026-10-14T12:00:00.000Z",
-                },
-              ],
-              thread.id,
-            ),
-          );
-        }),
-      })
-    : null;
   await setupPage({
     context,
-    path:
-      workspace && threads[0] && threads[1]
-        ? `/chats/${threads[0].id}?sidebar=${threads[1].id}`
-        : `/chats/${FILES_THREAD_ID}`,
+    path: `/activities/${options.runId ?? FILES_RUN_ID}${options.initialTab ? `?tab=${options.initialTab}` : ""}`,
     host: "app.okou.ai",
-    ...workspace?.pageOptions,
     featureSwitches: {
-      [FeatureSwitchKey.SandboxFilesSidebar]: options.enabled ?? true,
+      [FeatureSwitchKey.OkouDebug]: options.enabled ?? true,
     },
   });
-  return { sockets, requests, bootstraps, lifecycle, threads, workspace };
+  return {
+    sockets,
+    requests,
+    bootstraps,
+    statusRequests,
+    statusResponses,
+    setStatus(status: RunStatus, runId = FILES_RUN_ID) {
+      statuses.set(runId, status);
+    },
+    setStatusUnavailable(unavailable: boolean) {
+      statusUnavailable = unavailable;
+    },
+  };
 }
 
-export function openFiles(mobile = false): Promise<HTMLElement> {
-  if (mobile) {
-    click(filesButton("More actions"));
-    const item = queryAllByRoleFast("menuitem").find((candidate) => {
-      return candidate.textContent?.trim() === "Files";
-    });
-    if (!item) {
-      throw new Error("missing Files menu item");
-    }
-    click(item);
-  } else {
-    click(filesButton("Open files"));
+export function filesTab(name: string): HTMLElement {
+  const tab = queryAllByRoleFast("tab").find((candidate) => {
+    return candidate.textContent?.trim() === name;
+  });
+  if (!tab) {
+    throw new Error(`Expected Activity tab ${name}`);
   }
+  return tab;
+}
+
+export function openFiles(_mobile = false): Promise<HTMLElement> {
+  click(filesTab("Files"));
   return screen.findByRole("region", { name: "Files" });
 }
 

@@ -24,18 +24,18 @@ import {
 import type {
   FilesError,
   FilesDirectory,
-  SandboxFilesSidebarSignals,
-} from "../../signals/chat-page/sandbox-files-sidebar.ts";
+  SandboxFilesSignals,
+} from "../../signals/activity-page/sandbox-files.ts";
 import {
   FILES_ROW_HEIGHT,
   type FilesVirtualRow,
-} from "../../signals/chat-page/sandbox-files-virtual-list.ts";
+} from "../../signals/activity-page/sandbox-files-virtual-list.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import {
   FILES_HOME_LOCATION,
   filesLocationLabel,
-} from "../../signals/chat-page/sandbox-files-location.ts";
+} from "../../signals/activity-page/sandbox-files-location.ts";
 import { SandboxFilesBreadcrumb } from "./sandbox-files-breadcrumb.tsx";
 
 function FilesErrorMessage({ error }: { readonly error: FilesError }) {
@@ -43,22 +43,22 @@ function FilesErrorMessage({ error }: { readonly error: FilesError }) {
   switch (error) {
     case "updateRequired": {
       return t(($) => {
-        return $.chat.files.updateRequired;
+        return $.activity.detail.files.updateRequired;
       });
     }
     case "stale": {
       return t(($) => {
-        return $.chat.files.stale;
+        return $.activity.detail.files.stale;
       });
     }
     case "limit": {
       return t(($) => {
-        return $.chat.files.limit;
+        return $.activity.detail.files.limit;
       });
     }
     case "unavailable": {
       return t(($) => {
-        return $.chat.files.unavailable;
+        return $.activity.detail.files.unavailable;
       });
     }
   }
@@ -69,7 +69,7 @@ function FilesRow({
   signals,
   row,
 }: {
-  readonly signals: SandboxFilesSidebarSignals;
+  readonly signals: SandboxFilesSignals;
   readonly row: FilesVirtualRow;
 }) {
   const { t } = useTranslation();
@@ -117,7 +117,7 @@ function FilesRow({
             className="shrink-0 hover:bg-transparent active:bg-transparent [@media(pointer:coarse)]:size-10 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/files-row:opacity-100 group-has-[:focus-visible]/files-row:opacity-100"
             aria-label={t(
               ($) => {
-                return $.chat.files.enterFolder;
+                return $.activity.detail.files.enterFolder;
               },
               { name: entry.displayName },
             )}
@@ -147,14 +147,14 @@ function FilesRow({
         {entry.kind === "symlink" && (
           <span className="shrink-0 text-xs text-muted-foreground">
             {t(($) => {
-              return $.chat.files.link;
+              return $.activity.detail.files.link;
             })}
           </span>
         )}
         {entry.kind === "other" && (
           <span className="shrink-0 text-xs text-muted-foreground">
             {t(($) => {
-              return $.chat.files.other;
+              return $.activity.detail.files.other;
             })}
           </span>
         )}
@@ -176,7 +176,7 @@ function FilesRow({
         }}
       >
         {t(($) => {
-          return $.chat.files.more;
+          return $.activity.detail.files.more;
         })}
       </Button>
     );
@@ -194,7 +194,7 @@ function FilesDirectoryStatus({
     return (
       <p role="status" className="px-3 py-2 text-sm text-muted-foreground">
         {t(($) => {
-          return $.chat.files.loading;
+          return $.activity.detail.files.loading;
         })}
       </p>
     );
@@ -202,7 +202,7 @@ function FilesDirectoryStatus({
   return (
     <p className="px-3 py-2 text-sm text-muted-foreground">
       {t(($) => {
-        return $.chat.files.empty;
+        return $.activity.detail.files.empty;
       })}
     </p>
   );
@@ -240,7 +240,7 @@ function FilesVirtualListRow({
   signals,
   rowKey,
 }: {
-  readonly signals: SandboxFilesSidebarSignals;
+  readonly signals: SandboxFilesSignals;
   readonly rowKey: string;
 }) {
   const window = useGet(signals.virtual.window$, {
@@ -280,7 +280,7 @@ function FilesVirtualListFrame({
   signals,
   children,
 }: {
-  readonly signals: SandboxFilesSidebarSignals;
+  readonly signals: SandboxFilesSignals;
   readonly children: ReactNode;
 }) {
   const window = useGet(signals.virtual.window$, {
@@ -302,7 +302,7 @@ function FilesVirtualListFrame({
 function FilesVirtualList({
   signals,
 }: {
-  readonly signals: SandboxFilesSidebarSignals;
+  readonly signals: SandboxFilesSignals;
 }) {
   const window = useGet(signals.virtual.window$, {
     equalityFn: (previous, next) => {
@@ -333,7 +333,7 @@ function FilesRefreshControl({
   signals,
   errorId,
 }: {
-  readonly signals: SandboxFilesSidebarSignals;
+  readonly signals: SandboxFilesSignals;
   readonly errorId: string;
 }) {
   const { t } = useTranslation();
@@ -359,7 +359,9 @@ function FilesRefreshControl({
                   error && "text-destructive hover:text-destructive",
                 )}
                 aria-label={t(($) => {
-                  return error ? $.chat.files.retry : $.chat.files.refresh;
+                  return error
+                    ? $.activity.detail.files.retry
+                    : $.activity.detail.files.refresh;
                 })}
                 aria-describedby={error ? errorId : undefined}
                 disabled={loading || error === "updateRequired"}
@@ -394,7 +396,7 @@ function FilesRefreshControl({
             {failure?.location && error !== "updateRequired" ? (
               t(
                 ($) => {
-                  return $.chat.files.navigationFailed;
+                  return $.activity.detail.files.navigationFailed;
                 },
                 { path: filesLocationLabel(failure.location) },
               )
@@ -402,7 +404,7 @@ function FilesRefreshControl({
               <FilesErrorMessage error={error} />
             ) : (
               t(($) => {
-                return $.chat.files.refresh;
+                return $.activity.detail.files.refresh;
               })
             )}
           </TooltipContent>
@@ -413,7 +415,7 @@ function FilesRefreshControl({
           {failure?.location && error !== "updateRequired" ? (
             t(
               ($) => {
-                return $.chat.files.navigationFailed;
+                return $.activity.detail.files.navigationFailed;
               },
               { path: filesLocationLabel(failure.location) },
             )
@@ -426,10 +428,10 @@ function FilesRefreshControl({
   );
 }
 
-export function SandboxFilesSidebarBody({
+export function SandboxFilesBody({
   signals,
 }: {
-  readonly signals: SandboxFilesSidebarSignals;
+  readonly signals: SandboxFilesSignals;
 }) {
   const { t } = useTranslation();
   const runId = useGet(signals.activeRunId$);
@@ -445,10 +447,10 @@ export function SandboxFilesSidebarBody({
       <p role="status" className="p-4 text-sm text-muted-foreground">
         {pending
           ? t(($) => {
-              return $.chat.files.pending;
+              return $.activity.detail.files.pending;
             })
           : t(($) => {
-              return $.chat.files.noRun;
+              return $.activity.detail.files.noRun;
             })}
       </p>
     );
@@ -464,7 +466,7 @@ export function SandboxFilesSidebarBody({
           className="shrink-0"
           showTooltip
           aria-label={t(($) => {
-            return $.chat.files.goHome;
+            return $.activity.detail.files.goHome;
           })}
           disabled={phase !== "ready"}
           focusableWhenDisabled
@@ -505,7 +507,7 @@ export function SandboxFilesSidebarBody({
         >
           {phase === "connecting" ? (
             t(($) => {
-              return $.chat.files.connecting;
+              return $.activity.detail.files.connecting;
             })
           ) : (
             <FilesErrorMessage error={phase} />
@@ -514,7 +516,7 @@ export function SandboxFilesSidebarBody({
       )}
       <p className="border-t border-border px-4 py-3 text-xs text-muted-foreground">
         {t(($) => {
-          return $.chat.files.readonly;
+          return $.activity.detail.files.readonly;
         })}
       </p>
     </>

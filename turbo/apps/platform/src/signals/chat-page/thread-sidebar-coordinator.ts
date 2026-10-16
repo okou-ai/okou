@@ -1,6 +1,4 @@
 import { command, computed } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import {
   currentLeftThread$,
   currentRightThread$,
@@ -39,11 +37,7 @@ export const activeThreadSidebar$ = computed(
         continue;
       }
       const target = get(thread.sidebar.target$);
-      if (
-        target &&
-        (target.type !== "files" ||
-          get(featureSwitch$)[FeatureSwitchKey.SandboxFilesSidebar])
-      ) {
+      if (target) {
         return {
           thread,
           target,
@@ -126,14 +120,6 @@ export const openThreadArtifacts$ = command(
 export const openThreadAutomations$ = command(
   ({ get, set }, thread: ChatPanelSignals) => {
     set(openOnThread$, thread, { type: "automations" }, get(pageSignal$));
-  },
-);
-
-export const openThreadFiles$ = command(
-  ({ get, set }, thread: ChatPanelSignals) => {
-    if (get(featureSwitch$)[FeatureSwitchKey.SandboxFilesSidebar]) {
-      set(openOnThread$, thread, { type: "files" }, get(pageSignal$));
-    }
   },
 );
 
