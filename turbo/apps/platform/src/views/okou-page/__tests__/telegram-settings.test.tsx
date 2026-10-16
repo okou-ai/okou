@@ -85,7 +85,7 @@ test.each([
   },
 );
 
-test("A bare result and reload display the authenticated identity and never bind or launch Telegram", async () => {
+test("A bare result and reload display the verified connection and never bind or launch Telegram", async () => {
   setConnection(true);
   const launched = context.mocks.browser.locationAssign();
   const opened = context.mocks.browser.open();
@@ -99,7 +99,7 @@ test("A bare result and reload display the authenticated identity and never bind
   });
   await setupPage({ context, path: "/settings/telegram?status=connected" });
   await expect(
-    screen.findByText("Connected as @actual_name."),
+    screen.findByText("Send the bot a message in Telegram to start chatting."),
   ).resolves.toBeInTheDocument();
   const link = getAction("link", "Open Telegram");
   expect(link).toHaveAttribute("href", "https://t.me/support_bot");
@@ -109,7 +109,7 @@ test("A bare result and reload display the authenticated identity and never bind
     window.dispatchEvent(new PopStateEvent("popstate"));
   });
   await expect(
-    screen.findByText("Connected as @actual_name."),
+    screen.findByText("Send the bot a message in Telegram to start chatting."),
   ).resolves.toBeInTheDocument();
   expect(posts).toBe(0);
   expect(launched.calls).toStrictEqual([]);
@@ -178,7 +178,7 @@ test("Signed confirmation consumes proof only after the POST and displays a real
   }).toStrictEqual({ value: true });
   release.resolve();
   await expect(
-    screen.findByText("Connected as @actual_name."),
+    screen.findByText("Send the bot a message in Telegram to start chatting."),
   ).resolves.toBeInTheDocument();
   expect(window.location.pathname).toBe("/settings/telegram");
   expect({
@@ -195,7 +195,7 @@ test("Signed confirmation consumes proof only after the POST and displays a real
     window.dispatchEvent(new Event("focus"));
   });
   await expect(
-    screen.findByText("Connected as @actual_name."),
+    screen.findByText("Send the bot a message in Telegram to start chatting."),
   ).resolves.toBeInTheDocument();
   expect(posts).toBe(1);
 });
@@ -258,7 +258,9 @@ test.each(["focus", "visibilitychange"])(
       (event === "focus" ? window : document).dispatchEvent(new Event(event));
     });
     await expect(
-      screen.findByText("Connected as @actual_name."),
+      screen.findByText(
+        "Send the bot a message in Telegram to start chatting.",
+      ),
     ).resolves.toBeInTheDocument();
   },
 );
@@ -288,9 +290,9 @@ test("A failed status read is an error with manual recovery, never disconnected 
     queryAction("button", "Continue with Telegram"),
   ).not.toBeInTheDocument();
   failed = false;
-  click(getAction("button", "Refresh status"));
+  click(getAction("button", "Try again"));
   await expect(
-    screen.findByText("Connected as 99001."),
+    screen.findByText("Send the bot a message in Telegram to start chatting."),
   ).resolves.toBeInTheDocument();
 });
 
@@ -361,7 +363,7 @@ test.each([
     await expect(
       screen.findByRole("heading", { name: "Connect link is incomplete" }),
     ).resolves.toBeInTheDocument();
-    expect(getAction("link", "View Telegram settings")).toHaveAttribute(
+    expect(getAction("link", "Try again")).toHaveAttribute(
       "href",
       "/settings/telegram",
     );

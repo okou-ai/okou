@@ -14,12 +14,12 @@ export function connectErrorMessage(error: unknown, fallback: string): string {
 /** Centered card layout for connector sign-in, authorization, and status pages. */
 export function PageShell({ children }: { children: ReactNode }) {
   return (
-    <div className="box-border flex h-full max-h-full min-h-full w-full overflow-hidden bg-background pb-safe relative z-0 before:absolute before:inset-0 before:-z-1 before:bg-workspace-canvas before:bg-workspace-canvas-image before:bg-[length:100%_100%] before:content-['']">
-      <div className="flex flex-1 items-center justify-center p-4">
+    <div className="box-border h-full min-h-0 w-full overflow-y-auto bg-background pb-safe relative z-0 before:absolute before:inset-0 before:-z-1 before:bg-workspace-canvas before:bg-workspace-canvas-image before:bg-[length:100%_100%] before:content-['']">
+      <div className="flex min-h-full w-full flex-col items-center p-4">
         <div
           className={surfaceVariants({
             className:
-              "w-full max-w-sm p-5 sm:p-8 flex flex-col items-center gap-6",
+              "my-auto w-full max-w-sm shrink-0 p-5 sm:p-8 flex flex-col items-center gap-6",
           })}
         >
           {children}

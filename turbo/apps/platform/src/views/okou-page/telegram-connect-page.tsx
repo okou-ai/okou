@@ -4,7 +4,7 @@ import type {
 } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { useGet, useLoadable, useSet, type Loadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { Button, buttonVariants } from "@okouai/ui";
+import { BrandTelegram, Button, buttonVariants, cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { searchParams$ } from "../../signals/route.ts";
@@ -21,11 +21,11 @@ import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets
 import { telegramReadinessErrorMessage } from "../../signals/okou-page/telegram-authorization.ts";
 import {
   CenterText,
-  ConnectBackLink,
   ConnectErrorAlert,
   ConnectStatusMark,
   ConnectSubmitButton,
   PageShell,
+  SettingsBackLink,
   connectErrorMessage,
   type MarkState,
 } from "./connect-page-shell.tsx";
@@ -45,30 +45,18 @@ function TelegramMark({ state }: { state?: MarkState }) {
   );
 }
 
-function BackLink() {
-  const { t } = useTranslation();
-  return (
-    <ConnectBackLink
-      pathname={ROUTES.works}
-      label={t(($) => {
-        return $.connectors.providerSettings.telegram.backToIntegrations;
-      })}
-    />
-  );
-}
-
-function RefreshButton() {
+function RetryButton() {
   const { t } = useTranslation();
   const refresh = useSet(refreshTelegramConnection$);
   return (
     <Button
-      variant="outline"
+      className="w-full"
       onClick={() => {
         refresh();
       }}
     >
       {t(($) => {
-        return $.connectors.providerConnect.telegram.refreshStatus;
+        return $.connectors.actions.tryAgain;
       })}
     </Button>
   );
@@ -81,11 +69,12 @@ function TelegramLink({ username }: { username: string | undefined | null }) {
   }
   return (
     <a
-      className={buttonVariants()}
+      className={cn(buttonVariants(), "w-full gap-2")}
       href={`https://t.me/${encodeURIComponent(username.replace(/^@/, ""))}`}
       target="_blank"
       rel="noopener noreferrer"
     >
+      <BrandTelegram size={16} />
       {t(($) => {
         return $.connectors.providerConnect.telegram.open;
       })}
@@ -150,31 +139,30 @@ function ConnectedTelegram({
                 },
                 { current: label, requested: target },
               )
-            : t(
-                ($) => {
-                  return $.connectors.providerConnect.telegram
-                    .connectedIdentity;
-                },
-                { identity: label },
-              )
+            : t(($) => {
+                return $.connectors.providerConnect.telegram.successDescription;
+              })
         }
       />
-      {mismatch ? (
-        <a
-          href={ROUTES.works}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={buttonVariants({ variant: "outline" })}
-        >
-          {t(($) => {
-            return $.connectors.providerConnect.telegram.manageConnection;
-          })}
-        </a>
-      ) : (
-        <TelegramLink username={status.botUsername ?? bot?.username} />
-      )}
-      {mismatch && <RefreshButton />}
-      <BackLink />
+      <div className="flex w-full flex-col gap-3">
+        {mismatch ? (
+          <a
+            href={ROUTES.works}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn(buttonVariants({ variant: "outline" }), "w-full")}
+          >
+            {t(($) => {
+              return $.connectors.providerConnect.telegram.manageConnection;
+            })}
+          </a>
+        ) : (
+          <TelegramLink username={status.botUsername ?? bot?.username} />
+        )}
+        <div className="flex justify-center">
+          <SettingsBackLink />
+        </div>
+      </div>
     </PageShell>
   );
 }
@@ -205,15 +193,14 @@ function TelegramSetupRequired({ isAdmin }: { isAdmin: boolean }) {
           href={ROUTES.onboarding}
           target="_blank"
           rel="noopener noreferrer"
-          className={buttonVariants()}
+          className={cn(buttonVariants(), "w-full")}
         >
           {t(($) => {
             return $.connectors.providerConnect.telegram.openSetup;
           })}
         </a>
       ) : null}
-      <RefreshButton />
-      <BackLink />
+      <SettingsBackLink />
     </PageShell>
   );
 }
@@ -272,8 +259,7 @@ function TelegramConnectForm({
         }
       />
       {error ? <TelegramLink username={botUsername} /> : null}
-      <RefreshButton />
-      <BackLink />
+      <SettingsBackLink />
     </PageShell>
   );
 }
@@ -298,8 +284,7 @@ function TelegramNotReady({
       <TelegramLink
         username={status.installation?.botUsername ?? bot?.username}
       />
-      <RefreshButton />
-      <BackLink />
+      <SettingsBackLink />
     </PageShell>
   );
 }
@@ -319,13 +304,13 @@ export function TelegramConnectPage() {
         <CenterText title={parsed.error.title} body={parsed.error.message} />
         <a
           href={ROUTES.settingsTelegram}
-          className={buttonVariants({ variant: "outline" })}
+          className={cn(buttonVariants(), "w-full")}
         >
           {t(($) => {
-            return $.connectors.providerConnect.telegram.viewSettings;
+            return $.connectors.actions.tryAgain;
           })}
         </a>
-        <BackLink />
+        <SettingsBackLink />
       </PageShell>
     );
   }
@@ -362,8 +347,8 @@ export function TelegramConnectPage() {
             return $.connectors.providerSettings.telegram.loadError;
           })}
         />
-        <RefreshButton />
-        <BackLink />
+        <RetryButton />
+        <SettingsBackLink />
       </PageShell>
     );
   }
