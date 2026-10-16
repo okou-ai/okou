@@ -1582,7 +1582,7 @@ describe("protected host writes with authorized Runner authority", () => {
               },
             },
           }),
-          [200],
+          [200, 409],
         )
       : accept(
           credentials().update({
@@ -2038,11 +2038,84 @@ describe("protected host writes with authorized Runner authority", () => {
     },
   );
 
+  it("notifies the affected Runner after reviewed deletion and preserves the detached Host", async () => {
+    const { owner, shared, host, runner, request } = await claimedHost();
+    const admin = await actor(owner.orgId);
+    const impact = (
+      await accept(
+        configs().impactPreview({
+          headers: admin.headers,
+          params: { configId: shared.id },
+          query: { operation: "delete" },
+        }),
+        [200],
+      )
+    ).body;
+    context.mocks.ably.publish.mockClear();
+    await accept(
+      configs().delete({
+        headers: admin.headers,
+        params: { configId: shared.id },
+        query,
+        body: {
+          expectedRevision: impact.expectedRevision,
+          impactSnapshot: impact.impactSnapshot,
+        },
+      }),
+      [204],
+    );
+    expect(
+      context.mocks.ably.publish.mock.calls.filter(([topic]) => {
+        return topic === "ssh-authority-invalidated";
+      }),
+    ).toStrictEqual([
+      [
+        "ssh-authority-invalidated",
+        { runId: request.params.runId, connectionId: host.id },
+      ],
+    ]);
+    expect(
+      context.mocks.ably.publish.mock.calls.filter(([topic]) => {
+        return topic === "vnc-authority-invalidated";
+      }),
+    ).toStrictEqual([]);
+    expect(
+      (await accept(hosts().list({ headers: owner.headers }), [200])).body
+        .connections,
+    ).toContainEqual(
+      expect.objectContaining({
+        id: host.id,
+        host: host.host,
+        generation: host.generation + 1,
+        transport: { type: "cloudflare_access", needsRebind: true },
+      }),
+    );
+    expect((await accept(runner.resolve(request), [200])).body.outcome).toBe(
+      "unavailable",
+    );
+  });
+
   it.each(["network", "login"] as const)(
-    "serializes %s rotation with pin and observation, retaining current authority",
+    "commits %s rotation completely or rejects concurrent Runner authority before a fresh request",
     async (resource) => {
       const fixture = await claimedHost();
       const { owner, shared, host, runner, request } = fixture;
+      const second = (
+        await accept(
+          hosts().create({
+            headers: owner.headers,
+            body: {
+              id: randomUUID(),
+              displayName: "Independent retained host",
+              host: "second.example.com",
+              port: 443,
+              credential: { id: credentialBackedSshHost(host).credentialId },
+              transport: { type: "cloudflare_access", configId: shared.id },
+            },
+          }),
+          [201],
+        )
+      ).body;
       const [rotated, pinned, observed] = await Promise.all([
         rotateResource(resource, fixture),
         accept(
@@ -2070,7 +2143,67 @@ describe("protected host writes with authorized Runner authority", () => {
           [200],
         ),
       ]);
-      expect(rotated.body).toMatchObject(
+      let committed = rotated;
+      if (rotated.status === 409) {
+        expect(resource).toBe("network");
+        expect(rotated.body.error.code).toBe(
+          "CLOUDFLARE_ACCESS_REVISION_CONFLICT",
+        );
+        const unchanged = (
+          await accept(hosts().list({ headers: owner.headers }), [200])
+        ).body.connections;
+        expect(unchanged).toContainEqual(second);
+        expect(unchanged).toContainEqual(
+          expect.objectContaining({
+            id: host.id,
+            generation:
+              host.generation + Number(pinned.body.outcome === "pinned"),
+            learnedHostKey: pinned.body.outcome === "pinned" ? hostKey : null,
+          }),
+        );
+        expect(
+          (
+            await accept(
+              configs().list({ headers: owner.headers, query }),
+              [200],
+            )
+          ).body.configs,
+        ).toStrictEqual([
+          {
+            ...shared,
+            sshHosts: expect.arrayContaining([
+              { id: host.id, displayName: host.displayName },
+              { id: second.id, displayName: second.displayName },
+            ]),
+          },
+        ]);
+        expect(
+          (await accept(credentials().list({ headers: owner.headers }), [200]))
+            .body.credentials,
+        ).toContainEqual(
+          expect.objectContaining({
+            id: credentialBackedSshHost(host).credentialId,
+            revision: 1,
+            username: login.username,
+          }),
+        );
+        expect(
+          (await accept(runner.resolve(request), [200])).body,
+        ).toMatchObject({
+          outcome: "resolved_access",
+          access: {
+            configId: shared.id,
+            generation: 1,
+            clientId: "synthetic-id",
+            clientSecret: "synthetic-secret",
+          },
+        });
+        // The first request has completed without effects. This is a new
+        // caller request, not an implementation retry of prepared work.
+        committed = await rotateResource(resource, fixture);
+      }
+      expect(committed.status).toBe(200);
+      expect(committed.body).toMatchObject(
         resource === "network"
           ? { revision: 2, generation: 2 }
           : { revision: 2, username: "rotated-deploy" },
@@ -2096,6 +2229,15 @@ describe("protected host writes with authorized Runner authority", () => {
       expect(saved.generation).toBe(
         host.generation + 1 + Number(pinned.body.outcome === "pinned"),
       );
+      expect(
+        (await accept(hosts().list({ headers: owner.headers }), [200])).body
+          .connections,
+      ).toContainEqual({
+        ...second,
+        username: resource === "network" ? login.username : "rotated-deploy",
+        generation: second.generation + 1,
+        updatedAt: expect.any(String),
+      });
       if (pinned.body.outcome === "pinned") {
         expect(saved.learnedHostKey).toStrictEqual(hostKey);
       } else {

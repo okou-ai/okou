@@ -1,4 +1,5 @@
 import { deleteWechatOwnerData$ } from "./wechat-owner-cleanup.service";
+import { eraseRemoteOwnerData$ } from "./remote-owner-erasure.service";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -424,6 +425,8 @@ export const cleanupClerkDeletedOrg$ = command(
     await set(deleteWechatOwnerData$, owner, signal);
     await set(stopClerkDeletedOwnerSchedules$, owner, signal);
     await set(stopClerkDeletedOwnerRuns$, owner, signal);
+    signal.throwIfAborted();
+    await set(eraseRemoteOwnerData$, owner, signal);
   },
 );
 
@@ -441,6 +444,8 @@ export const cleanupClerkDeletedUser$ = command(
     await set(deleteWechatOwnerData$, owner, signal);
     await set(stopClerkDeletedOwnerSchedules$, owner, signal);
     await set(stopClerkDeletedOwnerRuns$, owner, signal);
+    signal.throwIfAborted();
+    await set(eraseRemoteOwnerData$, owner, signal);
   },
 );
 
