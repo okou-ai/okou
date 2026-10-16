@@ -3208,28 +3208,31 @@ async fn fetch_fresh_archive_once(
 
     let phase = FreshArchivePhaseGuard::new(phase_records, STORAGE_CACHE_FRESH_DELIVERY_BODY);
     let body = async {
-        let mut bytes = Vec::with_capacity(initial_body_capacity(
-            response_size,
-            Some(exact_size),
+        let mut body = BoundedArchiveBody::new(
+            initial_body_capacity(response_size, Some(exact_size), CACHE_MAX_SIZE),
             CACHE_MAX_SIZE,
-        ));
-        let mut downloaded = 0u64;
+        );
         while let Some(chunk) = response
             .chunk()
             .await
             .map_err(|error| FreshArchiveFetchError::from_reqwest("body", error))?
         {
-            if append_limited_chunk(&mut bytes, &mut downloaded, &chunk, CACHE_MAX_SIZE)
+            if body
+                .append(&chunk)
                 .map_err(|_| FreshArchiveFetchError::permanent("body-length-overflow"))?
                 .is_some()
             {
                 return Err(FreshArchiveFetchError::permanent("body-oversized"));
             }
         }
-        if downloaded != exact_size {
+        if body
+            .len()
+            .map_err(|_| FreshArchiveFetchError::permanent("body-length-overflow"))?
+            != exact_size
+        {
             return Err(FreshArchiveFetchError::permanent("body-size-mismatch"));
         }
-        Ok((Bytes::from(bytes), size_source))
+        Ok((body.into_bytes(), size_source))
     }
     .await;
     phase.finish(body.as_ref().map(|_| ()).map_err(|error| error.reason));
@@ -3851,30 +3854,27 @@ async fn download_tarball(
         });
     }
 
-    let mut bytes = Vec::with_capacity(initial_body_capacity(
-        content_length,
-        expected_size,
+    let mut body = BoundedArchiveBody::new(
+        initial_body_capacity(content_length, expected_size, max_size),
         max_size,
-    ));
-    let mut downloaded = 0u64;
+    );
 
     while let Some(chunk) = resp
         .chunk()
         .await
         .map_err(|e| CacheHttpError::from_reqwest("read body", e))?
     {
-        if let Some(observed_size) =
-            append_limited_chunk(&mut bytes, &mut downloaded, &chunk, max_size)?
-        {
+        if let Some(observed_size) = body.append(&chunk)? {
             return Ok(DownloadBody::OverSize { observed_size });
         }
     }
 
+    let bytes = body.into_bytes();
     if bytes.is_empty() {
         return Ok(DownloadBody::Empty);
     }
 
-    Ok(DownloadBody::Complete(Bytes::from(bytes)))
+    Ok(DownloadBody::Complete(bytes))
 }
 
 async fn read_cached_archive(
@@ -3886,8 +3886,7 @@ async fn read_cached_archive(
         .await
         .map_err(|e| RunnerError::Internal(format!("open cached {}: {e}", path.display())))?;
     let capacity = initial_body_capacity(None, expected_size, max_size);
-    let mut bytes = Vec::with_capacity(capacity);
-    let mut downloaded = 0u64;
+    let mut body = BoundedArchiveBody::new(capacity, max_size);
     // Keep the scratch space out of every spawned archive task's future. Small
     // cached archives also need no 64-KiB Tokio file read buffer. The size is
     // only a hint: retain a useful minimum and read to EOF under the byte limit.
@@ -3907,18 +3906,17 @@ async fn read_cached_archive(
                 path.display()
             ))
         })?;
-        if let Some(observed_size) =
-            append_limited_chunk(&mut bytes, &mut downloaded, chunk, max_size)?
-        {
+        if let Some(observed_size) = body.append(chunk)? {
             return Ok(DownloadBody::OverSize { observed_size });
         }
     }
 
+    let bytes = body.into_bytes();
     if bytes.is_empty() {
         return Ok(DownloadBody::Empty);
     }
 
-    Ok(DownloadBody::Complete(Bytes::from(bytes)))
+    Ok(DownloadBody::Complete(bytes))
 }
 
 fn initial_body_capacity(
@@ -3933,23 +3931,41 @@ fn initial_body_capacity(
     usize::try_from(capacity).unwrap_or(BODY_BUFFER_FALLBACK_CAPACITY)
 }
 
-fn append_limited_chunk(
-    bytes: &mut Vec<u8>,
-    downloaded: &mut u64,
-    chunk: &[u8],
+/// Owns the retained bytes and their append limit without a separate byte count.
+struct BoundedArchiveBody {
+    bytes: Vec<u8>,
     max_size: u64,
-) -> RunnerResult<Option<u64>> {
-    let chunk_len = u64::try_from(chunk.len())
-        .map_err(|_| RunnerError::Internal("body chunk length overflow".to_string()))?;
-    let Some(next_downloaded) = downloaded.checked_add(chunk_len) else {
-        return Ok(Some(u64::MAX));
-    };
-    if next_downloaded > max_size {
-        return Ok(Some(next_downloaded));
+}
+
+impl BoundedArchiveBody {
+    fn new(capacity: usize, max_size: u64) -> Self {
+        Self {
+            bytes: Vec::with_capacity(capacity),
+            max_size,
+        }
     }
-    bytes.extend_from_slice(chunk);
-    *downloaded = next_downloaded;
-    Ok(None)
+
+    fn len(&self) -> RunnerResult<u64> {
+        u64::try_from(self.bytes.len())
+            .map_err(|_| RunnerError::Internal("body length overflow".to_string()))
+    }
+
+    fn append(&mut self, chunk: &[u8]) -> RunnerResult<Option<u64>> {
+        let chunk_len = u64::try_from(chunk.len())
+            .map_err(|_| RunnerError::Internal("body chunk length overflow".to_string()))?;
+        let Some(observed_size) = self.len()?.checked_add(chunk_len) else {
+            return Ok(Some(u64::MAX));
+        };
+        if observed_size > self.max_size {
+            return Ok(Some(observed_size));
+        }
+        self.bytes.extend_from_slice(chunk);
+        Ok(None)
+    }
+
+    fn into_bytes(self) -> Bytes {
+        Bytes::from(self.bytes)
+    }
 }
 
 async fn evict_oversized_cache(
@@ -10340,33 +10356,36 @@ mod tests {
 
     #[test]
     fn limited_body_allows_exact_limit() {
-        let mut bytes = Vec::new();
-        let mut downloaded = 0u64;
+        let mut body = BoundedArchiveBody::new(0, 6);
 
-        let first = append_limited_chunk(&mut bytes, &mut downloaded, b"abcd", 6).unwrap();
-        let second = append_limited_chunk(&mut bytes, &mut downloaded, b"ef", 6).unwrap();
+        let first = body.append(b"abcd").unwrap();
+        let second = body.append(b"ef").unwrap();
 
         assert_eq!(first, None);
         assert_eq!(second, None);
-        assert_eq!(downloaded, 6);
-        assert_eq!(bytes, b"abcdef");
+        assert_eq!(body.len().unwrap(), 6);
+        assert_eq!(body.into_bytes().as_ref(), b"abcdef");
     }
 
     #[test]
     fn limited_body_rejects_one_byte_over_limit() {
-        let mut bytes = Vec::new();
-        let mut downloaded = 0u64;
+        let mut body = BoundedArchiveBody::new(0, 6);
 
-        let first = append_limited_chunk(&mut bytes, &mut downloaded, b"abcd", 6).unwrap();
-        let second = append_limited_chunk(&mut bytes, &mut downloaded, b"efg", 6).unwrap();
+        let first = body.append(b"abcd").unwrap();
+        let second = body.append(b"efg").unwrap();
 
         assert_eq!(first, None);
         assert_eq!(second, Some(7));
         assert_eq!(
-            downloaded, 4,
-            "over-limit chunk must not advance downloaded size"
+            body.len().unwrap(),
+            4,
+            "over-limit chunk must not advance accepted size"
         );
-        assert_eq!(bytes, b"abcd", "over-limit chunk must not be appended");
+        assert_eq!(
+            body.into_bytes().as_ref(),
+            b"abcd",
+            "over-limit chunk must not be appended"
+        );
     }
 
     #[tokio::test]
@@ -10394,6 +10413,27 @@ mod tests {
             }
             DownloadBody::Empty => panic!("content-length over limit must not be empty"),
             DownloadBody::OverSize { observed_size } => assert_eq!(observed_size, 7),
+        }
+    }
+
+    #[tokio::test]
+    async fn download_accepts_stream_without_content_length_at_exact_limit() {
+        let (url, server_task) = raw_http_url(
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n4\r\nabcd\r\n2\r\nef\r\n0\r\n\r\n"
+                .to_vec(),
+        )
+        .await;
+        let http = Client::builder().build().unwrap();
+
+        let result = download_tarball(&http, &url, Some(1), 6).await.unwrap();
+        server_task.assert_finished().await;
+
+        match result {
+            DownloadBody::Complete(bytes) => assert_eq!(bytes.as_ref(), b"abcdef"),
+            DownloadBody::Empty => panic!("exact-limit stream must not be empty"),
+            DownloadBody::OverSize { observed_size } => {
+                panic!("exact-limit stream rejected at {observed_size} bytes")
+            }
         }
     }
 
