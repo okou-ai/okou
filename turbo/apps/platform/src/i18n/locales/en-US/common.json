@@ -5148,21 +5148,25 @@
     "wallet": {
       "actionError": "Couldn’t complete the action. Check your connection, allow pop-ups, and try again.",
       "connect": "Connect",
-      "description": "Let your agents request purchases through Link. You approve each purchase.",
+      "description": "Let your agents request purchases and view Link transactions. You approve each purchase.",
       "disconnect": "Disconnect",
       "loadError": "Couldn’t load your wallet.",
       "permissionsUnknown": "Reconnect Link to review and confirm its current permissions.",
       "retry": "Retry",
-      "scope": "Let Okou make purchases for you with Link.",
+      "scope": "Let Okou make purchases and view your Link activity.",
       "title": "Wallet",
       "transactions": {
-        "description": "Your recent Link purchase requests in Okou.",
+        "description": "Recent transactions from your connected Link account.",
         "empty": "No Link transactions yet",
         "loadError": "Couldn’t load transactions. Try again.",
         "loading": "Loading transactions",
         "merchant": "Merchant",
+        "refunded": "Refunded",
+        "requestsDescription": "Recorded requests in this workspace. Connect or update Link permissions to view actual transactions.",
+        "requestsEmpty": "No purchase requests yet",
+        "requestsTitle": "Purchase requests",
         "status": {
-          "approved": "Approved, awaiting payment",
+          "approved": "Approved, payment unconfirmed",
           "canceled": "Canceled",
           "created": "Created",
           "creating": "Creating",
@@ -5175,8 +5179,8 @@
           "succeeded": "Payment succeeded"
         },
         "statusLabel": "Status",
-        "test": "Test",
-        "title": "Link transactions"
+        "title": "Link transactions",
+        "unknownStatus": "Status unavailable"
       },
       "workspaceScopeChanged": "Your Link wallet now works across your agents in this workspace. Reconnect to approve this change."
     },

@@ -1699,6 +1699,10 @@ export const INSTALL_NATIVE = String.raw`
         if(state.hasResolvedFont(s,meta))item._nativePaint={...item._nativePaint,resolvedFonts:true};
         delete item.options.fill;
         item.options.line = { transparency: 100 };
+        // Paint owns rounded/custom outlines; editable text uses the CSS content
+        // rectangle, without a preset shape's additional text-area inset.
+        item.options.shape = pptx.ShapeType.rect;
+        delete item.options.rectRadius;
         delete item.options.shadow;
         if (textShadow) item.options.shadow = textShadow;
         if (g.similarity) {
@@ -1713,7 +1717,9 @@ export const INSTALL_NATIVE = String.raw`
             if (part.options?.lineSpacing) part.options.lineSpacing *= g.sx;
           }
           if (Array.isArray(item.options.margin))
-            item.options.margin = item.options.margin.map((m) => m * g.sx);
+            item.options.margin = ['Left','Right','Bottom','Top'].map(side =>
+              (parseFloat(s['padding'+side]) + parseFloat(s['border'+side+'Width'])) * 0.75 * config.scale * g.sx,
+            );
         } else if (g.matrix.is2D)
           diagnostic(
             node,

@@ -132,7 +132,9 @@ test("verification connects the account and disconnect revokes it", async () => 
   await waitFor(() => {
     return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
-  click(getAction("button", "Disconnect", getIntegrationCard("WeChat")));
+  expect(queryAction("button", "Disconnect")).not.toBeInTheDocument();
+  click(getAction("button", "More options", getIntegrationCard("WeChat")));
+  click(getAction("button", "Disconnect"));
   await waitFor(() => {
     return expect(
       getAction("button", "Connect", getIntegrationCard("WeChat")),

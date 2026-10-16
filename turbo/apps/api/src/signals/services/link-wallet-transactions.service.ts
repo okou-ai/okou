@@ -18,6 +18,7 @@ export const walletTransactions$ = computed(async (get) => {
   const owner = and(
     eq(linkWalletSpends.orgId, orgId),
     eq(linkWalletSpends.userId, userId),
+    eq(linkWalletSpends.test, false),
   );
   // Compare in Postgres to retain timestamp precision, including tied dates.
   // A missing cursor or one owned by someone else yields no rows.

@@ -5136,21 +5136,25 @@
     "wallet": {
       "actionError": "Tindakan tidak dapat diselesaikan. Periksa koneksi, izinkan pop-up, lalu coba lagi.",
       "connect": "Hubungkan",
-      "description": "Agen Anda dapat meminta pembelian melalui Link. Anda menyetujui setiap pembelian.",
+      "description": "Agen Anda dapat meminta pembelian dan melihat transaksi Link. Anda menyetujui setiap pembelian.",
       "disconnect": "Putuskan",
       "loadError": "Dompet Anda tidak dapat dimuat.",
       "permissionsUnknown": "Hubungkan kembali Link untuk meninjau dan mengonfirmasi izin saat ini.",
       "retry": "Coba lagi",
-      "scope": "Biarkan Okou berbelanja untuk Anda melalui Link.",
+      "scope": "Izinkan Okou berbelanja dan melihat aktivitas Link Anda.",
       "title": "Dompet",
       "transactions": {
-        "description": "Permintaan pembelian Link terbaru Anda di Okou.",
+        "description": "Transaksi terbaru dari akun Link yang terhubung.",
         "empty": "Belum ada transaksi Link",
         "loadError": "Tidak dapat memuat transaksi. Coba lagi.",
         "loading": "Memuat transaksi",
         "merchant": "Penjual",
+        "refunded": "Dikembalikan",
+        "requestsDescription": "Permintaan yang tercatat di ruang kerja ini. Hubungkan Link atau perbarui izin untuk melihat transaksi aktual.",
+        "requestsEmpty": "Belum ada permintaan pembelian",
+        "requestsTitle": "Permintaan pembelian",
         "status": {
-          "approved": "Disetujui, menunggu pembayaran",
+          "approved": "Disetujui, pembayaran belum terkonfirmasi",
           "canceled": "Dibatalkan",
           "created": "Dibuat",
           "creating": "Sedang dibuat",
@@ -5163,8 +5167,8 @@
           "succeeded": "Pembayaran berhasil"
         },
         "statusLabel": "Status",
-        "test": "Uji coba",
-        "title": "Transaksi Link"
+        "title": "Transaksi Link",
+        "unknownStatus": "Status tidak tersedia"
       },
       "workspaceScopeChanged": "Dompet Link Anda kini dapat digunakan oleh semua agen Anda di ruang kerja ini. Hubungkan kembali untuk menyetujui perubahan ini."
     },

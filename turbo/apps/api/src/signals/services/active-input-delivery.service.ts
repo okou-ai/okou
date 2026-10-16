@@ -10,7 +10,7 @@ import { chatEvents } from "@okouai/db/schema/chat-event";
 import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
-import type { Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
 import { DiscordQueuedLaunchUnavailableError } from "./discord-queued-launch-context.service";
 import { WechatLaunchUnavailableError } from "./wechat-context.service";
@@ -88,43 +88,45 @@ type ActiveInputConsumption =
   | { readonly outcome: "rejected" }
   | { readonly outcome: "invalid" };
 
-async function loadActiveInputDeliveryScope(
-  db: Db,
-  args: {
-    readonly runId: string;
-    readonly userId: string;
-    readonly orgId: string;
+const loadActiveInputDeliveryScope$ = command(
+  async (
+    { get },
+    args: {
+      readonly runId: string;
+      readonly userId: string;
+      readonly orgId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<ActiveInputDeliveryScope | null> => {
+    const [row] = await get(db$)
+      .select({
+        runId: agentRuns.id,
+        chatThreadId: agentRuns.chatThreadId,
+        userId: agentRuns.userId,
+        orgId: agentRuns.orgId,
+        status: agentRuns.status,
+      })
+      .from(agentRuns)
+      .where(
+        and(
+          eq(agentRuns.id, args.runId),
+          eq(agentRuns.userId, args.userId),
+          eq(agentRuns.orgId, args.orgId),
+          isNotNull(agentRuns.triggerSource),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!row?.chatThreadId) {
+      return null;
+    }
+    return {
+      ...row,
+      chatThreadId: row.chatThreadId,
+      status: runStatusSchema.parse(row.status),
+    };
   },
-  signal: AbortSignal,
-): Promise<ActiveInputDeliveryScope | null> {
-  const [row] = await db
-    .select({
-      runId: agentRuns.id,
-      chatThreadId: agentRuns.chatThreadId,
-      userId: agentRuns.userId,
-      orgId: agentRuns.orgId,
-      status: agentRuns.status,
-    })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.id, args.runId),
-        eq(agentRuns.userId, args.userId),
-        eq(agentRuns.orgId, args.orgId),
-        isNotNull(agentRuns.triggerSource),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (!row?.chatThreadId) {
-    return null;
-  }
-  return {
-    ...row,
-    chatThreadId: row.chatThreadId,
-    status: runStatusSchema.parse(row.status),
-  };
-}
+);
 
 function replacementTarget(source: ActiveInputSourceRow) {
   return {
@@ -265,7 +267,7 @@ export const loadNextSteerableInput$ = command(
     },
     signal: AbortSignal,
   ): Promise<NextSteerableInputResult> => {
-    const scope = await loadActiveInputDeliveryScope(db, args, signal);
+    const scope = await set(loadActiveInputDeliveryScope$, args, signal);
     if (!scope) {
       return { outcome: "forbidden" };
     }
@@ -322,43 +324,46 @@ export const loadNextSteerableInput$ = command(
  * a replacement; a replacement by this run makes a repeat idempotent, and any
  * other revoker is a conflict the runner ignores.
  */
-export async function declareSteeredInput(
-  db: Db,
-  args: {
-    readonly runId: string;
-    readonly eventId: string;
-    readonly userId: string;
-    readonly orgId: string;
-  },
-  signal: AbortSignal,
-): Promise<SteeredInputDeclarationResult> {
-  const scope = await loadActiveInputDeliveryScope(db, args, signal);
-  if (!scope) {
-    return { outcome: "forbidden" };
-  }
-  const running = scope.status === "running";
-  const consumed = await consumeActiveInputSource(
-    db,
-    scope,
-    args.eventId,
-    running,
-  );
-  signal.throwIfAborted();
-  if (consumed.outcome === "invalid") {
-    return { outcome: "not_found" };
-  }
-  if (consumed.outcome === "rejected") {
+export const declareSteeredInput$ = command(
+  async (
+    { set },
+    args: {
+      readonly runId: string;
+      readonly eventId: string;
+      readonly userId: string;
+      readonly orgId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<SteeredInputDeclarationResult> => {
+    const db = set(writeDb$);
+    const scope = await set(loadActiveInputDeliveryScope$, args, signal);
+    if (!scope) {
+      return { outcome: "forbidden" };
+    }
+    const running = scope.status === "running";
+    const consumed = await consumeActiveInputSource(
+      db,
+      scope,
+      args.eventId,
+      running,
+    );
+    signal.throwIfAborted();
+    if (consumed.outcome === "invalid") {
+      return { outcome: "not_found" };
+    }
+    if (consumed.outcome === "rejected") {
+      return {
+        outcome: "conflict",
+        reason: running ? "input_already_consumed" : "run_not_running",
+      };
+    }
     return {
-      outcome: "conflict",
-      reason: running ? "input_already_consumed" : "run_not_running",
+      outcome: "steered",
+      replacementsAppended: consumed.outcome === "appended",
+      chatThreadId: scope.chatThreadId,
     };
-  }
-  return {
-    outcome: "steered",
-    replacementsAppended: consumed.outcome === "appended",
-    chatThreadId: scope.chatThreadId,
-  };
-}
+  },
+);
 
 /**
  * Revoke the run's time budget input when nothing consumed it.

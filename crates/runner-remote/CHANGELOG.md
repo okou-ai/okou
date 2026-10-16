@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.22.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.21.1...runner-remote-v0.22.0) (2026-10-16)
+
+
+### Features
+
+* **remote:** retain layered tailscale source diagnostics ([#40600](https://github.com/okou-ai/okou/issues/40600)) ([bea7f24](https://github.com/okou-ai/okou/commit/bea7f24675c550f6dc752866f501408d2d62987b))
+
+
+### Refactoring
+
+* **runner-remote:** share apple vnc ssh endpoint validation ([#40611](https://github.com/okou-ai/okou/issues/40611)) ([456eb00](https://github.com/okou-ai/okou/commit/456eb001bebb8c3b2b6388b3ca849847d7c450e0))
+* **runner-remote:** share public destination admission rules ([#40614](https://github.com/okou-ai/okou/issues/40614)) ([0c6ec16](https://github.com/okou-ai/okou/commit/0c6ec16e1698c91ebc3b4494a004f76ba4b02891))
+
 ## [0.21.1](https://github.com/okou-ai/okou/compare/runner-remote-v0.21.0...runner-remote-v0.21.1) (2026-10-16)
 
 ## [0.21.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.20.2...runner-remote-v0.21.0) (2026-10-16)
