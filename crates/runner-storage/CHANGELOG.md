@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.8](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.7...runner-storage-v0.5.8) (2026-10-16)
+
+
+### Refactoring
+
+* **runner-storage:** share guest staging batch limit policy ([#40610](https://github.com/okou-ai/okou/issues/40610)) ([8547dba](https://github.com/okou-ai/okou/commit/8547dba8b38a068ac0102a40e90a9d17d467681b))
+
 ## [0.5.7](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.6...runner-storage-v0.5.7) (2026-10-16)
 
 ## [0.5.6](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.5...runner-storage-v0.5.6) (2026-10-15)

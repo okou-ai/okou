@@ -12,6 +12,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1034.1](https://github.com/okou-ai/okou/compare/app-v0.1034.0...app-v0.1034.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **app:** allow skipping onboarding in preview ([#40623](https://github.com/okou-ai/okou/issues/40623)) ([3ae8215](https://github.com/okou-ai/okou/commit/3ae82159b4fd693eafa0bdaa0e5d7a85d316c148))
+* **app:** remove redundant activity files panel chrome ([#40644](https://github.com/okou-ai/okou/issues/40644)) ([f55ac16](https://github.com/okou-ai/okou/commit/f55ac165b9ac95940bc7a917379522bcb2e46690))
+* **app:** require activation to expand slash workflows ([#40633](https://github.com/okou-ai/okou/issues/40633)) ([960e028](https://github.com/okou-ai/okou/commit/960e0280c08aba3f11b5d578cbb85837374b337a))
+* **app:** restore direct slack oauth from web entries ([#40649](https://github.com/okou-ai/okou/issues/40649)) ([02b1c40](https://github.com/okou-ai/okou/commit/02b1c4026cbb383212100597777f1edc8b223206))
+* **app:** restore the slash menu section labels ([#40628](https://github.com/okou-ai/okou/issues/40628)) ([663ccd1](https://github.com/okou-ai/okou/commit/663ccd1b5db79243eefa45e3fda88cab3f64fe10))
+* **wallet:** unify link consent and show actual transactions ([#40650](https://github.com/okou-ai/okou/issues/40650)) ([16fa1cc](https://github.com/okou-ai/okou/commit/16fa1cc1386dd8fcb6f32c789693b98af25f0d13))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.1
+    * @okouai/connectors bumped to 3.16.9
+    * @okouai/core bumped to 8.764.2
+
 ## [0.1034.0](https://github.com/okou-ai/okou/compare/app-v0.1033.0...app-v0.1034.0) (2026-10-16)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.12](https://github.com/okou-ai/okou/compare/runner-executor-v0.13.11...runner-executor-v0.13.12) (2026-10-16)
+
+
+### Refactoring
+
+* **runner-executor:** share executor start telemetry initialization ([#40613](https://github.com/okou-ai/okou/issues/40613)) ([5f98eac](https://github.com/okou-ai/okou/commit/5f98eac805c2e74d2f3c5c69787a11f62ea16ecf))
+
 ## [0.13.11](https://github.com/okou-ai/okou/compare/runner-executor-v0.13.10...runner-executor-v0.13.11) (2026-10-16)
 
 ## [0.13.10](https://github.com/okou-ai/okou/compare/runner-executor-v0.13.9...runner-executor-v0.13.10) (2026-10-16)

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.10](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.14.9...runner-lifecycle-v0.14.10) (2026-10-16)
+
+
+### Refactoring
+
+* **runner-lifecycle:** encode status write polling commitment ([#40616](https://github.com/okou-ai/okou/issues/40616)) ([e751390](https://github.com/okou-ai/okou/commit/e751390e11af9e8d514e6d54b7446e41de52ae7c))
+
 ## [0.14.9](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.14.8...runner-lifecycle-v0.14.9) (2026-10-16)
 
 

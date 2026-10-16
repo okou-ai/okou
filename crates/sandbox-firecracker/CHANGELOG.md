@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.51.9](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.51.8...sandbox-firecracker-v0.51.9) (2026-10-16)
+
+
+### Bug Fixes
+
+* **rust:** bound control exec response writes ([#40651](https://github.com/okou-ai/okou/issues/40651)) ([71dc42e](https://github.com/okou-ai/okou/commit/71dc42e1bd4adc6b67aae3a307741ae2d67ddbbc))
+
 ## [0.51.8](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.51.7...sandbox-firecracker-v0.51.8) (2026-10-16)
 
 ## [0.51.7](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.51.6...sandbox-firecracker-v0.51.7) (2026-10-16)

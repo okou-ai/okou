@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.107.8](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.7...guest-agent-v0.107.8) (2026-10-16)
+
+
+### Refactoring
+
+* **rust:** retire orphaned history archive selectors ([#40652](https://github.com/okou-ai/okou/issues/40652)) ([12e6555](https://github.com/okou-ai/okou/commit/12e6555d00072f49d7d96e6cddb6f8ca4d079082))
+
+
+### Performance Improvements
+
+* **guest-agent:** bulk append bounded jsonl input ([#40637](https://github.com/okou-ai/okou/issues/40637)) ([b82f1cb](https://github.com/okou-ai/okou/commit/b82f1cbee05cf9a90160d3088d2c3a2d4121783b))
+
 ## [0.107.7](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.6...guest-agent-v0.107.7) (2026-10-16)
 
 
