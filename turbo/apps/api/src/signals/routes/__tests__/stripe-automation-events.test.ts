@@ -79,6 +79,7 @@ async function connectStripeOAuth(
 
 async function setupScenario(
   options: {
+    readonly isolatePg?: true;
     readonly accountId?: string;
     readonly billingReasons?: readonly (
       "manual" | "subscription_cycle" | "subscription_create"
@@ -86,7 +87,9 @@ async function setupScenario(
   } = {},
 ): Promise<Scenario> {
   const runnerGroup = runs.configureRunnerGroup();
-  const { actor } = await workflows.setupWorkflowOrg();
+  const { actor } = await workflows.setupWorkflowOrg({
+    isolatePg: options.isolatePg,
+  });
   if (!actor.orgId) {
     throw new Error("Expected an organization-scoped workflow owner");
   }
@@ -359,7 +362,10 @@ describe("Stripe automation event webhook", () => {
     const originalAccountId = `acct_stripe_clear_original_${randomUUID()}`;
     const threadAccountId = `acct_stripe_clear_thread_${randomUUID()}`;
     const defaultAccountId = `acct_stripe_clear_default_${randomUUID()}`;
-    const scenario = await setupScenario({ accountId: originalAccountId });
+    const scenario = await setupScenario({
+      accountId: originalAccountId,
+      isolatePg: true,
+    });
     const orgId = scenario.actor.orgId;
     if (!orgId) {
       throw new Error("Expected an organization-scoped workflow owner");
@@ -419,7 +425,10 @@ describe("Stripe automation event webhook", () => {
   it("creates a Stripe automation against the selected thread account", async () => {
     const originalAccountId = `acct_stripe_create_original_${randomUUID()}`;
     const threadAccountId = `acct_stripe_create_thread_${randomUUID()}`;
-    const scenario = await setupScenario({ accountId: originalAccountId });
+    const scenario = await setupScenario({
+      accountId: originalAccountId,
+      isolatePg: true,
+    });
     const orgId = scenario.actor.orgId;
     if (!orgId) {
       throw new Error("Expected an organization-scoped workflow owner");
