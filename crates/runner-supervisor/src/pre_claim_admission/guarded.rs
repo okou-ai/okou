@@ -19,9 +19,109 @@ enum Resource {
 type ClaimResult = Result<Option<ClaimedJob>, MemoryOperationError>;
 
 enum ClaimObservation {
-    Waiting,
-    Received,
-    Uncertain,
+    Pending(oneshot::Receiver<ClaimResult>),
+    Claimed(Box<ClaimedJob>),
+    Rejected,
+    Consumed,
+    Uncertain(Option<MemoryOperationError>),
+}
+
+/// Begun identity outlives receipt consumption, including successful transfer.
+struct BegunClaim {
+    run_id: RunId,
+    observation: ClaimObservation,
+}
+
+impl BegunClaim {
+    async fn wait(&mut self) -> Result<(), MemoryOperationError> {
+        let response = match &mut self.observation {
+            ClaimObservation::Pending(receiver) => receiver.await,
+            ClaimObservation::Uncertain(_) => return Err(MemoryOperationError::ProducerLost),
+            ClaimObservation::Claimed(_)
+            | ClaimObservation::Rejected
+            | ClaimObservation::Consumed => {
+                return Ok(());
+            }
+        };
+        // Only replace the receiver after its borrowed wait completes.
+        match response {
+            Ok(response) => self.record(response),
+            Err(_) => {
+                self.observation = ClaimObservation::Uncertain(None);
+                Err(MemoryOperationError::ProducerLost)
+            }
+        }
+    }
+
+    fn record(&mut self, response: ClaimResult) -> Result<(), MemoryOperationError> {
+        self.observation = match response {
+            Ok(Some(claimed)) => ClaimObservation::Claimed(Box::new(claimed)),
+            Ok(None) => ClaimObservation::Rejected,
+            Err(error) => ClaimObservation::Uncertain(Some(error)),
+        };
+        if matches!(self.observation, ClaimObservation::Uncertain(_)) {
+            Err(MemoryOperationError::ProducerLost)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn receive_ready(&mut self) -> Result<(), MemoryOperationError> {
+        let response = match &mut self.observation {
+            ClaimObservation::Pending(receiver) => receiver.try_recv(),
+            ClaimObservation::Consumed | ClaimObservation::Uncertain(None) => {
+                return Err(MemoryOperationError::Consumed);
+            }
+            ClaimObservation::Claimed(_)
+            | ClaimObservation::Rejected
+            | ClaimObservation::Uncertain(Some(_)) => return Ok(()),
+        };
+        match response {
+            Ok(response) => {
+                // Preserve the actual error receipt for its explicit take.
+                let _ = self.record(response);
+                Ok(())
+            }
+            Err(oneshot::error::TryRecvError::Empty) => Err(MemoryOperationError::Consumed),
+            Err(oneshot::error::TryRecvError::Closed) => {
+                self.observation = ClaimObservation::Uncertain(None);
+                Err(MemoryOperationError::ProducerLost)
+            }
+        }
+    }
+
+    fn take_response(&mut self) -> ClaimResult {
+        self.receive_ready()?;
+        // Uncertainty remains sticky after taking its actual error receipt.
+        if let ClaimObservation::Uncertain(error) = &mut self.observation {
+            return Err(error.take().ok_or(MemoryOperationError::Consumed)?);
+        }
+        match std::mem::replace(&mut self.observation, ClaimObservation::Consumed) {
+            ClaimObservation::Claimed(claimed) => Ok(Some(*claimed)),
+            ClaimObservation::Rejected => Ok(None),
+            observation => {
+                self.observation = observation;
+                Err(MemoryOperationError::Consumed)
+            }
+        }
+    }
+
+    fn take_matching_claim(&mut self) -> Result<Box<ClaimedJob>, String> {
+        self.receive_ready().map_err(|e| e.to_string())?;
+        match std::mem::replace(&mut self.observation, ClaimObservation::Consumed) {
+            ClaimObservation::Claimed(claimed) if claimed.context().run_id == self.run_id => {
+                Ok(claimed)
+            }
+            observation => {
+                self.observation = observation;
+                Err("speculative claim response missing, failed or mismatched".into())
+            }
+        }
+    }
+
+    fn restore_claim(&mut self, claimed: Box<ClaimedJob>) {
+        self.observation = ClaimObservation::Claimed(claimed);
+    }
 }
 
 /// Store this capsule outside every observed future. Provider claims are
@@ -30,10 +130,7 @@ enum ClaimObservation {
 #[must_use]
 pub struct GuardedSpeculativeAdmission {
     resource: Resource,
-    claim: Option<ClaimResult>,
-    claim_response: Option<oneshot::Receiver<ClaimResult>>,
-    claim_observation: ClaimObservation,
-    run_id: Option<RunId>,
+    claim: Option<BegunClaim>,
     preparation_error: Option<String>,
 }
 
@@ -49,9 +146,6 @@ impl GuardedSpeculativeAdmission {
                 reservation,
             )?)),
             claim: None,
-            claim_response: None,
-            claim_observation: ClaimObservation::Waiting,
-            run_id: None,
             preparation_error: None,
         })
     }
@@ -64,7 +158,7 @@ impl GuardedSpeculativeAdmission {
         candidate: JobCandidate,
         tracker: &IdleDestroyTracker,
     ) -> Result<(), String> {
-        if self.run_id.is_some() {
+        if self.claim.is_some() {
             return Err("speculative claim already began; observe its retained response".into());
         }
         let Resource::Speculative(owner) = &mut self.resource else {
@@ -83,8 +177,10 @@ impl GuardedSpeculativeAdmission {
         let token = tracker.acceptance_token().map_err(|e| e.to_string())?;
         let run_id = candidate.run_id();
         let (response, wait) = oneshot::channel();
-        self.run_id = Some(run_id);
-        self.claim_response = Some(wait);
+        self.claim = Some(BegunClaim {
+            run_id,
+            observation: ClaimObservation::Pending(wait),
+        });
         tracker.spawn_cleanup(
             async move {
                 let _token = token;
@@ -114,61 +210,11 @@ impl GuardedSpeculativeAdmission {
     }
 
     pub async fn wait_for_claim(&mut self) -> Result<(), MemoryOperationError> {
-        match self.claim_observation {
-            ClaimObservation::Received => return Ok(()),
-            ClaimObservation::Uncertain => return Err(MemoryOperationError::ProducerLost),
-            ClaimObservation::Waiting => {}
-        }
-        let result = self
-            .claim_response
+        self.claim
             .as_mut()
             .ok_or(MemoryOperationError::Consumed)?
-            .await;
-        self.claim_response = None;
-        match result {
-            Ok(response) => self.record_claim(response),
-            Err(_) => {
-                self.claim_observation = ClaimObservation::Uncertain;
-                Err(MemoryOperationError::ProducerLost)
-            }
-        }
-    }
-
-    fn record_claim(&mut self, response: ClaimResult) -> Result<(), MemoryOperationError> {
-        let definite = response.is_ok();
-        self.claim = Some(response);
-        if definite {
-            self.claim_observation = ClaimObservation::Received;
-            Ok(())
-        } else {
-            self.claim_observation = ClaimObservation::Uncertain;
-            Err(MemoryOperationError::ProducerLost)
-        }
-    }
-
-    fn receive_ready_claim(&mut self) -> Result<(), MemoryOperationError> {
-        if self.claim.is_some() {
-            return Ok(());
-        }
-        let response = self
-            .claim_response
-            .as_mut()
-            .ok_or(MemoryOperationError::Consumed)?
-            .try_recv();
-        match response {
-            Ok(response) => {
-                self.claim_response = None;
-                // Preserve the actual error receipt for its explicit take.
-                let _ = self.record_claim(response);
-                Ok(())
-            }
-            Err(oneshot::error::TryRecvError::Empty) => Err(MemoryOperationError::Consumed),
-            Err(oneshot::error::TryRecvError::Closed) => {
-                self.claim_response = None;
-                self.claim_observation = ClaimObservation::Uncertain;
-                Err(MemoryOperationError::ProducerLost)
-            }
-        }
+            .wait()
+            .await
     }
 
     pub fn preparation_error(&self) -> Option<&str> {
@@ -178,8 +224,10 @@ impl GuardedSpeculativeAdmission {
     /// A failed/rejected preparation may still have a successful claim requiring
     /// completion. Take its exact original auth explicitly at that boundary.
     pub fn take_claim_response(&mut self) -> Result<Option<ClaimedJob>, MemoryOperationError> {
-        self.receive_ready_claim()?;
-        self.claim.take().ok_or(MemoryOperationError::Consumed)?
+        self.claim
+            .as_mut()
+            .ok_or(MemoryOperationError::Consumed)?
+            .take_response()
     }
 
     /// Verify run identity before atomically transferring claim/resource/full
@@ -187,17 +235,14 @@ impl GuardedSpeculativeAdmission {
     pub fn commit(
         &mut self,
     ) -> Result<(ClaimedJob, Box<ReusableIdleSandbox>, BudgetLease), String> {
-        let run_id = self.run_id.ok_or("speculative claim has not begun")?;
-        self.receive_ready_claim().map_err(|e| e.to_string())?;
-        let claimed = match self.claim.take() {
-            Some(Ok(Some(claimed))) if claimed.context().run_id == run_id => claimed,
-            receipt => {
-                self.claim = receipt;
-                return Err("speculative claim response missing, failed or mismatched".into());
-            }
-        };
+        let claim = self
+            .claim
+            .as_mut()
+            .ok_or("speculative claim has not begun")?;
+        let run_id = claim.run_id;
+        let claimed = claim.take_matching_claim()?;
         let Resource::Speculative(owner) = &mut self.resource else {
-            self.claim = Some(Ok(Some(claimed)));
+            claim.restore_claim(claimed);
             return Err("speculative resource already transferred".into());
         };
         let claimed_timezone =
@@ -205,12 +250,12 @@ impl GuardedSpeculativeAdmission {
         let (sandbox, lease) = match owner.commit(run_id, &claimed_timezone) {
             Ok(resource) => resource,
             Err(error) => {
-                self.claim = Some(Ok(Some(claimed)));
+                claim.restore_claim(claimed);
                 return Err(error);
             }
         };
         self.resource = Resource::Transferred;
-        Ok((claimed, sandbox, lease))
+        Ok((*claimed, sandbox, lease))
     }
 
     /// Convert a rejected pool incoming owner to the shared required-cleanup
@@ -238,7 +283,7 @@ impl GuardedSpeculativeAdmission {
         envelope: IdleRetirementEnvelope,
         home_image_size_bytes: u64,
     ) -> Result<GuardedSpeculativeRollback, MemoryOperationError> {
-        if self.run_id.is_some() {
+        if self.claim.is_some() {
             self.wait_for_claim().await?;
         }
         if let Resource::Speculative(owner) = &mut self.resource {
