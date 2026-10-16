@@ -387,8 +387,10 @@ test("Show the first source and created chats, then open message rows in their r
   await expect(
     within(panel).findByText("Please check the launch plan"),
   ).resolves.toBeInTheDocument();
-  expect(within(panel).getByTitle("Sent")).toHaveTextContent("Sent 1");
-  expect(within(panel).getByTitle("Received")).toHaveTextContent("Received 1");
+  expect(within(panel).getAllByText("Sent", { exact: true })).toHaveLength(1);
+  expect(within(panel).getAllByText("Received", { exact: true })).toHaveLength(
+    1,
+  );
   expect(
     within(panel).getByText("Please check the launch plan").closest("a"),
   ).toHaveAttribute("href", `/chats/${PEER}#run-${OTHER_RUN}`);
@@ -501,22 +503,23 @@ test("Retry a failed relationship list without hiding the other sections", async
   ).resolves.toBeInTheDocument();
 });
 
-test("Format communication counts using the German locale", async () => {
+test("Format the related chat count using the German locale", async () => {
   await setupRelations({
     locale: "de-DE",
     mock: () => {
-      mockCommunications(1000);
-      context.mocks.api(chatRelationsContract.messages, ({ respond }) => {
-        return respond(200, { items: [], nextCursor: null });
+      context.mocks.api(chatRelationsContract.children, ({ respond }) => {
+        return respond(200, {
+          items: Array.from({ length: 1000 }, (_, index) => {
+            const id = `d0000000-0000-4000-a000-${String(index).padStart(12, "0")}`;
+            return { ...createdChat(id, `Child ${index}`), id };
+          }),
+          nextCursor: null,
+        });
       });
     },
   });
   const panel = await screen.findByRole("region", { name: "Resources" });
-  await within(panel).findByText("Existing planning chat");
-  click(buttonNamed("Messages with Existing planning chat", panel));
-  await expect(within(panel).findByTitle("Sent")).resolves.toHaveTextContent(
-    "Sent 1.000",
-  );
+  await expect(within(panel).findByText("1.000")).resolves.toBeInTheDocument();
   expect(document.documentElement).toHaveAttribute("lang", "de-DE");
 });
 
@@ -609,7 +612,7 @@ test("Keep received messages accessible when the peer is unavailable and avoid l
   ).toBeNull();
 });
 
-test("Hide zero counts, retain queued status, and page through message history", async () => {
+test("Show metadata once per message, retain queued status, and page through history", async () => {
   await setupRelations({
     mock: () => {
       mockCommunications(0, { status: "queued", receivedCount: 21 });
@@ -651,11 +654,15 @@ test("Hide zero counts, retain queued status, and page through message history",
   expect(
     within(panel).getByRole("img", { name: "Queued" }),
   ).toBeInTheDocument();
-  expect(within(panel).queryByTitle("Sent")).not.toBeInTheDocument();
+  expect(
+    within(panel).queryByText("Sent", { exact: true }),
+  ).not.toBeInTheDocument();
   click(buttonNamed("Messages with Existing planning chat", panel));
   await within(panel).findByText("Please check the launch plan");
-  expect(within(panel).queryByTitle("Sent")).not.toBeInTheDocument();
-  expect(within(panel).getByTitle("Received")).toHaveTextContent("Received 21");
+  expect(within(panel).getAllByText("Sent", { exact: true })).toHaveLength(1);
+  expect(
+    within(panel).queryByText("Received", { exact: true }),
+  ).not.toBeInTheDocument();
   click(buttonNamed("More", panel));
   const pending = await within(panel).findByText(
     "Waiting in the receiving chat",

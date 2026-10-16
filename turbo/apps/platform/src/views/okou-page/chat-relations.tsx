@@ -3,25 +3,20 @@ import { useGet, useLastLoadable, useSet, type Loadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
-  ArrowDownLeft,
-  ArrowUpRight,
   ChevronDown,
   ChevronRight,
   CircleSlash,
-  MessageCircle,
   RefreshCw,
 } from "lucide-react";
 import { Button, cn, LazySpinner } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type {
   ChatRelationMessage,
-  ChatCommunication,
   RelatedChat,
 } from "@okouai/api-contracts/contracts/chat-relations";
 import {
   formatChatTimestamp,
   formatCompactChatTimestamp,
-  formatLocalizedNumber,
 } from "../../i18n/format.ts";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import type {
@@ -148,7 +143,7 @@ function Origin({ signals }: { readonly signals: ChatRelationSignals }) {
       aria-label={t(($) => {
         return $.chat.relations.origin;
       })}
-      className="flex shrink-0 items-center gap-2 border-b border-border/60 px-5 py-2"
+      className="flex shrink-0 items-center gap-1 border-b border-border/60 px-5 py-2"
     >
       <h4 className="shrink-0 text-xs text-muted-foreground">
         {t(($) => {
@@ -162,15 +157,13 @@ function Origin({ signals }: { readonly signals: ChatRelationSignals }) {
             pathParams: { threadId: part.threadId },
             hash: `run-${part.runId}`,
           }}
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-state-hover"
+          className="min-w-0 flex-1 truncate rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-state-hover hover:text-foreground"
           title={part.titleSnapshot}
         >
-          <MessageCircle size={16} className="shrink-0 text-muted-foreground" />
-          <span className="min-w-0 flex-1 truncate">{part.titleSnapshot}</span>
-          <ArrowUpRight size={14} className="shrink-0 text-muted-foreground" />
+          {part.titleSnapshot}
         </Link>
       ) : part.kind === "mcp" ? (
-        <p className="px-2 py-1.5 text-sm">
+        <p className="px-2 py-1 text-xs text-muted-foreground">
           {part.clientName ??
             t(($) => {
               return $.chat.origins.mcp;
@@ -180,7 +173,7 @@ function Origin({ signals }: { readonly signals: ChatRelationSignals }) {
         <ExternalSourceMessageAnnotation
           part={part}
           compact
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-sm"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1 text-xs text-muted-foreground"
         />
       )}
     </section>
@@ -226,21 +219,15 @@ function RelatedChatLink({ chat }: { readonly chat: RelatedChat }) {
         aria-label={status}
         title={status}
         className={cn(
-          "flex shrink-0 items-center gap-1.5 text-xs",
-          chat.status === "running"
-            ? "text-emerald-600"
-            : chat.status === "queued"
-              ? "text-amber-600"
-              : "text-muted-foreground/40",
+          "shrink-0 text-xs",
+          chat.status === "idle"
+            ? "sr-only"
+            : chat.status === "running"
+              ? "text-emerald-600"
+              : "text-muted-foreground",
         )}
       >
-        <span
-          className={cn(
-            "size-1.5 rounded-full",
-            chat.status === "queued" ? "border border-current" : "bg-current",
-          )}
-        />
-        {chat.status !== "idle" && <span aria-hidden>{status}</span>}
+        <span aria-hidden>{status}</span>
       </span>
     </Link>
   );
@@ -276,13 +263,11 @@ function MessageRow({
     });
   const content = (
     <>
-      <span className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-        <span className="flex items-center gap-1">
-          {message.direction === "sent" ? (
-            <ArrowUpRight size={14} aria-hidden />
-          ) : (
-            <ArrowDownLeft size={14} aria-hidden />
-          )}
+      <span className="block whitespace-pre-wrap break-words text-sm leading-relaxed">
+        {preview}
+      </span>
+      <span className="flex items-center gap-2 text-xs text-muted-foreground">
+        <span>
           {t(($) => {
             return message.direction === "sent"
               ? $.chat.relations.sent
@@ -290,9 +275,6 @@ function MessageRow({
           })}
         </span>
         <MessageTime value={message.createdAt} />
-      </span>
-      <span className="block whitespace-pre-wrap break-words text-sm leading-relaxed">
-        {preview}
       </span>
     </>
   );
@@ -321,49 +303,6 @@ function MessageRow({
         </Link>
       )}
     </li>
-  );
-}
-
-function CommunicationSummary({ chat }: { readonly chat: ChatCommunication }) {
-  const { t } = useTranslation();
-  return (
-    <div className="flex items-center gap-3 px-2 py-2 text-xs text-muted-foreground">
-      {chat.sentCount > 0 && (
-        <span
-          className="flex items-center gap-1"
-          title={t(($) => {
-            return $.chat.relations.sent;
-          })}
-        >
-          <ArrowUpRight size={12} />
-          <span className="sr-only">
-            {t(($) => {
-              return $.chat.relations.sent;
-            })}{" "}
-          </span>
-          {formatLocalizedNumber(chat.sentCount)}
-        </span>
-      )}
-      {chat.receivedCount > 0 && (
-        <span
-          className="flex items-center gap-1"
-          title={t(($) => {
-            return $.chat.relations.received;
-          })}
-        >
-          <ArrowDownLeft size={12} />
-          <span className="sr-only">
-            {t(($) => {
-              return $.chat.relations.received;
-            })}{" "}
-          </span>
-          {formatLocalizedNumber(chat.receivedCount)}
-        </span>
-      )}
-      <span className="ml-auto">
-        <MessageTime value={chat.lastMessageAt} />
-      </span>
-    </div>
   );
 }
 
@@ -412,10 +351,7 @@ function ResourceChatRow({
         </Button>
       </div>
       {expanded && messages && (
-        <div className="mb-2 max-h-64 overflow-y-auto overscroll-contain rounded-2xl border border-surface-border bg-gray-50 p-2">
-          {chat.communication && (
-            <CommunicationSummary chat={chat.communication} />
-          )}
+        <div className="mb-3 ml-2 border-l border-border/60 pl-2">
           <Messages
             list={messages}
             reload={reload}
@@ -488,7 +424,6 @@ function RelationshipsInner({ thread }: { readonly thread: ChatPanelSignals }) {
       })}
     >
       <ChatResourceSectionHeading
-        icon={MessageCircle}
         title={t(($) => {
           return $.chat.relations.communications;
         })}
@@ -508,6 +443,8 @@ function RelationshipsInner({ thread }: { readonly thread: ChatPanelSignals }) {
         <Button
           variant="quiet"
           size="icon-sm"
+          showTooltip
+          className="text-muted-foreground [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/heading:opacity-100 group-focus-within/heading:opacity-100"
           aria-label={t(($) => {
             return $.chat.relations.refresh;
           })}

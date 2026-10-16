@@ -1,4 +1,4 @@
-import { command, computed, state, type Computed } from "ccstate";
+import { command, computed, state, type Command, type Computed } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { marked } from "marked";
@@ -195,7 +195,7 @@ function createChatResourceContentSignals(
   return { content$, links$ };
 }
 
-function createResourceElementRef() {
+function createResourceElementRef(onDetach$?: Command<void, []>) {
   const element$ = state<HTMLElement | null>(null);
   const onRef$ = onRef(
     command(({ set }, element: HTMLElement, signal: AbortSignal) => {
@@ -204,6 +204,9 @@ function createResourceElementRef() {
         "abort",
         () => {
           set(element$, null);
+          if (onDetach$) {
+            set(onDetach$);
+          }
         },
         { once: true },
       );
@@ -229,10 +232,36 @@ function resourcePopupAnchor(boundary: HTMLElement | null) {
     : null;
 }
 
+function createResourcePopupSignals() {
+  const frozenHeight$ = state<number | null>(null);
+  const popup = createResourceElementRef(
+    command(({ set }) => {
+      set(frozenHeight$, null);
+    }),
+  );
+  const freezeHeight$ = command(({ get, set }) => {
+    if (get(frozenHeight$) !== null) {
+      return;
+    }
+    const height = get(popup.element$)?.offsetHeight;
+    if (height && height > 0) {
+      // Lock the rendered size only when a category is expanded or collapsed.
+      set(frozenHeight$, height);
+    }
+  });
+  return {
+    ...popup,
+    freezeHeight$,
+    frozenHeight$: computed((get) => {
+      return get(frozenHeight$);
+    }),
+  };
+}
+
 function createChatResourcePanelSignals() {
   const gutterWidth$ = state(0);
   const anchor = createResourceElementRef();
-  const popup = createResourceElementRef();
+  const popup = createResourcePopupSignals();
   const boundary$ = state<HTMLElement | null>(null);
   const collisionBoundary$ = state<HTMLElement | null>(null);
   const messageColumn$ = state<HTMLElement | null>(null);
@@ -343,6 +372,8 @@ function createChatResourcePanelSignals() {
     layoutOnRef$,
     anchorOnRef$: anchor.onRef$,
     popupOnRef$: popup.onRef$,
+    freezeHeight$: popup.freezeHeight$,
+    frozenHeight$: popup.frozenHeight$,
     blurControl$,
     anchor$: anchor.element$,
     boundary$: computed((get) => {
@@ -365,6 +396,7 @@ export function createChatResourceSignals(
   artifacts$: Computed<Promise<ChatThreadArtifactRun[]>>,
   initialEventsReady$: Computed<boolean>,
 ) {
+  const panel = createChatResourcePanelSignals();
   const expandedSections$ = state({
     messages: false,
     artifacts: false,
@@ -376,6 +408,7 @@ export function createChatResourceSignals(
     }),
     toggleSection$: command(
       ({ set }, section: "messages" | "artifacts" | "links") => {
+        set(panel.freezeHeight$);
         set(expandedSections$, (expanded) => {
           return { ...expanded, [section]: !expanded[section] };
         });
@@ -386,7 +419,7 @@ export function createChatResourceSignals(
       artifacts$,
       initialEventsReady$,
     ),
-    ...createChatResourcePanelSignals(),
+    ...panel,
   };
 }
 

@@ -183,7 +183,6 @@ function createRelationContentSignal(
 
 export interface ResourceChat extends RelatedChat {
   readonly lastActivityAt: string;
-  readonly communication?: ChatCommunication;
 }
 
 function createResourceChats(
@@ -206,7 +205,6 @@ function createResourceChats(
         chats.set(chat.threadId, {
           ...chat,
           lastActivityAt: chat.lastMessageAt,
-          communication: chat,
         });
       }
     }

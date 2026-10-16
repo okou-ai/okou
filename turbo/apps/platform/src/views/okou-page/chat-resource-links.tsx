@@ -1,6 +1,6 @@
 import { useLastResolved, useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Copy, ExternalLink, Link2 } from "lucide-react";
+import { Copy } from "lucide-react";
 import { Button } from "@okouai/ui";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import { copyChatResourceLink$ } from "../../signals/chat-page/chat-resources.ts";
@@ -20,7 +20,7 @@ export function CopyResourceLink({ url }: { readonly url: string }) {
       aria-label={t(($) => {
         return $.chat.resources.copyLink;
       })}
-      className="shrink-0 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+      className="shrink-0 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/resource-row:opacity-100 group-focus-within/resource-row:opacity-100"
       onClick={() => {
         return detach(copy(url, signal), Reason.DomCallback);
       }}
@@ -56,7 +56,6 @@ export function ChatResourceLinks({
     >
       {showHeading && (
         <ChatResourceSectionHeading
-          icon={Link2}
           title={t(($) => {
             return $.chat.resources.links;
           })}
@@ -73,7 +72,7 @@ export function ChatResourceLinks({
             return (
               <li
                 key={link.url}
-                className="group flex min-w-0 items-center rounded-lg hover:bg-state-hover"
+                className="group/resource-row flex min-w-0 items-center rounded-lg hover:bg-state-hover"
               >
                 <a
                   href={link.url}
@@ -82,10 +81,6 @@ export function ChatResourceLinks({
                   className="flex min-h-11 min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-1 text-sm hover:bg-state-hover"
                   title={link.url}
                 >
-                  <ExternalLink
-                    size={16}
-                    className="shrink-0 text-muted-foreground"
-                  />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">{link.title}</span>
                     <span className="block truncate text-xs text-muted-foreground">

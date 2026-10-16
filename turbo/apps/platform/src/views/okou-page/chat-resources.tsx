@@ -5,8 +5,9 @@ import {
   useSet,
   type Loadable,
 } from "ccstate-react";
+import type { CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
-import { Files, Package } from "lucide-react";
+import { Package } from "lucide-react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   Button,
@@ -58,6 +59,12 @@ export function ChatResourcesButton({
   ) : null;
 }
 
+function resourcePanelStyle(height: number | null): CSSProperties {
+  return {
+    "--resource-panel-height": height === null ? undefined : `${height}px`,
+  } as CSSProperties;
+}
+
 function ChatResourcesButtonInner({
   thread,
   largeTarget,
@@ -89,6 +96,7 @@ function ChatResourcesButtonInner({
   const anchor = useGet(resources.anchor$);
   const boundary = useGet(resources.boundary$);
   const collisionBoundary = useGet(resources.collisionBoundary$);
+  const frozenHeight = useGet(resources.frozenHeight$);
   const popupAnchor = useGet(resources.popupAnchor$);
   const anchorRef = useSet(resources.anchorOnRef$);
   const setOpen = useSet(resources.setOpen$);
@@ -175,9 +183,10 @@ function ChatResourcesButtonInner({
         aria-label={t(($) => {
           return $.chat.resources.title;
         })}
+        style={resourcePanelStyle(frozenHeight)}
         className={surfaceVariants({
           className:
-            "flex h-[min(720px,var(--available-height))] w-[376px] max-w-[var(--available-width)] flex-col overflow-hidden p-0",
+            "flex h-[var(--resource-panel-height,auto)] max-h-[min(720px,var(--available-height))] w-[376px] max-w-[var(--available-width)] flex-col overflow-hidden p-0",
         })}
       >
         <ChatResourcesBody
@@ -199,7 +208,7 @@ function ResourceOutputRow({
 }) {
   const openArtifact = useSet(openArtifactSidebar$);
   return (
-    <li className="group flex min-w-0 items-center rounded-lg hover:bg-state-hover">
+    <li className="group/resource-row flex min-w-0 items-center rounded-lg hover:bg-state-hover">
       <Button
         variant="quiet"
         className="h-10 min-w-0 flex-1 justify-start gap-3 px-2 text-sm font-normal"
@@ -247,7 +256,7 @@ function ChatResourcesBody({
     <>
       {hasRelations && <ChatOrigin thread={thread} />}
       {/* Sticky category controls only overlap rows inside this scroll area. */}
-      <div className="isolate min-h-0 flex-1 space-y-3 divide-y divide-border/60 overflow-y-auto overscroll-contain p-3 [overflow-anchor:none]">
+      <div className="isolate min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain p-3 [overflow-anchor:none]">
         {hasRelations && <ChatRelationships thread={thread} />}
         {content.state === "hasError" ? (
           <div className="flex flex-col items-center gap-2 py-4 text-sm text-muted-foreground">
@@ -271,7 +280,6 @@ function ChatResourcesBody({
                 })}
               >
                 <ChatResourceSectionHeading
-                  icon={Files}
                   title={t(($) => {
                     return $.artifacts.sidebar.panelTitle;
                   })}
