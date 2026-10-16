@@ -8,7 +8,9 @@ import { expectClerkTestInstance, signInWithClerkEmailCode } from "./auth";
 // Exercise the fixture guard in a browser without connecting test credentials
 // to a live Clerk instance. Only the external SDK runtime is supplied here.
 test("auth fixtures require a loaded Clerk test instance", async (context) => {
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({
+    executablePath: process.env.E2E_CHROMIUM_EXECUTABLE_PATH,
+  });
   try {
     await context.test(
       "accepts a test instance after script cleanup",
@@ -81,7 +83,9 @@ test(
   "email-code sign-in fails promptly when the app bootstrap is unavailable",
   { timeout: 15_000 },
   async (context) => {
-    const browser = await chromium.launch();
+    const browser = await chromium.launch({
+      executablePath: process.env.E2E_CHROMIUM_EXECUTABLE_PATH,
+    });
     context.after(() => browser.close());
     const page = await browser.newPage();
     const appUrl = "https://clerk-auth-fixture.test";
@@ -102,8 +106,110 @@ test(
   },
 );
 
+test("email-code sign-in enters the intended email after an inert startup", async (context) => {
+  const browser = await chromium.launch({
+    executablePath: process.env.E2E_CHROMIUM_EXECUTABLE_PATH,
+  });
+  context.after(() => browser.close());
+  const page = await browser.newPage();
+  const appUrl = "https://clerk-auth-fixture.test";
+  const email = "fixture+clerk_test@example.com";
+
+  await page.route(`${appUrl}/**`, (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: `<!doctype html>
+        <p role="alert" hidden>Email is required</p>
+        <main inert>
+          <form>
+            <label>Email address <input name="email" type="email" required></label>
+            <button>Continue</button>
+          </form>
+        </main>
+        <script>
+          window.__okouClerkBootstrap = { runtime: Promise.resolve() };
+          window.Clerk = {
+            loaded: true,
+            organization: { id: 'org_fixture' },
+            client: { signIn: { firstFactorVerification: {
+              strategy: 'email_code', status: 'unverified'
+            } } },
+          };
+          document.addEventListener('invalid', () => {
+            document.querySelector('[role="alert"]').hidden = false;
+          }, true);
+          document.querySelector('form').onsubmit = event => {
+            event.preventDefault();
+            const submittedEmail = new FormData(event.target).get('email');
+            event.target.innerHTML = '<input aria-label="Enter verification code">';
+            event.target.querySelector('input').oninput = event => {
+              if (event.target.value !== '424242') return;
+              window.Clerk.session = { getToken: async () => 'fixture-token' };
+              history.replaceState(null, '', '/completed');
+              document.body.innerHTML = '<h1>Signed in</h1><p></p>';
+              document.querySelector('p').textContent = submittedEmail;
+            };
+          };
+        </script>`,
+    }),
+  );
+
+  // Keep the real browser actions. Release startup after the first input
+  // action: a click can still be waiting, whereas an inert fill has returned
+  // without entering anything. This reproduces the race without a sleep.
+  const getByLabel = page.getByLabel.bind(page);
+  const interactionStarted = new Promise<void>((resolve) => {
+    page.getByLabel = (...args) => {
+      const field = getByLabel(...args);
+      const click = field.click.bind(field);
+      field.click = (...options) => {
+        const action = click(...options);
+        resolve();
+        return action;
+      };
+      const fill = field.fill.bind(field);
+      field.fill = async (...options) => {
+        await fill(...options);
+        resolve();
+      };
+      return field;
+    };
+  });
+
+  const [token] = await Promise.all([
+    signInWithClerkEmailCode(page, email, appUrl, {
+      activeOrganizationId: "org_fixture",
+    }),
+    (async () => {
+      await interactionStarted;
+      const field = getByLabel("Email address", { exact: true });
+      await expect(field).toBeVisible();
+      await expect(field).toHaveValue("");
+      const invalidSubmission = page
+        .getByRole("alert")
+        .waitFor()
+        .then(() => {
+          throw new Error("Email was not entered before Continue");
+        });
+      await page.locator("main").evaluate((element) => {
+        element.removeAttribute("inert");
+      });
+      await Promise.race([
+        page.getByRole("heading", { name: "Signed in" }).waitFor(),
+        invalidSubmission,
+      ]);
+    })(),
+  ]);
+
+  assert.equal(token, "fixture-token");
+  await expect(page).toHaveURL(`${appUrl}/completed`);
+  await expect(page.getByText(email, { exact: true })).toBeVisible();
+});
+
 test("email-code sign-in waits for preparation before submitting a visible code", async (context) => {
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({
+    executablePath: process.env.E2E_CHROMIUM_EXECUTABLE_PATH,
+  });
   context.after(() => browser.close());
   const page = await browser.newPage();
   const appUrl = "https://clerk-auth-fixture.test";
