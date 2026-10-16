@@ -1203,6 +1203,7 @@ mod tests {
 
     fn test_factory_config() -> sandbox::FactoryConfig {
         sandbox::FactoryConfig {
+            home_drive_pressure: None,
             profile: "vm0/test".into(),
             binary_path: PathBuf::from("/firecracker"),
             kernel_path: PathBuf::from("/vmlinux"),

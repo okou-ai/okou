@@ -95,6 +95,7 @@ async fn factory_creates_sandbox() {
 async fn runtime_creates_factory() {
     let mut runtime = MockSandboxRuntime::new();
     let factory_config = FactoryConfig {
+        home_drive_pressure: None,
         profile: "test".into(),
         binary_path: "/bin/test".into(),
         kernel_path: "/boot/test".into(),

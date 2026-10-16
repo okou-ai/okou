@@ -30,6 +30,7 @@ pub(crate) trait HomeDriveImagePrepareObserver: Send {
 pub(crate) async fn prepare_home_drive_image(
     path: &Path,
     config: &sandbox::HomeDriveConfig,
+    pressure: Option<&dyn sandbox::HomeDrivePressurePolicy>,
     mut observer: Option<&mut dyn HomeDriveImagePrepareObserver>,
 ) -> sandbox::Result<()> {
     if let Some(observer) = observer.as_deref_mut() {
@@ -76,6 +77,7 @@ pub(crate) async fn prepare_home_drive_image(
                 source_image,
                 home_drive_size_bytes(config.size_mb),
                 config.space_reserve,
+                pressure,
                 observer,
             )
             .await;
@@ -89,6 +91,7 @@ pub(crate) async fn prepare_home_drive_image(
                 source_image,
                 home_drive_size_bytes(config.size_mb),
                 config.space_reserve,
+                pressure,
                 observer,
             )
             .await;
@@ -100,6 +103,8 @@ pub(crate) async fn prepare_home_drive_image(
         path,
         home_drive_size_bytes(config.size_mb),
         config.space_reserve,
+        None,
+        pressure,
     )
     .await?;
 
@@ -149,15 +154,16 @@ async fn copy_home_drive_seed_image(
     source: &Path,
     expected_size_bytes: u64,
     space_reserve: HomeDriveSpaceReserve,
+    pressure: Option<&dyn sandbox::HomeDrivePressurePolicy>,
     observer: Option<&mut dyn HomeDriveImagePrepareObserver>,
 ) -> sandbox::Result<()> {
-    let metadata = validate_home_seed_source(source, expected_size_bytes).await?;
+    validate_home_seed_source(source, expected_size_bytes).await?;
     copy_validated_home_drive_seed_image(
         target,
         source,
         expected_size_bytes,
-        metadata.blocks().saturating_mul(512),
         space_reserve,
+        pressure,
         observer,
     )
     .await
@@ -167,8 +173,8 @@ async fn copy_validated_home_drive_seed_image(
     target: &Path,
     source: &Path,
     expected_size_bytes: u64,
-    allocated_bytes: u64,
     space_reserve: HomeDriveSpaceReserve,
+    pressure: Option<&dyn sandbox::HomeDrivePressurePolicy>,
     observer: Option<&mut dyn HomeDriveImagePrepareObserver>,
 ) -> sandbox::Result<()> {
     let source_str = source
@@ -184,7 +190,14 @@ async fn copy_validated_home_drive_seed_image(
             message: format!("home image path is not UTF-8: {}", target.display()),
         })?;
 
-    ensure_home_image_headroom(target, allocated_bytes, space_reserve).await?;
+    ensure_home_image_headroom(
+        target,
+        expected_size_bytes,
+        space_reserve,
+        Some(source),
+        pressure,
+    )
+    .await?;
 
     let stage_started = Instant::now();
     let result = command::exec_status_with_timeout(
@@ -212,9 +225,10 @@ async fn move_home_drive_seed_image(
     source: &Path,
     expected_size_bytes: u64,
     space_reserve: HomeDriveSpaceReserve,
+    pressure: Option<&dyn sandbox::HomeDrivePressurePolicy>,
     observer: Option<&mut dyn HomeDriveImagePrepareObserver>,
 ) -> sandbox::Result<()> {
-    let metadata = validate_home_seed_source(source, expected_size_bytes).await?;
+    validate_home_seed_source(source, expected_size_bytes).await?;
     match std::fs::rename(source, target) {
         Ok(()) => validate_home_seed_target(target, expected_size_bytes, "moved").await,
         Err(e) if e.kind() == std::io::ErrorKind::CrossesDevices => {
@@ -222,8 +236,8 @@ async fn move_home_drive_seed_image(
                 target,
                 source,
                 expected_size_bytes,
-                metadata.blocks().saturating_mul(512),
                 space_reserve,
+                pressure,
                 observer,
             )
             .await?;
@@ -277,52 +291,120 @@ async fn validate_home_seed_source(
     Ok(source_metadata)
 }
 
-async fn ensure_home_image_headroom(
+struct HomeImageHeadroom {
+    device: u64,
+    capacity: u64,
+    available: u64,
+    required: u64,
+    infeasible: bool,
+}
+
+async fn observe_home_image_headroom(
     target: &Path,
-    allocated_bytes: u64,
+    logical_peak: u64,
     reserve: HomeDriveSpaceReserve,
-) -> sandbox::Result<()> {
-    // The parent has already been created on the actual receiving filesystem.
-    // Never infer its capacity from the cache's source filesystem. This only
-    // observes headroom; it does not serialize arbitrary concurrent writers.
+    copy_source: Option<&Path>,
+) -> sandbox::Result<HomeImageHeadroom> {
     let parent = target
         .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
+        .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."))
         .to_owned();
-    let target = target.to_owned();
+    let source = copy_source.map(Path::to_owned);
     tokio::task::spawn_blocking(move || {
-        let stats = nix::sys::statvfs::statvfs(&parent).map_err(|error| {
-            SandboxError::Initialization {
+        let stats =
+            nix::sys::statvfs::statvfs(&parent).map_err(|error| SandboxError::Initialization {
                 phase: SandboxInitializationPhase::SandboxAllocation,
                 message: format!("query home image filesystem {}: {error}", parent.display()),
-            }
-        })?;
+            })?;
         let capacity = stats.blocks().saturating_mul(stats.fragment_size());
-        let available = stats.blocks_available().saturating_mul(stats.fragment_size());
-        // Account for small filesystem metadata allocations as well as image
-        // blocks. Fresh images use their full logical size; sparse seeds use
-        // physical blocks and retain their source until transfer completes.
+        let available = stats
+            .blocks_available()
+            .saturating_mul(stats.fragment_size());
+        let reserve_bytes = reserve.bytes_for_capacity(capacity);
+        let unit = stats.fragment_size().max(1);
+        let full_peak = logical_peak.div_ceil(unit).saturating_mul(unit);
+        let full_required = reserve_bytes
+            .checked_add(full_peak)
+            .and_then(|bytes| bytes.checked_add(8192));
+        let peak = if full_required.is_some_and(|required| available >= required) {
+            full_peak
+        } else {
+            source.as_ref().map_or(full_peak, |source| {
+                sandbox::home_drive_copy_peak_bytes(source, logical_peak, stats.fragment_size())
+            })
+        };
         let required = reserve
             .bytes_for_capacity(capacity)
-            .saturating_add(allocated_bytes)
-            .saturating_add(8192);
-        if available < required {
-            return Err(SandboxError::Initialization {
+            .checked_add(peak)
+            .and_then(|bytes| bytes.checked_add(8192));
+        let device = std::fs::metadata(&parent)
+            .map_err(|error| SandboxError::Initialization {
                 phase: SandboxInitializationPhase::SandboxAllocation,
                 message: format!(
-                    "insufficient home image headroom for {}: available {available} bytes, required {required} bytes",
-                    target.display()
+                    "inspect home image filesystem {}: {error}",
+                    parent.display()
                 ),
-            });
-        }
-        Ok(())
+            })?
+            .dev();
+        Ok(HomeImageHeadroom {
+            device,
+            capacity,
+            available,
+            infeasible: required.is_none_or(|required| required > capacity),
+            required: required.unwrap_or(u64::MAX),
+        })
     })
     .await
     .map_err(|error| SandboxError::Initialization {
         phase: SandboxInitializationPhase::SandboxAllocation,
         message: format!("home image filesystem check failed: {error}"),
     })?
+}
+
+async fn ensure_home_image_headroom(
+    target: &Path,
+    logical_peak: u64,
+    reserve: HomeDriveSpaceReserve,
+    copy_source: Option<&Path>,
+    pressure: Option<&dyn sandbox::HomeDrivePressurePolicy>,
+) -> sandbox::Result<()> {
+    let mut observed =
+        observe_home_image_headroom(target, logical_peak, reserve, copy_source).await?;
+    if !observed.infeasible && observed.available >= observed.required {
+        return Ok(());
+    }
+    if !observed.infeasible
+        && let Some(pressure) = pressure
+    {
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(250);
+        // Only the observer expires. The policy owns accepted physical work and
+        // the provider never treats a callback result as an allocation grant.
+        let _ = tokio::time::timeout_at(
+            deadline,
+            pressure.reclaim(observed.device, observed.required),
+        )
+        .await;
+        observed = observe_home_image_headroom(target, logical_peak, reserve, copy_source).await?;
+        if !observed.infeasible && observed.available >= observed.required {
+            return Ok(());
+        }
+    }
+    Err(SandboxError::Initialization {
+        phase: SandboxInitializationPhase::SandboxAllocation,
+        message: format!(
+            "insufficient home image headroom for {}: available {} bytes, required {} bytes, capacity {} bytes, reason {}",
+            target.display(),
+            observed.available,
+            observed.required,
+            observed.capacity,
+            if observed.infeasible {
+                "reserve_infeasible"
+            } else {
+                "insufficient_headroom"
+            }
+        ),
+    })
 }
 
 async fn validate_home_seed_target(
@@ -424,6 +506,7 @@ fn record_stage_result(
 
 #[cfg(test)]
 mod tests {
+    mod pressure;
     use super::*;
     use std::io::SeekFrom;
     use std::os::unix::fs::MetadataExt;
@@ -494,6 +577,7 @@ mod tests {
                 space_reserve: reserve,
             },
             None,
+            None,
         )
         .await
         .unwrap();
@@ -535,6 +619,7 @@ mod tests {
                     seed_image,
                     space_reserve: reserve,
                 },
+                None,
                 Some(&mut observer),
             )
             .await
@@ -561,6 +646,7 @@ mod tests {
                 seed_image: Some(HomeDriveSeedImage::Move(source.clone())),
                 space_reserve: reserve,
             },
+            None,
             None,
         )
         .await
@@ -598,6 +684,7 @@ mod tests {
                     seed_image: Some(HomeDriveSeedImage::Move(source.clone())),
                     space_reserve: pressured_reserve(target_root.path()),
                 },
+                None,
                 Some(&mut observer),
             )
             .await
@@ -627,6 +714,7 @@ mod tests {
                     seed_image: Some(seed),
                 },
                 None,
+                None,
             )
             .await
             .unwrap_err();
@@ -646,6 +734,7 @@ mod tests {
                     size_mb: 1,
                     seed_image: Some(HomeDriveSeedImage::Move(source.clone()))
                 },
+                None,
                 None
             )
             .await
@@ -661,6 +750,7 @@ mod tests {
                     size_mb: 0,
                     seed_image: None
                 },
+                None,
                 None
             )
             .await
@@ -677,6 +767,7 @@ mod tests {
                     size_mb: 1,
                     seed_image: None
                 },
+                None,
                 None
             )
             .await
@@ -712,6 +803,7 @@ mod tests {
                         size_mb: 1,
                         seed_image: Some(seed)
                     },
+                    None,
                     None
                 )
                 .await
@@ -728,6 +820,7 @@ mod tests {
                     size_mb: 1,
                     seed_image: None
                 },
+                None,
                 None
             )
             .await
@@ -759,6 +852,7 @@ mod tests {
                 size_mb: 16,
                 seed_image: None,
             },
+            None,
             Some(&mut observer),
         )
         .await
@@ -835,6 +929,7 @@ mod tests {
                 size_mb: 1,
                 seed_image: Some(HomeDriveSeedImage::Copy(source.clone())),
             },
+            None,
             Some(&mut observer),
         )
         .await
@@ -880,6 +975,7 @@ mod tests {
                 seed_image: Some(HomeDriveSeedImage::Copy(source)),
             },
             None,
+            None,
         )
         .await
         .unwrap_err();
@@ -922,6 +1018,7 @@ mod tests {
                 size_mb: 1,
                 seed_image: Some(HomeDriveSeedImage::Move(source.clone())),
             },
+            None,
             Some(&mut observer),
         )
         .await
@@ -978,6 +1075,7 @@ mod tests {
                 size_mb: 1,
                 seed_image: Some(HomeDriveSeedImage::Move(source.clone())),
             },
+            None,
             Some(&mut observer),
         )
         .await
@@ -1027,6 +1125,7 @@ mod tests {
                 size_mb: 1,
                 seed_image: Some(HomeDriveSeedImage::Move(source.clone())),
             },
+            None,
             Some(&mut observer),
         )
         .await
@@ -1067,6 +1166,7 @@ mod tests {
                 seed_image: Some(HomeDriveSeedImage::Move(source.clone())),
             },
             None,
+            None,
         )
         .await
         .unwrap_err();
@@ -1101,6 +1201,7 @@ mod tests {
                 size_mb: 1,
                 seed_image: Some(HomeDriveSeedImage::Move(source_link.clone())),
             },
+            None,
             None,
         )
         .await

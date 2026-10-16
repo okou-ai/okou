@@ -122,12 +122,14 @@ impl SandboxRuntime for FirecrackerRuntime {
         &self,
         config: FactoryConfig,
     ) -> sandbox::Result<Box<dyn SandboxFactory>> {
+        let pressure = config.home_drive_pressure.clone();
         let fc_config = self.to_firecracker_config(config)?;
         let factory = FirecrackerFactory::start(
             fc_config,
             Some(self.netns_pool.clone()),
             self.device_pool.clone(),
             self.host_cpu_cgroup.clone(),
+            pressure,
         )
         .await?;
         Ok(Box::new(factory))

@@ -168,10 +168,13 @@ separate. Home persistence does not widen user artifact export: collection stays
 within the declared/cwd artifact boundary, not a full-home export. Explicit npm
 cache settings remain honored, without an out-of-home persistence promise.
 
-Code-defined retention keeps the total allocated-byte maximum at 50% of the
-cache filesystem's capacity, the GC target at 75% of that maximum and the free
-reserve at max(10%, 50 GiB). There are no host-budget YAML, environment or CLI
-overrides; inode observations do not change this byte-based GC policy.
+Code-defined retention uses the receiving filesystem's actual free-space
+watermarks and an independent entry-count limit. `home-image-cache info` reports
+the reserve, low/high watermarks and feasibility for the current host. Background
+reclamation starts below the low watermark and aims for the high watermark;
+foreground growth checks the reserve plus its additional peak. There are no
+host-budget YAML, environment or CLI overrides; inode observations do not change
+this byte-based GC policy.
 Individual eligibility uses the exact configured profile shape, not an unrelated
 percentage-of-host single-image cap. Fresh accounting includes image generations,
 metadata, candidate/orphan staging and cross-device sparse-copy peak headroom.

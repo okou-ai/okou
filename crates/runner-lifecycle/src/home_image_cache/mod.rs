@@ -25,12 +25,14 @@ mod entry;
 mod fs;
 mod gc;
 mod gc_metadata;
+mod gc_pressure;
 mod inspection;
 mod inventory;
 mod io_context;
 mod lifecycle;
 mod metadata;
 mod path_safety;
+mod pressure;
 mod reclamation;
 use reclamation::IdleHomeReclamation;
 pub use reclamation::IdleHomeReclamationPermit;
@@ -41,20 +43,22 @@ mod types;
 mod watcher;
 #[cfg(any(test, feature = "test-support"))]
 pub use entry::CacheEntryPaths;
+pub use gc_pressure::{HomeCacheReclaimOutcome, HomeCacheReclaimStatus};
 pub use inventory::{HomeCacheInventory, HomeCacheKeyUpdates};
 pub use lifecycle::{
     HomeImageLease, HomeImagePromotionContext, HomeImagePromotionIdentityFailure,
     HomeImagePromotionOutcome, cap_held_home_states,
 };
+use pressure::PressureReclamation;
 pub use runner_host::paths::HomeImageCacheKey;
 use types::HomeCacheLockOwner;
 pub use types::{
-    CacheBudget, FsStats, HomeCacheCheckoutResult, HomeCacheTerminalStatus,
-    HomeImageCacheInspection, HomeImageCacheInspectionEntry, HomeImageCacheInspectionStatus,
-    HomeImageCacheInspectionSummary, HomeImageLeaseIdentity, HomeImageLeaseRequest,
-    HomeImagePrepareLockPolicy, HomeImagePrepareRequest, HomeImagePromotionIdentity,
-    HomeImagePromotionIdentityMismatch, HomeImagePromotionIdentityRequest,
-    HomeImagePromotionRequest, HomeImageSourceIdentity,
+    CacheBudget, FsStats, HomeCacheCheckoutResult, HomeCachePressureThresholds,
+    HomeCacheTerminalStatus, HomeImageCacheInspection, HomeImageCacheInspectionEntry,
+    HomeImageCacheInspectionStatus, HomeImageCacheInspectionSummary, HomeImageLeaseIdentity,
+    HomeImageLeaseRequest, HomeImagePrepareLockPolicy, HomeImagePrepareRequest,
+    HomeImagePromotionIdentity, HomeImagePromotionIdentityMismatch,
+    HomeImagePromotionIdentityRequest, HomeImagePromotionRequest, HomeImageSourceIdentity,
 };
 use watcher::SelectionReleases;
 pub use watcher::{HomeCacheChange, HomeCacheWatcher};
@@ -92,6 +96,12 @@ pub struct HomeImageCache {
     promotion_capacity_lock_test_gate: Option<(Arc<tokio::sync::Notify>, Arc<Semaphore>)>,
     #[cfg(test)]
     publication_capacity_held_test_gate: Option<(Arc<tokio::sync::Notify>, Arc<Semaphore>)>,
+    #[cfg(any(test, feature = "test-support"))]
+    use_actual_fs_stats: bool,
+    #[cfg(test)]
+    pressure_reserve_override: Option<sandbox::HomeDriveSpaceReserve>,
+    #[cfg(any(test, feature = "test-support"))]
+    pressure_turn_test_gate: Option<HomeImagePrepareLockTestGate>,
 }
 #[cfg(any(test, feature = "test-support"))]
 #[derive(Clone, Default)]
@@ -165,10 +175,11 @@ struct HomeImageCacheInner {
     publication_admission: Semaphore,
     checkout_io: TaskTracker,
     selection_releases: SelectionReleases,
+    pressure_reclamation: PressureReclamation,
     #[cfg(test)]
     publication_admission_entered: Semaphore,
     #[cfg(any(test, feature = "test-support"))]
-    fs_stats_override: FsStats,
+    fs_stats_override: Mutex<FsStats>,
     #[cfg(any(test, feature = "test-support"))]
     gc_root_scan_count: AtomicUsize,
     #[cfg(any(test, feature = "test-support"))]
@@ -249,6 +260,7 @@ impl HomeImageCache {
                     publication_admission: Semaphore::new(1),
                     checkout_io: TaskTracker::new(),
                     selection_releases: SelectionReleases::default(),
+                    pressure_reclamation: PressureReclamation::new(),
                 }),
                 idle_home_reclamation: Arc::new(IdleHomeReclamation::new(
                     MAX_HOME_PROMOTION_CONCURRENCY,
@@ -276,9 +288,10 @@ impl HomeImageCache {
                 publication_admission: Semaphore::new(1),
                 checkout_io: TaskTracker::new(),
                 selection_releases: SelectionReleases::default(),
+                pressure_reclamation: PressureReclamation::new(),
                 #[cfg(test)]
                 publication_admission_entered: Semaphore::new(0),
-                fs_stats_override: stats,
+                fs_stats_override: Mutex::new(stats),
                 gc_root_scan_count: AtomicUsize::new(0),
                 held_state_root_scan_count: AtomicUsize::new(0),
                 held_state_root_scan_notify: tokio::sync::Notify::new(),
@@ -298,6 +311,10 @@ impl HomeImageCache {
             promotion_capacity_lock_test_gate: None,
             #[cfg(test)]
             publication_capacity_held_test_gate: None,
+            use_actual_fs_stats: false,
+            #[cfg(test)]
+            pressure_reserve_override: None,
+            pressure_turn_test_gate: None,
         }
     }
     pub fn with_telemetry(mut self, telemetry: SandboxOpReporter) -> Self {

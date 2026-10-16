@@ -171,6 +171,7 @@ async fn seed_idle_pool_with_overrides_and_generation(
     let runtime = sandbox_mock::MockSandboxRuntime::with_overrides(Arc::clone(overrides));
     let factory = runtime
         .create_factory(sandbox::FactoryConfig {
+            home_drive_pressure: None,
             profile: profile_name.into(),
             binary_path: PathBuf::new(),
             kernel_path: PathBuf::new(),

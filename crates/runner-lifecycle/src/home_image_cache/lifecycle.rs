@@ -30,11 +30,10 @@ use super::path_safety::{
     normalize_safe_guest_working_dir,
 };
 use super::types::{
-    CacheBudget, HomeCacheCheckoutResult, HomeCacheLockDecision, HomeCacheLockOwner,
-    HomeCacheTerminalStatus, HomeImageLeaseIdentity, HomeImageLeaseRequest,
-    HomeImagePrepareLockPolicy, HomeImagePrepareRequest, HomeImagePromotionIdentity,
-    HomeImagePromotionIdentityMismatch, HomeImagePromotionIdentityRequest,
-    HomeImagePromotionRequest, HomeImageSourceIdentity,
+    HomeCacheCheckoutResult, HomeCacheLockDecision, HomeCacheLockOwner, HomeCacheTerminalStatus,
+    HomeImageLeaseIdentity, HomeImageLeaseRequest, HomeImagePrepareLockPolicy,
+    HomeImagePrepareRequest, HomeImagePromotionIdentity, HomeImagePromotionIdentityMismatch,
+    HomeImagePromotionIdentityRequest, HomeImagePromotionRequest, HomeImageSourceIdentity,
 };
 use super::{
     CACHE_FORMAT_VERSION, HOME_DRIVE_LAYOUT, HomeCacheInventory, HomeCacheLockRegistration,
@@ -874,7 +873,7 @@ impl HomeImageCache {
                 let result = match self.fs_stats().await {
                     Ok(stats)
                         if stats.available_bytes
-                            >= CacheBudget::from_fs_stats(stats).min_free_bytes =>
+                            >= self.pressure_thresholds(stats).reserve_bytes =>
                     {
                         HomeCacheCheckoutResult::Miss
                     }
@@ -1344,16 +1343,24 @@ impl HomeImageCache {
                 .expect("publication capacity-held gate closed")
                 .forget();
         }
-        let stats = self.fs_stats().await?;
-        let budget = CacheBudget::from_fs_stats(stats);
+        let mut stats = self.fs_stats().await?;
+        let pressure = self.pressure_thresholds(stats);
         // Metadata staging and new directory blocks also need reserve. Never use
         // an unavailable scan as zero or assume another locked image is reclaimable.
         let metadata_peak = runner_host::state_file::HOME_METADATA_MAX_BYTES.saturating_add(8192);
-        if !has_copy_headroom(stats, budget, metadata_peak) {
+        if !has_copy_headroom(stats, pressure, metadata_peak) && pressure.reserve_feasible {
+            self.gc_locked(false, metadata_peak).await?;
+            stats = self.fs_stats().await?;
+        }
+        if !has_copy_headroom(stats, pressure, metadata_peak) {
             self.observe_publication(
                 &input,
                 HomeObservationOutcome::Skipped,
-                "disk_reserve",
+                if pressure.reserve_feasible {
+                    "disk_reserve"
+                } else {
+                    "reserve_infeasible"
+                },
                 None,
                 None,
             );
@@ -1374,26 +1381,7 @@ impl HomeImageCache {
             }
         };
         let source_identity = source.identity();
-        let active_allocated = allocated_bytes(&source.validate_path(input.active_image)?);
-        let pending_cache_bytes = active_allocated.saturating_add(metadata_peak);
-        let mut total = self.total_cache_allocated_bytes().await?;
-        // Evict older images only when this candidate can fit on its own.
-        if pending_cache_bytes <= budget.max_cache_bytes
-            && total.saturating_add(pending_cache_bytes) > budget.max_cache_bytes
-        {
-            self.gc_locked(false, pending_cache_bytes).await?;
-            total = self.total_cache_allocated_bytes().await?;
-        }
-        if total.saturating_add(pending_cache_bytes) > budget.max_cache_bytes {
-            self.observe_publication(
-                &input,
-                HomeObservationOutcome::Skipped,
-                "cache_budget",
-                None,
-                None,
-            );
-            return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
-        }
+        source.validate_path(input.active_image)?;
         self.ensure_home_cache_entry_dir(input.cache_key).await?;
         sync_directory(self.home_image_cache_dir()).await?;
         if let Some(parent) = self.home_image_cache_dir().parent() {
@@ -1416,12 +1404,26 @@ impl HomeImageCache {
                 (source, false)
             }
             Err(e) if e.kind() == std::io::ErrorKind::CrossesDevices => {
-                let fresh_stats = self.fs_stats().await?;
-                if !has_copy_headroom(
-                    fresh_stats,
-                    budget,
-                    active_allocated.saturating_add(metadata_peak),
-                ) {
+                let source_file = source.clone_file_for_observation()?;
+                let destination = self.home_image_cache_fs_stats_path();
+                let logical_bytes = input.image_size_bytes;
+                let copy_peak = tokio::task::spawn_blocking(move || {
+                    let unit = nix::sys::statvfs::statvfs(&destination)
+                        .map(|stats| stats.fragment_size())
+                        .unwrap_or(logical_bytes.max(1));
+                    sandbox::home_drive_copy_peak_bytes_from_file(&source_file, logical_bytes, unit)
+                })
+                .await
+                .map_err(|error| {
+                    LifecycleError::Internal(format!("publication copy demand: {error}"))
+                })?;
+                let additional_peak = copy_peak.saturating_add(metadata_peak);
+                let mut fresh_stats = self.fs_stats().await?;
+                if !has_copy_headroom(fresh_stats, pressure, additional_peak) {
+                    self.gc_locked(false, additional_peak).await?;
+                    fresh_stats = self.fs_stats().await?;
+                }
+                if !has_copy_headroom(fresh_stats, pressure, additional_peak) {
                     self.observe_publication(
                         &input,
                         HomeObservationOutcome::Skipped,
@@ -1468,20 +1470,18 @@ impl HomeImageCache {
         })?;
         let observed = pinned.validate_path(&candidate)?;
         sync_directory(paths.entry_dir()).await?;
-        // Fresh block counts include old commit, candidates, orphans, staging and
-        // metadata. Cross-device source allocation still exists until commit.
+        // Transfer can race other filesystem writers. Check actual remaining
+        // headroom again before the durable metadata commit.
         let fresh_stats = self.fs_stats().await?;
-        if fresh_stats.available_bytes < budget.min_free_bytes.saturating_add(metadata_peak)
-            || self
-                .total_cache_allocated_bytes()
-                .await?
-                .saturating_add(metadata_peak)
-                > budget.max_cache_bytes
-        {
+        if !has_copy_headroom(
+            fresh_stats,
+            self.pressure_thresholds(fresh_stats),
+            metadata_peak,
+        ) {
             self.observe_publication(
                 &input,
                 HomeObservationOutcome::Skipped,
-                "post_transfer_budget",
+                "post_transfer_reserve",
                 None,
                 None,
             );

@@ -15,11 +15,13 @@ use crate::status::StatusTracker;
 
 pub(super) struct MaintenanceTasks {
     home_cache_gc: Option<JoinHandle<()>>,
+    home_cache_pressure: Option<JoinHandle<()>>,
     status_retry: Option<JoinHandle<()>>,
 }
 
 pub(super) enum MaintenanceCompletion {
     HomeCacheGc(RunnerResult<()>),
+    HomeCachePressure(RunnerResult<()>),
     StatusRetry(RunnerResult<()>),
 }
 
@@ -27,6 +29,7 @@ impl MaintenanceTasks {
     pub(super) fn new() -> Self {
         Self {
             home_cache_gc: None,
+            home_cache_pressure: None,
             status_retry: None,
         }
     }
@@ -45,6 +48,22 @@ impl MaintenanceTasks {
         }
     }
 
+    pub(super) fn request_home_cache_pressure(&mut self, cache: Option<&HomeImageCache>) {
+        if self.home_cache_pressure.is_none()
+            && let Some(cache) = cache
+        {
+            let cache = cache.clone();
+            self.home_cache_pressure = Some(tokio::spawn(
+                async move {
+                    if let Err(error) = cache.probe_home_cache_pressure().await {
+                        warn!(%error, "home cache pressure probe failed");
+                    }
+                }
+                .in_current_span(),
+            ));
+        }
+    }
+
     /// Losing an outer select race preserves both observers. A selected join
     /// retires its observer synchronously before the reactor handles the result.
     pub(super) async fn wait(&mut self) -> MaintenanceCompletion {
@@ -52,6 +71,10 @@ impl MaintenanceTasks {
             result = next_maintenance_task(&mut self.home_cache_gc, "home cache GC") => {
                 self.home_cache_gc = None;
                 MaintenanceCompletion::HomeCacheGc(result)
+            }
+            result = next_maintenance_task(&mut self.home_cache_pressure, "home cache pressure") => {
+                self.home_cache_pressure = None;
+                MaintenanceCompletion::HomeCachePressure(result)
             }
             result = next_maintenance_task(&mut self.status_retry, "status retry") => {
                 self.status_retry = None;
@@ -65,6 +88,7 @@ impl MaintenanceTasks {
         let mut first_error = None;
         for (name, task) in [
             ("status retry", &mut self.status_retry),
+            ("home cache pressure", &mut self.home_cache_pressure),
             ("home cache GC", &mut self.home_cache_gc),
         ] {
             if task.is_some()

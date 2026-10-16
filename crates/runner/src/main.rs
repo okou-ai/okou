@@ -785,11 +785,12 @@ mod tests {
         assert!(help.contains(
             "first phase removes stale, unusable, and temporary cache contents before evaluating capacity"
         ));
-        assert!(help.contains("valid reusable entries, oldest-first"));
-        assert!(help.contains("maximum byte budget"));
-        assert!(help.contains("minimum-free-space thresholds"));
-        assert!(help.contains("post-GC target"));
-        assert!(help.contains("1,024-entry cap"));
+        assert!(help.contains("valid entries, oldest-first"));
+        assert!(help.contains("below the filesystem low-water mark toward its high-water mark"));
+        assert!(help.contains("independent 1,024-entry cap"));
+        assert!(help.contains("Count-only cleanup does not activate a free-byte target"));
+        assert!(help.contains("Actual free space controls recovery"));
+        assert!(help.contains("deleting an open image does not imply its blocks were released"));
         assert!(help.contains("Locked entries are skipped during reusable-entry eviction"));
         assert!(help.contains("`--dry-run` to evaluate this same policy"));
         assert!(help.contains("without deleting data"));

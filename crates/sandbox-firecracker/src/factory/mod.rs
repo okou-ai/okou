@@ -45,6 +45,7 @@ pub(crate) struct FirecrackerFactory {
     /// Best-effort release authority for sandboxes destroyed after shutdown.
     shutdown_netns_pool: Option<NetnsPoolHandle>,
     host_cpu_cgroup: Option<Arc<HostCpuCgroupManager>>,
+    home_drive_pressure: Option<Arc<dyn sandbox::HomeDrivePressurePolicy>>,
 }
 
 struct StartedFactoryResources {
@@ -72,6 +73,7 @@ impl FirecrackerFactory {
         netns_pool: Option<NetnsPoolHandle>,
         device_pool: nbd_cow::pool::DevicePoolHandle,
         host_cpu_cgroup: Option<Arc<HostCpuCgroupManager>>,
+        home_drive_pressure: Option<Arc<dyn sandbox::HomeDrivePressurePolicy>>,
     ) -> Result<Self, SandboxError> {
         let t = std::time::Instant::now();
         let mode = match config.snapshot.as_ref() {
@@ -174,6 +176,7 @@ impl FirecrackerFactory {
             }),
             shutdown_netns_pool: None,
             host_cpu_cgroup,
+            home_drive_pressure,
         })
     }
 
@@ -254,8 +257,10 @@ impl FirecrackerFactory {
             let prepare_result = if custody.is_some() {
                 let path = sandbox_paths.home_image();
                 let config = home_drive.clone();
+                let pressure = self.home_drive_pressure.clone();
                 let (owned_tx, result) = tokio::spawn(async move {
-                    let result = prepare_home_drive_image(&path, &config, None).await;
+                    let result =
+                        prepare_home_drive_image(&path, &config, pressure.as_deref(), None).await;
                     (tx, result)
                 })
                 .await
@@ -266,8 +271,13 @@ impl FirecrackerFactory {
                 tx = owned_tx;
                 result
             } else {
-                prepare_home_drive_image(&sandbox_paths.home_image(), home_drive, Some(&mut timing))
-                    .await
+                prepare_home_drive_image(
+                    &sandbox_paths.home_image(),
+                    home_drive,
+                    self.home_drive_pressure.as_deref(),
+                    Some(&mut timing),
+                )
+                .await
             };
             if let Err(error) = timing.record_stage_result(
                 SandboxCreateStage::HomeDrivePrepare,
@@ -676,6 +686,7 @@ mod tests {
 
     fn test_factory_without_resources() -> FirecrackerFactory {
         FirecrackerFactory {
+            home_drive_pressure: None,
             config: test_config(PathBuf::from("/tmp/factory-test-base")),
             factory_paths: FactoryPaths::new(PathBuf::from("/tmp/factory-test")),
             runtime_paths: RuntimePaths::new(),
@@ -711,6 +722,7 @@ mod tests {
         let cleanup_group = FactoryCleanupGroup::new();
         cleanup_group.start_accepting();
         FirecrackerFactory {
+            home_drive_pressure: None,
             config: test_config(PathBuf::from("/tmp/factory-test-base")),
             factory_paths,
             runtime_paths: RuntimePaths::new(),
