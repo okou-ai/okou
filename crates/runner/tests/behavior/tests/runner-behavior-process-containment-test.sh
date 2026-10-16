@@ -6,7 +6,23 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$SCRIPT_DIR/runner-behavior-stage-support.sh"
 
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+worker=""
+release_fd=""
+cleanup() {
+  local status=$?
+  trap - EXIT
+  if [ -n "$worker" ]; then
+    kill -TERM "$worker" 2> /dev/null || true
+    # Bash may defer its TERM trap while waiting for the controlled Runner.
+    if [ -n "$release_fd" ]; then
+      printf 'release\n' >&"$release_fd" || true
+    fi
+    wait "$worker" 2> /dev/null || true
+  fi
+  rm -rf "$tmp" || true
+  return "$status"
+}
+trap cleanup EXIT
 mkdir -p "$tmp/bin"
 
 cat > "$tmp/bin/ssh" << 'SSH'
@@ -176,20 +192,26 @@ for scenario in scenario-failed diagnostic-failed cancelled stop-unknown; do
   ln -s "$SCRIPT_DIR/runner-behavior-process-containment-resource-pressure.sh" "$state/scenarios/resource-pressure.sh"
   ln -s "$SCRIPT_DIR/runner-behavior-process-containment-submit.sh" "$state/scenarios/submit.sh"
   mkfifo "$state/ready" "$state/release"
+  exec {ready_fd}<> "$state/ready"
+  exec {release_fd}<> "$state/release"
   TEST_MODE="$scenario" TEST_STATE="$state" TMPDIR="$state/temp" PATH="$tmp/bin:$PATH" \
     bash "$SCRIPT_DIR/runner-behavior-process-containment-remote.sh" \
     /fake/bin test-case "$state/scenarios" < /dev/null > "$state/output" 2>&1 &
   worker=$!
   expected_status=1
   if [ "$scenario" = cancelled ]; then
-    read -r ready < "$state/ready"
+    read -r -t 10 ready <&"$ready_fd"
     test "$ready" = ready
     kill -TERM "$worker"
-    printf 'release\n' > "$state/release"
+    printf 'release\n' >&"$release_fd"
     expected_status=143
   fi
   status=0
   wait "$worker" || status=$?
+  worker=""
+  exec {ready_fd}>&-
+  exec {release_fd}>&-
+  release_fd=""
   if [ "$status" -ne "$expected_status" ]; then
     cat "$state/output" >&2
     echo "unexpected $scenario status: $status" >&2

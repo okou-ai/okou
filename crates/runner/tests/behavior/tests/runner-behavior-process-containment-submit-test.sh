@@ -4,9 +4,24 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SUBMIT="$SCRIPT_DIR/runner-behavior-process-containment-submit.sh"
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+child=""
+cleanup() {
+  local status=$?
+  trap - EXIT
+  if [ -n "$child" ]; then
+    kill -TERM "$child" 2> /dev/null || true
+    wait "$child" 2> /dev/null || true
+  fi
+  rm -rf "$tmp" || true
+  return "$status"
+}
+trap cleanup EXIT
 mkdir "$tmp/bin"
 mkfifo "$tmp/ready" "$tmp/release"
+# Open both ends before starting the child so even an early command failure
+# reaches the bounded read instead of blocking while opening the FIFO.
+exec {ready_fd}<> "$tmp/ready"
+exec {release_fd}<> "$tmp/release"
 
 cat > "$tmp/bin/sudo" << 'SUDO'
 #!/usr/bin/env bash
@@ -40,13 +55,14 @@ for outcome in complete fail; do
     TEST_STATE="$tmp" PATH="$tmp/bin:$PATH" \
     bash "$SUBMIT" "$tmp/bin" --group synthetic-test > "$tmp/output" 2>&1 &
   child=$!
-  read -r ready < "$tmp/ready"
+  read -r -t 10 ready <&"$ready_fd"
   test "$ready" = fixture-complete
   test "$(< "$tmp/pid")" = "$child"
   test ! -s "$tmp/output"
-  printf '%s\n' "$outcome" > "$tmp/release"
+  printf '%s\n' "$outcome" >&"$release_fd"
   status=0
   wait "$child" || status=$?
+  child=""
   if [ "$outcome" = complete ]; then
     test "$status" -eq 0
     test "$(< "$tmp/output")" = '{"exit_code":0}'
