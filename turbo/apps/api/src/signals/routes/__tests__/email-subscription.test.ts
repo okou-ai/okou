@@ -1,5 +1,8 @@
 import { createHmac, randomUUID } from "node:crypto";
-import { ClerkUserNotFoundTestError } from "./helpers/clerk-users";
+import {
+  ClerkUserNotFoundTestError,
+  mockClerkUsers,
+} from "./helpers/clerk-users";
 
 import { emailSubscriptionContract } from "@okouai/api-contracts/contracts/email-subscription";
 import { emailUnsubscribeContract } from "@okouai/api-contracts/contracts/email-unsubscribe";
@@ -124,6 +127,73 @@ describe("email subscription preferences", () => {
       expect(
         (await accept(client().get({ headers }), [200])).body,
       ).toMatchObject({ subscribed: true, deliveryStatus: "suppressed" });
+    },
+  );
+
+  it.each(["cache hit", "provider lookup"])(
+    "unsubscribes a known complaint recipient through a %s and isolates other users",
+    async (resolution) => {
+      const owner = actor();
+      const other = actor();
+      mockClerkUsers(
+        context,
+        [owner, other].map((user) => {
+          return {
+            id: user.userId,
+            primaryEmailAddressId: "primary",
+            firstName: "Test",
+            lastName: "User",
+            emailAddresses: [{ id: "primary", emailAddress: user.email }],
+            imageUrl: null,
+          };
+        }),
+      );
+      const app = await setupApp({
+        context,
+        routes: emailSubscriptionRoutes,
+        isolatePg: true,
+      });
+      const preferences = app(emailSubscriptionContract);
+      mocks.clerk.session(owner.userId, owner.orgId);
+      if (resolution === "cache hit") {
+        const initial = await accept(preferences.get({ headers }), [200]);
+        expect(initial.body).toStrictEqual({
+          subscribed: true,
+          email: owner.email,
+          deliveryStatus: "available",
+        });
+        context.mocks.clerk.users.getUserList.mockRejectedValue(
+          new Error("The cached recipient must not require a Clerk lookup"),
+        );
+      }
+
+      const webhooks = createWebhookCallbackApi(context);
+      const event = {
+        type: "email.complained",
+        data: { to: [owner.email], email_id: randomUUID() },
+      };
+      const response = await webhooks.requestResendInboundWebhook(
+        event,
+        webhooks.signedResendWebhookHeaders(event),
+        [200],
+      );
+      expect(response.body).toStrictEqual({ received: true });
+      expect(
+        (await accept(preferences.get({ headers }), [200])).body,
+      ).toStrictEqual({
+        subscribed: false,
+        email: owner.email,
+        deliveryStatus: "suppressed",
+      });
+
+      mocks.clerk.session(other.userId, other.orgId);
+      expect(
+        (await accept(preferences.get({ headers }), [200])).body,
+      ).toStrictEqual({
+        subscribed: true,
+        email: other.email,
+        deliveryStatus: "available",
+      });
     },
   );
 
