@@ -1,4 +1,4 @@
--- vm0:non-transactional
+-- okou:non-transactional
 -- Chat Event V8. Deletes the eight retired event types, rewrites historical
 -- Goal and GitHub contexts, converts stored Goal userMessage parts to text,
 -- retires the `goal` run source and drops `runGroupIndex` from saved shares.

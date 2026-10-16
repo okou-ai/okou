@@ -1,4 +1,4 @@
--- vm0:non-transactional
+-- okou:non-transactional
 -- S2 of #32653. The receipt migration is separately journaled before this CALL.
 -- 4,162 measured Goals; 100 candidate thread IDs and <=100 revokes per commit.
 -- A 15-minute CALL bound leaves a restartable committed prefix on timeout.

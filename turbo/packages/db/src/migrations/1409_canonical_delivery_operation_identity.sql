@@ -1,4 +1,4 @@
--- vm0:non-transactional
+-- okou:non-transactional
 -- Existing writers already serialize one destination per asset/operation.
 -- Build that business identity without blocking file-delivery writes. Until
 -- this migration is journaled, the previous writer still owns that invariant.

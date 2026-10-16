@@ -1,4 +1,4 @@
--- vm0:non-transactional
+-- okou:non-transactional
 -- A chat thread owns at most one canonical agent session. CONCURRENTLY does not
 -- block chat thread writes but waits for older transactions on chat_threads.
 SET lock_timeout = '10min';

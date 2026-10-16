@@ -1,4 +1,4 @@
--- vm0:non-transactional
+-- okou:non-transactional
 -- Release only Run-owned archive retains; keep Runs, Memory and blob metadata.
 -- v5 no longer produces remote native History. The supported rollback floor
 -- already requires native continuation; these hashes never authorize resume.
@@ -17,14 +17,15 @@ ANALYZE public.agent_runs (legacy_conversation_history_hash);
 --> statement-breakpoint
 SET statement_timeout = '2s';
 --> statement-breakpoint
--- vm0:batch-by-uuid
+-- okou:batch-by-uuid
+-- okou:explain-on-timeout
 WITH batch AS MATERIALIZED (
   SELECT id, legacy_conversation_history_hash AS hash
   FROM agent_runs
   WHERE ($1::uuid IS NULL OR id > $1::uuid)
     AND legacy_conversation_history_hash IS NOT NULL
   ORDER BY id
-  LIMIT 500
+  LIMIT 100
 ), target_hashes AS MATERIALIZED (
   SELECT DISTINCT hash FROM batch
 ), run_refs AS MATERIALIZED (

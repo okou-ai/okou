@@ -1,4 +1,4 @@
--- vm0:non-transactional
+-- okou:non-transactional
 -- Both indexes only served as user_id / (user_id, agent_id) prefixes, which
 -- idx_chat_threads_user_last_message_id and
 -- idx_chat_threads_user_agent_last_message already cover. Keeping

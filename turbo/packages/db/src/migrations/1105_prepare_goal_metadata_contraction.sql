@@ -1,4 +1,4 @@
--- vm0:non-transactional
+-- okou:non-transactional
 -- Enforce new writes immediately, then scan existing rows without an ACCESS
 -- EXCLUSIVE lock. The old validated constraint remains until atomic contraction.
 SET lock_timeout = '1s';

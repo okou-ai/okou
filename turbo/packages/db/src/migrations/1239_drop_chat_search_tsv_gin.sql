@@ -1,4 +1,4 @@
--- vm0:non-transactional
+-- okou:non-transactional
 -- Chat search and MCP chat search filter by user_id, so they are served by
 -- chat_event_search_messages_user_tsv_gin_idx. CONCURRENTLY does not block
 -- chat search reads or projector writes, but it waits for older transactions
