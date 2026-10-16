@@ -19,6 +19,8 @@ use crate::prefetch;
 use crate::proxy;
 use runner_host::paths::{HomePaths, RunnerPaths};
 
+use super::terminal_diagnostic::write_terminal_diagnostic;
+
 #[derive(Default)]
 struct Timing {
     boot_ms: Option<u128>,
@@ -370,35 +372,14 @@ fn write_benchmark_exec_output(
     let _ = stdout.write_all(&result.stdout);
     let _ = stderr.write_all(&result.stderr);
     let mut line_open = !result.stderr.is_empty() && !result.stderr.ends_with(b"\n");
-    write_benchmark_terminal_diagnostic(stderr, result, &mut line_open);
-}
-
-fn write_benchmark_terminal_diagnostic(
-    stderr: &mut impl Write,
-    result: &ExecResult,
-    line_open: &mut bool,
-) {
-    let (fallback, include_diagnostic) = match result.termination {
-        ExecTermination::Exited { .. } => (None, false),
-        ExecTermination::TimedOut => (Some("Timeout"), false),
-        ExecTermination::Cancelled => (Some("Cancelled"), true),
-        ExecTermination::StartFailed | ExecTermination::WaitFailed => (None, true),
-    };
-
-    if result.stderr.is_empty() {
-        if let Some(message) = fallback {
-            let _ = writeln!(stderr, "{message}");
-            *line_open = false;
-        }
-    } else if include_diagnostic && !result.diagnostic.is_empty() && *line_open {
-        let _ = writeln!(stderr);
-        *line_open = false;
-    }
-
-    if include_diagnostic && !result.diagnostic.is_empty() {
-        let _ = writeln!(stderr, "{}", result.diagnostic);
-        *line_open = false;
-    }
+    write_terminal_diagnostic(
+        stderr,
+        &result.termination,
+        &result.stderr,
+        &result.diagnostic,
+        false,
+        &mut line_open,
+    );
 }
 
 async fn stop_benchmark_proxy(mitm: &mut proxy::MitmProxy, phase: &'static str) {
@@ -764,6 +745,75 @@ mod tests {
 
         assert!(stdout.is_empty());
         assert_eq!(stderr, b"stderr clue\nwait failed\n");
+    }
+
+    #[test]
+    fn benchmark_terminal_output_preserves_binary_bytes_and_diagnostic_policy() {
+        for (termination, raw_stderr, diagnostic, expected_stderr) in [
+            (
+                ExecTermination::Exited { exit_code: 0 },
+                b"".as_slice(),
+                "exit diagnostic",
+                b"".as_slice(),
+            ),
+            (
+                ExecTermination::Exited { exit_code: 42 },
+                b"\xff\0".as_slice(),
+                "exit diagnostic",
+                b"\xff\0".as_slice(),
+            ),
+            (
+                ExecTermination::TimedOut,
+                b"".as_slice(),
+                "timeout diagnostic",
+                b"Timeout\n".as_slice(),
+            ),
+            (
+                ExecTermination::TimedOut,
+                b"\xff\0".as_slice(),
+                "timeout diagnostic",
+                b"\xff\0".as_slice(),
+            ),
+            (
+                ExecTermination::Cancelled,
+                b"".as_slice(),
+                "cancel diagnostic",
+                b"Cancelled\ncancel diagnostic\n".as_slice(),
+            ),
+            (
+                ExecTermination::Cancelled,
+                b"\xff\0".as_slice(),
+                "cancel diagnostic",
+                b"\xff\0\ncancel diagnostic\n".as_slice(),
+            ),
+            (
+                ExecTermination::StartFailed,
+                b"".as_slice(),
+                "start diagnostic",
+                b"start diagnostic\n".as_slice(),
+            ),
+            (
+                ExecTermination::StartFailed,
+                b"\xff\0".as_slice(),
+                "",
+                b"\xff\0".as_slice(),
+            ),
+            (
+                ExecTermination::WaitFailed,
+                b"\xff\0\n".as_slice(),
+                "wait diagnostic",
+                b"\xff\0\nwait diagnostic\n".as_slice(),
+            ),
+        ] {
+            let result = exec_result(termination, b"\0\xfe\n", raw_stderr, diagnostic);
+            let mut stdout = Vec::new();
+            let mut stderr = Vec::new();
+
+            write_benchmark_exec_output(&mut stdout, &mut stderr, &result);
+
+            assert_eq!(stdout, b"\0\xfe\n", "{termination:?}");
+            assert_eq!(stderr, expected_stderr, "{termination:?}");
+        }
     }
 
     #[tokio::test]
