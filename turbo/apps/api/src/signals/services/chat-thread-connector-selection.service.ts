@@ -14,7 +14,6 @@ import {
 } from "@okouai/db/runtime/connector-catalog";
 import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
-import type { Tx } from "../../lib/db-types";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { command, computed, type Computed } from "ccstate";
 import { db$, writeDb$ } from "../external/db";
@@ -407,72 +406,6 @@ export const prepareChatThreadConnectorSelections$ = command(
   },
 );
 
-/**
- * Insert only from an existing account. The ordinary foreign-key check either
- * protects that reference until commit or rejects a concurrent parent delete;
- * selectionParentMissing maps that rejection to an unavailable-account result.
- * No empty account UPDATE is used to serialize the two requests.
- */
-function selectionWriteSql(
-  tx: Tx,
-  chatThreadId: string,
-  selection: ConnectorAccountSelection,
-  onConflict: "update" | "none",
-) {
-  const account = tx
-    .$with("selected_connector_account")
-    .as(
-      tx
-        .select({ id: connectors.id })
-        .from(connectors)
-        .where(eq(connectors.id, selection.connectionId)),
-    );
-  const target = targetColumns(selection.target);
-  const insert = tx
-    .with(account)
-    .insert(chatThreadConnectorSelections)
-    .select(
-      sql`SELECT ${chatThreadId}::uuid, ${account.id}, ${target.connectorSlug}::varchar, ${target.customConnectorId}::uuid FROM ${account}`,
-    );
-  if (onConflict === "none") {
-    return insert.returning({
-      connectorId: chatThreadConnectorSelections.connectorId,
-    });
-  }
-  return (
-    selection.target.kind === "builtin"
-      ? insert.onConflictDoUpdate({
-          target: [
-            chatThreadConnectorSelections.chatThreadId,
-            chatThreadConnectorSelections.connectorSlug,
-          ],
-          targetWhere: isNotNull(chatThreadConnectorSelections.connectorSlug),
-          set: { connectorId: selection.connectionId },
-        })
-      : insert.onConflictDoUpdate({
-          target: [
-            chatThreadConnectorSelections.chatThreadId,
-            chatThreadConnectorSelections.customConnectorId,
-          ],
-          targetWhere: isNotNull(
-            chatThreadConnectorSelections.customConnectorId,
-          ),
-          set: { connectorId: selection.connectionId },
-        })
-  ).returning({ connectorId: chatThreadConnectorSelections.connectorId });
-}
-
-/** `undefined`: the account was deleted before this selection could reference it. */
-
-async function upsertSelection(
-  tx: Tx,
-  chatThreadId: string,
-  selection: ConnectorAccountSelection,
-): Promise<ConnectorAccountSelection | undefined> {
-  const [row] = await selectionWriteSql(tx, chatThreadId, selection, "update");
-  return row ? selection : undefined;
-}
-
 function foreignKeyConstraint(error: unknown): string | undefined {
   if (
     !isForeignKeyViolation(error) ||
@@ -513,10 +446,7 @@ export function selectionParentMissing(
 export const updateChatThreadConnectorSelection$ = command(
   async (
     { set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly chatThreadId: string;
+    args: ChatThreadConnectorSelectionScope & {
       readonly selection: ConnectorAccountSelection;
     },
     signal: AbortSignal,
@@ -565,11 +495,56 @@ export const updateChatThreadConnectorSelection$ = command(
           if (!selection) {
             throw new Error("Expected one prepared connector selection");
           }
-          const updated = await upsertSelection(
-            tx,
-            args.chatThreadId,
-            selection,
-          );
+          const chatThreadId = args.chatThreadId;
+          const updated = await (async () => {
+            /**
+             * Insert only from an existing account. The ordinary foreign-key check either
+             * protects that reference until commit or rejects a concurrent parent delete;
+             * selectionParentMissing maps that rejection to an unavailable-account result.
+             * No empty account UPDATE is used to serialize the two requests.
+             */
+            const account = tx
+              .$with("selected_connector_account")
+              .as(
+                tx
+                  .select({ id: connectors.id })
+                  .from(connectors)
+                  .where(eq(connectors.id, selection.connectionId)),
+              );
+            const target = targetColumns(selection.target);
+            const insert = tx
+              .with(account)
+              .insert(chatThreadConnectorSelections)
+              .select(
+                sql`SELECT ${chatThreadId}::uuid, ${account.id}, ${target.connectorSlug}::varchar, ${target.customConnectorId}::uuid FROM ${account}`,
+              );
+            const [row] = await (
+              selection.target.kind === "builtin"
+                ? insert.onConflictDoUpdate({
+                    target: [
+                      chatThreadConnectorSelections.chatThreadId,
+                      chatThreadConnectorSelections.connectorSlug,
+                    ],
+                    targetWhere: isNotNull(
+                      chatThreadConnectorSelections.connectorSlug,
+                    ),
+                    set: { connectorId: selection.connectionId },
+                  })
+                : insert.onConflictDoUpdate({
+                    target: [
+                      chatThreadConnectorSelections.chatThreadId,
+                      chatThreadConnectorSelections.customConnectorId,
+                    ],
+                    targetWhere: isNotNull(
+                      chatThreadConnectorSelections.customConnectorId,
+                    ),
+                    set: { connectorId: selection.connectionId },
+                  })
+            ).returning({
+              connectorId: chatThreadConnectorSelections.connectorId,
+            });
+            return row ? selection : undefined;
+          })();
           if (!updated) {
             return {
               kind: "invalid",
