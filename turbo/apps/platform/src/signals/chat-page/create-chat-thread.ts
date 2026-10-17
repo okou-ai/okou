@@ -87,7 +87,6 @@ import {
 import { createPlainMarkdownTree } from "../../lib/markdown/plain-markdown.ts";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import { apiClient$ } from "../api-client.ts";
-import { artifactReferenceLookupKey } from "../attachment-resource-url.ts";
 import { debounceCommand } from "../command-scheduling.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { modelCatalog$ } from "../external/model-catalog.ts";
@@ -1439,10 +1438,6 @@ function createLatestEventSignals(
 
 function createArtifacts(threadId: string) {
   const internalArtifactsReload$ = state(0);
-  const internalPreviewRefreshRevision$ = state(0);
-  const previewRefreshRevision$ = computed((get) => {
-    return get(internalPreviewRefreshRevision$);
-  });
   const artifacts$ = computed(async (get): Promise<ChatThreadArtifactRun[]> => {
     get(internalArtifactsReload$);
     const client = get(apiClient$)(chatThreadArtifactsContract);
@@ -1457,48 +1452,13 @@ function createArtifacts(threadId: string) {
   });
   const invalidateArtifacts$ = command(({ set }) => {
     set(reloadArtifacts$);
-    set(internalPreviewRefreshRevision$, (revision) => {
-      return revision + 1;
-    });
   });
 
   return {
     artifacts$,
     reloadArtifacts$,
     invalidateArtifacts$,
-    previewRefreshRevision$,
   };
-}
-
-function createArtifactPreviewImageUrls(
-  artifacts$: Computed<Promise<ChatThreadArtifactRun[]>>,
-): Computed<Promise<ReadonlyMap<string, string>>> {
-  return computed(async (get) => {
-    const runs = await get(artifacts$);
-    const previewImageUrlsByUrl = new Map<string, string>();
-    for (const run of runs) {
-      for (const file of run.files) {
-        if (!file.previewImageUrl) {
-          continue;
-        }
-        previewImageUrlsByUrl.set(
-          artifactReferenceLookupKey(file.url),
-          file.previewImageUrl,
-        );
-        previewImageUrlsByUrl.set(
-          artifactReferenceLookupKey(canonicalUserMessageFileUrl(file.id)),
-          file.previewImageUrl,
-        );
-        if (file.aliasUrl) {
-          previewImageUrlsByUrl.set(
-            artifactReferenceLookupKey(file.aliasUrl),
-            file.previewImageUrl,
-          );
-        }
-      }
-    }
-    return previewImageUrlsByUrl;
-  });
 }
 
 interface EventTreeRegistries {
@@ -1974,25 +1934,16 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
 function createPagedEventResources({
   chatActionContext,
   chatEvents$,
-  previewImageUrlsByUrl$,
-  previewRefreshRevision$,
   connector,
 }: {
   readonly chatActionContext: ChatActionContext;
   readonly chatEvents$: Computed<ChatEvent[]>;
-  readonly previewImageUrlsByUrl$: Computed<
-    Promise<ReadonlyMap<string, string>>
-  >;
-  readonly previewRefreshRevision$: Computed<number>;
   readonly connector: ComposerConnectorSignals;
 }) {
   const { threadId } = chatActionContext;
   const mailDraftCardSignals = createMailDraftCardSignalsRegistry(threadId);
   const browserSessionSignals = createBrowserSessionSignals(threadId);
-  const artifactCardSignals = createArtifactCardSignalsRegistry(
-    previewImageUrlsByUrl$,
-    previewRefreshRevision$,
-  );
+  const artifactCardSignals = createArtifactCardSignalsRegistry();
   const agentReferenceSignals = createAgentReferenceSignalsRegistry();
   const subscriptionResetCardSignals =
     createSubscriptionResetCardSignalsRegistry();
@@ -2379,8 +2330,6 @@ function createLoadMoreRenderedChatGroups(
 interface ChatThreadMessagePipelineOptions {
   chatActionContext: ChatActionContext;
   chatEvents: ChatEventSignals;
-  previewImageUrlsByUrl$: Computed<Promise<ReadonlyMap<string, string>>>;
-  previewRefreshRevision$: Computed<number>;
   connector: ComposerConnectorSignals;
   thinkingSummaries$: Computed<Promise<ThinkingSummaries | null>>;
 }
@@ -2388,8 +2337,6 @@ interface ChatThreadMessagePipelineOptions {
 function createChatThreadMessagePipeline({
   chatActionContext,
   chatEvents,
-  previewImageUrlsByUrl$,
-  previewRefreshRevision$,
   connector,
   thinkingSummaries$,
 }: ChatThreadMessagePipelineOptions) {
@@ -2399,8 +2346,6 @@ function createChatThreadMessagePipeline({
   const resources = createPagedEventResources({
     chatActionContext,
     chatEvents$: chatEvents.chatEvents$,
-    previewImageUrlsByUrl$,
-    previewRefreshRevision$,
     connector,
   });
   const usage = createChatRunUsageSignals(threadId, chatEvents.chatEvents$);
@@ -3838,8 +3783,6 @@ export function createChatPanelSignals(
   const messagePipeline = createChatThreadMessagePipeline({
     chatActionContext: { threadId, agentId },
     chatEvents,
-    previewImageUrlsByUrl$: createArtifactPreviewImageUrls(artifact.artifacts$),
-    previewRefreshRevision$: artifact.previewRefreshRevision$,
     connector: composer.connector,
     thinkingSummaries$: activity.thinkingSummaries$,
   });

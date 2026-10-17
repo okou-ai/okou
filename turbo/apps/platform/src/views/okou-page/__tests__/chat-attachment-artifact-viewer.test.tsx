@@ -4,7 +4,10 @@ import {
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
 import type { HostedSiteFilesResponse } from "@okouai/api-contracts/contracts/host";
-import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  chatThreadArtifactsContract,
+  type UserMessageDocument,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { strFromU8, unzipSync } from "fflate";
@@ -718,7 +721,7 @@ test("A private HTML link preview reuses its URL across reopening and split view
   });
 });
 
-test("A private site card resizes its authorized screenshot and opens the site on click", async () => {
+test("A private site card uses its resolved screenshot even when the thread artifact list is unavailable", async () => {
   const deploymentId = "00000000-0000-4000-8000-000000000019";
   const screenshotId = "00000000-0000-4000-8000-000000000020";
   const site = artifactReferencePath(deploymentId, "index.html");
@@ -728,15 +731,14 @@ test("A private site card resizes its authorized screenshot and opens the site o
   let currentPreview = previewUrl;
   mockAttachmentChat(context, {
     chatEvents: [assistantMessage(`![Private report](${site})`)],
-    artifacts: [
-      artifactFile("private-report.html", {
-        id: "private-screenshot",
-        contentType: "text/html",
-        url: site,
-        artifactKind: "hosted-site",
-        previewImageUrl: screenshot,
-      }),
-    ],
+  });
+  context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
+    return respond(500, {
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Artifact list unavailable",
+      },
+    });
   });
   context.mocks.api(
     artifactReferencesContract.resolve,
@@ -754,6 +756,7 @@ test("A private site card resizes its authorized screenshot and opens the site o
         target: isScreenshot
           ? { kind: "file", id: screenshotId }
           : { kind: "html", id: deploymentId },
+        ...(isScreenshot ? {} : { previewImageUrl: screenshot }),
         expiresAt: "2099-01-01T00:00:00.000Z",
       });
     },
@@ -790,12 +793,12 @@ test("A private site card resizes its authorized screenshot and opens the site o
 });
 
 test.each([
-  { role: "assistant", storedForm: "absolute" },
-  { role: "user", storedForm: "absolute" },
-  { role: "assistant", storedForm: "relative" },
+  { role: "assistant", referenceForm: "absolute" },
+  { role: "user", referenceForm: "absolute" },
+  { role: "assistant", referenceForm: "relative" },
 ] as const)(
-  "A private video in a $role message with a $storedForm catalog URL resizes its authorized poster and opens the original",
-  async ({ role, storedForm }) => {
+  "A private video in a $role message uses its $referenceForm resolved poster without a thread artifact list and opens the original",
+  async ({ role, referenceForm }) => {
     const videoId = "00000000-0000-4000-8000-000000000021";
     const posterId = "00000000-0000-4000-8000-000000000022";
     const video = new URL(
@@ -806,10 +809,8 @@ test.each([
       artifactReferencePath(posterId, "poster-v2.jpg"),
       "http://localhost",
     ).href;
-    const storedVideo =
-      storedForm === "relative" ? new URL(video).pathname : video;
-    const storedPoster =
-      storedForm === "relative" ? new URL(poster).pathname : poster;
+    const resolvedPoster =
+      referenceForm === "relative" ? new URL(poster).pathname : poster;
     const videoUrl = `${R2_ORIGIN}/private/generated.mp4?X-Amz-Signature=owner`;
     const renewedVideoUrl = `${R2_ORIGIN}/private/generated.mp4?X-Amz-Signature=renewed`;
     const posterUrl = `${R2_ORIGIN}/private/poster%20%2B.bin?X-Amz-Signature=owner&X-Amz-Security-Token=token%2B%2F%3D`;
@@ -826,14 +827,6 @@ test.each([
               },
             ]),
       ],
-      artifacts: [
-        artifactFile("generated.mp4", {
-          id: videoId,
-          contentType: "video/mp4",
-          url: storedVideo,
-          previewImageUrl: storedPoster,
-        }),
-      ],
     });
     let videoResolveCount = 0;
     context.mocks.api(
@@ -841,7 +834,7 @@ test.each([
       ({ params, respond }) => {
         const isPoster =
           params.reference ===
-          new URL(storedPoster, "http://localhost").pathname.slice(
+          new URL(resolvedPoster, "http://localhost").pathname.slice(
             "/artifacts/".length,
           );
         const resolvedVideoUrl =
@@ -858,6 +851,7 @@ test.each([
           filename: isPoster ? "poster-v2.jpg" : "generated.mp4",
           contentType: isPoster ? "image/jpeg" : "video/mp4",
           target: { kind: "file", id: isPoster ? posterId : videoId },
+          ...(isPoster ? {} : { previewImageUrl: resolvedPoster }),
           expiresAt: "2099-01-01T00:00:00.000Z",
         });
       },
@@ -872,7 +866,7 @@ test.each([
         url: resolvedVideoUrl,
         expiresAt: "2099-01-01T00:00:00.000Z",
         publicUrl: null,
-        previewImageUrl: storedPoster,
+        previewImageUrl: resolvedPoster,
       });
     });
     await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
@@ -906,6 +900,56 @@ test.each([
     });
   },
 );
+test.each(["private", "legacy CDN"] as const)(
+  "A %s video without a poster keeps an openable video fallback",
+  async (storage) => {
+    const videoId = "00000000-0000-4000-8000-000000000023";
+    const canonicalUrl = artifactReferencePath(videoId, "no-poster.mp4");
+    const videoUrl =
+      storage === "private"
+        ? `${R2_ORIGIN}/private/no-poster.mp4?X-Amz-Signature=owner`
+        : publicArtifactUrl("no-poster.mp4");
+    const reference = storage === "private" ? canonicalUrl : videoUrl;
+    mockAttachmentChat(context, {
+      chatEvents: [assistantMessage(`![Video without a poster](${reference})`)],
+    });
+    context.mocks.api(
+      artifactReferencesContract.resolve,
+      ({ params, respond }) => {
+        expect(params.reference).toBe(canonicalUrl.slice("/artifacts/".length));
+        return respond(200, {
+          downloadUrl: new URL("?download=1", videoUrl).href,
+          url: videoUrl,
+          filename: "no-poster.mp4",
+          contentType: "video/mp4",
+          target: { kind: "file", id: videoId },
+          expiresAt: "2099-01-01T00:00:00.000Z",
+        });
+      },
+    );
+
+    await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+    const fallback = await screen.findByTestId("chat-video-preview-fallback");
+    const card = fallback.closest("button");
+    if (!card) {
+      throw new Error("Expected an openable video card");
+    }
+    await waitFor(() => {
+      expect(fallback).toHaveAttribute("src", `${videoUrl}#t=0.001`);
+    });
+    expect(
+      within(card).queryByTestId("chat-video-preview-thumbnail"),
+    ).toBeNull();
+    expect(card).toBeEnabled();
+
+    click(card);
+    const stage = await screen.findByTestId("artifact-dialog-video-stage");
+    await waitFor(() => {
+      expect(stage.querySelector("video")).toHaveAttribute("src", videoUrl);
+    });
+  },
+);
+
 const PUBLICATION_DEPLOYMENT_ID = "00000000-0000-4000-8000-000000000021";
 const PUBLICATION_SITE_ID = "00000000-0000-4000-8000-000000000022";
 const PUBLICATION_HOST = "https://launch-site.sites.vm7.io/";
