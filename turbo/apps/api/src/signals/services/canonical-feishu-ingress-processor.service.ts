@@ -1,3 +1,6 @@
+import { connectors } from "@okouai/db/schema/connector";
+import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
+import { secrets } from "@okouai/db/schema/secret";
 import type { FeishuPlatform } from "@okouai/api-contracts/contracts/feishu-platform";
 import { agents } from "@okouai/db/schema/agent";
 import { feishuChatIngress } from "@okouai/db/schema/feishu-chat-ingress";
@@ -43,7 +46,14 @@ import {
   feishuInstallationAvailabilityReadPlan,
   feishuInstallationEnabledFromRows,
 } from "./feishu-config";
-import { resolveFeishuCustomConnectorOAuthConnection } from "./feishu-custom-connector.service";
+import {
+  feishuOAuthMemberReadPlan,
+  feishuOAuthMemberFromRows,
+  feishuOAuthInstallationReadPlan,
+  feishuOAuthAccountReadPlan,
+  feishuOAuthAccountFromRows,
+  feishuOAuthCredentialReadPlan,
+} from "./feishu-custom-connector.service";
 import {
   addFeishuThinkingReaction,
   dispatchConnectedFeishuCommand$,
@@ -206,13 +216,72 @@ async function loadConnection(
   if (!connection) {
     return undefined;
   }
-  const connectorId = await resolveFeishuCustomConnectorOAuthConnection(db, {
-    orgId,
-    userId: connection.userId,
-    installationId: message.installationId,
-    memberConnectorId: connection.connectorId,
-    feishuOpenId: message.openId,
-  });
+  const connectorId = await (async () => {
+    const scope = {
+      orgId,
+      userId: connection.userId,
+      installationId: message.installationId,
+      memberConnectorId: connection.connectorId,
+      feishuOpenId: message.openId,
+    };
+    const memberPlan = feishuOAuthMemberReadPlan(scope);
+    const memberRows = memberPlan.needsRead
+      ? await db
+          .select(memberPlan.columns)
+          .from(feishuOrgConnections)
+          .where(memberPlan.condition)
+          .limit(2)
+      : [];
+    const member = feishuOAuthMemberFromRows(scope, memberRows);
+    if (!member) {
+      return null;
+    }
+    const installationPlan = feishuOAuthInstallationReadPlan(scope);
+    const [installation] = await db
+      .select(installationPlan.columns)
+      .from(feishuOrgInstallations)
+      .where(installationPlan.condition)
+      .limit(1);
+    const customConnectorId = installation?.customConnectorId;
+    if (!customConnectorId) {
+      return null;
+    }
+    const accountScope = { ...scope, ...member, customConnectorId };
+    const accountPlan = feishuOAuthAccountReadPlan(accountScope);
+    const [exactRows, defaultRows] = await Promise.all([
+      accountPlan.exactWhere
+        ? db
+            .select(accountPlan.columns)
+            .from(connectors)
+            .where(accountPlan.exactWhere)
+        : [],
+      accountPlan.defaultWhere
+        ? db
+            .select(accountPlan.columns)
+            .from(connectors)
+            .where(accountPlan.defaultWhere)
+        : [],
+    ]);
+    const accountId = feishuOAuthAccountFromRows(accountPlan, {
+      exactRows,
+      defaultRows,
+    });
+    if (accountId === null) {
+      return null;
+    }
+    const credentialPlan = feishuOAuthCredentialReadPlan({
+      ...accountScope,
+      memberConnectorId: accountId,
+    });
+    const [matchedConnection] = await db
+      .select(credentialPlan.columns)
+      .from(connectors)
+      .innerJoin(orgCustomConnectors, credentialPlan.connectorJoin)
+      .innerJoin(secrets, credentialPlan.secretJoin)
+      .where(credentialPlan.condition)
+      .limit(1);
+    return matchedConnection?.id ?? null;
+  })();
   return connectorId ? { ...connection, connectorId } : undefined;
 }
 
