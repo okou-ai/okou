@@ -109,7 +109,6 @@ interface StorageManifestInputs {
 }
 
 interface BuildStorageManifestEntriesArgs {
-  readonly db: ReadonlyDb;
   readonly bucket: string;
   readonly storageIndex: StorageIndex;
   readonly agentOrgId: string;
@@ -1268,7 +1267,6 @@ function resolvePersistedStorageMounts(args: {
 }
 
 export function resolveValidatedPersistedStorageMounts(args: {
-  readonly db: ReadonlyDb;
   readonly bucket: string;
   readonly storageIndex: StorageIndex;
   readonly mounts: readonly PersistedStorageMount[];
@@ -1279,7 +1277,6 @@ export function resolveValidatedPersistedStorageMounts(args: {
   const phaseTimings = createStorageManifestEntryPhaseTimings(args);
   const result = safeSync(() => {
     const input: BuildStorageManifestEntriesArgs = {
-      db: args.db,
       bucket: args.bucket,
       storageIndex: args.storageIndex,
       agentOrgId: "",
@@ -1335,7 +1332,6 @@ export function prepareRequestStorageResolution(
   });
 
   const input: UnindexedStorageManifestEntriesArgs = {
-    db: args.db,
     bucket,
     agentOrgId: args.agentOrgId,
     runtimeOrgId: args.runtimeOrgId,

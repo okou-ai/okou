@@ -340,7 +340,9 @@ function createStoragePlanSignals(
         if (selection.kind === "captured") {
           return {
             requested: await resolveValidatedPersistedStorageMounts({
-              ...selection.args,
+              mounts: selection.args.mounts,
+              timing: selection.args.timing,
+              stats: selection.args.stats,
               bucket: selection.bucket,
               storageIndex,
               branch: "captured",
