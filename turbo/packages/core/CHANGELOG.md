@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.767.0](https://github.com/okou-ai/okou/compare/core-v8.766.1...core-v8.767.0) (2026-10-17)
+
+
+### Features
+
+* **sandbox:** add bounded file reads to fs v3 ([#40931](https://github.com/okou-ai/okou/issues/40931)) ([cc0d352](https://github.com/okou-ai/okou/commit/cc0d352860e96b1f45746e30bb17112b293003e2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.573.0
+
 ## [8.766.1](https://github.com/okou-ai/okou/compare/core-v8.766.0...core-v8.766.1) (2026-10-17)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/okou-ai/okou/compare/guest-channel-server-v0.4.5...guest-channel-server-v0.5.0) (2026-10-17)
+
+
+### Features
+
+* **sandbox:** add bounded file reads to fs v3 ([#40931](https://github.com/okou-ai/okou/issues/40931)) ([cc0d352](https://github.com/okou-ai/okou/commit/cc0d352860e96b1f45746e30bb17112b293003e2))
+
 ## [0.4.5](https://github.com/okou-ai/okou/compare/guest-channel-server-v0.4.4...guest-channel-server-v0.4.5) (2026-10-16)
 
 ## [0.4.4](https://github.com/okou-ai/okou/compare/guest-channel-server-v0.4.3...guest-channel-server-v0.4.4) (2026-10-16)

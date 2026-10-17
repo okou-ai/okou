@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.401.0](https://github.com/okou-ai/okou/compare/cli-v9.400.3...cli-v9.401.0) (2026-10-17)
+
+
+### Features
+
+* **vnc:** publish native network setup and canonical metadata ([#40923](https://github.com/okou-ai/okou/issues/40923)) ([5108add](https://github.com/okou-ai/okou/commit/5108add25e7a403e75d73157552d52df7d1e8da0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.573.0
+    * @okouai/core bumped to 8.767.0
+    * @okouai/pi-agent-runtime bumped to 1.50.19
+
 ## [9.400.3](https://github.com/okou-ai/okou/compare/cli-v9.400.2...cli-v9.400.3) (2026-10-17)
 
 

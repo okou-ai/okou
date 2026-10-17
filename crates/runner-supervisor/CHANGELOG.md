@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.8](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.17.7...runner-supervisor-v0.17.8) (2026-10-17)
+
+
+### Bug Fixes
+
+* **runner:** admit claims using reclaimable parked capacity ([#40942](https://github.com/okou-ai/okou/issues/40942)) ([4be79e5](https://github.com/okou-ai/okou/commit/4be79e5a74bdc54d26efe2ebb301f86054076f11))
+
 ## [0.17.7](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.17.6...runner-supervisor-v0.17.7) (2026-10-17)
 
 ## [0.17.6](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.17.5...runner-supervisor-v0.17.6) (2026-10-17)
