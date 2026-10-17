@@ -31,6 +31,8 @@ const contraction = journal.entries.find((entry) => {
   return entry.tag.endsWith("_contract_session_conversation");
 });
 assert.ok(contraction);
+// Keep this transition's preservation assertions independent of later DDL.
+const contractionOptions = { beforeMillis: contraction.when + 1 };
 
 const databaseName = `session_contraction_${randomUUID().replaceAll("-", "")}`;
 const admin = new Client({ connectionString: databaseUrl });
@@ -211,19 +213,22 @@ try {
     );
   };
   const rejectWithoutMutation = async (expected: RegExp) => {
-    await assert.rejects(applyPendingMigrations(sql), expected);
+    await assert.rejects(
+      applyPendingMigrations(sql, contractionOptions),
+      expected,
+    );
     await assertUnchanged();
   };
 
   await sql`UPDATE agent_runs SET launch_snapshot = ${sql.json({ ...snapshot, schemaVersion: 3 })} WHERE id = ${activeRunId}`;
   await assert.rejects(
-    applyPendingMigrations(sql),
+    applyPendingMigrations(sql, contractionOptions),
     /requires legacy Run drain/,
   );
   await sql`UPDATE agent_runs SET launch_snapshot = ${sql.json(snapshot)} WHERE id = ${activeRunId}`;
   await sql`UPDATE agent_runs SET framework = NULL WHERE id = ${runId}`;
   await assert.rejects(
-    applyPendingMigrations(sql),
+    applyPendingMigrations(sql, contractionOptions),
     /native facts were not transferred/,
   );
   await sql`UPDATE agent_runs SET framework = 'pi' WHERE id = ${runId}`;
@@ -340,7 +345,7 @@ try {
   }
 
   const startedAt = performance.now();
-  await applyPendingMigrations(sql);
+  await applyPendingMigrations(sql, contractionOptions);
   const elapsedMs = performance.now() - startedAt;
   assert.deepEqual(await retainedState(), baseline);
   assert.deepEqual(
@@ -386,7 +391,7 @@ try {
   const acceptedJournal = Array.from(
     await sql`SELECT * FROM drizzle.__drizzle_migrations ORDER BY id`,
   );
-  await applyPendingMigrations(sql);
+  await applyPendingMigrations(sql, contractionOptions);
   assert.deepEqual(
     Array.from(
       await sql`SELECT * FROM drizzle.__drizzle_migrations ORDER BY id`,
