@@ -18,13 +18,17 @@ describe("file download authority-store outage", () => {
       context,
       routes: runnerFileDownloadRoutes,
     })(runnerFileDownloadsContract);
-    const responses = [
-      await client.bootstrap({
+    // The public typed client rejects undeclared server-error responses.
+    // A store outage must remain HTTP 500, never ordinary unavailable/404.
+    await expect(
+      client.bootstrap({
         params: { runId: randomUUID() },
         headers: { authorization: "Bearer clerk-session" },
         body: { path: ["ZmlsZQ"] },
       }),
-      await client.consume({
+    ).rejects.toThrow("Unknown response status 500 for POST");
+    await expect(
+      client.consume({
         headers: {
           authorization:
             "Bearer vm0_official_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
@@ -36,11 +40,6 @@ describe("file download authority-store outage", () => {
           ticket: randomBytes(32).toString("base64url"),
         },
       }),
-    ];
-    for (const response of responses) {
-      expect(response.status).toBe(500);
-      expect(response.body).toStrictEqual({ error: "Internal server error" });
-      expect(response.headers.get("cache-control")).toBe("no-store");
-    }
+    ).rejects.toThrow("Unknown response status 500 for POST");
   });
 });
