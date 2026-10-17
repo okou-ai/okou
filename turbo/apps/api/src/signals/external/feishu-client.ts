@@ -1,4 +1,8 @@
-import { isFeishuInstallationEnabled } from "../services/feishu-config";
+import {
+  feishuInstallationAvailabilityReadPlan,
+  feishuInstallationEnabledFromRows,
+} from "../services/feishu-config";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import {
   FEISHU_PLATFORMS,
   type FeishuPlatform,
@@ -508,7 +512,19 @@ async function getFeishuRequestContext(
   if (!installation) {
     throw new Error("Bot installation not found");
   }
-  if (!(await isFeishuInstallationEnabled(args.db, installation))) {
+  if (
+    !(await (async () => {
+      const plan = feishuInstallationAvailabilityReadPlan(installation);
+      if (plan.kind === "resolved") {
+        return plan.enabled;
+      }
+      const rows = await args.db
+        .select(plan.columns)
+        .from(userFeatureSwitches)
+        .where(plan.condition);
+      return feishuInstallationEnabledFromRows(plan.scope, rows);
+    })())
+  ) {
     throw new FeishuApiError("Lark integration is not enabled", 403);
   }
   const credentials = await resolveFeishuRequestCredentials(

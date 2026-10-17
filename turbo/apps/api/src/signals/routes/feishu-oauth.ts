@@ -13,6 +13,7 @@ import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
@@ -50,7 +51,8 @@ import {
   feishuConnectorAccountMutationFromRows,
 } from "../services/feishu-custom-connector.service";
 import {
-  isFeishuInstallationEnabled,
+  feishuInstallationAvailabilityReadPlan,
+  feishuInstallationEnabledFromRows,
   feishuBotOpenUrl,
   feishuOAuthAppCallbackUrl,
   feishuOAuthCallbackUrl,
@@ -713,7 +715,19 @@ const connect$ = command(async ({ get, set }, signal: AbortSignal) => {
       `${FEISHU_PLATFORMS[callbackPlatform(state.redirectUri)].name} bot not found`,
     );
   }
-  if (!(await isFeishuInstallationEnabled(db, installation))) {
+  if (
+    !(await (async () => {
+      const plan = feishuInstallationAvailabilityReadPlan(installation);
+      if (plan.kind === "resolved") {
+        return plan.enabled;
+      }
+      const rows = await db
+        .select(plan.columns)
+        .from(userFeatureSwitches)
+        .where(plan.condition);
+      return feishuInstallationEnabledFromRows(plan.scope, rows);
+    })())
+  ) {
     return jsonErrorResponse("Lark integration is not enabled");
   }
   if (!installation.setupCompletedAt) {
@@ -905,15 +919,17 @@ const completeLegacyFeishuOAuth$ = command(
   },
 );
 
+interface CompleteClaimedFeishuOAuthArgs {
+  readonly db: Db;
+  readonly query: FeishuOAuthCallbackQuery & { readonly state: string };
+  readonly state: StoredCustomConnectorOAuthState;
+  readonly context: FeishuCustomConnectorOAuthContext;
+}
+
 const completeClaimedCustomFeishuOAuth$ = command(
   async (
     { get, set },
-    args: {
-      readonly db: Db;
-      readonly query: FeishuOAuthCallbackQuery & { readonly state: string };
-      readonly state: StoredCustomConnectorOAuthState;
-      readonly context: FeishuCustomConnectorOAuthContext;
-    },
+    args: CompleteClaimedFeishuOAuthArgs,
     signal: AbortSignal,
   ) => {
     const { context, db, query, state } = args;
@@ -963,10 +979,20 @@ const completeClaimedCustomFeishuOAuth$ = command(
       );
     }
     if (
-      !(await isFeishuInstallationEnabled(db, {
-        ...installation,
-        orgId: state.orgId,
-      }))
+      !(await (async () => {
+        const plan = feishuInstallationAvailabilityReadPlan({
+          ...installation,
+          orgId: state.orgId,
+        });
+        if (plan.kind === "resolved") {
+          return plan.enabled;
+        }
+        const rows = await db
+          .select(plan.columns)
+          .from(userFeatureSwitches)
+          .where(plan.condition);
+        return feishuInstallationEnabledFromRows(plan.scope, rows);
+      })())
     ) {
       return jsonErrorResponse("Lark integration is not enabled");
     }

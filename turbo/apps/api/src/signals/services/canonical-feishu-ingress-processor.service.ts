@@ -3,6 +3,7 @@ import { feishuChatIngress } from "@okouai/db/schema/feishu-chat-ingress";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { command } from "ccstate";
 import { and, asc, eq, inArray, lt, or } from "drizzle-orm";
 import { z } from "zod";
@@ -38,7 +39,8 @@ import {
 } from "./feishu-chat-ingress.service";
 import {
   buildFeishuChatOpenUrl,
-  isFeishuInstallationEnabled,
+  feishuInstallationAvailabilityReadPlan,
+  feishuInstallationEnabledFromRows,
 } from "./feishu-config";
 import { resolveFeishuCustomConnectorOAuthConnection } from "./feishu-custom-connector.service";
 import {
@@ -553,7 +555,19 @@ async function loadFeishuIngressDispatchContext(
   if (!ingress) {
     throw new Error("Canonical Feishu ingress is unavailable");
   }
-  if (!(await isFeishuInstallationEnabled(db, ingress))) {
+  if (
+    !(await (async () => {
+      const plan = feishuInstallationAvailabilityReadPlan(ingress);
+      if (plan.kind === "resolved") {
+        return plan.enabled;
+      }
+      const rows = await db
+        .select(plan.columns)
+        .from(userFeatureSwitches)
+        .where(plan.condition);
+      return feishuInstallationEnabledFromRows(plan.scope, rows);
+    })())
+  ) {
     throw new Error("Lark integration is not enabled");
   }
   const message = parseMatchingMessage(ingress);
