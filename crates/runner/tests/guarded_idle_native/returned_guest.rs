@@ -170,9 +170,10 @@ pub async fn exercise(
         start(&mut blank,request).await?;
         probe.stage_gate.wait_entered().await?;
         proof.require_full_lease()?;
+        let decision = control.decision();
         proof.returned_guest_witness("stage_accepted",json!({"actual":probe.snapshot()?,
             "samples":source.samples()?.into_iter().skip(first_sample).collect::<Vec<_>>(),
-            "available_bytes":control.decision().available_bytes,"allocated":context.budget.allocated(),
+            "available_bytes":decision.available_bytes,"allocated":context.budget.allocated(),
             "accounting":held(&context,growth)?,"release_byte_withheld":true}))?;
         blank.cancel_if_inactive(RunnerMode::Draining);
         let cancelled_ns = evidence::clocks()?.0;
