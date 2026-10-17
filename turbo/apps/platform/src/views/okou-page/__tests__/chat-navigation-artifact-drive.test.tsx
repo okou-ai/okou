@@ -434,17 +434,17 @@ async function openDriveArtifactMenu(
 
 async function expectSyncCompletedPreview(
   originalAction = "Upload to Google Drive",
+  downloadButton = () => {
+    return buttonNamed("Download artifact", artifactPreview());
+  },
 ): Promise<void> {
   const successMessages = await screen.findAllByText("Synced to Google Drive");
   expect(successMessages.length).toBeGreaterThan(0);
   await waitFor(() => {
-    expect(buttonNamed("Download artifact", artifactPreview())).toBeEnabled();
-    expect(buttonNamed("Download artifact", artifactPreview())).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
+    expect(downloadButton()).toBeEnabled();
+    expect(downloadButton()).toHaveAttribute("aria-expanded", "false");
   });
-  click(buttonNamed("Download artifact", artifactPreview()));
+  click(downloadButton());
   await waitFor(() => {
     expect(roleItemNamed("menuitem", originalAction)).not.toHaveAttribute(
       "aria-disabled",
@@ -463,6 +463,29 @@ async function expectSyncCompletedPreview(
       );
     }),
   ).toHaveLength(0);
+}
+
+async function openDriveMessageMenu() {
+  click(await findNamedLink("Drive preview"));
+  const preview = await waitFor(() => {
+    const button = buttonNamed("Download options");
+    const dialog = button.closest('[role="dialog"]');
+    if (!(dialog instanceof HTMLElement)) {
+      throw new Error("Expected the artifact's preview dialog");
+    }
+    expect(button).toBeEnabled();
+    return dialog;
+  });
+  const downloadButton = () => {
+    return buttonNamed("Download options", preview);
+  };
+  click(downloadButton());
+  await waitFor(() => {
+    expect(
+      roleItemNamed("menuitem", "Connect Google Drive"),
+    ).not.toHaveAttribute("aria-disabled", "true");
+  });
+  return { preview, downloadButton };
 }
 
 describe("with a Drive artifact menu", () => {
@@ -520,11 +543,27 @@ test("Recheck Drive authorization after leaving and reopening the chat page", as
     host: "app.okou.ai",
   });
 
-  await openDriveArtifactMenu();
+  const initial = await openDriveMessageMenu();
   click(roleItemNamed("menuitem", "Connect Google Drive"));
-  await expectSyncCompletedPreview();
+  await expectSyncCompletedPreview(
+    "Upload to Google Drive",
+    initial.downloadButton,
+  );
+  expect(drive.syncRequests).toStrictEqual([
+    {
+      artifactId: DRIVE_ARTIFACT_ID,
+      agentId: NAVIGATION_ARTIFACT_AGENT_ID,
+      connectionId: SELECTED_DRIVE_CONNECTION_ID,
+      mode: "original",
+    },
+  ]);
+  expect(drive.oauthRequests).toHaveLength(0);
 
   await userEvent.keyboard("{Escape}");
+  click(buttonNamed("Close", initial.preview));
+  await waitFor(() => {
+    expect(initial.preview).not.toBeInTheDocument();
+  });
   click(screen.getByLabelText("Chat", { selector: "a" }));
   await screen.findByPlaceholderText(
     "Ask me to automate workflows, manage tasks...",
@@ -534,7 +573,8 @@ test("Recheck Drive authorization after leaving and reopening the chat page", as
   drive.requireNewConnection();
   click(await screen.findByText("Artifact navigation"));
 
-  await openDriveArtifactMenu();
+  const recovered = await openDriveMessageMenu();
+  expect(recovered.preview).not.toBe(initial.preview);
   click(roleItemNamed("menuitem", "Connect Google Drive"));
   await waitFor(() => {
     expect(popup.location.href).toBe(AUTHORIZATION_URL);
@@ -555,7 +595,10 @@ test("Recheck Drive authorization after leaving and reopening the chat page", as
       mode: "original",
     });
   });
-  await expectSyncCompletedPreview();
+  await expectSyncCompletedPreview(
+    "Upload to Google Drive",
+    recovered.downloadButton,
+  );
 });
 
 test("Connect Google Drive and sync an artifact", async () => {
