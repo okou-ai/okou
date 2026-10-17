@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.11](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.10...runner-storage-v0.5.11) (2026-10-17)
+
+
+### Refactoring
+
+* **runner-storage:** converge archive publication cleanup ([#40792](https://github.com/okou-ai/okou/issues/40792)) ([5ca0b46](https://github.com/okou-ai/okou/commit/5ca0b463c3cae06279f7e44839a527f9d3e88a81))
+
 ## [0.5.10](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.9...runner-storage-v0.5.10) (2026-10-16)
 
 

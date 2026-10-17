@@ -12,6 +12,34 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1035.3](https://github.com/okou-ai/okou/compare/app-v0.1035.2...app-v0.1035.3) (2026-10-17)
+
+
+### Bug Fixes
+
+* refresh runner platform api and cli release markers ([#40789](https://github.com/okou-ai/okou/issues/40789)) ([8473d96](https://github.com/okou-ai/okou/commit/8473d964e20c44952d93d8a5bf210e65c7d6a794))
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#40811](https://github.com/okou-ai/okou/issues/40811)) ([b53e5a5](https://github.com/okou-ai/okou/commit/b53e5a5fc6437b2b15412d21a42d90344c18191f))
+* remove remaining expired compatibility from the daily cleanup backlog ([#40820](https://github.com/okou-ai/okou/issues/40820)) ([9ef42db](https://github.com/okou-ai/okou/commit/9ef42db5a3c1c8bfe040a7e41b6aafa6941d4510))
+
+
+### Performance Improvements
+
+* avoid redundant preview updates and test connector grants ([#40822](https://github.com/okou-ai/okou/issues/40822)) ([60bb4b8](https://github.com/okou-ai/okou/commit/60bb4b86402b77a50cba81bcaa5a81a333c72377))
+* defer unused chat context and stabilize ci fixtures ([#40794](https://github.com/okou-ai/okou/issues/40794)) ([302066c](https://github.com/okou-ai/okou/commit/302066cd123a9e02e6a323f983e35648011d5e11))
+* **platform:** load chat resources only when the popup opens ([#40826](https://github.com/okou-ai/okou/issues/40826)) ([bd7a111](https://github.com/okou-ai/okou/commit/bd7a11162586324540cf19c5ee841ef8dd52c4bd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.4
+    * @okouai/core bumped to 8.765.2
+
 ## [0.1035.2](https://github.com/okou-ai/okou/compare/app-v0.1035.1...app-v0.1035.2) (2026-10-16)
 
 

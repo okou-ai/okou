@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.14.4](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.3...runner-executor-v0.14.4) (2026-10-17)
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#40811](https://github.com/okou-ai/okou/issues/40811)) ([b53e5a5](https://github.com/okou-ai/okou/commit/b53e5a5fc6437b2b15412d21a42d90344c18191f))
+* **runner-executor:** retain active-input task custody ([#40821](https://github.com/okou-ai/okou/issues/40821)) ([f612914](https://github.com/okou-ai/okou/commit/f6129144ffb614fde97a27fcd0db9620ac3700f1))
+
 ## [0.14.3](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.2...runner-executor-v0.14.3) (2026-10-16)
 
 ## [0.14.2](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.1...runner-executor-v0.14.2) (2026-10-16)
