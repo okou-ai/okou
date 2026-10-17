@@ -27,7 +27,7 @@ import {
   setupResources,
 } from "./chat-resources-test-helpers.ts";
 
-test("Open an empty resources dropdown without hiding its button", async () => {
+test("Explain an empty resources dropdown without hiding its button", async () => {
   installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
   context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
@@ -50,6 +50,7 @@ test("Open an empty resources dropdown without hiding its button", async () => {
 
   const panel = await screen.findByRole("region", { name: "Resources" });
   expect(resourceButton()).toHaveAttribute("aria-expanded", "true");
+  await within(panel).findByText("No artifacts yet");
   expect(within(panel).queryByRole("listitem")).not.toBeInTheDocument();
 });
 
@@ -85,8 +86,10 @@ test("Open the dropdown before its resources finish loading", async () => {
   const panel = await screen.findByRole("region", { name: "Resources" });
   expect(resourceButton()).toHaveAttribute("aria-expanded", "true");
   expect(within(panel).queryByText("report.pdf")).not.toBeInTheDocument();
+  expect(within(panel).queryByText("No artifacts yet")).not.toBeInTheDocument();
   response.resolve();
   await within(panel).findByText("report.pdf");
+  expect(within(panel).queryByText("No artifacts yet")).not.toBeInTheDocument();
 });
 
 test("Show all three resources without an overflow control at the limit", async () => {

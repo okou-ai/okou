@@ -258,11 +258,13 @@ test("Keep the resources popup open when refreshed relationships are empty", asy
   });
   const panel = await screen.findByRole("region", { name: "Resources" });
   await within(panel).findByText("Research child");
+  expect(within(panel).queryByText("No artifacts yet")).not.toBeInTheDocument();
   empty = true;
   click(buttonNamed("Refresh", panel));
   await waitFor(() => {
     expect(within(panel).queryByText("Research child")).not.toBeInTheDocument();
   });
+  await within(panel).findByText("No artifacts yet");
   expect(screen.getByRole("region", { name: "Resources" })).toBeInTheDocument();
   expect(buttonNamed("Open artifacts")).toBeInTheDocument();
 });

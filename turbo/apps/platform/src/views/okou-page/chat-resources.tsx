@@ -217,8 +217,8 @@ function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
   const content = useLastLoadable(thread.resources.content$);
   const relationsEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ChatRelations];
-  const hasRelations =
-    useLastResolved(thread.relations.hasContent$) === true && relationsEnabled;
+  const relationContent = useLastResolved(thread.relations.hasContent$);
+  const hasRelations = relationContent === true && relationsEnabled;
   const retry = useSet(thread.reloadArtifacts$);
   const openAll = useOpenThreadArtifacts(thread);
   const expanded = useGet(thread.resources.expandedSections$);
@@ -298,6 +298,12 @@ function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
               }}
             />
           </>
+        ) : data && (!relationsEnabled || relationContent === false) ? (
+          <p className="py-4 text-center text-sm text-muted-foreground">
+            {t(($) => {
+              return $.chat.resources.emptyArtifacts;
+            })}
+          </p>
         ) : null}
       </div>
       {(content.state === "hasError" ||

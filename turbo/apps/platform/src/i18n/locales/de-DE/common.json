@@ -2116,6 +2116,7 @@
     "resources": {
       "collapse": "Einklappen",
       "copyLink": "Link kopieren",
+      "emptyArtifacts": "Noch keine Artefakte",
       "emptyLinks": "Noch keine Links in diesem Chat",
       "expand": "Ausklappen",
       "links": "Links",
