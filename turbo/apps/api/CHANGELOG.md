@@ -9,6 +9,51 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.750.1](https://github.com/okou-ai/okou/compare/api-v1.750.0...api-v1.750.1) (2026-10-17)
+
+
+### Bug Fixes
+
+* refresh runner platform api and cli release markers ([#40789](https://github.com/okou-ai/okou/issues/40789)) ([8473d96](https://github.com/okou-ai/okou/commit/8473d964e20c44952d93d8a5bf210e65c7d6a794))
+
+
+### Refactoring
+
+* **api:** keep banking reads in authorization action ([#40795](https://github.com/okou-ai/okou/issues/40795)) ([152dd59](https://github.com/okou-ai/okou/commit/152dd5913be090a566a78e573f07374198aaa706)) [#40793](https://github.com/okou-ai/okou/issues/40793)
+* **api:** keep proactive phone identity reads in route commands ([#40779](https://github.com/okou-ai/okou/issues/40779)) ([5fdc1b4](https://github.com/okou-ai/okou/commit/5fdc1b481dbc14987250e8c30a342fd1465eb85b))
+* **api:** keep raw row execution in owning units ([#40768](https://github.com/okou-ai/okou/issues/40768)) ([1c26c97](https://github.com/okou-ai/okou/commit/1c26c97926f803e5980f1c40deb988e1620ee6a5))
+* **api:** keep telegram retention database ownership local ([#40805](https://github.com/okou-ai/okou/issues/40805)) ([d10f9aa](https://github.com/okou-ai/okou/commit/d10f9aa113efa2dbc44436695209ad1cd33d4ed0))
+* **api:** own activity summary database access in commands ([#40799](https://github.com/okou-ai/okou/issues/40799)) ([ed33d81](https://github.com/okou-ai/okou/commit/ed33d8178fe3c0ecca1ce83819df795d2a83a895))
+* **api:** own agentphone sender lookup in webhook ([#40776](https://github.com/okou-ai/okou/issues/40776)) ([399dc5b](https://github.com/okou-ai/okou/commit/399dc5b06e9094d35057350fbd43858233850413))
+* **api:** own banking connection creation ([#40785](https://github.com/okou-ai/okou/issues/40785)) ([ddf9756](https://github.com/okou-ai/okou/commit/ddf97564051af4a0533feeb70e0891ebebc00225))
+* **api:** own default-account runtime wakeups in the route ([#40814](https://github.com/okou-ai/okou/issues/40814)) ([fa5cffa](https://github.com/okou-ai/okou/commit/fa5cffada72e8a0fa0e6f85f8b43eadd17105ff9))
+* **api:** own email complaint database access in commands ([#40801](https://github.com/okou-ai/okou/issues/40801)) ([332b2cd](https://github.com/okou-ai/okou/commit/332b2cd4da43a776dae0ce91039808111fcc9d0f))
+* **api:** own model preference writes in a private command ([#40830](https://github.com/okou-ai/okou/issues/40830)) ([6e56b68](https://github.com/okou-ai/okou/commit/6e56b68363fa309f3b19e1216fb419f1189b7845)) [#40829](https://github.com/okou-ai/okou/issues/40829)
+* **api:** own paid tool preference writes in a command ([#40818](https://github.com/okou-ai/okou/issues/40818)) ([bb82b9e](https://github.com/okou-ai/okou/commit/bb82b9ec9004a4c90cb84b4ec4a83f12cee82ef3))
+* **api:** own preference initialization writes in a private command ([#40803](https://github.com/okou-ai/okou/issues/40803)) ([ad65f83](https://github.com/okou-ai/okou/commit/ad65f83b3ec7fb0e6d65f0cb276c66e5d91bd68c))
+* **api:** own runner claim and runtime lookup reads ([#40808](https://github.com/okou-ai/okou/issues/40808)) ([d0245c6](https://github.com/okou-ai/okou/commit/d0245c6abf958b7002925903dcfaf0f7e7e2d58e))
+* **api:** remove unused agentphone database arguments ([#40782](https://github.com/okou-ai/okou/issues/40782)) ([9aae276](https://github.com/okou-ai/okou/commit/9aae2767374571bcfea9dc0a3f45d799f477520c))
+* **api:** remove unused failed chat callback database inputs ([#40827](https://github.com/okou-ai/okou/issues/40827)) ([4a7f4f5](https://github.com/okou-ai/okou/commit/4a7f4f5ad7904ee6e962fc3c4524c9fe42607a48))
+* **api:** retire migrated link wallet grant compatibility ([#40783](https://github.com/okou-ai/okou/issues/40783)) ([f52d38a](https://github.com/okou-ai/okou/commit/f52d38a227d7b815b5ce7c5c25764ddf7fd71b0b))
+* remove expired deployment compatibility ([#40811](https://github.com/okou-ai/okou/issues/40811)) ([b53e5a5](https://github.com/okou-ai/okou/commit/b53e5a5fc6437b2b15412d21a42d90344c18191f))
+* remove remaining expired compatibility from the daily cleanup backlog ([#40820](https://github.com/okou-ai/okou/issues/40820)) ([9ef42db](https://github.com/okou-ai/okou/commit/9ef42db5a3c1c8bfe040a7e41b6aafa6941d4510))
+
+
+### Performance Improvements
+
+* avoid redundant preview updates and test connector grants ([#40822](https://github.com/okou-ai/okou/issues/40822)) ([60bb4b8](https://github.com/okou-ai/okou/commit/60bb4b86402b77a50cba81bcaa5a81a333c72377))
+* defer unused chat context and stabilize ci fixtures ([#40794](https://github.com/okou-ai/okou/issues/40794)) ([302066c](https://github.com/okou-ai/okou/commit/302066cd123a9e02e6a323f983e35648011d5e11))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.4
+    * @okouai/core bumped to 8.765.2
+    * @okouai/db bumped to 1.345.3
+    * @okouai/pi-agent-runtime bumped to 1.50.16
+
 ## [1.750.0](https://github.com/okou-ai/okou/compare/api-v1.749.2...api-v1.750.0) (2026-10-16)
 
 

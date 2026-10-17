@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.11](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.10...runner-provider-v0.8.11) (2026-10-17)
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#40811](https://github.com/okou-ai/okou/issues/40811)) ([b53e5a5](https://github.com/okou-ai/okou/commit/b53e5a5fc6437b2b15412d21a42d90344c18191f))
+* remove remaining expired compatibility from the daily cleanup backlog ([#40820](https://github.com/okou-ai/okou/issues/40820)) ([9ef42db](https://github.com/okou-ai/okou/commit/9ef42db5a3c1c8bfe040a7e41b6aafa6941d4510))
+
 ## [0.8.10](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.9...runner-provider-v0.8.10) (2026-10-16)
 
 

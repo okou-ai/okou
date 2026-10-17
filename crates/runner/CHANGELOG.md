@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.234.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.4...runner-rs-v0.234.5) (2026-10-17)
+
+
+### Bug Fixes
+
+* refresh runner platform api and cli release markers ([#40789](https://github.com/okou-ai/okou/issues/40789)) ([8473d96](https://github.com/okou-ai/okou/commit/8473d964e20c44952d93d8a5bf210e65c7d6a794))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.234.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.3...runner-rs-v0.234.4) (2026-10-16)
 
 ## [0.234.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.2...runner-rs-v0.234.3) (2026-10-16)
