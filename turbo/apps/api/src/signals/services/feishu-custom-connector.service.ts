@@ -1,10 +1,17 @@
+import { decryptPersistentSecretValue } from "./crypto.utils";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { preparedVolumePublicationSql } from "./storage-volume-publication-sql";
 import { StorageVersionIdentityConflictError } from "./storage-version-registration.service";
 import {
   FEISHU_PLATFORMS,
   type FeishuPlatform,
 } from "@okouai/core/feishu-platform";
-import { loadFeishuInstallationConfig } from "./feishu-config";
+import {
+  feishuInstallationConfigReadPlan,
+  feishuInstallationConfigFromSecrets,
+  feishuInstallationAvailabilityReadPlan,
+  feishuInstallationEnabledFromRows,
+} from "./feishu-config";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { command } from "ccstate";
@@ -506,10 +513,41 @@ export const ensureFeishuCustomConnector$ = command(
     signal: AbortSignal,
   ): Promise<string | null> => {
     const db = set(writeDb$);
-    const installation = await loadFeishuInstallationConfig(
-      db,
-      args.installationId,
-    );
+    const installation = await (async () => {
+      const plan = feishuInstallationConfigReadPlan(args.installationId);
+      const [installation] = await db
+        .select(plan.columns)
+        .from(feishuOrgInstallations)
+        .where(plan.condition)
+        .limit(1);
+      if (
+        !installation ||
+        !(await (async () => {
+          const availability =
+            feishuInstallationAvailabilityReadPlan(installation);
+          if (availability.kind === "resolved") {
+            return availability.enabled;
+          }
+          const rows = await db
+            .select(availability.columns)
+            .from(userFeatureSwitches)
+            .where(availability.condition);
+          return feishuInstallationEnabledFromRows(availability.scope, rows);
+        })())
+      ) {
+        return null;
+      }
+      const context = { orgId: installation.orgId };
+      const secrets = await Promise.all([
+        decryptPersistentSecretValue(installation.encryptedAppSecret, context),
+        decryptPersistentSecretValue(
+          installation.encryptedVerificationToken,
+          context,
+        ),
+        decryptPersistentSecretValue(installation.encryptedEncryptKey, context),
+      ]);
+      return feishuInstallationConfigFromSecrets(installation, secrets);
+    })();
     signal.throwIfAborted();
     if (!installation || installation.orgId !== args.orgId) {
       return null;

@@ -1,3 +1,4 @@
+import { decryptPersistentSecretValue } from "../services/crypto.utils";
 import {
   FEISHU_PLATFORMS,
   feishuPlatformFromTokenUrl,
@@ -57,7 +58,8 @@ import {
   feishuOAuthAppCallbackUrl,
   feishuOAuthCallbackUrl,
   legacyFeishuOAuthAppCallbackUrl,
-  loadFeishuInstallationConfig,
+  feishuInstallationConfigReadPlan,
+  feishuInstallationConfigFromSecrets,
 } from "../services/feishu-config";
 import {
   type FeishuOAuthState,
@@ -789,6 +791,68 @@ const connect$ = command(async ({ get, set }, signal: AbortSignal) => {
   return redirectResponse(result.authorizationUrl);
 });
 
+function legacyFeishuOAuthInput(
+  query: FeishuOAuthCallbackQuery,
+  platform: FeishuPlatform,
+) {
+  if (query.error) {
+    return {
+      response: completionErrorResponse(
+        query.error_description ?? query.error,
+        query.responseMode,
+        platform,
+      ),
+    };
+  }
+  if (!query.code) {
+    return { response: jsonErrorResponse("Missing authorization code") };
+  }
+  return { code: query.code };
+}
+
+function legacyFeishuOAuthFailure(
+  reason: "bot" | "setup" | "connector" | "unavailable" | "exchange",
+  query: FeishuOAuthCallbackQuery,
+  platform: FeishuPlatform,
+) {
+  const name = FEISHU_PLATFORMS[platform].name;
+  const messages = {
+    bot: `${name} bot not found.`,
+    setup: `Finish setting up this ${name} bot before connecting.`,
+    connector: `${name} connector not found.`,
+    unavailable: `${name} connector is unavailable.`,
+    exchange: `Failed to connect ${name} account. Please try again.`,
+  };
+  return completionErrorResponse(
+    messages[reason],
+    query.responseMode,
+    platform,
+  );
+}
+
+function legacyTokenInput(
+  connector: CustomConnectorHttpRow,
+  clientSecret: string,
+  code: string,
+  state: FeishuOAuthState,
+) {
+  return {
+    connector,
+    clientSecret,
+    code,
+    codeVerifier: null,
+    redirectUri: legacyOAuthRedirectUri(state.oauthRedirectTarget),
+    installationId: state.installationId,
+  };
+}
+
+function legacyConnectionState(
+  state: FeishuOAuthState,
+  accountMutation: ConnectorAccountMutationIntent,
+) {
+  return { ...state, accountMutation };
+}
+
 const completeLegacyFeishuOAuth$ = command(
   async (
     { get, set },
@@ -801,24 +865,48 @@ const completeLegacyFeishuOAuth$ = command(
   ) => {
     const { db, query, state } = args;
     const platform = callbackPlatform(state.redirectUri);
-    if (query.error) {
-      return completionErrorResponse(
-        query.error_description ?? query.error,
-        query.responseMode,
-        platform,
-      );
+    const input = legacyFeishuOAuthInput(query, platform);
+    if (input.response) {
+      return input.response;
     }
-    if (!query.code) {
-      return jsonErrorResponse("Missing authorization code");
-    }
-    const config = await loadFeishuInstallationConfig(db, state.installationId);
+    const config = await (async () => {
+      const plan = feishuInstallationConfigReadPlan(state.installationId);
+      const [installation] = await db
+        .select(plan.columns)
+        .from(feishuOrgInstallations)
+        .where(plan.condition)
+        .limit(1);
+      if (
+        !installation ||
+        !(await (async () => {
+          const availability =
+            feishuInstallationAvailabilityReadPlan(installation);
+          if (availability.kind === "resolved") {
+            return availability.enabled;
+          }
+          const rows = await db
+            .select(availability.columns)
+            .from(userFeatureSwitches)
+            .where(availability.condition);
+          return feishuInstallationEnabledFromRows(availability.scope, rows);
+        })())
+      ) {
+        return null;
+      }
+      const context = { orgId: installation.orgId };
+      const secrets = await Promise.all([
+        decryptPersistentSecretValue(installation.encryptedAppSecret, context),
+        decryptPersistentSecretValue(
+          installation.encryptedVerificationToken,
+          context,
+        ),
+        decryptPersistentSecretValue(installation.encryptedEncryptKey, context),
+      ]);
+      return feishuInstallationConfigFromSecrets(installation, secrets);
+    })();
     signal.throwIfAborted();
     if (!config || config.orgId !== state.orgId) {
-      return completionErrorResponse(
-        `${FEISHU_PLATFORMS[platform].name} bot not found.`,
-        query.responseMode,
-        platform,
-      );
+      return legacyFeishuOAuthFailure("bot", query, platform);
     }
     const installation = await loadInstallationForConnector({
       db,
@@ -828,11 +916,7 @@ const completeLegacyFeishuOAuth$ = command(
     });
     signal.throwIfAborted();
     if (!installation?.setupCompletedAt) {
-      return completionErrorResponse(
-        `Finish setting up this ${FEISHU_PLATFORMS[platform].name} bot before connecting.`,
-        query.responseMode,
-        platform,
-      );
+      return legacyFeishuOAuthFailure("setup", query, platform);
     }
     const connectorId = await set(
       ensureFeishuCustomConnector$,
@@ -844,11 +928,7 @@ const completeLegacyFeishuOAuth$ = command(
       signal,
     );
     if (!connectorId) {
-      return completionErrorResponse(
-        `${FEISHU_PLATFORMS[platform].name} connector not found.`,
-        query.responseMode,
-        platform,
-      );
+      return legacyFeishuOAuthFailure("connector", query, platform);
     }
     const connector = await get(
       getCustomConnectorById({
@@ -858,11 +938,7 @@ const completeLegacyFeishuOAuth$ = command(
     );
     signal.throwIfAborted();
     if (!isFeishuCustomOAuthConnector(connector)) {
-      return completionErrorResponse(
-        `${FEISHU_PLATFORMS[platform].name} connector is unavailable.`,
-        query.responseMode,
-        platform,
-      );
+      return legacyFeishuOAuthFailure("unavailable", query, platform);
     }
     const accountPlan = feishuConnectorAccountMutationReadPlan(state);
     const accountMutation = feishuConnectorAccountMutationFromRows(
@@ -874,23 +950,12 @@ const completeLegacyFeishuOAuth$ = command(
     );
     signal.throwIfAborted();
     const exchanged = await exchangeOAuthTokenAndUserInfo(
-      {
-        connector,
-        clientSecret: config.appSecret,
-        code: query.code,
-        codeVerifier: null,
-        redirectUri: legacyOAuthRedirectUri(state.oauthRedirectTarget),
-        installationId: state.installationId,
-      },
+      legacyTokenInput(connector, config.appSecret, input.code, state),
       signal,
     );
     signal.throwIfAborted();
     if (!exchanged) {
-      return completionErrorResponse(
-        `Failed to connect ${FEISHU_PLATFORMS[platform].name} account. Please try again.`,
-        query.responseMode,
-        platform,
-      );
+      return legacyFeishuOAuthFailure("exchange", query, platform);
     }
     const featureContext = await get(
       userFeatureSwitchContext(state.orgId, state.userId),
@@ -899,10 +964,7 @@ const completeLegacyFeishuOAuth$ = command(
     const completed = await set(
       finishFeishuOAuthConnection$,
       {
-        state: {
-          ...state,
-          accountMutation,
-        },
+        state: legacyConnectionState(state, accountMutation),
         installation,
         connector,
         ...exchanged,
