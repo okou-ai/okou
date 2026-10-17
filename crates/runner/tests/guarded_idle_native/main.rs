@@ -802,7 +802,7 @@ async fn exercise_retirement(
         None,
     ));
     status.write_initial().await?;
-    let cache = HomeImageCache::new(paths.clone());
+    let cache = HomeImageCache::new(paths.clone()).with_actual_fs_stats_for_test();
     let run_id = RunId::new_v4();
     let sandbox_id = SandboxId::new_v4();
     let reuse_key = format!("thread:native-guarded-{run_id}");
@@ -860,7 +860,6 @@ async fn exercise_retirement(
                 history: continuation::SEED.to_vec(),
                 original: run_id,
                 continued: false,
-                require_bound_history: false,
             })
             .await;
         let mut prepared = match result {

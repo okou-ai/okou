@@ -1,10 +1,11 @@
 //! Home image cache. There is no old directory/layout/metadata reader.
 //!
 //! Entry locks own checkout, publication, and orphan reclamation. Promotion
-//! retries capacity asynchronously with bounded contention while holding entry;
-//! GC holds capacity and attempts entries non-blockingly. Routine inventory
-//! releases entry locks before attempting capacity. A capacity owner must never
-//! wait for an entry lock.
+//! retains accepted physical work and phase-aware retry under the original entry
+//! custody. New publishers share the canonical capacity barrier; legacy exclusive
+//! owners still exclude their tree growth and IO. All new collectors own the
+//! routine singleton and only try barrier/entry locks. A barrier owner must never
+//! wait for an entry lock or request another collector.
 //!
 //! A checkout removes the commit before moving its selected immutable image.
 //! Publication syncs a new generation and directories before a single atomic
@@ -73,6 +74,7 @@ const MIN_FREE_BYTES_FLOOR: u64 = 50 * GIB;
 pub const HOME_IMAGE_SPACE_RESERVE: sandbox::HomeDriveSpaceReserve =
     sandbox::HomeDriveSpaceReserve::new(MIN_FREE_BYTES_FLOOR, 10);
 const MAX_HOME_PROMOTION_CONCURRENCY: usize = 4;
+const HOME_PUBLICATION_IO_SLOTS: usize = 4;
 #[cfg(any(test, feature = "test-support"))]
 const TEST_FS_TOTAL_BYTES: u64 = 2_000 * GIB;
 #[cfg(any(test, feature = "test-support"))]
@@ -99,6 +101,10 @@ pub struct HomeImageCache {
     promotion_capacity_lock_test_gate: Option<(Arc<tokio::sync::Notify>, Arc<Semaphore>)>,
     #[cfg(test)]
     publication_capacity_held_test_gate: Option<(Arc<tokio::sync::Notify>, Arc<Semaphore>)>,
+    #[cfg(test)]
+    publication_sync_test_gate: Option<HomeImageHandoffTestGate>,
+    #[cfg(test)]
+    publication_copy_test_gate: Option<HomeImagePrepareLockTestGate>,
     #[cfg(any(test, feature = "test-support"))]
     use_actual_fs_stats: bool,
     #[cfg(test)]
@@ -217,6 +223,11 @@ enum PublicationFault {
     BeforeMetadataRename,
     AfterMetadataRename,
     RemoveStagingBeforeImageRename,
+    UnexpectedExdev,
+    BeforeCopy,
+    BeforeCandidateDirectorySync,
+    BeforeMetadataSync,
+    PartialMetadataWrite,
 }
 
 impl HomeImageCache {
@@ -266,7 +277,7 @@ impl HomeImageCache {
                     lock_dir,
                     cache_scope: scope.to_owned(),
                     entry_lock_owners: Mutex::new(HashMap::new()),
-                    publication_admission: Semaphore::new(1),
+                    publication_admission: Semaphore::new(HOME_PUBLICATION_IO_SLOTS),
                     checkout_io: TaskTracker::new(),
                     selection_releases: SelectionReleases::default(),
                     pressure_reclamation: PressureReclamation::new(),
@@ -295,7 +306,7 @@ impl HomeImageCache {
                 lock_dir,
                 cache_scope: scope.to_owned(),
                 entry_lock_owners: Mutex::new(HashMap::new()),
-                publication_admission: Semaphore::new(1),
+                publication_admission: Semaphore::new(HOME_PUBLICATION_IO_SLOTS),
                 checkout_io: TaskTracker::new(),
                 selection_releases: SelectionReleases::default(),
                 pressure_reclamation: PressureReclamation::new(),
@@ -324,6 +335,10 @@ impl HomeImageCache {
             promotion_capacity_lock_test_gate: None,
             #[cfg(test)]
             publication_capacity_held_test_gate: None,
+            #[cfg(test)]
+            publication_sync_test_gate: None,
+            #[cfg(test)]
+            publication_copy_test_gate: None,
             use_actual_fs_stats: false,
             #[cfg(test)]
             pressure_reserve_override: None,

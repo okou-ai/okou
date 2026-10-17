@@ -119,8 +119,44 @@ impl HomeImageCache {
     }
 
     pub async fn gc(&self, dry_run: bool) -> LifecycleResult<u64> {
-        let _capacity_lock = runner_host::lock::acquire(self.capacity_lock_path()).await?;
-        self.gc_locked(dry_run, 0).await
+        self.accept_collection(dry_run, 0).await.map_err(|error| {
+            crate::error::LifecycleError::Internal(format!("home collection task failed: {error}"))
+        })?
+    }
+
+    fn accept_collection(
+        &self,
+        dry_run: bool,
+        additional_peak_bytes: u64,
+    ) -> tokio::task::JoinHandle<LifecycleResult<u64>> {
+        let cache = self.clone();
+        self.inner.checkout_io.spawn(async move {
+            let result = cache
+                .collect_home_cache(dry_run, additional_peak_bytes)
+                .await;
+            if let Err(error) = &result {
+                tracing::warn!(%error, dry_run, "accepted home cache collection failed");
+            }
+            result
+        })
+    }
+
+    async fn collect_home_cache(
+        &self,
+        dry_run: bool,
+        additional_peak_bytes: u64,
+    ) -> LifecycleResult<u64> {
+        let _routine =
+            match runner_host::lock::try_acquire_or_busy(self.routine_gc_lock_path()).await? {
+                runner_host::lock::TryLock::Acquired(lock) => lock,
+                runner_host::lock::TryLock::Busy => return Ok(0),
+            };
+        let _capacity =
+            match runner_host::lock::try_acquire_shared_or_busy(self.capacity_lock_path()).await? {
+                runner_host::lock::TryLock::Acquired(lock) => lock,
+                runner_host::lock::TryLock::Busy => return Ok(0),
+            };
+        self.gc_locked(dry_run, additional_peak_bytes).await
     }
 
     pub async fn try_routine_gc(&self, minimum_interval: Duration) -> LifecycleResult<Option<u64>> {
@@ -133,7 +169,7 @@ impl HomeImageCache {
                 runner_host::lock::TryLock::Busy => return Ok(None),
             };
         let capacity_lock =
-            match runner_host::lock::try_acquire_or_busy(self.capacity_lock_path()).await? {
+            match runner_host::lock::try_acquire_shared_or_busy(self.capacity_lock_path()).await? {
                 runner_host::lock::TryLock::Acquired(lock) => lock,
                 runner_host::lock::TryLock::Busy => return Ok(None),
             };
@@ -141,7 +177,7 @@ impl HomeImageCache {
         if !routine_gc_is_due(&capacity_lock, minimum_interval)? {
             return Ok(None);
         }
-        let initial_capacity_duration = capacity_started.elapsed();
+        let mut initial_capacity_duration = capacity_started.elapsed();
         drop(capacity_lock);
 
         #[cfg(any(test, feature = "test-support"))]
@@ -153,17 +189,23 @@ impl HomeImageCache {
                 .expect("routine GC gate closed")
                 .forget();
         }
-        // Entry-local cleanup shares the publication entry lock and only frees
-        // disk space. The routine lock, not capacity, owns this potentially slow
-        // inventory so finalizers can publish while unrelated entries scan.
+        // New publishers share this barrier and can progress during inventory.
+        // Legacy exclusive budget windows exclude every accepted mutation.
+        let inventory_capacity =
+            match runner_host::lock::try_acquire_shared_or_busy(self.capacity_lock_path()).await? {
+                runner_host::lock::TryLock::Acquired(lock) => lock,
+                runner_host::lock::TryLock::Busy => return Ok(None),
+            };
         let inventory_started = Instant::now();
         let inventory = self
             .gc_inventory(false, || self.background_gc.is_active())
             .await?;
+        drop(inventory_capacity);
         if !self.background_gc.is_active() {
             return Ok(None);
         }
         let inventory_duration = inventory_started.elapsed();
+        initial_capacity_duration += inventory_duration;
         let entry_count = inventory.candidates.len();
         let mut freed_bytes = inventory.pre_cleanup_freed_bytes;
         let mut continuation = GcContinuation::new(inventory.candidates, 0);
@@ -171,7 +213,7 @@ impl HomeImageCache {
         // No entry lock survives inventory. Never wait for capacity here, and
         // never evict from an unlocked observation that promotion can replace.
         let mut capacity_lock =
-            match runner_host::lock::try_acquire_or_busy(self.capacity_lock_path()).await? {
+            match runner_host::lock::try_acquire_shared_or_busy(self.capacity_lock_path()).await? {
                 runner_host::lock::TryLock::Acquired(lock) => lock,
                 runner_host::lock::TryLock::Busy => {
                     info!(
@@ -250,14 +292,13 @@ impl HomeImageCache {
                         runner_host::lock::TryLock::Acquired(lock) => lock,
                         runner_host::lock::TryLock::Busy => return Ok(None),
                     };
-                capacity_lock = match runner_host::lock::try_acquire_or_busy(
-                    self.capacity_lock_path(),
-                )
-                .await?
-                {
-                    runner_host::lock::TryLock::Acquired(lock) => lock,
-                    runner_host::lock::TryLock::Busy => return Ok(None),
-                };
+                capacity_lock =
+                    match runner_host::lock::try_acquire_shared_or_busy(self.capacity_lock_path())
+                        .await?
+                    {
+                        runner_host::lock::TryLock::Acquired(lock) => lock,
+                        runner_host::lock::TryLock::Busy => return Ok(None),
+                    };
                 capacity_started = Instant::now();
                 if !routine_gc_is_due(&capacity_lock, minimum_interval)? {
                     return Ok(None);
@@ -350,8 +391,8 @@ impl HomeImageCache {
             if outcome.status != HomeCacheReclaimStatus::BudgetExhausted {
                 return Ok(removed);
             }
-            // Manual/inline callers retain their original exclusive capacity
-            // owner. No physical deletion is cancelled at this cooperative yield.
+            // Manual/publication collectors retain the singleton and shared
+            // compatibility barrier. Never cancel accepted physical deletion.
             tokio::task::yield_now().await;
         }
     }

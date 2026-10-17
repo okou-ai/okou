@@ -1,4 +1,4 @@
-use super::fs::{allocated_bytes, sync_directory, sync_private_file};
+use super::fs::{StagingFile, allocated_bytes, sync_directory};
 use super::types::HomeCacheTerminalStatus;
 use super::{CACHE_FORMAT_VERSION, HOME_DRIVE_LAYOUT, HomeImageCache};
 use crate::error::{LifecycleError, LifecycleResult};
@@ -191,11 +191,26 @@ impl HomeImageCache {
     /// Caller holds entry and capacity locks and has already synced the pinned
     /// generation image. A late error may mean the commit became visible: never
     /// delete that candidate in response to an ambiguous rename/directory-sync.
+    #[cfg(test)]
     pub(super) async fn write_metadata(
         &self,
         key: &str,
         run_id: RunId,
         metadata: HomeCacheMetadata,
+    ) -> LifecycleResult<()> {
+        self.write_metadata_with_progress(key, run_id, metadata, &mut None)
+            .await
+    }
+
+    /// Entry and compatibility ownership outlive every accepted write/sync.
+    /// Retain the exclusively created staging descriptor before writing, so a
+    /// partial-write retry cannot adopt or overwrite another attempt's inode.
+    pub(super) async fn write_metadata_with_progress(
+        &self,
+        key: &str,
+        run_id: RunId,
+        metadata: HomeCacheMetadata,
+        retained: &mut Option<StagingFile>,
     ) -> LifecycleResult<()> {
         validate_metadata_structure(&metadata)?;
         if metadata.image_generation != run_id.to_string()
@@ -215,9 +230,47 @@ impl HomeImageCache {
             ));
         }
         let tmp = paths.tmp_metadata(run_id);
-        // Never overwrite another attempt's staging path.
-        runner_host::host_file::write_private_new(&tmp, &bytes, "home metadata staging").await?;
-        sync_private_file(&tmp).await?;
+        // Creation establishes custody before a write can fail partially.
+        if retained.is_none() {
+            *retained = Some(StagingFile::create(&tmp)?);
+        }
+        let pin = retained.as_ref().unwrap();
+        #[cfg(test)]
+        if self
+            .inner
+            .publication_fault
+            .compare_exchange(
+                super::PublicationFault::PartialMetadataWrite as usize,
+                0,
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+            )
+            .is_ok()
+        {
+            pin.write_owned(&tmp, bytes[..bytes.len() / 2].to_vec())
+                .await?;
+            return Err(LifecycleError::Internal(
+                "injected partial metadata write".into(),
+            ));
+        }
+        pin.write_owned(&tmp, bytes.clone()).await?;
+        // Recovery uses the exact previously created staging file, never a
+        // path-only adoption of another writer's metadata.
+        if runner_host::state_file::read_to_bytes_required(
+            &tmp,
+            runner_host::state_file::HOME_METADATA_MAX_BYTES,
+            runner_host::state_file::OwnerCheck::None,
+        )
+        .await?
+            != bytes
+        {
+            return Err(LifecycleError::Internal(
+                "publication metadata staging changed".into(),
+            ));
+        }
+        #[cfg(test)]
+        self.publication_fault(super::PublicationFault::BeforeMetadataSync)?;
+        pin.sync_owned(&tmp).await?;
         sync_directory(paths.entry_dir()).await?;
         #[cfg(test)]
         self.publication_fault(super::PublicationFault::BeforeMetadataRename)?;
