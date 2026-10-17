@@ -133,6 +133,44 @@ class ReceiptTest(unittest.TestCase):
 
 
 class OwnerTest(unittest.TestCase):
+    def test_launch_cancellation_is_delivered_after_process_ownership(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = root / "state.json"
+            script = (
+                "import json,os,signal,sys; from pathlib import Path; sys.path.insert(0,"
+                + repr(str(fixture.HERE))
+                + "); import run; state={}; armed=True\ndef audit(event,args):\n global armed\n if event=='subprocess.Popen' and armed:\n  armed=False\n  os.kill(os.getpid(),signal.SIGTERM)\nsys.addaudithook(audit)\ntry: run.run_vm([sys.executable,'-c','print(1)'],Path("
+                + repr(str(root / "console"))
+                + "),state)\nexcept InterruptedError: pass\nfinally: Path("
+                + repr(str(state))
+                + ").write_text(json.dumps(state))"
+            )
+            result = subprocess.run(
+                [sys.executable, "-c", script],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            observed = json.loads(state.read_text())
+            self.assertEqual(observed["cleanup"], "vmm_joined")
+            self.assertGreater(observed["vmmPid"], 0)
+
+    def test_exec_restores_the_original_child_and_parent_signal_masks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            original = signal.pthread_sigmask(signal.SIG_BLOCK, [signal.SIGUSR1])
+            try:
+                expected = signal.pthread_sigmask(signal.SIG_BLOCK, [])
+                log = Path(directory) / "console"
+                code = "import json,signal; print(json.dumps(sorted(signal.pthread_sigmask(signal.SIG_BLOCK,[]))))"
+                fixture.run_vm([sys.executable, "-c", code], log, {})
+                self.assertEqual(json.loads(log.read_text()), sorted(expected))
+                self.assertEqual(signal.pthread_sigmask(signal.SIG_BLOCK, []), expected)
+            finally:
+                signal.pthread_sigmask(signal.SIG_SETMASK, original)
+
     def test_success_failure_and_timeout_reap_the_owned_process(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

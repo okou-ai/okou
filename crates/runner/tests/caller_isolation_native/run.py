@@ -199,15 +199,20 @@ def run_vm(command, log_path, receipt, timeout=35):
     def interrupted(number, _frame):
         raise InterruptedError(f"native owner received signal {number}")
 
-    previous = {
-        number: signal.signal(number, interrupted)
-        for number in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
-    }
+    interrupts = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+    original_mask = signal.pthread_sigmask(signal.SIG_BLOCK, interrupts)
+    previous = {number: signal.signal(number, interrupted) for number in interrupts}
     process = None
     try:
         with log_path.open("xb") as log:
             process = subprocess.Popen(
-                [sys.executable, str(HERE / "vmm.py"), str(os.getpid()), *command],
+                [
+                    sys.executable,
+                    str(HERE / "vmm.py"),
+                    str(os.getpid()),
+                    json.dumps(sorted(original_mask)),
+                    *command,
+                ],
                 stdin=subprocess.DEVNULL,
                 stdout=log,
                 stderr=subprocess.STDOUT,
@@ -215,6 +220,9 @@ def run_vm(command, log_path, receipt, timeout=35):
             )
             receipt["vmmPid"] = process.pid
             receipt["cleanup"] = "vmm_running"
+            # Pending cancellation can run only after Popen is owned. The exec
+            # wrapper restores the child's original mask independently.
+            signal.pthread_sigmask(signal.SIG_SETMASK, original_mask)
             try:
                 process.wait(timeout=timeout)
             except subprocess.TimeoutExpired as error:
@@ -226,6 +234,7 @@ def run_vm(command, log_path, receipt, timeout=35):
                     f"owned Firecracker failed with exit {process.returncode}"
                 )
     finally:
+        signal.pthread_sigmask(signal.SIG_BLOCK, interrupts)
         try:
             if process is not None:
                 if process.poll() is None:
@@ -238,6 +247,7 @@ def run_vm(command, log_path, receipt, timeout=35):
         finally:
             for number, handler in previous.items():
                 signal.signal(number, handler)
+            signal.pthread_sigmask(signal.SIG_SETMASK, original_mask)
 
 
 def run(args):

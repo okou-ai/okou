@@ -15,7 +15,7 @@ The policy and native controller are test-only. They are never installed in a
 production rootfs. The Guest contains no user home, platform key, network
 interface, vsock, host mount, application agent or user workload.
 
-Run on an authorized Linux host with KVM access, GCC/static libc, Python 3 and
+Run on an authorized Linux host with KVM access, GCC/static libc, Python 3.11+ and
 `secilc`. Use the committed `crates/runner/src/deps.rs` from the same source
 artifact. Both VMM and kernel are copied into an exclusively created output
 directory and their size/SHA-256 checked before execution. A private extracted
@@ -40,6 +40,8 @@ failed probes, a wrong architecture, nonzero VMM exit and timeout fail the
 command. The VMM has a 35-second host deadline, a 25-second Guest deadline and a
 128-KiB console limit. Its owner kills and joins it on failure or cancellation;
 Linux parent-death fencing also kills it after the owner is SIGKILLed.
+Cancellation is deferred until the launched process has an owner; the exec
+wrapper restores the child's original signal mask before running the VMM.
 
 Exit zero means only that the kernel-role primitive suite passed on this host
 architecture. `gateF` remains `incomplete`: actual packaged Codex/Claude Code/Pi
