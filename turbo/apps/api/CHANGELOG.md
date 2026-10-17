@@ -9,6 +9,25 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.750.4](https://github.com/okou-ai/okou/compare/api-v1.750.3...api-v1.750.4) (2026-10-17)
+
+
+### Refactoring
+
+* **api:** localize feishu installation availability reads ([#40901](https://github.com/okou-ai/okou/issues/40901)) ([44163c9](https://github.com/okou-ai/okou/commit/44163c92c6104906b93575f6408541ed60510b4a))
+* **api:** localize presigned cache prune ownership ([#40882](https://github.com/okou-ai/okou/issues/40882)) ([9ffbf27](https://github.com/okou-ai/okou/commit/9ffbf27cf0bfcf2978cca1178a2322c63bb8501f))
+* **api:** localize skill import reads in existing owners ([#40890](https://github.com/okou-ai/okou/issues/40890)) ([29ad572](https://github.com/okou-ai/okou/commit/29ad572e0a0cb256ac709e46256a9d58c2bc71cf))
+* **api:** pass ordinary values into storage input resolution ([#40906](https://github.com/okou-ai/okou/issues/40906)) ([a7fd4ab](https://github.com/okou-ai/okou/commit/a7fd4ab5f8887c35a974710386f4c54143165ec8))
+* **api:** pass ordinary values into storage request resolution ([#40915](https://github.com/okou-ai/okou/issues/40915)) ([2a3931f](https://github.com/okou-ai/okou/commit/2a3931fee6a6ec80bbad8ce6407592151805592e))
+* **api:** remove database capability from storage plan carriers ([#40909](https://github.com/okou-ai/okou/issues/40909)) ([64374b8](https://github.com/okou-ai/okou/commit/64374b890d460702d1deacb4fba214e0ca5a746e))
+* **api:** remove unused database argument from model label helper ([#40894](https://github.com/okou-ai/okou/issues/40894)) ([4a09c86](https://github.com/okou-ai/okou/commit/4a09c86d8b8bef902d75af751b8da650efcac17f))
+* **api:** remove unused db arguments from storage manifest helpers ([#40904](https://github.com/okou-ai/okou/issues/40904)) ([2f623ee](https://github.com/okou-ai/okou/commit/2f623ee2690ecb36c3c74961e6063743247b8d56)) [#40903](https://github.com/okou-ai/okou/issues/40903)
+
+
+### Performance Improvements
+
+* remove thread artifact list refresh paths ([#40912](https://github.com/okou-ai/okou/issues/40912)) ([432a2d9](https://github.com/okou-ai/okou/commit/432a2d9b83ba6770e66fa6d7714ed8bc6adac6e4))
+
 ## [1.750.3](https://github.com/okou-ai/okou/compare/api-v1.750.2...api-v1.750.3) (2026-10-17)
 
 

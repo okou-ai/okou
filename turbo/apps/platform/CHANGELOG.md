@@ -12,6 +12,18 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1036.2](https://github.com/okou-ai/okou/compare/app-v0.1036.1...app-v0.1036.2) (2026-10-17)
+
+
+### Bug Fixes
+
+* **app:** blend activity files toolbar into workspace canvas ([#40900](https://github.com/okou-ai/okou/issues/40900)) ([5365b53](https://github.com/okou-ai/okou/commit/5365b5384fcb2a3bff5320085abc98e02c787fb8))
+
+
+### Performance Improvements
+
+* remove thread artifact list refresh paths ([#40912](https://github.com/okou-ai/okou/issues/40912)) ([432a2d9](https://github.com/okou-ai/okou/commit/432a2d9b83ba6770e66fa6d7714ed8bc6adac6e4))
+
 ## [0.1036.1](https://github.com/okou-ai/okou/compare/app-v0.1036.0...app-v0.1036.1) (2026-10-17)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.54](https://github.com/okou-ai/okou/compare/runner-network-v0.2.53...runner-network-v0.2.54) (2026-10-17)
+
+
+### Bug Fixes
+
+* **runner:** enforce captured openrouter presets before auth ([#40884](https://github.com/okou-ai/okou/issues/40884)) ([1d2a780](https://github.com/okou-ai/okou/commit/1d2a780d35d7a8b2b5ceab760321470d8e06c489))
+
 ## [0.2.53](https://github.com/okou-ai/okou/compare/runner-network-v0.2.52...runner-network-v0.2.53) (2026-10-17)
 
 ## [0.2.52](https://github.com/okou-ai/okou/compare/runner-network-v0.2.51...runner-network-v0.2.52) (2026-10-17)
