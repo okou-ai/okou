@@ -716,18 +716,12 @@ async function connectBriefSourceForAgent(
   if (!state) {
     throw new Error("Expected OAuth state");
   }
-  await connectors.completeOauthCallback("gmail", {
+  // OAuth authorizes this Agent; do not repeat the same grant through PUT.
+  const callback = await connectors.completeOauthCallbackResult("gmail", {
     code: "brief-code",
     state,
   });
-  const membershipRead =
-    context.mocks.clerk.organizations.getOrganizationMembershipList.getMockImplementation();
-  await runs.enableAgentConnectors(actor, defaultAgentId, ["gmail"]);
-  if (membershipRead) {
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
-      membershipRead,
-    );
-  }
+  expect(callback.body).toMatchObject({ status: "success" });
 }
 
 async function initializeBriefMember(actor: ApiTestUser, timezone: string) {
