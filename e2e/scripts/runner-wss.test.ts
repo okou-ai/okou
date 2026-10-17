@@ -470,7 +470,7 @@ test("public cleanup deletes owned thread and agent after cancellation failure w
       );
       clientEventId = input.clientEventId;
       status = 201;
-      body = { threadId: THREAD, runId: null };
+      body = { threadId: THREAD };
     } else if (url.pathname.endsWith("/event-rows")) {
       assert.equal(url.searchParams.get("sinceSeqId"), "0");
       assert.equal(

@@ -473,7 +473,7 @@ export function mockChatLifecycle(
       seqId: allocateDynamicSeqId(),
       createdAt: now,
     });
-    return { runId: null, threadId: body.threadId, createdAt: now };
+    return { threadId: body.threadId, createdAt: now };
   };
 
   const appendInterruptControlEvent = (body: {
@@ -496,7 +496,7 @@ export function mockChatLifecycle(
       createdAt: now,
     });
     markRunCancelled();
-    return { runId: null, threadId: body.threadId, createdAt: now };
+    return { threadId: body.threadId, createdAt: now };
   };
 
   const terminal = new Set(["completed", "failed", "cancelled", "timeout"]);
@@ -671,7 +671,7 @@ export function mockChatLifecycle(
     // The server announces the persisted input like any other thread event;
     // the sender learns it is queued from that event, not the send response.
     createChatEvent(threadId);
-    return { runId: null, threadId, createdAt: now };
+    return { threadId, createdAt: now };
   };
 
   const startRunFromUserMessage = async (body: {
