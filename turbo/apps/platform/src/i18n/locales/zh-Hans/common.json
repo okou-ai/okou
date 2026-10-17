@@ -134,7 +134,7 @@
         "updateRequired": "此运行不支持文件浏览。请在沙箱更新后开始新的运行。"
       },
       "log": "日志",
-      "manualReloadNotice": "活动日志不会自动更新，请刷新页面查看最新记录。",
+      "manualReloadNotice": "日志不会自动更新。",
       "modelProvidedBy": "{{model}}，由 {{provider}} 提供",
       "networkEmpty": {
         "description": "本次运行没有记录到网络流量。",
@@ -145,6 +145,7 @@
         "description": "该日志不存在，或者你在当前工作区没有查看权限。",
         "title": "未找到日志"
       },
+      "refresh": "刷新",
       "runner": {
         "environment": "环境",
         "framework": "框架",

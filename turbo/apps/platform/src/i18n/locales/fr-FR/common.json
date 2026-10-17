@@ -136,7 +136,7 @@
         "updateRequired": "Cette exécution ne prend pas en charge les fichiers. Lance une nouvelle exécution après la mise à jour du bac à sable."
       },
       "log": "Journal",
-      "manualReloadNotice": "Les journaux d’activité ne se mettent pas à jour automatiquement. Actualisez la page pour voir les dernières entrées.",
+      "manualReloadNotice": "Les journaux ne se mettent pas à jour automatiquement.",
       "modelProvidedBy": "{{model}} fourni par {{provider}}",
       "networkEmpty": {
         "description": "Aucun trafic réseau n'a été enregistré pour cette exécution.",
@@ -147,6 +147,7 @@
         "description": "Ce journal n'existe pas ou vous n'avez pas la permission de le voir dans l'espace de travail actuel.",
         "title": "Journal introuvable"
       },
+      "refresh": "Actualiser",
       "runner": {
         "environment": "Environnement",
         "framework": "Framework",
