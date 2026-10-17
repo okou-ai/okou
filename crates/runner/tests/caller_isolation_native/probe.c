@@ -226,10 +226,27 @@ static int operation(enum action action, int inherited) {
     }
     case PROTECTED_WRITE:
         return open_then_close("/fixture/protected", O_WRONLY);
-    case KEY_READ:
-        return open_then_close("/fixture/key", O_RDONLY);
-    case DATA_WRITE:
-        return open_then_close("/fixture/data", O_WRONLY);
+    case KEY_READ: {
+        int fd = open("/fixture/key", O_RDONLY | O_CLOEXEC);
+        if (fd < 0)
+            return -1;
+        char byte;
+        ssize_t count = read(fd, &byte, 1);
+        int error = count < 0 ? errno : EIO;
+        close(fd);
+        errno = error;
+        return count == 1 ? 0 : -1;
+    }
+    case DATA_WRITE: {
+        int fd = open("/fixture/data", O_WRONLY | O_APPEND | O_CLOEXEC);
+        if (fd < 0)
+            return -1;
+        ssize_t count = write(fd, "1", 1);
+        int error = count < 0 ? errno : EIO;
+        close(fd);
+        errno = error;
+        return count == 1 ? 0 : -1;
+    }
     case DISABLE_POLICY: {
         int fd = open("/sys/fs/selinux/enforce", O_WRONLY | O_CLOEXEC);
         if (fd < 0)
