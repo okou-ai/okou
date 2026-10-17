@@ -236,6 +236,10 @@ impl Case {
         self.write_event("NATIVE_CREATE_CANCELLATION_WITNESS ", phase, evidence)
     }
 
+    pub fn returned_guest_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_RETURNED_GUEST_WITNESS ", phase, evidence)
+    }
+
     pub fn startup_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
         self.write_event("NATIVE_STARTUP_WITNESS ", phase, evidence)
     }

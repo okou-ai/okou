@@ -752,6 +752,45 @@ and post-merge reconciliation (#40788), production activation, numerical relief,
 full residency, calibrated envelopes, unknown bootstrap provenance and OOM
 protection remain open under #40760 and the delivery parents.
 
+## Actual returned Guest cancellation and late cleanup
+
+`native_returned_guest_cancellation_retains_actual_stages_and_late_cleanup`
+selects actual successful start, home-mount RPC and reusable park, each in fresh
+and matching-snapshot factories. Before these six cases accept creation, a real
+pool acquisition must poll Pending, cancel under foreground CPU preemption and
+join while the pool remains held, without entering the provider or P2.
+
+The feature-only, invocation-owned checkpoint holds a separate Unix read after
+the actual stage succeeds. It retains the exact returned Guest, ext4 home UUID
+and backing generation. Draining cancellation, dropped and replacement Pending
+observers, foreground CPU, acknowledged heartbeat and independent host observation
+must preserve both full leases and original Fresh growth. Releasing the stage
+must join a late cancelled success without preparing or publishing inventory.
+
+Invalid publication enters the existing required cleanup engine. Actual factory
+destruction, exact backing wait and workspace absence precede a second owned IO
+checkpoint. Heartbeat and observation progress while required tail accounting,
+uncertain Fresh growth and both full leases remain held. Only positive cleanup
+completion releases the new lease; the original lease/data survive through all
+producer joins and the inherited original saving, complete snapshot hash, durable
+64 MiB tail and exact original backing exit. P2 close retains the cancelled Fresh
+row and its complete growth; no numerical credit is inferred.
+
+Supply `native_returned_guest_policy_json`, `native_returned_guest_inputs_json`,
+`native_returned_guest_snapshot_bytes` and the original terminal artifact metadata.
+The nine ordered phases per case are checked with the inherited physical proof:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/returned_guest_report.py <p1-directory>
+```
+
+Default Cargo executes the real-file/CLI refusal contract. KVM/NBD execution
+remains opt-in. Checkpoints establish late result custody, not stalled storage or
+Guest transport. This completes only #40787; #40788 still requires both merges
+before final ancestor reconciliation. Production Reactor/P2 activation, full/cold
+residency, calibrated envelopes, unknown original bootstrap provenance, numerical
+relief and OOM protection remain unverified.
+
 ## Native observation gaps and recovery
 
 For a bounded native run using the local profile, optimize the verification hash

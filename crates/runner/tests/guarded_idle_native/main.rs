@@ -26,6 +26,8 @@ mod read_cancellation;
 mod recovery;
 mod recovery_source;
 mod refusal;
+mod returned_guest;
+mod returned_guest_probe;
 mod startup;
 mod tail;
 mod transitions;
@@ -70,6 +72,13 @@ enum Corpus {
     CriticalProgress,
     ReadCancellation,
     CreateCancellation,
+    ReturnedGuest(sandbox_firecracker::GuestPreparationStage),
+}
+
+enum PreparationProbe<'a> {
+    None,
+    Create(&'a Arc<create_cancellation::Probe>),
+    Returned(&'a Arc<returned_guest_probe::Probe>),
 }
 
 const MISSING_GUEST_TIMEZONE: &str = "Etc/okou-test-missing-zone";
@@ -555,6 +564,38 @@ fn native_create_report_requires_real_bytes_and_positive_rollback() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD inputs and exact-source actual returned Guest proof"]
+async fn native_returned_guest_cancellation_retains_actual_stages_and_late_cleanup()
+-> TestResult<()> {
+    use sandbox_firecracker::GuestPreparationStage::{Mount, Park, Start};
+    measured_selected_corpora(
+        &[NativeScope::OptionalOrdinary],
+        &[
+            Corpus::ReturnedGuest(Start),
+            Corpus::ReturnedGuest(Mount),
+            Corpus::ReturnedGuest(Park),
+        ],
+    )
+    .await
+}
+
+#[test]
+fn native_returned_guest_report_requires_actual_late_results_and_cleanup() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/returned_guest_report_test.py"
+        ))
+        .output()
+        .expect("returned Guest report requires Python3");
+    assert!(
+        output.status.success(),
+        "returned Guest report failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires owned KVM/NBD artifacts, synthetic native API, mock Codex and exact-source P1 proof"]
 async fn native_continuation_records_complete_session_history_and_required_saving() -> TestResult<()>
 {
@@ -572,6 +613,10 @@ async fn native_continuation_records_complete_session_history_and_required_savin
 }
 
 async fn measured_selected_corpus(scopes: &[NativeScope], corpus: Corpus) -> TestResult<()> {
+    measured_selected_corpora(scopes, &[corpus]).await
+}
+
+async fn measured_selected_corpora(scopes: &[NativeScope], corpora: &[Corpus]) -> TestResult<()> {
     native_logging()?;
     if !nix::unistd::getuid().is_root() {
         return Err(io::Error::other("native terminal corpus requires root").into());
@@ -595,9 +640,21 @@ async fn measured_selected_corpus(scopes: &[NativeScope], corpus: Corpus) -> Tes
         host_cpu_placement: None,
     })
     .await?;
-    let result =
-        exercise_selected_factories(&runtime, &base, &inputs, scopes, Some(&artifacts), corpus)
-            .await;
+    let result = async {
+        for corpus in corpora {
+            exercise_selected_factories(
+                &runtime,
+                &base,
+                &inputs,
+                scopes,
+                Some(&artifacts),
+                *corpus,
+            )
+            .await?;
+        }
+        Ok::<(), Box<dyn Error + Send + Sync>>(())
+    }
+    .await;
     if result.is_ok() {
         runtime.shutdown().await;
     }
@@ -692,6 +749,8 @@ async fn exercise_selected_factories(
                                 "ReadCancellation".into()
                             } else if corpus == Corpus::CreateCancellation {
                                 "CreateCancellation".into()
+                            } else if let Corpus::ReturnedGuest(stage) = corpus {
+                                format!("ReturnedGuest-{}", stage.label())
                             } else if corpus == Corpus::Continuation {
                                 if matches!(scope, NativeScope::Batch(_)) {
                                     "ContinuationNonzero".into()
@@ -728,6 +787,14 @@ async fn exercise_selected_factories(
                 .then(create_cancellation::Probe::new)
                 .transpose()?
                 .map(Arc::new);
+            let returned_probe = if let Corpus::ReturnedGuest(stage) = corpus {
+                Some(Arc::new(returned_guest_probe::Probe::new(
+                    stage,
+                    owned.clone(),
+                )?))
+            } else {
+                None
+            };
             let factory = if let Some(probe) = &create_probe {
                 let inner = runtime
                     .create_factory_with_home_checkpoint_for_test(config, probe.checkpoint())
@@ -736,6 +803,14 @@ async fn exercise_selected_factories(
                     inner,
                     probe: probe.clone(),
                     directory: owned.clone(),
+                }) as Box<dyn SandboxFactory>
+            } else if let Some(probe) = &returned_probe {
+                let inner = runtime
+                    .create_factory_with_guest_checkpoint_for_test(config, probe.checkpoint())
+                    .await?;
+                Box::new(returned_guest_probe::Factory {
+                    inner,
+                    probe: probe.clone(),
                 }) as Box<dyn SandboxFactory>
             } else {
                 runtime.create_factory(config).await?
@@ -758,7 +833,13 @@ async fn exercise_selected_factories(
                 scope,
                 proof.as_ref(),
                 corpus,
-                create_probe.as_ref(),
+                if let Some(probe) = &create_probe {
+                    PreparationProbe::Create(probe)
+                } else if let Some(probe) = &returned_probe {
+                    PreparationProbe::Returned(probe)
+                } else {
+                    PreparationProbe::None
+                },
             )
             .await;
             // A failed measured case is not permission to tear down dependencies
@@ -793,7 +874,7 @@ async fn exercise_retirement(
     scope: NativeScope,
     proof: Option<&Arc<evidence::Case>>,
     corpus: Corpus,
-    create_probe: Option<&Arc<create_cancellation::Probe>>,
+    preparation_probe: PreparationProbe<'_>,
 ) -> TestResult<()> {
     let status = Arc::new(StatusTracker::new(
         paths.base_dir().join("status.json"),
@@ -812,7 +893,10 @@ async fn exercise_retirement(
     }
     let recovery_source = (matches!(
         corpus,
-        Corpus::LogicalProgress | Corpus::IncomingProgress | Corpus::CreateCancellation
+        Corpus::LogicalProgress
+            | Corpus::IncomingProgress
+            | Corpus::CreateCancellation
+            | Corpus::ReturnedGuest(_)
     ) || matches!(
         scope,
         NativeScope::Recovery
@@ -997,8 +1081,10 @@ async fn exercise_retirement(
         },
     });
     let tracker = IdleDestroyTracker::new(Arc::new(Notify::new()));
-    if (matches!(corpus, Corpus::Optional | Corpus::CreateCancellation)
-        || matches!(corpus, Corpus::LogicalProgress | Corpus::IncomingProgress)
+    if (matches!(
+        corpus,
+        Corpus::Optional | Corpus::CreateCancellation | Corpus::ReturnedGuest(_)
+    ) || matches!(corpus, Corpus::LogicalProgress | Corpus::IncomingProgress)
         || matches!(
             scope,
             NativeScope::Recovery
@@ -1134,13 +1220,28 @@ async fn exercise_retirement(
                 Ok(None)
             }
             NativeScope::OptionalOrdinary | NativeScope::OptionalAged => {
+                if matches!(corpus, Corpus::ReturnedGuest(_)) {
+                    let PreparationProbe::Returned(probe) = preparation_probe else {
+                        return Err(io::Error::other("returned Guest probe absent").into());
+                    };
+                    returned_guest::exercise(transitions::Context {
+                        factory:factory.clone(),pool:pool.clone(),status:status.clone(),operations:operations.clone(),
+                        budget:budget.clone(),tracker:tracker.clone(),rootfs_hash:rootfs_hash.clone(),reuse_key:reuse_key.clone(),
+                    },inputs,recovery_source.as_ref().ok_or_else(||io::Error::other("returned Guest source absent"))?,
+                    proof.ok_or_else(||io::Error::other("returned Guest proof absent"))?, paths.base_dir(),
+                    probe).await?;
+                    return Ok(None);
+                }
                 if corpus == Corpus::CreateCancellation {
+                    let PreparationProbe::Create(probe) = preparation_probe else {
+                        return Err(io::Error::other("create probe absent").into());
+                    };
                     create_cancellation::exercise(transitions::Context {
                         factory: factory.clone(), pool: pool.clone(), status: status.clone(),
                         operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
                         rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
                     }, inputs, recovery_source.as_ref().ok_or_else(|| io::Error::other("create source absent"))?,
-                    proof, paths.base_dir(), create_probe.ok_or_else(|| io::Error::other("create probe absent"))?).await?;
+                    proof, paths.base_dir(), probe).await?;
                     return Ok(None);
                 }
                 optional::exercise(transitions::Context {
@@ -1488,7 +1589,10 @@ async fn exercise_retirement(
         return Ok(());
     }
     let report = operations.close_and_wait().await?;
-    if corpus == Corpus::CreateCancellation {
+    if matches!(
+        corpus,
+        Corpus::CreateCancellation | Corpus::ReturnedGuest(_)
+    ) {
         assert_eq!(
             (
                 report.registered_operations,
@@ -1504,12 +1608,17 @@ async fn exercise_retirement(
         );
         assert_eq!(report.cleanup_growth_bytes, 0);
         if let Some(proof) = proof {
-            proof.create_cancellation_witness("accounting_closed", serde_json::json!({
+            let evidence = serde_json::json!({
                 "registered_operations": report.registered_operations, "tracked_tasks": report.tracked_tasks,
                 "started": report.started, "uncertain": report.uncertain,
                 "ordinary_growth_bytes": report.ordinary_growth_bytes, "cleanup_growth_bytes": report.cleanup_growth_bytes,
                 "closed": report.closed, "allocated": budget.allocated(),
-            }))?;
+            });
+            if matches!(corpus, Corpus::ReturnedGuest(_)) {
+                proof.returned_guest_witness("accounting_closed", evidence)?;
+            } else {
+                proof.create_cancellation_witness("accounting_closed", evidence)?;
+            }
         }
     } else {
         assert_eq!((report.registered_operations, report.tracked_tasks), (0, 0));

@@ -36,9 +36,13 @@ use crate::runtime_dirs::prepare_runtime_socket_dir;
 use crate::sandbox::{FirecrackerSandbox, FirecrackerSandboxInit};
 
 #[cfg(any(test, feature = "test-support"))]
+use home_checkpoint::FactoryCheckpoint;
+#[cfg(any(test, feature = "test-support"))]
 pub use home_checkpoint::HomeCreateCheckpoint;
 #[cfg(feature = "test-support")]
 pub(crate) use home_checkpoint::wrap as checkpoint_factory;
+#[cfg(feature = "test-support")]
+pub(crate) use home_checkpoint::wrap_guest as guest_checkpoint_factory;
 pub(crate) use invariant::InvariantConfig;
 pub use invariant::{PREWARM_SCRIPT, config_hash};
 
@@ -220,8 +224,12 @@ impl FirecrackerFactory {
         config: SandboxConfig,
         observer: Option<&mut dyn SandboxCreateObserver>,
         custody: Option<sandbox::SandboxCreateCustody>,
-        #[cfg(any(test, feature = "test-support"))] checkpoint: Option<HomeCreateCheckpoint>,
+        #[cfg(any(test, feature = "test-support"))] checkpoint: Option<FactoryCheckpoint>,
     ) -> sandbox::Result<Box<dyn Sandbox>> {
+        #[cfg(feature = "test-support")]
+        let guest_checkpoint = checkpoint.as_ref().and_then(FactoryCheckpoint::guest);
+        #[cfg(any(test, feature = "test-support"))]
+        let home_checkpoint = checkpoint.and_then(FactoryCheckpoint::home);
         let resources = self.resources()?;
         let device_rate_limits = convert_device_rate_limits(config.device_rate_limits.as_ref())?;
         let leak_tx = resources.leak_cleaner.sender();
@@ -270,7 +278,7 @@ impl FirecrackerFactory {
                         prepare_home_drive_image(&path, &config, pressure.as_deref(), None).await;
                     #[cfg(any(test, feature = "test-support"))]
                     let (tx, result) = if result.is_ok() {
-                        home_checkpoint::run(tx, path, checkpoint).await?
+                        home_checkpoint::run(tx, path, home_checkpoint).await?
                     } else {
                         (tx, result)
                     };
@@ -431,6 +439,8 @@ impl FirecrackerFactory {
             leak_tx,
             host_cpu_cgroup: self.host_cpu_cgroup.clone(),
         });
+        #[cfg(feature = "test-support")]
+        let sandbox = crate::preparation_checkpoint::attach(sandbox, guest_checkpoint);
         Ok(Box::new(sandbox))
     }
 }

@@ -7,6 +7,31 @@ use super::*;
 /// The callback owns the real create transaction for its entire blocking lifetime.
 pub type HomeCreateCheckpoint = Arc<dyn Fn(&Path) -> std::io::Result<()> + Send + Sync>;
 
+#[derive(Clone)]
+pub(super) enum FactoryCheckpoint {
+    Home(HomeCreateCheckpoint),
+    #[cfg(feature = "test-support")]
+    Guest(crate::GuestPreparationCheckpoint),
+}
+
+impl FactoryCheckpoint {
+    pub(super) fn home(self) -> Option<HomeCreateCheckpoint> {
+        match self {
+            Self::Home(checkpoint) => Some(checkpoint),
+            #[cfg(feature = "test-support")]
+            Self::Guest(_) => None,
+        }
+    }
+
+    #[cfg(feature = "test-support")]
+    pub(super) fn guest(&self) -> Option<crate::GuestPreparationCheckpoint> {
+        match self {
+            Self::Home(_) => None,
+            Self::Guest(checkpoint) => Some(checkpoint.clone()),
+        }
+    }
+}
+
 pub(super) async fn run(
     tx: SandboxCreateTransaction,
     path: std::path::PathBuf,
@@ -32,7 +57,7 @@ pub(super) async fn run(
 #[cfg(feature = "test-support")]
 pub(crate) struct CheckpointFactory {
     inner: FirecrackerFactory,
-    checkpoint: HomeCreateCheckpoint,
+    checkpoint: FactoryCheckpoint,
 }
 
 #[cfg(feature = "test-support")]
@@ -76,5 +101,19 @@ pub(crate) fn wrap(
     inner: FirecrackerFactory,
     checkpoint: HomeCreateCheckpoint,
 ) -> Box<dyn SandboxFactory> {
-    Box::new(CheckpointFactory { inner, checkpoint })
+    Box::new(CheckpointFactory {
+        inner,
+        checkpoint: FactoryCheckpoint::Home(checkpoint),
+    })
+}
+
+#[cfg(feature = "test-support")]
+pub(crate) fn wrap_guest(
+    inner: FirecrackerFactory,
+    checkpoint: crate::GuestPreparationCheckpoint,
+) -> Box<dyn SandboxFactory> {
+    Box::new(CheckpointFactory {
+        inner,
+        checkpoint: FactoryCheckpoint::Guest(checkpoint),
+    })
 }
