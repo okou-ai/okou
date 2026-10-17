@@ -1,19 +1,19 @@
 import { expect, it } from "vitest";
 import type { SandboxChannelOperation } from "../sandbox-channel";
 import {
-  SANDBOX_FS_READ_LIMITS,
-  sandboxFsReadOpen,
+  SANDBOX_FS_LIMITS,
+  sandboxFsOpen,
   sandboxFsRead,
-  sandboxFsReadFinish,
-  sandboxFsReadClose,
+  sandboxFsFinish,
+  sandboxFsClose,
 } from "../sandbox-channel-fs";
 import vectors from "../../../../../../crates/guest-contracts/tests/fixtures/sandbox-channel-fs-read.json";
 
 const operations = new Map<string, SandboxChannelOperation>([
-  ["open", sandboxFsReadOpen],
+  ["open", sandboxFsOpen],
   ["read", sandboxFsRead],
-  ["finish", sandboxFsReadFinish],
-  ["close", sandboxFsReadClose],
+  ["finish", sandboxFsFinish],
+  ["close", sandboxFsClose],
 ]);
 for (const vector of vectors.payloads) {
   it(vector.name, () => {
@@ -29,7 +29,7 @@ for (const vector of vectors.payloads) {
 }
 
 it("accepts a complete maximum chunk within the response framing budget", () => {
-  const data = btoa("\xff".repeat(SANDBOX_FS_READ_LIMITS.maxChunkBytes));
+  const data = btoa("\xff".repeat(SANDBOX_FS_LIMITS.maxChunkBytes));
   expect(
     sandboxFsRead.result.safeParse({
       offset: "9007199254740993",

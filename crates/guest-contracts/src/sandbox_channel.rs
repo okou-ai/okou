@@ -3,7 +3,7 @@
 //! role and payload semantics before a runtime may dispatch business work.
 
 use api_contracts::generated::constants::sandbox_channel as limits;
-use api_contracts::generated::types::sandbox_channel::{diagnostics, fs, fs_read};
+use api_contracts::generated::types::sandbox_channel::{diagnostics, fs};
 
 mod file_read;
 use base64::{
@@ -38,13 +38,13 @@ pub enum Operation {
     /// Release an owned continuation.
     FsListClose,
     /// Open a connection-owned regular-file reader.
-    FsReadOpen,
+    FsOpen,
     /// Read a bounded positional chunk.
     FsRead,
     /// Validate and release a reader.
-    FsReadFinish,
+    FsFinish,
     /// Abandon and release a reader.
-    FsReadClose,
+    FsClose,
     /// Bounded echo in either direction.
     Echo,
     /// External request causing a reverse Guest echo.
@@ -103,13 +103,13 @@ pub enum Params {
     /// Owned continuation release.
     FsListClose(fs::ListCloseParams),
     /// Open a regular file with a download or preview selection.
-    FsReadOpen(fs_read::OpenParams),
+    FsOpen(fs::OpenParams),
     /// Positional bounded read.
-    FsRead(fs_read::ReadParams),
+    FsRead(fs::ReadParams),
     /// Final identity validation and release.
-    FsReadFinish(fs_read::HandleParams),
+    FsFinish(fs::HandleParams),
     /// Explicit abandonment.
-    FsReadClose(fs_read::HandleParams),
+    FsClose(fs::HandleParams),
     /// Echo or reverse-echo bytes.
     Echo(diagnostics::Echo),
 }
@@ -122,13 +122,13 @@ pub enum ResultPayload {
     /// Cursor release acknowledgment.
     FsListClose(fs::ListCloseResult),
     /// Owned reader metadata.
-    FsReadOpen(fs_read::OpenResult),
+    FsOpen(fs::OpenResult),
     /// One exact positional chunk.
-    FsRead(fs_read::ReadResult),
+    FsRead(fs::ReadResult),
     /// Validated reader release.
-    FsReadFinish(fs_read::ReleaseResult),
+    FsFinish(fs::ReleaseResult),
     /// Abandoned reader release.
-    FsReadClose(fs_read::ReleaseResult),
+    FsClose(fs::ReleaseResult),
     /// Bounded echo bytes.
     Echo(diagnostics::Echo),
 }
@@ -404,10 +404,10 @@ pub fn operation_contract(
             Operation::FsListClose
         }
         ("fs", version, name) if version == u64::from(limits::fs::VERSION) => match name {
-            "open" => Operation::FsReadOpen,
+            "open" => Operation::FsOpen,
             "read" => Operation::FsRead,
-            "finish" => Operation::FsReadFinish,
-            "close" => Operation::FsReadClose,
+            "finish" => Operation::FsFinish,
+            "close" => Operation::FsClose,
             _ => return Err(ChannelError::UnknownOperation),
         },
         ("diagnostics", version, "echo") if version == u64::from(limits::diagnostics::VERSION) => {
@@ -521,10 +521,9 @@ pub fn decode_params(operation: Operation, value: Value) -> Result<Params, Chann
             }
             Ok(Params::FsListClose(parsed))
         }
-        Operation::FsReadOpen
-        | Operation::FsRead
-        | Operation::FsReadFinish
-        | Operation::FsReadClose => file_read::params(operation, value),
+        Operation::FsOpen | Operation::FsRead | Operation::FsFinish | Operation::FsClose => {
+            file_read::params(operation, value)
+        }
         Operation::Echo | Operation::PeerEcho => Ok(Params::Echo(echo(value)?)),
     }
 }
@@ -589,10 +588,9 @@ pub fn decode_result(operation: Operation, value: Value) -> Result<ResultPayload
             let parsed = serde_json::from_value(value).map_err(|_| ChannelError::InvalidRequest)?;
             Ok(ResultPayload::FsListClose(parsed))
         }
-        Operation::FsReadOpen
-        | Operation::FsRead
-        | Operation::FsReadFinish
-        | Operation::FsReadClose => file_read::result(operation, value),
+        Operation::FsOpen | Operation::FsRead | Operation::FsFinish | Operation::FsClose => {
+            file_read::result(operation, value)
+        }
         Operation::Echo | Operation::PeerEcho => Ok(ResultPayload::Echo(
             echo(value).map_err(|_| ChannelError::InvalidRequest)?,
         )),

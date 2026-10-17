@@ -1,6 +1,6 @@
 use super::*;
 use crate::ChannelError;
-use api_contracts::generated::types::sandbox_channel::fs_read;
+use api_contracts::generated::types::sandbox_channel::fs;
 use base64::engine::general_purpose::STANDARD;
 use std::{ffi::CString, fs::OpenOptions, os::unix::fs::FileExt};
 
@@ -9,13 +9,13 @@ async fn open(
     owner: &Arc<Owner>,
     path: &[&[u8]],
     mode: &str,
-) -> Result<fs_read::OpenResult, Error> {
+) -> Result<fs::OpenResult, Error> {
     let path: Vec<_> = path.iter().map(|name| token(name)).collect();
     serde_json::from_value(
         request(
             filesystem,
             owner,
-            Operation::FsReadOpen,
+            Operation::FsOpen,
             json!({"path":path,"mode":mode}),
         )
         .await?,
@@ -29,7 +29,7 @@ async fn read(
     handle: &str,
     offset: u64,
     length: u32,
-) -> Result<fs_read::ReadResult, Error> {
+) -> Result<fs::ReadResult, Error> {
     serde_json::from_value(
         request(
             filesystem,
@@ -71,7 +71,7 @@ async fn framed_reader_returns_exact_binary_prefix_empty_bytes_and_releases() {
         json!({"path":[token(b"binary")],"mode":"download"}),
     )
     .await;
-    let file: fs_read::OpenResult = serde_json::from_value(opened["result"].clone()).unwrap();
+    let file: fs::OpenResult = serde_json::from_value(opened["result"].clone()).unwrap();
     assert_eq!(file.file_size, bytes.len().to_string());
     assert_eq!(file.selected_size, file.file_size);
     assert!(!file.truncated);
@@ -83,8 +83,7 @@ async fn framed_reader_returns_exact_binary_prefix_empty_bytes_and_releases() {
     let mut seen = BTreeSet::new();
     for _ in 0..3 {
         let response = peer.receive().await;
-        let result: fs_read::ReadResult =
-            serde_json::from_value(response["result"].clone()).unwrap();
+        let result: fs::ReadResult = serde_json::from_value(response["result"].clone()).unwrap();
         let offset = result.offset.parse::<usize>().unwrap();
         assert!(seen.insert(offset));
         assert_eq!(
@@ -189,7 +188,7 @@ async fn preview_caps_do_not_limit_sparse_downloads_beyond_four_gib() {
     request(
         &filesystem,
         &owner,
-        Operation::FsReadFinish,
+        Operation::FsFinish,
         json!({"handle":opened.handle}),
     )
     .await
@@ -239,7 +238,7 @@ async fn complete_preview_boundary_is_independent_of_download_selection() {
     request(
         &filesystem,
         &active,
-        Operation::FsReadFinish,
+        Operation::FsFinish,
         json!({"handle":preview.handle}),
     )
     .await
@@ -266,7 +265,7 @@ async fn complete_preview_boundary_is_independent_of_download_selection() {
     request(
         &filesystem,
         &active,
-        Operation::FsReadFinish,
+        Operation::FsFinish,
         json!({"handle":download.handle}),
     )
     .await
@@ -297,7 +296,7 @@ async fn modification_during_read_and_before_finish_invalidates_the_handle() {
         request(
             &filesystem,
             &owner,
-            Operation::FsReadFinish,
+            Operation::FsFinish,
             json!({"handle":opened.handle})
         )
         .await
@@ -312,7 +311,7 @@ async fn modification_during_read_and_before_finish_invalidates_the_handle() {
         request(
             &filesystem,
             &owner,
-            Operation::FsReadFinish,
+            Operation::FsFinish,
             json!({"handle":opened.handle})
         )
         .await
@@ -365,7 +364,7 @@ async fn sibling_activity_is_allowed_but_replaced_ancestors_and_targets_fail() {
         request(
             &filesystem,
             &owner,
-            Operation::FsReadFinish,
+            Operation::FsFinish,
             json!({"handle":opened.handle})
         )
         .await
@@ -427,7 +426,7 @@ async fn abandoned_open_response_releases_its_already_opened_descriptor() {
         blocked.recv_timeout(Duration::from_secs(5)).unwrap();
     }));
     let params = decode_params(
-        Operation::FsReadOpen,
+        Operation::FsOpen,
         json!({"path":[token(b"file")],"mode":"download"}),
     )
     .unwrap();
@@ -538,7 +537,7 @@ async fn raw_names_and_connection_owned_handle_limits_expiry_and_close() {
     request(
         &filesystem,
         &first,
-        Operation::FsReadClose,
+        Operation::FsClose,
         json!({"handle":handles[0]}),
     )
     .await

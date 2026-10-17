@@ -1,5 +1,5 @@
 use super::{
-    ChannelError, Operation, Params, ResultPayload, basename, count_limit, fs_read, handle, limits,
+    ChannelError, Operation, Params, ResultPayload, basename, count_limit, fs, handle, limits,
     object, raw_path,
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -26,7 +26,7 @@ fn length(value: &mut Value, minimum: u32) -> Result<(), ChannelError> {
         .ok_or(ChannelError::InvalidRequest)?;
     let number = field.as_f64().ok_or(ChannelError::InvalidRequest)?;
     if number < f64::from(minimum)
-        || number > f64::from(limits::fs_read::MAX_CHUNK_BYTES)
+        || number > f64::from(limits::fs::MAX_CHUNK_BYTES)
         || number.fract() != 0.0
     {
         return Err(ChannelError::InvalidRequest);
@@ -42,15 +42,15 @@ pub(super) fn params(operation: Operation, mut value: Value) -> Result<Params, C
 
 fn params_inner(operation: Operation, value: &mut Value) -> Result<Params, ChannelError> {
     match operation {
-        Operation::FsReadOpen => {
+        Operation::FsOpen => {
             object(value, &["path", "mode"], &["path", "mode"])?;
-            let parsed: fs_read::OpenParams =
+            let parsed: fs::OpenParams =
                 serde_json::from_value(value.take()).map_err(|_| ChannelError::InvalidRequest)?;
             if parsed.path.is_empty() {
                 return Err(ChannelError::InvalidRequest);
             }
             raw_path(&parsed.path)?;
-            Ok(Params::FsReadOpen(parsed))
+            Ok(Params::FsOpen(parsed))
         }
         Operation::FsRead => {
             object(
@@ -59,7 +59,7 @@ fn params_inner(operation: Operation, value: &mut Value) -> Result<Params, Chann
                 &["handle", "offset", "length"],
             )?;
             length(value, 1)?;
-            let parsed: fs_read::ReadParams =
+            let parsed: fs::ReadParams =
                 serde_json::from_value(value.take()).map_err(|_| ChannelError::InvalidRequest)?;
             if !handle(&parsed.handle) {
                 return Err(ChannelError::InvalidRequest);
@@ -67,17 +67,17 @@ fn params_inner(operation: Operation, value: &mut Value) -> Result<Params, Chann
             offset(&parsed.offset)?;
             Ok(Params::FsRead(parsed))
         }
-        Operation::FsReadFinish | Operation::FsReadClose => {
+        Operation::FsFinish | Operation::FsClose => {
             object(value, &["handle"], &["handle"])?;
-            let parsed: fs_read::HandleParams =
+            let parsed: fs::HandleParams =
                 serde_json::from_value(value.take()).map_err(|_| ChannelError::InvalidRequest)?;
             if !handle(&parsed.handle) {
                 return Err(ChannelError::InvalidRequest);
             }
-            Ok(if operation == Operation::FsReadFinish {
-                Params::FsReadFinish(parsed)
+            Ok(if operation == Operation::FsFinish {
+                Params::FsFinish(parsed)
             } else {
-                Params::FsReadClose(parsed)
+                Params::FsClose(parsed)
             })
         }
         _ => Err(ChannelError::UnknownOperation),
@@ -93,12 +93,12 @@ pub(super) fn result(
         .len();
     if !count_limit(
         size.saturating_add(limits::RESPONSE_OVERHEAD_BYTES as usize),
-        limits::fs_read::MAX_RESPONSE_BYTES,
+        limits::fs::MAX_RESPONSE_BYTES,
     ) {
         return Err(ChannelError::InvalidRequest);
     }
     match operation {
-        Operation::FsReadOpen => {
+        Operation::FsOpen => {
             let fields = &[
                 "handle",
                 "nameToken",
@@ -108,7 +108,7 @@ pub(super) fn result(
                 "truncated",
             ];
             object(&value, fields, fields)?;
-            let parsed: fs_read::OpenResult =
+            let parsed: fs::OpenResult =
                 serde_json::from_value(value).map_err(|_| ChannelError::InvalidRequest)?;
             let full = offset(&parsed.file_size)?;
             let selected = offset(&parsed.selected_size)?;
@@ -125,7 +125,7 @@ pub(super) fn result(
                 return Err(ChannelError::InvalidRequest);
             }
             basename(&parsed.name_token).map_err(|_| ChannelError::InvalidRequest)?;
-            Ok(ResultPayload::FsReadOpen(parsed))
+            Ok(ResultPayload::FsOpen(parsed))
         }
         Operation::FsRead => {
             object(
@@ -134,12 +134,12 @@ pub(super) fn result(
                 &["offset", "length", "data"],
             )?;
             length(&mut value, 0)?;
-            let parsed: fs_read::ReadResult =
+            let parsed: fs::ReadResult =
                 serde_json::from_value(value).map_err(|_| ChannelError::InvalidRequest)?;
             offset(&parsed.offset)?;
             if !count_limit(
                 parsed.data.len(),
-                4 * limits::fs_read::MAX_CHUNK_BYTES.div_ceil(3),
+                4 * limits::fs::MAX_CHUNK_BYTES.div_ceil(3),
             ) {
                 return Err(ChannelError::InvalidRequest);
             }
@@ -151,13 +151,13 @@ pub(super) fn result(
             }
             Ok(ResultPayload::FsRead(parsed))
         }
-        Operation::FsReadFinish | Operation::FsReadClose => {
+        Operation::FsFinish | Operation::FsClose => {
             object(&value, &[], &[])?;
             let parsed = serde_json::from_value(value).map_err(|_| ChannelError::InvalidRequest)?;
-            Ok(if operation == Operation::FsReadFinish {
-                ResultPayload::FsReadFinish(parsed)
+            Ok(if operation == Operation::FsFinish {
+                ResultPayload::FsFinish(parsed)
             } else {
-                ResultPayload::FsReadClose(parsed)
+                ResultPayload::FsClose(parsed)
             })
         }
         _ => Err(ChannelError::UnknownOperation),

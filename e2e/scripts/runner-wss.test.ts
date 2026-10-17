@@ -22,9 +22,9 @@ import { sandboxDiagnosticsEchoSchema } from "@okouai/api-contracts/contracts/sa
 import {
   sandboxFsListParamsSchema,
   sandboxFsListCloseParamsSchema,
-  sandboxFsReadOpenParamsSchema,
+  sandboxFsOpenParamsSchema,
   sandboxFsReadParamsSchema,
-  sandboxFsReadHandleParamsSchema,
+  sandboxFsHandleParamsSchema,
 } from "@okouai/api-contracts/contracts/sandbox-channel-fs";
 import { probeHomeFiles } from "./runner-wss-files";
 import { probeFileReads } from "./runner-wss-file-read";
@@ -187,7 +187,7 @@ async function peer(
           const token = (name: string) =>
             Buffer.from(name).toString("base64url");
           if (message.operation === "open") {
-            const params = sandboxFsReadOpenParamsSchema.parse(message.params);
+            const params = sandboxFsOpenParamsSchema.parse(message.params);
             const name = params.path.at(-1);
             if (name === token("outside")) {
               fail("link_not_expandable");
@@ -236,9 +236,7 @@ async function peer(
             assert.ok(
               message.operation === "finish" || message.operation === "close",
             );
-            const params = sandboxFsReadHandleParamsSchema.parse(
-              message.params,
-            );
+            const params = sandboxFsHandleParamsSchema.parse(message.params);
             if (!readers.delete(params.handle)) fail("handle_expired");
             else result(message.id, {});
           }

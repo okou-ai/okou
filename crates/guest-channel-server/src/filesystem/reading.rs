@@ -6,7 +6,7 @@ use std::{
 };
 
 use api_contracts::generated::{
-    constants::sandbox_channel::fs_read as limits, types::sandbox_channel::fs_read,
+    constants::sandbox_channel::fs as limits, types::sandbox_channel::fs,
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
@@ -42,7 +42,7 @@ impl State {
         scope: &mut Scope<'_>,
     ) -> Result<Value, Error> {
         match params {
-            Params::FsReadOpen(params) => self.open(root, params, scope),
+            Params::FsOpen(params) => self.open(root, params, scope),
             Params::FsRead(params) => {
                 // Any failure retires this identity rather than retrying against
                 // a new file or retaining a failed transfer's descriptor.
@@ -86,7 +86,7 @@ impl State {
                 self.handles.insert(params.handle.clone(), reader);
                 Ok(value)
             }
-            Params::FsReadFinish(params) => {
+            Params::FsFinish(params) => {
                 let reader = self
                     .handles
                     .remove(&params.handle)
@@ -94,7 +94,7 @@ impl State {
                 reader.validate(root, scope)?;
                 Ok(json!({}))
             }
-            Params::FsReadClose(params) => {
+            Params::FsClose(params) => {
                 self.handles
                     .remove(&params.handle)
                     .ok_or(Error::HandleExpired)?;
@@ -107,7 +107,7 @@ impl State {
     fn open(
         &mut self,
         root: &File,
-        params: &fs_read::OpenParams,
+        params: &fs::OpenParams,
         scope: &mut Scope<'_>,
     ) -> Result<Value, Error> {
         if self.handles.len() >= limits::MAX_HANDLES as usize {
@@ -118,14 +118,12 @@ impl State {
         let (parent, ancestors) = linux::resolve(root, parent_path, scope)?;
         let (pinned, stamp) = linux::pin_regular(&parent, name, scope)?;
         let selected = match params.mode {
-            fs_read::OpenParamsMode::Download => stamp.size,
-            fs_read::OpenParamsMode::Preview
-                if stamp.size <= u64::from(limits::MAX_PREVIEW_BYTES) =>
-            {
+            fs::OpenParamsMode::Download => stamp.size,
+            fs::OpenParamsMode::Preview if stamp.size <= u64::from(limits::MAX_PREVIEW_BYTES) => {
                 stamp.size
             }
-            fs_read::OpenParamsMode::Preview => return Err(ChannelError::LimitExceeded.into()),
-            fs_read::OpenParamsMode::Prefix => stamp.size.min(u64::from(limits::MAX_PREFIX_BYTES)),
+            fs::OpenParamsMode::Preview => return Err(ChannelError::LimitExceeded.into()),
+            fs::OpenParamsMode::Prefix => stamp.size.min(u64::from(limits::MAX_PREFIX_BYTES)),
         };
         let file = linux::readable(&pinned, stamp, scope)?;
         let display_name = linux::display(name)?;

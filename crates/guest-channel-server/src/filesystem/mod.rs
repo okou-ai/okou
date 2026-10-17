@@ -169,9 +169,7 @@ impl Filesystem {
                 Arc::new(Owner {
                     cancelled: CancellationToken::new(),
                     peer: Mutex::new(None),
-                    reads: Arc::new(Semaphore::new(
-                        limits::fs_read::MAX_IN_FLIGHT_READS as usize,
-                    )),
+                    reads: Arc::new(Semaphore::new(limits::fs::MAX_IN_FLIGHT_READS as usize)),
                     #[cfg(target_os = "linux")]
                     state: Mutex::new(None),
                     _permit: permit,
@@ -196,9 +194,9 @@ impl Filesystem {
         let encoded = match &params {
             Params::FsList(value) => serde_json::to_vec(value),
             Params::FsListClose(value) => serde_json::to_vec(value),
-            Params::FsReadOpen(value) => serde_json::to_vec(value),
+            Params::FsOpen(value) => serde_json::to_vec(value),
             Params::FsRead(value) => serde_json::to_vec(value),
-            Params::FsReadFinish(value) | Params::FsReadClose(value) => serde_json::to_vec(value),
+            Params::FsFinish(value) | Params::FsClose(value) => serde_json::to_vec(value),
             _ => return Err(Error::Unavailable),
         }
         .map_err(|_| Error::Unavailable)?;
@@ -245,10 +243,10 @@ impl Service for GuestFiles {
             operation,
             Operation::FsList
                 | Operation::FsListClose
-                | Operation::FsReadOpen
+                | Operation::FsOpen
                 | Operation::FsRead
-                | Operation::FsReadFinish
-                | Operation::FsReadClose
+                | Operation::FsFinish
+                | Operation::FsClose
         ) {
             return Diagnostics.request(operation, params, peer);
         }
@@ -259,11 +257,9 @@ impl Service for GuestFiles {
             let value = match params {
                 Params::FsList(value) => serde_json::to_value(value),
                 Params::FsListClose(value) => serde_json::to_value(value),
-                Params::FsReadOpen(value) => serde_json::to_value(value),
+                Params::FsOpen(value) => serde_json::to_value(value),
                 Params::FsRead(value) => serde_json::to_value(value),
-                Params::FsReadFinish(value) | Params::FsReadClose(value) => {
-                    serde_json::to_value(value)
-                }
+                Params::FsFinish(value) | Params::FsClose(value) => serde_json::to_value(value),
                 _ => return Err(Error::Unavailable),
             }
             .map_err(|_| Error::Unavailable)?;
@@ -334,7 +330,7 @@ fn worker(receiver: mpsc::Receiver<Job>) {
             }
         }
         #[cfg(target_os = "linux")]
-        let abandoned = if matches!(job.params, Params::FsReadOpen(_)) {
+        let abandoned = if matches!(job.params, Params::FsOpen(_)) {
             outcome
                 .as_ref()
                 .ok()

@@ -1,17 +1,100 @@
 import {
-  sandboxFsReadOpenParamsSchema,
-  sandboxFsReadOpenResultSchema,
+  sandboxFsListParamsSchema,
+  sandboxFsListResultSchema,
+  sandboxFsListCloseParamsSchema,
+  sandboxFsListCloseResultSchema,
+  sandboxFsOpenParamsSchema,
+  sandboxFsOpenResultSchema,
   sandboxFsReadParamsSchema,
   sandboxFsReadResultSchema,
-  sandboxFsReadHandleParamsSchema,
-  sandboxFsReadReleaseResultSchema,
+  sandboxFsHandleParamsSchema,
+  sandboxFsReleaseResultSchema,
 } from "../contracts/sandbox-channel-fs";
 import type { RustTypeBinding } from "./types";
 
-export const sandboxFsReadTypeBindings = [
+export const sandboxFsTypeBindings = [
   {
-    schema: sandboxFsReadOpenParamsSchema,
-    rustModulePath: ["sandbox_channel", "fs_read"],
+    schema: sandboxFsListParamsSchema,
+    rustModulePath: ["sandbox_channel", "fs"],
+    rustTypeName: "ListParams",
+    direction: "request",
+    declarations: [
+      {
+        rustTypeName: "ListParams",
+        rustDoc: ["Exactly one relative raw-name path or owned continuation."],
+        fields: {
+          path: ["Canonical raw basename tokens relative to Guest root."],
+          cursor: ["This connection's opaque continuation."],
+        },
+      },
+    ],
+  },
+  {
+    schema: sandboxFsListResultSchema,
+    rustModulePath: ["sandbox_channel", "fs"],
+    rustTypeName: "ListResult",
+    direction: "response",
+    declarations: [
+      {
+        rustTypeName: "ListResult",
+        rustDoc: [
+          "One bounded directory page; null continuation denotes actual EOF.",
+        ],
+        fields: {
+          listingId: ["This enumeration's independent identity."],
+          entries: ["Bounded readonly metadata."],
+          nextCursor: ["Continuation, or null at actual EOF."],
+        },
+      },
+      {
+        rustTypeName: "ListResultEntrie",
+        rustDoc: ["One raw basename and safe display label."],
+        fields: {
+          nameToken: ["Canonical raw basename bytes."],
+          displayName: ["Safe text label, never a path input."],
+          kind: ["Readonly entry presentation kind."],
+        },
+      },
+      {
+        rustTypeName: "ListResultEntrieKind",
+        rustDoc: ["Readonly entry kinds."],
+        variants: {
+          directory: ["Expandable directory within policy."],
+          file: ["Ordinary file metadata."],
+          symlink: ["Displayed without target traversal."],
+          other: ["Special entry metadata only."],
+        },
+      },
+    ],
+  },
+  {
+    schema: sandboxFsListCloseParamsSchema,
+    rustModulePath: ["sandbox_channel", "fs"],
+    rustTypeName: "ListCloseParams",
+    direction: "request",
+    declarations: [
+      {
+        rustTypeName: "ListCloseParams",
+        rustDoc: ["Release this connection's directory continuation."],
+        fields: { cursor: ["Owned continuation to release."] },
+      },
+    ],
+  },
+  {
+    schema: sandboxFsListCloseResultSchema,
+    rustModulePath: ["sandbox_channel", "fs"],
+    rustTypeName: "ListCloseResult",
+    direction: "response",
+    declarations: [
+      {
+        rustTypeName: "ListCloseResult",
+        rustDoc: ["Successful bounded cursor release."],
+      },
+    ],
+  },
+  {
+    schema: sandboxFsOpenParamsSchema,
+    rustModulePath: ["sandbox_channel", "fs"],
     rustTypeName: "OpenParams",
     direction: "request",
     declarations: [
@@ -39,8 +122,8 @@ export const sandboxFsReadTypeBindings = [
     ],
   },
   {
-    schema: sandboxFsReadOpenResultSchema,
-    rustModulePath: ["sandbox_channel", "fs_read"],
+    schema: sandboxFsOpenResultSchema,
+    rustModulePath: ["sandbox_channel", "fs"],
     rustTypeName: "OpenResult",
     direction: "response",
     declarations: [
@@ -66,7 +149,7 @@ export const sandboxFsReadTypeBindings = [
   },
   {
     schema: sandboxFsReadParamsSchema,
-    rustModulePath: ["sandbox_channel", "fs_read"],
+    rustModulePath: ["sandbox_channel", "fs"],
     rustTypeName: "ReadParams",
     direction: "request",
     declarations: [
@@ -83,7 +166,7 @@ export const sandboxFsReadTypeBindings = [
   },
   {
     schema: sandboxFsReadResultSchema,
-    rustModulePath: ["sandbox_channel", "fs_read"],
+    rustModulePath: ["sandbox_channel", "fs"],
     rustTypeName: "ReadResult",
     direction: "response",
     declarations: [
@@ -101,8 +184,8 @@ export const sandboxFsReadTypeBindings = [
     ],
   },
   {
-    schema: sandboxFsReadHandleParamsSchema,
-    rustModulePath: ["sandbox_channel", "fs_read"],
+    schema: sandboxFsHandleParamsSchema,
+    rustModulePath: ["sandbox_channel", "fs"],
     rustTypeName: "HandleParams",
     direction: "request",
     declarations: [
@@ -114,8 +197,8 @@ export const sandboxFsReadTypeBindings = [
     ],
   },
   {
-    schema: sandboxFsReadReleaseResultSchema,
-    rustModulePath: ["sandbox_channel", "fs_read"],
+    schema: sandboxFsReleaseResultSchema,
+    rustModulePath: ["sandbox_channel", "fs"],
     rustTypeName: "ReleaseResult",
     direction: "response",
     declarations: [

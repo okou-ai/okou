@@ -3589,8 +3589,16 @@ pub mod sandbox_channel {
         }
     }
 
-    /// Readonly home-directory category contracts.
+    /// Readonly filesystem listing and regular-file contracts.
     pub mod fs {
+        /// Finish validation or explicitly abandon this reader.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct HandleParams {
+            /// Opaque connection-owned reader handle.
+            pub handle: String,
+        }
+
         /// Release this connection's directory continuation.
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         #[serde(rename_all = "camelCase")]
@@ -3608,7 +3616,7 @@ pub mod sandbox_channel {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         #[serde(rename_all = "camelCase")]
         pub struct ListParams {
-            /// Canonical raw basename tokens relative to home.
+            /// Canonical raw basename tokens relative to Guest root.
             #[serde(default, skip_serializing_if = "Option::is_none")]
             pub path: Option<Vec<String>>,
             /// This connection's opaque continuation.
@@ -3655,17 +3663,6 @@ pub mod sandbox_channel {
             pub entries: Vec<ListResultEntrie>,
             /// Continuation, or null at actual EOF.
             pub next_cursor: Option<String>,
-        }
-    }
-
-    /// Regular-file content DTOs within the fs v3 category.
-    pub mod fs_read {
-        /// Finish validation or explicitly abandon this reader.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct HandleParams {
-            /// Opaque connection-owned reader handle.
-            pub handle: String,
         }
 
         /// Preview caps never gate complete downloads.

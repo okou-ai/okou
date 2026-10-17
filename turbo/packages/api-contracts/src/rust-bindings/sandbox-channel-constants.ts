@@ -2,7 +2,6 @@ import { SANDBOX_CHANNEL_LIMITS } from "../contracts/sandbox-channel";
 import {
   SANDBOX_FS_LIMITS,
   SANDBOX_FS_VERSION,
-  SANDBOX_FS_READ_LIMITS,
 } from "../contracts/sandbox-channel-fs";
 import {
   SANDBOX_DIAGNOSTICS_MAX_BYTES,
@@ -29,9 +28,6 @@ function limits(
 }
 
 export const sandboxChannelConstantBindings: readonly RustConstantBinding[] = [
-  ...limits(["sandbox_channel", "fs_read"], {
-    ...SANDBOX_FS_READ_LIMITS,
-  }),
   ...limits(["sandbox_channel"], SANDBOX_CHANNEL_LIMITS),
   ...limits(["sandbox_channel", "fs"], {
     version: SANDBOX_FS_VERSION,

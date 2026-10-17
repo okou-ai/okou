@@ -4,7 +4,7 @@ use super::{
     duplex::{receive, send},
     filesystem::command,
 };
-use api_contracts::generated::types::sandbox_channel::fs_read;
+use api_contracts::generated::types::sandbox_channel::fs;
 use base64::{
     Engine,
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
@@ -40,21 +40,17 @@ fn path(root: &str, suffix: &str) -> Vec<String> {
         .collect()
 }
 
-async fn open(
-    channel: &mut Channel,
-    path: Vec<String>,
-    mode: &str,
-) -> TestResult<fs_read::OpenResult> {
+async fn open(channel: &mut Channel, path: Vec<String>, mode: &str) -> TestResult<fs::OpenResult> {
     let value = call(channel, "open", json!({"path":path,"mode":mode}))
         .await?
         .map_err(|_| io::Error::other("native regular-file open rejected"))?;
-    match decode_result(Operation::FsReadOpen, value)? {
-        ResultPayload::FsReadOpen(value) => Ok(value),
+    match decode_result(Operation::FsOpen, value)? {
+        ResultPayload::FsOpen(value) => Ok(value),
         _ => Err(io::Error::other("invalid native file metadata").into()),
     }
 }
 
-async fn read(channel: &mut Channel, handle: &str, offset: u64) -> TestResult<fs_read::ReadResult> {
+async fn read(channel: &mut Channel, handle: &str, offset: u64) -> TestResult<fs::ReadResult> {
     let value = call(
         channel,
         "read",
@@ -74,9 +70,9 @@ async fn release(channel: &mut Channel, operation: &str, handle: &str) -> TestRe
         .map_err(|_| io::Error::other("native reader release rejected"))?;
     decode_result(
         if operation == "finish" {
-            Operation::FsReadFinish
+            Operation::FsFinish
         } else {
-            Operation::FsReadClose
+            Operation::FsClose
         },
         value,
     )?;

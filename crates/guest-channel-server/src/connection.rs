@@ -178,9 +178,9 @@ impl Peer {
             Params::Echo(value) => serde_json::to_value(value),
             Params::FsList(value) => serde_json::to_value(value),
             Params::FsListClose(value) => serde_json::to_value(value),
-            Params::FsReadOpen(value) => serde_json::to_value(value),
+            Params::FsOpen(value) => serde_json::to_value(value),
             Params::FsRead(value) => serde_json::to_value(value),
-            Params::FsReadFinish(value) | Params::FsReadClose(value) => serde_json::to_value(value),
+            Params::FsFinish(value) | Params::FsClose(value) => serde_json::to_value(value),
         }
         .map_err(|_| Error::Unavailable)?;
         let id = self.id()?;

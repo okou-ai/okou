@@ -17,6 +17,12 @@ export const SANDBOX_FS_LIMITS = {
   cursorIdleMs: 30_000,
   maxEnumerationSteps: 512,
   processingBudgetMs: 2000,
+  maxChunkBytes: 32 * 1024,
+  maxHandles: 4,
+  maxInFlightReads: 4,
+  handleIdleMs: 30_000,
+  maxPreviewBytes: 16 * 1024 * 1024,
+  maxPrefixBytes: 64 * 1024,
 } as const;
 
 /** Canonical raw basename bytes; display labels never become path inputs. */
@@ -138,16 +144,6 @@ export const sandboxFsListClose = {
   z.infer<typeof sandboxFsListCloseParamsSchema>,
   z.infer<typeof sandboxFsListCloseResultSchema>
 >;
-export const SANDBOX_FS_READ_LIMITS = {
-  maxChunkBytes: 32 * 1024,
-  maxResponseBytes: 48 * 1024,
-  maxHandles: 4,
-  maxInFlightReads: 4,
-  handleIdleMs: 30_000,
-  maxPreviewBytes: 16 * 1024 * 1024,
-  maxPrefixBytes: 64 * 1024,
-} as const;
-
 function fileOffset(value: string): boolean {
   return (
     /^(0|[1-9][0-9]{0,18})$/.test(value) &&
@@ -157,11 +153,11 @@ function fileOffset(value: string): boolean {
 
 /** Native signed file offsets stay exact beyond JavaScript's integer range. */
 export const sandboxFileOffsetSchema = z.string().max(19).refine(fileOffset);
-export const sandboxFsReadOpenParamsSchema = z.strictObject({
+export const sandboxFsOpenParamsSchema = z.strictObject({
   path: pathSchema.min(1),
   mode: z.enum(["download", "preview", "prefix"]),
 });
-export const sandboxFsReadOpenResultSchema = z
+export const sandboxFsOpenResultSchema = z
   .strictObject({
     handle: handleSchema,
     nameToken: sandboxNameTokenSchema,
@@ -193,21 +189,16 @@ export const sandboxFsReadOpenResultSchema = z
 export const sandboxFsReadParamsSchema = z.strictObject({
   handle: handleSchema,
   offset: sandboxFileOffsetSchema,
-  length: z.int().min(1).max(SANDBOX_FS_READ_LIMITS.maxChunkBytes),
+  length: z.int().min(1).max(SANDBOX_FS_LIMITS.maxChunkBytes),
 });
 export const sandboxFsReadResultSchema = z
   .strictObject({
     offset: sandboxFileOffsetSchema,
-    length: z.int().min(0).max(SANDBOX_FS_READ_LIMITS.maxChunkBytes),
-    data: z
-      .string()
-      .max(4 * Math.ceil(SANDBOX_FS_READ_LIMITS.maxChunkBytes / 3)),
+    length: z.int().min(0).max(SANDBOX_FS_LIMITS.maxChunkBytes),
+    data: z.string().max(4 * Math.ceil(SANDBOX_FS_LIMITS.maxChunkBytes / 3)),
   })
   .refine((result) => {
-    if (
-      result.data.length >
-      4 * Math.ceil(SANDBOX_FS_READ_LIMITS.maxChunkBytes / 3)
-    )
+    if (result.data.length > 4 * Math.ceil(SANDBOX_FS_LIMITS.maxChunkBytes / 3))
       return false;
     try {
       const bytes = atob(result.data);
@@ -216,27 +207,27 @@ export const sandboxFsReadResultSchema = z
         btoa(bytes) === result.data &&
         new TextEncoder().encode(JSON.stringify(result)).byteLength +
           SANDBOX_CHANNEL_LIMITS.responseOverheadBytes <=
-          SANDBOX_FS_READ_LIMITS.maxResponseBytes
+          SANDBOX_FS_LIMITS.maxResponseBytes
       );
     } catch {
       return false;
     }
   });
-export const sandboxFsReadHandleParamsSchema = z.strictObject({
+export const sandboxFsHandleParamsSchema = z.strictObject({
   handle: handleSchema,
 });
-export const sandboxFsReadReleaseResultSchema = z.strictObject({});
+export const sandboxFsReleaseResultSchema = z.strictObject({});
 
-export const sandboxFsReadOpen = {
+export const sandboxFsOpen = {
   category: "fs",
   categoryVersion: SANDBOX_FS_VERSION,
   operation: "open",
   origin: "external",
-  params: sandboxFsReadOpenParamsSchema,
-  result: sandboxFsReadOpenResultSchema,
+  params: sandboxFsOpenParamsSchema,
+  result: sandboxFsOpenResultSchema,
 } as const satisfies SandboxChannelOperation<
-  z.infer<typeof sandboxFsReadOpenParamsSchema>,
-  z.infer<typeof sandboxFsReadOpenResultSchema>
+  z.infer<typeof sandboxFsOpenParamsSchema>,
+  z.infer<typeof sandboxFsOpenResultSchema>
 >;
 export const sandboxFsRead = {
   category: "fs",
@@ -249,19 +240,19 @@ export const sandboxFsRead = {
   z.infer<typeof sandboxFsReadParamsSchema>,
   z.infer<typeof sandboxFsReadResultSchema>
 >;
-export const sandboxFsReadFinish = {
+export const sandboxFsFinish = {
   category: "fs",
   categoryVersion: SANDBOX_FS_VERSION,
   operation: "finish",
   origin: "external",
-  params: sandboxFsReadHandleParamsSchema,
-  result: sandboxFsReadReleaseResultSchema,
+  params: sandboxFsHandleParamsSchema,
+  result: sandboxFsReleaseResultSchema,
 } as const satisfies SandboxChannelOperation<
-  z.infer<typeof sandboxFsReadHandleParamsSchema>,
-  z.infer<typeof sandboxFsReadReleaseResultSchema>
+  z.infer<typeof sandboxFsHandleParamsSchema>,
+  z.infer<typeof sandboxFsReleaseResultSchema>
 >;
-export const sandboxFsReadClose = {
-  ...sandboxFsReadFinish,
+export const sandboxFsClose = {
+  ...sandboxFsFinish,
   operation: "close",
 } as const;
 export const sandboxFsCategory = {
@@ -270,10 +261,10 @@ export const sandboxFsCategory = {
   operations: [
     sandboxFsList,
     sandboxFsListClose,
-    sandboxFsReadOpen,
+    sandboxFsOpen,
     sandboxFsRead,
-    sandboxFsReadFinish,
-    sandboxFsReadClose,
+    sandboxFsFinish,
+    sandboxFsClose,
   ],
   events: [],
 } as const satisfies SandboxChannelCategoryContract;

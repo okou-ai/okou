@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import type { RunnerWssClient } from "./runner-wss-client";
 import {
-  sandboxFsReadOpen,
+  sandboxFsOpen,
   sandboxFsRead,
-  sandboxFsReadFinish,
-  sandboxFsReadClose,
+  sandboxFsFinish,
+  sandboxFsClose,
 } from "@okouai/api-contracts/contracts/sandbox-channel-fs";
 
 const token = (name: string) => Buffer.from(name).toString("base64url");
@@ -18,7 +18,7 @@ export async function probeFileReads(client: RunnerWssClient, fixture: string) {
     mode: "download" | "preview" | "prefix",
     selectedPath = path,
   ) => {
-    const file = await client.fileCall(sandboxFsReadOpen, {
+    const file = await client.fileCall(sandboxFsOpen, {
       path: selectedPath,
       mode,
     });
@@ -26,7 +26,7 @@ export async function probeFileReads(client: RunnerWssClient, fixture: string) {
     return file;
   };
   const release = async (handle: string, finish: boolean) => {
-    await client.fileCall(finish ? sandboxFsReadFinish : sandboxFsReadClose, {
+    await client.fileCall(finish ? sandboxFsFinish : sandboxFsClose, {
       handle,
     });
     active.delete(handle);
@@ -125,6 +125,6 @@ export async function probeFileReads(client: RunnerWssClient, fixture: string) {
     };
   } finally {
     for (const handle of active)
-      await client.fileCall(sandboxFsReadClose, { handle });
+      await client.fileCall(sandboxFsClose, { handle });
   }
 }

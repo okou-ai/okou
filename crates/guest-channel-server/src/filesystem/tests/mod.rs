@@ -16,9 +16,7 @@ fn owner(filesystem: &Filesystem) -> Arc<Owner> {
     Arc::new(Owner {
         cancelled: CancellationToken::new(),
         peer: Mutex::new(None),
-        reads: Arc::new(Semaphore::new(
-            limits::fs_read::MAX_IN_FLIGHT_READS as usize,
-        )),
+        reads: Arc::new(Semaphore::new(limits::fs::MAX_IN_FLIGHT_READS as usize)),
         state: Mutex::new(None),
         _permit: Arc::clone(&filesystem.owners).try_acquire_owned().unwrap(),
         hooks: Mutex::new(Hooks::default()),

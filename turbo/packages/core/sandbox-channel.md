@@ -187,6 +187,8 @@ and `close` alongside `list`/`list.close`. Schema v1 and listing payloads stay
 unchanged. All file operations require exact category-version agreement.
 A stale client must refresh before use; no separate reader category, old-version
 adapter or fallback is provided. Advertise fs v3 only with all six operations.
+Listing and read DTOs, generated Rust bindings and finite policies share the
+same `fs` namespace.
 
 Open accepts a nonempty raw-token path and one selection mode: `download` selects
 the complete file without a product byte cap; `preview` selects the complete file
