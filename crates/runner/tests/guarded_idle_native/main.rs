@@ -4,6 +4,7 @@
 
 mod continuation;
 mod continuation_api;
+mod create_cancellation;
 mod critical;
 mod critical_progress;
 mod evidence;
@@ -68,6 +69,7 @@ enum Corpus {
     IncomingProgress,
     CriticalProgress,
     ReadCancellation,
+    CreateCancellation,
 }
 
 const MISSING_GUEST_TIMEZONE: &str = "Etc/okou-test-missing-zone";
@@ -530,6 +532,29 @@ async fn native_read_cancellation_retains_actual_io_through_drain() -> TestResul
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD inputs and exact-source actual create cancellation proof"]
+async fn native_create_cancellation_retains_actual_transaction_through_rollback() -> TestResult<()>
+{
+    measured_selected_corpus(&[NativeScope::OptionalOrdinary], Corpus::CreateCancellation).await
+}
+
+#[test]
+fn native_create_report_requires_real_bytes_and_positive_rollback() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/create_cancellation_report_test.py"
+        ))
+        .output()
+        .expect("create report requires Python3");
+    assert!(
+        output.status.success(),
+        "create report failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires owned KVM/NBD artifacts, synthetic native API, mock Codex and exact-source P1 proof"]
 async fn native_continuation_records_complete_session_history_and_required_saving() -> TestResult<()>
 {
@@ -665,6 +690,8 @@ async fn exercise_selected_factories(
                                 "CriticalProgress".into()
                             } else if corpus == Corpus::ReadCancellation {
                                 "ReadCancellation".into()
+                            } else if corpus == Corpus::CreateCancellation {
+                                "CreateCancellation".into()
                             } else if corpus == Corpus::Continuation {
                                 if matches!(scope, NativeScope::Batch(_)) {
                                     "ContinuationNonzero".into()
@@ -688,17 +715,31 @@ async fn exercise_selected_factories(
             } else {
                 None
             };
-            let factory = runtime
-                .create_factory(FactoryConfig {
-                    home_drive_pressure: None,
-                    profile: fixture::PROFILE.into(),
-                    binary_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_FIRECRACKER")?),
-                    kernel_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_KERNEL")?),
-                    rootfs_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_ROOTFS")?),
-                    base_dir: owned.clone(),
-                    snapshot,
-                })
-                .await?;
+            let config = FactoryConfig {
+                home_drive_pressure: None,
+                profile: fixture::PROFILE.into(),
+                binary_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_FIRECRACKER")?),
+                kernel_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_KERNEL")?),
+                rootfs_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_ROOTFS")?),
+                base_dir: owned.clone(),
+                snapshot,
+            };
+            let create_probe = (corpus == Corpus::CreateCancellation)
+                .then(create_cancellation::Probe::new)
+                .transpose()?
+                .map(Arc::new);
+            let factory = if let Some(probe) = &create_probe {
+                let inner = runtime
+                    .create_factory_with_home_checkpoint_for_test(config, probe.checkpoint())
+                    .await?;
+                Box::new(create_cancellation::Factory {
+                    inner,
+                    probe: probe.clone(),
+                    directory: owned.clone(),
+                }) as Box<dyn SandboxFactory>
+            } else {
+                runtime.create_factory(config).await?
+            };
             let factory: Box<dyn SandboxFactory> = if let Some(proof) = &proof {
                 Box::new(tail::MeasuredFactory {
                     inner: factory,
@@ -717,6 +758,7 @@ async fn exercise_selected_factories(
                 scope,
                 proof.as_ref(),
                 corpus,
+                create_probe.as_ref(),
             )
             .await;
             // A failed measured case is not permission to tear down dependencies
@@ -751,6 +793,7 @@ async fn exercise_retirement(
     scope: NativeScope,
     proof: Option<&Arc<evidence::Case>>,
     corpus: Corpus,
+    create_probe: Option<&Arc<create_cancellation::Probe>>,
 ) -> TestResult<()> {
     let status = Arc::new(StatusTracker::new(
         paths.base_dir().join("status.json"),
@@ -767,15 +810,17 @@ async fn exercise_retirement(
     if rootfs_hash.is_empty() {
         return Err(io::Error::other("packaged rootfs hash must be supplied").into());
     }
-    let recovery_source = (matches!(corpus, Corpus::LogicalProgress | Corpus::IncomingProgress)
-        || matches!(
-            scope,
-            NativeScope::Recovery
-                | NativeScope::Critical
-                | NativeScope::Startup
-                | NativeScope::ForegroundFresh
-                | NativeScope::ForegroundReuse
-        ))
+    let recovery_source = (matches!(
+        corpus,
+        Corpus::LogicalProgress | Corpus::IncomingProgress | Corpus::CreateCancellation
+    ) || matches!(
+        scope,
+        NativeScope::Recovery
+            | NativeScope::Critical
+            | NativeScope::Startup
+            | NativeScope::ForegroundFresh
+            | NativeScope::ForegroundReuse
+    ))
     .then(|| Arc::new(recovery_source::Source::new()));
     let operations = match &recovery_source {
         Some(source) => inputs.operations_with_source(source.clone())?,
@@ -953,7 +998,7 @@ async fn exercise_retirement(
         },
     });
     let tracker = IdleDestroyTracker::new(Arc::new(Notify::new()));
-    if (corpus == Corpus::Optional
+    if (matches!(corpus, Corpus::Optional | Corpus::CreateCancellation)
         || matches!(corpus, Corpus::LogicalProgress | Corpus::IncomingProgress)
         || matches!(
             scope,
@@ -1090,6 +1135,15 @@ async fn exercise_retirement(
                 Ok(None)
             }
             NativeScope::OptionalOrdinary | NativeScope::OptionalAged => {
+                if corpus == Corpus::CreateCancellation {
+                    create_cancellation::exercise(transitions::Context {
+                        factory: factory.clone(), pool: pool.clone(), status: status.clone(),
+                        operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
+                        rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
+                    }, inputs, recovery_source.as_ref().ok_or_else(|| io::Error::other("create source absent"))?,
+                    proof, paths.base_dir(), create_probe.ok_or_else(|| io::Error::other("create probe absent"))?).await?;
+                    return Ok(None);
+                }
                 optional::exercise(transitions::Context {
                     factory: factory.clone(), pool: pool.clone(), status: status.clone(),
                     operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
@@ -1435,7 +1489,32 @@ async fn exercise_retirement(
         return Ok(());
     }
     let report = operations.close_and_wait().await?;
-    assert_eq!((report.registered_operations, report.tracked_tasks), (0, 0));
+    if corpus == Corpus::CreateCancellation {
+        assert_eq!(
+            (
+                report.registered_operations,
+                report.tracked_tasks,
+                report.started,
+                report.uncertain
+            ),
+            (1, 0, 0, 1)
+        );
+        assert_eq!(
+            report.ordinary_growth_bytes,
+            4096 * 1024 * 1024 + inputs.preparation_bytes()
+        );
+        assert_eq!(report.cleanup_growth_bytes, 0);
+        if let Some(proof) = proof {
+            proof.create_cancellation_witness("accounting_closed", serde_json::json!({
+                "registered_operations": report.registered_operations, "tracked_tasks": report.tracked_tasks,
+                "started": report.started, "uncertain": report.uncertain,
+                "ordinary_growth_bytes": report.ordinary_growth_bytes, "cleanup_growth_bytes": report.cleanup_growth_bytes,
+                "closed": report.closed, "allocated": budget.allocated(),
+            }))?;
+        }
+    } else {
+        assert_eq!((report.registered_operations, report.tracked_tasks), (0, 0));
+    }
     let next_run = RunId::new_v4();
     let next_id = SandboxId::new_v4();
     let mut restored = fixture::checkout(&cache, next_run, next_id, &reuse_key, &rootfs_hash).await;

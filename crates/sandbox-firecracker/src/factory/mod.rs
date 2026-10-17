@@ -1,6 +1,8 @@
 mod cleanup_group;
 mod create_timing;
 mod create_transaction;
+#[cfg(any(test, feature = "test-support"))]
+mod home_checkpoint;
 mod invariant;
 mod leak_cleaner;
 
@@ -33,6 +35,10 @@ use crate::prerequisites;
 use crate::runtime_dirs::prepare_runtime_socket_dir;
 use crate::sandbox::{FirecrackerSandbox, FirecrackerSandboxInit};
 
+#[cfg(any(test, feature = "test-support"))]
+pub use home_checkpoint::HomeCreateCheckpoint;
+#[cfg(feature = "test-support")]
+pub(crate) use home_checkpoint::wrap as checkpoint_factory;
 pub(crate) use invariant::InvariantConfig;
 pub use invariant::{PREWARM_SCRIPT, config_hash};
 
@@ -214,6 +220,7 @@ impl FirecrackerFactory {
         config: SandboxConfig,
         observer: Option<&mut dyn SandboxCreateObserver>,
         custody: Option<sandbox::SandboxCreateCustody>,
+        #[cfg(any(test, feature = "test-support"))] checkpoint: Option<HomeCreateCheckpoint>,
     ) -> sandbox::Result<Box<dyn Sandbox>> {
         let resources = self.resources()?;
         let device_rate_limits = convert_device_rate_limits(config.device_rate_limits.as_ref())?;
@@ -261,13 +268,19 @@ impl FirecrackerFactory {
                 let (owned_tx, result) = tokio::spawn(async move {
                     let result =
                         prepare_home_drive_image(&path, &config, pressure.as_deref(), None).await;
-                    (tx, result)
+                    #[cfg(any(test, feature = "test-support"))]
+                    let (tx, result) = if result.is_ok() {
+                        home_checkpoint::run(tx, path, checkpoint).await?
+                    } else {
+                        (tx, result)
+                    };
+                    Ok::<_, SandboxError>((tx, result))
                 })
                 .await
                 .map_err(|error| SandboxError::Initialization {
                     phase: SandboxInitializationPhase::SandboxAllocation,
                     message: format!("owned home preparation producer: {error}"),
-                })?;
+                })??;
                 tx = owned_tx;
                 result
             } else {
@@ -433,7 +446,14 @@ impl SandboxFactory for FirecrackerFactory {
     }
 
     async fn create(&self, config: SandboxConfig) -> sandbox::Result<Box<dyn Sandbox>> {
-        self.create_inner(config, None, None).await
+        self.create_inner(
+            config,
+            None,
+            None,
+            #[cfg(any(test, feature = "test-support"))]
+            None,
+        )
+        .await
     }
 
     async fn create_with_custody(
@@ -441,7 +461,14 @@ impl SandboxFactory for FirecrackerFactory {
         config: SandboxConfig,
         custody: sandbox::SandboxCreateCustody,
     ) -> sandbox::Result<Box<dyn Sandbox>> {
-        self.create_inner(config, None, Some(custody)).await
+        self.create_inner(
+            config,
+            None,
+            Some(custody),
+            #[cfg(any(test, feature = "test-support"))]
+            None,
+        )
+        .await
     }
 
     async fn create_with_observer(
@@ -449,7 +476,14 @@ impl SandboxFactory for FirecrackerFactory {
         config: SandboxConfig,
         observer: &mut dyn SandboxCreateObserver,
     ) -> sandbox::Result<Box<dyn Sandbox>> {
-        self.create_inner(config, Some(observer), None).await
+        self.create_inner(
+            config,
+            Some(observer),
+            None,
+            #[cfg(any(test, feature = "test-support"))]
+            None,
+        )
+        .await
     }
 
     async fn destroy(&self, sandbox: Box<dyn Sandbox>) {

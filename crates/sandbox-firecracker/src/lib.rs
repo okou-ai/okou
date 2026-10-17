@@ -63,6 +63,8 @@ pub use config::{
     TokenBucketConfig,
 };
 pub use control::FirecrackerControl;
+#[cfg(feature = "test-support")]
+pub use factory::HomeCreateCheckpoint;
 pub use factory::{PREWARM_SCRIPT, config_hash};
 pub use guest_dns_probe::{DNS_PROBE_RESOLVER_IPV4, DNS_READINESS_HOSTNAME, DNS_READINESS_IPV4};
 pub use network::{
