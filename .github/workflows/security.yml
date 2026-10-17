@@ -285,6 +285,8 @@ jobs:
             .github/scripts/checks/check-release-please-workspace-coverage.sh \
             .github/scripts/checks/check-pr-ci-capacity.sh \
             .github/scripts/checks/check-workflow-shell-compatibility.sh \
+            .github/scripts/checks/crates-coverage-needed.sh \
+            .github/scripts/tests/crates-coverage-workflow-test.sh \
             .github/scripts/runner/cleanup-pr-runner-namespace.sh \
             .github/scripts/runner/discover-runner-pr-namespaces.sh \
             .github/scripts/checks/detect-native-only.sh \
@@ -303,7 +305,6 @@ jobs:
             .github/actions/report-memory-peak/report.sh \
             .github/scripts/report-sccache-stats.sh \
             .github/scripts/release/resolve-desktop-version-change.sh \
-            ops/link-wallet-grants-40206/migrate.sh \
             .github/scripts/checks/run-semgrep.sh \
             crates/nbd-cow/tests/run-nbd-cow-tests.sh \
             .github/scripts/run-workflow-script-test-shard.sh \
@@ -339,7 +340,6 @@ jobs:
             .github/scripts/tests/fetch-okou-desktop-artifact-test.sh \
             crates/nbd-cow/tests/infrastructure/nbd-cow-upload-test.sh \
             .github/scripts/tests/neon-credential-mask-test.sh \
-            .github/scripts/tests/migrate-link-wallet-grants-test.sh \
             .github/scripts/tests/neon-connection-string-ssl-test.sh \
             .github/scripts/tests/okou-desktop-artifact-test.sh \
             .github/scripts/tests/provision-runner-kvm-test.sh \

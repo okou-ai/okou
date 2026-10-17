@@ -188,27 +188,48 @@ Keep bound values and SQL wrappers as distinct types across helper boundaries.
 
 Prefer structured Drizzle selections whenever they can express the query.
 Direct `db.execute(...)` is allowed when rows are discarded or only `rowCount`
-is consumed. When an irreducible raw query returns rows, use
-`executeRawRows(executor, query, rowSchema)` from
+is consumed. When an irreducible raw query returns rows, execute it in its
+owning unit and use the data-only `parseRawRows` decoder from
 `turbo/apps/api/src/lib/db-raw-rows.ts`:
 
 ```typescript
+const query = sql`SELECT id, size_bytes FROM artifacts`;
 const rowSchema = z.object({
   id: z.string().uuid(),
   size_bytes: pgInt8ToSafeIntegerSchema,
 });
+const rows = parseRawRows(rowSchema, await db.execute(query));
+```
 
-const rows = await executeRawRows(
-  db,
-  sql`SELECT id, size_bytes FROM artifacts`,
-  rowSchema,
+`parseRawRows` parses every returned driver row with the supplied schema; its
+TypeScript output is inferred from that schema. Keep the database or transaction
+handle in its owning unit rather than passing it to an executor helper. Use
+schema transforms such as `pgInt8ToSafeIntegerSchema`, `pgInt8ToBigIntSchema`,
+and `pgTimestampWithoutTimezoneToDateSchema` when the driver representation
+differs from the application value. Never replace this boundary with
+`execute<Row>`, a typed wrapper around `db.execute`, or a downstream assertion.
+
+Preserve the caller's construction and Promise error boundaries when replacing
+an async executor helper. Capture the original receiver, query and schema in
+that order at the original lexical position, before invoking an immediate
+zero-argument async expression. Keep execution and full parsing inside that
+expression, and feed its Promise to the original await, settle or redaction
+consumer:
+
+```typescript
+const query = buildQuery(input);
+const rowSchema = resultRowSchema;
+const result = await settle(
+  (async () => {
+    return parseRawRows(rowSchema, await db.execute(query));
+  })(),
 );
 ```
 
-`executeRawRows` executes without a row generic and parses every returned driver
-row with the supplied schema; its TypeScript output is inferred from that schema.
-Use schema transforms such as `pgInt8ToSafeIntegerSchema`,
-`pgInt8ToBigIntSchema`, and `pgTimestampWithoutTimezoneToDateSchema` when the
-driver representation differs from the application value. Never replace this
-boundary with `execute<Row>`, a typed wrapper around `db.execute`, or a
-downstream assertion.
+Query/schema construction errors belong to the caller; synchronous execute
+method access/call and decoding errors reject the inner Promise. Moving
+construction inside that expression expands the consumer's error mapping;
+executing or parsing before the consumer bypasses it. Preserve the inner await
+layer and surrounding timing, cancellation and result handling. Immediately
+invoke the expression without handle arguments; never store, pass, return,
+register or detach it.

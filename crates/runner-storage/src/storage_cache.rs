@@ -4008,6 +4008,11 @@ async fn evict_empty_cache(target: &CacheTarget, cache_dir: &Path) -> RunnerResu
     Ok(())
 }
 
+enum CachePublication {
+    Renamed,
+    ExistingArchive,
+}
+
 async fn write_to_cache(cache_dir: &Path, bytes: &[u8]) -> RunnerResult<()> {
     let staging = staging_dir(cache_dir);
 
@@ -4017,71 +4022,58 @@ async fn write_to_cache(cache_dir: &Path, bytes: &[u8]) -> RunnerResult<()> {
         .await
         .map_err(|e| RunnerError::Internal(format!("create staging {}: {e}", staging.display())))?;
 
-    let archive_staging = staging.join("archive.tar.gz");
-    if let Err(e) = fs::write(&archive_staging, bytes).await {
-        let _ = fs::remove_dir_all(&staging).await;
-        return Err(RunnerError::Internal(format!(
-            "write {}: {e}",
-            archive_staging.display()
-        )));
-    }
+    let publication: RunnerResult<CachePublication> = async {
+        let archive_staging = staging.join("archive.tar.gz");
+        fs::write(&archive_staging, bytes).await.map_err(|e| {
+            RunnerError::Internal(format!("write {}: {e}", archive_staging.display()))
+        })?;
 
-    // fsync the archive so a crash between rename and next sync cannot
-    // leave a zero-byte or torn file visible at the final path.
-    let f = match fs::File::open(&archive_staging).await {
-        Ok(f) => f,
-        Err(e) => {
-            let _ = fs::remove_dir_all(&staging).await;
+        // fsync before publishing so a crash cannot expose a torn archive.
+        // Retire the handle before any failed-attempt cleanup.
+        {
+            let archive = fs::File::open(&archive_staging).await.map_err(|e| {
+                RunnerError::Internal(format!("open for fsync {}: {e}", archive_staging.display()))
+            })?;
+            archive.sync_all().await.map_err(|e| {
+                RunnerError::Internal(format!("fsync {}: {e}", archive_staging.display()))
+            })?;
+        }
+
+        // Ensure the `<name>/` parent exists so the rename below has a target.
+        if let Some(parent) = cache_dir.parent() {
+            fs::create_dir_all(parent).await.map_err(|e| {
+                RunnerError::Internal(format!("create cache parent {}: {e}", parent.display()))
+            })?;
+        }
+
+        if let Err(e) = fs::rename(&staging, cache_dir).await {
+            // A sibling runner may have populated the final dir while we were
+            // staging. Only accept a collision when the final artifact exists;
+            // other errors (EXDEV, ENOSPC, EACCES, ...) must still propagate.
+            if is_rename_collision(&e)
+                && fs::metadata(cache_dir.join("archive.tar.gz")).await.is_ok()
+            {
+                return Ok(CachePublication::ExistingArchive);
+            }
             return Err(RunnerError::Internal(format!(
-                "open for fsync {}: {e}",
-                archive_staging.display()
+                "rename {} -> {}: {e}",
+                staging.display(),
+                cache_dir.display()
             )));
         }
+        Ok(CachePublication::Renamed)
+    }
+    .await;
+
+    let result = match publication {
+        // Rename consumed staging; its old path may already belong to a new attempt.
+        Ok(CachePublication::Renamed) => return Ok(()),
+        Ok(CachePublication::ExistingArchive) => Ok(()),
+        Err(error) => Err(error),
     };
-    if let Err(e) = f.sync_all().await {
-        drop(f);
-        let _ = fs::remove_dir_all(&staging).await;
-        return Err(RunnerError::Internal(format!(
-            "fsync {}: {e}",
-            archive_staging.display()
-        )));
-    }
-    drop(f);
-
-    // Ensure the `<name>/` parent exists so the rename below has a target.
-    if let Some(parent) = cache_dir.parent()
-        && let Err(e) = fs::create_dir_all(parent).await
-    {
-        let _ = fs::remove_dir_all(&staging).await;
-        return Err(RunnerError::Internal(format!(
-            "create cache parent {}: {e}",
-            parent.display()
-        )));
-    }
-
-    if let Err(e) = fs::rename(&staging, cache_dir).await {
-        // A sibling runner may have populated the final dir while we were
-        // staging. Only swallow the error if (a) it looks like a "target
-        // already exists" kind (EEXIST / ENOTEMPTY on Linux — the kernel
-        // returns ENOTEMPTY for a non-empty target and EEXIST for some
-        // filesystems) and (b) the expected final artifact is actually
-        // there. Any other kernel error (EXDEV, ENOSPC, EACCES, ...) must
-        // propagate so callers can surface the real failure.
-        if is_rename_collision(&e) && fs::metadata(cache_dir.join("archive.tar.gz")).await.is_ok() {
-            let _ = fs::remove_dir_all(&staging).await;
-            return Ok(());
-        }
-        // Non-race error: clean up the staging dir ourselves so EXDEV /
-        // ENOSPC / EACCES leftovers don't accumulate between retries. The
-        // cleanup is best-effort — we still surface the original error.
-        let _ = fs::remove_dir_all(&staging).await;
-        return Err(RunnerError::Internal(format!(
-            "rename {} -> {}: {e}",
-            staging.display(),
-            cache_dir.display()
-        )));
-    }
-    Ok(())
+    // Retire failed or superseded staging without replacing the original result.
+    let _ = fs::remove_dir_all(&staging).await;
+    result
 }
 
 /// Whether a `fs::rename` error plausibly means "target already exists or is
@@ -4379,6 +4371,7 @@ mod tests {
 
     mod archive_retries;
     mod batch_limits;
+    mod cache_publication;
     mod decoded_observation;
     mod fresh_staging;
     mod http_reuse;

@@ -1,6 +1,5 @@
 import { z } from "zod";
 import {
-  executeRawRows,
   parseRawRows,
   pgTimestampWithoutTimezoneToDateSchema,
 } from "../../lib/db-raw-rows";
@@ -411,15 +410,15 @@ const commitMetadata$ = command(
         codexServiceTier: chatThreads.codexServiceTier,
         updatedAt: chatThreads.updatedAt,
       });
-    const [row] = await executeRawRows(
-      db,
-      metadataCommitWithEventsSql({
-        updated: updated.getSQL(),
-        ...args.principal,
-        events: metadataEvents(args, current.agentId, columns, updatedAt),
-      }),
-      metadataCommitRowSchema,
-    );
+    const commitQuery = metadataCommitWithEventsSql({
+      updated: updated.getSQL(),
+      ...args.principal,
+      events: metadataEvents(args, current.agentId, columns, updatedAt),
+    });
+    const rowSchema = metadataCommitRowSchema;
+    const [row] = await (async () => {
+      return parseRawRows(rowSchema, await db.execute(commitQuery));
+    })();
     signal.throwIfAborted();
     return row ? metadataResult(row) : { kind: "not_found" };
   },

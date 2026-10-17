@@ -11,7 +11,7 @@ pub(crate) struct StorageBatchDimensions {
 }
 
 /// Additive optional fields on the existing capped storage-batch operation.
-/// Old API readers can strip these fields; their absence is not a zero sample.
+/// An absent field is not a zero sample.
 /// Each duration is truncated to milliseconds and omitted if it cannot fit u32.
 /// Complete means all nine Host phases were observed, not that they explain the
 /// entire outer residual or exclude the Guest work in response wait.

@@ -8,8 +8,8 @@ import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
   getSvixHeaders,
-  getUserIdByEmail,
-  unsubscribeUser,
+  getUserIdByEmail$,
+  unsubscribeUser$,
   verifyResendWebhook,
 } from "../services/email-common.service";
 import { safeSync } from "../utils";
@@ -77,12 +77,13 @@ const handleComplaint$ = command(
       .onConflictDoNothing();
     signal.throwIfAborted();
 
-    const clerk = get(clerk$);
+    // Preserve Clerk initialization and error timing even for cached recipients.
+    get(clerk$);
     for (const address of recipients) {
-      const userId = await getUserIdByEmail(db, clerk, address);
+      const userId = await set(getUserIdByEmail$, address);
       signal.throwIfAborted();
       if (userId) {
-        await unsubscribeUser(db, userId);
+        await set(unsubscribeUser$, userId);
         signal.throwIfAborted();
       }
     }
