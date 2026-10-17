@@ -70,6 +70,11 @@ Queries perform no target login, capture, input, command replay or provisioning.
 History requires current read capability and Run/chat/host visibility. Nested
 SSH evidence requires dependency visibility too. Existing metadata inventories
 always return the current authorized hosts and their required identities.
+Runner installs diagnostic authority from the API-authored
+`platformEnvironment.OKOU_TOKEN` for this Run. Missing trusted agent authority
+leaves history and active checks unavailable while ordinary SSH/VNC operations
+keep their existing authorization paths. The internal sandbox token and
+user-authored environment cannot substitute for this authority.
 Known creation identities must match with PostgreSQL microsecond precision;
 later generations on the
 same creation instance can still read history. Missing identity projection

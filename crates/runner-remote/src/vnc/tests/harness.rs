@@ -27,6 +27,9 @@ use crate::guest_rpc::{Run as RpcRun, Runtime};
 use crate::test_fixtures::http::{HttpClientConfig, http_client};
 use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_types::ids::RunId;
+use runner_types::types::ExecutionContext;
+use sandbox::Sandbox;
+use sandbox_mock::MockSandbox;
 
 pub(super) const CONNECTION: &str = "9f0128ce-dd11-4234-b1ac-a0c33353a112";
 const TOKEN: &str = "vm0_official_vnc-test";
@@ -309,21 +312,26 @@ impl TestRun {
     }
 
     async fn enable_diagnostics_token(&mut self, runtime: &Arc<VncRuntime>, token: &str) {
+        let context =
+            crate::test_fixtures::execution_context::diagnostic_context_for_test(self.id, token);
+        self.install_context(runtime, &context).await;
+    }
+
+    pub(crate) async fn install_context(
+        &mut self,
+        runtime: &Arc<VncRuntime>,
+        context: &ExecutionContext,
+    ) {
         self.shutdown().await;
         let (incoming, receiver) = mpsc::channel(16);
         self.incoming = incoming;
+        let mut sandbox = MockSandbox::new("vnc-assigned-sandbox")
+            .with_guest_rpc(Arc::new(Acceptor(tokio::sync::Mutex::new(receiver))));
+        sandbox.bind_run_control(&self.id.to_string()).unwrap();
         self.dispatcher = Some(
-            Runtime::new(None, Some(Arc::clone(runtime)), None).start_with_diagnostics(
-                Arc::new(Acceptor(tokio::sync::Mutex::new(receiver))),
-                "vnc-assigned-sandbox".into(),
-                self.id,
-                &self.cancel,
-                None,
-                Some(Arc::new(crate::diagnostics::Authority::new(
-                    runtime.http_client(),
-                    token,
-                ))),
-            ),
+            Runtime::new(None, Some(Arc::clone(runtime)), None)
+                .install(&sandbox, context, &self.cancel)
+                .unwrap(),
         );
     }
 
