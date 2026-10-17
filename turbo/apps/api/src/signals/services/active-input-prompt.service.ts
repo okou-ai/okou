@@ -18,7 +18,7 @@ import {
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { and, eq, inArray } from "drizzle-orm";
+import type { SelectResultFields } from "drizzle-orm/query-builders/select.types";
 
 import type { Db } from "../external/db";
 import { resolveThreadGenerationTemplatePrompt } from "../../lib/thread-generation-template";
@@ -104,36 +104,24 @@ function activeInputControlPayloadFits(payload: object): boolean {
   );
 }
 
-/** Load active-input source events of one thread by id, without locks. */
-export function activeInputRowsByIds(
-  db: Pick<Db, "select">,
-  chatThreadId: string,
-  eventIds: readonly string[],
-) {
-  return db
-    .select({
-      id: chatEvents.id,
-      chatThreadId: chatEvents.chatThreadId,
-      createdAt: chatEvents.createdAt,
-      runId: chatEvents.runId,
-      eventType: chatEvents.eventType,
-      contextType: chatEvents.contextType,
-      contextId: chatEvents.contextId,
-      userMessage: canonicalChatEventUserMessage(),
-      modelSelection: canonicalChatInputModelSelection(),
-    })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.chatThreadId, chatThreadId),
-        inArray(chatEvents.id, eventIds),
-      ),
-    );
+/** Mapped fields for an active-input source read. */
+export function activeInputSourceFields() {
+  return {
+    id: chatEvents.id,
+    chatThreadId: chatEvents.chatThreadId,
+    createdAt: chatEvents.createdAt,
+    runId: chatEvents.runId,
+    eventType: chatEvents.eventType,
+    contextType: chatEvents.contextType,
+    contextId: chatEvents.contextId,
+    userMessage: canonicalChatEventUserMessage(),
+    modelSelection: canonicalChatInputModelSelection(),
+  };
 }
 
-export type ActiveInputSourceRow = Awaited<
-  ReturnType<typeof activeInputRowsByIds>
->[number];
+export type ActiveInputSourceRow = SelectResultFields<
+  ReturnType<typeof activeInputSourceFields>
+>;
 
 /** Render one pending active input for steering. */
 export const materializeActiveInputSource$ = command(
