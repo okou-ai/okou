@@ -5,13 +5,14 @@ import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-conn
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { orgDeleteContract } from "@okouai/api-contracts/contracts/org-routes";
 import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
-import { createStore } from "ccstate";
-import { expect, test } from "vitest";
+import { createStore, state } from "ccstate";
+import { beforeEach, expect, onTestFinished, test } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { joinAll } from "../../utils";
 import { cloudflareAccessRoutes } from "../cloudflare-access";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { orgDeleteRoutes } from "../org-delete";
@@ -19,12 +20,25 @@ import { webhooksClerkRoutes } from "../webhooks-clerk";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
+import {
+  cleanupCloudflareAccessLifecycle,
+  type CloudflareAccessLifecycleOwner,
+} from "./helpers/cloudflare-access-lifecycle-cleanup";
 
 const context = testContext();
 const store = createStore();
 const mocks = createRouteMocks(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const query = Object.freeze({ view: "scoped" as const });
+const owners$ = state<readonly CloudflareAccessLifecycleOwner[]>([]);
+
+beforeEach(() => {
+  store.set(owners$, []);
+  onTestFinished(async () => {
+    await cleanupCloudflareAccessLifecycle(context, store.get(owners$));
+  });
+});
+
 const configs = () => {
   return setupApp({ context, routes: cloudflareAccessRoutes })(
     cloudflareAccessContract,
@@ -45,6 +59,7 @@ async function owner(
     userId: `user_shared_access_${randomUUID()}`,
     membershipId: `orgmem_${randomUUID()}`,
   };
+  store.set(owners$, [...store.get(owners$), value]);
   await store.set(seedOrgMembership$, { ...value, role }, context.signal);
   mocks.clerk.session(value.userId, value.orgId, `org:${role}`);
   mocks.s3.listObjects([]);
@@ -98,6 +113,18 @@ async function createHost(configId: string) {
   return created;
 }
 
+function forgetErasedOwners(
+  type: "user.deleted" | "organization.deleted",
+  id: string,
+) {
+  store.set(
+    owners$,
+    store.get(owners$).filter((owner) => {
+      return type === "user.deleted" ? owner.userId !== id : owner.orgId !== id;
+    }),
+  );
+}
+
 async function webhook(
   type: "user.deleted" | "organization.deleted",
   id: string,
@@ -117,6 +144,7 @@ async function webhook(
     [200],
   );
   await flushWaitUntilForTest();
+  forgetErasedOwners(type, id);
 }
 
 test("creator deletion erases private Access while preserving shared Access and another member's SSH host", async () => {
@@ -204,6 +232,7 @@ test.each(["Clerk webhook", "manual"] as const)(
         }),
         [200],
       );
+      forgetErasedOwners("organization.deleted", creator.orgId);
     } else {
       await webhook("organization.deleted", creator.orgId);
     }
@@ -502,7 +531,7 @@ test("conversion and concurrent host binding retain a valid admin-owned referenc
       [200],
     )
   ).body;
-  const [converted, host] = await Promise.all([
+  const [converted, host] = await joinAll([
     accept(
       configs().convertToPersonal({
         headers,
