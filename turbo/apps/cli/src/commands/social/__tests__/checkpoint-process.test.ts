@@ -21,14 +21,23 @@ import {
 let directory: string;
 let compiled: Awaited<ReturnType<typeof buildProcessEntry>>;
 let preparation: ReturnType<typeof buildProcessEntry> | undefined;
+let httpFixture: Awaited<ReturnType<typeof buildProcessEntry>>;
+let fixturePreparation: ReturnType<typeof buildProcessEntry> | undefined;
 beforeAll(async () => {
   preparation = buildProcessEntry(
     fileURLToPath(new URL("../../../okou.ts", import.meta.url)),
   );
   compiled = await preparation;
+  fixturePreparation = buildProcessEntry(
+    fileURLToPath(new URL("./fixtures/process-http.ts", import.meta.url)),
+  );
+  httpFixture = await fixturePreparation;
 });
 afterAll(async () => {
   await disposePreparedProcessEntry(preparation);
+});
+afterAll(async () => {
+  await disposePreparedProcessEntry(fixturePreparation);
 });
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), "okou-collection-process-"));
@@ -44,9 +53,7 @@ function invoke(args: string[], failPage = false) {
         process.execPath,
         [
           "--import",
-          import.meta.resolve("tsx"),
-          "--import",
-          fileURLToPath(new URL("./fixtures/process-http.ts", import.meta.url)),
+          httpFixture.entry,
           compiled.entry,
           join(directory, "requests.jsonl"),
           failPage ? "1" : "0",
