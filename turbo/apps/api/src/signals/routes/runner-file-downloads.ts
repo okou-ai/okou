@@ -1,11 +1,15 @@
 import { runnerFileDownloadsContract } from "@okouai/api-contracts/contracts/runner-file-downloads";
-import { command } from "ccstate";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { command, computed } from "ccstate";
 import { notFound } from "../../lib/error";
+import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { runnerAuth$ } from "../auth/runner-auth";
 import { authorization$, setResHeader$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
+import { createUserFeatureSwitchContext } from "../services/feature-switches.service";
 import {
   consumeFileDownload$,
   expireFileDownloads$,
@@ -14,11 +18,20 @@ import {
 } from "../services/runner-file-download.service";
 
 const unavailable = notFound("File download unavailable");
+const downloadOwner$ = computed((get) => {
+  return Promise.resolve(get(organizationAuthContext$));
+});
+const downloadFeatures$ = createUserFeatureSwitchContext(downloadOwner$);
 const prepareInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const body = await get(bodyResultOf(runnerFileDownloadsContract.bootstrap));
   signal.throwIfAborted();
   if (!body.ok) {
     return body.response;
+  }
+  const features = await get(downloadFeatures$);
+  signal.throwIfAborted();
+  if (!isFeatureEnabled(FeatureSwitchKey.OkouDebug, features)) {
+    return unavailable;
   }
   const target = await get(fileDownloadTarget$);
   signal.throwIfAborted();

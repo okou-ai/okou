@@ -11,12 +11,12 @@ if [[ -n "${VERCEL_AUTOMATION_BYPASS_SECRET:-}" ]]; then
     headers+=(-H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}")
 fi
 
-# Pin the mocked runtime before provisioning synthetic subscription accounts.
+# Pin the mocked runtime and opt into Activity Files before parallel shards.
 curl -fsS "${headers[@]}" \
     -X POST \
-    -d '{"switches":{"_realAgentInPreview":false}}' \
+    -d '{"switches":{"_realAgentInPreview":false,"_debug":true}}' \
     "${api_url}/api/feature-switches" \
-    | jq -e '.effectiveSwitches._realAgentInPreview == false' >/dev/null
+    | jq -e '.effectiveSwitches._realAgentInPreview == false and .effectiveSwitches._debug == true' >/dev/null
 
 provider_response=$(curl -fsS "${headers[@]}" \
     -X POST \

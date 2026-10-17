@@ -68,6 +68,7 @@ export class RunnerWssApi {
   async verifyMockProfile(model: string): Promise<void> {
     const switches = object(await this.request("/api/feature-switches"));
     assert.equal(object(switches.effectiveSwitches)._realAgentInPreview, false);
+    assert.equal(object(switches.effectiveSwitches)._debug, true);
     const models = object(await this.request("/api/run-models")).models;
     if (
       !Array.isArray(models) ||

@@ -70,6 +70,7 @@ async function main(): Promise<void> {
     );
     await client.close();
     phase = "file-download-run-end";
+    downloadHttpStatus = undefined;
     downloadRunEnd = await probeDownloadRunEnd(api, run, signal);
   } catch {
     failed = true;

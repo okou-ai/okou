@@ -1,15 +1,20 @@
 import { createHash, randomUUID } from "node:crypto";
 import { runnerFileDownloadsContract } from "@okouai/api-contracts/contracts/runner-file-downloads";
 import { runnerWssTicketsContract } from "@okouai/api-contracts/contracts/runner-wss-tickets";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { runnerFileDownloadRoutes } from "../runner-file-downloads";
 import { runnerWssTicketRoutes } from "../runner-wss-tickets";
-import { createBddApi } from "./helpers/api-bdd";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { publicChatActor } from "./helpers/public-chat-actor";
+import {
+  deleteFeatureSwitchesForUser,
+  updateFeatureSwitchesForUser,
+} from "./helpers/feature-switches";
 
 describe("native file download authority", () => {
   const context = testContext();
@@ -28,12 +33,44 @@ describe("native file download authority", () => {
     );
   };
 
-  async function setup() {
+  async function setup(debug = true) {
+    const otherDebugOwners: { userId: string; orgId: string }[] = [];
     const owned = await publicChatActor(context, {
       restoreEnvironment: clearMockNow,
+      beforeWorkspaceCleanup: async () => {
+        for (const actor of otherDebugOwners) {
+          await deleteFeatureSwitchesForUser(context, actor);
+        }
+      },
     });
     const api = createRunsApi(context);
     const bdd = createBddApi(context);
+    owned.ownsFeatureSwitches();
+    const setDebug = (actor: ApiTestUser, enabled: boolean) => {
+      const orgId = actor.orgId;
+      if (!orgId) {
+        throw new Error("Expected a workspace owner");
+      }
+      return owned.run(async () => {
+        await bdd.readMe(actor);
+        if (
+          actor.userId !== owned.actor.userId &&
+          !otherDebugOwners.some((owner) => {
+            return owner.userId === actor.userId;
+          })
+        ) {
+          otherDebugOwners.push({ userId: actor.userId, orgId });
+        }
+        await updateFeatureSwitchesForUser(
+          context,
+          { ...actor, orgId },
+          {
+            [FeatureSwitchKey.OkouDebug]: enabled,
+          },
+        );
+      });
+    };
+    await setDebug(owned.actor, debug);
     return owned.run(async () => {
       const run = await api.createThreadRun(owned.actor, {
         agentId: owned.agentId,
@@ -52,7 +89,7 @@ describe("native file download authority", () => {
         wssIngressServiceActive: true,
         fileDownloadServiceVersion: 1,
       });
-      return { ...owned, api, bdd, runId: run.runId, runnerId };
+      return { ...owned, api, bdd, setDebug, runId: run.runId, runnerId };
     });
   }
   type Fixture = Awaited<ReturnType<typeof setup>>;
@@ -108,8 +145,10 @@ describe("native file download authority", () => {
 
   it("returns only a short-lived native URL and atomically spends exact owner/path authority once", async () => {
     const f = await setup();
-    await accept(bootstrap(f, f.bdd.user({ orgId: f.actor.orgId })), [404]);
-    await accept(bootstrap(f, f.bdd.user()), [404]);
+    for (const actor of [f.bdd.user({ orgId: f.actor.orgId }), f.bdd.user()]) {
+      await f.setDebug(actor, true);
+      await accept(bootstrap(f, actor), [404]);
+    }
     const issued = await accept(bootstrap(f), [200]);
     expect(Object.keys(issued.body).sort()).toStrictEqual([
       "downloadUrl",
@@ -151,6 +190,17 @@ describe("native file download authority", () => {
     expect(redeemed.headers.get("cache-control")).toBe("no-store");
     await accept(consume(f, secret), [404]);
     await accept(bootstrap(f), [200]);
+  });
+
+  it("requires the existing Debug switch before issuing file authority", async () => {
+    const f = await setup(false);
+    const disabled = await accept(bootstrap(f), [404]);
+    expect(disabled.headers.get("cache-control")).toBe("no-store");
+    await f.setDebug(f.actor, true);
+    const issued = await accept(bootstrap(f), [200]);
+    await accept(consume(f, ticket(issued.body.downloadUrl)), [200]);
+    await f.setDebug(f.actor, false);
+    await accept(bootstrap(f), [404]);
   });
 
   it("has one pending grant per Run and exactly one concurrent consumer", async () => {
