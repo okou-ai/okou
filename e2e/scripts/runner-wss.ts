@@ -28,6 +28,7 @@ async function main(): Promise<void> {
   let phase = "profile";
   let failed = false;
   let failureApiStatus: number | undefined;
+  let downloadHttpStatus: number | undefined;
   let cleanupFailures = 0;
   let filesystem: Awaited<ReturnType<typeof probeHomeFiles>> | undefined;
   let fileReads: Awaited<ReturnType<typeof probeFileReads>> | undefined;
@@ -57,7 +58,16 @@ async function main(): Promise<void> {
     await client.diagnostics();
     client.assertHealthy();
     phase = "file-download";
-    downloads = await probeDownloads(api, run, signal);
+    downloads = await probeDownloads(
+      api,
+      run,
+      (check, status) => {
+        // Only fixed probe labels and numeric status enter failure diagnostics.
+        phase = `file-download-${check}`;
+        downloadHttpStatus = status;
+      },
+      signal,
+    );
     await client.close();
     phase = "file-download-run-end";
     downloadRunEnd = await probeDownloadRunEnd(api, run, signal);
@@ -83,6 +93,7 @@ async function main(): Promise<void> {
         result: "FAIL",
         phase,
         apiStatus: failureApiStatus,
+        downloadHttpStatus,
         cleanupFailures,
       }),
     );

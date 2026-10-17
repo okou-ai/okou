@@ -17,17 +17,14 @@ describe("file download authority-store outage", () => {
     const client = setupApp({
       context,
       routes: runnerFileDownloadRoutes,
-      rethrowErrors: true,
     })(runnerFileDownloadsContract);
-    await expect(
-      client.bootstrap({
+    const responses = [
+      await client.bootstrap({
         params: { runId: randomUUID() },
         headers: { authorization: "Bearer clerk-session" },
         body: { path: ["ZmlsZQ"] },
       }),
-    ).rejects.toThrow(/ECONNREFUSED/);
-    await expect(
-      client.consume({
+      await client.consume({
         headers: {
           authorization:
             "Bearer vm0_official_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
@@ -39,8 +36,11 @@ describe("file download authority-store outage", () => {
           ticket: randomBytes(32).toString("base64url"),
         },
       }),
-    ).rejects.toMatchObject({
-      cause: expect.objectContaining({ code: "ECONNREFUSED" }),
-    });
+    ];
+    for (const response of responses) {
+      expect(response.status).toBe(500);
+      expect(response.body).toStrictEqual({ error: "Internal server error" });
+      expect(response.headers.get("cache-control")).toBe("no-store");
+    }
   });
 });

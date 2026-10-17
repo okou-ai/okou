@@ -7,37 +7,52 @@ import type { OwnedWssRun, RunnerWssApi } from "./runner-wss-api";
 export async function probeDownloads(
   api: RunnerWssApi,
   run: OwnedWssRun,
+  progress: (check: string, status?: number) => void,
   signal: AbortSignal,
 ) {
   const startRss = process.memoryUsage().rss;
   let peakRss = startRss;
   let chunks = 0;
-  const read = async (names: string[], size: number, expected: string) => {
+  const read = async (
+    fixture: "empty" | "binary" | "large",
+    names: string[],
+    size: number,
+    expected: string,
+  ) => {
+    progress(`${fixture}-bootstrap`);
     const url = await api.download(run, names);
     if (size === 0) {
+      progress("empty-head");
       const head = await fetch(url, {
         method: "HEAD",
         signal,
         redirect: "error",
       });
       try {
+        progress("empty-head-status", head.status);
         assert.equal(head.status, 405);
       } finally {
         await head.body?.cancel();
       }
+      progress("empty-invalid-path");
       const invalidPath = await fetch(`${url}/extra`, {
         signal,
         redirect: "error",
       });
       try {
+        progress("empty-invalid-path-status", invalidPath.status);
         assert.equal(invalidPath.status, 404);
       } finally {
         await invalidPath.body?.cancel();
       }
     }
+    progress(`${fixture}-get`);
     const response = await fetch(url, { signal, redirect: "error" });
+    progress(`${fixture}-status`, response.status);
     assert.equal(response.status, 200);
+    progress(`${fixture}-length-header`, response.status);
     assert.equal(response.headers.get("content-length"), String(size));
+    progress(`${fixture}-security-headers`, response.status);
     assert.equal(
       response.headers.get("content-type"),
       "application/octet-stream",
@@ -57,6 +72,7 @@ export async function probeDownloads(
     const hash = createHash("sha256");
     let count = 0;
     try {
+      progress(`${fixture}-body`, response.status);
       for (;;) {
         const chunk = await reader.read();
         if (chunk.done) break;
@@ -71,17 +87,22 @@ export async function probeDownloads(
     } finally {
       await reader.cancel();
     }
+    progress(`${fixture}-length`, response.status);
     assert.equal(count, size);
+    progress(`${fixture}-hash`, response.status);
     assert.equal(hash.digest("hex"), expected);
+    progress(`${fixture}-replay`);
     const replay = await fetch(url, { signal, redirect: "error" });
     try {
+      progress(`${fixture}-replay-status`, replay.status);
       assert.ok([404, 503].includes(replay.status));
     } finally {
       await replay.body?.cancel();
     }
   };
-  await read([".hidden"], 0, createHash("sha256").digest("hex"));
+  await read("empty", [".hidden"], 0, createHash("sha256").digest("hex"));
   await read(
+    "binary",
     ["nested", "leaf"],
     70003,
     createHash("sha256")
@@ -91,7 +112,7 @@ export async function probeDownloads(
   const expected = createHash("sha256");
   const zeroChunk = Buffer.alloc(65536);
   for (let i = 0; i < 2048; i++) expected.update(zeroChunk);
-  await read(["file-0"], 134217728, expected.digest("hex"));
+  await read("large", ["file-0"], 134217728, expected.digest("hex"));
   return {
     nativeDownloadBytes: 134287731,
     nativeDownloadChunks: chunks,
