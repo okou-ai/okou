@@ -4,7 +4,7 @@ import {
   type PresentationTemplatePreviewAsset,
 } from "@okouai/api-contracts/contracts/presentation-templates";
 import { presentationTemplates } from "@okouai/db/schema/presentation-template";
-import { and, eq, getTableColumns, sql } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, or, sql } from "drizzle-orm";
 
 import { notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -16,8 +16,6 @@ import {
   publishPresentationTemplatesChangedForUserSafely,
 } from "../external/realtime";
 import {
-  listAccessiblePresentationTemplates,
-  loadAccessiblePresentationTemplate,
   parsePresentationTemplatePreviewAssetId,
   presentationTemplatePreviewAssetId,
   presentationTemplateSummary,
@@ -164,12 +162,22 @@ const publishInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (result.kind === "rejected") {
     return result.response;
   }
-  const row = await loadAccessiblePresentationTemplate(get(db$), {
-    orgId: auth.orgId,
-    userId: auth.userId,
-    templateId: result.templateId,
-  });
+  const [selectedRow] = await get(db$)
+    .select()
+    .from(presentationTemplates)
+    .where(
+      and(
+        eq(presentationTemplates.id, result.templateId),
+        eq(presentationTemplates.orgId, auth.orgId),
+        or(
+          eq(presentationTemplates.ownerUserId, auth.userId),
+          eq(presentationTemplates.visibility, "public"),
+        ),
+      ),
+    )
+    .limit(1);
   signal.throwIfAborted();
+  const row = selectedRow ?? null;
   if (!row) {
     throw new Error(`Published template not found: ${result.templateId}`);
   }
@@ -201,10 +209,22 @@ const publishInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const listInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  const rows = await listAccessiblePresentationTemplates(get(db$), {
-    orgId: auth.orgId,
-    userId: auth.userId,
-  });
+  const rows = await get(db$)
+    .select()
+    .from(presentationTemplates)
+    .where(
+      and(
+        eq(presentationTemplates.orgId, auth.orgId),
+        or(
+          eq(presentationTemplates.ownerUserId, auth.userId),
+          eq(presentationTemplates.visibility, "public"),
+        ),
+      ),
+    )
+    .orderBy(
+      desc(eq(presentationTemplates.ownerUserId, auth.userId)),
+      desc(presentationTemplates.createdAt),
+    );
   signal.throwIfAborted();
   const previewAssetsByTemplateId = new Map(
     rows.map((row) => {
@@ -249,12 +269,22 @@ const getParams$ = pathParamsOf(presentationTemplatesContract.get);
 const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const params = get(getParams$);
-  const row = await loadAccessiblePresentationTemplate(get(db$), {
-    orgId: auth.orgId,
-    userId: auth.userId,
-    templateId: params.templateId,
-  });
+  const [selectedRow] = await get(db$)
+    .select()
+    .from(presentationTemplates)
+    .where(
+      and(
+        eq(presentationTemplates.id, params.templateId),
+        eq(presentationTemplates.orgId, auth.orgId),
+        or(
+          eq(presentationTemplates.ownerUserId, auth.userId),
+          eq(presentationTemplates.visibility, "public"),
+        ),
+      ),
+    )
+    .limit(1);
   signal.throwIfAborted();
+  const row = selectedRow ?? null;
   if (!row) {
     return templateNotFound(params.templateId);
   }
@@ -299,10 +329,22 @@ const resolvePreviewUrlsInner$ = command(
     if (!bodyResult.ok) {
       return bodyResult.response;
     }
-    const rows = await listAccessiblePresentationTemplates(get(db$), {
-      orgId: auth.orgId,
-      userId: auth.userId,
-    });
+    const rows = await get(db$)
+      .select()
+      .from(presentationTemplates)
+      .where(
+        and(
+          eq(presentationTemplates.orgId, auth.orgId),
+          or(
+            eq(presentationTemplates.ownerUserId, auth.userId),
+            eq(presentationTemplates.visibility, "public"),
+          ),
+        ),
+      )
+      .orderBy(
+        desc(eq(presentationTemplates.ownerUserId, auth.userId)),
+        desc(presentationTemplates.createdAt),
+      );
     signal.throwIfAborted();
     const assets = accessiblePresentationTemplatePreviewAssets({
       rows,
