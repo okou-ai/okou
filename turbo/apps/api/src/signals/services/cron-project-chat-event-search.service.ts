@@ -532,71 +532,6 @@ const cleanupOrphanedSearchProjection$ = command(
   },
 );
 
-async function loadCandidateThreads(
-  db: Pick<Db, "select">,
-): Promise<readonly CandidateThread[]> {
-  return await db
-    .select({
-      chatThreadId: chatThreads.id,
-      userId: chatThreads.userId,
-      orgId: agents.orgId,
-      agentId: agents.id,
-    })
-    .from(chatThreads)
-    .leftJoin(
-      chatEventSequences,
-      eq(chatEventSequences.chatThreadId, chatThreads.id),
-    )
-    .innerJoin(agents, eq(chatThreads.agentId, agents.id))
-    .leftJoin(
-      chatEventSearchMessageWatermarks,
-      eq(chatEventSearchMessageWatermarks.chatThreadId, chatThreads.id),
-    )
-    .where(
-      and(
-        gt(
-          chatEventSequences.lastSeqId,
-          sql`COALESCE(${chatEventSearchMessageWatermarks.indexedSeqId}, 0)`,
-        ),
-      ),
-    )
-    .orderBy(asc(chatThreads.id))
-    .limit(chatEventSearchThreadBatchSize());
-}
-
-async function projectionConvergence(
-  db: Pick<Db, "select">,
-): Promise<ChatEventSearchProjectionConvergence> {
-  const eligibleScope = gt(chatEventSequences.lastSeqId, 0);
-  const [stats] = await db
-    .select({
-      eligibleThreads: count(),
-      durableCaughtUpThreads: count(
-        chatEventSearchMessageWatermarks.chatThreadId,
-      ),
-    })
-    .from(chatThreads)
-    .leftJoin(
-      chatEventSequences,
-      eq(chatEventSequences.chatThreadId, chatThreads.id),
-    )
-    .leftJoin(
-      chatEventSearchMessageWatermarks,
-      and(
-        eq(chatEventSearchMessageWatermarks.chatThreadId, chatThreads.id),
-        gte(
-          chatEventSearchMessageWatermarks.indexedSeqId,
-          chatEventSequences.lastSeqId,
-        ),
-      ),
-    )
-    .where(eligibleScope);
-  if (!stats) {
-    throw new Error("Chat search projection convergence query returned no row");
-  }
-  return stats;
-}
-
 export const projectChatEventSearch$ = command(
   async (
     { set },
@@ -605,7 +540,37 @@ export const projectChatEventSearch$ = command(
     const db = set(writeDb$);
     const orphanedThreads = await set(cleanupOrphanedSearchProjection$);
     signal.throwIfAborted();
-    const candidateThreads = await loadCandidateThreads(db);
+    const candidateThreads = await (async (): Promise<
+      readonly CandidateThread[]
+    > => {
+      return await db
+        .select({
+          chatThreadId: chatThreads.id,
+          userId: chatThreads.userId,
+          orgId: agents.orgId,
+          agentId: agents.id,
+        })
+        .from(chatThreads)
+        .leftJoin(
+          chatEventSequences,
+          eq(chatEventSequences.chatThreadId, chatThreads.id),
+        )
+        .innerJoin(agents, eq(chatThreads.agentId, agents.id))
+        .leftJoin(
+          chatEventSearchMessageWatermarks,
+          eq(chatEventSearchMessageWatermarks.chatThreadId, chatThreads.id),
+        )
+        .where(
+          and(
+            gt(
+              chatEventSequences.lastSeqId,
+              sql`COALESCE(${chatEventSearchMessageWatermarks.indexedSeqId}, 0)`,
+            ),
+          ),
+        )
+        .orderBy(asc(chatThreads.id))
+        .limit(chatEventSearchThreadBatchSize());
+    })();
     signal.throwIfAborted();
 
     let threads = 0;
@@ -619,7 +584,39 @@ export const projectChatEventSearch$ = command(
       indexedEvents += stats.indexedEvents;
       deletedDocs += stats.deletedDocs;
     }
-    const convergence = await projectionConvergence(db);
+    const convergence =
+      await (async (): Promise<ChatEventSearchProjectionConvergence> => {
+        const eligibleScope = gt(chatEventSequences.lastSeqId, 0);
+        const [stats] = await db
+          .select({
+            eligibleThreads: count(),
+            durableCaughtUpThreads: count(
+              chatEventSearchMessageWatermarks.chatThreadId,
+            ),
+          })
+          .from(chatThreads)
+          .leftJoin(
+            chatEventSequences,
+            eq(chatEventSequences.chatThreadId, chatThreads.id),
+          )
+          .leftJoin(
+            chatEventSearchMessageWatermarks,
+            and(
+              eq(chatEventSearchMessageWatermarks.chatThreadId, chatThreads.id),
+              gte(
+                chatEventSearchMessageWatermarks.indexedSeqId,
+                chatEventSequences.lastSeqId,
+              ),
+            ),
+          )
+          .where(eligibleScope);
+        if (!stats) {
+          throw new Error(
+            "Chat search projection convergence query returned no row",
+          );
+        }
+        return stats;
+      })();
     signal.throwIfAborted();
     return {
       threads,
