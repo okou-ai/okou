@@ -1103,7 +1103,9 @@ await new Promise(resolve=>setTimeout(resolve,50));"""
             record(name, False, error="no managed task was created")
             continue
         before = len(stop_peers)
-        run = as_role(role, ["/fixture/guest-task-exec", "stop", handle], env=env)
+        run = as_role(
+            role, ["/fixture/guest-task-exec", "stop", handle], env=env, group="tools"
+        )
         observed = stop_peers[before:]
         record(
             name,
