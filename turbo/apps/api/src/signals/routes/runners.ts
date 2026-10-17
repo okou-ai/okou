@@ -67,7 +67,7 @@ import {
   type PgPoolAcquisitionCapture,
   type PgQueryExecutionCapture,
 } from "../../lib/db-instrumentation";
-import { executeRawRows } from "../../lib/db-raw-rows";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
@@ -1283,7 +1283,10 @@ async function transitionClaimedJobToRunning(
     "claim_route_transition_execute",
     "nested",
     async () => {
-      return await executeRawRows(db, query, claimTransitionSqlRowSchema);
+      const rowSchema = claimTransitionSqlRowSchema;
+      return await (async () => {
+        return parseRawRows(rowSchema, await db.execute(query));
+      })();
     },
   );
   const transition = decodeClaimTransitionResult(result);

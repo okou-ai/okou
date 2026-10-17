@@ -10,7 +10,7 @@ import {
   type PgPoolAcquisition,
   type PgPoolAcquisitionCapture,
 } from "../../lib/db-instrumentation";
-import { executeRawRows } from "../../lib/db-raw-rows";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { env } from "../../lib/env";
 import { now, nowDate, timestampWithoutTimeZone } from "../../lib/time";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
@@ -658,9 +658,8 @@ async function pruneExpiredCacheRows(
   signal?: AbortSignal,
 ): Promise<number> {
   const issuedAtTimestamp = timestampWithoutTimeZone(args.issuedAt);
-  const deletedRows = await executeRawRows(
-    args.db,
-    sql`
+  const db = args.db;
+  const pruneQuery = sql`
       WITH candidates AS (
       SELECT ${systemStoragePresignedUrlCache.cacheKey} AS "cacheKey"
       FROM ${systemStoragePresignedUrlCache}
@@ -700,9 +699,11 @@ async function pruneExpiredCacheRows(
     USING locked
     WHERE ${eq(systemStoragePresignedUrlCache.cacheKey, sql`locked."cacheKey"`)}
       RETURNING ${systemStoragePresignedUrlCache.cacheKey} AS "cacheKey"
-    `,
-    deletedCacheRowSchema,
-  );
+    `;
+  const rowSchema = deletedCacheRowSchema;
+  const deletedRows = await (async () => {
+    return parseRawRows(rowSchema, await db.execute(pruneQuery));
+  })();
   signal?.throwIfAborted();
   return deletedRows.length;
 }
