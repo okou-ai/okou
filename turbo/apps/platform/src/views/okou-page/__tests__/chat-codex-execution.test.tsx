@@ -1,5 +1,6 @@
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { modelCatalogContract } from "@okouai/api-contracts/contracts/model-catalog";
+import { getFeatureSwitchMetadata } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -67,6 +68,15 @@ test("enabling Codex in Lab preserves a saved Ultra preference that Pi cannot us
 
   click(await findButton("Test User"));
   click(await screen.findByText("Lab"));
+  const maintainer = getFeatureSwitchMetadata()[
+    FeatureSwitchKey.CodexExecution
+  ].maintainer.replace(/@.*$/u, "");
+  const maintainerFilter = await screen.findByText(maintainer);
+  click(maintainerFilter);
+  expect(maintainerFilter.closest("button")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   const row = (await screen.findByText("Codex execution (test only)")).closest(
     "li",
   );

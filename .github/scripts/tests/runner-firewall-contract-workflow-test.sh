@@ -104,8 +104,8 @@ scenarios = [
     ('native-routing-tests', ['.github/scripts/tests/runner-firewall-contract-workflow-test.sh'],
      'coverage', True, True, True, True),
     ('base-selector', ['.github/scripts/checks/changed-base-ref.sh'], 'coverage', True, True, True, True),
-    ('crate-selector', ['scripts/crate-changed.sh'], None, False, False, True, True),
-    ('toolchain', ['docker/toolchain/Dockerfile'], None, False, False, True, True),
+    ('crate-selector', ['scripts/crate-changed.sh'], 'coverage', False, False, True, True),
+    ('toolchain', ['docker/toolchain/Dockerfile'], 'coverage', False, False, True, True),
     ('qemu-producer', ['crates/rfb-client/tests/fixtures/prepare-qemu-gssapi-fixture.py'], 'coverage', True, True, False, True),
     ('qemu-wrapper', ['crates/rfb-client/tests/check-full-qemu-producer.sh'], 'coverage', True, True, False, True),
     ('qemu-download', ['.github/scripts/download-verified.sh'], 'coverage', True, True, False, False),
@@ -115,6 +115,12 @@ scenarios = [
     ('fixture-only', [corpus], standalone, False, True, False, False),
     ('fixture-and-rust', [corpus, 'crates/runner-types/src/types.rs'], 'coverage', True, True, False, False),
     ('fixture-and-ci', [corpus, '.github/workflows/crates.yml'], 'coverage', True, True, True, True),
+    ('web-only', ['.github/scripts/tests/clerk-test-resource-workflow-test.sh'],
+     None, True, True, False, False),
+    ('fixture-and-web', [corpus, '.github/scripts/tests/clerk-test-resource-workflow-test.sh'],
+     standalone, True, True, False, False),
+    ('web-and-rust', ['.github/scripts/tests/clerk-test-resource-workflow-test.sh',
+                      'crates/runner-types/src/types.rs'], 'coverage', True, True, False, False),
     ('unrelated', ['README.md'], None, False, False, False, False),
     ('firewall-semantics-fixture',
      ['turbo/packages/connectors/src/__tests__/firewall-semantics-contract.json'],
@@ -316,6 +322,7 @@ CHECK
     repo = directory / 'repo'
     repo.mkdir()
     for relative in ['scripts/crate-changed.sh', '.github/scripts/checks/changed-base-ref.sh',
+                     '.github/scripts/checks/crates-coverage-needed.sh',
                      '.github/scripts/runner/runner-image-context.sh', '.github/scripts/runner/runner-image-target.sh']:
         destination = repo / relative
         destination.parent.mkdir(parents=True, exist_ok=True)

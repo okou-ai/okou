@@ -1747,59 +1747,47 @@ describe("okou connector check command", () => {
       },
     );
 
-    it.each([
-      { name: "new API", header: CONNECTOR_CHECK_AWS_CONTEXT_INSUFFICIENT },
-      { name: "old API", header: undefined },
-    ])(
-      "handles an incomplete AWS check from the $name without changing policy",
-      async ({ header }) => {
-        stubDiagnostic(
-          resolvedUrl({
-            connector: connectorIdentity({
-              connectorSlug: "aws",
-              label: "AWS",
-            }),
-            method: "POST",
-            base: "https://sts.us-west-2.amazonaws.com",
-            relativePath: "/",
-            permission: {
-              kind: "unknown-endpoint",
-              policy: { outcome: "deny", basis: "unknown-policy" },
-            },
+    it("handles an incomplete AWS check without changing policy", async () => {
+      stubDiagnostic(
+        resolvedUrl({
+          connector: connectorIdentity({
+            connectorSlug: "aws",
+            label: "AWS",
           }),
-          undefined,
-          API_BASE_URL,
-          header,
-        );
-        stubResolvedDependencies("aws", { enabledConnectorSlugs: [] });
-        setRunAccount("aws", "connected");
+          method: "POST",
+          base: "https://sts.us-west-2.amazonaws.com",
+          relativePath: "/",
+          permission: {
+            kind: "unknown-endpoint",
+            policy: { outcome: "deny", basis: "unknown-policy" },
+          },
+        }),
+        undefined,
+        API_BASE_URL,
+        CONNECTOR_CHECK_AWS_CONTEXT_INSUFFICIENT,
+      );
+      stubResolvedDependencies("aws", { enabledConnectorSlugs: [] });
+      setRunAccount("aws", "connected");
 
-        await checkConnectorCommand.parseAsync([
-          "node",
-          "cli",
-          "--url",
-          "https://sts.us-west-2.amazonaws.com/",
-          "--method",
-          "POST",
-          "--connector",
-          "aws",
-        ]);
+      await checkConnectorCommand.parseAsync([
+        "node",
+        "cli",
+        "--url",
+        "https://sts.us-west-2.amazonaws.com/",
+        "--method",
+        "POST",
+        "--connector",
+        "aws",
+      ]);
 
-        expect(getOutput()).toContain(
-          "unknown endpoint policy denies this request",
-        );
-        expect(getOutput()).toContain("okou connector check");
-        if (header === undefined) {
-          expect(getOutput()).toContain("--permission '__unknown__'");
-        } else {
-          expect(getOutput()).toContain(
-            "AWS operation context is insufficient",
-          );
-          expect(getOutput()).toContain("--aws-service");
-          expect(getOutput()).not.toContain("--permission '__unknown__'");
-        }
-      },
-    );
+      expect(getOutput()).toContain(
+        "unknown endpoint policy denies this request",
+      );
+      expect(getOutput()).toContain("okou connector check");
+      expect(getOutput()).toContain("AWS operation context is insufficient");
+      expect(getOutput()).toContain("--aws-service");
+      expect(getOutput()).not.toContain("--permission '__unknown__'");
+    });
   });
 
   describe("explicit diagnostic outcomes", () => {

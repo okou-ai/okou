@@ -4,7 +4,7 @@ import { inArray, lt, sql } from "drizzle-orm";
 
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
-import { type Db, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 
 const TELEGRAM_MESSAGE_RETENTION_DAYS = 30;
 const TELEGRAM_MESSAGE_DELETE_BATCH_SIZE = 10_000;
@@ -18,39 +18,44 @@ function retentionCutoff(): Date {
   return cutoffDate;
 }
 
-async function cleanupTelegramMessages(
-  db: Db,
-  cutoff: Date,
-  batchSize: number,
-  signal: AbortSignal,
-): Promise<number> {
-  const expiredWhere = lt(telegramMessages.createdAt, cutoff);
+const deleteExpiredTelegramMessageBatches$ = command(
+  async (
+    { set },
+    cutoff: Date,
+    batchSize: number,
+    signal: AbortSignal,
+  ): Promise<number> => {
+    const db = set(writeDb$);
+    const expiredWhere = lt(telegramMessages.createdAt, cutoff);
 
-  let totalDeleted = 0;
-  let batchDeleted: number;
+    let totalDeleted = 0;
+    let batchDeleted: number;
 
-  do {
-    const expiredMessages = db
-      .select({ ctid: telegramMessageCtid })
-      .from(telegramMessages)
-      .where(expiredWhere)
-      .limit(batchSize);
-    const { rowCount } = await db
-      .delete(telegramMessages)
-      .where(inArray(telegramMessageCtid, expiredMessages));
-    signal.throwIfAborted();
+    do {
+      const expiredMessages = db
+        .select({ ctid: telegramMessageCtid })
+        .from(telegramMessages)
+        .where(expiredWhere)
+        .limit(batchSize);
+      const { rowCount } = await db
+        .delete(telegramMessages)
+        .where(inArray(telegramMessageCtid, expiredMessages));
+      signal.throwIfAborted();
 
-    batchDeleted = rowCount ?? 0;
-    totalDeleted += batchDeleted;
-  } while (batchDeleted === batchSize);
+      batchDeleted = rowCount ?? 0;
+      totalDeleted += batchDeleted;
+    } while (batchDeleted === batchSize);
 
-  return totalDeleted;
-}
+    return totalDeleted;
+  },
+);
 
 export const cleanupTelegramMessages$ = command(
   async ({ set }, signal: AbortSignal): Promise<number> => {
-    return await cleanupTelegramMessages(
-      set(writeDb$),
+    // Initialize the database before sampling the clock to preserve error timing.
+    set(writeDb$);
+    return await set(
+      deleteExpiredTelegramMessageBatches$,
       retentionCutoff(),
       TELEGRAM_MESSAGE_DELETE_BATCH_SIZE,
       signal,

@@ -71,8 +71,8 @@ struct ClaimRequestBody<'a> {
     capabilities: RunnerClaimCapabilities,
     native_continuation_supported: bool,
     telemetry: ClaimRequestTelemetry,
-    /// Versions of the Okou CLI installed in this runner's rootfs. Older APIs
-    /// strip the field; a runner without an installed CLI omits it.
+    /// Versions of the Okou CLI installed in this runner's rootfs. A runner
+    /// without an installed CLI omits the field.
     #[serde(skip_serializing_if = "Option::is_none")]
     installed_versions: Option<&'a OkouCliVersions>,
 }
@@ -6022,7 +6022,7 @@ mod tests {
         let claim_path = format!("/api/runners/jobs/{run_id}/claim");
         let mut response: serde_json::Value =
             serde_json::from_str(RUNNER_CLAIM_RESPONSE_FIXTURE).unwrap();
-        // Supported older APIs may include this optional observation field.
+        // The claim response carries the storage manifest when mounts exist.
         response["storageManifest"] = serde_json::json!({
             "storageMounts": [
                 {
@@ -6150,8 +6150,7 @@ mod tests {
             .mock_async(|when, then| {
                 when.method(POST)
                     .path(claim_path.as_str())
-                    // A previous API strips the optional root capability and still
-                    // validates the unchanged strict claim body.
+                    // The strict claim body only varies in its measured latency.
                     .is_true(|request| {
                         let Ok(mut body) =
                             serde_json::from_slice::<serde_json::Value>(request.body_ref())
@@ -6162,11 +6161,7 @@ mod tests {
                             return false;
                         };
                         let elapsed = telemetry.remove("jobDiscoveredToClaimRequestMs");
-                        let native = body
-                            .as_object_mut()
-                            .and_then(|body| body.remove("nativeContinuationSupported"));
                         elapsed.as_ref().is_some_and(serde_json::Value::is_u64)
-                            && native == Some(serde_json::Value::Bool(true))
                             && body
                                 == serde_json::json!({
                                     "runnerIdentity": {
@@ -6175,6 +6170,7 @@ mod tests {
                                     },
                                     "runnerHostname": "prod-1.aws.vm3.ai",
                                     "capabilities": { "piModelConfigGenerations": [2, 3, 5] },
+                                    "nativeContinuationSupported": true,
                                     "telemetry": {},
                                 })
                     });

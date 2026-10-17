@@ -36,7 +36,6 @@ import {
   normalizeAgentPhoneHandle,
   publishAgentPhoneUserChanged,
   publishAgentPhoneUserLinked,
-  resolveAgentPhoneUserLinkForEvent,
   sendAgentPhoneText$,
   storeInboundAgentPhoneMessage$,
   verifyAgentPhoneConnectSignature,
@@ -1408,9 +1407,22 @@ const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
     return admissionResponse;
   }
 
-  const writeDb = set(writeDb$);
-  const userLink = await resolveAgentPhoneUserLinkForEvent(writeDb, event);
+  const db = get(db$);
+  // A group sender never borrows a participant's or route owner's link.
+  const phoneHandle = normalizeAgentPhoneHandle(
+    event.fromNumber,
+    event.channel,
+  );
+  const linkRows = phoneHandle
+    ? db
+        .select()
+        .from(agentphoneUserLinks)
+        .where(eq(agentphoneUserLinks.phoneHandle, phoneHandle))
+        .limit(1)
+    : Promise.resolve([]);
+  const [link] = await linkRows;
   signal.throwIfAborted();
+  const userLink = link ?? null;
 
   const stored = await set(
     storeInboundAgentPhoneMessage$,

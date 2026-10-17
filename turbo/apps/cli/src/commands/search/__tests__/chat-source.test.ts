@@ -214,37 +214,6 @@ describe("okou search --source chat", () => {
     expect(errors).toContain("Invalid agent ID");
   });
 
-  it("renders an older API response without a pagination hint", async () => {
-    server.use(
-      http.get("http://localhost:3000/api/chat/search", () => {
-        return HttpResponse.json({
-          results: [
-            {
-              chatThreadId: "thread-x",
-              agentName: "agent",
-              matchedMessage: makeMessage({ content: "match" }),
-            },
-          ],
-          hasMore: true,
-        });
-      }),
-    );
-
-    await searchCommand.parseAsync([
-      "node",
-      "cli",
-      "match",
-      "--source",
-      "chat",
-    ]);
-
-    const logs = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(logs).toContain("thread-x");
-    expect(logs).toContain("match");
-    expect(logs).not.toContain("--limit");
-    expect(logs).not.toContain("Showing first");
-  });
-
   it("surfaces API authentication errors", async () => {
     server.use(
       http.get("http://localhost:3000/api/chat/search", () => {

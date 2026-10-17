@@ -798,6 +798,82 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(lastSend(sends).body).toBe("Task completed successfully.");
   });
 
+  it("runs a prompt from an already linked mixed-case iMessage email sender", async () => {
+    const bdd = createBddApi(context);
+    const runs = createRunsApi(context);
+    const integrations = createBddIntegrationApi(context);
+    const ap = createAgentPhoneBddApi(context);
+    const actor = bdd.user();
+    const email = `bdd-${randomUUID().slice(0, 8)}@example.com`;
+    ap.acceptAgentPhoneObjectStorage();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    context.mocks.ably.publish.mockResolvedValue(undefined);
+    const runnerGroup = runs.configureRunnerGroup();
+    integrations.configureAgentPhoneProvider();
+    integrations.configureAgentPhoneWebhook();
+    const sends = ap.captureAgentPhoneSends();
+
+    await runs.grantProEntitlement(actor, { isolatePg: true });
+    await runs.ensurePersonalSubscriptionModel(actor);
+    const issued = await integrations.requestCreateAgentPhoneLinkCode(
+      actor,
+      [200],
+    );
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: email,
+      body: issued.body.code,
+      conversationId: uniqueConversationId(),
+    });
+    await expect(
+      integrations.getAgentPhoneLinkStatus(actor),
+    ).resolves.toMatchObject({
+      linked: true,
+      phoneHandle: email,
+    });
+
+    const sender = ` ${email.toUpperCase()} `;
+    const messageId = await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: sender,
+      body: "Summarize my meeting notes",
+      conversationId: uniqueConversationId(),
+    });
+    const run = await claimDispatchedRun(runnerGroup);
+    expect(run.prompt).toBe("Summarize my meeting notes");
+    const beforeCompletion = sends.messages.length;
+    await createWebhookCallbackApi(context).requestAgentComplete(
+      {
+        runId: run.runId,
+        exitCode: 0,
+        completion: {
+          cliAgentType: run.cliAgentType,
+          cliAgentSessionId: agentPhoneCliAgentSessionIdForRun(run.runId),
+          cliAgentSessionHistoryDisposition: "native_only",
+        },
+      },
+      { authorization: `Bearer ${run.sandboxToken}` },
+      [200],
+    );
+    await expect
+      .poll(() => {
+        return sends.messages.slice(beforeCompletion).find((send) => {
+          return send.replyToMessageId === messageId;
+        });
+      })
+      .toMatchObject({
+        toNumber: sender,
+        body: "Task completed successfully.",
+      });
+    await expect(
+      integrations.getAgentPhoneLinkStatus(actor),
+    ).resolves.toMatchObject({
+      linked: true,
+      phoneHandle: email,
+    });
+  });
+
   it("links an AgentPhone user through the provider connect prompt", async () => {
     const integrations = createBddIntegrationApi(context);
     const ap = createAgentPhoneBddApi(context);

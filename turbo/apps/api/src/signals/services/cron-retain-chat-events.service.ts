@@ -9,7 +9,7 @@ import { chatEventSearchMessageWatermarks } from "@okouai/db/schema/chat-event-s
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
 
 import {
-  executeRawRows,
+  parseRawRows,
   pgTimestampWithoutTimezoneToDateSchema,
 } from "../../lib/db-raw-rows";
 import { pgTextDecoder } from "../../lib/db-structured-result";
@@ -73,16 +73,16 @@ const cutoffRowSchema = z.object({
 });
 
 async function loadRetentionCutoff(db: Pick<Db, "execute">): Promise<Date> {
-  const rows = await executeRawRows(
-    db,
-    sql`
+  const cutoffQuery = sql`
       SELECT (
         timezone('UTC', now())
         - ${CHAT_EVENT_RETENTION_DAYS} * interval '1 day'
       )::timestamp AS cutoff
-    `,
-    cutoffRowSchema,
-  );
+    `;
+  const rowSchema = cutoffRowSchema;
+  const rows = await (async () => {
+    return parseRawRows(rowSchema, await db.execute(cutoffQuery));
+  })();
   const cutoff = rows[0]?.cutoff;
   if (cutoff === undefined) {
     throw new Error("Chat event retention cutoff query returned no row");

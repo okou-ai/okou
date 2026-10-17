@@ -12,7 +12,7 @@ import { and, asc, eq, gt, sql } from "drizzle-orm";
 
 import { db$, writeDb$ } from "../external/db";
 import { storages } from "@okouai/db/schema/storage";
-import { executeRawRows, parseRawRows } from "../../lib/db-raw-rows";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import {
   agentDeletionAdmissionPlan,
   agentDeletionIdentityCondition,
@@ -103,12 +103,15 @@ const deleteAgentRows$ = command(
         .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
         .where(agentDeletionAutomationCondition(args));
       signal.throwIfAborted();
+      const historyDeletionQuery = deleteRunHistoriesSql(lifecycle.runIds);
+      const historyDeletionSchema = deletedRunHistorySchema;
       const deletion = await settle(
-        executeRawRows(
-          tx,
-          deleteRunHistoriesSql(lifecycle.runIds),
-          deletedRunHistorySchema,
-        ),
+        (async () => {
+          return parseRawRows(
+            historyDeletionSchema,
+            await tx.execute(historyDeletionQuery),
+          );
+        })(),
       );
       signal.throwIfAborted();
       if (!deletion.ok) {

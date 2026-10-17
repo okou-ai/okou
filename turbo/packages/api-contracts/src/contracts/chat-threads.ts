@@ -2027,30 +2027,6 @@ export const chatThreadArtifactsContract = c.router({
     },
     summary: "List uploaded files associated with every run in a chat thread",
   },
-  /** @deprecated Cached App compatibility; use artifactGoogleDriveContract.upload. */
-  syncGoogleDrive: {
-    method: "POST",
-    path: "/api/chat-threads/:threadId/artifacts",
-    headers: authHeadersSchema,
-    pathParams: chatThreadThreadIdPathParamsSchema,
-    body: z.object({
-      runId: z.string(),
-      fileId: z.string(),
-    }),
-    responses: {
-      200: z.object({
-        id: z.string(),
-        name: z.string(),
-        webViewLink: z.string().nullable(),
-      }),
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-      503: apiErrorSchema,
-    },
-    summary: "Sync a chat artifact file to the user's connected Google Drive",
-  },
 });
 
 export type ChatThreadsContract = typeof chatThreadsContract;
