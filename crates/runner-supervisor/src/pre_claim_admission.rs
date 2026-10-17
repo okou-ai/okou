@@ -451,24 +451,34 @@ async fn claim_with_local_admission(
                 let claimed = ctx.provider.claim(candidate).await;
                 (claimed, Instant::now())
             };
-            let preparation = prepare_exact_speculation(*reservation, run_id);
-            let ((claimed, claim_returned_at), preparation) = tokio::join!(claim, preparation);
-            let speculation = ExactSpeculation {
-                outcome: preparation.outcome,
-                sandbox_id,
-                idle_snapshot,
-                preparation_started_at: preparation.started_at,
-                preparation_completed_at: preparation.completed_at,
-                claim_started_at,
-                claim_returned_at,
-                unpark: preparation.unpark,
-                guest_restore: preparation.guest_restore,
+            let preparation = async {
+                if let Err(error) = ctx.status.set_idle_snapshot(idle_snapshot.clone()).await {
+                    warn!(%error, "failed to persist exact speculation idle reservation");
+                    return Err(reservation);
+                }
+                Ok(prepare_exact_speculation(*reservation, run_id).await)
             };
-            (
-                claimed,
-                AdmittedResource::ExactSpeculation(speculation),
-                claim_returned_at,
-            )
+            let ((claimed, claim_returned_at), preparation) = tokio::join!(claim, preparation);
+            let resource = match preparation {
+                Ok(preparation) => AdmittedResource::ExactSpeculation(ExactSpeculation {
+                    outcome: preparation.outcome,
+                    sandbox_id,
+                    idle_snapshot,
+                    preparation_started_at: preparation.started_at,
+                    preparation_completed_at: preparation.completed_at,
+                    claim_started_at,
+                    claim_returned_at,
+                    unpark: preparation.unpark,
+                    guest_restore: preparation.guest_restore,
+                }),
+                // The Guest is still parked. Claimed activation must persist
+                // Preparing before unpark; rejection restores this same owner.
+                Err(reservation) => AdmittedResource::Reusable(ReservedIdleActivation::new(
+                    *reservation,
+                    idle_snapshot,
+                )),
+            };
+            (claimed, resource, claim_returned_at)
         }
         LocalAdmissionResource::Finalizing(finalizing) => {
             let claimed = ctx.provider.claim(candidate).await;
@@ -643,7 +653,7 @@ async fn prepare_ranked_preference_candidate(
         .await
     {
         return if reservation.guest_timezone_intent().is_usable_prediction() {
-            exact_speculative_preparation(candidate, reservation, ctx).await
+            exact_speculative_preparation(candidate, reservation)
         } else {
             reusable_preparation(candidate, reservation)
         };
@@ -762,25 +772,12 @@ fn reusable_preparation(
     })
 }
 
-async fn exact_speculative_preparation(
+fn exact_speculative_preparation(
     candidate: JobCandidate,
     reservation: ReservedIdleActivation,
-    ctx: &PreClaimResources<'_>,
 ) -> PreferencePreparation {
     let sandbox_id = reservation.sandbox_id();
     let (reservation, idle_snapshot) = reservation.into_parts();
-    if let Err(error) = ctx.status.set_idle_snapshot(idle_snapshot.clone()).await {
-        warn!(%error, "failed to persist exact speculation idle reservation");
-        rollback_reserved_idle_for_spawn(
-            ReservedIdleActivation::new(reservation, idle_snapshot),
-            ctx.idle_pool,
-            ctx.status,
-            ctx.reuse_state_notify,
-            ctx.idle_destroy_tracker,
-        )
-        .await;
-        return ordinary_preparation(candidate);
-    }
     PreferencePreparation::Ready(PreparedCandidate {
         candidate,
         resource: Some(LocalAdmissionResource::ExactSpeculative(
