@@ -12,7 +12,7 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { eq } from "drizzle-orm";
 
 import { env } from "../../lib/env";
-import { db$, type ReadonlyDb } from "../external/db";
+import { db$ } from "../external/db";
 import {
   catalogDisplayName,
   modelCatalog$,
@@ -117,7 +117,6 @@ function runErrorProviderContext(
  */
 async function resolveRunModelDisplayName(
   catalogSnapshot: ModelCatalog,
-  db: ReadonlyDb,
   selectedModel: string,
 ): Promise<string> {
   const catalog = await catalogSnapshot;
@@ -151,13 +150,16 @@ function formatRunErrorLikeWebMessage(
       params.selectedModel !== undefined
         ? params.selectedModel
         : providerContext?.selectedModel;
-    const selectedModelLabel = selectedModel?.trim()
-      ? await resolveRunModelDisplayName(
-          await get(modelCatalog$),
-          get(db$),
-          selectedModel,
-        )
-      : null;
+    let selectedModelLabel: string | null = null;
+    if (selectedModel?.trim()) {
+      const catalog = await get(modelCatalog$);
+      // Preserve the original eager receiver read before model formatting.
+      get(db$);
+      selectedModelLabel = await resolveRunModelDisplayName(
+        catalog,
+        selectedModel,
+      );
+    }
     return formatRunErrorForExternalSurface({
       code: "INTERNAL_SERVER_ERROR",
       message: errorMessage,
