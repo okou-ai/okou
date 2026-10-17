@@ -12,6 +12,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1037.0](https://github.com/okou-ai/okou/compare/app-v0.1036.2...app-v0.1037.0) (2026-10-17)
+
+
+### Features
+
+* **sandbox:** add bounded file reads to fs v3 ([#40931](https://github.com/okou-ai/okou/issues/40931)) ([cc0d352](https://github.com/okou-ai/okou/commit/cc0d352860e96b1f45746e30bb17112b293003e2))
+* **vnc:** publish native network setup and canonical metadata ([#40923](https://github.com/okou-ai/okou/issues/40923)) ([5108add](https://github.com/okou-ai/okou/commit/5108add25e7a403e75d73157552d52df7d1e8da0))
+
+
+### Performance Improvements
+
+* **platform:** avoid template gallery focus scans ([#40927](https://github.com/okou-ai/okou/issues/40927)) ([57c703c](https://github.com/okou-ai/okou/commit/57c703cae1bb665320f46716eb39b10fcb071bad))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.573.0
+    * @okouai/core bumped to 8.767.0
+
 ## [0.1036.2](https://github.com/okou-ai/okou/compare/app-v0.1036.1...app-v0.1036.2) (2026-10-17)
 
 
