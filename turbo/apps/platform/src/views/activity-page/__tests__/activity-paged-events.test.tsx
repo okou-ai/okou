@@ -1,5 +1,4 @@
 import { act, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
 import { runAgentEventsContract } from "@okouai/api-contracts/contracts/run-routes";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -7,6 +6,7 @@ import { expect, test } from "vitest";
 
 import {
   click,
+  fill,
   queryAllByRoleFast,
   setupPage,
   startPage,
@@ -165,7 +165,6 @@ test("An active activity explains how to load the latest logs", async () => {
 });
 
 test("Refreshing an activity keeps the page and search until every new log page is ready", async () => {
-  const user = userEvent.setup();
   const secondPageStarted = context.mocks.deferred<void>();
   const releaseSecondPage = context.mocks.deferred<void>();
   let refreshed = false;
@@ -205,7 +204,7 @@ test("Refreshing an activity keeps the page and search until every new log page 
     screen.findByText("Current activity log"),
   ).resolves.toBeInTheDocument();
   const search = screen.getByPlaceholderText("Search steps");
-  await user.type(search, "activity");
+  await fill(search, "activity");
   const button = refreshButton();
 
   refreshed = true;
