@@ -81,6 +81,7 @@ readonly COMPUTER_USE_HOST_SESSION_ONLY_PATH=turbo/packages/db/src/runtime/compu
 readonly NATIVE_BRIEF_MEMBER_RUNTIME_PATH=turbo/packages/db/src/runtime/org-members-metadata.ts
 readonly SESSION_STORAGE_MOUNT_RUNTIME_PATH=turbo/packages/db/src/runtime/agent-session.ts
 readonly SESSION_CONVERSATION_RUNTIME_PATH=.github/rollback-floors/session-conversation-runtime
+readonly VNC_CANONICAL_METADATA_PATH=.github/rollback-floors/vnc-native-networks-canonical-metadata
 readonly WORKFLOW_NAME_SCOPES_PREPARATION_PATH=turbo/packages/db/src/migrations/1375_workflow_name_scopes.sql
 readonly RETIRED_PREFERENCE_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1274_drop_retired_voice_reasoning_collection_columns.sql
 readonly RETIRED_INTEGRATION_AGENT_TABLES_DROP_PATH=turbo/packages/db/src/migrations/1282_drop_retired_integration_agent_tables.sql
@@ -142,6 +143,18 @@ fi
 
 if ! git merge-base --is-ancestor "$LINK_WALLET_GRANT_WRITER_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Link wallet grant metadata writer: ${LINK_WALLET_GRANT_WRITER_COMMIT}."
+fi
+
+# G publishes native VNC bindings and always-present reference arrays. H's
+# required readers must never reach a B-F API that can omit vncHosts. Resolve
+# the producer's merged main commit, independently of the requested old target.
+vnc_canonical_metadata_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$VNC_CANONICAL_METADATA_PATH" | sed -n '1p')
+if [[ ! "$vnc_canonical_metadata_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged VNC canonical metadata producer on main."
+fi
+if ! git merge-base --is-ancestor "$vnc_canonical_metadata_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the VNC canonical metadata producer: ${vnc_canonical_metadata_commit}."
 fi
 
 # Native-only producers cannot roll back to Session-based handlers or deleters.

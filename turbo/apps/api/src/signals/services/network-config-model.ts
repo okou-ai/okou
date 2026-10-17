@@ -172,5 +172,5 @@ export function networkHostMetadata(references: readonly NetworkReference[]) {
       }
       return { id: host.id, displayName: host.displayName, roles };
     });
-  return { sshHosts, ...(vncHosts.length === 0 ? {} : { vncHosts }) };
+  return { sshHosts, vncHosts };
 }

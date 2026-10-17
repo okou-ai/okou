@@ -64,7 +64,7 @@ describe("explicit Owner Kerberos sources", () => {
     };
   }
   it.each(["cloudflare_access", "tailscale"] as const)(
-    "keeps public %s RFB and KDC publication disabled without changing saved data",
+    "rejects unavailable %s RFB and KDC bindings before encryption without changing saved data",
     async (type) => {
       const kms = useSecretKmsProbe();
       await owner({ isolatePg: true });
@@ -76,6 +76,7 @@ describe("explicit Owner Kerberos sources", () => {
       const transport = { type, configId: randomUUID() };
       const nativeRfb = {
         ...hostBody(),
+        security: { ...security, serverName: "vnc.example.com" },
         port: type === "cloudflare_access" ? 443 : 5900,
         transport,
       };
@@ -93,7 +94,7 @@ describe("explicit Owner Kerberos sources", () => {
       };
       for (const body of [nativeRfb, nativeKdc]) {
         expect((await rawRequest("/api/vnc/connections", body)).status).toBe(
-          400,
+          404,
         );
         expect(
           (
@@ -107,13 +108,14 @@ describe("explicit Owner Kerberos sources", () => {
                       host: nativeRfb.host,
                       port: nativeRfb.port,
                       credential: body.credential,
+                      security: body.security,
                     }
                   : { security: body.security, credential: body.credential }),
               },
               "PATCH",
             )
           ).status,
-        ).toBe(400);
+        ).toBe(404);
       }
       expect(
         (await accept(connections().list({ headers }), [200])).body.connections,

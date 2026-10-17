@@ -56,6 +56,12 @@ export function managementWriteCommand<T extends z.ZodType>(
       "after",
       `\nInput follows the VNC ${resource} ${name} contract. ${name === "create" ? "id is optional and defaults to a UUID." : resource === "host" ? "Include expectedGeneration from the current configured host metadata." : "Include expectedRevision from the current credential metadata."} Security profiles and transport bindings are enforced by the API. Management does not grant execution access. Credential values and PEM are never displayed.`,
     );
+  if (resource === "host" && name !== "delete") {
+    command.addHelpText(
+      "after",
+      `\nNative setup: list reusable configurations with okou remote-control cloudflare-access list or okou remote-control tailscale list. Set transport to {"type":"cloudflare_access","configId":"<uuid>"} with the TCP application hostname and port 443, or {"type":"tailscale","configId":"<uuid>"} with the exact peer IP/name and service port. Cloudflare X509 profiles need an explicit security.serverName independent of the gateway. Mac and authentication-only RSA-AES need SSH to literal server loopback, native Tailscale, or Cloudflare originTls {serverName,trust}; TLS must terminate on the selected server and forward only to local VNC. KDC transport is configured independently in security.kdc; ticket imports have no online KDC. Detached routes require an explicit configuration ID to rebind; configuration never grants chat execution access.`,
+    );
+  }
   if (name !== "create")
     command.argument("<id>", `Exact UUID from the configured ${resource} list`);
   const act = async (

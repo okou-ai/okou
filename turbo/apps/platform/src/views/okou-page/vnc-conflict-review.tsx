@@ -11,7 +11,6 @@ import {
   vncSshConnectionId,
   retryVnc$,
   isVncReviewableConflict,
-  hasNativeVncRoute,
   type VncConflictReviewState,
   type VncDialogState,
 } from "../../signals/vnc.ts";
@@ -225,24 +224,20 @@ function VncConflictReviewActions({
   const incompatible =
     dialog.kind === "edit-credential" &&
     reviewed.credential?.authMethod !== dialog.credential?.authMethod;
-  const nativeRoute =
-    reviewed.kind === "edit" && hasNativeVncRoute(reviewed.connection);
   const inUse =
     reviewed.kind === "delete-credential" &&
     reviewed.credential.hosts.length > 0;
   return (
     <>
-      <p role={incompatible || inUse || nativeRoute ? "alert" : undefined}>
+      <p role={incompatible || inUse ? "alert" : undefined}>
         {t(($) => {
-          return nativeRoute
-            ? $.vnc.native.editPending
-            : inUse
-              ? $.vnc.credential.inUse
-              : incompatible
-                ? $.vnc.saveRecovery.incompatible
-                : destructive
-                  ? $.vnc.saveRecovery.deleteHelp
-                  : $.vnc.saveRecovery.keepHelp;
+          return inUse
+            ? $.vnc.credential.inUse
+            : incompatible
+              ? $.vnc.saveRecovery.incompatible
+              : destructive
+                ? $.vnc.saveRecovery.deleteHelp
+                : $.vnc.saveRecovery.keepHelp;
         })}
       </p>
       {inUse && (
@@ -255,7 +250,7 @@ function VncConflictReviewActions({
       <Button
         type="button"
         variant="outline"
-        disabled={incompatible || inUse || nativeRoute}
+        disabled={incompatible || inUse}
         onClick={() => {
           detach(accept(reviewed, signal), Reason.DomCallback);
         }}
