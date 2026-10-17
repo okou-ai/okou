@@ -45,8 +45,10 @@ async fn native_checks_keep_fresh_streams_separate_from_reused_node_and_shared_t
     ));
     let id = uuid::Uuid::new_v4();
     let _resolve = h.resolve_response(credential(&h, id, false)).await;
+    let mut other_credential = credential(&h, id, false);
+    other_credential["port"] = json!(5901);
     let _second = h
-        .resolve_response_connection(OTHER, credential(&h, id, false), Some(CREATED_AT))
+        .resolve_response_connection(OTHER, other_credential, Some(CREATED_AT))
         .await;
     let _check = h.check_route(CONNECTION, route(id), "valid", 200).await;
     let _other_check = h.check_route(OTHER, route(id), "valid", 200).await;
@@ -59,24 +61,32 @@ async fn native_checks_keep_fresh_streams_separate_from_reused_node_and_shared_t
         })
         .await;
     control.allow_all();
-    let (foreground, initial_check, mut peers, proxy) = {
-        let opening = async {
-            tokio::join!(
-                h.start("shared"),
-                h.run
-                    .active_check(json!({"connectionId":OTHER,"mode":"exclusive"}))
-            )
-        };
+    let (foreground, initial_check, mut peers, proxy, other_proxy) = {
+        let opening = h.start("shared");
         tokio::pin!(opening);
-        let mut peers = relay(home, key, opening.as_mut(), vec![5900]).await;
+        let mut peers = relay(home, key, opening.as_mut(), vec![5900, 5901]).await;
         let channel = peers.sides[0].channel();
         let listener = peers
             .finish(channel.tcp_listen("100.64.0.2:5900".parse().unwrap()))
             .await
             .unwrap();
         let proxy = proxy(listener, h.peer.address);
-        let (foreground, checked) = peers.finish(opening.as_mut()).await;
-        (foreground.session(), checked, peers, proxy)
+        let other_listener = peers
+            .finish(channel.tcp_listen("100.64.0.2:5901".parse().unwrap()))
+            .await
+            .unwrap();
+        let other_proxy = super::proxy(other_listener, h.peer.address);
+        // Establish the external listener before exercising concurrent consumers.
+        let (foreground, checked) = peers
+            .finish(async {
+                tokio::join!(
+                    opening.as_mut(),
+                    h.run
+                        .active_check(json!({"connectionId":OTHER,"mode":"exclusive"}))
+                )
+            })
+            .await;
+        (foreground.session(), checked, peers, proxy, other_proxy)
     };
     assert_eq!(initial_check["status"], "passed", "{initial_check}");
     let mut modes = Vec::new();
@@ -171,22 +181,23 @@ async fn native_checks_keep_fresh_streams_separate_from_reused_node_and_shared_t
     control
         .update_map(json!({"Peers":[{"ID":2,"Name":"private-map-canary"}]}))
         .await;
-    let after = bounded(async {
-        loop {
-            let found = h
-                .run
-                .passive("vnc.diagnose", json!({"connectionId":OTHER}))
-                .await;
-            let text = diagnostic_text(&found);
-            if text.contains("terminal root: map stream;")
-                && text.contains("cleanup complete true;")
-            {
-                break found;
+    let after = peers
+        .finish(async {
+            loop {
+                let found = h
+                    .run
+                    .passive("vnc.diagnose", json!({"connectionId":OTHER}))
+                    .await;
+                let text = diagnostic_text(&found);
+                if text.contains("terminal root: map stream;")
+                    && text.contains("cleanup complete true;")
+                {
+                    break found;
+                }
+                tokio::task::yield_now().await;
             }
-            tokio::task::yield_now().await;
-        }
-    })
-    .await;
+        })
+        .await;
     let text = diagnostic_text(&after);
     assert!(
         text.contains("Native node map validation: failed; detail: invalid."),
@@ -261,6 +272,8 @@ async fn native_checks_keep_fresh_streams_separate_from_reused_node_and_shared_t
     h.run.shutdown().await;
     proxy.abort();
     assert!(proxy.await.unwrap_err().is_cancelled());
+    other_proxy.abort();
+    assert!(other_proxy.await.unwrap_err().is_cancelled());
     api.assert_contract(1, 0);
     api.finish().await;
     control.finish().await;
