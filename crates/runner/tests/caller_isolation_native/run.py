@@ -297,6 +297,14 @@ def run(args):
             "path": str(args.secilc.resolve()),
             "sha256": sha256(args.secilc),
         }
+        cc = shutil.which(args.cc)
+        if cc is None:
+            raise ValueError("native C compiler is unavailable")
+        cc_path = Path(cc).resolve()
+        receipt["cCompiler"] = {
+            "path": str(cc_path),
+            "sha256": sha256(cc_path),
+        }
         (directory / "policy.cil").write_text(build_policy())
         subprocess.run(
             [
@@ -317,7 +325,7 @@ def run(args):
         )
         subprocess.run(
             [
-                args.cc,
+                str(cc_path),
                 "-std=c11",
                 "-Wall",
                 "-Wextra",
