@@ -71,7 +71,7 @@ def build_policy():
         lines += [f"(allow control_t all_types ({k} ({v})))"]
     lines += [
         "(fsuse xattr ext4 (system_u object_r control_t ((s0) (s0))))",
-        "(fsuse xattr tmpfs (system_u object_r control_t ((s0) (s0))))",
+        "(fsuse trans tmpfs (system_u object_r control_t ((s0) (s0))))",
         "(genfscon cgroup2 / (system_u object_r cgroup_t ((s0) (s0))))",
         "(allow all_types all_types (filesystem (associate)))",
     ]
@@ -145,6 +145,8 @@ def build_policy():
     safe_caps = "chown dac_override dac_read_search fowner fsetid kill setgid setuid setpcap net_bind_service sys_chroot sys_resource audit_write setfcap mknod"
     lines += [
         "(typetransition workload_t control_t file workload_data_t)",
+        "(typetransition agent_t control_t file agent_t)",
+        "(allow agent_t self (file (create setattr map lock)))",
         "(typetransition agent_t runtime_state_t file runtime_state_t)",
         "(typetransition agent_t runtime_state_t dir runtime_state_t)",
         "(typetransition agent_t runtime_state_t lnk_file runtime_state_t)",

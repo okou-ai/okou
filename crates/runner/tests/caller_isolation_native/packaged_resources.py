@@ -75,7 +75,7 @@ for path in (base/'runtime/cgroup.procs',base/'runtime/cgroup.threads',base/'too
 try: (base/'forged-runtime').mkdir()
 except OSError as e: assert e.errno in (errno.EACCES,errno.EPERM,errno.EROFS),e
 else: raise AssertionError('workload created a resource domain')
-target=Path('/home/user/workspace')/('forged-cgroup-'+str(os.getpid()))
+target=Path('/tmp')/('forged-cgroup-'+str(os.getpid()))
 target.mkdir()
 libc=ctypes.CDLL(None,use_errno=True)
 try:
