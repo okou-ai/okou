@@ -50,9 +50,11 @@ async function connectGithubAdd(
 describe("GitHub OAuth account mutation selection", () => {
   it("links connector callbacks only to their organization's active installation", async () => {
     const first = bdd.user();
-    const firstAgent = await bdd.createAgent(first, {
-      displayName: `First GitHub organization ${randomUUID()}`,
-    });
+    const firstAgent = await bdd.createAgent(
+      first,
+      { displayName: `First GitHub organization ${randomUUID()}` },
+      { isolatePg: true },
+    );
     const firstInstallation = await github.installGithubApp(
       first,
       firstAgent.agentId,
