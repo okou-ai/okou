@@ -713,6 +713,19 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
+class OrdinaryHandler(Handler):
+    """Public fixture data service, with no model or admission-marker routes."""
+
+    def do_GET(self):
+        if self.path not in ("/ordinary", "/native-storage.tar.gz"):
+            self.send_error(404)
+            return
+        super().do_GET()
+
+    def do_POST(self):
+        self.send_error(405)
+
+
 def run_guest(resources):
     socket.sethostname("localhost")
     (Path("/sys/fs/selinux/enforce")).write_text("1")
@@ -956,7 +969,7 @@ print("protected file flags ioctl denied")"""
         stdout=run.stdout[-1500:],
         stderr=run.stderr[-1500:],
     )
-    ordinary = ThreadingHTTPServer(("127.0.0.1", 18081), Handler)
+    ordinary = ThreadingHTTPServer(("127.0.0.1", 18081), OrdinaryHandler)
     threading.Thread(target=ordinary.serve_forever, daemon=True).start()
     run = as_role(
         "workload",
@@ -964,9 +977,29 @@ print("protected file flags ioctl denied")"""
         env=env,
         group="tools",
     )
+    rejected = as_role(
+        "workload",
+        [
+            "/usr/bin/curl",
+            "--silent",
+            "--output",
+            "/dev/null",
+            "--write-out",
+            "%{http_code}",
+            "--data",
+            "{}",
+            "http://127.0.0.1:18081/v1/chat/completions",
+        ],
+        env=env,
+        group="tools",
+    )
     record(
         "ordinary_network",
-        run.returncode == 0 and run.stdout == '{"data":[]}',
+        run.returncode == 0
+        and run.stdout == '{"data":[]}'
+        and rejected.returncode == 0
+        and rejected.stdout == "405",
+        ordinaryModelPostStatus=rejected.stdout,
         exit=run.returncode,
         stdout=run.stdout[-2000:],
         stderr=run.stderr[-2000:],

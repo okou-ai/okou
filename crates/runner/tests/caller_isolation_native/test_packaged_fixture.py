@@ -351,6 +351,33 @@ print(json.dumps(receipt))
 
 
 class ModelPeerTest(unittest.TestCase):
+    def test_ordinary_service_cannot_answer_model_or_admission_requests(self):
+        with ThreadingHTTPServer(
+            ("127.0.0.1", 0), packaged_guest.OrdinaryHandler
+        ) as server:
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            connection = http.client.HTTPConnection(*server.server_address, timeout=5)
+            try:
+                for method, path, status in (
+                    ("POST", "/v1/chat/completions", 405),
+                    ("GET", "/mcp-claude-direct", 404),
+                    ("GET", "/ordinary", 200),
+                ):
+                    connection.request(
+                        method, path, b"{}" if method == "POST" else None
+                    )
+                    response = connection.getresponse()
+                    body = response.read()
+                    self.assertEqual(response.status, status)
+                    if status == 200:
+                        self.assertEqual(body, b'{"data":[]}')
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                self.assertFalse(thread.is_alive())
+
     def test_parallel_response_ids_and_request_budget(self):
         with (
             tempfile.TemporaryDirectory() as directory,
