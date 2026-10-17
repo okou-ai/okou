@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { feishuBrowserConnectContract } from "@okouai/api-contracts/contracts/feishu-browser-connect";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { env } from "../../lib/env";
@@ -23,7 +24,8 @@ import {
   feishuConnectorAccountMutationFromRows,
 } from "../services/feishu-custom-connector.service";
 import {
-  isFeishuInstallationEnabled,
+  feishuInstallationAvailabilityReadPlan,
+  feishuInstallationEnabledFromRows,
   feishuBotOpenUrl,
   feishuOAuthAppCallbackUrl,
 } from "../services/feishu-config";
@@ -100,7 +102,19 @@ const startFeishuAccountOAuth$ = command(
     if (args.orgId !== installation.orgId) {
       return { kind: "wrong_organization" };
     }
-    if (!(await isFeishuInstallationEnabled(db, installation))) {
+    if (
+      !(await (async () => {
+        const plan = feishuInstallationAvailabilityReadPlan(installation);
+        if (plan.kind === "resolved") {
+          return plan.enabled;
+        }
+        const rows = await db
+          .select(plan.columns)
+          .from(userFeatureSwitches)
+          .where(plan.condition);
+        return feishuInstallationEnabledFromRows(plan.scope, rows);
+      })())
+    ) {
       return { kind: "installation_not_found" };
     }
     if (!installation.setupCompletedAt) {
@@ -307,7 +321,19 @@ const getStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!installation) {
     return notFound("Bot installation not found");
   }
-  if (!(await isFeishuInstallationEnabled(db, installation))) {
+  if (
+    !(await (async () => {
+      const plan = feishuInstallationAvailabilityReadPlan(installation);
+      if (plan.kind === "resolved") {
+        return plan.enabled;
+      }
+      const rows = await db
+        .select(plan.columns)
+        .from(userFeatureSwitches)
+        .where(plan.condition);
+      return feishuInstallationEnabledFromRows(plan.scope, rows);
+    })())
+  ) {
     return notFound("Bot integration is unavailable");
   }
   if (installation.orgId !== auth.orgId) {

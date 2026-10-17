@@ -1,4 +1,8 @@
-import { isFeishuInstallationEnabled } from "./feishu-config";
+import {
+  feishuInstallationAvailabilityReadPlan,
+  feishuInstallationEnabledFromRows,
+} from "./feishu-config";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import type { FeishuPlatform } from "@okouai/core/feishu-platform";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
@@ -159,7 +163,20 @@ async function loadFeishuLaunchContext(
     .limit(1);
   if (
     row &&
-    !(await isFeishuInstallationEnabled(db, { ...row, orgId: args.orgId }))
+    !(await (async () => {
+      const plan = feishuInstallationAvailabilityReadPlan({
+        ...row,
+        orgId: args.orgId,
+      });
+      if (plan.kind === "resolved") {
+        return plan.enabled;
+      }
+      const rows = await db
+        .select(plan.columns)
+        .from(userFeatureSwitches)
+        .where(plan.condition);
+      return feishuInstallationEnabledFromRows(plan.scope, rows);
+    })())
   ) {
     return null;
   }
