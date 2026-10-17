@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.8](https://github.com/okou-ai/okou/compare/runner-host-v0.9.7...runner-host-v0.9.8) (2026-10-17)
+
+
+### Performance Improvements
+
+* **runner:** publish independent home cache entries concurrently ([#40750](https://github.com/okou-ai/okou/issues/40750)) ([a184cdc](https://github.com/okou-ai/okou/commit/a184cdca83dda487a92c2f7e1f6f921e3115179d))
+
 ## [0.9.7](https://github.com/okou-ai/okou/compare/runner-host-v0.9.6...runner-host-v0.9.7) (2026-10-16)
 
 ## [0.9.6](https://github.com/okou-ai/okou/compare/runner-host-v0.9.5...runner-host-v0.9.6) (2026-10-16)

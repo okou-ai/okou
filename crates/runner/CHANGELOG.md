@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.234.6](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.5...runner-rs-v0.234.6) (2026-10-17)
+
+
+### Performance Improvements
+
+* **runner:** publish independent home cache entries concurrently ([#40750](https://github.com/okou-ai/okou/issues/40750)) ([a184cdc](https://github.com/okou-ai/okou/commit/a184cdca83dda487a92c2f7e1f6f921e3115179d))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.234.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.4...runner-rs-v0.234.5) (2026-10-17)
 
 

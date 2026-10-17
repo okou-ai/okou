@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.5](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.4...runner-executor-v0.14.5) (2026-10-17)
+
+
+### Refactoring
+
+* **runner-executor:** own stdout drain stop lifetime ([#40837](https://github.com/okou-ai/okou/issues/40837)) ([6bb408e](https://github.com/okou-ai/okou/commit/6bb408e346532034320fe4e37f98ed776d6bcff2))
+
 ## [0.14.4](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.3...runner-executor-v0.14.4) (2026-10-17)
 
 

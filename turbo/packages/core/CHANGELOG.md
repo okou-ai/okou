@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.766.0](https://github.com/okou-ai/okou/compare/core-v8.765.2...core-v8.766.0) (2026-10-17)
+
+
+### Features
+
+* **app:** add a gated inline slash hint to the composer ([#40673](https://github.com/okou-ai/okou/issues/40673)) ([8ff3d51](https://github.com/okou-ai/okou/commit/8ff3d518c92a7c43e196716712d32a78984d994b))
+
 ## [8.765.2](https://github.com/okou-ai/okou/compare/core-v8.765.1...core-v8.765.2) (2026-10-17)
 
 
