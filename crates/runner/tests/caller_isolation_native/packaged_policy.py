@@ -144,6 +144,7 @@ def build_policy():
     # Ordinary execution does not gain a protected role from mutable binaries.
     safe_caps = "chown dac_override dac_read_search fowner fsetid kill setgid setuid setpcap net_bind_service sys_chroot sys_resource audit_write setfcap mknod"
     lines += [
+        "(typetransition workload_t control_t file workload_data_t)",
         "(typetransition agent_t runtime_state_t file runtime_state_t)",
         "(typetransition agent_t runtime_state_t dir runtime_state_t)",
         "(typetransition agent_t runtime_state_t lnk_file runtime_state_t)",
@@ -159,7 +160,7 @@ def build_policy():
         "(allow agent_t agent_state_t (file (open read write append getattr setattr lock)))",
         "(allow agent_t agent_state_t (dir (create open read write getattr setattr add_name remove_name search rmdir)))",
         f"(allow workload_t self (capability ({safe_caps})))",
-        f"(allow workload_t self (cap_userns ({safe_caps} sys_admin)))",
+        f"(allow workload_t self (cap_userns ({safe_caps} sys_admin sys_ptrace)))",
         "(allow workload_t self (process (ptrace)))",
         "(allow workload_t self (process (setcap)))",
         "(allow workload_t self (user_namespace (create)))",

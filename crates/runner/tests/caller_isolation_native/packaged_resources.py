@@ -60,7 +60,7 @@ console.log(JSON.stringify({extensions:result.extensions.map(e=>e.path),errors:r
 
 
 def cgroup_probes(env, as_role, record):
-    script = """import errno,json,os
+    script = """import ctypes,errno,json,os
 from pathlib import Path
 base=Path('/sys/fs/cgroup/vm0-exec/exec-native/workload')
 for path in (base/'runtime/cgroup.procs',base/'runtime/cgroup.threads',base/'tools/cgroup.procs'):
@@ -75,25 +75,71 @@ for path in (base/'runtime/cgroup.procs',base/'runtime/cgroup.threads',base/'too
 try: (base/'forged-runtime').mkdir()
 except OSError as e: assert e.errno in (errno.EACCES,errno.EPERM,errno.EROFS),e
 else: raise AssertionError('workload created a resource domain')
+target=Path('/home/user/workspace')/('forged-cgroup-'+str(os.getpid()))
+target.mkdir()
+libc=ctypes.CDLL(None,use_errno=True)
+try:
+ result=libc.mount(b'none',os.fsencode(target),b'cgroup2',0,None)
+ assert result==-1 and ctypes.get_errno() in (errno.EACCES,errno.EPERM),('cgroup mount',result,ctypes.get_errno())
+ result=libc.mount(None,b'/sys/fs/cgroup',None,4096|32,None)
+ assert result==-1 and ctypes.get_errno() in (errno.EACCES,errno.EPERM),('cgroup remount',result,ctypes.get_errno())
+finally: target.rmdir()
 status=Path('/proc/self/status').read_text()
 print(json.dumps({'uid':os.getuid(),'context':Path('/proc/self/attr/current').read_text().rstrip('\\0'),'capEff':next(line.split()[1] for line in status.splitlines() if line.startswith('CapEff:'))}))
 """
-    for role in ("workload", "root"):
-        result = as_role(
-            role, ["/usr/bin/python3", "-c", script], env=env, group="tools"
-        )
+    for role, nested in (
+        ("workload", False),
+        ("root", False),
+        ("workload", True),
+        ("root", True),
+    ):
+        command = ["/usr/bin/python3", "-c", script]
+        if nested:
+            command = ["/usr/bin/unshare", "--user", "--map-root-user", *command]
+        result = as_role(role, command, env=env, group="tools")
         observed = json.loads(result.stdout) if result.stdout else {}
         root = role == "root"
         passed = (
             result.returncode == 0
-            and observed.get("uid") == (0 if root else 1000)
+            and observed.get("uid") == (0 if root or nested else 1000)
             and observed.get("context") == "system_u:system_r:workload_t"
             and observed.get("capEff")
-            == ("000001ffffffffff" if root else "0000000000000000")
+            == ("000001ffffffffff" if root or nested else "0000000000000000")
         )
         record(
-            ("root" if root else "user") + "_cgroup_migration_denied",
+            ("root" if root else "user")
+            + ("_namespace" if nested else "")
+            + "_cgroup_migration_denied",
             passed,
             identity=observed,
             stderr=result.stderr[-1500:],
         )
+
+
+def shared_memory_probe(env, as_role, record):
+    script = """import json,mmap,os
+from pathlib import Path
+fd=os.memfd_create('owned-workload-memory',os.MFD_CLOEXEC)
+try:
+ os.ftruncate(fd,4096)
+ with mmap.mmap(fd,4096) as region:
+  region[:5]=b'owned'
+  assert region[:5]==b'owned'
+finally: os.close(fd)
+path=Path('/dev/shm/native-owned-memory')
+path.write_bytes(b'owned')
+assert path.read_bytes()==b'owned'
+path.unlink()
+print(json.dumps({'uid':os.getuid(),'context':Path('/proc/self/attr/current').read_text().rstrip('\\0')}))
+"""
+    result = as_role(
+        "workload", ["/usr/bin/python3", "-c", script], env=env, group="tools"
+    )
+    identity = json.loads(result.stdout) if result.returncode == 0 else {}
+    record(
+        "workload_shared_memory",
+        result.returncode == 0
+        and identity == {"uid": 1000, "context": "system_u:system_r:workload_t"},
+        identity=identity,
+        stderr=result.stderr[-2000:],
+    )

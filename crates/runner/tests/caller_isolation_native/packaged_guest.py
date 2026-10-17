@@ -724,6 +724,7 @@ def run_guest(resources):
     if workload_pid <= 1:
         raise ValueError("invalid workload namespace owner")
     writable_root = Path(f"/proc/{workload_pid}/root")
+    label("/dev/shm", "workload_data_t")
     # Only this newly owned writable drive is relabelled. The separate immutable
     # drive supplies the protected process's complete OS/runtime dependency view.
     for top in ("usr", "etc", "opt", "home", "root", "tmp", "var", "run"):
@@ -1414,6 +1415,7 @@ print('private credential state inaccessible')""",
         )
     packaged_storage.probe(FIXTURE, ROOT, env, as_role, record)
     packaged_resources.cgroup_probes(env, as_role, record)
+    packaged_resources.shared_memory_probe(env, as_role, record)
     packaged_browser.probe(env, as_role, record)
     packaged_accounting.probe(
         CG, env, as_role, record, pi_session, resource_ready, resource_release

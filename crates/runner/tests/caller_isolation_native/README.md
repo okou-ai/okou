@@ -141,7 +141,10 @@ namespaces. A chroot-only setup would reject user namespace creation even for
 the control role. Workloads can create subordinate user namespaces and use their
 namespaced capabilities; host-level SYS_ADMIN and protected model/file authority
 remain denied. The suite checks mapped uid 0 and the actual unchanged workload
-role, and runs the packaged browser's default sandboxed local-page operation.
+role, and runs the packaged browser's default sandboxed local-page operation,
+including an actual PNG screenshot. Nested user/root probes also reject cgroup
+mount, remount and migration. Workload memfd mappings and `/dev/shm` IO use data
+labels rather than protected-controller labels.
 
 The controller writes `/native-result.json` on its owned drive. After the VMM is
 joined, the host reads it with debugfs and retains `guest-result.json`,
@@ -151,7 +154,7 @@ identities are recorded separately. Image payloads are reduced to size/hash in
 the receipt. The CLI artifact's source identity is independent of the fixture
 commit; record both in the owning issue.
 
-All 49 named checks, enforcing Guest identity, pinned CLI identity, no broker
+All 52 named checks, enforcing Guest identity, pinned CLI identity, no broker
 errors and a qualified extension negative are required for exit zero. Missing,
 duplicate, failed or unqualified observations fail closed. The positive extension
 control seals the same executable dependencies but retains the user's discovery
