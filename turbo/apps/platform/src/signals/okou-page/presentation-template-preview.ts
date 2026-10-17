@@ -68,6 +68,41 @@ function createThemedFrameSignals(themeCss$: Computed<string>) {
   return { setFrameRef$, repaint$ };
 }
 
+async function loadTemplatePreview(item: PresentationTemplateItem) {
+  const response = await fetchResource(
+    readableAttachmentResourceUrl(item.embedUrl),
+    { mode: "cors" },
+  );
+  if (!response.ok) {
+    throw new Error(`Failed to load template HTML (${response.status})`);
+  }
+  const draft = parsePresentationPreviewDraft(await response.text());
+  if (draft.slides.length === 0) {
+    throw new Error("Presentation template preview has no slides");
+  }
+  return { item, draft };
+}
+
+async function renderTemplatePreview(
+  template: ReturnType<typeof loadTemplatePreview>,
+  selection: TemplatePreviewSelection,
+) {
+  const resolved = await template;
+  const slide =
+    resolved.draft.slides[
+      Math.min(selection.index, resolved.draft.slides.length - 1)
+    ];
+  if (slide === undefined) {
+    throw new Error("Presentation template preview slide is missing");
+  }
+  return previewPresentationHtml({
+    activeSlideId: slide.id,
+    additionalHeadStyle: selection.themeCss,
+    html: resolved.draft.html,
+    sourceUrl: resolved.item.embedUrl,
+  });
+}
+
 function createTemplatePreviewSignals() {
   const internalTemplateId$ = state<string | null>(null);
   const internalSelection$ = state<TemplatePreviewSelection | null>(null);
@@ -92,43 +127,18 @@ function createTemplatePreviewSignals() {
 
   // Only the selected template controls loading. Slide and theme changes reuse
   // this computed's result without retaining previously visited templates.
-  const template$ = computed(async (get) => {
+  // Keep an empty preview synchronous; only a selected template starts loading.
+  const template$ = computed((get) => {
     const item = get(item$);
-    if (item === null) {
-      return null;
-    }
-    const response = await fetchResource(
-      readableAttachmentResourceUrl(item.embedUrl),
-      { mode: "cors" },
-    );
-    if (!response.ok) {
-      throw new Error(`Failed to load template HTML (${response.status})`);
-    }
-    const draft = parsePresentationPreviewDraft(await response.text());
-    if (draft.slides.length === 0) {
-      throw new Error("Presentation template preview has no slides");
-    }
-    return { item, draft };
+    return item === null ? null : loadTemplatePreview(item);
   });
-  const html$ = computed(async (get) => {
+  const html$ = computed((get) => {
     const selection = get(selection$);
-    const template = await get(template$);
+    const template = get(template$);
     if (selection === null || template === null) {
       return null;
     }
-    const slide =
-      template.draft.slides[
-        Math.min(selection.index, template.draft.slides.length - 1)
-      ];
-    if (slide === undefined) {
-      throw new Error("Presentation template preview slide is missing");
-    }
-    return previewPresentationHtml({
-      activeSlideId: slide.id,
-      additionalHeadStyle: selection.themeCss,
-      html: template.draft.html,
-      sourceUrl: template.item.embedUrl,
-    });
+    return renderTemplatePreview(template, selection);
   });
   const themeCss$ = computed((get) => {
     return get(internalSelection$)?.themeCss ?? "";
