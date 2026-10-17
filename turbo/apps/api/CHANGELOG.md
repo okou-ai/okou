@@ -9,6 +9,33 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.751.0](https://github.com/okou-ai/okou/compare/api-v1.750.4...api-v1.751.0) (2026-10-17)
+
+
+### Features
+
+* **api:** force app.vm0.ai clients to upgrade to v0.1036.2 ([#40928](https://github.com/okou-ai/okou/issues/40928)) ([cc43b07](https://github.com/okou-ai/okou/commit/cc43b07fa90f7ffc30a689dcc4adc73db0f60f38))
+
+
+### Refactoring
+
+* **api:** build pending queue predicates without database handles ([#40947](https://github.com/okou-ai/okou/issues/40947)) ([a066df7](https://github.com/okou-ai/okou/commit/a066df7080d96c6a0114fe59997a94213dd63670))
+* **api:** keep active input source reads with their owners ([#40953](https://github.com/okou-ai/okou/issues/40953)) ([6d28fd8](https://github.com/okou-ai/okou/commit/6d28fd87675d9620a26f5d4d8265b4d2bc63e118))
+* **api:** localize feishu effective agent reads ([#40925](https://github.com/okou-ai/okou/issues/40925)) ([ce920e1](https://github.com/okou-ai/okou/commit/ce920e1f56b861cc79ee5bab1e35caf8bfff0835))
+* **api:** localize feishu queued launch reads ([#40951](https://github.com/okou-ai/okou/issues/40951)) ([844d634](https://github.com/okou-ai/okou/commit/844d634e8c8afec1737d39970dc31dd6efe031f2))
+* **api:** localize morning brief claim settlement ([#40964](https://github.com/okou-ai/okou/issues/40964)) ([c58c664](https://github.com/okou-ai/okou/commit/c58c66498ea29c8b4138a1c99620dec036fd2ad2)) [#40962](https://github.com/okou-ai/okou/issues/40962)
+* **api:** localize thread connector selection upsert ([#40959](https://github.com/okou-ai/okou/issues/40959)) ([3d7d759](https://github.com/okou-ai/okou/commit/3d7d759244a828e18e79b628a83407b696e2006e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.573.0
+    * @okouai/core bumped to 8.767.0
+    * @okouai/db bumped to 1.345.6
+    * @okouai/pi-agent-runtime bumped to 1.50.19
+
 ## [1.750.4](https://github.com/okou-ai/okou/compare/api-v1.750.3...api-v1.750.4) (2026-10-17)
 
 

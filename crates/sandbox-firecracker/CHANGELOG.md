@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.0](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.52.7...sandbox-firecracker-v0.53.0) (2026-10-17)
+
+
+### Features
+
+* **sandbox:** add bounded file reads to fs v3 ([#40931](https://github.com/okou-ai/okou/issues/40931)) ([cc0d352](https://github.com/okou-ai/okou/commit/cc0d352860e96b1f45746e30bb17112b293003e2))
+
 ## [0.52.7](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.52.6...sandbox-firecracker-v0.52.7) (2026-10-17)
 
 ## [0.52.6](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.52.5...sandbox-firecracker-v0.52.6) (2026-10-17)

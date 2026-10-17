@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.6](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.15.5...runner-lifecycle-v0.15.6) (2026-10-17)
+
+
+### Bug Fixes
+
+* **runner:** admit claims using reclaimable parked capacity ([#40942](https://github.com/okou-ai/okou/issues/40942)) ([4be79e5](https://github.com/okou-ai/okou/commit/4be79e5a74bdc54d26efe2ebb301f86054076f11))
+
 ## [0.15.5](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.15.4...runner-lifecycle-v0.15.5) (2026-10-17)
 
 ## [0.15.4](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.15.3...runner-lifecycle-v0.15.4) (2026-10-17)

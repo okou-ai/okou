@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.14](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.13...runner-provider-v0.8.14) (2026-10-17)
+
+
+### Refactoring
+
+* **runner-provider:** own local queue staging cleanup ([#40943](https://github.com/okou-ai/okou/issues/40943)) ([1097b2c](https://github.com/okou-ai/okou/commit/1097b2c150ad5921c0fa90e4a1f4ecbd502e5d5e))
+
 ## [0.8.13](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.12...runner-provider-v0.8.13) (2026-10-17)
 
 
