@@ -27,7 +27,6 @@ import {
   sharedThreadArtifactLogicalKey,
 } from "../../lib/shared-thread-artifact";
 import { db$, writeDb$ } from "../external/db";
-import { publishUserSignal } from "../external/realtime";
 import {
   prepareSharedThreadMessageAttachments$,
   publishSharedThreadAttachments$,
@@ -646,11 +645,6 @@ const prepareAndPersistSharedThread$ = command(
       }
       throw publication.error;
     }
-    await publishUserSignal(
-      [args.userId],
-      `chatThreadArtifactsChanged:${args.threadId}`,
-    );
-    signal.throwIfAborted();
     return { kind: "created", id } as const;
   },
 );

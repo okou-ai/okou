@@ -252,14 +252,24 @@ const syncArtifactFileToGoogleDrive$ = command(
   },
 );
 
-// Keep the existing artifact consumers' synchronous refresh hook: it invalidates
-// their owning thread or catalog, rather than giving a sync action a new owner.
+const internalGoogleDriveSyncAccounts$ = state<
+  ReadonlyMap<
+    string,
+    { readonly agentId: string; readonly connectionId: string | undefined }
+  >
+>(new Map());
+export const googleDriveSyncAccounts$ = computed((get) => {
+  return get(internalGoogleDriveSyncAccounts$);
+});
+
+// Retain the account selected by a successful operation, not the thread list's
+// stale connect/reconnect instruction. Catalog consumers can still refresh.
 export const syncArtifactAndRefresh$ = command(
   async (
     { get, set },
     params: ArtifactGoogleDriveSyncParams & {
       readonly authorize: boolean;
-      readonly onSyncSuccess: () => void;
+      readonly onSyncSuccess?: () => void;
     },
     signal: AbortSignal,
   ): Promise<void> => {
@@ -277,8 +287,18 @@ export const syncArtifactAndRefresh$ = command(
       signal,
     );
     signal.throwIfAborted();
+    const accounts = new Map(get(internalGoogleDriveSyncAccounts$));
     if (success) {
-      params.onSyncSuccess();
+      accounts.set(params.artifactId, {
+        agentId: params.agentId,
+        connectionId: params.connectionId,
+      });
+    } else {
+      accounts.delete(params.artifactId);
+    }
+    set(internalGoogleDriveSyncAccounts$, accounts);
+    if (success) {
+      params.onSyncSuccess?.();
     }
   },
 );

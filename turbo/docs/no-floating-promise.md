@@ -109,12 +109,6 @@ const loadPagedMessages$ = command(
         onThreadChanged$,
         signal,
       ),
-      set(
-        setAblyLoop$,
-        `chatThreadArtifactsChanged:${thread.id}`,
-        onArtifactsChanged$,
-        signal,
-      ),
     ]);
 
     // This line is only reached if all loops complete (return true)

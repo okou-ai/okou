@@ -1450,14 +1450,9 @@ function createArtifacts(threadId: string) {
       return version + 1;
     });
   });
-  const invalidateArtifacts$ = command(({ set }) => {
-    set(reloadArtifacts$);
-  });
-
   return {
     artifacts$,
     reloadArtifacts$,
-    invalidateArtifacts$,
   };
 }
 
@@ -2478,8 +2473,6 @@ interface RunTrackingDeps {
   threadId: string;
   setupChatEvents$: Command<Promise<void>, [AbortSignal]>;
   catchUpChatEvents$: Command<Promise<void>, [AbortSignal]>;
-  reloadArtifacts$: Command<void, []>;
-  invalidateArtifacts$: Command<void, []>;
   subscribeBrowserSessions$: Command<void, [AbortSignal]>;
   subscribeSessionOutput$: Command<void, [AbortSignal]>;
   subscribeThinkingSummaries$: ThreadActivitySummarySignals["subscribe$"];
@@ -2893,21 +2886,18 @@ function createEnsureVisibleEventTreesAfterScroll(
 function createOnSubscribedCommand({
   threadId,
   catchUpChatEvents$,
-  reloadArtifacts$,
   cancellationRecovery,
   reloadConnectorAccounts$,
 }: Pick<
   RunTrackingDeps,
   | "threadId"
   | "catchUpChatEvents$"
-  | "reloadArtifacts$"
   | "cancellationRecovery"
   | "reloadConnectorAccounts$"
 >): Command<Promise<void>, [AbortSignal]> {
   return command(async ({ get, set }, signal: AbortSignal) => {
     L.debug("subscribeChatThread$ catchup start", { threadId });
     set(cancellationRecovery.reload$);
-    set(reloadArtifacts$);
     set(reloadConnectorAccounts$);
     await Promise.all([
       get(cancellationRecovery.pending$),
@@ -2930,8 +2920,6 @@ function createRunTracking({
   threadId,
   setupChatEvents$,
   catchUpChatEvents$,
-  reloadArtifacts$,
-  invalidateArtifacts$,
   subscribeBrowserSessions$,
   subscribeSessionOutput$,
   subscribeThinkingSummaries$,
@@ -2943,7 +2931,6 @@ function createRunTracking({
   const onSubscribed$ = createOnSubscribedCommand({
     threadId,
     catchUpChatEvents$,
-    reloadArtifacts$,
     cancellationRecovery,
     reloadConnectorAccounts$,
   });
@@ -2969,7 +2956,6 @@ function createRunTracking({
             automations: [
               automationSignals.headerAutomations.reloadAutomations$,
             ],
-            artifacts: [invalidateArtifacts$],
           },
           handlers: {
             onWorkflowsChanged$,
@@ -3811,8 +3797,6 @@ export function createChatPanelSignals(
     threadId,
     setupChatEvents$: messages.setup$,
     catchUpChatEvents$: messages.catchUp$,
-    reloadArtifacts$: messages.reloadArtifacts$,
-    invalidateArtifacts$: artifact.invalidateArtifacts$,
     subscribeBrowserSessions$: messages.subscribeBrowserSessions$,
     subscribeThinkingSummaries$: activity.subscribe$,
     subscribeSessionOutput$: sessionOutput.subscribe$,

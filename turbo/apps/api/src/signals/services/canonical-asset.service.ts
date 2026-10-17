@@ -53,7 +53,6 @@ import {
   queueArtifactCatalogFileSql,
   syncArtifactCatalogForFile$,
 } from "./artifact-catalog.service";
-import { publishArtifactsChangedForRun$ } from "./artifact-realtime.service";
 import { sourceForRun$ } from "./run-uploaded-files.service";
 import {
   artifactStorageBucket,
@@ -1732,9 +1731,6 @@ export const materializeCanonicalPublishedAsset$ = command(
     );
     signal.throwIfAborted();
     await set(syncArtifactCatalogForFile$, asset.id, signal);
-    if (args.runId !== null) {
-      await set(publishArtifactsChangedForRun$, args.runId, signal);
-    }
     return { ok: true, assetId: asset.id, url };
   },
 );
