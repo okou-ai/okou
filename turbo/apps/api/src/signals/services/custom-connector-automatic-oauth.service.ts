@@ -128,12 +128,11 @@ const automaticOAuthBindingPersistenceSchema = z
     return customConnectorAutomaticOAuthBindingSchema.parse(row);
   });
 
-export async function readCustomConnectorAutomaticOAuthBinding(
-  db: Db,
+export function customConnectorAutomaticOAuthBindingReadPlan(
   connectorAccountId: string,
-): Promise<CustomConnectorAutomaticOAuthBinding | null> {
-  const [row] = await db
-    .select({
+) {
+  return {
+    columns: {
       accountAuthMethod: connectors.authMethod,
       accountStorageVersion: connectors.storageVersion,
       connectorAuthMode: orgCustomConnectors.authMode,
@@ -168,51 +167,41 @@ export async function readCustomConnectorAutomaticOAuthBinding(
         issuedAt: orgCustomConnectorDcrRegistrations.issuedAt,
         expiresAt: orgCustomConnectorDcrRegistrations.expiresAt,
       },
-    })
-    .from(customConnectorAccountOauthBindings)
-    .innerJoin(
-      connectors,
-      and(
-        eq(
-          connectors.id,
-          customConnectorAccountOauthBindings.connectorAccountId,
-        ),
-        eq(
-          connectors.customConnectorId,
-          customConnectorAccountOauthBindings.customConnectorId,
-        ),
-      ),
-    )
-    .innerJoin(
-      orgCustomConnectors,
-      and(
-        eq(
-          orgCustomConnectors.id,
-          customConnectorAccountOauthBindings.customConnectorId,
-        ),
-        eq(orgCustomConnectors.orgId, connectors.orgId),
-      ),
-    )
-    .leftJoin(
-      orgCustomConnectorDcrRegistrations,
-      and(
-        eq(
-          orgCustomConnectorDcrRegistrations.id,
-          customConnectorAccountOauthBindings.dcrRegistrationId,
-        ),
-        eq(
-          orgCustomConnectorDcrRegistrations.customConnectorId,
-          customConnectorAccountOauthBindings.customConnectorId,
-        ),
-      ),
-    )
-    .where(
+    },
+    accountJoin: and(
+      eq(connectors.id, customConnectorAccountOauthBindings.connectorAccountId),
       eq(
-        customConnectorAccountOauthBindings.connectorAccountId,
-        connectorAccountId,
+        connectors.customConnectorId,
+        customConnectorAccountOauthBindings.customConnectorId,
       ),
-    )
-    .limit(1);
+    ),
+    connectorJoin: and(
+      eq(
+        orgCustomConnectors.id,
+        customConnectorAccountOauthBindings.customConnectorId,
+      ),
+      eq(orgCustomConnectors.orgId, connectors.orgId),
+    ),
+    registrationJoin: and(
+      eq(
+        orgCustomConnectorDcrRegistrations.id,
+        customConnectorAccountOauthBindings.dcrRegistrationId,
+      ),
+      eq(
+        orgCustomConnectorDcrRegistrations.customConnectorId,
+        customConnectorAccountOauthBindings.customConnectorId,
+      ),
+    ),
+    condition: eq(
+      customConnectorAccountOauthBindings.connectorAccountId,
+      connectorAccountId,
+    ),
+  };
+}
+
+export function customConnectorAutomaticOAuthBindingFromRow(
+  row: unknown,
+): CustomConnectorAutomaticOAuthBinding | null {
   if (!row) {
     return null;
   }

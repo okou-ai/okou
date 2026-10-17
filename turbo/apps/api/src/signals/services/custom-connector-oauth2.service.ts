@@ -36,6 +36,7 @@ import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
 import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
+import { orgCustomConnectorDcrRegistrations } from "@okouai/db/schema/org-custom-connector-dcr-registration";
 import { secrets } from "@okouai/db/schema/secret";
 
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
@@ -86,7 +87,8 @@ import {
   customConnectorAutomaticOAuthErrorCode,
   prepareCustomConnectorAutomaticOAuthAuthorization$,
   prepareCustomConnectorAutomaticOAuthReauthorization,
-  readCustomConnectorAutomaticOAuthBinding,
+  customConnectorAutomaticOAuthBindingReadPlan,
+  customConnectorAutomaticOAuthBindingFromRow,
   refreshCustomConnectorAutomaticOAuthToken,
   retireCustomConnectorDcrRegistrationSql,
   type CustomConnectorAutomaticOAuthBinding,
@@ -1250,10 +1252,18 @@ export const startCustomConnectorAutomaticOAuthReauthorization$ = command(
     ) {
       return automaticOAuthReauthorizationUnavailable("account");
     }
-    const binding = await readCustomConnectorAutomaticOAuthBinding(
-      db,
-      connection.id,
-    );
+    const binding = await (async () => {
+      const plan = customConnectorAutomaticOAuthBindingReadPlan(connection.id);
+      const [row] = await db
+        .select(plan.columns)
+        .from(customConnectorAccountOauthBindings)
+        .innerJoin(connectors, plan.accountJoin)
+        .innerJoin(orgCustomConnectors, plan.connectorJoin)
+        .leftJoin(orgCustomConnectorDcrRegistrations, plan.registrationJoin)
+        .where(plan.condition)
+        .limit(1);
+      return customConnectorAutomaticOAuthBindingFromRow(row);
+    })();
     signal.throwIfAborted();
     if (!binding || binding.customConnectorId !== connector.id) {
       return automaticOAuthReauthorizationUnavailable("account");
@@ -2140,10 +2150,18 @@ async function refreshAutomaticOAuthAccessToken(
     );
     return { kind: "reconnect-required" };
   }
-  const binding = await readCustomConnectorAutomaticOAuthBinding(
-    db,
-    connection.id,
-  );
+  const binding = await (async () => {
+    const plan = customConnectorAutomaticOAuthBindingReadPlan(connection.id);
+    const [row] = await db
+      .select(plan.columns)
+      .from(customConnectorAccountOauthBindings)
+      .innerJoin(connectors, plan.accountJoin)
+      .innerJoin(orgCustomConnectors, plan.connectorJoin)
+      .leftJoin(orgCustomConnectorDcrRegistrations, plan.registrationJoin)
+      .where(plan.condition)
+      .limit(1);
+    return customConnectorAutomaticOAuthBindingFromRow(row);
+  })();
   signal.throwIfAborted();
   if (!binding) {
     await markCustomConnectorNeedsReconnect(
