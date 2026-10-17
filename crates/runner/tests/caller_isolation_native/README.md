@@ -61,3 +61,78 @@ bash crates/runner/tests/behavior/tests/runner-behavior-caller-isolation-test.sh
 These tests execute real owned subprocesses, including timeout, cancellation,
 owner SIGKILL and output bounds. Existing Security script shards run them; they
 do not substitute for actual native VM execution or full Gate F.
+
+## Packaged runtime prototype
+
+`packaged_run.py` extends the experiment to actual Codex, Claude Code and Okou Pi
+executables. It uses unchanged `guest-tool-exec` and `guest-task-exec` Rust
+binaries, the real CLI subagent command and synthetic Chat Completions,
+Messages and Responses streams. Its small Python broker implements the existing
+placement protocol; it is not the production Guest Agent or Run lifecycle.
+
+Supply a newly owned Ubuntu rootfs from `build-template.sh`, prepared with the
+verified CLI artifact and the normal managed tool hooks. This prototype pins
+CLI 9.400.3, Pi runtime 1.50.18 and SDK 1.1.0+okou.592c3e597de7. Its required
+private image layout is:
+
+- `/usr/bin/node`, `/usr/bin/codex`, `/usr/local/bin/claude`, Python, sudo,
+  `dpkg-deb`, dpkg and curl, with the canonical uid-1000 `user` account.
+- `/usr/local/lib/okou-cli/9.400.3/okou.js`, the packaged image worker/WASM and
+  `/usr/local/lib/okou-cli/installed.json`, matching the pinned package identity
+  in `packaged_run.py`. Verify the downloaded package with the repository's
+  `verify-okou-cli-artifact.sh` before preparing this private image.
+- The canonical `okou` launcher and, only in this fixture image, symlinks
+  `/usr/local/bin/guest-tool-exec -> /fixture/guest-tool-exec` and
+  `/usr/local/bin/guest-task-exec -> /fixture/guest-task-exec`. PID 1 supplies the
+  fixed native entries in a private tmpfs. These links are not production launch
+  changes.
+- The Claude managed-settings and Codex requirements hooks from
+  `customize-rootfs.sh`. `/fixture` and `/sealed` must exist as directories.
+
+Prepare and mount only a fresh private copy, in a private mount namespace, then
+unmount and make that input file read-only. Never prepare an active, shared or
+user-data image for this fixture. The rootfs SHA must be independently retained;
+the driver checks it before copying and checks the owned copy before boot.
+
+```bash
+cargo build --manifest-path crates/Cargo.toml --profile local --locked -j1 \
+  -p guest-tool-exec -p guest-task-exec
+python3 crates/runner/tests/caller_isolation_native/packaged_run.py \
+  --kernel /path/to/pinned/vmlinux \
+  --firecracker /path/to/pinned/firecracker \
+  --secilc /path/to/private/compiler/usr/bin/secilc \
+  --base-rootfs /owned/prepared/read-only.ext4 \
+  --rootfs-sha256 <exact-64-hex-image-sha256> \
+  --tool-helper crates/target/local/guest-tool-exec \
+  --task-helper crates/target/local/guest-task-exec \
+  --output /owned/experiment/new-packaged-attempt \
+  --source-revision <exact-40-hex-fixture-source-commit>
+```
+
+The VM has two vCPUs, 1536 MiB, a 240-second deadline, no NIC/vsock/host mount
+and a 128-KiB console bound. It mounts its own writable copy and a separate
+read-only drive for the protected OS/runtime view. Fixed native entries select
+the role and obtain namespace handles from a peer-validated control socket.
+Shell exec transitions occur before user startup files run. Actual Rust helpers
+still perform their cgroup placement and OOM adjustment. Ordinary sudo/package,
+terminal/network, root device/ioctl denial, image worker and startup-file probes
+run in the same Guest. The prototype does not configure production resource
+controllers or establish accounting/OOM/reclaim equivalence.
+
+The controller writes `/native-result.json` on its owned drive. After the VMM is
+joined, the host reads it with debugfs and retains `guest-result.json`,
+`receipt.json`, generated inputs and `console.log`. It then deletes only the
+owned writable copy. Kernel, VMM, compiler, fixture, helper and immutable image
+identities are recorded separately. Image payloads are reduced to size/hash in
+the receipt. The CLI artifact's source identity is independent of the fixture
+commit; record both in the owning issue.
+
+All 22 named checks, enforcing Guest identity, pinned CLI identity, no broker
+errors and a qualified extension negative are required for exit zero. Missing,
+duplicate, failed or unqualified observations fail closed. In particular, an
+extension that never loaded because a dependency is missing is not a security
+pass: that check currently remains explicitly unqualified. A successful subset
+still leaves `gateF: incomplete`. In-process resource/configuration closure,
+other helpers, real Run lifecycle/resource/resolver coverage and native ARM
+remain independent requirements; this test is never an activation or rollout
+fallback.

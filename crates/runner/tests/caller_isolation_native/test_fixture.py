@@ -221,7 +221,7 @@ class OwnerTest(unittest.TestCase):
             self.assertLessEqual(log.stat().st_size, 131072)
             self.assertEqual(state["cleanup"], "vmm_joined")
 
-    def owner_signal(self, number):
+    def owner_signal(self, number, module="run", entry="run_vm"):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             fifo = root / "ready"
@@ -237,7 +237,7 @@ class OwnerTest(unittest.TestCase):
             owner = (
                 "import json,sys; from pathlib import Path; sys.path.insert(0,"
                 + repr(str(fixture.HERE))
-                + "); import run; state={};\ntry: run.run_vm([sys.executable,'-c',"
+                + f"); import {module}; state={{}};\ntry: {module}.{entry}([sys.executable,'-c',"
                 + repr(child)
                 + "],Path("
                 + repr(str(root / "console"))
