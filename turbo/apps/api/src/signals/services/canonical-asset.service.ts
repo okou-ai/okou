@@ -26,10 +26,11 @@ import { and, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import type { SlackFile } from "../../lib/slack-webhook-context";
 import { buildFileUrlFromKey, isArtifactKeyV2 } from "../../lib/file-url";
 import { inferMimetype } from "../../lib/mimetype";
-import { isForeignKeyViolation } from "../../lib/pg-errors";
+import { isForeignKeyViolation, isUniqueViolation } from "../../lib/pg-errors";
 import { isAllowedUploadType } from "../../lib/uploads-constants";
 import { db$, writeDb$ } from "../external/db";
 import { DiscordFileFetchError } from "../external/discord-file-fetcher";
+import { WechatMediaDownloadError } from "../external/wechat-media";
 import { FeishuApiError } from "../external/feishu-client";
 import { isTelegramApiError } from "../external/telegram-client";
 import {
@@ -202,7 +203,10 @@ function inputMaterializationError(error: unknown): {
   readonly message: string;
   readonly retryable: boolean;
 } {
-  if (error instanceof DiscordFileFetchError) {
+  if (
+    error instanceof DiscordFileFetchError ||
+    error instanceof WechatMediaDownloadError
+  ) {
     return {
       code: error.code,
       message: error.message,
@@ -1343,29 +1347,46 @@ const ensureCanonicalDelivery$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const db = set(writeDb$);
-    const [inserted] = await db
-      .insert(canonicalAssetDeliveries)
-      .values({
-        assetId,
-        provider: args.provider,
-        operationId: args.operationId,
-        status: "pending",
-        destination: args.destination,
-        ...(args.provider === "discord" || args.provider === "wechat"
-          ? {
-              providerState: { provider: args.provider, attempt: null },
-            }
-          : {}),
-      })
-      .onConflictDoNothing({
-        target: [
-          canonicalAssetDeliveries.assetId,
-          canonicalAssetDeliveries.operationId,
-        ],
-      })
-      .returning({ id: canonicalAssetDeliveries.id });
+    const inserted = await settle(
+      db
+        .insert(canonicalAssetDeliveries)
+        .values({
+          assetId,
+          provider: args.provider,
+          operationId: args.operationId,
+          status: "pending",
+          destination: args.destination,
+          ...(args.provider === "discord" || args.provider === "wechat"
+            ? {
+                providerState: { provider: args.provider, attempt: null },
+              }
+            : {}),
+        })
+        .onConflictDoNothing({
+          target: [
+            canonicalAssetDeliveries.assetId,
+            canonicalAssetDeliveries.operationId,
+          ],
+        })
+        .returning({ id: canonicalAssetDeliveries.id }),
+      signal,
+    );
     signal.throwIfAborted();
-    if (inserted) {
+    // The provider-scoped index remains for outgoing writers after migration
+    // 1409. It can win PostgreSQL's concurrent unique check before the arbiter.
+    // Resolve only that same-operation conflict; unrelated DB failures escape.
+    // DB/API removal gate (#40671): retire this catch with the old index after
+    // all serving/draining APIs and retained rollback targets use the new target.
+    if (
+      !inserted.ok &&
+      !isUniqueViolation(
+        inserted.error,
+        "canonical_asset_deliveries_asset_provider_operation_unique",
+      )
+    ) {
+      throw inserted.error;
+    }
+    if (inserted.ok && inserted.value.length > 0) {
       return true;
     }
     // A separate statement sees the winner after ON CONFLICT waits for it.

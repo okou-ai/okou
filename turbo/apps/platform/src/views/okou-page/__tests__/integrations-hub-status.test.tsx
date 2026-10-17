@@ -459,7 +459,7 @@ test("Uninstalling Microsoft Teams requires confirmation", async () => {
 });
 
 test.each([false, true])(
-  "Slack opens its canonical page and refreshes the original Works page (installed: %s)",
+  "Slack starts OAuth directly and refreshes the original Works page (installed: %s)",
   async (isInstalled) => {
     let connected = false;
     context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
@@ -478,7 +478,9 @@ test.each([false, true])(
     click(
       getAction("button", isInstalled ? "Connect" : "Install to Slack", card),
     );
-    expect(new URL(opened.calls[0]!.url!).pathname).toBe("/settings/slack");
+    const url = new URL(opened.calls[0]!.url!);
+    expect(url.origin).toBe("https://slack.example.test");
+    expect(url.pathname).toBe(isInstalled ? "/connect" : "/install");
     expect(opened.calls[0]!.target).toBe("_blank");
     expect(pathname()).toBe("/works");
     await waitFor(() => {
@@ -511,7 +513,9 @@ test("Slack permission refresh reports actual scope recovery on the original Wor
   await setupIntegrationsPage(context);
   const card = getIntegrationCard("Slack");
   click(getAction("button", "Update Permissions", card));
-  expect(new URL(opened.calls[0]!.url!).pathname).toBe("/settings/slack");
+  const url = new URL(opened.calls[0]!.url!);
+  expect(url.origin).toBe("https://slack.example.test");
+  expect(url.pathname).toBe("/reinstall");
   expect(opened.calls[0]!.target).toBe("_blank");
   await waitFor(() => {
     expect(context.mocks.ably.hasSubscription("slack:changed")).toBeTruthy();

@@ -344,12 +344,13 @@ pub(super) fn image_notice(text_type: &str) -> Value {
 }
 
 pub(super) fn json_string_bytes(value: &str) -> usize {
-    value.chars().fold(2usize, |bytes, character| {
+    // Only ASCII escapes add bytes to the existing UTF-8 representation.
+    value.bytes().fold(value.len() + 2, |bytes, byte| {
         bytes
-            + match character {
-                '"' | '\\' | '\u{0008}' | '\t' | '\n' | '\u{000c}' | '\r' => 2,
-                '\u{0000}'..='\u{001f}' => 6,
-                _ => character.len_utf8(),
+            + match byte {
+                b'"' | b'\\' | b'\x08' | b'\t' | b'\n' | b'\x0c' | b'\r' => 1,
+                b'\x00'..=b'\x1f' => 5,
+                _ => 0,
             }
     })
 }

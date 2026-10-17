@@ -42,6 +42,8 @@ export const walletCreateSpendSchema = z.object({
   test: z.boolean().default(false),
 });
 
+// Retain explicit modes for captured older CLI builds until their Runner and
+// rollback artifacts are retired (#40206). Current clients use unified consent.
 export const walletConnectSchema = z
   .object({
     readOnly: z.boolean().optional(),
@@ -120,6 +122,7 @@ export const walletTransactionSchema = z.object({
   category: z.string().nullable(),
   status: z.string(),
 });
+export type WalletTransaction = z.infer<typeof walletTransactionSchema>;
 
 export const walletPaymentMethodSchema = z.object({
   id: walletProviderIdSchema,
@@ -190,9 +193,7 @@ export const walletSpendSchema = z.object({
   merchantUrl: z.url(),
   context: z.string(),
   test: z.boolean(),
-  // New CLI -> old API: require after pre-#40198 APIs are neither serving nor
-  // retained for rollback; remove the tolerance and its tests in #40206.
-  createdAt: z.iso.datetime().optional(),
+  createdAt: z.iso.datetime(),
   payment: walletPaymentSchema.nullable().optional(),
   paymentHistory: z.array(walletPaymentSchema).optional(),
   approvalUrl: z.url().nullable(),
@@ -291,23 +292,19 @@ export const walletContract = c.router({
         // Purchase readiness retains the enum understood by captured CLI builds.
         // Read availability is expressed by the additive authorization fields.
         nextAction: z.enum(["connect", "create_spend"]),
-        // New CLI -> old API: require after pre-#40198 APIs are neither serving
-        // nor retained for rollback; cleanup #40206 includes the CLI branch/tests.
-        authorization: z
-          .object({
-            known: z.boolean(),
-            scopes: z.array(z.string()),
-            sourceActions: z.array(z.string()),
-            capabilities: z.object({
-              payments: z.boolean(),
-              spendHistory: z.boolean(),
-              paymentMethods: z.boolean(),
-              userInfo: z.boolean(),
-              transactions: z.boolean(),
-            }),
-            missingPermissions: z.array(z.string()),
-          })
-          .optional(),
+        authorization: z.object({
+          known: z.boolean(),
+          scopes: z.array(z.string()),
+          sourceActions: z.array(z.string()),
+          capabilities: z.object({
+            payments: z.boolean(),
+            spendHistory: z.boolean(),
+            paymentMethods: z.boolean(),
+            userInfo: z.boolean(),
+            transactions: z.boolean(),
+          }),
+          missingPermissions: z.array(z.string()),
+        }),
         checkoutAvailable: z.literal(false),
       }),
       400: apiErrorSchema,
@@ -523,6 +520,10 @@ export const walletCallbackContract = c.router({
 });
 
 export const walletUserContract = c.router({
+  activity: {
+    ...walletContract.transactions,
+    path: "/api/wallet/connection/transactions",
+  },
   transactions: {
     method: "GET",
     path: "/api/wallet/purchases",

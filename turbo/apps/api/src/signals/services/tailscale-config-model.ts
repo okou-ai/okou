@@ -1,7 +1,5 @@
-import { createHash } from "node:crypto";
 import { and, eq, or } from "drizzle-orm";
 import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";
-import { sshConnections } from "@okouai/db/runtime/ssh-connection";
 import type {
   TailscaleConfig,
   UpdateTailscaleRequest,
@@ -29,10 +27,6 @@ export type TailscaleMetadata = Pick<
   | "generation"
   | "createdAt"
   | "updatedAt"
->;
-export type ReferencingTailscaleHost = Pick<
-  typeof sshConnections.$inferSelect,
-  "id" | "userId" | "displayName" | "generation"
 >;
 const failures = {
   notFound: {
@@ -104,54 +98,6 @@ export function tailscaleConfigResponse(
     updatedAt: row.updatedAt.toISOString(),
     sshHosts,
   };
-}
-export function referencingHostPredicate(args: TailscaleConfigArgs) {
-  return and(
-    eq(sshConnections.orgId, args.owner.orgId),
-    eq(sshConnections.tailscaleId, args.configId),
-  );
-}
-export function ownHostReferences(
-  hosts: ReferencingTailscaleHost[],
-  owner: TailscaleOwner,
-) {
-  return hosts
-    .filter((host) => {
-      return host.userId === owner.userId;
-    })
-    .map(({ id, displayName }) => {
-      return { id, displayName };
-    });
-}
-export function exhaustedTailscaleConfig(
-  config: TailscaleMetadata,
-  hosts: ReferencingTailscaleHost[],
-  effective = true,
-) {
-  return (
-    config.revision === 2_147_483_647 ||
-    (effective &&
-      (config.generation === 2_147_483_647 ||
-        hosts.some((host) => {
-          return host.generation === 2_147_483_647;
-        })))
-  );
-}
-export function tailscaleImpactSnapshot(
-  config: TailscaleMetadata,
-  hosts: ReferencingTailscaleHost[],
-) {
-  return createHash("sha256")
-    .update(
-      JSON.stringify([
-        config.id,
-        config.revision,
-        hosts.map((host) => {
-          return [host.id, host.userId, host.generation];
-        }),
-      ]),
-    )
-    .digest("hex");
 }
 export function selectedTailscaleBindingId(
   id: string | null,

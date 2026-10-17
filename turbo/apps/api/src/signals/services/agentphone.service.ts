@@ -30,7 +30,7 @@ import {
   sendAgentPhoneMessage,
   sendAgentPhoneTypingIndicator,
 } from "../external/agentphone-client";
-import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { writeDb$, type ReadonlyDb } from "../external/db";
 import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
@@ -46,7 +46,6 @@ import {
   isValidAgentPhoneHandle,
   normalizeAgentPhoneHandle,
   resolveAgentPhoneConversationVisibilityRecipients$,
-  resolveAgentPhoneUserLink,
   resolveOrgDefaultComposeId,
   storeOutboundAgentPhoneMessage$,
   type AgentPhoneChannel,
@@ -296,75 +295,6 @@ export function buildAgentPhoneConnectUrl(params: {
     channel: params.channel,
   });
   return `${env("APP_URL")}/agentphone/connect?${query.toString()}`;
-}
-
-/**
- * The sender's own phone link. Group conversations never borrow another
- * participant's link: an unlinked sender is treated as unlinked even when the
- * conversation already has a route owned by someone else.
- */
-export function resolveAgentPhoneUserLinkForEvent(
-  db: Db,
-  event: AgentPhoneMessageEvent,
-): Promise<AgentPhoneUserLink | null> {
-  return resolveAgentPhoneUserLink(db, event.fromNumber, event.channel);
-}
-
-/**
- * The member's own phone link. A member has at most one link per organization,
- * so proactive sends address it directly instead of trusting a caller-supplied
- * handle.
- */
-export async function resolveAgentPhoneUserLinkForMember(
-  db: ReadonlyDb,
-  params: {
-    readonly userId: string;
-    readonly orgId: string;
-  },
-): Promise<AgentPhoneUserLink | null> {
-  const [userLink] = await db
-    .select()
-    .from(agentphoneUserLinks)
-    .where(
-      and(
-        eq(agentphoneUserLinks.userId, params.userId),
-        eq(agentphoneUserLinks.orgId, params.orgId),
-      ),
-    )
-    .limit(1);
-
-  return userLink ?? null;
-}
-
-export async function resolveAgentPhoneAgentIdForUserLink(
-  db: ReadonlyDb,
-  params: {
-    readonly userLinkId: string;
-    readonly phoneHandle: string;
-    readonly channel: AgentPhoneChannel;
-    readonly agentphoneAgentId?: string | null;
-  },
-): Promise<string | null> {
-  if (params.agentphoneAgentId) {
-    return params.agentphoneAgentId;
-  }
-
-  const [message] = await db
-    .select({ agentphoneAgentId: agentphoneMessages.agentphoneAgentId })
-    .from(agentphoneMessages)
-    .where(
-      and(
-        eq(agentphoneMessages.agentphoneUserLinkId, params.userLinkId),
-        eq(
-          agentphoneMessages.phoneHandle,
-          normalizeAgentPhoneHandle(params.phoneHandle, params.channel),
-        ),
-      ),
-    )
-    .orderBy(desc(agentphoneMessages.createdAt))
-    .limit(1);
-
-  return message?.agentphoneAgentId ?? null;
 }
 
 function inboundAgentPhoneMessageValues(
@@ -1278,7 +1208,6 @@ const persistAgentPhoneChatMessage$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
       readonly userLink: AgentPhoneUserLink;
       readonly agent: WorkspaceAgent;
       readonly event: AgentPhoneMessageEvent;
@@ -1414,7 +1343,6 @@ const runAgentForAgentPhone$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
       readonly userLink: AgentPhoneUserLink;
       readonly agent: WorkspaceAgent;
       readonly event: AgentPhoneMessageEvent;
@@ -1596,7 +1524,6 @@ export const handleAgentPhoneMessage$ = command(
     await set(
       runAgentForAgentPhone$,
       {
-        db,
         userLink,
         agent,
         rootMessageId,

@@ -285,6 +285,8 @@ jobs:
             .github/scripts/checks/check-release-please-workspace-coverage.sh \
             .github/scripts/checks/check-pr-ci-capacity.sh \
             .github/scripts/checks/check-workflow-shell-compatibility.sh \
+            .github/scripts/checks/crates-coverage-needed.sh \
+            .github/scripts/tests/crates-coverage-workflow-test.sh \
             .github/scripts/runner/cleanup-pr-runner-namespace.sh \
             .github/scripts/runner/discover-runner-pr-namespaces.sh \
             .github/scripts/checks/detect-native-only.sh \

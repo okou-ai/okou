@@ -1,4 +1,5 @@
 import { deleteWechatOwnerData$ } from "./wechat-owner-cleanup.service";
+import { eraseRemoteOwnerData$ } from "./remote-owner-erasure.service";
 import { usagePackUsdSchema } from "@okouai/api-contracts/contracts/billing";
 import {
   orgRoleSchema,
@@ -663,6 +664,12 @@ export const deleteOrg$ = command(
     }
 
     await client.organizations.deleteOrganization(args.orgId);
+    signal.throwIfAborted();
+    await set(
+      eraseRemoteOwnerData$,
+      { kind: "organization", orgId: args.orgId },
+      signal,
+    );
     signal.throwIfAborted();
     await set(deleteDiscordOrgData$, args.orgId, signal);
     await set(

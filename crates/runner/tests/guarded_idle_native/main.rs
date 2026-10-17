@@ -4,7 +4,9 @@
 
 mod continuation;
 mod continuation_api;
+mod create_cancellation;
 mod critical;
+mod critical_progress;
 mod evidence;
 mod fences;
 mod finalizing;
@@ -13,9 +15,14 @@ mod foreground;
 mod foreground_growth;
 mod foreground_io;
 mod foreground_probe;
+mod incoming_progress;
+mod incoming_work;
+mod logical_progress;
+mod logical_work;
 mod optional;
 mod pressure;
 mod pressure_condition;
+mod read_cancellation;
 mod recovery;
 mod recovery_source;
 mod refusal;
@@ -58,6 +65,11 @@ enum Corpus {
     Continuation,
     Optional,
     Fences,
+    LogicalProgress,
+    IncomingProgress,
+    CriticalProgress,
+    ReadCancellation,
+    CreateCancellation,
 }
 
 const MISSING_GUEST_TIMEZONE: &str = "Etc/okou-test-missing-zone";
@@ -423,6 +435,125 @@ async fn native_foreground_records_retirement_fences_before_detach() -> TestResu
     .await
 }
 
+#[test]
+fn native_logical_progress_report_requires_physical_coverage_and_real_waits() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/logical_report_test.py"
+        ))
+        .output()
+        .expect("native logical progress report requires Python 3");
+    assert!(
+        output.status.success(),
+        "native logical report failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD inputs, full-budget logical transfer and exact-source P1 proof"]
+async fn native_logical_records_reader_heartbeat_and_cleanup_contention() -> TestResult<()> {
+    measured_selected_corpus(&[NativeScope::Logical], Corpus::LogicalProgress).await
+}
+
+#[test]
+fn native_incoming_report_requires_path_specific_progress_and_full_custody() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/incoming_report_test.py"
+        ))
+        .output()
+        .expect("native incoming report requires Python 3");
+    assert!(
+        output.status.success(),
+        "native incoming report failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD inputs, incoming ownership and exact-source P1 proof"]
+async fn native_incoming_records_reader_heartbeat_and_cleanup_contention() -> TestResult<()> {
+    measured_selected_corpus(
+        &[
+            NativeScope::Replacement,
+            NativeScope::Restore,
+            NativeScope::Aged,
+        ],
+        Corpus::IncomingProgress,
+    )
+    .await
+}
+
+#[test]
+fn native_critical_progress_report_requires_complete_contention_and_custody() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/critical_progress_report_test.py"
+        ))
+        .output()
+        .expect("native Critical progress report requires Python3");
+    assert!(
+        output.status.success(),
+        "Critical progress report failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD inputs and final-source Critical contention P1 proof"]
+async fn native_critical_records_independent_contention_progress() -> TestResult<()> {
+    measured_selected_corpus(&[NativeScope::Critical], Corpus::CriticalProgress).await
+}
+
+#[test]
+fn native_read_cancellation_report_requires_actual_bytes_and_retained_custody() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/read_cancellation_report_test.py"
+        ))
+        .output()
+        .expect("native read cancellation report requires Python3");
+    assert!(
+        output.status.success(),
+        "read cancellation report failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD inputs and exact-source accepted read cancellation P1 proof"]
+async fn native_read_cancellation_retains_actual_io_through_drain() -> TestResult<()> {
+    measured_selected_corpus(&[NativeScope::Startup], Corpus::ReadCancellation).await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD inputs and exact-source actual create cancellation proof"]
+async fn native_create_cancellation_retains_actual_transaction_through_rollback() -> TestResult<()>
+{
+    measured_selected_corpus(&[NativeScope::OptionalOrdinary], Corpus::CreateCancellation).await
+}
+
+#[test]
+fn native_create_report_requires_real_bytes_and_positive_rollback() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/create_cancellation_report_test.py"
+        ))
+        .output()
+        .expect("create report requires Python3");
+    assert!(
+        output.status.success(),
+        "create report failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires owned KVM/NBD artifacts, synthetic native API, mock Codex and exact-source P1 proof"]
 async fn native_continuation_records_complete_session_history_and_required_saving() -> TestResult<()>
@@ -551,7 +682,17 @@ async fn exercise_selected_factories(
                     evidence::Case::new(
                         format!(
                             "{}-{}",
-                            if corpus == Corpus::Continuation {
+                            if corpus == Corpus::LogicalProgress {
+                                "LogicalProgress".into()
+                            } else if corpus == Corpus::IncomingProgress {
+                                format!("Incoming{scope:?}")
+                            } else if corpus == Corpus::CriticalProgress {
+                                "CriticalProgress".into()
+                            } else if corpus == Corpus::ReadCancellation {
+                                "ReadCancellation".into()
+                            } else if corpus == Corpus::CreateCancellation {
+                                "CreateCancellation".into()
+                            } else if corpus == Corpus::Continuation {
                                 if matches!(scope, NativeScope::Batch(_)) {
                                     "ContinuationNonzero".into()
                                 } else {
@@ -574,16 +715,31 @@ async fn exercise_selected_factories(
             } else {
                 None
             };
-            let factory = runtime
-                .create_factory(FactoryConfig {
-                    profile: fixture::PROFILE.into(),
-                    binary_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_FIRECRACKER")?),
-                    kernel_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_KERNEL")?),
-                    rootfs_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_ROOTFS")?),
-                    base_dir: owned.clone(),
-                    snapshot,
-                })
-                .await?;
+            let config = FactoryConfig {
+                home_drive_pressure: None,
+                profile: fixture::PROFILE.into(),
+                binary_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_FIRECRACKER")?),
+                kernel_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_KERNEL")?),
+                rootfs_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_ROOTFS")?),
+                base_dir: owned.clone(),
+                snapshot,
+            };
+            let create_probe = (corpus == Corpus::CreateCancellation)
+                .then(create_cancellation::Probe::new)
+                .transpose()?
+                .map(Arc::new);
+            let factory = if let Some(probe) = &create_probe {
+                let inner = runtime
+                    .create_factory_with_home_checkpoint_for_test(config, probe.checkpoint())
+                    .await?;
+                Box::new(create_cancellation::Factory {
+                    inner,
+                    probe: probe.clone(),
+                    directory: owned.clone(),
+                }) as Box<dyn SandboxFactory>
+            } else {
+                runtime.create_factory(config).await?
+            };
             let factory: Box<dyn SandboxFactory> = if let Some(proof) = &proof {
                 Box::new(tail::MeasuredFactory {
                     inner: factory,
@@ -602,6 +758,7 @@ async fn exercise_selected_factories(
                 scope,
                 proof.as_ref(),
                 corpus,
+                create_probe.as_ref(),
             )
             .await;
             // A failed measured case is not permission to tear down dependencies
@@ -636,6 +793,7 @@ async fn exercise_retirement(
     scope: NativeScope,
     proof: Option<&Arc<evidence::Case>>,
     corpus: Corpus,
+    create_probe: Option<&Arc<create_cancellation::Probe>>,
 ) -> TestResult<()> {
     let status = Arc::new(StatusTracker::new(
         paths.base_dir().join("status.json"),
@@ -644,7 +802,7 @@ async fn exercise_retirement(
         None,
     ));
     status.write_initial().await?;
-    let cache = HomeImageCache::new(paths.clone());
+    let cache = HomeImageCache::new(paths.clone()).with_actual_fs_stats_for_test();
     let run_id = RunId::new_v4();
     let sandbox_id = SandboxId::new_v4();
     let reuse_key = format!("thread:native-guarded-{run_id}");
@@ -652,14 +810,17 @@ async fn exercise_retirement(
     if rootfs_hash.is_empty() {
         return Err(io::Error::other("packaged rootfs hash must be supplied").into());
     }
-    let recovery_source = matches!(
+    let recovery_source = (matches!(
+        corpus,
+        Corpus::LogicalProgress | Corpus::IncomingProgress | Corpus::CreateCancellation
+    ) || matches!(
         scope,
         NativeScope::Recovery
             | NativeScope::Critical
             | NativeScope::Startup
             | NativeScope::ForegroundFresh
             | NativeScope::ForegroundReuse
-    )
+    ))
     .then(|| Arc::new(recovery_source::Source::new()));
     let operations = match &recovery_source {
         Some(source) => inputs.operations_with_source(source.clone())?,
@@ -699,7 +860,6 @@ async fn exercise_retirement(
                 history: continuation::SEED.to_vec(),
                 original: run_id,
                 continued: false,
-                require_bound_history: false,
             })
             .await;
         let mut prepared = match result {
@@ -837,7 +997,8 @@ async fn exercise_retirement(
         },
     });
     let tracker = IdleDestroyTracker::new(Arc::new(Notify::new()));
-    if (corpus == Corpus::Optional
+    if (matches!(corpus, Corpus::Optional | Corpus::CreateCancellation)
+        || matches!(corpus, Corpus::LogicalProgress | Corpus::IncomingProgress)
         || matches!(
             scope,
             NativeScope::Recovery
@@ -938,6 +1099,14 @@ async fn exercise_retirement(
                 Ok(None)
             }
             NativeScope::Startup => {
+                if corpus == Corpus::ReadCancellation {
+                    read_cancellation::exercise(transitions::Context {
+                        factory: factory.clone(), pool: pool.clone(), status: status.clone(),
+                        operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
+                        rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
+                    }, inputs, recovery_source.as_ref().ok_or_else(|| io::Error::other("read cancellation source missing"))?, proof, paths.base_dir()).await?;
+                    return Ok(None);
+                }
                 startup::exercise(transitions::Context {
                     factory: factory.clone(), pool: pool.clone(), status: status.clone(),
                     operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
@@ -950,7 +1119,10 @@ async fn exercise_retirement(
                     factory: factory.clone(), pool: pool.clone(), status: status.clone(),
                     operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
                     rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
-                }, inputs, recovery_source.as_ref().ok_or_else(|| io::Error::other("native Critical source missing"))?, proof).await?;
+                }, inputs, recovery_source.as_ref().ok_or_else(|| io::Error::other("native Critical source missing"))?, proof,
+                    (corpus == Corpus::CriticalProgress).then(|| critical_progress::Request {
+                        directory: paths.base_dir(), backing: backing.clone(), original: run_id,
+                    })).await?;
                 Ok(None)
             }
             NativeScope::Recovery => {
@@ -962,6 +1134,15 @@ async fn exercise_retirement(
                 Ok(None)
             }
             NativeScope::OptionalOrdinary | NativeScope::OptionalAged => {
+                if corpus == Corpus::CreateCancellation {
+                    create_cancellation::exercise(transitions::Context {
+                        factory: factory.clone(), pool: pool.clone(), status: status.clone(),
+                        operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
+                        rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
+                    }, inputs, recovery_source.as_ref().ok_or_else(|| io::Error::other("create source absent"))?,
+                    proof, paths.base_dir(), create_probe.ok_or_else(|| io::Error::other("create probe absent"))?).await?;
+                    return Ok(None);
+                }
                 optional::exercise(transitions::Context {
                     factory: factory.clone(), pool: pool.clone(), status: status.clone(),
                     operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
@@ -1061,6 +1242,18 @@ async fn exercise_retirement(
                 Ok(None)
             }
             NativeScope::Replacement | NativeScope::Restore | NativeScope::Aged => {
+                if corpus == Corpus::IncomingProgress {
+                    let lease = incoming_progress::exercise(incoming_progress::Request {
+                        context: transitions::Context {
+                            factory: factory.clone(), pool: pool.clone(), status: status.clone(),
+                            operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
+                            rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
+                        }, inputs, source: recovery_source.as_ref().ok_or_else(|| io::Error::other("incoming source missing"))?,
+                        proof: proof.ok_or_else(|| io::Error::other("incoming proof missing"))?,
+                        directory: paths.base_dir(), backing: backing.clone(), scope,
+                    }).await?;
+                    return Ok(Some(lease));
+                }
                 transitions::exercise(
                     transitions::Context {
                         factory: factory.clone(),
@@ -1103,6 +1296,18 @@ async fn exercise_retirement(
                     (1, 1, 0)
                 );
                 Ok(None)
+            }
+            NativeScope::Logical if corpus == Corpus::LogicalProgress => {
+                let lease = logical_progress::exercise(logical_progress::Request {
+                    context: transitions::Context {
+                        factory: factory.clone(), pool: pool.clone(), status: status.clone(),
+                        operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
+                        rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
+                    }, inputs, source: recovery_source.as_ref().ok_or_else(|| io::Error::other("logical source missing"))?,
+                    proof: proof.ok_or_else(|| io::Error::other("logical proof missing"))?,
+                    directory: paths.base_dir(), backing: backing.clone(),
+                }).await?;
+                Ok(Some(lease))
             }
             NativeScope::Logical => {
                 // Same physical authority reserves real replacement growth before
@@ -1283,7 +1488,32 @@ async fn exercise_retirement(
         return Ok(());
     }
     let report = operations.close_and_wait().await?;
-    assert_eq!((report.registered_operations, report.tracked_tasks), (0, 0));
+    if corpus == Corpus::CreateCancellation {
+        assert_eq!(
+            (
+                report.registered_operations,
+                report.tracked_tasks,
+                report.started,
+                report.uncertain
+            ),
+            (1, 0, 0, 1)
+        );
+        assert_eq!(
+            report.ordinary_growth_bytes,
+            4096 * 1024 * 1024 + inputs.preparation_bytes()
+        );
+        assert_eq!(report.cleanup_growth_bytes, 0);
+        if let Some(proof) = proof {
+            proof.create_cancellation_witness("accounting_closed", serde_json::json!({
+                "registered_operations": report.registered_operations, "tracked_tasks": report.tracked_tasks,
+                "started": report.started, "uncertain": report.uncertain,
+                "ordinary_growth_bytes": report.ordinary_growth_bytes, "cleanup_growth_bytes": report.cleanup_growth_bytes,
+                "closed": report.closed, "allocated": budget.allocated(),
+            }))?;
+        }
+    } else {
+        assert_eq!((report.registered_operations, report.tracked_tasks), (0, 0));
+    }
     let next_run = RunId::new_v4();
     let next_id = SandboxId::new_v4();
     let mut restored = fixture::checkout(&cache, next_run, next_id, &reuse_key, &rootfs_hash).await;

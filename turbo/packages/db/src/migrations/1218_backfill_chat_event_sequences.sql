@@ -1,4 +1,4 @@
--- vm0:non-transactional
+-- okou:non-transactional
 -- Bounded, restartable watermark backfill after the bridge is installed.
 SET lock_timeout = '1s';
 --> statement-breakpoint

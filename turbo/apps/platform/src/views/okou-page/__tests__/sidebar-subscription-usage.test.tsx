@@ -273,16 +273,31 @@ test("Show an exhausted week with its own reset time", async () => {
   expect(screen.queryByText("invalid reset")).not.toBeInTheDocument();
 });
 
-test("Reset Codex usage from the account menu", async () => {
+test("Keep Codex reset pending until refreshed account-menu usage is ready", async () => {
   mockAdminAccountSidebar();
-  context.mocks.data.personalModelProviders([connectedPersonalCodexProvider()]);
+  const refreshStarted = context.mocks.deferred<void>();
+  const finishRefresh = context.mocks.deferred<void>();
+  let resetCompleted = false;
+  context.mocks.api(
+    personalModelProvidersMainContract.list,
+    async ({ respond }) => {
+      if (resetCompleted) {
+        refreshStarted.resolve();
+        await finishRefresh.promise;
+      }
+      return respond(200, {
+        modelProviders: [
+          connectedPersonalCodexProvider({
+            subscriptionResetCredits: resetCompleted ? 1 : 2,
+          }),
+        ],
+      });
+    },
+  );
   context.mocks.api(
     personalModelProvidersByTypeContract.resetSubscriptionUsage,
     ({ respond }) => {
-      const provider = connectedPersonalCodexProvider({
-        subscriptionResetCredits: 1,
-      });
-      context.mocks.data.personalModelProviders([provider]);
+      resetCompleted = true;
       return respond(200, { outcome: "reset" });
     },
   );
@@ -320,6 +335,17 @@ test("Reset Codex usage from the account menu", async () => {
     throw new Error("Reset usage button not found");
   }
   click(resetButton);
+
+  await refreshStarted.promise;
+  expect(confirmDialog).toBeInTheDocument();
+  await waitFor(() => {
+    expect(
+      queryAllByRoleFast("button", confirmDialog).find((button) => {
+        return button.textContent === "Cancel";
+      }),
+    ).toBeDisabled();
+  });
+  finishRefresh.resolve();
 
   await waitFor(() => {
     expect(

@@ -26,7 +26,7 @@ export const wechatConnections = pgTable(
     baseUrl: text("base_url").notNull(),
     tokenCiphertext: text("token_ciphertext").notNull(),
     status: text("status")
-      .$type<"active" | "reconnect_required">()
+      .$type<"active" | "reconnect_required" | "disconnected">()
       .notNull()
       .default("active"),
     updatesCursor: text("updates_cursor").notNull().default(""),

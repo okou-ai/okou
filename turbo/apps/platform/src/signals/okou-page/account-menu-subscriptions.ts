@@ -5,7 +5,12 @@ import type {
 } from "@okouai/api-contracts/contracts/model-providers";
 import { subscriptionUsageWindows } from "../../lib/subscription-usage-windows.ts";
 import { refreshPersonalModelProvidersIfStale$ } from "../external/personal-model-providers.ts";
-import { personalConfiguredProviders$ } from "./settings/personal-model-providers.ts";
+import {
+  accountMenuCodexResetDialog$,
+  personalConfiguredProviders$,
+  resetPersonalCodexSubscriptionUsage$,
+  setAccountMenuCodexResetDialog$,
+} from "./settings/personal-model-providers.ts";
 
 export type AccountMenuSubscriptionUsage = NonNullable<
   ModelProviderResponse["subscriptionUsage"]
@@ -81,6 +86,21 @@ export const reloadAccountMenuSubscriptionUsageRows$ = command(
     set(internalAccountMenuSubscriptionUsageRowsRefreshPromise$, promise);
 
     return promise;
+  },
+);
+
+export const confirmAccountMenuCodexUsageReset$ = command(
+  async (
+    { get, set },
+    key: AccountMenuSubscriptionUsageRowsCacheKey,
+    signal: AbortSignal,
+  ) => {
+    const dialog = get(accountMenuCodexResetDialog$);
+    await set(resetPersonalCodexSubscriptionUsage$, signal);
+    await set(reloadAccountMenuSubscriptionUsageRows$, key, signal);
+    if (get(accountMenuCodexResetDialog$) === dialog) {
+      set(setAccountMenuCodexResetDialog$, { ...dialog, open: false });
+    }
   },
 );
 

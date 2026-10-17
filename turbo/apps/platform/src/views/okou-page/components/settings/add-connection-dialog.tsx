@@ -49,13 +49,12 @@ import {
   setBuiltinConnectorOAuthDeviceAuthStartOptionValue$,
   setBuiltinConnectorExternalCodeAuthorizationCode$,
   runBuiltinConnectorConnectSuccess$,
-  submitBuiltinManualGrant$,
+  submitBuiltinManualGrantAndSettle$,
   setBuiltinManualGrantFormValue$,
   builtinManualGrantFormValuesFor$,
   builtinConnectorCurrentConnectionStatus,
   builtinConnectorExpiryCountdownText,
   manualGrantInputValuesForMethod,
-  type BuiltinConnectorConnectionResult,
   type ConnectorConnectSuccess,
   type BuiltinConnectorExternalCodeState,
   type BuiltinConnectorOAuthDeviceAuthState,
@@ -130,12 +129,15 @@ type BrowserAuthPostConnectOptions = PostConnectOptions & {
 };
 
 type SubmitManualGrantFn = (
-  connectorSlug: ConnectorSlug,
-  authMethod: ConnectorAuthMethodId,
-  inputValues: Record<string, string>,
-  options: PostConnectOptions,
+  args: {
+    readonly connectorSlug: ConnectorSlug;
+    readonly authMethod: ConnectorAuthMethodId;
+    readonly inputValues: Record<string, string>;
+    readonly options: PostConnectOptions;
+    readonly onSuccess: ConnectorConnectSuccess;
+  },
   signal: AbortSignal,
-) => Promise<BuiltinConnectorConnectionResult | false>;
+) => Promise<void>;
 
 type ConnectOAuthAuthCodeAndSettleFn = (
   connectorSlug: ConnectorSlug,
@@ -313,22 +315,21 @@ function ManualGrantForm({
       if (!allFilled || submitting) {
         return;
       }
-      const connected = await submit(
-        connectorSlug,
-        authMethod,
-        manualGrantInputValuesForMethod(method, fieldValues),
+      await submit(
         {
-          authorizeVisibleAgents: authorizeVisibleAgentsOnConnect,
-          connectorLabel,
-          ...(agentId ? { agentId } : {}),
-          ...accountOptions,
+          connectorSlug,
+          authMethod,
+          inputValues: manualGrantInputValuesForMethod(method, fieldValues),
+          options: {
+            authorizeVisibleAgents: authorizeVisibleAgentsOnConnect,
+            connectorLabel,
+            ...(agentId ? { agentId } : {}),
+            ...accountOptions,
+          },
+          onSuccess,
         },
         pageSignal,
       );
-      if (!connected) {
-        return;
-      }
-      await onSuccess(connected.connectionId, pageSignal);
     },
   );
 
@@ -1409,24 +1410,12 @@ function ConnectModalContent({
   );
   const [completeExternalCodeLoadable, completeExternalCodeAndSettleCommand] =
     useLoadableSet(completeBuiltinConnectorExternalCodeAndSettle$);
-  const [manualGrantLoadable, submitManualGrantCommand] = useLoadableSet(
-    submitBuiltinManualGrant$,
+  const [manualGrantLoadable, submitManualGrant] = useLoadableSet(
+    submitBuiltinManualGrantAndSettle$,
   );
-  const [noAuthLoadable, connectNoAuthAndSettleCommand] = useLoadableSet(
+  const [noAuthLoadable, connectNoAuthAndSettle] = useLoadableSet(
     connectBuiltinConnectorNoAuthAndSettle$,
   );
-  const submitManualGrant: SubmitManualGrantFn = async (
-    connectorSlug,
-    authMethod,
-    inputValues,
-    options,
-    signal,
-  ) => {
-    return await submitManualGrantCommand(
-      { connectorSlug, authMethod, inputValues, options },
-      signal,
-    );
-  };
   const [, runConnectSuccess] = useLoadableSet(
     runBuiltinConnectorConnectSuccess$,
   );
@@ -1480,13 +1469,15 @@ function ConnectModalContent({
   ) => {
     await completeExternalCodeAndSettleCommand(args, signal);
   };
-  const connectNoAuthAndSettle: ConnectNoAuthAndSettleFn = async (
-    args,
-    signal,
-  ) => {
-    await connectNoAuthAndSettleCommand(args, signal);
-  };
-
+  const connectionError = [
+    settleLoadable,
+    deviceAuthLoadable,
+    completeExternalCodeLoadable,
+    manualGrantLoadable,
+    noAuthLoadable,
+  ].find((loadable) => {
+    return loadable.state === "hasError";
+  });
   const progressContent = useConnectorProgressContent(item.slug, {
     browser: settleLoadable.state === "loading",
     device: deviceAuthLoadable.state === "loading",
@@ -1497,25 +1488,34 @@ function ConnectModalContent({
   }
 
   return (
-    <StandardConnectMethodsContent
-      item={item}
-      agentId={agentId}
-      onSuccess={onConnectSuccess}
-      authorizeVisibleAgentsOnConnect={authorizeVisibleAgentsOnConnect}
-      accountOptions={accountOptions}
-      accountMode={accountMode}
-      reconnectAuthMethod={reconnectAuthMethod}
-      connectOAuthAuthCodeAndSettle={connectOAuthAuthCodeAndSettle}
-      connectOAuthDeviceAuthAndSettle={connectOAuthDeviceAuthAndSettleCommandFn}
-      connectExternalCode={connectExternalCode}
-      completeExternalCodeAndSettle={completeExternalCodeAndSettle}
-      connectNoAuthAndSettle={connectNoAuthAndSettle}
-      submitManualGrant={submitManualGrant}
-      externalCodeCompleting={externalCodeCompleting}
-      manualGrantSubmitting={manualGrantSubmitting}
-      noAuthSubmitting={noAuthSubmitting}
-      entries={entries}
-    />
+    <>
+      {connectionError && (
+        <p role="alert" className="text-sm text-destructive">
+          {String(connectionError.error)}
+        </p>
+      )}
+      <StandardConnectMethodsContent
+        item={item}
+        agentId={agentId}
+        onSuccess={onConnectSuccess}
+        authorizeVisibleAgentsOnConnect={authorizeVisibleAgentsOnConnect}
+        accountOptions={accountOptions}
+        accountMode={accountMode}
+        reconnectAuthMethod={reconnectAuthMethod}
+        connectOAuthAuthCodeAndSettle={connectOAuthAuthCodeAndSettle}
+        connectOAuthDeviceAuthAndSettle={
+          connectOAuthDeviceAuthAndSettleCommandFn
+        }
+        connectExternalCode={connectExternalCode}
+        completeExternalCodeAndSettle={completeExternalCodeAndSettle}
+        connectNoAuthAndSettle={connectNoAuthAndSettle}
+        submitManualGrant={submitManualGrant}
+        externalCodeCompleting={externalCodeCompleting}
+        manualGrantSubmitting={manualGrantSubmitting}
+        noAuthSubmitting={noAuthSubmitting}
+        entries={entries}
+      />
+    </>
   );
 }
 

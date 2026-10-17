@@ -36,7 +36,7 @@ import {
   pgIntegerDecoder,
   zodDriverValueDecoder,
 } from "../../lib/db-structured-result";
-import { executeRawRows } from "../../lib/db-raw-rows";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import type { HostedSitePointer } from "../../lib/hosted-site-pointer";
 import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
@@ -575,11 +575,11 @@ const createHostedSiteDeployment$ = command(
               break;
             }
             case "asset-conflict": {
-              const rows = await executeRawRows(
-                tx,
-                query.query,
-                publishedAssetRowSchema,
-              );
+              const conflictQuery = query.query;
+              const rowSchema = publishedAssetRowSchema;
+              const rows = await (async () => {
+                return parseRawRows(rowSchema, await tx.execute(conflictQuery));
+              })();
               result = { path: rows[0]?.path };
               break;
             }

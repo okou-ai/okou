@@ -12,6 +12,106 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1035.3](https://github.com/okou-ai/okou/compare/app-v0.1035.2...app-v0.1035.3) (2026-10-17)
+
+
+### Bug Fixes
+
+* refresh runner platform api and cli release markers ([#40789](https://github.com/okou-ai/okou/issues/40789)) ([8473d96](https://github.com/okou-ai/okou/commit/8473d964e20c44952d93d8a5bf210e65c7d6a794))
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#40811](https://github.com/okou-ai/okou/issues/40811)) ([b53e5a5](https://github.com/okou-ai/okou/commit/b53e5a5fc6437b2b15412d21a42d90344c18191f))
+* remove remaining expired compatibility from the daily cleanup backlog ([#40820](https://github.com/okou-ai/okou/issues/40820)) ([9ef42db](https://github.com/okou-ai/okou/commit/9ef42db5a3c1c8bfe040a7e41b6aafa6941d4510))
+
+
+### Performance Improvements
+
+* avoid redundant preview updates and test connector grants ([#40822](https://github.com/okou-ai/okou/issues/40822)) ([60bb4b8](https://github.com/okou-ai/okou/commit/60bb4b86402b77a50cba81bcaa5a81a333c72377))
+* defer unused chat context and stabilize ci fixtures ([#40794](https://github.com/okou-ai/okou/issues/40794)) ([302066c](https://github.com/okou-ai/okou/commit/302066cd123a9e02e6a323f983e35648011d5e11))
+* **platform:** load chat resources only when the popup opens ([#40826](https://github.com/okou-ai/okou/issues/40826)) ([bd7a111](https://github.com/okou-ai/okou/commit/bd7a11162586324540cf19c5ee841ef8dd52c4bd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.4
+    * @okouai/core bumped to 8.765.2
+
+## [0.1035.2](https://github.com/okou-ai/okou/compare/app-v0.1035.1...app-v0.1035.2) (2026-10-16)
+
+
+### Refactoring
+
+* **app:** keep business continuations in page-owned actions ([#40729](https://github.com/okou-ai/okou/issues/40729)) ([e9db5e3](https://github.com/okou-ai/okou/commit/e9db5e3e1200ad0b06331f14e5d3ebc0f118303a))
+
+## [0.1035.1](https://github.com/okou-ai/okou/compare/app-v0.1035.0...app-v0.1035.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **app:** center the office preview loading spinner ([#40700](https://github.com/okou-ai/okou/issues/40700)) ([19badfa](https://github.com/okou-ai/okou/commit/19badfa25abb133fbc4f8fa7bcf622cf523ea990))
+* **app:** retry unauthorized api requests once ([#40720](https://github.com/okou-ai/okou/issues/40720)) ([b5a44ef](https://github.com/okou-ai/okou/commit/b5a44ef267c6fa43dafdacec8a4b7228af51bd9f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.3
+    * @okouai/core bumped to 8.765.1
+
+## [0.1035.0](https://github.com/okou-ai/okou/compare/app-v0.1034.1...app-v0.1035.0) (2026-10-16)
+
+
+### Features
+
+* **app:** include custom templates in slash commands ([#40685](https://github.com/okou-ai/okou/issues/40685)) ([5c673b4](https://github.com/okou-ai/okou/commit/5c673b4757de42b7bbba75eceb972be3c7a71c20))
+* **app:** simplify chat resource popover ([#40584](https://github.com/okou-ai/okou/issues/40584)) ([b54cef2](https://github.com/okou-ai/okou/commit/b54cef25d6b2e4b60802acfbb3aa3dba92ade024))
+
+
+### Bug Fixes
+
+* **app:** align integration connection pages and restore slack auto-open ([#40641](https://github.com/okou-ai/okou/issues/40641)) ([9913258](https://github.com/okou-ai/okou/commit/9913258f0024e12dd8c078d40da60e1a87d5eb86))
+* **app:** hide home task chips after selection ([#40680](https://github.com/okou-ai/okou/issues/40680)) ([9c53c73](https://github.com/okou-ai/okou/commit/9c53c73fd5f7a0c6abe7ea5ec6c16aaf7881ca87))
+* **app:** separate google workspace and drive upload progress ([#40691](https://github.com/okou-ai/okou/issues/40691)) ([8ee7a21](https://github.com/okou-ai/okou/commit/8ee7a21eb727e84bcec34cab9798da4126dfc872))
+
+
+### Refactoring
+
+* **wallet:** migrate and require link grant metadata ([#40627](https://github.com/okou-ai/okou/issues/40627)) ([86adc57](https://github.com/okou-ai/okou/commit/86adc578e06477316a04b479d7c30043264f3e9c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.2
+    * @okouai/core bumped to 8.765.0
+
+## [0.1034.1](https://github.com/okou-ai/okou/compare/app-v0.1034.0...app-v0.1034.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **app:** allow skipping onboarding in preview ([#40623](https://github.com/okou-ai/okou/issues/40623)) ([3ae8215](https://github.com/okou-ai/okou/commit/3ae82159b4fd693eafa0bdaa0e5d7a85d316c148))
+* **app:** remove redundant activity files panel chrome ([#40644](https://github.com/okou-ai/okou/issues/40644)) ([f55ac16](https://github.com/okou-ai/okou/commit/f55ac165b9ac95940bc7a917379522bcb2e46690))
+* **app:** require activation to expand slash workflows ([#40633](https://github.com/okou-ai/okou/issues/40633)) ([960e028](https://github.com/okou-ai/okou/commit/960e0280c08aba3f11b5d578cbb85837374b337a))
+* **app:** restore direct slack oauth from web entries ([#40649](https://github.com/okou-ai/okou/issues/40649)) ([02b1c40](https://github.com/okou-ai/okou/commit/02b1c4026cbb383212100597777f1edc8b223206))
+* **app:** restore the slash menu section labels ([#40628](https://github.com/okou-ai/okou/issues/40628)) ([663ccd1](https://github.com/okou-ai/okou/commit/663ccd1b5db79243eefa45e3fda88cab3f64fe10))
+* **wallet:** unify link consent and show actual transactions ([#40650](https://github.com/okou-ai/okou/issues/40650)) ([16fa1cc](https://github.com/okou-ai/okou/commit/16fa1cc1386dd8fcb6f32c789693b98af25f0d13))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.1
+    * @okouai/connectors bumped to 3.16.9
+    * @okouai/core bumped to 8.764.2
+
 ## [0.1034.0](https://github.com/okou-ai/okou/compare/app-v0.1033.0...app-v0.1034.0) (2026-10-16)
 
 

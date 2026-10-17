@@ -195,6 +195,26 @@ export const resetPersonalCodexSubscriptionUsage$ = command(
   },
 );
 
+export const confirmSettingsCodexUsageReset$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const dialog = get(settingsCodexResetDialog$);
+    const accountId = dialog.accountId;
+    if (!accountId) {
+      return;
+    }
+    const promise = (async () => {
+      await set(resetPersonalCodexAccountSubscriptionUsage$, accountId, signal);
+      await get(personalConfiguredProviders$);
+      signal.throwIfAborted();
+      if (get(settingsCodexResetDialog$) === dialog) {
+        set(setSettingsCodexResetDialog$, { ...dialog, open: false });
+      }
+    })();
+    set(internalPersonalActionPromise$, promise);
+    await promise;
+  },
+);
+
 export const resetPersonalCodexAccountSubscriptionUsage$ = command(
   (
     { set },

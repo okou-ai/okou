@@ -38,6 +38,7 @@ const spend = {
   merchantUrl: "https://books.example.test",
   context,
   test: true,
+  createdAt: "2026-10-12T07:30:00.000Z",
   approvalUrl:
     "https://app.link.com/activity/approve/lsrq_example?approval=keep-exact",
   expiresAt: "2026-10-12T08:00:00.000Z",
@@ -52,8 +53,6 @@ beforeEach(async () => {
   const reset = (command: Command) => {
     for (const option of [
       "json",
-      "readOnly",
-      "transactions",
       "startDate",
       "endDate",
       "startingAfter",
@@ -97,24 +96,36 @@ function credentialDownload(value: unknown) {
 }
 
 describe("okou wallet", () => {
-  it("prints wallet status and makes checkout limitations explicit", async () => {
+  it("prints the disconnected wallet status and missing grants", async () => {
+    const status = {
+      connected: false,
+      nextAction: "connect",
+      checkoutAvailable: false,
+      authorization: {
+        known: false,
+        scopes: [],
+        sourceActions: [],
+        capabilities: {
+          payments: false,
+          spendHistory: false,
+          paymentMethods: false,
+          userInfo: false,
+          transactions: false,
+        },
+        missingPermissions: [
+          "payment_methods.agentic",
+          "userinfo:read",
+          "read_link_transactions",
+        ],
+      },
+    };
     server.use(
       http.get(`${origin}/api/wallet/status`, () => {
-        return HttpResponse.json({
-          connected: false,
-          nextAction: "connect",
-          checkoutAvailable: false,
-        });
+        return HttpResponse.json(status);
       }),
     );
     await run(["status", "--json"]);
-    expect(output).toHaveBeenCalledWith(
-      JSON.stringify({
-        connected: false,
-        nextAction: "connect",
-        checkoutAvailable: false,
-      }),
-    );
+    expect(JSON.parse(String(output.mock.calls[0]?.[0]))).toStrictEqual(status);
   });
   it.each([true, false])(
     "reports read-only access while retaining the compatible status response (json=%s)",
@@ -154,20 +165,6 @@ describe("okou wallet", () => {
       }
     },
   );
-  it("preserves the full Link consent URL and ends the turn", async () => {
-    const url =
-      "https://login.link.com/auth?client_id=example&state=keep-me&code_challenge=keep-me-too";
-    server.use(
-      http.post(`${origin}/api/wallet/connect`, () => {
-        return HttpResponse.json({ url, expiresAt: spend.expiresAt });
-      }),
-    );
-    await run(["connect"]);
-    expect(output).toHaveBeenCalledWith(url);
-    expect(output).toHaveBeenCalledWith(
-      expect.stringContaining("end the turn"),
-    );
-  });
   it("uses integer cents, an explicit stable intent and test mode without exposing extra provider fields", async () => {
     let requestBody: unknown;
     server.use(
@@ -239,43 +236,78 @@ describe("okou wallet", () => {
     );
   });
 
-  it("requests read-only consent and preserves its exact hosted action URL", async () => {
-    const url = new URL(
-      "https://login.link.com/auth?client_id=fixture&state=keep%2Fexact&scope=userinfo%3Aread",
-    );
+  it.each([false, true])(
+    "requests unified consent and preserves its exact URL (json=%s)",
+    async (json) => {
+      const url = new URL(
+        "https://login.link.com/auth?client_id=fixture&state=keep%2Fexact&scope=payment_methods.agentic%20userinfo%3Aread",
+      );
+      url.searchParams.set(
+        "authorization_details",
+        JSON.stringify([
+          { type: "source", actions: ["read_link_transactions"] },
+        ]),
+      );
+      let body: unknown;
+      server.use(
+        http.post(`${origin}/api/wallet/connect`, async ({ request }) => {
+          body = await request.json();
+          return HttpResponse.json({
+            url: url.toString(),
+            expiresAt: spend.expiresAt,
+          });
+        }),
+      );
+      await run(json ? ["connect", "--json"] : ["connect"]);
+      expect(body).toStrictEqual({});
+      if (json) {
+        expect(JSON.parse(String(output.mock.calls[0]?.[0]))).toStrictEqual({
+          url: url.toString(),
+          expiresAt: spend.expiresAt,
+        });
+      } else {
+        expect(output).toHaveBeenCalledWith(url.toString());
+        expect(output).toHaveBeenCalledWith(
+          expect.stringContaining("end the turn"),
+        );
+      }
+    },
+  );
+
+  it.each([
+    "payment_methods.agentic",
+    "userinfo:read",
+    "read_link_transactions",
+  ])("refuses an older server's consent URL missing %s", async (missing) => {
+    const url = new URL("https://login.link.com/auth?state=fixture");
     url.searchParams.set(
-      "authorization_details",
-      JSON.stringify([{ type: "source", actions: ["read_link_transactions"] }]),
+      "scope",
+      ["payment_methods.agentic", "userinfo:read"]
+        .filter((scope) => {
+          return scope !== missing;
+        })
+        .join(" "),
     );
-    let body: unknown;
+    if (missing !== "read_link_transactions") {
+      url.searchParams.set(
+        "authorization_details",
+        JSON.stringify([
+          { type: "source", actions: ["read_link_transactions"] },
+        ]),
+      );
+    }
     server.use(
-      http.post(`${origin}/api/wallet/connect`, async ({ request }) => {
-        body = await request.json();
+      http.post(`${origin}/api/wallet/connect`, () => {
         return HttpResponse.json({
           url: url.toString(),
           expiresAt: spend.expiresAt,
         });
       }),
     );
-    await run(["connect", "--read-only"]);
-    expect(body).toStrictEqual({ readOnly: true });
-    expect(output).toHaveBeenCalledWith(url.toString());
-  });
-
-  it("refuses a payment consent URL from an older server that ignores read-only input", async () => {
-    const url =
-      "https://login.link.com/auth?scope=payment_methods.agentic&state=fixture";
-    server.use(
-      http.post(`${origin}/api/wallet/connect`, () => {
-        return HttpResponse.json({ url, expiresAt: spend.expiresAt });
-      }),
-    );
-    await expect(run(["connect", "--read-only"])).rejects.toThrow(
-      "process.exit called",
-    );
-    expect(output).not.toHaveBeenCalledWith(url);
+    await expect(run(["connect"])).rejects.toThrow("process.exit called");
+    expect(output).not.toHaveBeenCalledWith(url.toString());
     expect(JSON.stringify(errors.mock.calls)).toContain(
-      "does not support the requested read authorization",
+      "does not support unified",
     );
   });
 

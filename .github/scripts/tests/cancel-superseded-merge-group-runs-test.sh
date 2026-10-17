@@ -20,6 +20,7 @@ printf '%s\n' "$*" >>"$MOCK_GH_LOG"
 
 endpoint=""
 method="GET"
+include_response=false
 status_filter=""
 previous=""
 for argument in "$@"; do
@@ -27,6 +28,7 @@ for argument in "$@"; do
     --method) method=$argument ;;
   esac
   case "$argument" in
+    --include|-i) include_response=true ;;
     repos/*) endpoint=$argument ;;
     status=*) status_filter=${argument#status=} ;;
   esac
@@ -97,7 +99,14 @@ JSON
     fi
     case " ${MOCK_CANCEL_FAILURE_RUN_IDS:-} " in
       *" $run_id "*)
-        echo 'gh: Failed to cancel workflow run (HTTP 500)' >&2
+        http_status=${MOCK_CANCEL_FAILURE_HTTP_STATUS:-500}
+        if $include_response; then
+          printf 'HTTP/2.0 %s\nContent-Type: application/json\n\n' "$http_status"
+        fi
+        if [ "$http_status" = "409" ]; then
+          echo '{"message":"Cannot cancel a workflow run that is not in progress.","status":"409"}'
+        fi
+        echo "gh: Failed to cancel workflow run (HTTP ${http_status})" >&2
         exit 1
         ;;
     esac
@@ -118,7 +127,9 @@ JSON
     elif [[ " ${MOCK_CANCEL_FAILURE_RUN_IDS:-} " == *" $run_id "* ]] &&
       [ "${MOCK_CANCEL_FAILURE_ACTIVE:-0}" = "1" ]; then
       printf 'in_progress\n'
-    elif [ "${MOCK_DELAY_COMPLETION:-0}" = "1" ] && [ ! -f "$MOCK_RUNS_RELEASED" ]; then
+    elif [ "${MOCK_DELAY_COMPLETION:-0}" = "1" ] && [ ! -f "$MOCK_RUNS_RELEASED" ] &&
+      { [ -z "${MOCK_DELAY_COMPLETION_RUN_IDS:-}" ] ||
+        [[ " ${MOCK_DELAY_COMPLETION_RUN_IDS} " == *" $run_id "* ]]; }; then
       printf 'in_progress\n'
     else
       printf 'completed\n'
@@ -330,6 +341,51 @@ output=$(run_cancel MOCK_CANCEL_FAILURE_RUN_IDS=100)
 grep -q "All superseded CI runs completed" <<<"$output" || fail "terminal conflict must be safe"
 grep -q 'api --method GET repos/okou-ai/okou/actions/runs/100 ' "${tmp_dir}/gh.log" ||
   fail "terminal conflict must have fresh status proof"
+
+# A concurrent cancellation can return 409 before its terminal status is visible.
+# Only the conflicted consumer stays active; its producer must remain untouched
+# until that consumer completes, without replaying the cancellation request.
+: >"${tmp_dir}/gh.log"
+: >"${tmp_dir}/cancel.log"
+: >"${tmp_dir}/sleep.log"
+rm -f "${tmp_dir}/runs-released"
+output=$(run_cancel MOCK_CANCEL_FAILURE_RUN_IDS=100 MOCK_CANCEL_FAILURE_HTTP_STATUS=409 \
+  MOCK_DELAY_COMPLETION=1 MOCK_DELAY_COMPLETION_RUN_IDS=100)
+grep -q "All superseded CI runs completed" <<<"$output" ||
+  fail "cancellation conflict must await eventual completion"
+[ "$(wc -l <"${tmp_dir}/sleep.log")" -eq 1 ] ||
+  fail "conflicted consumer must remain in the completion barrier"
+[ "$(cat "${tmp_dir}/cancel.log")" = $'100\n110\n120' ] ||
+  fail "conflict recovery must preserve ordering without replaying cancellation"
+
+: >"${tmp_dir}/gh.log"
+: >"${tmp_dir}/cancel.log"
+: >"${tmp_dir}/sleep.log"
+rm -f "${tmp_dir}/runs-released"
+if run_cancel MOCK_CANCEL_FAILURE_RUN_IDS=100 MOCK_CANCEL_FAILURE_HTTP_STATUS=409 \
+  MOCK_CANCEL_FAILURE_ACTIVE=1 SUPERSEDED_RUN_COMPLETION_TIMEOUT_SECONDS=0 \
+  >"${tmp_dir}/conflict-timeout.out" 2>"${tmp_dir}/conflict-timeout.err"; then
+  fail "cancellation conflict must not release an active consumer"
+fi
+grep -q "Timed out after 0s waiting for superseded CI runs to complete" \
+  "${tmp_dir}/conflict-timeout.err" ||
+  fail "cancellation conflict must use the existing completion deadline"
+if grep -qx 120 "${tmp_dir}/cancel.log"; then
+  fail "timed-out conflicted consumer must retain its producer"
+fi
+[ ! -s "${tmp_dir}/sleep.log" ] ||
+  fail "zero-budget conflict must fail before polling"
+
+: >"${tmp_dir}/cancel.log"
+if run_cancel MOCK_CANCEL_FAILURE_RUN_IDS=100 MOCK_CANCEL_FAILURE_HTTP_STATUS=409 \
+  MOCK_RUN_STATUS_FAILURE_RUN_IDS=100 \
+  >"${tmp_dir}/conflict-status.out" 2>"${tmp_dir}/conflict-status.err"; then
+  fail "cancellation conflict must not hide unreadable ownership status"
+fi
+grep -q "failed to query superseded run 100" "${tmp_dir}/conflict-status.err" ||
+  fail "cancellation conflict must preserve the status-read failure"
+[ "$(cat "${tmp_dir}/cancel.log")" = 100 ] ||
+  fail "unreadable conflicted consumer must stop the handoff"
 
 : >"${tmp_dir}/gh.log"
 : >"${tmp_dir}/cancel.log"

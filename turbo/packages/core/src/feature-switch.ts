@@ -50,6 +50,16 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Show an inline hint after / to search workflows or choose a template.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.SlackOpenGraphPreviews]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Slack Open Graph previews",
+    description:
+      "Use public page metadata and bounded thumbnails for links you share in Slack.",
+    enabled: false,
+    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
+    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
   [FeatureSwitchKey.DesktopShell]: {
     maintainer: "lancy@okou.ai",
@@ -104,6 +114,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Open chat artifacts and artifacts-page previews directly in a sidebar instead of a lightbox.",
     enabled: false,
   },
+  [FeatureSwitchKey.SlashActions]: {
+    maintainer: "tongx@okou.ai",
+    displayName: "Slash actions",
+    description:
+      "Lead the composer's slash menu with chat actions, and open Workflows and Templates as second-level lists.",
+    enabled: false,
+  },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
     maintainer: "bingjie@okou.ai",
     description:
@@ -138,6 +155,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     // into a customer workspace, where the org hash does not apply.
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
+  },
+  [FeatureSwitchKey.ComposerSlashCustomTemplates]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Custom templates in slash commands",
+    description:
+      "Include accessible image, presentation, and document templates in the composer slash menu. Requires customTemplates.",
+    enabled: false,
   },
   [FeatureSwitchKey.PresentationConvert]: {
     maintainer: "bingjie@okou.ai",

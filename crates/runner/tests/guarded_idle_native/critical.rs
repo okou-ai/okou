@@ -55,6 +55,7 @@ pub async fn exercise(
     inputs: &fixture::Inputs,
     source: &Arc<recovery_source::Source>,
     proof: Option<&Arc<evidence::Case>>,
+    progress_request: Option<critical_progress::Request<'_>>,
 ) -> TestResult<()> {
     let proof = proof.ok_or_else(|| io::Error::other("Critical needs measured owners"))?;
     let policy = inputs.pressure_policy()?;
@@ -80,6 +81,11 @@ pub async fn exercise(
     let expected = proof.snapshot_memory_hash()?.to_owned();
     let hash = expected.clone();
     tokio::task::spawn_blocking(move || evidence::verify_file(&checked, &hash)).await??;
+    let startup_original = if progress_request.is_some() {
+        Some(startup::original(&context.budget, inputs, proof).await?)
+    } else {
+        None
+    };
 
     let mut backings = Vec::new();
     let mut blanks = Vec::new();
@@ -138,7 +144,15 @@ pub async fn exercise(
     )?;
 
     source.pause();
-    let pressure = IdlePressureOwner::spawn(IdlePressureConfig {
+    let mut progress = match (startup_original, progress_request) {
+        (Some(original), Some(request)) => Some(
+            critical_progress::Progress::new(&context, inputs, source, proof, original, request)
+                .await?,
+        ),
+        (None, None) => None,
+        _ => return Err(io::Error::other("Critical progress input mismatch").into()),
+    };
+    let spawned_pressure = IdlePressureOwner::spawn(IdlePressureConfig {
         pool: context.pool.clone(),
         status: context.status.clone(),
         tracker: context.tracker.clone(),
@@ -146,7 +160,17 @@ pub async fn exercise(
         policy,
         sample_period: inputs.pressure_sample_period(),
         envelope: inputs.envelope(),
-    })?;
+    });
+    let pressure = match spawned_pressure {
+        Ok(pressure) => pressure,
+        Err(error) => {
+            source.resume();
+            if let Some(progress) = &mut progress {
+                progress.cleanup().await?;
+            }
+            return Err(error.into());
+        }
+    };
     let control = pressure.optional_preparation();
     let spawned = MemoryPrefetchTasks::spawn_guarded(
         [MemoryPrefetchCandidate {
@@ -164,7 +188,13 @@ pub async fn exercise(
         Ok(spawned) => spawned,
         Err(error) => {
             source.resume();
-            let _ = pressure.shutdown().await?;
+            let progress_joined = match &mut progress {
+                Some(progress) => progress.cleanup().await,
+                None => Ok(()),
+            };
+            let pressure_stopped = pressure.shutdown().await;
+            progress_joined?;
+            let _ = pressure_stopped?;
             return Err(error.into());
         }
     };
@@ -182,6 +212,13 @@ pub async fn exercise(
             "state": "Unknown", "reads": read_evidence(&reads.borrow()),
             "registered_operations": pending.registered_operations, "tracked_tasks": pending.tracked_tasks,
         }))?;
+        if let Some(progress) = &mut progress {
+            let read = reads.borrow().clone();
+            progress.unknown(&read).await?;
+            if control.decision().state != HostPressureState::Unknown {
+                return Err(io::Error::other("Critical startup did not retain Unknown").into());
+            }
+        }
         // Let only the sampler classify real Critical first. Its first wave's
         // admission reads remain held until that classification is witnessed.
         source.one_read();
@@ -202,6 +239,10 @@ pub async fn exercise(
                     "wave_inflight": snapshot.decision.wave_inflight, "reads": read_evidence(&reads.borrow()),
                 }))?;
                 source.resume();
+                if let Some(progress) = &mut progress {
+                    let read = reads.borrow().clone();
+                    progress.pressure_waits(&control, &read).await?;
+                }
             } else if matches!(snapshot.decision.state, HostPressureState::Ready | HostPressureState::Recovering) {
                 return Err(io::Error::other("Critical native condition changed to recovery").into());
             }
@@ -244,6 +285,10 @@ pub async fn exercise(
                 }))?;
                 last = Some(wave.clone());
                 completion_observed = None;
+                if waves == 2 && let Some(progress) = &mut progress {
+                    let read = reads.borrow().clone();
+                    progress.original_io(&control, &read).await?;
+                }
                 if waves == 3 { break; }
             }
             updates.changed().await?;
@@ -252,10 +297,15 @@ pub async fn exercise(
     }).await;
     // Reopen every external reader and join actual owners even after refusal.
     source.resume();
+    let progress_joined = match &mut progress {
+        Some(progress) => progress.cleanup().await,
+        None => Ok(()),
+    };
     prefetch.cancel();
     prefetch.drain().await;
     let stopped = pressure.shutdown().await?;
     outcome.map_err(io::Error::other)??;
+    progress_joined?;
     no_reads(&reads.borrow(), true)?;
     if stopped.producer_lost || !stopped.stopped || stopped.decision.wave_inflight {
         return Err(io::Error::other("Critical pressure shutdown unresolved").into());
@@ -286,5 +336,8 @@ pub async fn exercise(
         "registered_operations": pending.registered_operations, "tracked_tasks": pending.tracked_tasks,
         "snapshot_reverified": true, "samples": source.samples()?,
     }))?;
+    if let Some(progress) = &progress {
+        progress.joined(&reads.borrow())?;
+    }
     Ok(())
 }

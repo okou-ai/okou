@@ -77,7 +77,6 @@ pub struct Execution<'a> {
     pub history: Vec<u8>,
     pub original: RunId,
     pub continued: bool,
-    pub require_bound_history: bool,
 }
 
 pub struct Saving<'a> {
@@ -234,11 +233,21 @@ impl Fixture {
             history,
             original,
             continued,
-            require_bound_history,
         } = request;
         let mut request = operations.request(inputs.replacement_plan()?)?;
         let permit = request.try_grant().await?;
         let context = self.context(run, &key, &history, original, continued)?;
+        let previous_generation = context
+            .native_continuation
+            .as_ref()
+            .and_then(|native| native.generation_run_id.clone());
+        let previous_session_hash = context
+            .native_continuation
+            .as_ref()
+            .and_then(|native| native.session_id.as_deref())
+            .map(|id| digest(id.as_bytes()));
+        let previous_history_hash = digest(&history);
+        let previous_history_size = history.len() as u64;
         let storage = StorageFingerprints::from_manifest(
             context
                 .storage_manifest
@@ -312,9 +321,22 @@ impl Fixture {
                 this.case.retain(outcome);
                 return Err(io::Error::other("native home lease disappeared").into());
             };
-            if continued && (!home.is_cache_hit() || home.history_proof_binding().is_some() != require_bound_history) {
-                this.case.retain(sandbox); this.case.retain(home);
-                return Err(io::Error::other("native continuation did not use verified saved home/history").into());
+            if continued {
+                // Acknowledged nonzero execution can finalize local history too.
+                // Executor still withholds its reusable identity, while terminal
+                // preparation independently verifies those bytes for the cache.
+                let bound = home.history_proof_binding().is_some_and(|binding| {
+                    let identity = &binding.proof.identity;
+                    Some(binding.proof.generation.as_str()) == previous_generation.as_deref()
+                        && identity.history_hash == previous_history_hash
+                        && identity.history_size_bytes == previous_history_size
+                        && Some(identity.session_id_hash.as_str()) == previous_session_hash.as_deref()
+                        && binding.proof.to_json_vec().is_ok_and(|bytes| digest(&bytes) == binding.sha256)
+                });
+                if !home.is_cache_hit() || !bound {
+                    this.case.retain(sandbox); this.case.retain(home);
+                    return Err(io::Error::other("native continuation did not use verified saved home/history").into());
+                }
             }
             Ok::<_, Box<dyn std::error::Error + Send + Sync>>(Prepared { sandbox, home, identity, history, storage, exit_code })
         })?;
@@ -355,7 +377,6 @@ impl Fixture {
                     history: history.clone(),
                     original: request.original,
                     continued: true,
-                    require_bound_history: !self.nonzero || generation != 0,
                 })
                 .await;
             let prepared = match result {

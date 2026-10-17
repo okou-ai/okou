@@ -39,7 +39,7 @@ class ContinuationReportTests(unittest.TestCase):
             for event in events: event["case"] = case
             run, next_run = str(uuid.uuid4()), str(uuid.uuid4())
             home_hash = hashlib.sha256((run.encode()*2048)[:65536]).hexdigest()
-            base = {"thread_id":continuation.THREAD,"original_home_sha256":home_hash,
+            base = {"thread_id":str(uuid.uuid4()),"original_home_sha256":home_hash,
                     "original_home_bytes":65536,"final_identity_verified":True,
                     "full_original_prefix_verified":True,"preparation_observed_by_native_process":True}
             original = {**base,"original_run_id":run,"seed_history_sha256":continuation.SEED_HASH,
@@ -54,7 +54,7 @@ class ContinuationReportTests(unittest.TestCase):
             continued = {**base,"continued_run_id":next_run,"continued_sandbox_id":str(uuid.uuid4()),
                          "restored_history_sha256":"3"*64,"restored_history_bytes":len(continuation.SEED)+256,
                          "continued_history_sha256":"4"*64,"continued_history_bytes":len(continuation.SEED)+512,
-                         "exit_code":0,"home_cache_hit":True,"history_proof_bound":not case.startswith("ContinuationNonzero-")}
+                         "exit_code":0,"home_cache_hit":True,"history_proof_bound":True}
             saved = {"required_cleanup_joined":True,"complete_continued_bytes_restored":True,
                      "verified_final_identity_preserved":True}
             clocks = (events[0]["monotonic_ns"]+3,events[0]["monotonic_ns"]+6,
@@ -83,6 +83,10 @@ class ContinuationReportTests(unittest.TestCase):
         self.assertFalse(result["memory_envelope_calibrated"])
         self.assertFalse(result["production_protection_proven"])
         self.assertNotIn("native_terminal_corpus_complete",result)
+        for event in self.witnesses:
+            if event["phase"] == "original_executor_completed":
+                self.assertEqual(result["cases"][event["case"]]["continuation"]["thread_id"],
+                                 event["evidence"]["thread_id"])
 
     def test_cli_accepts_complete_files_and_rejects_missing_witness(self):
         self.write()
@@ -150,10 +154,10 @@ class ContinuationReportTests(unittest.TestCase):
         self.events[3]["evidence"]["full_logical_lease"]=[2,2048,1]
         with self.assertRaises(ValueError): self.validate()
 
-    def test_nonzero_withholds_identity_until_successful_continuation(self):
+    def test_nonzero_withholds_reusable_identity_and_keeps_verified_home_history(self):
         for phase, key, value in (("original_executor_completed", "final_identity_verified", True),
                                   ("original_executor_completed", "reusable_identity_withheld_after_nonzero", False),
-                                  ("continued_executor_completed", "history_proof_bound", True),
+                                  ("continued_executor_completed", "history_proof_bound", False),
                                   ("continued_executor_completed", "final_identity_verified", False)):
             with self.subTest(phase=phase, key=key):
                 self.setUp()

@@ -73,7 +73,8 @@ impl CommandSession {
         // The caller keeps Child owned and unpolled until session cleanup ends.
         // Readiness observes exit without reaping the leader and releasing its SID.
         let pidfd = rustix::process::pidfd_open(self.session_id, PidfdFlags::empty())?;
-        let pidfd = AsyncFd::new(pidfd)?;
+        // SAFETY: AsyncFd owns the pidfd and keeps its descriptor unchanged until drop.
+        let pidfd = unsafe { AsyncFd::register(pidfd) }?;
         pidfd.readable().await.map(drop)
     }
 

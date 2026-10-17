@@ -17,17 +17,18 @@ use runner_types::types::MAX_HELD_HOME_STATES;
 use super::HomeImageCache;
 use super::entry::{CacheEntryPaths, is_cache_key_name};
 use super::fs::{
-    cache_entry_dir_is_dir, entry_file_type_is_dir, fs_stats_with_additional_available,
-    is_home_tmp_path_name, remove_home_cache_path_if_exists,
+    cache_entry_dir_is_dir, entry_file_type_is_dir, is_home_tmp_path_name,
+    remove_home_cache_path_if_exists,
 };
 use super::gc_metadata::read_gc_metadata_file;
+use super::gc_pressure::{GcContinuation, GcTarget, HomeCacheReclaimStatus};
 use super::io_context::with_path;
-use super::types::{CacheBudget, FsStats};
 
 pub(super) struct GcCandidate {
     pub(super) cache_key: String,
-    image_generation: String,
+    pub(super) image_generation: String,
     pub(super) allocated_bytes: u64,
+    pub(super) prospective_cleanup_bytes: u64,
     file_dev: u64,
     file_ino: u64,
     pub(super) last_used_at: String,
@@ -78,27 +79,9 @@ impl GcCandidate {
     pub(super) fn same_current_image(&self, other: &Self) -> bool {
         self.file_dev == other.file_dev
             && self.file_ino == other.file_ino
+            && self.image_generation == other.image_generation
             && self.last_used_at == other.last_used_at
     }
-}
-
-pub(super) fn gc_budget_satisfied(
-    needs_budget_gc: bool,
-    total_cache_bytes: u64,
-    entry_count: usize,
-    stats_after_pre_cleanup: FsStats,
-    budget: CacheBudget,
-    candidate_freed_bytes: u64,
-) -> bool {
-    if entry_count > MAX_HELD_HOME_STATES {
-        return false;
-    }
-    !needs_budget_gc
-        || (total_cache_bytes <= budget.target_after_gc_bytes
-            && stats_after_pre_cleanup
-                .available_bytes
-                .saturating_add(candidate_freed_bytes)
-                >= budget.min_free_bytes)
 }
 
 fn removal_observation(
@@ -117,7 +100,7 @@ fn removal_observation(
 }
 
 impl HomeImageCache {
-    fn observe_removal(
+    pub(super) fn observe_removal(
         &self,
         key: &str,
         generation: Option<&str>,
@@ -130,23 +113,63 @@ impl HomeImageCache {
         ));
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     pub(super) async fn total_cache_allocated_bytes(&self) -> LifecycleResult<u64> {
         super::fs::measured_entry_bytes(self.home_image_cache_dir()).await
     }
 
     pub async fn gc(&self, dry_run: bool) -> LifecycleResult<u64> {
-        let _capacity_lock = runner_host::lock::acquire(self.capacity_lock_path()).await?;
-        self.gc_locked(dry_run, 0).await
+        self.accept_collection(dry_run, 0).await.map_err(|error| {
+            crate::error::LifecycleError::Internal(format!("home collection task failed: {error}"))
+        })?
+    }
+
+    fn accept_collection(
+        &self,
+        dry_run: bool,
+        additional_peak_bytes: u64,
+    ) -> tokio::task::JoinHandle<LifecycleResult<u64>> {
+        let cache = self.clone();
+        self.inner.checkout_io.spawn(async move {
+            let result = cache
+                .collect_home_cache(dry_run, additional_peak_bytes)
+                .await;
+            if let Err(error) = &result {
+                tracing::warn!(%error, dry_run, "accepted home cache collection failed");
+            }
+            result
+        })
+    }
+
+    async fn collect_home_cache(
+        &self,
+        dry_run: bool,
+        additional_peak_bytes: u64,
+    ) -> LifecycleResult<u64> {
+        let _routine =
+            match runner_host::lock::try_acquire_or_busy(self.routine_gc_lock_path()).await? {
+                runner_host::lock::TryLock::Acquired(lock) => lock,
+                runner_host::lock::TryLock::Busy => return Ok(0),
+            };
+        let _capacity =
+            match runner_host::lock::try_acquire_shared_or_busy(self.capacity_lock_path()).await? {
+                runner_host::lock::TryLock::Acquired(lock) => lock,
+                runner_host::lock::TryLock::Busy => return Ok(0),
+            };
+        self.gc_locked(dry_run, additional_peak_bytes).await
     }
 
     pub async fn try_routine_gc(&self, minimum_interval: Duration) -> LifecycleResult<Option<u64>> {
-        let _routine_lock =
+        if !self.background_gc.is_active() {
+            return Ok(None);
+        }
+        let mut routine_lock =
             match runner_host::lock::try_acquire_or_busy(self.routine_gc_lock_path()).await? {
                 runner_host::lock::TryLock::Acquired(lock) => lock,
                 runner_host::lock::TryLock::Busy => return Ok(None),
             };
         let capacity_lock =
-            match runner_host::lock::try_acquire_or_busy(self.capacity_lock_path()).await? {
+            match runner_host::lock::try_acquire_shared_or_busy(self.capacity_lock_path()).await? {
                 runner_host::lock::TryLock::Acquired(lock) => lock,
                 runner_host::lock::TryLock::Busy => return Ok(None),
             };
@@ -154,7 +177,7 @@ impl HomeImageCache {
         if !routine_gc_is_due(&capacity_lock, minimum_interval)? {
             return Ok(None);
         }
-        let initial_capacity_duration = capacity_started.elapsed();
+        let mut initial_capacity_duration = capacity_started.elapsed();
         drop(capacity_lock);
 
         #[cfg(any(test, feature = "test-support"))]
@@ -166,20 +189,31 @@ impl HomeImageCache {
                 .expect("routine GC gate closed")
                 .forget();
         }
-        // Entry-local cleanup shares the publication entry lock and only frees
-        // disk space. The routine lock, not capacity, owns this potentially slow
-        // inventory so finalizers can publish while unrelated entries scan.
+        // New publishers share this barrier and can progress during inventory.
+        // Legacy exclusive budget windows exclude every accepted mutation.
+        let inventory_capacity =
+            match runner_host::lock::try_acquire_shared_or_busy(self.capacity_lock_path()).await? {
+                runner_host::lock::TryLock::Acquired(lock) => lock,
+                runner_host::lock::TryLock::Busy => return Ok(None),
+            };
         let inventory_started = Instant::now();
-        let inventory = self.gc_inventory(false).await?;
+        let inventory = self
+            .gc_inventory(false, || self.background_gc.is_active())
+            .await?;
+        drop(inventory_capacity);
+        if !self.background_gc.is_active() {
+            return Ok(None);
+        }
         let inventory_duration = inventory_started.elapsed();
+        initial_capacity_duration += inventory_duration;
         let entry_count = inventory.candidates.len();
         let mut freed_bytes = inventory.pre_cleanup_freed_bytes;
-        drop(inventory);
+        let mut continuation = GcContinuation::new(inventory.candidates, 0);
 
         // No entry lock survives inventory. Never wait for capacity here, and
         // never evict from an unlocked observation that promotion can replace.
         let mut capacity_lock =
-            match runner_host::lock::try_acquire_or_busy(self.capacity_lock_path()).await? {
+            match runner_host::lock::try_acquire_shared_or_busy(self.capacity_lock_path()).await? {
                 runner_host::lock::TryLock::Acquired(lock) => lock,
                 runner_host::lock::TryLock::Busy => {
                     info!(
@@ -191,22 +225,91 @@ impl HomeImageCache {
                     return Ok(None);
                 }
             };
-        let capacity_started = Instant::now();
+        let mut capacity_started = Instant::now();
+        let mut capacity_duration = initial_capacity_duration;
         if !routine_gc_is_due(&capacity_lock, minimum_interval)? {
             return Ok(None);
         }
         let stats = self.fs_stats().await?;
-        let budget = CacheBudget::from_fs_stats(stats);
+        let pressure = self.pressure_thresholds(stats);
         let budget_gc = entry_count > MAX_HELD_HOME_STATES
-            || self.total_cache_allocated_bytes().await? > budget.max_cache_bytes
-            || stats.available_bytes < budget.min_free_bytes;
+            || (pressure.reserve_feasible && stats.available_bytes < pressure.low_free_bytes);
         if budget_gc {
-            // Promotions may have added/replaced entries during inventory.
-            // Rebuild all accounting under capacity before budget collection.
-            freed_bytes = freed_bytes.saturating_add(self.gc_locked(false, 0).await?);
+            let required = (pressure.reserve_feasible
+                && stats.available_bytes < pressure.low_free_bytes)
+                .then_some(pressure.high_free_bytes);
+            let reason = if required.is_some() {
+                "filesystem_pressure"
+            } else {
+                "entry_count"
+            };
+            loop {
+                #[cfg(any(test, feature = "test-support"))]
+                if let Some(gate) = &self.pressure_turn_test_gate {
+                    gate.enter_and_wait().await;
+                }
+                // Inventory remains a hint. Every mutation revalidates current
+                // generation/inode/last-use after try-only entry acquisition.
+                let outcome = self
+                    .reclaim_gc_turn(
+                        &mut continuation,
+                        || {
+                            if self.background_gc.is_active() {
+                                required.map_or(GcTarget::CountOnly, GcTarget::FreeBytes)
+                            } else {
+                                GcTarget::Inactive
+                            }
+                        },
+                        false,
+                        reason,
+                    )
+                    .await?;
+                if outcome.status == HomeCacheReclaimStatus::BackgroundStopped {
+                    return Ok(None);
+                }
+                freed_bytes = freed_bytes.saturating_add(outcome.removed_allocated_bytes);
+                info!(reason, status = ?outcome.status,
+                    available_before = outcome.available_before, available_after = outcome.available_after,
+                    victim_attempts = outcome.victim_attempts, "home cache routine reclaim turn completed");
+                if outcome.status != HomeCacheReclaimStatus::BudgetExhausted {
+                    break;
+                }
+                capacity_duration += capacity_started.elapsed();
+                drop(capacity_lock);
+                drop(routine_lock);
+                #[cfg(any(test, feature = "test-support"))]
+                if let Some(gate) = &self.pressure_turn_test_gate {
+                    gate.enter_and_wait().await;
+                }
+                tokio::task::yield_now().await;
+                if !self.background_gc.is_active() {
+                    return Ok(None);
+                }
+                routine_lock =
+                    match runner_host::lock::try_acquire_or_busy(self.routine_gc_lock_path())
+                        .await?
+                    {
+                        runner_host::lock::TryLock::Acquired(lock) => lock,
+                        runner_host::lock::TryLock::Busy => return Ok(None),
+                    };
+                capacity_lock =
+                    match runner_host::lock::try_acquire_shared_or_busy(self.capacity_lock_path())
+                        .await?
+                    {
+                        runner_host::lock::TryLock::Acquired(lock) => lock,
+                        runner_host::lock::TryLock::Busy => return Ok(None),
+                    };
+                capacity_started = Instant::now();
+                if !routine_gc_is_due(&capacity_lock, minimum_interval)? {
+                    return Ok(None);
+                }
+            }
+        }
+        if !self.background_gc.is_active() {
+            return Ok(None);
         }
         capacity_lock.write_all(b"\0")?;
-        let capacity_duration = initial_capacity_duration + capacity_started.elapsed();
+        capacity_duration += capacity_started.elapsed();
         drop(capacity_lock);
         info!(
             entry_count,
@@ -238,102 +341,85 @@ impl HomeImageCache {
     pub(super) async fn gc_locked(
         &self,
         dry_run: bool,
-        pending_cache_bytes: u64,
+        additional_peak_bytes: u64,
     ) -> LifecycleResult<u64> {
-        let inventory = self.gc_inventory(dry_run).await?;
+        let inventory = self.gc_inventory(dry_run, || true).await?;
         let stats = self.fs_stats().await?;
-        let pre_cleanup_freed = inventory.pre_cleanup_freed_bytes;
-        let stats_after_pre_cleanup = if dry_run {
-            fs_stats_with_additional_available(stats, pre_cleanup_freed)
+        let pressure = self.pressure_thresholds(stats);
+        let prospective = if dry_run {
+            inventory.pre_cleanup_freed_bytes
         } else {
-            stats
+            0
         };
-        let budget = CacheBudget::from_fs_stats(stats_after_pre_cleanup);
-        let mut candidates = inventory.candidates;
-        let mut entry_count = candidates.len();
-        let mut total = self.total_cache_allocated_bytes().await?;
-        // Publication's pinned source is still outside the retained-cache tree.
-        // Reserve its measured allocation and staging allowance in both the
-        // pressure trigger and target. Physical Move/Copy headroom is checked
-        // separately by publication.
-        let needs_budget_gc = total.saturating_add(pending_cache_bytes) > budget.max_cache_bytes
-            || stats_after_pre_cleanup.available_bytes < budget.min_free_bytes;
-        if !needs_budget_gc && entry_count <= MAX_HELD_HOME_STATES {
-            return Ok(pre_cleanup_freed);
+        // Preview the trigger after prospective cleanup too. Live decisions
+        // still use only actual stats queried after physical cleanup.
+        let decision_available = stats
+            .available_bytes
+            .saturating_add(prospective)
+            .min(stats.total_bytes);
+        let required = if additional_peak_bytes > 0 {
+            Some(pressure.reserve_bytes.saturating_add(additional_peak_bytes))
+        } else if pressure.reserve_feasible && decision_available < pressure.low_free_bytes {
+            Some(pressure.high_free_bytes)
+        } else {
+            None
+        };
+        let reason = if additional_peak_bytes > 0 {
+            "foreground_demand"
+        } else if required.is_some() {
+            "filesystem_pressure"
+        } else {
+            "entry_count"
+        };
+        let mut continuation = GcContinuation::new(inventory.candidates, prospective);
+        let mut removed = inventory.pre_cleanup_freed_bytes;
+        loop {
+            let outcome = self
+                .reclaim_gc_turn(
+                    &mut continuation,
+                    || required.map_or(GcTarget::CountOnly, GcTarget::FreeBytes),
+                    dry_run,
+                    reason,
+                )
+                .await?;
+            removed = removed.saturating_add(outcome.removed_allocated_bytes);
+            if required.is_some() || outcome.victim_attempts > 0 {
+                tracing::info!(reason, status = ?outcome.status, dry_run,
+                    available_before = outcome.available_before, available_after = outcome.available_after,
+                    victim_attempts = outcome.victim_attempts, "home cache reclaim turn completed");
+            }
+            if outcome.status != HomeCacheReclaimStatus::BudgetExhausted {
+                return Ok(removed);
+            }
+            // Manual/publication collectors retain the singleton and shared
+            // compatibility barrier. Never cancel accepted physical deletion.
+            tokio::task::yield_now().await;
         }
-        candidates.sort_by(|left, right| {
-            left.last_used_at
-                .cmp(&right.last_used_at)
-                .then_with(|| left.cache_key.cmp(&right.cache_key))
-        });
-        let mut freed = pre_cleanup_freed;
-        let mut candidate_freed: u64 = 0;
-        for candidate in candidates {
-            if gc_budget_satisfied(
-                needs_budget_gc,
-                total.saturating_add(pending_cache_bytes),
-                entry_count,
-                stats_after_pre_cleanup,
-                budget,
-                candidate_freed,
-            ) {
-                break;
-            }
-            let Ok(lock) =
-                runner_host::lock::try_acquire(self.entry_lock_path(&candidate.cache_key)).await
-            else {
-                continue;
-            };
-            let Some(refreshed) = self.gc_candidate(candidate.cache_key.clone()).await else {
-                drop(lock);
-                continue;
-            };
-            if !refreshed.same_current_image(&candidate) {
-                drop(lock);
-                continue;
-            }
-            if dry_run {
-                info!(
-                    cache_key = candidate.cache_key,
-                    allocated_bytes = refreshed.allocated_bytes,
-                    "[dry-run] would delete home image cache entry"
-                );
-            } else if let Err(e) =
-                fs::remove_dir_all(self.home_image_cache_entry_dir(&candidate.cache_key)).await
-            {
-                warn!(
-                    cache_key = candidate.cache_key,
-                    error = %e,
-                    "failed to delete home image cache entry"
-                );
-                self.observe_removal(
-                    &refreshed.cache_key,
-                    Some(&refreshed.image_generation),
-                    refreshed.allocated_bytes,
-                    HomeObservationOutcome::Failed,
-                    "cache_budget",
-                );
-                drop(lock);
-                continue;
-            } else {
-                self.observe_removal(
-                    &refreshed.cache_key,
-                    Some(&refreshed.image_generation),
-                    refreshed.allocated_bytes,
-                    HomeObservationOutcome::Deleted,
-                    "cache_budget",
-                );
-            }
-            total = total.saturating_sub(refreshed.allocated_bytes);
-            entry_count = entry_count.saturating_sub(1);
-            freed = freed.saturating_add(refreshed.allocated_bytes);
-            candidate_freed = candidate_freed.saturating_add(refreshed.allocated_bytes);
-            drop(lock);
-        }
-        Ok(freed)
     }
 
-    async fn gc_inventory(&self, dry_run: bool) -> LifecycleResult<GcInventory> {
+    #[cfg(test)]
+    async fn pause_gc_inventory_for_test(&self, entries_seen: usize) {
+        if let Some(gate) = &self.gc_inventory_test_gate
+            && entries_seen == gate.after_entries
+            && gate.armed.swap(false, std::sync::atomic::Ordering::Relaxed)
+        {
+            gate.entered.notify_one();
+            gate.release
+                .acquire()
+                .await
+                .expect("GC inventory gate closed")
+                .forget();
+        }
+    }
+
+    async fn gc_inventory(
+        &self,
+        dry_run: bool,
+        active: impl Fn() -> bool,
+    ) -> LifecycleResult<GcInventory> {
+        if !active() {
+            return Ok(GcInventory::default());
+        }
         let Some(mut entries) = self.gc_cache_entry_reader().await? else {
             return Ok(GcInventory::default());
         };
@@ -343,8 +429,14 @@ impl HomeImageCache {
         while let Some(entry) =
             Self::next_gc_cache_entry(&mut entries, self.home_image_cache_dir()).await?
         {
+            if !active() {
+                break;
+            }
             let entry_inventory = match self.try_lock_gc_cache_entry(&entry).await? {
                 Some(lock) => {
+                    if !active() {
+                        break;
+                    }
                     let result = self.gc_locked_cache_entry(&entry, dry_run).await;
                     drop(lock);
                     result?
@@ -357,22 +449,16 @@ impl HomeImageCache {
             inventory.pre_cleanup_freed_bytes = inventory
                 .pre_cleanup_freed_bytes
                 .saturating_add(entry_inventory.pre_cleanup_freed_bytes);
-            if let Some(candidate) = entry_inventory.candidate {
+            if let Some(mut candidate) = entry_inventory.candidate {
+                if dry_run {
+                    candidate.prospective_cleanup_bytes = entry_inventory.pre_cleanup_freed_bytes;
+                }
                 inventory.candidates.push(candidate);
             }
             #[cfg(test)]
-            if let Some(gate) = &self.gc_inventory_test_gate {
+            {
                 entries_seen += 1;
-                if entries_seen == gate.after_entries
-                    && gate.armed.swap(false, std::sync::atomic::Ordering::Relaxed)
-                {
-                    gate.entered.notify_one();
-                    gate.release
-                        .acquire()
-                        .await
-                        .expect("GC inventory gate closed")
-                        .forget();
-                }
+                self.pause_gc_inventory_for_test(entries_seen).await;
             }
         }
         Ok(inventory)
@@ -695,21 +781,39 @@ impl HomeImageCache {
         Ok(freed)
     }
 
-    #[cfg(any(test, feature = "test-support"))]
-    pub(super) async fn gc_candidates(&self) -> LifecycleResult<Vec<GcCandidate>> {
+    pub(super) async fn gc_candidates(
+        &self,
+        active: impl Fn() -> bool,
+    ) -> LifecycleResult<Option<Vec<GcCandidate>>> {
+        if !active() {
+            return Ok(None);
+        }
         let Some(mut entries) = self.gc_cache_entry_reader().await? else {
-            return Ok(Vec::new());
+            return Ok(Some(Vec::new()));
         };
         let mut candidates = Vec::new();
+        #[cfg(test)]
+        let mut entries_seen = 0;
         while let Some(entry) =
             Self::next_gc_cache_entry(&mut entries, self.home_image_cache_dir()).await?
         {
-            let Some(candidate) = self.gc_candidate_for_entry(&entry).await else {
-                continue;
-            };
-            candidates.push(candidate);
+            if !active() {
+                #[cfg(test)]
+                if let Some(gate) = &self.pressure_inventory_stopped_test_gate {
+                    gate.enter_and_wait().await;
+                }
+                return Ok(None);
+            }
+            if let Some(candidate) = self.gc_candidate_for_entry(&entry).await {
+                candidates.push(candidate);
+            }
+            #[cfg(test)]
+            {
+                entries_seen += 1;
+                self.pause_gc_inventory_for_test(entries_seen).await;
+            }
         }
-        Ok(candidates)
+        Ok(Some(candidates))
     }
 
     async fn gc_candidate_from_observation(
@@ -727,6 +831,7 @@ impl HomeImageCache {
             cache_key,
             image_generation,
             allocated_bytes: total,
+            prospective_cleanup_bytes: 0,
             file_dev: file_metadata.dev(),
             file_ino: file_metadata.ino(),
             last_used_at,

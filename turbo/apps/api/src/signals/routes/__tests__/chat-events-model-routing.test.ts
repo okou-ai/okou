@@ -202,7 +202,7 @@ describe("CHAT-02: model-first routing", () => {
       },
       [201],
     );
-    expect(sent).toMatchObject({ status: 201, body: { runId: null } });
+    expect(sent.status).toBe(201);
     await flushWaitUntilForTest();
     expect(
       (await chat.listThreadEvents(actor, thread.id)).events,
@@ -303,7 +303,7 @@ describe("CHAT-02: model-first routing", () => {
         hasTextContent: true,
       });
       expect(response.status).toBe(201);
-      expect(response.body).toMatchObject({ threadId, runId: null });
+      expect(response.body).toMatchObject({ threadId });
       await flushWaitUntilForTest();
       await expect(
         chat.readThreadMetadata(actor, threadId),
@@ -368,7 +368,7 @@ describe("CHAT-02: model-first routing", () => {
         [201],
       );
       expect(response.status).toBe(201);
-      expect(response.body).toMatchObject({ threadId, runId: null });
+      expect(response.body).toMatchObject({ threadId });
       await flushWaitUntilForTest();
       await expect(
         chat.readThreadMetadata(actor, threadId),
@@ -562,7 +562,6 @@ describe("CHAT-02: model-first routing", () => {
     if (queued.status !== 201) {
       throw new Error("Expected the legacy-thread follow-up to queue");
     }
-    expect(queued.body.runId).toBeNull();
 
     const historicalMessages = await chat.listThreadEvents(
       actor,

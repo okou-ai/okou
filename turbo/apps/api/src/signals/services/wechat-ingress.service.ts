@@ -1,5 +1,11 @@
 import { wechatAttachments } from "../external/wechat-media";
-import { wechatEventId } from "./wechat-message-identity";
+import { MAX_WECHAT_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/integrations-wechat-files";
+import {
+  materializeIntegrationInputAssets$,
+  integrationInputMessageFiles,
+  type IntegrationInputFile,
+} from "./integration-input-assets.service";
+import { isWechatOwnerMessage, wechatEventId } from "./wechat-message-identity";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import {
   publishChatThreadMessageCreatedSafely,
@@ -20,6 +26,8 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { agents } from "@okouai/db/schema/agent";
 import { writeDb$ } from "../external/db";
+import { waitUntil } from "../context/wait-until";
+import { reconcileWechatThreadTyping$ } from "./wechat-thread-typing.service";
 import type { WechatMessage } from "../external/wechat-client";
 import { nowDate } from "../../lib/time";
 import { parseRawRows } from "../../lib/db-raw-rows";
@@ -35,7 +43,10 @@ import {
   type ThreadModelReplacement,
 } from "./chat-input-model.service";
 import { chatThreadServiceTierFromCodex } from "./chat-thread-event.service";
-import { createUserMessageDocument } from "./chat-user-message.service";
+import {
+  createUserMessageDocument,
+  projectUserMessage,
+} from "./chat-user-message.service";
 import { prepareChatEvent } from "./chat-event.service";
 import { canonicalChatEventAppendCtes } from "./chat-event-append.service";
 import { encryptStoredSecretValue } from "./crypto.utils";
@@ -45,6 +56,14 @@ import {
 } from "./chat-thread-queue-drain.service";
 
 type Connection = typeof wechatConnections.$inferSelect;
+
+function activeBinding(connection: Connection) {
+  return and(
+    eq(wechatConnections.id, connection.id),
+    eq(wechatConnections.generation, connection.generation),
+    eq(wechatConnections.status, "active"),
+  );
+}
 
 /** Keep model replacement and its lifecycle records in the input's statement. */
 function modelReplacementCtes(replacement: ThreadModelReplacement | null) {
@@ -83,11 +102,18 @@ const ensureThread$ = command(
     const db = set(writeDb$);
     const [existing] = await db
       .select({ chatThreadId: wechatChatThreadRoutes.chatThreadId })
-      .from(wechatChatThreadRoutes)
-      .where(eq(wechatChatThreadRoutes.connectionId, connection.id))
+      .from(wechatConnections)
+      .leftJoin(
+        wechatChatThreadRoutes,
+        eq(wechatChatThreadRoutes.connectionId, wechatConnections.id),
+      )
+      .where(activeBinding(connection))
       .limit(1);
     signal.throwIfAborted();
-    if (existing) {
+    if (!existing) {
+      return;
+    }
+    if (existing.chatThreadId) {
       return existing.chatThreadId;
     }
     const [agent] = await db
@@ -120,7 +146,23 @@ const ensureThread$ = command(
     );
     const routeInsert = db
       .insert(wechatChatThreadRoutes)
-      .values({ connectionId: connection.id, chatThreadId: thread.id })
+      .select(
+        db
+          .select({
+            id: sql`gen_random_uuid()`
+              .mapWith(wechatChatThreadRoutes.id)
+              .as("id"),
+            connectionId: wechatConnections.id,
+            chatThreadId: sql`${thread.id}::uuid`
+              .mapWith(wechatChatThreadRoutes.chatThreadId)
+              .as("chat_thread_id"),
+            createdAt: sql`now()`
+              .mapWith(wechatChatThreadRoutes.createdAt)
+              .as("created_at"),
+          })
+          .from(wechatConnections)
+          .where(activeBinding(connection)),
+      )
       .onConflictDoNothing({ target: wechatChatThreadRoutes.connectionId })
       .returning({ chatThreadId: wechatChatThreadRoutes.chatThreadId });
     const route = db.$with("wechat_route").as(routeInsert);
@@ -142,21 +184,24 @@ const ensureThread$ = command(
     }
     const [winner] = await db
       .select({ chatThreadId: wechatChatThreadRoutes.chatThreadId })
-      .from(wechatChatThreadRoutes)
-      .where(eq(wechatChatThreadRoutes.connectionId, connection.id))
+      .from(wechatConnections)
+      .leftJoin(
+        wechatChatThreadRoutes,
+        eq(wechatChatThreadRoutes.connectionId, wechatConnections.id),
+      )
+      .where(activeBinding(connection))
       .limit(1);
     signal.throwIfAborted();
     if (!winner) {
+      return;
+    }
+    if (!winner.chatThreadId) {
       throw new Error("WeChat route publication did not succeed");
     }
     return winner.chatThreadId;
   },
 );
-function wechatMessagePrompt(
-  message: WechatMessage,
-  connectionId: string,
-  id: string,
-) {
+function wechatMessagePrompt(message: WechatMessage) {
   const text = (message.item_list ?? [])
     .filter((item) => {
       return item.type === 1 || item.type === 3;
@@ -177,11 +222,6 @@ function wechatMessagePrompt(
   });
   return [
     text,
-    ...(attachments.length
-      ? [
-          `[WeChat attachments: untrusted metadata, content not yet read]\n${JSON.stringify(attachments)}\nRead with: okou wechat download-file <attachment-id> --channel ${connectionId} --message ${id} --out <path>`,
-        ]
-      : []),
     ...(unsupported
       ? [
           "[The sender included an attachment. This item could not be retrieved; explain that it was not read and ask the sender to resend it as a supported file or text.]",
@@ -206,6 +246,90 @@ function quotedWechatText(message: WechatMessage) {
       .slice(0, 12_000) || null
   );
 }
+const materializeWechatUserMessage$ = command(
+  async (
+    { set },
+    args: {
+      readonly connection: Connection;
+      readonly message: WechatMessage;
+      readonly chatThreadId: string;
+      readonly eventId: string;
+      readonly text: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const { connection, message } = args;
+    const files: IntegrationInputFile[] = wechatAttachments(
+      message.item_list ?? [],
+    ).map((attachment) => {
+      const item = message.item_list?.[Number(attachment.id)];
+      if (!item) {
+        throw new Error("WeChat attachment has no provider item");
+      }
+      return {
+        sourceId: attachment.id,
+        filename: attachment.filename,
+        size: attachment.size ?? undefined,
+        maxBytes: MAX_WECHAT_FILE_SIZE_BYTES,
+        provenance: {
+          provider: "wechat",
+          installationId: connection.id,
+          messageId: message.message_id,
+          externalFileId: `${args.eventId}:${attachment.id}`,
+        },
+        resource: { provider: "wechat", item },
+      };
+    });
+    const assets = await set(
+      materializeIntegrationInputAssets$,
+      {
+        userId: connection.userId,
+        orgId: connection.orgId,
+        chatThreadId: args.chatThreadId,
+        files,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (
+      assets.some(({ asset }) => {
+        return asset.error?.retryable;
+      })
+    ) {
+      // Keep the durable provider batch until a transient import can be retried.
+      throw new Error("WeChat attachment import is temporarily unavailable");
+    }
+    return createUserMessageDocument({
+      text: args.text,
+      files: integrationInputMessageFiles(assets),
+      nonContentPart: { type: "source", kind: "wechat" },
+    });
+  },
+);
+
+async function wechatMessageMaterial(
+  connection: Connection,
+  message: WechatMessage,
+  contextToken: string,
+) {
+  const attachments = wechatAttachments(message.item_list ?? []);
+  return {
+    context: {
+      connectionId: connection.id,
+      generation: connection.generation,
+      senderId: connection.senderId,
+      botId: connection.botId,
+      messageId: message.message_id,
+      contextTokenCiphertext: await encryptStoredSecretValue(contextToken),
+      quotedText: quotedWechatText(message),
+    },
+    attachments,
+    mediaCiphertext: attachments.length
+      ? await encryptStoredSecretValue(JSON.stringify(message.item_list))
+      : null,
+  };
+}
+
 export const receiveWechatMessage$ = command(
   async (
     { set },
@@ -215,11 +339,8 @@ export const receiveWechatMessage$ = command(
     const { connection, message } = args;
     // Only the verified scanner's direct messages can become an Okou input.
     if (
-      message.message_type !== 1 ||
-      message.from_user_id !== connection.senderId ||
-      message.group_id ||
-      (message.to_user_id && message.to_user_id !== connection.botId) ||
-      !message.context_token
+      connection.status !== "active" ||
+      !isWechatOwnerMessage(connection, message)
     ) {
       return;
     }
@@ -228,16 +349,24 @@ export const receiveWechatMessage$ = command(
       connection.generation,
       message.message_id,
     );
-    const attachments = wechatAttachments(message.item_list ?? []);
-    const mediaCiphertext = attachments.length
-      ? await encryptStoredSecretValue(JSON.stringify(message.item_list))
-      : null;
+    const { context, attachments, mediaCiphertext } =
+      await wechatMessageMaterial(connection, message, message.context_token);
     signal.throwIfAborted();
-    const prompt = wechatMessagePrompt(message, connection.id, id);
-    if (!prompt) {
+    const text = wechatMessagePrompt(message);
+    if (!text && attachments.length === 0) {
       return;
     }
     const threadId = await set(ensureThread$, connection, signal);
+    if (!threadId) {
+      return;
+    }
+    const userMessage = await set(
+      materializeWechatUserMessage$,
+      { connection, message, chatThreadId: threadId, eventId: id, text },
+      signal,
+    );
+    signal.throwIfAborted();
+    const prompt = projectUserMessage(userMessage).agentPrompt;
 
     const model = await set(
       resolveEnqueuedChatInputModel$,
@@ -245,18 +374,6 @@ export const receiveWechatMessage$ = command(
       signal,
     );
 
-    const quotedText = quotedWechatText(message);
-    const context = {
-      connectionId: connection.id,
-      generation: connection.generation,
-      senderId: connection.senderId,
-      botId: connection.botId,
-      messageId: message.message_id,
-      contextTokenCiphertext: await encryptStoredSecretValue(
-        message.context_token,
-      ),
-      quotedText,
-    };
     const currentTime = nowDate();
     const prepared = prepareChatEvent({
       id,
@@ -264,33 +381,25 @@ export const receiveWechatMessage$ = command(
       eventType: "input.prompt",
       runId: null,
       modelSelection: model.modelSelection,
-      userMessage: createUserMessageDocument({
-        text: prompt,
-        nonContentPart: { type: "source", kind: "wechat" },
-      }),
+      userMessage,
       wechatContext: context,
       createdAt: currentTime,
     });
     const db = set(writeDb$);
     // Context, receipt (the deterministic canonical event ID), and queue commit
     // together. Replays do not enqueue again; a concurrent disconnect fails closed.
-    const contextInsert = db
-      .insert(chatWechatContext)
-      .values({
-        ...context,
-        id,
-        chatThreadId: threadId,
-        createdAt: currentTime,
-      })
-      .onConflictDoNothing()
-      .returning({ id: chatWechatContext.id });
+    const contextInsert = sql`INSERT INTO chat_wechat_context
+      (id,chat_thread_id,connection_id,generation,sender_id,bot_id,message_id,context_token_ciphertext,quoted_text,created_at)
+      SELECT ${id}::uuid,${threadId}::uuid,id,generation,sender_id,bot_id,${message.message_id},${context.contextTokenCiphertext},${context.quotedText},${sql.param(currentTime, chatWechatContext.createdAt)}
+      FROM ${wechatConnections} WHERE ${activeBinding(connection)}
+      ON CONFLICT DO NOTHING RETURNING id`;
     // Queue compare-and-delete uses JS Dates; preserve millisecond precision.
     const inserted = parseRawRows(
       z.object({ id: z.uuid() }),
-      await db.execute(sql`WITH context_insert AS (${contextInsert.getSQL()}), ${canonicalChatEventAppendCtes([prepared.row], "id", sql`EXISTS(SELECT 1 FROM ${wechatConnections} WHERE id=${connection.id}::uuid AND generation=${connection.generation}::uuid AND status='active') AND EXISTS(SELECT 1 FROM context_insert)`)}
+      await db.execute(sql`WITH context_insert AS (${contextInsert}), ${canonicalChatEventAppendCtes([prepared.row], "id", sql`EXISTS(SELECT 1 FROM ${wechatConnections} WHERE ${activeBinding(connection)}) AND EXISTS(SELECT 1 FROM context_insert)`)}
  ${modelReplacementCtes(model.threadModelReplacement)}, archived AS (
  INSERT INTO wechat_messages(id,connection_id,generation,provider_message_id,direction,status,content,quoted_text,attachments,media_ciphertext,created_at)
- SELECT ${id}::uuid,${connection.id}::uuid,${connection.generation}::uuid,${message.message_id},'inbound','received',${prompt},${quotedText},${sql.param(attachments, wechatMessages.attachments)},${mediaCiphertext},${sql.param(currentTime, wechatMessages.createdAt)} FROM inserted
+ SELECT ${id}::uuid,${connection.id}::uuid,${connection.generation}::uuid,${message.message_id},'inbound','received',${prompt},${context.quotedText},${sql.param(attachments, wechatMessages.attachments)},${mediaCiphertext},${sql.param(currentTime, wechatMessages.createdAt)} FROM inserted
  ON CONFLICT DO NOTHING RETURNING id
  ), enqueued AS (
  INSERT INTO queued_chat_threads (chat_thread_id,org_id,queued_at)
@@ -301,6 +410,22 @@ export const receiveWechatMessage$ = command(
     );
     signal.throwIfAborted();
     if (inserted.length > 0) {
+      waitUntil(
+        set(
+          reconcileWechatThreadTyping$,
+          {
+            chatThreadId: threadId,
+            target: {
+              connectionId: connection.id,
+              generation: connection.generation,
+              senderId: connection.senderId,
+              messageId: message.message_id,
+              contextId: id,
+            },
+          },
+          new AbortController().signal,
+        ),
+      );
       await set(
         touchNativeChatThread$,
         {

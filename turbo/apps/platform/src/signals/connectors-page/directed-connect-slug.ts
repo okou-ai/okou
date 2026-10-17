@@ -16,7 +16,20 @@ import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { pathParams$, searchParams$ } from "../route.ts";
 import { agents$ } from "../agent.ts";
-import { resetBuiltinManualGrantForm$ } from "../okou-page/settings/connectors.ts";
+import {
+  resetBuiltinManualGrantForm$,
+  connectBuiltinConnectorOAuthAuthCodeAndSettle$,
+  connectBuiltinConnectorNoAuthAndSettle$,
+  getBuiltinConnectorStatusConnectLaunchMode,
+  getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail,
+  getOnlyAvailableBuiltinConnectorStatusNoAuthMethod,
+  getOnlyManualBuiltinConnectorStatusAuthMethod,
+  hasBuiltinConnectorStatusProviderDrivenConnectMethod,
+} from "../okou-page/settings/connectors.ts";
+import type { PlatformConnectorCatalogStatusItem } from "../connector-domain.ts";
+import type { ConnectorAccountMutationOptions } from "../okou-page/settings/connector-account-dialogs.ts";
+import { completeDirectedConnectorAction$ } from "./directed-connector-callback.ts";
+import { routeChatActionCallback$ } from "../chat-page/action-callback.ts";
 import { connectorCatalogItemForSlug } from "../external/connectors.ts";
 
 /**
@@ -103,21 +116,25 @@ export const directedConnectAgentName$ = computed(async (get) => {
   return { agentId, displayName: agent?.displayName ?? null };
 });
 
-type DirectedConnectManualGrantDialogKey = {
+interface DirectedConnectTarget {
   readonly connectorSlug: ConnectorSlug;
   readonly agentId: string | null;
-  readonly signal: AbortSignal;
-};
+}
 
-type DirectedConnectModalKey = {
-  readonly connectorSlug: ConnectorSlug;
-  readonly agentId: string | null;
-  readonly signal: AbortSignal;
-};
-
-type DirectedConnectCustomDialogKey = {
+interface DirectedConnectCustomTarget {
   readonly connectorSlug: CustomConnectorSlug;
   readonly agentId: string | null;
+}
+
+type DirectedConnectManualGrantDialogKey = DirectedConnectTarget & {
+  readonly signal: AbortSignal;
+};
+
+type DirectedConnectModalKey = DirectedConnectTarget & {
+  readonly signal: AbortSignal;
+};
+
+type DirectedConnectCustomDialogKey = DirectedConnectCustomTarget & {
   readonly signal: AbortSignal;
 };
 
@@ -138,23 +155,100 @@ export const directedConnectCustomDialogKey$ = computed((get) => {
   return get(internalDirectedConnectCustomDialogKey$);
 });
 export const setManualGrantDialogKey$ = command(
-  ({ set }, key: DirectedConnectManualGrantDialogKey | null) => {
+  ({ set }, key: DirectedConnectTarget | null, signal: AbortSignal) => {
     if (key) {
       set(resetBuiltinManualGrantForm$, key.connectorSlug);
     }
-    set(internalManualGrantDialogKey$, key);
+    set(internalManualGrantDialogKey$, key ? { ...key, signal } : null);
   },
 );
 export const setDirectedConnectModalKey$ = command(
-  ({ set }, key: DirectedConnectModalKey | null) => {
+  ({ set }, key: DirectedConnectTarget | null, signal: AbortSignal) => {
     if (key) {
       set(resetBuiltinManualGrantForm$, key.connectorSlug);
     }
-    set(internalDirectedConnectModalKey$, key);
+    set(internalDirectedConnectModalKey$, key ? { ...key, signal } : null);
   },
 );
 export const setDirectedConnectCustomDialogKey$ = command(
-  ({ set }, key: DirectedConnectCustomDialogKey | null) => {
-    set(internalDirectedConnectCustomDialogKey$, key);
+  ({ set }, key: DirectedConnectCustomTarget | null, signal: AbortSignal) => {
+    set(
+      internalDirectedConnectCustomDialogKey$,
+      key ? { ...key, signal } : null,
+    );
+  },
+);
+
+/** Launch the selected account's connection and await its chat continuation. */
+export const connectDirectedConnector$ = command(
+  async (
+    { get, set },
+    item: PlatformConnectorCatalogStatusItem,
+    agentId: string | null,
+    accountOptions: ConnectorAccountMutationOptions,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const callback = get(routeChatActionCallback$);
+    const launchMode = getBuiltinConnectorStatusConnectLaunchMode(item);
+    const key = { connectorSlug: item.slug, agentId };
+    if (launchMode === "modal") {
+      const manualMethod = getOnlyManualBuiltinConnectorStatusAuthMethod(item);
+      if (
+        !hasBuiltinConnectorStatusProviderDrivenConnectMethod(item) &&
+        manualMethod &&
+        item.authMethods.length === 1
+      ) {
+        set(setManualGrantDialogKey$, key, signal);
+      } else {
+        set(setDirectedConnectModalKey$, key, signal);
+      }
+      return;
+    }
+    const options = {
+      connectorLabel: item.label,
+      ...(agentId ? { agentId } : { authorizeVisibleAgents: true }),
+      ...accountOptions,
+    };
+    const onSuccess = (
+      _connectionId: string | null,
+      attemptSignal: AbortSignal,
+    ) => {
+      return set(
+        completeDirectedConnectorAction$,
+        agentId,
+        callback,
+        attemptSignal,
+      );
+    };
+    if (launchMode === "browser-auth") {
+      const method =
+        getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail(item);
+      if (!method) {
+        set(setDirectedConnectModalKey$, key, signal);
+        return;
+      }
+      await set(
+        connectBuiltinConnectorOAuthAuthCodeAndSettle$,
+        {
+          connectorSlug: item.slug,
+          method,
+          options: { ...options, connectorIcon: item.icon },
+          onSuccess,
+        },
+        signal,
+      );
+    } else {
+      const authMethod =
+        getOnlyAvailableBuiltinConnectorStatusNoAuthMethod(item);
+      if (!authMethod) {
+        set(setDirectedConnectModalKey$, key, signal);
+        return;
+      }
+      await set(
+        connectBuiltinConnectorNoAuthAndSettle$,
+        { connectorSlug: item.slug, authMethod, options, onSuccess },
+        signal,
+      );
+    }
   },
 );

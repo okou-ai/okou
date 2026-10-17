@@ -1,5 +1,158 @@
 # Guarded idle terminal fixture
 
+## Accepted actual snapshot-read cancellation
+
+`native_read_cancellation_retains_actual_io_through_drain` runs the production
+startup and guarded runtime readers on the immutable original 4 GiB `memory.bin`,
+in fresh and matching-snapshot Guest factories. A non-default test-support
+checkpoint runs after the actual File reader returns its first 1 MiB. It holds
+that same physical producer on an invocation-owned blocking Unix read; the
+storage File read itself is not claimed to be stalled.
+
+Startup remains unguarded under held Unknown. Runtime is admitted under actual
+sustained Ready using the original P2 authority. Cancellation must leave both a
+first drain observer Pending and, after dropping it, a second drain Pending.
+Actual independent host observation and acknowledged API heartbeat finish while
+the release byte remains withheld. The original full lease/data remain owned;
+the guarded operation retains its original registration, declared full growth
+and tracked physical owner. Only actual checkpoint release, positive physical
+drain and fresh phase settlement permit the cancelled exact-byte outcome and
+zero remaining P2 custody. Cancellation supplies no numerical memory credit.
+
+All readers, sampler, heartbeat/provider and peer join before required original
+saving. The inherited complete immutable snapshot hash, original home bytes,
+full lease, exact backing wait, durable 64 MiB tail and factory/runtime dependency
+joins remain mandatory. Every failure also releases owned gates and positively
+joins accepted work; timeout remains failure.
+
+Select the ignored test with the exact-source bounded P1 invocation below.
+Metadata additionally requires `native_read_cancellation_policy_json`,
+`native_read_cancellation_inputs_json` and
+`native_read_cancellation_snapshot_bytes` (4294967296). Validate both cases:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/read_cancellation_report.py "$P1_OUTPUT_DIRECTORY"
+```
+
+Ordinary Cargo runs actual-file checkpoint/ownership regressions and the
+real-file/CLI refusal consumer without KVM. Accepted Guest/provider creation,
+rollback and late results plus final ancestor reconciliation remain #40760
+under #40355. Full production Reactor/P2 installation, stalled-storage progress,
+numerical relief, full/cold residency, calibrated envelopes, unknown original
+template provenance and OOM protection remain unverified.
+
+## Native Critical contention progress
+
+`native_critical_records_independent_contention_progress` supplements the actual
+three-wave Critical corpus in fresh and matching-snapshot factories. Startup
+completely reads the original 4 GiB under held Unknown. Runtime preparation stays
+suppressed throughout actual Critical observations from the supplied policy.
+
+The pressure owner's actual initial pool-lock future must poll Pending before
+independent host observation completes. After pool release and the first blank's
+joined cleanup, its actual status publication must poll Pending; acknowledged API
+heartbeat and new host observation complete while that status lock remains held.
+This preserves production cleanup-before-publication ordering.
+
+After two resolved single-entry waves, the original required durable-tail IO stays
+blocked in the kernel. A separate fitting Fresh foreground caller positively waits
+on the held pool and status locks, then completes real Guest RPC, its original P2
+phase and exact new-backing exit while the original full lease and IO gate remain
+held. Observation completes during the pool wait; acknowledged heartbeat and new
+observation complete during status and IO waits. Only then is the original IO
+released. The final wave requires a new actual post-completion sample and all
+original physical, data, durable-tail and producer joins.
+
+Select the ignored test with the exact-source bounded P1 invocation below.
+Metadata additionally requires `native_critical_policy_json`,
+`native_critical_inputs_json` and `native_critical_snapshot_bytes` (4294967296).
+Validate both cases and their inherited complete physical proof:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/critical_progress_report.py "$P1_OUTPUT_DIRECTORY"
+```
+
+Ordinary Cargo runs the real-file/CLI refusal contracts and actual pool Pending
+observer regression without KVM. The supplied policy classifies actual host reads
+as Critical without inducing host pressure. Numerical relief, full production
+Reactor/P2 installation, full/cold residency, calibrated envelopes, original
+template provenance and OOM protection remain unverified. Accepted cancellation,
+provider late results and final ancestor reconciliation remain separate.
+
+## Native incoming inventory progress
+
+`native_incoming_records_reader_heartbeat_and_cleanup_contention` runs actual
+replacement, exact restoration and aged replenishment in fresh and matching
+snapshot factories. Every case completely reads the original 4 GiB at startup
+under Unknown, then through the guarded runtime reader under sustained actual
+Ready while the public incoming caller still waits on the held pool.
+
+After pool release, the exact StatusTracker lock observer proves the status
+publication is Pending. Replacement/restoration compose public insertion with
+public status publication; aged uses its actual internal publication. Independent
+host observation and acknowledged API heartbeat finish while status remains
+held, then again while original required saving waits on the real kernel IO gate.
+
+Replacement retains separate new and original full leases. Restoration returns
+the exact original reservation and retires a distinct competing blank. Aged joins
+the old original cleanup and durable tail before its new blank factory creation;
+the receipt observes that actual factory boundary. Every new preparation settles
+its original Fresh P2 phase, and both original and new backing exits are positively
+joined. The original full lease stays active through complete original data,
+durable 64 MiB tail and producer/dependency joins before main releases it.
+
+Select the ignored incoming test with the exact-source bounded P1 invocation
+below. Metadata additionally requires `native_incoming_policy_json`,
+`native_incoming_inputs_json` and `native_incoming_snapshot_bytes` (4294967296).
+Validate all six cases and the inherited complete physical proof:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/incoming_report.py "$P1_OUTPUT_DIRECTORY"
+```
+
+Ordinary Cargo executes its real-file/CLI refusal contracts. Independent Critical
+contention/mapping remains separate, as do accepted cancellation and provider late
+results. Full production Reactor/P2 installation, numerical relief, full/cold
+residency, calibrated envelopes, original template provenance and OOM protection
+remain unverified. No physical credit is inferred from insertion or logical lease
+custody.
+
+## Native logical substitution progress
+
+`native_logical_records_reader_heartbeat_and_cleanup_contention` starts with the
+original full logical budget and an independently granted Fresh physical allowance
+in the same P2. The actual guarded logical caller positively waits on the held
+pool. Startup completes every original 4 GiB under Unknown; guarded runtime then
+completes every byte under actual sustained Ready while the pool remains held.
+
+After pool release, a non-default Lifecycle observer identifies the actual
+`set_idle_snapshot` state-lock future polling Pending after accepted old cleanup
+and atomic full-profile logical transfer. Independent actual observation and
+acknowledged heartbeat complete during that held status wait. The original Fresh
+allowance refreshes after status release, funds a different real Guest and settles
+its actual RPC phase. Its exact physical exit is joined before requesting the old
+cleanup join; no old-exit dependency or still-live overlap is claimed. The same
+original lease witness survives the one-for-one logical transfer and remains
+active through the blocked kernel read, complete durable old tail and all joins.
+Logical capacity never supplies physical memory credit.
+
+Select that ignored test with the exact-source bounded P1 invocation below.
+Metadata additionally requires `native_logical_policy_json`,
+`native_logical_inputs_json` and `native_logical_snapshot_bytes` (4294967296),
+binding the exact supplied policy and original immutable snapshot inputs. Then run:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/logical_report.py "$P1_OUTPUT_DIRECTORY"
+```
+
+Ordinary Cargo runs the real-file/CLI refusal contract and the status observer's
+real-file owner test. Native execution requires owned KVM/NBD inputs in fresh and
+matching-snapshot factories. #40595 retains replacement/restoration/aged progress,
+#40597 retains remaining Critical contention and full #40412/#40353 mapping, and
+#40355 retains accepted cancellation/provider late results. Full production
+Reactor/P2 installation, numerical relief, full/cold residency, calibrated
+envelopes, unknown template producer and OOM protection remain unverified.
+
 ## Native retirement fences
 
 `native_foreground_records_retirement_fences_before_detach` first grants real
@@ -559,6 +712,45 @@ suppression, paced recovery and cancellation/late-result integration remain
 #40173 under #39997. Full native failures and provenance/residency/envelopes remain
 #39998 and the parents/P4. No calibrated RAM relief, OOM protection or production
 composition-root activation follows from these supplied test-policy observations.
+
+## Actual create cancellation and rollback
+
+`native_create_cancellation_retains_actual_transaction_through_rollback` selects
+`CreateCancellation-fresh` and `CreateCancellation-snapshot`. It creates the
+actual provider home image, reads its complete 1 KiB ext4 superblock, and holds
+the original transaction inside a separate blocking Unix read. The non-default
+`sandbox-firecracker/test-support` checkpoint is invocation-owned; default
+production factories expose no checkpoint. This establishes accepted physical
+creation custody after real file preparation, without claiming stalled storage.
+
+Cancellation must leave both original and creating full leases and the same P2
+Fresh allowance alive through positively Pending dropped/replacement observers,
+foreground CPU admission, an acknowledged heartbeat and an independent actual
+host-memory read. Positive workspace deletion is observed before the final
+custody drops. No new Guest is returned or published. The cancelled Fresh row
+remains registered and uncertain with its entire original growth allowance,
+including at P2 shutdown; cleanup is not numerical memory credit. The existing
+original immutable snapshot/home, exact backing exit, durable 64 MiB tail,
+restored original data and all provider/factory/runtime joins remain required.
+
+Use the existing optional input file and supply exact raw metadata fields
+`native_create_cancellation_policy_json`,
+`native_create_cancellation_inputs_json`,
+`native_create_cancellation_snapshot_bytes` and `native_terminal_artifacts`.
+Validate all bounded P1 files with:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/create_cancellation_report.py <p1-directory>
+```
+
+The report checks actual superblock bytes/hash, distinct new workspace identity,
+original source/input identity, fresh sustained observations, cancellation and
+cleanup clocks, original full resources, pending observers and preserved Fresh
+uncertainty. Real-file/CLI refusal tests run in default CI; actual KVM/NBD remains
+opt-in. This completes only #40786. Returned actual Guest/late results (#40787)
+and post-merge reconciliation (#40788), production activation, numerical relief,
+full residency, calibrated envelopes, unknown bootstrap provenance and OOM
+protection remain open under #40760 and the delivery parents.
 
 ## Native observation gaps and recovery
 

@@ -9,7 +9,7 @@ import type { Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
 import { safeSqlStateCode } from "../../lib/pg-errors";
 import { settle } from "../utils";
-import { executeRawRows } from "../../lib/db-raw-rows";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import type { z } from "zod";
 
 const L = logger("ConversationHistoryDeletion");
@@ -46,8 +46,15 @@ export async function deleteLockedRunHistories(
   tx: Tx,
   runIds: readonly string[],
 ) {
+  const historyDeletionQuery = deleteRunHistoriesSql(runIds);
+  const historyDeletionSchema = deletedRunHistorySchema;
   const rows = await contentFreeDatabaseOperation(
-    executeRawRows(tx, deleteRunHistoriesSql(runIds), deletedRunHistorySchema),
+    (async () => {
+      return parseRawRows(
+        historyDeletionSchema,
+        await tx.execute(historyDeletionQuery),
+      );
+    })(),
   );
   if (rows.length !== runIds.length) {
     throw new Error("Conversation deletion lost a locked run");

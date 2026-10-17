@@ -81,6 +81,7 @@ pub(crate) struct Observed {
     pub(crate) none_auth: AtomicUsize,
     pub(crate) allow_none_auth: AtomicBool,
     pub(crate) commands: Mutex<Vec<Vec<u8>>>,
+    pub(super) exec_ack_gate: Mutex<Option<Arc<Semaphore>>>,
     pub(super) attempts: Mutex<Vec<SocketAddr>>,
     pub(crate) queries: Mutex<Vec<(String, u16)>>,
     pub(super) resolved: AtomicUsize,
@@ -530,6 +531,16 @@ impl Harness {
     }
 
     pub(crate) async fn enable_diagnostics(&mut self) {
+        self.enable_diagnostics_token("diagnostic-agent-token")
+            .await;
+    }
+
+    pub(crate) async fn enable_checks(&mut self, capabilities: &[&str]) {
+        self.enable_diagnostics_token(&crate::test_fixtures::check_token(self.run, capabilities))
+            .await;
+    }
+
+    async fn enable_diagnostics_token(&mut self, token: &str) {
         self.shutdown().await;
         let (incoming, receiver) = mpsc::channel(32);
         self.incoming = incoming;
@@ -541,7 +552,7 @@ impl Harness {
             None,
             Some(Arc::new(crate::diagnostics::Authority::new(
                 self.runtime.http_client(),
-                "diagnostic-agent-token",
+                token,
             ))),
         ));
     }
@@ -916,6 +927,10 @@ impl server::Handler for Peer {
             .lock()
             .unwrap()
             .push(command.to_vec());
+        let gate = self.observed.exec_ack_gate.lock().unwrap().clone();
+        if let Some(gate) = gate {
+            gate.acquire().await.unwrap().forget();
+        }
         match &self.reply {
             Reply::Process => {
                 session.channel_success(channel)?;

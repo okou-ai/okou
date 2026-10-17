@@ -30,6 +30,7 @@ impl SandboxFactory for MeasuredFactory {
         self.inner.config_hash()
     }
     async fn create(&self, config: SandboxConfig) -> sandbox::Result<Box<dyn Sandbox>> {
+        self.case.incoming_creation(config.id)?;
         self.inner.create(config).await
     }
     async fn create_with_custody(

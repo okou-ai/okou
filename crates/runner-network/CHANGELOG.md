@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.52](https://github.com/okou-ai/okou/compare/runner-network-v0.2.51...runner-network-v0.2.52) (2026-10-17)
+
+
+### Refactoring
+
+* **runner-network:** own kmsg diagnostic reader lifetime ([#40815](https://github.com/okou-ai/okou/issues/40815)) ([08e5aa5](https://github.com/okou-ai/okou/commit/08e5aa56f92fe155e8aecf1f6e115d84997b0d5b))
+* **runner-network:** remove redundant source drain state ([#40810](https://github.com/okou-ai/okou/issues/40810)) ([47c09f1](https://github.com/okou-ai/okou/commit/47c09f1a4690940572e4d2202040fda51b704aa8))
+
+## [0.2.51](https://github.com/okou-ai/okou/compare/runner-network-v0.2.50...runner-network-v0.2.51) (2026-10-16)
+
+## [0.2.50](https://github.com/okou-ai/okou/compare/runner-network-v0.2.49...runner-network-v0.2.50) (2026-10-16)
+
 ## [0.2.49](https://github.com/okou-ai/okou/compare/runner-network-v0.2.48...runner-network-v0.2.49) (2026-10-16)
 
 

@@ -28,6 +28,30 @@ close do not create failures. Existing business/byte/truncation/EOF/helper-exit
 and local file-publication checks remain authoritative. Lost or corrupt delivery
 never supplies a trusted explanation and never replays work.
 
+## Automatic VNC explanations
+
+Ordinary VNC failures can carry the same optional `diagnostic_text` as SSH.
+Runner captures early admission/configuration, selected destination/transport,
+RFB authentication/initialization and independent KDC stages in owned finite
+snapshots. Existing RFB deadline and Apple DH categories remain available.
+Nested SSH trust/carrier/native evidence keeps its exact dependency identity;
+KDC failure identifies the independent route rather than the RFB data route.
+
+Each delivered explanation uses that operation's committed report. Retained
+sessions keep pure setup/source facts and latch their first terminal cause and
+time independently of subsequent operation report IDs. Later operations and
+successful connections cannot substitute another report's context.
+Intentional close, stale geometry and input validation do not create retained
+network failures. Setup evidence on a later session operation is marked reused.
+
+An interrupted capture can attach text to the existing error terminal without
+End or a completed image. Binary framing, EOF/exit verification, PNG publication,
+input outcome and delivery uncertainty remain authoritative. CLI only validates
+text size/terminal safety and forwards it in human/JSON output. Missing or unsafe
+optional text cannot replace a verified result; no diagnosis query or action is
+replayed automatically. Collection uses the same default-off switch and current
+assignment/host/dependency authority as passive history.
+
 ## Same-Run passive history
 
 `ssh.diagnose` and `vnc.diagnose` accept optional exact UUID `connectionId`,
@@ -51,6 +75,46 @@ later generations on the
 same creation instance can still read history. Missing identity projection
 fails closed. Generic pre-resolve failures remain unbound and contain no
 private configuration or native source evidence.
+
+## Explicit active checks
+
+`okou ssh check <connection-id> [--json]` opens a fresh physical connection
+through the normal Direct, Cloudflare Access or Tailscale SSH path, performs
+server proof/trust and authentication, and closes only that connection. It sends
+no command, shell, file operation or forwarding channel. Existing host-key TOFU
+and initial native provisioning policy still apply.
+If all physical connection slots are occupied, the check returns blocked and
+keeps existing connections.
+
+`okou vnc check <connection-id> --mode shared|exclusive [--json]` uses the
+existing session admission/capacity policy, configured security/authentication,
+independent KDC and ServerInit, then closes only its temporary session. It sends
+no screenshot or desktop input. Mode can affect remote viewers; exclusive mode
+can disconnect them or be refused. Checks never evict foreground sessions to
+make room. Kerberos ticket acquisition remains an authentication effect.
+
+Both require enabled diagnostics, the exact current assignment and a trusted
+API-installed Run token with the corresponding execution (`ssh:write` or
+`vnc:write`) capability. Passive read authority cannot authorize a login.
+Current host/dependency authority and normal configuration invalidation remain
+authoritative. A failed retained native node blocks reuse; checks never restart
+it, reset trust, bypass provisioning journals or change modes automatically.
+
+One bounded result contains `type: active_check`, `status: passed|failed|blocked`
+and the same opaque Runner-authored `message` in human/JSON output. It identifies
+the check time/context, observed fresh/reused/unknown stages and check-owned
+cleanup scope. SSH waits for physical transport release; VNC waits for temporary
+session closure and explicitly leaves SSH/Kerberos descendant completion unknown.
+Those descendants retain their existing physical owners/capacity. Passing proves
+only the authenticated SSH or initialized VNC setup at
+that time. It does not prove command, framebuffer, input or later health.
+Unconfirmed cleanup stays unknown; shared native resources remain Run-owned.
+
+Check-local evidence, including nested SSH/KDC/native failures, is isolated from
+operational pins, the operational detail ring and qualifying observation API
+writes. Only the latest check receipt is retained separately. Passing and failing
+checks cannot explain or erase a previous operational failure. No discovery,
+version fallback, automatic retry or business replay is performed.
 
 ## Source ownership and bounds
 

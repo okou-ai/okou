@@ -55,7 +55,6 @@ async function sendQueuedPrompt(
   if (sent.status !== 201) {
     throw new Error("Expected the prompt to be accepted");
   }
-  expect(sent.body.runId).toBeNull();
   return clientEventId;
 }
 
@@ -356,6 +355,15 @@ describe("CHAT-02: steering input prompts into a running run", () => {
     ).resolves.toStrictEqual({
       input: { eventId: keptEventId, prompt: "kept for steering" },
     });
+    await expect(
+      api.declareSteeredInput(token, active.runId, keptEventId),
+    ).resolves.toStrictEqual({ outcome: "steered" });
+    await expect(
+      api.declareSteeredInput(token, active.runId, keptEventId),
+    ).resolves.toStrictEqual({ outcome: "steered" });
+    await expect(
+      api.nextSteerableInput(token, active.runId),
+    ).resolves.toStrictEqual({ input: null });
 
     const events = await chat.listThreadEvents(actor, active.threadId);
     expect(
@@ -367,6 +375,15 @@ describe("CHAT-02: steering input prompts into a running run", () => {
           return event.eventType;
         }),
     ).toStrictEqual(["control.revoke"]);
+    const keptReplacements = events.events.filter((event) => {
+      return event.revokesEventId === keptEventId;
+    });
+    expect(keptReplacements).toHaveLength(1);
+    expect(keptReplacements[0]).toMatchObject({
+      eventType: "input.prompt",
+      runId: active.runId,
+      revokesEventId: keptEventId,
+    });
     await cancelChatRun(actor, active.runId);
   }, 90_000);
 
@@ -501,6 +518,34 @@ describe("CHAT-02: steering input prompts into a running run", () => {
         api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
       ).resolves.toStrictEqual({
         input: { eventId, prompt: "only the owning run may steer" },
+      });
+      await expect(
+        api.declareSteeredInput(
+          claimed.claim.sandboxToken,
+          active.runId,
+          eventId,
+        ),
+      ).resolves.toStrictEqual({ outcome: "steered" });
+      await expect(
+        api.declareSteeredInput(
+          claimed.claim.sandboxToken,
+          active.runId,
+          eventId,
+        ),
+      ).resolves.toStrictEqual({ outcome: "steered" });
+      await expect(
+        api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
+      ).resolves.toStrictEqual({ input: null });
+      const replacements = (
+        await chat.listThreadEvents(actor, active.threadId)
+      ).events.filter((event) => {
+        return event.revokesEventId === eventId;
+      });
+      expect(replacements).toHaveLength(1);
+      expect(replacements[0]).toMatchObject({
+        eventType: "input.prompt",
+        runId: active.runId,
+        revokesEventId: eventId,
       });
       await cancelChatRun(actor, active.runId);
     });

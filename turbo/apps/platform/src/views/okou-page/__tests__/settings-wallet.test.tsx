@@ -85,6 +85,25 @@ function connection(connected: boolean): WalletConnectionStatus {
     connectionStatus: connected ? "connected" : "not-connected",
     scopeChange: null,
     nextAction: connected ? ("create_spend" as const) : ("connect" as const),
+    authorization: {
+      known: connected,
+      scopes: connected ? ["payment_methods.agentic"] : [],
+      sourceActions: [],
+      capabilities: {
+        payments: connected,
+        spendHistory: connected,
+        paymentMethods: connected,
+        userInfo: false,
+        transactions: false,
+      },
+      missingPermissions: connected
+        ? ["userinfo:read", "read_link_transactions"]
+        : [
+            "payment_methods.agentic",
+            "userinfo:read",
+            "read_link_transactions",
+          ],
+    },
     checkoutAvailable: false as const,
   };
 }
@@ -116,7 +135,7 @@ test("lets a member connect their workspace wallet and disconnect after consent 
   });
   await openWallet();
   await expect(
-    screen.findByText("Let Okou make purchases for you with Link."),
+    screen.findByText("Let Okou make purchases and view your Link activity."),
   ).resolves.toBeInTheDocument();
   click(await button("Connect"));
   await waitFor(() => {
@@ -373,13 +392,12 @@ function transaction(
   };
 }
 
-test("shows recent purchases with distinct approval/payment states and retains history when disconnected", async () => {
+test("labels recorded approvals as unconfirmed and retains history when disconnected", async () => {
   const first = transaction();
   const second = transaction({
     id: "00000000-0000-4000-8000-000000000002",
     merchantName: "Example Stationery",
     status: "succeeded",
-    test: true,
   });
   context.mocks.api(walletUserContract.status, ({ respond }) => {
     return respond(200, connection(false));
@@ -391,14 +409,14 @@ test("shows recent purchases with distinct approval/payment states and retains h
     });
   });
   await openWallet();
-  const list = await screen.findByRole("region", { name: "Link transactions" });
+  const list = await screen.findByRole("region", { name: "Purchase requests" });
   await within(list).findByText("Example Books");
   expect(within(list).getAllByText("$35.00")).toHaveLength(2);
   expect(
-    within(list).getByText("Approved, awaiting payment"),
+    within(list).getByText("Approved, payment unconfirmed"),
   ).toBeInTheDocument();
   await expect(button("Connect")).resolves.toBeEnabled();
-  const table = within(list).getByRole("table", { name: "Link transactions" });
+  const table = within(list).getByRole("table", { name: "Purchase requests" });
   expect(
     queryAllByRoleFast("columnheader", table).map((cell) => {
       return cell.textContent;
@@ -406,7 +424,6 @@ test("shows recent purchases with distinct approval/payment states and retains h
   ).toStrictEqual(["Merchant", "Date", "Amount", "Status"]);
   expect(within(table).getByText("Example Stationery")).toBeInTheDocument();
   expect(within(table).getByText("Payment succeeded")).toBeInTheDocument();
-  expect(within(table).getByText("Test")).toBeInTheDocument();
   expect(queryAllByRoleFast("button", list)).toHaveLength(0);
 });
 
@@ -429,7 +446,7 @@ test("shows a transaction error separately from connection status and retries to
   ).not.toBeInTheDocument();
   fail = false;
   click(await button("Retry"));
-  await within(list).findByText("No Link transactions yet");
+  await within(list).findByText("No purchase requests yet");
 });
 
 test("opens scope review from the reconnect menu without starting consent immediately", async () => {
@@ -466,4 +483,110 @@ test("opens scope review from the reconnect menu without starting consent immedi
       "More options",
     );
   });
+});
+
+test("replaces recorded approvals with actual Link activity after permission is granted", async () => {
+  let authorized = false;
+  context.mocks.api(walletUserContract.status, ({ respond }) => {
+    return respond(200, {
+      ...connection(true),
+      authorization: {
+        known: true,
+        scopes: ["payment_methods.agentic", "userinfo:read"],
+        sourceActions: authorized ? ["read_link_transactions"] : [],
+        capabilities: {
+          payments: true,
+          spendHistory: true,
+          paymentMethods: true,
+          userInfo: true,
+          transactions: authorized,
+        },
+        missingPermissions: authorized ? [] : ["read_link_transactions"],
+      },
+    });
+  });
+  context.mocks.api(walletUserContract.transactions, ({ respond }) => {
+    return respond(200, {
+      transactions: [transaction({ merchantName: "Okou", amount: 100 })],
+      nextCursor: null,
+    });
+  });
+  context.mocks.api(walletUserContract.activity, ({ respond }) => {
+    return respond(200, {
+      data: [
+        {
+          id: "txn_paid",
+          sourceId: null,
+          amount: -100,
+          currency: "usd",
+          date: "2026-10-14",
+          description: "Okou",
+          origin: "link",
+          category: null,
+          status: "succeeded",
+        },
+        {
+          id: "txn_jpy",
+          sourceId: null,
+          amount: -150,
+          currency: "jpy",
+          date: "2026-10-14",
+          description: "Stationery",
+          origin: "link",
+          category: null,
+          status: "posted",
+        },
+      ],
+      hasMore: false,
+      nextCursor: null,
+    });
+  });
+  await openWallet();
+  await screen.findByText("Approved, payment unconfirmed");
+  expect(
+    screen.getByRole("region", { name: "Purchase requests" }),
+  ).toBeInTheDocument();
+  authorized = true;
+  context.mocks.ably.trigger("wallet:changed", { orgId: "org_1" });
+  const list = await screen.findByRole("table", { name: "Link transactions" });
+  await within(list).findByText("-$1.00");
+  expect(within(list).getByText("-¥150")).toBeInTheDocument();
+  expect(within(list).getAllByText("Payment succeeded")).toHaveLength(2);
+  expect(
+    screen.queryByText("Approved, payment unconfirmed"),
+  ).not.toBeInTheDocument();
+});
+
+test("shows a failed Link activity read as an error rather than recorded approvals", async () => {
+  context.mocks.api(walletUserContract.status, ({ respond }) => {
+    return respond(200, {
+      ...connection(true),
+      authorization: {
+        known: true,
+        scopes: ["payment_methods.agentic", "userinfo:read"],
+        sourceActions: ["read_link_transactions"],
+        capabilities: {
+          payments: true,
+          spendHistory: true,
+          paymentMethods: true,
+          userInfo: true,
+          transactions: true,
+        },
+        missingPermissions: [],
+      },
+    });
+  });
+  context.mocks.api(walletUserContract.transactions, ({ never }) => {
+    return never();
+  });
+  context.mocks.api(walletUserContract.activity, ({ respond }) => {
+    return respond(502, {
+      error: { code: "WALLET_PROVIDER_ERROR", message: "Unavailable" },
+    });
+  });
+  await openWallet();
+  await screen.findByText("Couldn’t load transactions. Try again.");
+  expect(
+    screen.queryByText("Approved, payment unconfirmed"),
+  ).not.toBeInTheDocument();
 });

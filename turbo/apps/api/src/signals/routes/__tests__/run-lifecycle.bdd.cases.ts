@@ -14328,7 +14328,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.requestCancelRun(actor, runId, [200]);
       });
 
-      it("uses the pick time as api start for a chat input picked after a slot frees", async () => {
+      it("omits the api start for a chat input picked after a slot frees", async () => {
         // Two open runs fill the organization, independent of the plan.
         mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
         const api = createRunsApi(context);
@@ -14367,7 +14367,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const picked = await waiting.launchedRun();
         await api.heartbeatRunner(runnerGroup);
         const claim = await api.claimRunnerJob(picked.runId);
-        expect(claim.apiStartTime).toBe(pickedAt);
+        // Only a pick inside its own send request is anchored at receipt.
+        expect(claim.apiStartTime).toBeUndefined();
 
         await api.requestCancelRun(actor, second.runId, [200]);
         await api.requestCancelRun(actor, picked.runId, [200]);

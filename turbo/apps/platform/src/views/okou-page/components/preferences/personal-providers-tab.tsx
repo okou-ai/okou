@@ -23,6 +23,7 @@ import {
   TooltipTrigger,
 } from "@okouai/ui";
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { EllipsisVertical, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { subscriptionUsageWindows } from "../../../../lib/subscription-usage-windows.ts";
@@ -31,11 +32,11 @@ import { openClaudeCodeDeviceAuthDialogPersonal$ } from "../../../../signals/oko
 import { openCodexDeviceAuthDialogPersonal$ } from "../../../../signals/okou-page/settings/codex-device-auth.ts";
 import {
   activatePersonalOAuthCredentialAccount$,
+  confirmSettingsCodexUsageReset$,
   deletePersonalOAuthCredentialAccount$,
   personalAccountDisconnectDialog$,
   personalActionPromise$,
   personalConfiguredProviders$,
-  resetPersonalCodexAccountSubscriptionUsage$,
   setPersonalAccountDisconnectDialog$,
   setSettingsCodexResetDialog$,
   settingsCodexResetDialog$,
@@ -860,40 +861,30 @@ function CodexResetDialogController({
 }) {
   const resetDialog = useGet(settingsCodexResetDialog$);
   const setResetDialog = useSet(setSettingsCodexResetDialog$);
-  const resetCodexAccount = useSet(resetPersonalCodexAccountSubscriptionUsage$);
+  const [resetLoadable, confirmReset] = useLoadableSet(
+    confirmSettingsCodexUsageReset$,
+  );
   const pageSignal = useGet(pageSignal$);
 
-  const confirmReset = () => {
-    const resetPromise = resetDialog.accountId
-      ? resetCodexAccount(resetDialog.accountId, pageSignal)
-      : null;
-    if (!resetPromise) {
-      return;
-    }
-    detach(
-      (async () => {
-        await resetPromise;
-        setResetDialog({
-          ...resetDialog,
-          open: false,
-        });
-      })(),
-      Reason.DomCallback,
-    );
+  const handleConfirmReset = () => {
+    detach(confirmReset(pageSignal), Reason.DomCallback);
   };
 
   return (
     <CodexResetUsageDialog
       open={resetDialog.open}
       resetCredits={resetDialog.resetCredits}
-      resetting={actionPending}
+      resetting={actionPending || resetLoadable.state === "loading"}
+      error={
+        resetLoadable.state === "hasError" ? String(resetLoadable.error) : null
+      }
       onOpenChange={(open) => {
         setResetDialog({
           ...resetDialog,
           open,
         });
       }}
-      onConfirm={confirmReset}
+      onConfirm={handleConfirmReset}
     />
   );
 }

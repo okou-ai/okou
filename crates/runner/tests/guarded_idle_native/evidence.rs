@@ -173,6 +173,7 @@ pub struct Case {
     exit_observer: Mutex<Option<tokio::task::JoinHandle<io::Result<()>>>>,
     retained: Mutex<Vec<Box<dyn Send>>>,
     foreground_io: Mutex<Option<Arc<super::foreground_io::Gate>>>,
+    incoming_creations: std::sync::atomic::AtomicBool,
 }
 
 impl Case {
@@ -190,6 +191,7 @@ impl Case {
             exit_observer: Mutex::new(None),
             retained: Mutex::new(Vec::new()),
             foreground_io: Mutex::new(None),
+            incoming_creations: std::sync::atomic::AtomicBool::new(false),
         });
         case.event(
             "case_started",
@@ -220,6 +222,18 @@ impl Case {
 
     pub fn critical_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
         self.write_event("NATIVE_CRITICAL_WITNESS ", phase, evidence)
+    }
+
+    pub fn critical_progress_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_CRITICAL_PROGRESS_WITNESS ", phase, evidence)
+    }
+
+    pub fn read_cancellation_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_READ_CANCELLATION_WITNESS ", phase, evidence)
+    }
+
+    pub fn create_cancellation_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_CREATE_CANCELLATION_WITNESS ", phase, evidence)
     }
 
     pub fn startup_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
@@ -302,6 +316,32 @@ impl Case {
 
     pub fn fence_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
         self.write_event("NATIVE_FENCE_WITNESS ", phase, evidence)
+    }
+
+    pub fn logical_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_LOGICAL_PROGRESS_WITNESS ", phase, evidence)
+    }
+
+    pub fn incoming_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_INCOMING_PROGRESS_WITNESS ", phase, evidence)
+    }
+
+    pub fn observe_incoming_creations(&self, enabled: bool) {
+        self.incoming_creations
+            .store(enabled, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub fn incoming_creation(&self, id: sandbox::SandboxId) -> io::Result<()> {
+        if self
+            .incoming_creations
+            .load(std::sync::atomic::Ordering::SeqCst)
+        {
+            self.incoming_witness(
+                "guest_creation_started",
+                json!({"sandbox_id": id.to_string()}),
+            )?;
+        }
+        Ok(())
     }
 
     pub fn bind(

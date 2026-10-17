@@ -1,5 +1,56 @@
 # Changelog
 
+## [8.765.2](https://github.com/okou-ai/okou/compare/core-v8.765.1...core-v8.765.2) (2026-10-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.4
+
+## [8.765.1](https://github.com/okou-ai/okou/compare/core-v8.765.0...core-v8.765.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **api:** prefer public og with bounded slack previews and a personal switch ([#40683](https://github.com/okou-ai/okou/issues/40683)) ([fdaa8bd](https://github.com/okou-ai/okou/commit/fdaa8bdfd023f10eba503b63c099d17224b23c51))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.3
+
+## [8.765.0](https://github.com/okou-ai/okou/compare/core-v8.764.2...core-v8.765.0) (2026-10-16)
+
+
+### Features
+
+* **app:** include custom templates in slash commands ([#40685](https://github.com/okou-ai/okou/issues/40685)) ([5c673b4](https://github.com/okou-ai/okou/commit/5c673b4757de42b7bbba75eceb972be3c7a71c20))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.2
+
+## [8.764.2](https://github.com/okou-ai/okou/compare/core-v8.764.1...core-v8.764.2) (2026-10-16)
+
+
+### Bug Fixes
+
+* **wallet:** unify link consent and show actual transactions ([#40650](https://github.com/okou-ai/okou/issues/40650)) ([16fa1cc](https://github.com/okou-ai/okou/commit/16fa1cc1386dd8fcb6f32c789693b98af25f0d13))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.1
+
 ## [8.764.1](https://github.com/okou-ai/okou/compare/core-v8.764.0...core-v8.764.1) (2026-10-16)
 
 

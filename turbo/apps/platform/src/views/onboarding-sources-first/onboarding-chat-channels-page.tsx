@@ -1,5 +1,3 @@
-import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
-import { ROUTES } from "../../signals/route-paths.ts";
 import {
   useGet,
   useLoadable,
@@ -19,7 +17,6 @@ import {
 import { agentPhoneLinkStatus$ } from "../../signals/okou-page/agentphone.ts";
 import { slackOrgData$ } from "../../signals/okou-page/slack.ts";
 import { teamsEntryUrl } from "../../signals/okou-page/teams-connect-context.ts";
-import { TeamsStatusRefresh } from "../okou-page/teams-status-refresh.tsx";
 import { teamsOrgData$ } from "../../signals/okou-page/teams.ts";
 import { telegramBots$ } from "../../signals/okou-page/telegram.ts";
 import { authorizeTelegramBot$ } from "../../signals/okou-page/telegram-authorization.ts";
@@ -196,9 +193,7 @@ function InstalledChannelButton({
           } else {
             captureChannelClicked("teams", true);
           }
-          openFreshOAuth(
-            channel === "slack" ? INTEGRATION_SETTINGS_PATHS.slack : actionUrl,
-          );
+          openFreshOAuth(actionUrl);
         }
       }}
     >
@@ -239,16 +234,6 @@ function TelegramButton({ connected }: { readonly connected: boolean }) {
           })}
         </p>
       ) : null}
-      <a
-        href={ROUTES.settingsTelegram}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-center text-xs text-primary underline-offset-4 hover:underline"
-      >
-        {t(($) => {
-          return $.connectors.providerConnect.telegram.viewSettings;
-        })}
-      </a>
     </div>
   );
 }
@@ -422,7 +407,6 @@ export function OnboardingSlackPage() {
                 return $.onboarding.sourcesFirst.slack.name;
               })}
             />
-            <TeamsStatusRefresh />
             <ChannelNote
               state={teams}
               channel={t(($) => {

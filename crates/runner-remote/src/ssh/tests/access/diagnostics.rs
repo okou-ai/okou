@@ -10,6 +10,25 @@ use crate::test_fixtures::diagnostic_text;
 use std::sync::atomic::Ordering;
 
 #[tokio::test]
+async fn active_check_uses_real_access_carrier_and_closes_without_ssh_channels() {
+    use super::super::{harness::CONNECTION, wait_for};
+    use serde_json::json;
+    for (mode, expected) in [(Mode::Proxy, "passed"), (Mode::Text, "failed")] {
+        let (mut h, gateway) = gateway::setup(Reply::default(), mode, "ssh.example.com").await;
+        h.enable_checks(&["ssh:write"]).await;
+        let _resolve = h.resolve(credential(&h, true, true)).await;
+        let frames = h.raw(json!({"version":1,"method":"ssh.check","remaining_ms":10000,"params":{"connectionId":CONNECTION}}).to_string()).await;
+        let result = terminal(&frames);
+        assert_eq!(result["status"], expected, "{result}");
+        assert!(diagnostic_text(result).contains("Route: cloudflare access; transport: fresh."));
+        assert!(!result.to_string().contains("canary"));
+        assert!(h.observed.commands.lock().unwrap().is_empty());
+        h.shutdown().await;
+        wait_for(|| gateway.observed.closed.load(Ordering::SeqCst) == 1).await;
+    }
+}
+
+#[tokio::test]
 async fn access_results_separate_tls_rejection_upgrade_and_interruption() {
     for (mode, cert_host, cause, action) in [
         (

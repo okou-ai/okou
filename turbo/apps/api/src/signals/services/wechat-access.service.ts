@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, ne } from "drizzle-orm";
 import { chatWechatContext, wechatConnections } from "@okouai/db/schema/wechat";
 import { writeDb$ } from "../external/db";
 import { wechatEnabled$ } from "./wechat-config";
@@ -29,6 +29,7 @@ export const requireWechatConnection$ = command(
           eq(wechatConnections.id, args.channelId),
           eq(wechatConnections.orgId, args.orgId),
           eq(wechatConnections.userId, args.userId),
+          ne(wechatConnections.status, "disconnected"),
         ),
       )
       .limit(1);

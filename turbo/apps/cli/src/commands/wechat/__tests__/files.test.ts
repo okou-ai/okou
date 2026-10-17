@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { gzipSync } from "node:zlib";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -164,7 +165,11 @@ describe("okou wechat files", () => {
       delivery: { status: "failed", error: "Delivery unknown", operationId },
     });
   });
-  it("downloads through the API and writes only validated complete bytes", async () => {
+  it.each([
+    { "Content-Length": "5" },
+    {},
+    { "Content-Length": "25", "Content-Encoding": "gzip" },
+  ])("downloads through the API with response framing %j", async (framing) => {
     const path = join(directory, "report.txt");
     server.use(
       http.get(`${origin}/download-file`, ({ request }) => {
@@ -172,12 +177,17 @@ describe("okou wechat files", () => {
         expect(
           Object.fromEntries(new URL(request.url).searchParams),
         ).toStrictEqual({ channelId, messageId, attachmentId: "0" });
-        return new HttpResponse("hello", {
-          headers: {
-            "Content-Type": "application/octet-stream",
-            "Content-Length": "5",
+        return new HttpResponse(
+          "Content-Encoding" in framing
+            ? new Uint8Array(gzipSync("hello"))
+            : "hello",
+          {
+            headers: {
+              "Content-Type": "application/octet-stream",
+              ...framing,
+            },
           },
-        });
+        );
       }),
     );
     await run([
@@ -196,6 +206,31 @@ describe("okou wechat files", () => {
       mimetype: "application/octet-stream",
       size: 5,
     });
+  });
+  it("bounds chunked downloads and preserves the previous file on overflow", async () => {
+    const path = join(directory, "report.txt");
+    await writeFile(path, "original");
+    server.use(
+      http.get(`${origin}/download-file`, () => {
+        return new HttpResponse(new Uint8Array(10 * 1024 * 1024 + 1), {
+          headers: { "Content-Type": "application/octet-stream" },
+        });
+      }),
+    );
+    await expect(
+      run([
+        "download-file",
+        "0",
+        "--channel",
+        channelId,
+        "--message",
+        messageId,
+        "--out",
+        path,
+      ]),
+    ).rejects.toThrow("process.exit");
+    expect(await readFile(path, "utf8")).toBe("original");
+    expect(await readdir(directory)).toStrictEqual(["report.txt"]);
   });
   it("keeps an existing output when download is truncated", async () => {
     const path = join(directory, "report.txt");

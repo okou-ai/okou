@@ -15,6 +15,7 @@ use tokio::{
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 use uuid::Uuid;
 
+use super::evidence::{Snapshot, Stage};
 use super::{
     Failure, Scope, VncRuntime,
     authority::{Authentication, Transport},
@@ -22,6 +23,7 @@ use super::{
     network,
     protocol::{Info, Start},
 };
+use crate::diagnostics::{Report, trace::Progress};
 use crate::ssh::DirectTcpIpStream;
 use runner_types::ids::RunId;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -114,60 +116,106 @@ pub(super) struct Session {
     pub(super) engine: tokio::sync::Mutex<Engine>,
     diagnostics: Option<crate::diagnostics::Handle>,
     identity: crate::diagnostics::Identity,
-    diagnostic_terminal: Mutex<bool>,
-    dependency: Option<crate::diagnostics::Dependency>,
-    native: Option<crate::diagnostics::NativeSource>,
+    diagnostic_terminal: Mutex<DiagnosticTerminal>,
+    source: SourceEvidence,
+    vnc: Option<Snapshot>,
     diagnostic_active: Arc<AtomicBool>,
 }
 
+#[derive(Default)]
+struct DiagnosticTerminal {
+    finished: bool,
+    failure: Option<Failure>,
+    observed_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
 impl Session {
+    pub(super) fn check_report(
+        &self,
+        failure: Option<Failure>,
+        cleanup: Progress,
+    ) -> Option<Report> {
+        let handle = self.diagnostics.as_ref()?;
+        handle.record(crate::diagnostics::Record {
+            protocol: crate::diagnostics::Protocol::Vnc,
+            connection: self.info.connection_id,
+            operation: crate::diagnostics::Operation::ActiveCheck,
+            identity: self.identity.clone(),
+            cause: failure.map(crate::diagnostics::Cause::Vnc),
+            dependency: self.source.dependency.clone(),
+            native: self.source.native.clone(),
+            ssh: self.source.snapshot(),
+            vnc: self.vnc.clone().map(|mut snapshot| {
+                snapshot.set(Stage::Retirement, cleanup);
+                snapshot
+            }),
+        })
+    }
+
     pub(super) fn close(&self) {
         // Latch intentional close before its cancellation can become failure evidence.
-        *self
-            .diagnostic_terminal
+        self.diagnostic_terminal
             .lock()
-            .unwrap_or_else(|p| p.into_inner()) = true;
+            .unwrap_or_else(|p| p.into_inner())
+            .finished = true;
         self.retire();
     }
     pub(super) fn retire(&self) {
         self.diagnostic_active.store(false, Ordering::Release);
         self.cancel.cancel();
     }
-    pub(super) fn failed(&self, operation: crate::diagnostics::Operation, failure: Failure) {
+    pub(super) fn failed(
+        &self,
+        operation: crate::diagnostics::Operation,
+        failure: Failure,
+    ) -> Option<Report> {
         if matches!(
             failure,
             Failure::InvalidInput | Failure::StaleGeometry | Failure::SessionNotFound
         ) {
-            return;
+            return None;
         }
         self.diagnostic_active.store(false, Ordering::Release);
         let mut terminal = self
             .diagnostic_terminal
             .lock()
             .unwrap_or_else(|p| p.into_inner());
-        if *terminal {
-            return;
+        if terminal.finished {
+            return None;
         }
-        *terminal = true;
-        if let Some(diagnostics) = &self.diagnostics {
-            let _ = diagnostics.record(crate::diagnostics::Record {
+        if terminal.failure.is_some()
+            && matches!(operation, crate::diagnostics::Operation::Retirement)
+        {
+            return None;
+        }
+        let source_failure = *terminal.failure.get_or_insert(failure);
+        let observed_at = *terminal.observed_at.get_or_insert_with(chrono::Utc::now);
+        self.diagnostics.as_ref().and_then(|diagnostics| {
+            diagnostics.record(crate::diagnostics::Record {
                 protocol: crate::diagnostics::Protocol::Vnc,
                 connection: self.info.connection_id,
                 operation,
                 identity: self.identity.clone(),
-                cause: crate::diagnostics::Cause::Vnc(failure),
-                dependency: self.dependency.clone().map(|mut dependency| {
+                cause: Some(crate::diagnostics::Cause::Vnc(source_failure)),
+                dependency: self.source.dependency.clone().map(|mut dependency| {
                     dependency.cause = self
+                        .source
                         .native
                         .as_ref()
                         .and_then(|native| native.evidence.terminal())
                         .map(crate::diagnostics::Cause::Native);
                     dependency
                 }),
-                native: self.native.clone(),
-                ssh: None,
-            });
-        }
+                native: self.source.native.clone(),
+                ssh: self.source.snapshot(),
+                vnc: self.vnc.as_ref().map(|snapshot| {
+                    let mut snapshot = snapshot.operation(operation, failure);
+                    snapshot.first_failure = Some(source_failure);
+                    snapshot.first_failure_at = Some(observed_at);
+                    snapshot
+                }),
+            })
+        })
     }
 }
 
@@ -185,18 +233,69 @@ pub(crate) struct Run {
 #[derive(Default)]
 pub(super) struct StartEvidence {
     identity: crate::diagnostics::Identity,
+    pub(super) source: SourceEvidence,
+    pub(super) vnc: Option<Snapshot>,
+    handle: Option<crate::diagnostics::Handle>,
+    ssh: Option<Arc<crate::ssh::Run>>,
+    active_check: bool,
+}
+
+#[derive(Clone, Default)]
+pub(super) struct SourceEvidence {
     dependency: Option<crate::diagnostics::Dependency>,
     native: Option<crate::diagnostics::NativeSource>,
+    ssh: Option<crate::diagnostics::trace::Snapshot>,
+    trace: Option<crate::ssh::ForwardingTrace>,
+}
+impl SourceEvidence {
+    fn snapshot(&self) -> Option<crate::diagnostics::trace::Snapshot> {
+        self.trace
+            .as_ref()
+            .and_then(crate::ssh::ForwardingTrace::snapshot)
+            .or_else(|| self.ssh.clone())
+    }
+}
+
+pub(super) struct StartFailure {
+    pub(super) reason: Failure,
+    pub(super) report: Option<Box<Report>>,
 }
 
 impl StartEvidence {
+    pub(super) fn begin(&mut self, stage: Stage) {
+        if let Some(snapshot) = &mut self.vnc {
+            snapshot.begin(stage);
+        }
+    }
+    pub(super) fn set(&mut self, stage: Stage, status: Progress) {
+        if let Some(snapshot) = &mut self.vnc {
+            snapshot.set(stage, status);
+        }
+    }
+    pub(super) fn retain_ssh_stream(&mut self, connection: Uuid, stream: &DirectTcpIpStream) {
+        let identity = stream.diagnostic_identity();
+        self.source = SourceEvidence {
+            native: stream.diagnostic_source(),
+            trace: Some(stream.diagnostic_trace()),
+            ssh: None,
+            dependency: Some(crate::diagnostics::Dependency {
+                protocol: crate::diagnostics::Protocol::Ssh,
+                connection_id: connection,
+                cause: None,
+                configuration_created_at: identity.created_at,
+                configuration_generation: identity.generation,
+            }),
+        };
+    }
     pub(super) fn retain_ssh_failure(
         &mut self,
         connection: Uuid,
         failure: crate::ssh::ForwardingFailure,
     ) {
-        self.native = failure.native;
-        self.dependency = Some(crate::diagnostics::Dependency {
+        self.source.native = failure.native;
+        self.source.ssh = failure.trace;
+        self.source.trace = None;
+        self.source.dependency = Some(crate::diagnostics::Dependency {
             protocol: crate::diagnostics::Protocol::Ssh,
             connection_id: connection,
             cause: Some(crate::diagnostics::Cause::Ssh(failure.reason)),
@@ -231,6 +330,10 @@ impl Run {
 
     pub(crate) fn set_diagnostics(&self, diagnostics: crate::diagnostics::Handle) {
         let _ = self.diagnostics.set(diagnostics);
+    }
+
+    pub(super) fn diagnostics_handle(&self) -> Option<crate::diagnostics::Handle> {
+        self.diagnostics.get().cloned()
     }
 
     pub(super) fn invalidate(&self, connection: Option<Uuid>, ssh: bool) {
@@ -273,27 +376,72 @@ impl Run {
         request: Start,
         scope: &Scope,
         operation: Arc<OwnedSemaphorePermit>,
-    ) -> Result<Arc<Session>, Failure> {
+    ) -> Result<Arc<Session>, StartFailure> {
+        self.start_observed(
+            request,
+            scope,
+            operation,
+            self.diagnostics.get().cloned(),
+            false,
+        )
+        .await
+    }
+
+    pub(super) async fn start_observed(
+        &self,
+        request: Start,
+        scope: &Scope,
+        operation: Arc<OwnedSemaphorePermit>,
+        handle: Option<crate::diagnostics::Handle>,
+        active_check: bool,
+    ) -> Result<Arc<Session>, StartFailure> {
         let connection = request.connection_id;
-        let mut evidence = StartEvidence::default();
+        let ssh = self.ssh.as_ref().map(|ssh| match &handle {
+            Some(handle) if active_check => ssh.with_diagnostics(handle.clone()),
+            _ => Arc::clone(ssh),
+        });
+        let mut evidence = StartEvidence {
+            vnc: handle
+                .as_ref()
+                .filter(|handle| handle.enabled())
+                .map(|_| Snapshot::default()),
+            handle,
+            ssh,
+            active_check,
+            ..StartEvidence::default()
+        };
+        evidence.begin(Stage::Admission);
         let result = self
             .start_inner(request, scope, operation, &mut evidence)
             .await;
-        if let Err(failure) = &result
-            && let Some(diagnostics) = self.diagnostics.get()
-        {
-            let _ = diagnostics.record(crate::diagnostics::Record {
-                protocol: crate::diagnostics::Protocol::Vnc,
-                connection,
-                operation: crate::diagnostics::Operation::Start,
-                identity: evidence.identity,
-                cause: crate::diagnostics::Cause::Vnc(*failure),
-                dependency: evidence.dependency,
-                native: evidence.native,
-                ssh: None,
-            });
-        }
-        result
+        let report = if let Err(failure) = &result {
+            if let Some(snapshot) = &mut evidence.vnc {
+                snapshot.finish(*failure);
+            }
+            evidence.handle.as_ref().and_then(|diagnostics| {
+                diagnostics.record(crate::diagnostics::Record {
+                    protocol: crate::diagnostics::Protocol::Vnc,
+                    connection,
+                    operation: if active_check {
+                        crate::diagnostics::Operation::ActiveCheck
+                    } else {
+                        crate::diagnostics::Operation::Start
+                    },
+                    identity: evidence.identity,
+                    cause: Some(crate::diagnostics::Cause::Vnc(*failure)),
+                    ssh: evidence.source.snapshot(),
+                    dependency: evidence.source.dependency,
+                    native: evidence.source.native,
+                    vnc: evidence.vnc,
+                })
+            })
+        } else {
+            None
+        };
+        result.map_err(|reason| StartFailure {
+            reason,
+            report: report.map(Box::new),
+        })
     }
 
     async fn start_inner(
@@ -344,6 +492,7 @@ impl Run {
             let _ = done.await;
         });
         let native_owner: Arc<dyn kerberos_worker::WorkOwner> = native_work.clone();
+        evidence.begin(Stage::Credential);
         let mut credential = scope
             .wait(self.runtime.authority.resolve(
                 self.id,
@@ -376,10 +525,21 @@ impl Run {
             &credential.authentication,
             credential.transport,
         );
+        diagnostic.apply(&mut evidence.vnc);
+        if let Some(snapshot) = &mut evidence.vnc {
+            snapshot.route = super::evidence::route(credential.transport);
+            snapshot.kdc_route = match &credential.authentication {
+                Authentication::Kerberos { kdc, .. } => kdc
+                    .as_ref()
+                    .map(|kdc| super::evidence::route(kdc.transport)),
+                _ => None,
+            };
+        }
         let result = async {
             let mut transport = credential.transport;
             let stream = match transport {
                 Transport::Direct => {
+                    evidence.begin(Stage::Destination);
                     let resolver_capacity = Arc::clone(&capacity);
                     let network = Arc::clone(&self.runtime.network);
                     let host = credential.host.clone();
@@ -392,6 +552,10 @@ impl Run {
                         network::destination(network, &host, port).await
                     });
                     let address = scope.wait(resolve).await?.map_err(|_| Failure::Network)??;
+                    if let Some(snapshot) = &mut evidence.vnc {
+                        snapshot.address = Some(address);
+                    }
+                    evidence.begin(Stage::Transport);
                     let socket = scope
                         .wait(self.runtime.network.connect(address))
                         .await?
@@ -402,7 +566,8 @@ impl Run {
                     connection,
                     generation,
                 } => {
-                    let ssh = self.ssh.as_ref().ok_or(Failure::UnsupportedProfile)?;
+                    evidence.begin(Stage::Transport);
+                    let ssh = evidence.ssh.as_ref().ok_or(Failure::UnsupportedProfile)?;
                     let stream = scope
                         .wait(ssh.open_direct_tcpip_diagnosed(
                             connection,
@@ -415,22 +580,14 @@ impl Run {
                         .await?
                         .map_err(|failure| {
                             let reason = Failure::from(failure.reason);
-                            evidence.retain_ssh_failure(connection, failure);
+                            evidence.retain_ssh_failure(connection, *failure);
                             reason
                         })?;
                     transport = Transport::Ssh {
                         connection,
                         generation: stream.generation(),
                     };
-                    evidence.native = stream.diagnostic_source();
-                    let identity = stream.diagnostic_identity();
-                    evidence.dependency = Some(crate::diagnostics::Dependency {
-                        protocol: crate::diagnostics::Protocol::Ssh,
-                        connection_id: connection,
-                        cause: None,
-                        configuration_created_at: identity.created_at,
-                        configuration_generation: identity.generation,
-                    });
+                    evidence.retain_ssh_stream(connection, &stream);
                     DirectOrSshStream::Ssh(Box::new(stream))
                 }
             };
@@ -444,6 +601,7 @@ impl Run {
                 _ => None,
             };
             diagnostic.stage = "authentication";
+            evidence.begin(Stage::Authentication);
             let authenticated = scope
                 .wait_deadline_aware(async {
                     match credential.authentication {
@@ -466,7 +624,7 @@ impl Run {
                                 kdc,
                                 realm,
                                 scope: scope.clone(),
-                                ssh: self.ssh.clone(),
+                                ssh: evidence.ssh.clone(),
                                 tasks: self.tasks.clone(),
                                 owner: Arc::clone(&native_owner),
                                 exchanges: 0,
@@ -566,6 +724,7 @@ impl Run {
                 .await?
                 .map_err(|error| diagnostic.rfb_failure(error))?;
             diagnostic.stage = "initialization";
+            evidence.begin(Stage::Initialization);
             let connection = scope
                 .wait(authenticated.initialize(request.mode.into(), scope.deadline))
                 .await?
@@ -579,6 +738,7 @@ impl Run {
                 ..scope.clone()
             };
             diagnostic.stage = "authority_recheck";
+            evidence.begin(Stage::AuthorityRecheck);
             authority_scope
                 .wait(self.runtime.authority.check(
                     self.id,
@@ -593,13 +753,14 @@ impl Run {
                 return Err(Failure::Cancelled);
             }
             diagnostic.stage = "session_admission";
+            evidence.begin(Stage::SessionAdmission);
             let session_id = Uuid::new_v4();
             evidence.identity.session = Some(session_id);
-            let ssh_dependency = evidence.dependency.clone();
-            let native = evidence.native.clone();
+            let ssh_dependency = evidence.source.dependency.clone();
+            let native = evidence.source.native.clone();
             let diagnostic_active = Arc::new(AtomicBool::new(true));
             if let (Some(ssh), Some(source), Some(handle)) =
-                (ssh_dependency.clone(), &native, self.diagnostics.get())
+                (ssh_dependency.clone(), &native, evidence.handle.as_ref())
                 && let Some(watch) = handle.watch_vnc(
                     request.connection_id,
                     evidence.identity.clone(),
@@ -622,11 +783,14 @@ impl Run {
                 cancel: session_cancel,
                 closed: CancellationToken::new(),
                 engine: tokio::sync::Mutex::new(engine),
-                diagnostics: self.diagnostics.get().cloned(),
+                diagnostics: evidence.handle.clone(),
                 identity: evidence.identity.clone(),
-                diagnostic_terminal: Mutex::new(false),
-                dependency: ssh_dependency,
-                native,
+                diagnostic_terminal: Mutex::new(DiagnosticTerminal::default()),
+                source: evidence.source.clone(),
+                vnc: evidence.vnc.clone().map(|mut snapshot| {
+                    snapshot.set(Stage::SessionAdmission, Progress::Passed);
+                    snapshot
+                }),
                 diagnostic_active,
             });
             admission.admit(Arc::clone(&session))?;
@@ -640,8 +804,13 @@ impl Run {
             Ok(session)
         }
         .await;
-        diagnostic.finish(self.id, connection_id, result.as_ref().err().copied());
-        if let Some(report) = observation.finish(result.as_ref().err().copied()) {
+        diagnostic.apply(&mut evidence.vnc);
+        if !evidence.active_check {
+            diagnostic.finish(self.id, connection_id, result.as_ref().err().copied());
+        }
+        if !evidence.active_check
+            && let Some(report) = observation.finish(result.as_ref().err().copied())
+        {
             if let Ok(permit) = Arc::clone(&self.runtime.reports).try_acquire_owned() {
                 let runtime = Arc::clone(&self.runtime);
                 let run = self.id;
@@ -671,6 +840,14 @@ impl Run {
         // neither restore it nor retire it; missed delivery can delay revocation
         // until the original Run/session/credential lifetime ends, as with SSH.
         Ok(())
+    }
+
+    pub(super) fn explanation(&self, report: Option<&Report>) -> Option<String> {
+        let handle = self.diagnostics.get()?;
+        if !handle.enabled() || !handle.current() {
+            return None;
+        }
+        report?.message()
     }
 }
 

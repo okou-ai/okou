@@ -33,7 +33,7 @@ def observer(value, begin, end):
         raise ValueError("foreground observer did not complete a new joined real read inside the held wait")
 
 
-def heartbeat(value, sequence, begin, end):
+def heartbeat(value, sequence, begin, end, allocated=(2, 4096)):
     if (not isinstance(value, dict) or set(value) != {"receipt", "send_joined", "completed_ns"}
             or value["send_joined"] is not True or not report.positive_integer(value["completed_ns"])):
         raise ValueError("foreground heartbeat send was not positively joined")
@@ -48,8 +48,8 @@ def heartbeat(value, sequence, begin, end):
             or not pressure_report.integer(state.get("snapshotGeneration"), 1)
             or type(state.get("snapshotSequence")) is not int or state["snapshotSequence"] != sequence
             or state.get("group") != "native-foreground" or state.get("mode") != "running"
-            or type(state.get("allocatedVcpu")) is not int or state["allocatedVcpu"] != 2
-            or type(state.get("allocatedMemoryMb")) is not int or state["allocatedMemoryMb"] != 4096):
+            or type(state.get("allocatedVcpu")) is not int or state["allocatedVcpu"] != allocated[0]
+            or type(state.get("allocatedMemoryMb")) is not int or state["allocatedMemoryMb"] != allocated[1]):
         raise ValueError("foreground heartbeat lost its original generation/sequence/full lease")
     return state["runnerId"], state["snapshotGeneration"]
 

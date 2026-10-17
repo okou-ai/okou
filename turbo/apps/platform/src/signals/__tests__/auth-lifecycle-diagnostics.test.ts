@@ -115,9 +115,14 @@ function attributes(event: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(value));
 }
 
-function stage(name: string) {
+function stage(name: string, operationId?: unknown) {
   const matches = lifecycle().filter((event) => {
-    return attributes(event)["okou.auth.stage"] === name;
+    const fields = attributes(event);
+    return (
+      fields["okou.auth.stage"] === name &&
+      (operationId === undefined ||
+        fields["okou.auth.operation_id"] === operationId)
+    );
   });
   expect(matches).toHaveLength(1);
   const event = matches[0];
@@ -127,7 +132,7 @@ function stage(name: string) {
   return event;
 }
 
-test("An SDK completion after a clock jump reports completion-time TTL and sends the same expired token once", async () => {
+test("An SDK completion after a clock jump reports completion-time TTL for both normal-provider 401 attempts", async () => {
   const sdkStarted = context.mocks.deferred<void>();
   const sdkResult = context.mocks.deferred<string | null>();
   const credential = token(NOW / 1000 + 5);
@@ -135,7 +140,9 @@ test("An SDK completion after a clock jump reports completion-time TTL and sends
     (options?: { readonly skipCache?: boolean }) => Promise<string | null>
   >((options) => {
     expect(options?.skipCache).toBeFalsy();
-    sdkStarted.resolve();
+    if (!sdkStarted.settled()) {
+      sdkStarted.resolve();
+    }
     return sdkResult.promise;
   });
   const observed: Headers[] = [];
@@ -154,47 +161,84 @@ test("An SDK completion after a clock jump reports completion-time TTL and sends
   sdkResult.resolve(credential);
   await expect(response).resolves.toMatchObject({ status: 401, body: denied });
 
-  expect(sdkGetToken).toHaveBeenCalledExactlyOnceWith(undefined);
-  expect(observed).toHaveLength(1);
-  expect(observed[0]?.get("Authorization")).toBe(`Bearer ${credential}`);
-  const operationId = attributes(stage("token_read_started"))[
-    "okou.auth.operation_id"
-  ];
-  expect(operationId).toStrictEqual(expect.any(String));
-  const requestId = observed[0]?.get(CLIENT_REQUEST_ID_HEADER);
-  expect(requestId).toStrictEqual(expect.any(String));
-  for (const event of lifecycle()) {
-    expect(attributes(event)["okou.auth.operation_id"]).toBe(operationId);
-  }
-  for (const name of [
-    "clerk_sdk_finished",
-    "token_read_finished",
-    "http_send_invoked",
-    "http_finished",
-  ]) {
-    const event = stage(name);
-    expect(event._time).toBe(new Date(completedAt).toISOString());
-    expect(attributes(event)).toMatchObject({
-      "okou.auth.event_at_ms": completedAt,
-      "okou.auth.token_ttl_seconds": -15,
-      "okou.auth.token_present": 1,
-      "okou.auth.jwt_decoded": 1,
-    });
-  }
-  expect(attributes(stage("clerk_sdk_finished"))).toMatchObject({
-    "okou.auth.started_at_ms": NOW,
-    "okou.auth.elapsed_wall_ms": 20_000,
-    "okou.auth.owner_aborted": 0,
-    "okou.auth.skip_cache": 0,
+  expect(sdkGetToken.mock.calls).toStrictEqual([[undefined], [undefined]]);
+  expect(observed).toHaveLength(2);
+  const starts = lifecycle().filter((event) => {
+    return attributes(event)["okou.auth.stage"] === "token_read_started";
   });
-  for (const name of ["http_send_invoked", "http_finished"]) {
-    expect(attributes(stage(name))).toMatchObject({
-      "okou.auth.http_request_id": requestId,
-      "okou.auth.method": "GET",
-      "okou.auth.route": "/api/chat-threads/:threadId/event-rows",
+  expect(starts).toHaveLength(2);
+  const operationIds = starts.map((event) => {
+    return attributes(event)["okou.auth.operation_id"];
+  });
+  expect(new Set(operationIds).size).toBe(2);
+  expect(
+    new Set(
+      observed.map((headers) => {
+        return headers.get(CLIENT_REQUEST_ID_HEADER);
+      }),
+    ).size,
+  ).toBe(2);
+  expect(lifecycle()).toHaveLength(12);
+  for (const [attempt, operationId] of operationIds.entries()) {
+    expect(operationId).toStrictEqual(expect.any(String));
+    const headers = observed[attempt];
+    expect(headers?.get("Authorization")).toBe(`Bearer ${credential}`);
+    const requestId = headers?.get(CLIENT_REQUEST_ID_HEADER);
+    expect(requestId).toStrictEqual(expect.any(String));
+    for (const name of [
+      "token_read_started",
+      "clerk_sdk_started",
+      "clerk_sdk_finished",
+      "token_read_finished",
+      "http_send_invoked",
+      "http_finished",
+    ]) {
+      expect(stage(name, operationId)).toBeDefined();
+    }
+    for (const name of [
+      "clerk_sdk_finished",
+      "token_read_finished",
+      "http_send_invoked",
+      "http_finished",
+    ]) {
+      const event = stage(name, operationId);
+      expect(event._time).toBe(new Date(completedAt).toISOString());
+      expect(attributes(event)).toMatchObject({
+        "okou.auth.event_at_ms": completedAt,
+        "okou.auth.token_ttl_seconds": -15,
+        "okou.auth.token_present": 1,
+        "okou.auth.jwt_decoded": 1,
+      });
+    }
+    expect(attributes(stage("clerk_sdk_finished", operationId))).toMatchObject({
+      "okou.auth.started_at_ms": attempt === 0 ? NOW : completedAt,
+      "okou.auth.elapsed_wall_ms": attempt === 0 ? 20_000 : 0,
+      "okou.auth.owner_aborted": 0,
+      "okou.auth.skip_cache": 0,
+    });
+    for (const name of ["http_send_invoked", "http_finished"]) {
+      expect(attributes(stage(name, operationId))).toMatchObject({
+        "okou.auth.http_request_id": requestId,
+        "okou.auth.method": "GET",
+        "okou.auth.route": "/api/chat-threads/:threadId/event-rows",
+      });
+    }
+    expect(
+      attributes(stage("http_finished", operationId))["okou.auth.status"],
+    ).toBe(401);
+  }
+  const red = axiom.ingest.mock.calls.flatMap(([, events]) => {
+    return events.filter((event) => {
+      return event.name === "GET /api/chat-threads/:threadId/event-rows";
+    });
+  });
+  expect(red).toHaveLength(2);
+  for (const event of red) {
+    expect(event).toMatchObject({
+      kind: "client",
+      "attributes.http.response.status_code": 401,
     });
   }
-  expect(attributes(stage("http_finished"))["okou.auth.status"]).toBe(401);
   const emitted = JSON.stringify(axiom.ingest.mock.calls);
   for (const secret of [
     credential,
@@ -283,18 +327,26 @@ test.each([null, "malformed.private-credential"])(
       status: 401,
       body: denied,
     });
-    expect(sdkGetToken).toHaveBeenCalledOnce();
-    expect(observed).toHaveLength(1);
-    expect(observed[0]?.get("Authorization")).toBe(
-      credential === null ? null : `Bearer ${credential}`,
-    );
+    expect(sdkGetToken.mock.calls).toStrictEqual([[undefined], [undefined]]);
+    expect(observed).toHaveLength(2);
+    for (const headers of observed) {
+      expect(headers.get("Authorization")).toBe(
+        credential === null ? null : `Bearer ${credential}`,
+      );
+    }
     for (const name of ["clerk_sdk_finished", "http_send_invoked"]) {
-      const fields = attributes(stage(name));
-      expect(fields).toMatchObject({
-        "okou.auth.token_present": credential === null ? 0 : 1,
-        "okou.auth.jwt_decoded": 0,
+      const events = lifecycle().filter((event) => {
+        return attributes(event)["okou.auth.stage"] === name;
       });
-      expect(fields).not.toHaveProperty("okou.auth.token_ttl_seconds");
+      expect(events).toHaveLength(2);
+      for (const event of events) {
+        const fields = attributes(event);
+        expect(fields).toMatchObject({
+          "okou.auth.token_present": credential === null ? 0 : 1,
+          "okou.auth.jwt_decoded": 0,
+        });
+        expect(fields).not.toHaveProperty("okou.auth.token_ttl_seconds");
+      }
     }
     expect(JSON.stringify(axiom.ingest.mock.calls)).not.toContain(
       "private-credential",

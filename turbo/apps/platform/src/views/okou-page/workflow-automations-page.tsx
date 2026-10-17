@@ -79,10 +79,10 @@ import {
   labelInitials,
   workflowTitle,
 } from "../workflows-page/workflow-shared.tsx";
-import { CREATE_WORKFLOW_WITH_CHAT_PROMPT } from "../../signals/chat-page/workflow-prompt-action";
-
-const CREATE_AUTOMATION_CHAT_PROMPT =
-  "Help me create a workflow automation for this agent. Use the workflow-setup skill, then ask me for the desired outcome, automation, and action before creating the workflow and automation.";
+import {
+  CREATE_AUTOMATION_CHAT_PROMPT,
+  CREATE_WORKFLOW_WITH_CHAT_PROMPT,
+} from "../../signals/chat-page/workflow-prompt-action";
 
 function currentLocale(): string {
   return i18n.resolvedLanguage ?? "en-US";

@@ -233,7 +233,7 @@ describe("private Runner VNC authority", () => {
     return result.body.observations;
   }
 
-  it("does not record prepared native snapshots against current Direct/SSH storage", async () => {
+  it("rejects native snapshots and failure reasons for a Direct VNC route", async () => {
     mockNow(new Date("2026-10-14T00:00:30.000Z"));
     const f = await claimedFixture();
     for (const type of ["cloudflare_access", "tailscale"] as const) {

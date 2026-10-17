@@ -709,14 +709,6 @@ export default [
     },
   },
   {
-    files: ["src/lib/db-raw-rows.ts"],
-    rules: {
-      // This is the single reviewed boundary that turns driver rows into
-      // schema-derived values before returning them to application code.
-      "api/require-execute-row-schema": "off",
-    },
-  },
-  {
     files: ["src/**/*.ts"],
     rules: {
       "api/no-package-variable": "error",

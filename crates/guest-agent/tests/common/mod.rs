@@ -538,7 +538,8 @@ pub fn expected_codex_turn_usage() -> Value {
 /// test concurrently. Supported callers use either a one-test integration
 /// binary or one exact-filtered isolated child-test process.
 ///
-/// SAFETY: no other thread can read the process environment while this setup
+/// # Safety
+/// No other thread can read the process environment while this setup
 /// mutates environment and CWD state.
 pub unsafe fn setup_env(
     mock_path: &Path,

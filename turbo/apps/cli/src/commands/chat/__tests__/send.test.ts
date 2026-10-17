@@ -84,7 +84,6 @@ describe("okou chat send command", () => {
         );
         return HttpResponse.json(
           {
-            runId: null,
             threadId: THREAD_ID,
             createdAt: "2026-07-29T10:00:00.000Z",
           },
@@ -129,7 +128,6 @@ describe("okou chat send command", () => {
         sentEventId = String(body.clientEventId);
         return HttpResponse.json(
           {
-            runId: null,
             threadId: OTHER_THREAD_ID,
             createdAt: "2026-07-29T10:00:00.000Z",
           },
@@ -211,7 +209,6 @@ describe("okou chat send command", () => {
         });
         return HttpResponse.json(
           {
-            runId: null,
             threadId: THREAD_ID,
             createdAt: "2026-07-30T10:00:00.000Z",
           },
@@ -261,10 +258,7 @@ describe("okou chat send command", () => {
           hasTextContent: false,
           userMessage: document,
         });
-        return HttpResponse.json(
-          { runId: null, threadId: THREAD_ID },
-          { status: 201 },
-        );
+        return HttpResponse.json({ threadId: THREAD_ID }, { status: 201 });
       }),
     );
 

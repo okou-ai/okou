@@ -1,0 +1,882 @@
+//! Pi CLI terminal results preserve completed length responses, error-message,
+//! and aborted fallback semantics through the guest's public event projection.
+
+use guest_agent_tests as common;
+
+use guest_agent::masker::SecretMasker;
+use guest_contracts::diagnostics::{
+    AgentFramework, FailureClass, FailureDetailSource, FailureReason,
+};
+use serde_json::Value;
+use std::collections::HashMap;
+use std::ffi::OsStr;
+use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
+use std::time::Duration;
+
+/// Expected public terminal text for a settled Pi run.
+///
+/// A replaced upstream document cannot be spelled out here because its byte
+/// count and digest come from the discarded page, so that case asserts the
+/// contract instead: the marker, no observed transport evidence, and no markup.
+enum ExpectedTerminalResult<'a> {
+    Completed(&'a str),
+    Exact(&'a str),
+    UpstreamNonApiResponse,
+}
+
+async fn run_settlement_case(
+    run_id: &str,
+    assistant_messages: &[Value],
+    expected_result: ExpectedTerminalResult<'_>,
+    expected_failure_reason: Option<FailureReason>,
+    expected_assistant_text: Option<&str>,
+    base_path: &OsStr,
+    original_directory: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let completed = matches!(expected_result, ExpectedTerminalResult::Completed(_));
+    let tmp = tempfile::tempdir()?;
+    let server = common::RecordingServer::start(200, Duration::ZERO).await?;
+    let bin_dir = tmp.path().join("bin");
+    std::fs::create_dir_all(&bin_dir)?;
+    let assistant_event_path = tmp.path().join("pi-assistant-event.jsonl");
+    std::fs::write(
+        &assistant_event_path,
+        assistant_messages
+            .iter()
+            .map(|message| {
+                format!(
+                    "{}\n",
+                    serde_json::json!({ "type": "message_end", "message": message })
+                )
+            })
+            .collect::<String>(),
+    )?;
+
+    let okou = bin_dir.join("okou");
+    std::fs::write(
+        &okou,
+        r#"#!/bin/sh
+set -eu
+IFS= read -r state_command
+case "$state_command" in
+  *'"type":"get_state"'*) ;;
+  *) exit 21 ;;
+esac
+printf '%s\n' "{\"id\":\"${OKOU_RUN_ID}:pi:get-state\",\"type\":\"response\",\"command\":\"get_state\",\"success\":true,\"data\":{\"sessionId\":\"11111111-1111-4111-8111-111111111111\",\"sessionFile\":\"/home/user/.pi/agent/sessions/--home-user-workspace--/session.jsonl\"}}"
+IFS= read -r prompt_command
+case "$prompt_command" in
+  *'"type":"prompt"'*) ;;
+  *) exit 22 ;;
+esac
+printf '%s\n' "{\"id\":\"${OKOU_RUN_ID}:pi:initial-prompt\",\"type\":\"response\",\"command\":\"prompt\",\"success\":true}"
+cat "$PI_ASSISTANT_EVENT_PATH"
+printf '%s\n' '{"type":"agent_settled"}'
+if IFS= read -r unexpected; then
+  exit 23
+fi
+"#,
+    )?;
+    let mut permissions = std::fs::metadata(&okou)?.permissions();
+    permissions.set_mode(0o700);
+    std::fs::set_permissions(&okou, permissions)?;
+
+    let runtime_dir = guest_contracts::runtime_paths::run_dir_for_home(tmp.path(), run_id)?;
+    unsafe {
+        common::clear_guest_agent_bootstrap_env_for_test();
+        std::env::set_var(guest_contracts::env::CLI_AGENT_TYPE_ENV, "pi");
+        std::env::set_var(guest_contracts::env::RUN_ID_ENV, run_id);
+        std::env::set_var(
+            guest_contracts::env::CANONICAL_API_URL_ENV,
+            &server.base_url,
+        );
+        std::env::set_var(guest_contracts::env::CANONICAL_API_TOKEN_ENV, "test-token");
+        std::env::set_var(
+            guest_contracts::env::CANONICAL_SANDBOX_ID_ENV,
+            "00000000-0000-4000-8000-000000000abc",
+        );
+        std::env::set_var("HOME", tmp.path());
+        std::env::set_var("PATH", base_path);
+        std::env::set_var("OKOU_TEST_PI_CLI_PATH", &okou);
+        common::set_run_payload_file_env_for_test(
+            &runtime_dir,
+            &guest_contracts::env::RunPayload {
+                prompt: "verify Pi terminal result".to_string(),
+                pi_launch_config: r#"{"schemaVersion":2}"#.to_string(),
+                pi_model_config: "{}".to_string(),
+                pi_session_id: "11111111-1111-4111-8111-111111111111".to_string(),
+                ..guest_contracts::env::RunPayload::default()
+            },
+        )?;
+        common::set_user_env_file_env_for_test(
+            &runtime_dir,
+            &HashMap::from([(
+                "PI_ASSISTANT_EVENT_PATH".to_string(),
+                assistant_event_path.to_string_lossy().into_owned(),
+            )]),
+        )?;
+    }
+    common::ensure_canonical_workspace_for_test()?;
+    std::env::set_current_dir(tmp.path())?;
+
+    let runtime = common::guest_runtime_from_process_env()?;
+    let result = tokio::time::timeout(
+        Duration::from_secs(5),
+        common::execute_cli_for_runtime(
+            &runtime,
+            &SecretMasker::from_raw(""),
+            common::spawn_dummy_heartbeat(),
+        ),
+    )
+    .await
+    .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "Pi CLI process timed out"))??;
+
+    std::env::set_current_dir(original_directory)?;
+    assert_eq!(result.exit_code, i32::from(!completed));
+    assert_eq!(
+        result.jsonl_result.as_ref().map(|summary| summary.status),
+        Some(if completed {
+            guest_agent::cli::JsonlResultStatus::Success
+        } else {
+            guest_agent::cli::JsonlResultStatus::Error
+        })
+    );
+    if completed {
+        assert_eq!(
+            result
+                .jsonl_result
+                .as_ref()
+                .and_then(|summary| summary.model_request.as_ref()),
+            None
+        );
+    } else {
+        let terminal_failure = guest_agent::failure_diagnostics::cli_nonzero_failure_for_config(
+            &runtime.config,
+            None,
+            &result,
+        );
+        assert_eq!(terminal_failure.diagnostic.framework, AgentFramework::Pi);
+        assert_eq!(
+            terminal_failure.diagnostic.failure_detail_source,
+            Some(FailureDetailSource::PiResult)
+        );
+        assert_eq!(terminal_failure.diagnostic.claude_num_turns, None);
+        assert_eq!(
+            terminal_failure.diagnostic.failure_reason,
+            expected_failure_reason
+        );
+        if expected_failure_reason == Some(FailureReason::InvalidCredentials) {
+            assert_eq!(
+                terminal_failure.diagnostic.failure_class,
+                FailureClass::CliNonzero
+            );
+            assert_eq!(terminal_failure.diagnostic.cli_exit_code, Some(1));
+            let reason: api_contracts::generated::types::webhooks::agent::complete::RequestFailureReason =
+                terminal_failure.diagnostic.failure_reason.ok_or_else(|| std::io::Error::other("missing completion reason"))?.into();
+            assert_eq!(serde_json::to_value(reason)?, "invalid_credentials");
+        }
+        if expected_failure_reason == Some(FailureReason::SafetyPolicyRefusal) {
+            assert_eq!(
+                terminal_failure.diagnostic.failure_class,
+                FailureClass::CliNonzero
+            );
+            assert_eq!(terminal_failure.diagnostic.cli_exit_code, Some(1));
+            assert_eq!(
+                terminal_failure
+                    .diagnostic
+                    .cli_observed_exit
+                    .as_ref()
+                    .and_then(|exit| exit.exit_code),
+                Some(0)
+            );
+            assert_eq!(
+                terminal_failure.diagnostic.model_request,
+                Some(guest_contracts::diagnostics::ModelRequestDiagnostic {
+                    http_status: Some(200),
+                    transport_attempts: 1,
+                    retry_attempts: 0,
+                    retry_limit: None,
+                    transport_failure: None,
+                })
+            );
+            let reason: api_contracts::generated::types::webhooks::agent::complete::RequestFailureReason =
+                terminal_failure.diagnostic.failure_reason.ok_or_else(|| std::io::Error::other("missing completion reason"))?.into();
+            assert_eq!(serde_json::to_value(reason)?, "safety_policy_refusal");
+        }
+        if expected_failure_reason == Some(FailureReason::ProviderServerError) {
+            assert_eq!(
+                terminal_failure.diagnostic.failure_class,
+                FailureClass::CliNonzero
+            );
+            assert_eq!(terminal_failure.diagnostic.cli_exit_code, Some(1));
+            assert_eq!(
+                terminal_failure
+                    .diagnostic
+                    .cli_observed_exit
+                    .as_ref()
+                    .and_then(|exit| exit.exit_code),
+                Some(0)
+            );
+            if let Some(expected_status) = assistant_messages
+                .last()
+                .and_then(|message| message.pointer("/diagnostics/0/details/httpStatus"))
+                .and_then(Value::as_u64)
+            {
+                let request = terminal_failure
+                    .diagnostic
+                    .model_request
+                    .ok_or_else(|| std::io::Error::other("missing model request evidence"))?;
+                assert_eq!(request.http_status.map(u64::from), Some(expected_status));
+                assert_eq!(request.transport_attempts, 1);
+                assert_eq!(request.retry_attempts, 0);
+            } else {
+                // A legacy text-only upstream marker identifies the reason,
+                // but cannot manufacture model-request transport evidence.
+                assert_eq!(terminal_failure.diagnostic.model_request, None);
+            }
+            let reason: api_contracts::generated::types::webhooks::agent::complete::RequestFailureReason =
+                terminal_failure.diagnostic.failure_reason.ok_or_else(|| std::io::Error::other("missing completion reason"))?.into();
+            assert_eq!(serde_json::to_value(reason)?, "provider_server_error");
+        }
+        if expected_failure_reason == Some(FailureReason::ProviderQueueTimeout) {
+            assert_eq!(
+                result
+                    .cli_observed_exit
+                    .as_ref()
+                    .and_then(|exit| exit.exit_code),
+                Some(0)
+            );
+        }
+        if expected_failure_reason == Some(FailureReason::ProviderRateLimited) {
+            assert_eq!(
+                result
+                    .cli_observed_exit
+                    .as_ref()
+                    .and_then(|exit| exit.exit_code),
+                Some(0)
+            );
+            assert_eq!(
+                terminal_failure.diagnostic.model_request,
+                Some(guest_contracts::diagnostics::ModelRequestDiagnostic {
+                    http_status: Some(429),
+                    transport_attempts: 1,
+                    retry_attempts: 0,
+                    retry_limit: None,
+                    transport_failure: None,
+                })
+            );
+            let reason: api_contracts::generated::types::webhooks::agent::complete::RequestFailureReason =
+            terminal_failure.diagnostic.failure_reason.ok_or_else(|| std::io::Error::other("missing completion reason"))?.into();
+            assert_eq!(serde_json::to_value(reason)?, "provider_rate_limited");
+        }
+        if expected_failure_reason == Some(FailureReason::ResponseConnectionLost) {
+            assert_eq!(
+                result
+                    .cli_observed_exit
+                    .as_ref()
+                    .and_then(|exit| exit.exit_code),
+                Some(0)
+            );
+            let request = terminal_failure
+                .diagnostic
+                .model_request
+                .ok_or_else(|| std::io::Error::other("missing model request evidence"))?;
+            assert_eq!(request.http_status, Some(200));
+            assert_eq!(
+                serde_json::to_value(request.transport_failure)?,
+                serde_json::json!({
+                    "phase": "response_body", "signalAborted": false,
+                    "errorName": "TypeError", "causeCode": "UND_ERR_RES_CONTENT_LENGTH_MISMATCH"
+                })
+            );
+        }
+
+        let system_log = std::fs::read_to_string(runtime.paths.system_log_file())?;
+        assert!(
+            system_log.contains("Pi JSONL failure result"),
+            "system log should attribute the result failure to Pi: {system_log}"
+        );
+        assert!(
+            !system_log.contains("Claude JSONL failure result"),
+            "system log should not attribute a Pi result failure to Claude: {system_log}"
+        );
+    }
+
+    let mut delivered_events = Vec::new();
+    for request in server.requests()? {
+        let body: Value = serde_json::from_str(&request.body)?;
+        delivered_events.extend(
+            body.get("events")
+                .and_then(Value::as_array)
+                .ok_or_else(|| std::io::Error::other("Pi event request omitted its events"))?
+                .iter()
+                .cloned(),
+        );
+    }
+    let assistants: Vec<_> = delivered_events
+        .iter()
+        .filter(|event| event["type"] == "assistant")
+        .collect();
+    if let Some(text) = expected_assistant_text {
+        assert_eq!(assistants.len(), 1);
+        assert_eq!(
+            assistants
+                .first()
+                .and_then(|assistant| assistant.pointer("/message/content/0/text")),
+            Some(&Value::String(text.to_string()))
+        );
+    } else {
+        assert!(assistants.is_empty());
+    }
+    assert_eq!(
+        delivered_events
+            .iter()
+            .filter(|event| event["type"] == "result")
+            .count(),
+        1
+    );
+    let terminal = delivered_events
+        .iter()
+        .find(|event| event["type"] == "result")
+        .ok_or_else(|| std::io::Error::other("terminal result was not delivered"))?;
+    assert_eq!(
+        terminal["subtype"],
+        if completed {
+            "success"
+        } else {
+            "error_during_execution"
+        }
+    );
+    assert_eq!(terminal["is_error"], !completed);
+    if completed {
+        assert!(terminal.get("failureReason").is_none());
+        assert!(terminal.get("modelRequest").is_none());
+    }
+    if expected_failure_reason == Some(FailureReason::SafetyPolicyRefusal) {
+        assert_eq!(
+            terminal["modelRequest"],
+            serde_json::json!({"httpStatus": 200, "transportAttempts": 1, "retryAttempts": 0})
+        );
+        assert_eq!(
+            terminal.get("failureReason"),
+            assistant_messages
+                .last()
+                .and_then(|message| message.pointer("/diagnostics/0/details/failureReason"))
+        );
+    }
+    if expected_failure_reason == Some(FailureReason::ProviderServerError) {
+        if let Some(expected_status) = assistant_messages
+            .last()
+            .and_then(|message| message.pointer("/diagnostics/0/details/httpStatus"))
+        {
+            assert_eq!(
+                terminal.pointer("/modelRequest/httpStatus"),
+                Some(expected_status)
+            );
+            assert_eq!(
+                terminal
+                    .pointer("/modelRequest/transportAttempts")
+                    .and_then(Value::as_u64),
+                Some(1)
+            );
+            assert_eq!(
+                terminal
+                    .pointer("/modelRequest/retryAttempts")
+                    .and_then(Value::as_u64),
+                Some(0)
+            );
+        } else {
+            assert!(terminal.get("modelRequest").is_none());
+        }
+        assert_eq!(
+            terminal.get("failureReason"),
+            assistant_messages
+                .last()
+                .and_then(|message| message.pointer("/diagnostics/0/details/failureReason"))
+        );
+    }
+    let result = terminal["result"]
+        .as_str()
+        .ok_or_else(|| std::io::Error::other("terminal result text was not a string"))?;
+    match expected_result {
+        ExpectedTerminalResult::Exact(expected) | ExpectedTerminalResult::Completed(expected) => {
+            assert_eq!(result, expected);
+        }
+        ExpectedTerminalResult::UpstreamNonApiResponse => {
+            assert!(
+                result.starts_with("upstream_non_api_response "),
+                "terminal result should carry the upstream marker: {result}"
+            );
+            assert!(
+                result.contains("status=unknown") && result.contains("content_type=unknown"),
+                "guest-side projection cannot claim transport evidence: {result}"
+            );
+            assert!(
+                !result.contains('<'),
+                "terminal result should not republish the upstream document: {result}"
+            );
+            assert!(
+                result.len() < 128,
+                "terminal result should stay bounded: {result}"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn guest_preserves_pi_completed_length_error_and_aborted_settlement_results()
+-> Result<(), Box<dyn std::error::Error>> {
+    let base_path = std::env::var_os("PATH").unwrap_or_default();
+    let original_directory = std::env::current_dir()?;
+    for (run_id, messages, result, assistant_text) in [
+        (
+            "00000000-0000-4000-8000-000000000141",
+            vec![serde_json::json!({
+                "role": "assistant", "stopReason": "length",
+                "content": [{"type": "text", "text": "Partial answer"}]
+            })],
+            "Partial answer",
+            Some("Partial answer"),
+        ),
+        (
+            "00000000-0000-4000-8000-000000000160",
+            vec![serde_json::json!({
+                "role": "assistant", "stopReason": "length",
+                "content": [{"type": "thinking", "thinking": "Unfinished reasoning"}]
+            })],
+            "",
+            None,
+        ),
+        (
+            "00000000-0000-4000-8000-000000000161",
+            vec![
+                serde_json::json!({"role": "assistant", "stopReason": "length", "content": []}),
+                serde_json::json!({
+                    "role": "assistant", "stopReason": "stop",
+                    "content": [{"type": "text", "text": "Recovered answer"}]
+                }),
+            ],
+            "Recovered answer",
+            Some("Recovered answer"),
+        ),
+    ] {
+        run_settlement_case(
+            run_id,
+            &messages,
+            ExpectedTerminalResult::Completed(result),
+            None,
+            assistant_text,
+            &base_path,
+            &original_directory,
+        )
+        .await?;
+    }
+    for (index, text, reason) in [
+        (
+            0,
+            "Your authentication token has expired. Please try refreshing it.",
+            Some(FailureReason::InvalidCredentials),
+        ),
+        (
+            1,
+            "Provided authentication token is expired.",
+            Some(FailureReason::InvalidCredentials),
+        ),
+        (2, "401 Unauthorized", None),
+    ] {
+        run_settlement_case(
+            &format!("00000000-0000-4000-8000-{:012}", 180 + index),
+            &[serde_json::json!({
+                "role": "assistant", "stopReason": "error", "api": "openai-codex-responses",
+                "content": [], "errorMessage": text,
+                "diagnostics": [{"type": "okou_model_request", "details": {
+                    "httpStatus": 401, "transportAttempts": 1
+                }}]
+            })],
+            ExpectedTerminalResult::Exact(text),
+            reason,
+            None,
+            &base_path,
+            &original_directory,
+        )
+        .await?;
+    }
+    const QUEUE_TIMEOUT: &str = "We were unable to start processing your request within the 900-second timeout limit. Please try again later.";
+    for (index, metadata) in [
+        serde_json::json!({
+            "httpStatus": 200, "transportAttempts": 1,
+            "failureReason": "provider_queue_timeout"
+        }),
+        serde_json::json!({
+            "httpStatus": 503, "transportAttempts": 1,
+            "failureReason": "provider_server_error"
+        }),
+        serde_json::json!({
+            "httpStatus": 529, "transportAttempts": 1,
+            "failureReason": "provider_overloaded"
+        }),
+        serde_json::json!({
+            "transportAttempts": 1, "failureReason": "future_provider_reason"
+        }),
+        Value::Null,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut message = serde_json::json!({
+            "role": "assistant", "stopReason": "error", "api": "openai-responses",
+            "content": [], "errorMessage": QUEUE_TIMEOUT
+        });
+        if !metadata.is_null() {
+            message["diagnostics"] = serde_json::json!([{
+                "type": "okou_model_request", "details": metadata
+            }]);
+        }
+        run_settlement_case(
+            &format!("00000000-0000-4000-8000-{:012}", 150 + index),
+            &[message],
+            ExpectedTerminalResult::Exact(QUEUE_TIMEOUT),
+            Some(FailureReason::ProviderQueueTimeout),
+            None,
+            &base_path,
+            &original_directory,
+        )
+        .await?;
+    }
+    for (run_id, message, result, reason, assistant_text) in [
+        (
+            "00000000-0000-4000-8000-000000000140",
+            serde_json::json!({
+                "role": "assistant", "stopReason": "error", "content": [],
+                "errorMessage": "Codex error: Our servers are currently overloaded. Please try again later."
+            }),
+            "Codex error: Our servers are currently overloaded. Please try again later.",
+            FailureReason::ProviderOverloaded,
+            None,
+        ),
+        (
+            "00000000-0000-4000-8000-000000000142",
+            serde_json::json!({
+                "role": "assistant", "stopReason": "error", "api": "openai-codex-responses", "content": [],
+                "errorMessage": "You have hit your ChatGPT usage limit.",
+                "diagnostics": [{"type": "okou_model_request", "details": {"httpStatus": 429, "transportAttempts": 1, "failureReason": "provider_rate_limited"}}]
+            }),
+            "You have hit your ChatGPT usage limit.",
+            FailureReason::ProviderRateLimited,
+            None,
+        ),
+        (
+            "00000000-0000-4000-8000-000000000143",
+            serde_json::json!({
+                "role": "assistant", "stopReason": "error", "api": "openai-responses", "content": [],
+                "errorMessage": "Service unavailable",
+                "diagnostics": [{"type": "okou_model_request", "details": {"httpStatus": 503, "transportAttempts": 1}}]
+            }),
+            "Service unavailable",
+            FailureReason::ProviderServerError,
+            None,
+        ),
+        (
+            "00000000-0000-4000-8000-000000000144",
+            serde_json::json!({
+                "role": "assistant", "stopReason": "error", "api": "openai-codex-responses", "content": [],
+                "errorMessage": "You have hit your ChatGPT usage limit.",
+                "diagnostics": [{"type": "okou_model_request", "details": {"httpStatus": 429, "transportAttempts": 1, "failureReason": "provider_insufficient_credits"}}]
+            }),
+            "You have hit your ChatGPT usage limit.",
+            FailureReason::ProviderInsufficientCredits,
+            None,
+        ),
+    ] {
+        run_settlement_case(
+            run_id,
+            &[message],
+            ExpectedTerminalResult::Exact(result),
+            Some(reason),
+            assistant_text,
+            &base_path,
+            &original_directory,
+        )
+        .await?;
+    }
+    let processing_failure: Value = serde_json::from_str(include_str!(
+        "../../../turbo/packages/pi-agent-runtime/src/test/fixtures/codex-request-processing-error.json"
+    ))?;
+    let processing_text = processing_failure["errorMessage"]
+        .as_str()
+        .ok_or_else(|| std::io::Error::other("missing request-processing failure text"))?;
+    for (run_id, structured_reason) in [
+        ("00000000-0000-4000-8000-000000000192", true),
+        ("00000000-0000-4000-8000-000000000193", false),
+    ] {
+        let mut message = processing_failure.clone();
+        if !structured_reason {
+            message
+                .pointer_mut("/diagnostics/0/details")
+                .and_then(Value::as_object_mut)
+                .ok_or_else(|| std::io::Error::other("missing model request details"))?
+                .remove("failureReason");
+        }
+        run_settlement_case(
+            run_id,
+            &[message],
+            ExpectedTerminalResult::Exact(processing_text),
+            Some(FailureReason::ProviderServerError),
+            None,
+            &base_path,
+            &original_directory,
+        )
+        .await?;
+    }
+    let verification_failure: Value = serde_json::from_str(include_str!(
+        "../../../turbo/packages/pi-agent-runtime/src/test/fixtures/codex-model-access-verification.json"
+    ))?;
+    let verification_text = verification_failure["errorMessage"]
+        .as_str()
+        .ok_or_else(|| std::io::Error::other("missing model-access verification text"))?;
+    for (run_id, structured_reason) in [
+        ("00000000-0000-4000-8000-000000000190", true),
+        ("00000000-0000-4000-8000-000000000191", false),
+    ] {
+        let mut message = verification_failure.clone();
+        if !structured_reason {
+            message
+                .pointer_mut("/diagnostics/0/details")
+                .and_then(Value::as_object_mut)
+                .ok_or_else(|| std::io::Error::other("missing model request details"))?
+                .remove("failureReason");
+        }
+        run_settlement_case(
+            run_id,
+            &[message],
+            ExpectedTerminalResult::Exact(verification_text),
+            Some(FailureReason::ProviderServerError),
+            None,
+            &base_path,
+            &original_directory,
+        )
+        .await?;
+    }
+    let cyber_refusal: Value = serde_json::from_str(include_str!(
+        "../../../turbo/packages/pi-agent-runtime/src/test/fixtures/codex-cyber-safety-refusal.json"
+    ))?;
+    let cyber_refusal_text = cyber_refusal["errorMessage"]
+        .as_str()
+        .ok_or_else(|| std::io::Error::other("missing cybersecurity refusal text"))?;
+    for (run_id, structured_reason) in [
+        ("00000000-0000-4000-8000-000000000170", true),
+        ("00000000-0000-4000-8000-000000000171", false),
+    ] {
+        let mut message = cyber_refusal.clone();
+        if !structured_reason {
+            message
+                .pointer_mut("/diagnostics/0/details")
+                .and_then(Value::as_object_mut)
+                .ok_or_else(|| std::io::Error::other("missing model request details"))?
+                .remove("failureReason");
+        }
+        run_settlement_case(
+            run_id,
+            &[message],
+            ExpectedTerminalResult::Exact(cyber_refusal_text),
+            Some(FailureReason::SafetyPolicyRefusal),
+            None,
+            &base_path,
+            &original_directory,
+        )
+        .await?;
+    }
+    // Shared with the real TypeScript provider-boundary regression. No status
+    // is inferred from the detail text by this guest entry point.
+    let rate_limit: Value = serde_json::from_str(include_str!(
+        "../../../turbo/packages/pi-agent-runtime/src/test/fixtures/codex-rate-limit.json"
+    ))?;
+    run_settlement_case(
+        "00000000-0000-4000-8000-000000000130",
+        std::slice::from_ref(&rate_limit),
+        ExpectedTerminalResult::Exact(r#"{"detail":"Rate limit exceeded"}"#),
+        Some(FailureReason::ProviderRateLimited),
+        None,
+        &base_path,
+        &original_directory,
+    )
+    .await?;
+    let terminated: Value = serde_json::from_str(include_str!(
+        "../../../turbo/packages/pi-agent-runtime/src/test/fixtures/codex-stream-terminated.json"
+    ))?;
+    run_settlement_case(
+        "00000000-0000-4000-8000-000000000145",
+        &[terminated],
+        ExpectedTerminalResult::Exact("terminated"),
+        Some(FailureReason::ResponseConnectionLost),
+        None,
+        &base_path,
+        &original_directory,
+    )
+    .await?;
+    for (run_id, status) in [
+        ("00000000-0000-4000-8000-000000000133", 200),
+        ("00000000-0000-4000-8000-000000000134", 401),
+    ] {
+        let mut other_status = rate_limit.clone();
+        other_status["diagnostics"][0]["details"]["httpStatus"] = Value::from(status);
+        run_settlement_case(
+            run_id,
+            &[other_status],
+            ExpectedTerminalResult::Exact(r#"{"detail":"Rate limit exceeded"}"#),
+            None,
+            None,
+            &base_path,
+            &original_directory,
+        )
+        .await?;
+    }
+    let mut explicit_usage = rate_limit.clone();
+    explicit_usage["errorMessage"] =
+        Value::from("You have hit your ChatGPT usage limit (plus plan).");
+    run_settlement_case(
+        "00000000-0000-4000-8000-000000000131",
+        &[explicit_usage],
+        ExpectedTerminalResult::Exact("You have hit your ChatGPT usage limit (plus plan)."),
+        Some(FailureReason::UsageLimit),
+        None,
+        &base_path,
+        &original_directory,
+    )
+    .await?;
+    let mut historical = rate_limit.clone();
+    historical
+        .as_object_mut()
+        .ok_or_else(|| std::io::Error::other("expected assistant object"))?
+        .remove("diagnostics");
+    run_settlement_case(
+        "00000000-0000-4000-8000-000000000132",
+        &[historical],
+        ExpectedTerminalResult::Exact(r#"{"detail":"Rate limit exceeded"}"#),
+        None,
+        None,
+        &base_path,
+        &original_directory,
+    )
+    .await?;
+    run_settlement_case(
+        "00000000-0000-4000-8000-000000000124",
+        &[serde_json::json!({
+            "role": "assistant",
+            "content": [{ "type": "text", "text": "ignored assistant text" }],
+            "model": "deepseek-v4-flash",
+            "responseId": "response-error",
+            "usage": {},
+            "stopReason": "error",
+            "errorMessage": "API Error: Overloaded",
+            "timestamp": 1,
+        })],
+        ExpectedTerminalResult::Exact("API Error: Overloaded"),
+        None,
+        Some("ignored assistant text"),
+        &base_path,
+        &original_directory,
+    )
+    .await?;
+    run_settlement_case(
+        "00000000-0000-4000-8000-000000000125",
+        &[serde_json::json!({
+            "role": "assistant",
+            "content": [{ "type": "text", "text": "ignored assistant text" }],
+            "model": "deepseek-v4-flash",
+            "responseId": "response-aborted",
+            "usage": {},
+            "stopReason": "aborted",
+            "errorMessage": "",
+            "timestamp": 1,
+        })],
+        ExpectedTerminalResult::Exact("Pi model turn aborted"),
+        None,
+        Some("ignored assistant text"),
+        &base_path,
+        &original_directory,
+    )
+    .await?;
+    // This fixture is also asserted against actual official RPC output by the
+    // TypeScript pending-tool cancellation test (only its timestamp is normalized).
+    let [assistant_end, settlement]: [Value; 2] = serde_json::from_str(include_str!(
+        "../../../turbo/packages/pi-agent-runtime/src/test/fixtures/pending-tool-abort.json"
+    ))?;
+    assert_eq!(settlement["type"], "agent_settled");
+    run_settlement_case(
+        "00000000-0000-4000-8000-000000000126",
+        std::slice::from_ref(&assistant_end["message"]),
+        ExpectedTerminalResult::Exact("This operation was aborted"),
+        None,
+        None,
+        &base_path,
+        &original_directory,
+    )
+    .await?;
+    // An older sandbox CLI can still hand Guest a whole upstream page. Guest
+    // must bound it without claiming transport evidence it never observed.
+    run_settlement_case(
+        "00000000-0000-4000-8000-000000000128",
+        &[serde_json::json!({
+            "role": "assistant",
+            "content": [],
+            "model": "deepseek-v4-flash",
+            "responseId": "response-upstream-document",
+            "usage": {},
+            "stopReason": "error",
+            "errorMessage": format!(
+                "<html>\n  <head><style global>body{{color:#8e8ea0}}</style></head>\n  <body>{}</body>\n</html>",
+                "<svg viewBox=\"0 0 41 41\"><path d=\"M37.5324 16.8707\" /></svg>".repeat(200)
+            ),
+            "timestamp": 1,
+        })],
+        ExpectedTerminalResult::UpstreamNonApiResponse,
+        None,
+        None,
+        &base_path,
+        &original_directory,
+    )
+    .await?;
+    // A current CLI already replaced the page at its provider boundary, so the
+    // observed status classifies the failure as an upstream server error.
+    run_settlement_case(
+        "00000000-0000-4000-8000-000000000129",
+        &[serde_json::json!({
+            "role": "assistant",
+            "content": [],
+            "model": "deepseek-v4-flash",
+            "responseId": "response-upstream-marker",
+            "usage": {},
+            "stopReason": "error",
+            "errorMessage":
+                "upstream_non_api_response status=502 content_type=html bytes=4711 digest=1a2b3c4d",
+            "timestamp": 1,
+        })],
+        ExpectedTerminalResult::Exact(
+            "upstream_non_api_response status=502 content_type=html bytes=4711 digest=1a2b3c4d",
+        ),
+        Some(FailureReason::ProviderServerError),
+        None,
+        &base_path,
+        &original_directory,
+    )
+    .await?;
+    // A normal stop already reached Guest when cancellation wins during
+    // settlement preparation. Guest must replace its cached terminal outcome.
+    let [success, aborted, settlement]: [Value; 3] = serde_json::from_str(include_str!(
+        "../../../turbo/packages/pi-agent-runtime/src/test/fixtures/pending-tool-settlement-abort.json"
+    ))?;
+    assert_eq!(settlement["type"], "agent_settled");
+    run_settlement_case(
+        "00000000-0000-4000-8000-000000000127",
+        &[success["message"].clone(), aborted["message"].clone()],
+        ExpectedTerminalResult::Exact("This operation was aborted"),
+        None,
+        None,
+        &base_path,
+        &original_directory,
+    )
+    .await?;
+    Ok(())
+}

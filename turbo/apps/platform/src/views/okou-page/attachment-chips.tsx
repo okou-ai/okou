@@ -52,12 +52,7 @@ import {
   currentLeftThread$,
   currentRightThread$,
 } from "../../signals/chat-page/chat-thread-panes.ts";
-import {
-  detach,
-  jsonParseOr,
-  Reason,
-  withCleanup,
-} from "../../signals/utils.ts";
+import { detach, jsonParseOr, Reason } from "../../signals/utils.ts";
 import type { ImageLoadSignals } from "../../signals/image-load.ts";
 import type { TextPreviewComputed } from "../../signals/text-preview.ts";
 import type { MarkdownPreviewTreeComputed } from "../../signals/markdown-preview-tree.ts";
@@ -91,6 +86,7 @@ import {
   artifactPreviewUrlsMatch,
   attachmentFilenameFromUrl,
 } from "./attachment-url.ts";
+import type { ComposerAttachmentAnnotationActions } from "../../signals/okou-page/composer-business-actions.ts";
 import { AnnotationMarkLayer } from "./image-annotation-marks.tsx";
 import {
   annotationMarkCount,
@@ -1908,14 +1904,14 @@ function ComposerImagePreviewButton({
 
 function AnnotationUploadRetry({
   attachment,
-  onAnnotationChange,
+  annotationActions,
 }: {
   readonly attachment: ChatAttachment;
-  readonly onAnnotationChange: () => void;
+  readonly annotationActions: ComposerAttachmentAnnotationActions;
 }) {
   const { t } = useTranslation();
   const status = useGet(attachment.annotationUploadStatus$);
-  const retry = useSet(attachment.retryAnnotationUpload$);
+  const retry = useSet(annotationActions.retryAttachmentAnnotations$);
   const pageSignal = useGet(pageSignal$);
   if (status !== "failed") {
     return null;
@@ -1931,10 +1927,7 @@ function AnnotationUploadRetry({
         { filename: attachment.filename },
       )}
       onClick={() => {
-        detach(
-          withCleanup(retry(pageSignal), onAnnotationChange),
-          Reason.DomCallback,
-        );
+        detach(retry(attachment, pageSignal), Reason.DomCallback);
       }}
     >
       <RotateCcw size={9} />
@@ -1945,12 +1938,12 @@ function AnnotationUploadRetry({
 function AttachmentChip({
   attachment,
   annotationSignals,
-  onAnnotationChange,
+  annotationActions,
   onRemove,
 }: {
   attachment: ChatAttachment;
   annotationSignals: ImageAnnotationSignals;
-  onAnnotationChange: () => void;
+  annotationActions: ComposerAttachmentAnnotationActions;
   onRemove: () => void;
 }) {
   const { t } = useTranslation();
@@ -1963,7 +1956,9 @@ function AttachmentChip({
       : undefined;
   const openImageLightbox = useSet(openImageLightbox$);
   const openAnnotationEditor = useSet(annotationSignals.openAnnotationEditor$);
-  const confirmAnnotations = useSet(attachment.confirmAnnotations$);
+  const confirmAnnotations = useSet(
+    annotationActions.confirmAttachmentAnnotations$,
+  );
   const annotations = useGet(attachment.annotations$);
   const isImage = attachment.contentType.startsWith("image/");
   return (
@@ -1999,21 +1994,8 @@ function AttachmentChip({
                           url: previewUrl,
                           preview: imagePreview,
                           annotations,
-                          commit: async (next, signal) => {
-                            // Persist once, after the annotated copy exists or
-                            // has definitively failed. Saving while the upload
-                            // was still in flight wrote a draft carrying marks
-                            // with no copy for them to render into, and a draft
-                            // in that shape restores as `failed` — a failure
-                            // the user is shown for something that was merely
-                            // unfinished. The chip already reflects the marks
-                            // from `annotations$`, which this sets
-                            // synchronously, so nothing visible waits on the
-                            // save.
-                            await withCleanup(
-                              confirmAnnotations(next, signal),
-                              onAnnotationChange,
-                            );
+                          commit: (next, signal) => {
+                            return confirmAnnotations(attachment, next, signal);
                           },
                         });
                       },
@@ -2040,7 +2022,7 @@ function AttachmentChip({
       )}
       <AnnotationUploadRetry
         attachment={attachment}
-        onAnnotationChange={onAnnotationChange}
+        annotationActions={annotationActions}
       />
       <IconTooltipButton
         type="button"
@@ -2079,12 +2061,12 @@ function AttachmentChip({
 export function AttachmentChips({
   attachments,
   annotationSignals,
-  onAnnotationChange,
+  annotationActions,
   onRemove,
 }: {
   attachments: ChatAttachment[];
   annotationSignals: ImageAnnotationSignals;
-  onAnnotationChange: () => void;
+  annotationActions: ComposerAttachmentAnnotationActions;
   onRemove: (attachment: ChatAttachment) => void;
 }) {
   return (
@@ -2092,7 +2074,7 @@ export function AttachmentChips({
       {attachments.map((a) => {
         return (
           <AttachmentChip
-            onAnnotationChange={onAnnotationChange}
+            annotationActions={annotationActions}
             key={a.key}
             attachment={a}
             annotationSignals={annotationSignals}

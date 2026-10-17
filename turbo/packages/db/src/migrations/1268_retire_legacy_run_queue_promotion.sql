@@ -1,4 +1,4 @@
--- vm0:non-transactional
+-- okou:non-transactional
 -- 1) #37034 stopped creating queued runs and is the rollback floor, and this
 -- release no longer promotes them. Remove any active row a queued run still
 -- holds so only pending and running runs occupy active_agent_runs. The

@@ -3,6 +3,22 @@
   "baseUrlTemplateResolutionCases": [
     {
       "category": "authority-fragment",
+      "name": "partial alabel rejects an invalid resolved payload",
+      "base": "https://xn--${{ vars.SUFFIX }}.example.com",
+      "vars": { "SUFFIX": "a" },
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "authority-fragment",
+      "name": "partial alabel rejects an overlong resolved payload",
+      "base": "https://xn--${{ vars.SUFFIX }}.example.com",
+      "vars": {
+        "SUFFIX": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "authority-fragment",
       "name": "host suffix cannot extend a full literal label",
       "base": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa${{ vars.SUFFIX }}/v1/{resource}",
       "vars": {
@@ -138,6 +154,86 @@
   ],
   "catalogBaseUrlValidationCases": [
     {
+      "category": "authority",
+      "name": "partial alabel preserves rejection of an invalid fixed alabel",
+      "base": "https://xn--${{ vars.SUFFIX }}.xn--a.example.com/v1/{resource}",
+      "vars": {
+        "SUFFIX": "bcher-kva"
+      },
+      "expectedValid": false,
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "authority",
+      "name": "partial alabel rejects an encoded literal dot",
+      "base": "https://xn--%2e${{ vars.SUFFIX }}.example.com/v1/{resource}",
+      "vars": {
+        "SUFFIX": "bcher-kva"
+      },
+      "expectedValid": false,
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "authority",
+      "name": "partial alabel rejects an encoded literal slash",
+      "base": "https://xn--%2f${{ vars.SUFFIX }}.example.com/v1/{resource}",
+      "vars": {
+        "SUFFIX": "bcher-kva"
+      },
+      "expectedValid": false,
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "authority",
+      "name": "partial alabel rejects a malformed literal escape",
+      "base": "https://xn--%zz${{ vars.SUFFIX }}.example.com/v1/{resource}",
+      "vars": {
+        "SUFFIX": "bcher-kva"
+      },
+      "expectedValid": false,
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "authority",
+      "name": "partial alabel rejects invalid literal utf8",
+      "base": "https://xn--%ff${{ vars.SUFFIX }}.example.com/v1/{resource}",
+      "vars": {
+        "SUFFIX": "bcher-kva"
+      },
+      "expectedValid": false,
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "authority",
+      "name": "partial alabel rejects an encoded literal percent",
+      "base": "https://xn--b%2561${{ vars.SUFFIX }}.example.com/v1/{resource}",
+      "vars": {
+        "SUFFIX": "bcher-kva"
+      },
+      "expectedValid": false,
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "authority",
+      "name": "partial alabel rejects encoded literal parameter syntax",
+      "base": "https://xn--%7Btenant%7D${{ vars.SUFFIX }}.example.com/v1/{resource}",
+      "vars": {
+        "SUFFIX": "bcher-kva"
+      },
+      "expectedValid": false,
+      "expectedResolvedBase": null
+    },
+    {
+      "category": "authority",
+      "name": "partial alabel rejects an overlong literal fragment",
+      "base": "https://xn--aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa${{ vars.SUFFIX }}.example.com/v1/{resource}",
+      "vars": {
+        "SUFFIX": "bcher-kva"
+      },
+      "expectedValid": false,
+      "expectedResolvedBase": null
+    },
+    {
       "category": "valid",
       "name": "whole host template with parameterized path",
       "base": "https://${{ vars.WORKSPACE_HOST }}/v1/{resource}",
@@ -239,6 +335,54 @@
       },
       "expectedValid": true,
       "expectedResolvedBase": "https://xn--bcher-kva.example.com/v1/{resource}"
+    },
+    {
+      "category": "valid",
+      "name": "host variable completes an alabel prefix",
+      "base": "https://xn--${{ vars.SUFFIX }}.example.com/v1/{resource}",
+      "vars": { "SUFFIX": "bcher-kva" },
+      "expectedValid": true,
+      "expectedResolvedBase": "https://xn--bcher-kva.example.com/v1/{resource}"
+    },
+    {
+      "category": "valid",
+      "name": "host variable completes a split punycode payload",
+      "base": "https://xn--b${{ vars.SUFFIX }}.example.com/v1/{resource}",
+      "vars": { "SUFFIX": "cher-kva" },
+      "expectedValid": true,
+      "expectedResolvedBase": "https://xn--bcher-kva.example.com/v1/{resource}"
+    },
+    {
+      "category": "valid",
+      "name": "partial alabel preserves a basic ascii underscore",
+      "base": "https://xn--b_${{ vars.SUFFIX }}.example.com/v1/{resource}",
+      "vars": { "SUFFIX": "cher-3ya" },
+      "expectedValid": true,
+      "expectedResolvedBase": "https://xn--b_cher-3ya.example.com/v1/{resource}"
+    },
+    {
+      "category": "valid",
+      "name": "partial alabel preserves basic ascii punctuation",
+      "base": "https://xn--b!${{ vars.SUFFIX }}.example.com/v1/{resource}",
+      "vars": { "SUFFIX": "cher-3ya" },
+      "expectedValid": true,
+      "expectedResolvedBase": "https://xn--b!cher-3ya.example.com/v1/{resource}"
+    },
+    {
+      "category": "valid",
+      "name": "adjacent host variables complete an alabel prefix",
+      "base": "https://xn--${{ vars.FIRST }}${{ vars.SECOND }}.example.com/v1/{resource}",
+      "vars": { "FIRST": "bcher", "SECOND": "-kva" },
+      "expectedValid": true,
+      "expectedResolvedBase": "https://xn--bcher-kva.example.com/v1/{resource}"
+    },
+    {
+      "category": "valid",
+      "name": "repeated host variable completes each alabel prefix",
+      "base": "https://xn--${{ vars.SUFFIX }}.xn--${{ vars.SUFFIX }}.example.com/v1/{resource}",
+      "vars": { "SUFFIX": "bcher-kva" },
+      "expectedValid": true,
+      "expectedResolvedBase": "https://xn--bcher-kva.xn--bcher-kva.example.com/v1/{resource}"
     },
     {
       "category": "authority",
@@ -420,6 +564,12 @@
     },
     {
       "category": "valid",
+      "name": "static canonical ipv4 base with parameterized path",
+      "base": "https://127.0.0.1/items/{item}",
+      "expectedValid": true
+    },
+    {
+      "category": "valid",
       "name": "percent-encoded unicode host is valid",
       "base": "https://%E2%98%83.example.com",
       "expectedValid": true,
@@ -464,6 +614,55 @@
       "category": "valid",
       "name": "parameterized host base",
       "base": "https://{sub}.example.com",
+      "expectedValid": true
+    },
+    {
+      "category": "valid",
+      "name": "parameterized dns host with decimal literal label",
+      "base": "https://{sub}.123.example.com",
+      "expectedValid": true
+    },
+    {
+      "category": "valid",
+      "name": "parameterized dns host with leading-zero decimal literal label",
+      "base": "https://{sub}.0123.example.com",
+      "expectedValid": true
+    },
+    {
+      "category": "hostname-policy",
+      "name": "parameterized dns host canonicalizes hexadecimal-looking literal label",
+      "base": "https://{sub}.0XABC.example.com",
+      "expectedValid": true,
+      "expectedCanonicalBase": "https://{sub}.0xabc.example.com"
+    },
+    {
+      "category": "valid",
+      "name": "mixed host parameter with decimal literal dns label",
+      "base": "https://api-{sub}.123.example.com",
+      "expectedValid": true
+    },
+    {
+      "category": "valid",
+      "name": "plus-greedy host parameter with leading-zero decimal dns label",
+      "base": "https://{sub+}.0123.example.com",
+      "expectedValid": true
+    },
+    {
+      "category": "valid",
+      "name": "star-greedy host parameter with hexadecimal-looking dns label",
+      "base": "https://{sub*}.0xabc.example.com",
+      "expectedValid": true
+    },
+    {
+      "category": "valid",
+      "name": "numeric dns labels with more than four required host segments",
+      "base": "https://1.2.3.4.{sub}",
+      "expectedValid": true
+    },
+    {
+      "category": "valid",
+      "name": "nonnumeric mixed affix distinguishes dns from ipv4",
+      "base": "https://127.0.{octet}.node-{suffix}",
       "expectedValid": true
     },
     {
@@ -704,6 +903,90 @@
       "category": "authority",
       "name": "single-number ipv4 literal is invalid",
       "base": "https://2130706433",
+      "expectedValid": false
+    },
+    {
+      "category": "authority",
+      "name": "hexadecimal ipv4 literal is invalid",
+      "base": "https://0x7f000001",
+      "expectedValid": false
+    },
+    {
+      "category": "authority",
+      "name": "abbreviated ipv4 literal is invalid",
+      "base": "https://127.1",
+      "expectedValid": false
+    },
+    {
+      "category": "authority",
+      "name": "parameterized four-component ipv4 authority is invalid",
+      "base": "https://127.{octet}.0.1",
+      "expectedValid": false
+    },
+    {
+      "category": "authority",
+      "name": "parameterized ipv4 authority with leading parameter is invalid",
+      "base": "https://{octet}.0.0.1",
+      "expectedValid": false
+    },
+    {
+      "category": "authority",
+      "name": "parameterized abbreviated ipv4 authority is invalid",
+      "base": "https://127.{octet}",
+      "expectedValid": false
+    },
+    {
+      "category": "authority",
+      "name": "parameterized hexadecimal ipv4 authority is invalid",
+      "base": "https://{octet}.0x1",
+      "expectedValid": false
+    },
+    {
+      "category": "authority",
+      "name": "plus-greedy parameterized ipv4 authority is invalid",
+      "base": "https://{octets+}.0.1",
+      "expectedValid": false
+    },
+    {
+      "category": "authority",
+      "name": "star-greedy parameterized ipv4 authority is invalid",
+      "base": "https://{octets*}.0.1",
+      "expectedValid": false
+    },
+    {
+      "category": "authority",
+      "name": "parameterized ipv4 authority with two parameters is invalid",
+      "base": "https://127.0.{a}.{b}",
+      "expectedValid": false
+    },
+    {
+      "category": "authority",
+      "name": "numeric mixed suffix in ipv4 authority is invalid",
+      "base": "https://{prefix}7.0.0.1",
+      "expectedValid": false
+    },
+    {
+      "category": "authority",
+      "name": "numeric mixed prefix in ipv4 authority is invalid",
+      "base": "https://127.0.0.1{suffix}",
+      "expectedValid": false
+    },
+    {
+      "category": "authority",
+      "name": "numeric mixed prefix and suffix in ipv4 authority are invalid",
+      "base": "https://1{octet}7.0.0.1",
+      "expectedValid": false
+    },
+    {
+      "category": "authority",
+      "name": "optional greedy parameter before four ipv4 literals is invalid",
+      "base": "https://{sub*}.127.0.0.1",
+      "expectedValid": false
+    },
+    {
+      "category": "authority",
+      "name": "greedy and numeric mixed parameters in ipv4 authority are invalid",
+      "base": "https://{octets+}.0.0.{suffix}1",
       "expectedValid": false
     },
     {

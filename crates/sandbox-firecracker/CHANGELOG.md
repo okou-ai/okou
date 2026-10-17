@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.52.4](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.52.3...sandbox-firecracker-v0.52.4) (2026-10-17)
+
+## [0.52.3](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.52.2...sandbox-firecracker-v0.52.3) (2026-10-16)
+
+## [0.52.2](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.52.1...sandbox-firecracker-v0.52.2) (2026-10-16)
+
+## [0.52.1](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.52.0...sandbox-firecracker-v0.52.1) (2026-10-16)
+
+## [0.52.0](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.51.9...sandbox-firecracker-v0.52.0) (2026-10-16)
+
+
+### Features
+
+* **runner:** retain home cache by filesystem pressure ([#40658](https://github.com/okou-ai/okou/issues/40658)) ([713e66c](https://github.com/okou-ai/okou/commit/713e66cc7d558d4626834ea5186cfa0f2517e207))
+
+## [0.51.9](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.51.8...sandbox-firecracker-v0.51.9) (2026-10-16)
+
+
+### Bug Fixes
+
+* **rust:** bound control exec response writes ([#40651](https://github.com/okou-ai/okou/issues/40651)) ([71dc42e](https://github.com/okou-ai/okou/commit/71dc42e1bd4adc6b67aae3a307741ae2d67ddbbc))
+
 ## [0.51.8](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.51.7...sandbox-firecracker-v0.51.8) (2026-10-16)
 
 ## [0.51.7](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.51.6...sandbox-firecracker-v0.51.7) (2026-10-16)

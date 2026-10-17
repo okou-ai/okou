@@ -1,5 +1,88 @@
 # Changelog
 
+## [9.400.1](https://github.com/okou-ai/okou/compare/cli-v9.400.0...cli-v9.400.1) (2026-10-17)
+
+
+### Bug Fixes
+
+* refresh runner platform api and cli release markers ([#40789](https://github.com/okou-ai/okou/issues/40789)) ([8473d96](https://github.com/okou-ai/okou/commit/8473d964e20c44952d93d8a5bf210e65c7d6a794))
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#40811](https://github.com/okou-ai/okou/issues/40811)) ([b53e5a5](https://github.com/okou-ai/okou/commit/b53e5a5fc6437b2b15412d21a42d90344c18191f))
+* remove remaining expired compatibility from the daily cleanup backlog ([#40820](https://github.com/okou-ai/okou/issues/40820)) ([9ef42db](https://github.com/okou-ai/okou/commit/9ef42db5a3c1c8bfe040a7e41b6aafa6941d4510))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.572.4
+    * @okouai/core bumped to 8.765.2
+    * @okouai/pi-agent-runtime bumped to 1.50.16
+
+## [9.400.0](https://github.com/okou-ai/okou/compare/cli-v9.399.1...cli-v9.400.0) (2026-10-16)
+
+
+### Features
+
+* **cli:** add active ssh and vnc connectivity checks ([#40724](https://github.com/okou-ai/okou/issues/40724)) ([680e006](https://github.com/okou-ai/okou/commit/680e006659273013a0e514f7d38e05c3402496d9))
+
+## [9.399.1](https://github.com/okou-ai/okou/compare/cli-v9.399.0...cli-v9.399.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* repair wechat media transfer and conversation context ([#40674](https://github.com/okou-ai/okou/issues/40674)) ([da2141f](https://github.com/okou-ai/okou/commit/da2141fcd53dff04ba8490d99397f3bcba6e7a84))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.572.3
+    * @okouai/core bumped to 8.765.1
+    * @okouai/pi-agent-runtime bumped to 1.50.15
+
+## [9.399.0](https://github.com/okou-ai/okou/compare/cli-v9.398.1...cli-v9.399.0) (2026-10-16)
+
+
+### Features
+
+* **remote:** explain vnc failures with retained source evidence ([#40669](https://github.com/okou-ai/okou/issues/40669)) ([07b1a90](https://github.com/okou-ai/okou/commit/07b1a902af74b7a3ebde6434b86e4efb35b1de7e))
+
+
+### Refactoring
+
+* **wallet:** migrate and require link grant metadata ([#40627](https://github.com/okou-ai/okou/issues/40627)) ([86adc57](https://github.com/okou-ai/okou/commit/86adc578e06477316a04b479d7c30043264f3e9c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.572.2
+    * @okouai/core bumped to 8.765.0
+    * @okouai/pi-agent-runtime bumped to 1.50.14
+
+## [9.398.1](https://github.com/okou-ai/okou/compare/cli-v9.398.0...cli-v9.398.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **wallet:** unify link consent and show actual transactions ([#40650](https://github.com/okou-ai/okou/issues/40650)) ([16fa1cc](https://github.com/okou-ai/okou/commit/16fa1cc1386dd8fcb6f32c789693b98af25f0d13))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.572.1
+    * @okouai/connectors bumped to 3.16.9
+    * @okouai/core bumped to 8.764.2
+    * @okouai/pi-agent-runtime bumped to 1.50.13
+
 ## [9.398.0](https://github.com/okou-ai/okou/compare/cli-v9.397.0...cli-v9.398.0) (2026-10-16)
 
 

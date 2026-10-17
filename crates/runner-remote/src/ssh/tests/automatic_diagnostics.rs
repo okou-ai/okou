@@ -193,6 +193,33 @@ async fn pooled_transport_retains_selected_address_without_fabricating_new_setup
 }
 
 #[tokio::test]
+async fn key_decode_rejection_reports_credential_failure_before_network() {
+    let mut h = Harness::new(Reply::default()).await;
+    h.enable_diagnostics().await;
+    let mut credential = h.credential(true);
+    credential["privateKey"] = "invalid-key-canary".into();
+    let resolve = h.resolve(credential).await;
+    let result = rpc(&h, "ssh.exec", params()).await;
+    assert_eq!(result["failure_reason"], "unsupported_credential");
+    assert_eq!(result["effects"], "not_started");
+    let text = diagnostic_text(&result);
+    assert!(text.contains(&format!("Configuration: created at {CREATED_AT};")));
+    assert!(text.contains("generation 7."));
+    assert_stage(text, "authority", "passed");
+    assert_stage(text, "credential", "failed");
+    for stage in ["dns", "tcp", "ssh_proof", "ssh_trust", "authentication"] {
+        assert_stage(text, stage, "not_reached");
+    }
+    assert!(h.observed.queries.lock().unwrap().is_empty());
+    assert!(h.observed.attempts.lock().unwrap().is_empty());
+    assert_eq!(h.observed.auth.load(Ordering::SeqCst), 0);
+    assert!(h.observed.commands.lock().unwrap().is_empty());
+    assert!(!result.to_string().contains("canary"));
+    resolve.assert_calls_async(1).await;
+    h.shutdown().await;
+}
+
+#[tokio::test]
 async fn trust_rejection_precedes_authentication_and_credential_rejection_keeps_proven_trust() {
     use base64::Engine;
     for trust_failure in [true, false] {
@@ -272,6 +299,15 @@ async fn retained_process_status_uses_its_receipt_after_another_host_failure() {
     assert_ne!(diagnostic_attempt(&first), diagnostic_attempt(&unrelated));
     let again = rpc(&h, "ssh.session.status", json!({"sessionId":session})).await;
     assert_eq!(first["diagnostic_text"], again["diagnostic_text"]);
+    let read = rpc(
+        &h,
+        "ssh.session.read",
+        json!({"sessionId":session,"cursor":0,"waitMs":30000,"maxBytes":8192,"maxChunks":32}),
+    )
+    .await;
+    assert_eq!(read["session"], first["session"]);
+    assert_eq!(read["diagnostic_text"], first["diagnostic_text"]);
+    assert_eq!(read["wait_expired"], false);
     h.shutdown().await;
 }
 

@@ -10,7 +10,7 @@ impl HomeImageLease {
             let commit = self.selected_commit_pin.take().ok_or_else(|| {
                 LifecycleError::Internal("home seed handoff already attempted".into())
             })?;
-            let mut entry = self.entry_lock.take().ok_or_else(|| {
+            let entry = self.entry_lock.take().ok_or_else(|| {
                 LifecycleError::Internal("home seed handoff requires entry ownership".into())
             })?;
             let pin = self.source_pin.take().ok_or_else(|| {
@@ -37,7 +37,9 @@ impl HomeImageLease {
                         std::fs::remove_file(&metadata).map_err(|error| {
                             super::super::io_context::with_path(error, "revoke_commit", &metadata)
                         })?;
-                        entry.unused_selection = false;
+                        entry
+                            .unused_selection
+                            .store(false, std::sync::atomic::Ordering::Relaxed);
                         Ok(())
                     })();
                     (entry, pin, result)
@@ -72,7 +74,8 @@ impl HomeImageLease {
 }
 
 impl HomeImageCache {
-    /// Call after all producers/executor jobs settle, before factory teardown.
+    /// Join accepted seed handoff, publication and explicit collection IO after
+    /// producers/executor jobs settle, before dependent factory teardown.
     pub async fn drain_checkout_handoffs(&self) {
         self.inner.checkout_io.close();
         self.inner.checkout_io.wait().await;

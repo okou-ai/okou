@@ -84,6 +84,7 @@ async fn list_omits_a_closed_sibling_while_another_capture_is_active() {
 
 async fn interrupted_list(cancel_run: bool) {
     let mut h = Harness::new().await;
+    h.run.enable_diagnostics(&h.runtime).await;
     let _resolve = h.resolve().await;
     let check = h.check("valid", 200).await;
     let session = h.start("shared").await.session();
@@ -98,7 +99,7 @@ async fn interrupted_list(cancel_run: bool) {
     if cancel_run {
         h.run.cancel.cancel();
     }
-    if cancel_run {
+    let listed = if cancel_run {
         // Run teardown may close the guest stream before list dispatch. It
         // must never claim a successful list or retain the capture transport.
         let mut reader = Reader::responses(list);
@@ -109,14 +110,58 @@ async fn interrupted_list(cancel_run: bool) {
                 assert_eq!(data["reason"], "cancelled");
             }
         }
+        None
     } else {
         let listed = read(list).await;
         assert_eq!(listed.result()["outcome"], "failed");
         assert_eq!(listed.result()["reason"], "timed_out");
-    }
+        let explanation = crate::test_fixtures::diagnostic_text(listed.result());
+        assert!(
+            explanation.contains("VNC status: unknown."),
+            "{explanation}"
+        );
+        assert!(
+            explanation.contains(&format!("Session: {session}\n")),
+            "{explanation}"
+        );
+        Some(listed)
+    };
     gate.add_permits(1);
-    read(capture).await;
+    let capture = read(capture).await;
     closed(&h).await;
+    if let Some(listed) = listed {
+        use crate::test_fixtures::{diagnostic_attempt, diagnostic_text, remote_inventory};
+        assert_eq!(capture.result()["reason"], "cancelled");
+        assert_ne!(
+            diagnostic_attempt(listed.result()),
+            diagnostic_attempt(capture.result())
+        );
+        let capture_text = diagnostic_text(capture.result());
+        assert!(
+            capture_text.contains("VNC session first terminal failure: timed out;"),
+            "{capture_text}"
+        );
+        let inventory = h
+            .api
+            .mock_async(|when, then| {
+                when.method("GET").path("/api/vnc/hosts");
+                then.status(200).json_body(remote_inventory(
+                    &[(super::harness::CONNECTION, 7)],
+                    super::harness::CREATED_AT,
+                ));
+            })
+            .await;
+        let retained = h
+            .run
+            .passive(
+                "vnc.diagnose",
+                json!({"attemptId": diagnostic_attempt(listed.result())}),
+            )
+            .await;
+        assert_eq!(retained["status"], "found");
+        assert_eq!(diagnostic_text(&retained), diagnostic_text(listed.result()));
+        inventory.assert_calls_async(1).await;
+    }
     check.assert_calls_async(1).await;
     h.run.shutdown().await;
 }

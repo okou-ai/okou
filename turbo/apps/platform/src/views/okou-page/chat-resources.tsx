@@ -3,8 +3,8 @@ import {
   useLastLoadable,
   useLastResolved,
   useSet,
-  type Loadable,
 } from "ccstate-react";
+import type { CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { Package } from "lucide-react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -18,7 +18,6 @@ import {
 } from "@okouai/ui";
 import type { ChatThreadArtifactFile } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
-import type { ChatResourceContent } from "../../signals/chat-page/chat-resources.ts";
 import { currentChatThreadId$ } from "../../signals/agent-chat.ts";
 import { searchParams$ } from "../../signals/route.ts";
 import { SIDEBAR_PARAM } from "../../signals/chat-page/chat-thread-panes.ts";
@@ -26,16 +25,14 @@ import { openArtifactSidebar$ } from "../../signals/chat-page/thread-sidebar-coo
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import {
-  ChatResourceLinks,
-  ChatResourcePreviewToggle,
-  CopyResourceLink,
-} from "./chat-resource-links.tsx";
+import { ChatResourceLinks, CopyResourceLink } from "./chat-resource-links.tsx";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import { useOpenThreadArtifacts } from "./thread-sidebar.tsx";
-import { ChatRelationships } from "./chat-relations.tsx";
-
-const RESOURCE_PREVIEW_LIMIT = 3;
+import { ChatOrigin, ChatRelationships } from "./chat-relations.tsx";
+import {
+  ChatResourceSectionHeading,
+  RESOURCE_PREVIEW_LIMIT,
+} from "./chat-resource-section.tsx";
 
 export function ChatResourcesButton({
   thread,
@@ -60,6 +57,12 @@ export function ChatResourcesButton({
   ) : null;
 }
 
+function resourcePanelStyle(height: number | null): CSSProperties {
+  return {
+    "--resource-panel-height": height === null ? undefined : `${height}px`,
+  } as CSSProperties;
+}
+
 function ChatResourcesButtonInner({
   thread,
   largeTarget,
@@ -71,34 +74,18 @@ function ChatResourcesButtonInner({
   const popupRef = useSet(thread.resources.popupOnRef$);
   const blurControl = useSet(thread.resources.blurControl$);
   const resources = thread.resources;
-  const requestedOpen = useLastResolved(resources.open$) ?? false;
-  const content = useLastLoadable(resources.content$);
-  const relationsEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatRelations];
-  const hasRelations = useLastResolved(thread.relations.hasContent$);
-  const ready =
-    (!relationsEnabled ||
-      (hasRelations !== undefined && hasRelations !== null)) &&
-    (content.state === "hasError" ||
-      (content.state === "hasData" &&
-        content.data !== null &&
-        ((relationsEnabled && hasRelations) ||
-          content.data.artifacts.length > 0 ||
-          content.data.links.length > 0)));
-  const open = requestedOpen && ready;
+  const open = useLastResolved(resources.open$) ?? false;
   const wide = useGet(resources.wide$);
   const saving = useGet(resources.saving$);
   const anchor = useGet(resources.anchor$);
   const boundary = useGet(resources.boundary$);
+  const collisionBoundary = useGet(resources.collisionBoundary$);
+  const frozenHeight = useGet(resources.frozenHeight$);
   const popupAnchor = useGet(resources.popupAnchor$);
   const anchorRef = useSet(resources.anchorOnRef$);
   const setOpen = useSet(resources.setOpen$);
   const changePreference = useSet(resources.changePreference$);
   const rootSignal = useGet(rootSignal$);
-
-  if (!ready) {
-    return null;
-  }
 
   return (
     <Popover
@@ -161,7 +148,7 @@ function ChatResourcesButtonInner({
         // Persistent resources share the chat's keyboard context.
         role="region"
         anchor={popupAnchor ?? undefined}
-        collisionBoundary={boundary ?? undefined}
+        collisionBoundary={collisionBoundary ?? undefined}
         collisionPadding={16}
         collisionAvoidance={{
           side: "none",
@@ -176,16 +163,13 @@ function ChatResourcesButtonInner({
         aria-label={t(($) => {
           return $.chat.resources.title;
         })}
+        style={resourcePanelStyle(frozenHeight)}
         className={surfaceVariants({
           className:
-            "flex max-h-[min(480px,var(--available-height))] w-[376px] max-w-[var(--available-width)] flex-col overflow-hidden p-0",
+            "flex h-[var(--resource-panel-height,auto)] max-h-[min(720px,var(--available-height))] w-[376px] max-w-[var(--available-width)] flex-col overflow-hidden p-0",
         })}
       >
-        <ChatResourcesBody
-          thread={thread}
-          content={content}
-          hasRelations={relationsEnabled && hasRelations === true}
-        />
+        <ChatResourcesBody thread={thread} />
       </PopoverContent>
     </Popover>
   );
@@ -200,10 +184,10 @@ function ResourceOutputRow({
 }) {
   const openArtifact = useSet(openArtifactSidebar$);
   return (
-    <li className="group flex min-w-0 items-center rounded-lg hover:bg-state-hover">
+    <li className="group/resource-row flex min-w-0 items-center gap-1">
       <Button
         variant="quiet"
-        className="h-10 min-w-0 flex-1 justify-start gap-3 px-2 text-sm font-normal"
+        className="h-8.5 min-w-0 flex-1 justify-start gap-2.5 px-1 text-[13px] leading-5 font-normal text-foreground hover:bg-gray-50 focus-visible:bg-gray-50"
         onClick={() => {
           openArtifact(
             {
@@ -228,16 +212,13 @@ function ResourceOutputRow({
   );
 }
 
-function ChatResourcesBody({
-  thread,
-  content,
-  hasRelations,
-}: {
-  readonly thread: ChatPanelSignals;
-  readonly content: Loadable<ChatResourceContent | null>;
-  readonly hasRelations: boolean;
-}) {
+function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
   const { t } = useTranslation();
+  const content = useLastLoadable(thread.resources.content$);
+  const relationsEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatRelations];
+  const relationContent = useLastResolved(thread.relations.hasContent$);
+  const hasRelations = relationContent === true && relationsEnabled;
   const retry = useSet(thread.reloadArtifacts$);
   const openAll = useOpenThreadArtifacts(thread);
   const expanded = useGet(thread.resources.expandedSections$);
@@ -246,7 +227,9 @@ function ChatResourcesBody({
   const data = content.state === "hasData" ? content.data : null;
   return (
     <>
-      <div className="min-h-0 space-y-4 overflow-y-auto p-3">
+      {hasRelations && <ChatOrigin thread={thread} />}
+      {/* Sticky category controls only overlap rows inside this scroll area. */}
+      <div className="isolate min-h-0 flex-1 divide-y divide-divider overflow-y-auto overscroll-contain px-4 [overflow-anchor:none]">
         {hasRelations && <ChatRelationships thread={thread} />}
         {content.state === "hasError" ? (
           <div className="flex flex-col items-center gap-2 py-4 text-sm text-muted-foreground">
@@ -262,18 +245,30 @@ function ChatResourcesBody({
             </Button>
           </div>
         ) : data && (data.artifacts.length > 0 || data.links.length > 0) ? (
-          <div className="space-y-4">
+          <>
             {data.artifacts.length > 0 && (
               <section
+                className="py-3"
                 aria-label={t(($) => {
                   return $.artifacts.sidebar.panelTitle;
                 })}
               >
-                <h3 className="px-2 pb-2 text-xs font-medium text-muted-foreground">
-                  {t(($) => {
+                <ChatResourceSectionHeading
+                  title={t(($) => {
                     return $.artifacts.sidebar.panelTitle;
                   })}
-                </h3>
+                  count={data.artifacts.length}
+                  preview={
+                    data.artifacts.length > RESOURCE_PREVIEW_LIMIT
+                      ? {
+                          expanded: expanded.artifacts,
+                          onToggle: () => {
+                            toggleSection("artifacts");
+                          },
+                        }
+                      : undefined
+                  }
+                />
                 <ul className="m-0 list-none p-0">
                   {data.artifacts
                     .slice(
@@ -290,14 +285,6 @@ function ChatResourcesBody({
                       );
                     })}
                 </ul>
-                {data.artifacts.length > RESOURCE_PREVIEW_LIMIT && (
-                  <ChatResourcePreviewToggle
-                    expanded={expanded.artifacts}
-                    onToggle={() => {
-                      toggleSection("artifacts");
-                    }}
-                  />
-                )}
               </section>
             )}
             <ChatResourceLinks
@@ -310,16 +297,22 @@ function ChatResourcesBody({
                 },
               }}
             />
-          </div>
+          </>
+        ) : data && (!relationsEnabled || relationContent === false) ? (
+          <p className="py-4 text-center text-sm text-muted-foreground">
+            {t(($) => {
+              return $.chat.resources.emptyArtifacts;
+            })}
+          </p>
         ) : null}
       </div>
       {(content.state === "hasError" ||
         (data && (data.artifacts.length > 0 || data.links.length > 0))) && (
-        <div className="shrink-0 border-t border-border/60 p-2">
+        <div className="shrink-0 border-t border-divider px-4 py-1.5">
           <Button
             variant="quiet"
             size="sm"
-            className="w-full justify-start"
+            className="justify-start px-1 text-xs leading-4.5 font-normal hover:bg-gray-50 focus-visible:bg-gray-50"
             onClick={() => {
               setOpen(false);
               openAll();

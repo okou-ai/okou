@@ -62,7 +62,8 @@ impl TryFrom<crate::Child> for Child {
         }
         let mut guard = SpawnGuard(Some(child));
         let child = guard.0.as_mut().ok_or_else(missing_child)?;
-        let pidfd = AsyncFd::new(open_pidfd(child.id())?)?;
+        // SAFETY: AsyncFd owns the pidfd and keeps its descriptor unchanged until drop.
+        let pidfd = unsafe { AsyncFd::register(open_pidfd(child.id())?) }?;
         let stdin = child.stdin.take().map(ChildStdin::from_std).transpose()?;
         let stdout = child.stdout.take().map(ChildStdout::from_std).transpose()?;
         let stderr = child.stderr.take().map(ChildStderr::from_std).transpose()?;
@@ -133,9 +134,10 @@ async fn acknowledge_exec(
     {
         return Err(io::Error::last_os_error());
     }
-    // The borrowed descriptor cannot outlive pending. Registration and its
-    // destructor run while the child/pipe owner still guards cancellation.
-    let pipe = AsyncFd::with_interest(reader.as_fd(), tokio::io::Interest::READABLE)?;
+    // SAFETY: reader borrows pending's live, unchanged pipe descriptor. The
+    // registration is dropped before pending, including on cancellation.
+    let pipe =
+        unsafe { AsyncFd::register_with_interest(reader.as_fd(), tokio::io::Interest::READABLE) }?;
     loop {
         if Instant::now() >= deadline {
             return Err(exec_timeout());

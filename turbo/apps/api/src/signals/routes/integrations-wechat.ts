@@ -1,4 +1,3 @@
-import { deleteWechatOwnerData$ } from "../services/wechat-owner-cleanup.service";
 import { settle } from "../utils";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { randomUUID } from "node:crypto";
@@ -58,7 +57,7 @@ const status$ = command(async ({ get, set }, signal: AbortSignal) => {
     .limit(1);
   signal.throwIfAborted();
   // Also repairs a connection committed just before the browser/API lost its response.
-  if (row?.status === "active" && wechatConfigured()) {
+  if (row && row.status !== "reconnect_required" && wechatConfigured()) {
     await startWechatPoller(row.id, signal);
   }
   return {
@@ -189,10 +188,19 @@ const poll$ = command(async ({ get, set }, signal: AbortSignal) => {
         await db.execute(sql`
   WITH consumed AS (DELETE FROM ${wechatConnectAttempts}
    WHERE id=${attempt.id}::uuid AND org_id=${auth.orgId} AND user_id=${auth.userId} AND expires_at>now()
-   RETURNING id), bound AS (
+   RETURNING id), eligible AS (
+   SELECT id FROM consumed
+   WHERE NOT EXISTS(SELECT 1 FROM ${wechatConnections} WHERE org_id=${auth.orgId} AND user_id=${auth.userId} AND sender_id<>${result.ilink_user_id} AND status<>'disconnected')
+   AND NOT EXISTS(SELECT 1 FROM ${wechatConnections} WHERE sender_id=${result.ilink_user_id} AND status<>'disconnected' AND (org_id<>${auth.orgId} OR user_id<>${auth.userId}))
+  ), released AS (
+   DELETE FROM ${wechatConnections}
+   WHERE status='disconnected' AND (sender_id=${result.ilink_user_id} OR (org_id=${auth.orgId} AND user_id=${auth.userId}))
+   AND EXISTS(SELECT 1 FROM eligible)
+   RETURNING id
+  ), bound AS (
    INSERT INTO ${wechatConnections} (org_id,user_id,sender_id,bot_id,base_url,token_ciphertext,generation)
-   SELECT ${auth.orgId},${auth.userId},${result.ilink_user_id},${result.ilink_bot_id},${baseUrl},${ciphertext},${generation}::uuid FROM consumed
-   WHERE NOT EXISTS (SELECT 1 FROM ${wechatConnections} WHERE sender_id=${result.ilink_user_id} AND (org_id<>${auth.orgId} OR user_id<>${auth.userId}))
+   SELECT ${auth.orgId},${auth.userId},${result.ilink_user_id},${result.ilink_bot_id},${baseUrl},${ciphertext},${generation}::uuid FROM eligible
+   WHERE (SELECT count(*) FROM released)>=0
    ON CONFLICT (org_id,user_id) DO UPDATE SET sender_id=EXCLUDED.sender_id,bot_id=EXCLUDED.bot_id,base_url=EXCLUDED.base_url,token_ciphertext=EXCLUDED.token_ciphertext,generation=EXCLUDED.generation,status='active',updates_cursor='',pending_batch_ciphertext=NULL,updated_at=now()
    WHERE wechat_connections.sender_id=EXCLUDED.sender_id
    RETURNING id
@@ -238,11 +246,19 @@ const cancel$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 const disconnect$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  await set(
-    deleteWechatOwnerData$,
-    { kind: "owner", orgId: auth.orgId, userId: auth.userId },
-    signal,
-  );
+  // Retain only the transport for reconnect notices. Old runs, routes and
+  // private message history lose their binding in the same statement.
+  await set(writeDb$).execute(sql`WITH cancelled AS (
+    DELETE FROM wechat_connect_attempts WHERE org_id=${auth.orgId} AND user_id=${auth.userId}
+  ), disconnected AS (
+    UPDATE wechat_connections SET status='disconnected',generation=gen_random_uuid(),pending_batch_ciphertext=NULL,updated_at=now()
+    WHERE org_id=${auth.orgId} AND user_id=${auth.userId} AND status<>'disconnected'
+    RETURNING id
+  ), contexts AS (
+    DELETE FROM chat_wechat_context WHERE connection_id IN (SELECT id FROM disconnected)
+  ), messages AS (
+    DELETE FROM wechat_messages WHERE connection_id IN (SELECT id FROM disconnected)
+  ) DELETE FROM wechat_chat_thread_routes WHERE connection_id IN (SELECT id FROM disconnected)`);
   signal.throwIfAborted();
   return { status: 204 as const, body: undefined };
 });

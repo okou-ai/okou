@@ -59,7 +59,6 @@ describe("okou chat cancel command", () => {
         });
         return HttpResponse.json(
           {
-            runId: null,
             threadId: THREAD_ID,
             createdAt: "2026-07-29T10:00:00.000Z",
           },
@@ -100,7 +99,6 @@ describe("okou chat cancel command", () => {
         expect(body).not.toHaveProperty("interruptsRunId");
         return HttpResponse.json(
           {
-            runId: null,
             threadId: THREAD_ID,
           },
           { status: 201 },

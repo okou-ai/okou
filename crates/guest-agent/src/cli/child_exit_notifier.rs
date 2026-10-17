@@ -45,7 +45,9 @@ impl ChildExitNotifier {
         let pidfd = open_pidfd(pid)
             .map_err(|error| io::Error::new(error.kind(), format!("pidfd_open failed: {error}")))?;
         Ok(Self {
-            pidfd: tokio::io::unix::AsyncFd::new(pidfd).map_err(|error| {
+            // SAFETY: AsyncFd owns the pidfd and keeps its descriptor unchanged until drop.
+            pidfd: unsafe { tokio::io::unix::AsyncFd::register(pidfd) }.map_err(|error| {
+                let error = io::Error::from(error);
                 io::Error::new(
                     error.kind(),
                     format!("pidfd async registration failed: {error}"),

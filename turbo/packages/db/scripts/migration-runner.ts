@@ -4,6 +4,7 @@ import { readMigrationFiles } from "drizzle-orm/migrator";
 import type postgres from "postgres";
 import { z } from "zod";
 import { DRIZZLE_MIGRATE_OUT } from "../drizzle.config";
+import { summarizeMigrationPlan } from "./migration-plan";
 
 type DbMigration = {
   readonly id: number;
@@ -11,8 +12,9 @@ type DbMigration = {
   readonly created_at: string | number | null;
 };
 
-export const NON_TRANSACTIONAL_MIGRATION_MARKER = "-- vm0:non-transactional";
-export const UUID_BATCH_MIGRATION_MARKER = "-- vm0:batch-by-uuid";
+export const NON_TRANSACTIONAL_MIGRATION_MARKER = "-- okou:non-transactional";
+export const UUID_BATCH_MIGRATION_MARKER = "-- okou:batch-by-uuid";
+const EXPLAIN_ON_TIMEOUT_MIGRATION_MARKER = "-- okou:explain-on-timeout";
 
 const batchCursorSchema = z.tuple([
   z.object({ next_cursor: z.guid().nullable() }),
@@ -24,6 +26,51 @@ export interface ApplyPendingMigrationsOptions {
    * value. Migration tests use it to seed data in the preceding schema.
    */
   readonly beforeMillis?: number;
+  /** Disposable smoke clones only: a diagnostic replay can commit its batch. */
+  readonly diagnoseBatchTimeouts?: boolean;
+}
+
+function migrationSqlstate(error: unknown): string | null {
+  return error instanceof Error &&
+    "code" in error &&
+    typeof error.code === "string"
+    ? error.code
+    : null;
+}
+
+function isStatementTimeout(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    migrationSqlstate(error) === "57014" &&
+    error.message.includes("statement timeout")
+  );
+}
+
+function validateDiagnosticMarkers(
+  statements: readonly string[],
+  nonTransactional: boolean,
+): void {
+  for (const statement of statements) {
+    if (
+      statement.includes(EXPLAIN_ON_TIMEOUT_MIGRATION_MARKER) &&
+      (!nonTransactional || !statement.includes(UUID_BATCH_MIGRATION_MARKER))
+    ) {
+      throw new Error(
+        "explain-on-timeout requires a non-transactional UUID batch",
+      );
+    }
+  }
+}
+
+function diagnosticBatchFor(
+  statement: string,
+  cursor: string | null,
+  enabled: boolean | undefined,
+): { statement: string; cursor: string | null } | null {
+  return enabled === true &&
+    statement.includes(EXPLAIN_ON_TIMEOUT_MIGRATION_MARKER)
+    ? { statement, cursor }
+    : null;
 }
 
 export async function applyPendingMigrations(
@@ -90,6 +137,11 @@ export async function applyPendingMigrations(
       );
     }
     const startedAt = performance.now();
+    const nonTransactional = migration.sql.some((statement) => {
+      return statement.includes(NON_TRANSACTIONAL_MIGRATION_MARKER);
+    });
+    let diagnosticBatch: { statement: string; cursor: string | null } | null =
+      null;
     let progress: {
       phase: "transaction_start" | "setup" | "execute" | "journal" | "commit";
       statement: number | null;
@@ -98,11 +150,8 @@ export async function applyPendingMigrations(
     } = { phase: "transaction_start", statement: null, batch: null, startedAt };
     console.error(JSON.stringify({ event: "migration_started", file }));
     try {
-      if (
-        migration.sql.some((statement) => {
-          return statement.includes(NON_TRANSACTIONAL_MIGRATION_MARKER);
-        })
-      ) {
+      validateDiagnosticMarkers(migration.sql, nonTransactional);
+      if (nonTransactional) {
         for (const [index, statement] of migration.sql.entries()) {
           if (statement.trim().length === 0) {
             continue;
@@ -119,12 +168,18 @@ export async function applyPendingMigrations(
             while (true) {
               progress.batch = ++batch;
               progress.startedAt = performance.now();
+              diagnosticBatch = diagnosticBatchFor(
+                statement,
+                cursor,
+                options.diagnoseBatchTimeouts,
+              );
               // Each query commits independently. A failed migration restarts
               // at NULL, so the statement must make already-committed work a
               // no-op, including after a lost response or journal failure.
               const [{ next_cursor: nextCursor }] = batchCursorSchema.parse(
                 await sql.unsafe(statement, [cursor]),
               );
+              diagnosticBatch = null;
               console.error(
                 JSON.stringify({
                   event: "migration_batch_completed",
@@ -234,14 +289,40 @@ export async function applyPendingMigrations(
           statementCount: migration.sql.length,
           batch: progress.batch,
           elapsedMs: Math.round(performance.now() - progress.startedAt),
-          sqlstate:
-            error instanceof Error &&
-            "code" in error &&
-            typeof error.code === "string"
-              ? error.code
-              : null,
+          sqlstate: migrationSqlstate(error),
         }),
       );
+      if (diagnosticBatch !== null && isStatementTimeout(error)) {
+        // The failed autocommit statement has rolled back. Diagnose only that
+        // batch on the same disposable clone, never replay earlier statements.
+        // Regardless of diagnosis, preserve the original failure and stop.
+        try {
+          await sql.unsafe("SET statement_timeout = '30s'");
+          const rows = await sql.unsafe(
+            `EXPLAIN (ANALYZE, BUFFERS, WAL, SETTINGS, FORMAT JSON) ${diagnosticBatch.statement}`,
+            [diagnosticBatch.cursor],
+          );
+          console.error(
+            JSON.stringify({
+              event: "migration_diagnostic_plan",
+              file,
+              statement: progress.statement,
+              batch: progress.batch,
+              plan: summarizeMigrationPlan(rows),
+            }),
+          );
+        } catch (diagnosticError) {
+          console.error(
+            JSON.stringify({
+              event: "migration_diagnostic_failed",
+              file,
+              statement: progress.statement,
+              batch: progress.batch,
+              sqlstate: migrationSqlstate(diagnosticError),
+            }),
+          );
+        }
+      }
       throw error;
     }
     console.error(

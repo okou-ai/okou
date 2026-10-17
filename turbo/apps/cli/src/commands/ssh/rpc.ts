@@ -1,6 +1,6 @@
 import type { Writable } from "node:stream";
 import { z } from "zod";
-import { diagnosticTextSchema } from "../../lib/ssh-diagnostics";
+import { diagnosticTextSchema } from "../../lib/diagnostic-text";
 
 import {
   invokeRunnerRpc,

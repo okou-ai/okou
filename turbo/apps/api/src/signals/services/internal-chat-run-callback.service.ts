@@ -3,6 +3,7 @@ import {
   type WechatDeliveryTarget,
 } from "./wechat-chat-callback-payload";
 import { loadWechatQueuedLaunchMaterial$ } from "./wechat-context.service";
+import { reconcileWechatThreadTyping$ } from "./wechat-thread-typing.service";
 import {
   sendWechatChatReply$,
   type WechatReplyRequest,
@@ -2038,7 +2039,6 @@ const handleFailedChatCallback$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
       readonly runId: string;
       readonly chatThread: ChatThreadForRunRow;
       readonly errorMessage: string;
@@ -2590,6 +2590,15 @@ const deliverQueuedAdmissionFailureToChannel$ = command(
       },
     );
     signal.throwIfAborted();
+    if (channel.kind === "Wechat") {
+      waitUntil(
+        set(
+          reconcileWechatThreadTyping$,
+          { chatThreadId: channel.chatThreadId, target: channel.target },
+          new AbortController().signal,
+        ),
+      );
+    }
     if (channel.kind !== "Feishu") {
       return;
     }
@@ -2619,7 +2628,12 @@ function unreachableQueuedAdmissionFailure(failure: never): never {
 /** The committed run's title and typing observations need no read plan. */
 export type QueuedPromptLaunchInput = Pick<
   CreateQueuedChatRunInput,
-  "orgId" | "threadId" | "prompt" | "discordDelivery" | "triggerSource"
+  | "orgId"
+  | "threadId"
+  | "prompt"
+  | "discordDelivery"
+  | "wechatDelivery"
+  | "triggerSource"
 >;
 
 export interface QueuedPromptLaunchContext {
@@ -2658,6 +2672,15 @@ export const recordQueuedPromptRunLaunch$ = command(
         chatThreadId: threadId,
         target: runInput.discordDelivery,
       });
+    }
+    if (runInput.wechatDelivery) {
+      waitUntil(
+        set(
+          reconcileWechatThreadTyping$,
+          { chatThreadId: threadId, target: runInput.wechatDelivery },
+          new AbortController().signal,
+        ),
+      );
     }
     timing.flush(runId, runInput.triggerSource);
   },
@@ -2792,7 +2815,6 @@ const prepareFailedTerminalChatCallbackWork$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
       readonly runId: string;
       readonly run: ChatRunInfo;
       readonly chatThread: ChatThreadForRunRow;
@@ -3149,6 +3171,13 @@ const clearTerminalIntegrationStatus$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
+    if (args.payload.wechatDelivery) {
+      await set(
+        reconcileWechatThreadTyping$,
+        { chatThreadId, target: args.payload.wechatDelivery },
+        signal,
+      );
+    }
     await set(
       clearSlackThreadStatusAfterTerminalCallback$,
       {
@@ -3194,19 +3223,20 @@ const finishTerminalChatCallbackAfterProjection$ = command(
         agentphoneDeliveryCallbackId: args.work.agentphoneDeliveryCallbackId,
       },
       signal,
-    );
-
-    // Integration status clears keep their established detached owner: they
-    // must neither hold the completion ACK nor be cancelled with its request.
-    // The thread's queue is woken by whoever releases the run's active slot.
-    waitUntil(
-      set(
-        clearTerminalIntegrationStatus$,
-        { payload: args.callback.payload },
-        args.chatThread.chatThreadId,
-        new AbortController().signal,
-      ),
-    );
+    ).finally(() => {
+      // Integration status clears keep their established detached owner: they
+      // must neither hold the completion ACK nor be cancelled with its request.
+      // The thread's queue is woken by whoever releases the run's active slot.
+      waitUntil(
+        set(
+          clearTerminalIntegrationStatus$,
+          { payload: args.callback.payload },
+          args.chatThread.chatThreadId,
+          new AbortController().signal,
+        ),
+      );
+    });
+    signal.throwIfAborted();
 
     // A committed marker must not acknowledge an unfinished automation. Throw
     // back to the existing callback owner so its failed/pending row can retry.
@@ -3346,7 +3376,18 @@ const processTerminalChatCallback$ = command(
           : set(
               prepareFailedTerminalChatCallbackWork$,
               {
-                ...preparation,
+                runId: preparation.runId,
+                run: preparation.run,
+                chatThread: preparation.chatThread,
+                timing: preparation.timing,
+                slackDelivery: preparation.slackDelivery,
+                feishuDelivery: preparation.feishuDelivery,
+                teamsDelivery: preparation.teamsDelivery,
+                discordDelivery: preparation.discordDelivery,
+                wechatDelivery: preparation.wechatDelivery,
+                telegramDelivery: preparation.telegramDelivery,
+                agentphoneDelivery: preparation.agentphoneDelivery,
+                sourceCallbackId: preparation.sourceCallbackId,
                 errorMessage: terminalCallbackErrorMessage(
                   args.callback.error,
                   run.error,
@@ -3408,6 +3449,18 @@ const processChatInternalCallback$ = command(
     }
 
     if (args.callback.status === "progress") {
+      if (payload.data.wechatDelivery) {
+        waitUntil(
+          set(
+            reconcileWechatThreadTyping$,
+            {
+              chatThreadId: payload.data.threadId,
+              target: payload.data.wechatDelivery,
+            },
+            new AbortController().signal,
+          ),
+        );
+      }
       if (payload.data.discordDelivery) {
         set(scheduleDiscordRunTyping$, args.db, {
           runId: args.callback.runId,

@@ -427,7 +427,6 @@ describe("CHAT-02: generation templates and attachments", () => {
       [201],
     );
     expect(forwarded.body).toMatchObject({
-      runId: null,
       threadId: targetThread.id,
     });
     const forwardedRunId = await waitForLaunchedRunId(
@@ -577,7 +576,6 @@ describe("CHAT-02: generation templates and attachments", () => {
         [201],
       );
       expect(forwarded.body, scenario.name).toMatchObject({
-        runId: null,
         threadId: targetThread.id,
       });
       const forwardedRunId = await waitForLaunchedRunId(
@@ -1346,7 +1344,6 @@ describe("CHAT-02: generation templates and attachments", () => {
       if (rejected.status !== 201) {
         throw new Error("Expected the selection to enqueue before pick");
       }
-      expect(rejected.body.runId).toBeNull();
       const settled = await waitForThreadMessages(
         actor,
         rejected.body.threadId,
@@ -1878,7 +1875,6 @@ describe("CHAT-02: generation templates and attachments", () => {
     if (sent.status !== 201) {
       throw new Error("Expected the bounded attachment send to be accepted");
     }
-    expect(sent.body.runId).toBeNull();
     expect(startedHeads).toBe(5);
     expect(peakActiveHeads).toBe(4);
     expect(matchingListRequests).toBe(0);
@@ -2420,7 +2416,7 @@ describe("CHAT-02: queued attachments on auto-send", () => {
       ],
     };
     chat.mockCompletedUploadObject(actor, fileId, "ordered.txt", 12);
-    const queued = await chat.requestSendEvent(
+    await chat.requestSendEvent(
       actor,
       {
         agentId,
@@ -2431,7 +2427,6 @@ describe("CHAT-02: queued attachments on auto-send", () => {
       },
       [201],
     );
-    expect(queued.body).toMatchObject({ runId: null });
 
     chatCallbacks.mockChatOutputEvents([]);
     await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
@@ -2496,7 +2491,7 @@ describe("CHAT-02: queued attachments on auto-send", () => {
       { id: fileId, filename: "notes.txt", size: 12 },
       { id: secondFileId, filename: "details.json", size: 24 },
     ]);
-    const queued = await chat.requestSendEvent(
+    await chat.requestSendEvent(
       actor,
       {
         agentId,
@@ -2525,7 +2520,6 @@ describe("CHAT-02: queued attachments on auto-send", () => {
       },
       [201],
     );
-    expect(queued.body).toMatchObject({ runId: null });
     // Completing the anchor run promotes the queued message into a fresh
     // run whose prompt carries the resolved attachment references.
     chatCallbacks.mockChatOutputEvents([]);

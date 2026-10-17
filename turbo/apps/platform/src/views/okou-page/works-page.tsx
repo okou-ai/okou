@@ -1,6 +1,5 @@
+import { ProviderCardMenu } from "./components/provider-card-menu.tsx";
 import { ConnectedIndicator } from "./components/connected-indicator.tsx";
-import { ROUTES } from "../../signals/route-paths.ts";
-import type { ReactNode } from "react";
 import {
   useGet,
   useSet,
@@ -64,7 +63,6 @@ import {
 import { authorizeTelegramBot$ } from "../../signals/okou-page/telegram-authorization.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { teamsEntryUrl } from "../../signals/okou-page/teams-connect-context.ts";
-import { TeamsStatusRefresh } from "./teams-status-refresh.tsx";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { openFreshOAuth } from "../../lib/oauth-window.ts";
 import { WechatCard } from "./wechat-card.tsx";
@@ -91,78 +89,6 @@ const slackIconImg = settingsIconAssetUrl("slack");
 const teamsIconImg = settingsIconAssetUrl("teams");
 const githubIconImg = settingsIconAssetUrl("github");
 const telegramIconImg = settingsIconAssetUrl("telegram");
-
-function ProviderCardMenu({
-  children,
-  disabled = false,
-  moreOptionsLabel,
-  disconnectLabel,
-  uninstallLabel,
-  onDisconnect,
-  onUninstall,
-  disconnecting,
-}: {
-  children?: ReactNode;
-  disabled?: boolean;
-  moreOptionsLabel: string;
-  disconnectLabel: string;
-  uninstallLabel?: string;
-  onDisconnect?: () => void;
-  onUninstall?: () => void;
-  disconnecting: boolean;
-}) {
-  const { t } = useTranslation();
-  return (
-    <Popover>
-      <PopoverTrigger
-        render={
-          <Button
-            showTooltip
-            type="button"
-            variant="quiet"
-            size="icon-xs"
-            className="shrink-0"
-            aria-label={moreOptionsLabel}
-          >
-            <EllipsisVertical size={16} />
-          </Button>
-        }
-      />
-      <PopoverContent align="end" className="flex flex-col gap-0.5 w-40 p-2">
-        {children}
-        {onDisconnect && (
-          <button
-            type="button"
-            aria-label={disconnectLabel}
-            disabled={disabled || disconnecting}
-            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-left hover:bg-state-hover hover:text-accent-foreground transition-colors disabled:opacity-50 disabled:pointer-events-none"
-            onClick={onDisconnect}
-          >
-            {disconnecting
-              ? t(($) => {
-                  return $.works.actions.disconnecting;
-                })
-              : t(($) => {
-                  return $.works.actions.disconnect;
-                })}
-          </button>
-        )}
-        {onUninstall && (
-          <button
-            type="button"
-            aria-label={uninstallLabel}
-            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-left text-destructive hover:bg-state-hover hover:text-accent-foreground transition-colors"
-            onClick={onUninstall}
-          >
-            {t(($) => {
-              return $.works.actions.uninstall;
-            })}
-          </button>
-        )}
-      </PopoverContent>
-    </Popover>
-  );
-}
 
 function ProviderCardActions({
   isConnected,
@@ -406,12 +332,8 @@ function SlackCard({ displayName }: { displayName: string }) {
             isConnected={isConnected}
             isInstalled={isInstalled}
             isAdmin={isAdmin}
-            installUrl={
-              slackData?.installUrl ? INTEGRATION_SETTINGS_PATHS.slack : null
-            }
-            connectUrl={
-              slackData?.connectUrl ? INTEGRATION_SETTINGS_PATHS.slack : null
-            }
+            installUrl={slackData?.installUrl}
+            connectUrl={slackData?.connectUrl}
             connectedDetail={slackData?.workspaceName}
             connectedTestId="slack-connected-indicator"
             installTestId="slack-install-button"
@@ -438,11 +360,7 @@ function SlackCard({ displayName }: { displayName: string }) {
         </div>
 
         <PermissionWarning
-          reinstallUrl={
-            scopeMismatch && isAdmin && reinstallUrl
-              ? INTEGRATION_SETTINGS_PATHS.slack
-              : null
-          }
+          reinstallUrl={scopeMismatch && isAdmin ? reinstallUrl : null}
           message={t(($) => {
             return $.works.slack.permissionsUpdated;
           })}
@@ -747,10 +665,6 @@ function TeamsCard({ displayName }: { displayName: string }) {
           />
         </div>
 
-        <div className="px-4 pb-3">
-          <TeamsStatusRefresh />
-        </div>
-
         <PermissionWarning
           reinstallUrl={
             isAdmin && permissionMismatch
@@ -883,29 +797,21 @@ function TelegramConnectionFeedback({
   connection: Loadable<unknown> | { state: "idle" };
 }) {
   const { t } = useTranslation();
+  if (
+    connected ||
+    !(
+      connection.state === "hasError" ||
+      (connection.state === "hasData" && !connection.data)
+    )
+  ) {
+    return null;
+  }
   return (
-    <>
-      {" "}
-      {!connected &&
-      (connection.state === "hasError" ||
-        (connection.state === "hasData" && !connection.data)) ? (
-        <p role="status" className="px-4 pb-2 text-sm text-muted-foreground">
-          {t(($) => {
-            return $.connectors.providerConnect.telegram.interrupted;
-          })}
-        </p>
-      ) : null}
-      <a
-        href={ROUTES.settingsTelegram}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="px-4 pb-4 text-sm text-primary underline-offset-4 hover:underline"
-      >
-        {t(($) => {
-          return $.connectors.providerConnect.telegram.viewSettings;
-        })}
-      </a>
-    </>
+    <p role="status" className="px-4 pb-2 text-sm text-muted-foreground">
+      {t(($) => {
+        return $.connectors.providerConnect.telegram.interrupted;
+      })}
+    </p>
   );
 }
 

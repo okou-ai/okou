@@ -1,10 +1,12 @@
 //! Explicit Kerberos source and independently authorized bounded KDC transport.
+use super::evidence::Stage;
 use super::{
     Failure, Scope, VncRuntime,
     authority::{Authentication, Credential, Transport},
     network,
     sessions::DirectOrSshStream,
 };
+use crate::diagnostics::trace::Progress;
 use api_contracts::generated::types::runners::vnc::*;
 use base64::Engine;
 use kerberos_credentials::{ClientKeytab, Principal, ServiceTicketCache};
@@ -347,6 +349,10 @@ impl kerberos_worker::KdcExchange for Caller<'_> {
         {
             return Err(E::Invalid);
         }
+        let previous_source = self.diagnostics.source.clone();
+        // Independent KDC setup must not label the RFB carrier as its source.
+        self.diagnostics.source = super::sessions::SourceEvidence::default();
+        self.diagnostics.set(Stage::KdcTransport, Progress::Running);
         self.authorize().await?;
         let route = self.kdc.as_ref().ok_or(E::Authority)?;
         let host = route.host.clone();
@@ -367,6 +373,9 @@ impl kerberos_worker::KdcExchange for Caller<'_> {
                     .map_err(|_| E::Authority)?
                     .map_err(|_| E::KdcUnavailable)?
                     .map_err(|_| E::KdcUnavailable)?;
+                if let Some(snapshot) = &mut self.diagnostics.vnc {
+                    snapshot.kdc_address = Some(address);
+                }
                 self.authorize().await?;
                 DirectOrSshStream::Direct(
                     self.scope
@@ -395,7 +404,7 @@ impl kerberos_worker::KdcExchange for Caller<'_> {
                     .await
                     .map_err(|_| E::Authority)?
                     .map_err(|failure| {
-                        self.diagnostics.retain_ssh_failure(connection, failure);
+                        self.diagnostics.retain_ssh_failure(connection, *failure);
                         E::KdcUnavailable
                     })?;
                 // The shared SSH authority permits only its attested first-use
@@ -405,11 +414,14 @@ impl kerberos_worker::KdcExchange for Caller<'_> {
                     connection,
                     generation: stream.generation(),
                 };
+                self.diagnostics.retain_ssh_stream(connection, &stream);
                 self.binding
                     .record_ssh_generation(&mut self.kdc, transport, learned);
                 DirectOrSshStream::Ssh(Box::new(stream))
             }
         };
+        self.diagnostics.set(Stage::KdcTransport, Progress::Passed);
+        self.diagnostics.set(Stage::KdcExchange, Progress::Running);
         self.authorize().await?;
         self.exchanges += 1;
         self.total += request.len();
@@ -436,6 +448,8 @@ impl kerberos_worker::KdcExchange for Caller<'_> {
             .map_err(|_| E::DeliveryUnknown)?;
         self.total += size;
         self.awaiting_kdc_reply = false;
+        self.diagnostics.set(Stage::KdcExchange, Progress::Passed);
+        self.diagnostics.source = previous_source;
         Ok(reply)
     }
 }

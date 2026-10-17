@@ -1169,6 +1169,19 @@ export function createThreadClaimRunObjects(
       const apiStartTime = head.apiStartTime;
       const committedAt = get(chatInputEnqueueCommits$).get(head.id);
       if (committedAt !== undefined) {
+        const requestReceivedAt =
+          requestFacts?.input.id === head.id
+            ? requestFacts.input.requestReceivedAt
+            : undefined;
+        if (requestReceivedAt !== undefined) {
+          timing.recordDuration(
+            "api_dispatch_request_received_to_enqueue_commit",
+            "top_level",
+            committedAt - requestReceivedAt,
+            committedAt,
+            { capture_scope: "request_observed_commit" },
+          );
+        }
         timing.recordDuration(
           "api_dispatch_enqueue_commit_to_consume_start",
           "top_level",
@@ -1307,6 +1320,16 @@ export function createThreadClaimRunObjects(
   });
   const promptTiming$ = computed(() => {
     return new ChatCallbackPreCreateTimingCollector();
+  });
+  // Runner and guest `api_to_*` rows start at `POST /api/chat/events` receipt,
+  // and only for the input that request committed and then picked itself.
+  // Any other pick (queued behind a run, cron, slot release, other producers)
+  // carries no API start time, so those rows are not emitted for it.
+  const runnerApiStartTime$ = computed(async (get) => {
+    const event = await get(pickedEvent$);
+    return event && requestFacts?.input.id === event.id
+      ? requestFacts.input.requestReceivedAt
+      : undefined;
   });
   // Generated once per claim graph; read after authorization admits the head.
   const runIds$ = threadContext.runIds$;
@@ -3461,7 +3484,7 @@ export function createThreadClaimRunObjects(
           launchSnapshot,
           userId: args.userId,
           orgId: args.orgId,
-          apiStartTime: args.apiStartTime,
+          apiStartTime: await get(runnerApiStartTime$),
           includeOkouTokenSecret: args.includeOkouTokenSecret,
           chatThreadId: args.chatThreadId,
           // Thread launches carry no producer Pi launch options.
@@ -5260,7 +5283,7 @@ function buildStoredExecutionContextDraft(
     readonly billableFirewalls: readonly string[];
     readonly modelUsageProvider: string | undefined;
     readonly modelUsageLongContextMinTotalInputTokens: number;
-    readonly apiStartTime: number;
+    readonly apiStartTime: number | undefined;
     readonly additionalVolumes:
       readonly AgentRunCreateAdditionalVolume[] | undefined;
     readonly platformEnvironment: Record<string, string> | undefined;
@@ -5404,7 +5427,7 @@ interface BuildRunnerJobPayloadInput {
   readonly billableFirewalls: readonly string[];
   readonly modelUsageProvider: string | undefined;
   readonly modelUsageLongContextMinTotalInputTokens: number;
-  readonly apiStartTime: number;
+  readonly apiStartTime: number | undefined;
   readonly additionalVolumes:
     readonly AgentRunCreateAdditionalVolume[] | undefined;
   readonly additionalVolumeSources: AdditionalVolumeSources;

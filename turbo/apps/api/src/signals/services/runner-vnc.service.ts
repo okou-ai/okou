@@ -19,7 +19,27 @@ import {
 import { decryptStoredSecretValue } from "./crypto.utils";
 import { settle, safeSync } from "../utils";
 import { hasCurrentVncMembership } from "./vnc-owner-lifecycle.service";
-import { currentRunnerVncAuthority$ } from "./runner-vnc-authority.service";
+import {
+  currentRunnerVncAuthority$,
+  type CurrentVncAuthority,
+} from "./runner-vnc-authority.service";
+import {
+  storedVncSecurity,
+  storedVncOriginTls,
+  hasProtectedVncRawRoute,
+} from "./vnc-stored-route";
+import {
+  storedTransportSnapshot,
+  storedKdcSnapshot,
+  hasTransportAuthority,
+  hasKdcAuthority,
+  sameTransport,
+  sameKdc,
+  decryptVncRoleTransport,
+  type TransportSnapshot,
+  type ResolvedVncTransport,
+  type ResolvedVncKdcTransport,
+} from "./runner-vnc-transport";
 import { isVncProfileCompatible } from "./vnc-configuration.utils";
 import { parseStoredVncClientIdentity } from "./vnc-client-identity.service";
 import { parseStoredVncKerberos } from "./vnc-kerberos.service";
@@ -29,10 +49,6 @@ import {
   sameKerberosPrincipal,
   type VncKerberosMethod,
 } from "@okouai/api-contracts/contracts/vnc-kerberos";
-
-type CurrentVncAuthority = NonNullable<
-  Awaited<ReturnType<(typeof currentRunnerVncAuthority$)["write"]>>
->;
 
 function hasLiveKerberosTicket(
   row: CurrentVncAuthority,
@@ -47,101 +63,9 @@ function hasLiveKerberosTicket(
   return row.kerberosDeclaredExpiresAt > nowSeconds;
 }
 
-type TransportSnapshot =
-  | { readonly type: "direct" }
-  | {
-      readonly type: "ssh";
-      readonly connectionId: string;
-      readonly generation: number;
-    };
-
-function storedTransportSnapshot(row: CurrentVncAuthority): TransportSnapshot {
-  if (row.transportType === "direct") {
-    if (row.sshConnectionId !== null || row.sshGeneration !== null) {
-      throw new Error("Direct VNC connection has an invalid SSH reference");
-    }
-    return { type: "direct" };
-  }
-  if (row.sshConnectionId === null) {
-    throw new Error("SSH VNC connection is missing its SSH reference");
-  }
-  if (row.sshGeneration === null) {
-    throw new Error("SSH VNC connection references a missing SSH connection");
-  }
-  return {
-    type: "ssh",
-    connectionId: row.sshConnectionId,
-    generation: row.sshGeneration,
-  };
-}
-
-function hasTransportAuthority(
-  row: CurrentVncAuthority,
-  transport: TransportSnapshot,
-) {
-  return (
-    transport.type === "direct" ||
-    (row.sshNeedsRebind === false && row.sshAllowed)
-  );
-}
-
-function storedKdcSnapshot(row: CurrentVncAuthority): TransportSnapshot | null {
-  if (
-    !isVncKerberosMethod(row.authMethod) ||
-    row.authMethod === "qemu_kerberos_ticket"
-  ) {
-    if (
-      row.kdcHost !== null ||
-      row.kdcTransportType !== null ||
-      row.kdcSshConnectionId !== null
-    ) {
-      throw new Error("Unexpected stored VNC KDC route");
-    }
-    return null;
-  }
-  if (row.kdcHost === null || row.kdcPort === null) {
-    throw new Error("Missing stored VNC KDC route");
-  }
-  if (row.kdcTransportType === "direct" && row.kdcSshConnectionId === null) {
-    return { type: "direct" };
-  }
-  if (
-    row.kdcTransportType !== "ssh" ||
-    row.kdcSshConnectionId === null ||
-    row.kdcSshGeneration === null ||
-    (row.kdcHost !== "127.0.0.1" && row.kdcHost !== "::1")
-  ) {
-    throw new Error("Invalid stored VNC KDC route");
-  }
-  return {
-    type: "ssh",
-    connectionId: row.kdcSshConnectionId,
-    generation: row.kdcSshGeneration,
-  };
-}
-function hasKdcAuthority(row: CurrentVncAuthority) {
-  const snapshot = storedKdcSnapshot(row);
-  return (
-    snapshot === null ||
-    snapshot.type === "direct" ||
-    (row.kdcSshNeedsRebind === false && row.kdcSshAllowed)
-  );
-}
-function sameKdc(left: CurrentVncAuthority, right: CurrentVncAuthority) {
-  const a = storedKdcSnapshot(left),
-    b = storedKdcSnapshot(right);
-  return a === null ? b === null : b !== null && sameTransport(a, b);
-}
-
-function hasValidAppleRoute(
-  row: CurrentVncAuthority,
-  transport: TransportSnapshot,
-) {
+function hasValidRawProfileRoute(row: CurrentVncAuthority) {
   if (isVncRsaAesAuthenticationOnly(row.securityType)) {
-    return (
-      transport.type === "ssh" &&
-      (row.host === "127.0.0.1" || row.host === "::1")
-    );
+    return hasProtectedVncRawRoute(row);
   }
   return (
     (row.securityType !== "apple_vnc_password" &&
@@ -151,32 +75,7 @@ function hasValidAppleRoute(
     (row.trustMode === "none" &&
       row.caBundle === null &&
       row.x509ServerName === null &&
-      transport.type === "ssh" &&
-      (row.host === "127.0.0.1" || row.host === "::1"))
-  );
-}
-
-function sameTransport(left: TransportSnapshot, right: TransportSnapshot) {
-  return (
-    left.type === right.type &&
-    (left.type === "direct" ||
-      (right.type === "ssh" &&
-        left.connectionId === right.connectionId &&
-        left.generation === right.generation))
-  );
-}
-
-function matchesExpectedTransport(
-  current: TransportSnapshot,
-  expected: RunnerVncCheckRequest["expectedTransport"],
-) {
-  if (current.type === "direct") {
-    return expected.type === "direct";
-  }
-  return (
-    expected.type === "ssh" &&
-    expected.connectionId === current.connectionId &&
-    expected.generation === current.generation
+      hasProtectedVncRawRoute(row))
   );
 }
 
@@ -242,6 +141,7 @@ async function isSameCurrentHandoff(
   }
   const currentTransport = storedTransportSnapshot(current);
   return (
+    currentTransport !== null &&
     hasTransportAuthority(current, currentTransport) &&
     hasKdcAuthority(current) &&
     sameKdc(current, initial) &&
@@ -276,24 +176,25 @@ export const checkRunnerVnc$ = command(
     validateStoredProfile(row);
     const transport = storedTransportSnapshot(row);
     if (
+      transport === null ||
       !hasTransportAuthority(row, transport) ||
       !hasKdcAuthority(row) ||
       !hasLiveKerberosTicket(row)
     ) {
       return { outcome: "unavailable" };
     }
-    if (!hasValidAppleRoute(row, transport)) {
+    if (!hasValidRawProfileRoute(row)) {
       return { outcome: "unavailable" };
     }
     const matches =
       row.generation === input.expectedGeneration &&
-      matchesExpectedTransport(transport, input.expectedTransport) &&
+      sameTransport(transport, input.expectedTransport) &&
       (!isVncKerberosMethod(row.authMethod) ||
         (row.credentialRevision === input.expectedCredentialRevision &&
           (row.authMethod === "qemu_kerberos_ticket"
             ? input.expectedKdcTransport === undefined
             : input.expectedKdcTransport !== undefined &&
-              matchesExpectedTransport(
+              sameTransport(
                 storedKdcSnapshot(row)!,
                 input.expectedKdcTransport,
               ))));
@@ -306,87 +207,38 @@ export const checkRunnerVnc$ = command(
   },
 );
 
-function storedRsaServerKeyPin(
-  row: CurrentVncAuthority,
-  transport: TransportSnapshot,
-): string {
-  if (
-    !hasValidAppleRoute(row, transport) ||
-    row.trustMode !== "none" ||
-    row.caBundle !== null ||
-    row.x509ServerName !== null ||
-    row.rsaServerKeySha256 === null ||
-    !/^[a-f0-9]{64}$/u.test(row.rsaServerKeySha256)
-  ) {
-    throw new Error(
-      "VNC connection has an invalid stored RSA trust configuration",
-    );
-  }
-  return row.rsaServerKeySha256;
-}
-
-function isAppleSecurityType(type: CurrentVncAuthority["securityType"]) {
-  return (
-    type === "apple_vnc_password" ||
-    type === "apple_dh" ||
-    type === "apple_srp" ||
-    type === "apple_rsa_srp"
-  );
-}
-
 function storedRunnerSecurity(
   row: CurrentVncAuthority,
-  transport: TransportSnapshot,
+  kdcTransport: ResolvedVncKdcTransport | null,
 ) {
-  if (isVncRsaAesSecurityType(row.securityType)) {
-    return {
-      type: row.securityType,
-      serverKeySha256: storedRsaServerKeyPin(row, transport),
-    };
-  }
-  if (row.rsaServerKeySha256 !== null) {
-    throw new Error("VNC connection has unexpected stored RSA trust");
-  }
-  if (
-    !hasValidAppleRoute(row, transport) ||
-    (!isAppleSecurityType(row.securityType) &&
-      ((row.trustMode === "system" && row.caBundle !== null) ||
-        (row.trustMode === "custom_ca" && row.caBundle === null) ||
-        row.trustMode === "none"))
-  ) {
-    throw new Error("VNC connection has an invalid stored trust configuration");
-  }
-  const security = runnerVncSecuritySchema.safeParse({
-    type: row.securityType,
-    ...(row.securityType === "qemu_x509_gssapi"
+  const stored = storedVncSecurity(row);
+  const parsed = runnerVncSecuritySchema.safeParse({
+    type: stored.type,
+    ...("trust" in stored ? { trust: stored.trust } : {}),
+    ...("serverKeySha256" in stored
+      ? { serverKeySha256: stored.serverKeySha256 }
+      : {}),
+    ...(stored.type === "qemu_x509_gssapi"
       ? {
-          service: row.kerberosService,
+          service: stored.service,
           kdc:
-            row.authMethod === "qemu_kerberos_ticket"
+            kdcTransport === null
               ? null
               : {
                   host: row.kdcHost,
                   port: row.kdcPort,
-                  transport: storedKdcSnapshot(row),
+                  transport: kdcTransport,
                   ticketLifetimeSeconds: row.kerberosTicketLifetimeSeconds,
                   renewableLifetimeSeconds:
                     row.kerberosRenewableLifetimeSeconds,
                 },
         }
       : {}),
-    ...(isAppleSecurityType(row.securityType)
-      ? {}
-      : {
-          trust:
-            row.trustMode === "system"
-              ? { mode: "system" }
-              : { mode: row.trustMode, caBundle: row.caBundle },
-        }),
   });
-  if (!security.success) {
+  if (!parsed.success) {
     throw new Error("VNC connection has an invalid stored security profile");
   }
-  return security.data;
+  return parsed.data;
 }
 
 function parseStoredPasswordAuthentication(
@@ -589,7 +441,7 @@ function validateRsaAesHandoffPair(
 
 function resolvedKerberosResponse(
   row: CurrentVncAuthority,
-  transport: TransportSnapshot,
+  transport: ResolvedVncTransport,
   security: ReturnType<typeof storedRunnerSecurity>,
   authentication: NonNullable<
     Awaited<ReturnType<typeof decryptRunnerAuthentication>>
@@ -616,7 +468,7 @@ function resolvedKerberosResponse(
 
 function resolvedRunnerResponse(
   row: CurrentVncAuthority,
-  transport: TransportSnapshot,
+  transport: ResolvedVncTransport,
   security: ReturnType<typeof storedRunnerSecurity>,
   authentication: NonNullable<
     Awaited<ReturnType<typeof decryptRunnerAuthentication>>
@@ -644,7 +496,7 @@ function resolvedRunnerResponse(
   }
   if (row.securityType === "apple_vnc_password") {
     if (
-      transport.type !== "ssh" ||
+      !hasProtectedVncRawRoute(row) ||
       security.type !== "apple_vnc_password" ||
       authentication.method !== "vnc_password"
     ) {
@@ -662,7 +514,7 @@ function resolvedRunnerResponse(
   }
   if (row.securityType === "apple_dh") {
     if (
-      transport.type !== "ssh" ||
+      !hasProtectedVncRawRoute(row) ||
       security.type !== "apple_dh" ||
       authentication.method !== "apple_dh_username_password"
     ) {
@@ -678,7 +530,7 @@ function resolvedRunnerResponse(
   }
   if (row.securityType === "apple_srp") {
     if (
-      transport.type !== "ssh" ||
+      !hasProtectedVncRawRoute(row) ||
       security.type !== "apple_srp" ||
       authentication.method !== "apple_srp_username_password"
     ) {
@@ -694,7 +546,7 @@ function resolvedRunnerResponse(
   }
   if (row.securityType === "apple_rsa_srp") {
     if (
-      transport.type !== "ssh" ||
+      !hasProtectedVncRawRoute(row) ||
       security.type !== "apple_rsa_srp" ||
       authentication.method !== "apple_rsa_srp_username_password"
     ) {
@@ -738,6 +590,7 @@ export const resolveRunnerVnc$ = command(
     validateStoredProfile(row);
     const transport = storedTransportSnapshot(row);
     if (
+      transport === null ||
       !hasTransportAuthority(row, transport) ||
       !hasKdcAuthority(row) ||
       !hasLiveKerberosTicket(row)
@@ -752,11 +605,28 @@ export const resolveRunnerVnc$ = command(
     if (!capability) {
       return { response: { outcome: "unsupported_profile" }, createdAt: null };
     }
-    const security = storedRunnerSecurity(row, transport);
+    // Validate non-secret metadata before any KMS work, including native KDC routes.
+    storedVncSecurity(row);
     const authentication = await decryptRunnerAuthentication(row, signal);
     if (authentication === null) {
       return { response: { outcome: "unavailable" }, createdAt: null };
     }
+    const rfbTransport = await decryptVncRoleTransport(
+      row,
+      "rfb",
+      transport,
+      signal,
+    );
+    const resolvedTransport: ResolvedVncTransport =
+      rfbTransport.type === "cloudflare_access"
+        ? { ...rfbTransport, originTls: storedVncOriginTls(row) }
+        : rfbTransport;
+    const kdc = storedKdcSnapshot(row);
+    const kdcTransport =
+      kdc === null
+        ? null
+        : await decryptVncRoleTransport(row, "kdc", kdc, signal);
+    const security = storedRunnerSecurity(row, kdcTransport);
     const current = await set(currentRunnerVncAuthority$, input, signal);
     if (!(await isSameCurrentHandoff(current, row, transport, clerk, signal))) {
       return { response: { outcome: "unavailable" }, createdAt: null };
@@ -764,7 +634,7 @@ export const resolveRunnerVnc$ = command(
     return {
       response: resolvedRunnerResponse(
         row,
-        transport,
+        resolvedTransport,
         security,
         authentication,
       ),

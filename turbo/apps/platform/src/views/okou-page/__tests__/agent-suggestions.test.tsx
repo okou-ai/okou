@@ -127,7 +127,7 @@ function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
 }
 const features = { [FeatureSwitchKey.AgentSuggestion]: true } as const;
 
-test("Suggestions is the default tab and browsing categories preserves the draft and keyboard focus", async () => {
+test("Selecting a task hides the categories, focuses the composer, and restores Suggestions when cleared", async () => {
   const user = userEvent.setup();
   mockPool();
   await setupPage({
@@ -141,22 +141,80 @@ test("Suggestions is the default tab and browsing categories preserves the draft
   click(button("Image", "tab"));
   await screen.findByText("Put my product in a new scene");
   expect(composer()).toHaveTextContent("My draft stays here");
-  expect(button("Image", "tab")).toHaveAttribute("aria-selected", "true");
-  await user.click(button("Suggestions", "tab"));
+  expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+  expect(button("Remove Image")).toBeInTheDocument();
+  await waitFor(() => {
+    expect(composer()).toHaveFocus();
+  });
+  click(button("Remove Image"));
   await screen.findByText(makeSuggestion().title);
+  await user.click(button("Suggestions", "tab"));
   await user.keyboard("{ArrowRight}");
   await waitFor(() => {
     return expect(button("Workflow", "tab")).toHaveFocus();
   });
   await user.keyboard("{Enter}");
   await waitFor(() => {
-    return expect(button("Workflow", "tab")).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
+    expect(button("Remove Workflow")).toBeInTheDocument();
+    expect(composer()).toHaveFocus();
   });
+  expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
   expect(composer()).toHaveTextContent("My draft stays here");
 });
+
+test.each([
+  "Workflow",
+  "Presentation",
+  "Document",
+  "Image",
+  "Website",
+  "Visualization",
+])(
+  "Selecting %s hides the entire row with an empty suggestion pool",
+  async (task) => {
+    mockPool([]);
+    await setupPage({
+      context,
+      path: `/agents/${agentId}/chat`,
+      featureSwitches: {
+        ...features,
+        [FeatureSwitchKey.BuiltinDocumentTemplates]: true,
+      },
+    });
+    await waitFor(() => {
+      expect(queryTab(task)).toBeInTheDocument();
+    });
+    await fill(composer(), "Keep my draft");
+    click(button(task, "tab"));
+    await waitFor(() => {
+      expect(button(`Remove ${task}`)).toBeInTheDocument();
+      expect(composer()).toHaveFocus();
+    });
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("group", { name: "Choose a task" }),
+    ).not.toBeInTheDocument();
+    expect(composer()).toHaveTextContent("Keep my draft");
+    click(button(`Remove ${task}`));
+    await waitFor(() => {
+      expect(queryTab(task)).toBeInTheDocument();
+    });
+    expect(
+      queryAllByRoleFast("tab").map((tab) => {
+        return tab.textContent?.trim();
+      }),
+    ).toStrictEqual([
+      "Workflow",
+      "Presentation",
+      "Document",
+      "Image",
+      "Website",
+      "Visualization",
+    ]);
+    expect(composer()).toHaveTextContent("Keep my draft");
+  },
+);
+
 test("An empty pool hides Suggestions until a realtime publication without changing the chosen category or draft", async () => {
   const pool = mockPool([]);
   await setupPage({
@@ -183,12 +241,13 @@ test("An empty pool hides Suggestions until a realtime publication without chang
   });
   pool.publish(makeSuggestion());
   context.mocks.ably.trigger("agentSuggestionsChanged");
+  expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+  expect(button("Remove Image")).toBeInTheDocument();
+  expect(composer()).toHaveTextContent("Keep my draft");
+  click(button("Remove Image"));
   await waitFor(() => {
     expect(queryTab("Suggestions")).toBeInTheDocument();
   });
-  expect(button("Image", "tab")).toHaveAttribute("aria-selected", "true");
-  expect(composer()).toHaveTextContent("Keep my draft");
-  click(button("Suggestions", "tab"));
   await screen.findByText(makeSuggestion().title);
   expect(composer()).toHaveTextContent("Keep my draft");
 });
@@ -391,10 +450,13 @@ test("Realtime removal hides Suggestions without changing another selected categ
   });
   pool.withdrawAll();
   context.mocks.ably.trigger("agentSuggestionsChanged");
+  expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+  expect(button("Remove Image")).toBeInTheDocument();
+  click(button("Remove Image"));
   await waitFor(() => {
+    expect(queryTab("Image")).toBeInTheDocument();
     expect(queryTab("Suggestions")).not.toBeInTheDocument();
   });
-  expect(button("Image", "tab")).toHaveAttribute("aria-selected", "true");
   expect(
     screen.queryByText("No suggestions right now."),
   ).not.toBeInTheDocument();

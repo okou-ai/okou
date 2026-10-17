@@ -31,6 +31,31 @@ pub struct FirecrackerRuntime {
 }
 
 impl FirecrackerRuntime {
+    #[cfg(feature = "test-support")]
+    /// Create an actual factory with an invocation-owned accepted-home checkpoint.
+    pub async fn create_factory_with_home_checkpoint_for_test(
+        &self,
+        config: FactoryConfig,
+        checkpoint: crate::HomeCreateCheckpoint,
+    ) -> sandbox::Result<Box<dyn SandboxFactory>> {
+        Ok(crate::factory::checkpoint_factory(
+            self.start_factory(config).await?,
+            checkpoint,
+        ))
+    }
+
+    async fn start_factory(&self, config: FactoryConfig) -> sandbox::Result<FirecrackerFactory> {
+        let pressure = config.home_drive_pressure.clone();
+        let fc_config = self.to_firecracker_config(config)?;
+        FirecrackerFactory::start(
+            fc_config,
+            Some(self.netns_pool.clone()),
+            self.device_pool.clone(),
+            self.host_cpu_cgroup.clone(),
+            pressure,
+        )
+        .await
+    }
     /// Create a new runtime with shared resources.
     ///
     /// This allocates network namespace and NBD device pools.
@@ -122,14 +147,7 @@ impl SandboxRuntime for FirecrackerRuntime {
         &self,
         config: FactoryConfig,
     ) -> sandbox::Result<Box<dyn SandboxFactory>> {
-        let fc_config = self.to_firecracker_config(config)?;
-        let factory = FirecrackerFactory::start(
-            fc_config,
-            Some(self.netns_pool.clone()),
-            self.device_pool.clone(),
-            self.host_cpu_cgroup.clone(),
-        )
-        .await?;
+        let factory = self.start_factory(config).await?;
         Ok(Box::new(factory))
     }
 

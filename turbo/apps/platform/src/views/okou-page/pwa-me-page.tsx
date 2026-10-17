@@ -358,6 +358,7 @@ export function PwaMePage() {
         open={reset.resetDialog.open}
         resetCredits={reset.resetDialog.resetCredits}
         resetting={reset.actionPending}
+        error={reset.resetError}
         onOpenChange={reset.handleCodexResetOpenChange}
         onConfirm={reset.handleConfirmCodexReset}
       />

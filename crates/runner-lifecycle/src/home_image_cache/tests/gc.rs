@@ -207,69 +207,110 @@ async fn gc_dry_run_retains_generation_and_uses_actual_allocated_bytes() {
     );
 }
 
-#[test]
-fn budget_preserves_zero_small_and_saturating_arithmetic_boundaries() {
-    for (total_bytes, maximum, target, reserve) in [
-        (0, 0, 0, 50 * GIB),
-        (1, 0, 0, 50 * GIB),
-        (
-            u64::MAX,
-            u64::MAX / 100,
-            (u64::MAX / 100) * 75 / 100,
-            u64::MAX / 100,
-        ),
-    ] {
-        let budget = CacheBudget::from_fs_stats(FsStats {
-            total_bytes,
-            total_inodes: 100,
-            available_inodes: 0,
-            ..FsStats::default()
-        });
-        assert_eq!(budget.max_cache_bytes, maximum);
-        assert_eq!(budget.target_after_gc_bytes, target);
-        assert_eq!(budget.min_free_bytes, reserve);
+#[tokio::test]
+async fn dry_run_pressure_counts_orphan_allocation_once_when_evicting_its_whole_entry() {
+    let f = Fixture::new().await;
+    let committed = f.commit("thread", b"home", "2026-10-09T09:00:00Z").await;
+    let paths = f.cache.entry_paths(&f.key("thread"));
+    let orphan = paths.image(&uuid::Uuid::new_v4().to_string()).unwrap();
+    write_image(&orphan, b"orphan", SIZE);
+    let mut allocated = std::fs::metadata(paths.entry_dir()).unwrap().blocks() * 512;
+    for entry in std::fs::read_dir(paths.entry_dir()).unwrap() {
+        let metadata = std::fs::symlink_metadata(entry.unwrap().path()).unwrap();
+        assert!(metadata.is_file());
+        allocated += metadata.blocks() * 512;
     }
+    f.cache.set_fs_stats_for_test(FsStats {
+        total_bytes: 400 * GIB,
+        available_bytes: 1,
+        ..FsStats::default()
+    });
+    assert_eq!(f.cache.gc(true).await.unwrap(), allocated);
+    assert!(orphan.exists());
+    assert!(f.image("thread", &committed).exists());
+    assert_eq!(
+        f.metadata("thread").await.image_generation,
+        committed.image_generation
+    );
+}
+
+#[tokio::test]
+async fn dry_run_pre_cleanup_recovery_to_low_water_does_not_propose_valid_image_eviction() {
+    let f = Fixture::new().await;
+    let committed = f.commit("thread", b"home", "2026-10-09T09:00:00Z").await;
+    let paths = f.cache.entry_paths(&f.key("thread"));
+    let orphan = paths.image(&uuid::Uuid::new_v4().to_string()).unwrap();
+    write_image(&orphan, b"orphan", SIZE);
+    let orphan_bytes = std::fs::metadata(&orphan).unwrap().blocks() * 512;
+    assert!(orphan_bytes > 1);
+    let stats = FsStats {
+        total_bytes: 400 * GIB,
+        ..FsStats::default()
+    };
+    let thresholds = HomeCachePressureThresholds::from_fs_stats(stats);
+    f.cache.set_fs_stats_for_test(FsStats {
+        available_bytes: thresholds.low_free_bytes - 1,
+        ..stats
+    });
+    assert_eq!(f.cache.gc(true).await.unwrap(), orphan_bytes);
+    assert!(orphan.exists());
+    assert!(f.image("thread", &committed).exists());
+    assert_eq!(
+        f.metadata("thread").await.image_generation,
+        committed.image_generation
+    );
 }
 
 #[test]
-fn safe_default_budget_and_gc_target_are_exact_without_host_percentage_entry_cap() {
-    let stats = FsStats {
+fn pressure_watermarks_cover_small_infeasible_and_integer_boundaries() {
+    let example = HomeCachePressureThresholds::from_fs_stats(FsStats {
         total_bytes: 400 * GIB,
         available_bytes: 200 * GIB,
         ..FsStats::default()
-    };
-    let budget = CacheBudget::from_fs_stats(stats);
-    assert_eq!(budget.max_cache_bytes, 200 * GIB);
-    assert_eq!(budget.target_after_gc_bytes, 150 * GIB);
-    assert_eq!(budget.min_free_bytes, 50 * GIB);
-    let big = CacheBudget::from_fs_stats(FsStats {
-        total_bytes: 2000 * GIB,
-        available_bytes: 1000 * GIB,
+    });
+    assert_eq!(example.reserve_bytes, 50 * GIB);
+    assert_eq!(example.low_free_bytes, 50 * GIB + 50 * GIB / 4);
+    assert_eq!(example.high_free_bytes, 75 * GIB);
+    assert!(example.reserve_feasible);
+    for total_bytes in [0, 1, 40 * GIB] {
+        let policy = HomeCachePressureThresholds::from_fs_stats(FsStats {
+            total_bytes,
+            ..FsStats::default()
+        });
+        assert_eq!(policy.reserve_bytes, 50 * GIB);
+        assert!(!policy.reserve_feasible);
+    }
+    let largest = HomeCachePressureThresholds::from_fs_stats(FsStats {
+        total_bytes: u64::MAX,
         ..FsStats::default()
     });
-    assert_eq!(big.min_free_bytes, 200 * GIB);
-    assert!(!super::super::gc::gc_budget_satisfied(
-        true,
-        151 * GIB,
-        1,
-        stats,
-        budget,
-        0
-    ));
-    assert!(super::super::gc::gc_budget_satisfied(
-        true,
-        150 * GIB,
-        1,
-        stats,
-        budget,
-        0
-    ));
+    assert_eq!(largest.reserve_bytes, u64::MAX / 10);
+    assert!(largest.reserve_feasible);
+    assert!(largest.reserve_bytes < largest.low_free_bytes);
+    assert!(largest.low_free_bytes < largest.high_free_bytes);
+    assert_eq!(largest.high_free_bytes, 2_767_011_611_056_432_741);
+}
+
+#[test]
+fn foreground_peak_and_complete_legacy_projection_are_distinct_from_background_recovery() {
+    let stats = FsStats {
+        total_bytes: 400 * GIB,
+        available_bytes: 51 * GIB,
+        ..FsStats::default()
+    };
+    let pressure = HomeCachePressureThresholds::from_fs_stats(stats);
+    assert!(stats.available_bytes < pressure.low_free_bytes);
+    assert!(super::super::fs::has_copy_headroom(stats, pressure, GIB));
     assert!(!super::super::fs::has_copy_headroom(
-        FsStats {
-            available_bytes: 50 * GIB,
-            ..stats
-        },
-        budget,
-        1
+        stats,
+        pressure,
+        GIB + 1
     ));
+    let complete = CacheBudget::from_observed_allocation(stats, Some(250 * GIB));
+    assert!(complete.complete);
+    assert_eq!(complete.max_cache_bytes, 251 * GIB);
+    assert_eq!(complete.target_after_gc_bytes, 226 * GIB);
+    let unavailable = CacheBudget::from_observed_allocation(stats, None);
+    assert!(!unavailable.complete);
+    assert_eq!(unavailable.max_cache_bytes, 0);
 }

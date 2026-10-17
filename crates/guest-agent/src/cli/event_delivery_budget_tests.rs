@@ -1,4 +1,5 @@
 //! Exercise exact final requests and failure controls through the real sender.
+use super::bounded_event_delivery::json_string_bytes;
 use super::event_delivery::*;
 use crate::env::Framework;
 use crate::events;
@@ -13,6 +14,35 @@ use std::time::Duration;
 
 const LIMIT: usize = 4 * 1024 * 1024;
 const RUN_ID: &str = "delivery-\"\\-你好";
+
+#[test]
+fn json_string_byte_lengths_match_compact_encoded_bytes() {
+    for content in [
+        "",
+        "ordinary / text",
+        "é",
+        "你好",
+        "🙂",
+        "\u{85}\u{2028}\u{2029}\u{10ffff}",
+    ] {
+        assert_eq!(
+            json_string_bytes(content),
+            serde_json::to_vec(content).unwrap().len(),
+        );
+        for padding in [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65,
+        ] {
+            for byte in 0..=127u8 {
+                let text = format!("{}{}{content}\"\\\n", "x".repeat(padding), char::from(byte),);
+                assert_eq!(
+                    json_string_bytes(&text),
+                    serde_json::to_vec(&text).unwrap().len(),
+                    "{text:?}",
+                );
+            }
+        }
+    }
+}
 
 struct PublicEvent<'a> {
     fields: &'a serde_json::Map<String, Value>,

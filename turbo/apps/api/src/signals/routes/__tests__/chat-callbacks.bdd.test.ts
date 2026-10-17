@@ -168,26 +168,22 @@ async function startChatRun(
   if (sent.status !== 201) {
     throw new Error("Expected the entitled chat send to create a run");
   }
-  let runId: string | null | undefined = sent.body.runId;
-  if (runId === null) {
-    // A terminal callback may claim the queued row between enqueue and the
-    // inline dispatch decision. Recover as a refreshed client does: read the
-    // appended replacement instead of retrying the client message id.
-    const messages = await waitForThreadMessages(
-      actor,
-      sent.body.threadId,
-      (items) => {
-        return userMessages(items).some((message) => {
-          return (
-            message.revokesEventId === messageId && message.runId !== undefined
-          );
-        });
-      },
-    );
-    runId = userMessages(messages.events).find((message) => {
-      return message.revokesEventId === messageId;
-    })?.runId;
-  }
+  // The send only enqueues. Read the launched run from the appended
+  // replacement, as a refreshed client does.
+  const messages = await waitForThreadMessages(
+    actor,
+    sent.body.threadId,
+    (items) => {
+      return userMessages(items).some((message) => {
+        return (
+          message.revokesEventId === messageId && message.runId !== undefined
+        );
+      });
+    },
+  );
+  const runId = userMessages(messages.events).find((message) => {
+    return message.revokesEventId === messageId;
+  })?.runId;
   if (runId === undefined || runId === null) {
     throw new Error("Expected the entitled chat send to create a run");
   }
@@ -221,7 +217,7 @@ async function queueChatEvent(
     },
     [201],
   );
-  if (sent.status !== 201 || sent.body.runId !== null) {
+  if (sent.status !== 201) {
     throw new Error("Expected the chat send to queue while a run is active");
   }
   return messageId;
@@ -824,7 +820,7 @@ describe("CHAT-02: completed chat callback", () => {
     await waitForRunStatus(actor, claimed.runId, "cancelled");
   }, 90_000);
 
-  it("starts the queued chat run's API clock at its dequeue", async () => {
+  it("omits the API clock for a chat run picked from the queue", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
@@ -877,7 +873,8 @@ describe("CHAT-02: completed chat callback", () => {
       throw new Error("Expected the queued Web message to auto-send");
     }
     const secondClaim = await claimChatRunJob(runnerGroup, claimed.runId);
-    expect(secondClaim.apiStartTime).toBe(dequeuedAt);
+    // Only a pick inside its own send request is anchored at receipt.
+    expect(secondClaim.apiStartTime).toBeUndefined();
 
     await api.requestCancelRun(actor, claimed.runId, [200]);
     await waitForRunStatus(actor, claimed.runId, "cancelled");

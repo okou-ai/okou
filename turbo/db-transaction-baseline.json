@@ -147,11 +147,6 @@
       "owner": "clearChatThreadConnectorSelection"
     },
     {
-      "id": "TX-0094",
-      "file": "turbo/apps/api/src/signals/services/chat-thread-metadata-update.service.ts",
-      "owner": "commitMetadata$"
-    },
-    {
       "id": "TX-0095",
       "file": "turbo/apps/api/src/signals/services/chat-thread.service.ts",
       "owner": "createChatThread$"
@@ -165,21 +160,6 @@
       "id": "TX-0097",
       "file": "turbo/apps/api/src/signals/services/chat-thread.service.ts",
       "owner": "deleteChatThreadContent$"
-    },
-    {
-      "id": "TX-0104",
-      "file": "turbo/apps/api/src/signals/services/cloudflare-access.service.ts",
-      "owner": "updateCloudflareAccessConfig$"
-    },
-    {
-      "id": "TX-0106",
-      "file": "turbo/apps/api/src/signals/services/cloudflare-access.service.ts",
-      "owner": "convertCloudflareAccessToOrganization$"
-    },
-    {
-      "id": "TX-0107",
-      "file": "turbo/apps/api/src/signals/services/cloudflare-access.service.ts",
-      "owner": "convertCloudflareAccessToPersonal$"
     },
     {
       "id": "TX-0111",
@@ -485,11 +465,6 @@
       "id": "TX-0229",
       "file": "turbo/apps/api/src/signals/services/pi-memory-stage1-worker.service.ts",
       "owner": "claimPiMemoryStage1Selection$"
-    },
-    {
-      "id": "TX-0230",
-      "file": "turbo/apps/api/src/signals/services/pi-memory-stage1-worker.service.ts",
-      "owner": "validatePreparedWork$"
     },
     {
       "id": "TX-0234",

@@ -3,8 +3,8 @@ use serde::Serialize;
 
 use crate::error::{RunnerError, RunnerResult};
 use crate::home_image_cache::{
-    CacheBudget, FsStats, HomeImageCache, HomeImageCacheInspection, HomeImageCacheInspectionEntry,
-    HomeImageCacheInspectionStatus, HomeImageCacheInspectionSummary,
+    CacheBudget, FsStats, HomeCachePressureThresholds, HomeImageCache, HomeImageCacheInspection,
+    HomeImageCacheInspectionEntry, HomeImageCacheInspectionStatus, HomeImageCacheInspectionSummary,
 };
 use runner_host::byte_size::human_bytes;
 use runner_host::paths::{HomePaths, RunnerPaths};
@@ -34,10 +34,10 @@ enum HomeImageCacheCommand {
     /// Clean up home image cache entries.
     ///
     /// The first phase removes stale, unusable, and temporary cache contents before evaluating
-    /// capacity. It may also evict valid reusable entries, oldest-first, when the cache exceeds
-    /// its maximum byte budget, filesystem free space falls below the minimum, or the cache
-    /// exceeds the 1,024-entry cap. When budget pressure triggers eviction, it continues until
-    /// the post-GC target and minimum-free-space thresholds are met. Locked entries are skipped
+    /// capacity. It may evict valid entries, oldest-first, below the filesystem low-water mark
+    /// toward its high-water mark, or to restore the independent 1,024-entry cap. Count-only
+    /// cleanup does not activate a free-byte target. Actual free space controls recovery;
+    /// deleting an open image does not imply its blocks were released. Locked entries are skipped
     /// during reusable-entry eviction, and candidates are revalidated before deletion. Use
     /// `--dry-run` to evaluate this same policy and report prospective cleanup without deleting
     /// data.
@@ -81,6 +81,7 @@ struct HomeImageCacheInfoOutput {
     lock_dir: String,
     fs_stats: FsStats,
     budget: CacheBudget,
+    pressure: HomeCachePressureThresholds,
     measurements_complete: bool,
     summary: HomeImageCacheInspectionSummary,
 }
@@ -92,6 +93,7 @@ struct HomeImageCacheListOutput {
     lock_dir: String,
     fs_stats: FsStats,
     budget: CacheBudget,
+    pressure: HomeCachePressureThresholds,
     measurements_complete: bool,
     entries_complete: bool,
     summary: HomeImageCacheInspectionSummary,
@@ -183,6 +185,7 @@ fn info_output(inspection: &HomeImageCacheInspection) -> HomeImageCacheInfoOutpu
         lock_dir: inspection.lock_dir.clone(),
         fs_stats: inspection.fs_stats,
         budget: inspection.budget,
+        pressure: inspection.pressure,
         measurements_complete: inspection.summary.locked_entries == 0,
         summary: inspection.summary.clone(),
     }
@@ -197,6 +200,7 @@ fn list_output(
         lock_dir,
         fs_stats,
         budget,
+        pressure,
         summary,
         entries,
     } = inspection;
@@ -216,6 +220,7 @@ fn list_output(
         lock_dir,
         fs_stats,
         budget,
+        pressure,
         measurements_complete: summary.locked_entries == 0,
         entries_complete: entries.len() == observed_entries,
         summary,
@@ -247,7 +252,8 @@ Home image cache
   Lock dir: {lock_dir}
   Filesystem: total {fs_total}, available {fs_available}
   Inodes: total {inode_total}, available {inode_available}
-  Budget: max {max_cache}, target after GC {target_after_gc}, min free {min_free}
+  Pressure: min free {min_free}, low {low_free}, high {high_free}, feasible {feasible}
+  Legacy allocation projection: max {max_cache}, target after GC {target_after_gc}, complete {budget_complete}
   Entries: total {total}, reusable {reusable}, invalid {invalid}, stale {stale}, temporary-only {temporary}, locked {locked}
   Temporary paths: {temporary_paths} ({temporary_allocated})
   Size: allocated {allocated}, logical {logical}
@@ -269,6 +275,10 @@ Preview cleanup:
         max_cache = human_bytes(budget.max_cache_bytes),
         target_after_gc = human_bytes(budget.target_after_gc_bytes),
         min_free = human_bytes(budget.min_free_bytes),
+        low_free = human_bytes(inspection.pressure.low_free_bytes),
+        high_free = human_bytes(inspection.pressure.high_free_bytes),
+        feasible = inspection.pressure.reserve_feasible,
+        budget_complete = budget.complete,
         total = summary.total_entries,
         reusable = summary.reusable_entries,
         invalid = summary.invalid_entries,
@@ -380,6 +390,13 @@ mod tests {
                 max_cache_bytes: 500,
                 target_after_gc_bytes: 375,
                 min_free_bytes: 100,
+                complete: true,
+            },
+            pressure: HomeCachePressureThresholds {
+                reserve_bytes: 100,
+                low_free_bytes: 125,
+                high_free_bytes: 150,
+                reserve_feasible: true,
             },
             summary: HomeImageCacheInspectionSummary {
                 total_entries: 2,
@@ -440,6 +457,9 @@ mod tests {
         let mut inspection = test_inspection();
         inspection.summary.total_entries += 1;
         inspection.summary.locked_entries = 1;
+        inspection.budget.complete = false;
+        inspection.budget.max_cache_bytes = 0;
+        inspection.budget.target_after_gc_bytes = 0;
         inspection.entries.push(HomeImageCacheInspectionEntry {
             cache_key: "c".repeat(64),
             status: HomeImageCacheInspectionStatus::Locked,
@@ -469,6 +489,9 @@ mod tests {
         assert_eq!(value["summary"]["temporaryPaths"], 1);
         assert_eq!(value["fsStats"]["availableInodes"], 70);
         assert_eq!(value["measurementsComplete"], true);
+        assert_eq!(value["pressure"]["lowFreeBytes"], 125);
+        assert_eq!(value["pressure"]["highFreeBytes"], 150);
+        assert_eq!(value["budget"]["complete"], true);
         assert!(value["summary"].get("temporaryFiles").is_none());
         assert!(value.get("entries").is_none());
         assert!(value["budget"].get("maxEntryBytes").is_none());
@@ -497,6 +520,7 @@ mod tests {
         let entry = &value["entries"][0];
         assert_eq!(value["summary"]["lockedEntries"], 1);
         assert_eq!(value["measurementsComplete"], false);
+        assert_eq!(value["budget"]["complete"], false);
         assert_eq!(value["entriesComplete"], false);
         assert_eq!(entry["status"], "locked");
         assert_eq!(entry["reason"], "entry lock is held");

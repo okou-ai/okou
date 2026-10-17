@@ -15,6 +15,7 @@ import builtin_base_url_template
 import builtin_host_policy
 import matching
 import state_file
+from authority_utils import percent_decode_host
 from generated.builtin_firewall_cache import (
     BUILTIN_FIREWALL_CATALOG_CACHE_SCHEMA_VERSION,
     BUILTIN_FIREWALL_CATALOG_MAX_BYTES,
@@ -30,7 +31,8 @@ _BASE_URL_TEMPLATE_WHOLE_BASE_PLACEHOLDER = "https://x.y"
 _BASE_URL_TEMPLATE_HOST_PLACEHOLDER = "x.y"
 _BASE_URL_TEMPLATE_PORT_PLACEHOLDER = "1"
 _BASE_URL_TEMPLATE_PATH_PLACEHOLDER = "x"
-_BASE_URL_TEMPLATE_HOST_LABEL_DELIMITERS = re.compile(r"[.:/?#@\[\]\u3002\uff0e\uff61]")
+_BASE_URL_TEMPLATE_HOST_LABEL_DELIMITERS = re.compile(r"([.:/?#@\[\]\u3002\uff0e\uff61])")
+_BASE_URL_TEMPLATE_ENCODED_HOST_STRUCTURE = frozenset(r".:/?#@[]\%{}*")
 _BASE_URL_TEMPLATE_PLACEHOLDERS: dict[
     builtin_base_url_template.BaseUrlTemplateComponentKind, str
 ] = {
@@ -480,27 +482,62 @@ def _base_url_template_syntax_target(firewall_name: str, raw_base: str) -> str |
     if not variables:
         return None
 
-    result: list[str] = []
+    literal_parts: list[str] = []
     last_index = 0
+    for variable in variables:
+        literal_parts.append(raw_base[last_index : variable.reference.start])
+        last_index = variable.reference.end
+    literal_parts.append(raw_base[last_index:])
+
     for index, variable in enumerate(variables):
-        reference = variable.reference
-        result.append(raw_base[last_index : reference.start])
+        if variable.authority_fragment_shape == "hostname":
+            literal_parts[index] = _base_url_template_hostname_literal_syntax_target(
+                literal_parts[index], trailing=True
+            )
+            literal_parts[index + 1] = _base_url_template_hostname_literal_syntax_target(
+                literal_parts[index + 1], trailing=False
+            )
+
+    result: list[str] = []
+    for index, variable in enumerate(variables):
+        result.append(literal_parts[index])
         placeholder = _BASE_URL_TEMPLATE_PLACEHOLDERS[variable.kind]
         if variable.authority_fragment_shape == "ip-literal":
             placeholder = _BASE_URL_TEMPLATE_PORT_PLACEHOLDER
         elif variable.authority_fragment_shape == "hostname":
-            literal_end = (
-                variables[index + 1].reference.start
-                if index + 1 < len(variables)
-                else len(raw_base)
-            )
             placeholder = _base_url_template_hostname_placeholder(
-                raw_base[last_index : reference.start], raw_base[reference.end : literal_end]
+                literal_parts[index], literal_parts[index + 1]
             )
         result.append(placeholder)
-        last_index = reference.end
-    result.append(raw_base[last_index:])
+    result.append(literal_parts[-1])
     return "".join(result)
+
+
+def _base_url_template_hostname_literal_syntax_target(literal: str, *, trailing: bool) -> str:
+    parts = _BASE_URL_TEMPLATE_HOST_LABEL_DELIMITERS.split(literal)
+    index = -1 if trailing else 0
+    decoded = percent_decode_host(
+        parts[index], syntax_chars=_BASE_URL_TEMPLATE_ENCODED_HOST_STRUCTURE
+    )
+    if (
+        decoded.invalid_encoding
+        or decoded.decoded_syntax
+        or not decoded.value.isascii()
+        or not decoded.value.lower().startswith("xn--")
+    ):
+        return literal
+
+    syntax_label = "idna" + decoded.value[len("xn--") :]
+    if not _base_url_template_literal_label_is_valid(syntax_label):
+        return literal
+
+    # An adjoining variable can complete or extend the A-label payload. Project
+    # its prefix to ordinary ASCII of the same decoded length for syntax/length
+    # checks, without guessing a valid punycode expansion. Reuse the existing
+    # label grammar; malformed encoding and introduced URL syntax stay intact.
+    # The actual resolved base still undergoes full IDNA and host-policy checks.
+    parts[index] = syntax_label
+    return "".join(parts)
 
 
 def _base_url_template_hostname_placeholder(prefix: str, suffix: str) -> str:

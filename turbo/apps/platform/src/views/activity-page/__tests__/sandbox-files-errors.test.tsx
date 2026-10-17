@@ -193,7 +193,7 @@ test("A terminal bootstrap 404 requires explicit retry and never implies an empt
   await expect(
     within(panel).findByText("Files are unavailable. Try again."),
   ).resolves.toBeInTheDocument();
-  click(filesButton("Close files", panel));
+  click(filesTab("Steps"));
   await waitFor(() => {
     expect(screen.queryByRole("region", { name: "Files" })).toBeNull();
   });

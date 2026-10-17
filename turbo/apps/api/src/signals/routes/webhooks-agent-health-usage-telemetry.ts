@@ -42,6 +42,10 @@ import {
   DISCORD_TYPING_REFRESH_INTERVAL_SECONDS,
   hasDiscordTypingTargetForRun,
 } from "../services/discord-run-typing.service";
+import {
+  WECHAT_TYPING_REFRESH_INTERVAL_SECONDS,
+  hasWechatTypingTargetForRun$,
+} from "../services/wechat-thread-typing.service";
 import { settle } from "../utils";
 import {
   recordRunnerUsageBatch$,
@@ -589,6 +593,11 @@ const typingRefreshIntervalSecondsForRun$ = command(
     args: { readonly runId: string; readonly triggerSource: string | null },
     signal: AbortSignal,
   ): Promise<number | undefined> => {
+    if (args.triggerSource === "wechat") {
+      return (await set(hasWechatTypingTargetForRun$, args.runId, signal))
+        ? WECHAT_TYPING_REFRESH_INTERVAL_SECONDS
+        : undefined;
+    }
     if (args.triggerSource === "agentphone") {
       return (await set(hasAgentPhoneTypingTargetForRun$, args.runId, signal))
         ? AGENTPHONE_TYPING_REFRESH_INTERVAL_SECONDS

@@ -24,6 +24,8 @@ case "${1:-}" in
   merge-base)
     if [ "${3:-}" = "dfff1605013103371cd90962ee5b54c80fc93140" ]; then
       [ "${MOCK_BUNDLED_CLI_RUNNER_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "37e6bb51029f05ff1d7a7a6c28b03f139dfd067c" ]; then
+      [ "${MOCK_LINK_GRANT_WRITER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "52525252525252525252525252525252525252ab" ]; then
       [ "${MOCK_WORKFLOW_NAME_SCOPES_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "4747474747474747474747474747474747474747" ]; then
@@ -1042,6 +1044,9 @@ assert_failure "found 0" run_resolver "${tmp_dir}/zero.output" MOCK_VERCEL_MATCH
 [ ! -s "${tmp_dir}/zero.output" ] || fail "failed resolution must not publish outputs"
 
 : >"${tmp_dir}/boundaries.log"
+assert_failure "predates the Link wallet grant metadata writer" \
+  run_resolver "${tmp_dir}/link-grant-writer.output" MOCK_LINK_GRANT_WRITER_FLOOR_VALID=0
+
 assert_failure "predates bundled-only CLI startup" \
   run_resolver "${tmp_dir}/bundled-cli-runner.output" MOCK_BUNDLED_CLI_RUNNER_FLOOR_VALID=0
 [ ! -s "${tmp_dir}/bundled-cli-runner.output" ] || fail "incompatible CLI Runner must not publish outputs"
@@ -1094,7 +1099,9 @@ ruby -e '
     raise "release bodies, changelogs, and complete outputs must not enter the release target resolver environment"
   end
 
-  configured_paths = JSON.parse(File.read(ARGV[1])).fetch("packages").keys
+  # Version-managed private packages do not emit a release SHA or tag.
+  configured_paths = JSON.parse(File.read(ARGV[1])).fetch("packages")
+    .reject { |_, config| config["skip-github-release"] == true }.keys
   missing_paths = configured_paths - projected_paths
   unknown_paths = projected_paths - configured_paths
   duplicate_paths = projected_paths.group_by(&:itself).select { |_, paths| paths.length > 1 }.keys
@@ -1167,7 +1174,9 @@ ruby -e '
     raise "release bodies, changelogs, and complete outputs must not enter the release tag resolver environment"
   end
 
-  configured_paths = JSON.parse(File.read(ARGV[1])).fetch("packages").keys
+  # Version-managed private packages do not emit a release SHA or tag.
+  configured_paths = JSON.parse(File.read(ARGV[1])).fetch("packages")
+    .reject { |_, config| config["skip-github-release"] == true }.keys
   missing_paths = configured_paths - projected_paths
   unknown_paths = projected_paths - configured_paths
   duplicate_paths = projected_paths.group_by(&:itself).select { |_, paths| paths.length > 1 }.keys

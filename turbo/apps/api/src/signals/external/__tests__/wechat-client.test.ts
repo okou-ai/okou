@@ -24,8 +24,8 @@ describe("WeChat protocol boundaries", () => {
       "",
       new AbortController().signal,
     );
-    expect(result.msgs?.[0]?.message_id).toBe("18446744073709551615");
-    expect(result.msgs?.[0]?.item_list?.[0]?.text_item?.text).toBe(
+    expect(result?.msgs?.[0]?.message_id).toBe("18446744073709551615");
+    expect(result?.msgs?.[0]?.item_list?.[0]?.text_item?.text).toBe(
       "message_id: 123",
     );
   });

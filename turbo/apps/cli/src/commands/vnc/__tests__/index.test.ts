@@ -49,7 +49,7 @@ vi.mock("node:child_process", async (importOriginal) => {
         };
         const reply = value => emit(Buffer.from(JSON.stringify(value)));
         function finish() {
-          if (['nonzero-exit', 'rpc-error', 'early-rejection', 'partial-error'].includes(mode)) process.exitCode = 1;
+          if (['nonzero-exit', 'rpc-error', 'early-rejection', 'partial-error', 'partial-diagnostic-error'].includes(mode)) process.exitCode = 1;
           process.stdout.end();
           if (mode === 'close-gate') {
             process.send('ready');
@@ -104,9 +104,10 @@ vi.mock("node:child_process", async (importOriginal) => {
               if (mode === 'unsafe-epoch') metadata.geometry.epoch = 9007199254740992;
               if (mode !== 'missing-metadata') reply({ type: 'event', data: metadata });
               if (mode === 'duplicate-metadata') reply({ type: 'event', data: metadata });
-              if (mode === 'partial-error') {
+              if (['partial-error', 'partial-diagnostic-error'].includes(mode)) {
                 emit(Buffer.concat([Buffer.from([0]), data.subarray(0, 2)]));
-                reply({ type: 'error', code: 'transport', delivery: 'unknown' });
+                reply({ type: 'error', code: 'transport', delivery: 'unknown',
+                  ...(mode === 'partial-diagnostic-error' ? { diagnostic_text: 'Runner observed a capture interruption.' } : {}) });
                 return finish();
               }
               if (mode === 'empty-data-frame') emit(Buffer.from([0]));
@@ -233,6 +234,72 @@ async function invoke(...args: string[]) {
 }
 
 describe("VNC sessions and input", () => {
+  it("forwards opaque Runner text in human/JSON failures without replacing input uncertainty", async () => {
+    const text =
+      "Runner-authored evidence with arbitrary future wording.\nThe retained source belongs to this attempt.";
+    helper.response = {
+      type: "result",
+      data: {
+        outcome: "unknown",
+        reason: "network_failure",
+        diagnostic_text: text,
+      },
+    };
+    await createVncCommand().parseAsync(
+      ["text", sessionId, "--text", "hello"],
+      { from: "user" },
+    );
+    const message = errors.mock.calls.flat().join("\n");
+    expect(message).toContain(text);
+    expect(message).toContain("VNC unknown: network_failure");
+    expect(message).toContain("Never replay automatically");
+    expect(await invoke("text", sessionId, "--text", "hello")).toEqual({
+      outcome: "unknown",
+      reason: "network_failure",
+      diagnostic_text: text,
+    });
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(helper.requests).toHaveLength(2);
+  });
+
+  it.each([
+    { name: "object", diagnostic_text: {} },
+    { name: "oversized", diagnostic_text: "x".repeat(8193) },
+    { name: "terminal controls", diagnostic_text: "unsafe\u001b[31mtext" },
+  ])(
+    "omits $name optional text while preserving the verified failure",
+    async ({ diagnostic_text: diagnosticText }) => {
+      helper.response = {
+        type: "result",
+        data: {
+          outcome: "failed",
+          reason: "authentication_failed",
+          diagnostic_text: diagnosticText,
+        },
+      };
+      expect(
+        await invoke("session", "start", connectionId, "--mode", "shared"),
+      ).toEqual({ outcome: "failed", reason: "authentication_failed" });
+      expect(process.exitCode).toBe(1);
+      expect(spawn).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("discards even valid text when the helper result has an invalid exit", async () => {
+    helper.mode = "nonzero-exit";
+    helper.response = {
+      type: "result",
+      data: {
+        outcome: "failed",
+        reason: "authentication_failed",
+        diagnostic_text: "Unverified terminal text",
+      },
+    };
+    expect(
+      await invoke("session", "start", connectionId, "--mode", "shared"),
+    ).toEqual({ outcome: "failed", reason: "transport", delivery: "unknown" });
+    expect(spawn).toHaveBeenCalledTimes(1);
+  });
   it("explains native sharing effects and uncertain input in command help", () => {
     const command = createVncCommand();
     const start = command.commands
@@ -811,6 +878,24 @@ describe("VNC screenshots", () => {
     expect(await readdir(directory)).toEqual(["screen.png"]);
     expect(process.exitCode).toBe(1);
     expect(spawn).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves capture interruption text and unknown delivery without publishing partial bytes", async () => {
+    helper.mode = "partial-diagnostic-error";
+    const path = join(directory, "screen.png");
+    await writeFile(path, "old image");
+    expect(
+      await invoke("screenshot", sessionId, "--output", path, "--overwrite"),
+    ).toEqual({
+      outcome: "failed",
+      reason: "transport",
+      delivery: "unknown",
+      diagnostic_text: "Runner observed a capture interruption.",
+    });
+    expect(await readFile(path, "utf8")).toBe("old image");
+    expect(await readdir(directory)).toEqual(["screen.png"]);
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(process.exitCode).toBe(1);
   });
 
   it.each([

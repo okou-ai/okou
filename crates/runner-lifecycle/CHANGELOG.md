@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.15.3](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.15.2...runner-lifecycle-v0.15.3) (2026-10-17)
+
+## [0.15.2](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.15.1...runner-lifecycle-v0.15.2) (2026-10-16)
+
+## [0.15.1](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.15.0...runner-lifecycle-v0.15.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **runner:** stop background home cache gc during drain ([#40721](https://github.com/okou-ai/okou/issues/40721)) ([f32f299](https://github.com/okou-ai/okou/commit/f32f2993681e4b7074b7789ce3cc5f4e0ac373dd))
+
+
+### Refactoring
+
+* **runner-lifecycle:** share home drive helper result interpretation ([#40717](https://github.com/okou-ai/okou/issues/40717)) ([2132ff6](https://github.com/okou-ai/okou/commit/2132ff6fd345b4dd219f449139616b2c30604113))
+
+## [0.15.0](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.14.10...runner-lifecycle-v0.15.0) (2026-10-16)
+
+
+### Features
+
+* **runner:** retain home cache by filesystem pressure ([#40658](https://github.com/okou-ai/okou/issues/40658)) ([713e66c](https://github.com/okou-ai/okou/commit/713e66cc7d558d4626834ea5186cfa0f2517e207))
+
+## [0.14.10](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.14.9...runner-lifecycle-v0.14.10) (2026-10-16)
+
+
+### Refactoring
+
+* **runner-lifecycle:** encode status write polling commitment ([#40616](https://github.com/okou-ai/okou/issues/40616)) ([e751390](https://github.com/okou-ai/okou/commit/e751390e11af9e8d514e6d54b7446e41de52ae7c))
+
 ## [0.14.9](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.14.8...runner-lifecycle-v0.14.9) (2026-10-16)
 
 

@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.5.11](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.10...runner-storage-v0.5.11) (2026-10-17)
+
+
+### Refactoring
+
+* **runner-storage:** converge archive publication cleanup ([#40792](https://github.com/okou-ai/okou/issues/40792)) ([5ca0b46](https://github.com/okou-ai/okou/commit/5ca0b463c3cae06279f7e44839a527f9d3e88a81))
+
+## [0.5.10](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.9...runner-storage-v0.5.10) (2026-10-16)
+
+
+### Refactoring
+
+* **runner-storage:** converge template download error cleanup ([#40743](https://github.com/okou-ai/okou/issues/40743)) ([5cbe760](https://github.com/okou-ai/okou/commit/5cbe76087f8057f7bd30fe1ba2e3fbb9ea926e64))
+* **runner-storage:** make decoded cache lookup outcomes explicit ([#40744](https://github.com/okou-ai/okou/issues/40744)) ([423c1b8](https://github.com/okou-ai/okou/commit/423c1b8033bff9fcbf3753be1ae12adf1692b29f))
+* **runner:** express storage eviction accounting as domain outcomes ([#40765](https://github.com/okou-ai/okou/issues/40765)) ([d3ad8e7](https://github.com/okou-ai/okou/commit/d3ad8e7967d5290fbe55d278918a92808b1b5ae5))
+
+## [0.5.9](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.8...runner-storage-v0.5.9) (2026-10-16)
+
+
+### Refactoring
+
+* **runner-storage:** converge multipart scheduler failure retirement ([#40665](https://github.com/okou-ai/okou/issues/40665)) ([de324d4](https://github.com/okou-ai/okou/commit/de324d44248ae8060d183a371978a351700a34f7))
+
+## [0.5.8](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.7...runner-storage-v0.5.8) (2026-10-16)
+
+
+### Refactoring
+
+* **runner-storage:** share guest staging batch limit policy ([#40610](https://github.com/okou-ai/okou/issues/40610)) ([8547dba](https://github.com/okou-ai/okou/commit/8547dba8b38a068ac0102a40e90a9d17d467681b))
+
 ## [0.5.7](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.6...runner-storage-v0.5.7) (2026-10-16)
 
 ## [0.5.6](https://github.com/okou-ai/okou/compare/runner-storage-v0.5.5...runner-storage-v0.5.6) (2026-10-15)

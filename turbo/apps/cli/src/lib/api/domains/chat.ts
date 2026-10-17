@@ -56,7 +56,6 @@ interface ChatThreadCreateResult {
 }
 
 interface ChatEventSendResult {
-  readonly runId: string | null;
   readonly threadId: string;
   readonly createdAt?: string;
 }

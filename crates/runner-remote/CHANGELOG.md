@@ -1,5 +1,53 @@
 # Changelog
 
+## [0.24.2](https://github.com/okou-ai/okou/compare/runner-remote-v0.24.1...runner-remote-v0.24.2) (2026-10-17)
+
+## [0.24.1](https://github.com/okou-ai/okou/compare/runner-remote-v0.24.0...runner-remote-v0.24.1) (2026-10-16)
+
+
+### Refactoring
+
+* **runner-remote:** encode acknowledged sftp staging ownership ([#40749](https://github.com/okou-ai/okou/issues/40749)) ([dde8df1](https://github.com/okou-ai/okou/commit/dde8df1da3508f9fee62b98e8ee64fb5316acd1e))
+
+## [0.24.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.23.1...runner-remote-v0.24.0) (2026-10-16)
+
+
+### Features
+
+* **cli:** add active ssh and vnc connectivity checks ([#40724](https://github.com/okou-ai/okou/issues/40724)) ([680e006](https://github.com/okou-ai/okou/commit/680e006659273013a0e514f7d38e05c3402496d9))
+
+## [0.23.1](https://github.com/okou-ai/okou/compare/runner-remote-v0.23.0...runner-remote-v0.23.1) (2026-10-16)
+
+
+### Refactoring
+
+* **runner-remote:** own ssh session terminal retention state ([#40719](https://github.com/okou-ai/okou/issues/40719)) ([2eb8337](https://github.com/okou-ai/okou/commit/2eb8337e3df2b287555e84e5683cd9944d3f0b48))
+
+## [0.23.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.22.0...runner-remote-v0.23.0) (2026-10-16)
+
+
+### Features
+
+* **remote:** explain vnc failures with retained source evidence ([#40669](https://github.com/okou-ai/okou/issues/40669)) ([07b1a90](https://github.com/okou-ai/okou/commit/07b1a902af74b7a3ebde6434b86e4efb35b1de7e))
+
+
+### Refactoring
+
+* **runner-remote:** converge ssh credential preparation completion ([#40666](https://github.com/okou-ai/okou/issues/40666)) ([218e28c](https://github.com/okou-ai/okou/commit/218e28cc7d5f970e18b9a9943f63a1b383f17d71))
+
+## [0.22.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.21.1...runner-remote-v0.22.0) (2026-10-16)
+
+
+### Features
+
+* **remote:** retain layered tailscale source diagnostics ([#40600](https://github.com/okou-ai/okou/issues/40600)) ([bea7f24](https://github.com/okou-ai/okou/commit/bea7f24675c550f6dc752866f501408d2d62987b))
+
+
+### Refactoring
+
+* **runner-remote:** share apple vnc ssh endpoint validation ([#40611](https://github.com/okou-ai/okou/issues/40611)) ([456eb00](https://github.com/okou-ai/okou/commit/456eb001bebb8c3b2b6388b3ca849847d7c450e0))
+* **runner-remote:** share public destination admission rules ([#40614](https://github.com/okou-ai/okou/issues/40614)) ([0c6ec16](https://github.com/okou-ai/okou/commit/0c6ec16e1698c91ebc3b4494a004f76ba4b02891))
+
 ## [0.21.1](https://github.com/okou-ai/okou/compare/runner-remote-v0.21.0...runner-remote-v0.21.1) (2026-10-16)
 
 ## [0.21.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.20.2...runner-remote-v0.21.0) (2026-10-16)

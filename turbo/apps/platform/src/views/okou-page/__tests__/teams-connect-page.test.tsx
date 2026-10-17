@@ -90,7 +90,6 @@ test.each(["bare", "connected", "error"])(
         "You are connected to Core Team. Mention @Verified Assistant in Teams to start chatting.",
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Verified Avery/u)).toBeInTheDocument();
     expect(
       screen.queryAllByText("Microsoft declined this attempt"),
     ).toHaveLength(entry === "error" ? 1 : 0);
@@ -169,9 +168,6 @@ test.each([
       screen.getByRole("heading", { name: "Connect Microsoft Teams" }),
     ).toBeInTheDocument();
     expect(screen.getByText(message)).toBeInTheDocument();
-    expect(
-      screen.getByText(/An existing Teams connection/u),
-    ).toBeInTheDocument();
     expect(queryAction("button", "Connect") === null).toBe(blocked);
   },
 );
@@ -219,7 +215,7 @@ test("Bare setup opts in without treating a blocked window as connection or canc
   expect(
     screen.getByRole("heading", { name: "Connect Microsoft Teams" }),
   ).toBeInTheDocument();
-  expect(getAction("button", "Refresh Teams status")).toBeEnabled();
+  expect(getAction("button", "Authorize Microsoft Teams")).toBeEnabled();
 });
 
 test("A provider link binds with aliases and full context, then reads actual status", async () => {
@@ -320,7 +316,7 @@ test("Read failures remain visible and recover through manual retry", async () =
     screen.findByRole("heading", { name: "Connection failed" }),
   ).resolves.toBeInTheDocument();
   failed = false;
-  click(getAction("button", "Refresh Teams status"));
+  click(getAction("button", "Try again"));
   await expectConnected();
 });
 
@@ -448,7 +444,9 @@ test("Route departure cancels a pending read and keeps the next page", async () 
   });
   await setupPage({ context, path: path(target) });
   blocked = true;
-  click(getAction("button", "Refresh Teams status"));
+  act(() => {
+    window.dispatchEvent(new Event("focus"));
+  });
   await request.promise;
   click(getAction("link", "Back to settings"));
   release.resolve();
@@ -566,7 +564,9 @@ test("A late status read cannot publish the previous actor's connection", async 
   });
   await setupPage({ context, path: path(target) });
   pending = true;
-  click(getAction("button", "Refresh Teams status"));
+  act(() => {
+    window.dispatchEvent(new Event("focus"));
+  });
   await started.promise;
   const clerk = context.mocks.clerk();
   changedOwner = true;
@@ -579,9 +579,12 @@ test("A late status read cannot publish the previous actor's connection", async 
   });
   release.resolve();
   await waitFor(() => {
-    expect(screen.getByText(/New owner's tenant/u)).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Connect Microsoft Teams" }),
+    ).toBeInTheDocument();
+    expect(queryAction("button", "Connect")).toBeNull();
   });
-  expect(screen.queryByText(/Verified Avery/u)).not.toBeInTheDocument();
+  expect(screen.getByText(/does not match/u)).toBeInTheDocument();
   expect(
     screen.queryByRole("heading", { name: "Connected to Microsoft Teams" }),
   ).not.toBeInTheDocument();
@@ -657,7 +660,9 @@ test("Reloading a success link with no current connection remains read-only", as
   expect(
     screen.getByRole("heading", { name: "Connect Microsoft Teams" }),
   ).toBeInTheDocument();
-  click(getAction("button", "Refresh Teams status"));
+  act(() => {
+    window.dispatchEvent(new Event("focus"));
+  });
   await waitFor(() => {
     expect(getAction("button", "Connect")).toBeEnabled();
   });
@@ -692,6 +697,6 @@ test("A failed readback after binding stays visible until a successful retry", a
     ).toBeInTheDocument();
   });
   mockStatus(status({ isConnected: true, linkedAccounts: [account] }));
-  click(getAction("button", "Refresh Teams status"));
+  click(getAction("button", "Try again"));
   await expectConnected();
 });

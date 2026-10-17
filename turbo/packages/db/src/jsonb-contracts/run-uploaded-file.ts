@@ -5,7 +5,7 @@ export type RunUploadedFileMetadata = JsonObject;
 export type CanonicalAssetProvenance =
   | {
       readonly provider:
-        "feishu" | "lark" | "teams" | "telegram" | "agentphone";
+        "feishu" | "lark" | "teams" | "telegram" | "agentphone" | "wechat";
       readonly installationId: string;
       readonly messageId: string;
       readonly externalFileId: string;

@@ -60,6 +60,11 @@ import { createPublicComputerUseHosts } from "./helpers/public-computer-use-host
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import { createPublicFirewallFixture } from "./helpers/public-firewall-fixture";
 import { createRouteMocks } from "./helpers/route-test";
+import {
+  mockSlidesImportFonts,
+  slidesImportFixture,
+  uploadedSlidesText,
+} from "./helpers/slides-import-fixture";
 const TEST_APP_ROUTES = Object.freeze([...chatThreadRoutes]);
 
 /**
@@ -392,11 +397,7 @@ async function sendNoCreditMessageResult(
   // An unconfigured Auto workspace has no credits and needs no personal
   // subscription fixture to persist a rejected message for search assertions.
   const sent = await chat.requestSendEvent(actor, body, [201]);
-  if (
-    sent.status !== 201 ||
-    sent.body.runId !== null ||
-    sent.body.createdAt === undefined
-  ) {
+  if (sent.status !== 201 || sent.body.createdAt === undefined) {
     throw new Error("Expected a no-credit send without a run");
   }
   const createdAt = Date.parse(sent.body.createdAt);
@@ -492,11 +493,6 @@ const malformedChatThreadIdRequests = [
   },
   {
     method: "GET",
-    path: "/api/chat-threads/:id/artifacts",
-    paramName: "threadId",
-  },
-  {
-    method: "POST",
     path: "/api/chat-threads/:id/artifacts",
     paramName: "threadId",
   },
@@ -1986,8 +1982,8 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         .find((file) => {
           return file.url === prepared.artifactUrl;
         });
-      if (!artifact) {
-        throw new Error("Expected hosted artifact");
+      if (!artifact?.artifactId) {
+        throw new Error("Expected hosted artifact with a catalog id");
       }
       mockGoogleDriveConnectorOAuth();
       const start = await connectorsApi.startOauth(
@@ -2004,10 +2000,10 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         id: "private-drive-file",
         name: "private-report.zip",
       });
-      const synced = await chat.requestSyncThreadArtifact(
+      const synced = await chat.requestUploadArtifactToGoogleDrive(
         actor,
-        run.threadId,
-        { runId: run.runId, fileId: artifact.id },
+        artifact.artifactId,
+        { agentId },
         [200],
       );
       expect(synced.body).toMatchObject({ id: "private-drive-file" });
@@ -2077,8 +2073,8 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       .find((file) => {
         return file.url === artifactUrl;
       });
-    if (!artifact) {
-      throw new Error("Expected a public hosted artifact");
+    if (!artifact?.artifactId) {
+      throw new Error("Expected a public hosted artifact with a catalog id");
     }
     mockGoogleDriveConnectorOAuth();
     const start = await connectorsApi.startOauth(
@@ -2095,10 +2091,10 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       id: "public-deck-drive-file",
       name: "deck.zip",
     });
-    await chat.requestSyncThreadArtifact(
+    await chat.requestUploadArtifactToGoogleDrive(
       actor,
-      run.threadId,
-      { runId: run.runId, fileId: artifact.id },
+      artifact.artifactId,
+      { agentId },
       [200],
     );
 
@@ -2147,8 +2143,8 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       .find((file) => {
         return file.url === prepared.artifactUrl;
       });
-    if (!artifact) {
-      throw new Error("Expected a hosted artifact");
+    if (!artifact?.artifactId) {
+      throw new Error("Expected a hosted artifact with a catalog id");
     }
     mockGoogleDriveConnectorOAuth();
     const start = await connectorsApi.startOauth(
@@ -2165,10 +2161,10 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       id: "single-page-drive-file",
       name: "report.html",
     });
-    await chat.requestSyncThreadArtifact(
+    await chat.requestUploadArtifactToGoogleDrive(
       actor,
-      run.threadId,
-      { runId: run.runId, fileId: artifact.id },
+      artifact.artifactId,
+      { agentId },
       [200],
     );
 
@@ -2253,16 +2249,16 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       recovery: { action: "connect" },
     });
 
-    // Sync requires a connected Drive.
-    const noConnector = await chat.requestSyncThreadArtifact(
+    // Uploading requires a connected and Agent-authorized Drive account.
+    const noConnector = await chat.requestUploadArtifactToGoogleDrive(
       actor,
-      run.threadId,
-      { runId: run.runId, fileId: csvId },
+      await chat.resolveCatalogArtifactId(actor, run.threadId, csvId),
+      { agentId },
       [400],
     );
     expectApiError(noConnector.body);
     expect(noConnector.body.error.message).toBe(
-      "Connect Google Drive before syncing artifacts",
+      "Connect and authorize Google Drive for this agent before uploading artifacts",
     );
 
     // Connect Google Drive through the public OAuth routes.
@@ -2288,30 +2284,30 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       status: "disconnected",
       recovery: { action: "authorize" },
     });
-    const disabledForAgent = await chat.requestSyncThreadArtifact(
+    const disabledForAgent = await chat.requestUploadArtifactToGoogleDrive(
       actor,
-      run.threadId,
-      { runId: run.runId, fileId: csvId },
+      await chat.resolveCatalogArtifactId(actor, run.threadId, csvId),
+      { agentId },
       [400],
     );
     expectApiError(disabledForAgent.body);
     expect(disabledForAgent.body.error.message).toBe(
-      "Connect Google Drive before syncing artifacts",
+      "Connect and authorize Google Drive for this agent before uploading artifacts",
     );
 
-    const unknownArtifact = await chat.requestSyncThreadArtifact(
+    const unknownArtifact = await chat.requestUploadArtifactToGoogleDrive(
       actor,
-      run.threadId,
-      { runId: randomUUID(), fileId: randomUUID() },
+      randomUUID(),
+      { agentId },
       [404],
     );
     expectApiError(unknownArtifact.body);
     expect(unknownArtifact.body.error.message).toBe("Artifact file not found");
 
-    const invalidBody = await chat.requestSyncThreadArtifactUnchecked(
+    const invalidBody = await chat.requestUploadArtifactToGoogleDriveUnchecked(
       actor,
-      run.threadId,
-      { runId: 7 },
+      csvId,
+      { agentId: 7 },
       [400],
     );
     expectApiError(invalidBody.body);
@@ -2324,10 +2320,10 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       name: "data.csv",
       webViewLink: "https://drive.google.com/file/d/drive-uploaded-file/view",
     });
-    const synced = await chat.requestSyncThreadArtifact(
+    const synced = await chat.requestUploadArtifactToGoogleDrive(
       actor,
-      run.threadId,
-      { runId: run.runId, fileId: csvId },
+      await chat.resolveCatalogArtifactId(actor, run.threadId, csvId),
+      { agentId },
       [200],
     );
     expect(synced.body).toStrictEqual({
@@ -2455,10 +2451,10 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         files: [{ id: "drive-folder", name: "artifacts" }],
       };
     });
-    const refreshedUpload = await chat.requestSyncThreadArtifact(
+    const refreshedUpload = await chat.requestUploadArtifactToGoogleDrive(
       actor,
-      run.threadId,
-      { runId: run.runId, fileId: csvId },
+      await chat.resolveCatalogArtifactId(actor, run.threadId, csvId),
+      { agentId },
       [200],
     );
     expect(refreshedUpload.body).toMatchObject({
@@ -3088,6 +3084,173 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     120_000,
   );
 
+  it.each(["google", "original"] as const)(
+    "prepares editable presentation text only for Slides conversion (%s)",
+    async (mode) => {
+      const bytes = slidesImportFixture();
+      const fixture = await workspaceSource("deck.pptx", bytes, false, true);
+      mockSlidesImportFonts();
+      const native = {
+        id: "prepared-deck",
+        name: "deck",
+        mimeType:
+          mode === "original"
+            ? "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            : GOOGLE_WORKSPACE_MIME_TYPES.presentation,
+      };
+      const uploaded = mockGoogleDriveArtifactUpload(native);
+      if (mode !== "original") {
+        mockGoogleWorkspaceReadback(native);
+        mockGoogleSlidesReadback([{ pageElementCount: 12 }]);
+      }
+      const response = await fixture.upload(mode);
+      expect(response.status).toBe(200);
+      if (mode === "original") {
+        expect(Buffer.from(uploaded.bodies[0]!)).toStrictEqual(bytes);
+      } else {
+        const text = uploadedSlidesText(uploaded.bodies[0]!);
+        expect(text).toHaveLength(12);
+        expect(
+          text.find((item) => {
+            return item.id === "2";
+          }),
+        ).toMatchObject({ text: "05", sizes: [192] });
+        // The 259.2pt glyph advance needs spare capacity in the editor;
+        // preserving only that exact width is not a successful reservation.
+        const numberWidth = text.find((item) => {
+          return item.id === "2";
+        })!.width;
+        expect(numberWidth).toBeGreaterThanOrEqual(259.2 + 0.75);
+        expect(numberWidth).toBeLessThanOrEqual(259.2 + 2);
+        expect(
+          text.find((item) => {
+            return item.id === "3";
+          })?.width,
+        ).toBeCloseTo(300.52, 4);
+        expect(
+          text.find((item) => {
+            return item.id === "4";
+          }),
+        ).toMatchObject({
+          text: "White Green",
+          colors: ["FFFFFF", "00FF00"],
+          sizes: [20, 20],
+        });
+        expect(
+          text.filter((item) => {
+            return item.text.startsWith("Column");
+          }),
+        ).toHaveLength(2);
+        expect(
+          text.find((item) => {
+            return item.id === "8";
+          })?.width,
+        ).toBe(251);
+        expect(
+          text.find((item) => {
+            return item.id === "10";
+          })?.width,
+        ).toBe(235);
+        expect(
+          text.find((item) => {
+            return item.id === "11";
+          }),
+        ).toMatchObject({ text: "Unknown font", width: 100 });
+        expect(
+          text.find((item) => {
+            return item.id === "12";
+          }),
+        ).toMatchObject({ text: "05", width: 27, sizes: [20] });
+        expect(
+          text.find((item) => {
+            return item.id === "14";
+          }),
+        ).toMatchObject({ text: "05", width: 27, sizes: [20] });
+      }
+      await fixture.finish();
+    },
+    120_000,
+  );
+
+  it.each([false, true])(
+    "reserves positive font kerning for editable Slides text (split runs: %s)",
+    async (splitTopicNumber) => {
+      const bytes = slidesImportFixture({
+        topicNumber: "06",
+        splitTopicNumber,
+      });
+      const fixture = await workspaceSource("deck.pptx", bytes, false, true);
+      mockSlidesImportFonts();
+      const native = {
+        id: "kerned-deck",
+        name: "deck",
+        mimeType: GOOGLE_WORKSPACE_MIME_TYPES.presentation,
+      };
+      const uploaded = mockGoogleDriveArtifactUpload(native);
+      mockGoogleWorkspaceReadback(native);
+      mockGoogleSlidesReadback([{ pageElementCount: 12 }]);
+      const response = await fixture.upload("google");
+      expect(response.status).toBe(200);
+      const number = uploadedSlidesText(uploaded.bodies[0]!).find((item) => {
+        return item.id === "2";
+      });
+      expect(number).toMatchObject({
+        text: "06",
+        sizes: splitTopicNumber ? [192, 192] : [192],
+        colors: splitTopicNumber ? ["242121", "00FF00"] : ["242121"],
+      });
+      // The fixture's 0/6 pair adds 30 units to its 1300-unit advance.
+      // A color boundary must not hide that positive kerning adjustment.
+      expect(number!.width).toBeGreaterThanOrEqual(255.36 + 0.75);
+      expect(number!.width).toBeLessThanOrEqual(255.36 + 2);
+      await fixture.finish();
+    },
+    120_000,
+  );
+
+  it("preserves a slide with transformed obstacles instead of guessing text clearance", async () => {
+    const archive = new AdmZip(slidesImportFixture());
+    const slide = archive.readAsText("ppt/slides/slide1.xml");
+    archive.addFile(
+      "ppt/slides/slide1.xml",
+      Buffer.from(slide.replace("<a:xfrm>", '<a:xfrm rot="5400000">')),
+    );
+    const bytes = archive.toBuffer();
+    const fixture = await workspaceSource("deck.pptx", bytes, false, true);
+    const native = {
+      id: "transformed-deck",
+      name: "deck",
+      mimeType: GOOGLE_WORKSPACE_MIME_TYPES.presentation,
+    };
+    const uploaded = mockGoogleDriveArtifactUpload(native);
+    mockGoogleWorkspaceReadback(native);
+    mockGoogleSlidesReadback([{ pageElementCount: 13 }]);
+    const response = await fixture.upload("google");
+    expect(response.status).toBe(200);
+    expect(Buffer.from(uploaded.bodies[0]!)).toStrictEqual(bytes);
+    await fixture.finish();
+  }, 120_000);
+
+  it("reports a font provider outage before uploading a partly prepared deck", async () => {
+    const fixture = await workspaceSource(
+      "deck.pptx",
+      slidesImportFixture(),
+      false,
+      true,
+    );
+    mockSlidesImportFonts(503);
+    const uploaded = mockGoogleDriveArtifactUpload({
+      id: "unexpected",
+      name: "deck",
+    });
+    const response = await fixture.upload("google");
+    expect(response.status).toBe(400);
+    expectApiError(response.body);
+    expect(response.body.error.message).toContain("Could not load the fonts");
+    expect(uploaded.bodies).toHaveLength(0);
+    await fixture.finish();
+  }, 120_000);
+
   it("explicit Google conversion still rejects and removes an empty Slides deck", async () => {
     const fixture = await workspaceSource(
       "deck.pptx",
@@ -3263,7 +3426,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
   ])(
     "$label",
     async ({ pageElementCounts, trashAccepted, expectedMessage }) => {
-      const { actor, deckId, run, sandboxHeaders } =
+      const { actor, agentId, deckId, run, sandboxHeaders } =
         await setupSlidesConversionSync({
           agentLabel: "Artifacts slides conversion agent",
           conversionEnabled: true,
@@ -3282,10 +3445,10 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         { trashAccepted },
       );
 
-      const synced = await chat.requestSyncThreadArtifact(
+      const synced = await chat.requestUploadArtifactToGoogleDrive(
         actor,
-        run.threadId,
-        { runId: run.runId, fileId: deckId },
+        await chat.resolveCatalogArtifactId(actor, run.threadId, deckId),
+        { agentId },
         expectedMessage === null ? [200] : [400],
       );
 
@@ -3318,7 +3481,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
   );
 
   it("uploads a presentation unchanged while slides conversion is off", async () => {
-    const { actor, deckId, run, sandboxHeaders } =
+    const { actor, agentId, deckId, run, sandboxHeaders } =
       await setupSlidesConversionSync({
         agentLabel: "Artifacts slides conversion disabled agent",
         conversionEnabled: false,
@@ -3332,10 +3495,10 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     // No Slides handler is registered, so an unexpected read-back would fail
     // the request instead of passing silently.
 
-    const synced = await chat.requestSyncThreadArtifact(
+    const synced = await chat.requestUploadArtifactToGoogleDrive(
       actor,
-      run.threadId,
-      { runId: run.runId, fileId: deckId },
+      await chat.resolveCatalogArtifactId(actor, run.threadId, deckId),
+      { agentId },
       [200],
     );
 
@@ -3351,7 +3514,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
   }, 120_000);
 
   it("reports a presentation google slides cannot read", async () => {
-    const { actor, deckId, run, sandboxHeaders } =
+    const { actor, agentId, deckId, run, sandboxHeaders } =
       await setupSlidesConversionSync({
         agentLabel: "Artifacts slides unreadable agent",
         conversionEnabled: true,
@@ -3361,10 +3524,10 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       "conversionUnsupportedConversionPath",
     );
 
-    const rejected = await chat.requestSyncThreadArtifact(
+    const rejected = await chat.requestUploadArtifactToGoogleDrive(
       actor,
-      run.threadId,
-      { runId: run.runId, fileId: deckId },
+      await chat.resolveCatalogArtifactId(actor, run.threadId, deckId),
+      { agentId },
       [400],
     );
 
@@ -3522,10 +3685,10 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       name: "account.txt",
       webViewLink: "https://drive.google.com/file/d/drive-selected-upload/view",
     });
-    const synced = await chat.requestSyncThreadArtifact(
+    const synced = await chat.requestUploadArtifactToGoogleDrive(
       actor,
-      run.threadId,
-      { runId: run.runId, fileId },
+      await chat.resolveCatalogArtifactId(actor, run.threadId, fileId),
+      { agentId, connectionId: selectedAccount.id },
       [200],
     );
     expect(synced.body).toMatchObject({
@@ -3600,10 +3763,10 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       reconnectReason: "authorization_expired_or_revoked",
     });
 
-    const unavailable = await chat.requestSyncThreadArtifact(
+    const unavailable = await chat.requestUploadArtifactToGoogleDrive(
       actor,
-      run.threadId,
-      { runId: run.runId, fileId },
+      await chat.resolveCatalogArtifactId(actor, run.threadId, fileId),
+      { agentId, connectionId: selectedAccount.id },
       [400],
     );
     expectApiError(unavailable.body);

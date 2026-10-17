@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { escapeUTF8 } from "entities/escape";
-import { artifactHtmlMetadata, artifactOgHtml } from "../artifact-og";
+import {
+  artifactHtmlMetadata,
+  artifactOgHtml,
+  htmlOpenGraphMetadata,
+} from "../artifact-og";
 
 const metadata = {
   title: 'Report <draft> & "review"',
@@ -9,6 +13,52 @@ const metadata = {
   imageUrl:
     "https://api.okou.ai/api/artifact-og/image?kind=host&id=abc&version=v1",
 };
+
+describe("public page Open Graph metadata", () => {
+  it("reads decoded head fields and resolves the first valid image against the page base", () => {
+    const html = `<html><head>
+      <base href="../assets/">
+      <template><meta property="og:title" content="Inert title"></template>
+      <meta property="og:title" content="Report &amp; 计划">
+      <meta property="og:description" content="Public &lt;review&gt;">
+      <meta property="og:image" content="javascript:alert(1)">
+      <meta property="og:image" content="cover.png?x=1&amp;y=2">
+      </head><body><meta property="og:image" content="/body.png"></body></html>`;
+    expect(
+      htmlOpenGraphMetadata(html, "https://demo.okou.app/reports/page"),
+    ).toEqual({
+      title: "Report & 计划",
+      description: "Public <review>",
+      imageUrl: "https://demo.okou.app/assets/cover.png?x=1&y=2",
+    });
+  });
+
+  it("leaves missing OG fields unset without reading body, script or template content", () => {
+    const html = `<head><title>Document title</title>
+      <script>const sample = '<meta property="og:title" content="Script title">';</script>
+      <template><meta property="og:image" content="https://example.com/template.png"></template>
+      <meta property="og:description" content="  ">
+      </head><body><meta property="og:title" content="Body title"></body>`;
+    expect(htmlOpenGraphMetadata(html, "https://demo.okou.app/")).toEqual({
+      title: undefined,
+      description: undefined,
+      imageUrl: undefined,
+    });
+  });
+
+  it.each([
+    "http://localhost/cover.png",
+    "https://user:password@example.com/cover.png",
+    "data:image/png;base64,AAAA",
+  ])("ignores an unusable image URL: %s", (imageUrl) => {
+    expect(
+      htmlOpenGraphMetadata(
+        `<head><meta property="og:image" content="${imageUrl}"></head>`,
+        "https://demo.okou.app/",
+      ).imageUrl,
+    ).toBeUndefined();
+  });
+});
 
 describe("artifact sharing HTML", () => {
   it("ignores inert templates and SVG titles when finding document metadata", () => {

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { failureReasonSchema } from "./rpc";
 import { rpcErrorSchema } from "../../lib/runner-rpc";
-import { diagnosticTextSchema } from "../../lib/ssh-diagnostics";
+import { diagnosticTextSchema } from "../../lib/diagnostic-text";
 
 export const FILE_LIMITS = {
   max_file_bytes: 1_073_741_824,

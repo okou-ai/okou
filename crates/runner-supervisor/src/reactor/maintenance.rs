@@ -6,20 +6,24 @@
 
 use std::sync::Arc;
 
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tracing::{Instrument, error, info, warn};
 
 use super::{HOME_CACHE_GC_PERIOD, RunnerError, RunnerResult};
 use crate::home_image_cache::HomeImageCache;
+use crate::lifecycle::RunnerMode;
 use crate::status::StatusTracker;
 
 pub(super) struct MaintenanceTasks {
     home_cache_gc: Option<JoinHandle<()>>,
+    home_cache_pressure: Option<JoinHandle<()>>,
     status_retry: Option<JoinHandle<()>>,
 }
 
 pub(super) enum MaintenanceCompletion {
     HomeCacheGc(RunnerResult<()>),
+    HomeCachePressure(RunnerResult<()>),
     StatusRetry(RunnerResult<()>),
 }
 
@@ -27,21 +31,50 @@ impl MaintenanceTasks {
     pub(super) fn new() -> Self {
         Self {
             home_cache_gc: None,
+            home_cache_pressure: None,
             status_retry: None,
         }
     }
 
-    pub(super) fn request_home_cache_gc(&mut self, cache: Option<&HomeImageCache>) {
+    pub(super) fn request_home_cache_gc(
+        &mut self,
+        cache: Option<&HomeImageCache>,
+        mode: &watch::Receiver<RunnerMode>,
+    ) {
         if self.home_cache_gc.is_none()
+            && *mode.borrow() == RunnerMode::Running
             && let Some(cache) = cache
         {
-            self.home_cache_gc = Some(home_cache_gc_task(cache.clone()));
+            self.home_cache_gc = Some(home_cache_gc_task(
+                cache.clone().with_background_gc_lifecycle(mode.clone()),
+            ));
         }
     }
 
     pub(super) fn request_status_retry(&mut self, status: &Arc<StatusTracker>) {
         if self.status_retry.is_none() {
             self.status_retry = Some(status_retry_task(Arc::clone(status)));
+        }
+    }
+
+    pub(super) fn request_home_cache_pressure(
+        &mut self,
+        cache: Option<&HomeImageCache>,
+        mode: &watch::Receiver<RunnerMode>,
+    ) {
+        if self.home_cache_pressure.is_none()
+            && *mode.borrow() == RunnerMode::Running
+            && let Some(cache) = cache
+        {
+            let cache = cache.clone().with_background_gc_lifecycle(mode.clone());
+            self.home_cache_pressure = Some(tokio::spawn(
+                async move {
+                    if let Err(error) = cache.probe_home_cache_pressure().await {
+                        warn!(%error, "home cache pressure probe failed");
+                    }
+                }
+                .in_current_span(),
+            ));
         }
     }
 
@@ -52,6 +85,10 @@ impl MaintenanceTasks {
             result = next_maintenance_task(&mut self.home_cache_gc, "home cache GC") => {
                 self.home_cache_gc = None;
                 MaintenanceCompletion::HomeCacheGc(result)
+            }
+            result = next_maintenance_task(&mut self.home_cache_pressure, "home cache pressure") => {
+                self.home_cache_pressure = None;
+                MaintenanceCompletion::HomeCachePressure(result)
             }
             result = next_maintenance_task(&mut self.status_retry, "status retry") => {
                 self.status_retry = None;
@@ -65,6 +102,7 @@ impl MaintenanceTasks {
         let mut first_error = None;
         for (name, task) in [
             ("status retry", &mut self.status_retry),
+            ("home cache pressure", &mut self.home_cache_pressure),
             ("home cache GC", &mut self.home_cache_gc),
         ] {
             if task.is_some()

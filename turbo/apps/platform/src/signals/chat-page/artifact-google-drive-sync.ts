@@ -9,7 +9,7 @@ import { artifactGoogleDriveContract } from "@okouai/api-contracts/contracts/art
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { accept } from "../../lib/accept.ts";
 import { i18n } from "../../i18n/index.ts";
-import type { ApiClientFactory } from "../api-client.ts";
+import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { settle, withCleanup } from "../utils.ts";
 
 type ArtifactGoogleDriveSyncParams = {
@@ -215,12 +215,14 @@ async function syncArtifactFileToGoogleDrive(
   );
 }
 
-const internalGoogleDriveSyncPending$ = state<ReadonlySet<string>>(new Set());
+const internalGoogleDriveSyncPending$ = state<
+  ReadonlyMap<string, GoogleDriveUploadMode>
+>(new Map());
 export const googleDriveSyncPending$ = computed((get) => {
   return get(internalGoogleDriveSyncPending$);
 });
 
-export const syncArtifactFileToGoogleDrive$ = command(
+const syncArtifactFileToGoogleDrive$ = command(
   async (
     { get, set },
     params: ArtifactGoogleDriveSyncParams & {
@@ -234,12 +236,15 @@ export const syncArtifactFileToGoogleDrive$ = command(
     }
     set(
       internalGoogleDriveSyncPending$,
-      new Set([...get(internalGoogleDriveSyncPending$), params.artifactId]),
+      new Map(get(internalGoogleDriveSyncPending$)).set(
+        params.artifactId,
+        params.mode,
+      ),
     );
     return await withCleanup(
       syncArtifactFileToGoogleDrive(params, signal),
       () => {
-        const pending = new Set(get(internalGoogleDriveSyncPending$));
+        const pending = new Map(get(internalGoogleDriveSyncPending$));
         pending.delete(params.artifactId);
         set(internalGoogleDriveSyncPending$, pending);
       },
@@ -247,7 +252,38 @@ export const syncArtifactFileToGoogleDrive$ = command(
   },
 );
 
-export async function authorizeGoogleDriveForAgent(
+// Keep the existing artifact consumers' synchronous refresh hook: it invalidates
+// their owning thread or catalog, rather than giving a sync action a new owner.
+export const syncArtifactAndRefresh$ = command(
+  async (
+    { get, set },
+    params: ArtifactGoogleDriveSyncParams & {
+      readonly authorize: boolean;
+      readonly onSyncSuccess: () => void;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    const createClient = get(apiClient$);
+    if (params.authorize) {
+      await authorizeGoogleDriveForAgent(
+        { agentId: params.agentId, createClient },
+        signal,
+      );
+    }
+    const success = await set(
+      syncArtifactFileToGoogleDrive$,
+      { ...params, createClient },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (success) {
+      params.onSyncSuccess();
+    }
+  },
+);
+
+async function authorizeGoogleDriveForAgent(
   params: {
     readonly agentId: string;
     readonly createClient: ApiClientFactory;

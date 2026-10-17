@@ -77,6 +77,7 @@ export interface BankingSignals extends BankingActionDescriptor {
     [HTMLElement | null]
   >;
   readonly uiState$: Computed<BankingCardUiState>;
+  readonly startRequest$: Command<boolean, [Exclude<BankingBusyAction, null>]>;
   readonly updateUiState$: Command<void, [Partial<BankingCardUiState>]>;
 }
 
@@ -284,7 +285,7 @@ function initialBankingCardUiState(): BankingCardUiState {
 
 function createBankingUiSignals(): Pick<
   BankingSignals,
-  "uiState$" | "updateUiState$"
+  "uiState$" | "startRequest$" | "updateUiState$"
 > {
   const internalUiState$ = state(initialBankingCardUiState());
   const uiState$ = computed((get): BankingCardUiState => {
@@ -297,7 +298,18 @@ function createBankingUiSignals(): Pick<
       });
     },
   );
-  return { uiState$, updateUiState$ };
+  // Duplicate cards share this owner; acquire it synchronously so an older
+  // request's cleanup cannot release a newer request's busy state.
+  const startRequest$ = command(
+    ({ get, set }, action: Exclude<BankingBusyAction, null>) => {
+      if (get(internalUiState$).busy !== null) {
+        return false;
+      }
+      set(updateUiState$, { localError: null, busy: action });
+      return true;
+    },
+  );
+  return { uiState$, startRequest$, updateUiState$ };
 }
 
 function createBankingSignals(

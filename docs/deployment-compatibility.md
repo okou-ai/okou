@@ -61,7 +61,7 @@ migration stops promotion. Staged builds, host provisioning, and other
 non-serving preparation may finish before migrations; they do not establish
 that traffic has moved.
 
-Migrations marked `-- vm0:non-transactional` execute one statement at a time.
+Migrations marked `-- okou:non-transactional` execute one statement at a time.
 Earlier successful statements survive a later failure, and a retry starts the
 migration again. Every statement must be idempotent under a full retry.
 
@@ -71,6 +71,29 @@ Evaluate all reachable combinations:
 - new App -> old API when traffic propagation or rollback can expose it;
 - old Runner -> new API;
 - new Runner -> old API when deployment order can expose it.
+
+#### API Request Drain
+
+Production traffic cutover sends new API requests to the replacement deployment.
+The outgoing deployment receives no new requests after cutover, while requests
+admitted before it can continue running the outgoing code. The API's Vercel
+function uses `maxDuration: 300` in
+[`vite.config.ts`](../turbo/apps/api/vite.config.ts), giving each invocation a
+five-minute execution limit, including time spent in preflight or KMS work.
+
+Record the outgoing and replacement artifact identities, the verified time
+traffic finished moving off the outgoing deployment, and the outgoing artifact's
+enforced request limit in the owning issue or PR. With the 300-second limit,
+the outgoing-request drain deadline is **verified cutover time + five minutes**.
+After that deadline, outgoing API invocations have ended; individual completion
+logs for every request are unnecessary when both cutover and the enforced limit
+are verified. Check the outgoing artifact's limit rather than assuming it matches
+the replacement. Work outside the API invocation follows its owning lifetime.
+
+When a protocol change requires preparation before activation, deploy the
+preparation, complete this drain, then activate the change. Waiting after a
+combined release does not establish that the preparation and drain preceded
+activation.
 
 ### Runner, Guest, and CLI Artifacts
 
@@ -370,9 +393,11 @@ business triggers; follow the [trigger policy](api/database.md#database-triggers
   references separately; a client upgrade does not erase old rows or copied
   links.
 
-Every applicable gate must pass. A merge, nominal deployment duration, or an
-arbitrary elapsed interval is not drain evidence. Keep enforced rollback floors
-in [the main-owned records](../.github/rollback-floors) and their release tooling;
+Every applicable gate must pass. A verified traffic cutover and the enforced
+outgoing-request deadline can establish [API request drain](#api-request-drain).
+A merge, nominal deployment duration, or an arbitrary elapsed interval alone
+cannot. Keep enforced rollback floors in
+[the main-owned records](../.github/rollback-floors) and their release tooling;
 this document does not reset or replace them. Contracted-schema recovery must
 restore compatibility first or roll forward, not promote an incompatible API.
 

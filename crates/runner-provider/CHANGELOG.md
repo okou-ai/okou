@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.8.11](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.10...runner-provider-v0.8.11) (2026-10-17)
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#40811](https://github.com/okou-ai/okou/issues/40811)) ([b53e5a5](https://github.com/okou-ai/okou/commit/b53e5a5fc6437b2b15412d21a42d90344c18191f))
+* remove remaining expired compatibility from the daily cleanup backlog ([#40820](https://github.com/okou-ai/okou/issues/40820)) ([9ef42db](https://github.com/okou-ai/okou/commit/9ef42db5a3c1c8bfe040a7e41b6aafa6941d4510))
+
+## [0.8.10](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.9...runner-provider-v0.8.10) (2026-10-16)
+
+
+### Refactoring
+
+* **runner-provider:** own ably disconnect episodes ([#40742](https://github.com/okou-ai/okou/issues/40742)) ([eaec130](https://github.com/okou-ai/okou/commit/eaec1301db7352859f5c6eccc03d38960e0173fb))
+
+## [0.8.9](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.8...runner-provider-v0.8.9) (2026-10-16)
+
+
+### Refactoring
+
+* **runner-provider:** centralize current connector sync identity checks ([#40716](https://github.com/okou-ai/okou/issues/40716)) ([e2e886c](https://github.com/okou-ai/okou/commit/e2e886cf7a73409b3534eba274b1a9e6068def5b))
+
+## [0.8.8](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.7...runner-provider-v0.8.8) (2026-10-16)
+
+
+### Refactoring
+
+* **runner-provider:** own abandoned local result marker custody ([#40667](https://github.com/okou-ai/okou/issues/40667)) ([a9a257c](https://github.com/okou-ai/okou/commit/a9a257c329ed81cf41582e1900443c4af35a5798))
+
+## [0.8.7](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.6...runner-provider-v0.8.7) (2026-10-16)
+
+
+### Bug Fixes
+
+* **runner:** accept numeric dns labels in parameterized firewall hosts ([#40639](https://github.com/okou-ai/okou/issues/40639)) ([3cb77fa](https://github.com/okou-ai/okou/commit/3cb77fa3561e260cc2aecc30ce51f9349eaee5a3))
+
 ## [0.8.6](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.5...runner-provider-v0.8.6) (2026-10-16)
 
 

@@ -126,7 +126,6 @@ describe("CHAT-02: default assistant identity", () => {
     if (queued.status !== 201) {
       throw new Error("Expected the Okou follow-up to enter the chat queue");
     }
-    expect(queued.body.runId).toBeNull();
 
     const rawQueuedEvent = (
       await chat.listThreadEventRows(actor, anchor.threadId)
@@ -240,7 +239,6 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
       if (immediateSend.status !== 201) {
         throw new Error("Expected the run-scoped handoff request to succeed");
       }
-      expect(immediateSend.body.runId).toBeNull();
       // The idle thread's background pick launches the handoff.
       await flushWaitUntilForTest();
       const launchedMessages = await waitForThreadMessages(
@@ -297,7 +295,6 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
       if (queued.status !== 201) {
         throw new Error("Expected the queued run-scoped request to succeed");
       }
-      expect(queued.body.runId).toBeNull();
 
       await cancelChatRun(actor, immediateRunId);
       await flushWaitUntilForTest();
@@ -389,8 +386,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
         [201],
       );
       expect(nestedSend.status).toBe(201);
-      expect(nestedSend.body).toMatchObject({ runId: null });
-      const recalled = await owned.run(() => {
+      await owned.run(() => {
         return accept(
           chatEventsClient().send({
             headers: { authorization: `Bearer ${plainToken}` },
@@ -404,7 +400,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
           [201],
         );
       });
-      expect(recalled.body.runId).toBeNull();
       await owned.run(() => {
         return cancelChatRun(actor, plain.runId, plainClaim.sandboxHeaders);
       });
@@ -687,7 +682,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
       // online, not revoked), but explicit selections are still accepted so the
       // run can use the host if it reconnects while running.
       mockNow(now() + 91_000);
-      const offlineHostSend = await run(() => {
+      await run(() => {
         return chat.requestSendEvent(
           actor,
           {
@@ -698,7 +693,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
           [201],
         );
       });
-      expect(offlineHostSend.body).toMatchObject({ runId: null });
 
       // The sticky-host fallthrough also tolerates a stale host instead of
       // failing: a send without the field on the pinned thread is accepted.

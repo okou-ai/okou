@@ -5,8 +5,8 @@ members = [
     "api-contracts",
     "cli-test-support",
     "guest-agent",
+    "guest-agent-tests",
     "guest-contracts",
-    "session-history-selector",
     "runner-rpc-client",
     "guest-tool-exec",
     "guest-task-exec",
@@ -60,7 +60,6 @@ api-contracts = { path = "api-contracts" }
 cli-test-support = { path = "cli-test-support" }
 guest-agent = { path = "guest-agent" }
 guest-contracts = { path = "guest-contracts" }
-session-history-selector = { path = "session-history-selector" }
 runner-rpc-client = { path = "runner-rpc-client" }
 guest-tool-exec = { path = "guest-tool-exec" }
 guest-task-exec = { path = "guest-task-exec" }
@@ -156,7 +155,7 @@ subtle = { version = "2.6", default-features = false }
 tar = { version = "0.4", default-features = false }
 tempfile = { version = "3", default-features = false }
 thiserror = { version = "2", default-features = false }
-tokio = { version = "1", default-features = false }
+tokio = { version = "1.53.3", default-features = false }
 tokio-rustls = { version = "0.26", default-features = false }
 tokio-tungstenite = { version = "0.30", default-features = false }
 tokio-util = { version = "0.7", default-features = false }

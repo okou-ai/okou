@@ -17,10 +17,7 @@ import {
   integrationsSlackUploadInitContract,
   integrationsSlackUploadMaterializeContract,
 } from "@okouai/api-contracts/contracts/integrations";
-import {
-  chatThreadArtifactsContract,
-  type ChatEvent,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import type { ChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -1689,13 +1686,13 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
           baseUrl: "https://api.okou.ai",
           context,
           routes: chatThreadsArtifactsSyncRoutes,
-        })(chatThreadArtifactsContract);
+        })(artifactGoogleDriveContract);
         const driveSync = await fixture.run(() => {
           return accept(
-            driveClient.syncGoogleDrive({
+            driveClient.upload({
               headers: { authorization: "Bearer clerk-session" },
-              params: { threadId },
-              body: { runId, fileId: canonicalAssetId },
+              params: { artifactId: canonicalAssetId },
+              body: { agentId },
             }),
             [200],
           );
@@ -1709,10 +1706,10 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
 
         const retryDriveSync = await fixture.run(() => {
           return accept(
-            driveClient.syncGoogleDrive({
+            driveClient.upload({
               headers: { authorization: "Bearer clerk-session" },
-              params: { threadId },
-              body: { runId, fileId: canonicalAssetId },
+              params: { artifactId: canonicalAssetId },
+              body: { agentId },
             }),
             [200],
           );
@@ -1721,7 +1718,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
 
         const runDriveSync = await fixture.run(() => {
           return accept(
-            driveClient.syncGoogleDrive({
+            driveClient.upload({
               headers: {
                 authorization: `Bearer ${okouToken({
                   userId,
@@ -1729,8 +1726,8 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
                   runId,
                 })}`,
               },
-              params: { threadId },
-              body: { runId, fileId: canonicalAssetId },
+              params: { artifactId: canonicalAssetId },
+              body: { agentId },
             }),
             [200],
           );
@@ -1753,7 +1750,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
           expect(body).toContain(`"vm0Artifact":"true"`);
           expect(body).toContain(`"vm0ThreadId":"${threadId}"`);
           expect(body).toContain(`"vm0RunId":"${runId}"`);
-          expect(body).toContain(`"vm0FileId":"${canonicalAssetId}"`);
+          expect(body).toContain(`"vm0FileId":"${operationId}"`);
         }
         expect(
           driveUploadContentTypes.every((contentType) => {

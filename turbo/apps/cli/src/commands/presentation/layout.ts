@@ -231,6 +231,49 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
     const cellBadge=owner.matches('td,th')&&['inline-flex','inline-grid'].includes(style.display);
     return child.tagName === 'BR' || ((style.display === 'inline' || style.display === 'inline-block' || style.display === 'contents' || cellBadge) && !child.matches('svg,img,canvas,math,ruby,rt,video,iframe'));
   });
+  const hasBoxPaint = style => color(style.backgroundColor) || style.backgroundImage !== 'none' || style.boxShadow !== 'none' || ['Top','Right','Bottom','Left'].some(side => parseFloat(style['border'+side+'Width']) > 0);
+  // Retain the source line's available space without moving its glyph anchor.
+  // Independent inline boxes and neighboring fragments remain layout boundaries.
+  const textFrame = (part, owner, parts, decorations) => {
+    let container = part.source;
+    while (container !== owner && ['inline','contents'].includes(getComputedStyle(container).display)) container = container.parentElement;
+    const style = getComputedStyle(container), rect = container.getBoundingClientRect();
+    let left = rect.left + parseFloat(style.borderLeftWidth) + parseFloat(style.paddingLeft);
+    let right = rect.right - parseFloat(style.borderRightWidth) - parseFloat(style.paddingRight);
+    for (let ancestor = container; ancestor; ancestor = ancestor.parentElement) {
+      const s = getComputedStyle(ancestor), r = ancestor.getBoundingClientRect();
+      if (['hidden','clip','scroll','auto'].includes(s.overflowX)) {
+        left = Math.max(left,r.left+parseFloat(s.borderLeftWidth));
+        right = Math.min(right,r.right-parseFloat(s.borderRightWidth));
+      }
+      if (slides.includes(ancestor)) break;
+    }
+    let align = style.textAlign;
+    if (align === 'start') align = style.direction === 'rtl' ? 'right' : 'left';
+    if (align === 'end') align = style.direction === 'rtl' ? 'left' : 'right';
+    const measured = {left:part.left,right:part.right,align};
+    if (!['left','right','center'].includes(align) || part.style.direction !== style.direction || part.left < left || part.right > right) return measured;
+    // A split word's trailing space can include kerning with the next word.
+    // Its measured extent is not a standalone advance for right/center anchoring.
+    if (align !== 'left' && parseFloat(part.style.wordSpacing) > 0 && /\s$/.test(part.text)) return measured;
+    for (const other of parts) {
+      if (other === part || other.bottom <= part.top || other.top >= part.bottom) continue;
+      // Share measured whitespace so adjacent frames cannot both claim it.
+      if (other.right <= part.left) left = Math.max(left,(other.right+part.left)/2);
+      else if (other.left >= part.right) right = Math.min(right,(part.right+other.left)/2);
+      else return measured;
+    }
+    for (const other of decorations.filter(item => !item.source.contains(part.source)).flatMap(item => item.rects)) {
+      if (other.bottom <= part.top || other.top >= part.bottom) continue;
+      if (other.right <= part.left) left = Math.max(left,other.right);
+      else if (other.left >= part.right) right = Math.min(right,other.left);
+      else return measured;
+    }
+    if (align === 'left') return {...measured,right:Math.max(part.right,right)};
+    if (align === 'right') return {...measured,left:Math.min(part.left,left)};
+    const extra = Math.max(0,Math.min(part.left-left,right-part.right));
+    return {...measured,left:part.left-extra,right:part.right+extra};
+  };
   // visibility is inherited but can be overridden. Unlike display:none, it
   // must not prune visible descendants from the renderer's traversal.
   for (const slide of slides) {
@@ -306,15 +349,14 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
       // Rotated/scaled bounds are axis-aligned unions too, but require affine
       // composition, not the untransformed line-fragment contract below.
       if (transformed) continue;
-      const decorated = color(style.backgroundColor) || style.backgroundImage !== 'none' || style.boxShadow !== 'none' || parseFloat(style.borderTopWidth) > 0 || Array.from(owner.querySelectorAll('*')).some(child => {
-        const s = getComputedStyle(child);
-        return s.backgroundImage !== 'none' || s.boxShadow !== 'none' || color(s.backgroundColor) || parseFloat(s.borderTopWidth) > 0;
-      });
+      // The native renderer paints the owner's background/border independently.
+      // Only descendant paint needs materializing alongside inline text.
+      const inlinePaint = Array.from(owner.querySelectorAll('*')).some(child => hasBoxPaint(getComputedStyle(child)));
       const textDecoration = nodes.some(node => getComputedStyle(node.parentElement).textDecorationLine !== 'none');
       const naturalWrap = nodes.some(node => fragment(node,false).length > 1);
       const spacing = nodes.some(node => parseFloat(getComputedStyle(node.parentElement).wordSpacing) > 0 || /\t|\u00a0{2}/.test(node.nodeValue));
       const scripts = nodes.some(node => /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(node.nodeValue) || getComputedStyle(node.parentElement).direction === 'rtl');
-      if (owner.closest('td,th') || nodes.length>1 || decorated || textDecoration || naturalWrap || spacing || scripts || owner.querySelector('sup,sub,br') || style.whiteSpace.startsWith('pre') || nodes.some(node=>fragment(node,false).clipped)) candidates.push({owner,nodes,decorated});
+      if (owner.closest('td,th') || nodes.length>1 || inlinePaint || textDecoration || naturalWrap || spacing || scripts || owner.querySelector('sup,sub,br') || style.whiteSpace.startsWith('pre') || nodes.some(node=>fragment(node,false).clipped)) candidates.push({owner,nodes});
     }
   }
   const relativeOpacity = (element,owner) => {
@@ -331,10 +373,9 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
     const sourceStyle = snapshotStyle(owner);
     const parts = nodes.flatMap(node => fragment(node,parseFloat(getComputedStyle(node.parentElement).wordSpacing) > 0 || /\t|\u00a0{2}/.test(node.nodeValue)).map(part => ({...part,opacity:relativeOpacity(node.parentElement,owner)})));
     if (!parts.length) continue;
-    const decorations = Array.from(owner.querySelectorAll('*')).filter(child => {
-      const style = getComputedStyle(child);
-      return color(style.backgroundColor) || style.backgroundImage !== 'none' || style.boxShadow !== 'none' || parseFloat(style.borderTopWidth) > 0;
-    }).map(child => ({source:child,style:snapshotStyle(child),opacity:relativeOpacity(child,owner),rects:Array.from(child.getClientRects())}));
+    const decorations = Array.from(owner.querySelectorAll('*')).filter(child => hasBoxPaint(getComputedStyle(child)))
+      .map(child => ({source:child,style:snapshotStyle(child),opacity:relativeOpacity(child,owner),rects:Array.from(child.getClientRects())}));
+    const frames = parts.map(part => textFrame(part,owner,parts,decorations));
     const originalChildren = Array.from(owner.childNodes);
     save(owner);
     undo.push(() => owner.replaceChildren(...originalChildren));
@@ -356,11 +397,12 @@ export const PREPARE_LAYOUT = String.raw`((selector, activated) => {
         owner.append(paint);
       }
     }
-    for (const part of parts) {
+    for (const [index,part] of parts.entries()) {
+      const frame = frames[index];
       const span = document.createElement(part.href ? 'a' : 'span');
       if (part.href) span.href = part.href;
       for (const property of ['font-family','font-size','font-weight','font-style','font-stretch','font-synthesis-weight','font-synthesis-style','font-variant','font-variation-settings','font-optical-sizing','font-feature-settings','font-kerning','letter-spacing','text-transform','text-decoration','color','direction','-webkit-text-stroke-width','-webkit-text-stroke-color']) span.style.setProperty(property,part.style.getPropertyValue(property));
-      Object.assign(span.style,{position:'absolute',display:'block',left:(part.left-originX)+'px',top:(part.top-originY)+'px',width:(part.right-part.left)+'px',height:(part.bottom-part.top)+'px',padding:'0',margin:'0',lineHeight:'normal',whiteSpace:'pre',background:'transparent'});
+      Object.assign(span.style,{position:'absolute',display:'block',left:(frame.left-originX)+'px',top:(part.top-originY)+'px',width:(frame.right-frame.left)+'px',height:(part.bottom-part.top)+'px',padding:'0',margin:'0',lineHeight:'normal',whiteSpace:'pre',textAlign:frame.align,textIndent:'0',background:'transparent'});
       span.style.opacity = String(part.opacity);
       span.textContent = part.text;
       if(window.__okouNative){

@@ -125,7 +125,6 @@ async function openUnconfirmedConversation() {
   });
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     return respond(201, {
-      runId: "a7000000-0000-4000-a000-000000000009",
       threadId: body.threadId ?? "b7000000-0000-4000-a000-000000000009",
       createdAt: "2026-08-01T03:00:01.000Z",
     });
@@ -289,7 +288,6 @@ test("Sending in an older conversation moves it to the top", async () => {
     sentPrompt = body.prompt;
     await send.promise;
     return respond(201, {
-      runId: "a7000000-0000-4000-a000-000000000012",
       threadId: body.threadId ?? older.id,
       createdAt: "2026-08-01T03:00:02.000Z",
     });
@@ -350,7 +348,6 @@ test("Server confirmation settles a new conversation without duplication", async
   });
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     return respond(201, {
-      runId: "a7000000-0000-4000-a000-000000000013",
       threadId: body.threadId ?? "b7000000-0000-4000-a000-000000000013",
       createdAt: "2026-08-01T03:00:04.000Z",
     });

@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.14.4](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.3...runner-executor-v0.14.4) (2026-10-17)
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#40811](https://github.com/okou-ai/okou/issues/40811)) ([b53e5a5](https://github.com/okou-ai/okou/commit/b53e5a5fc6437b2b15412d21a42d90344c18191f))
+* **runner-executor:** retain active-input task custody ([#40821](https://github.com/okou-ai/okou/issues/40821)) ([f612914](https://github.com/okou-ai/okou/commit/f6129144ffb614fde97a27fcd0db9620ac3700f1))
+
+## [0.14.3](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.2...runner-executor-v0.14.3) (2026-10-16)
+
+## [0.14.2](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.1...runner-executor-v0.14.2) (2026-10-16)
+
+## [0.14.1](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.0...runner-executor-v0.14.1) (2026-10-16)
+
+## [0.14.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.13.12...runner-executor-v0.14.0) (2026-10-16)
+
+
+### Features
+
+* **remote:** explain vnc failures with retained source evidence ([#40669](https://github.com/okou-ai/okou/issues/40669)) ([07b1a90](https://github.com/okou-ai/okou/commit/07b1a902af74b7a3ebde6434b86e4efb35b1de7e))
+
+## [0.13.12](https://github.com/okou-ai/okou/compare/runner-executor-v0.13.11...runner-executor-v0.13.12) (2026-10-16)
+
+
+### Refactoring
+
+* **runner-executor:** share executor start telemetry initialization ([#40613](https://github.com/okou-ai/okou/issues/40613)) ([5f98eac](https://github.com/okou-ai/okou/commit/5f98eac805c2e74d2f3c5c69787a11f62ea16ecf))
+
 ## [0.13.11](https://github.com/okou-ai/okou/compare/runner-executor-v0.13.10...runner-executor-v0.13.11) (2026-10-16)
 
 ## [0.13.10](https://github.com/okou-ai/okou/compare/runner-executor-v0.13.9...runner-executor-v0.13.10) (2026-10-16)

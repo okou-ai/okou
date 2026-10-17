@@ -1796,7 +1796,9 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         let stop = CancellationToken::new();
         let task_stop = stop.clone();
         let task = tokio::spawn(drain_stdout_to_file(stdout_rx, host_log_path, task_stop));
-        (stop, task)
+        // Scope destruction must close the receiver and flush accepted output,
+        // including when the normal join below is abandoned.
+        (stop.drop_guard(), task)
     });
 
     if let Some(background_fill) = deferred_background_fill {
@@ -1869,7 +1871,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
     let mut stdout_drain_report = StdoutDrainReport::default();
     if let Some((stop, task)) = stream_task {
         if interrupt_stdout_drain {
-            stop.cancel();
+            stop.token().cancel();
         }
         match task.await {
             Ok(Ok(report)) => {

@@ -139,7 +139,6 @@ describe("CHAT-02: shared user message queue", () => {
         "Expected an idle-thread queue-first send to be accepted",
       );
     }
-    expect(sent.body.runId).toBeNull();
     await flushWaitUntilForTest();
     const runId = await readPickedInputRun(
       actor,
@@ -216,7 +215,6 @@ describe("CHAT-02: shared user message queue", () => {
     // The retry conflicts on the stored input and is accepted as a duplicate
     // at request time without reading the original send back.
     expect(replay.body).toStrictEqual({
-      runId: null,
       threadId: sent.body.threadId,
       createdAt: expect.any(String),
     });
@@ -264,7 +262,6 @@ describe("CHAT-02: shared user message queue", () => {
     if (queued.status !== 201) {
       throw new Error("Expected the first Web message to queue");
     }
-    expect(queued.body.runId).toBeNull();
     const recall = await chat.requestSendEvent(
       actor,
       {
@@ -278,7 +275,6 @@ describe("CHAT-02: shared user message queue", () => {
     if (recall.status !== 201) {
       throw new Error("Expected the queued message recall to succeed");
     }
-    expect(recall.body.runId).toBeNull();
 
     chatCallbacks.mockChatOutputEvents([]);
     await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
@@ -298,7 +294,6 @@ describe("CHAT-02: shared user message queue", () => {
     if (sent.status !== 201) {
       throw new Error("Expected the later Web send to be accepted");
     }
-    expect(sent.body.runId).toBeNull();
     await flushWaitUntilForTest();
     const runId = await readPickedInputRun(actor, anchor.threadId, nextId);
     const claimed = await waitForThreadMessages(
@@ -351,7 +346,6 @@ describe("CHAT-02: shared user message queue", () => {
     if (forwarded.status !== 201) {
       throw new Error("Expected the forwarded prompt to be accepted");
     }
-    expect(forwarded.body.runId).toBeNull();
     await flushWaitUntilForTest();
     const forwardedRunId = await readPickedInputRun(
       actor,
@@ -460,7 +454,6 @@ describe("CHAT-02: shared user message queue", () => {
     if (firstSend.status !== 201) {
       throw new Error("Expected the first delegated prompt to be accepted");
     }
-    expect(firstSend.body.runId).toBeNull();
     await flushWaitUntilForTest();
     const firstTargetRunId = await readPickedInputRun(
       actor,
@@ -548,7 +541,6 @@ describe("CHAT-02: shared user message queue", () => {
       throw new Error("Expected the second delegated prompt to be accepted");
     }
     // At the org cap the delegated prompt stays queued as input; no run yet.
-    expect(secondSend.body.runId).toBeNull();
     const secondMessages = await waitForThreadMessages(
       actor,
       secondTargetThread.id,
@@ -589,7 +581,6 @@ describe("CHAT-02: shared user message queue", () => {
     if (nowSend.status !== 201) {
       throw new Error("Expected the placeholder-title prompt to be accepted");
     }
-    expect(nowSend.body.runId).toBeNull();
     const nowMessages = await waitForThreadMessages(
       actor,
       nowTargetThread.id,
@@ -726,7 +717,6 @@ describe("CHAT-02: shared user message queue", () => {
     if (rotatedQueued.status !== 201) {
       throw new Error("Expected the rotated agent prompt to queue");
     }
-    expect(rotatedQueued.body.runId).toBeNull();
 
     chatCallbacks.mockChatOutputEvents([]);
     await completeChatRunOk(
@@ -794,7 +784,6 @@ describe("CHAT-02: shared user message queue", () => {
     if (incompleteQueued.status !== 201) {
       throw new Error("Expected the incomplete agent prompt to queue");
     }
-    expect(incompleteQueued.body.runId).toBeNull();
 
     await failChatRun(
       incomplete.runId,
@@ -892,7 +881,7 @@ describe("CHAT-02: shared user message queue", () => {
     );
     expect(blocked).toMatchObject({
       status: 201,
-      body: { runId: null, threadId: blockedTarget.id },
+      body: { threadId: blockedTarget.id },
     });
     // The pick rejects the exhausted budget in the thread instead of the send.
     await flushWaitUntilForTest();
@@ -967,7 +956,7 @@ describe("CHAT-02: shared user message queue", () => {
     const { id: previewFileId } = await chat.completeUpload(actor, {
       id: upload.id,
     });
-    const previewQueued = await chat.requestSendEvent(
+    await chat.requestSendEvent(
       actor,
       {
         agentId,
@@ -990,9 +979,8 @@ describe("CHAT-02: shared user message queue", () => {
       },
       [201],
     );
-    expect(previewQueued.body).toMatchObject({ runId: null });
     const mockMessageId = randomUUID();
-    const mockQueued = await chat.requestSendEvent(
+    await chat.requestSendEvent(
       actor,
       {
         agentId,
@@ -1003,7 +991,6 @@ describe("CHAT-02: shared user message queue", () => {
       },
       [201],
     );
-    expect(mockQueued.body).toMatchObject({ runId: null });
     await updateFeatureSwitchesForUser(context, actorWithOrg, {
       [FeatureSwitchKey.RealAgentInPreview]: true,
     });
@@ -1102,7 +1089,7 @@ describe("CHAT-02: shared user message queue", () => {
         { type: "text", text: " at claim" },
       ],
     };
-    const queued = await chat.requestSendEvent(
+    await chat.requestSendEvent(
       actor,
       {
         agentId,
@@ -1113,7 +1100,6 @@ describe("CHAT-02: shared user message queue", () => {
       },
       [201],
     );
-    expect(queued.body).toMatchObject({ runId: null });
 
     chatCallbacks.mockChatOutputEvents([]);
     await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
@@ -1175,7 +1161,7 @@ describe("CHAT-02: shared user message queue", () => {
 
     const firstId = randomUUID();
     const firstPrompt = "first queued transcript message";
-    const first = await chat.requestSendEvent(
+    await chat.requestSendEvent(
       actor,
       {
         agentId,
@@ -1185,11 +1171,10 @@ describe("CHAT-02: shared user message queue", () => {
       },
       [201],
     );
-    expect(first.body).toMatchObject({ runId: null });
 
     const secondId = randomUUID();
     const secondPrompt = "second queued transcript message";
-    const second = await chat.requestSendEvent(
+    await chat.requestSendEvent(
       actor,
       {
         agentId,
@@ -1199,7 +1184,6 @@ describe("CHAT-02: shared user message queue", () => {
       },
       [201],
     );
-    expect(second.body).toMatchObject({ runId: null });
 
     await cancelChatRun(actor, anchor.runId);
     await flushWaitUntilForTest();
@@ -1290,7 +1274,6 @@ describe("CHAT-02: shared user message queue", () => {
     };
     const queued = await chat.requestSendEvent(actor, queuedBody, [201]);
     expect(queued.body).toMatchObject({
-      runId: null,
       threadId: anchor.threadId,
     });
     // Finish the queued send's background publication before retrying.
@@ -1299,7 +1282,6 @@ describe("CHAT-02: shared user message queue", () => {
 
     const retried = await chat.requestSendEvent(actor, queuedBody, [201]);
     expect(retried.body).toMatchObject({
-      runId: null,
       threadId: anchor.threadId,
     });
     await flushWaitUntilForTest();
@@ -1344,7 +1326,7 @@ describe("CHAT-02: shared user message queue", () => {
     const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
 
     const queuedId = randomUUID();
-    const queued = await chat.requestSendEvent(
+    await chat.requestSendEvent(
       actor,
       {
         agentId,
@@ -1354,11 +1336,10 @@ describe("CHAT-02: shared user message queue", () => {
       },
       [201],
     );
-    expect(queued.body).toMatchObject({ runId: null });
 
     // A second queued message can be recalled before dispatch.
     const recalledId = randomUUID();
-    const toRecall = await chat.requestSendEvent(
+    await chat.requestSendEvent(
       actor,
       {
         agentId,
@@ -1368,8 +1349,7 @@ describe("CHAT-02: shared user message queue", () => {
       },
       [201],
     );
-    expect(toRecall.body).toMatchObject({ runId: null });
-    const recalled = await chat.requestSendEvent(
+    await chat.requestSendEvent(
       actor,
       {
         agentId,
@@ -1379,10 +1359,9 @@ describe("CHAT-02: shared user message queue", () => {
       },
       [201],
     );
-    expect(recalled.body).toMatchObject({ runId: null });
 
     // A repeated recall stays idempotent.
-    const repeatedRecall = await chat.requestSendEvent(
+    await chat.requestSendEvent(
       actor,
       {
         agentId,
@@ -1392,7 +1371,6 @@ describe("CHAT-02: shared user message queue", () => {
       },
       [201],
     );
-    expect(repeatedRecall.body).toMatchObject({ runId: null });
 
     // Completing the anchor auto-sends the queued message by appending a
     // run-associated replacement while preserving the queued row.
@@ -1484,7 +1462,6 @@ describe("CHAT-02: shared user message queue", () => {
     if (sent.status !== 201) {
       throw new Error("Expected recovery-blocked input to be accepted");
     }
-    expect(sent.body.runId).toBeNull();
     const beforeRecovery = await chat.listThreadEvents(actor, anchor.threadId);
     expect(userMessages(beforeRecovery.events)).not.toContainEqual(
       expect.objectContaining({
@@ -1524,7 +1501,7 @@ describe("CHAT-02: shared user message queue", () => {
     const { sandboxHeaders } = await claimChatRun(runnerGroup, anchor.runId);
 
     const queuedId = randomUUID();
-    const queued = await chat.requestSendEvent(
+    await chat.requestSendEvent(
       actor,
       {
         agentId,
@@ -1534,7 +1511,6 @@ describe("CHAT-02: shared user message queue", () => {
       },
       [201],
     );
-    expect(queued.body).toMatchObject({ runId: null });
 
     // Cancellation is public immediately, but a claimed run keeps the thread
     // barrier until the runner reports cancellation recovery.

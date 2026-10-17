@@ -1,10 +1,13 @@
 pub(super) mod allocation_scan;
+mod background;
 mod fs;
 mod gc;
 mod inspection;
 mod lifecycle;
 mod metadata;
 mod observations;
+mod parallel_publication;
+mod pressure;
 mod promotion;
 mod publication_admission;
 mod publication_budget;
