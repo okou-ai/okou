@@ -46,7 +46,6 @@ import {
   isValidAgentPhoneHandle,
   normalizeAgentPhoneHandle,
   resolveAgentPhoneConversationVisibilityRecipients$,
-  resolveAgentPhoneUserLink,
   resolveOrgDefaultComposeId,
   storeOutboundAgentPhoneMessage$,
   type AgentPhoneChannel,
@@ -296,18 +295,6 @@ export function buildAgentPhoneConnectUrl(params: {
     channel: params.channel,
   });
   return `${env("APP_URL")}/agentphone/connect?${query.toString()}`;
-}
-
-/**
- * The sender's own phone link. Group conversations never borrow another
- * participant's link: an unlinked sender is treated as unlinked even when the
- * conversation already has a route owned by someone else.
- */
-export function resolveAgentPhoneUserLinkForEvent(
-  db: Db,
-  event: AgentPhoneMessageEvent,
-): Promise<AgentPhoneUserLink | null> {
-  return resolveAgentPhoneUserLink(db, event.fromNumber, event.channel);
 }
 
 /**
