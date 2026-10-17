@@ -185,6 +185,10 @@ pub(crate) struct TestRun {
 }
 
 impl TestRun {
+    pub(crate) fn native(&self) -> Arc<crate::native::Run> {
+        self.dispatcher.as_ref().unwrap().native()
+    }
+
     pub(super) fn new(runtime: &Arc<VncRuntime>) -> Self {
         Self::with_id(runtime, RunId::new_v4())
     }

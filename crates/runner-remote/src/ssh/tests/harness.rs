@@ -513,6 +513,10 @@ impl Harness {
         super::wait_for(|| self.observed.closed.load(Ordering::SeqCst) > closed).await;
     }
 
+    pub(crate) fn native(&self) -> Arc<crate::native::Run> {
+        self.dispatcher.as_ref().unwrap().native()
+    }
+
     pub(crate) fn take_dispatcher(&mut self) -> RpcRun {
         self.dispatcher.take().unwrap()
     }

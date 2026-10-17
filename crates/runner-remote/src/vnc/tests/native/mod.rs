@@ -1,4 +1,5 @@
-mod gateway;
+pub(crate) mod gateway;
+pub(crate) mod kdc;
 mod profiles;
 
 use super::{
@@ -31,7 +32,7 @@ fn response(h: &Harness, transport: Value, raw: bool) -> Value {
     value
 }
 
-async fn connect_gateway(h: &Harness, gateway: &Gateway) {
+pub(crate) async fn connect_gateway(h: &Harness, gateway: &Gateway) {
     *h.network.target.lock().unwrap() = gateway.address;
     *h.network.answers.lock().unwrap() = vec!["93.184.216.34:443".parse().unwrap()];
     *h.runtime.access_tls.lock().unwrap() = Some(Arc::clone(&gateway.tls));

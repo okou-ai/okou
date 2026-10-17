@@ -22,7 +22,7 @@ impl Run {
             cancelled,
             sandbox: sandbox_cancelled,
             session: CancellationToken::new(),
-            native: None,
+            native: Vec::new(),
             deadline,
         };
         let mut writer = ResponseWriter::new(input);

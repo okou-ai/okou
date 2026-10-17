@@ -21,8 +21,8 @@ use tokio_tungstenite::tungstenite::{
     handshake::server::{Callback, ErrorResponse, Request, Response},
 };
 
-pub(super) const HOST: &str = "access.example.test";
-pub(super) const ORIGIN: &str = "mac.example.test";
+pub(crate) const HOST: &str = "access.example.test";
+pub(crate) const ORIGIN: &str = "mac.example.test";
 
 struct Upgrade;
 impl Callback for Upgrade {
@@ -38,13 +38,13 @@ impl Callback for Upgrade {
     }
 }
 
-pub(super) struct Gateway {
-    pub(super) address: SocketAddr,
-    pub(super) tls: Arc<ClientConfig>,
-    pub(super) ca: String,
-    pub(super) applications: Arc<AtomicUsize>,
-    pub(super) upgraded: Arc<tokio::sync::Notify>,
-    pub(super) origin_gate: Arc<tokio::sync::Semaphore>,
+pub(crate) struct Gateway {
+    pub(crate) address: SocketAddr,
+    pub(crate) tls: Arc<ClientConfig>,
+    pub(crate) ca: String,
+    pub(crate) applications: Arc<AtomicUsize>,
+    pub(crate) upgraded: Arc<tokio::sync::Notify>,
+    pub(crate) origin_gate: Arc<tokio::sync::Semaphore>,
     task: JoinHandle<()>,
 }
 
@@ -81,7 +81,7 @@ fn certificate(name: &str, expired: bool) -> (Arc<ServerConfig>, Arc<ClientConfi
 }
 
 impl Gateway {
-    pub(super) async fn new(
+    pub(crate) async fn new(
         target: SocketAddr,
         origin: bool,
         expired: bool,

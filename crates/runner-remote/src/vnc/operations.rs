@@ -63,7 +63,7 @@ async fn lock<'a>(
 fn session_scope(scope: &Scope, session: &Session) -> Scope {
     Scope {
         session: session.cancel.clone(),
-        native: session.native.clone(),
+        native: session.native.iter().cloned().collect(),
         ..scope.clone()
     }
 }
@@ -94,7 +94,7 @@ impl Run {
                 cancelled,
                 sandbox: sandbox_cancelled,
                 session: CancellationToken::new(),
-                native: None,
+                native: Vec::new(),
                 deadline,
             };
             let _ = scope
@@ -109,7 +109,7 @@ impl Run {
             cancelled,
             sandbox: sandbox_cancelled,
             session: CancellationToken::new(),
-            native: None,
+            native: Vec::new(),
             deadline: deadline.min(started + Duration::from_millis(remaining.min(60_000)))
                 - Duration::from_secs(1),
         };

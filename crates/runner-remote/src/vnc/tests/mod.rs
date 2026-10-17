@@ -318,7 +318,7 @@ async fn malformed_or_cross_paired_credentials_fail_before_dns_or_connect() {
 }
 
 #[tokio::test]
-async fn native_kdc_and_malformed_native_rfb_fail_before_network_or_session_admission() {
+async fn malformed_native_rfb_and_kdc_fail_before_network_or_session_admission() {
     for (kind, kdc) in [
         ("cloudflare_access", false),
         ("tailscale", false),
@@ -335,9 +335,7 @@ async fn native_kdc_and_malformed_native_rfb_fail_before_network_or_session_admi
         } else if !kdc {
             transport["originTls"] = serde_json::Value::Null;
         }
-        if !kdc {
-            transport["configId"] = json!("invalid-config-id");
-        }
+        transport["configId"] = json!("invalid-config-id");
         let mut response = json!({
             "outcome":"resolved_transport", "host":"vnc.example.test", "port":5900,
             "generation":7, "serverName":"vnc.example.test", "transport":transport,
@@ -360,7 +358,7 @@ async fn native_kdc_and_malformed_native_rfb_fail_before_network_or_session_admi
                     "ticketLifetimeSeconds":1200,"renewableLifetimeSeconds":7200}
             });
         }
-        // Exact native RFB capabilities must never include native KDC tuples.
+        // The exact installed declaration includes independently authorized native KDC tuples.
         let resolve = h.resolve_response(response).await;
         assert_eq!(
             h.start("shared").await.result(),

@@ -7,7 +7,7 @@ pub(crate) struct Lease {
 }
 
 impl Lease {
-    pub(crate) fn new<T: Send + Sync + 'static>(owner: Arc<T>) -> Self {
+    pub(crate) fn new(owner: Arc<dyn Send + Sync>) -> Self {
         Self { _owner: owner }
     }
 }

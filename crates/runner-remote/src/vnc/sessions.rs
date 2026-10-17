@@ -612,12 +612,13 @@ impl Run {
                     evidence.begin(Stage::Transport);
                     let configuration = credential.native.take().ok_or(Failure::Authority)?;
                     let stream = self
-                        .dial_native(
+                        .native_dialer()
+                        .dial(
                             configuration,
                             &credential.host,
                             credential.port,
                             scope,
-                            Arc::clone(&native_work),
+                            native_work.clone(),
                             evidence,
                         )
                         .await?;
@@ -643,7 +644,7 @@ impl Run {
                 _ => None,
             };
             let scope = &Scope {
-                native,
+                native: native.into_iter().collect(),
                 ..scope.clone()
             };
             observation.transport = transport;
@@ -657,6 +658,8 @@ impl Run {
             };
             diagnostic.stage = "authentication";
             evidence.begin(Stage::Authentication);
+            // This latch outlives cancellation of the nested authentication future.
+            let kdc_delivery = std::sync::atomic::AtomicBool::new(false);
             let authenticated = scope
                 .wait_deadline_aware(async {
                     match credential.authentication {
@@ -684,7 +687,8 @@ impl Run {
                                 owner: Arc::clone(&native_owner),
                                 exchanges: 0,
                                 total: 0,
-                                awaiting_kdc_reply: false,
+                                awaiting_kdc_reply: &kdc_delivery,
+                                native: self.native_dialer(),
                                 diagnostics: evidence,
                             };
                             let result = Box::pin(rfb_client::authenticate_qemu_gssapi(
@@ -776,7 +780,14 @@ impl Run {
                         }
                     }
                 })
-                .await?
+                .await
+                .map_err(|failure| {
+                    if kdc_delivery.load(Ordering::Relaxed) {
+                        Failure::DeliveryUnknown
+                    } else {
+                        failure
+                    }
+                })?
                 .map_err(|error| diagnostic.rfb_failure(error))?;
             diagnostic.stage = "initialization";
             evidence.begin(Stage::Initialization);
@@ -836,7 +847,7 @@ impl Run {
                 transport,
                 kerberos,
                 cancel: session_cancel,
-                native: scope.native.clone(),
+                native: scope.native.first().cloned(),
                 closed: CancellationToken::new(),
                 engine: tokio::sync::Mutex::new(engine),
                 diagnostics: evidence.handle.clone(),

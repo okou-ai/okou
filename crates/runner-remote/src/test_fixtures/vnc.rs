@@ -75,26 +75,10 @@ pub(crate) fn optional_kerberos_request(
     supports_ssh: bool,
 ) -> impl Fn(&httpmock::HttpMockRequest) -> bool + Send + Sync + 'static {
     let mut capable = expected.clone();
-    let profiles = [
-        json!({"authMethod":"qemu_kerberos_ticket","securityType":"qemu_x509_gssapi","transportType":"direct","kdcTransportType":"none"}),
-        json!({"authMethod":"qemu_kerberos_keytab","securityType":"qemu_x509_gssapi","transportType":"direct","kdcTransportType":"direct"}),
-        json!({"authMethod":"qemu_kerberos_keytab","securityType":"qemu_x509_gssapi","transportType":"direct","kdcTransportType":"ssh"}),
-        json!({"authMethod":"qemu_kerberos_password","securityType":"qemu_x509_gssapi","transportType":"direct","kdcTransportType":"direct"}),
-        json!({"authMethod":"qemu_kerberos_password","securityType":"qemu_x509_gssapi","transportType":"direct","kdcTransportType":"ssh"}),
-        json!({"authMethod":"qemu_kerberos_ticket","securityType":"qemu_x509_gssapi","transportType":"ssh","kdcTransportType":"none"}),
-        json!({"authMethod":"qemu_kerberos_keytab","securityType":"qemu_x509_gssapi","transportType":"ssh","kdcTransportType":"direct"}),
-        json!({"authMethod":"qemu_kerberos_keytab","securityType":"qemu_x509_gssapi","transportType":"ssh","kdcTransportType":"ssh"}),
-        json!({"authMethod":"qemu_kerberos_password","securityType":"qemu_x509_gssapi","transportType":"ssh","kdcTransportType":"direct"}),
-        json!({"authMethod":"qemu_kerberos_password","securityType":"qemu_x509_gssapi","transportType":"ssh","kdcTransportType":"ssh"}),
-    ];
-    capable["supportedProfiles"]
-        .as_array_mut()
-        .unwrap()
-        .extend(profiles.into_iter().filter(|profile| {
-            supports_ssh
-                || (profile["transportType"] == "direct" && profile["kdcTransportType"] != "ssh")
-        }));
-    for transport in ["cloudflare_access", "tailscale"] {
+    for transport in ["direct", "ssh", "cloudflare_access", "tailscale"] {
+        if transport == "ssh" && !supports_ssh {
+            continue;
+        }
         capable["supportedProfiles"]
             .as_array_mut()
             .unwrap()
@@ -103,7 +87,7 @@ pub(crate) fn optional_kerberos_request(
                 "transportType":transport,"kdcTransportType":"none"
             }));
         for auth in ["qemu_kerberos_keytab", "qemu_kerberos_password"] {
-            for kdc in ["direct", "ssh"] {
+            for kdc in ["direct", "ssh", "cloudflare_access", "tailscale"] {
                 if kdc == "ssh" && !supports_ssh {
                     continue;
                 }
