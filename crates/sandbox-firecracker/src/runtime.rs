@@ -44,6 +44,19 @@ impl FirecrackerRuntime {
         ))
     }
 
+    #[cfg(feature = "test-support")]
+    /// Create an actual factory with an invocation-owned after-success Guest checkpoint.
+    pub async fn create_factory_with_guest_checkpoint_for_test(
+        &self,
+        config: FactoryConfig,
+        checkpoint: crate::GuestPreparationCheckpoint,
+    ) -> sandbox::Result<Box<dyn SandboxFactory>> {
+        Ok(crate::factory::guest_checkpoint_factory(
+            self.start_factory(config).await?,
+            checkpoint,
+        ))
+    }
+
     async fn start_factory(&self, config: FactoryConfig) -> sandbox::Result<FirecrackerFactory> {
         let pressure = config.home_drive_pressure.clone();
         let fc_config = self.to_firecracker_config(config)?;

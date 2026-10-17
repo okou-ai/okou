@@ -177,6 +177,8 @@ impl BlankPoolDiagnostics {
 }
 
 pub struct BlankPoolReplenisher {
+    #[cfg(feature = "test-support")]
+    optional_pool_wait: Option<tokio::sync::watch::Sender<bool>>,
     plan: Option<BlankPoolPlan>,
     diagnostics: BlankPoolDiagnostics,
     preparation: Option<BlankPreparation>,
@@ -299,6 +301,8 @@ impl BlankPoolReplenisher {
         }
         let diagnostics = BlankPoolDiagnostics::new(plan.as_ref());
         Self {
+            #[cfg(feature = "test-support")]
+            optional_pool_wait: None,
             plan,
             diagnostics,
             preparation: None,

@@ -65,6 +65,8 @@ pub use config::{
 pub use control::FirecrackerControl;
 #[cfg(feature = "test-support")]
 pub use factory::HomeCreateCheckpoint;
+#[cfg(feature = "test-support")]
+mod preparation_checkpoint;
 pub use factory::{PREWARM_SCRIPT, config_hash};
 pub use guest_dns_probe::{DNS_PROBE_RESOLVER_IPV4, DNS_READINESS_HOSTNAME, DNS_READINESS_IPV4};
 pub use network::{
@@ -72,6 +74,10 @@ pub use network::{
 };
 pub use paths::{
     FactoryPaths, LockPaths, RuntimePaths, SandboxPaths, SnapshotOutputPaths, SockPaths,
+};
+#[cfg(feature = "test-support")]
+pub use preparation_checkpoint::{
+    GuestPreparationCheckpoint, GuestPreparationObservation, GuestPreparationStage,
 };
 pub use prerequisites::runtime_required_commands;
 pub use runtime::{FirecrackerRuntime, FirecrackerRuntimeProvider};

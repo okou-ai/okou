@@ -37,9 +37,24 @@ struct Context {
     preparation_bytes: u64,
     opportunity: Arc<OptionalPressureOpportunity>,
     pre_spawn: Option<BackgroundPreSpawnAdmissionLease>,
+    #[cfg(feature = "test-support")]
+    pool_wait: Option<tokio::sync::watch::Sender<bool>>,
 }
 
 impl BlankPoolReplenisher {
+    #[cfg(feature = "test-support")]
+    /// Observe this owner's first actual pending pool acquisition, without gating it.
+    pub fn observe_optional_pool_wait_for_test(
+        &mut self,
+    ) -> Result<tokio::sync::watch::Receiver<bool>, MemoryOperationError> {
+        if self.optional.is_some() || self.optional_pool_wait.is_some() {
+            return Err(MemoryOperationError::OwnershipInvariant);
+        }
+        let (sender, receiver) = tokio::sync::watch::channel(false);
+        self.optional_pool_wait = Some(sender);
+        Ok(receiver)
+    }
+
     /// Admission and provider waits progress outside the caller's reactor turn.
     pub fn maybe_start_optional(
         &mut self,
@@ -120,6 +135,8 @@ impl BlankPoolReplenisher {
             preparation_bytes: request.preparation_bytes,
             opportunity,
             pre_spawn: Some(pre_spawn),
+            #[cfg(feature = "test-support")]
+            pool_wait: self.optional_pool_wait.clone(),
         };
         self.attempt_requested = false;
         self.diagnostics.preparing(cancel);
@@ -316,6 +333,8 @@ async fn run(mut context: Context) -> Result<(), String> {
         &context.pool,
         &context.result.cancel,
         &mut context.pre_spawn,
+        #[cfg(feature = "test-support")]
+        context.pool_wait.as_ref(),
     )
     .await?;
     if pool.blank_len() >= context.plan.target || context.result.cancel.is_cancelled() {
@@ -366,6 +385,8 @@ async fn run(mut context: Context) -> Result<(), String> {
             &context.pool,
             &context.result.cancel,
             &mut context.pre_spawn,
+            #[cfg(feature = "test-support")]
+            context.pool_wait.as_ref(),
         )
         .await?;
         if pool.blank_len() >= context.plan.target
@@ -393,6 +414,8 @@ async fn run(mut context: Context) -> Result<(), String> {
             &context.pool,
             &context.result.cancel,
             &mut context.pre_spawn,
+            #[cfg(feature = "test-support")]
+            context.pool_wait.as_ref(),
         )
         .await?;
         let ordinary_available = ordinary_capacity_available(&pool, &context.budget, &context.plan);
@@ -537,11 +560,26 @@ async fn lock_optional_pool<'a>(
     pool: &'a SharedIdlePool,
     cancel: &CancellationToken,
     cpu: &mut Option<BackgroundPreSpawnAdmissionLease>,
+    #[cfg(feature = "test-support")] observer: Option<&tokio::sync::watch::Sender<bool>>,
 ) -> Result<tokio::sync::MutexGuard<'a, IdlePool>, String> {
+    let locked = pool.lock();
+    #[cfg(feature = "test-support")]
+    let locked = {
+        let mut locked = Box::pin(locked);
+        std::future::poll_fn(move |cx| {
+            let result = locked.as_mut().poll(cx);
+            if result.is_pending()
+                && let Some(observer) = observer
+            {
+                observer.send_replace(true);
+            }
+            result
+        })
+    };
     tokio::select! {
         biased;
         () = cancel.cancelled() => { drop(cpu.take()); Err("optional pool wait cancelled".into()) }
-        locked = pool.lock() => Ok(locked),
+        locked = locked => Ok(locked),
     }
 }
 

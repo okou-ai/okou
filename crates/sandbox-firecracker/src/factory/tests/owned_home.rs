@@ -88,7 +88,7 @@ async fn actual_formatted_home_checkpoint_retains_transaction_until_cleanup() {
             Some(sandbox::SandboxCreateCustody::new(Arc::new(
                 CustodyCompletion(Some(completed)),
             ))),
-            Some(checkpoint),
+            Some(FactoryCheckpoint::Home(checkpoint)),
         );
         tokio::pin!(finished);
         let mut create = Box::pin(create);
