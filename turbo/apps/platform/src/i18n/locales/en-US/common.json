@@ -5871,7 +5871,7 @@
       "qemuX509Sasl": "QEMU SCRAM-SHA-256 (X509SASL)",
       "qemuX509SaslHelp": "QEMU subtype 263 only. TLS verifies the server before SCRAM; no fallback to PLAIN or subtype 264.",
       "serverName": "TLS certificate identity",
-      "serverNameHelp": "Optional. Leave blank to verify the certificate against the RFB destination host. Set this only when the certificate uses a different DNS name.",
+      "serverNameHelp": "Cloudflare Access requires the RFB server's certificate identity. For other routes, you can leave this blank to verify against the RFB destination host.",
       "serverNameHint": "e.g. desktop.internal.example.com",
       "system": "System certificate authorities",
       "title": "Server certificate trust",

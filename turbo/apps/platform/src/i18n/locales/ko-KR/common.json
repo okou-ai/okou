@@ -5852,7 +5852,7 @@
       "qemuX509Sasl": "QEMU SCRAM-SHA-256(X509SASL)",
       "qemuX509SaslHelp": "QEMU 하위 유형 263만 지원합니다. SCRAM 전에 TLS로 서버를 검증하며 PLAIN 또는 하위 유형 264로 전환하지 않습니다.",
       "serverName": "TLS 인증서 ID",
-      "serverNameHelp": "선택 사항입니다. 비워 두면 RFB 대상 호스트를 기준으로 인증서를 확인합니다. 인증서가 다른 DNS 이름을 사용하는 경우에만 설정하세요.",
+      "serverNameHelp": "Cloudflare Access에는 RFB 서버의 인증서 식별 정보가 필요합니다. 다른 경로에서는 비워 두면 RFB 대상 호스트를 기준으로 확인합니다.",
       "serverNameHint": "예: desktop.internal.example.com",
       "system": "시스템 인증 기관",
       "title": "서버 인증서 신뢰",

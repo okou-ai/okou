@@ -5852,7 +5852,7 @@
       "qemuX509Sasl": "QEMU SCRAM-SHA-256（X509SASL）",
       "qemuX509SaslHelp": "僅支援 QEMU 子類型 263。TLS 會在 SCRAM 之前驗證伺服器；不降級至 PLAIN 或子類型 264。",
       "serverName": "TLS 憑證身分",
-      "serverNameHelp": "選填。留空時將依據 RFB 目標主機驗證憑證。僅當憑證使用其他 DNS 名稱時才填寫。",
+      "serverNameHelp": "Cloudflare Access 必須明確填寫 RFB 伺服器的憑證身分。其他路由可留空，此時將依據 RFB 目標主機驗證憑證。",
       "serverNameHint": "例如 desktop.internal.example.com",
       "system": "系統證書頒發機構",
       "title": "伺服器證書信任",
