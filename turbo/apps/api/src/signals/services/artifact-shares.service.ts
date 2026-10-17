@@ -51,6 +51,7 @@ import { prepareArtifactShareAliases$ } from "./artifact-share-alias.service";
 import { signHostedSiteFiles$ } from "./hosted-site-files.service";
 import { artifactDeliveryRecord } from "./artifact-delivery.service";
 import { resolveSharedThreadHostedDownload$ } from "./shared-thread-artifacts.service";
+import { uploadedArtifactPreviewImageUrl$ } from "./uploaded-artifact.service";
 
 interface ShareCandidate {
   readonly targetId: string;
@@ -658,12 +659,18 @@ export const resolveArtifactShare$ = command(
       },
       signal,
     );
+    const previewImageUrl = await set(
+      uploadedArtifactPreviewImageUrl$,
+      { id: file.id, userId: row.userId, orgId: row.orgId },
+      signal,
+    );
     signal.throwIfAborted();
     return {
       ...preview,
       downloadUrl,
       filename: file.filename,
       contentType: file.contentType,
+      ...(previewImageUrl ? { previewImageUrl } : {}),
       target: { kind: "file" as const, id: policy.target.id },
     };
   },
