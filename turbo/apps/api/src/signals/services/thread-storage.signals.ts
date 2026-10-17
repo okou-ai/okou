@@ -264,7 +264,16 @@ function createStorageIndexSignals(
         timing: input.args.timing,
       });
       const request = prepareRequestStorageResolution(
-        input.args,
+        {
+          agentOrgId: input.args.agentOrgId,
+          runtimeOrgId: input.args.runtimeOrgId,
+          userId: input.args.userId,
+          artifacts: input.args.artifacts,
+          additionalVolumes: input.args.additionalVolumes,
+          additionalVolumeSources: input.args.additionalVolumeSources,
+          timing: input.args.timing,
+          stats: input.args.stats,
+        },
         bucket,
         composeVolumes,
         artifacts,

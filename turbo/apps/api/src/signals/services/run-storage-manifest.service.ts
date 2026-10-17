@@ -1318,7 +1318,17 @@ export function resolveValidatedPersistedStorageMounts(args: {
 }
 
 export function prepareRequestStorageResolution(
-  args: PrepareAgentRunStorageManifestArgs,
+  args: {
+    readonly agentOrgId: string;
+    readonly runtimeOrgId: string;
+    readonly userId: string;
+    readonly artifacts: readonly ContextArtifact[];
+    readonly additionalVolumes: readonly AdditionalVolume[] | undefined;
+    readonly additionalVolumeSources:
+      readonly StorageManifestSource[] | undefined;
+    readonly timing?: ApiDispatchTimingCollector;
+    readonly stats?: StorageManifestBuildStats;
+  },
   bucket: string,
   composeVolumes: readonly ResolvedVolume[],
   artifacts: readonly ContextArtifact[],
