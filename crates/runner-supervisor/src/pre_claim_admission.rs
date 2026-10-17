@@ -933,22 +933,7 @@ async fn acquire_local_admission_resource(
             blank_pool_selection,
         )),
         IdlePressureSelection::Fresh(lease) => {
-            if let Some(reuse_key) = candidate.reuse_key()
-                && let Some(reservation) = reserve_reusable_idle_for_spawn(
-                    ctx.idle_pool,
-                    reuse_key,
-                    profile_name,
-                    device_rate_limits,
-                    None,
-                )
-                .await
-            {
-                drop(lease);
-                return Some((
-                    LocalAdmissionResource::Reusable(reservation),
-                    blank_pool_selection,
-                ));
-            }
+            // Claimed activation rechecks the pool, so claim need not wait for it.
             Some((LocalAdmissionResource::Fresh(lease), blank_pool_selection))
         }
         IdlePressureSelection::Exhausted(retiring_leases) => {
@@ -1114,6 +1099,7 @@ pub async fn rollback_exact_speculation_outcome(
 
 #[cfg(test)]
 mod tests {
+    mod fresh_claim;
     mod stale_journal;
 
     use super::*;

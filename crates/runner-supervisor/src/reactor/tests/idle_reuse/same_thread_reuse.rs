@@ -2,7 +2,7 @@ use super::super::super::*;
 use super::super::support::{
     context_with_session, minimal_context, mock_run_config, mock_run_config_with_overrides,
     push_job, seed_idle_pool, shutdown, test_profiles, two_profiles, wait_budget_count,
-    wait_idle_pool_reuse_keys,
+    wait_discover_entered, wait_idle_pool_reuse_keys,
 };
 
 // -----------------------------------------------------------------------
@@ -258,4 +258,51 @@ async fn reuse_enabled_empty_pool_creates_fresh_sandbox() {
     );
 
     shutdown(&env, run_handle).await;
+}
+
+#[tokio::test]
+async fn fresh_claim_reuses_exact_sandbox_parked_while_claim_is_pending() {
+    let (mut config, env) = mock_run_config(test_profiles(), 5, 8192, 2);
+    config.capacity.max_idle = 0;
+    let budget = Arc::clone(&config.capacity.budget);
+    let idle_pool = Arc::clone(&config.shared.idle_pool);
+    let run_id = RunId::new_v4();
+    let reuse_key = RunId::new_v4().to_string();
+    env.handle.block_claim(run_id);
+    let run_handle = tokio::spawn(run(config));
+    wait_discover_entered(&env, Duration::from_secs(2)).await;
+    push_job(
+        &env,
+        run_id,
+        "vm0/default",
+        Some(context_with_session(run_id, &reuse_key)),
+    );
+    assert!(
+        env.handle
+            .wait_run_claim_in_flight(run_id, Duration::from_secs(2))
+            .await
+    );
+    assert_eq!(budget.allocated(), (2, 4096, 1));
+    assert!(idle_pool.lock().await.is_empty());
+
+    let sandbox_id = seed_idle_pool(&idle_pool, &budget, &reuse_key, "vm0/default", 2, 4096).await;
+    assert_eq!(budget.allocated(), (4, 8192, 2));
+    env.handle.unblock_claim(run_id);
+    let completion = env
+        .handle
+        .wait_completion(run_id, Duration::from_secs(5))
+        .await
+        .expect("claimed fresh admission should select the newly parked exact sandbox");
+    assert_eq!(completion.exit_code, 0);
+    assert_eq!(completion.sandbox_id, Some(sandbox_id));
+    wait_idle_pool_reuse_keys(&idle_pool, &[&reuse_key], Duration::from_secs(5)).await;
+    wait_budget_count(&budget, 1, Duration::from_secs(5)).await;
+    assert_eq!(budget.allocated(), (2, 4096, 1));
+    assert_eq!(
+        idle_pool.lock().await.status_snapshot().idle_sandboxes[0].sandbox_id,
+        sandbox_id,
+    );
+
+    shutdown(&env, run_handle).await;
+    assert_eq!(budget.allocated(), (0, 0, 0));
 }
