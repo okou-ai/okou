@@ -26,6 +26,8 @@ HERE = Path(__file__).resolve().parent
 EXPECTED = {
     "user_bridge_metadata_denied",
     "root_bridge_metadata_denied",
+    "user_task_stop_workload",
+    "root_task_stop_workload",
     "control_runtime_on_sealed_drive",
     "workload_direct_ingress",
     "root_direct_ingress",

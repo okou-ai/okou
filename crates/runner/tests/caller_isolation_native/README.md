@@ -127,7 +127,7 @@ identities are recorded separately. Image payloads are reduced to size/hash in
 the receipt. The CLI artifact's source identity is independent of the fixture
 commit; record both in the owning issue.
 
-All 24 named checks, enforcing Guest identity, pinned CLI identity, no broker
+All 26 named checks, enforcing Guest identity, pinned CLI identity, no broker
 errors and a qualified extension negative are required for exit zero. Missing,
 duplicate, failed or unqualified observations fail closed. In particular, an
 extension that never loaded because a dependency is missing is not a security

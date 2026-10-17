@@ -33,6 +33,7 @@ requests = []
 errors = []
 counter = 0
 tasks = {}
+stop_peers = []
 spawned = set()
 request_counts = {}
 lock = threading.Lock()
@@ -196,6 +197,18 @@ def broker(endpoint, task=False):
                         raise ValueError("invalid task request version")
                     request = json.loads(raw[1:])
                     if request["op"] == "stop":
+                        status = Path(f"/proc/{pid}/status").read_text()
+                        stop_peers.append(
+                            {
+                                "uid": uid,
+                                "context": context,
+                                "capEff": next(
+                                    line.split()[1]
+                                    for line in status.splitlines()
+                                    if line.startswith("CapEff:")
+                                ),
+                            }
+                        )
                         path = tasks[request["handle"]]
                         (path / "cgroup.kill").write_text("1")
                         frame(peer, {"status": "stopped"})
@@ -1082,6 +1095,30 @@ await new Promise(resolve=>setTimeout(resolve,50));"""
             error="runtime timeout",
             stdout=str(error.stdout)[-2500:],
             stderr=str(error.stderr)[-3000:],
+        )
+    for role in ("workload", "root"):
+        name = ("user" if role == "workload" else "root") + "_task_stop_workload"
+        handle = next(iter(tasks), None)
+        if handle is None:
+            record(name, False, error="no managed task was created")
+            continue
+        before = len(stop_peers)
+        run = as_role(role, ["/fixture/guest-task-exec", "stop", handle], env=env)
+        observed = stop_peers[before:]
+        record(
+            name,
+            run.returncode == 0
+            and observed
+            == [
+                {
+                    "uid": 1000,
+                    "context": "system_u:system_r:workload_t",
+                    "capEff": "0000000000000000",
+                }
+            ],
+            exit=run.returncode,
+            peers=observed,
+            stderr=run.stderr[-1500:],
         )
     observations_path = ROOT / "untrusted-shell-observations.jsonl"
     observations = (

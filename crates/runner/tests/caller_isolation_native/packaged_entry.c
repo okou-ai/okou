@@ -189,6 +189,7 @@ int main(int argc, char **argv) {
     diagnostic();
     if (argc == 2 && !strcmp(argv[1], "hook")) {
       user();
+      role("workload_t");
       argv[0] = "/fixture/real-guest-tool-exec";
       execv(argv[0], argv);
       fail("hook-exec");
@@ -203,6 +204,8 @@ int main(int argc, char **argv) {
   if (!strcmp(leaf, "guest-task-exec")) {
     diagnostic();
     if (argc == 3 && !strcmp(argv[1], "stop")) {
+      user();
+      role("workload_t");
       argv[0] = "/fixture/real-guest-task-exec";
       execv(argv[0], argv);
       fail("stop-exec");

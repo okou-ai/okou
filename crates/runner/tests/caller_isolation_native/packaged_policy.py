@@ -163,6 +163,7 @@ def build_policy():
             f"(allowx {bridge} control_t (ioctl file (0xb703)))",
             f"(allow {bridge} control_t (filesystem (mount)))",
         ]
+    lines += ["(allow taskbridge_t workload_t (process (dyntransition)))"]
     lines += [
         "(portcon tcp (18080 18080) (system_u object_r model_port_t ((s0) (s0))))",
         "(portcon tcp (18081 65535) (system_u object_r ordinary_port_t ((s0) (s0))))",
