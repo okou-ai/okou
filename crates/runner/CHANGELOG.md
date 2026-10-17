@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.234.8](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.7...runner-rs-v0.234.8) (2026-10-17)
+
+
+### Bug Fixes
+
+* **runner:** enforce captured openrouter presets before auth ([#40884](https://github.com/okou-ai/okou/issues/40884)) ([1d2a780](https://github.com/okou-ai/okou/commit/1d2a780d35d7a8b2b5ceab760321470d8e06c489))
+
 ## [0.234.7](https://github.com/okou-ai/okou/compare/runner-rs-v0.234.6...runner-rs-v0.234.7) (2026-10-17)
 
 ### Release Dependencies

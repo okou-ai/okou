@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.7](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.6...runner-executor-v0.14.7) (2026-10-17)
+
+
+### Bug Fixes
+
+* **runner:** enforce captured openrouter presets before auth ([#40884](https://github.com/okou-ai/okou/issues/40884)) ([1d2a780](https://github.com/okou-ai/okou/commit/1d2a780d35d7a8b2b5ceab760321470d8e06c489))
+
 ## [0.14.6](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.5...runner-executor-v0.14.6) (2026-10-17)
 
 ## [0.14.5](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.4...runner-executor-v0.14.5) (2026-10-17)

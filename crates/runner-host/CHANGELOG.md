@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.9](https://github.com/okou-ai/okou/compare/runner-host-v0.9.8...runner-host-v0.9.9) (2026-10-17)
+
+
+### Refactoring
+
+* **runner-host:** share bounded file content reads ([#40910](https://github.com/okou-ai/okou/issues/40910)) ([086e283](https://github.com/okou-ai/okou/commit/086e2832b605fc8e24ee2174a19a532180f2f87d))
+
 ## [0.9.8](https://github.com/okou-ai/okou/compare/runner-host-v0.9.7...runner-host-v0.9.8) (2026-10-17)
 
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.25.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.24.4...runner-remote-v0.25.0) (2026-10-17)
+
+
+### Features
+
+* **vnc:** support independent native kdc routes ([#40902](https://github.com/okou-ai/okou/issues/40902)) ([c951fc4](https://github.com/okou-ai/okou/commit/c951fc445df5676aa1f29ad2a967df878e623356))
+* **vnc:** support protected native rfb transports ([#40892](https://github.com/okou-ai/okou/issues/40892)) ([72c4484](https://github.com/okou-ai/okou/commit/72c4484957579669367dfde45a0c91e50ca675a8))
+
 ## [0.24.4](https://github.com/okou-ai/okou/compare/runner-remote-v0.24.3...runner-remote-v0.24.4) (2026-10-17)
 
 

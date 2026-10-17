@@ -2084,7 +2084,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent-tests"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -3973,7 +3973,7 @@ dependencies = [
 
 [[package]]
 name = "rfb-client"
-version = "0.23.9"
+version = "0.24.0"
 dependencies = [
  "aes",
  "base64 0.23.1",
@@ -4115,7 +4115,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.234.7"
+version = "0.234.8"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4186,7 +4186,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.14.6"
+version = "0.14.7"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4234,7 +4234,7 @@ dependencies = [
 
 [[package]]
 name = "runner-host"
-version = "0.9.8"
+version = "0.9.9"
 dependencies = [
  "chrono",
  "futures-util",
@@ -4258,7 +4258,7 @@ dependencies = [
 
 [[package]]
 name = "runner-lifecycle"
-version = "0.15.4"
+version = "0.15.5"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4289,7 +4289,7 @@ dependencies = [
 
 [[package]]
 name = "runner-network"
-version = "0.2.53"
+version = "0.2.54"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4320,7 +4320,7 @@ dependencies = [
 
 [[package]]
 name = "runner-provider"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4356,7 +4356,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.24.4"
+version = "0.25.0"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4458,7 +4458,7 @@ dependencies = [
 
 [[package]]
 name = "runner-storage"
-version = "0.5.12"
+version = "0.5.13"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4500,7 +4500,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.17.6"
+version = "0.17.7"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4824,7 +4824,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.52.6"
+version = "0.52.7"
 dependencies = [
  "api-contracts",
  "async-trait",
