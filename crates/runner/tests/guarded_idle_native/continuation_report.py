@@ -115,7 +115,7 @@ def validate(directory):
         if (type(original.get("exit_code")) is not int or original["exit_code"] != expected_exit
                 or type(continued.get("exit_code")) is not int or continued["exit_code"] != 0
                 or continued.get("home_cache_hit") is not True
-                or continued.get("history_proof_bound") is not (expected_exit == 0)
+                or continued.get("history_proof_bound") is not True
                 or saved != {"required_cleanup_joined": True, "complete_continued_bytes_restored": True,
                              "verified_final_identity_preserved": True}):
             raise ValueError("native continuation/required saving did not positively complete")

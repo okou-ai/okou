@@ -54,7 +54,7 @@ class ContinuationReportTests(unittest.TestCase):
             continued = {**base,"continued_run_id":next_run,"continued_sandbox_id":str(uuid.uuid4()),
                          "restored_history_sha256":"3"*64,"restored_history_bytes":len(continuation.SEED)+256,
                          "continued_history_sha256":"4"*64,"continued_history_bytes":len(continuation.SEED)+512,
-                         "exit_code":0,"home_cache_hit":True,"history_proof_bound":not case.startswith("ContinuationNonzero-")}
+                         "exit_code":0,"home_cache_hit":True,"history_proof_bound":True}
             saved = {"required_cleanup_joined":True,"complete_continued_bytes_restored":True,
                      "verified_final_identity_preserved":True}
             clocks = (events[0]["monotonic_ns"]+3,events[0]["monotonic_ns"]+6,
@@ -150,10 +150,10 @@ class ContinuationReportTests(unittest.TestCase):
         self.events[3]["evidence"]["full_logical_lease"]=[2,2048,1]
         with self.assertRaises(ValueError): self.validate()
 
-    def test_nonzero_withholds_identity_until_successful_continuation(self):
+    def test_nonzero_withholds_reusable_identity_and_keeps_verified_home_history(self):
         for phase, key, value in (("original_executor_completed", "final_identity_verified", True),
                                   ("original_executor_completed", "reusable_identity_withheld_after_nonzero", False),
-                                  ("continued_executor_completed", "history_proof_bound", True),
+                                  ("continued_executor_completed", "history_proof_bound", False),
                                   ("continued_executor_completed", "final_identity_verified", False)):
             with self.subTest(phase=phase, key=key):
                 self.setUp()

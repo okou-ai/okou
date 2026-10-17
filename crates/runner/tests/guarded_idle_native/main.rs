@@ -763,7 +763,6 @@ async fn exercise_retirement(
                 history: continuation::SEED.to_vec(),
                 original: run_id,
                 continued: false,
-                require_bound_history: false,
             })
             .await;
         let mut prepared = match result {
