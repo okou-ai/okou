@@ -27,17 +27,28 @@ beforeAll(async () => {
   preparation = buildProcessEntry(
     fileURLToPath(new URL("../../../okou.ts", import.meta.url)),
   );
-  compiled = await preparation;
   fixturePreparation = buildProcessEntry(
     fileURLToPath(new URL("./fixtures/process-http.ts", import.meta.url)),
   );
-  httpFixture = await fixturePreparation;
+  [compiled, httpFixture] = await Promise.all([
+    preparation,
+    fixturePreparation,
+  ]);
 });
 afterAll(async () => {
-  await disposePreparedProcessEntry(preparation);
-});
-afterAll(async () => {
-  await disposePreparedProcessEntry(fixturePreparation);
+  const results = await Promise.allSettled([
+    disposePreparedProcessEntry(preparation),
+    disposePreparedProcessEntry(fixturePreparation),
+  ]);
+  const errors = results.flatMap((result) => {
+    return result.status === "rejected" ? [result.reason] : [];
+  });
+  if (errors.length > 0) {
+    throw new AggregateError(
+      errors,
+      "Failed to dispose checkpoint process entries",
+    );
+  }
 });
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), "okou-collection-process-"));
