@@ -118,7 +118,7 @@ def build_policy():
         "(allow agent_t model_port_t (tcp_socket (name_connect)))",
         "(allow gateway_t model_port_t (tcp_socket (name_bind)))",
         "(allow workload_t ordinary_port_t (tcp_socket (name_connect name_bind)))",
-        "(allow workload_t workload_data_t (file (open read write getattr)))",
+        "(allow workload_t workload_data_t (file (open read write append getattr)))",
         "(allow workload_t workload_data_t (dir (search read open getattr)))",
         "(allow agent_t protected_file_t (file (open read getattr map)))",
         "(allow gateway_t gateway_key_t (file (open read getattr)))",
