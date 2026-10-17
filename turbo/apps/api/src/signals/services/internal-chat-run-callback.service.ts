@@ -2039,7 +2039,6 @@ const handleFailedChatCallback$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
       readonly runId: string;
       readonly chatThread: ChatThreadForRunRow;
       readonly errorMessage: string;
@@ -2816,7 +2815,6 @@ const prepareFailedTerminalChatCallbackWork$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
       readonly runId: string;
       readonly run: ChatRunInfo;
       readonly chatThread: ChatThreadForRunRow;
@@ -3378,7 +3376,18 @@ const processTerminalChatCallback$ = command(
           : set(
               prepareFailedTerminalChatCallbackWork$,
               {
-                ...preparation,
+                runId: preparation.runId,
+                run: preparation.run,
+                chatThread: preparation.chatThread,
+                timing: preparation.timing,
+                slackDelivery: preparation.slackDelivery,
+                feishuDelivery: preparation.feishuDelivery,
+                teamsDelivery: preparation.teamsDelivery,
+                discordDelivery: preparation.discordDelivery,
+                wechatDelivery: preparation.wechatDelivery,
+                telegramDelivery: preparation.telegramDelivery,
+                agentphoneDelivery: preparation.agentphoneDelivery,
+                sourceCallbackId: preparation.sourceCallbackId,
                 errorMessage: terminalCallbackErrorMessage(
                   args.callback.error,
                   run.error,
