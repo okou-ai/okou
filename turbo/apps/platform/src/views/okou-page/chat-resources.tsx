@@ -3,7 +3,6 @@ import {
   useLastLoadable,
   useLastResolved,
   useSet,
-  type Loadable,
 } from "ccstate-react";
 import type { CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
@@ -19,7 +18,6 @@ import {
 } from "@okouai/ui";
 import type { ChatThreadArtifactFile } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
-import type { ChatResourceContent } from "../../signals/chat-page/chat-resources.ts";
 import { currentChatThreadId$ } from "../../signals/agent-chat.ts";
 import { searchParams$ } from "../../signals/route.ts";
 import { SIDEBAR_PARAM } from "../../signals/chat-page/chat-thread-panes.ts";
@@ -76,21 +74,7 @@ function ChatResourcesButtonInner({
   const popupRef = useSet(thread.resources.popupOnRef$);
   const blurControl = useSet(thread.resources.blurControl$);
   const resources = thread.resources;
-  const requestedOpen = useLastResolved(resources.open$) ?? false;
-  const content = useLastLoadable(resources.content$);
-  const relationsEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatRelations];
-  const hasRelations = useLastResolved(thread.relations.hasContent$);
-  const ready =
-    (relationsEnabled && hasRelations === true) ||
-    ((!relationsEnabled ||
-      (hasRelations !== undefined && hasRelations !== null)) &&
-      (content.state === "hasError" ||
-        (content.state === "hasData" &&
-          content.data !== null &&
-          (content.data.artifacts.length > 0 ||
-            content.data.links.length > 0))));
-  const open = requestedOpen && ready;
+  const open = useLastResolved(resources.open$) ?? false;
   const wide = useGet(resources.wide$);
   const saving = useGet(resources.saving$);
   const anchor = useGet(resources.anchor$);
@@ -102,10 +86,6 @@ function ChatResourcesButtonInner({
   const setOpen = useSet(resources.setOpen$);
   const changePreference = useSet(resources.changePreference$);
   const rootSignal = useGet(rootSignal$);
-
-  if (!ready) {
-    return null;
-  }
 
   return (
     <Popover
@@ -189,11 +169,7 @@ function ChatResourcesButtonInner({
             "flex h-[var(--resource-panel-height,auto)] max-h-[min(720px,var(--available-height))] w-[376px] max-w-[var(--available-width)] flex-col overflow-hidden p-0",
         })}
       >
-        <ChatResourcesBody
-          thread={thread}
-          content={content}
-          hasRelations={relationsEnabled && hasRelations === true}
-        />
+        <ChatResourcesBody thread={thread} />
       </PopoverContent>
     </Popover>
   );
@@ -236,16 +212,13 @@ function ResourceOutputRow({
   );
 }
 
-function ChatResourcesBody({
-  thread,
-  content,
-  hasRelations,
-}: {
-  readonly thread: ChatPanelSignals;
-  readonly content: Loadable<ChatResourceContent | null>;
-  readonly hasRelations: boolean;
-}) {
+function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
   const { t } = useTranslation();
+  const content = useLastLoadable(thread.resources.content$);
+  const relationsEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatRelations];
+  const hasRelations =
+    useLastResolved(thread.relations.hasContent$) === true && relationsEnabled;
   const retry = useSet(thread.reloadArtifacts$);
   const openAll = useOpenThreadArtifacts(thread);
   const expanded = useGet(thread.resources.expandedSections$);
