@@ -35,6 +35,7 @@ import {
   isSupportedFramework,
 } from "@okouai/core/frameworks";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { activityFiles } from "../../signals/activity-page/sandbox-files.ts";
 import { fetchDownloadExtra$ } from "../../signals/activity-page/activity-download.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { searchParams$, updateSearchParams$ } from "../../signals/route.ts";
@@ -981,6 +982,7 @@ function ActivityDetailContent({
   const { t } = useTranslation();
   const params = useGet(searchParams$);
   const updateParams = useSet(updateSearchParams$);
+  const filesViewport = useSet(activityFiles.virtual.scroll.setScrollViewport$);
   const showDebugTabs = features?.[FeatureSwitchKey.OkouDebug] ?? false;
   const rawTab = params.get("tab");
   const activeTab: ActivityTab =
@@ -1009,7 +1011,14 @@ function ActivityDetailContent({
 
   return (
     <div className="h-full flex flex-col min-h-0 overflow-hidden">
-      <div className="flex-1 flex flex-col min-h-0 overflow-auto">
+      <div
+        ref={activeTab === "files" ? filesViewport : undefined}
+        data-testid="activity-detail-viewport"
+        className={cn(
+          "flex-1 flex flex-col min-h-0 overflow-auto",
+          activeTab === "files" && "scroll-pt-12",
+        )}
+      >
         <nav className="hidden md:flex shrink-0 items-center gap-1 px-4 pt-4 text-sm text-muted-foreground">
           {features?.[FeatureSwitchKey.OkouDebug] && (
             <>

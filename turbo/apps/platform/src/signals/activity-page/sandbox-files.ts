@@ -1572,7 +1572,7 @@ function createDemandCommands(
     createRunLifecycleCommands(graph, startRun$),
   );
   const mount$ = onRef(
-    command(({ get, set }, _element: HTMLElement, signal: AbortSignal) => {
+    command(({ get, set }, element: HTMLElement, signal: AbortSignal) => {
       if (!get(featureSwitch$)[FeatureSwitchKey.OkouDebug]) {
         return;
       }
@@ -1581,6 +1581,7 @@ function createDemandCommands(
       if (!sessionKey || !runId) {
         return;
       }
+      set(graph.virtual.scroll.attachSection$, element, signal);
       set(graph.ownerKey$, sessionKey);
       const locationOwner = `${sessionKey}:${runId}`;
       if (get(graph.locationOwner$) !== locationOwner) {
