@@ -1,4 +1,4 @@
-//! Native RFB owns the actual protective stream and its consumer leases.
+//! Native RFB and KDC own the actual protective stream and its consumer leases.
 
 use std::{
     future::Future,
@@ -9,6 +9,7 @@ use std::{
 };
 
 use api_contracts::generated::types::runners::vnc::{
+    ResolveResponseResolvedTransportSecurityQemuX509GssapiKdcTransport as KdcRoute,
     ResolveResponseResolvedTransportTransport as Route,
     ResolveResponseResolvedTransportTransportCloudflareAccessCredentials as Credentials,
     ResolveResponseResolvedTransportTransportCloudflareAccessOriginTlsTrust as OriginTrust,
@@ -21,21 +22,23 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use super::{
-    Failure, Scope,
+    Failure, Scope, VncRuntime,
     authority::Transport,
     network,
-    sessions::{NativeWork, Run, StartEvidence},
+    sessions::{Run, StartEvidence},
 };
 use crate::{cloudflare, tailscale};
 
+#[derive(Clone)]
 pub(super) enum Configuration {
     Cloudflare {
-        credentials: Credentials,
+        credentials: Arc<Credentials>,
         origin: Option<Origin>,
     },
     Tailscale(tailscale::Configuration),
 }
 
+#[derive(Clone)]
 pub(super) struct Origin {
     name: ServerName<'static>,
     tls: Arc<ClientConfig>,
@@ -94,7 +97,7 @@ pub(super) fn parse(route: Route) -> Result<(Transport, Option<Configuration>), 
                     generation,
                 },
                 Some(Configuration::Cloudflare {
-                    credentials,
+                    credentials: Arc::new(credentials),
                     origin,
                 }),
             ))
@@ -120,6 +123,52 @@ pub(super) fn parse(route: Route) -> Result<(Transport, Option<Configuration>), 
         }
         _ => Err(Failure::Authority),
     }
+}
+
+/// KDC credentials are moved directly into the shared private carrier format.
+/// A KDC has no origin-TLS field and cannot inherit the RFB protection wrapper.
+pub(super) fn parse_kdc(
+    route: KdcRoute,
+    ssh: bool,
+) -> Result<(Transport, Option<Configuration>), Failure> {
+    let route = match route {
+        KdcRoute::Direct => Route::Direct,
+        KdcRoute::Ssh {
+            connection_id,
+            generation,
+        } => Route::Ssh {
+            connection_id,
+            generation,
+        },
+        KdcRoute::CloudflareAccess {
+            config_id,
+            generation,
+            credentials,
+        } => Route::CloudflareAccess {
+            config_id,
+            generation,
+            credentials: Credentials {
+                client_id: credentials.client_id,
+                client_secret: credentials.client_secret,
+            },
+            origin_tls: None,
+        },
+        KdcRoute::Tailscale {
+            config_id,
+            generation,
+            credentials,
+            tags,
+        } => Route::Tailscale {
+            config_id,
+            generation,
+            credentials: Credentials {
+                client_id: credentials.client_id,
+                client_secret: credentials.client_secret,
+            },
+            tags,
+        },
+    };
+    super::authority::parse_transport(route, ssh)
 }
 
 /// Admission is separate from protection: the connected stream is checked again.
@@ -151,11 +200,14 @@ pub(super) struct Stream {
     io: Io,
     cancellation: Pin<Box<tokio_util::sync::WaitForCancellationFutureOwned>>,
     cancel: CancellationToken,
-    _node: Option<Arc<tailscale::Node>>,
-    _owner: Arc<NativeWork>,
+    node: Option<Arc<tailscale::Node>>,
+    _owner: Arc<dyn kerberos_worker::WorkOwner>,
 }
 
 impl Stream {
+    pub(super) fn node(&self) -> Option<Arc<tailscale::Node>> {
+        self.node.clone()
+    }
     pub(super) fn guard(&self) -> Option<tailscale::StreamGuard> {
         match &self.io {
             Io::Peer(stream) => Some(stream.guard()),
@@ -233,14 +285,30 @@ impl AsyncWrite for Stream {
     }
 }
 
+pub(super) struct Dialer {
+    pub(super) runtime: Arc<VncRuntime>,
+    pub(super) native: Arc<crate::native::Run>,
+    pub(super) tasks: tokio_util::task::TaskTracker,
+}
+
 impl Run {
-    pub(super) async fn dial_native(
+    pub(super) fn native_dialer(&self) -> Dialer {
+        Dialer {
+            runtime: Arc::clone(&self.runtime),
+            native: Arc::clone(&self.native),
+            tasks: self.tasks.clone(),
+        }
+    }
+}
+
+impl Dialer {
+    pub(super) async fn dial(
         &self,
         configuration: Configuration,
         host: &str,
         port: u16,
         scope: &Scope,
-        owner: Arc<NativeWork>,
+        owner: Arc<dyn kerberos_worker::WorkOwner>,
         evidence: &mut StartEvidence,
     ) -> Result<Stream, Failure> {
         let (io, node) = match configuration {
@@ -273,7 +341,7 @@ impl Run {
                     .wait(node.dial_retained(
                         host,
                         port,
-                        tailscale::Lease::new(Arc::clone(&owner)),
+                        tailscale::Lease::new(owner.clone()),
                         trace,
                     ))
                     .await?
@@ -342,7 +410,7 @@ impl Run {
             io,
             cancellation: Box::pin(scope.session.clone().cancelled_owned()),
             cancel: scope.session.clone(),
-            _node: node,
+            node,
             _owner: owner,
         })
     }

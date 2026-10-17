@@ -3,6 +3,7 @@
 
 mod capacity;
 mod common;
+mod kdc;
 mod vnc;
 mod vnc_shared;
 

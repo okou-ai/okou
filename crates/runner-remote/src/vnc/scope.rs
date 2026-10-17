@@ -8,7 +8,7 @@ pub(super) struct Scope {
     pub(super) cancelled: CancellationToken,
     pub(super) sandbox: CancellationToken,
     pub(super) session: CancellationToken,
-    pub(super) native: Option<crate::tailscale::StreamGuard>,
+    pub(super) native: Vec<crate::tailscale::StreamGuard>,
     pub(super) deadline: Instant,
 }
 
@@ -17,7 +17,7 @@ impl Scope {
         if self.cancelled.is_cancelled()
             || self.sandbox.is_cancelled()
             || self.session.is_cancelled()
-            || self.native.as_ref().is_some_and(|guard| !guard.is_live())
+            || self.native.iter().any(|guard| !guard.is_live())
         {
             Err(Failure::Cancelled)
         } else if Instant::now() >= self.deadline {
@@ -67,7 +67,7 @@ impl Scope {
         Self {
             cancelled: CancellationToken::new(),
             session: CancellationToken::new(),
-            native: None,
+            native: Vec::new(),
             deadline: (self.deadline + Duration::from_secs(1))
                 .min(Instant::now() + Duration::from_secs(1)),
             sandbox: self.sandbox.clone(),
@@ -75,9 +75,13 @@ impl Scope {
     }
 
     pub(super) async fn native_retired(&self) {
-        match &self.native {
-            Some(guard) => guard.retired().await,
-            None => std::future::pending().await,
+        if self.native.is_empty() {
+            std::future::pending().await
+        } else {
+            futures_util::future::select_all(
+                self.native.iter().map(|guard| Box::pin(guard.retired())),
+            )
+            .await;
         }
     }
 }
@@ -93,7 +97,7 @@ mod tests {
             cancelled: CancellationToken::new(),
             sandbox: CancellationToken::new(),
             session: session.clone(),
-            native: None,
+            native: Vec::new(),
             deadline: Instant::now() + Duration::from_secs(1),
         };
         let result = scope
@@ -112,7 +116,7 @@ mod tests {
             cancelled: CancellationToken::new(),
             sandbox: CancellationToken::new(),
             session: CancellationToken::new(),
-            native: None,
+            native: Vec::new(),
             deadline,
         };
 
