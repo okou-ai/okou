@@ -3,7 +3,9 @@ import { Readable } from "node:stream";
 import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
+import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import { http, HttpResponse } from "msw";
@@ -18,6 +20,7 @@ import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { artifactShareRoutes } from "../artifact-shares";
 import { integrationsSlackRoutes } from "../integrations-slack";
+import { hostRoutes } from "../host";
 import { slackEventsRoutes } from "../slack-events";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
@@ -176,6 +179,26 @@ function postLinks(
           : {}),
       },
     },
+  );
+}
+
+function sharing(actor: { readonly userId: string; readonly orgId: string }) {
+  context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+    {
+      data: [
+        {
+          organization: {
+            id: actor.orgId,
+            name: "Preview test workspace",
+          },
+          publicUserData: { userId: actor.userId },
+          role: "org:admin",
+        },
+      ],
+    },
+  );
+  return setupAppWithRoutes({ context, routes: artifactShareRoutes })(
+    artifactSharesContract,
   );
 }
 
@@ -388,15 +411,14 @@ describe("Slack link previews", () => {
     }
   });
 
-  it("reads Open Graph before classifying App, shared, artifact or hosted paths", async () => {
+  it("reads Open Graph for non-artifact App, shared-thread and hosted subpages", async () => {
     const f = await fixture({ openGraph: true });
     const origin = new URL(env("APP_URL")).origin;
     const appUrl = `${origin}/works?source=slack&view=cover#cover|v1`;
-    const hostedUrl = `https://${f.prepared.publicSlug}.okou.app/`;
+    const hostedUrl = `https://${f.prepared.publicSlug}.okou.app/guides/launch.html`;
     const otherUrls = [
       `${origin}/share/threads/${randomUUID()}/`,
       `${origin}/future-feature/public-page`,
-      `${origin}/artifacts/${"0".repeat(32)}.png`,
       `https://og-${randomUUID()}.okou.app/guides/launch.html`,
     ];
     const page =
@@ -469,7 +491,7 @@ describe("Slack link previews", () => {
     expect(context.mocks.s3.send).not.toHaveBeenCalled();
   });
 
-  it("uses partial Open Graph metadata without requiring an artifact fallback", async () => {
+  it("uses partial Open Graph metadata for non-artifact pages", async () => {
     const f = await fixture({ openGraph: true });
     const origin = `https://og-${randomUUID()}.okou.app`;
     const artifactImageUrl = `${env("OKOU_API_BACKEND_URL")}/api/artifact-og/image?kind=host&id=${f.prepared.deploymentId}&version=v1`;
@@ -738,28 +760,69 @@ describe("Slack link previews", () => {
     expect(status.body.reinstallUrl).toStrictEqual(expect.any(String));
   });
 
-  it.each([false, true])(
-    "requires public sharing for artifact fallbacks and honors revocation with Open Graph %s",
-    async (openGraph) => {
+  it.each([
+    {
+      openGraph: false,
+      pageMetadata: "none",
+      filename: "report.png",
+      contentType: "image/png",
+    },
+    {
+      openGraph: true,
+      pageMetadata: "none",
+      filename: "report.png",
+      contentType: "image/png",
+    },
+    {
+      openGraph: true,
+      pageMetadata: "brand",
+      filename: "report.png",
+      contentType: "image/png",
+    },
+    {
+      openGraph: true,
+      pageMetadata: "artifact",
+      filename: "report.png",
+      contentType: "image/png",
+    },
+    {
+      openGraph: true,
+      pageMetadata: "brand",
+      filename: "report.pdf",
+      contentType: "application/pdf",
+    },
+    {
+      openGraph: true,
+      pageMetadata: "artifact",
+      filename: "report.docx",
+      contentType:
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    },
+  ])(
+    "preserves sharing for $filename with Open Graph $openGraph and $pageMetadata page metadata",
+    async ({ openGraph, pageMetadata, filename, contentType }) => {
       const f = await fixture({ openGraph });
-      context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-        {
-          data: [
-            {
-              organization: {
-                id: f.actor.orgId,
-                name: "Preview test workspace",
-              },
-              publicUserData: { userId: f.actor.userId },
-              role: "org:admin",
+      const pageTitle =
+        pageMetadata === "brand" ? "Okou branding" : "Published image title";
+      const pageImage =
+        pageMetadata === "brand"
+          ? ARTIFACT_OG_BRAND.imageUrl
+          : "https://images.example.com/published-image.png";
+      if (pageMetadata !== "none") {
+        server.use(
+          http.get(
+            `${new URL(env("APP_URL")).origin}/artifacts/:reference`,
+            ({ request }) => {
+              f.pageRequests.push(request);
+              // A shell or cached OG response alone does not establish public access.
+              return HttpResponse.html(
+                `<head><meta property="og:title" content="${pageTitle}"><meta property="og:image" content="${pageImage}"></head>`,
+              );
             },
-          ],
-        },
-      );
-      const shares = setupAppWithRoutes({
-        context,
-        routes: artifactShareRoutes,
-      })(artifactSharesContract);
+          ),
+        );
+      }
+      const shares = sharing(f.actor);
       const uploads = setupAppWithRoutes({
         context,
         routes: [...uploadsPrepareRoutes, ...uploadsCompleteRoutes],
@@ -769,7 +832,7 @@ describe("Slack link previews", () => {
         if (command instanceof HeadObjectCommand) {
           return Promise.resolve({
             ContentLength: 13,
-            ContentType: "image/png",
+            ContentType: contentType,
             Metadata: { "artifact-id": command.input.Key?.split("/")[1] },
           });
         }
@@ -779,8 +842,8 @@ describe("Slack link previews", () => {
         uploads.preparePrivate({
           headers,
           body: {
-            filename: "report.png",
-            contentType: "image/png",
+            filename,
+            contentType,
             size: 13,
             purpose: "artifact",
           },
@@ -793,10 +856,22 @@ describe("Slack link previews", () => {
       );
       const target = { kind: "file" as const, id: completed.body.id };
       const privateUrl = new URL(completed.body.url, env("APP_URL")).href;
-      await accept(postLinks(f.teamId, [privateUrl]), [200]);
+      const missingUrl = new URL(
+        artifactReferencePath(randomUUID(), filename),
+        env("APP_URL"),
+      ).href;
+      const urls = [
+        privateUrl,
+        `${privateUrl}?source=slack#preview`,
+        new URL(
+          artifactReferencePath(completed.body.id, filename),
+          env("APP_URL"),
+        ).href,
+      ];
+      await accept(postLinks(f.teamId, [...urls, missingUrl]), [200]);
       await flushWaitUntilForTest();
       expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
-      expect(f.pageRequests).toHaveLength(openGraph ? 1 : 0);
+      expect(f.pageRequests).toHaveLength(0);
 
       const organization = await accept(
         shares.update({ headers, body: { target, audience: "organization" } }),
@@ -805,10 +880,13 @@ describe("Slack link previews", () => {
       if (!organization.body.shortUrl) {
         throw new Error("Expected an organization share");
       }
-      await accept(postLinks(f.teamId, [organization.body.shortUrl]), [200]);
+      await accept(
+        postLinks(f.teamId, [...urls, organization.body.shortUrl]),
+        [200],
+      );
       await flushWaitUntilForTest();
       expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
-      expect(f.pageRequests).toHaveLength(openGraph ? 2 : 0);
+      expect(f.pageRequests).toHaveLength(0);
 
       const published = await accept(
         shares.update({ headers, body: { target, audience: "public" } }),
@@ -817,14 +895,14 @@ describe("Slack link previews", () => {
       if (!published.body.url) {
         throw new Error("Expected a public sharing URL");
       }
-      const urls = [privateUrl];
-      await accept(postLinks(f.teamId, urls), [200]);
+      const publicUrls = [...new Set([...urls, organization.body.shortUrl])];
+      await accept(postLinks(f.teamId, [...publicUrls, missingUrl]), [200]);
       await flushWaitUntilForTest();
       expect(context.mocks.slack.chat.unfurl).toHaveBeenCalledExactlyOnceWith({
         channel: "C_PREVIEW",
         ts: messageTs,
         unfurls: Object.fromEntries(
-          urls.map((url) => {
+          publicUrls.map((url) => {
             return [
               url,
               {
@@ -836,7 +914,7 @@ describe("Slack link previews", () => {
                         ? "/api/artifact-og/slack.png?url="
                         : "/api/artifact-og/image?kind=reference&id=",
                     ),
-                    alt_text: "report.png",
+                    alt_text: filename,
                   }),
                 ]),
               },
@@ -844,29 +922,148 @@ describe("Slack link previews", () => {
           }),
         ),
       });
+      expect(f.pageRequests).toHaveLength(0);
 
       await accept(
         shares.update({ headers, body: { target, audience: "private" } }),
         [200],
       );
       context.mocks.slack.chat.unfurl.mockClear();
-      await accept(postLinks(f.teamId, urls, { retry: true }), [200]);
+      await accept(postLinks(f.teamId, publicUrls, { retry: true }), [200]);
       await flushWaitUntilForTest();
       expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
+      expect(f.pageRequests).toHaveLength(0);
     },
   );
 
-  it("does not preview a deleted site", async () => {
-    const f = await fixture();
-    const urls = [
-      `https://dpl-${f.prepared.deploymentId}.okou.app/`,
-      `https://${f.prepared.publicSlug}.okou.app/`,
-    ];
-    await host.deleteHostedSite(f.actor, f.prepared.publicSlug);
-    await accept(postLinks(f.teamId, urls), [200]);
+  it("keeps HTML artifact sharing on its original permission and metadata path", async () => {
+    const f = await fixture({ openGraph: true });
+    const shares = sharing(f.actor);
+    const sites = setupAppWithRoutes({ context, routes: hostRoutes })(
+      hostContract,
+    );
+    const prepared = await accept(
+      sites.preparePrivate({
+        headers,
+        body: {
+          site: `slack-private-${randomUUID().slice(0, 8)}`,
+          artifactKind: "hosted-site",
+          spaFallback: false,
+          files: [hostedTextFile("/index.html", html)],
+        },
+      }),
+      [200],
+    );
+    const completed = await accept(
+      sites.complete({
+        headers,
+        params: { deploymentId: prepared.body.deploymentId },
+        body: {},
+      }),
+      [200],
+    );
+    const target = { kind: "html" as const, id: completed.body.deploymentId };
+    const artifactUrl = new URL(completed.body.url, env("APP_URL")).href;
+    server.use(
+      http.get(
+        `${new URL(env("APP_URL")).origin}/artifacts/:reference`,
+        ({ request }) => {
+          f.pageRequests.push(request);
+          return HttpResponse.html(
+            '<head><meta property="og:title" content="App shell branding"></head>',
+          );
+        },
+      ),
+      http.get(/^https:\/\/[^/]+\.okou\.app\//u, ({ request }) => {
+        f.pageRequests.push(request);
+        return HttpResponse.html(
+          '<head><meta property="og:title" content="Cached public page"></head>',
+        );
+      }),
+    );
+    await accept(postLinks(f.teamId, [artifactUrl]), [200]);
     await flushWaitUntilForTest();
     expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
+
+    const organization = await accept(
+      shares.update({ headers, body: { target, audience: "organization" } }),
+      [200],
+    );
+    if (!organization.body.shortUrl) {
+      throw new Error("Expected an organization share");
+    }
+    await accept(
+      postLinks(f.teamId, [artifactUrl, organization.body.shortUrl]),
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
+
+    const published = await accept(
+      shares.update({ headers, body: { target, audience: "public" } }),
+      [200],
+    );
+    if (!published.body.url) {
+      throw new Error("Expected a public sharing URL");
+    }
+    const urls = [
+      ...new Set([
+        artifactUrl,
+        organization.body.shortUrl,
+        published.body.url,
+        new URL("/index.html", published.body.url).href,
+      ]),
+    ];
+    await accept(postLinks(f.teamId, urls), [200]);
+    await flushWaitUntilForTest();
+    expect(context.mocks.slack.chat.unfurl).toHaveBeenCalledExactlyOnceWith({
+      channel: "C_PREVIEW",
+      ts: messageTs,
+      unfurls: Object.fromEntries(
+        urls.map((url) => {
+          return [
+            url,
+            {
+              blocks: expect.arrayContaining([
+                expect.objectContaining({
+                  type: "image",
+                  image_url: expect.stringContaining(
+                    "/api/artifact-og/slack.png?url=",
+                  ),
+                  alt_text: 'Report & <!channel>\u00a0"标题"',
+                }),
+              ]),
+            },
+          ];
+        }),
+      ),
+    });
+    await accept(
+      shares.update({ headers, body: { target, audience: "private" } }),
+      [200],
+    );
+    context.mocks.slack.chat.unfurl.mockClear();
+    await accept(postLinks(f.teamId, urls, { retry: true }), [200]);
+    await flushWaitUntilForTest();
+    expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
+    expect(f.pageRequests).toHaveLength(0);
   });
+
+  it.each([false, true])(
+    "does not preview a deleted site with Open Graph %s",
+    async (openGraph) => {
+      const f = await fixture({ openGraph });
+      const urls = [
+        `https://dpl-${f.prepared.deploymentId}.okou.app/`,
+        `https://${f.prepared.publicSlug}.okou.app/`,
+      ];
+      await host.deleteHostedSite(f.actor, f.prepared.publicSlug);
+      await accept(postLinks(f.teamId, urls), [200]);
+      await flushWaitUntilForTest();
+      expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
+      expect(f.pageRequests).toHaveLength(0);
+    },
+  );
 
   it("verifies the webhook signature and link payload before acknowledging", async () => {
     integrations.configureSlackSigningSecret();
