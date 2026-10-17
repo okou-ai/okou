@@ -3,6 +3,7 @@
 #include <fcntl.h>
 #include <grp.h>
 #include <limits.h>
+#include <linux/capability.h>
 #include <linux/nsfs.h>
 #include <sched.h>
 #include <stddef.h>
@@ -13,6 +14,7 @@
 #include <sys/mount.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/time.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -123,6 +125,11 @@ static void user(void) {
   if (setgroups(0, NULL) || setresgid(1000, 1000, 1000) ||
       setresuid(1000, 1000, 1000))
     fail("uid");
+  struct __user_cap_header_struct header = {
+      .version = _LINUX_CAPABILITY_VERSION_3, .pid = 0};
+  struct __user_cap_data_struct data[2] = {0};
+  if (syscall(SYS_capset, &header, data))
+    fail("drop-launch-capabilities");
 }
 static void placement(const char *leaf) {
   char path[256];

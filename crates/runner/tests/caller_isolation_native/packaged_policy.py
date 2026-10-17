@@ -157,7 +157,7 @@ def build_policy():
     for bridge, target in [("toolbridge_t", "workload_t"), ("taskbridge_t", "agent_t")]:
         lines += [
             f"(allow {bridge} self (capability (sys_admin sys_chroot setuid setgid)))",
-            f"(allow {bridge} self (process (setcurrent)))",
+            f"(allow {bridge} self (process (setcurrent setcap)))",
             f"(allow {bridge} {target} (process (dyntransition)))",
             f"(allow {bridge} control_t (file (ioctl)))",
             f"(allowx {bridge} control_t (ioctl file (0xb703)))",

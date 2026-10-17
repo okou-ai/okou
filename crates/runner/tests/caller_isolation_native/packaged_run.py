@@ -24,6 +24,8 @@ from run import (
 
 HERE = Path(__file__).resolve().parent
 EXPECTED = {
+    "user_bridge_metadata_denied",
+    "root_bridge_metadata_denied",
     "control_runtime_on_sealed_drive",
     "workload_direct_ingress",
     "root_direct_ingress",
@@ -182,6 +184,7 @@ def vm(command, log_path, receipt, timeout=240, max_bytes=131072):
                     try:
                         os.killpg(child.pid, signal.SIGKILL)
                     except ProcessLookupError:
+                        # It already exited; wait below still joins the owned child.
                         pass
                 child.wait(timeout=5)
                 child.stdout.close()

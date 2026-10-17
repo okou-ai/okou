@@ -18,6 +18,7 @@ import time
 import traceback
 import uuid
 import zlib
+from contextlib import ExitStack, contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -135,6 +136,7 @@ def pi_session(env):
             try:
                 pi.stdin.close()
             except BrokenPipeError:
+                # The settled CLI may close stdin first; exit/tool results still decide success.
                 pass
             pi.wait(timeout=5)
         finally:
@@ -266,56 +268,58 @@ def broker(endpoint, task=False):
     return listener
 
 
+@contextmanager
 def namespace_broker(keeper_pid, workload_pid):
-    handles = {
-        b"T": os.open(f"/proc/{workload_pid}/ns/mnt", os.O_RDONLY | os.O_CLOEXEC),
-        b"A": os.open(f"/proc/{keeper_pid}/ns/mnt", os.O_RDONLY | os.O_CLOEXEC),
-    }
-    listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    listener.bind("\0okou-native-namespace")
-    listener.listen(16)
+    with (
+        open(f"/proc/{workload_pid}/ns/mnt", "rb") as workload,
+        open(f"/proc/{keeper_pid}/ns/mnt", "rb") as agent,
+    ):
+        handles = {b"T": workload.fileno(), b"A": agent.fileno()}
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
+            listener.bind("\0okou-native-namespace")
+            listener.listen(16)
 
-    def serve():
-        while True:
-            peer, _ = listener.accept()
-            try:
-                peer.settimeout(5)
-                context = (
-                    peer.getsockopt(socket.SOL_SOCKET, socket.SO_PEERSEC, 256)
-                    .decode()
-                    .rstrip("\0")
-                )
-                target = exact(peer, 1)
-                expected = {
-                    b"T": {
-                        "system_u:system_r:toolbridge_t",
-                        "system_u:system_r:control_t",
-                    },
-                    b"A": {
-                        "system_u:system_r:control_t",
-                        "system_u:system_r:taskbridge_t",
-                    },
-                }
-                if context not in expected.get(target, set()):
-                    raise ValueError("namespace role/entry mismatch")
-                peer.sendmsg(
-                    [b"N"],
-                    [
-                        (
-                            socket.SOL_SOCKET,
-                            socket.SCM_RIGHTS,
-                            array.array("i", [handles[target]]),
+            def serve():
+                while True:
+                    peer, _ = listener.accept()
+                    try:
+                        peer.settimeout(5)
+                        context = (
+                            peer.getsockopt(socket.SOL_SOCKET, socket.SO_PEERSEC, 256)
+                            .decode()
+                            .rstrip("\0")
                         )
-                    ],
-                )
-            except (OSError, EOFError, ValueError) as error:
-                errors.append(str(error))
-                print("PACKAGED_NAMESPACE_ERROR " + repr(error), flush=True)
-            finally:
-                peer.close()
+                        target = exact(peer, 1)
+                        expected = {
+                            b"T": {
+                                "system_u:system_r:toolbridge_t",
+                                "system_u:system_r:control_t",
+                            },
+                            b"A": {
+                                "system_u:system_r:control_t",
+                                "system_u:system_r:taskbridge_t",
+                            },
+                        }
+                        if context not in expected.get(target, set()):
+                            raise ValueError("namespace role/entry mismatch")
+                        peer.sendmsg(
+                            [b"N"],
+                            [
+                                (
+                                    socket.SOL_SOCKET,
+                                    socket.SCM_RIGHTS,
+                                    array.array("i", [handles[target]]),
+                                )
+                            ],
+                        )
+                    except (OSError, EOFError, ValueError) as error:
+                        errors.append(str(error))
+                        print("PACKAGED_NAMESPACE_ERROR " + repr(error), flush=True)
+                    finally:
+                        peer.close()
 
-    threading.Thread(target=serve, daemon=True).start()
-    return listener
+            threading.Thread(target=serve, daemon=True).start()
+            yield
 
 
 PROBE = r"""import errno,json,os,socket
@@ -602,7 +606,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
-def main():
+def run_guest(resources):
     socket.sethostname("localhost")
     (Path("/sys/fs/selinux/enforce")).write_text("1")
     Path("/proc/sys/kernel/printk_ratelimit").write_text("0")
@@ -626,7 +630,16 @@ def main():
     ]:
         shutil.copyfile(FIXTURE / "entry", FIXTURE / name)
         label(FIXTURE / name, kind)
-        os.chmod(FIXTURE / name, 0o4755)
+        os.chown(FIXTURE / name, 1000, 1000)
+        os.chmod(FIXTURE / name, 0o500)
+        # Only the fixed entry receives namespace/identity capabilities. MAC
+        # protects its bytes and metadata even from its owner and sudo-root.
+        capabilities = (1 << 21) | (1 << 18) | (1 << 7) | (1 << 6)
+        os.setxattr(
+            FIXTURE / name,
+            "security.capability",
+            struct.pack("<IIIII", 0x02000001, capabilities, 0, 0, 0),
+        )
     ROOT.mkdir(parents=True, exist_ok=True)
     for path in (Path("/home/user"), ROOT):
         os.chown(path, 1000, 1000)
@@ -688,7 +701,7 @@ def main():
     )
     if keeper.stdout.readline().strip() != "ready":
         raise ValueError("sealed namespace keeper failed")
-    namespace_broker(keeper.pid, workload_pid)
+    resources.enter_context(namespace_broker(keeper.pid, workload_pid))
     broker("okou-native-placement")
     broker("okou-native-placement-tasks", task=True)
     server = ThreadingHTTPServer(("127.0.0.1", 18080), Handler)
@@ -711,6 +724,25 @@ def main():
             exit=run.returncode,
             stdout=run.stdout[-2000:],
             stderr=run.stderr[-2000:],
+        )
+    metadata_probe = """import errno,os,stat
+for name in ("guest-tool-exec","guest-task-exec"):
+ path="/fixture/"+name; info=os.stat(path)
+ assert info.st_uid==1000 and stat.S_IMODE(info.st_mode)==0o500
+ try: os.chmod(path,0o700)
+ except OSError as error: assert error.errno in (errno.EACCES,errno.EPERM),error
+ else: raise AssertionError("protected entry metadata changed")
+print("protected entry metadata denied to uid",os.getuid())"""
+    for role in ("workload", "root"):
+        run = as_role(
+            role, ["/usr/bin/python3", "-c", metadata_probe], env=env, group="tools"
+        )
+        record(
+            ("user" if role == "workload" else "root") + "_bridge_metadata_denied",
+            run.returncode == 0,
+            exit=run.returncode,
+            stdout=run.stdout[-1500:],
+            stderr=run.stderr[-1500:],
         )
     raw_probe = """import errno,os
 for name in ("/dev/vda","/dev/vdb"):
@@ -1105,6 +1137,11 @@ await new Promise(resolve=>setTimeout(resolve,50));"""
     keeper.wait()
     os.kill(workload_pid, signal.SIGKILL)
     os.waitpid(workload_pid, 0)
+
+
+def main():
+    with ExitStack() as resources:
+        run_guest(resources)
 
 
 if __name__ == "__main__":
