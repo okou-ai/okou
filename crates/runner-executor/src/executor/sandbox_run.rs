@@ -1653,6 +1653,7 @@ pub(super) async fn register_proxy(
         model_usage_provider: context.model_usage_provider.as_deref(),
         model_usage_long_context_min_total_input_tokens: context
             .model_usage_long_context_min_total_input_tokens,
+        pi_model_config: context.pi_model_config.as_ref(),
     };
     let publication = config
         .registry
