@@ -1,5 +1,38 @@
 # Guarded idle terminal fixture
 
+## Accepted read revocation through stale recovery
+
+`native_read_revocation_retains_accepted_custody_through_recovery` holds two
+guarded readers after each physically reads 1 MiB of the original immutable
+4 GiB `memory.bin`. It holds an actual source request until its unchanged last
+sample expires to `Unknown(Stale)`, retaining that state through an acknowledged
+heartbeat and independent host observation. Dropped/replacement drain observers
+remain Pending while the original full allowances remain held.
+
+Real sustained observations then restore Ready. A third fitting reader completes
+all 4 GiB while the two old physical producers remain held. Releasing the old
+readers separately must yield cancelled results with exactly 1 MiB each, without
+explicitly cancelling their owners on the successful path. Accounting retains
+two, then three, two, one and zero full allowances until the corresponding
+physical joins. All reporting/pressure/provider/peer dependencies join before
+original Guest saving, backing exit and durable tail verification. Fresh and
+matching-snapshot modes retain the original supplied policy and P1 guards.
+
+Metadata requires `native_read_revocation_policy_json`,
+`native_read_revocation_inputs_json`, `native_read_revocation_snapshot_bytes`
+(4294967296), and the existing original terminal artifact/source identities.
+Validate both modes with:
+
+```bash
+python3 crates/runner/tests/guarded_idle_native/read_revocation_report.py <p1-directory>
+```
+
+This separate `native-read-revocation-report-v1` format does not change the prior
+paired-reader report. Production startup remains unguarded and P4 owns its
+installation/calibration/full-runtime/overlap gates. This witnessed stale window
+does not prove every transient/coalesced notification race, stalled storage,
+complete cold residency, useful memory relief or production OOM protection.
+
 ## Concurrent guarded snapshot readers
 
 `native_shared_reads_retain_independent_physical_custody` runs two guarded
