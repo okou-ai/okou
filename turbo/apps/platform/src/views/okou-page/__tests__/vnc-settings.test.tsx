@@ -13,6 +13,8 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { VNC_RSA_AES_SECURITY_TYPES } from "@okouai/api-contracts/contracts/vnc-rsa-aes";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
+import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
+import { tailscaleContract } from "@okouai/api-contracts/contracts/tailscale";
 import {
   act,
   fireEvent,
@@ -151,6 +153,12 @@ function mockSettings(
     credentials: options.credentials ?? [credential],
     sshConnections: options.sshConnections ?? [],
   };
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, { configs: [] });
+  });
+  context.mocks.api(tailscaleContract.list, ({ respond }) => {
+    return respond(200, { configs: [] });
+  });
   context.mocks.api(vncConnectionsContract.summary, ({ respond }) => {
     return respond(200, { configuredCount: data.connections.length });
   });
@@ -200,7 +208,7 @@ async function openAddHostPage() {
 }
 
 test.each(["cloudflare_access", "direct"] as const)(
-  "Prepared %s RFB and native KDC routes preserve identity and cannot be converted by the legacy editor",
+  "Native %s RFB and detached KDC routes preserve identity and open an explicit rebind editor",
   async (rfbTransport) => {
     const native: VncConnectionResponse = {
       ...host,
@@ -257,12 +265,21 @@ test.each(["cloudflare_access", "direct"] as const)(
     expect(
       within(card).getByText(/needs a new configuration/),
     ).toBeInTheDocument();
-    expect(getAction("button", "Edit host", card)).toBeDisabled();
+    expect(getAction("button", "Edit host", card)).toBeEnabled();
     expect(getAction("button", "Delete host", card)).toBeEnabled();
+    click(getAction("button", "Edit host", card));
+    const dialog = await screen.findByRole("dialog", { name: "Edit host" });
+    expect(
+      within(dialog).getByLabelText("Separate KDC route"),
+    ).toHaveTextContent("Tailscale");
+    expect(within(dialog).getByLabelText("Connection route")).toHaveTextContent(
+      rfbTransport === "direct" ? "Direct from Runner" : "Cloudflare Access",
+    );
+    expect(getAction("button", "Save", dialog)).toBeDisabled();
   },
 );
 
-test("A conflict cannot reapply a Direct draft over a newly native saved route", async () => {
+test("A conflict requires explicit review before reapplying a Direct draft over a newly native saved route", async () => {
   const data = mockSettings();
   const requests: unknown[] = [];
   context.mocks.api(vncConnectionsContract.update, ({ body, respond }) => {
@@ -291,13 +308,8 @@ test("A conflict cannot reapply a Direct draft over a newly native saved route",
     within(review).findByText("Tailscale"),
   ).resolves.toBeInTheDocument();
   expect(
-    within(review).getByText(
-      "Editing this private-network route is not available yet.",
-    ),
-  ).toBeInTheDocument();
-  expect(
     getAction("button", "Keep my changes with this version", review),
-  ).toBeDisabled();
+  ).toBeEnabled();
   expect(getAction("button", "Save", dialog)).toBeDisabled();
   expect(within(dialog).getByLabelText("Display name")).toHaveValue(
     "Preserved draft",
@@ -820,18 +832,25 @@ test("VNC host settings update the chat remote access default", async () => {
 });
 
 async function choose(dialog: HTMLElement, label: string, name: string) {
-  if (label === "Connection route") {
-    click(
-      getAction(
-        "radio",
-        name,
-        within(dialog).getByRole("radiogroup", { name: label }),
-      ),
-    );
-    return;
-  }
   await userEvent.click(await within(dialog).findByLabelText(label));
   await userEvent.click(await screen.findByRole("option", { name }));
+}
+
+async function inspectProtectiveRoutes(dialog: HTMLElement) {
+  const trigger = within(dialog).getByLabelText("Connection route");
+  trigger.focus();
+  await userEvent.keyboard("{ArrowDown}");
+  await expect(
+    screen.findByRole("option", { name: "Direct from Runner" }),
+  ).resolves.toHaveAttribute("aria-disabled", "true");
+  expect(
+    screen.getByRole("option", { name: "Cloudflare Access" }),
+  ).toBeVisible();
+  expect(screen.getByRole("option", { name: "Tailscale" })).toBeVisible();
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(trigger).toHaveFocus();
+  });
 }
 
 async function addCredential() {
@@ -1252,7 +1271,9 @@ test("An SSH-backed card shows topology and a missing saved SSH host blocks edit
 
   click(getAction("button", "Edit host"));
   const dialog = await screen.findByRole("dialog", { name: "Edit host" });
-  expect(getAction("radio", "Through saved SSH host", dialog)).toBeChecked();
+  expect(within(dialog).getByLabelText("Connection route")).toHaveTextContent(
+    "Through saved SSH host",
+  );
   expect(
     within(dialog).getByText(/The selected SSH host is no longer available/u),
   ).toBeInTheDocument();
@@ -1260,7 +1281,7 @@ test("An SSH-backed card shows topology and a missing saved SSH host blocks edit
   await choose(dialog, "Connection route", "Direct from Runner");
   expect(getAction("button", "Save", dialog)).toBeDisabled();
   expect(within(dialog).getByRole("alert")).toHaveTextContent(
-    "Private and loopback IP addresses require a saved SSH host",
+    "Private IP addresses require a supported private-network route or saved SSH host",
   );
   await fill(
     within(dialog).getByLabelText("RFB destination host"),
@@ -1368,7 +1389,7 @@ test("Direct route explains canonical IPv6 loopback and private mapped literals"
   ]) {
     await fill(destination, address);
     expect(within(dialog).getByRole("alert")).toHaveTextContent(
-      "Private and loopback IP addresses require a saved SSH host",
+      "Private IP addresses require a supported private-network route or saved SSH host",
     );
     expect(getAction("button", "Save", dialog)).toBeDisabled();
   }
@@ -2084,7 +2105,7 @@ test("Name stays first and a later profile choice never rewrites the earlier dra
   expect(within(dialog).getByLabelText("Display name")).toHaveValue(
     "Office desktop",
   );
-  expect(queryAction("radio", "Direct from Runner", dialog)).toBeNull();
+  await inspectProtectiveRoutes(dialog);
   expect(
     within(dialog).getByLabelText("RFB destination host"),
   ).toHaveTextContent("127.0.0.1");
@@ -2095,10 +2116,12 @@ test("Name stays first and a later profile choice never rewrites the earlier dra
   expect(within(dialog).getByLabelText("RFB destination host")).toHaveValue(
     "desktop.example.com",
   );
-  expect(getAction("radio", "Through saved SSH host", dialog)).toBeChecked();
+  expect(within(dialog).getByLabelText("Connection route")).toHaveTextContent(
+    "Through saved SSH host",
+  );
 });
 
-test("Mac classic password is an explicit SSH-only profile with risk disclosure and bounded password", async () => {
+test("Mac classic password defaults to SSH loopback with risk disclosure and bounded password", async () => {
   mockSettings({
     connections: [],
     credentials: [],
@@ -2127,10 +2150,7 @@ test("Mac classic password is an explicit SSH-only profile with risk disclosure 
   expect(
     within(dialog).queryByLabelText("Server certificate trust"),
   ).toBeNull();
-  expect(
-    within(dialog).queryByRole("radiogroup", { name: "Connection route" }),
-  ).toBeNull();
-  expect(queryAction("radio", "Direct from Runner", dialog)).toBeNull();
+  await inspectProtectiveRoutes(dialog);
   await choose(dialog, "SSH host", "Desktop gateway · gateway.example.com:22");
   await fill(within(dialog).getByLabelText("Display name"), "Mac classic VNC");
   const destination = within(dialog).getByLabelText("RFB destination host");
@@ -2231,10 +2251,7 @@ test.each(appleHostProfiles)(
     expect(
       within(dialog).queryByLabelText("Server certificate trust"),
     ).toBeNull();
-    expect(
-      within(dialog).queryByRole("radiogroup", { name: "Connection route" }),
-    ).toBeNull();
-    expect(queryAction("radio", "Direct from Runner", dialog)).toBeNull();
+    await inspectProtectiveRoutes(dialog);
     await choose(
       dialog,
       "SSH host",
@@ -3789,8 +3806,8 @@ test.each(
       within(dialog).queryByLabelText("Server certificate trust"),
     ).toBeNull();
     await fill(within(dialog).getByLabelText("Display name"), "RSA desktop");
-    expect(queryAction("radio", "Direct from Runner", dialog) === null).toBe(
-      ne,
+    expect(within(dialog).getByLabelText("Connection route")).toHaveTextContent(
+      ne ? "Through saved SSH host" : "Direct from Runner",
     );
     expect(
       within(dialog).queryByText(/SSH protects only its hop/u) !== null,

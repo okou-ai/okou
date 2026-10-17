@@ -145,7 +145,12 @@ export const commitNetworkConfigMutation$ = command(
     if (!result.ok) {
       // The only division in this statement is its completion guard. PostgreSQL
       // has rolled back every effect before reporting this known failed write.
-      if (safeSqlStateCode(result.error) === "22012") {
+      // A deadlock victim is also a known fully aborted statement. Let the
+      // caller review the current snapshot; never replay prepared secret work.
+      if (
+        safeSqlStateCode(result.error) === "22012" ||
+        safeSqlStateCode(result.error) === "40P01"
+      ) {
         return { ok: false as const, reason: "conflict" as const };
       }
       throw result.error;

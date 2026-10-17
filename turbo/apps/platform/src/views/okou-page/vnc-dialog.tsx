@@ -29,6 +29,8 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { localizedVncError } from "../../lib/vnc-error.ts";
 import { sshConnections$ } from "../../signals/ssh.ts";
+import { cloudflareAccessConfigs$ } from "../../signals/cloudflare-access.ts";
+import { scopedTailscaleConfigs$ } from "../../signals/tailscale.ts";
 import { isVncKerberosMethod } from "@okouai/api-contracts/contracts/vnc-kerberos";
 import { VncConflictReview } from "./vnc-conflict-review.tsx";
 import {
@@ -144,10 +146,39 @@ function VncSaveNotice({
   );
 }
 
+function useNativeVncNetworkBlocked() {
+  const access = useLoadable(cloudflareAccessConfigs$);
+  const tailscale = useLoadable(scopedTailscaleConfigs$);
+  const editor = useGet(vncEditor$);
+  const networkUnavailable = (type: string, id: string) => {
+    if (type !== "cloudflare_access" && type !== "tailscale") {
+      return false;
+    }
+    const configs = type === "cloudflare_access" ? access : tailscale;
+    return (
+      configs.state !== "hasData" ||
+      !configs.data?.some((config) => {
+        return config.id === id;
+      })
+    );
+  };
+  const onlineKdc =
+    isVncKerberosMethod(editor.profile) &&
+    editor.profile !== "qemu_kerberos_ticket";
+  return (
+    networkUnavailable(editor.transport, editor.networkConfigId) ||
+    (onlineKdc &&
+      (networkUnavailable(editor.kdcTransport, editor.kdcNetworkConfigId) ||
+        (editor.kdcTransport === "direct" &&
+          isPrivateVncLiteral(editor.kdcHost))))
+  );
+}
+
 function useSaveBlocked(dialog: VncDialogState) {
   const credentials = useLoadable(vncCredentials$);
   const sshConnections = useLoadable(sshConnections$);
   const editor = useGet(vncEditor$);
+  const nativeBlocked = useNativeVncNetworkBlocked();
   const conflict = useGet(vncConflict$);
   if (conflict) {
     return true;
@@ -178,13 +209,17 @@ function useSaveBlocked(dialog: VncDialogState) {
     const kdcBlocked =
       isVncKerberosMethod(editor.profile) &&
       editor.profile !== "qemu_kerberos_ticket" &&
-      editor.kdcSshConnectionId !== "" &&
+      editor.kdcTransport === "ssh" &&
       sshUnavailable(editor.kdcSshConnectionId);
     const destinationBlocked =
       editor.transport === "direct" &&
       isPrivateVncLiteral(editor.destinationHost);
     return (
-      credentialBlocked || transportBlocked || kdcBlocked || destinationBlocked
+      credentialBlocked ||
+      transportBlocked ||
+      kdcBlocked ||
+      nativeBlocked ||
+      destinationBlocked
     );
   }
   return (
@@ -302,7 +337,10 @@ function VncForm({
                   <VncTransportFields disabled={disabled} />
                   <VncEndpointFields connection={dialog.connection} />
                   <VncTlsFields disabled={disabled} />
-                  <KerberosConnectionFields connection={dialog.connection} />
+                  <KerberosConnectionFields
+                    connection={dialog.connection}
+                    disabled={disabled}
+                  />
                 </fieldset>
                 {editor.profile !== "x509_none" && (
                   <VncCredentialSelection disabled={disabled} />

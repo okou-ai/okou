@@ -166,7 +166,7 @@ describe("prepared native VNC contracts", () => {
     expect(vncConnectionResponseSchema.parse(host)).toEqual(host);
   });
 
-  it("keeps native RFB/KDC and origin TLS out of public create/update input", () => {
+  it("accepts bound native RFB/KDC input while rejecting misplaced origin TLS and detached bindings", () => {
     const create = {
       id,
       displayName: host.displayName,
@@ -180,13 +180,13 @@ describe("prepared native VNC contracts", () => {
       expect(
         createVncConnectionRequestSchema.safeParse({ ...create, transport })
           .success,
-      ).toBe(false);
+      ).toBe(true);
       expect(
         updateVncConnectionRequestSchema.safeParse({
           expectedGeneration: 1,
           transport,
         }).success,
-      ).toBe(false);
+      ).toBe(true);
       const security = {
         type: "qemu_x509_gssapi",
         trust: { mode: "system" },
@@ -196,11 +196,25 @@ describe("prepared native VNC contracts", () => {
       expect(
         createVncConnectionRequestSchema.safeParse({ ...create, security })
           .success,
-      ).toBe(false);
+      ).toBe(true);
       expect(
         updateVncConnectionRequestSchema.safeParse({
           expectedGeneration: 1,
           security,
+        }).success,
+      ).toBe(true);
+    }
+    expect(
+      createVncConnectionRequestSchema.safeParse({
+        ...create,
+        transport: { type: "cloudflare_access", configId: id, originTls },
+      }).success,
+    ).toBe(true);
+    for (const type of ["cloudflare_access", "tailscale"]) {
+      expect(
+        createVncConnectionRequestSchema.safeParse({
+          ...create,
+          transport: { type, needsRebind: true },
         }).success,
       ).toBe(false);
     }

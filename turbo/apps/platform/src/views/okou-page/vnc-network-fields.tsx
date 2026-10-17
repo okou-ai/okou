@@ -1,0 +1,397 @@
+import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useTranslation } from "react-i18next";
+import {
+  Button,
+  Checkbox,
+  Input,
+  Textarea,
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@okouai/ui";
+import {
+  VNC_CA_BUNDLE_MAX_LENGTH,
+  VNC_HOST_MAX_LENGTH,
+} from "@okouai/api-contracts/contracts/vnc-connections";
+import {
+  cloudflareAccessConfigs$,
+  retryCloudflareAccess$,
+} from "../../signals/cloudflare-access.ts";
+import {
+  scopedTailscaleConfigs$,
+  retryTailscale$,
+} from "../../signals/tailscale.ts";
+import {
+  chooseVncTransport$,
+  chooseVncKdcTransport$,
+  chooseVncNetworkConfig$,
+  editVncOriginTls$,
+  vncEditor$,
+} from "../../signals/vnc.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
+import { detach, Reason } from "../../signals/utils.ts";
+
+function VncNetworkConfigGroups({
+  configs,
+}: {
+  readonly configs: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly scope: "personal" | "organization";
+  }[];
+}) {
+  const { t } = useTranslation();
+  return (["personal", "organization"] as const).map((scope) => {
+    const scoped = configs.filter((config) => {
+      return config.scope === scope;
+    });
+    return scoped.length > 0 ? (
+      <SelectGroup key={scope}>
+        <SelectLabel>
+          {scope === "personal"
+            ? t(($) => {
+                return $.cloudflareAccess.personal;
+              })
+            : t(($) => {
+                return $.cloudflareAccess.organization;
+              })}
+        </SelectLabel>
+        {scoped.map((config) => {
+          return (
+            <SelectItem key={config.id} value={config.id}>
+              {config.name}
+            </SelectItem>
+          );
+        })}
+      </SelectGroup>
+    ) : null;
+  });
+}
+
+function VncNetworkConfig({
+  role,
+  type,
+  disabled,
+}: {
+  readonly role: "rfb" | "kdc";
+  readonly type: "cloudflare_access" | "tailscale";
+  readonly disabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const access = useLoadable(cloudflareAccessConfigs$);
+  const tailscale = useLoadable(scopedTailscaleConfigs$);
+  const configs = type === "cloudflare_access" ? access : tailscale;
+  const editor = useGet(vncEditor$);
+  const choose = useSet(chooseVncNetworkConfig$);
+  const retryAccess = useSet(retryCloudflareAccess$);
+  const retryTailscale = useSet(retryTailscale$);
+  const signal = useGet(pageSignal$);
+  const id =
+    role === "rfb" ? editor.networkConfigId : editor.kdcNetworkConfigId;
+  const available = configs.state === "hasData" ? configs.data : null;
+  const items =
+    available?.map((config) => {
+      return { value: config.id, label: config.name };
+    }) ?? [];
+  if (configs.state === "loading") {
+    return (
+      <p role="status">
+        {t(($) => {
+          return $.vnc.native.loading;
+        })}
+      </p>
+    );
+  }
+  if (configs.state === "hasError") {
+    return (
+      <div role="alert" className="grid gap-2 text-sm text-muted-foreground">
+        <p>
+          {t(($) => {
+            return $.vnc.native.loadFailed;
+          })}
+        </p>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            detach(
+              type === "cloudflare_access"
+                ? retryAccess(signal)
+                : retryTailscale(signal),
+              Reason.DomCallback,
+            );
+          }}
+        >
+          {t(($) => {
+            return $.global.actions.tryAgain;
+          })}
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <div className="grid min-w-0 gap-2 text-sm">
+      <label htmlFor={`vnc-${role}-network-config`}>
+        {t(($) => {
+          return $.vnc.native.configuration;
+        })}
+      </label>
+      <Select
+        items={items}
+        disabled={disabled || !available}
+        value={id || null}
+        onValueChange={(value) => {
+          choose(role, value);
+        }}
+      >
+        <SelectTrigger id={`vnc-${role}-network-config`}>
+          <SelectValue
+            placeholder={t(($) => {
+              return $.vnc.native.select;
+            })}
+          />
+        </SelectTrigger>
+        <SelectContent>
+          <VncNetworkConfigGroups configs={available ?? []} />
+        </SelectContent>
+      </Select>
+      {id &&
+        !available?.some((config) => {
+          return config.id === id;
+        }) && (
+          <p role="alert">
+            {t(($) => {
+              return $.vnc.native.needsRebind;
+            })}
+          </p>
+        )}
+      {available?.length === 0 && (
+        <p>
+          {t(($) => {
+            return $.vnc.native.empty;
+          })}
+        </p>
+      )}
+      {available === null && (
+        <p role="alert">
+          {t(($) => {
+            return $.vnc.unavailable;
+          })}
+        </p>
+      )}
+      <p className="text-muted-foreground">
+        {type === "cloudflare_access"
+          ? t(($) => {
+              return $.vnc.native.gatewayHelp;
+            })
+          : t(($) => {
+              return $.vnc.native.peerHelp;
+            })}
+      </p>
+    </div>
+  );
+}
+
+export function VncNetworkFields({
+  role,
+  disabled,
+  protectedRoute = false,
+}: {
+  readonly role: "rfb" | "kdc";
+  readonly disabled: boolean;
+  readonly protectedRoute?: boolean;
+}) {
+  const { t } = useTranslation();
+  const editor = useGet(vncEditor$);
+  const chooseRfb = useSet(chooseVncTransport$);
+  const chooseKdc = useSet(chooseVncKdcTransport$);
+  const type = role === "rfb" ? editor.transport : editor.kdcTransport;
+  const items = [
+    {
+      value: "direct",
+      label: t(($) => {
+        return $.vnc.transport.direct;
+      }),
+    },
+    {
+      value: "ssh",
+      label: t(($) => {
+        return $.vnc.transport.ssh;
+      }),
+    },
+    {
+      value: "cloudflare_access",
+      label: t(($) => {
+        return $.cloudflareAccess.title;
+      }),
+    },
+    {
+      value: "tailscale",
+      label: t(($) => {
+        return $.tailscale.title;
+      }),
+    },
+  ];
+  return (
+    <div className="grid min-w-0 gap-4">
+      <div className="grid gap-2 text-sm">
+        <label htmlFor={`vnc-${role}-route`}>
+          {role === "rfb"
+            ? t(($) => {
+                return $.vnc.transport.title;
+              })
+            : t(($) => {
+                return $.vnc.kerberos.kdcRoute;
+              })}
+        </label>
+        <Select
+          items={items}
+          disabled={disabled}
+          value={type}
+          onValueChange={role === "rfb" ? chooseRfb : chooseKdc}
+        >
+          <SelectTrigger id={`vnc-${role}-route`}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {items.map((item) => {
+              return (
+                <SelectItem
+                  key={item.value}
+                  value={item.value}
+                  disabled={protectedRoute && item.value === "direct"}
+                >
+                  {item.label}
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
+      </div>
+      {(type === "cloudflare_access" || type === "tailscale") && (
+        <VncNetworkConfig role={role} type={type} disabled={disabled} />
+      )}
+      {role === "rfb" && type === "cloudflare_access" && (
+        <VncOriginTlsFields required={protectedRoute} disabled={disabled} />
+      )}
+    </div>
+  );
+}
+
+function VncOriginTlsFields({
+  required,
+  disabled,
+}: {
+  readonly required: boolean;
+  readonly disabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const editor = useGet(vncEditor$);
+  const edit = useSet(editVncOriginTls$);
+  const enabled = required || editor.originTlsEnabled;
+  const trusts = [
+    {
+      value: "system",
+      label: t(($) => {
+        return $.vnc.security.system;
+      }),
+    },
+    {
+      value: "custom_ca",
+      label: t(($) => {
+        return $.vnc.security.custom;
+      }),
+    },
+  ];
+  return (
+    <fieldset className="grid min-w-0 gap-3" disabled={disabled}>
+      <label className="flex items-center gap-2 text-sm">
+        <Checkbox
+          checked={enabled}
+          disabled={required || disabled}
+          onCheckedChange={(checked) => {
+            edit({ originTlsEnabled: checked });
+          }}
+        />
+        {t(($) => {
+          return $.vnc.native.originTls;
+        })}
+      </label>
+      <p className="text-sm text-muted-foreground">
+        {t(($) => {
+          return $.vnc.native.originTlsHelp;
+        })}
+      </p>
+      {enabled && (
+        <>
+          <label className="grid gap-2 text-sm">
+            <span>
+              {t(($) => {
+                return $.vnc.native.originServerName;
+              })}
+            </span>
+            <Input
+              required
+              maxLength={VNC_HOST_MAX_LENGTH}
+              value={editor.originTlsServerName}
+              onChange={(event) => {
+                edit({ originTlsServerName: event.currentTarget.value });
+              }}
+            />
+          </label>
+          <div className="grid gap-2 text-sm">
+            <label htmlFor="vnc-origin-tls-trust">
+              {t(($) => {
+                return $.vnc.native.originTrust;
+              })}
+            </label>
+            <Select
+              items={trusts}
+              value={editor.originTlsTrust}
+              disabled={disabled}
+              onValueChange={(value) => {
+                if (value === "system" || value === "custom_ca") {
+                  edit({ originTlsTrust: value });
+                }
+              }}
+            >
+              <SelectTrigger id="vnc-origin-tls-trust">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {trusts.map((item) => {
+                  return (
+                    <SelectItem key={item.value} value={item.value}>
+                      {item.label}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+          {editor.originTlsTrust === "custom_ca" && (
+            <label className="grid gap-2 text-sm">
+              <span>
+                {t(($) => {
+                  return $.vnc.native.originCaBundle;
+                })}
+              </span>
+              <Textarea
+                required
+                maxLength={VNC_CA_BUNDLE_MAX_LENGTH}
+                value={editor.originTlsCaBundle}
+                onChange={(event) => {
+                  edit({ originTlsCaBundle: event.currentTarget.value });
+                }}
+              />
+            </label>
+          )}
+        </>
+      )}
+    </fieldset>
+  );
+}
