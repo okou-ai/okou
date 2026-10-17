@@ -349,15 +349,25 @@ async fn claim_with_local_admission(
     let resource = match resource {
         Some(resource) => resource,
         None => {
-            let (resource, selection) = acquire_local_admission_resource(
+            let allow_compatible_blank = !(ctx.has_home_cache
+                && candidate.reuse_key().is_some_and(|reuse_key| {
+                    ctx.home_cache_snapshot
+                        .might_contain_home_cache_reuse_key(reuse_key)
+                }));
+            let Some((resource, selection)) = acquire_local_admission_resource(
                 &candidate,
                 profile_name,
                 job_vcpu,
                 job_memory,
                 device_rate_limits,
+                allow_compatible_blank,
                 ctx,
             )
-            .await?;
+            .await
+            else {
+                record_home_admission_deferral(&candidate, ctx, "capacity_exhausted");
+                return None;
+            };
             blank_pool_selection = selection;
             resource
         }
@@ -686,12 +696,21 @@ async fn prepare_ranked_preference_candidate(
         if ranked_preference_allows(advertised_tier, RunnerPreferenceTier::HomeCache, selected)
             && has_compatible_home(reuse_key, profile_name, ctx)
         {
-            if let Some(lease) = ResourceBudget::try_reserve_lease(ctx.budget, job_vcpu, job_memory)
+            if let Some((resource, blank_pool_selection)) = acquire_local_admission_resource(
+                &candidate,
+                profile_name,
+                job_vcpu,
+                job_memory,
+                device_rate_limits,
+                false,
+                ctx,
+            )
+            .await
             {
                 return PreferencePreparation::Ready(PreparedCandidate {
                     candidate,
-                    resource: Some(LocalAdmissionResource::Fresh(lease)),
-                    blank_pool_selection: None,
+                    resource: Some(resource),
+                    blank_pool_selection,
                 });
             }
             "capacity_exhausted"
@@ -871,13 +890,9 @@ async fn acquire_local_admission_resource(
     job_vcpu: u32,
     job_memory: u32,
     device_rate_limits: &Option<sandbox::DeviceRateLimits>,
+    allow_compatible_blank: bool,
     ctx: &PreClaimResources<'_>,
 ) -> Option<(LocalAdmissionResource, Option<BlankPoolSelection>)> {
-    let home_cache_possible = ctx.has_home_cache
-        && candidate.reuse_key().is_some_and(|reuse_key| {
-            ctx.home_cache_snapshot
-                .might_contain_home_cache_reuse_key(reuse_key)
-        });
     let (selection, blank_pool_selection) = select_idle_entries_for_pressure(
         ctx.idle_pool,
         ctx.status,
@@ -890,7 +905,7 @@ async fn acquire_local_admission_resource(
             profile_name,
             device_rate_limits,
             history_generation_run_id: None,
-            allow_compatible_blank: !home_cache_possible,
+            allow_compatible_blank,
             blank_pool_diagnostics: Some(ctx.blank_pool_diagnostics),
             vcpu: job_vcpu,
             memory_mb: job_memory,
@@ -924,7 +939,6 @@ async fn acquire_local_admission_resource(
         }
         IdlePressureSelection::Exhausted(retiring_leases) => {
             drop(retiring_leases);
-            record_home_admission_deferral(candidate, ctx, "capacity_exhausted");
             None
         }
     }

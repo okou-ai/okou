@@ -244,44 +244,13 @@ impl ResourceBudget {
         vcpu: u32,
         memory_mb: u32,
     ) -> Result<BudgetLease, Vec<BudgetLease>> {
-        assert!(
-            leases.iter().all(|lease| {
-                lease
-                    .budget
-                    .as_ref()
-                    .is_some_and(|owner| Arc::ptr_eq(owner, budget))
-            }),
-            "substituted leases must belong to the target resource budget"
-        );
-
         let mut state = budget.lock();
         let before = (
             state.running_vcpu,
             state.running_memory_mb,
             state.running_count,
         );
-        let mut virtual_state = BudgetState {
-            running_vcpu: state.running_vcpu,
-            running_memory_mb: state.running_memory_mb,
-            running_count: state.running_count,
-        };
-        for lease in &leases {
-            assert!(
-                virtual_state.running_vcpu >= lease.vcpu,
-                "substituted vCPU exceeds resource budget allocation"
-            );
-            assert!(
-                virtual_state.running_memory_mb >= lease.memory_mb,
-                "substituted memory exceeds resource budget allocation"
-            );
-            assert!(
-                virtual_state.running_count > 0,
-                "substituted lease count exceeds resource budget allocation"
-            );
-            virtual_state.running_vcpu -= lease.vcpu;
-            virtual_state.running_memory_mb -= lease.memory_mb;
-            virtual_state.running_count -= 1;
-        }
+        let virtual_state = budget.state_after_releasing(&state, &leases);
 
         if !budget.can_admit_locked(&virtual_state, vcpu, memory_mb) {
             return Err(leases);
@@ -358,6 +327,54 @@ impl ResourceBudget {
     pub fn can_afford(&self, vcpu: u32, memory_mb: u32) -> bool {
         let state = self.lock();
         self.can_admit_locked(&state, vcpu, memory_mb)
+    }
+
+    /// Observe potential admission after releasing the supplied distinct owned leases.
+    /// This neither releases resources nor reserves the incoming shape; callers
+    /// must still reclaim and atomically reserve before claiming work.
+    pub(crate) fn can_afford_after_releasing<'a>(
+        &self,
+        vcpu: u32,
+        memory_mb: u32,
+        leases: impl IntoIterator<Item = &'a BudgetLease>,
+    ) -> bool {
+        let state = self.lock();
+        let remaining = self.state_after_releasing(&state, leases);
+        self.can_admit_locked(&remaining, vcpu, memory_mb)
+    }
+
+    fn state_after_releasing<'a>(
+        &self,
+        state: &BudgetState,
+        leases: impl IntoIterator<Item = &'a BudgetLease>,
+    ) -> BudgetState {
+        let mut remaining = BudgetState {
+            running_vcpu: state.running_vcpu,
+            running_memory_mb: state.running_memory_mb,
+            running_count: state.running_count,
+        };
+        for lease in leases {
+            assert!(
+                lease
+                    .budget
+                    .as_ref()
+                    .is_some_and(|owner| std::ptr::eq(owner.as_ref(), self)),
+                "substituted leases must belong to the target resource budget"
+            );
+            remaining.running_vcpu = remaining
+                .running_vcpu
+                .checked_sub(lease.vcpu)
+                .expect("substituted vCPU exceeds resource budget allocation");
+            remaining.running_memory_mb = remaining
+                .running_memory_mb
+                .checked_sub(lease.memory_mb)
+                .expect("substituted memory exceeds resource budget allocation");
+            remaining.running_count = remaining
+                .running_count
+                .checked_sub(1)
+                .expect("substituted lease count exceeds resource budget allocation");
+        }
+        remaining
     }
 
     /// Observe whether one reservation and its required remaining headroom fit
@@ -674,6 +691,23 @@ mod tests {
         assert_eq!(state.running_vcpu, 2);
         assert_eq!(state.running_memory_mb, 2048);
         assert_eq!(state.running_count, 1);
+    }
+
+    #[test]
+    fn observing_reclaimable_leases_keeps_actual_capacity_reserved() {
+        let budget = Arc::new(ResourceBudget::new(5, 8192, 1.0, 2));
+        let _active = ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap();
+        let parked = ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap();
+
+        assert!(budget.can_afford_after_releasing(2, 4096, [&parked]));
+        assert!(!budget.can_afford_after_releasing(4, 8192, [&parked]));
+        assert_eq!(budget.allocated(), (4, 8192, 2));
+        assert!(ResourceBudget::try_reserve_lease(&budget, 2, 4096).is_none());
+
+        let _replacement = ResourceBudget::try_substitute_leases(&budget, vec![parked], 2, 4096)
+            .unwrap_or_else(|_| panic!("observed replacement should fit"));
+        assert_eq!(budget.allocated(), (4, 8192, 2));
+        assert!(ResourceBudget::try_reserve_lease(&budget, 2, 4096).is_none());
     }
 
     #[test]
