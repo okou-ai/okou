@@ -1,5 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
+import { SANDBOX_FS_VERSION } from "@okouai/api-contracts/contracts/sandbox-channel-fs";
 import { click } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
@@ -37,7 +38,11 @@ test("An unsupported schema is a stable update state while Activity Steps remain
   ).resolves.toBeInTheDocument();
 });
 
-test.each<Record<string, number>>([{}, { fs: 1 }, { fs: 3 }])(
+test.each<Record<string, number>>([
+  {},
+  { fs: SANDBOX_FS_VERSION - 1 },
+  { fs: SANDBOX_FS_VERSION + 1 },
+])(
   "An unsupported fs category %j shows an update state without a list call",
   async (categories) => {
     const fixture = await setupFilesPage(context, { categories });

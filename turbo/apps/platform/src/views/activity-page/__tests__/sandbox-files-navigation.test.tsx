@@ -1,6 +1,7 @@
 import { act, fireEvent, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
+import { SANDBOX_FS_VERSION } from "@okouai/api-contracts/contracts/sandbox-channel-fs";
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
@@ -22,7 +23,7 @@ function currentFolder(panel: HTMLElement) {
     .querySelector('[aria-current="location"]');
 }
 
-test("Folder expansion and entry are distinct and every ancestor navigates the real fs v3 namespace", async () => {
+test("Folder expansion and entry are distinct and every ancestor navigates the real Guest root namespace", async () => {
   const fixture = await setupFilesPage(context, { handler: navigationListing });
   const panel = await openFiles();
   await expect(
@@ -70,7 +71,7 @@ test("Folder expansion and entry are distinct and every ancestor navigates the r
   });
   expect(
     requests.every((request) => {
-      return request.categoryVersion === 2;
+      return request.categoryVersion === SANDBOX_FS_VERSION;
     }),
   ).toBeTruthy();
   expect(

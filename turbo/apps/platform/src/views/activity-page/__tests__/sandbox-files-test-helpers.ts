@@ -5,6 +5,7 @@ import {
   type SandboxChannelMessage,
   type SandboxChannelWireError,
 } from "@okouai/api-contracts/contracts/sandbox-channel";
+import { SANDBOX_FS_VERSION } from "@okouai/api-contracts/contracts/sandbox-channel-fs";
 import { runnerWssTicketsContract } from "@okouai/api-contracts/contracts/runner-wss-tickets";
 import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
 import {
@@ -233,7 +234,11 @@ export async function setupFilesPage(
           request.id,
           options.helloError
             ? { error: options.helloError }
-            : { result: { categories: options.categories ?? { fs: 2 } } },
+            : {
+                result: {
+                  categories: options.categories ?? { fs: SANDBOX_FS_VERSION },
+                },
+              },
         );
       } else if (request.type === "request") {
         requests.push(request);

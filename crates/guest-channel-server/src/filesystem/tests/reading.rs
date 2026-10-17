@@ -214,6 +214,66 @@ async fn preview_caps_do_not_limit_sparse_downloads_beyond_four_gib() {
 }
 
 #[tokio::test]
+async fn complete_preview_boundary_is_independent_of_download_selection() {
+    let root = tempfile::tempdir().unwrap();
+    let file = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(root.path().join("preview"))
+        .unwrap();
+    let boundary = 16_u64 * 1024 * 1024;
+    file.set_len(boundary).unwrap();
+    let filesystem = Filesystem::start(root.path().into()).unwrap();
+    let active = owner(&filesystem);
+    let preview = open(&filesystem, &active, &[b"preview"], "preview")
+        .await
+        .unwrap();
+    assert_eq!(preview.file_size, boundary.to_string());
+    assert_eq!(preview.selected_size, preview.file_size);
+    assert!(!preview.truncated);
+    let tail = read(&filesystem, &active, &preview.handle, boundary - 1, 2)
+        .await
+        .unwrap();
+    assert_eq!(tail.length, 1);
+    assert_eq!(STANDARD.decode(tail.data).unwrap(), [0]);
+    request(
+        &filesystem,
+        &active,
+        Operation::FsReadFinish,
+        json!({"handle":preview.handle}),
+    )
+    .await
+    .unwrap();
+    file.set_len(boundary + 1).unwrap();
+    assert_eq!(
+        open(&filesystem, &active, &[b"preview"], "preview")
+            .await
+            .unwrap_err(),
+        Error::Contract(ChannelError::LimitExceeded)
+    );
+    let download = open(&filesystem, &active, &[b"preview"], "download")
+        .await
+        .unwrap();
+    assert_eq!(download.selected_size, (boundary + 1).to_string());
+    assert!(!download.truncated);
+    assert_eq!(
+        read(&filesystem, &active, &download.handle, boundary, 1)
+            .await
+            .unwrap()
+            .length,
+        1
+    );
+    request(
+        &filesystem,
+        &active,
+        Operation::FsReadFinish,
+        json!({"handle":download.handle}),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn modification_during_read_and_before_finish_invalidates_the_handle() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("file");
