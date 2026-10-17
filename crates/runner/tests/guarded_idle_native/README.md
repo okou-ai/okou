@@ -1,5 +1,38 @@
 # Guarded idle terminal fixture
 
+## Concurrent guarded snapshot readers
+
+`native_shared_reads_retain_independent_physical_custody` runs two guarded
+readers of the same immutable original 4 GiB `memory.bin`, sharing the original
+pressure/P2 authority in fresh and matching-snapshot Guest factories. Both wait
+under initial Unknown, then actual sustained Ready admits two complete declared
+growth allowances. Existing test-only checkpoints hold each producer after its
+actual first 1 MiB; they do not model stalled storage.
+
+Cancelling the first reader leaves its dropped/replacement drain observers
+Pending while an acknowledged API heartbeat and actual host observation finish.
+Both allowances remain held. Positive release and physical join settle only the
+first allowance; the second producer stays held and independently completes all
+4 GiB after its own release. Every reader, sampler and reporting dependency joins
+before original saving, complete home data, exact backing exit and durable
+64 MiB tail. Failure cleanup also releases owned gates and joins accepted work.
+
+Select this ignored test with the bounded P1 invocation below, supplying metadata
+`native_shared_reads_policy_json`, `native_shared_reads_inputs_json` and
+`native_shared_reads_snapshot_bytes` (4294967296), plus the original terminal
+artifact metadata. Validate both cases with:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/shared_reads_report.py <p1-directory>
+```
+
+Ordinary Cargo runs the shared-headroom and independent-cancellation real-file
+regressions and the report's real-file/CLI refusal checks. This is component
+composition evidence: production startup still uses unguarded `spawn`.
+Production startup/P2 installation, full/cold residency, calibration, unknown
+bootstrap provenance, broader failure/race coverage, useful memory savings and
+OOM protection retain their existing parent/P4 gates.
+
 ## Accepted actual snapshot-read cancellation
 
 `native_read_cancellation_retains_actual_io_through_drain` runs the production
@@ -799,7 +832,7 @@ dependency while retaining complete artifact and snapshot byte checks:
 ```sh
 OKOU_TEST_BUILD_SOURCE_SHA="$(git rev-parse HEAD)" \
   cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \
-  --config 'profile.local.package."sha2@0.11.0".opt-level=3' \
+  --config 'profile.local.package."sha2@0.11.1".opt-level=3' \
   -p runner --test guarded_idle_native --no-run --message-format=json
 ```
 
