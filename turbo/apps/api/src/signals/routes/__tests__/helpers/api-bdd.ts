@@ -358,9 +358,15 @@ export function createBddApi(context: TestContext) {
     async createAgent(
       nextUser: ApiTestUser,
       body: AgentRequest = {},
+      options: { readonly isolatePg?: true } = {},
     ): Promise<AgentResponse> {
+      const client = options.isolatePg
+        ? (await setupApp({ context, routes: agentsRoutes, isolatePg: true }))(
+            agentsMainContract,
+          )
+        : agentsClient();
       const response = await accept(
-        agentsClient().create({
+        client.create({
           headers: authenticate(nextUser),
           body: { visibility: "public", ...body },
         }),
