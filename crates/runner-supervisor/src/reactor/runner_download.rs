@@ -419,12 +419,8 @@ async fn respond(
 
 fn disposition(name: &str) -> String {
     use std::fmt::Write;
-    let cleaned: String = name.chars().filter(|c| !c.is_control()).take(120).collect();
-    let name = if cleaned.is_empty() {
-        "download"
-    } else {
-        &cleaned
-    };
+    // The fs v3 result validator guarantees a nonempty, control-free label.
+    let name: String = name.chars().take(120).collect();
     let fallback: String = name
         .chars()
         .map(|c| {
