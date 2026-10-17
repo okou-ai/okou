@@ -183,7 +183,11 @@ class SnapshotOwnershipTest(unittest.TestCase):
             os.mkfifo(fifo)
             descriptor = os.open(fifo, os.O_RDONLY | os.O_NONBLOCK)
             self.addCleanup(os.close, descriptor)
-            child = f"import os,signal; f=open({str(fifo)!r},'w'); f.write(str(os.getpid())); f.close(); signal.pause()"
+            child = (
+                "import os,signal\nwith open("
+                + repr(str(fifo))
+                + ",'w') as ready:\n ready.write(str(os.getpid()))\nsignal.pause()"
+            )
             program = (
                 "import packaged_snapshot,signal,sys\nwith packaged_snapshot.owned([sys.executable,'-c',"
                 + repr(child)
@@ -219,14 +223,16 @@ class SnapshotOwnershipTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             receipt = {"schemaVersion": 1, "result": "failed", "processes": []}
-            with (
-                self.assertRaisesRegex(ValueError, "owned failure"),
-                packaged_snapshot.owned(
+            observed_error = None
+            try:
+                with packaged_snapshot.owned(
                     [sys.executable, "-c", "print('ready',flush=True)"], receipt
-                ) as child,
-            ):
-                self.assertEqual(child.stdout.readline(), b"ready\n")
-                raise ValueError("owned failure")
+                ) as child:
+                    self.assertEqual(child.stdout.readline(), b"ready\n")
+                    raise ValueError("owned failure")
+            except ValueError as error:
+                observed_error = str(error)
+            self.assertEqual(observed_error, "owned failure")
             path = root / "snapshot-receipt.json"
             path.write_text(json.dumps(receipt))
             fixture.snapshot_receipt(root, complete=False)
@@ -267,19 +273,21 @@ class SnapshotOwnershipTest(unittest.TestCase):
 
     def test_owned_context_joins_child_on_failure(self):
         receipt = {"processes": []}
-        with (
-            self.assertRaisesRegex(ValueError, "owned failure"),
-            packaged_snapshot.owned(
+        observed_error = None
+        try:
+            with packaged_snapshot.owned(
                 [
                     sys.executable,
                     "-c",
                     "import time; print('ready',flush=True); time.sleep(30)",
                 ],
                 receipt,
-            ) as child,
-        ):
-            self.assertEqual(child.stdout.readline(), b"ready\n")
-            raise ValueError("owned failure")
+            ) as child:
+                self.assertEqual(child.stdout.readline(), b"ready\n")
+                raise ValueError("owned failure")
+        except ValueError as error:
+            observed_error = str(error)
+        self.assertEqual(observed_error, "owned failure")
         self.assertEqual(receipt["processes"][0]["cleanup"], "joined")
         self.assertFalse(Path(f"/proc/{receipt['processes'][0]['pid']}").exists())
 

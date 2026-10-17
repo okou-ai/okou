@@ -119,6 +119,8 @@ def workload_broker(fixture, root, env):
                 try:
                     peer.sendall(bytes([result if 0 <= result <= 125 else 125]))
                 except (BrokenPipeError, ConnectionResetError):
+                    # The vendor may close stdio after its turn. Completion and
+                    # child ownership were recorded before this notification.
                     pass
         except (OSError, ValueError, subprocess.TimeoutExpired, struct.error) as error:
             failures.append(str(error))
@@ -128,6 +130,8 @@ def workload_broker(fixture, root, env):
                     try:
                         os.killpg(child.pid, signal.SIGKILL)
                     except ProcessLookupError:
+                        # Natural exit can win the poll/kill race; wait below
+                        # still collects the exact owned child.
                         pass
                 child.wait(timeout=5)
             for fd in descriptors:
