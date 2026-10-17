@@ -41,9 +41,9 @@ import { env, optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
 import { webUrl } from "../../lib/web-url";
-import { clerk$, type ClerkClient } from "../external/clerk";
+import { clerk$ } from "../external/clerk";
 import { findClerkUser } from "../external/clerk-users";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { renderCreditLowBalanceEmail } from "./credit-low-balance-email-renderer";
 import { renderDataExportReadyEmail } from "./data-export-ready-email-renderer";
 
@@ -955,61 +955,65 @@ export const getUserEmail$ = command(
   },
 );
 
-export async function getUserIdByEmail(
-  db: Db,
-  clerk: ClerkClient,
-  email: string,
-): Promise<string | null> {
-  const [cached] = await db
-    .select()
-    .from(userCache)
-    .where(eq(userCache.email, email))
-    .limit(1);
-  if (cached && now() - cached.cachedAt.getTime() < USER_CACHE_TTL_MS) {
-    return cached.userId;
-  }
+export const getUserIdByEmail$ = command(
+  async ({ get, set }, email: string): Promise<string | null> => {
+    const db = set(writeDb$);
+    const clerk = get(clerk$);
+    const [cached] = await db
+      .select()
+      .from(userCache)
+      .where(eq(userCache.email, email))
+      .limit(1);
+    if (cached && now() - cached.cachedAt.getTime() < USER_CACHE_TTL_MS) {
+      return cached.userId;
+    }
 
-  const usersResponse = await clerk.users.getUserList({
-    emailAddress: [email],
-  });
-  const user = usersResponse.data[0];
-  if (!user) {
-    return null;
-  }
-  const resolvedEmail =
-    user.emailAddresses.find((entry) => {
-      return entry.id === user.primaryEmailAddressId;
-    })?.emailAddress ??
-    user.emailAddresses[0]?.emailAddress ??
-    email;
+    const usersResponse = await clerk.users.getUserList({
+      emailAddress: [email],
+    });
+    const user = usersResponse.data[0];
+    if (!user) {
+      return null;
+    }
+    const resolvedEmail =
+      user.emailAddresses.find((entry) => {
+        return entry.id === user.primaryEmailAddressId;
+      })?.emailAddress ??
+      user.emailAddresses[0]?.emailAddress ??
+      email;
 
-  await db
-    .insert(userCache)
-    .values({
-      userId: user.id,
-      email: resolvedEmail,
-      name: [user.firstName, user.lastName].filter(Boolean).join(" ") || null,
-      imageUrl: user.imageUrl ?? null,
-      cachedAt: nowDate(),
-    })
-    .onConflictDoUpdate({
-      target: userCache.userId,
-      set: {
+    await db
+      .insert(userCache)
+      .values({
+        userId: user.id,
         email: resolvedEmail,
         name: [user.firstName, user.lastName].filter(Boolean).join(" ") || null,
         imageUrl: user.imageUrl ?? null,
         cachedAt: nowDate(),
-      },
-    });
-  return user.id;
-}
+      })
+      .onConflictDoUpdate({
+        target: userCache.userId,
+        set: {
+          email: resolvedEmail,
+          name:
+            [user.firstName, user.lastName].filter(Boolean).join(" ") || null,
+          imageUrl: user.imageUrl ?? null,
+          cachedAt: nowDate(),
+        },
+      });
+    return user.id;
+  },
+);
 
-export async function unsubscribeUser(db: Db, userId: string): Promise<void> {
-  await db
-    .insert(users)
-    .values({ id: userId, emailUnsubscribed: true })
-    .onConflictDoUpdate({
-      target: users.id,
-      set: { emailUnsubscribed: true, updatedAt: nowDate() },
-    });
-}
+export const unsubscribeUser$ = command(
+  async ({ set }, userId: string): Promise<void> => {
+    const db = set(writeDb$);
+    await db
+      .insert(users)
+      .values({ id: userId, emailUnsubscribed: true })
+      .onConflictDoUpdate({
+        target: users.id,
+        set: { emailUnsubscribed: true, updatedAt: nowDate() },
+      });
+  },
+);
