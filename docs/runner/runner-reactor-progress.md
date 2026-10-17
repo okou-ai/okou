@@ -343,7 +343,8 @@ are not resident-cache, released-byte or production memory-saving proof.
   writes. Already-claimed finalizing fallback retains its awaited publication.
 - Exact speculative reuse joins claim with journal-gated Guest preparation.
   The exclusive reservation and cancellation/lifecycle checks precede claim;
-  its idle snapshot must persist before speculative unpark. A journal error
+  its idle snapshot must persist before speculative unpark. If a newer in-memory
+  revision supersedes it, current status durability is still required. A journal error
   retains the parked reservation for ordinary claimed activation or rejection
   rollback, preserving the persisted Preparing gate before physical reuse.
 - API claim requests own temporary poll exclusions until they settle. Poll uses

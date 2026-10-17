@@ -452,7 +452,14 @@ async fn claim_with_local_admission(
                 (claimed, Instant::now())
             };
             let preparation = async {
-                if let Err(error) = ctx.status.set_idle_snapshot(idle_snapshot.clone()).await {
+                let journal = match ctx.status.set_idle_snapshot(idle_snapshot.clone()).await {
+                    Ok(true) => Ok(()),
+                    // A newer in-memory revision can still be waiting for IO.
+                    // Persist the current status, never the superseded inventory.
+                    Ok(false) => ctx.status.retry_unpublished_snapshot().await,
+                    Err(error) => Err(error),
+                };
+                if let Err(error) = journal {
                     warn!(%error, "failed to persist exact speculation idle reservation");
                     return Err(reservation);
                 }
@@ -1107,6 +1114,8 @@ pub async fn rollback_exact_speculation_outcome(
 
 #[cfg(test)]
 mod tests {
+    mod stale_journal;
+
     use super::*;
     use runner_provider::{ActiveRunnerPreference, RunnerPreferenceClaimState};
     use std::time::Duration;
