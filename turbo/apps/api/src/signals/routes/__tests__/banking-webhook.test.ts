@@ -285,7 +285,7 @@ describe("Finicity webhook outcomes", () => {
   });
 
   it("updates account metadata, removes absent accounts and restores their identities", async () => {
-    const fixture = await pendingConnect();
+    const fixture = await pendingConnect(true);
     server.use(
       http.get(fixture.accountsUrl, () => {
         return HttpResponse.json({
