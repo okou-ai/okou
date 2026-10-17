@@ -35,6 +35,7 @@ import {
   filesLocationLabel,
 } from "../../signals/activity-page/sandbox-files-location.ts";
 import { SandboxFilesBreadcrumb } from "./sandbox-files-breadcrumb.tsx";
+import { WorkspaceCanvasBackdrop } from "../okou-page/workspace-inset.tsx";
 
 function FilesErrorMessage({ error }: { readonly error: FilesError }) {
   const { t } = useTranslation();
@@ -456,8 +457,9 @@ export function SandboxFilesBody({
   }
   return (
     <>
-      {/* The isolated Files section keeps this toolbar above its virtual rows. */}
-      <div className="sticky top-0 z-10 flex h-12 items-center gap-2 bg-background px-4 py-2">
+      {/* Match the workspace canvas while occluding the virtual rows below. */}
+      <div className="sticky top-0 z-10 isolate flex h-12 items-center gap-2 px-4 py-2">
+        <WorkspaceCanvasBackdrop />
         <SandboxFilesBreadcrumb signals={signals} />
         <Button
           type="button"
