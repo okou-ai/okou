@@ -6,6 +6,7 @@ import {
 import { agents } from "@okouai/db/schema/agent";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { command } from "ccstate";
 import { and, eq, isNull, or } from "drizzle-orm";
 import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
@@ -22,6 +23,7 @@ import {
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
+import { publishUserSignal } from "../external/realtime";
 import {
   addFeishuMessageReaction,
   listFeishuMessages,
@@ -33,7 +35,10 @@ import { tapError } from "../utils";
 import { publishCustomConnectorUserInvalidationAfterCommit } from "./connector-client-invalidation.service";
 import { buildFeishuConnectUrl } from "./feishu-connect-token";
 import { disconnectFeishuCustomConnectorOAuthConnection } from "./feishu-custom-connector.service";
-import { publishFeishuOrgChanged } from "./feishu-realtime.service";
+import {
+  feishuOrgChangedAdminReadPlan,
+  feishuOrgChangedUserIds,
+} from "./feishu-realtime.service";
 
 const L = logger("FeishuDispatch");
 const FEISHU_THINKING_EMOJI = "Typing";
@@ -584,11 +589,21 @@ export async function markFeishuMessageReceived(
     .returning({ id: feishuOrgInstallations.id });
   signal.throwIfAborted();
   if (markedAsReceived) {
-    await publishFeishuOrgChanged(
-      args.db,
-      args.installation.orgId,
-      args.installation.ownerUserId,
-    );
+    await (async () => {
+      const plan = feishuOrgChangedAdminReadPlan(args.installation.orgId);
+      const admins = await args.db
+        .select(plan.columns)
+        .from(orgMembersCache)
+        .where(plan.condition);
+      const userIds = feishuOrgChangedUserIds(
+        admins,
+        args.installation.ownerUserId,
+      );
+      if (userIds.length === 0) {
+        return;
+      }
+      await publishUserSignal(userIds, "feishu:changed");
+    })();
   }
 }
 
@@ -618,12 +633,22 @@ async function handleDisconnectCommand(
     args.connection.userId,
     signal,
   );
-  await publishFeishuOrgChanged(
-    args.db,
-    args.installation.orgId,
-    args.installation.ownerUserId,
-    [args.connection.userId],
-  );
+  await (async () => {
+    const plan = feishuOrgChangedAdminReadPlan(args.installation.orgId);
+    const admins = await args.db
+      .select(plan.columns)
+      .from(orgMembersCache)
+      .where(plan.condition);
+    const userIds = feishuOrgChangedUserIds(
+      admins,
+      args.installation.ownerUserId,
+      [args.connection.userId],
+    );
+    if (userIds.length === 0) {
+      return;
+    }
+    await publishUserSignal(userIds, "feishu:changed");
+  })();
   await replyNotice(
     {
       db: args.db,

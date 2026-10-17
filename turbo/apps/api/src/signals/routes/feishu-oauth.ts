@@ -12,6 +12,7 @@ import { connectors } from "@okouai/db/schema/connector";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
@@ -72,7 +73,10 @@ import {
   type CustomConnectorHttpRow,
   type CustomConnectorRow,
 } from "../services/custom-connector.service";
-import { publishFeishuOrgChanged } from "../services/feishu-realtime.service";
+import {
+  feishuOrgChangedAdminReadPlan,
+  feishuOrgChangedUserIds,
+} from "../services/feishu-realtime.service";
 import { notifyFeishuConnect$ } from "../services/feishu-welcome.service";
 import { tapError } from "../utils";
 
@@ -601,12 +605,22 @@ const finishFeishuOAuthConnection$ = command(
     );
     signal.throwIfAborted();
 
-    await publishFeishuOrgChanged(
-      db,
-      args.state.orgId,
-      args.installation.ownerUserId,
-      [args.state.userId],
-    );
+    await (async () => {
+      const plan = feishuOrgChangedAdminReadPlan(args.state.orgId);
+      const admins = await db
+        .select(plan.columns)
+        .from(orgMembersCache)
+        .where(plan.condition);
+      const userIds = feishuOrgChangedUserIds(
+        admins,
+        args.installation.ownerUserId,
+        [args.state.userId],
+      );
+      if (userIds.length === 0) {
+        return;
+      }
+      await publishUserSignal(userIds, "feishu:changed");
+    })();
     signal.throwIfAborted();
     if (connection.shouldNotify) {
       const backgroundSignal = new AbortController().signal;
