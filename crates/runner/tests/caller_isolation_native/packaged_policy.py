@@ -1,9 +1,11 @@
-from policy import CLASSES, FILE, SOCKET
+from policy import CAP, CLASSES, FILE, SOCKET
 
 
 def build_policy():
     classes = {
         **CLASSES,
+        "cap_userns": CAP,
+        "cap2_userns": CLASSES["capability2"],
         "netlink_route_socket": SOCKET + " nlmsg_read nlmsg_write",
         "netlink_audit_socket": SOCKET
         + " nlmsg_read nlmsg_write nlmsg_relay nlmsg_readpriv nlmsg_tty_audit",
@@ -26,6 +28,7 @@ def build_policy():
         "resource_anchor_t",
         "resource_config_t",
         "agent_state_t",
+        "runtime_state_t",
     ]
     lines = ["(handleunknown deny)", "(mls false)"]
     lines += [f"(class {k} ({v}))" for k, v in classes.items()]
@@ -134,13 +137,19 @@ def build_policy():
             f"(allow {r} workload_data_t (lnk_file ({FILE})))",
             f"(allow {r} workload_data_t (fifo_file ({FILE})))",
             f"(allow {r} workload_data_t (sock_file ({FILE})))",
-            f"(allow {r} cgroup_t (file (write getattr)))",
+            f"(allow {r} cgroup_t (file (open read write getattr)))",
             f"(allow {r} runtime_log_t (file (write append getattr ioctl)))",
             f"(allow {r} ordinary_port_t (tcp_socket (name_connect)))",
         ]
     # Ordinary execution does not gain a protected role from mutable binaries.
     safe_caps = "chown dac_override dac_read_search fowner fsetid kill setgid setuid setpcap net_bind_service sys_chroot sys_resource audit_write setfcap mknod"
     lines += [
+        "(typetransition agent_t runtime_state_t file runtime_state_t)",
+        "(typetransition agent_t runtime_state_t dir runtime_state_t)",
+        "(typetransition agent_t runtime_state_t lnk_file runtime_state_t)",
+        "(allow agent_t runtime_state_t (file (create open read write append getattr setattr lock map unlink rename watch)))",
+        "(allow agent_t runtime_state_t (dir (create open read write getattr setattr add_name remove_name search rename rmdir)))",
+        "(allow agent_t runtime_state_t (lnk_file (create read write getattr setattr unlink rename)))",
         # Upstream locks even credential/settings reads. Permit only these
         # named lock directories and the private credential file, while fixed
         # executable discovery files/directories retain immutable labels.
@@ -150,7 +159,12 @@ def build_policy():
         "(allow agent_t agent_state_t (file (open read write append getattr setattr lock)))",
         "(allow agent_t agent_state_t (dir (create open read write getattr setattr add_name remove_name search rmdir)))",
         f"(allow workload_t self (capability ({safe_caps})))",
+        f"(allow workload_t self (cap_userns ({safe_caps} sys_admin)))",
+        "(allow workload_t self (process (ptrace)))",
         "(allow workload_t self (process (setcap)))",
+        "(allow workload_t self (user_namespace (create)))",
+        "(allow workload_t control_t (tcp_socket (node_bind)))",
+        "(allow workload_t ordinary_port_t (tcp_socket (name_bind)))",
         "(allow workload_t workload_data_t (file (execute execute_no_trans entrypoint execmod)))",
         "(allow agent_t model_port_t (tcp_socket (name_connect)))",
         "(allow agent_t self (process (setcurrent)))",

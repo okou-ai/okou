@@ -12,6 +12,7 @@
 #include <sys/reboot.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 static void fail(const char *name) {
@@ -33,10 +34,23 @@ int main(void) {
   mount_fs("/dev/vdb", "/rootfs/sealed", "ext4", MS_RDONLY, NULL);
   mkdir("/rootfs/fixture", 0755);
   mount_fs("tmpfs", "/rootfs/fixture", "tmpfs", 0, "mode=0755");
-  const char *files[] = {
-      "guest.py", "packaged_resources.py", "policy",
-      "entry",    "real-guest-tool-exec",  "real-guest-task-exec",
-      NULL};
+  const char *files[] = {"guest.py",
+                         "packaged_resources.py",
+                         "packaged_accounting.py",
+                         "packaged_audit.py",
+                         "packaged_browser.py",
+                         "packaged_history.py",
+                         "packaged_mcp.py",
+                         "packaged_mcp_peer.py",
+                         "packaged_storage.py",
+                         "packaged_lifecycle.py",
+                         "guest-storage-apply",
+                         "resource-policy",
+                         "policy",
+                         "entry",
+                         "real-guest-tool-exec",
+                         "real-guest-task-exec",
+                         NULL};
   for (int i = 0; files[i]; i++) {
     char source[256], target[256], data[16384];
     snprintf(source, sizeof(source), "/fixture/%s", files[i]);
@@ -58,8 +72,11 @@ int main(void) {
     if (n < 0 || close(in) || close(out))
       fail("copy-close");
   }
-  if (chdir("/rootfs") || chroot(".") || chdir("/"))
-    fail("chroot");
+  /* Cover the initramfs root before changing fs.root. A plain chroot makes
+     the kernel reject unprivileged user namespaces even for control_t. */
+  if (chdir("/rootfs") || mount("/rootfs", "/", NULL, MS_MOVE, NULL) ||
+      chroot(".") || chdir("/"))
+    fail("switch-root");
   mount_fs("proc", "/proc", "proc", 0, NULL);
   mount_fs("sysfs", "/sys", "sysfs", 0, NULL);
   mount_fs("securityfs", "/sys/kernel/security", "securityfs", 0, NULL);
@@ -90,6 +107,17 @@ int main(void) {
   close(out);
   free(bytes);
   mount_fs("cgroup2", "/sys/fs/cgroup", "cgroup2", 0, NULL);
+  pid_t setup = fork();
+  if (setup < 0)
+    fail("resource-policy-fork");
+  if (setup == 0) {
+    execl("/fixture/resource-policy", "resource-policy", NULL);
+    fail("resource-policy-exec");
+  }
+  int resource_status;
+  if (waitpid(setup, &resource_status, 0) != setup ||
+      !WIFEXITED(resource_status) || WEXITSTATUS(resource_status))
+    fail("resource-policy-setup");
   if (mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL))
     fail("private-root");
   int ready[2];
@@ -103,6 +131,9 @@ int main(void) {
     if (unshare(CLONE_NEWNS) ||
         mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL))
       fail("workload-namespace");
+    mount_fs("/sys/fs/cgroup", "/sys/fs/cgroup", NULL, MS_BIND, NULL);
+    mount_fs(NULL, "/sys/fs/cgroup", NULL, MS_BIND | MS_REMOUNT | MS_RDONLY,
+             NULL);
     if (write(ready[1], "R", 1) != 1 || close(ready[1]))
       fail("workload-ready-write");
     for (;;)

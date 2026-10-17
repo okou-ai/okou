@@ -97,7 +97,11 @@ the driver checks it before copying and checks the owned copy before boot.
 
 ```bash
 cargo build --manifest-path crates/Cargo.toml --profile local --locked -j1 \
-  -p guest-tool-exec -p guest-task-exec
+  -p guest-tool-exec -p guest-task-exec -p guest-storage-apply -p guest-contracts
+rustc --edition 2024 \
+  crates/runner/tests/caller_isolation_native/packaged_resource_policy.rs \
+  --extern guest_contracts=crates/target/local/libguest_contracts.rlib \
+  -L dependency=crates/target/local/deps -o /owned/experiment/resource-policy
 python3 crates/runner/tests/caller_isolation_native/packaged_run.py \
   --kernel /path/to/pinned/vmlinux \
   --firecracker /path/to/pinned/firecracker \
@@ -106,6 +110,8 @@ python3 crates/runner/tests/caller_isolation_native/packaged_run.py \
   --rootfs-sha256 <exact-64-hex-image-sha256> \
   --tool-helper crates/target/local/guest-tool-exec \
   --task-helper crates/target/local/guest-task-exec \
+  --storage-helper crates/target/local/guest-storage-apply \
+  --resource-helper /owned/experiment/resource-policy \
   --output /owned/experiment/new-packaged-attempt \
   --source-revision <exact-40-hex-fixture-source-commit>
 ```
@@ -117,8 +123,25 @@ the role and obtain namespace handles from a peer-validated control socket.
 Shell exec transitions occur before user startup files run. Actual Rust helpers
 still perform their cgroup placement and OOM adjustment. Ordinary sudo/package,
 terminal/network, root device/ioctl denial, image worker and startup-file probes
-run in the same Guest. The prototype does not configure production resource
-controllers or establish accounting/OOM/reclaim equivalence.
+run in the same Guest. A small test setup executable links the unchanged
+production resource-policy calculator and configures CPU, memory and PID
+controllers before admitting Python or user code. The controller retains its
+writable cgroup mount; agent and tool mount views are read-only. Legitimate
+Rust placement still writes the controller-opened descriptor. User and
+sudo-root attempts actually write migration files and create a forged domain.
+Actual tool CPU, peak memory, PID accounting and group OOM are observed. These
+are prototype results, not production Run accounting/reclaim equivalence or a
+resource-saving comparison. A real Pi loop waits on its synthetic model peer
+while a managed tool reaches group OOM; it must keep its protected identity and
+continue after that pressure. All three packaged CLIs reopen the actual sessions
+they created, and the model peer must observe their earlier user conversation.
+
+The Guest switches its mounted root over the initramfs before entering role
+namespaces. A chroot-only setup would reject user namespace creation even for
+the control role. Workloads can create subordinate user namespaces and use their
+namespaced capabilities; host-level SYS_ADMIN and protected model/file authority
+remain denied. The suite checks mapped uid 0 and the actual unchanged workload
+role, and runs the packaged browser's default sandboxed local-page operation.
 
 The controller writes `/native-result.json` on its owned drive. After the VMM is
 joined, the host reads it with debugfs and retains `guest-result.json`,
@@ -128,7 +151,7 @@ identities are recorded separately. Image payloads are reduced to size/hash in
 the receipt. The CLI artifact's source identity is independent of the fixture
 commit; record both in the owning issue.
 
-All 31 named checks, enforcing Guest identity, pinned CLI identity, no broker
+All 49 named checks, enforcing Guest identity, pinned CLI identity, no broker
 errors and a qualified extension negative are required for exit zero. Missing,
 duplicate, failed or unqualified observations fail closed. The positive extension
 control seals the same executable dependencies but retains the user's discovery
@@ -144,6 +167,34 @@ remains writable and the canonical session tree is shared as data. The suite
 checks extension execution identity and observed model ingress in the load
 control, absence in the frozen view, rejected configuration writes, stable
 anchors, private-state denial and retained-session access.
+
+Actual Claude Code and Codex MCP clients also initialize a benign stdio peer.
+Direct execution is an explicit control that demonstrates the peer inheriting
+agent authority. A captured test configuration instead selects a fixed capless
+native adapter that has already transitioned to workload. It transfers only
+stdio to a peer-validated, bounded controller owner. That owner selects the fixed
+Rust tool helper and preserves the adapter's actual capability bounding set and
+no-new-privileges state. The unchanged helper places the peer as workload, where
+model ingress is denied while its MCP handshake succeeds. This establishes that
+handoff, not complete vendor configuration/plugin closure. The native result
+retains peer identities, handshake completion and server-observed requests.
+Serial output keeps concise verdicts; an audit tail and denial count remain in
+the receipt rather than duplicating every kernel syscall/proctitle line.
+
+The real storage helper applies both file and loopback HTTP gzip/tar manifests;
+pre-existing synthetic user data remains intact. The real Pi subagent kill
+command cancels a child with a blocked workload tool; its task family becomes
+unpopulated and the controller verifies that the tool has exited.
+
+Add `--snapshot-restore` with a new output directory to checkpoint after enforcing
+policy, resource domains and protected namespaces are established, before user
+code. The owner pauses and snapshots its first VMM, joins it, restores a second
+owned VMM and runs the complete suite. Receipts require unchanged enforcing
+state and distinct namespace identities, exact snapshot bytes and both native
+processes joined. On a failed restore, verified joined processes permit owned
+drive cleanup without converting the failed test into success. Unverified
+ownership retains the drive for diagnosis. Snapshot memory files may be large;
+retain them locally on the authorized host and transfer the small receipts.
 
 A successful subset still leaves `gateF: incomplete`. Complete executable
 resource closure for every supported runtime, other helpers and real Run

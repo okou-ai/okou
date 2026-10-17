@@ -5,6 +5,7 @@ import http.client
 import io
 import json
 import os
+import select
 import signal
 import subprocess
 import sys
@@ -17,6 +18,7 @@ from unittest.mock import patch
 
 import packaged_guest
 import packaged_run as fixture
+import packaged_snapshot
 import test_fixture as primitive_tests
 
 
@@ -31,6 +33,20 @@ def summary():
         identity={"uid": 1000, "context": "system_u:system_r:agent_t"},
         ingressObserved=True,
     )
+    for framework in ("claude", "codex"):
+        for mode in ("direct", "lowered"):
+            direct = mode == "direct"
+            by_name[framework + "_mcp_" + mode].update(
+                identity={
+                    "uid": 1000,
+                    "initialized": True,
+                    "capEff": "0000000000000000",
+                    "context": "system_u:system_r:"
+                    + ("agent_t" if direct else "workload_t"),
+                    "connectErrno": 0 if direct else 13,
+                },
+                ingressObserved=direct,
+            )
     by_name["untrusted_shell_startup_denied"].update(
         ingressObserved=False,
         observations=[
@@ -43,6 +59,7 @@ def summary():
         ],
     )
     return {
+        "bootMode": "fresh",
         "gateF": "incomplete",
         "kernel": {
             "architecture": "x86_64",
@@ -131,6 +148,170 @@ class ReceiptTest(unittest.TestCase):
         for raw in ('{"gateF":"passed","gateF":"incomplete"}', " " * 131073):
             with self.subTest(size=len(raw)), self.assertRaises(ValueError):
                 fixture.decode_summary(raw)
+
+    def test_mcp_success_requires_handshake_lowering_and_actual_ingress(self):
+        for change in (
+            "missing",
+            "uninitialized",
+            "privileged",
+            "capabilities",
+            "boolean-errno",
+            "connected",
+        ):
+            value = summary()
+            case = next(c for c in value["results"] if c["name"] == "codex_mcp_lowered")
+            if change == "missing":
+                case["identity"] = None
+            elif change == "uninitialized":
+                case["identity"]["initialized"] = False
+            elif change == "privileged":
+                case["identity"]["context"] = "system_u:system_r:agent_t"
+            elif change == "capabilities":
+                case["identity"]["capEff"] = "000001ffffffffff"
+            elif change == "boolean-errno":
+                case["identity"]["connectErrno"] = True
+            else:
+                case["ingressObserved"] = True
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                fixture.validate_summary(value, "x86_64")
+
+
+class SnapshotOwnershipTest(unittest.TestCase):
+    def test_snapshot_child_is_fenced_after_owner_sigkill(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fifo = Path(directory) / "ready"
+            os.mkfifo(fifo)
+            descriptor = os.open(fifo, os.O_RDONLY | os.O_NONBLOCK)
+            self.addCleanup(os.close, descriptor)
+            child = f"import os,signal; f=open({str(fifo)!r},'w'); f.write(str(os.getpid())); f.close(); signal.pause()"
+            program = (
+                "import packaged_snapshot,signal,sys\nwith packaged_snapshot.owned([sys.executable,'-c',"
+                + repr(child)
+                + "],{'processes':[]}) as child: child.wait()"
+            )
+            owner = subprocess.Popen(
+                [sys.executable, "-c", program],
+                cwd=fixture.HERE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            try:
+                self.assertTrue(
+                    select.select([descriptor], [], [], 5)[0],
+                    "snapshot child never became ready",
+                )
+                pidfd = os.pidfd_open(int(os.read(descriptor, 128)))
+                try:
+                    owner.kill()
+                    owner.wait(timeout=5)
+                    self.assertTrue(
+                        select.select([pidfd], [], [], 5)[0],
+                        "snapshot child survived owner SIGKILL",
+                    )
+                finally:
+                    os.close(pidfd)
+            finally:
+                if owner.poll() is None:
+                    owner.kill()
+                owner.wait(timeout=5)
+
+    def test_failed_snapshot_cleanup_is_separate_from_restore_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            receipt = {"schemaVersion": 1, "result": "failed", "processes": []}
+            with (
+                self.assertRaisesRegex(ValueError, "owned failure"),
+                packaged_snapshot.owned(
+                    [sys.executable, "-c", "print('ready',flush=True)"], receipt
+                ) as child,
+            ):
+                self.assertEqual(child.stdout.readline(), b"ready\n")
+                raise ValueError("owned failure")
+            path = root / "snapshot-receipt.json"
+            path.write_text(json.dumps(receipt))
+            fixture.snapshot_receipt(root, complete=False)
+            with self.assertRaises(ValueError):
+                fixture.snapshot_receipt(root, complete=True)
+            for invalid in (
+                None,
+                {
+                    **receipt,
+                    "processes": [{"pid": os.getpid(), "exit": 0, "cleanup": "joined"}],
+                },
+            ):
+                path.write_text(json.dumps(invalid))
+                with (
+                    self.subTest(invalid=invalid),
+                    self.assertRaises((ValueError, TypeError)),
+                ):
+                    fixture.snapshot_receipt(root, complete=False)
+
+    def test_restore_checkpoint_requires_unchanged_enforcing_namespaces(self):
+        value = summary()
+        checkpoint = {
+            "enforcing": "1",
+            "controllerContext": "system_u:system_r:control_t",
+            "agentNamespace": "mnt:[100]",
+            "workloadNamespace": "mnt:[101]",
+        }
+        value.update(
+            bootMode="restored",
+            restoration={"before": checkpoint, "after": checkpoint.copy()},
+        )
+        fixture.validate_summary(value, "x86_64", "restored")
+        for field, replacement in (("enforcing", "0"), ("agentNamespace", "mnt:[102]")):
+            invalid = copy.deepcopy(value)
+            invalid["restoration"]["after"][field] = replacement
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                fixture.validate_summary(invalid, "x86_64", "restored")
+
+    def test_owned_context_joins_child_on_failure(self):
+        receipt = {"processes": []}
+        with (
+            self.assertRaisesRegex(ValueError, "owned failure"),
+            packaged_snapshot.owned(
+                [
+                    sys.executable,
+                    "-c",
+                    "import time; print('ready',flush=True); time.sleep(30)",
+                ],
+                receipt,
+            ) as child,
+        ):
+            self.assertEqual(child.stdout.readline(), b"ready\n")
+            raise ValueError("owned failure")
+        self.assertEqual(receipt["processes"][0]["cleanup"], "joined")
+        self.assertFalse(Path(f"/proc/{receipt['processes'][0]['pid']}").exists())
+
+    def test_launch_signal_cannot_escape_child_ownership(self):
+        program = """import json,os,signal,sys
+import packaged_snapshot as fixture
+receipt={'processes':[]}
+def interrupted(*_args): raise InterruptedError('cancelled launch')
+signal.signal(signal.SIGTERM,interrupted)
+armed=True
+def audit(event,_args):
+ global armed
+ if event=='subprocess.Popen' and armed:
+  armed=False; os.kill(os.getpid(),signal.SIGTERM)
+sys.addaudithook(audit)
+try:
+ with fixture.owned([sys.executable,'-c','import time;time.sleep(30)'],receipt):
+  raise AssertionError('cancelled launch entered caller')
+except InterruptedError: pass
+print(json.dumps(receipt))
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", program],
+            cwd=Path(fixture.__file__).parent,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=5,
+        )
+        observed = json.loads(result.stdout)["processes"][0]
+        self.assertEqual(observed["cleanup"], "joined")
+        self.assertFalse(Path(f"/proc/{observed['pid']}").exists())
 
     def test_extension_control_requires_actual_privileged_execution_and_ingress(self):
         for change in (

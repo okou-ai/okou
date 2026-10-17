@@ -51,6 +51,24 @@ EXPECTED = {
     "pi_resource_anchors_stable",
     "pi_retained_sessions",
     "pi_private_state_denied",
+    "claude_mcp_direct",
+    "claude_mcp_lowered",
+    "codex_mcp_direct",
+    "codex_mcp_lowered",
+    "storage_file_archive",
+    "storage_http_archive",
+    "real_pi_child_cancellation",
+    "user_cgroup_migration_denied",
+    "root_cgroup_migration_denied",
+    "production_resource_policy_applied",
+    "real_tool_resource_accounting",
+    "real_tool_group_oom_contained",
+    "workload_browser_dom",
+    "real_pi_continues_after_tool_oom",
+    "user_namespace_stays_workload",
+    "pi_reopens_real_history",
+    "claude_reopens_real_history",
+    "codex_reopens_real_history",
     "claude_real_tool_subagent",
     "codex_real_tool_subagent",
     "untrusted_shell_startup_denied",
@@ -67,9 +85,31 @@ PACKAGE = {
 }
 
 
-def validate_summary(summary, architecture):
+def validate_summary(summary, architecture, boot_mode="fresh"):
     if not isinstance(summary, dict) or summary.get("gateF") != "incomplete":
         raise ValueError("invalid packaged scope/gate")
+    if "fixtureError" in summary:
+        raise ValueError("Guest fixture failed: " + str(summary["fixtureError"]))
+    if summary.get("bootMode") != boot_mode:
+        raise ValueError("wrong observed native boot mode")
+    if boot_mode == "restored":
+        observed = summary.get("restoration")
+        if (
+            not isinstance(observed, dict)
+            or not isinstance(observed.get("before"), dict)
+            or observed.get("before") != observed.get("after")
+            or observed["before"].get("enforcing") != "1"
+            or observed["before"].get("controllerContext")
+            != "system_u:system_r:control_t"
+            or any(
+                not isinstance(observed["before"].get(name), str)
+                or re.fullmatch(r"mnt:\[\d+\]", observed["before"][name]) is None
+                for name in ("agentNamespace", "workloadNamespace")
+            )
+            or observed["before"]["agentNamespace"]
+            == observed["before"]["workloadNamespace"]
+        ):
+            raise ValueError("restore lacks unchanged enforcing checkpoint")
     kernel = summary.get("kernel")
     if (
         not isinstance(kernel, dict)
@@ -119,6 +159,25 @@ def validate_summary(summary, architecture):
         or denied.get("ingressObserved") is not False
     ):
         raise ValueError("Pi extension denial lacks a known-load control")
+    for framework in ("claude", "codex"):
+        for mode in ("direct", "lowered"):
+            case = by_name[framework + "_mcp_" + mode]
+            observed = case.get("identity")
+            direct = mode == "direct"
+            if (
+                not isinstance(observed, dict)
+                or observed.get("uid") != 1000
+                or observed.get("initialized") is not True
+                or observed.get("capEff") != "0000000000000000"
+                or type(observed.get("connectErrno")) is not int
+                or observed.get("context")
+                != "system_u:system_r:" + ("agent_t" if direct else "workload_t")
+                or observed.get("connectErrno") not in ((0,) if direct else (1, 13))
+                or case.get("ingressObserved") is not direct
+            ):
+                raise ValueError(
+                    "MCP handoff lacks actual protocol/role/ingress evidence"
+                )
     shell = by_name["untrusted_shell_startup_denied"]
     observations = shell.get("observations")
     if not isinstance(observations, list) or any(
@@ -142,6 +201,48 @@ def decode_summary(raw):
     if len(raw.encode()) > 131072:
         raise ValueError("native result bound")
     return json.loads(raw, object_pairs_hook=unique_fields)
+
+
+def snapshot_receipt(out, *, complete):
+    value = decode_summary((out / "snapshot-receipt.json").read_text())
+    if not isinstance(value, dict):
+        raise TypeError("invalid snapshot receipt")
+    processes = value.get("processes")
+    if (
+        value.get("schemaVersion") != 1
+        or value.get("result") not in ("failed", "restored_and_joined")
+        or not isinstance(processes, list)
+        or len(processes) > 2
+    ):
+        raise ValueError("invalid snapshot ownership receipt")
+    pids = set()
+    for process in processes:
+        if process == {"cleanup": "not_started"}:
+            continue
+        if (
+            not isinstance(process, dict)
+            or type(process.get("pid")) is not int
+            or process["pid"] <= 1
+            or process["pid"] in pids
+            or process.get("cleanup") != "joined"
+            or type(process.get("exit")) is not int
+            or Path(f"/proc/{process['pid']}").exists()
+        ):
+            raise ValueError("snapshot child cleanup is unverified")
+        pids.add(process["pid"])
+    if complete and (
+        value["result"] != "restored_and_joined"
+        or len(pids) != 2
+        or processes[1].get("exit") != 0
+        or value.get("snapshot")
+        != {
+            name: {"bytes": path.stat().st_size, "sha256": sha256(path)}
+            for name in ("state", "memory")
+            for path in (out / ("snapshot." + name),)
+        }
+    ):
+        raise ValueError("snapshot was not restored with matching owned inputs")
+    return value
 
 
 def vm(command, log_path, receipt, timeout=240, max_bytes=131072):
@@ -224,11 +325,14 @@ def main():
         "base-rootfs",
         "tool-helper",
         "task-helper",
+        "storage-helper",
+        "resource-helper",
         "output",
     ):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--rootfs-sha256", required=True)
     parser.add_argument("--source-revision", required=True)
+    parser.add_argument("--snapshot-restore", action="store_true")
     args = parser.parse_args()
     if re.fullmatch(r"[a-f0-9]{40}", args.source_revision) is None:
         parser.error("source revision must be a full lowercase commit SHA")
@@ -242,6 +346,7 @@ def main():
         "sourceRevision": args.source_revision,
         "architecture": architecture,
         "gateF": "incomplete",
+        "bootMode": "restored" if args.snapshot_restore else "fresh",
         "result": "failed",
         "cleanup": "not_started",
         "limits": {
@@ -258,6 +363,8 @@ def main():
             args.base_rootfs,
             args.tool_helper,
             args.task_helper,
+            args.storage_helper,
+            args.resource_helper,
             args.secilc,
         ):
             if not stat.S_ISREG(path.stat().st_mode):
@@ -292,6 +399,8 @@ def main():
         receipt["helpers"] = {
             "tool": sha256(args.tool_helper),
             "task": sha256(args.task_helper),
+            "storage": sha256(args.storage_helper),
+            "resourcePolicy": sha256(args.resource_helper),
         }
         compiler = Path(shutil.which("gcc")).resolve()
         policy_compiler = args.secilc.resolve()
@@ -361,6 +470,16 @@ def main():
         for name, path in [
             ("guest.py", HERE / "packaged_guest.py"),
             ("packaged_resources.py", HERE / "packaged_resources.py"),
+            ("packaged_accounting.py", HERE / "packaged_accounting.py"),
+            ("packaged_audit.py", HERE / "packaged_audit.py"),
+            ("packaged_browser.py", HERE / "packaged_browser.py"),
+            ("packaged_history.py", HERE / "packaged_history.py"),
+            ("packaged_mcp.py", HERE / "packaged_mcp.py"),
+            ("packaged_mcp_peer.py", HERE / "packaged_mcp_peer.py"),
+            ("packaged_storage.py", HERE / "packaged_storage.py"),
+            ("packaged_lifecycle.py", HERE / "packaged_lifecycle.py"),
+            ("guest-storage-apply", args.storage_helper),
+            ("resource-policy", args.resource_helper),
             ("policy", out / "policy"),
             ("entry", out / "entry"),
             ("real-guest-tool-exec", args.tool_helper),
@@ -394,6 +513,8 @@ def main():
             ],
             "network-interfaces": [],
         }
+        if args.snapshot_restore:
+            config["boot-source"]["boot_args"] += " caller_restore=1"
         (out / "vm.json").write_text(json.dumps(config))
         receipt["generatedInputs"] = {
             name: sha256(out / name)
@@ -406,16 +527,25 @@ def main():
                 "vm.json",
             )
         }
-        vm(
-            [
+        command = (
+            [sys.executable, str(HERE / "packaged_snapshot.py"), str(out)]
+            if args.snapshot_restore
+            else [
                 str(out / "firecracker"),
                 "--no-api",
                 "--config-file",
                 str(out / "vm.json"),
-            ],
+            ]
+        )
+        vm(
+            command,
             out / "console.log",
             receipt,
         )
+        if args.snapshot_restore:
+            receipt["cleanup"] = "snapshot_children_unverified"
+            receipt["snapshot"] = snapshot_receipt(out, complete=True)
+            receipt["cleanup"] = "vmm_joined"
         result = subprocess.run(
             ["debugfs", "-R", "cat /native-result.json", str(out / "rootfs.ext4")],
             capture_output=True,
@@ -426,12 +556,23 @@ def main():
         (out / "guest-result.json").write_text(result.stdout)
         summary = decode_summary(result.stdout)
         receipt["guest"] = summary
-        validate_summary(summary, architecture)
+        validate_summary(summary, architecture, receipt["bootMode"])
         receipt["result"] = "passed_subset"
     except BaseException as error:
         receipt["error"] = str(error)
         raise
     finally:
+        if args.snapshot_restore:
+            receipt["snapshotSupervisorPid"] = receipt.pop("vmmPid", None)
+            if (
+                receipt["cleanup"] in ("vmm_joined", "snapshot_children_unverified")
+                and "snapshot" not in receipt
+            ):
+                try:
+                    receipt["snapshot"] = snapshot_receipt(out, complete=False)
+                    receipt["cleanup"] = "vmm_joined"
+                except (OSError, ValueError, TypeError):
+                    receipt["cleanup"] = "snapshot_children_unverified"
         (out / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
         # The only mutable drive belongs to this attempt. Retain input identity
         # and synthetic console/receipt; release its multi-GB disposable copy.

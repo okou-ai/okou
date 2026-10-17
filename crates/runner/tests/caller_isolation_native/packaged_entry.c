@@ -12,6 +12,7 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mount.h>
+#include <sys/prctl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -85,10 +86,8 @@ static void enter_ns(char target) {
     fail("namespace-setns");
   if (close(fd))
     fail("namespace-close");
-  /* setns resets fs.root to the namespace root; this initramfs fixture uses
-     a chroot below that root rather than production Guest PID 1 boot. */
-  if (chdir("/rootfs") || chroot(".") || chdir(cwd))
-    fail("namespace-root");
+  if (chdir(cwd))
+    fail("namespace-cwd");
 }
 static void diagnostic(void) {
   char context[128] = {0}, status[4096] = {0};
@@ -131,11 +130,74 @@ static void user(void) {
   if (syscall(SYS_capset, &header, data))
     fail("drop-launch-capabilities");
 }
+static void mcp_client(int argc, char **argv) {
+  if (argc != 2 ||
+      (strcmp(argv[1], "claude-lowered") && strcmp(argv[1], "codex-lowered")))
+    fail("mcp-tag");
+  int peer = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+  struct timeval timeout = {.tv_sec = 35};
+  struct sockaddr_un address = {.sun_family = AF_UNIX};
+  const char endpoint[] = "\0okou-native-mcp";
+  memcpy(address.sun_path, endpoint, sizeof(endpoint) - 1);
+  if (peer < 0 ||
+      setsockopt(peer, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) ||
+      connect(peer, (struct sockaddr *)&address,
+              offsetof(struct sockaddr_un, sun_path) + sizeof(endpoint) - 1))
+    fail("mcp-connect");
+  struct ucred credentials;
+  socklen_t size = sizeof(credentials);
+  char context[128] = {0};
+  if (getsockopt(peer, SOL_SOCKET, SO_PEERCRED, &credentials, &size) ||
+      size != sizeof(credentials) || credentials.uid != 0)
+    fail("mcp-peer-uid");
+  size = sizeof(context) - 1;
+  if (getsockopt(peer, SOL_SOCKET, SO_PEERSEC, context, &size) ||
+      strcmp(context, "system_u:system_r:control_t"))
+    fail("mcp-peer-role");
+  union {
+    struct cmsghdr aligned;
+    char bytes[CMSG_SPACE(3 * sizeof(int))];
+  } ancillary = {0};
+  struct iovec iov = {.iov_base = argv[1], .iov_len = strlen(argv[1])};
+  struct msghdr message = {.msg_iov = &iov,
+                           .msg_iovlen = 1,
+                           .msg_control = ancillary.bytes,
+                           .msg_controllen = sizeof(ancillary.bytes)};
+  struct cmsghdr *header = CMSG_FIRSTHDR(&message);
+  header->cmsg_level = SOL_SOCKET;
+  header->cmsg_type = SCM_RIGHTS;
+  header->cmsg_len = CMSG_LEN(3 * sizeof(int));
+  int descriptors[3] = {0, 1, 2};
+  memcpy(CMSG_DATA(header), descriptors, sizeof(descriptors));
+  if (sendmsg(peer, &message, MSG_NOSIGNAL) != (ssize_t)strlen(argv[1]))
+    fail("mcp-stdio");
+  unsigned char status;
+  if (recv(peer, &status, 1, 0) != 1 || close(peer))
+    fail("mcp-completion");
+  _exit(status);
+}
+static void bounding(const char *value) {
+  char *end = NULL;
+  errno = 0;
+  unsigned long long mask = strtoull(value, &end, 16);
+  if (errno || strlen(value) != 16 || !end || *end)
+    fail("mcp-bounding-mask");
+  for (int bit = 0; bit < 64; bit++) {
+    int present = prctl(PR_CAPBSET_READ, bit, 0, 0, 0);
+    if (present < 0) {
+      if (errno == EINVAL)
+        break;
+      fail("mcp-bounding-read");
+    }
+    if (!(mask & (1ULL << bit)) && prctl(PR_CAPBSET_DROP, bit, 0, 0, 0))
+      fail("mcp-bounding-drop");
+  }
+}
 static void placement(const char *leaf) {
   char path[256];
   snprintf(path, sizeof(path),
            "/sys/fs/cgroup/vm0-exec/exec-native/workload/%s/cgroup.procs",
-           leaf);
+           !strcmp(leaf, "tools") ? "tools/fixture-direct" : leaf);
   int fd = open(path, O_WRONLY | O_CLOEXEC);
   if (fd < 0 || write(fd, "0", 1) != 1 || close(fd))
     fail("initial-placement");
@@ -186,6 +248,10 @@ static void seal_os(void) {
   if (unshare(CLONE_NEWNS) || mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL))
     fail("agent-ns");
   const char *dirs[] = {"/usr", "/etc", "/opt", NULL};
+  if (mount("/sys/fs/cgroup", "/sys/fs/cgroup", NULL, MS_BIND, NULL) ||
+      mount(NULL, "/sys/fs/cgroup", NULL, MS_BIND | MS_REMOUNT | MS_RDONLY,
+            NULL))
+    fail("read-only-cgroup-view");
   for (int i = 0; dirs[i]; i++) {
     char source[128];
     snprintf(source, sizeof(source), "/sealed%s", dirs[i]);
@@ -204,6 +270,8 @@ static void seal_os(void) {
 int main(int argc, char **argv) {
   const char *leaf = strrchr(argv[0], '/');
   leaf = leaf ? leaf + 1 : argv[0];
+  if (!strcmp(leaf, "mcp-workload-exec"))
+    mcp_client(argc, argv);
   if (!strcmp(leaf, "guest-tool-exec")) {
     diagnostic();
     if (argc == 2 && !strcmp(argv[1], "hook")) {
@@ -292,6 +360,20 @@ int main(int argc, char **argv) {
     seal_os();
     user();
     role("agent_t");
+  } else if (!strcmp(argv[1], "mcp-workload")) {
+    if (argc != 8 || (strcmp(argv[3], "0") && strcmp(argv[3], "1")) ||
+        strcmp(argv[4], "/fixture/real-guest-tool-exec") ||
+        strcmp(argv[6], "--shell") || strcmp(argv[7], "/bin/bash"))
+      fail("mcp-fixed-entry");
+    placement("runtime");
+    enter_ns('T');
+    bounding(argv[2]);
+    user();
+    role("workload_t");
+    if (!strcmp(argv[3], "1") && prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0))
+      fail("mcp-no-new-privileges");
+    execv(argv[4], argv + 4);
+    fail("mcp-workload-exec");
   } else if (!strcmp(argv[1], "workload")) {
     placement("tools");
     enter_ns('T');

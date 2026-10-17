@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import select
+import shlex
 import shutil
 import signal
 import socket
@@ -22,7 +23,14 @@ from contextlib import ExitStack, contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import packaged_accounting
+import packaged_audit
+import packaged_browser
+import packaged_history
+import packaged_lifecycle
+import packaged_mcp
 import packaged_resources
+import packaged_storage
 
 ROOT = Path("/home/user/workspace")
 FIXTURE = Path("/fixture")
@@ -38,6 +46,8 @@ tasks = {}
 stop_peers = []
 spawned = set()
 request_counts = {}
+resource_ready = threading.Event()
+resource_release = threading.Event()
 lock = threading.Lock()
 
 
@@ -52,6 +62,16 @@ def record(name, passed, **extra):
         ),
         flush=True,
     )
+    if not passed:
+        failure = {
+            k: extra[k]
+            for k in ("identity", "bootstrap", "stderr", "audit", "peerError")
+            if k in extra
+        }
+        print(
+            "PACKAGED_CASE_FAILURE " + json.dumps({"name": name, **failure})[-12000:],
+            flush=True,
+        )
 
 
 def label(path, kind, follow=True):
@@ -95,7 +115,7 @@ def as_role(role, args, *, env=None, stdin=None, timeout=45, group="runtime"):
     )
 
 
-def pi_session(env):
+def pi_session(env, message="PI_MAIN"):
     records = []
     buffered = b""
     settled = False
@@ -112,7 +132,7 @@ def pi_session(env):
         )
         try:
             pi.stdin.write(
-                json.dumps({"id": "native", "type": "prompt", "message": "PI_MAIN"})
+                json.dumps({"id": "native", "type": "prompt", "message": message})
                 + "\n"
             )
             pi.stdin.flush()
@@ -220,8 +240,13 @@ def broker(endpoint, task=False):
                     handle = str(uuid.uuid4())
                     parent = CG / "tools" / ("task-" + handle)
                     parent.mkdir()
+                    (parent / "memory.oom.group").write_text("0")
+                    (parent / "cgroup.subtree_control").write_text("+memory")
                     (parent / "runtime").mkdir()
+                    (parent / "runtime/memory.oom.group").write_text("1")
                     (parent / "tools").mkdir()
+                    (parent / "tools/memory.oom.group").write_text("0")
+                    (parent / "tools/cgroup.subtree_control").write_text("+memory")
                     tasks[handle] = parent
                     target = parent / "runtime"
                     frame(
@@ -235,6 +260,7 @@ def broker(endpoint, task=False):
                     parent = Path("/sys/fs/cgroup" + membership).parent / "tools"
                     target = parent / f"tool-{counter}"
                     target.mkdir()
+                    (target / "memory.oom.group").write_text("1")
                 fd = os.open(target / "cgroup.procs", os.O_WRONLY | os.O_CLOEXEC)
                 try:
                     peer.sendmsg(
@@ -365,6 +391,10 @@ def choose(payload, dialect):
     messages = payload.get("messages", payload.get("input", []))
     users = [json.dumps(m) for m in messages if m.get("role") == "user"]
     text = users[-1] if users else json.dumps(messages)
+    if "_RETAINED_HISTORY" in text:
+        return None, {"text": "retained session history reopened"}
+    if "PI_RESOURCE_WAIT" in text:
+        return None, {"text": "resource pressure completed; real Pi loop continued"}
     child = "PI_CHILD" in text and "PI_MAIN" not in text
     if "CLAUDE_CHILD" in text and "CLAUDE_MAIN" not in text:
         child = True
@@ -374,6 +404,28 @@ def choose(payload, dialect):
         "pi" if dialect == "chat" else ("claude" if dialect == "anthropic" else "codex")
     )
     marker = name + ("-child" if child else "-tool")
+    for phase in ("MAIN", "CHILD"):
+        if "PI_LIFECYCLE_" + phase in text:
+            key = "lifecycle-" + phase
+            if key not in spawned:
+                spawned.add(key)
+                return "bash", {
+                    "command": "python3 /fixture/packaged_lifecycle.py "
+                    + ("parent" if phase == "MAIN" else "child")
+                }
+            return None, {"text": "lifecycle main continued"}
+    for tag in ("claude-direct", "claude-lowered", "codex-direct", "codex-lowered"):
+        if tag in text and tag not in spawned:
+            spawned.add(tag)
+            wait = (
+                "import json,pathlib,time; p=pathlib.Path('/home/user/workspace/mcp-"
+                + tag
+                + ".json'); end=time.monotonic()+5\nwhile time.monotonic()<end:\n if p.exists() and json.loads(p.read_text()).get('initialized'): break\n time.sleep(.01)\nelse: raise AssertionError('MCP handshake did not complete')"
+            )
+            return ("Bash" if name == "claude" else "exec_command"), {
+                "command" if name == "claude" else "cmd": "python3 -c "
+                + shlex.quote(wait)
+            }
     if name == "pi" and not child and "pi-image-read" not in spawned:
         spawned.add("pi-image-read")
         return "read", {"path": str(ROOT / "native-image.png")}
@@ -418,6 +470,24 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
+        if self.path == "/native-storage.tar.gz":
+            body = (FIXTURE / "native-storage.tar.gz").read_bytes()
+            (ROOT / "storage-http-observed").write_text("observed owned archive GET")
+            self.send_response(200)
+            self.send_header("content-type", "application/gzip")
+            self.send_header("content-length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if self.path in {
+            "/mcp-claude-direct",
+            "/mcp-claude-lowered",
+            "/mcp-codex-direct",
+            "/mcp-codex-lowered",
+        }:
+            (ROOT / (self.path[1:] + "-connected")).write_text(
+                "observed synthetic MCP ingress GET"
+            )
         if self.path == "/untrusted-extension-ingress":
             (ROOT / "untrusted-extension-connected").write_text(
                 "observed synthetic ingress GET"
@@ -440,6 +510,11 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(413)
             return
         payload = json.loads(self.rfile.read(length))
+        if "PI_RESOURCE_WAIT" in json.dumps(payload):
+            resource_ready.set()
+            if not resource_release.wait(60):
+                self.send_error(504, "resource probe continuation timeout")
+                return
         dialect = (
             "chat"
             if "chat/completions" in self.path
@@ -467,6 +542,16 @@ class Handler(BaseHTTPRequestHandler):
                 "tools": tools,
                 "lastInput": json.dumps(messages[-1])[-1800:] if messages else "",
             }
+            for framework in ("pi", "claude", "codex"):
+                marker = framework.upper() + "_RETAINED_HISTORY"
+                if messages and marker in json.dumps(messages[-1]):
+                    request.update(
+                        historyMarker=marker,
+                        retainedMainObserved=framework.upper() + "_MAIN"
+                        in json.dumps(
+                            [m for m in messages[:-1] if m.get("role") == "user"]
+                        ),
+                    )
             requests.append(request)
             request_counts[dialect] = request_counts.get(dialect, 0) + 1
             over_budget = request_counts[dialect] > 16
@@ -474,7 +559,11 @@ class Handler(BaseHTTPRequestHandler):
             if not over_budget and not count_tokens:
                 name, arguments = choose(payload, dialect)
             call = "call_" + str(len(requests))
-        print("PACKAGED_HTTP " + json.dumps(request), flush=True)
+        print(
+            "PACKAGED_HTTP "
+            + json.dumps({"path": self.path, "bytes": length, "tools": len(tools)}),
+            flush=True,
+        )
         if over_budget:
             self.send_error(400, "bounded synthetic fixture request budget")
             return
@@ -628,6 +717,9 @@ def run_guest(resources):
     socket.sethostname("localhost")
     (Path("/sys/fs/selinux/enforce")).write_text("1")
     Path("/proc/sys/kernel/printk_ratelimit").write_text("0")
+    # Preserve fallback denials in the kernel buffer without duplicating each
+    # syscall/proctitle across the bounded serial transport.
+    Path("/proc/sys/kernel/printk").write_text("3\n")
     workload_pid = int(os.environ["OKOU_NATIVE_WORKLOAD_KEEPER_PID"])
     if workload_pid <= 1:
         raise ValueError("invalid workload namespace owner")
@@ -662,8 +754,9 @@ def run_guest(resources):
     for path in (Path("/home/user"), ROOT):
         os.chown(path, 1000, 1000)
         label(path, "workload_data_t")
-    (CG / "runtime").mkdir(parents=True)
-    (CG / "tools").mkdir()
+    for path in (CG / "runtime", CG / "tools"):
+        if not path.is_dir():
+            raise ValueError("resource policy did not create managed domains")
     packaged_resources.prepare(FIXTURE, label)
     env = {
         "PATH": "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
@@ -728,6 +821,31 @@ def run_guest(resources):
     broker("okou-native-placement-tasks", task=True)
     server = ThreadingHTTPServer(("127.0.0.1", 18080), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
+    restoration = {}
+    if "caller_restore=1" in Path("/proc/cmdline").read_text().split():
+
+        def checkpoint():
+            return {
+                "enforcing": Path("/sys/fs/selinux/enforce").read_text().strip(),
+                "controllerContext": Path("/proc/self/attr/current")
+                .read_text()
+                .rstrip("\0"),
+                "agentNamespace": os.readlink(f"/proc/{keeper.pid}/ns/mnt"),
+                "workloadNamespace": os.readlink(f"/proc/{workload_pid}/ns/mnt"),
+            }
+
+        restoration["before"] = checkpoint()
+        os.sync()
+        print("PACKAGED_SNAPSHOT_READY", flush=True)
+        with open("/dev/ttyS0", "rb", buffering=0) as console:
+            if console.readline(32) != b"restored\n":
+                raise ValueError("invalid owned snapshot continuation")
+        restoration["after"] = checkpoint()
+        if (
+            restoration["before"] != restoration["after"]
+            or restoration["after"]["enforcing"] != "1"
+        ):
+            raise ValueError("restore lost enforcing state or namespace identity")
     control_device = Path("/usr/bin/python3").stat().st_dev
     sealed_device = Path("/sealed/usr/bin/python3").stat().st_dev
     workload_device = (writable_root / "usr/bin/python3").stat().st_dev
@@ -747,6 +865,44 @@ def run_guest(resources):
             stdout=run.stdout[-2000:],
             stderr=run.stderr[-2000:],
         )
+    with packaged_audit.capture() as namespace_audit:
+        nested = as_role(
+            "workload",
+            [
+                "/usr/bin/unshare",
+                "--user",
+                "--map-root-user",
+                "/usr/bin/python3",
+                "-c",
+                PROBE,
+            ],
+            env=env,
+            group="tools",
+        )
+    nested_identity = json.loads(nested.stdout) if nested.returncode == 0 else {}
+    namespace_control = subprocess.run(
+        ["/usr/bin/unshare", "--user", "--map-root-user", "/usr/bin/id", "-u"],
+        capture_output=True,
+        text=True,
+        timeout=5,
+        check=False,
+    )
+    record(
+        "user_namespace_stays_workload",
+        nested.returncode == 0
+        and nested_identity.get("uid") == 0
+        and nested_identity.get("context") == "system_u:system_r:workload_t"
+        and nested_identity.get("capEff") == "000001ffffffffff"
+        and nested_identity.get("connectErrno") in (1, 13),
+        identity=nested_identity,
+        stderr=nested.stderr[-2000:],
+        control={
+            "exit": namespace_control.returncode,
+            "stdout": namespace_control.stdout,
+            "stderr": namespace_control.stderr,
+        },
+        audit=namespace_audit["denials"],
+    )
     metadata_probe = """import errno,os,stat
 for name in ("guest-tool-exec","guest-task-exec"):
  path="/fixture/"+name; info=os.stat(path)
@@ -1229,6 +1385,7 @@ print('private credential state inaccessible')""",
             stdout=str(error.stdout)[-2500:],
             stderr=str(error.stderr)[-3000:],
         )
+    packaged_history.probe(FIXTURE, env, as_role, pi_session, requests, record)
     for role in ("workload", "root"):
         name = ("user" if role == "workload" else "root") + "_task_stop_workload"
         handle = next(iter(tasks), None)
@@ -1255,6 +1412,14 @@ print('private credential state inaccessible')""",
             peers=observed,
             stderr=run.stderr[-1500:],
         )
+    packaged_storage.probe(FIXTURE, ROOT, env, as_role, record)
+    packaged_resources.cgroup_probes(env, as_role, record)
+    packaged_browser.probe(env, as_role, record)
+    packaged_accounting.probe(
+        CG, env, as_role, record, pi_session, resource_ready, resource_release
+    )
+    packaged_lifecycle.probe(ROOT, env, pi_session, tasks, record)
+    packaged_mcp.probe(FIXTURE, ROOT, env, as_role, label, record)
     observations_path = ROOT / "untrusted-shell-observations.jsonl"
     observations = (
         [json.loads(line) for line in observations_path.read_text().splitlines()]
@@ -1287,6 +1452,8 @@ print('private credential state inaccessible')""",
         "enforcing": Path("/sys/fs/selinux/enforce").read_text().strip() == "1",
     }
     summary = {
+        "bootMode": "restored" if restoration else "fresh",
+        "restoration": restoration,
         "results": results,
         "requests": requests,
         "brokerErrors": errors,
@@ -1296,6 +1463,20 @@ print('private credential state inaccessible')""",
             Path("/usr/local/lib/okou-cli/installed.json").read_text()
         ),
     }
+    audit = b""
+    fd = os.open("/dev/kmsg", os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)
+    try:
+        while len(audit) < 1024 * 1024:
+            try:
+                audit += os.read(fd, 16384)
+            except BlockingIOError:
+                break
+    finally:
+        os.close(fd)
+    summary["kernelAuditTail"] = audit.decode(errors="replace")[-8192:]
+    summary["kernelAuditDeniedEvents"] = sum(
+        b"avc:" in line and b"denied" in line for line in audit.splitlines()
+    )
     Path("/native-result.json").write_text(json.dumps(summary))
     print(
         "PACKAGED_DONE "
@@ -1322,7 +1503,17 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except Exception:
+    except Exception as error:
+        Path("/native-result.json").write_text(
+            json.dumps(
+                {
+                    "gateF": "incomplete",
+                    "fixtureError": str(error),
+                    "results": results,
+                    "brokerErrors": errors,
+                }
+            )
+        )
         traceback.print_exc()
         print("PACKAGED_FATAL setup_or_runtime", flush=True)
         raise
