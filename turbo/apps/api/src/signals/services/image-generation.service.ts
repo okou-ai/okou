@@ -1261,7 +1261,6 @@ export const checkImageCredits$ = command(
     args: {
       readonly orgId: string;
       readonly userId: string;
-      readonly runId?: string;
     },
     signal: AbortSignal,
   ): Promise<boolean> => {

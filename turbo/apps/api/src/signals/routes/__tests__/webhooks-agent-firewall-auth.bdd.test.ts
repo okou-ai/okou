@@ -79,12 +79,11 @@ const TEST_DATA_KEY = Buffer.from("0123456789abcdef0123456789abcdef", "utf8");
  * Corrected scenarios use public setup and authenticated Runner protocol flows.
  * Private metadata helpers and worker entry points do not justify preserving
  * a scenario that users cannot construct through production boundaries.
+ * Credit depletion and low-balance leases are covered in runtime-credit-balance.test.ts.
  *
  * Unreachable through public APIs (kept out of this file deliberately):
  * - TOKEN_ACCESS_RESOLUTION_FAILED needs a current token whose backing secret
  *   row is missing; public seeding writes both atomically.
- * - The 402/5s low-credit billable lease needs a public API that drains an
- *   org's credits below the threshold while keeping the tier active.
  */
 
 const context = testContext();

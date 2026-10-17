@@ -139,12 +139,7 @@ import {
   loadCustomConnectorRuntimeData,
 } from "./custom-connector.service";
 
-import {
-  loadRunCreditAdmissionState,
-  resolveOrgCreditAvailability$,
-  runHasActiveCreditAdmission,
-  type RunCreditAdmissionState,
-} from "./run-admission.service";
+import { resolveOrgCreditAvailability$ } from "./run-admission.service";
 
 type AccessSecretSource = SecretConnectorMetadata["sourceType"];
 type StorageSecretSource = Exclude<AccessSecretSource, "platform-secret">;
@@ -483,7 +478,6 @@ export const resolveBillableFirewallCacheExpiry$ = command(
     const [run] = await db
       .select({
         status: agentRuns.status,
-        creditAdmitted: agentRuns.creditAdmitted,
       })
       .from(agentRuns)
       .where(
@@ -508,13 +502,6 @@ export const resolveBillableFirewallCacheExpiry$ = command(
     signal.throwIfAborted();
     if (!availability || availability.status !== "active") {
       return insufficientCredits();
-    }
-    if (runHasActiveCreditAdmission(run)) {
-      return {
-        expiresAt:
-          Math.floor(nowDate().getTime() / 1000) +
-          NORMAL_BILLABLE_FIREWALL_LEASE_SECONDS,
-      };
     }
     const spendableCredits =
       availability.usagePackCredits +
@@ -4171,7 +4158,7 @@ function missingResolvedSecretsResponse(args: {
   );
 }
 
-type FirewallAuthRun = RunCreditAdmissionState;
+type FirewallAuthRun = Pick<typeof agentRuns.$inferSelect, "orgId" | "status">;
 
 function firewallAuthRunIsActive(
   status: typeof agentRuns.$inferSelect.status,
@@ -4185,12 +4172,18 @@ async function findFirewallAuthRun(
   db: Db,
   auth: SandboxAuth,
 ): Promise<FirewallAuthRun | undefined> {
-  return await loadRunCreditAdmissionState({
-    db,
-    runId: auth.runId,
-    userId: auth.userId,
-    orgId: auth.orgId,
-  });
+  const [run] = await db
+    .select({ orgId: agentRuns.orgId, status: agentRuns.status })
+    .from(agentRuns)
+    .where(
+      and(
+        eq(agentRuns.id, auth.runId),
+        eq(agentRuns.orgId, auth.orgId),
+        eq(agentRuns.userId, auth.userId),
+      ),
+    )
+    .limit(1);
+  return run;
 }
 
 /** Final admission owns its single statement. Credential/provider work has
