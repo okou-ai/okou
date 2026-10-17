@@ -502,6 +502,54 @@ describe("with a Drive artifact menu", () => {
   });
 });
 
+test("Recheck Drive authorization after leaving and reopening the chat page", async () => {
+  mockWideScreen();
+  const popup = installAuthorizationPopup();
+  installDriveMocks(context, "connected");
+  await setupPage({
+    context,
+    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+    host: "app.okou.ai",
+  });
+
+  await openDriveArtifactMenu();
+  click(roleItemNamed("menuitem", "Connect Google Drive"));
+  await expectSyncCompletedPreview();
+
+  await userEvent.keyboard("{Escape}");
+  click(screen.getByLabelText("Chat", { selector: "a" }));
+  await screen.findByPlaceholderText(
+    "Ask me to automate workflows, manage tasks...",
+  );
+  // The external account now requires a new connection. Returning to this
+  // artifact must honor that page's recovery instruction, not the old success.
+  const drive = installDriveMocks(context, "not-connected");
+  click(await screen.findByText("Artifact navigation"));
+
+  await openDriveArtifactMenu();
+  click(roleItemNamed("menuitem", "Connect Google Drive"));
+  await waitFor(() => {
+    expect(popup.location.href).toBe(AUTHORIZATION_URL);
+    expect(drive.oauthRequests).toContainEqual({
+      account: { intent: "add" },
+      authMethod: "oauth",
+      agentId: NAVIGATION_ARTIFACT_AGENT_ID,
+      authorizeAgent: true,
+      callbackTarget: "app",
+    });
+  });
+  drive.completeAuthorization();
+  await waitFor(() => {
+    expect(drive.syncRequests).toContainEqual({
+      artifactId: DRIVE_ARTIFACT_ID,
+      agentId: NAVIGATION_ARTIFACT_AGENT_ID,
+      connectionId: NEW_DRIVE_CONNECTION_ID,
+      mode: "original",
+    });
+  });
+  await expectSyncCompletedPreview();
+});
+
 test("Connect Google Drive and sync an artifact", async () => {
   mockWideScreen();
   const authorizationPopup = installAuthorizationPopup();

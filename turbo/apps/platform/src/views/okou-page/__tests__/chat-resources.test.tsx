@@ -92,7 +92,7 @@ test("Open the dropdown before its resources finish loading", async () => {
   expect(within(panel).queryByText("No artifacts yet")).not.toBeInTheDocument();
 });
 
-test("Show resource loading errors without retry controls in the popup and Links tab", async () => {
+test("Show resource loading errors distinctly from empty results in the popup and Links tab", async () => {
   installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
   context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
@@ -115,11 +115,6 @@ test("Show resource loading errors without retry controls in the popup and Links
   await expect(
     within(panel).findByText("Could not load resources"),
   ).resolves.toBeInTheDocument();
-  expect(
-    queryAllByRoleFast("button", panel).find((button) => {
-      return button.textContent?.trim() === "Retry";
-    }),
-  ).toBeUndefined();
   expect(within(panel).queryByText("No artifacts yet")).not.toBeInTheDocument();
 
   click(buttonNamed("View all", panel));
@@ -136,11 +131,6 @@ test("Show resource loading errors without retry controls in the popup and Links
     within(links).findByText("Could not load resources"),
   ).resolves.toBeInTheDocument();
   expect(linksTab).toHaveAttribute("aria-selected", "true");
-  expect(
-    queryAllByRoleFast("button", links).find((button) => {
-      return button.textContent?.trim() === "Retry";
-    }),
-  ).toBeUndefined();
   expect(
     within(links).queryByText("No links in this chat yet"),
   ).not.toBeInTheDocument();

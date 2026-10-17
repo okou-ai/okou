@@ -52,7 +52,7 @@ import { detach, Reason } from "../../signals/utils.ts";
 import {
   syncArtifactAndRefresh$,
   googleDriveSyncPending$,
-  googleDriveSyncAccounts$,
+  googleDriveSyncAccount$,
 } from "../../signals/chat-page/artifact-google-drive-sync.ts";
 import {
   connectBuiltinConnectorOAuthAuthCodeWithDialogAndSettle$,
@@ -262,12 +262,11 @@ function useGoogleDriveAvailability(
     googleDriveConnector === null
       ? null
       : getOnlyAvailableCatalogBrowserAuthMethodDetail(googleDriveConnector);
-  const syncAccounts = useGet(googleDriveSyncAccounts$);
-  const completedAccount = syncTarget
-    ? syncAccounts.get(syncTarget.artifactId)
-    : undefined;
+  const completedAccount = useGet(googleDriveSyncAccount$);
   const selectedAccount =
-    completedAccount?.agentId === syncTarget?.agentId
+    completedAccount &&
+    completedAccount.artifactId === syncTarget?.artifactId &&
+    completedAccount.agentId === syncTarget.agentId
       ? completedAccount
       : undefined;
   const accountReady =
