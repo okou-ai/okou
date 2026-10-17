@@ -832,8 +832,8 @@ test("VNC host settings update the chat remote access default", async () => {
 });
 
 async function choose(dialog: HTMLElement, label: string, name: string) {
-  await userEvent.click(await within(dialog).findByLabelText(label));
-  await userEvent.click(await screen.findByRole("option", { name }));
+  click(await within(dialog).findByLabelText(label));
+  click(await screen.findByRole("option", { name }));
 }
 
 async function inspectProtectiveRoutes(dialog: HTMLElement) {
