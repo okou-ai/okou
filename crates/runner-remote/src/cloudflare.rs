@@ -81,7 +81,7 @@ pub(crate) enum Failure {
     Network,
 }
 
-fn valid_header(value: &str) -> bool {
+pub(crate) fn valid_header(value: &str) -> bool {
     !value.is_empty() && value.len() <= 4096 && value.bytes().all(|b| (0x21..=0x7e).contains(&b))
 }
 

@@ -28,12 +28,13 @@ use crate::ssh::DirectTcpIpStream;
 use runner_types::ids::RunId;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-pub(super) enum DirectOrSshStream {
+pub(super) enum Carrier {
     Direct(TcpStream),
     Ssh(Box<DirectTcpIpStream>),
+    Native(Box<super::native::Stream>),
 }
 
-impl AsyncRead for DirectOrSshStream {
+impl AsyncRead for Carrier {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -42,11 +43,12 @@ impl AsyncRead for DirectOrSshStream {
         match self.get_mut() {
             Self::Direct(stream) => Pin::new(stream).poll_read(cx, buffer),
             Self::Ssh(stream) => Pin::new(stream.as_mut()).poll_read(cx, buffer),
+            Self::Native(stream) => Pin::new(stream.as_mut()).poll_read(cx, buffer),
         }
     }
 }
 
-impl AsyncWrite for DirectOrSshStream {
+impl AsyncWrite for Carrier {
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -55,6 +57,7 @@ impl AsyncWrite for DirectOrSshStream {
         match self.get_mut() {
             Self::Direct(stream) => Pin::new(stream).poll_write(cx, bytes),
             Self::Ssh(stream) => Pin::new(stream.as_mut()).poll_write(cx, bytes),
+            Self::Native(stream) => Pin::new(stream.as_mut()).poll_write(cx, bytes),
         }
     }
 
@@ -62,6 +65,7 @@ impl AsyncWrite for DirectOrSshStream {
         match self.get_mut() {
             Self::Direct(stream) => Pin::new(stream).poll_flush(cx),
             Self::Ssh(stream) => Pin::new(stream.as_mut()).poll_flush(cx),
+            Self::Native(stream) => Pin::new(stream.as_mut()).poll_flush(cx),
         }
     }
 
@@ -69,11 +73,12 @@ impl AsyncWrite for DirectOrSshStream {
         match self.get_mut() {
             Self::Direct(stream) => Pin::new(stream).poll_shutdown(cx),
             Self::Ssh(stream) => Pin::new(stream.as_mut()).poll_shutdown(cx),
+            Self::Native(stream) => Pin::new(stream.as_mut()).poll_shutdown(cx),
         }
     }
 }
 
-pub(super) type Engine = rfb_client::Session<DirectOrSshStream>;
+pub(super) type Engine = rfb_client::Session<Carrier>;
 
 /// Kept by lifecycle cleanup and pending DNS, independently of guest streams.
 struct Capacity {
@@ -82,7 +87,7 @@ struct Capacity {
 }
 
 /// Actual helper/DNS custody; completion is emitted only after the last owner drops.
-struct NativeWork {
+pub(super) struct NativeWork {
     root: Option<tempfile::TempDir>,
     _capacity: Arc<Capacity>,
     _operation: Arc<OwnedSemaphorePermit>,
@@ -112,6 +117,7 @@ pub(super) struct Session {
     pub(super) transport: Transport,
     pub(super) kerberos: Option<super::kerberos::Binding>,
     pub(super) cancel: CancellationToken,
+    pub(super) native: Option<crate::tailscale::StreamGuard>,
     pub(super) closed: CancellationToken,
     pub(super) engine: tokio::sync::Mutex<Engine>,
     diagnostics: Option<crate::diagnostics::Handle>,
@@ -224,9 +230,10 @@ pub(crate) struct Run {
     pub(super) id: RunId,
     cancel: CancellationToken,
     ssh: Option<Arc<crate::ssh::Run>>,
+    pub(super) native: Arc<crate::native::Run>,
     capacity: Arc<Semaphore>,
     sessions: Registry,
-    tasks: TaskTracker,
+    pub(super) tasks: TaskTracker,
     diagnostics: std::sync::OnceLock<crate::diagnostics::Handle>,
 }
 
@@ -262,6 +269,15 @@ pub(super) struct StartFailure {
 }
 
 impl StartEvidence {
+    pub(super) fn retain_native(&mut self, source: crate::diagnostics::NativeSource) {
+        if self
+            .handle
+            .as_ref()
+            .is_some_and(crate::diagnostics::Handle::enabled)
+        {
+            self.source.native = Some(source);
+        }
+    }
     pub(super) fn begin(&mut self, stage: Stage) {
         if let Some(snapshot) = &mut self.vnc {
             snapshot.begin(stage);
@@ -311,12 +327,14 @@ impl Run {
         id: RunId,
         cancel: CancellationToken,
         ssh: Option<Arc<crate::ssh::Run>>,
+        native: Arc<crate::native::Run>,
     ) -> Self {
         Self {
             runtime,
             id,
             cancel,
             ssh,
+            native,
             capacity: Arc::new(Semaphore::new(2)),
             sessions: Arc::new(Mutex::new(Entries::default())),
             tasks: TaskTracker::new(),
@@ -560,7 +578,7 @@ impl Run {
                         .wait(self.runtime.network.connect(address))
                         .await?
                         .map_err(|_| Failure::Network)?;
-                    DirectOrSshStream::Direct(socket)
+                    Carrier::Direct(socket)
                 }
                 Transport::Ssh {
                     connection,
@@ -588,8 +606,45 @@ impl Run {
                         generation: stream.generation(),
                     };
                     evidence.retain_ssh_stream(connection, &stream);
-                    DirectOrSshStream::Ssh(Box::new(stream))
+                    Carrier::Ssh(Box::new(stream))
                 }
+                Transport::Cloudflare { .. } | Transport::Tailscale { .. } => {
+                    evidence.begin(Stage::Transport);
+                    let configuration = credential.native.take().ok_or(Failure::Authority)?;
+                    let stream = self
+                        .dial_native(
+                            configuration,
+                            &credential.host,
+                            credential.port,
+                            scope,
+                            Arc::clone(&native_work),
+                            evidence,
+                        )
+                        .await?;
+                    // Admission input alone is insufficient: require the actual
+                    // verified origin TLS or exact peer stream before RFB bytes.
+                    if credential.authentication.requires_outer_protection() {
+                        stream.require_raw_protection()?;
+                    }
+                    scope
+                        .wait(self.runtime.authority.check(
+                            self.id,
+                            request.connection_id,
+                            credential.generation,
+                            transport,
+                            observation.kerberos,
+                        ))
+                        .await??;
+                    Carrier::Native(Box::new(stream))
+                }
+            };
+            let native = match &stream {
+                Carrier::Native(stream) => stream.guard(),
+                _ => None,
+            };
+            let scope = &Scope {
+                native,
+                ..scope.clone()
             };
             observation.transport = transport;
             if let Authentication::Kerberos { binding, kdc, .. } = &mut credential.authentication {
@@ -759,7 +814,7 @@ impl Run {
             let ssh_dependency = evidence.source.dependency.clone();
             let native = evidence.source.native.clone();
             let diagnostic_active = Arc::new(AtomicBool::new(true));
-            if let (Some(ssh), Some(source), Some(handle)) =
+            if let (ssh, Some(source), Some(handle)) =
                 (ssh_dependency.clone(), &native, evidence.handle.as_ref())
                 && let Some(watch) = handle.watch_vnc(
                     request.connection_id,
@@ -781,6 +836,7 @@ impl Run {
                 transport,
                 kerberos,
                 cancel: session_cancel,
+                native: scope.native.clone(),
                 closed: CancellationToken::new(),
                 engine: tokio::sync::Mutex::new(engine),
                 diagnostics: evidence.handle.clone(),
@@ -873,6 +929,9 @@ async fn cleanup(
 ) {
     tokio::select! { biased;
         () = session.cancel.cancelled() => {},
+        () = async {
+            match &session.native { Some(guard) => guard.retired().await, None => std::future::pending().await }
+        } => {},
         () = sandbox.cancelled() => {},
         () = tokio::time::sleep_until(expires) => { session.failed(crate::diagnostics::Operation::Retirement, Failure::TimedOut); },
     }

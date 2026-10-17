@@ -456,7 +456,7 @@ impl Harness {
         }).await
     }
 
-    pub(super) async fn restart_with_vnc(&mut self, vnc: Arc<crate::vnc::VncRuntime>) {
+    pub(crate) async fn restart_with_vnc(&mut self, vnc: Arc<crate::vnc::VncRuntime>) {
         self.shutdown().await;
         self.rpc.vnc = Some(vnc);
         let (incoming, receiver) = mpsc::channel(32);

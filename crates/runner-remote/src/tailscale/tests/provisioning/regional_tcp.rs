@@ -3,6 +3,8 @@
 
 mod capacity;
 mod common;
+mod vnc;
+mod vnc_shared;
 
 use std::{
     collections::VecDeque,

@@ -167,6 +167,7 @@ impl Stack {
 
 struct ExternalPolicy {
     destination: IpAddr,
+    ports: Vec<u16>,
 }
 
 fn external_plane(
@@ -174,6 +175,7 @@ fn external_plane(
     client_key: ts_keys::NodePublicKey,
     ip: u8,
     endpoint: DynEndpoint,
+    ports: Vec<u16>,
 ) -> DataPlane {
     let mut plane = DataPlane::new(keys);
     plane.wireguard.upsert_peer(ts_tunnel::PeerConfig::new(
@@ -202,6 +204,7 @@ fn external_plane(
     plane.src_filter_in = Arc::new(source);
     plane.packet_filter = Arc::new(ExternalPolicy {
         destination: peer_ip(ip),
+        ports,
     });
     plane
 }
@@ -223,9 +226,27 @@ impl DerpSide {
         client_key: ts_keys::NodePublicKey,
         ip: u8,
     ) -> Self {
+        Self::with_port(keys, client_key, ip, 22)
+    }
+
+    pub(in crate::tailscale::tests) fn with_port(
+        keys: NodeKeyPair,
+        client_key: ts_keys::NodePublicKey,
+        ip: u8,
+        port: u16,
+    ) -> Self {
+        Self::with_ports(keys, client_key, ip, vec![port])
+    }
+
+    pub(in crate::tailscale::tests) fn with_ports(
+        keys: NodeKeyPair,
+        client_key: ts_keys::NodePublicKey,
+        ip: u8,
+        ports: Vec<u16>,
+    ) -> Self {
         let key = keys.public;
         Self {
-            plane: external_plane(keys, client_key, ip, DynEndpoint::derp(client_key)),
+            plane: external_plane(keys, client_key, ip, DynEndpoint::derp(client_key), ports),
             stack: Stack::new(peer_ip(ip)),
             key,
             client_key,
@@ -300,8 +321,8 @@ impl Filter for ExternalPolicy {
         (info.src == peer_ip(1)
             && info.dst == self.destination
             && info.ip_proto == ts_packetfilter::IpProto::TCP
-            && info.port == 22)
-            .then_some("synthetic-external-TCP-peer")
+            && self.ports.contains(&info.port))
+        .then_some("synthetic-external-TCP-peer")
     }
 }
 
@@ -326,6 +347,7 @@ impl Side {
             client_key,
             ip,
             DynEndpoint::udp(client.local_addr().unwrap()),
+            vec![22],
         );
         Self {
             plane,
@@ -586,6 +608,10 @@ impl Fixture {
 
     pub(super) fn retire_b(&mut self) {
         self.tcp.retire();
+    }
+
+    pub(super) fn into_peers(self) -> Peers {
+        self.peers
     }
 
     pub(super) fn unexpected_b_packet(

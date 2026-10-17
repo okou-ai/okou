@@ -47,7 +47,9 @@ impl TrustRoots {
         Ok(Self(roots))
     }
 
-    pub(crate) fn into_config(self) -> Result<Arc<ClientConfig>, Error> {
+    /// Build a certificate-verifying client for an independently owned TLS stream.
+    /// The returned configuration has no insecure verifier or client credentials.
+    pub fn into_config(self) -> Result<Arc<ClientConfig>, Error> {
         let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
         let config = ClientConfig::builder_with_provider(provider)
             .with_protocol_versions(&[&rustls::version::TLS13, &rustls::version::TLS12])

@@ -30,7 +30,7 @@ use runner_types::ids::RunId;
 
 pub(super) const CONNECTION: &str = "9f0128ce-dd11-4234-b1ac-a0c33353a112";
 const TOKEN: &str = "vm0_official_vnc-test";
-pub(super) const CREATED_AT: &str = "2026-09-01T00:00:00.123456Z";
+pub(crate) const CREATED_AT: &str = "2026-09-01T00:00:00.123456Z";
 
 pub(super) fn resolved_response(body: &str) -> Vec<u8> {
     let mut response = crate::test_fixtures::raw_http::json_response("200 OK", body);
@@ -58,16 +58,18 @@ pub(super) async fn bounded<T>(future: impl Future<Output = T>) -> T {
         .unwrap()
 }
 
-pub(super) struct TestNetwork {
-    target: SocketAddr,
-    pub(super) answers: Mutex<Vec<SocketAddr>>,
-    pub(super) attempts: Mutex<Vec<SocketAddr>>,
+pub(crate) struct TestNetwork {
+    pub(super) target: Mutex<SocketAddr>,
+    pub(crate) answers: Mutex<Vec<SocketAddr>>,
+    pub(crate) attempts: Mutex<Vec<SocketAddr>>,
+    pub(crate) queries: Mutex<Vec<(String, u16)>>,
     pub(super) resolve_gate: Mutex<Option<Arc<Semaphore>>>,
 }
 
 #[async_trait]
 impl Network for TestNetwork {
-    async fn resolve(&self, _host: &str, _port: u16) -> io::Result<Vec<SocketAddr>> {
+    async fn resolve(&self, host: &str, port: u16) -> io::Result<Vec<SocketAddr>> {
+        self.queries.lock().unwrap().push((host.to_owned(), port));
         let gate = self.resolve_gate.lock().unwrap().clone();
         if let Some(gate) = gate {
             gate.acquire().await.unwrap().forget();
@@ -77,7 +79,8 @@ impl Network for TestNetwork {
 
     async fn connect(&self, address: SocketAddr) -> io::Result<TcpStream> {
         self.attempts.lock().unwrap().push(address);
-        TcpStream::connect(self.target).await
+        let target = *self.target.lock().unwrap();
+        TcpStream::connect(target).await
     }
 }
 
@@ -173,8 +176,8 @@ impl sandbox::GuestRpcAcceptor for Acceptor {
     }
 }
 
-pub(super) struct TestRun {
-    pub(super) id: RunId,
+pub(crate) struct TestRun {
+    pub(crate) id: RunId,
     pub(super) cancel: CancellationToken,
     pub(super) lifecycle: CancellationToken,
     incoming: mpsc::Sender<sandbox::AcceptedGuestRpc>,
@@ -263,7 +266,7 @@ impl TestRun {
         guest
     }
 
-    pub(super) async fn request(&self, method: &str, params: Value) -> Reply {
+    pub(crate) async fn request(&self, method: &str, params: Value) -> Reply {
         self.raw(
             json!({"version":1,"method":method,"remaining_ms":60000,"params":params}).to_string(),
         )
@@ -276,13 +279,19 @@ impl TestRun {
         read(guest).await
     }
 
-    pub(super) async fn shutdown(&mut self) {
+    pub(crate) async fn shutdown(&mut self) {
+        self.shutdown_result().await.unwrap();
+    }
+
+    pub(crate) async fn shutdown_result(&mut self) -> Result<(), crate::guest_rpc::CleanupError> {
         if let Some(dispatcher) = self.dispatcher.take() {
-            bounded(dispatcher.shutdown()).await.unwrap();
+            bounded(dispatcher.shutdown()).await
+        } else {
+            Ok(())
         }
     }
 
-    pub(super) async fn enable_diagnostics(&mut self, runtime: &Arc<VncRuntime>) {
+    pub(crate) async fn enable_diagnostics(&mut self, runtime: &Arc<VncRuntime>) {
         self.enable_diagnostics_token(runtime, "diagnostic-vnc-agent")
             .await;
     }
@@ -314,7 +323,7 @@ impl TestRun {
         );
     }
 
-    pub(super) async fn passive(&self, method: &str, params: Value) -> Value {
+    pub(crate) async fn passive(&self, method: &str, params: Value) -> Value {
         self.diagnostic_rpc(method, params, None).await
     }
 
@@ -359,20 +368,20 @@ pub(super) async fn send(guest: &mut DuplexStream, request: &str) {
 }
 
 #[derive(Default)]
-pub(super) struct Reply {
+pub(crate) struct Reply {
     pub(super) controls: Vec<Value>,
-    pub(super) bytes: Vec<u8>,
+    pub(crate) bytes: Vec<u8>,
     pub(super) ended: bool,
 }
 
 impl Reply {
-    pub(super) fn result(&self) -> &Value {
+    pub(crate) fn result(&self) -> &Value {
         let terminal = self.controls.last().expect("terminal response");
         assert_eq!(terminal["type"], "result", "{terminal}");
         &terminal["data"]
     }
 
-    pub(super) fn session(&self) -> String {
+    pub(crate) fn session(&self) -> String {
         assert_eq!(self.result()["outcome"], "started", "{}", self.result());
         self.result()["session"]["sessionId"]
             .as_str()
@@ -399,17 +408,17 @@ pub(super) async fn read(guest: impl AsyncRead + Unpin) -> Reply {
     .await
 }
 
-pub(super) struct Harness {
-    pub(super) api: MockServer,
-    pub(super) runtime: Arc<VncRuntime>,
-    pub(super) network: Arc<TestNetwork>,
-    pub(super) peer: Peer,
-    pub(super) run: TestRun,
+pub(crate) struct Harness {
+    pub(crate) api: MockServer,
+    pub(crate) runtime: Arc<VncRuntime>,
+    pub(crate) network: Arc<TestNetwork>,
+    pub(crate) peer: Peer,
+    pub(crate) run: TestRun,
     identity: RunnerProcessIdentity,
 }
 
 impl Harness {
-    pub(super) async fn new() -> Self {
+    pub(crate) async fn new() -> Self {
         Self::with_authority(Peer::new().await, None).await
     }
 
@@ -417,7 +426,7 @@ impl Harness {
         Self::with_authority(Peer::plain().await, None).await
     }
 
-    pub(super) async fn with_authority(peer: Peer, api_url: Option<String>) -> Self {
+    pub(crate) async fn with_authority(peer: Peer, api_url: Option<String>) -> Self {
         let api = MockServer::start_async().await;
         let identity = RunnerProcessIdentity::new(uuid::Uuid::new_v4(), 27).unwrap();
         let http = http_client(HttpClientConfig {
@@ -429,9 +438,10 @@ impl Harness {
             .unwrap()
             .unwrap();
         let network = Arc::new(TestNetwork {
-            target: peer.address,
+            target: Mutex::new(peer.address),
             answers: Mutex::new(vec!["93.184.216.34:5900".parse().unwrap()]),
             attempts: Mutex::new(Vec::new()),
+            queries: Mutex::new(Vec::new()),
             resolve_gate: Mutex::new(None),
         });
         Arc::get_mut(&mut runtime).unwrap().network = network.clone();
@@ -485,7 +495,7 @@ impl Harness {
         }).await
     }
 
-    pub(super) async fn resolve_response(&self, response: Value) -> Mock<'_> {
+    pub(crate) async fn resolve_response(&self, response: Value) -> Mock<'_> {
         self.resolve_response_with_created_at(response, Some(CREATED_AT))
             .await
     }
@@ -495,11 +505,21 @@ impl Harness {
         response: Value,
         created_at: Option<&str>,
     ) -> Mock<'_> {
+        self.resolve_response_connection(CONNECTION, response, created_at)
+            .await
+    }
+
+    pub(crate) async fn resolve_response_connection(
+        &self,
+        connection: &str,
+        response: Value,
+        created_at: Option<&str>,
+    ) -> Mock<'_> {
         self.api.mock_async(|when, then| {
             when.method("POST")
                 .path_matches(r"^/api/runners/runs/[^/]+/vnc/resolve$")
                 .header("authorization", format!("Bearer {TOKEN}"))
-                .is_true(optional_kerberos_request(json!({"connectionId":CONNECTION,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},"supportedProfiles":supported_profiles()})));
+                .is_true(optional_kerberos_request(json!({"connectionId":connection,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},"supportedProfiles":supported_profiles()})));
             let then = then.status(200);
             let then = if let Some(created_at) = created_at {
                 then.header("X-VNC-Connection-Created-At", created_at)
@@ -520,15 +540,26 @@ impl Harness {
         outcome: &str,
         status: u16,
     ) -> Mock<'_> {
+        self.check_route(connection, json!({"type":"direct"}), outcome, status)
+            .await
+    }
+
+    pub(crate) async fn check_route(
+        &self,
+        connection: &str,
+        route: Value,
+        outcome: &str,
+        status: u16,
+    ) -> Mock<'_> {
         self.api.mock_async(|when, then| {
             when.method("POST").path_matches(r"^/api/runners/runs/[^/]+/vnc/check$")
                 .header("authorization", format!("Bearer {TOKEN}"))
-                .json_body(json!({"connectionId":connection,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},"expectedGeneration":7,"expectedTransport":{"type":"direct"}}));
+                .json_body(json!({"connectionId":connection,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},"expectedGeneration":7,"expectedTransport":route}));
             then.status(status).json_body(json!({"outcome":outcome}));
         }).await
     }
 
-    pub(super) async fn start(&self, mode: &str) -> Reply {
+    pub(crate) async fn start(&self, mode: &str) -> Reply {
         self.run
             .request(
                 "vnc.session.start",

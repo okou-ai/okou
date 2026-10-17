@@ -169,7 +169,7 @@ impl Runtime {
         let vnc = self
             .vnc
             .as_ref()
-            .map(|runtime| runtime.for_run(run, &cancel, ssh.clone()));
+            .map(|runtime| runtime.for_run(run, &cancel, ssh.clone(), Arc::clone(&native)));
         if let Some(vnc) = &vnc {
             vnc.set_diagnostics(native.diagnostics.clone());
         }

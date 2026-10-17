@@ -42,7 +42,7 @@ pub(crate) use producer::TestServices;
 pub(crate) use producer::work;
 pub(crate) use provisioning_effect::Journal;
 pub(crate) use registry::{Key, Node, Registry};
-pub(crate) use tcp::Stream;
+pub(crate) use tcp::{Stream, StreamGuard};
 
 /// Used by the Runner panic hook before raw-payload integrations.
 pub fn in_domain() -> bool {

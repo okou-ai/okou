@@ -644,6 +644,36 @@ async fn retired_native_bridge_cuts_buffered_bytes_and_remains_common_ssh_io() {
 }
 
 #[tokio::test]
+async fn retained_liveness_observer_does_not_reserve_a_physically_closed_tcp_tuple() {
+    inside(|control| async move {
+        let mut fixture = wire::Fixture::new().await;
+        control.ready();
+        let (client, server, listener) = fixture.connect_b().await;
+        let observer = client.guard();
+        assert!(observer.is_live());
+        let retirement = observer.retired();
+        tokio::pin!(retirement);
+        assert!(futures_util::poll!(retirement.as_mut()).is_pending());
+        let local = fixture.binding.local();
+        fixture.retire_b();
+        assert!(!observer.is_live());
+        bounded(retirement).await;
+        drop((client, server, listener));
+        let mut peers = fixture.into_peers();
+        let replacement = peers.bind("100.64.0.3", 22, local);
+        assert!(
+            replacement.is_ok(),
+            "metadata-only liveness must not reserve the closed TCP tuple"
+        );
+        assert!(
+            !observer.is_live(),
+            "old observation cannot adopt a new tuple"
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn a_full_pending_bridge_write_is_cancelled_without_adopting_or_replaying_it() {
     inside(|control| async move {
         use tokio::io::AsyncWriteExt;
