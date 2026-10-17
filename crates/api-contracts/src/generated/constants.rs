@@ -256,10 +256,16 @@ pub mod sandbox_channel {
         pub const VERSION: u32 = 1;
     }
 
-    /// Readonly directory category version and finite policies.
+    /// Readonly filesystem category version and finite policies.
     pub mod fs {
         /// Shared finite policy: cursorIdleMs.
         pub const CURSOR_IDLE_MS: u32 = 30000;
+
+        /// Shared finite policy: handleIdleMs.
+        pub const HANDLE_IDLE_MS: u32 = 30000;
+
+        /// Shared finite policy: maxChunkBytes.
+        pub const MAX_CHUNK_BYTES: u32 = 32768;
 
         /// Shared finite policy: maxCursors.
         pub const MAX_CURSORS: u32 = 8;
@@ -273,6 +279,12 @@ pub mod sandbox_channel {
         /// Shared finite policy: maxEnumerationSteps.
         pub const MAX_ENUMERATION_STEPS: u32 = 512;
 
+        /// Shared finite policy: maxHandles.
+        pub const MAX_HANDLES: u32 = 4;
+
+        /// Shared finite policy: maxInFlightReads.
+        pub const MAX_IN_FLIGHT_READS: u32 = 4;
+
         /// Shared finite policy: maxNameBytes.
         pub const MAX_NAME_BYTES: u32 = 255;
 
@@ -282,6 +294,12 @@ pub mod sandbox_channel {
         /// Shared finite policy: maxPathComponents.
         pub const MAX_PATH_COMPONENTS: u32 = 64;
 
+        /// Shared finite policy: maxPrefixBytes.
+        pub const MAX_PREFIX_BYTES: u32 = 65536;
+
+        /// Shared finite policy: maxPreviewBytes.
+        pub const MAX_PREVIEW_BYTES: u32 = 16777216;
+
         /// Shared finite policy: maxResponseBytes.
         pub const MAX_RESPONSE_BYTES: u32 = 49152;
 
@@ -289,7 +307,7 @@ pub mod sandbox_channel {
         pub const PROCESSING_BUDGET_MS: u32 = 2000;
 
         /// Shared finite policy: version.
-        pub const VERSION: u32 = 2;
+        pub const VERSION: u32 = 3;
     }
 }
 
