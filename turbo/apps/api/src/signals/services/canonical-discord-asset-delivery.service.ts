@@ -440,25 +440,6 @@ async function recordDelivered(
   return await currentDeliveryResult(db, identity, signal);
 }
 
-/** Claims the operation's only send; a concurrent claimer loses the race. */
-async function claimDeliveryAttempt(
-  db: Db,
-  row: DiscordDeliveryRow,
-  signal: AbortSignal,
-): Promise<DiscordDeliveryRow | undefined> {
-  const providerState: CanonicalAssetDiscordDeliveryState = {
-    provider: "discord",
-    attempt: { id: randomUUID(), startedAt: nowDate().toISOString() },
-  };
-  const [claimed] = await db
-    .update(canonicalAssetDeliveries)
-    .set({ providerState, updatedAt: sql`now()` })
-    .where(transitionCondition(row))
-    .returning({ id: canonicalAssetDeliveries.id });
-  signal.throwIfAborted();
-  return claimed ? { ...row, providerState } : undefined;
-}
-
 const sendDiscordFile$ = command(
   async (
     { set },
@@ -566,7 +547,22 @@ export const completeCanonicalDiscordDelivery$ = command(
     if (!destination.ok) {
       return destination;
     }
-    const attemptRow = await claimDeliveryAttempt(db, row, signal);
+    /** Claims the operation's only send; a concurrent claimer loses the race. */
+    const attemptRow = await (async (
+      signal: AbortSignal,
+    ): Promise<DiscordDeliveryRow | undefined> => {
+      const providerState: CanonicalAssetDiscordDeliveryState = {
+        provider: "discord",
+        attempt: { id: randomUUID(), startedAt: nowDate().toISOString() },
+      };
+      const [claimed] = await db
+        .update(canonicalAssetDeliveries)
+        .set({ providerState, updatedAt: sql`now()` })
+        .where(transitionCondition(row))
+        .returning({ id: canonicalAssetDeliveries.id });
+      signal.throwIfAborted();
+      return claimed ? { ...row, providerState } : undefined;
+    })(signal);
     if (!attemptRow) {
       return await currentDeliveryResult(db, args, signal);
     }
