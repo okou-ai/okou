@@ -56,7 +56,6 @@ export function createArtifactSignals(
   descriptor: ArtifactDescriptor,
   previewImageUrlsByUrl$: Computed<Promise<ReadonlyMap<string, string>>>,
   previewRefreshRevision$?: Computed<number>,
-  previewCatalogReady$?: Computed<boolean>,
 ): ArtifactSignals {
   const preview = createAttachmentPreviewSignals(descriptor.url, {
     contentType: descriptor.contentType,
@@ -77,19 +76,9 @@ export function createArtifactSignals(
       return undefined;
     }
     if (isAuthenticatedAttachmentUrl(descriptor.url)) {
-      const token = await get(preview.presignedToken$);
-      let url = token?.previewImageUrl;
-      // A current API returns null when no poster exists. Only an older API
-      // omits the field, and its catalog fallback must wait for thread create.
-      if (
-        url === undefined &&
-        (!previewCatalogReady$ || get(previewCatalogReady$))
-      ) {
-        const previewImageUrlsByUrl = await get(previewImageUrlsByUrl$);
-        url = previewImageUrlsByUrl.get(
-          artifactReferenceLookupKey(descriptor.url),
-        );
-      }
+      // The file URL response always carries the poster, or null when none
+      // has been materialized yet.
+      let url = (await get(preview.presignedToken$))?.previewImageUrl;
       let revision = 0;
       if (!url && previewRefreshRevision$) {
         revision = get(previewRefreshRevision$);
@@ -133,7 +122,6 @@ export function createArtifactSignals(
 export function createArtifactCardSignalsRegistry(
   previewImageUrlsByUrl$: Computed<Promise<ReadonlyMap<string, string>>>,
   previewRefreshRevision$?: Computed<number>,
-  previewCatalogReady$?: Computed<boolean>,
 ): ArtifactCardSignalsRegistry {
   return createCardSignalsRegistry(
     (descriptor: ArtifactDescriptor) => {
@@ -144,7 +132,6 @@ export function createArtifactCardSignalsRegistry(
         descriptor,
         previewImageUrlsByUrl$,
         previewRefreshRevision$,
-        previewCatalogReady$,
       );
     },
   );

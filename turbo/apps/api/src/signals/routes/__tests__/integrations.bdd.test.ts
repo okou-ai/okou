@@ -2489,7 +2489,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
       [201],
     );
     expect(queuedWebMessage.body).toMatchObject({
-      runId: null,
       threadId: canonicalChatThreadId,
     });
 
@@ -2696,7 +2695,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
         [201],
       );
       expect(queuedWebMessage.body).toMatchObject({
-        runId: null,
         threadId: canonicalChatThreadId,
       });
 

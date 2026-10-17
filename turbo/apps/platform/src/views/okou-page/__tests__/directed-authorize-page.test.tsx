@@ -213,7 +213,6 @@ test("Authorize an agent to use an already connected connector", async () => {
       continuationUserMessage = body.userMessage;
     }
     return respond(201, {
-      runId: "00000000-0000-4000-a000-000000000201",
       threadId,
     });
   });
@@ -563,7 +562,7 @@ test("Keep a failed chat continuation retryable after authorizing the connector"
         },
       });
     }
-    return respond(201, { runId: crypto.randomUUID(), threadId });
+    return respond(201, { threadId });
   });
   await setupPage({
     context,

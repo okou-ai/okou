@@ -422,7 +422,6 @@ describe("CHAT-02: run-level model overrides", () => {
         if (queued.status !== 201) {
           throw new Error("Expected queued subscription send");
         }
-        expect(queued.body.runId).toBeNull();
         chatCallbacks.mockChatOutputEvents([]);
         await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
         await flushWaitUntilForTest();

@@ -430,7 +430,7 @@ test.each([true, false])(
       sentPrompt = body.prompt ?? "";
       expect(body.clientEventId).toBe(SUCCESS_CLIENT_ID);
       expect(body.chatThreadSortEventId).toBe(SUCCESS_SORT_ID);
-      return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+      return respond(201, { threadId: THREAD_ID });
     });
 
     await setupPage({
@@ -501,7 +501,7 @@ test("A required native slider starts at the website position and needs delibera
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
     context,
@@ -554,7 +554,7 @@ test("An optional native slider stays untouched unless the user changes it", asy
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
     context,
@@ -598,7 +598,7 @@ test("An optional native slider submits a changed position with its observed sna
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
     context,
@@ -649,7 +649,7 @@ test("A required native color starts from the website and needs explicit confirm
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
     context,
@@ -695,7 +695,7 @@ test("An optional native color remains untouched or submits an explicit change",
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
     context,
@@ -739,7 +739,7 @@ test("A changed native color submits its observed website snapshot", async () =>
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
     context,
@@ -828,7 +828,7 @@ test("A standalone native file input transfers chosen bytes only on confirmed su
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
     context,
@@ -941,7 +941,7 @@ test("An optional file selection leaves existing website files untouched without
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
     context,
@@ -991,7 +991,7 @@ test("A required file field can retain already selected website files without a 
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
     context,
@@ -1033,7 +1033,7 @@ test("The standalone form accepts input and submission while its background chec
     return respond(200, action(state));
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    return respond(201, { threadId: THREAD_ID });
   });
 
   await setupPage({
@@ -1139,7 +1139,7 @@ test("The standalone form uses preflight's observed multiline and email controls
     return respond(200, action(state));
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    return respond(201, { threadId: THREAD_ID });
   });
 
   await setupPage({
@@ -1185,7 +1185,7 @@ test("The standalone form uses the existing input style with live number constra
     return respond(200, { ...numberAction(true), state });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
     context,
@@ -1230,7 +1230,7 @@ test.each([
       return respond(200, { ...numberAction(false), state });
     });
     context.mocks.api(chatEventsContract.send, ({ respond }) => {
-      return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+      return respond(201, { threadId: THREAD_ID });
     });
     await setupPage({
       context,
@@ -1279,7 +1279,7 @@ test.each([
       return respond(200, { ...dateTimeAction(inputType, false), state });
     });
     context.mocks.api(chatEventsContract.send, ({ respond }) => {
-      return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+      return respond(201, { threadId: THREAD_ID });
     });
     await setupPage({
       context,
@@ -1320,7 +1320,7 @@ test.each([
       return respond(200, { ...dateTimeAction("date", false), state });
     });
     context.mocks.api(chatEventsContract.send, ({ respond }) => {
-      return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+      return respond(201, { threadId: THREAD_ID });
     });
     await setupPage({
       context,
@@ -1378,7 +1378,7 @@ test.each([
     });
     context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
       expect(body.prompt).toBe(CALLBACK_PROMPT);
-      return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+      return respond(201, { threadId: THREAD_ID });
     });
     await setupPage({
       context,
@@ -1424,7 +1424,7 @@ test("An untouched optional checkbox preserves a checked website value", async (
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
     context,
@@ -1469,7 +1469,7 @@ test("A required checked checkbox submits its valid website state without auxili
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
     context,
@@ -1531,7 +1531,7 @@ test("A changed checkbox state on Retry uses the fresh valid website snapshot", 
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
     context,
@@ -1596,7 +1596,7 @@ test("A radio group submits an indexed choice without its duplicate value", asyn
   });
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     expect(body.prompt).toBe(CALLBACK_PROMPT);
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
     context,
@@ -1659,7 +1659,7 @@ test("A radio choice from a changed website group uses its fresh snapshot on Ret
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
     context,
@@ -1728,7 +1728,7 @@ test("An untouched optional radio group preserves the existing selection", async
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
     context,
@@ -1774,7 +1774,7 @@ test("An Agent-required radio group submits its existing valid website choice", 
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
     context,
@@ -1821,7 +1821,7 @@ test("The standalone form selects a required native option by index, not its web
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
     context,
@@ -1894,7 +1894,7 @@ test("A required multiple select cannot keep a disabled website choice and drops
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    return respond(201, { threadId: THREAD_ID });
   });
 
   await setupPage({
@@ -1948,7 +1948,7 @@ test("An optional multiple select distinguishes untouched from an explicit clear
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
     context,
@@ -2022,7 +2022,7 @@ test("An optional single select clears its website selection through the native 
     });
   });
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
     context,
@@ -2109,7 +2109,7 @@ test.each([
       });
     });
     context.mocks.api(chatEventsContract.send, ({ respond }) => {
-      return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+      return respond(201, { threadId: THREAD_ID });
     });
     await setupPage({
       context,
@@ -2304,7 +2304,7 @@ test("The standalone form records cancellation before notifying the agent", asyn
     expect(body.prompt).toBe("The user cancelled the browser input request.");
     expect(body.clientEventId).toBe(CANCEL_CLIENT_ID);
     expect(body.chatThreadSortEventId).toBe(CANCEL_SORT_ID);
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    return respond(201, { threadId: THREAD_ID });
   });
 
   await setupPage({
@@ -2475,7 +2475,7 @@ test.each(["apply", "cancel"] as const)(
           error: { code: "CHAT_UNAVAILABLE", message: "Chat unavailable" },
         });
       }
-      return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+      return respond(201, { threadId: THREAD_ID });
     });
 
     await setupPage({
@@ -2590,7 +2590,7 @@ test("An authoritative pending recovery rechecks the form before an explicit ret
     },
   );
   context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    return respond(201, { threadId: THREAD_ID });
   });
   await setupPage({
     context,
@@ -2783,7 +2783,7 @@ test("A terminal standalone action retries only its stable callback", async () =
     expect(body.prompt).toBe(CALLBACK_PROMPT);
     expect(body.clientEventId).toBe(SUCCESS_CLIENT_ID);
     expect(body.chatThreadSortEventId).toBe(SUCCESS_SORT_ID);
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    return respond(201, { threadId: THREAD_ID });
   });
 
   await setupPage({
@@ -2814,7 +2814,7 @@ test("A failed notification announces the error and remains retryable", async ()
         error: { code: "CHAT_UNAVAILABLE", message: "Chat unavailable" },
       });
     }
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    return respond(201, { threadId: THREAD_ID });
   });
 
   await setupPage({
@@ -2858,7 +2858,7 @@ test("A failed callback retries without repeating the Browser mutation", async (
         error: { code: "CHAT_UNAVAILABLE", message: "Chat unavailable" },
       });
     }
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    return respond(201, { threadId: THREAD_ID });
   });
 
   await setupPage({

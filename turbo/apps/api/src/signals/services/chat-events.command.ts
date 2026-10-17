@@ -218,7 +218,6 @@ interface CreatedChatEventResponse {
   readonly replayed?: boolean;
   readonly status: 201;
   readonly body: {
-    readonly runId: null;
     readonly threadId: string;
     readonly createdAt: string;
   };
@@ -261,7 +260,7 @@ function acceptedSendResponse(
   return {
     replayed,
     status: 201,
-    body: { runId: null, threadId, createdAt: createdAt.toISOString() },
+    body: { threadId, createdAt: createdAt.toISOString() },
   };
 }
 function normalSendTriggerSource(
@@ -2383,7 +2382,6 @@ const handleRecallSend$ = command(
     return {
       status: 201 as const,
       body: {
-        runId: null,
         threadId: args.body.threadId,
         createdAt: result.createdAt.toISOString(),
       },
@@ -2455,7 +2453,6 @@ const handleInterruptSend$ = command(
     return {
       status: 201 as const,
       body: {
-        runId: null,
         threadId: args.body.threadId,
         createdAt: result.createdAt.toISOString(),
       },

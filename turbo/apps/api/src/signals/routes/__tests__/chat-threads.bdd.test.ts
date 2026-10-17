@@ -397,11 +397,7 @@ async function sendNoCreditMessageResult(
   // An unconfigured Auto workspace has no credits and needs no personal
   // subscription fixture to persist a rejected message for search assertions.
   const sent = await chat.requestSendEvent(actor, body, [201]);
-  if (
-    sent.status !== 201 ||
-    sent.body.runId !== null ||
-    sent.body.createdAt === undefined
-  ) {
+  if (sent.status !== 201 || sent.body.createdAt === undefined) {
     throw new Error("Expected a no-credit send without a run");
   }
   const createdAt = Date.parse(sent.body.createdAt);

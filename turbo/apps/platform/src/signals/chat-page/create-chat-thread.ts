@@ -1976,7 +1976,6 @@ function createPagedEventResources({
   chatEvents$,
   previewImageUrlsByUrl$,
   previewRefreshRevision$,
-  previewCatalogReady$,
   connector,
 }: {
   readonly chatActionContext: ChatActionContext;
@@ -1985,7 +1984,6 @@ function createPagedEventResources({
     Promise<ReadonlyMap<string, string>>
   >;
   readonly previewRefreshRevision$: Computed<number>;
-  readonly previewCatalogReady$: Computed<boolean>;
   readonly connector: ComposerConnectorSignals;
 }) {
   const { threadId } = chatActionContext;
@@ -1994,7 +1992,6 @@ function createPagedEventResources({
   const artifactCardSignals = createArtifactCardSignalsRegistry(
     previewImageUrlsByUrl$,
     previewRefreshRevision$,
-    previewCatalogReady$,
   );
   const agentReferenceSignals = createAgentReferenceSignalsRegistry();
   const subscriptionResetCardSignals =
@@ -2384,7 +2381,6 @@ interface ChatThreadMessagePipelineOptions {
   chatEvents: ChatEventSignals;
   previewImageUrlsByUrl$: Computed<Promise<ReadonlyMap<string, string>>>;
   previewRefreshRevision$: Computed<number>;
-  previewCatalogReady$: Computed<boolean>;
   connector: ComposerConnectorSignals;
   thinkingSummaries$: Computed<Promise<ThinkingSummaries | null>>;
 }
@@ -2394,7 +2390,6 @@ function createChatThreadMessagePipeline({
   chatEvents,
   previewImageUrlsByUrl$,
   previewRefreshRevision$,
-  previewCatalogReady$,
   connector,
   thinkingSummaries$,
 }: ChatThreadMessagePipelineOptions) {
@@ -2406,7 +2401,6 @@ function createChatThreadMessagePipeline({
     chatEvents$: chatEvents.chatEvents$,
     previewImageUrlsByUrl$,
     previewRefreshRevision$,
-    previewCatalogReady$,
     connector,
   });
   const usage = createChatRunUsageSignals(threadId, chatEvents.chatEvents$);
@@ -3817,9 +3811,6 @@ export function createChatPanelSignals(
   const threadMeta$ = createThreadMeta(threadId);
   const optimisticCreateUnsettled$ =
     optimisticChatThreadCreateUnsettled(threadId);
-  const previewCatalogReady$ = computed((get) => {
-    return !get(optimisticCreateUnsettled$);
-  });
   const threadMetadata = createThreadMetadata(threadMeta$);
   const sessionOutput = createSessionOutputStreamSignals(
     threadId,
@@ -3849,7 +3840,6 @@ export function createChatPanelSignals(
     chatEvents,
     previewImageUrlsByUrl$: createArtifactPreviewImageUrls(artifact.artifacts$),
     previewRefreshRevision$: artifact.previewRefreshRevision$,
-    previewCatalogReady$,
     connector: composer.connector,
     thinkingSummaries$: activity.thinkingSummaries$,
   });

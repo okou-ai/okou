@@ -1091,7 +1091,6 @@ test("Connect a no-auth connector and continue the originating chat", async () =
       continuationPrompt = body.prompt ?? null;
     }
     return respond(201, {
-      runId: "00000000-0000-4000-a000-000000000201",
       threadId,
     });
   });
@@ -1158,7 +1157,6 @@ test("Complete OpenID and continue the originating chat", async () => {
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     continuationPrompt = body.prompt ?? null;
     return respond(201, {
-      runId: "00000000-0000-4000-a000-000000000202",
       threadId,
     });
   });
@@ -1341,7 +1339,6 @@ test("Reconnect the exact account and continue the originating chat only after s
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     continuationPrompt = body.prompt ?? null;
     return respond(201, {
-      runId: "00000000-0000-4000-a000-000000000203",
       threadId,
     });
   });
@@ -1411,7 +1408,6 @@ test("Connect a manual grant and continue the originating chat", async () => {
     callbackStarted.resolve();
     await releaseCallback.promise;
     return respond(201, {
-      runId: "00000000-0000-4000-a000-000000000203",
       threadId,
     });
   });

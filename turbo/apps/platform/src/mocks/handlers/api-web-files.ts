@@ -18,6 +18,7 @@ export const apiWebFilesHandlers = [
       url: `https://cdn.vm0.io/artifacts/${query.file_id}`,
       expiresAt: "2099-01-01T00:00:00.000Z",
       publicUrl: `https://cdn.vm0.io/artifacts/${query.file_id}`,
+      previewImageUrl: null,
     });
   }),
 ];

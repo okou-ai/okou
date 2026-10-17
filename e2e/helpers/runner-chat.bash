@@ -322,9 +322,9 @@ runner_chat_send() {
 }
 
 # Sends one chat input and waits for the background pick to launch it. The send
-# only enqueues the input and answers `runId: null`; the launched run appears
-# as an `input.prompt` that revokes the sent input and carries its `runId`.
-# Prints the send response with that `runId` filled in.
+# only enqueues the input; the launched run appears as an `input.prompt`
+# that revokes the sent input and carries its `runId`.
+# Prints the send response with that `runId` added.
 runner_chat_send_parts() {
     local agent_id="$1"
     local prompt="$2"
@@ -671,9 +671,9 @@ runner_chat_steer() {
         "" \
         "$steer_event_id")" || return 1
     if ! jq -e --arg threadId "$thread_id" '
-        has("runId") and .runId == null and .threadId == $threadId
+        .threadId == $threadId
     ' <<< "$steer_response" >/dev/null; then
-        echo "# Steer created a separate run or thread: $steer_response" >&2
+        echo "# Steer returned a different thread: $steer_response" >&2
         return 1
     fi
 
