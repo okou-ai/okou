@@ -10,7 +10,7 @@ use api_contracts::generated::{constants::sandbox_channel as limits, types::sand
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::Value;
 
-use super::{Scope, linux};
+use super::{Scope, linux, reading};
 use crate::{Error, Params};
 
 const BUFFER_BYTES: usize = 16 * 1024;
@@ -19,6 +19,7 @@ const IDLE: Duration = Duration::from_millis(limits::fs::CURSOR_IDLE_MS as u64);
 pub(super) struct State {
     root: File,
     pub(super) cursors: HashMap<String, Cursor>,
+    pub(super) readers: reading::State,
 }
 
 pub(super) struct Cursor {
@@ -43,11 +44,13 @@ impl State {
         Ok(Self {
             root: linux::capture(path, scope)?,
             cursors: HashMap::new(),
+            readers: reading::State::default(),
         })
     }
 
     pub(super) fn expire(&mut self, now: Instant) {
         self.cursors.retain(|_, cursor| now < cursor.idle_until);
+        self.readers.expire(now);
     }
 
     pub(super) fn execute(
@@ -64,7 +67,7 @@ impl State {
                     .ok_or(Error::CursorExpired)?;
                 Ok(serde_json::json!({}))
             }
-            _ => Err(Error::Unavailable),
+            _ => self.readers.execute(&self.root, params, scope),
         }
     }
 
@@ -212,7 +215,7 @@ impl Cursor {
     }
 }
 
-fn handle() -> Result<String, Error> {
+pub(super) fn handle() -> Result<String, Error> {
     let mut bytes = [0; 24];
     getrandom::fill(&mut bytes).map_err(|_| Error::Unavailable)?;
     Ok(URL_SAFE_NO_PAD.encode(bytes))

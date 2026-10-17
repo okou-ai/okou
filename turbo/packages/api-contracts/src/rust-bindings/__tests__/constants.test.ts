@@ -62,6 +62,7 @@ import { SANDBOX_CHANNEL_LIMITS } from "../../contracts/sandbox-channel";
 import {
   SANDBOX_FS_VERSION,
   SANDBOX_FS_LIMITS,
+  SANDBOX_FS_READ_LIMITS,
 } from "../../contracts/sandbox-channel-fs";
 import {
   SANDBOX_DIAGNOSTICS_VERSION,
@@ -373,6 +374,48 @@ const expectedBindings = [
     "PROCESSING_BUDGET_MS",
     SANDBOX_FS_LIMITS.processingBudgetMs,
     "processingBudgetMs",
+  ),
+  channelConstant(
+    ["sandbox_channel", "fs_read"],
+    "MAX_CHUNK_BYTES",
+    SANDBOX_FS_READ_LIMITS.maxChunkBytes,
+    "maxChunkBytes",
+  ),
+  channelConstant(
+    ["sandbox_channel", "fs_read"],
+    "MAX_RESPONSE_BYTES",
+    SANDBOX_FS_READ_LIMITS.maxResponseBytes,
+    "maxResponseBytes",
+  ),
+  channelConstant(
+    ["sandbox_channel", "fs_read"],
+    "MAX_HANDLES",
+    SANDBOX_FS_READ_LIMITS.maxHandles,
+    "maxHandles",
+  ),
+  channelConstant(
+    ["sandbox_channel", "fs_read"],
+    "MAX_IN_FLIGHT_READS",
+    SANDBOX_FS_READ_LIMITS.maxInFlightReads,
+    "maxInFlightReads",
+  ),
+  channelConstant(
+    ["sandbox_channel", "fs_read"],
+    "HANDLE_IDLE_MS",
+    SANDBOX_FS_READ_LIMITS.handleIdleMs,
+    "handleIdleMs",
+  ),
+  channelConstant(
+    ["sandbox_channel", "fs_read"],
+    "MAX_PREVIEW_BYTES",
+    SANDBOX_FS_READ_LIMITS.maxPreviewBytes,
+    "maxPreviewBytes",
+  ),
+  channelConstant(
+    ["sandbox_channel", "fs_read"],
+    "MAX_PREFIX_BYTES",
+    SANDBOX_FS_READ_LIMITS.maxPrefixBytes,
+    "maxPrefixBytes",
   ),
   channelConstant(
     ["sandbox_channel", "diagnostics"],

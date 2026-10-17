@@ -3,7 +3,9 @@
 //! role and payload semantics before a runtime may dispatch business work.
 
 use api_contracts::generated::constants::sandbox_channel as limits;
-use api_contracts::generated::types::sandbox_channel::{diagnostics, fs};
+use api_contracts::generated::types::sandbox_channel::{diagnostics, fs, fs_read};
+
+mod file_read;
 use base64::{
     Engine,
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
@@ -35,6 +37,14 @@ pub enum Operation {
     FsList,
     /// Release an owned continuation.
     FsListClose,
+    /// Open a connection-owned regular-file reader.
+    FsReadOpen,
+    /// Read a bounded positional chunk.
+    FsRead,
+    /// Validate and release a reader.
+    FsReadFinish,
+    /// Abandon and release a reader.
+    FsReadClose,
     /// Bounded echo in either direction.
     Echo,
     /// External request causing a reverse Guest echo.
@@ -92,6 +102,14 @@ pub enum Params {
     FsList(fs::ListParams),
     /// Owned continuation release.
     FsListClose(fs::ListCloseParams),
+    /// Open a regular file with a download or preview selection.
+    FsReadOpen(fs_read::OpenParams),
+    /// Positional bounded read.
+    FsRead(fs_read::ReadParams),
+    /// Final identity validation and release.
+    FsReadFinish(fs_read::HandleParams),
+    /// Explicit abandonment.
+    FsReadClose(fs_read::HandleParams),
     /// Echo or reverse-echo bytes.
     Echo(diagnostics::Echo),
 }
@@ -103,6 +121,14 @@ pub enum ResultPayload {
     FsList(fs::ListResult),
     /// Cursor release acknowledgment.
     FsListClose(fs::ListCloseResult),
+    /// Owned reader metadata.
+    FsReadOpen(fs_read::OpenResult),
+    /// One exact positional chunk.
+    FsRead(fs_read::ReadResult),
+    /// Validated reader release.
+    FsReadFinish(fs_read::ReleaseResult),
+    /// Abandoned reader release.
+    FsReadClose(fs_read::ReleaseResult),
     /// Bounded echo bytes.
     Echo(diagnostics::Echo),
 }
@@ -377,6 +403,13 @@ pub fn operation_contract(
         ("fs", version, "list.close") if version == u64::from(limits::fs::VERSION) => {
             Operation::FsListClose
         }
+        ("fs", version, name) if version == u64::from(limits::fs::VERSION) => match name {
+            "open" => Operation::FsReadOpen,
+            "read" => Operation::FsRead,
+            "finish" => Operation::FsReadFinish,
+            "close" => Operation::FsReadClose,
+            _ => return Err(ChannelError::UnknownOperation),
+        },
         ("diagnostics", version, "echo") if version == u64::from(limits::diagnostics::VERSION) => {
             Operation::Echo
         }
@@ -440,6 +473,20 @@ fn echo(value: Value) -> Result<diagnostics::Echo, ChannelError> {
     Ok(parsed)
 }
 
+fn raw_path(path: &[String]) -> Result<(), ChannelError> {
+    if !count_limit(path.len(), limits::fs::MAX_PATH_COMPONENTS) {
+        return Err(ChannelError::InvalidParams);
+    }
+    let mut bytes = path.len().saturating_sub(1);
+    for token in path {
+        bytes += basename(token)?.len();
+    }
+    if !count_limit(bytes, limits::fs::MAX_PATH_BYTES) {
+        return Err(ChannelError::InvalidParams);
+    }
+    Ok(())
+}
+
 /// Consume and validate an operation's closed, typed params after routing gates.
 pub fn decode_params(operation: Operation, value: Value) -> Result<Params, ChannelError> {
     match operation {
@@ -454,16 +501,7 @@ pub fn decode_params(operation: Operation, value: Value) -> Result<Params, Chann
             let parsed: fs::ListParams =
                 serde_json::from_value(value).map_err(|_| ChannelError::InvalidParams)?;
             if let Some(path) = &parsed.path {
-                if !count_limit(path.len(), limits::fs::MAX_PATH_COMPONENTS) {
-                    return Err(ChannelError::InvalidParams);
-                }
-                let mut bytes = path.len().saturating_sub(1);
-                for token in path {
-                    bytes += basename(token)?.len();
-                }
-                if !count_limit(bytes, limits::fs::MAX_PATH_BYTES) {
-                    return Err(ChannelError::InvalidParams);
-                }
+                raw_path(path)?;
             }
             if parsed
                 .cursor
@@ -483,6 +521,10 @@ pub fn decode_params(operation: Operation, value: Value) -> Result<Params, Chann
             }
             Ok(Params::FsListClose(parsed))
         }
+        Operation::FsReadOpen
+        | Operation::FsRead
+        | Operation::FsReadFinish
+        | Operation::FsReadClose => file_read::params(operation, value),
         Operation::Echo | Operation::PeerEcho => Ok(Params::Echo(echo(value)?)),
     }
 }
@@ -547,6 +589,10 @@ pub fn decode_result(operation: Operation, value: Value) -> Result<ResultPayload
             let parsed = serde_json::from_value(value).map_err(|_| ChannelError::InvalidRequest)?;
             Ok(ResultPayload::FsListClose(parsed))
         }
+        Operation::FsReadOpen
+        | Operation::FsRead
+        | Operation::FsReadFinish
+        | Operation::FsReadClose => file_read::result(operation, value),
         Operation::Echo | Operation::PeerEcho => Ok(ResultPayload::Echo(
             echo(value).map_err(|_| ChannelError::InvalidRequest)?,
         )),

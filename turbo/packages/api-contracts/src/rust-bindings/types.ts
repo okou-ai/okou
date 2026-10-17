@@ -56,6 +56,10 @@ export const rustTypeRootDoc = [
 
 export const rustTypeModuleDocs = [
   {
+    rustModulePath: ["sandbox_channel", "fs_read"],
+    rustDoc: ["Regular-file content DTOs within the fs v3 category."],
+  },
+  {
     rustModulePath: ["runners", "runs", "startup"],
     rustDoc: ["Run-authenticated actual sandbox startup reporting DTOs."],
   },

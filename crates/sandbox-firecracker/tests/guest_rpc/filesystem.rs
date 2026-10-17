@@ -13,11 +13,17 @@ use super::{
     duplex::{receive, send},
 };
 
+#[derive(Clone)]
+pub(super) struct Retained {
+    pub(super) cursor: String,
+    pub(super) reader: String,
+}
+
 pub(super) async fn exercise(
     sandbox: &dyn Sandbox,
     channel: &mut Channel,
     idle: &mut Channel,
-) -> TestResult<String> {
+) -> TestResult<Retained> {
     let name = format!("channel-fs-{}", uuid::Uuid::new_v4());
     let root = format!("/home/user/{name}");
     // This exact owned subtree is removed, including its mount, on every outcome.
@@ -25,20 +31,27 @@ pub(super) async fn exercise(
         "set -eu\nmkdir -p '{root}/nested' '{root}/mount'\ntouch '{root}/.hidden' '{root}/nested/leaf'\nln -s / '{root}/outside'\nln -s cycle '{root}/cycle'\ni=0; while [ \"$i\" -lt 300 ]; do touch \"{root}/file-$i\"; i=$((i+1)); done\nmount -t tmpfs -o size=1m tmpfs '{root}/mount'"
     ), true).await;
     let result = match prepared {
-        Ok(()) => browse(channel, idle, &name).await,
+        Ok(()) => {
+            async {
+                let cursor = browse(channel, idle, &name).await?;
+                let reader = super::file_read::exercise(sandbox, channel, idle, &root).await?;
+                Ok(Retained { cursor, reader })
+            }
+            .await
+        }
         Err(error) => Err(error),
     };
     let cleanup = command(sandbox, &format!("set -eu\nif mountpoint -q '{root}/mount'; then umount '{root}/mount'; fi\nrm -rf -- '{root}'"), true).await;
     let cursor = result?;
     cleanup?;
     println!(
-        "FILESYSTEM_FIRECRACKER_PASS arch={} fs=2 policy=openat2-beneath-no-links-no-xdev root=actual home=canonical-mount paging=complete cursor-close=owned other-mount=rejected cleanup=owned",
+        "FILESYSTEM_FIRECRACKER_PASS arch={} fs=3 policy=openat2-beneath-no-links-no-xdev root=actual home=canonical-mount paging=complete cursor-close=owned other-mount=rejected cleanup=owned",
         std::env::consts::ARCH
     );
     Ok(cursor)
 }
 
-async fn command(sandbox: &dyn Sandbox, command: &str, sudo: bool) -> TestResult<()> {
+pub(super) async fn command(sandbox: &dyn Sandbox, command: &str, sudo: bool) -> TestResult<()> {
     let output = sandbox
         .exec(&ExecRequest {
             cmd: command,
@@ -66,7 +79,7 @@ async fn call(
 ) -> TestResult<Result<Value, String>> {
     tokio::time::timeout(Duration::from_secs(5), async {
         let id = uuid::Uuid::new_v4().to_string();
-        send(channel, json!({"schemaVersion":1,"type":"request","id":id,"category":"fs","categoryVersion":2,"operation":operation,"params":params})).await?;
+        send(channel, json!({"schemaVersion":1,"type":"request","id":id,"category":"fs","categoryVersion":3,"operation":operation,"params":params})).await?;
         match receive(channel).await? {
             Message::Response { request_id, result:Some(result), error:None, .. } if request_id == id => Ok(Ok(result)),
             Message::Response { request_id, result:None, error:Some(error), .. } if request_id == id => Ok(Err(error.code)),

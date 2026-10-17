@@ -13,8 +13,10 @@ import {
   sandboxDiagnosticsNoticeSchema,
 } from "../contracts/sandbox-channel-diagnostics";
 import type { RustTypeBinding } from "./types";
+import { sandboxFsReadTypeBindings } from "./sandbox-channel-fs-read-types";
 
 export const sandboxChannelTypeBindings = [
+  ...sandboxFsReadTypeBindings,
   {
     schema: sandboxChannelWireSchema,
     rustModulePath: ["sandbox_channel"],

@@ -168,7 +168,7 @@ function harness(options: Partial<SandboxChannelPeerOptions> = {}) {
     return { socket, hello, connected };
   };
   const ready = async (
-    categories: Record<string, number> = { fs: 2, diagnostics: 1 },
+    categories: Record<string, number> = { fs: 3, diagnostics: 1 },
   ) => {
     const started = await start();
     started.socket.reply(started.hello, { categories });
@@ -218,7 +218,7 @@ describe("admitted application peer", () => {
     const h = harness();
     const { socket, hello, connected } = await h.start();
     expect(h.peer.state).toBe("connecting");
-    socket.reply(hello, { categories: { fs: 2, diagnostics: 1 } });
+    socket.reply(hello, { categories: { fs: 3, diagnostics: 1 } });
     socket.receive(incoming(100));
     const reply = await socket.frames.next();
     expect(reply).toMatchObject({
@@ -373,7 +373,7 @@ describe("admitted application peer", () => {
       h.peer.call(sandboxFsList, { path: [] }, h.controller.signal),
     ).rejects.toMatchObject({
       code: "category_version_mismatch",
-      details: { category: "fs", expectedVersion: 2, receivedVersion: 1 },
+      details: { category: "fs", expectedVersion: 3, receivedVersion: 1 },
     });
     const echo = h.peer.call(
       sandboxDiagnosticsEcho,
@@ -411,7 +411,7 @@ describe("admitted application peer", () => {
       error: {
         code: "category_version_mismatch",
         category: "fs",
-        expectedVersion: 2,
+        expectedVersion: 3,
         receivedVersion: 1,
       },
     });
@@ -678,7 +678,7 @@ describe("admitted application peer", () => {
       replacement = await h.sockets.next(),
       hello = await replacement.frames.next();
     if (hello.type !== "hello") throw new Error("fresh hello");
-    replacement.reply(hello, { categories: { fs: 2, diagnostics: 1 } });
+    replacement.reply(hello, { categories: { fs: 3, diagnostics: 1 } });
     await ready;
     release.put("finish old handler");
     expect(await finished.next()).toBe("old");
@@ -1175,7 +1175,7 @@ describe("admitted application peer", () => {
       });
       const started = await h.start();
       started.socket.reply(started.hello, {
-        categories: { fs: 2, diagnostics: 1, bulk: 1 },
+        categories: { fs: 3, diagnostics: 1, bulk: 1 },
       });
       await started.connected;
       const socket = started.socket,
@@ -1223,7 +1223,7 @@ describe("admitted application peer", () => {
     const replacement = await h.sockets.next(),
       hello = await replacement.frames.next();
     if (hello.type !== "hello") throw new Error("fresh hello");
-    replacement.reply(hello, { categories: { fs: 2, diagnostics: 1 } });
+    replacement.reply(hello, { categories: { fs: 3, diagnostics: 1 } });
     await ready;
     const second = h.peer.call(
       sandboxDiagnosticsEcho,
@@ -1279,7 +1279,7 @@ describe("admitted application peer", () => {
       replacement = await h.sockets.next(),
       hello = await replacement.frames.next();
     if (hello.type !== "hello") throw new Error("fresh hello");
-    replacement.reply(hello, { categories: { fs: 2, diagnostics: 1 } });
+    replacement.reply(hello, { categories: { fs: 3, diagnostics: 1 } });
     await ready;
     const next = h.peer.call(
       sandboxDiagnosticsEcho,

@@ -122,6 +122,10 @@ export const rustConstantModuleDocs = [
     rustDoc: ["Sandbox application schema and finite resource policies."],
   },
   {
+    rustModulePath: ["sandbox_channel", "fs_read"],
+    rustDoc: ["Shared regular-file reader resource and preview bounds."],
+  },
+  {
     rustModulePath: ["sandbox_channel", "fs"],
     rustDoc: ["Readonly directory category version and finite policies."],
   },

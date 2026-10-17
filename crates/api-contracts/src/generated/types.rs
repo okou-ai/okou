@@ -3657,6 +3657,88 @@ pub mod sandbox_channel {
             pub next_cursor: Option<String>,
         }
     }
+
+    /// Regular-file content DTOs within the fs v3 category.
+    pub mod fs_read {
+        /// Finish validation or explicitly abandon this reader.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct HandleParams {
+            /// Opaque connection-owned reader handle.
+            pub handle: String,
+        }
+
+        /// Preview caps never gate complete downloads.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+        pub enum OpenParamsMode {
+            /// Complete file, without a product byte cap.
+            #[serde(rename = "download")]
+            Download,
+            /// Complete file within the preview bound.
+            #[serde(rename = "preview")]
+            Preview,
+            /// Bounded text prefix with explicit truncation.
+            #[serde(rename = "prefix")]
+            Prefix,
+        }
+
+        /// Open an owned regular-file reader with an explicit selection policy.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct OpenParams {
+            /// Nonempty raw basename tokens relative to captured Guest root.
+            pub path: Vec<String>,
+            /// Complete download or bounded preview selection.
+            pub mode: OpenParamsMode,
+        }
+
+        /// Held regular-file identity and exact selected byte range.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct OpenResult {
+            /// Opaque connection-owned reader handle.
+            pub handle: String,
+            /// Canonical raw basename, independent of the display label.
+            pub name_token: String,
+            /// Safe display label, never a path input.
+            pub display_name: String,
+            /// Complete size as a canonical native-offset decimal string.
+            pub file_size: String,
+            /// Selected bytes as a canonical native-offset decimal string.
+            pub selected_size: String,
+            /// Whether the selected range is shorter than the file.
+            pub truncated: bool,
+        }
+
+        /// One bounded positional read from an owned handle.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct ReadParams {
+            /// Owned regular-file handle.
+            pub handle: String,
+            /// Exact canonical decimal offset within the selected range.
+            pub offset: String,
+            /// Positive requested raw bytes within the chunk bound.
+            pub length: u64,
+        }
+
+        /// Exact offset and canonical padded base64 of one validated chunk.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct ReadResult {
+            /// Canonical decimal offset matching the request.
+            pub offset: String,
+            /// Actual raw byte count; zero only at selected EOF.
+            pub length: u64,
+            /// Canonical padded base64 of exactly length raw bytes.
+            pub data: String,
+        }
+
+        /// Successful reader release; finish also validates observed stability.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct ReleaseResult {}
+    }
 }
 
 /// Webhook DTOs generated from TypeScript API contracts.

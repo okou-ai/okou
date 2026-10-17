@@ -178,6 +178,9 @@ impl Peer {
             Params::Echo(value) => serde_json::to_value(value),
             Params::FsList(value) => serde_json::to_value(value),
             Params::FsListClose(value) => serde_json::to_value(value),
+            Params::FsReadOpen(value) => serde_json::to_value(value),
+            Params::FsRead(value) => serde_json::to_value(value),
+            Params::FsReadFinish(value) | Params::FsReadClose(value) => serde_json::to_value(value),
         }
         .map_err(|_| Error::Unavailable)?;
         let id = self.id()?;
@@ -347,6 +350,9 @@ fn remote_error(error: MessageResponseError) -> Error {
         "mount_not_expandable" => Error::MountNotExpandable,
         "directory_changed" => Error::DirectoryChanged,
         "cursor_expired" => Error::CursorExpired,
+        "not_regular_file" => Error::NotRegularFile,
+        "file_changed" => Error::FileChanged,
+        "handle_expired" => Error::HandleExpired,
         _ => Error::Unavailable,
     }
 }

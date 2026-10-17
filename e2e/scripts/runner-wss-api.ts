@@ -105,7 +105,7 @@ export class RunnerWssApi {
     const ready = `WSS_READY_${clientEventId}`;
     const homeFixture = `wss-home-${clientEventId}`;
     const fixture = `/home/user/${homeFixture}`;
-    const prompt = `@shell-checkpoint@\nset -eu\nmkdir -p '${fixture}/nested'\ntouch '${fixture}/.hidden' '${fixture}/nested/leaf'\nln -s / '${fixture}/outside'\ni=0; while [ "$i" -lt 270 ]; do touch "${fixture}/file-$i"; i=$((i+1)); done\nprintf ${ready}\n@continue@\nset -eu\ntrap 'rm -rf -- "${fixture}"' EXIT HUP INT TERM\nsleep 300\nprintf WSS_WORK_FINISHED`;
+    const prompt = `@shell-checkpoint@\nset -eu\nmkdir -p '${fixture}/nested'\ntouch '${fixture}/.hidden' '${fixture}/nested/leaf'\npython3 -c 'from pathlib import Path; Path("${fixture}/nested/leaf").write_bytes(bytes(i % 256 for i in range(70003)))'\nln -s / '${fixture}/outside'\ni=0; while [ "$i" -lt 270 ]; do touch "${fixture}/file-$i"; i=$((i+1)); done\nprintf ${ready}\n@continue@\nset -eu\ntrap 'rm -rf -- "${fixture}"' EXIT HUP INT TERM\nsleep 300\nprintf WSS_WORK_FINISHED`;
     const sent = object(
       await this.request(
         "/api/chat/events",

@@ -22,7 +22,7 @@ function currentFolder(panel: HTMLElement) {
     .querySelector('[aria-current="location"]');
 }
 
-test("Folder expansion and entry are distinct and every ancestor navigates the real fs v2 namespace", async () => {
+test("Folder expansion and entry are distinct and every ancestor navigates the real fs v3 namespace", async () => {
   const fixture = await setupFilesPage(context, { handler: navigationListing });
   const panel = await openFiles();
   await expect(

@@ -4,6 +4,8 @@
 mod linux;
 #[cfg(target_os = "linux")]
 mod listing;
+#[cfg(target_os = "linux")]
+mod reading;
 #[cfg(test)]
 #[cfg(target_os = "linux")]
 mod tests;
@@ -42,6 +44,7 @@ pub struct Filesystem {
 struct Owner {
     cancelled: CancellationToken,
     peer: Mutex<Option<CancellationToken>>,
+    reads: Arc<Semaphore>,
     #[cfg(target_os = "linux")]
     state: Mutex<Option<listing::State>>,
     _permit: OwnedSemaphorePermit,
@@ -54,6 +57,8 @@ struct Owner {
 struct Hooks {
     before_job: Option<Box<dyn FnOnce() + Send>>,
     after_read: Option<Box<dyn FnOnce() + Send>>,
+    after_file_pin: Option<Box<dyn FnOnce() + Send>>,
+    after_job: Option<Box<dyn FnOnce() + Send>>,
     after_maintenance: Option<Box<dyn FnOnce() + Send>>,
 }
 
@@ -85,6 +90,7 @@ struct Job {
     params: Params,
     result: oneshot::Sender<Result<Value, Error>>,
     _bytes: OwnedSemaphorePermit,
+    _read: Option<OwnedSemaphorePermit>,
 }
 
 pub(super) struct Scope<'a> {
@@ -134,7 +140,7 @@ impl Scope<'_> {
 }
 
 impl Filesystem {
-    /// fs v2 captures Guest /; neither process HOME nor cwd is used.
+    /// fs v3 captures Guest /; neither process HOME nor cwd is used.
     pub fn new() -> std::io::Result<Self> {
         Self::start(PathBuf::from("/"))
     }
@@ -163,6 +169,9 @@ impl Filesystem {
                 Arc::new(Owner {
                     cancelled: CancellationToken::new(),
                     peer: Mutex::new(None),
+                    reads: Arc::new(Semaphore::new(
+                        limits::fs_read::MAX_IN_FLIGHT_READS as usize,
+                    )),
                     #[cfg(target_os = "linux")]
                     state: Mutex::new(None),
                     _permit: permit,
@@ -187,6 +196,9 @@ impl Filesystem {
         let encoded = match &params {
             Params::FsList(value) => serde_json::to_vec(value),
             Params::FsListClose(value) => serde_json::to_vec(value),
+            Params::FsReadOpen(value) => serde_json::to_vec(value),
+            Params::FsRead(value) => serde_json::to_vec(value),
+            Params::FsReadFinish(value) | Params::FsReadClose(value) => serde_json::to_vec(value),
             _ => return Err(Error::Unavailable),
         }
         .map_err(|_| Error::Unavailable)?;
@@ -195,6 +207,15 @@ impl Filesystem {
             .try_acquire_many_owned(count)
             .map_err(|_| Error::Busy)?;
         let (result, receiver) = oneshot::channel();
+        let read = if matches!(params, Params::FsRead(_)) {
+            Some(
+                Arc::clone(&owner.reads)
+                    .try_acquire_owned()
+                    .map_err(|_| Error::Busy)?,
+            )
+        } else {
+            None
+        };
         self.queue
             .try_send(Job {
                 owner,
@@ -202,6 +223,7 @@ impl Filesystem {
                 params,
                 result,
                 _bytes: bytes,
+                _read: read,
             })
             .map_err(|error| match error {
                 mpsc::TrySendError::Full(_) => Error::Busy,
@@ -219,7 +241,15 @@ impl Service for GuestFiles {
     }
 
     fn request(&self, operation: Operation, params: Params, peer: Peer) -> ServiceFuture<Value> {
-        if !matches!(operation, Operation::FsList | Operation::FsListClose) {
+        if !matches!(
+            operation,
+            Operation::FsList
+                | Operation::FsListClose
+                | Operation::FsReadOpen
+                | Operation::FsRead
+                | Operation::FsReadFinish
+                | Operation::FsReadClose
+        ) {
             return Diagnostics.request(operation, params, peer);
         }
         let filesystem = self.filesystem.clone();
@@ -229,6 +259,11 @@ impl Service for GuestFiles {
             let value = match params {
                 Params::FsList(value) => serde_json::to_value(value),
                 Params::FsListClose(value) => serde_json::to_value(value),
+                Params::FsReadOpen(value) => serde_json::to_value(value),
+                Params::FsRead(value) => serde_json::to_value(value),
+                Params::FsReadFinish(value) | Params::FsReadClose(value) => {
+                    serde_json::to_value(value)
+                }
                 _ => return Err(Error::Unavailable),
             }
             .map_err(|_| Error::Unavailable)?;
@@ -291,7 +326,33 @@ fn worker(receiver: mpsc::Receiver<Job>) {
             owners.push(weak);
         }
         let outcome = execute(&job);
-        let _ = job.result.send(outcome);
+        #[cfg(test)]
+        {
+            let hook = job.owner.hooks.lock().unwrap().after_job.take();
+            if let Some(hook) = hook {
+                hook();
+            }
+        }
+        #[cfg(target_os = "linux")]
+        let abandoned = if matches!(job.params, Params::FsReadOpen(_)) {
+            outcome
+                .as_ref()
+                .ok()
+                .and_then(|value| value.get("handle"))
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        } else {
+            None
+        };
+        if job.result.send(outcome).is_err() {
+            #[cfg(target_os = "linux")]
+            if let Some(handle) = abandoned
+                && let Ok(mut state) = job.owner.state.lock()
+                && let Some(state) = state.as_mut()
+            {
+                state.readers.handles.remove(&handle);
+            }
+        }
     }
 }
 

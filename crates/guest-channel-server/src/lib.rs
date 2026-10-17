@@ -45,6 +45,12 @@ pub enum Error {
     DirectoryChanged,
     /// The owned cursor expired.
     CursorExpired,
+    /// The requested entry is not a regular file.
+    NotRegularFile,
+    /// The observed file identity or content stamps changed.
+    FileChanged,
+    /// The connection-owned reader was released or expired.
+    HandleExpired,
 }
 
 impl Error {
@@ -62,6 +68,9 @@ impl Error {
             Self::MountNotExpandable => "mount_not_expandable",
             Self::DirectoryChanged => "directory_changed",
             Self::CursorExpired => "cursor_expired",
+            Self::NotRegularFile => "not_regular_file",
+            Self::FileChanged => "file_changed",
+            Self::HandleExpired => "handle_expired",
         }
     }
 }
