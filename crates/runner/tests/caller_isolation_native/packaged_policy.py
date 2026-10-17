@@ -23,6 +23,9 @@ def build_policy():
         "cgroup_t",
         "gateway_key_t",
         "runtime_log_t",
+        "resource_anchor_t",
+        "resource_config_t",
+        "agent_state_t",
     ]
     lines = ["(handleunknown deny)", "(mls false)"]
     lines += [f"(class {k} ({v}))" for k, v in classes.items()]
@@ -80,6 +83,9 @@ def build_policy():
             lines += [
                 f"(typetransition {source} workload_data_t {kind} workload_data_t)"
             ]
+            lines += [
+                f"(typetransition {source} resource_anchor_t {kind} workload_data_t)"
+            ]
     for r in ["agent_t", "workload_t", "toolbridge_t", "taskbridge_t"]:
         lines += [
             f"(allow {r} self (process (fork sigchld getattr getcap getrlimit setrlimit getsched setsched getpgid setpgid getsession signal sigkill sigstop signull execmem)))",
@@ -106,6 +112,7 @@ def build_policy():
             f"(allow {r} self (dir (open read getattr search)))",
             f"(allow {r} self (capability (setuid setgid)))",
             f"(allow {r} all_types (dir (open read getattr search)))",
+            f"(allow {r} resource_anchor_t (dir (write add_name remove_name)))",
         ]
         for t in [
             "control_t",
@@ -134,6 +141,14 @@ def build_policy():
     # Ordinary execution does not gain a protected role from mutable binaries.
     safe_caps = "chown dac_override dac_read_search fowner fsetid kill setgid setuid setpcap net_bind_service sys_chroot sys_resource audit_write setfcap mknod"
     lines += [
+        # Upstream locks even credential/settings reads. Permit only these
+        # named lock directories and the private credential file, while fixed
+        # executable discovery files/directories retain immutable labels.
+        '(typetransition agent_t resource_config_t dir "auth.json.lock" agent_state_t)',
+        '(typetransition agent_t resource_config_t dir "settings.json.lock" agent_state_t)',
+        "(allow agent_t resource_config_t (dir (write add_name remove_name)))",
+        "(allow agent_t agent_state_t (file (open read write append getattr setattr lock)))",
+        "(allow agent_t agent_state_t (dir (create open read write getattr setattr add_name remove_name search rmdir)))",
         f"(allow workload_t self (capability ({safe_caps})))",
         "(allow workload_t self (process (setcap)))",
         "(allow workload_t workload_data_t (file (execute execute_no_trans entrypoint execmod)))",

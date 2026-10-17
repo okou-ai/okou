@@ -47,7 +47,8 @@ Exit zero means only that the kernel-role primitive suite passed on this host
 architecture. `gateF` remains `incomplete`: actual packaged Codex/Claude Code/Pi
 and tools/subagents, sealed dependencies, sudo/package functionality, retained
 home/history, alternate credential resolvers, real Run lifecycle/resource
-accounting and paired architecture evidence are separate mandatory gates.
+accounting are separate mandatory gates. The owning issue selects the required
+native architecture coverage; a receipt establishes only its observed architecture.
 Neither this command nor its ordinary tests establish production caller
 authorization. Task-specific observations and release decisions belong in the
 owning issue/PR, not this README.
@@ -127,12 +128,24 @@ identities are recorded separately. Image payloads are reduced to size/hash in
 the receipt. The CLI artifact's source identity is independent of the fixture
 commit; record both in the owning issue.
 
-All 26 named checks, enforcing Guest identity, pinned CLI identity, no broker
+All 31 named checks, enforcing Guest identity, pinned CLI identity, no broker
 errors and a qualified extension negative are required for exit zero. Missing,
-duplicate, failed or unqualified observations fail closed. In particular, an
-extension that never loaded because a dependency is missing is not a security
-pass: that check currently remains explicitly unqualified. A successful subset
-still leaves `gateF: incomplete`. In-process resource/configuration closure,
-other helpers, real Run lifecycle/resource/resolver coverage and native ARM
-remain independent requirements; this test is never an activation or rollout
-fallback.
+duplicate, failed or unqualified observations fail closed. The positive extension
+control seals the same executable dependencies but retains the user's discovery
+roots. Both it and the real CLI use an explicit test-only Node import that selects
+the packaged SDK's bundled loader. Package bytes are unchanged; a dependency
+loading error cannot stand in for extension denial.
+
+The agent view masks Pi's global and ancestor project discovery roots. Mandatory
+labels protect configuration bytes and mount anchors while allowing the private
+credential file and specifically named credential/settings lock directories.
+The existing SDK requires these locks even for reads. The original tool view
+remains writable and the canonical session tree is shared as data. The suite
+checks extension execution identity and observed model ingress in the load
+control, absence in the frozen view, rejected configuration writes, stable
+anchors, private-state denial and retained-session access.
+
+A successful subset still leaves `gateF: incomplete`. Complete executable
+resource closure for every supported runtime, other helpers and real Run
+lifecycle/resource/resolver coverage remain independent requirements; this
+test is never an activation or rollout fallback.

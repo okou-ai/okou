@@ -46,6 +46,11 @@ EXPECTED = {
     "pi_real_tool_subagent",
     "untrusted_pi_extension_denied",
     "pi_sdk_extension_loader_diagnostic",
+    "pi_extension_known_load_control",
+    "pi_frozen_resource_mutation_denied",
+    "pi_resource_anchors_stable",
+    "pi_retained_sessions",
+    "pi_private_state_denied",
     "claude_real_tool_subagent",
     "codex_real_tool_subagent",
     "untrusted_shell_startup_denied",
@@ -99,7 +104,20 @@ def validate_summary(summary, architecture):
     ):
         raise ValueError("failed or unqualified packaged case")
     by_name = {c["name"]: c for c in checks}
-    if by_name["untrusted_pi_extension_denied"].get("qualified") is not True:
+    control = by_name["pi_extension_known_load_control"]
+    identity = control.get("identity")
+    denied = by_name["untrusted_pi_extension_denied"]
+    if (
+        control.get("qualified") is not True
+        or not isinstance(identity, dict)
+        or identity.get("uid") != 1000
+        or not isinstance(identity.get("context"), str)
+        or identity["context"].rstrip("\0") != "system_u:system_r:agent_t"
+        or control.get("ingressObserved") is not True
+        or denied.get("qualified") is not True
+        or denied.get("executed") is not None
+        or denied.get("ingressObserved") is not False
+    ):
         raise ValueError("Pi extension denial lacks a known-load control")
     shell = by_name["untrusted_shell_startup_denied"]
     observations = shell.get("observations")
@@ -342,6 +360,7 @@ def main():
         ]
         for name, path in [
             ("guest.py", HERE / "packaged_guest.py"),
+            ("packaged_resources.py", HERE / "packaged_resources.py"),
             ("policy", out / "policy"),
             ("entry", out / "entry"),
             ("real-guest-tool-exec", args.tool_helper),

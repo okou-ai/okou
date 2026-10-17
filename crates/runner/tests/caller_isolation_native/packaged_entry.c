@@ -182,6 +182,25 @@ static void frozen_env(void) {
   if (*ipc_copy)
     setenv("NODE_CHANNEL_FD", ipc_copy, 1);
 }
+static void seal_os(void) {
+  if (unshare(CLONE_NEWNS) || mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL))
+    fail("agent-ns");
+  const char *dirs[] = {"/usr", "/etc", "/opt", NULL};
+  for (int i = 0; dirs[i]; i++) {
+    char source[128];
+    snprintf(source, sizeof(source), "/sealed%s", dirs[i]);
+    if (mount(source, dirs[i], NULL, MS_BIND | MS_REC, NULL))
+      fail("agent-seal");
+  }
+  const char *shells[] = {"bash", "dash", NULL};
+  for (int i = 0; shells[i]; i++) {
+    char source[128], target[128];
+    snprintf(source, sizeof(source), "/fixture/workload-shell-%s", shells[i]);
+    snprintf(target, sizeof(target), "/usr/bin/%s", shells[i]);
+    if (mount(source, target, NULL, MS_BIND, NULL))
+      fail("fixed-workload-shell");
+  }
+}
 int main(int argc, char **argv) {
   const char *leaf = strrchr(argv[0], '/');
   leaf = leaf ? leaf + 1 : argv[0];
@@ -236,24 +255,26 @@ int main(int argc, char **argv) {
   if (argc < 3)
     fail("arguments");
   if (!strcmp(argv[1], "keeper")) {
-    if (unshare(CLONE_NEWNS) ||
-        mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL))
-      fail("agent-ns");
-    const char *dirs[] = {"/usr", "/etc", "/opt", NULL};
-    for (int i = 0; dirs[i]; i++) {
-      char source[128];
-      snprintf(source, sizeof(source), "/sealed%s", dirs[i]);
-      if (mount(source, dirs[i], NULL, MS_BIND | MS_REC, NULL))
-        fail("agent-seal");
+    seal_os();
+    int sessions =
+        open("/home/user/.pi/agent/sessions", O_PATH | O_DIRECTORY | O_CLOEXEC);
+    if (sessions < 0)
+      fail("retained-sessions");
+    const char *resource_sources[] = {
+        "/fixture/pi-resources", "/fixture/project-resources",
+        "/fixture/project-resources", "/fixture/project-resources", NULL};
+    const char *resource_targets[] = {"/home/user/.pi",
+                                      "/home/user/workspace/.pi", "/home/.pi",
+                                      "/.pi", NULL};
+    for (int i = 0; resource_targets[i]; i++) {
+      if (mount(resource_sources[i], resource_targets[i], NULL, MS_BIND, NULL))
+        fail("frozen-resources");
     }
-    const char *shells[] = {"bash", "dash", NULL};
-    for (int i = 0; shells[i]; i++) {
-      char source[128], target[128];
-      snprintf(source, sizeof(source), "/fixture/workload-shell-%s", shells[i]);
-      snprintf(target, sizeof(target), "/usr/bin/%s", shells[i]);
-      if (mount(source, target, NULL, MS_BIND, NULL))
-        fail("fixed-workload-shell");
-    }
+    char retained[64];
+    snprintf(retained, sizeof(retained), "/proc/self/fd/%d", sessions);
+    if (mount(retained, "/home/user/.pi/agent/sessions", NULL, MS_BIND, NULL) ||
+        close(sessions))
+      fail("retained-session-view");
     puts("ready");
     fflush(stdout);
     for (;;)
@@ -261,6 +282,14 @@ int main(int argc, char **argv) {
   } else if (!strcmp(argv[1], "agent")) {
     placement("runtime");
     enter_ns('A');
+    user();
+    role("agent_t");
+  } else if (!strcmp(argv[1], "agent-resource-control")) {
+    placement("runtime");
+    enter_ns('T');
+    /* The positive loader control seals the identical executable bytes while
+       intentionally retaining the original discovery roots in its own view. */
+    seal_os();
     user();
     role("agent_t");
   } else if (!strcmp(argv[1], "workload")) {

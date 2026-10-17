@@ -33,12 +33,10 @@ int main(void) {
   mount_fs("/dev/vdb", "/rootfs/sealed", "ext4", MS_RDONLY, NULL);
   mkdir("/rootfs/fixture", 0755);
   mount_fs("tmpfs", "/rootfs/fixture", "tmpfs", 0, "mode=0755");
-  const char *files[] = {"guest.py",
-                         "policy",
-                         "entry",
-                         "real-guest-tool-exec",
-                         "real-guest-task-exec",
-                         NULL};
+  const char *files[] = {
+      "guest.py", "packaged_resources.py", "policy",
+      "entry",    "real-guest-tool-exec",  "real-guest-task-exec",
+      NULL};
   for (int i = 0; files[i]; i++) {
     char source[256], target[256], data[16384];
     snprintf(source, sizeof(source), "/fixture/%s", files[i]);

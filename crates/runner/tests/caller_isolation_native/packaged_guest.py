@@ -22,6 +22,8 @@ from contextlib import ExitStack, contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import packaged_resources
+
 ROOT = Path("/home/user/workspace")
 FIXTURE = Path("/fixture")
 RUN = "88888888-8888-4888-8888-888888888888"
@@ -79,7 +81,7 @@ def compact(value):
 
 
 def as_role(role, args, *, env=None, stdin=None, timeout=45, group="runtime"):
-    if group != ("runtime" if role == "agent" else "tools"):
+    if group != ("runtime" if role in ("agent", "agent-resource-control") else "tools"):
         raise ValueError("role/cgroup mismatch")
     return subprocess.run(
         [ENTRY, role, *args],
@@ -662,6 +664,7 @@ def run_guest(resources):
         label(path, "workload_data_t")
     (CG / "runtime").mkdir(parents=True)
     (CG / "tools").mkdir()
+    packaged_resources.prepare(FIXTURE, label)
     env = {
         "PATH": "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
         "HOME": "/home/user",
@@ -677,6 +680,9 @@ def run_guest(resources):
         "NO_PROXY": "*",
         "no_proxy": "*",
         "OKOU_NATIVE_FRAMEWORK": "pi",
+        # Exercise the real CLI with a working packaged extension loader in both
+        # views. The negative cannot depend on its default typebox packaging error.
+        "NODE_OPTIONS": "--import=/fixture/bundled-loader-control.mjs",
     }
     model = {
         "schemaVersion": 5,
@@ -954,7 +960,7 @@ s.close()
     extension.write_text(
         'import fs from "node:fs";\nexport default function () { fs.writeFileSync("/home/user/workspace/untrusted-extension-executed", JSON.stringify({uid:process.getuid(),context:fs.readFileSync("/proc/self/attr/current","utf8")})); void fetch("http://127.0.0.1:18080/untrusted-extension-ingress"); }\n'
     )
-    for path in [extension, *list(extension.parents)[:3]]:
+    for path in (extension, extension.parent):
         label(path, "workload_data_t")
         os.chown(path, 1000, 1000)
     settings = extension.parent.parent / "settings.json"
@@ -963,6 +969,34 @@ s.close()
     )
     label(settings, "workload_data_t")
     os.chown(settings, 1000, 1000)
+
+    loader_script = packaged_resources.loader_script()
+    control = as_role(
+        "agent-resource-control",
+        ["/usr/bin/node", "--input-type=module", "-e", loader_script],
+        env=env,
+    )
+    executed = ROOT / "untrusted-extension-executed"
+    connected = ROOT / "untrusted-extension-connected"
+    control_identity = json.loads(executed.read_text()) if executed.exists() else {}
+    control_loaded = (
+        control.returncode == 0
+        and control_identity.get("uid") == 1000
+        and control_identity.get("context", "").rstrip("\0")
+        == "system_u:system_r:agent_t"
+        and connected.exists()
+    )
+    record(
+        "pi_extension_known_load_control",
+        control_loaded,
+        qualified=control_loaded,
+        identity=control_identity,
+        ingressObserved=connected.exists(),
+        stdout=control.stdout[-3000:],
+        stderr=control.stderr[-1500:],
+    )
+    executed.unlink(missing_ok=True)
+    connected.unlink(missing_ok=True)
 
     pi_exit, records = pi_session(env)
     (FIXTURE / "pi.records.json").write_text(json.dumps(records))
@@ -980,33 +1014,132 @@ s.close()
         pi_exit == 0 and (ROOT / "pi-tool").exists() and (ROOT / "pi-child").exists(),
         exit=pi_exit,
         records=len(records),
+        failureRecords=[
+            {"type": r.get("type"), "message": compact(r.get("message"))}
+            for r in records
+            if isinstance(r.get("message"), dict)
+            and r["message"].get("stopReason") == "error"
+        ],
         toolResults=compact(tool_results[:4]),
         stderr=(FIXTURE / "pi.stderr").read_text()[-5000:],
     )
-    executed = ROOT / "untrusted-extension-executed"
-    connected = ROOT / "untrusted-extension-connected"
-    record(
-        "untrusted_pi_extension_denied",
-        False,
-        qualified=False,
-        executed=executed.read_text() if executed.exists() else None,
-        ingressObserved=connected.exists(),
-        negativeProbeQualification="execution is conclusive failure; absence alone is unqualified until a separate known-load control succeeds",
-    )
-    loader_script = """import {createAgentSessionServices} from "/usr/local/lib/okou-cli/9.400.3/chunk-D5UXOEXQ.js";
-const services=await createAgentSessionServices({cwd:process.cwd(),agentDir:"/home/user/.pi/agent",modelRuntime:{refresh:async()=>{}}});
-const result=services.resourceLoader.getExtensions();
-console.log(JSON.stringify({extensions:result.extensions.map(e=>e.path),errors:result.errors}));
-await new Promise(resolve=>setTimeout(resolve,50));"""
     run = as_role(
         "agent", ["/usr/bin/node", "--input-type=module", "-e", loader_script], env=env
     )
     record(
         "pi_sdk_extension_loader_diagnostic",
-        run.returncode == 0,
+        run.returncode == 0
+        and json.loads(run.stdout) == {"extensions": [], "errors": []},
         exit=run.returncode,
         stdout=run.stdout[-4000:],
         stderr=run.stderr[-2500:],
+    )
+    record(
+        "untrusted_pi_extension_denied",
+        control_loaded
+        and pi_exit == 0
+        and not executed.exists()
+        and not connected.exists()
+        and run.returncode == 0
+        and json.loads(run.stdout) == {"extensions": [], "errors": []},
+        qualified=control_loaded,
+        executed=executed.read_text() if executed.exists() else None,
+        ingressObserved=connected.exists(),
+        negativeProbeQualification="same packaged SDK/CLI loader, with successful agent-role load control and frozen discovery roots",
+    )
+    mutation = as_role(
+        "agent",
+        [
+            "/usr/bin/python3",
+            "-c",
+            """import errno,pathlib
+for path in ('/home/user/.pi/agent/settings.json','/home/user/workspace/.pi/settings.json','/home/user/.pi/agent/models.json','/home/user/.pi/agent/extensions/new.js'):
+ try: pathlib.Path(path).write_text('{}')
+ except OSError as e: assert e.errno in (errno.EACCES,errno.EPERM,errno.EROFS),e
+ else: raise AssertionError('agent changed executable resource configuration')
+print('frozen configuration rejects in-process writes')""",
+        ],
+        env=env,
+    )
+    record(
+        "pi_frozen_resource_mutation_denied",
+        mutation.returncode == 0,
+        stdout=mutation.stdout,
+        stderr=mutation.stderr[-1500:],
+    )
+    anchors = []
+    for role in ("workload", "root"):
+        anchor_probe = as_role(
+            role,
+            [
+                "/usr/bin/python3",
+                "-c",
+                """import errno,os,pathlib
+for path in ('/home/user/.pi','/home/user/workspace/.pi'):
+ p=pathlib.Path(path); (p/'ordinary-tool-data').write_text('retained tool access')
+for path in ('/home','/home/user','/home/user/workspace','/home/user/.pi','/home/user/workspace/.pi','/home/.pi','/.pi'):
+ try: os.rename(path,path+'.moved')
+ except OSError as e: assert e.errno in (errno.EACCES,errno.EPERM,errno.EBUSY),e
+ else: raise AssertionError('resource mount anchor moved')
+print('tool data remains writable; discovery anchors cannot move')""",
+            ],
+            env=env,
+            group="tools",
+        )
+        anchors.append(
+            {
+                "role": role,
+                "exit": anchor_probe.returncode,
+                "stdout": anchor_probe.stdout,
+                "stderr": anchor_probe.stderr[-1500:],
+            }
+        )
+    record(
+        "pi_resource_anchors_stable",
+        all(a["exit"] == 0 for a in anchors),
+        observations=anchors,
+    )
+    retained = as_role(
+        "agent",
+        [
+            "/usr/bin/python3",
+            "-c",
+            "from pathlib import Path; p=Path('/home/user/.pi/agent/sessions/native-retained.txt'); p.write_text('retained session data'); assert p.read_text()=='retained session data'",
+        ],
+        env=env,
+    )
+    record(
+        "pi_retained_sessions",
+        retained.returncode == 0
+        and Path("/home/user/.pi/agent/sessions/native-retained.txt").read_text()
+        == "retained session data",
+        stderr=retained.stderr[-1500:],
+    )
+    private_state = []
+    for role in ("workload", "root"):
+        run = as_role(
+            role,
+            [
+                "/usr/bin/python3",
+                "-c",
+                """import errno,pathlib
+p=pathlib.Path('/fixture/pi-resources/agent/auth.json')
+for operation in (p.read_text,lambda:p.write_text('{}')):
+ try: operation()
+ except OSError as e: assert e.errno in (errno.EACCES,errno.EPERM),e
+ else: raise AssertionError('workload accessed private agent state')
+print('private credential state inaccessible')""",
+            ],
+            env=env,
+            group="tools",
+        )
+        private_state.append(
+            {"role": role, "exit": run.returncode, "stderr": run.stderr[-1500:]}
+        )
+    record(
+        "pi_private_state_denied",
+        all(p["exit"] == 0 for p in private_state),
+        observations=private_state,
     )
     claude_env = {
         **env,

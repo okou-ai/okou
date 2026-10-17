@@ -23,7 +23,14 @@ import test_fixture as primitive_tests
 def summary():
     checks = [{"name": name, "passed": True} for name in sorted(fixture.EXPECTED)]
     by_name = {check["name"]: check for check in checks}
-    by_name["untrusted_pi_extension_denied"]["qualified"] = True
+    by_name["untrusted_pi_extension_denied"].update(
+        qualified=True, executed=None, ingressObserved=False
+    )
+    by_name["pi_extension_known_load_control"].update(
+        qualified=True,
+        identity={"uid": 1000, "context": "system_u:system_r:agent_t"},
+        ingressObserved=True,
+    )
     by_name["untrusted_shell_startup_denied"].update(
         ingressObserved=False,
         observations=[
@@ -124,6 +131,34 @@ class ReceiptTest(unittest.TestCase):
         for raw in ('{"gateF":"passed","gateF":"incomplete"}', " " * 131073):
             with self.subTest(size=len(raw)), self.assertRaises(ValueError):
                 fixture.decode_summary(raw)
+
+    def test_extension_control_requires_actual_privileged_execution_and_ingress(self):
+        for change in (
+            "identity",
+            "role",
+            "ingress",
+            "qualification",
+            "executed",
+            "negative-ingress",
+        ):
+            value = summary()
+            cases = {c["name"]: c for c in value["results"]}
+            control = cases["pi_extension_known_load_control"]
+            denied = cases["untrusted_pi_extension_denied"]
+            if change == "identity":
+                control["identity"] = None
+            elif change == "role":
+                control["identity"]["context"] = "system_u:system_r:workload_t"
+            elif change == "ingress":
+                control["ingressObserved"] = False
+            elif change == "qualification":
+                control["qualified"] = False
+            elif change == "executed":
+                denied["executed"] = "loaded"
+            else:
+                denied["ingressObserved"] = True
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                fixture.validate_summary(value, "x86_64")
 
 
 class ModelPeerTest(unittest.TestCase):

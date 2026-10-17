@@ -61,7 +61,6 @@ REMAINING = [
     "sealed runtime/dependency closure and ordinary sudo/package compatibility",
     "retained home/history/cache and full lifecycle/resource accounting",
     "actual eligible provider/Runner matrix and alternate credential resolvers",
-    "native results on both x86_64 and aarch64 paired artifacts",
 ]
 
 
