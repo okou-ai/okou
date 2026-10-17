@@ -1,14 +1,22 @@
 import { agentRunColumns } from "../columns/agent-run";
 
-import { pgTable, index, check } from "drizzle-orm/pg-core";
+import { pgTable, index, check, boolean } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+
+const migrationColumns = {
+  ...agentRunColumns(),
+  // Retain physical storage until this runtime is independently deployed,
+  // preceding API SQL drains and incompatible rollback targets are excluded.
+  // Physical contraction is tracked by #40886.
+  creditAdmitted: boolean("credit_admitted").notNull().default(false),
+};
 
 /**
  * Agent Runs table
  * Created when developer executes agent via SDK
  * Stores an immutable launch snapshot for reproducibility.
  */
-export const agentRuns = pgTable("agent_runs", agentRunColumns(), (table) => {
+export const agentRuns = pgTable("agent_runs", migrationColumns, (table) => {
   return [
     check(
       "agent_runs_selected_model_check",

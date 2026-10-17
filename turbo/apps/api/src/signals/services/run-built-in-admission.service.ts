@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { agentRuns } from "@okouai/db/schema/agent-run";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { runBuiltInAdmissions } from "@okouai/db/schema/run-built-in-admission";
 import { and, count, eq, lte } from "drizzle-orm";
 
