@@ -39,9 +39,9 @@ use tracing::{info, warn};
 use crate::blank_pool::BlankPoolDiagnostics;
 use crate::finalizing_admission::FinalizingAdmission;
 use crate::idle_lifecycle::{
-    IdleDestroyTracker, IdlePressureRequest, IdlePressureSelection, ReservedIdleActivation,
-    SharedIdlePool, reserve_reusable_idle_for_spawn, rollback_reserved_idle_for_spawn,
-    select_idle_entries_for_pressure, set_idle_status_snapshot,
+    IdleDestroyTracker, IdlePressureOutcome, IdlePressureRequest, IdlePressureSelection,
+    ReservedIdleActivation, SharedIdlePool, reserve_reusable_idle_for_spawn,
+    rollback_reserved_idle_for_spawn, select_idle_entries_for_pressure, set_idle_status_snapshot,
 };
 
 /// Narrow, borrowed composition inputs required for the admission-to-claim transaction.
@@ -49,7 +49,7 @@ use crate::idle_lifecycle::{
 pub struct PreClaimResources<'a> {
     pub runner_identity: RunnerProcessIdentity,
     pub idle_pool: &'a SharedIdlePool,
-    pub status: &'a StatusTracker,
+    pub status: &'a Arc<StatusTracker>,
     pub mode_rx: &'a watch::Receiver<RunnerMode>,
     pub cancel_tokens: &'a RunCancellationRegistry,
     pub provider: &'a dyn JobProvider,
@@ -893,9 +893,12 @@ async fn acquire_local_admission_resource(
     allow_compatible_blank: bool,
     ctx: &PreClaimResources<'_>,
 ) -> Option<(LocalAdmissionResource, Option<BlankPoolSelection>)> {
-    let (selection, blank_pool_selection) = select_idle_entries_for_pressure(
+    let IdlePressureOutcome {
+        selection,
+        blank_pool_selection,
+        idle_snapshot,
+    } = select_idle_entries_for_pressure(
         ctx.idle_pool,
-        ctx.status,
         ctx.idle_destroy_tracker,
         ctx.budget,
         Vec::new(),
@@ -913,6 +916,13 @@ async fn acquire_local_admission_resource(
         },
     )
     .await;
+    if let Some(snapshot) = idle_snapshot {
+        let status = Arc::clone(ctx.status);
+        ctx.idle_destroy_tracker.spawn_cleanup(
+            async move { set_idle_status_snapshot(&status, snapshot).await },
+            "candidate_admission_idle_status",
+        );
+    }
     match selection {
         IdlePressureSelection::Reusable(reservation) => Some((
             LocalAdmissionResource::Reusable(reservation),

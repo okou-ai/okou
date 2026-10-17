@@ -191,7 +191,7 @@ pub(super) struct DiscoveredJobContext<'a> {
     pub(super) runner_identity: RunnerProcessIdentity,
     pub(super) budget: &'a Arc<ResourceBudget>,
     pub(super) idle_pool: &'a SharedIdlePool,
-    pub(super) status: &'a StatusTracker,
+    pub(super) status: &'a Arc<StatusTracker>,
     pub(super) mode_rx: &'a tokio::sync::watch::Receiver<RunnerMode>,
     pub(super) cancel_tokens: &'a RunCancellationRegistry,
     pub(super) spawn_ctx: &'a SpawnContext,

@@ -3557,6 +3557,55 @@ async fn saturated_fresh_claim_reclaims_nonmatching_parked_profiles() {
     }
 }
 
+#[tokio::test]
+async fn rejected_pressure_claim_releases_capacity_while_status_state_is_blocked() {
+    let (config, env) = mock_run_config(two_profiles(), 9, 16384, 2);
+    let budget = Arc::clone(&config.capacity.budget);
+    let status = Arc::clone(&config.shared.status);
+    let status_path = env._temp_dir.path().join("status.json");
+    for reuse_key in ["unrelated-pressure-first", "unrelated-pressure-second"] {
+        seed_idle_pool(&env.idle_pool, &budget, reuse_key, "vm0/large", 4, 8192).await;
+    }
+    let run_handle = tokio::spawn(run(config));
+    wait_discover_entered(&env, Duration::from_secs(2)).await;
+
+    let holder = status.hold_state_for_test().await;
+    let mut status_waits = status.idle_snapshot_waits_for_test();
+    let run_id = RunId::new_v4();
+    env.handle.block_claim(run_id);
+    push_job(&env, run_id, "vm0/default", None);
+    assert!(
+        env.handle
+            .wait_run_claim_in_flight(run_id, Duration::from_secs(2))
+            .await,
+        "status-state contention must not delay a fitting claim"
+    );
+    tokio::time::timeout(
+        Duration::from_secs(2),
+        status_waits.wait_for(|waits| *waits > 0),
+    )
+    .await
+    .expect("accepted publication should wait independently for status state")
+    .unwrap();
+    assert_eq!(budget.allocated(), (6, 12288, 2));
+
+    env.handle.unblock_claim(run_id);
+    wait_cancel_token_removed(&env.cancel_tokens, run_id, Duration::from_secs(2)).await;
+    wait_budget_count(&budget, 1, Duration::from_secs(2)).await;
+    assert_eq!(budget.allocated(), (4, 8192, 1));
+    assert_eq!(env.handle.claim_candidates().len(), 1);
+    assert!(env.handle.completions.lock().unwrap().is_empty());
+    assert_eq!(env.idle_pool.lock().await.len(), 1);
+
+    drop(holder);
+    shutdown(&env, run_handle).await;
+    assert_eq!(budget.allocated(), (0, 0, 0));
+    let persisted: serde_json::Value =
+        serde_json::from_str(&tokio::fs::read_to_string(status_path).await.unwrap()).unwrap();
+    assert_eq!(persisted["mode"], "stopped");
+    assert!(persisted.get("idle_sandboxes").is_none());
+}
+
 async fn assert_saturated_claim_reclaims_parked_sandbox(blank_count: usize, home_preferred: bool) {
     let reuse_key = "thread:cache-saturated";
     let provider_session_id = "provider-session-cache-saturated";
@@ -3565,6 +3614,15 @@ async fn assert_saturated_claim_reclaims_parked_sandbox(blank_count: usize, home
     let fresh_overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     let (mut config, env) =
         mock_run_config_with_overrides(profiles, 9, 16384, 2, Arc::clone(&fresh_overrides));
+    let status_path = env._temp_dir.path().join("status.json");
+    let status_write_started = Arc::new(tokio::sync::Notify::new());
+    let release_status_write = Arc::new(tokio::sync::Semaphore::new(0));
+    config.shared.status = Arc::new(StatusTracker::new_with_atomic_write_gate(
+        status_path.clone(),
+        3, // Initial and Running snapshots precede reclaimed-pool publication.
+        Arc::clone(&status_write_started),
+        Arc::clone(&release_status_write),
+    ));
     if home_preferred {
         let runner_paths = RunnerPaths::new(config.paths.base_dir.clone());
         let home_cache = HomeImageCache::shared(
@@ -3638,6 +3696,7 @@ async fn assert_saturated_claim_reclaims_parked_sandbox(blank_count: usize, home
     let mut context = context_with_session(run_id, provider_session_id);
     context.reuse_key = Some(reuse_key.into());
     env.provider.set_claim_result(run_id, Some(context));
+    env.handle.block_claim(run_id);
     let candidate = if home_preferred {
         ranked_candidate(
             run_id,
@@ -3652,10 +3711,22 @@ async fn assert_saturated_claim_reclaims_parked_sandbox(blank_count: usize, home
     };
     env.handle.discover_tx.send(candidate).unwrap();
 
+    assert!(
+        env.handle
+            .wait_run_claim_in_flight(run_id, Duration::from_secs(2))
+            .await,
+        "fitting capacity must reach claim before reclaimed-pool status is persisted"
+    );
+    tokio::time::timeout(Duration::from_secs(2), status_write_started.notified())
+        .await
+        .expect("reclaimed-pool publication should remain independently owned");
     destroy_gate
         .wait_entered(1, Duration::from_secs(5))
         .await
         .expect("the selected parked sandbox should enter tracked cleanup");
+    assert_eq!(budget.allocated(), (6, 12288, 2));
+    release_status_write.add_permits(1);
+    env.handle.unblock_claim(run_id);
     let completion = env
         .handle
         .wait_completion(run_id, Duration::from_secs(5))
@@ -3695,6 +3766,11 @@ async fn assert_saturated_claim_reclaims_parked_sandbox(blank_count: usize, home
     destroy_gate.release_one();
     destroy_gate.release_one();
     shutdown(&env, run_handle).await;
+    let status: serde_json::Value =
+        serde_json::from_str(&tokio::fs::read_to_string(status_path).await.unwrap()).unwrap();
+    assert_eq!(status["mode"], "stopped");
+    assert!(status.get("idle_sandboxes").is_none());
+    assert!(status.get("blank_sandboxes").is_none());
 }
 
 #[tokio::test(start_paused = true)]
