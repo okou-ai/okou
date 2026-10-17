@@ -242,7 +242,7 @@ const stopClerkDeletedOwnerRuns$ = command(
                   .from(agents)
                   .where(eq(agents.orgId, owner.orgId)),
               ),
-          pendingChatQueueEventCondition(db),
+          pendingChatQueueEventCondition(),
         ),
       );
     signal.throwIfAborted();
