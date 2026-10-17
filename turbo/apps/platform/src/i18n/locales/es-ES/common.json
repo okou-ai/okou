@@ -1823,6 +1823,7 @@
       },
       "slashPanel": {
         "browseAll": "Ver todas las plantillas",
+        "hint": "Busca flujos de trabajo o elige una plantilla…",
         "make": "Crear",
         "useTemplate": "Usar la plantilla {{title}}"
       },
