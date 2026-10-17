@@ -18,6 +18,11 @@ import {
   filterTelegramAuthSentryEvent,
   isTelegramAuthTelemetryUrl,
 } from "./lib/telegram-auth-telemetry";
+import {
+  filterRunnerFileDownloadSentryBreadcrumb,
+  filterRunnerFileDownloadSentryEvent,
+  isRunnerFileDownloadTelemetryUrl,
+} from "./lib/runner-file-download-telemetry";
 
 const OTEL_SERVICE_NAME = "vm0-api";
 
@@ -65,7 +70,9 @@ function setupSentry() {
         tracePropagation: false,
         ignoreIncomingRequestBody: (url) => {
           return (
-            isDiscordOauthTelemetryUrl(url) || isTelegramAuthTelemetryUrl(url)
+            isDiscordOauthTelemetryUrl(url) ||
+            isTelegramAuthTelemetryUrl(url) ||
+            isRunnerFileDownloadTelemetryUrl(url)
           );
         },
       }),
@@ -74,14 +81,22 @@ function setupSentry() {
     release,
     sendDefaultPii: false,
     beforeSend: (event) => {
-      return filterTelegramAuthSentryEvent(event)
-        ? filterDiscordOauthSentryEvent(event)
-        : null;
+      if (
+        !filterTelegramAuthSentryEvent(event) ||
+        !filterDiscordOauthSentryEvent(event)
+      ) {
+        return null;
+      }
+      return filterRunnerFileDownloadSentryEvent(event);
     },
     beforeBreadcrumb: (breadcrumb) => {
-      return filterTelegramAuthSentryBreadcrumb(breadcrumb)
-        ? filterDiscordOauthSentryBreadcrumb(breadcrumb)
-        : null;
+      if (
+        !filterTelegramAuthSentryBreadcrumb(breadcrumb) ||
+        !filterDiscordOauthSentryBreadcrumb(breadcrumb)
+      ) {
+        return null;
+      }
+      return filterRunnerFileDownloadSentryBreadcrumb(breadcrumb);
     },
     shutdownTimeout: 500,
     skipOpenTelemetrySetup: true,
