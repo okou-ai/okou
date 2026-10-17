@@ -232,6 +232,10 @@ impl Case {
         self.write_event("NATIVE_READ_CANCELLATION_WITNESS ", phase, evidence)
     }
 
+    pub fn read_revocation_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_READ_REVOCATION_WITNESS ", phase, evidence)
+    }
+
     pub fn shared_reads_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
         self.write_event("NATIVE_SHARED_READS_WITNESS ", phase, evidence)
     }
