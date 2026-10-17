@@ -49,6 +49,7 @@ pub(super) async fn while_live<T>(
                 let current = tokio::select! {
                     biased;
                     () = stop.cancelled() => return Err(unavailable()),
+                    () = async { match guest { Some(guest) => guest.cancelled().await, None => std::future::pending().await } } => return Err(unavailable()),
                     changed = live.changed() => { let _ = changed; continue; },
                     result = context.status.running_sandbox(run) => result,
                 };

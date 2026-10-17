@@ -89,7 +89,8 @@ export async function probeDownloads(
       .digest("hex"),
   );
   const expected = createHash("sha256");
-  for (let i = 0; i < 2048; i++) expected.update(Buffer.alloc(65536));
+  const zeroChunk = Buffer.alloc(65536);
+  for (let i = 0; i < 2048; i++) expected.update(zeroChunk);
   await read(["file-0"], 134217728, expected.digest("hex"));
   return {
     nativeDownloadBytes: 134287731,

@@ -481,6 +481,46 @@ async fn run_end_cancels_pending_authority_before_success_headers_or_guest_attac
 }
 
 #[tokio::test]
+async fn guest_cancellation_retires_a_transfer_while_its_status_check_is_blocked() {
+    let mut f = Fixture::new(3).await;
+    let context = f.admission.context.clone();
+    let sandbox = context.status.running_sandbox(f.run).await.unwrap();
+    let channel = context
+        .guest
+        .open_for_sandbox(f.run, &sandbox.to_string())
+        .await
+        .unwrap();
+    let guest = channel.cancellation();
+    let mut live = context.active_runs.watch_live_run(f.run).unwrap();
+    let stop = CancellationToken::new();
+    let held = context.status.hold_state_for_test().await;
+    let mut transfer = Box::pin(transfer::while_live(
+        std::future::pending::<io::Result<()>>(),
+        transfer::Fence {
+            context: &context,
+            run: f.run,
+            sandbox,
+            live: &mut live,
+            stop: &stop,
+            guest: Some(&guest),
+        },
+    ));
+    // The interval's first tick is immediate. Poll through that tick until its
+    // real status-lock wait is pending, before cancelling the Guest boundary.
+    assert!(futures_util::poll!(transfer.as_mut()).is_pending());
+    f.boundary.cancelled.cancel();
+    assert!(
+        tokio::time::timeout(Duration::from_secs(2), transfer)
+            .await
+            .unwrap()
+            .is_err()
+    );
+    drop(held);
+    drop(channel);
+    f.retire().await;
+}
+
+#[tokio::test]
 async fn official_api_consumer_requires_complete_exact_file_authority() {
     use httpmock::prelude::*;
     let server = MockServer::start_async().await;
