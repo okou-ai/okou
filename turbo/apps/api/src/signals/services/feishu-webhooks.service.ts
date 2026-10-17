@@ -1,3 +1,5 @@
+import { decryptPersistentSecretValue } from "./crypto.utils";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { createDecipheriv, createHash, timingSafeEqual } from "node:crypto";
 
 import { command } from "ccstate";
@@ -22,7 +24,10 @@ import { safeSync, tapError } from "../utils";
 import { processCanonicalFeishuIngress$ } from "./canonical-feishu-ingress-processor.service";
 import { admitFeishuChatEvent$ } from "./feishu-chat-ingress.service";
 import {
-  loadFeishuInstallationConfig,
+  feishuInstallationConfigReadPlan,
+  feishuInstallationConfigFromSecrets,
+  feishuInstallationAvailabilityReadPlan,
+  feishuInstallationEnabledFromRows,
   type FeishuInstallationConfig,
 } from "./feishu-config";
 import type { FeishuInboundMessage } from "./feishu-dispatch.service";
@@ -358,15 +363,69 @@ const admitInboundFeishuMessage$ = command(
   },
 );
 
+function validatedFeishuEventEnvelope(
+  payload: unknown,
+  config: FeishuInstallationConfig,
+) {
+  const v2 = v2EnvelopeSchema.safeParse(payload);
+  if (!v2.success) {
+    L.warn("Rejected Feishu callback with an invalid payload", {
+      installationId: config.id,
+    });
+    return { response: jsonResponse({ error: "Invalid Feishu event" }, 400) };
+  }
+  if (
+    v2.data.header.app_id !== config.appId ||
+    v2.data.header.token !== config.verificationToken
+  ) {
+    L.warn("Rejected Feishu event with invalid app credentials", {
+      installationId: config.id,
+    });
+    return { response: jsonResponse({ error: "Invalid Feishu token" }, 401) };
+  }
+  return { envelope: v2.data };
+}
+
 export const handleFeishuEvents$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<Response> => {
     const request = get(request$);
     const params = get(pathParamsOf(feishuEventsContract.post));
     const db = set(writeDb$);
-    const config = await loadFeishuInstallationConfig(
-      db,
-      params.installationId,
-    );
+    const config = await (async () => {
+      const plan = feishuInstallationConfigReadPlan(params.installationId);
+      const [installation] = await db
+        .select(plan.columns)
+        .from(feishuOrgInstallations)
+        .where(plan.condition)
+        .limit(1);
+      if (
+        !installation ||
+        !(await (async () => {
+          const availability =
+            feishuInstallationAvailabilityReadPlan(installation);
+          if (availability.kind === "resolved") {
+            return availability.enabled;
+          }
+          const rows = await db
+            .select(availability.columns)
+            .from(userFeatureSwitches)
+            .where(availability.condition);
+          return feishuInstallationEnabledFromRows(availability.scope, rows);
+        })())
+      ) {
+        return null;
+      }
+      const context = { orgId: installation.orgId };
+      const secrets = await Promise.all([
+        decryptPersistentSecretValue(installation.encryptedAppSecret, context),
+        decryptPersistentSecretValue(
+          installation.encryptedVerificationToken,
+          context,
+        ),
+        decryptPersistentSecretValue(installation.encryptedEncryptKey, context),
+      ]);
+      return feishuInstallationConfigFromSecrets(installation, secrets);
+    })();
     signal.throwIfAborted();
     if (!config) {
       return jsonResponse({ error: "Feishu installation not found" }, 404);
@@ -435,32 +494,20 @@ export const handleFeishuEvents$ = command(
       return jsonResponse({ error: "Invalid Feishu signature" }, 401);
     }
 
-    const v2 = v2EnvelopeSchema.safeParse(payload);
-    if (!v2.success) {
-      L.warn("Rejected Feishu callback with an invalid payload", {
-        installationId: config.id,
-      });
-      return jsonResponse({ error: "Invalid Feishu event" }, 400);
-    }
-    if (
-      v2.data.header.app_id !== config.appId ||
-      v2.data.header.token !== config.verificationToken
-    ) {
-      L.warn("Rejected Feishu event with invalid app credentials", {
-        installationId: config.id,
-      });
-      return jsonResponse({ error: "Invalid Feishu token" }, 401);
+    const validated = validatedFeishuEventEnvelope(payload, config);
+    if (validated.response) {
+      return validated.response;
     }
     await set(markCallbackVerified$, { config }, signal);
     const dispatchConfig = await set(
       ensureInboundBotIdentity$,
       {
         config,
-        envelope: v2.data,
+        envelope: validated.envelope,
       },
       signal,
     );
-    const message = inboundMessage(dispatchConfig, v2.data);
+    const message = inboundMessage(dispatchConfig, validated.envelope);
     if (message) {
       await set(admitInboundFeishuMessage$, message, signal);
       signal.throwIfAborted();

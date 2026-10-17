@@ -16,8 +16,6 @@ import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installatio
 import { apiBackendUrl } from "../../lib/api-backend-url";
 import { env } from "../../lib/env";
 import { webUrl } from "../../lib/web-url";
-import type { Db } from "../external/db";
-import { decryptPersistentSecretValue } from "./crypto.utils";
 
 export interface FeishuInstallationConfig {
   readonly id: string;
@@ -33,12 +31,23 @@ export interface FeishuInstallationConfig {
   readonly callbackVerified: boolean;
 }
 
-export async function loadFeishuInstallationConfig(
-  db: Db,
-  installationId: string,
-): Promise<FeishuInstallationConfig | null> {
-  const [installation] = await db
-    .select({
+type FeishuInstallationConfigRow = Pick<
+  typeof feishuOrgInstallations.$inferSelect,
+  | "id"
+  | "orgId"
+  | "ownerUserId"
+  | "appId"
+  | "platform"
+  | "botOpenId"
+  | "encryptedAppSecret"
+  | "encryptedVerificationToken"
+  | "encryptedEncryptKey"
+  | "callbackVerifiedAt"
+>;
+
+export function feishuInstallationConfigReadPlan(installationId: string) {
+  return {
+    columns: {
       id: feishuOrgInstallations.id,
       orgId: feishuOrgInstallations.orgId,
       ownerUserId: feishuOrgInstallations.ownerUserId,
@@ -50,35 +59,16 @@ export async function loadFeishuInstallationConfig(
         feishuOrgInstallations.encryptedVerificationToken,
       encryptedEncryptKey: feishuOrgInstallations.encryptedEncryptKey,
       callbackVerifiedAt: feishuOrgInstallations.callbackVerifiedAt,
-    })
-    .from(feishuOrgInstallations)
-    .where(eq(feishuOrgInstallations.id, installationId))
-    .limit(1);
-  if (
-    !installation ||
-    !(await (async () => {
-      const plan = feishuInstallationAvailabilityReadPlan(installation);
-      if (plan.kind === "resolved") {
-        return plan.enabled;
-      }
-      const rows = await db
-        .select(plan.columns)
-        .from(userFeatureSwitches)
-        .where(plan.condition);
-      return feishuInstallationEnabledFromRows(plan.scope, rows);
-    })())
-  ) {
-    return null;
-  }
-  const context = { orgId: installation.orgId };
-  const [appSecret, verificationToken, encryptKey] = await Promise.all([
-    decryptPersistentSecretValue(installation.encryptedAppSecret, context),
-    decryptPersistentSecretValue(
-      installation.encryptedVerificationToken,
-      context,
-    ),
-    decryptPersistentSecretValue(installation.encryptedEncryptKey, context),
-  ]);
+    },
+    condition: eq(feishuOrgInstallations.id, installationId),
+  };
+}
+
+export function feishuInstallationConfigFromSecrets(
+  installation: FeishuInstallationConfigRow,
+  secrets: readonly [string, string, string],
+): FeishuInstallationConfig {
+  const [appSecret, verificationToken, encryptKey] = secrets;
   return {
     id: installation.id,
     orgId: installation.orgId,
