@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import {
   socialDataContract,
@@ -95,6 +97,70 @@ function source() {
 }
 
 describe("Social data jobs", () => {
+  it("returns an empty saved-job collection", async () => {
+    const app = await setupApp({
+      context,
+      routes: socialDataRoutes,
+      isolatePg: true,
+    });
+    const actor = createBddApi(context).user();
+    const response = await accept(
+      app(socialDataContract).list({
+        headers: authenticate(actor),
+        query: { limit: 20 },
+      }),
+      [200],
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toStrictEqual({ jobs: [], nextCursor: null });
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+  });
+
+  it("returns not found for a missing saved job", async () => {
+    const app = await setupApp({
+      context,
+      routes: socialDataRoutes,
+      isolatePg: true,
+    });
+    const actor = createBddApi(context).user();
+    const response = await accept(
+      app(socialDataContract).get({
+        headers: authenticate(actor),
+        params: { jobId: randomUUID() },
+      }),
+      [404],
+    );
+
+    expect(response.status).toBe(404);
+    expect(response.body).toStrictEqual({
+      error: { code: "NOT_FOUND", message: "Social data job not found." },
+    });
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+  });
+
+  it("returns not found for a missing saved-job cursor", async () => {
+    const app = await setupApp({
+      context,
+      routes: socialDataRoutes,
+      isolatePg: true,
+    });
+    const actor = createBddApi(context).user();
+    const response = await accept(
+      app(socialDataContract).list({
+        headers: authenticate(actor),
+        query: { limit: 20, cursor: randomUUID() },
+      }),
+      [404],
+    );
+
+    expect(response.status).toBe(404);
+    expect(response.body).toStrictEqual({
+      error: { code: "NOT_FOUND", message: "Social data cursor not found." },
+    });
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+  });
+
   it("requires authentication", async () => {
     const actor = await seedActor();
     await actor.run(async () => {
