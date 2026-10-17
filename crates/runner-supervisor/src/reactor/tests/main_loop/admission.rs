@@ -8,6 +8,7 @@ use super::super::support::{
     wait_cancel_handle, wait_cancel_token, wait_cancel_token_removed, wait_discover_entered,
     wait_idle_pool_len, wait_status_idle_reuse_keys_and_active_runs,
 };
+use sandbox::SandboxId;
 use std::sync::Arc;
 
 use crate::home_image_cache::{HomeImageCache, HomeImagePrepareLockTestGate};
@@ -3543,42 +3544,151 @@ async fn selected_reusable_defers_for_cache_then_selected_home_claims_it() {
 }
 
 #[tokio::test]
-async fn saturated_cache_only_holder_defers_before_reclaiming_unrelated_idle() {
+async fn saturated_home_claim_reclaims_only_the_needed_parked_sandbox() {
+    for blank_count in 0..=2 {
+        assert_saturated_claim_reclaims_parked_sandbox(blank_count, true).await;
+    }
+}
+
+#[tokio::test]
+async fn saturated_fresh_claim_reclaims_nonmatching_parked_profiles() {
+    for blank_count in 0..=2 {
+        assert_saturated_claim_reclaims_parked_sandbox(blank_count, false).await;
+    }
+}
+
+#[tokio::test]
+async fn rejected_pressure_claim_releases_capacity_while_status_state_is_blocked() {
+    let (config, env) = mock_run_config(two_profiles(), 9, 16384, 2);
+    let budget = Arc::clone(&config.capacity.budget);
+    let status = Arc::clone(&config.shared.status);
+    let status_path = env._temp_dir.path().join("status.json");
+    for reuse_key in ["unrelated-pressure-first", "unrelated-pressure-second"] {
+        seed_idle_pool(&env.idle_pool, &budget, reuse_key, "vm0/large", 4, 8192).await;
+    }
+    let run_handle = tokio::spawn(run(config));
+    wait_discover_entered(&env, Duration::from_secs(2)).await;
+
+    let holder = status.hold_state_for_test().await;
+    let mut status_waits = status.idle_snapshot_waits_for_test();
+    let run_id = RunId::new_v4();
+    env.handle.block_claim(run_id);
+    push_job(&env, run_id, "vm0/default", None);
+    assert!(
+        env.handle
+            .wait_run_claim_in_flight(run_id, Duration::from_secs(2))
+            .await,
+        "status-state contention must not delay a fitting claim"
+    );
+    tokio::time::timeout(
+        Duration::from_secs(2),
+        status_waits.wait_for(|waits| *waits > 0),
+    )
+    .await
+    .expect("accepted publication should wait independently for status state")
+    .unwrap();
+    assert_eq!(budget.allocated(), (6, 12288, 2));
+
+    env.handle.unblock_claim(run_id);
+    wait_cancel_token_removed(&env.cancel_tokens, run_id, Duration::from_secs(2)).await;
+    wait_budget_count(&budget, 1, Duration::from_secs(2)).await;
+    assert_eq!(budget.allocated(), (4, 8192, 1));
+    assert_eq!(env.handle.claim_candidates().len(), 1);
+    assert!(env.handle.completions.lock().unwrap().is_empty());
+    assert_eq!(env.idle_pool.lock().await.len(), 1);
+
+    drop(holder);
+    shutdown(&env, run_handle).await;
+    assert_eq!(budget.allocated(), (0, 0, 0));
+    let persisted: serde_json::Value =
+        serde_json::from_str(&tokio::fs::read_to_string(status_path).await.unwrap()).unwrap();
+    assert_eq!(persisted["mode"], "stopped");
+    assert!(persisted.get("idle_sandboxes").is_none());
+}
+
+async fn assert_saturated_claim_reclaims_parked_sandbox(blank_count: usize, home_preferred: bool) {
     let reuse_key = "thread:cache-saturated";
     let provider_session_id = "provider-session-cache-saturated";
-    let image_size_bytes = 1024 * 1024;
-    let mut profiles = test_profiles();
+    let mut profiles = two_profiles();
     profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
-    let (mut config, env) = mock_run_config(profiles, 2, 4096, 1);
-    let observations = runner_storage::operation_test_support::RecordedHomeObservations::default();
-    config.sandbox_op_reporter = Some(observations.handle());
-    let runner_paths = RunnerPaths::new(config.paths.base_dir.clone());
-    let home_cache = HomeImageCache::shared(
-        runner_paths.clone(),
-        &config.paths.home,
-        &config.runner.group,
-    );
-    seed_home_cache_state(
-        &home_cache,
-        &runner_paths,
-        reuse_key,
-        "vm0/default",
-        image_size_bytes,
-    )
-    .await;
-    Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(home_cache);
+    let fresh_overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    let (mut config, env) =
+        mock_run_config_with_overrides(profiles, 9, 16384, 2, Arc::clone(&fresh_overrides));
+    let status_path = env._temp_dir.path().join("status.json");
+    let status_write_started = Arc::new(tokio::sync::Notify::new());
+    let release_status_write = Arc::new(tokio::sync::Semaphore::new(0));
+    config.shared.status = Arc::new(StatusTracker::new_with_atomic_write_gate(
+        status_path.clone(),
+        3, // Initial and Running snapshots precede reclaimed-pool publication.
+        Arc::clone(&status_write_started),
+        Arc::clone(&release_status_write),
+    ));
+    if home_preferred {
+        let runner_paths = RunnerPaths::new(config.paths.base_dir.clone());
+        let home_cache = HomeImageCache::shared(
+            runner_paths.clone(),
+            &config.paths.home,
+            &config.runner.group,
+        );
+        seed_home_cache_state(
+            &home_cache,
+            &runner_paths,
+            reuse_key,
+            "vm0/default",
+            1024 * 1024,
+        )
+        .await;
+        Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(home_cache);
+    }
 
     let budget = Arc::clone(&config.capacity.budget);
     let idle_pool = Arc::clone(&config.shared.idle_pool);
-    seed_idle_pool(
-        &idle_pool,
-        &budget,
-        "sess-unrelated-idle",
-        "vm0/default",
-        2,
-        4096,
-    )
-    .await;
+    let destroy_gate = sandbox_mock::MockLifecycleGate::new();
+    let parked_overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    parked_overrides.set_destroy_lifecycle_gate(destroy_gate.clone());
+    let parked_factory: Arc<Box<dyn sandbox::SandboxFactory>> = Arc::new(Box::new(
+        sandbox_mock::MockSandboxFactory::with_overrides(Arc::clone(&parked_overrides)),
+    ));
+    let mut parked_ids = Vec::new();
+    for index in 0..2 {
+        let sandbox_id = SandboxId::new_v4();
+        let sandbox = Box::new(sandbox_mock::MockSandbox::with_overrides(
+            sandbox_id.to_string(),
+            Arc::clone(&parked_overrides),
+        ));
+        let lease = ResourceBudget::try_reserve_lease(&budget, 4, 8192).unwrap();
+        let candidate = if index < blank_count {
+            runner_lifecycle::idle_pool::ParkedIdleCandidate::blank(
+                sandbox,
+                Arc::clone(&parked_factory),
+                lease,
+                sandbox_id,
+                "vm0/large".into(),
+                "hash2".into(),
+                None,
+            )
+        } else {
+            runner_lifecycle::idle_pool::test_support::ParkedIdleCandidateBuilder::new(
+                format!("unrelated-idle-{index}"),
+                lease,
+            )
+            .with_sandbox(sandbox)
+            .with_factory(Arc::clone(&parked_factory))
+            .with_sandbox_id(sandbox_id)
+            .with_profile_name("vm0/large")
+            .with_rootfs_hash("hash2")
+            .build()
+        };
+        assert!(matches!(
+            idle_pool.lock().await.park_at_for_test(
+                candidate,
+                std::time::Instant::now() - Duration::from_secs(2 - index as u64),
+            ),
+            runner_lifecycle::idle_pool::ParkResult::Parked
+        ));
+        parked_ids.push(sandbox_id);
+    }
+    assert!(!budget.can_afford(2, 4096));
     let run_handle = tokio::spawn(run(config));
     wait_discover_entered(&env, Duration::from_secs(2)).await;
 
@@ -3586,49 +3696,81 @@ async fn saturated_cache_only_holder_defers_before_reclaiming_unrelated_idle() {
     let mut context = context_with_session(run_id, provider_session_id);
     context.reuse_key = Some(reuse_key.into());
     env.provider.set_claim_result(run_id, Some(context));
-    env.handle
-        .discover_tx
-        .send(ranked_candidate(
+    env.handle.block_claim(run_id);
+    let candidate = if home_preferred {
+        ranked_candidate(
             run_id,
             Some(reuse_key),
             RunnerPreferenceTier::HomeCache,
             TEST_RUNNER_ID,
             TEST_HEARTBEAT_GENERATION,
-        ))
-        .unwrap();
+        )
+    } else {
+        runner_provider::JobCandidate::new(run_id, "vm0/default".into())
+            .with_reuse_key(Some(reuse_key.into()))
+    };
+    env.handle.discover_tx.send(candidate).unwrap();
 
-    wait_discover_entered(&env, Duration::from_secs(5)).await;
     assert!(
         env.handle
-            .wait_deferred_poll_count(1, Duration::from_secs(5))
-            .await
+            .wait_run_claim_in_flight(run_id, Duration::from_secs(2))
+            .await,
+        "fitting capacity must reach claim before reclaimed-pool status is persisted"
     );
-    assert!(
-        env.handle.claim_candidates().is_empty(),
-        "a cache-only preference must not bypass exhausted fresh admission"
-    );
+    tokio::time::timeout(Duration::from_secs(2), status_write_started.notified())
+        .await
+        .expect("reclaimed-pool publication should remain independently owned");
+    destroy_gate
+        .wait_entered(1, Duration::from_secs(5))
+        .await
+        .expect("the selected parked sandbox should enter tracked cleanup");
+    assert_eq!(budget.allocated(), (6, 12288, 2));
+    release_status_write.add_permits(1);
+    env.handle.unblock_claim(run_id);
+    let completion = env
+        .handle
+        .wait_completion(run_id, Duration::from_secs(5))
+        .await
+        .expect("the claim should complete while old post-exit cleanup is blocked");
+    assert_eq!(completion.exit_code, 0);
+    assert!(!parked_ids.contains(&completion.sandbox_id.unwrap()));
+    assert!(env.handle.deferred_poll_deadlines().is_empty());
+    assert_eq!(destroy_gate.entered_count(), 1);
     assert_eq!(
-        env.handle.deferred_poll_deadlines().len(),
-        1,
-        "home-selected work should defer when fresh budget is unavailable"
+        fresh_overrides.create_configs()[0]
+            .home_drive
+            .as_ref()
+            .unwrap()
+            .seed_image
+            .is_some(),
+        home_preferred,
+        "home-preferred replacement must create from the retained home"
     );
-    assert_eq!(
-        idle_pool.lock().await.held_reuse_keys(),
-        vec!["sess-unrelated-idle".to_string()],
-        "preference deferral must happen before candidate-aware reclamation"
-    );
-    assert_eq!(budget.allocated(), (2, 4096, 1));
 
-    let event = observations
-        .events()
-        .into_iter()
-        .find(|event| event.run_id == Some(run_id))
-        .unwrap();
-    assert_eq!(event.reason.as_deref(), Some("capacity_exhausted"));
-    assert_eq!(event.reuse_key.as_deref(), Some(reuse_key));
-    assert!(event.is_first_run.is_none());
+    let snapshot = idle_pool.lock().await.status_snapshot();
+    let remaining = snapshot
+        .idle_sandboxes
+        .iter()
+        .map(|sandbox| sandbox.sandbox_id)
+        .chain(
+            snapshot
+                .blank_sandboxes
+                .iter()
+                .map(|sandbox| sandbox.sandbox_id),
+        )
+        .collect::<Vec<_>>();
+    assert!(!remaining.contains(&parked_ids[0]));
+    assert!(remaining.contains(&parked_ids[1]));
+    assert!(budget.allocated().2 <= 2);
 
+    destroy_gate.release_one();
+    destroy_gate.release_one();
     shutdown(&env, run_handle).await;
+    let status: serde_json::Value =
+        serde_json::from_str(&tokio::fs::read_to_string(status_path).await.unwrap()).unwrap();
+    assert_eq!(status["mode"], "stopped");
+    assert!(status.get("idle_sandboxes").is_none());
+    assert!(status.get("blank_sandboxes").is_none());
 }
 
 #[tokio::test(start_paused = true)]

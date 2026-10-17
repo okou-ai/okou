@@ -334,6 +334,19 @@ are not resident-cache, released-byte or production memory-saving proof.
   still reject duplicate or ineligible ownership. Claim cooldown updates have no
   shared retained lock holder that depends on the reactor to resume. PollWakeups
   stays synchronous and provider defer/generation rules are unchanged.
+- Ordinary and home-preferred admission secure local capacity before claiming.
+  They transfer the revisioned eviction snapshot to an independent status task owned
+  by the joined cleanup tracker before another await. Claim proceeds through
+  cancellation registration and lifecycle checks without waiting for status
+  state, ordered persistence or old sandbox cleanup. Claim loss cannot cancel
+  accepted publication; snapshot revisions and status generations fence delayed
+  writes. Already-claimed finalizing fallback retains its awaited publication.
+- Exact speculative reuse joins claim with journal-gated Guest preparation.
+  The exclusive reservation and cancellation/lifecycle checks precede claim;
+  its idle snapshot must persist before speculative unpark. If a newer in-memory
+  revision supersedes it, current status durability is still required. A journal error
+  retains the parked reservation for ordinary claimed activation or rejection
+  rollback, preserving the persisted Preparing gate before physical reuse.
 - API claim requests own temporary poll exclusions until they settle. Poll uses
   the existing `excludedRunIds` field, prioritizes in-flight claims within its
   contract limit, and preserves the full cooldown inventory for local filtering.

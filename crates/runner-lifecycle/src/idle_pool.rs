@@ -5,6 +5,7 @@ use sandbox::{DeviceRateLimits, SandboxId};
 use tokio::sync::watch;
 use uuid::Uuid;
 
+use crate::resource_budget::ResourceBudget;
 use crate::status::{BlankSandbox, IdleSandbox};
 use runner_types::ids::RunId;
 use runner_types::types::{HeldSandboxState, ReusableSandboxState};
@@ -302,6 +303,21 @@ impl IdlePool {
             .into_iter()
             .map(|entry| entry.metadata.identity.clone())
             .collect()
+    }
+
+    /// Advisory capacity after reclaiming only this pool's parked inventory.
+    /// Active, reserved and retiring sandboxes retain their full allocation.
+    pub fn can_admit_after_reclaiming(
+        &self,
+        budget: &ResourceBudget,
+        vcpu: u32,
+        memory_mb: u32,
+    ) -> bool {
+        budget.can_afford_after_releasing(
+            vcpu,
+            memory_mb,
+            self.entries().map(|entry| &entry.budget_lease),
+        )
     }
 
     fn ordered_pressure_entries(&self) -> Vec<&IdleEntry> {
