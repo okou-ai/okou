@@ -349,11 +349,7 @@ function artifactDialogSyncTarget(
     artifactId: artifact.artifactId,
     connectionId: artifact.googleDriveConnectionId,
     filename: artifact.filename,
-    onSyncSuccess:
-      artifact.onSyncSuccess ??
-      (() => {
-        return undefined;
-      }),
+    onSyncSuccess: artifact.onSyncSuccess,
     synced: artifact.googleDriveSynced,
     mimeType: artifact.googleDriveMimeType,
     originalUploaded: artifact.googleDriveOriginalUploaded,
@@ -383,7 +379,6 @@ function findArtifactDialogItemForUrl(
 function artifactDialogMetadataFromItem(params: {
   agentId: string | null | undefined;
   item: ArtifactDialogItem;
-  onSyncSuccess: () => void;
   threadId: string;
 }): AttachmentArtifactMetadata {
   const connectionId = params.item.file.googleDriveConnectionId;
@@ -421,7 +416,6 @@ function artifactDialogMetadataFromItem(params: {
       params.item.file.googleDriveSync?.status === "synced"
         ? params.item.file.googleDriveSync.webViewLink
         : undefined,
-    onSyncSuccess: params.onSyncSuccess,
     runId: params.item.runId,
     size: params.item.file.size,
     threadId: params.threadId,
@@ -1188,7 +1182,6 @@ function ArtifactPreviewDialogThreadResolver({
     equalityFn: equalEventImageGroups,
   });
   const navigateImageLightbox = useSet(navigateImageLightbox$);
-  const reloadArtifacts = useSet(thread.reloadArtifacts$);
   const item =
     loadable.state === "hasData"
       ? findArtifactDialogItemForUrl(loadable.data, preview.url)
@@ -1213,9 +1206,6 @@ function ArtifactPreviewDialogThreadResolver({
         ? artifactDialogMetadataFromItem({
             agentId,
             item: navigationItem.artifact,
-            onSyncSuccess: () => {
-              reloadArtifacts();
-            },
             threadId: thread.threadId,
           })
         : undefined,
@@ -1245,9 +1235,6 @@ function ArtifactPreviewDialogThreadResolver({
         artifact={artifactDialogMetadataFromItem({
           agentId,
           item,
-          onSyncSuccess: () => {
-            reloadArtifacts();
-          },
           threadId: thread.threadId,
         })}
         imageNavigation={{

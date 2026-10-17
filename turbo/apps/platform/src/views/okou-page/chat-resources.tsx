@@ -219,7 +219,6 @@ function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
     useGet(featureSwitch$)[FeatureSwitchKey.ChatRelations];
   const relationContent = useLastResolved(thread.relations.hasContent$);
   const hasRelations = relationContent === true && relationsEnabled;
-  const retry = useSet(thread.reloadArtifacts$);
   const openAll = useOpenThreadArtifacts(thread);
   const expanded = useGet(thread.resources.expandedSections$);
   const toggleSection = useSet(thread.resources.toggleSection$);
@@ -238,11 +237,6 @@ function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
                 return $.chat.resources.loadFailed;
               })}
             </p>
-            <Button variant="quiet" size="sm" onClick={retry}>
-              {t(($) => {
-                return $.chat.resources.retry;
-              })}
-            </Button>
           </div>
         ) : data && (data.artifacts.length > 0 || data.links.length > 0) ? (
           <>

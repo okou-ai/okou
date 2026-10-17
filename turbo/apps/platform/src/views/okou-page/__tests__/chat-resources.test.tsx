@@ -92,6 +92,50 @@ test("Open the dropdown before its resources finish loading", async () => {
   expect(within(panel).queryByText("No artifacts yet")).not.toBeInTheDocument();
 });
 
+test("Show resource loading errors distinctly from empty results in the popup and Links tab", async () => {
+  installResourceGeometry(480);
+  context.mocks.browser.matchMedia(true);
+  context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
+  mockArtifactConversation(context, { catalog: [], chatEvents: [] });
+  context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
+    return respond(500, {
+      error: { message: "Attachments are unavailable" },
+    });
+  });
+  await setupPage({
+    context,
+    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
+  });
+  expect(resourceButton()).toBeInTheDocument();
+
+  click(resourceButton());
+
+  const panel = await screen.findByRole("region", { name: "Resources" });
+  await expect(
+    within(panel).findByText("Could not load resources"),
+  ).resolves.toBeInTheDocument();
+  expect(within(panel).queryByText("No artifacts yet")).not.toBeInTheDocument();
+
+  click(buttonNamed("View all", panel));
+
+  const all = await screen.findByRole("complementary", { name: "Resources" });
+  const linksTab = queryAllByRoleFast("tab", all).find((tab) => {
+    return tab.textContent?.trim() === "Links";
+  });
+  expect(linksTab).toBeInTheDocument();
+  click(linksTab!);
+
+  const links = within(all).getByRole("tabpanel");
+  await expect(
+    within(links).findByText("Could not load resources"),
+  ).resolves.toBeInTheDocument();
+  expect(linksTab).toHaveAttribute("aria-selected", "true");
+  expect(
+    within(links).queryByText("No links in this chat yet"),
+  ).not.toBeInTheDocument();
+});
+
 test("Show all three resources without an overflow control at the limit", async () => {
   const { panel } = await setupOverflowResources(3);
   for (const name of ["Artifacts", "Links"]) {

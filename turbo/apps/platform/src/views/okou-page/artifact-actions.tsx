@@ -52,6 +52,7 @@ import { detach, Reason } from "../../signals/utils.ts";
 import {
   syncArtifactAndRefresh$,
   googleDriveSyncPending$,
+  googleDriveSyncAccount$,
 } from "../../signals/chat-page/artifact-google-drive-sync.ts";
 import {
   connectBuiltinConnectorOAuthAuthCodeWithDialogAndSettle$,
@@ -105,7 +106,7 @@ export type ArtifactDownloadSyncTarget = {
   readonly artifactId: string;
   readonly connectionId: string | undefined;
   readonly filename: string;
-  readonly onSyncSuccess: () => void;
+  readonly onSyncSuccess?: () => void;
   readonly recovery: ChatThreadArtifactGoogleDriveRecovery | undefined;
   readonly synced: boolean;
   readonly mimeType?: string | undefined;
@@ -261,7 +262,15 @@ function useGoogleDriveAvailability(
     googleDriveConnector === null
       ? null
       : getOnlyAvailableCatalogBrowserAuthMethodDetail(googleDriveConnector);
-  const accountReady = syncTarget?.accountReady === true;
+  const completedAccount = useGet(googleDriveSyncAccount$);
+  const selectedAccount =
+    completedAccount &&
+    completedAccount.artifactId === syncTarget?.artifactId &&
+    completedAccount.agentId === syncTarget.agentId
+      ? completedAccount
+      : undefined;
+  const accountReady =
+    selectedAccount !== undefined || syncTarget?.accountReady === true;
 
   return {
     connectorListLoaded:
@@ -272,6 +281,9 @@ function useGoogleDriveAvailability(
     googleDriveConnected,
     googleDriveConnector,
     googleDriveReady: accountReady,
+    googleDriveConnectionId: selectedAccount
+      ? selectedAccount.connectionId
+      : syncTarget?.connectionId,
   };
 }
 
@@ -430,7 +442,7 @@ function useGoogleDriveMenuAction(
     };
     if (availability.googleDriveReady) {
       detach(
-        run(syncTarget.connectionId, false, pageSignal),
+        run(availability.googleDriveConnectionId, false, pageSignal),
         Reason.DomCallback,
         "artifact google drive sync",
       );
