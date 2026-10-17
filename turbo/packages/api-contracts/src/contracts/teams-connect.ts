@@ -29,19 +29,16 @@ const teamsConnectStatusSchema = z.object({
   permissionMismatch: z.boolean().optional(),
   reinstallUrl: nullableStringSchema.optional(),
   environment: teamsEnvironmentSchema.optional(),
-  // Absent on older APIs: callers cannot infer an exact identity or pending state.
-  linkedAccounts: z
-    .array(
-      z.object({
-        tenantId: z.string(),
-        teamsUserId: nullableStringSchema,
-        teamsAadObjectId: nullableStringSchema,
-        displayName: nullableStringSchema,
-        userPrincipalName: nullableStringSchema,
-      }),
-    )
-    .optional(),
-  pendingInstallation: z.boolean().optional(),
+  linkedAccounts: z.array(
+    z.object({
+      tenantId: z.string(),
+      teamsUserId: nullableStringSchema,
+      teamsAadObjectId: nullableStringSchema,
+      displayName: nullableStringSchema,
+      userPrincipalName: nullableStringSchema,
+    }),
+  ),
+  pendingInstallation: z.boolean(),
 });
 
 const teamsConnectBodySchema = z

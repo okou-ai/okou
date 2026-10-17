@@ -136,6 +136,8 @@ test("The step sends an admin to Slack's own install and turns connected once th
     isConnected: false,
     isInstalled: false,
     isAdmin: true,
+    linkedAccounts: [],
+    pendingInstallation: false,
     connectUrl: TEAMS_CONNECT_URL,
   });
   mockNow(NOW, context.signal);
@@ -194,6 +196,8 @@ test("A protected worker preview keeps access on its matching OAuth start URL", 
     isConnected: true,
     isInstalled: true,
     isAdmin: true,
+    linkedAccounts: [],
+    pendingInstallation: false,
     teamName: "Northwind",
     connectUrl: TEAMS_CONNECT_URL,
   });
@@ -232,6 +236,8 @@ test("An installed workspace offers the account connect rather than the install"
     isConnected: true,
     isInstalled: true,
     isAdmin: true,
+    linkedAccounts: [],
+    pendingInstallation: false,
     teamName: "Northwind",
     connectUrl: TEAMS_CONNECT_URL,
   });
@@ -270,6 +276,8 @@ test("A workspace this user cannot add to names who can, instead of a dead butto
     isConnected: false,
     isInstalled: false,
     isAdmin: false,
+    linkedAccounts: [],
+    pendingInstallation: false,
     installUrl: null,
     connectUrl: null,
   });
@@ -364,6 +372,8 @@ test("Telegram authorizes the official bot in a new tab and keeps onboarding ope
     isConnected: false,
     isInstalled: false,
     isAdmin: true,
+    linkedAccounts: [],
+    pendingInstallation: false,
     connectUrl: TEAMS_CONNECT_URL,
   });
   context.mocks.data.telegramIntegration({

@@ -57,9 +57,7 @@ function createTeamsStatus(owner: string | null) {
     const current = {
       isInstalled: next.isInstalled,
       isConnected:
-        next.isInstalled &&
-        next.isConnected &&
-        next.pendingInstallation !== true,
+        next.isInstalled && next.isConnected && !next.pendingInstallation,
     };
     set(previous$, current);
     if (hasTeamsStatusChanged(previous, current)) {
