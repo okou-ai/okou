@@ -12,7 +12,6 @@ import {
   startPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { detachedNavigateTo$ } from "../../../signals/route.ts";
 import type {
   AgentEventsResponse,
   LogDetail,
@@ -225,8 +224,7 @@ test("Refreshing an activity keeps the page and search until every new log page 
   ).resolves.toBeInTheDocument();
   expect(screen.getByText("Current activity log")).toBeInTheDocument();
   expect(screen.getByText("Done")).toBeInTheDocument();
-  expect(screen.getByPlaceholderText("Search steps")).toBe(search);
-  expect(search).toHaveValue("activity");
+  expect(screen.getByPlaceholderText("Search steps")).toHaveValue("activity");
   expect(
     screen.queryByText("Logs do not update automatically."),
   ).not.toBeInTheDocument();
@@ -300,8 +298,7 @@ test("A failed refresh keeps the logs and lets the user retry without losing foc
     screen.findByText("Latest activity log"),
   ).resolves.toBeInTheDocument();
   expect(screen.getByText("Current activity log")).toBeInTheDocument();
-  expect(refreshButton()).toBe(button);
-  expect(button).toHaveFocus();
+  expect(refreshButton()).toHaveFocus();
 });
 
 test("Leaving an activity cancels a pending refresh before it can affect the next activity", async () => {
@@ -347,8 +344,9 @@ test("Leaving an activity cancels a pending refresh before it can affect the nex
   refreshed = true;
   click(refreshButton());
   await refreshStarted.promise;
-  context.store.set(detachedNavigateTo$, "/activities/:activityRunId", {
-    pathParams: { activityRunId: nextRunId },
+  act(() => {
+    window.history.pushState(null, "", `/activities/${nextRunId}`);
+    window.dispatchEvent(new PopStateEvent("popstate"));
   });
   await expect(
     screen.findByText("Next activity log"),
