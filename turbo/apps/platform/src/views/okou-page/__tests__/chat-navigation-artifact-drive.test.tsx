@@ -564,10 +564,10 @@ test("Recheck Drive authorization after leaving and reopening the chat page", as
   await waitFor(() => {
     expect(initial.preview).not.toBeInTheDocument();
   });
-  click(screen.getByLabelText("Chat", { selector: "a" }));
-  await screen.findByPlaceholderText(
-    "Ask me to automate workflows, manage tasks...",
-  );
+  click(screen.getByLabelText("Artifacts", { selector: "a" }));
+  await expect(
+    screen.findByTestId("artifact-catalog-grid"),
+  ).resolves.toBeInTheDocument();
   // The external account now requires a new connection. Returning to this
   // artifact must honor that page's recovery instruction, not the old success.
   drive.requireNewConnection();
