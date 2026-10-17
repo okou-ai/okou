@@ -22,12 +22,14 @@ import {
   VNC_HOST_MAX_LENGTH,
   vncTrustSchema,
   vncTransportMetadataSchema,
+  vncTransportSchema,
 } from "./vnc-transport";
 export {
   VNC_HOST_MAX_LENGTH,
   VNC_CA_BUNDLE_MAX_LENGTH,
   VNC_CA_CERTIFICATES_MAX_COUNT,
   vncTrustSchema,
+  vncTransportSchema,
 } from "./vnc-transport";
 
 const displayNameSchema = z
@@ -38,14 +40,6 @@ const displayNameSchema = z
 const hostSchema = z.string().min(1).max(VNC_HOST_MAX_LENGTH);
 const portSchema = z.int().min(1).max(65_535);
 const generationSchema = z.int().positive().max(2_147_483_647);
-const directTransportSchema = z.object({ type: z.literal("direct") }).strict();
-const sshTransportSchema = z
-  .object({ type: z.literal("ssh"), connectionId: z.uuid() })
-  .strict();
-export const vncTransportSchema = z.discriminatedUnion("type", [
-  directTransportSchema,
-  sshTransportSchema,
-]);
 
 const vncX509NoneSecurityVariantSchema = z
   .object({

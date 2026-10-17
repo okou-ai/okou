@@ -448,7 +448,6 @@ function VncHostCard({
       <div className="flex flex-wrap gap-2">
         <Button
           variant="outline"
-          disabled={hasNativeVncRoute(connection)}
           onClick={() => {
             detach(open("edit", connection, signal), Reason.DomCallback);
           }}
@@ -468,13 +467,6 @@ function VncHostCard({
           })}
         </Button>
       </div>
-      {hasNativeVncRoute(connection) && (
-        <p className="text-sm text-muted-foreground">
-          {t(($) => {
-            return $.vnc.native.editPending;
-          })}
-        </p>
-      )}
     </article>
   );
 }

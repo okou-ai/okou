@@ -735,6 +735,7 @@ describe("organization Cloudflare Access", () => {
       createdAt: expect.any(String),
       updatedAt: expect.any(String),
       sshHosts: [],
+      vncHosts: [],
     });
     expect(
       (await accept(configs().list({ headers }), [200])).body.configs,
