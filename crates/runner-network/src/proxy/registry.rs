@@ -58,6 +58,9 @@ struct SandboxEntry {
     model_usage_provider: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     model_usage_long_context_min_total_input_tokens: Option<u64>,
+    /// API-captured, non-secret model intent for host-side request validation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pi_model_config: Option<serde_json::Value>,
 }
 
 /// Parameters for registering a sandbox in the proxy registry.
@@ -79,6 +82,7 @@ pub struct SandboxRegistration<'a> {
     pub billable_firewalls: &'a [String],
     pub model_usage_provider: Option<&'a str>,
     pub model_usage_long_context_min_total_input_tokens: Option<u64>,
+    pub pi_model_config: Option<&'a serde_json::Value>,
 }
 
 async fn read_registry(path: &std::path::Path) -> RunnerResult<ProxyRegistry> {
@@ -678,6 +682,7 @@ impl ProxyRegistryHandle {
                 model_usage_provider: registration.model_usage_provider.map(String::from),
                 model_usage_long_context_min_total_input_tokens: registration
                     .model_usage_long_context_min_total_input_tokens,
+                pi_model_config: registration.pi_model_config.cloned(),
             },
         );
         registry.updated_at = now;
@@ -1086,7 +1091,35 @@ mod tests {
             billable_firewalls: &[],
             model_usage_provider: None,
             model_usage_long_context_min_total_input_tokens: None,
+            pi_model_config: None,
         }
+    }
+
+    #[tokio::test]
+    async fn registration_preserves_captured_pi_model_config() {
+        let fixture = RegistryHarness::new().await;
+        let captured = serde_json::json!({
+            "schemaVersion": 5,
+            "provider": "openrouter",
+            "baseUrl": "https://openrouter.ai/api/v1",
+            "dialect": "openai-completions",
+            "transport": "sse",
+            "model": "@preset/captured-org-preset"
+        });
+        let registration = SandboxRegistration {
+            pi_model_config: Some(&captured),
+            ..base_registration()
+        };
+        fixture
+            .handle
+            .register_sandbox("10.200.0.2", &registration)
+            .await
+            .unwrap();
+        let stored = read_registry(fixture.registry_path()).await.unwrap();
+        assert_eq!(
+            stored.sandboxes["10.200.0.2"].pi_model_config.as_ref(),
+            Some(&captured)
+        );
     }
 
     #[tokio::test]
@@ -1324,6 +1357,7 @@ mod tests {
                 billable_firewalls: vec![],
                 model_usage_provider: None,
                 model_usage_long_context_min_total_input_tokens: None,
+                pi_model_config: None,
             },
         );
         write_registry(&registry_path, &registry).await.unwrap();

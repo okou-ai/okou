@@ -446,6 +446,7 @@ async fn run_sandbox(
         billable_firewalls: &[],
         model_usage_provider: None,
         model_usage_long_context_min_total_input_tokens: None,
+        pi_model_config: None,
     };
     if let Err(e) = mitm.register_sandbox(&source_ip, &registration).await {
         warn!(error = %e, "failed to register sandbox in proxy");

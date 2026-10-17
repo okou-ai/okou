@@ -145,6 +145,8 @@ struct TestSandboxEntry {
     model_usage_provider: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     model_usage_long_context_min_total_input_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pi_model_config: Option<serde_json::Value>,
 }
 
 pub(crate) struct SandboxRegistration<'a> {
@@ -164,6 +166,7 @@ pub(crate) struct SandboxRegistration<'a> {
     pub billable_firewalls: &'a [String],
     pub model_usage_provider: Option<&'a str>,
     pub model_usage_long_context_min_total_input_tokens: Option<u64>,
+    pub pi_model_config: Option<&'a serde_json::Value>,
 }
 
 #[derive(Clone)]
@@ -255,6 +258,7 @@ impl TestProxyRegistry {
                 model_usage_provider: registration.model_usage_provider.map(str::to_string),
                 model_usage_long_context_min_total_input_tokens: registration
                     .model_usage_long_context_min_total_input_tokens,
+                pi_model_config: registration.pi_model_config.cloned(),
             },
         );
         registry.updated_at = chrono::Utc::now().timestamp_millis();

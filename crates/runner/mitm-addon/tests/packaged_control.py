@@ -308,14 +308,15 @@ def test_packaged_blocked_delivery_independent_progress_and_failure_outcome(tmp_
                             "encryptedSecrets": "synthetic-ciphertext",
                             "modelUsageProvider": "gpt-5.5",
                             "usageGeneration": "generation-1",
-                            "billableFirewalls": ["model-provider:openrouter-codex"],
+                            "billableFirewalls": ["model-provider:usage-test"],
                             "networkLogPath": str(log_path),
                             "proxyLogPath": str(directory / f"proxy-{run_id}.jsonl"),
                             "firewalls": [
                                 {
                                     "kind": "inline",
                                     "firewall": {
-                                        "name": "model-provider:openrouter-codex",
+                                        # Synthetic local usage source, not managed inference.
+                                        "name": "model-provider:usage-test",
                                         "apis": [
                                             {
                                                 "base": api.api_url,

@@ -15,9 +15,13 @@ from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.request_handler_helpers import _single_firewall_sandbox, _write_registry
 from tests.requestheaders_helpers import await_requestheaders_result
 
-_MODEL_PROVIDER_FIREWALL_NAME = "model-provider:openrouter-codex"
-_MODEL_PROVIDER_HOST = "openrouter.ai"
-_MODEL_PROVIDER_PATH = "/api/v1/responses"
+# These generic encoding contracts exercise both HTTP and WebSocket paths.
+# The fixture explicitly controls billing independently of provider selection.
+# Managed OpenRouter only admits preset-bound POST/SSE requests; its encoding
+# integration is covered by test_request_handler_managed_openrouter.py.
+_MODEL_PROVIDER_FIREWALL_NAME = "model-provider:codex-oauth-token"
+_MODEL_PROVIDER_HOST = "chatgpt.com"
+_MODEL_PROVIDER_PATH = "/backend-api/codex/responses"
 _SUBSCRIPTION_FIREWALL_NAME = "model-provider:claude-code-oauth-token"
 _SUBSCRIPTION_HOST = "api.anthropic.com"
 _SUBSCRIPTION_PATH = "/v1/messages"
@@ -939,11 +943,9 @@ async def test_model_provider_websocket_upgrade_injects_auth_and_keeps_accept_en
     fake_firewall_headers,
     extra_headers: tuple[tuple[str, str], ...],
 ) -> None:
-    firewall_name = "model-provider:openrouter-codex"
-    host = "openrouter.ai"
-    # Match the generated OpenAI model-provider firewall; upstream endpoint
-    # WebSocket validity is outside the request-hook auth injection boundary.
-    path = "/api/v1/responses"
+    firewall_name = _MODEL_PROVIDER_FIREWALL_NAME
+    host = _MODEL_PROVIDER_HOST
+    path = _MODEL_PROVIDER_PATH
     reg_path = _write_registry(
         tmp_path,
         sandbox_info=_single_firewall_sandbox(
