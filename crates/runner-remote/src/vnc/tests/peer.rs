@@ -58,7 +58,7 @@ pub(crate) struct Peer {
     pub(crate) ca: String,
     pub(super) client_identity: Option<(Vec<String>, String)>,
     pub(crate) capture_gate: Arc<Mutex<Option<Arc<Semaphore>>>>,
-    pub(super) refuse: Arc<AtomicBool>,
+    pub(crate) refuse: Arc<AtomicBool>,
     pub(super) disconnect: CancellationToken,
     events: Mutex<mpsc::UnboundedReceiver<Event>>,
     task: JoinHandle<()>,

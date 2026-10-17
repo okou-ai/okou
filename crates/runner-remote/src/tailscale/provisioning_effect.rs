@@ -1,7 +1,7 @@
 //! A private, memory-only receipt survives the startup future and weak node entry.
 
 use std::sync::{
-    Mutex,
+    Arc, Mutex, OnceLock,
     atomic::{AtomicU8, Ordering},
 };
 
@@ -20,6 +20,7 @@ enum State {
 pub(crate) struct Journal {
     state: Mutex<State>,
     physical: AtomicU8,
+    evidence: OnceLock<Arc<crate::diagnostics::NativeEvidence>>,
 }
 
 pub(super) enum Cleanup {
@@ -32,7 +33,17 @@ impl Journal {
         Self {
             state: Mutex::new(State::NotDispatched),
             physical: AtomicU8::new(0),
+            evidence: OnceLock::new(),
         }
+    }
+
+    // Pure source facts survive weak-node removal; this holds no physical owner.
+    pub(super) fn retain_evidence(&self, evidence: Arc<crate::diagnostics::NativeEvidence>) {
+        self.evidence.get_or_init(|| evidence);
+    }
+
+    pub(super) fn evidence(&self) -> Option<Arc<crate::diagnostics::NativeEvidence>> {
+        self.evidence.get().cloned()
     }
 
     pub(super) fn retry_safe(&self) -> bool {

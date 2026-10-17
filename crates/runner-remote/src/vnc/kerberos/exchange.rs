@@ -33,6 +33,17 @@ impl kerberos_worker::KdcExchange for Caller<'_> {
         realm: &str,
         request: &[u8],
     ) -> Result<Zeroizing<Vec<u8>>, kerberos_worker::Error> {
+        // Keep the caller's transport future out of the packaged GSSAPI frame.
+        Box::pin(self.exchange_once(realm, request)).await
+    }
+}
+
+impl Caller<'_> {
+    async fn exchange_once(
+        &mut self,
+        realm: &str,
+        request: &[u8],
+    ) -> Result<Zeroizing<Vec<u8>>, kerberos_worker::Error> {
         use kerberos_worker::Error as E;
         if self.awaiting_kdc_reply.load(Ordering::Relaxed) {
             return Err(E::DeliveryUnknown);
@@ -47,9 +58,9 @@ impl kerberos_worker::KdcExchange for Caller<'_> {
         }
         let previous_source = self.diagnostics.source.clone();
         // Independent KDC setup must not label the RFB carrier as its source.
-        self.diagnostics.source = crate::vnc::sessions::SourceEvidence::default();
+        self.diagnostics.begin_kdc_source();
         self.diagnostics.set(Stage::KdcTransport, Progress::Running);
-        self.authorize().await?;
+        self.authorize_in(&self.scope).await?;
         let route = self.kdc.as_ref().ok_or(E::Authority)?;
         let host = route.host.clone();
         let port = route.port;
@@ -61,8 +72,11 @@ impl kerberos_worker::KdcExchange for Caller<'_> {
                     .native
                     .dial(
                         configuration,
-                        &host,
-                        port,
+                        crate::vnc::native::Destination {
+                            host: &host,
+                            port,
+                            role: crate::vnc::evidence::Role::Kdc,
+                        },
                         &self.scope,
                         Arc::clone(&self.owner),
                         self.diagnostics,
@@ -95,7 +109,7 @@ impl kerberos_worker::KdcExchange for Caller<'_> {
                 if let Some(snapshot) = &mut self.diagnostics.vnc {
                     snapshot.kdc_address = Some(address);
                 }
-                self.authorize().await?;
+                self.authorize_in(&self.scope).await?;
                 Carrier::Direct(
                     self.scope
                         .wait(self.runtime.network.connect(address))
@@ -198,6 +212,7 @@ impl kerberos_worker::KdcExchange for Caller<'_> {
         self.total += size;
         self.awaiting_kdc_reply.store(false, Ordering::Relaxed);
         self.diagnostics.set(Stage::KdcExchange, Progress::Passed);
+        self.diagnostics.capture_carrier();
         self.diagnostics.source = previous_source;
         Ok(reply)
     }

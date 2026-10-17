@@ -284,6 +284,15 @@ impl Trace {
         }
         Some(state)
     }
+    pub(crate) fn id(&self) -> Option<uuid::Uuid> {
+        Some(
+            self.state
+                .as_ref()?
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .attempt_id,
+        )
+    }
 }
 
 pub(super) struct Observation {

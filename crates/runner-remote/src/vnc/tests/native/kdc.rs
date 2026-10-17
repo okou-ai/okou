@@ -38,6 +38,7 @@ pub(crate) fn snapshot(route: &Value) -> Value {
 }
 
 pub(crate) async fn exercise(h: &Harness, case: Case, exchanges: usize) -> Result<(), Error> {
+    let expected_kdc = snapshot(&case.route);
     let expected_rfb = case
         .rfb
         .as_ref()
@@ -64,6 +65,7 @@ pub(crate) async fn exercise(h: &Harness, case: Case, exchanges: usize) -> Resul
         tasks: tasks.clone(),
     };
     let mut diagnostics = StartEvidence::default();
+    diagnostics.vnc = Some(crate::vnc::evidence::Snapshot::default());
     let mut scope = Scope {
         cancelled: case.cancel,
         sandbox: CancellationToken::new(),
@@ -78,8 +80,11 @@ pub(crate) async fn exercise(h: &Harness, case: Case, exchanges: usize) -> Resul
         let stream = dialer
             .dial(
                 configuration.unwrap(),
-                &host,
-                port,
+                native::Destination {
+                    host: &host,
+                    port,
+                    role: crate::vnc::evidence::Role::Rfb,
+                },
                 &scope,
                 Arc::new(()),
                 &mut diagnostics,
@@ -162,6 +167,24 @@ pub(crate) async fn exercise(h: &Harness, case: Case, exchanges: usize) -> Resul
     if result.is_ok() {
         assert!(!delivery.load(Ordering::Relaxed));
         assert_eq!(caller.exchanges, exchanges);
+        let evidence = caller.diagnostics.vnc.as_ref().unwrap();
+        let kdc = evidence.kdc_carrier.as_ref().unwrap();
+        assert_eq!(
+            kdc.configuration_id.to_string(),
+            expected_kdc["configId"].as_str().unwrap()
+        );
+        assert_eq!(kdc.generation, expected_kdc["generation"].as_i64().unwrap());
+        assert_eq!(kdc.status, crate::diagnostics::trace::Progress::Passed);
+        if rfb_stream.is_some() {
+            let rfb = evidence.rfb_carrier.as_ref().unwrap();
+            assert_eq!(
+                rfb.configuration_id.to_string(),
+                expected_rfb["configId"].as_str().unwrap()
+            );
+            assert_eq!(rfb.generation, expected_rfb["generation"].as_i64().unwrap());
+            assert_eq!(rfb.status, crate::diagnostics::trace::Progress::Passed);
+            assert_ne!(rfb.attempt_id, kdc.attempt_id);
+        }
         if let Some(stream) = &mut rfb_stream {
             let mut banner = [0; 12];
             stream.read_exact(&mut banner).await.unwrap();

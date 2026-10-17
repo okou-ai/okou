@@ -2,6 +2,7 @@
 
 use serde::Serialize;
 use std::net::SocketAddr;
+use uuid::Uuid;
 
 use super::{Failure, authority::Transport};
 use crate::diagnostics::{Operation, trace::Progress};
@@ -31,10 +32,32 @@ pub(crate) struct Step {
     pub(crate) status: Progress,
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum Role {
+    Rfb,
+    Kdc,
+}
+
+/// A finite receipt for one independently authorized native carrier.
+#[derive(Clone, Serialize)]
+pub(crate) struct Carrier {
+    pub(crate) configuration_id: Uuid,
+    pub(crate) generation: i64,
+    pub(crate) attempt_id: Uuid,
+    pub(crate) resource_id: Option<Uuid>,
+    pub(crate) connection_id: Option<Uuid>,
+    pub(crate) status: Progress,
+    pub(crate) node_setup: Option<Progress>,
+    pub(crate) origin_tls: Option<Progress>,
+    pub(crate) access: Option<crate::diagnostics::trace::Snapshot>,
+}
+
 #[derive(Clone, Serialize)]
 pub(crate) struct Snapshot {
     pub(crate) route: &'static str,
     pub(crate) kdc_route: Option<&'static str>,
+    pub(crate) rfb_carrier: Option<Box<Carrier>>,
+    pub(crate) kdc_carrier: Option<Box<Carrier>>,
     pub(crate) address: Option<SocketAddr>,
     pub(crate) kdc_address: Option<SocketAddr>,
     pub(crate) profile: Option<&'static str>,
@@ -53,6 +76,8 @@ impl Default for Snapshot {
         Self {
             route: "not observed",
             kdc_route: None,
+            rfb_carrier: None,
+            kdc_carrier: None,
             address: None,
             kdc_address: None,
             profile: None,
@@ -99,6 +124,22 @@ pub(super) fn route(transport: Transport) -> &'static str {
 }
 
 impl Snapshot {
+    pub(super) fn failed_carrier(&mut self, resource: Uuid) {
+        for carrier in [&mut self.rfb_carrier, &mut self.kdc_carrier]
+            .into_iter()
+            .flatten()
+        {
+            if carrier.resource_id == Some(resource) && carrier.status != Progress::NotReached {
+                carrier.status = Progress::Failed;
+            }
+        }
+    }
+    pub(super) fn carrier(&mut self, role: Role) -> &mut Option<Box<Carrier>> {
+        match role {
+            Role::Rfb => &mut self.rfb_carrier,
+            Role::Kdc => &mut self.kdc_carrier,
+        }
+    }
     pub(super) fn begin(&mut self, stage: Stage) {
         for step in &mut self.steps {
             if step.status == Progress::Running {
@@ -113,6 +154,27 @@ impl Snapshot {
         }
     }
     pub(super) fn finish(&mut self, failure: Failure) {
+        for carrier in [&mut self.rfb_carrier, &mut self.kdc_carrier]
+            .into_iter()
+            .flatten()
+        {
+            for status in [
+                Some(&mut carrier.status),
+                carrier.node_setup.as_mut(),
+                carrier.origin_tls.as_mut(),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                if *status == Progress::Running {
+                    *status = if matches!(failure, Failure::Cancelled | Failure::TimedOut) {
+                        Progress::Unknown
+                    } else {
+                        Progress::Failed
+                    };
+                }
+            }
+        }
         for step in &mut self.steps {
             if step.status == Progress::Running {
                 step.status = if matches!(
@@ -128,6 +190,26 @@ impl Snapshot {
     }
     pub(super) fn operation(&self, operation: Operation, failure: Failure) -> Self {
         let mut snapshot = self.clone();
+        for carrier in [&mut snapshot.rfb_carrier, &mut snapshot.kdc_carrier]
+            .into_iter()
+            .flatten()
+        {
+            for status in [
+                Some(&mut carrier.status),
+                carrier.node_setup.as_mut(),
+                carrier.origin_tls.as_mut(),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                if *status == Progress::Passed {
+                    *status = Progress::Reused;
+                }
+            }
+            if let Some(access) = &mut carrier.access {
+                access.reused();
+            }
+        }
         for step in &mut snapshot.steps {
             if step.status == Progress::Passed {
                 step.status = Progress::Reused;
@@ -141,6 +223,26 @@ impl Snapshot {
         };
         snapshot.set(stage, Progress::Running);
         snapshot.finish(failure);
+        snapshot
+    }
+    pub(crate) fn native_failure(&self, resource: Uuid) -> Self {
+        let mut snapshot = self.operation(Operation::Native, Failure::Network);
+        // A background source event did not execute a VNC status request.
+        snapshot.set(Stage::Status, Progress::NotReached);
+        if !self
+            .steps
+            .iter()
+            .any(|step| step.stage == Stage::SessionAdmission && step.status == Progress::Passed)
+        {
+            // Startup subscriptions captured setup context before dialing. Later
+            // authentication progress is published by the owning start operation.
+            for step in &mut snapshot.steps {
+                if step.status != Progress::Reused {
+                    step.status = Progress::Unknown;
+                }
+            }
+        }
+        snapshot.failed_carrier(resource);
         snapshot
     }
 }

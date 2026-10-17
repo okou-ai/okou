@@ -66,6 +66,32 @@ impl Report {
                 observed(vnc.profile),
                 observed(vnc.kdc_route)
             ));
+            for (role, carrier) in [("RFB", &vnc.rfb_carrier), ("KDC", &vnc.kdc_carrier)] {
+                if let Some(carrier) = carrier {
+                    text.push_str(&format!(
+                        "- VNC {role} carrier: configuration {}; generation {}; attempt {}; resource {}; private connection {}; stream {}; node setup {}; origin TLS {}.\n",
+                        carrier.configuration_id, carrier.generation, carrier.attempt_id,
+                        observed(carrier.resource_id), observed(carrier.connection_id), words(carrier.status)?,
+                        carrier.node_setup.and_then(words).unwrap_or_else(|| "not observed".into()),
+                        carrier.origin_tls.and_then(words).unwrap_or_else(|| "not observed".into()),
+                    ));
+                    if let Some(access) = &carrier.access {
+                        if let Some(failure) = access.access_failure {
+                            text.push_str(&format!(
+                                "- VNC {role} first Cloudflare Access failure: {}.\n",
+                                words(failure)?
+                            ));
+                        }
+                        for step in &access.stages {
+                            text.push_str(&format!(
+                                "- VNC {role} carrier {}: {}.\n",
+                                words(step.stage)?,
+                                words(step.status)?
+                            ));
+                        }
+                    }
+                }
+            }
             for (subject, address) in [("VNC RFB", vnc.address), ("VNC KDC", vnc.kdc_address)] {
                 if let Some(address) = address {
                     text.push_str(&format!(
@@ -185,6 +211,11 @@ impl Report {
             cause,
             Cause::Native(crate::tailscale::Failure::DomainFailed)
                 | Cause::Ssh(S::NetworkFailure | S::Cancelled | S::AuthorityFailure)
+                | Cause::Vnc(
+                    crate::vnc::Failure::Network
+                        | crate::vnc::Failure::Cancelled
+                        | crate::vnc::Failure::Unavailable
+                )
         ) && let Some(root) = self.native_layers.as_ref().and_then(|s| s.root)
         {
             return match root {
@@ -202,20 +233,32 @@ impl Report {
                 }
             };
         }
-        if matches!(cause, Cause::Ssh(S::NetworkFailure))
-            && self.native_connection.as_ref().is_some_and(|snapshot| {
-                snapshot.steps.iter().any(|s| {
-                    matches!(
-                        s.stage,
-                        crate::tailscale::evidence::Stage::PeerSelection
-                            | crate::tailscale::evidence::Stage::PrivateTcp
-                    ) && s.status == crate::tailscale::evidence::Status::Failed
-                })
+        if matches!(
+            cause,
+            Cause::Ssh(S::NetworkFailure) | Cause::Vnc(crate::vnc::Failure::Network)
+        ) && self.native_connection.as_ref().is_some_and(|snapshot| {
+            snapshot.steps.iter().any(|s| {
+                matches!(
+                    s.stage,
+                    crate::tailscale::evidence::Stage::PeerSelection
+                        | crate::tailscale::evidence::Stage::PrivateTcp
+                ) && s.status == crate::tailscale::evidence::Status::Failed
             })
-        {
+        }) {
             return "Inspect the selected private TCP peer/region and map authority; prior native readiness does not establish target service health.";
         }
-        if let Some(failure) = self.ssh.as_ref().and_then(|s| s.access_failure) {
+        if let Some(failure) = self
+            .ssh
+            .as_ref()
+            .and_then(|s| s.access_failure)
+            .or_else(|| {
+                let vnc = self.vnc.as_ref()?;
+                [&vnc.kdc_carrier, &vnc.rfb_carrier]
+                    .into_iter()
+                    .flatten()
+                    .find_map(|carrier| carrier.access.as_ref()?.access_failure)
+            })
+        {
             return match failure {
                 crate::cloudflare::Failure::Tls => {
                     "Check the Access gateway certificate and TLS trust."
