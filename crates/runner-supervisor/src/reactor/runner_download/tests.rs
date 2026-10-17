@@ -55,6 +55,7 @@ impl GrantConsumer for Grants {
 struct ObservedService {
     inner: Arc<dyn Service>,
     bytes: Arc<AtomicUsize>,
+    read_progress: Arc<tokio::sync::Notify>,
     mutate_finish: Arc<AtomicBool>,
     stale_version: Arc<AtomicBool>,
     path: PathBuf,
@@ -78,6 +79,7 @@ impl Service for ObservedService {
     ) -> ServiceFuture<serde_json::Value> {
         let inner = self.inner.clone();
         let bytes = self.bytes.clone();
+        let read_progress = self.read_progress.clone();
         let mutate =
             operation == Operation::FsFinish && self.mutate_finish.swap(false, Ordering::SeqCst);
         let path = self.path.clone();
@@ -91,6 +93,7 @@ impl Service for ObservedService {
                     result["length"].as_u64().unwrap() as usize,
                     Ordering::SeqCst,
                 );
+                read_progress.notify_one();
             }
             Ok(result)
         })
@@ -101,6 +104,7 @@ struct Boundary {
     fs: Filesystem,
     tasks: Mutex<JoinSet<()>>,
     bytes: Arc<AtomicUsize>,
+    read_progress: Arc<tokio::sync::Notify>,
     mutate_finish: Arc<AtomicBool>,
     stale_version: Arc<AtomicBool>,
     path: PathBuf,
@@ -113,6 +117,7 @@ impl GuestDuplexAcceptor for Boundary {
         let service = Arc::new(ObservedService {
             inner: self.fs.service(),
             bytes: self.bytes.clone(),
+            read_progress: self.read_progress.clone(),
             mutate_finish: self.mutate_finish.clone(),
             stale_version: self.stale_version.clone(),
             path: self.path.clone(),
@@ -158,6 +163,7 @@ impl Fixture {
             fs: Filesystem::new().unwrap(),
             tasks: Mutex::new(JoinSet::new()),
             bytes: Arc::new(AtomicUsize::new(0)),
+            read_progress: Arc::new(tokio::sync::Notify::new()),
             mutate_finish: Arc::new(AtomicBool::new(false)),
             stale_version: Arc::new(AtomicBool::new(false)),
             path: path.clone(),
@@ -325,10 +331,25 @@ async fn stalled_client_bounds_guest_progress_run_admission_and_disconnect_relea
     let (_, _, first) = f.connect(&"D".repeat(43), "", "GET").await;
     let (_, _, second) = f.connect(&"E".repeat(43), "", "GET").await;
     assert_eq!(f.connect(&"F".repeat(43), "", "GET").await.0, 503);
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    // Observe a forbidden amount of Guest progress while clients do not read.
+    // The deadline bounds this negative assertion; no sleep guesses when the
+    // producer has settled or requires two scheduling-dependent samples to match.
+    let excessive = async {
+        loop {
+            let progress = f.boundary.read_progress.notified();
+            if f.boundary.bytes.load(Ordering::SeqCst) >= 2 * 1024 * 1024 {
+                break;
+            }
+            progress.await;
+        }
+    };
+    assert!(
+        tokio::time::timeout(Duration::from_millis(400), excessive)
+            .await
+            .is_err(),
+        "two unread clients must backpressure Guest reads"
+    );
     let before = f.boundary.bytes.load(Ordering::SeqCst);
-    tokio::time::sleep(Duration::from_millis(200)).await;
-    assert_eq!(before, f.boundary.bytes.load(Ordering::SeqCst));
     assert!(
         before < 2 * 1024 * 1024,
         "Guest stopped after {before} bytes for two unread clients"
@@ -339,6 +360,7 @@ async fn stalled_client_bounds_guest_progress_run_admission_and_disconnect_relea
     );
     drop((first, second));
     f.retire().await;
+    assert!(f.boundary.bytes.load(Ordering::SeqCst) < 2 * 1024 * 1024);
 }
 
 #[tokio::test]
