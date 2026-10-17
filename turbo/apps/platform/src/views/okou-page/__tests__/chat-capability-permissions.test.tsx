@@ -403,7 +403,6 @@ test("Permission cards keep callback work pending and expose a retryable callbac
       });
     }
     return respond(201, {
-      runId: "30000000-0000-4000-a000-000000000001",
       threadId: RUN_THREAD_ID,
     });
   });

@@ -872,6 +872,7 @@ test.each([
         url: resolvedVideoUrl,
         expiresAt: "2099-01-01T00:00:00.000Z",
         publicUrl: null,
+        previewImageUrl: storedPoster,
       });
     });
     await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });

@@ -597,7 +597,6 @@ describe("thin MCP Web adapters", () => {
       });
       expect(web.status).toBe(201);
       expect(web.body).toStrictEqual({
-        runId: null,
         threadId: result.threadId,
         createdAt: result.createdAt,
       });
@@ -793,7 +792,10 @@ describe("thin MCP Web adapters", () => {
       threadId: args.threadId,
       revokesEventId: args.eventId,
     });
-    expect(body(recalled)).toStrictEqual(web.body);
+    // The published MCP output keeps its always-null runId; the Web send
+    // response no longer carries one.
+    expect(web.body).not.toHaveProperty("runId");
+    expect(body(recalled)).toStrictEqual({ ...web.body, runId: null });
     const history = mcpGetChatMessagesOutputSchema.parse(
       body(
         await mcp.call(f.token(), "get_chat_messages", {

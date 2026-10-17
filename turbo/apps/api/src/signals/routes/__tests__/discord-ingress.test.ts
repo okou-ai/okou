@@ -1938,7 +1938,7 @@ describe("canonical Discord ingress", () => {
       },
       [201],
     );
-    expect(sent.body).toMatchObject({ threadId: thread.id, runId: null });
+    expect(sent.body).toMatchObject({ threadId: thread.id });
     await flushWaitUntilForTest();
     const queued = currentInputs(await events(actor, thread.id));
     expect(queued).toHaveLength(2);

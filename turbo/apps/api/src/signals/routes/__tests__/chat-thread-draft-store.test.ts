@@ -46,7 +46,7 @@ async function sendWithoutCredits(fixture: DraftFixture): Promise<void> {
   if (sent.status !== 201) {
     throw new Error("Expected a no-credit message send");
   }
-  expect(sent.body.runId).toBeNull();
+  expect(sent.body).not.toHaveProperty("runId");
 }
 
 function draftDocument(text: string): UserMessageInputDocument {

@@ -484,30 +484,27 @@ export function createChatEventsFixture(context: TestContext) {
     if (sent.status !== 201) {
       throw new Error("Expected the entitled chat send to create a run");
     }
-    let runId: string | null | undefined = sent.body.runId;
-    if (runId === null) {
-      // A successful-run fixture owns the enqueued pick before inspecting its
-      // effects. Tests that intentionally hold publication can opt out and
-      // observe their own explicit intermediate boundary.
-      if (options?.awaitEnqueuedPick !== false) {
-        await flushWaitUntilForTest();
-      }
-      const messages = await waitForThreadMessages(
-        actor,
-        sent.body.threadId,
-        (items) => {
-          return userMessages(items).some((message) => {
-            return (
-              message.revokesEventId === requestBody.clientEventId &&
-              message.runId !== undefined
-            );
-          });
-        },
-      );
-      runId = userMessages(messages.events).find((message) => {
-        return message.revokesEventId === requestBody.clientEventId;
-      })?.runId;
+    // A successful-run fixture owns the enqueued pick before inspecting its
+    // effects. Tests that intentionally hold publication can opt out and
+    // observe their own explicit intermediate boundary.
+    if (options?.awaitEnqueuedPick !== false) {
+      await flushWaitUntilForTest();
     }
+    const messages = await waitForThreadMessages(
+      actor,
+      sent.body.threadId,
+      (items) => {
+        return userMessages(items).some((message) => {
+          return (
+            message.revokesEventId === requestBody.clientEventId &&
+            message.runId !== undefined
+          );
+        });
+      },
+    );
+    const runId = userMessages(messages.events).find((message) => {
+      return message.revokesEventId === requestBody.clientEventId;
+    })?.runId;
     if (runId === undefined || runId === null) {
       throw new Error("Expected the entitled chat send to create a run");
     }
@@ -556,7 +553,7 @@ export function createChatEventsFixture(context: TestContext) {
       throw new Error("Expected the at-capacity chat send to be accepted");
     }
     // At capacity the input waits in the thread without a run.
-    expect(sent.body.runId).toBeNull();
+    expect(sent.body).not.toHaveProperty("runId");
     const threadId = sent.body.threadId;
     const waiting = await chat.listThreadEvents(actor, threadId);
     expect(

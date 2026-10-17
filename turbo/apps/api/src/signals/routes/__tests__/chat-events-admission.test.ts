@@ -178,7 +178,6 @@ describe("CHAT-02: web chat send and client ids", () => {
     for (const response of responses) {
       expect(response.body).toMatchObject({
         threadId: clientThreadId,
-        runId: null,
       });
     }
     const messages = await waitForThreadMessages(
@@ -240,7 +239,6 @@ describe("CHAT-02: web chat send and client ids", () => {
       [201],
     );
     expect(first.body).toStrictEqual({
-      runId: null,
       threadId: clientThreadId,
       createdAt: expect.any(String),
     });
@@ -479,7 +477,7 @@ describe("CHAT-02: interrupting active chat runs", () => {
     if (interrupted.status !== 201) {
       throw new Error("Expected the interrupt send to be accepted");
     }
-    expect(interrupted.body.runId).toBeNull();
+    expect(interrupted.body).not.toHaveProperty("runId");
     await waitForRunStatus(actor, first.runId, "cancelled");
     await flushWaitUntilForTest();
     expect(context.mocks.ably.publish).toHaveBeenCalledWith("cancel", {
@@ -557,7 +555,6 @@ describe("CHAT-02: interrupting active chat runs", () => {
       [201],
     );
     expect(replayedInterrupt.body).toMatchObject({
-      runId: null,
       threadId: first.threadId,
     });
     await chat.requestSendEvent(
@@ -664,7 +661,6 @@ describe("CHAT-02: dispatch failure", () => {
       throw new Error("Expected the send to be accepted");
     }
     expect(sent.body).toStrictEqual({
-      runId: null,
       threadId: sent.body.threadId,
       createdAt: expect.any(String),
     });
@@ -741,7 +737,6 @@ describe("CHAT-02: admission without spendable credits", () => {
         );
       }
       expect(sent.body).toStrictEqual({
-        runId: null,
         threadId: sent.body.threadId,
         createdAt: expect.any(String),
       });
@@ -830,7 +825,6 @@ describe("CHAT-02: admission without spendable credits", () => {
       }
       // The retry is accepted as a duplicate at request time and stores nothing.
       expect(retry.body).toStrictEqual({
-        runId: null,
         threadId: sent.body.threadId,
         createdAt: expect.any(String),
       });
@@ -870,7 +864,7 @@ describe("CHAT-02: admission without spendable credits", () => {
       if (sent.status !== 201) {
         throw new Error("Expected the send to settle as a rejection");
       }
-      expect(sent.body.runId).toBeNull();
+      expect(sent.body).not.toHaveProperty("runId");
 
       await waitForThreadMessages(actor, pending.threadId, (items) => {
         return userMessages(items).some((message) => {

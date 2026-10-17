@@ -817,12 +817,25 @@ function registerMutationTools(
       inputSchema: mcpRevokeQueuedMessageInputSchema,
       outputSchema: mcpRevokeQueuedMessageOutputSchema,
       annotations: { ...writeAnnotations, destructiveHint: true },
-      operation: ({ eventId, ...body }, signal) => {
-        return requestWebApi(
+      operation: async ({ eventId, ...body }, signal) => {
+        const response = await requestWebApi(
           access,
           chatEventsContract.send,
           { body: { ...body, revokesEventId: eventId } },
           signal,
+        );
+        if (!response.ok) {
+          return await toolResponse(response);
+        }
+        const accepted = chatEventsContract.send.responses[201].parse(
+          await response.json(),
+        );
+        signal.throwIfAborted();
+        return toolBody(
+          mcpRevokeQueuedMessageOutputSchema.parse({
+            ...accepted,
+            runId: null,
+          }),
         );
       },
     },

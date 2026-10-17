@@ -351,7 +351,7 @@ describe("CHAT-02: prior rounds and thread titles", () => {
       [201],
     );
     expect(retriedFollowup.body).toStrictEqual(normalFollowup.body);
-    expect(normalFollowup.body.runId).toBeNull();
+    expect(normalFollowup.body).not.toHaveProperty("runId");
     await flushWaitUntilForTest();
     const afterFollowup = await waitForThreadMessages(
       actor,
@@ -477,7 +477,7 @@ describe("CHAT-02: prior rounds and thread titles", () => {
     if (followup.status !== 201) {
       throw new Error("Expected the recommended follow-up to succeed");
     }
-    expect(followup.body.runId).toBeNull();
+    expect(followup.body).not.toHaveProperty("runId");
     await expect(
       api.nextSteerableInput(activeClaim.claim.sandboxToken, active.runId),
     ).resolves.toStrictEqual({

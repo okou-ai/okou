@@ -99,7 +99,7 @@ describe("chat agent bootstrap prefetch", () => {
       },
       [201],
     );
-    expect(queued.body).toMatchObject({ runId: null });
+    expect(queued.body).not.toHaveProperty("runId");
     await cancelChatRun(actor, first.runId, firstClaim.sandboxHeaders);
     const messages = await waitForThreadMessages(
       actor,
@@ -157,7 +157,7 @@ describe("chat agent bootstrap prefetch", () => {
       },
       [201],
     );
-    expect(queued.body).toMatchObject({ runId: null });
+    expect(queued.body).not.toHaveProperty("runId");
     await cancelChatRun(actor, first.runId, firstClaim.sandboxHeaders);
     const messages = await waitForThreadMessages(
       actor,
@@ -225,7 +225,7 @@ describe("chat agent bootstrap prefetch", () => {
       },
       [201],
     );
-    expect(queued.body).toMatchObject({ runId: null });
+    expect(queued.body).not.toHaveProperty("runId");
     await cancelChatRun(actor, first.runId, firstClaim.sandboxHeaders);
     const messages = await waitForThreadMessages(
       actor,
@@ -278,7 +278,7 @@ describe("chat agent bootstrap prefetch", () => {
       },
       [201],
     );
-    expect(queued.body).toMatchObject({ runId: null });
+    expect(queued.body).not.toHaveProperty("runId");
     // Cancellation is a separate API request: its pick cannot receive the send's signals.
     await cancelChatRun(actor, first.runId);
     const messages = await waitForThreadMessages(
@@ -354,7 +354,7 @@ describe("chat agent bootstrap prefetch", () => {
       },
       [201],
     );
-    expect(queued.body).toMatchObject({ runId: null });
+    expect(queued.body).not.toHaveProperty("runId");
     // This separate API request cannot reuse the queued send's context signals.
     await cancelChatRun(actor, first.runId, firstClaim.sandboxHeaders);
     const messages = await waitForThreadMessages(
@@ -458,7 +458,7 @@ describe("chat agent bootstrap prefetch", () => {
       if (sent.status !== 201) {
         throw new Error("Expected the direct send to be accepted");
       }
-      expect(sent.body.runId).toBeNull();
+      expect(sent.body).not.toHaveProperty("runId");
       await flushWaitUntilForTest();
       const messages = userMessages(
         (await chat.listThreadEvents(actor, sent.body.threadId)).events,
@@ -552,7 +552,7 @@ describe("chat agent bootstrap prefetch", () => {
     if (sent.status !== 201) {
       throw new Error("Expected the steer input to be accepted");
     }
-    expect(sent.body.runId).toBeNull();
+    expect(sent.body).not.toHaveProperty("runId");
     await flushWaitUntilForTest();
 
     await expect(

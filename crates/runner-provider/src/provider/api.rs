@@ -331,9 +331,11 @@ enum DiscoveryWakeup {
 /// `PollWakeups` state machine. If every exclusion expires while that poll is in
 /// flight, the provider immediately polls again without the stale exclusions.
 ///
-/// An older API may ignore the additive exclusions and return a cooled run. The
-/// provider therefore checks returned candidates locally and defers rather than
-/// reclaiming that run at network-round-trip cadence. Cooldown capacity never
+/// The API can still return a cooled run: exclusions are truncated to the
+/// contract maximum, and a cooldown recorded while a poll is in flight is not in
+/// that poll's request. The provider therefore checks returned candidates
+/// locally and defers rather than reclaiming that run at network-round-trip
+/// cadence. Cooldown capacity never
 /// evicts an active entry; saturation instead applies a short provider-wide
 /// cooldown and defers all discovery before retrying.
 pub struct ApiProvider {
@@ -4741,7 +4743,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn old_api_returning_excluded_run_does_not_rediscover_it() {
+    async fn poll_returning_cooled_run_does_not_rediscover_it() {
         let run_id: RunId = "00000000-0000-0000-0000-00000000001a".parse().unwrap();
         let mut server = RawHttpTestServer::spawn(vec![
             RawHttpAction::Respond(status_response(400)),
@@ -4765,19 +4767,19 @@ mod tests {
 
         let direct = provider.discover().await.unwrap();
         assert!(provider.claim(direct).await.is_none());
-        let claim_request = server.next_request("old API claim request").await;
+        let claim_request = server.next_request("rejected claim request").await;
         assert!(claim_request.contains(&format!("/api/runners/jobs/{run_id}/claim")));
 
         let provider_for_discover = Arc::clone(&provider);
         let mut discover_task = tokio::spawn(async move { provider_for_discover.discover().await });
-        let ignored_exclusion_request = server.next_request("old API poll request").await;
-        assert!(ignored_exclusion_request.contains(r#""excludedRunIds":["#));
-        assert!(ignored_exclusion_request.contains(&run_id.to_string()));
+        let excluded_poll_request = server.next_request("excluded poll request").await;
+        assert!(excluded_poll_request.contains(r#""excludedRunIds":["#));
+        assert!(excluded_poll_request.contains(&run_id.to_string()));
         assert!(
             tokio::time::timeout(Duration::from_millis(100), &mut discover_task)
                 .await
                 .is_err(),
-            "an excluded run returned by an old API must not be rediscovered"
+            "a cooled run returned by a poll must not be rediscovered"
         );
         assert!(server.try_next_request().is_err());
 

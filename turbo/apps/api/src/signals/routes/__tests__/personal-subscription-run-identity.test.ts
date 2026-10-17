@@ -72,7 +72,7 @@ async function sendRejectedAtPick(
   if (sent.status !== 201) {
     throw new Error("Expected the chat send to be queued");
   }
-  expect(sent.body.runId).toBeNull();
+  expect(sent.body).not.toHaveProperty("runId");
   await flushWaitUntilForTest();
   const { events } = await chat.listThreadEvents(actor, sent.body.threadId);
   expect(
@@ -368,7 +368,7 @@ describe("personal subscription run identity", () => {
     if (sent.status !== 201) {
       throw new Error("Expected the chat send to be queued");
     }
-    expect(sent.body.runId).toBeNull();
+    expect(sent.body).not.toHaveProperty("runId");
     await expect(clearAllDetached()).rejects.toBe(preparationError);
     const { events } = await chat.listThreadEvents(f.actor, sent.body.threadId);
     expect(events).toContainEqual(
@@ -776,16 +776,12 @@ describe("personal subscription run identity", () => {
     };
     const responses = await Promise.all([send(), send()]);
     expect(responses).toHaveLength(2);
-    const responseRunIds = new Set<string>();
     for (const response of responses) {
       if (response.status !== 201) {
         throw new Error("Expected both idempotent sends to be accepted");
       }
-      if (response.body.runId !== null) {
-        responseRunIds.add(response.body.runId);
-      }
+      expect(response.body).not.toHaveProperty("runId");
     }
-    expect(responseRunIds.size).toBeLessThanOrEqual(1);
 
     await flushWaitUntilForTest();
     const admittedEvents = (await chat.listThreadEvents(f.actor, thread.id))
@@ -802,9 +798,6 @@ describe("personal subscription run identity", () => {
     if (!claimedRunId) {
       throw new Error("Expected the input to be claimed by one run");
     }
-    expect([...responseRunIds]).toStrictEqual(
-      responseRunIds.size === 0 ? [] : [claimedRunId],
-    );
     const claim = await f.claim(claimedRunId);
     await finish(f.actor, claimedRunId, claim, "completed");
     const events = (await chat.listThreadEvents(f.actor, thread.id)).events;
@@ -1520,7 +1513,7 @@ describe("personal priority credential and session boundaries", () => {
       },
       [201],
     );
-    expect(queued.body).toMatchObject({ runId: null });
+    expect(queued.body).not.toHaveProperty("runId");
     const replacement = await connect(f.actor, f.type, "identity-b");
     const history = Buffer.from(`subscription history ${sent.runId}`);
     const hash = createHash("sha256").update(history).digest("hex");

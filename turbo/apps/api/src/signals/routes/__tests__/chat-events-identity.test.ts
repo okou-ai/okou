@@ -126,7 +126,7 @@ describe("CHAT-02: default assistant identity", () => {
     if (queued.status !== 201) {
       throw new Error("Expected the Okou follow-up to enter the chat queue");
     }
-    expect(queued.body.runId).toBeNull();
+    expect(queued.body).not.toHaveProperty("runId");
 
     const rawQueuedEvent = (
       await chat.listThreadEventRows(actor, anchor.threadId)
@@ -240,7 +240,7 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
       if (immediateSend.status !== 201) {
         throw new Error("Expected the run-scoped handoff request to succeed");
       }
-      expect(immediateSend.body.runId).toBeNull();
+      expect(immediateSend.body).not.toHaveProperty("runId");
       // The idle thread's background pick launches the handoff.
       await flushWaitUntilForTest();
       const launchedMessages = await waitForThreadMessages(
@@ -297,7 +297,7 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
       if (queued.status !== 201) {
         throw new Error("Expected the queued run-scoped request to succeed");
       }
-      expect(queued.body.runId).toBeNull();
+      expect(queued.body).not.toHaveProperty("runId");
 
       await cancelChatRun(actor, immediateRunId);
       await flushWaitUntilForTest();
@@ -389,7 +389,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
         [201],
       );
       expect(nestedSend.status).toBe(201);
-      expect(nestedSend.body).toMatchObject({ runId: null });
+      expect(nestedSend.body).not.toHaveProperty("runId");
       const recalled = await owned.run(() => {
         return accept(
           chatEventsClient().send({
@@ -404,7 +404,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
           [201],
         );
       });
-      expect(recalled.body.runId).toBeNull();
+      expect(recalled.body).not.toHaveProperty("runId");
       await owned.run(() => {
         return cancelChatRun(actor, plain.runId, plainClaim.sandboxHeaders);
       });
@@ -698,7 +698,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
           [201],
         );
       });
-      expect(offlineHostSend.body).toMatchObject({ runId: null });
+      expect(offlineHostSend.body).not.toHaveProperty("runId");
 
       // The sticky-host fallthrough also tolerates a stale host instead of
       // failing: a send without the field on the pinned thread is accepted.

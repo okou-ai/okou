@@ -1830,14 +1830,12 @@ export const chatEventsContract = c.router({
         .strict(),
     ]),
     responses: {
+      /**
+       * A send enqueues its input and returns without waiting for a run. The
+       * run, or an `input.rejected` event explaining why none started,
+       * appears in the thread's event stream.
+       */
       201: z.object({
-        /**
-         * Always null: a send enqueues its input and returns without waiting
-         * for a run. The key stays because older clients require it. The run,
-         * or an `input.rejected` event explaining why none started, appears
-         * in the thread's event stream.
-         */
-        runId: z.string().nullable(),
         threadId: z.string(),
         createdAt: z.string().optional(),
       }),

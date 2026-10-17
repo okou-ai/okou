@@ -1499,7 +1499,7 @@ const runWorkflowInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   return {
     status: 200 as const,
-    body: { chatThreadId: result.body.threadId, runId: result.body.runId },
+    body: { chatThreadId: result.body.threadId, runId: null },
   };
 });
 

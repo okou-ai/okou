@@ -249,7 +249,7 @@ describe("CHAT effort: thread configuration", () => {
         },
         [201],
       );
-      expect(queued.body).toMatchObject({ runId: null });
+      expect(queued.body).not.toHaveProperty("runId");
       await chat.updateThreadModelSelection(
         actor,
         active.threadId,
@@ -273,7 +273,6 @@ describe("CHAT effort: thread configuration", () => {
       // The retry conflicts on the stored input and is accepted as a
       // duplicate at request time; its new settings are not stored.
       expect(retry.body).toStrictEqual({
-        runId: null,
         threadId: active.threadId,
         createdAt: expect.any(String),
       });

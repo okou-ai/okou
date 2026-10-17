@@ -1100,7 +1100,7 @@ describe("workflow queue", () => {
       [201],
     );
     await flushWaitUntilForTest();
-    expect(queued.body.runId).toBeNull();
+    expect(queued.body).not.toHaveProperty("runId");
 
     // Terminal run: strict FIFO by admission sequence, so the automation
     // event appended before the user message starts first.
@@ -1282,7 +1282,7 @@ describe("workflow queue", () => {
       [201],
     );
     await flushWaitUntilForTest();
-    expect(userMessage.body.runId).toBeNull();
+    expect(userMessage.body).not.toHaveProperty("runId");
 
     // Cancelling frees the slot; its pick launches the older user message.
     await runsApi.requestCancelRun(scenario.actor, firstRunId, [200]);
