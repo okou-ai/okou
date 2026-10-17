@@ -915,9 +915,12 @@ function normalizeAdditionalVolumeSources(args: {
   return args.sources;
 }
 
-export async function resolveStorageManifestInputs(
-  args: PrepareAgentRunStorageManifestArgs,
-): Promise<StorageManifestInputs> {
+export async function resolveStorageManifestInputs(args: {
+  readonly instructionsStorageName: string;
+  readonly framework: SupportedFramework | "pi";
+  readonly artifacts: readonly ContextArtifact[];
+  readonly timing?: ApiDispatchTimingCollector;
+}): Promise<StorageManifestInputs> {
   return await measureApiDispatchTiming(
     args.timing,
     "api_dispatch_prepare_storage_manifest_resolve_inputs",

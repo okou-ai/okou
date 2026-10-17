@@ -257,9 +257,12 @@ function createStorageIndexSignals(
           requests: persistedStorageMountRequests(input.args.mounts),
         };
       }
-      const { artifacts, composeVolumes } = await resolveStorageManifestInputs(
-        input.args,
-      );
+      const { artifacts, composeVolumes } = await resolveStorageManifestInputs({
+        instructionsStorageName: input.args.instructionsStorageName,
+        framework: input.args.framework,
+        artifacts: input.args.artifacts,
+        timing: input.args.timing,
+      });
       const request = prepareRequestStorageResolution(
         input.args,
         bucket,
