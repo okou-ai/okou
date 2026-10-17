@@ -228,8 +228,14 @@ test.each([
     await fill(editor, "Keep my launch brief /");
     const menu = await screen.findByTestId("slash-workflow-menu");
     click(button(entry, menu));
-    const dialog = await screen.findByRole("dialog");
-    click(tabByText("Custom"));
+    const customTab = await waitFor(() => {
+      return tabByText("Custom");
+    });
+    const dialog = customTab.closest('[role="dialog"]');
+    if (!(dialog instanceof HTMLElement)) {
+      throw new Error("Expected the Custom tab in a template dialog");
+    }
+    click(customTab);
     await within(dialog).findByText(own.title);
     click(button("Use", dialog));
     await waitFor(() => {
