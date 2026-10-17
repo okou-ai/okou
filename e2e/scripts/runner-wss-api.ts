@@ -105,7 +105,7 @@ export class RunnerWssApi {
     const ready = `WSS_READY_${clientEventId}`;
     const homeFixture = `wss-home-${clientEventId}`;
     const fixture = `/home/user/${homeFixture}`;
-    const prompt = `@shell-checkpoint@\nset -eu\nmkdir -p '${fixture}/nested'\ntouch '${fixture}/.hidden' '${fixture}/nested/leaf'\npython3 -c 'from pathlib import Path; Path("${fixture}/nested/leaf").write_bytes(bytes(i % 256 for i in range(70003)))'\nln -s / '${fixture}/outside'\ni=0; while [ "$i" -lt 270 ]; do touch "${fixture}/file-$i"; i=$((i+1)); done\nprintf ${ready}\n@continue@\nset -eu\ntrap 'rm -rf -- "${fixture}"' EXIT HUP INT TERM\nsleep 300\nprintf WSS_WORK_FINISHED`;
+    const prompt = `@shell-checkpoint@\nset -eu\nmkdir -p '${fixture}/nested'\ntouch '${fixture}/.hidden' '${fixture}/nested/leaf'\npython3 -c 'from pathlib import Path; Path("${fixture}/nested/leaf").write_bytes(bytes(i % 256 for i in range(70003))); f = open("${fixture}/file-0", "wb"); f.truncate(134217728); f.close()'\nln -s / '${fixture}/outside'\ni=0; while [ "$i" -lt 270 ]; do touch "${fixture}/file-$i"; i=$((i+1)); done\nprintf ${ready}\n@continue@\nset -eu\ntrap 'rm -rf -- "${fixture}"' EXIT HUP INT TERM\nsleep 300\nprintf WSS_WORK_FINISHED`;
     const sent = object(
       await this.request(
         "/api/chat/events",
@@ -219,6 +219,49 @@ export class RunnerWssApi {
       ticket: body.ticket,
       expiresAt: body.expiresAt,
     };
+  }
+
+  async download(run: OwnedWssRun, names: string[]): Promise<string> {
+    const body = object(
+      await this.request(`/api/runs/${id(run.runId)}/files/download`, "POST", {
+        path: ["home", "user", run.homeFixture, ...names].map((name) =>
+          Buffer.from(name).toString("base64url"),
+        ),
+      }),
+    );
+    if (
+      typeof body.downloadUrl !== "string" ||
+      typeof body.expiresAt !== "string"
+    )
+      throw new Error("Invalid download bootstrap");
+    const url = new URL(body.downloadUrl);
+    if (
+      url.protocol !== "https:" ||
+      url.hostname !== run.hostname ||
+      (url.port !== "" && url.port !== "443") ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      !new RegExp(
+        `^/downloads/${run.runnerId}/${run.runId}/[A-Za-z0-9_-]{43}$`,
+      ).test(url.pathname)
+    )
+      throw new Error("Invalid native download audience");
+    return body.downloadUrl;
+  }
+
+  async cancel(run: OwnedWssRun): Promise<void> {
+    await this.request(
+      `/api/runs/${id(run.runId)}/cancel`,
+      "POST",
+      undefined,
+      [200, 409],
+    );
+    await this.poll(
+      async (signal) => TERMINAL.has(await this.status(run.runId, signal)),
+      30_000,
+    );
   }
 
   private async status(

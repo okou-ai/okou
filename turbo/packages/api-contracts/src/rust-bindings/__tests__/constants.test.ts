@@ -224,6 +224,12 @@ function channelConstant(
 }
 
 const expectedBindings = [
+  {
+    rustModulePath: ["runners", "files"],
+    rustConstName: "VERSION",
+    value: { kind: "u32", value: 1 },
+    rustDoc: ["Complete native download service capability version."],
+  },
   channelConstant(
     ["sandbox_channel"],
     "SCHEMA_VERSION",

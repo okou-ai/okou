@@ -26,6 +26,11 @@ import {
 
 const expectedBindings = [
   {
+    rustModulePath: ["runners", "files"],
+    rustTypeName: "ConsumeResponse",
+    direction: "response",
+  },
+  {
     rustModulePath: ["sandbox_channel", "fs"],
     rustTypeName: "OpenParams",
     direction: "request",

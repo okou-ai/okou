@@ -42,3 +42,15 @@ to connection teardown. Mismatched fs versions reject both listing and reads.
 Both sides must advertise fs v3; a stale client must refresh, without a legacy fallback.
 Actual pinned-kernel containment, sparse offsets beyond 4 GiB, mutation and
 park/reuse retirement also run in the native amd64/ARM64 Guest suite.
+
+The same captured-source lane now exercises native HTTPS file downloads after
+the WSS probes. It checks attachment/cache/security headers, empty and binary
+files, incremental SHA-256 of a 128 MiB sparse file, credential replay rejection,
+and incomplete-body failure when its owned Run is cancelled. The fixture size is
+an acceptance sample, not a download limit. It records actual client RSS and
+chunk counts without claiming Runner or proxy memory measurements. Pinned Caddy
+loopback tests separately observe upstream backpressure and credential redaction;
+native HTTP/Guest tests cover replacement and final-validation failures.
+The API/migration must deploy before new Runners; a missing or stale independent
+download-listener heartbeat makes bootstrap unavailable. Activities buttons and
+browser download-manager acceptance belong to the following UI issue.

@@ -84,6 +84,7 @@ mod job_terminal_log;
 mod maintenance;
 mod pending_candidate;
 mod prune_idle;
+mod runner_download;
 mod runner_wss;
 pub(crate) mod signals;
 mod soft_drain;
@@ -267,8 +268,10 @@ pub struct RunConfig {
 /// callers cannot install a separate registry through this configuration.
 pub struct WssConfig {
     socket_dir: PathBuf,
+    download_dir: PathBuf,
     hostname: Option<String>,
     consumer: Arc<dyn runner_wss::TicketConsumer>,
+    download_consumer: Arc<dyn runner_download::GrantConsumer>,
     #[cfg(test)]
     fail_accept: Option<tokio::sync::oneshot::Receiver<()>>,
 }
@@ -284,8 +287,13 @@ impl WssConfig {
     ) -> Self {
         Self {
             socket_dir: home.wss_dir(),
+            download_dir: home.file_download_dir(),
             hostname,
-            consumer: Arc::new(runner_wss::ApiTicketConsumer::new(http, token)),
+            consumer: Arc::new(runner_wss::ApiTicketConsumer::new(
+                http.clone(),
+                token.clone(),
+            )),
+            download_consumer: Arc::new(runner_download::ApiGrantConsumer::new(http, token)),
             #[cfg(test)]
             fail_accept: None,
         }
@@ -1121,7 +1129,12 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         home_cache_snapshot: home_cache_snapshot.clone(),
         wss_ingress_service_probe,
         sandbox_op_reporter: sandbox_op_reporter.clone(),
-    });
+    })
+    .with_file_download_readiness(
+        wss_task
+            .as_ref()
+            .map(runner_wss::AcceptTask::download_readiness),
+    );
     let (mut home_cache_observation, initial_home_cache) = HomeCacheObservation::initialize(
         exec_config.home_cache.as_ref(),
         &home_cache_snapshot,

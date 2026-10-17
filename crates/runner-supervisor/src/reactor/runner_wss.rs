@@ -224,6 +224,8 @@ pub(super) fn start(
 ) -> io::Result<StartedListener> {
     let socket =
         runner_host::runner_wss_socket::RunnerWssSocket::bind(&config.socket_dir, runner_id)?;
+    let download_socket =
+        runner_host::runner_wss_socket::RunnerWssSocket::bind(&config.download_dir, runner_id)?;
     #[cfg(test)]
     let mut fail_accept = config.fail_accept;
     let mut admission = Admission::new(
@@ -234,15 +236,36 @@ pub(super) fn start(
         shared.active_runs.clone(),
         Arc::clone(&shared.status),
     );
+    let mut downloads = super::runner_download::Admission::new(
+        runner_id,
+        admission
+            .origin
+            .as_ref()
+            .map(|origin| origin.replacen("wss:", "https:", 1)),
+        config.download_consumer,
+        admission.guest.clone(),
+        shared.active_runs.clone(),
+        Arc::clone(&shared.status),
+    );
     let (started_tx, started) = tokio::sync::oneshot::channel();
     let stop = CancellationToken::new();
     let stop_in_task = stop.clone();
     let failed = Arc::new(AtomicBool::new(false));
     let failed_in_task = Arc::clone(&failed);
+    let download_ready = Arc::new(AtomicBool::new(false));
+    let ready_in_task = Arc::clone(&download_ready);
     let failure_cancel = provider.cancel.clone();
     let failure_tokens = provider.cancel_tokens.clone();
     let failure_lifecycle = lifecycle.clone();
     let task = tokio::spawn(async move {
+        struct ReadyGuard(Arc<AtomicBool>);
+        impl Drop for ReadyGuard {
+            fn drop(&mut self) {
+                self.0.store(false, Ordering::SeqCst);
+            }
+        }
+        let _ready = ReadyGuard(Arc::clone(&ready_in_task));
+        ready_in_task.store(true, Ordering::SeqCst);
         let _ = started_tx.send(());
         let result = loop {
             let event = tokio::select! {
@@ -251,6 +274,10 @@ pub(super) fn start(
                 result = admission.reap(), if admission.has_tasks() => {
                     result.map(|()| None).map_err(io::Error::other)
                 }
+                result = downloads.reap(), if downloads.has_tasks() => {
+                    result.map(|()| None).map_err(io::Error::other)
+                }
+                result = download_socket.accept() => result.map(|stream| Some((true, stream))),
                 result = async {
                     #[cfg(not(test))]
                     { socket.accept().await }
@@ -265,12 +292,14 @@ pub(super) fn start(
                             socket.accept().await
                         }
                     }
-                } => result.map(Some),
+                } => result.map(|stream| Some((false, stream))),
             };
             match event {
-                Ok(Some(stream)) => admission.accept(stream),
+                Ok(Some((true, stream))) => downloads.accept(stream),
+                Ok(Some((false, stream))) => admission.accept(stream),
                 Ok(None) => {}
                 Err(error) => {
+                    ready_in_task.store(false, Ordering::SeqCst);
                     failed_in_task.store(true, Ordering::SeqCst);
                     super::signals::handle_stopping_signal(
                         "wss-accept-failure",
@@ -283,11 +312,13 @@ pub(super) fn start(
                 }
             }
         };
+        ready_in_task.store(false, Ordering::SeqCst);
+        downloads.stop().await;
         admission.stop().await;
         result
     });
     Ok(StartedListener {
-        task: AcceptTask::new(task, stop, failed),
+        task: AcceptTask::new(task, stop, failed, download_ready),
         started,
     })
 }
@@ -299,6 +330,7 @@ pub(super) struct AcceptTask {
     task: tokio::task::JoinHandle<io::Result<()>>,
     stop: CancellationToken,
     failed: Arc<AtomicBool>,
+    download_ready: Arc<AtomicBool>,
     joined: bool,
 }
 
@@ -307,15 +339,20 @@ impl AcceptTask {
         task: tokio::task::JoinHandle<io::Result<()>>,
         stop: CancellationToken,
         failed: Arc<AtomicBool>,
+        download_ready: Arc<AtomicBool>,
     ) -> Self {
         Self {
             task,
             stop,
             failed,
+            download_ready,
             joined: false,
         }
     }
     /// Failure is published before the task finishes joining its connections.
+    pub fn download_readiness(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.download_ready)
+    }
     pub fn has_failed(&self) -> bool {
         self.failed.load(Ordering::SeqCst)
     }

@@ -1,6 +1,7 @@
 """Exercise generated Caddy routes and the real Unix permission boundary."""
 
 import importlib.util
+import hashlib
 import json
 import os
 import shutil
@@ -49,6 +50,74 @@ class EchoHandler(BaseHTTPRequestHandler):
 
     def log_message(self, *_args):
         pass
+
+
+class DownloadHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Length", "134217728")
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Disposition", 'attachment; filename="binary.bin"')
+        self.send_header("Cache-Control", "no-store, no-transform")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Accept-Ranges", "none")
+        self.end_headers()
+        self.server.started.set()
+        try:
+            for _ in range(4096):
+                self.wfile.write(bytes(32768))
+                self.server.bytes_written += 32768
+            self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            self.close_connection = True
+
+    def log_message(self, *_args):
+        pass
+
+
+def rss_kib(pid):
+    for line in Path(f"/proc/{pid}/status").read_text().splitlines():
+        if line.startswith("VmRSS:"):
+            return int(line.split()[1])
+    raise AssertionError("Caddy RSS observation unavailable")
+
+
+def download(context, port, path, server, pid):
+    before_rss = rss_kib(pid)
+    with socket.create_connection(("127.0.0.1", port), timeout=10) as raw:
+        with context.wrap_socket(raw, server_hostname="runner-wss.example.org") as peer:
+            peer.sendall(f"GET {path} HTTP/1.1\r\nHost: runner-wss.example.org\r\nConnection: close\r\n\r\n".encode())
+            reader = peer.makefile("rb")
+            assert reader.readline().split()[1] == b"200"
+            headers = {}
+            while (line := reader.readline()) != b"\r\n":
+                name, value = line.decode().split(":", 1)
+                headers[name.lower()] = value.strip()
+            assert headers["content-length"] == "134217728"
+            assert headers["cache-control"] == "no-store, no-transform"
+            assert headers["x-content-type-options"] == "nosniff"
+            assert headers["accept-ranges"] == "none"
+            assert server.started.wait(timeout=5)
+            # The client deliberately stops reading. The pinned proxy must not
+            # absorb a file-sized response before applying socket backpressure.
+            time.sleep(0.3)
+            assert server.bytes_written < 16 * 1024 * 1024, server.bytes_written
+            blocked_bytes, blocked_rss = server.bytes_written, rss_kib(pid)
+            digest, expected = hashlib.sha256(), hashlib.sha256()
+            count = 0
+            while chunk := reader.read(65536):
+                digest.update(chunk)
+                count += len(chunk)
+            for _ in range(2048):
+                expected.update(bytes(65536))
+            assert count == 134217728 and digest.digest() == expected.digest()
+            print(json.dumps({"caddyBlockedUpstreamBytes": blocked_bytes, "fileBytes": count,
+                              "caddyBeforeRssKiB": before_rss, "caddyBlockedRssKiB": blocked_rss,
+                              "caddyAfterRssKiB": rss_kib(pid)}), flush=True)
 
 
 def response(context, port, path, websocket=False):
@@ -110,6 +179,7 @@ def main():
         shutil.copy2(caddy, root / "caddy")
         caddy = root / "caddy"
         namespace = root / "wss"
+        downloads = root / "file-downloads"
         missing = root / "runner-not-started" / "wss"
         validator.validate_namespace(missing, consumer)
         assert not missing.parent.exists()
@@ -236,7 +306,7 @@ def main():
             }
             config_path = root / "Caddy.json"
             config_path.write_text(
-                json.dumps(config).replace("/var/lib/vm0-runner/wss", str(namespace))
+                json.dumps(config).replace("/var/lib/vm0-runner/wss", str(namespace)).replace("/var/lib/vm0-runner/file-downloads", str(downloads))
             )
             state = root / "state"
             state.mkdir(mode=0o700)
@@ -312,6 +382,28 @@ def main():
                     assert (
                         response(context, port, f"/ws/{uuid.uuid4()}", True)[0] == 502
                     )
+                    secret = "REDACTION_PROBE_" + "A" * 27
+                    assert len(secret) == 43
+                    run_id = str(uuid.uuid4())
+                    download_path = f"/downloads/{ids[0]}/{run_id}/{secret}"
+                    assert response(context, port, download_path)[0] == 502
+                    downloads.mkdir(mode=0o710)
+                    os.chown(downloads, 0, consumer)
+                    validator.validate_namespace(downloads, consumer)
+                    path = downloads / f"{ids[0]}.sock"
+                    server = ThreadingUnixStreamServer(str(path), DownloadHandler)
+                    server.daemon_threads = True
+                    server.started = threading.Event()
+                    server.bytes_written = 0
+                    os.chown(path, 0, consumer)
+                    path.chmod(0o660)
+                    servers.append(server)
+                    thread = threading.Thread(target=server.serve_forever, daemon=True)
+                    thread.start()
+                    threads.append(thread)
+                    download(context, port, download_path, server, process.pid)
+                    assert response(context, port, download_path + "/extra")[0] == 404
+                    assert secret not in (root / "caddy.log").read_text()
                     assert before == {
                         p.name: (p.stat().st_ino, p.stat().st_mode)
                         for p in namespace.iterdir()

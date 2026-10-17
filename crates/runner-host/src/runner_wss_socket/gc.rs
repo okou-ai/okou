@@ -15,7 +15,14 @@ use super::owner::Owner;
 pub const WSS_GC_MAX_IDS: u64 = 100;
 
 pub fn gc_wss_sockets(home: &HomePaths, dry_run: bool) -> io::Result<u64> {
-    let directory = home.wss_dir();
+    let first = gc_namespace(home.wss_dir(), dry_run, WSS_GC_MAX_IDS)?;
+    if first == WSS_GC_MAX_IDS {
+        return Ok(first);
+    }
+    Ok(first + gc_namespace(home.file_download_dir(), dry_run, WSS_GC_MAX_IDS - first)?)
+}
+
+fn gc_namespace(directory: std::path::PathBuf, dry_run: bool, limit: u64) -> io::Result<u64> {
     match std::fs::symlink_metadata(&directory) {
         Ok(_) => {}
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(0),
@@ -51,7 +58,7 @@ pub fn gc_wss_sockets(home: &HomePaths, dry_run: bool) -> io::Result<u64> {
             owner.retire_locked(&guard)?;
         }
         retired += 1;
-        if retired == WSS_GC_MAX_IDS {
+        if retired == limit {
             break;
         }
     }

@@ -175,6 +175,12 @@ pub mod runners {
     /// Smaller histories stay identity-encoded to avoid gzip work when it cannot materially reduce transport size.
     pub const SESSION_HISTORY_GZIP_MIN_BYTES: u64 = 65536;
 
+    /// Native file-download service capability.
+    pub mod files {
+        /// Complete native download service capability version.
+        pub const VERSION: u32 = 1;
+    }
+
     /// Runner and guest filesystem path constants shared across Rust and TypeScript.
     pub mod paths {
         /// Canonical directory for Okou-managed Claude Code configuration and session state inside runner guests.

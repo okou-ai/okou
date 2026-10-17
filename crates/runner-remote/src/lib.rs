@@ -3,6 +3,7 @@
 mod cloudflare;
 mod destination;
 mod diagnostics;
+pub mod file_reader;
 pub mod guest_duplex;
 pub mod guest_rpc;
 mod native;

@@ -25,6 +25,29 @@ pub mod runners {
         Cold,
     }
 
+    /// Purpose-bound native file-download authority.
+    pub mod files {
+        /// One consumed exact-file grant; the local live assignment still owns access.
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        pub struct ConsumeResponse {
+            /// Exact live Run.
+            pub run_id: String,
+            /// Exact owning Runner.
+            pub runner_id: String,
+            /// Owning organization.
+            pub org_id: String,
+            /// Owning user.
+            pub user_id: String,
+            /// Canonical HTTPS audience.
+            pub origin: String,
+            /// Redeemed credential digest.
+            pub digest: String,
+            /// Bounded raw basename tokens; never a display pathname.
+            pub path: Vec<String>,
+        }
+    }
+
     /// Run-scoped DTOs exchanged between runners, guests, and the API.
     pub mod runs {
         /// API-owned provider configuration forwarded to Codex in the sandbox.

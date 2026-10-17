@@ -213,7 +213,7 @@ export function encodeSandboxChannelFrame(
   const bytes = new TextEncoder().encode(JSON.stringify(message));
   // Validate the actual encoded shape, including omitted undefined fields.
   decodeSandboxChannelFrame(bytes);
-  return bytes.buffer;
+  return new Uint8Array(bytes).buffer;
 }
 
 /** Interoperable JSON: finite numbers, Unicode scalar strings and finite depth. */

@@ -2,6 +2,7 @@ import { RunnerWssApi, type OwnedWssRun } from "./runner-wss-api";
 import { ECHO_SIZES, RunnerWssClient } from "./runner-wss-client";
 import { probeHomeFiles } from "./runner-wss-files";
 import { probeFileReads } from "./runner-wss-file-read";
+import { probeDownloads, probeDownloadRunEnd } from "./runner-file-download";
 
 async function main(): Promise<void> {
   if (required("E2E_RUNNER_PROFILE") !== "mock-codex")
@@ -30,6 +31,9 @@ async function main(): Promise<void> {
   let cleanupFailures = 0;
   let filesystem: Awaited<ReturnType<typeof probeHomeFiles>> | undefined;
   let fileReads: Awaited<ReturnType<typeof probeFileReads>> | undefined;
+  let downloads: Awaited<ReturnType<typeof probeDownloads>> | undefined;
+  let downloadRunEnd:
+    Awaited<ReturnType<typeof probeDownloadRunEnd>> | undefined;
   try {
     const model = required("E2E_MOCK_CODEX_MODEL");
     await api.verifyMockProfile(model);
@@ -52,6 +56,11 @@ async function main(): Promise<void> {
     phase = "retained-diagnostics";
     await client.diagnostics();
     client.assertHealthy();
+    phase = "file-download";
+    downloads = await probeDownloads(api, run, signal);
+    await client.close();
+    phase = "file-download-run-end";
+    downloadRunEnd = await probeDownloadRunEnd(api, run, signal);
   } catch {
     failed = true;
     failureApiStatus = api.lastHttpStatus;
@@ -89,6 +98,8 @@ async function main(): Promise<void> {
       ...client.receipts,
       ...filesystem,
       ...fileReads,
+      ...downloads,
+      ...downloadRunEnd,
       replayRejectedBeforeExpiry: true,
       runId: run.runId,
       runnerId: run.runnerId,

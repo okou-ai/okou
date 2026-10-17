@@ -15,6 +15,7 @@ import { sshTypeBindings } from "./ssh-types";
 import { vncTypeBindings } from "./vnc-types";
 import { sandboxChannelTypeBindings } from "./sandbox-channel-types";
 import { runnerWssTicketsContract } from "../contracts/runner-wss-tickets";
+import { runnerFileDownloadsContract } from "../contracts/runner-file-downloads";
 import { runnersRunStartupContract } from "../contracts/runner-startup";
 import { knownRunFailureReasonSchema } from "../contracts/run-failure-reasons";
 import { modelProviderCodexRuntimeConfigSchema } from "../contracts/model-providers";
@@ -74,6 +75,10 @@ export const rustTypeModuleDocs = [
   {
     rustModulePath: ["runners", "wss"],
     rustDoc: ["Official Runner one-use WSS ticket redemption."],
+  },
+  {
+    rustModulePath: ["runners", "files"],
+    rustDoc: ["Purpose-bound native file-download authority."],
   },
   {
     rustModulePath: ["runners", "runs", "cancellation"],
@@ -183,6 +188,30 @@ export const rustTypeBindings = [
           home: ["A new sandbox with a cached home image."],
           blank: ["A prepared tenant-free sandbox with a fresh home."],
           cold: ["A new sandbox with a fresh home."],
+        },
+      },
+    ],
+  },
+  {
+    schema: runnerFileDownloadsContract.consume.responses[200],
+    rustModulePath: ["runners", "files"],
+    rustTypeName: "ConsumeResponse",
+    direction: "response",
+    sensitive: true,
+    declarations: [
+      {
+        rustTypeName: "ConsumeResponse",
+        rustDoc: [
+          "One consumed exact-file grant; the local live assignment still owns access.",
+        ],
+        fields: {
+          runId: ["Exact live Run."],
+          runnerId: ["Exact owning Runner."],
+          orgId: ["Owning organization."],
+          userId: ["Owning user."],
+          origin: ["Canonical HTTPS audience."],
+          digest: ["Redeemed credential digest."],
+          path: ["Bounded raw basename tokens; never a display pathname."],
         },
       },
     ],

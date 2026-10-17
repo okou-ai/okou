@@ -12,6 +12,7 @@ fn missing_namespace_is_not_created_by_gc() {
     assert_eq!(gc_wss_sockets(&home, true).unwrap(), 0);
     assert_eq!(gc_wss_sockets(&home, false).unwrap(), 0);
     assert!(!home.wss_dir().exists());
+    assert!(!home.file_download_dir().exists());
 }
 
 fn fixture() -> (tempfile::TempDir, HomePaths) {
@@ -24,10 +25,14 @@ fn fixture() -> (tempfile::TempDir, HomePaths) {
 
 fn dead_owner(home: &HomePaths) -> (Uuid, std::path::PathBuf) {
     let directory = home.wss_dir();
-    let (parent, _) = namespace::open(&directory).unwrap();
+    dead_owner_in(&directory)
+}
+
+fn dead_owner_in(directory: &std::path::Path) -> (Uuid, std::path::PathBuf) {
+    let (parent, _) = namespace::open(directory).unwrap();
     let guard = NamespaceLock::acquire(&parent).unwrap();
     let id = Uuid::new_v4();
-    let mut owner = Owner::acquire(&guard, &directory, id).unwrap();
+    let mut owner = Owner::acquire(&guard, directory, id).unwrap();
     drop(guard);
     let name = format!(".wss-{}", Uuid::new_v4().simple());
     let anchor = directory.join(&name);
@@ -40,6 +45,27 @@ fn dead_owner(home: &HomePaths) -> (Uuid, std::path::PathBuf) {
     drop(listener);
     drop(owner);
     (id, anchor)
+}
+
+#[tokio::test]
+async fn download_namespace_reclaims_only_dead_owned_sockets() {
+    let (_root, home) = fixture();
+    let directory = home.file_download_dir();
+    std::fs::create_dir(&directory).unwrap();
+    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o710)).unwrap();
+    let live_id = Uuid::new_v4();
+    let live = RunnerWssSocket::bind(&directory, live_id).unwrap();
+    let (dead_id, anchor) = dead_owner_in(&directory);
+    let unknown = directory.join("unknown.sock");
+    let _foreign = UnixListener::bind(&unknown).unwrap();
+    assert_eq!(gc_wss_sockets(&home, true).unwrap(), 1);
+    assert!(anchor.exists());
+    assert_eq!(gc_wss_sockets(&home, false).unwrap(), 1);
+    assert!(!anchor.exists());
+    assert!(!directory.join(format!("{dead_id}.sock")).exists());
+    assert!(unknown.exists());
+    assert!(directory.join(format!("{live_id}.sock")).exists());
+    drop(live);
 }
 
 #[tokio::test]

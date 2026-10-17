@@ -220,6 +220,8 @@ shared_home_dirs! {
     pub fn logs_dir => "logs";
     /// Persistent, host-shared Runner-ID Unix socket namespace.
     pub fn wss_dir => "wss";
+    /// Purpose-separated native-download HTTP sockets; never a file-byte spool.
+    pub fn file_download_dir => "file-downloads";
     fn mitmproxy_root_dir => "mitmproxy";
     /// Root directory for the runner-side storage archive cache.
     ///

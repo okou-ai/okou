@@ -49,6 +49,7 @@ import {
   STORAGE_MANIFEST_MAX_PATH_BYTES,
 } from "../contracts/storages";
 import { sandboxChannelConstantBindings } from "./sandbox-channel-constants";
+import { RUNNER_FILE_DOWNLOAD_VERSION } from "../contracts/runner-file-downloads";
 
 export type RustConstantValue =
   | {
@@ -117,6 +118,10 @@ export const rustConstantRootDoc = [
 ] as const;
 
 export const rustConstantModuleDocs = [
+  {
+    rustModulePath: ["runners", "files"],
+    rustDoc: ["Native file-download service capability."],
+  },
   {
     rustModulePath: ["sandbox_channel"],
     rustDoc: ["Sandbox application schema and finite resource policies."],
@@ -236,6 +241,12 @@ function rustU64(value: number): RustConstantValue {
 
 export const rustConstantBindings = [
   ...sandboxChannelConstantBindings,
+  {
+    rustModulePath: ["runners", "files"],
+    rustConstName: "VERSION",
+    value: rustU32(RUNNER_FILE_DOWNLOAD_VERSION),
+    rustDoc: ["Complete native download service capability version."],
+  },
   {
     rustModulePath: ["runners"],
     rustConstName: "OFFICIAL_RUNNER_TOKEN_PREFIX",
