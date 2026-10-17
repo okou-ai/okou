@@ -44,6 +44,160 @@ async fn settled(fixture: &Fixture, growth: u64) {
 }
 
 #[tokio::test]
+async fn recovered_pressure_admits_new_reads_without_reviving_accepted_cancelled_reads() {
+    let fixture = Fixture::new(48).await;
+    let bytes = vec![7; MEMORY_PREFETCH_CHUNK_BYTES + 17];
+    let candidate = fixture.file("recovered-snapshot", &bytes, 2).await;
+    let gates = std::array::from_fn::<_, 3, _>(|_| Arc::new(Gate::default()));
+    let _releases = gates.each_ref().map(|gate| Release(gate.clone()));
+    let mut readers = Vec::new();
+    for gate in &gates[..2] {
+        let mut reader = MemoryPrefetchTasks::spawn_guarded_with_read_checkpoint_for_test(
+            [MemoryPrefetchCandidate {
+                path: candidate.path.clone(),
+                memory_mb: 2,
+            }],
+            2,
+            fixture.config(),
+            checkpoint(gate.clone()),
+        )
+        .unwrap();
+        gate.entered().await;
+        report(&mut reader.1, |value| value.accepted == 1).await;
+        readers.push(reader);
+    }
+    accounting(&fixture, 2, 3 * MIB);
+    let next = fixture.meminfo.with_extension("next");
+    tokio::fs::write(&next, "invalid actual meminfo\n")
+        .await
+        .unwrap();
+    tokio::fs::rename(next, &fixture.meminfo).await.unwrap();
+    fixture.state(HostPressureState::Unknown).await;
+    // Meaningful independently completed work while the original reads are held.
+    assert_eq!(tokio::fs::read(&candidate.path).await.unwrap(), bytes);
+    for (owner, _) in &mut readers {
+        let drain = owner.drain();
+        tokio::pin!(drain);
+        assert!(futures_util::poll!(&mut drain).is_pending());
+    }
+    accounting(&fixture, 2, 3 * MIB);
+    fixture.available(48).await;
+    fixture.state(HostPressureState::Ready).await;
+    let (mut fresh, mut latest) = MemoryPrefetchTasks::spawn_guarded_with_read_checkpoint_for_test(
+        [MemoryPrefetchCandidate {
+            path: candidate.path.clone(),
+            memory_mb: 2,
+        }],
+        2,
+        fixture.config(),
+        checkpoint(gates[2].clone()),
+    )
+    .unwrap();
+    gates[2].entered().await;
+    report(&mut latest, |value| value.accepted == 1).await;
+    accounting(&fixture, 3, 3 * MIB);
+    gates[2].release();
+    tokio::time::timeout(WAIT, fresh.drain()).await.unwrap();
+    let completed = report(&mut latest, |value| value.finished).await;
+    assert_eq!(
+        (
+            completed.completed,
+            completed.cancelled,
+            completed.read_bytes
+        ),
+        (1, 0, bytes.len() as u64)
+    );
+    accounting(&fixture, 2, 3 * MIB);
+    for (index, (owner, latest)) in readers.iter_mut().enumerate() {
+        gates[index].release();
+        tokio::time::timeout(WAIT, owner.drain()).await.unwrap();
+        let value = report(latest, |value| value.finished).await;
+        assert_eq!(
+            (
+                value.cancelled,
+                value.completed,
+                value.failed,
+                value.uncertain,
+                value.read_bytes
+            ),
+            (1, 0, 0, 0, MIB)
+        );
+        if index == 0 {
+            accounting(&fixture, 1, 3 * MIB);
+        }
+    }
+    settled(&fixture, 3 * MIB).await;
+    assert_eq!(tokio::fs::read(candidate.path).await.unwrap(), bytes);
+    fixture.stop().await;
+}
+
+#[tokio::test]
+async fn stopped_pressure_retains_accepted_reads_until_physical_join() {
+    let fixture = Fixture::new(48).await;
+    let bytes = vec![7; MEMORY_PREFETCH_CHUNK_BYTES + 17];
+    let candidate = fixture.file("stopped-snapshot", &bytes, 2).await;
+    let gates = [Arc::new(Gate::default()), Arc::new(Gate::default())];
+    let _releases = gates.each_ref().map(|gate| Release(gate.clone()));
+    let mut readers = Vec::new();
+    for gate in &gates {
+        let mut reader = MemoryPrefetchTasks::spawn_guarded_with_read_checkpoint_for_test(
+            [MemoryPrefetchCandidate {
+                path: candidate.path.clone(),
+                memory_mb: 2,
+            }],
+            2,
+            fixture.config(),
+            checkpoint(gate.clone()),
+        )
+        .unwrap();
+        gate.entered().await;
+        report(&mut reader.1, |value| value.accepted == 1).await;
+        readers.push(reader);
+    }
+    fixture.control.stopped().cancel();
+    let (mut refused, mut latest) = MemoryPrefetchTasks::spawn_guarded(
+        [MemoryPrefetchCandidate {
+            path: candidate.path.clone(),
+            memory_mb: 2,
+        }],
+        2,
+        fixture.config(),
+    )
+    .unwrap();
+    tokio::time::timeout(WAIT, refused.drain()).await.unwrap();
+    let value = report(&mut latest, |value| value.finished).await;
+    assert_eq!((value.accepted, value.read_bytes), (0, 0));
+    assert!(matches!(
+        fixture.control.take_optional_start(),
+        Err(crate::host_memory_operations::MemoryOperationError::Closed)
+    ));
+    for (index, (owner, latest)) in readers.iter_mut().enumerate() {
+        for _ in 0..2 {
+            let drain = owner.drain();
+            tokio::pin!(drain);
+            assert!(futures_util::poll!(&mut drain).is_pending());
+        }
+        accounting(&fixture, 2 - index, 3 * MIB);
+        gates[index].release();
+        tokio::time::timeout(WAIT, owner.drain()).await.unwrap();
+        let value = report(latest, |value| value.finished).await;
+        assert_eq!(
+            (
+                value.cancelled,
+                value.completed,
+                value.failed,
+                value.uncertain,
+                value.read_bytes
+            ),
+            (1, 0, 0, 0, MIB)
+        );
+    }
+    settled(&fixture, 3 * MIB).await;
+    assert_eq!(tokio::fs::read(candidate.path).await.unwrap(), bytes);
+    fixture.stop().await;
+}
+
+#[tokio::test]
 async fn concurrent_actual_reads_keep_independent_custody_after_one_cancelled_drain() {
     let fixture = Fixture::new(48).await;
     let bytes = vec![7; MEMORY_PREFETCH_CHUNK_BYTES + 17];
