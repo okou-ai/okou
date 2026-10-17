@@ -6,7 +6,7 @@ import {
   type UserTemplatePreviewAsset,
 } from "@okouai/api-contracts/contracts/user-templates";
 import { userTemplates } from "@okouai/db/schema/user-template";
-import { and, eq, getTableColumns, sql } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, or, sql } from "drizzle-orm";
 
 import { notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -19,8 +19,6 @@ import {
   publishPresentationTemplatesChangedForUserSafely,
 } from "../external/realtime";
 import {
-  listAccessibleUserTemplates,
-  loadAccessibleUserTemplate,
   parseUserTemplatePreviewAssetId,
   userTemplateCoverKeys,
   userTemplatePageKeys,
@@ -284,12 +282,24 @@ const publishInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (result.kind === "rejected") {
     return result.response;
   }
-  const row = await loadAccessibleUserTemplate(get(db$), {
-    orgId: auth.orgId,
-    userId: auth.userId,
-    templateId: result.templateId,
-  });
+  const [selectedRow] = await get(db$)
+    .select()
+    .from(userTemplates)
+    .where(
+      and(
+        eq(userTemplates.id, result.templateId),
+        and(
+          eq(userTemplates.orgId, auth.orgId),
+          or(
+            eq(userTemplates.ownerUserId, auth.userId),
+            eq(userTemplates.visibility, "organization"),
+          ),
+        ),
+      ),
+    )
+    .limit(1);
   signal.throwIfAborted();
+  const row = selectedRow ?? null;
   if (!row) {
     throw new Error(`Published template not found: ${result.templateId}`);
   }
@@ -317,10 +327,19 @@ const listInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   signal.throwIfAborted();
   const auth = get(organizationAuthContext$);
-  const rows = await listAccessibleUserTemplates(get(db$), {
-    orgId: auth.orgId,
-    userId: auth.userId,
-  });
+  const rows = await get(db$)
+    .select()
+    .from(userTemplates)
+    .where(
+      and(
+        eq(userTemplates.orgId, auth.orgId),
+        or(
+          eq(userTemplates.ownerUserId, auth.userId),
+          eq(userTemplates.visibility, "organization"),
+        ),
+      ),
+    )
+    .orderBy(desc(userTemplates.createdAt));
   signal.throwIfAborted();
   const previewAssetsByTemplateId = new Map(
     rows.map((row) => {
@@ -369,12 +388,24 @@ const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   const auth = get(organizationAuthContext$);
   const params = get(getParams$);
-  const row = await loadAccessibleUserTemplate(get(db$), {
-    orgId: auth.orgId,
-    userId: auth.userId,
-    templateId: params.templateId,
-  });
+  const [selectedRow] = await get(db$)
+    .select()
+    .from(userTemplates)
+    .where(
+      and(
+        eq(userTemplates.id, params.templateId),
+        and(
+          eq(userTemplates.orgId, auth.orgId),
+          or(
+            eq(userTemplates.ownerUserId, auth.userId),
+            eq(userTemplates.visibility, "organization"),
+          ),
+        ),
+      ),
+    )
+    .limit(1);
   signal.throwIfAborted();
+  const row = selectedRow ?? null;
   if (!row) {
     return templateNotFound(params.templateId);
   }
@@ -452,10 +483,19 @@ const resolvePreviewUrlsInner$ = command(
     if (!bodyResult.ok) {
       return bodyResult.response;
     }
-    const rows = await listAccessibleUserTemplates(get(db$), {
-      orgId: auth.orgId,
-      userId: auth.userId,
-    });
+    const rows = await get(db$)
+      .select()
+      .from(userTemplates)
+      .where(
+        and(
+          eq(userTemplates.orgId, auth.orgId),
+          or(
+            eq(userTemplates.ownerUserId, auth.userId),
+            eq(userTemplates.visibility, "organization"),
+          ),
+        ),
+      )
+      .orderBy(desc(userTemplates.createdAt));
     signal.throwIfAborted();
     const assets = accessibleUserTemplatePreviewAssets({
       rows,
