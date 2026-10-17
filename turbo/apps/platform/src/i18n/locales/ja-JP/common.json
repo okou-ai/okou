@@ -2108,6 +2108,7 @@
     "resources": {
       "collapse": "折りたたむ",
       "copyLink": "リンクをコピー",
+      "emptyArtifacts": "まだアーティファクトはありません",
       "emptyLinks": "このチャットにはまだリンクがありません",
       "expand": "展開",
       "links": "リンク",

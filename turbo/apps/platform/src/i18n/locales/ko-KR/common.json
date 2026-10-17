@@ -2108,6 +2108,7 @@
     "resources": {
       "collapse": "접기",
       "copyLink": "링크 복사",
+      "emptyArtifacts": "아직 아티팩트가 없습니다",
       "emptyLinks": "이 채팅에는 아직 링크가 없습니다",
       "expand": "펼치기",
       "links": "링크",

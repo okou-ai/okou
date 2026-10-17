@@ -2157,6 +2157,7 @@
     "resources": {
       "collapse": "Recolher",
       "copyLink": "Copiar link",
+      "emptyArtifacts": "Ainda não há artefatos",
       "emptyLinks": "Ainda não há links neste chat",
       "expand": "Expandir",
       "links": "Links",

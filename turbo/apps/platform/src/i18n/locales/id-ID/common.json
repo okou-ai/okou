@@ -2108,6 +2108,7 @@
     "resources": {
       "collapse": "Ciutkan",
       "copyLink": "Salin tautan",
+      "emptyArtifacts": "Belum ada artefak",
       "emptyLinks": "Belum ada tautan di chat ini",
       "expand": "Perluas",
       "links": "Tautan",
