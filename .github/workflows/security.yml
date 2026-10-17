@@ -368,6 +368,7 @@ jobs:
             crates/runner/tests/behavior/tests/runner-behavior-process-containment-submit-test.sh \
             crates/runner/tests/behavior/tests/runner-behavior-durable-test.sh \
             crates/runner/tests/behavior/tests/runner-behavior-exec-inventory-test.sh \
+            crates/runner/tests/behavior/tests/runner-behavior-caller-isolation-test.sh \
             crates/runner/tests/behavior/tests/runner-behavior-upgrade-local-test.sh \
             .github/scripts/tests/workflow-script-test-shards-test.sh \
             e2e/scripts/ensure-stripe-cli.sh \
