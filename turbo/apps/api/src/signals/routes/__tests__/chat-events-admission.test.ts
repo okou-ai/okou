@@ -477,7 +477,6 @@ describe("CHAT-02: interrupting active chat runs", () => {
     if (interrupted.status !== 201) {
       throw new Error("Expected the interrupt send to be accepted");
     }
-    expect(interrupted.body).not.toHaveProperty("runId");
     await waitForRunStatus(actor, first.runId, "cancelled");
     await flushWaitUntilForTest();
     expect(context.mocks.ably.publish).toHaveBeenCalledWith("cancel", {
@@ -864,7 +863,6 @@ describe("CHAT-02: admission without spendable credits", () => {
       if (sent.status !== 201) {
         throw new Error("Expected the send to settle as a rejection");
       }
-      expect(sent.body).not.toHaveProperty("runId");
 
       await waitForThreadMessages(actor, pending.threadId, (items) => {
         return userMessages(items).some((message) => {

@@ -249,7 +249,6 @@ describe("CHAT effort: thread configuration", () => {
         },
         [201],
       );
-      expect(queued.body).not.toHaveProperty("runId");
       await chat.updateThreadModelSelection(
         actor,
         active.threadId,

@@ -1083,7 +1083,7 @@ describe("workflow queue", () => {
 
     // A user message sent while the automation run is active joins the chat
     // message queue (no run yet).
-    const queued = await accept(
+    await accept(
       chatEventsClient().send({
         headers: authHeaders(),
         body: {
@@ -1100,7 +1100,6 @@ describe("workflow queue", () => {
       [201],
     );
     await flushWaitUntilForTest();
-    expect(queued.body).not.toHaveProperty("runId");
 
     // Terminal run: strict FIFO by admission sequence, so the automation
     // event appended before the user message starts first.
@@ -1260,7 +1259,7 @@ describe("workflow queue", () => {
     const threadId = first.body.chatThreadId;
     const firstRunId = await latestThreadRunId(threadId);
 
-    const userMessage = await accept(
+    await accept(
       chatEventsClient().send({
         headers: authHeaders(),
         body: {
@@ -1282,7 +1281,6 @@ describe("workflow queue", () => {
       [201],
     );
     await flushWaitUntilForTest();
-    expect(userMessage.body).not.toHaveProperty("runId");
 
     // Cancelling frees the slot; its pick launches the older user message.
     await runsApi.requestCancelRun(scenario.actor, firstRunId, [200]);

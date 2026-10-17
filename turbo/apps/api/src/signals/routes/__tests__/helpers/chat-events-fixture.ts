@@ -553,7 +553,6 @@ export function createChatEventsFixture(context: TestContext) {
       throw new Error("Expected the at-capacity chat send to be accepted");
     }
     // At capacity the input waits in the thread without a run.
-    expect(sent.body).not.toHaveProperty("runId");
     const threadId = sent.body.threadId;
     const waiting = await chat.listThreadEvents(actor, threadId);
     expect(

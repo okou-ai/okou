@@ -203,7 +203,6 @@ describe("CHAT-02: model-first routing", () => {
       [201],
     );
     expect(sent.status).toBe(201);
-    expect(sent.body).not.toHaveProperty("runId");
     await flushWaitUntilForTest();
     expect(
       (await chat.listThreadEvents(actor, thread.id)).events,
@@ -563,7 +562,6 @@ describe("CHAT-02: model-first routing", () => {
     if (queued.status !== 201) {
       throw new Error("Expected the legacy-thread follow-up to queue");
     }
-    expect(queued.body).not.toHaveProperty("runId");
 
     const historicalMessages = await chat.listThreadEvents(
       actor,

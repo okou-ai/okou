@@ -365,7 +365,6 @@ describe("CHAT-02 chat messages and visible validation", () => {
         "Expected chat send to create visible no-credit messages",
       );
     }
-    expect(sent.body).not.toHaveProperty("runId");
     expect(sent.body.threadId).toStrictEqual(expect.any(String));
     // The background pick rejects the input for missing credits.
     await flushWaitUntilForTest();

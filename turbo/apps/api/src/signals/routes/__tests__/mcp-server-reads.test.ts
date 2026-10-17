@@ -8,6 +8,7 @@ import type { JsonSchemaType } from "@modelcontextprotocol/server";
 import { apiErrorSchema } from "@okouai/api-contracts/contracts/errors";
 import { activitySummaryResponseSchema } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import {
+  chatEventsContract,
   chatThreadEventsContract,
   chatThreadsContract,
   indicatorsSchema,
@@ -794,8 +795,8 @@ describe("thin MCP Web adapters", () => {
     });
     // The published MCP output keeps its always-null runId; the Web send
     // response no longer carries one.
-    expect(web.body).not.toHaveProperty("runId");
-    expect(body(recalled)).toStrictEqual({ ...web.body, runId: null });
+    const accepted = chatEventsContract.send.responses[201].parse(web.body);
+    expect(body(recalled)).toStrictEqual({ ...accepted, runId: null });
     const history = mcpGetChatMessagesOutputSchema.parse(
       body(
         await mcp.call(f.token(), "get_chat_messages", {

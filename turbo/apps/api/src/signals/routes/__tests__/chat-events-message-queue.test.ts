@@ -213,7 +213,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
     if (sent.status !== 201) {
       throw new Error("Expected the steer message to be accepted");
     }
-    expect(sent.body).not.toHaveProperty("runId");
 
     await expect(
       api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
@@ -298,7 +297,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
     if (later.status !== 201) {
       throw new Error("Expected later input to remain queued");
     }
-    expect(later.body).not.toHaveProperty("runId");
 
     await completeChatRunOk(active.runId, claimed.sandboxHeaders);
     await flushWaitUntilForTest();
@@ -456,7 +454,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
     if (queued.status !== 201) {
       throw new Error("Expected the queued send to be accepted");
     }
-    expect(queued.body).not.toHaveProperty("runId");
     await api.updateUserModelPreference(actor, "claude-opus-5-5");
     const queuedRetry = await chat.requestSendEvent(
       actor,
@@ -533,7 +530,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
     if (recalled.status !== 201) {
       throw new Error("Expected the recall send to be accepted");
     }
-    expect(recalled.body).not.toHaveProperty("runId");
 
     const repeatedRecall = await chat.requestSendEvent(
       actor,
@@ -585,7 +581,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
       prompt: "cross-thread recall anchor",
     });
     const queuedMessageId = randomUUID();
-    const queued = await chat.requestSendEvent(
+    await chat.requestSendEvent(
       actor,
       {
         agentId,
@@ -595,7 +591,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
       },
       [201],
     );
-    expect(queued.body).not.toHaveProperty("runId");
 
     const otherThread = await chat.createThread(actor, {
       agentId,

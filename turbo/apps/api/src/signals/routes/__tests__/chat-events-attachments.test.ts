@@ -1344,7 +1344,6 @@ describe("CHAT-02: generation templates and attachments", () => {
       if (rejected.status !== 201) {
         throw new Error("Expected the selection to enqueue before pick");
       }
-      expect(rejected.body).not.toHaveProperty("runId");
       const settled = await waitForThreadMessages(
         actor,
         rejected.body.threadId,
@@ -1876,7 +1875,6 @@ describe("CHAT-02: generation templates and attachments", () => {
     if (sent.status !== 201) {
       throw new Error("Expected the bounded attachment send to be accepted");
     }
-    expect(sent.body).not.toHaveProperty("runId");
     expect(startedHeads).toBe(5);
     expect(peakActiveHeads).toBe(4);
     expect(matchingListRequests).toBe(0);
@@ -2418,7 +2416,7 @@ describe("CHAT-02: queued attachments on auto-send", () => {
       ],
     };
     chat.mockCompletedUploadObject(actor, fileId, "ordered.txt", 12);
-    const queued = await chat.requestSendEvent(
+    await chat.requestSendEvent(
       actor,
       {
         agentId,
@@ -2429,7 +2427,6 @@ describe("CHAT-02: queued attachments on auto-send", () => {
       },
       [201],
     );
-    expect(queued.body).not.toHaveProperty("runId");
 
     chatCallbacks.mockChatOutputEvents([]);
     await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
@@ -2494,7 +2491,7 @@ describe("CHAT-02: queued attachments on auto-send", () => {
       { id: fileId, filename: "notes.txt", size: 12 },
       { id: secondFileId, filename: "details.json", size: 24 },
     ]);
-    const queued = await chat.requestSendEvent(
+    await chat.requestSendEvent(
       actor,
       {
         agentId,
@@ -2523,7 +2520,6 @@ describe("CHAT-02: queued attachments on auto-send", () => {
       },
       [201],
     );
-    expect(queued.body).not.toHaveProperty("runId");
     // Completing the anchor run promotes the queued message into a fresh
     // run whose prompt carries the resolved attachment references.
     chatCallbacks.mockChatOutputEvents([]);

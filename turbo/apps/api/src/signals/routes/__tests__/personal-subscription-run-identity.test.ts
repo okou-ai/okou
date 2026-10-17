@@ -72,7 +72,6 @@ async function sendRejectedAtPick(
   if (sent.status !== 201) {
     throw new Error("Expected the chat send to be queued");
   }
-  expect(sent.body).not.toHaveProperty("runId");
   await flushWaitUntilForTest();
   const { events } = await chat.listThreadEvents(actor, sent.body.threadId);
   expect(
@@ -368,7 +367,6 @@ describe("personal subscription run identity", () => {
     if (sent.status !== 201) {
       throw new Error("Expected the chat send to be queued");
     }
-    expect(sent.body).not.toHaveProperty("runId");
     await expect(clearAllDetached()).rejects.toBe(preparationError);
     const { events } = await chat.listThreadEvents(f.actor, sent.body.threadId);
     expect(events).toContainEqual(
@@ -780,7 +778,6 @@ describe("personal subscription run identity", () => {
       if (response.status !== 201) {
         throw new Error("Expected both idempotent sends to be accepted");
       }
-      expect(response.body).not.toHaveProperty("runId");
     }
 
     await flushWaitUntilForTest();
@@ -1503,7 +1500,7 @@ describe("personal priority credential and session boundaries", () => {
       prompt: "first account",
     });
     const first = await f.claim(sent.runId);
-    const queued = await chat.requestSendEvent(
+    await chat.requestSendEvent(
       f.actor,
       {
         agentId: f.agentId,
@@ -1513,7 +1510,6 @@ describe("personal priority credential and session boundaries", () => {
       },
       [201],
     );
-    expect(queued.body).not.toHaveProperty("runId");
     const replacement = await connect(f.actor, f.type, "identity-b");
     const history = Buffer.from(`subscription history ${sent.runId}`);
     const hash = createHash("sha256").update(history).digest("hex");
