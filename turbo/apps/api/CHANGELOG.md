@@ -9,6 +9,29 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.750.2](https://github.com/okou-ai/okou/compare/api-v1.750.1...api-v1.750.2) (2026-10-17)
+
+
+### Bug Fixes
+
+* **api:** remove admitted-run credit exemptions ([#40868](https://github.com/okou-ai/okou/issues/40868)) ([57be294](https://github.com/okou-ai/okou/commit/57be2940bcd4fc2b24ad101fabc618c580bbff77))
+* **api:** require prepared native vnc app versions ([#40797](https://github.com/okou-ai/okou/issues/40797)) ([d54dba7](https://github.com/okou-ai/okou/commit/d54dba790b8600fa6b834bc49875a5dc79b86560))
+
+
+### Refactoring
+
+* **api:** localize feishu organization notification reads ([#40869](https://github.com/okou-ai/okou/issues/40869)) ([d0ef659](https://github.com/okou-ai/okou/commit/d0ef6597bcc9c2e5cb1ef4abe844dc6c9bfc9fd9))
+* **api:** own presentation template reads in route commands ([#40863](https://github.com/okou-ai/okou/issues/40863)) ([0d74572](https://github.com/okou-ai/okou/commit/0d74572e6676ff37144d0d121642e134f56c1416))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.766.0
+    * @okouai/db bumped to 1.345.4
+    * @okouai/pi-agent-runtime bumped to 1.50.17
+
 ## [1.750.1](https://github.com/okou-ai/okou/compare/api-v1.750.0...api-v1.750.1) (2026-10-17)
 
 

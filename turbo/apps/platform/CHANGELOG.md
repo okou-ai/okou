@@ -12,6 +12,25 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1036.0](https://github.com/okou-ai/okou/compare/app-v0.1035.3...app-v0.1036.0) (2026-10-17)
+
+
+### Features
+
+* **app:** add a gated inline slash hint to the composer ([#40673](https://github.com/okou-ai/okou/issues/40673)) ([8ff3d51](https://github.com/okou-ai/okou/commit/8ff3d518c92a7c43e196716712d32a78984d994b))
+
+
+### Bug Fixes
+
+* **ci:** name app source map upload after the platform release ([#40836](https://github.com/okou-ai/okou/issues/40836)) ([6d0a4a2](https://github.com/okou-ai/okou/commit/6d0a4a29f90c0c76c96caf2bb3f15a54320ead9f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.766.0
+
 ## [0.1035.3](https://github.com/okou-ai/okou/compare/app-v0.1035.2...app-v0.1035.3) (2026-10-17)
 
 

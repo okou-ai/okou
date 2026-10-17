@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.4](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.15.3...runner-lifecycle-v0.15.4) (2026-10-17)
+
+
+### Performance Improvements
+
+* **runner:** publish independent home cache entries concurrently ([#40750](https://github.com/okou-ai/okou/issues/40750)) ([a184cdc](https://github.com/okou-ai/okou/commit/a184cdca83dda487a92c2f7e1f6f921e3115179d))
+
 ## [0.15.3](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.15.2...runner-lifecycle-v0.15.3) (2026-10-17)
 
 ## [0.15.2](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.15.1...runner-lifecycle-v0.15.2) (2026-10-16)
