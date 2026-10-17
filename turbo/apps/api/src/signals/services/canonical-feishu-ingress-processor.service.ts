@@ -1,4 +1,5 @@
 import type { FeishuPlatform } from "@okouai/api-contracts/contracts/feishu-platform";
+import { agents } from "@okouai/db/schema/agent";
 import { feishuChatIngress } from "@okouai/db/schema/feishu-chat-ingress";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
@@ -50,7 +51,8 @@ import {
   markFeishuMessageReceived,
   replyFeishuAgentUnavailable,
   replyToUnconnectedFeishuMessage,
-  resolveEffectiveFeishuAgent,
+  feishuEffectiveAgentReadPlan,
+  feishuEffectiveAgentFromRows,
   type FeishuDispatchConnection,
   type FeishuDispatchInstallation,
   type FeishuInboundMessage,
@@ -636,11 +638,26 @@ const processClaimedIngress$ = command(
       return null;
     }
 
-    const effectiveAgent = await resolveEffectiveFeishuAgent({
-      db: args.db,
-      installation,
-      connection,
-    });
+    const effectiveAgent = await (async () => {
+      const plan = feishuEffectiveAgentReadPlan({ installation, connection });
+      const agent = await (async () => {
+        const [visibleAgent] = await args.db
+          .select(plan.visibleColumns)
+          .from(agents)
+          .where(plan.visibleCondition)
+          .limit(1);
+        return visibleAgent;
+      })();
+      if (agent) {
+        return feishuEffectiveAgentFromRows(agent, undefined);
+      }
+      const [existing] = await args.db
+        .select(plan.existingColumns)
+        .from(agents)
+        .where(plan.existingCondition)
+        .limit(1);
+      return feishuEffectiveAgentFromRows(agent, existing);
+    })();
     signal.throwIfAborted();
     if (effectiveAgent.status !== "resolved") {
       await finishUnavailableAgentFeishuIngress(
