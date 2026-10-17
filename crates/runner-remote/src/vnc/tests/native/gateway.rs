@@ -44,6 +44,7 @@ pub(crate) struct Gateway {
     pub(crate) ca: String,
     pub(crate) applications: Arc<AtomicUsize>,
     pub(crate) upgraded: Arc<tokio::sync::Notify>,
+    pub(crate) received: Arc<tokio::sync::Notify>,
     pub(crate) origin_gate: Arc<tokio::sync::Semaphore>,
     task: JoinHandle<()>,
 }
@@ -101,6 +102,8 @@ impl Gateway {
         let observed = Arc::clone(&applications);
         let upgraded = Arc::new(tokio::sync::Notify::new());
         let announced = Arc::clone(&upgraded);
+        let received = Arc::new(tokio::sync::Notify::new());
+        let receipt = Arc::clone(&received);
         let origin_gate = Arc::new(tokio::sync::Semaphore::new(1));
         let gate = Arc::clone(&origin_gate);
         let task = tokio::spawn(async move {
@@ -113,6 +116,7 @@ impl Gateway {
                         let inner = inner.clone();
                         let observed = Arc::clone(&observed);
                         let announced = Arc::clone(&announced);
+                        let receipt = Arc::clone(&receipt);
                         let gate = Arc::clone(&gate);
                         tasks.spawn(async move {
                             let Ok(tls) = acceptor.accept(socket).await else { return; };
@@ -124,7 +128,10 @@ impl Gateway {
                                 loop {
                                     tokio::select! {
                                         message = ws.next() => match message {
-                                            Some(Ok(Message::Binary(bytes))) => if bridge.write_all(&bytes).await.is_err() { break; },
+                                            Some(Ok(Message::Binary(bytes))) => {
+                                                receipt.notify_one();
+                                                if bridge.write_all(&bytes).await.is_err() { break; }
+                                            },
                                             Some(Ok(Message::Ping(_))) => { if ws.flush().await.is_err() { break; } },
                                             _ => break,
                                         },
@@ -164,6 +171,7 @@ impl Gateway {
             ca,
             applications,
             upgraded,
+            received,
             origin_gate,
             task,
         }

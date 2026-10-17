@@ -141,6 +141,16 @@ SSH transport reuse keeps the original connection evidence ID; a fresh dial gets
 a new ID while retaining the shared node identity. Relay attempts are
 isolated, and only the selected terminal root's relay facts enter the node receipt.
 Detailed collection is activated by enabled consumers before native startup.
+Native VNC records separate RFB and independently authorized KDC carrier receipts,
+including each configuration/generation and attempt. Tailscale receipts identify
+the shared resource and fresh private TCP connection separately; reused node
+setup does not establish current control health. Cloudflare receipts retain
+actual DNS/address-policy, TCP, gateway TLS/WebSocket and optional independent
+RFB origin-TLS progress. Successful KDC carrier facts are captured before its
+source is restored to RFB; failed KDC setup keeps its own source. These two fixed
+role slots retain no carrier, native node or physical lease. Established native
+failure publication includes the consumer's VNC context and private connection
+trace, even when no SSH dependency exists.
 Each operational report copies its node and connection stage snapshots when
 recorded, so later map/stream activity cannot rewrite an earlier explanation.
 The node lifecycle's first terminal timestamp and later cleanup remain explicit
@@ -155,6 +165,11 @@ Native subscriptions keep weak consumer activity references, at most 64 recent
 subject bindings. Retirement/revocation disables later publication. A later
 rejected adoption copies available pure source evidence from this Run's exact
 configuration/generation without restarting or retaining the physical node.
+The existing bounded provisioning journal retains that pure receipt after weak
+node removal. A VNC check blocks on a prior failed source before provisioning
+another node, including after physical cleanup; ordinary operation retry/journal
+eligibility is unchanged. Intentional node cancellation alone is not a failed
+source. The receipt owns no physical capacity.
 
 SSH-routed Kerberos KDC failures retain their source cause and creation identity
 before Kerberos error conversion. The native RPC regression uses a real packaged
@@ -166,5 +181,32 @@ explicitly:
 cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \
   -p runner-remote --lib \
   ssh::tests::kdc_diagnostics::vnc_history_retains_kdc_ssh_failure_before_kerberos_conversion \
+  -- --exact --ignored
+```
+
+All packaged KDC diagnostics, including native RFB failure interrupting a pending
+Cloudflare KDC exchange, can be run together on that supported runtime:
+
+```sh
+cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \
+  -p runner-remote --all-features --lib kdc -- --ignored --test-threads=1
+```
+
+The native Cloudflare RFB/independent KDC trust-refusal RPC regression also uses
+the packaged worker and the same Linux runtime requirements:
+
+```sh
+cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \
+  -p runner-remote --lib \
+  vnc::tests::native::diagnostics::native_kdc_trust_failure_keeps_separate_rfb_and_kdc_configuration_receipts \
+  -- --exact --ignored
+```
+
+The mixed Cloudflare RFB/Tailscale KDC failure regression has the same requirement:
+
+```sh
+cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \
+  -p runner-remote --lib \
+  tailscale::tests::provisioning::regional_tcp::vnc::diagnostics::mixed_cloudflare_rfb_tailscale_kdc_failure_keeps_the_kdc_native_source \
   -- --exact --ignored
 ```

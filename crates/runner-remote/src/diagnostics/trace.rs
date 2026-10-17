@@ -191,6 +191,20 @@ impl Trace {
             ))
         }))
     }
+    pub(crate) fn carrier_snapshot(&self) -> Option<Snapshot> {
+        let mut snapshot = self.snapshot()?;
+        snapshot.stages.retain(|step| {
+            matches!(
+                step.stage,
+                Stage::Dns
+                    | Stage::DestinationPolicy
+                    | Stage::Tcp
+                    | Stage::AccessTls
+                    | Stage::AccessWebsocket
+            )
+        });
+        Some(snapshot)
+    }
     pub(crate) fn reuse(&self, previous: Option<&Snapshot>) {
         self.update(|state| {
             if let Some(previous) = previous {
@@ -208,6 +222,21 @@ impl Trace {
     }
 }
 impl Snapshot {
+    pub(crate) fn has_failure(&self) -> bool {
+        self.access_failure.is_some()
+            || self
+                .stages
+                .iter()
+                .any(|step| step.status == Progress::Failed)
+    }
+    pub(crate) fn reused(&mut self) {
+        self.transport = Transport::Reused;
+        for step in &mut self.stages {
+            if step.status == Progress::Passed {
+                step.status = Progress::Reused;
+            }
+        }
+    }
     pub(crate) fn failed_at(&self, stage: Stage) -> bool {
         self.stages
             .iter()

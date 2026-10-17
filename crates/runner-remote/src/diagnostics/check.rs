@@ -34,25 +34,33 @@ impl Handle {
         };
         report.operation = Operation::ActiveCheck;
         report.assignment_id = self.assignment;
+        let native_admission_blocked = report.vnc.as_ref().is_some_and(|snapshot| {
+            [&snapshot.rfb_carrier, &snapshot.kdc_carrier]
+                .into_iter()
+                .flatten()
+                .any(|carrier| carrier.status == Progress::NotReached)
+        });
         let status = if report.cause.is_none() && cleanup == Progress::Passed {
             "passed"
-        } else if matches!(
-            report.cause,
-            Some(
-                Cause::Ssh(
-                    crate::ssh::FailureReason::Unavailable
-                        | crate::ssh::FailureReason::AuthorityFailure
-                        | crate::ssh::FailureReason::ConfigurationChanged
-                        | crate::ssh::FailureReason::ResourceExhausted
-                ) | Cause::Vnc(
-                    crate::vnc::Failure::Unavailable
-                        | crate::vnc::Failure::Authority
-                        | crate::vnc::Failure::ConfigurationChanged
-                        | crate::vnc::Failure::ResourceExhausted
-                        | crate::vnc::Failure::UnsupportedProfile
+        } else if native_admission_blocked
+            || matches!(
+                report.cause,
+                Some(
+                    Cause::Ssh(
+                        crate::ssh::FailureReason::Unavailable
+                            | crate::ssh::FailureReason::AuthorityFailure
+                            | crate::ssh::FailureReason::ConfigurationChanged
+                            | crate::ssh::FailureReason::ResourceExhausted
+                    ) | Cause::Vnc(
+                        crate::vnc::Failure::Unavailable
+                            | crate::vnc::Failure::Authority
+                            | crate::vnc::Failure::ConfigurationChanged
+                            | crate::vnc::Failure::ResourceExhausted
+                            | crate::vnc::Failure::UnsupportedProfile
+                    )
                 )
             )
-        ) {
+        {
             "blocked"
         } else {
             "failed"

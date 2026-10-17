@@ -300,7 +300,7 @@ impl TestRun {
             .await;
     }
 
-    pub(super) async fn enable_checks(&mut self, runtime: &Arc<VncRuntime>, capabilities: &[&str]) {
+    pub(crate) async fn enable_checks(&mut self, runtime: &Arc<VncRuntime>, capabilities: &[&str]) {
         self.enable_diagnostics_token(
             runtime,
             &crate::test_fixtures::check_token(self.id, capabilities),
@@ -331,7 +331,7 @@ impl TestRun {
         self.diagnostic_rpc(method, params, None).await
     }
 
-    pub(super) async fn active_check(&self, params: Value) -> Value {
+    pub(crate) async fn active_check(&self, params: Value) -> Value {
         self.active_check_budget(params, 60000).await
     }
 
@@ -560,6 +560,21 @@ impl Harness {
                 .header("authorization", format!("Bearer {TOKEN}"))
                 .json_body(json!({"connectionId":connection,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},"expectedGeneration":7,"expectedTransport":route}));
             then.status(status).json_body(json!({"outcome":outcome}));
+        }).await
+    }
+
+    pub(crate) async fn check_kerberos_route(
+        &self,
+        connection: &str,
+        rfb: Value,
+        kdc: Value,
+    ) -> Mock<'_> {
+        self.api.mock_async(|when, then| {
+            when.method("POST").path_matches(r"^/api/runners/runs/[^/]+/vnc/check$")
+                .header("authorization", format!("Bearer {TOKEN}"))
+                .json_body(json!({"connectionId":connection,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},
+                    "expectedGeneration":7,"expectedTransport":rfb,"expectedCredentialRevision":3,"expectedKdcTransport":kdc}));
+            then.status(200).json_body(json!({"outcome":"valid"}));
         }).await
     }
 

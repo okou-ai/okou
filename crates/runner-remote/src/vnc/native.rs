@@ -24,14 +24,18 @@ use zeroize::Zeroizing;
 use super::{
     Failure, Scope, VncRuntime,
     authority::Transport,
+    evidence::{Carrier, Role},
     network,
     sessions::{Run, StartEvidence},
 };
+use crate::diagnostics::trace::{Progress, Route as DiagnosticRoute, Stage, Trace};
 use crate::{cloudflare, tailscale};
 
 #[derive(Clone)]
 pub(super) enum Configuration {
     Cloudflare {
+        configuration: Uuid,
+        generation: i64,
         credentials: Arc<Credentials>,
         origin: Option<Origin>,
     },
@@ -97,6 +101,8 @@ pub(super) fn parse(route: Route) -> Result<(Transport, Option<Configuration>), 
                     generation,
                 },
                 Some(Configuration::Cloudflare {
+                    configuration,
+                    generation,
                     credentials: Arc::new(credentials),
                     origin,
                 }),
@@ -291,6 +297,12 @@ pub(super) struct Dialer {
     pub(super) tasks: tokio_util::task::TaskTracker,
 }
 
+pub(super) struct Destination<'a> {
+    pub(super) host: &'a str,
+    pub(super) port: u16,
+    pub(super) role: Role,
+}
+
 impl Run {
     pub(super) fn native_dialer(&self) -> Dialer {
         Dialer {
@@ -305,37 +317,100 @@ impl Dialer {
     pub(super) async fn dial(
         &self,
         configuration: Configuration,
-        host: &str,
-        port: u16,
+        destination: Destination<'_>,
         scope: &Scope,
         owner: Arc<dyn kerberos_worker::WorkOwner>,
         evidence: &mut StartEvidence,
     ) -> Result<Stream, Failure> {
+        scope.check()?;
+        let Destination { host, port, role } = destination;
+        let (id, generation) = match &configuration {
+            Configuration::Tailscale(configuration) => configuration.key().diagnostic_identity(),
+            Configuration::Cloudflare {
+                configuration,
+                generation,
+                ..
+            } => (*configuration, *generation),
+        };
+        if let Some(snapshot) = &mut evidence.vnc {
+            *snapshot.carrier(role) = Some(Box::new(Carrier {
+                configuration_id: id,
+                generation,
+                attempt_id: Uuid::new_v4(),
+                resource_id: None,
+                connection_id: None,
+                status: Progress::Running,
+                node_setup: None,
+                origin_tls: None,
+                access: None,
+            }));
+        }
         let (io, node) = match configuration {
             Configuration::Tailscale(configuration) => {
                 let key = configuration.key();
-                let node = self
+                let acquired = self
                     .native
                     .registry
-                    .acquire_configured(configuration, |configuration, journal| {
-                        #[cfg(test)]
-                        if let Some(services) = self
-                            .runtime
-                            .native_services
-                            .lock()
-                            .unwrap_or_else(|p| p.into_inner())
-                            .as_ref()
-                        {
-                            return services.work(configuration, journal);
+                    .acquire_configured_diagnosed(
+                        configuration,
+                        evidence.is_check(),
+                        |configuration, journal| {
+                            #[cfg(test)]
+                            if let Some(services) = self
+                                .runtime
+                                .native_services
+                                .lock()
+                                .unwrap_or_else(|p| p.into_inner())
+                                .as_ref()
+                            {
+                                return services.work(configuration, journal);
+                            }
+                            tailscale::work(configuration, journal)
+                        },
+                    )
+                    .map_err(|rejected| {
+                        if let Some(carrier) = evidence.carrier(role) {
+                            carrier.status = Progress::NotReached;
+                            if let Some(source) = &rejected.source {
+                                carrier.resource_id = Some(source.resource_id);
+                                carrier.node_setup = Some(Progress::Reused);
+                            }
                         }
-                        tailscale::work(configuration, journal)
-                    })
-                    .map_err(native_failure)?;
-                let trace = tailscale::evidence::Trace::new(self.native.diagnostics.enabled());
+                        if let Some(source) = rejected.source {
+                            evidence.retain_native(source);
+                        }
+                        if evidence.is_check()
+                            && rejected.reason == tailscale::Failure::DomainFailed
+                        {
+                            Failure::Unavailable
+                        } else {
+                            native_failure(rejected.reason)
+                        }
+                    })?;
+                let node = acquired.node;
+                let trace = tailscale::evidence::Trace::new(evidence.vnc.is_some());
                 let mut source = node.diagnostic_source(key);
                 source.connection = Some(trace.clone());
+                if let Some(carrier) = evidence.carrier(role) {
+                    carrier.resource_id = Some(source.resource_id);
+                    carrier.connection_id = trace.id();
+                    carrier.node_setup = Some(if acquired.reused {
+                        Progress::Reused
+                    } else {
+                        Progress::Running
+                    });
+                }
+                let failed = source.evidence.terminal().is_some();
                 evidence.retain_native(source);
                 scope.check()?;
+                // A check cannot recreate or restart a retained failed node.
+                if failed {
+                    return Err(if evidence.is_check() {
+                        Failure::Unavailable
+                    } else {
+                        Failure::Network
+                    });
+                }
                 node.start();
                 let stream = scope
                     .wait(node.dial_retained(
@@ -351,7 +426,14 @@ impl Dialer {
             Configuration::Cloudflare {
                 credentials,
                 origin,
+                ..
             } => {
+                let trace = Trace::new(evidence.vnc.is_some());
+                trace.route(DiagnosticRoute::CloudflareAccess);
+                evidence.retain_carrier(role, trace.clone());
+                if let Some(carrier) = evidence.carrier(role) {
+                    carrier.origin_tls = origin.as_ref().map(|_| Progress::NotReached);
+                }
                 let configuration = cloudflare::Configuration::new(
                     host,
                     u64::from(port),
@@ -362,15 +444,27 @@ impl Dialer {
                 let network = Arc::clone(&self.runtime.network);
                 let target = host.to_owned();
                 let held = Arc::clone(&owner);
+                let resolving_trace = trace.clone();
                 let resolve = self.tasks.spawn(async move {
                     let _owner = held;
-                    network::destination(network, &target, port).await
+                    network::destination_traced(network, &target, port, &resolving_trace).await
                 });
                 let address = scope.wait(resolve).await?.map_err(|_| Failure::Network)??;
+                if let Some(snapshot) = &mut evidence.vnc {
+                    match role {
+                        Role::Rfb => snapshot.address = Some(address),
+                        Role::Kdc => snapshot.kdc_address = Some(address),
+                    }
+                }
+                trace.set(Stage::Tcp, Progress::Running);
                 let socket = scope
                     .wait(self.runtime.network.connect(address))
                     .await?
-                    .map_err(|_| Failure::Network)?;
+                    .map_err(|_| {
+                        trace.set(Stage::Tcp, Progress::Failed);
+                        Failure::Network
+                    })?;
+                trace.set(Stage::Tcp, Progress::Passed);
                 let tls = crate::tls::client_config().map_err(|_| Failure::Network)?;
                 #[cfg(test)]
                 let tls = self
@@ -380,8 +474,6 @@ impl Dialer {
                     .unwrap_or_else(|p| p.into_inner())
                     .clone()
                     .unwrap_or(tls);
-                let trace =
-                    crate::diagnostics::trace::Trace::new(self.native.diagnostics.enabled());
                 let (stream, _) = scope
                     .wait(cloudflare::connect(socket, configuration, tls, &trace))
                     .await?
@@ -394,10 +486,21 @@ impl Dialer {
                 let stream: Box<dyn cloudflare::ByteIo + Sync> = Box::new(stream);
                 let io = match origin {
                     Some(origin) => {
+                        if let Some(carrier) = evidence.carrier(role) {
+                            carrier.origin_tls = Some(Progress::Running);
+                        }
                         let stream = scope
                             .wait(TlsConnector::from(origin.tls).connect(origin.name, stream))
                             .await?
-                            .map_err(|_| Failure::AuthenticationFailed)?;
+                            .map_err(|_| {
+                                if let Some(carrier) = evidence.carrier(role) {
+                                    carrier.origin_tls = Some(Progress::Failed);
+                                }
+                                Failure::AuthenticationFailed
+                            })?;
+                        if let Some(carrier) = evidence.carrier(role) {
+                            carrier.origin_tls = Some(Progress::Passed);
+                        }
                         Io::Origin(Box::new(stream))
                     }
                     None => Io::Access(stream),
@@ -406,6 +509,13 @@ impl Dialer {
             }
         };
         scope.check()?;
+        if let Some(carrier) = evidence.carrier(role) {
+            carrier.status = Progress::Passed;
+            if carrier.node_setup == Some(Progress::Running) {
+                carrier.node_setup = Some(Progress::Passed);
+            }
+        }
+        evidence.capture_carrier();
         Ok(Stream {
             io,
             cancellation: Box::pin(scope.session.clone().cancelled_owned()),

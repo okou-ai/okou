@@ -1,3 +1,4 @@
+mod diagnostics;
 pub(crate) mod gateway;
 pub(crate) mod kdc;
 mod profiles;

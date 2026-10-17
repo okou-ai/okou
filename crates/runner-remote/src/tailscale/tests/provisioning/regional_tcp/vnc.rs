@@ -1,5 +1,7 @@
 //! VNC-only Run uses the production native owner and genuine encrypted SDK TCP.
 
+mod diagnostics;
+
 use super::*;
 use crate::vnc::tests::{
     harness::{CREATED_AT, Harness},
