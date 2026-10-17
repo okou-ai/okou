@@ -218,7 +218,7 @@ async fn serve(stream: UnixStream, context: Context, stop: CancellationToken) {
     });
     let mut http = http1::Builder::new();
     http.keep_alive(false)
-        .max_headers(16)
+        .max_headers(32)
         .max_buf_size(8192)
         .header_read_timeout(Duration::from_secs(5))
         .timer(TokioTimer::new());

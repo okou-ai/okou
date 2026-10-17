@@ -115,10 +115,10 @@ describe("native file download authority", () => {
       "downloadUrl",
       "expiresAt",
     ]);
-    expect(issued.body.downloadUrl).toMatch(
-      new RegExp(
-        `^${origin}/downloads/${f.runnerId}/${f.runId}/[A-Za-z0-9_-]{43}$`,
-      ),
+    const prefix = `${origin}/downloads/${f.runnerId}/${f.runId}/`;
+    expect(issued.body.downloadUrl.startsWith(prefix)).toBeTruthy();
+    expect(issued.body.downloadUrl.slice(prefix.length)).toMatch(
+      /^[A-Za-z0-9_-]{43}$/,
     );
     expect(issued.headers.get("cache-control")).toBe("no-store");
     const secret = ticket(issued.body.downloadUrl);

@@ -417,6 +417,20 @@ async fn method_and_range_rejections_do_not_spend_the_grant() {
 }
 
 #[tokio::test]
+async fn browser_and_ingress_header_counts_fit_the_bounded_http_parser() {
+    let mut f = Fixture::new(3).await;
+    let headers = (0..20)
+        .map(|i| format!("X-Browser-Ingress-{i}: fixture\r\n"))
+        .collect::<String>();
+    let (status, _, mut reader) = f.connect(&"N".repeat(43), &headers, "GET").await;
+    assert_eq!(status, 200);
+    let mut bytes = Vec::new();
+    reader.read_to_end(&mut bytes).await.unwrap();
+    assert_eq!(bytes, [0; 3]);
+    f.retire().await;
+}
+
+#[tokio::test]
 async fn native_http_requires_exact_fs_version_and_preserves_large_decimal_lengths() {
     let size = 5 * 1024 * 1024 * 1024 + 17;
     let mut f = Fixture::new(size).await;

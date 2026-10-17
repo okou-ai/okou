@@ -235,6 +235,7 @@ export class RunnerWssApi {
     )
       throw new Error("Invalid download bootstrap");
     const url = new URL(body.downloadUrl);
+    const prefix = `/downloads/${run.runnerId}/${run.runId}/`;
     if (
       url.protocol !== "https:" ||
       url.hostname !== run.hostname ||
@@ -243,9 +244,8 @@ export class RunnerWssApi {
       url.password ||
       url.search ||
       url.hash ||
-      !new RegExp(
-        `^/downloads/${run.runnerId}/${run.runId}/[A-Za-z0-9_-]{43}$`,
-      ).test(url.pathname)
+      !url.pathname.startsWith(prefix) ||
+      !/^[A-Za-z0-9_-]{43}$/.test(url.pathname.slice(prefix.length))
     )
       throw new Error("Invalid native download audience");
     return body.downloadUrl;
