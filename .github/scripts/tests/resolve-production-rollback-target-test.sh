@@ -22,7 +22,13 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "dfff1605013103371cd90962ee5b54c80fc93140" ]; then
+    if [ "${3:-}" = "5757575757575757575757575757575757575757" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_RUN_CREDIT_PREPARATION_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_RUN_CREDIT_PREPARATION_FLOOR_VALID:-1}" = "1" ]
+      fi
+    elif [ "${3:-}" = "dfff1605013103371cd90962ee5b54c80fc93140" ]; then
       [ "${MOCK_BUNDLED_CLI_RUNNER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "37e6bb51029f05ff1d7a7a6c28b03f139dfd067c" ]; then
       [ "${MOCK_LINK_GRANT_WRITER_FLOOR_VALID:-1}" = "1" ]
@@ -209,7 +215,12 @@ case "${1:-}" in
     printf 'vm0-v1.2.3\n'
     ;;
   show)
-    printf '[package]\nversion = "1.2.3"\n'
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/run-credit-admission" ]; then
+      [ "${MOCK_RUN_CREDIT_FLOOR_PRESENT:-1}" = "1" ] || exit 1
+      printf '%s\n' "${MOCK_RUN_CREDIT_PREPARATION_COMMIT-5757575757575757575757575757575757575757}"
+    else
+      printf '[package]\nversion = "1.2.3"\n'
+    fi
     ;;
   rev-list)
     printf 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n'
@@ -344,6 +355,9 @@ grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/m
 grep -Fxq "git merge-base --is-ancestor 5252525252525252525252525252525252525252 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Session storage-mount runtime floor"
 grep -Fxq "git merge-base --is-ancestor 4141414141414141414141414141414141414141 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Usage Allowance retirement floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
+grep -Fxq "git show origin/main:.github/rollback-floors/run-credit-admission" "${tmp_dir}/boundaries.log" || fail "Run credit floor must come from main, not the rollback target"
+grep -Fxq "git merge-base --is-ancestor 5757575757575757575757575757575757575757 origin/main" "${tmp_dir}/boundaries.log" || fail "Run credit preparation must be on main"
+grep -Fxq "git merge-base --is-ancestor 5757575757575757575757575757575757575757 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible target must include Run credit preparation"
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"
 grep -qx "runner_version=1.2.3" "$output_file" || fail "missing Runner version output"
 grep -qx "runner_tag=runner-rs-v1.2.3" "$output_file" || fail "missing retained Runner tag output"
@@ -872,6 +886,33 @@ grep -Fq '5252525252525252525252525252525252525252' "${tmp_dir}/failure.err" || 
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Session mount floor must fail before artifact or host access"
 fi
+
+assert_run_credit_floor_stopped() {
+  [ ! -s "$1" ] || fail "invalid Run credit target must not publish outputs"
+  if grep -Eq '^(curl|ssh|git rev-list) |^git show [0-9a-f]{40}:' "${tmp_dir}/boundaries.log"; then
+    fail "Run credit floor must reject before deployment, artifact or host access"
+  fi
+}
+
+for preparation_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Invalid Run credit-admission preparation commit" \
+    run_resolver "${tmp_dir}/run-credit-invalid.output" "MOCK_RUN_CREDIT_PREPARATION_COMMIT=${preparation_commit}"
+  assert_run_credit_floor_stopped "${tmp_dir}/run-credit-invalid.output"
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Cannot read the Run credit-admission rollback floor" \
+  run_resolver "${tmp_dir}/run-credit-missing.output" MOCK_RUN_CREDIT_FLOOR_PRESENT=0
+assert_run_credit_floor_stopped "${tmp_dir}/run-credit-missing.output"
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Invalid Run credit-admission preparation commit" \
+  run_resolver "${tmp_dir}/run-credit-off-main.output" MOCK_RUN_CREDIT_PREPARATION_ON_MAIN=0
+assert_run_credit_floor_stopped "${tmp_dir}/run-credit-off-main.output"
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates Run credit-admission runtime preparation" \
+  run_resolver "${tmp_dir}/run-credit-old-api.output" MOCK_RUN_CREDIT_PREPARATION_FLOOR_VALID=0
+assert_run_credit_floor_stopped "${tmp_dir}/run-credit-old-api.output"
+grep -Fq '5757575757575757575757575757575757575757' "${tmp_dir}/failure.err" || fail "Run credit rejection must identify the preparation floor"
 
 for v8_commit in "" invalid; do
   : >"${tmp_dir}/boundaries.log"

@@ -81,6 +81,7 @@ readonly COMPUTER_USE_HOST_SESSION_ONLY_PATH=turbo/packages/db/src/runtime/compu
 readonly NATIVE_BRIEF_MEMBER_RUNTIME_PATH=turbo/packages/db/src/runtime/org-members-metadata.ts
 readonly SESSION_STORAGE_MOUNT_RUNTIME_PATH=turbo/packages/db/src/runtime/agent-session.ts
 readonly SESSION_CONVERSATION_RUNTIME_PATH=.github/rollback-floors/session-conversation-runtime
+readonly RUN_CREDIT_ADMISSION_FLOOR_PATH=.github/rollback-floors/run-credit-admission
 readonly WORKFLOW_NAME_SCOPES_PREPARATION_PATH=turbo/packages/db/src/migrations/1375_workflow_name_scopes.sql
 readonly RETIRED_PREFERENCE_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1274_drop_retired_voice_reasoning_collection_columns.sql
 readonly RETIRED_INTEGRATION_AGENT_TABLES_DROP_PATH=turbo/packages/db/src/migrations/1282_drop_retired_integration_agent_tables.sql
@@ -619,6 +620,20 @@ if [[ ! "$retired_integration_agent_tables_drop_commit" =~ ^[0-9a-f]{40}$ ]]; th
 fi
 if ! git merge-base --is-ancestor "$retired_integration_agent_tables_drop_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the retired integration agent table drop: ${retired_integration_agent_tables_drop_commit}."
+fi
+
+# #40886 drops the column after #40887's independent production preparation.
+# Read main's canonical preparation, not the requested rollback artifact's copy.
+if ! run_credit_admission_floor=$(git show "origin/main:${RUN_CREDIT_ADMISSION_FLOOR_PATH}"); then
+  fail "Cannot read the Run credit-admission rollback floor from main."
+fi
+run_credit_admission_commit=$(sed -n '1p' <<<"$run_credit_admission_floor")
+if [[ ! "$run_credit_admission_commit" =~ ^[0-9a-f]{40}$ ]] || \
+  ! git merge-base --is-ancestor "$run_credit_admission_commit" origin/main; then
+  fail "Invalid Run credit-admission preparation commit in main's rollback floor."
+fi
+if ! git merge-base --is-ancestor "$run_credit_admission_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates Run credit-admission runtime preparation: ${run_credit_admission_commit}."
 fi
 
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \

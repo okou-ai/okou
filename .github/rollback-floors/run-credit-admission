@@ -1,0 +1,7 @@
+c7c05d0e3c17f7dd4da0f50191983f8a48bb6818
+
+Minimum compatible API: the merged #40887 runtime preparation. Earlier API ORM
+and maintenance SQL name agent_runs.credit_admitted, removed by #40886.
+The rollback resolver reads this record from origin/main, validates its ancestry
+and rejects older targets before artifact or host access. The independently
+released preparation remains eligible; recovery must preserve this boundary.
