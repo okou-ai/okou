@@ -39,7 +39,7 @@ class ContinuationReportTests(unittest.TestCase):
             for event in events: event["case"] = case
             run, next_run = str(uuid.uuid4()), str(uuid.uuid4())
             home_hash = hashlib.sha256((run.encode()*2048)[:65536]).hexdigest()
-            base = {"thread_id":continuation.THREAD,"original_home_sha256":home_hash,
+            base = {"thread_id":str(uuid.uuid4()),"original_home_sha256":home_hash,
                     "original_home_bytes":65536,"final_identity_verified":True,
                     "full_original_prefix_verified":True,"preparation_observed_by_native_process":True}
             original = {**base,"original_run_id":run,"seed_history_sha256":continuation.SEED_HASH,
@@ -83,6 +83,10 @@ class ContinuationReportTests(unittest.TestCase):
         self.assertFalse(result["memory_envelope_calibrated"])
         self.assertFalse(result["production_protection_proven"])
         self.assertNotIn("native_terminal_corpus_complete",result)
+        for event in self.witnesses:
+            if event["phase"] == "original_executor_completed":
+                self.assertEqual(result["cases"][event["case"]]["continuation"]["thread_id"],
+                                 event["evidence"]["thread_id"])
 
     def test_cli_accepts_complete_files_and_rejects_missing_witness(self):
         self.write()
