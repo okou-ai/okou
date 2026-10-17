@@ -54,6 +54,8 @@ async function openChatStep(): Promise<void> {
       isConnected: false,
       isInstalled: false,
       isAdmin: true,
+      linkedAccounts: [],
+      pendingInstallation: false,
       connectUrl: "/api/teams/oauth/connect?orgId=org_default",
     });
   });

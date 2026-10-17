@@ -116,13 +116,6 @@ test("A forged success marker cannot connect an account or launch Teams", async 
 
 test.each([
   {
-    label: "old API projection",
-    overrides: { linkedAccounts: undefined },
-    query: target,
-    message: /cannot confirm the Teams account/u,
-    blocked: false,
-  },
-  {
     label: "another Teams user",
     overrides: {},
     query: { ...target, teamsUserId: "other" },
@@ -183,19 +176,6 @@ test("All supplied identity fields match one of multiple caller-owned accounts",
     }),
   );
   await setupPage({ context, path: path(target) });
-  await expectConnected();
-  expect(getAction("link", "Open Teams")).toHaveAttribute("target", "_blank");
-});
-
-test("A bare old-API connection remains readable without certifying a target", async () => {
-  mockStatus(
-    status({
-      isConnected: true,
-      linkedAccounts: undefined,
-      pendingInstallation: undefined,
-    }),
-  );
-  await setupPage({ context, path: "/settings/teams" });
   await expectConnected();
   expect(getAction("link", "Open Teams")).toHaveAttribute("target", "_blank");
 });

@@ -16,8 +16,6 @@ import {
   discordApprovalAvailable$,
   discordApprovalRequest$,
   discordApprovalSucceeded$,
-  continueDiscordApproval$,
-  discordApprovalContinuation$,
 } from "../../signals/okou-page/discord-oauth-approval.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
@@ -64,8 +62,6 @@ function DiscordApprovalState() {
   const request = useLoadable(discordApprovalRequest$);
   const approve = useSet(approveDiscordAuthorization$);
   const pageSignal = useGet(pageSignal$);
-  const continuation = useGet(discordApprovalContinuation$);
-  const [recovery, continueApproval] = useLoadableSet(continueDiscordApproval$);
   const failed = request.state === "hasError";
   if (failed) {
     return (
@@ -97,28 +93,6 @@ function DiscordApprovalState() {
   return (
     <>
       <ConnectCheckingState />
-      {continuation ? (
-        <>
-          <ConnectErrorAlert
-            error={
-              recovery.state === "hasError"
-                ? t(($) => {
-                    return $.works.discord.popupBlocked;
-                  })
-                : null
-            }
-          />
-          <ConnectSubmitButton
-            connecting={false}
-            label={t(($) => {
-              return $.works.discord.continueInNewTab;
-            })}
-            onConnect={() => {
-              detach(continueApproval(pageSignal), Reason.DomCallback);
-            }}
-          />
-        </>
-      ) : null}
       <SettingsBackLink />
     </>
   );

@@ -208,6 +208,8 @@ function mockChatChannelInstalls(): void {
       isConnected: false,
       isInstalled: false,
       isAdmin: true,
+      linkedAccounts: [],
+      pendingInstallation: false,
       connectUrl: "/api/teams/oauth/connect?orgId=org_default",
     });
   });

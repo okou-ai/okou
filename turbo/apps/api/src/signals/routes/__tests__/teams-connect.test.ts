@@ -196,20 +196,6 @@ describe("GET /api/integrations/teams/connect", () => {
         userId: fixture.userId,
       }),
     });
-    const { linkedAccounts, pendingInstallation, ...oldResponse } =
-      response.body;
-    expect(linkedAccounts).toStrictEqual([]);
-    expect(pendingInstallation).toBeFalsy();
-    const schema = teamsConnectContract.getStatus.responses[200];
-    // Old readers strip additive fields; new readers preserve absence as unknown.
-    expect(
-      schema
-        .omit({ linkedAccounts: true, pendingInstallation: true })
-        .parse(response.body),
-    ).toStrictEqual(oldResponse);
-    expect(schema.parse(oldResponse)).toStrictEqual(oldResponse);
-    expect(schema.parse(oldResponse).linkedAccounts).toBeUndefined();
-    expect(schema.parse(oldResponse).pendingInstallation).toBeUndefined();
   });
 
   it("falls back to the web origin when the API backend URL is unset", async () => {
