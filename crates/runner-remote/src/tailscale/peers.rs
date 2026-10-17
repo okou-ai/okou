@@ -232,6 +232,8 @@ struct HeldBinding {
     binding: Weak<Binding>,
     handle: PeerId,
     retired: bool,
+    // Conservative until this peer's SDK output proves the queue drained.
+    pending_plaintext: bool,
 }
 
 pub(super) struct Binding {
@@ -635,6 +637,7 @@ impl Peers {
             binding: Arc::downgrade(&binding),
             handle: binding.handle,
             retired: false,
+            pending_plaintext: false,
         });
         Ok(binding)
     }
@@ -690,6 +693,11 @@ impl Peers {
         }
         if !packets.is_empty() {
             binding.started.store(true, Ordering::Relaxed);
+            self.bindings
+                .iter_mut()
+                .find(|item| std::ptr::eq(item.binding.as_ptr(), binding))
+                .ok_or(Failure::Cancelled)?
+                .pending_plaintext = true;
         }
         let output = self.plane.process_outbound(packets);
         if !output.loopback.is_empty() {
@@ -859,6 +867,33 @@ impl Peers {
         let count = output.values().map(Vec::len).sum::<usize>();
         if count > MAX_PACKETS || output.values().flatten().any(|packet| packet.len() > 2048) {
             return self.fail();
+        }
+        for (destination, packets) in &output {
+            if !packets.iter().any(|packet| {
+                // Trusted SDK output: WireGuard type 4 has a 16-byte header
+                // and a 16-byte authentication tag, including keepalives.
+                packet.len() >= 32 && packet.as_ref().starts_with(&[4, 0, 0, 0])
+            }) {
+                continue;
+            }
+            let mut peers = self
+                .plane
+                .ur_out
+                .table
+                .iter()
+                .filter(|(_, route)| *route == destination);
+            if let Some((&handle, _)) = peers.next()
+                && peers.next().is_none()
+            {
+                // The pinned SDK queues plaintext only without active crypto;
+                // activation drains the whole queue before emitting transport
+                // data. Only uniquely routed SDK output proves that peer drained.
+                for item in &mut self.bindings {
+                    if item.handle == handle {
+                        item.pending_plaintext = false;
+                    }
+                }
+            }
         }
         let permit = Arc::clone(&self.frame_budget)
             .try_acquire_many_owned(count as u32)
@@ -1047,6 +1082,7 @@ impl Peers {
 
     fn reap_bindings(&mut self) {
         let mut reset = HashSet::new();
+        let mut retired = HashSet::new();
         for item in &mut self.bindings {
             let binding = item.binding.upgrade();
             if !item.retired && binding.as_ref().is_none_or(|binding| !binding.live()) {
@@ -1054,7 +1090,10 @@ impl Peers {
                     binding.cancelled.cancel();
                 }
                 item.retired = true;
-                reset.insert(item.handle);
+                retired.insert(item.handle);
+                if item.pending_plaintext {
+                    reset.insert(item.handle);
+                }
             }
         }
         // Expired peers with no active binding must not retain crypto timers or
@@ -1065,15 +1104,29 @@ impl Peers {
                 .remove_peer(ts_tunnel::PeerId(peer.handle.0));
             self.plane.ur_out.table.remove(&peer.handle);
         }
-        if !reset.is_empty() {
+        if !retired.is_empty() {
             self.invalidate_frames();
         }
+        for handle in retired {
+            if !self
+                .bindings
+                .iter()
+                .any(|item| item.handle == handle && !item.retired)
+            {
+                reset.insert(handle);
+            }
+        }
         for handle in reset {
-            // Public upsert alone preserves sessions and queued packets. Actual
-            // removal is required, including when a dropped binding queued a SYN.
+            // Removal purges SDK-held plaintext, or releases an unused peer's
+            // sessions. Established siblings otherwise keep their receiver IDs.
             self.plane
                 .wireguard
                 .remove_peer(ts_tunnel::PeerId(handle.0));
+            for item in &mut self.bindings {
+                if item.handle == handle {
+                    item.pending_plaintext = false;
+                }
+            }
             if let Some(peer) = self.peers.values().find(|peer| {
                 peer.handle == handle
                     && peer.identity.tailnet == self.local.tailnet

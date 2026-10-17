@@ -1,6 +1,7 @@
 //! VNC-only Run uses the production native owner and genuine encrypted SDK TCP.
 
 mod diagnostics;
+mod retirement;
 
 use super::*;
 use crate::vnc::tests::{
@@ -47,14 +48,43 @@ pub(super) fn proxy(
     listener: ts_netstack_smoltcp_socket::TcpListener,
     target: std::net::SocketAddr,
 ) -> tokio_util::task::AbortOnDropHandle<()> {
+    proxy_gated(listener, target, None)
+}
+
+struct BackendGate {
+    accepted: Mutex<Vec<std::net::SocketAddr>>,
+    first_ready: tokio::sync::Notify,
+    release: tokio::sync::Semaphore,
+}
+
+fn proxy_gated(
+    listener: ts_netstack_smoltcp_socket::TcpListener,
+    target: std::net::SocketAddr,
+    gate: Option<Arc<BackendGate>>,
+) -> tokio_util::task::AbortOnDropHandle<()> {
     assert!(target.ip().is_loopback());
     tokio_util::task::AbortOnDropHandle::new(tokio::spawn(async move {
         let mut connections = tokio::task::JoinSet::new();
+        // SDK accept enqueues a command and is not cancellation safe. Preserve
+        // that response receiver when a forwarding task finishes first.
+        let mut accepting = Box::pin(listener.accept());
         loop {
             tokio::select! {
-                accepted = listener.accept() => {
+                accepted = &mut accepting => {
                     let Ok(mut stream) = accepted else { break; };
+                    accepting.set(listener.accept());
+                    let first = gate.as_ref().is_some_and(|gate| {
+                        let mut accepted = gate.accepted.lock().unwrap();
+                        accepted.push(stream.remote_addr());
+                        accepted.len() == 1
+                    });
+                    let gate = gate.clone();
                     connections.spawn(async move {
+                        if first {
+                            let gate = gate.as_ref().unwrap();
+                            gate.first_ready.notify_one();
+                            gate.release.acquire().await.unwrap().forget();
+                        }
                         let mut server = tokio::net::TcpStream::connect(target).await.unwrap();
                         let _ = tokio::io::copy_bidirectional(&mut stream, &mut server).await;
                     });
