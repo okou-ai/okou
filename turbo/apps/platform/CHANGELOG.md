@@ -12,6 +12,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1036.1](https://github.com/okou-ai/okou/compare/app-v0.1036.0...app-v0.1036.1) (2026-10-17)
+
+
+### Bug Fixes
+
+* **app:** unify activity files scrolling with sticky navigation ([#40878](https://github.com/okou-ai/okou/issues/40878)) ([e1f856a](https://github.com/okou-ai/okou/commit/e1f856a7afc7b2647b49e5b5ec6780f3669f9e45))
+* **platform:** scope activity log reload notice to steps ([#40877](https://github.com/okou-ai/okou/issues/40877)) ([52c8e80](https://github.com/okou-ai/okou/commit/52c8e80e152101167dc530015ffacbe5aef28795))
+
+
+### Performance Improvements
+
+* resolve chat card posters without thread artifact lists ([#40866](https://github.com/okou-ai/okou/issues/40866)) ([0f32ccb](https://github.com/okou-ai/okou/commit/0f32ccb082949a2af8694f443936d2a0cf32f3eb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.5
+    * @okouai/core bumped to 8.766.1
+
 ## [0.1036.0](https://github.com/okou-ai/okou/compare/app-v0.1035.3...app-v0.1036.0) (2026-10-17)
 
 

@@ -9,6 +9,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.750.3](https://github.com/okou-ai/okou/compare/api-v1.750.2...api-v1.750.3) (2026-10-17)
+
+
+### Refactoring
+
+* **db:** retire run credit-admission runtime references ([#40887](https://github.com/okou-ai/okou/issues/40887)) ([c7c05d0](https://github.com/okou-ai/okou/commit/c7c05d0e3c17f7dd4da0f50191983f8a48bb6818))
+
+
+### Performance Improvements
+
+* resolve chat card posters without thread artifact lists ([#40866](https://github.com/okou-ai/okou/issues/40866)) ([0f32ccb](https://github.com/okou-ai/okou/commit/0f32ccb082949a2af8694f443936d2a0cf32f3eb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.5
+    * @okouai/core bumped to 8.766.1
+    * @okouai/db bumped to 1.345.5
+    * @okouai/pi-agent-runtime bumped to 1.50.18
+
 ## [1.750.2](https://github.com/okou-ai/okou/compare/api-v1.750.1...api-v1.750.2) (2026-10-17)
 
 
