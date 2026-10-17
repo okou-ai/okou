@@ -134,7 +134,7 @@
         "updateRequired": "此執行不支援檔案瀏覽。請在沙箱更新後開始新的執行。"
       },
       "log": "日誌",
-      "manualReloadNotice": "重新整理頁面即可檢視最新的活動日誌。",
+      "manualReloadNotice": "活動日誌不會自動更新，請重新整理頁面查看最新記錄。",
       "modelProvidedBy": "{{model}}，由 {{provider}} 提供",
       "networkEmpty": {
         "description": "本次執行沒有記錄到網路流量。",

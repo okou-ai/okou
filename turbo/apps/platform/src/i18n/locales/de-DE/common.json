@@ -134,7 +134,7 @@
         "updateRequired": "Dieser Lauf unterstützt keine Dateien. Starte nach der Sandbox-Aktualisierung einen neuen Lauf."
       },
       "log": "Log",
-      "manualReloadNotice": "Laden Sie diese Seite neu, um die neuesten Aktivitätsprotokolle zu sehen.",
+      "manualReloadNotice": "Aktivitätsprotokolle werden nicht automatisch aktualisiert. Laden Sie die Seite neu, um die neuesten Einträge zu sehen.",
       "modelProvidedBy": "{{model}} bereitgestellt von {{provider}}",
       "networkEmpty": {
         "description": "Für diese Ausführung wurde kein Netzwerkverkehr aufgezeichnet.",

@@ -134,7 +134,7 @@
         "updateRequired": "이 실행은 파일을 지원하지 않습니다. 샌드박스 업데이트 후 새 실행을 시작하세요."
       },
       "log": "로그",
-      "manualReloadNotice": "최신 활동 로그를 보려면 이 페이지를 새로고침하세요.",
+      "manualReloadNotice": "활동 로그는 자동으로 업데이트되지 않습니다. 최신 기록을 보려면 페이지를 새로고침하세요.",
       "modelProvidedBy": "{{provider}}에서 제공하는 {{model}}",
       "networkEmpty": {
         "description": "이 실행에 대한 네트워크 트래픽이 기록되지 않았습니다.",

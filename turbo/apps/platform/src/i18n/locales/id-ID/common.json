@@ -134,7 +134,7 @@
         "updateRequired": "Proses ini tidak mendukung file. Mulai proses baru setelah sandbox diperbarui."
       },
       "log": "Log",
-      "manualReloadNotice": "Muat ulang halaman ini untuk melihat log aktivitas terbaru.",
+      "manualReloadNotice": "Log aktivitas tidak diperbarui secara otomatis. Muat ulang halaman untuk melihat catatan terbaru.",
       "modelProvidedBy": "{{model}} disediakan oleh {{provider}}",
       "networkEmpty": {
         "description": "Tidak ada traffic jaringan yang direkam untuk run ini.",
