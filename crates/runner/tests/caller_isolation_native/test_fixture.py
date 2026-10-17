@@ -229,9 +229,9 @@ class OwnerTest(unittest.TestCase):
             ready = os.open(fifo, os.O_RDONLY | os.O_NONBLOCK)
             self.addCleanup(os.close, ready)
             child = (
-                "import os,signal; f=open("
+                "import os,signal\nwith open("
                 + repr(str(fifo))
-                + ",'w'); f.write(str(os.getpid())); f.close(); signal.pause()"
+                + ",'w') as ready:\n ready.write(str(os.getpid()))\nsignal.pause()"
             )
             state_path = root / "state.json"
             owner = (
