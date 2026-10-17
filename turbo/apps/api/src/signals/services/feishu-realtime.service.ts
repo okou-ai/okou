@@ -1,21 +1,21 @@
 import { and, eq } from "drizzle-orm";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 
-import type { Db } from "../external/db";
-import { publishUserSignal } from "../external/realtime";
+export function feishuOrgChangedAdminReadPlan(orgId: string) {
+  return {
+    columns: { userId: orgMembersCache.userId },
+    condition: and(
+      eq(orgMembersCache.orgId, orgId),
+      eq(orgMembersCache.role, "admin"),
+    ),
+  };
+}
 
-export async function publishFeishuOrgChanged(
-  db: Db,
-  orgId: string,
+export function feishuOrgChangedUserIds(
+  admins: readonly { readonly userId: string }[],
   ownerUserId: string | null,
   additionalUserIds: readonly string[] = [],
-): Promise<void> {
-  const admins = await db
-    .select({ userId: orgMembersCache.userId })
-    .from(orgMembersCache)
-    .where(
-      and(eq(orgMembersCache.orgId, orgId), eq(orgMembersCache.role, "admin")),
-    );
+): string[] {
   const userIds = new Set(
     admins.map((admin) => {
       return admin.userId;
@@ -27,8 +27,5 @@ export async function publishFeishuOrgChanged(
   for (const userId of additionalUserIds) {
     userIds.add(userId);
   }
-  if (userIds.size === 0) {
-    return;
-  }
-  await publishUserSignal([...userIds], "feishu:changed");
+  return [...userIds];
 }

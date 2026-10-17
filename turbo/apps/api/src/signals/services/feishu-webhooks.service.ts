@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { feishuEventsContract } from "@okouai/api-contracts/contracts/feishu-events";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 
 import { logger } from "../../lib/log";
 import { request$ } from "../context/hono";
@@ -15,6 +16,7 @@ import {
   getFeishuTenantAccessToken,
 } from "../external/feishu-client";
 import { writeDb$ } from "../external/db";
+import { publishUserSignal } from "../external/realtime";
 import { now, nowDate } from "../../lib/time";
 import { safeSync, tapError } from "../utils";
 import { processCanonicalFeishuIngress$ } from "./canonical-feishu-ingress-processor.service";
@@ -28,7 +30,10 @@ import {
   formatFeishuMessageContent,
   parseFeishuMessageContent,
 } from "../../lib/feishu-message-content";
-import { publishFeishuOrgChanged } from "./feishu-realtime.service";
+import {
+  feishuOrgChangedAdminReadPlan,
+  feishuOrgChangedUserIds,
+} from "./feishu-realtime.service";
 
 const L = logger("FeishuWebhooks");
 
@@ -104,11 +109,18 @@ const markCallbackVerified$ = command(
       .set({ callbackVerifiedAt: nowDate(), updatedAt: nowDate() })
       .where(eq(feishuOrgInstallations.id, args.config.id));
     signal.throwIfAborted();
-    await publishFeishuOrgChanged(
-      db,
-      args.config.orgId,
-      args.config.ownerUserId,
-    );
+    await (async () => {
+      const plan = feishuOrgChangedAdminReadPlan(args.config.orgId);
+      const admins = await db
+        .select(plan.columns)
+        .from(orgMembersCache)
+        .where(plan.condition);
+      const userIds = feishuOrgChangedUserIds(admins, args.config.ownerUserId);
+      if (userIds.length === 0) {
+        return;
+      }
+      await publishUserSignal(userIds, "feishu:changed");
+    })();
   },
 );
 
