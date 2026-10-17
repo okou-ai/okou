@@ -1177,7 +1177,7 @@ test.each(["rotate", "convert", "delete"] as const)(
 );
 
 test.each(["delete", "detach"] as const)(
-  "retains reference-fence safety when a bound host concurrently leaves through %s",
+  "preserves atomic rotation when a bound host concurrently leaves through %s",
   async (operation) => {
     const owner = await actor();
     const shared = await sharedConfig(owner);
@@ -1185,7 +1185,7 @@ test.each(["delete", "detach"] as const)(
     const beforeLogins = (
       await accept(credentials().list({ headers: owner.headers }), [200])
     ).body;
-    const departing =
+    const [departed, rotated] = await joinAll([
       operation === "delete"
         ? accept(
             hosts().delete({
@@ -1206,8 +1206,7 @@ test.each(["delete", "detach"] as const)(
               },
             }),
             [200, 409],
-          );
-    const [rotated, departed] = await Promise.all([
+          ),
       accept(
         configs().update({
           headers: owner.headers,
@@ -1221,20 +1220,30 @@ test.each(["delete", "detach"] as const)(
             },
           },
         }),
-        [200],
+        [200, 409],
       ),
-      departing,
     ]);
-    expect(rotated.body).toMatchObject({
-      revision: shared.revision + 1,
-      generation: shared.generation + 1,
-    });
     const listed = (
       await accept(hosts().list({ headers: owner.headers }), [200])
     ).body.connections;
     const current = (
       await accept(configs().list({ headers: owner.headers, query }), [200])
     ).body.configs;
+    if (rotated.status === 200) {
+      expect(rotated.body).toMatchObject({
+        revision: shared.revision + 1,
+        generation: shared.generation + 1,
+      });
+      expect(current).toStrictEqual([rotated.body]);
+    } else {
+      // Departure can invalidate the rotation's observed Host publication.
+      // Rejecting that attempt must leave all configuration authority intact.
+      expect(rotated.body.error.code).toBe(
+        "CLOUDFLARE_ACCESS_REVISION_CONFLICT",
+      );
+      expect(departed.status).toBe(operation === "delete" ? 204 : 200);
+      expect(current).toStrictEqual([shared]);
+    }
     if (departed.status === 409) {
       expect(departed.body.error.code).toBe("SSH_GENERATION_CONFLICT");
       expect(listed).toContainEqual(
