@@ -6,11 +6,9 @@ import type {
 } from "@okouai/api-contracts/contracts/user-templates";
 import { getUserTemplateStorageName } from "@okouai/core/storage-names";
 import { userTemplateDirectory } from "@okouai/core/user-template-selection";
-import { userTemplates } from "@okouai/db/schema/user-template";
-import { and, desc, eq, or } from "drizzle-orm";
+import type { userTemplates } from "@okouai/db/schema/user-template";
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import type { ReadonlyDb } from "../external/db";
 import type { PresentationTemplateVolume } from "./presentation-template-data.service";
 
 export type UserTemplateRow = typeof userTemplates.$inferSelect;
@@ -199,42 +197,6 @@ export function userTemplateSummary(args: {
 }
 
 /**
- * The caller's own rows plus every member's organization-visible ones.
- *
- * The row is the authority for its own existence and visibility: a template
- * that does not come back is indistinguishable from one that never existed, so
- * a caller cannot use the answer to probe which case it was.
- */
-function accessibleWhere(args: {
-  readonly orgId: string;
-  readonly userId: string;
-}) {
-  return and(
-    eq(userTemplates.orgId, args.orgId),
-    or(
-      eq(userTemplates.ownerUserId, args.userId),
-      eq(userTemplates.visibility, "organization"),
-    ),
-  );
-}
-
-export async function loadAccessibleUserTemplate(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly templateId: string;
-  },
-): Promise<UserTemplateRow | null> {
-  const [row] = await db
-    .select()
-    .from(userTemplates)
-    .where(and(eq(userTemplates.id, args.templateId), accessibleWhere(args)))
-    .limit(1);
-  return row ?? null;
-}
-
-/**
  * One selected custom template, reduced to what a run needs: where to mount it
  * and what the package inside will turn out to be.
  */
@@ -278,22 +240,4 @@ export function userTemplateVolumes(
       mountPath: `${CANONICAL_WORKING_DIR}/${userTemplateDirectory(template.templateId)}`,
     };
   });
-}
-
-/**
- * Newest first, with no owner-first tier.
- *
- * The catalog exposes ownership as a filter the reader controls, so sorting
- * the reader's own rows to the top would compete with that filter and bury a
- * colleague's template the reader just went looking for.
- */
-export async function listAccessibleUserTemplates(
-  db: ReadonlyDb,
-  args: { readonly orgId: string; readonly userId: string },
-): Promise<readonly UserTemplateRow[]> {
-  return await db
-    .select()
-    .from(userTemplates)
-    .where(accessibleWhere(args))
-    .orderBy(desc(userTemplates.createdAt));
 }
