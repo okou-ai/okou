@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.26.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.25.0...runner-remote-v0.26.0) (2026-10-17)
+
+
+### Features
+
+* **vnc:** retain native route diagnostics and checks ([#40946](https://github.com/okou-ai/okou/issues/40946)) ([c4b0a51](https://github.com/okou-ai/okou/commit/c4b0a51b88fefc0739b97df1b186c7dd0f02b857))
+
+
+### Bug Fixes
+
+* **tailscale:** preserve shared crypto when native bindings retire ([#40963](https://github.com/okou-ai/okou/issues/40963)) ([458d2a0](https://github.com/okou-ai/okou/commit/458d2a06d20aae0e6f7ec707a4f2d4fad4d37346))
+
 ## [0.25.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.24.4...runner-remote-v0.25.0) (2026-10-17)
 
 
