@@ -71,7 +71,9 @@ class DownloadHandler(BaseHTTPRequestHandler):
                 self.server.bytes_written += 32768
             self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError):
-            pass
+            # The cancellation probe closes TLS before the body completes;
+            # receipt here proves Caddy retired that upstream write too.
+            self.server.disconnected.set()
         finally:
             self.close_connection = True
 
@@ -153,6 +155,22 @@ def response(context, port, path, websocket=False):
             assert header[0] == 0x81 and not header[1] & 0x80
             return status, reader.read(header[1])
         return status, None
+
+
+def cancel_download(context, port, path, server):
+    server.started.clear()
+    server.disconnected.clear()
+    server.bytes_written = 0
+    with socket.create_connection(("127.0.0.1", port), timeout=10) as raw:
+        with context.wrap_socket(raw, server_hostname="runner-wss.example.org") as peer:
+            peer.sendall(f"GET {path} HTTP/1.1\r\nHost: runner-wss.example.org\r\nConnection: close\r\n\r\n".encode())
+            with peer.makefile("rb") as reader:
+                assert reader.readline().split()[1] == b"200"
+                while (line := reader.readline()) != b"\r\n":
+                    assert line, "unexpected EOF in response headers"
+                assert reader.read(32768) == bytes(32768)
+    assert server.disconnected.wait(timeout=5), "client cancellation retained the upstream"
+    assert server.bytes_written < 134217728, server.bytes_written
 
 
 def wait_ready(notify):
@@ -394,6 +412,7 @@ def main():
                     server = ThreadingUnixStreamServer(str(path), DownloadHandler)
                     server.daemon_threads = True
                     server.started = threading.Event()
+                    server.disconnected = threading.Event()
                     server.bytes_written = 0
                     os.chown(path, 0, consumer)
                     path.chmod(0o660)
@@ -402,6 +421,7 @@ def main():
                     thread.start()
                     threads.append(thread)
                     download(context, port, download_path, server, process.pid)
+                    cancel_download(context, port, download_path, server)
                     assert response(context, port, download_path + "/extra")[0] == 404
                     assert secret not in (root / "caddy.log").read_text()
                     assert before == {

@@ -277,22 +277,29 @@ pub(super) fn start(
                 result = downloads.reap(), if downloads.has_tasks() => {
                     result.map(|()| None).map_err(io::Error::other)
                 }
-                result = download_socket.accept() => result.map(|stream| Some((true, stream))),
                 result = async {
-                    #[cfg(not(test))]
-                    { socket.accept().await }
-                    #[cfg(test)]
-                    {
-                        if let Some(fail) = fail_accept.as_mut() {
-                            tokio::select! {
-                                result = socket.accept() => result,
-                                _ = fail => Err(io::Error::other("injected WSS accept failure")),
+                    // Keep shutdown/reaping priority above, but fairly poll the
+                    // two public ingress listeners so download load cannot
+                    // permanently outrank an already-waiting WSS connection.
+                    tokio::select! {
+                        result = download_socket.accept() => result.map(|stream| Some((true, stream))),
+                        result = async {
+                            #[cfg(not(test))]
+                            { socket.accept().await }
+                            #[cfg(test)]
+                            {
+                                if let Some(fail) = fail_accept.as_mut() {
+                                    tokio::select! {
+                                        result = socket.accept() => result,
+                                        _ = fail => Err(io::Error::other("injected WSS accept failure")),
+                                    }
+                                } else {
+                                    socket.accept().await
+                                }
                             }
-                        } else {
-                            socket.accept().await
-                        }
+                        } => result.map(|stream| Some((false, stream))),
                     }
-                } => result.map(|stream| Some((false, stream))),
+                } => result,
             };
             match event {
                 Ok(Some((true, stream))) => downloads.accept(stream),
