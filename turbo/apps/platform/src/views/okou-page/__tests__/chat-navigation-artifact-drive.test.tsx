@@ -78,6 +78,7 @@ interface OauthRequest {
 interface DriveMockControl {
   readonly authorizationUpdates: readonly UserBuiltinConnectorUpdate[];
   readonly completeAuthorization: () => void;
+  readonly requireNewConnection: () => void;
   readonly oauthRequests: readonly OauthRequest[];
   readonly syncRequests: readonly {
     readonly artifactId: string;
@@ -106,6 +107,7 @@ function installDriveMocks(
   let oauthAttemptId = crypto.randomUUID();
   let oauthConnectionId = SELECTED_DRIVE_CONNECTION_ID;
   let connectionState = initialConnectionState;
+  let artifactConnectionState = initialConnectionState;
   let agentAuthorized = options.agentAuthorized ?? false;
   let artifactSynced = options.existingMimeType !== undefined;
   let mimeType = options.existingMimeType;
@@ -188,9 +190,9 @@ function installDriveMocks(
               : {
                   status: "disconnected",
                   recovery:
-                    initialConnectionState === "not-connected"
+                    artifactConnectionState === "not-connected"
                       ? { action: "connect" }
-                      : initialConnectionState === "reconnect-required"
+                      : artifactConnectionState === "reconnect-required"
                         ? {
                             action: "reconnect",
                             connectionId: SELECTED_DRIVE_CONNECTION_ID,
@@ -359,6 +361,12 @@ function installDriveMocks(
         connectorSlug: "google-drive",
       });
     },
+    requireNewConnection: () => {
+      connectionState = "not-connected";
+      artifactConnectionState = "not-connected";
+      agentAuthorized = false;
+      artifactSynced = false;
+    },
     oauthRequests,
     syncRequests,
   };
@@ -505,7 +513,7 @@ describe("with a Drive artifact menu", () => {
 test("Recheck Drive authorization after leaving and reopening the chat page", async () => {
   mockWideScreen();
   const popup = installAuthorizationPopup();
-  installDriveMocks(context, "connected");
+  const drive = installDriveMocks(context, "connected");
   await setupPage({
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
@@ -523,7 +531,7 @@ test("Recheck Drive authorization after leaving and reopening the chat page", as
   );
   // The external account now requires a new connection. Returning to this
   // artifact must honor that page's recovery instruction, not the old success.
-  const drive = installDriveMocks(context, "not-connected");
+  drive.requireNewConnection();
   click(await screen.findByText("Artifact navigation"));
 
   await openDriveArtifactMenu();

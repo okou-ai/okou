@@ -151,6 +151,33 @@ function createTemplatePickerDialogSignals() {
   const templatePickerOpen$ = computed((get) => {
     return get(internalTemplatePickerOpen$);
   });
+  const internalTemplatePickerPopup$ = state<HTMLElement | null>(null);
+  const templatePickerInitialFocus$ = command(
+    ({ get }, interactionType: string) => {
+      const popup = get(internalTemplatePickerPopup$);
+      if (interactionType === "touch") {
+        return popup;
+      }
+      const selector = window.matchMedia("(min-width: 640px)").matches
+        ? '[data-template-picker-sidebar] [role="tab"][aria-selected="true"]'
+        : "[data-template-picker-category-select]";
+      return popup?.querySelector<HTMLElement>(selector) ?? null;
+    },
+  );
+  const setTemplatePickerPopup$ = onRef(
+    command(({ get, set }, element: HTMLElement, signal: AbortSignal) => {
+      set(internalTemplatePickerPopup$, element);
+      signal.addEventListener(
+        "abort",
+        () => {
+          if (get(internalTemplatePickerPopup$) === element) {
+            set(internalTemplatePickerPopup$, null);
+          }
+        },
+        { once: true },
+      );
+    }),
+  );
   const setTemplatePickerOpen$ = command(({ set }, open: boolean) => {
     if (open) {
       set(internalTemplatePickerMounted$, true);
@@ -209,6 +236,8 @@ function createTemplatePickerDialogSignals() {
   return {
     templatePickerMounted$,
     templatePickerOpen$,
+    templatePickerInitialFocus$,
+    setTemplatePickerPopup$,
     setTemplatePickerOpen$,
     completeTemplatePickerClose$,
     templatePickerReferenceValue$,

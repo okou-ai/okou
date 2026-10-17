@@ -3441,6 +3441,7 @@ function TemplatePickerCategoryNav({
           }}
         >
           <SelectTrigger
+            data-template-picker-category-select=""
             aria-label={t(($) => {
               return $.artifacts.templates.category;
             })}
@@ -5011,6 +5012,8 @@ function TemplatePickerDialogFrame({
   const { t } = useTranslation();
   // Visibility stays below the gallery's built-in card construction.
   const open = useGet(signals.template.templatePickerOpen$);
+  const initialFocus = useSet(signals.template.templatePickerInitialFocus$);
+  const setPopup = useSet(signals.template.setTemplatePickerPopup$);
   const previewSlug = useGet(signals.template.openedTemplateId$);
   const importedPreviewId = useGet(
     signals.template.importedPresentationTemplatePreviewId$,
@@ -5069,6 +5072,8 @@ function TemplatePickerDialogFrame({
       }}
     >
       <DialogContent
+        ref={setPopup}
+        initialFocus={initialFocus}
         closeLabel={t(($) => {
           return $.artifacts.actions.close;
         })}
