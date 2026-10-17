@@ -187,6 +187,25 @@ async function syncDeployedCatalog() {
   );
 }
 
+async function syncMorningBriefCatalog() {
+  return await syncCatalog(
+    catalog(
+      MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.map((name) => {
+        return activeDefinition(name, [
+          {
+            key: "daily-delivery",
+            parameters: [],
+            desiredState: {
+              kind: "schedule",
+              schedule: { type: "cron", cronExpression: "0 7 * * *" },
+            },
+          },
+        ]);
+      }),
+    ),
+  );
+}
+
 async function executeAutomationCron() {
   return await accept(
     setupApp({ context, routes: cronExecuteWorkflowAutomationsRoutes })(
@@ -2309,7 +2328,7 @@ describe("Official schedule expiry", () => {
     const sameUserElsewhere = bdd.user({ userId: doomed.userId });
     const peer = bdd.user({ orgId: doomed.orgId, orgRole: "org:admin" });
     // These IDs came from real onboarding responses. Members of the same org
-    // share its default Agent; reconnecting a source need not reread onboarding.
+    // share its default Agent; each installation must keep that identity.
     const defaultAgentIds = new Map<ApiTestUser, string>([
       [doomed, entitlement.defaultAgentId],
       [peer, entitlement.defaultAgentId],
@@ -2396,7 +2415,6 @@ describe("Official schedule expiry", () => {
     readonly stopped: boolean;
   }) {
     await bdd.updateUserTimezone(actor, "Asia/Shanghai");
-    await connectBriefSourceForAgent(actor, defaultAgentId);
     await accept(
       morningBriefPreferenceClient().update({
         headers: authHeaders(actor),
@@ -2408,6 +2426,7 @@ describe("Official schedule expiry", () => {
     if (!installation?.agentId) {
       throw new Error("Expected the member's Morning Brief Agent");
     }
+    expect(installation.agentId).toBe(defaultAgentId);
     const [automation] = await readMorningBriefAutomations(
       actor,
       installation.id,
@@ -2451,7 +2470,8 @@ describe("Official schedule expiry", () => {
         // in scope as production system/operator boundaries. Catalog publication
         // is the first real request and owns this case's isolated database.
         installCatalogStorageFixture();
-        await syncDeployedCatalog();
+        // Cancellation concerns Morning Brief, not unrelated retirement history.
+        expect((await syncMorningBriefCatalog()).body.outcome).toBe("accepted");
         const {
           doomed,
           entitlement,
