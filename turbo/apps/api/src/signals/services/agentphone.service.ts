@@ -297,63 +297,6 @@ export function buildAgentPhoneConnectUrl(params: {
   return `${env("APP_URL")}/agentphone/connect?${query.toString()}`;
 }
 
-/**
- * The member's own phone link. A member has at most one link per organization,
- * so proactive sends address it directly instead of trusting a caller-supplied
- * handle.
- */
-export async function resolveAgentPhoneUserLinkForMember(
-  db: ReadonlyDb,
-  params: {
-    readonly userId: string;
-    readonly orgId: string;
-  },
-): Promise<AgentPhoneUserLink | null> {
-  const [userLink] = await db
-    .select()
-    .from(agentphoneUserLinks)
-    .where(
-      and(
-        eq(agentphoneUserLinks.userId, params.userId),
-        eq(agentphoneUserLinks.orgId, params.orgId),
-      ),
-    )
-    .limit(1);
-
-  return userLink ?? null;
-}
-
-export async function resolveAgentPhoneAgentIdForUserLink(
-  db: ReadonlyDb,
-  params: {
-    readonly userLinkId: string;
-    readonly phoneHandle: string;
-    readonly channel: AgentPhoneChannel;
-    readonly agentphoneAgentId?: string | null;
-  },
-): Promise<string | null> {
-  if (params.agentphoneAgentId) {
-    return params.agentphoneAgentId;
-  }
-
-  const [message] = await db
-    .select({ agentphoneAgentId: agentphoneMessages.agentphoneAgentId })
-    .from(agentphoneMessages)
-    .where(
-      and(
-        eq(agentphoneMessages.agentphoneUserLinkId, params.userLinkId),
-        eq(
-          agentphoneMessages.phoneHandle,
-          normalizeAgentPhoneHandle(params.phoneHandle, params.channel),
-        ),
-      ),
-    )
-    .orderBy(desc(agentphoneMessages.createdAt))
-    .limit(1);
-
-  return message?.agentphoneAgentId ?? null;
-}
-
 function inboundAgentPhoneMessageValues(
   event: AgentPhoneMessageEvent,
   userLinkId: string | null | undefined,
