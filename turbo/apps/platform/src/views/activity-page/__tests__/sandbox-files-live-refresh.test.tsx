@@ -16,6 +16,7 @@ import {
   openFiles,
   filesButton,
   filesTab,
+  filesViewport,
   setupFilesPage,
   loadMoreFiles,
   scrollFilesToEnd,
@@ -222,7 +223,7 @@ test("Background refresh keeps the pagination button focused and inert until its
   expect(within(panel).queryByText("Loading…")).toBeNull();
 });
 
-test("Completing a focused pagination action returns focus to the Files viewport", async () => {
+test("Completing a focused pagination action returns focus to the Files list", async () => {
   await setupFilesPage(context, {
     handler: (request) => {
       return request.params.cursor
@@ -240,7 +241,7 @@ test("Completing a focused pagination action returns focus to the Files viewport
     within(panel).findByText("last.txt"),
   ).resolves.toBeInTheDocument();
   expect(within(panel).queryByText("Load more")).toBeNull();
-  expect(within(panel).getByTestId("sandbox-files-viewport")).toHaveFocus();
+  expect(within(panel).getByTestId("sandbox-files-virtual-list")).toHaveFocus();
 });
 
 test("A failed focused pagination action keeps rows and makes Retry reachable by keyboard", async () => {
@@ -261,7 +262,7 @@ test("A failed focused pagination action keeps rows and makes Retry reachable by
     within(panel).findByText("Files are unavailable. Try again."),
   ).resolves.toBeInTheDocument();
   expect(within(panel).getByText("first.txt")).toBeInTheDocument();
-  expect(within(panel).getByTestId("sandbox-files-viewport")).toHaveFocus();
+  expect(within(panel).getByTestId("sandbox-files-virtual-list")).toHaveFocus();
   await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
   expect(filesButton("Retry", panel)).toHaveFocus();
   await userEvent.keyboard("{Enter}");
@@ -327,7 +328,7 @@ test("A scrolled listing exposes failure and retry on the existing refresh contr
   await expect(
     within(panel).findByText("file-000"),
   ).resolves.toBeInTheDocument();
-  const viewport = within(panel).getByTestId("sandbox-files-viewport");
+  const viewport = filesViewport(panel);
   const refresh = filesButton("Refresh", panel);
   fireEvent.scroll(viewport, { target: { scrollTop: 1760 } });
   await expect(
@@ -347,10 +348,10 @@ test("A scrolled listing exposes failure and retry on the existing refresh contr
   expect(viewport.scrollTop).toBe(1760);
   expect(panel.querySelectorAll("li").length).toBeLessThan(40);
   expect(
-    queryAllByRoleFast("button", viewport).some((button) => {
+    queryAllByRoleFast("button", panel).filter((button) => {
       return button.getAttribute("aria-label") === "Retry";
     }),
-  ).toBeFalsy();
+  ).toHaveLength(1);
   expect(within(panel).queryByText("Retry")).toBeNull();
   const user = userEvent.setup();
   await user.hover(refresh);
@@ -400,8 +401,7 @@ test("Removing a failed directory retains focus on the same refresh control", as
   await expect(
     within(panel).findByText("Files are unavailable. Try again."),
   ).resolves.toBeInTheDocument();
-  const viewport = within(panel).getByTestId("sandbox-files-viewport");
-  viewport.focus();
+  within(panel).getByTestId("sandbox-files-virtual-list").focus();
   await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
   const refresh = filesButton("Retry", panel);
   expect(refresh).toHaveFocus();

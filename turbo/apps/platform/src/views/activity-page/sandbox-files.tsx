@@ -10,11 +10,9 @@ import {
 } from "lucide-react";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { ScrollArea } from "@base-ui/react/scroll-area";
 import type { ReactNode } from "react";
 import {
   Button,
-  ScrollBar,
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -283,6 +281,7 @@ function FilesVirtualListFrame({
   readonly signals: SandboxFilesSignals;
   readonly children: ReactNode;
 }) {
+  const listRef = useSet(signals.virtual.scroll.setListRef$);
   const window = useGet(signals.virtual.window$, {
     equalityFn: (previous, next) => {
       return previous.height === next.height;
@@ -290,8 +289,10 @@ function FilesVirtualListFrame({
   });
   return (
     <ul
-      className="relative w-full"
+      ref={listRef}
+      className="relative w-full focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       data-testid="sandbox-files-virtual-list"
+      tabIndex={0}
       style={{ height: window.height }}
     >
       {children}
@@ -439,8 +440,6 @@ export function SandboxFilesBody({
   const phase = useGet(signals.phase$);
   const signal = useGet(pageSignal$);
   const navigate = useSet(signals.navigate$);
-  const viewport = useSet(signals.virtual.scroll.setScrollViewport$);
-  const metrics = useSet(signals.virtual.scroll.setScrollMetrics$);
   const errorId = "sandbox-files-error-" + runId;
   if (!runId) {
     return (
@@ -457,7 +456,8 @@ export function SandboxFilesBody({
   }
   return (
     <>
-      <div className="flex items-center gap-2 px-4 py-2">
+      {/* The isolated Files section keeps this toolbar above its virtual rows. */}
+      <div className="sticky top-0 z-10 flex h-12 items-center gap-2 bg-background px-4 py-2">
         <SandboxFilesBreadcrumb signals={signals} />
         <Button
           type="button"
@@ -479,26 +479,9 @@ export function SandboxFilesBody({
         <FilesRefreshControl signals={signals} errorId={errorId} />
       </div>
       {phase === "ready" ? (
-        <ScrollArea.Root className="min-h-0 flex-1">
-          <ScrollArea.Viewport
-            ref={viewport}
-            data-slot="scroll-area-viewport"
-            data-testid="sandbox-files-viewport"
-            className="h-full focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-            tabIndex={0}
-            onScroll={(event) => {
-              metrics({
-                scrollTop: event.currentTarget.scrollTop,
-                clientHeight: event.currentTarget.clientHeight,
-              });
-            }}
-          >
-            <ScrollArea.Content className="pb-4">
-              <FilesVirtualList signals={signals} />
-            </ScrollArea.Content>
-          </ScrollArea.Viewport>
-          <ScrollBar />
-        </ScrollArea.Root>
+        <div className="pb-4">
+          <FilesVirtualList signals={signals} />
+        </div>
       ) : (
         <p
           id={errorId}

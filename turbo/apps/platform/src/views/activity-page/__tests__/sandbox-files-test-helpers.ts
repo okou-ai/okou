@@ -115,6 +115,7 @@ export async function setupFilesPage(
     readonly enabled?: boolean;
     readonly mobile?: boolean;
     readonly viewportHeight?: number;
+    readonly activityHeaderHeight?: number;
     readonly bootstrapUnavailable?: boolean;
     readonly initialTab?: string;
     readonly statusHandler?: (runId: string) => RunStatus | Promise<RunStatus>;
@@ -279,9 +280,34 @@ export async function setupFilesPage(
   vi.stubGlobal("WebSocket", Socket);
   vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(
     function (this: HTMLElement) {
-      return this.dataset.testid === "sandbox-files-viewport"
+      return this.dataset.testid === "activity-detail-viewport"
         ? (options.viewportHeight ?? 264)
         : 0;
+    },
+  );
+  const rectangle = HTMLElement.prototype.getBoundingClientRect;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      const viewport = this.closest<HTMLElement>(
+        '[data-testid="activity-detail-viewport"]',
+      );
+      const top =
+        (options.activityHeaderHeight ?? 0) - (viewport?.scrollTop ?? 0);
+      if (
+        this.tagName === "SECTION" &&
+        this.getAttribute("aria-label") === "Files"
+      ) {
+        return new DOMRect(0, top, 600, 0);
+      }
+      if (this.dataset.testid === "sandbox-files-virtual-list") {
+        return new DOMRect(
+          0,
+          top + 48,
+          600,
+          Number.parseFloat(this.style.height),
+        );
+      }
+      return rectangle.call(this);
     },
   );
   context.mocks.browser.matchMedia((query) => {
@@ -342,14 +368,27 @@ export function openFiles(): Promise<HTMLElement> {
   return screen.findByRole("region", { name: "Files" });
 }
 
+export function filesViewport(panel: HTMLElement): HTMLElement {
+  const viewport = panel.closest<HTMLElement>(
+    '[data-testid="activity-detail-viewport"]',
+  );
+  if (!viewport) {
+    throw new Error("Expected the Activity page scrollport");
+  }
+  return viewport;
+}
+
 export function scrollFilesToEnd(panel: HTMLElement): void {
-  const viewport = within(panel).getByTestId("sandbox-files-viewport");
+  const viewport = filesViewport(panel);
   const list = within(panel).getByTestId("sandbox-files-virtual-list");
   fireEvent.scroll(viewport, {
     target: {
       scrollTop: Math.max(
         0,
-        Number.parseFloat(list.style.height) - viewport.clientHeight,
+        viewport.scrollTop +
+          list.getBoundingClientRect().bottom -
+          viewport.getBoundingClientRect().top -
+          viewport.clientHeight,
       ),
     },
   });
