@@ -1,5 +1,13 @@
 import { workflowsCollectionContract } from "@okouai/api-contracts";
+import {
+  userTemplatesContract,
+  type UserTemplateCatalogEntry,
+  type UserTemplateKind,
+} from "@okouai/api-contracts/contracts/user-templates";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
+import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
+import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -11,6 +19,7 @@ import {
 import { CREATE_AUTOMATION_CHAT_PROMPT } from "../../../signals/chat-page/workflow-prompt-action.ts";
 import {
   AGENT_ID,
+  buildRunModel,
   composerWorkflow,
   context,
   findComposerEditor,
@@ -29,10 +38,15 @@ async function openSlashActions({
   path = `/agents/${AGENT_ID}/chat`,
   enabled = true,
   noModelChoice = false,
+  noEffort = false,
+  featureSwitches = {},
 }: {
   readonly path?: string;
   readonly enabled?: boolean;
   readonly noModelChoice?: boolean;
+  /** The chat model runs without a runtime route, so it has no levels. */
+  readonly noEffort?: boolean;
+  readonly featureSwitches?: Partial<Record<FeatureSwitchKey, boolean>>;
 } = {}) {
   mockAgent();
   mockPersonalModelRoutes();
@@ -56,10 +70,29 @@ async function openSlashActions({
   if (noModelChoice) {
     context.mocks.data.availableRunModels([]);
   }
+  if (noEffort) {
+    const runModel = buildRunModel({
+      model: "claude-fable-5-1",
+      modelLabel: "Claude Fable 5.1",
+      providerType: "claude-code-oauth-token",
+    });
+    context.mocks.data.availableRunModels([
+      {
+        ...runModel,
+        memberEffective: {
+          ...runModel.memberEffective,
+          runtimeProviderType: null,
+        },
+      },
+    ]);
+  }
   await setupPage({
     context,
     path,
-    featureSwitches: { [FeatureSwitchKey.SlashActions]: enabled },
+    featureSwitches: {
+      ...featureSwitches,
+      [FeatureSwitchKey.SlashActions]: enabled,
+    },
   });
   const editor = await findComposerEditor();
   await fill(editor, "Draft /");
@@ -244,6 +277,205 @@ test("Model and Effort stay out when the composer offers no model choice", async
   expect(
     firstLevelNames().find((name) => {
       return name.startsWith("Model") || name.startsWith("Effort");
+    }),
+  ).toBeUndefined();
+});
+
+test("Typing after the slash finds a chat action, and Enter runs it", async () => {
+  const user = userEvent.setup();
+  const { editor } = await openSlashActions();
+  await fill(editor, "Draft /sch");
+  await waitFor(() => {
+    expect(menuButton("Schedule")).toHaveAttribute("data-active", "true");
+  });
+  expect(
+    within(screen.getByTestId("slash-workflow-menu")).getByText("Actions"),
+  ).toBeInTheDocument();
+  // Actions match from the start of a word, so `sch` names nothing else.
+  expect(
+    firstLevelNames().find((name) => {
+      return name.startsWith("Model");
+    }),
+  ).toBeUndefined();
+
+  await user.keyboard("{Enter}");
+
+  await waitFor(() => {
+    expect(editor).toHaveTextContent(`Draft ${CREATE_AUTOMATION_CHAT_PROMPT}`);
+  });
+  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+});
+
+test("A typed command keyword finds the chat's own actions", async () => {
+  await openSlashActions({ path: `/chats/${THREAD_ID}` });
+  await fill(await findComposerEditor(), "Draft /title");
+  await waitFor(() => {
+    expect(menuButton("Rename chat")).toBeInTheDocument();
+  });
+  expect(
+    firstLevelNames().find((name) => {
+      return name.startsWith("Share");
+    }),
+  ).toBeUndefined();
+});
+
+test("Effort opens the model panel with the keyboard on its effort bar", async () => {
+  const user = userEvent.setup();
+  const { editor } = await openSlashActions();
+  await fill(editor, "Draft /eff");
+  await waitFor(() => {
+    expect(menuButton("Effort")).toHaveAttribute("data-active", "true");
+  });
+
+  await user.keyboard("{Enter}");
+
+  const panel = await screen.findByRole("dialog", { name: "Chat models" });
+  const slider = await within(panel).findByRole("slider", { name: "Effort" });
+  await waitFor(() => {
+    expect(slider).toHaveFocus();
+  });
+  expect(editor).toHaveTextContent(/^Draft$/u);
+  // Arrow keys now set the effort without leaving the panel.
+  const before = slider.getAttribute("aria-valuetext");
+  await user.keyboard("{Home}");
+  await waitFor(() => {
+    expect(slider.getAttribute("aria-valuetext")).not.toBe(before);
+  });
+});
+
+test("Model opens the same panel on its model list", async () => {
+  const user = userEvent.setup();
+  const { editor } = await openSlashActions();
+  await fill(editor, "Draft /mod");
+  await waitFor(() => {
+    expect(menuButton("Model")).toHaveAttribute("data-active", "true");
+  });
+
+  await user.keyboard("{Enter}");
+
+  const panel = await screen.findByRole("dialog", { name: "Chat models" });
+  await waitFor(() => {
+    expect(panel).toContainElement(document.activeElement as HTMLElement);
+  });
+  expect(
+    within(panel).getByRole("slider", { name: "Effort" }),
+  ).not.toHaveFocus();
+});
+
+function customTemplate(
+  kind: UserTemplateKind,
+  index: number,
+): UserTemplateCatalogEntry {
+  const id = `11111111-1111-4111-8111-${String(index).padStart(12, "0")}`;
+  return {
+    id,
+    kind,
+    title: `My ${kind} template ${String(index)}`,
+    sourceFilename: `source-${kind}.pdf`,
+    coverUrl: null,
+    coverHasMorePages: false,
+    pageCount: null,
+    visibility: "private",
+    ownerUserId: "user_self",
+    ownerDisplayName: "Dana Self",
+    canManage: true,
+    createdAt: "2026-01-02T00:00:00Z",
+    updatedAt: "2026-01-02T00:00:00Z",
+    previewAssets: [],
+  };
+}
+
+test("Template counts include the custom templates listed beside the built-in ones", async () => {
+  context.mocks.browser.matchMedia((query) => {
+    return query === SIDEBAR_DESKTOP_MEDIA_QUERY;
+  });
+  context.mocks.api(userTemplatesContract.list, ({ respond }) => {
+    return respond(200, [
+      customTemplate("presentation", 1),
+      customTemplate("presentation", 2),
+      customTemplate("document", 3),
+    ]);
+  });
+  const { menu } = await openSlashActions({
+    featureSwitches: {
+      [FeatureSwitchKey.CustomTemplates]: true,
+      [FeatureSwitchKey.ComposerSlashCustomTemplates]: true,
+      [FeatureSwitchKey.BuiltinDocumentTemplates]: false,
+    },
+  });
+  // Built-in documents are off, so Document counts only the custom one.
+  const counts = {
+    Presentation: PRESENTATION_TEMPLATE_PICKER_ITEMS.length + 2,
+    Document: 1,
+    Illustration: ILLUSTRATION_TEMPLATE_ITEMS.length,
+    Website: WEBSITE_TEMPLATE_ITEMS.length,
+  };
+  const total = Object.values(counts).reduce((sum, count) => {
+    return sum + count;
+  }, 0);
+  const entry = await waitFor(() => {
+    return menuButton(`Templates ${String(total)}`);
+  });
+  fireEvent.mouseOver(entry);
+  fireEvent.mouseMove(entry);
+
+  const pane = within(menu).getByRole("region", { name: "Templates" });
+  const tabs = queryAllByRoleFast("button", pane).map((tab) => {
+    return tab.textContent?.replace(/\s+/gu, " ").trim();
+  });
+  expect(tabs).toStrictEqual(
+    expect.arrayContaining(
+      Object.entries(counts).map(([label, count]) => {
+        return `${label} ${String(count)}`;
+      }),
+    ),
+  );
+});
+
+test("Effort stays out when the chat model has no effort levels", async () => {
+  await openSlashActions({ noEffort: true });
+  await waitFor(() => {
+    expect(menuButton("Model")).toBeInTheDocument();
+  });
+  expect(
+    firstLevelNames().find((name) => {
+      return name.startsWith("Effort");
+    }),
+  ).toBeUndefined();
+});
+
+test("A template type with nothing to show gets no tab", async () => {
+  context.mocks.browser.matchMedia((query) => {
+    return query === SIDEBAR_DESKTOP_MEDIA_QUERY;
+  });
+  context.mocks.api(userTemplatesContract.list, ({ respond }) => {
+    return respond(200, [customTemplate("presentation", 1)]);
+  });
+  const { menu } = await openSlashActions({
+    featureSwitches: {
+      [FeatureSwitchKey.CustomTemplates]: true,
+      [FeatureSwitchKey.ComposerSlashCustomTemplates]: true,
+      [FeatureSwitchKey.BuiltinDocumentTemplates]: false,
+    },
+  });
+  const presentations = PRESENTATION_TEMPLATE_PICKER_ITEMS.length + 1;
+  const entry = await waitFor(() => {
+    return menuButton(
+      `Templates ${String(presentations + ILLUSTRATION_TEMPLATE_ITEMS.length + WEBSITE_TEMPLATE_ITEMS.length)}`,
+    );
+  });
+  fireEvent.mouseOver(entry);
+  fireEvent.mouseMove(entry);
+
+  const pane = within(menu).getByRole("region", { name: "Templates" });
+  const tabs = queryAllByRoleFast("button", pane).map((tab) => {
+    return tab.textContent?.replace(/\s+/gu, " ").trim() ?? "";
+  });
+  expect(tabs).toContain(`Presentation ${String(presentations)}`);
+  // Built-in documents are off and no custom document exists.
+  expect(
+    tabs.find((tab) => {
+      return tab.startsWith("Document");
     }),
   ).toBeUndefined();
 });

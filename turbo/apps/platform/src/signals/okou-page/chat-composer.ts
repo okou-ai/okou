@@ -128,16 +128,47 @@ export type OpenTemplatePickerDialogCommand = Command<
 
 function createBasicComposerUiSignals() {
   const internalModelPickerOpen$ = state(false);
+  // Whether this opening of the picker belongs to its effort bar, and whether
+  // the bar still has to take the focus.
+  const internalModelPickerAtEffort$ = state(false);
+  const internalEffortFocusPending$ = state(false);
   const modelPickerOpen$ = computed((get) => {
     return get(internalModelPickerOpen$);
   });
   const setModelPickerOpen$ = command(({ set }, open: boolean) => {
+    set(internalModelPickerAtEffort$, false);
+    set(internalEffortFocusPending$, false);
     set(internalModelPickerOpen$, open);
+  });
+  /** The same panel, with the effort bar taking the opening focus. */
+  const openModelPickerAtEffort$ = command(({ set }) => {
+    set(internalModelPickerAtEffort$, true);
+    set(internalEffortFocusPending$, true);
+    set(internalModelPickerOpen$, true);
+  });
+  // The panel lists its rows once the models resolve, which can be after Base
+  // UI places the opening focus, so the bar takes it when it arrives. Only
+  // once: a bar that remounts for another model leaves focus where it is.
+  const effortInputRef$ = onRef<HTMLInputElement>(
+    command(({ get, set }, input: HTMLInputElement) => {
+      if (get(internalEffortFocusPending$)) {
+        set(internalEffortFocusPending$, false);
+        input.focus({ preventScroll: true });
+      }
+    }),
+  );
+  // Base UI owns the opening focus; it keeps its default target unless the
+  // effort bar is taking it.
+  const modelPickerInitialFocus$ = command(({ get }) => {
+    return !get(internalModelPickerAtEffort$);
   });
   return {
     model: {
       modelPickerOpen$,
       setModelPickerOpen$,
+      openModelPickerAtEffort$,
+      effortInputRef$,
+      modelPickerInitialFocus$,
     },
   };
 }

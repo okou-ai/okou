@@ -1770,6 +1770,7 @@
       "selectedModelUnavailableToast": "선택한 모델을 사용할 수 없습니다",
       "selectModel": "모델 선택",
       "slashActions": {
+        "actions": "작업",
         "archive": "채팅 보관",
         "back": "뒤로",
         "connect": "도구 연결",

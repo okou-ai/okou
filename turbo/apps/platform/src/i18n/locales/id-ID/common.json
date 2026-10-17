@@ -1770,6 +1770,7 @@
       "selectedModelUnavailableToast": "Model yang dipilih tidak tersedia",
       "selectModel": "Pilih model",
       "slashActions": {
+        "actions": "Tindakan",
         "archive": "Arsipkan obrolan",
         "back": "Kembali",
         "connect": "Hubungkan alat",

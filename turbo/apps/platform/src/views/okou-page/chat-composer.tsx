@@ -8090,6 +8090,8 @@ function ComposerModelPickerControls({
   const { t } = useTranslation();
   const open = useGet(signals.model.modelPickerOpen$);
   const setOpen = useSet(signals.model.setModelPickerOpen$);
+  const initialFocus = useSet(signals.model.modelPickerInitialFocus$);
+  const effortInputRef = useSet(signals.model.effortInputRef$);
   return (
     <>
       <ComposerModelPanel
@@ -8101,6 +8103,8 @@ function ComposerModelPickerControls({
         triggerClassName={composerModelPickerTriggerClassName()}
         open={open}
         onOpenChange={setOpen}
+        initialFocus={initialFocus}
+        effortInputRef={effortInputRef}
       />
       <ComposerModelSlotDivider />
     </>
