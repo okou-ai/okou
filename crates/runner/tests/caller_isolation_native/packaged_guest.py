@@ -445,20 +445,25 @@ class Handler(BaseHTTPRequestHandler):
         for t in payload.get("tools", []):
             tools.extend(s.get("name") for s in t.get("tools", []))
         messages = payload.get("messages", payload.get("input", []))
-        requests.append(
-            {
+        with lock:
+            request = {
                 "path": self.path,
                 "bytes": length,
                 "tools": tools,
                 "lastInput": json.dumps(messages[-1])[-1800:] if messages else "",
             }
-        )
-        print("PACKAGED_HTTP " + json.dumps(requests[-1]), flush=True)
-        request_counts[dialect] = request_counts.get(dialect, 0) + 1
-        if request_counts[dialect] > 16:
+            requests.append(request)
+            request_counts[dialect] = request_counts.get(dialect, 0) + 1
+            over_budget = request_counts[dialect] > 16
+            count_tokens = "count_tokens" in self.path
+            if not over_budget and not count_tokens:
+                name, arguments = choose(payload, dialect)
+            call = "call_" + str(len(requests))
+        print("PACKAGED_HTTP " + json.dumps(request), flush=True)
+        if over_budget:
             self.send_error(400, "bounded synthetic fixture request budget")
             return
-        if "count_tokens" in self.path:
+        if count_tokens:
             raw = b'{"input_tokens":100}'
             self.send_response(200)
             self.send_header("content-type", "application/json")
@@ -466,10 +471,8 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(raw)
             return
-        name, arguments = choose(payload, dialect)
         if name and name not in tools:
             errors.append("requested tool missing: " + name + " in " + repr(tools))
-        call = "call_" + str(len(requests))
         events = []
         if dialect == "chat":
             delta = (

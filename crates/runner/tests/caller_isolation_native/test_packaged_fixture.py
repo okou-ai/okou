@@ -1,13 +1,21 @@
+import concurrent.futures
+import contextlib
 import copy
+import http.client
+import io
 import json
 import os
 import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
+from http.server import ThreadingHTTPServer
 from pathlib import Path
+from unittest.mock import patch
 
+import packaged_guest
 import packaged_run as fixture
 import test_fixture as primitive_tests
 
@@ -116,6 +124,71 @@ class ReceiptTest(unittest.TestCase):
         for raw in ('{"gateF":"passed","gateF":"incomplete"}', " " * 131073):
             with self.subTest(size=len(raw)), self.assertRaises(ValueError):
                 fixture.decode_summary(raw)
+
+
+class ModelPeerTest(unittest.TestCase):
+    def test_parallel_response_ids_and_request_budget(self):
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.multiple(
+                packaged_guest,
+                ROOT=Path(directory),
+                requests=[],
+                request_counts={},
+                spawned=set(),
+                errors=[],
+            ),
+            contextlib.redirect_stdout(io.StringIO()),
+            ThreadingHTTPServer(("127.0.0.1", 0), packaged_guest.Handler) as server,
+        ):
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            start = threading.Barrier(4)
+
+            def request(index):
+                connection = http.client.HTTPConnection(
+                    *server.server_address, timeout=5
+                )
+                try:
+                    if index < 4:
+                        start.wait(timeout=5)
+                    connection.request(
+                        "POST",
+                        "/v1/chat/completions",
+                        json.dumps(
+                            {
+                                "messages": [{"role": "user", "content": "PI_MAIN"}],
+                                "tools": [
+                                    {"function": {"name": name}}
+                                    for name in ("read", "bash")
+                                ],
+                            }
+                        ),
+                        {"content-type": "application/json"},
+                    )
+                    response = connection.getresponse()
+                    body = response.read().decode()
+                    identity = (
+                        json.loads(body.splitlines()[0][6:])["id"]
+                        if response.status == 200
+                        else None
+                    )
+                    return response.status, identity
+                finally:
+                    connection.close()
+
+            try:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+                    responses = list(pool.map(request, range(4)))
+                self.assertTrue(all(status == 200 for status, _ in responses))
+                self.assertEqual(len({identity for _, identity in responses}), 4)
+                for index in range(4, 16):
+                    self.assertEqual(request(index)[0], 200)
+                self.assertEqual(request(16)[0], 400)
+            finally:
+                server.shutdown()
+                thread.join(timeout=5)
+                self.assertFalse(thread.is_alive())
 
 
 class OwnerTest(unittest.TestCase):
