@@ -294,7 +294,6 @@ async function checkBudget(
       label: "Okou Social",
       reservedCredits:
         (reservation?.credits ?? 0) + args.maxCredits - args.estimatedCredits,
-      enforceBalance: true,
     },
     signal,
   );

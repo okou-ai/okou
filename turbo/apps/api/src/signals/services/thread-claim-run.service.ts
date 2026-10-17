@@ -172,7 +172,6 @@ import {
 import {
   checkCatalogRunRoute,
   checkOrgPlanRunAdmission,
-  isFreePlanForCreditAdmission,
   type RunAdmissionInput,
 } from "./run-admission.service";
 
@@ -4568,7 +4567,6 @@ interface LaunchRunRowsArgs {
   readonly officialWorkflowProvenance:
     AgentRunOfficialWorkflowProvenance | undefined;
   readonly error: string | undefined;
-  readonly creditAdmitted: boolean;
 }
 
 function launchRunValues(
@@ -4583,7 +4581,6 @@ function launchRunValues(
     orgId: args.orgId,
     status: args.status,
     agentId: args.resolved.agentId,
-    creditAdmitted: args.creditAdmitted,
     prompt: args.body.prompt,
     appendSystemPrompt: args.body.appendSystemPrompt ?? null,
     vars: args.body.vars ?? null,
@@ -4729,7 +4726,6 @@ function preparedLaunchRowsArgs(args: {
     officialWorkflowProvenance:
       args.commit.context.officialWorkflowRun?.provenance,
     error: undefined,
-    creditAdmitted: false,
   };
 }
 
@@ -4843,10 +4839,7 @@ function launchThreadBindingCte(args: {
   );
 }
 
-function buildAtomicLaunchCteContext(
-  args: AtomicLaunchRowsPlanArgs,
-  creditAdmitted: boolean,
-) {
+function buildAtomicLaunchCteContext(args: AtomicLaunchRowsPlanArgs) {
   const { rowsArgs, metadata } = args.commit.persistence.rows;
   const createdAt = nowDate();
   const ctes: WithSubquery[] = [];
@@ -4862,7 +4855,6 @@ function buildAtomicLaunchCteContext(
         [
           {
             ...launchRunValues(rowsArgs, createdAt, metadata),
-            creditAdmitted,
             modelProviderAccountIdentity: args.validatedAccountIdentity,
           },
         ],
@@ -6464,13 +6456,9 @@ function returnedCteColumn(cte: WithSubquery, name: string): SQL {
 function pendingLaunchRowsPlan(
   commit: PreparedCommitPreparedLaunchArgs,
   admission: ValidatedPreparedLaunchAdmission,
-  capabilities: OrgPlanCapabilities | null,
 ) {
-  const creditAdmitted =
-    commit.enforceBuiltInCredits &&
-    isFreePlanForCreditAdmission(capabilities?.planKey);
   const rows = { commit, payload: commit.persistence.payload, ...admission };
-  const context = buildAtomicLaunchCteContext(rows, creditAdmitted);
+  const context = buildAtomicLaunchCteContext(rows);
   return {
     rows,
     context,
@@ -6517,15 +6505,8 @@ export const commitPreparedPendingLaunch$ = command(
         const persisted = await admissionTiming.measureLeaf(
           "persistence",
           async () => {
-            // The approved S1 snapshot also drives the persisted admission bit;
-            // account/session/queue authority is still checked by this writer.
-            const capabilities = args.planCapabilities;
             signal.throwIfAborted();
-            const prepared = pendingLaunchRowsPlan(
-              args,
-              admission,
-              capabilities,
-            );
+            const prepared = pendingLaunchRowsPlan(args, admission);
             const rowsPersisted = await timing.measureDatabase(
               "api_dispatch_persist_atomic_launch",
               "api_dispatch_persist_atomic_launch_sql_call",

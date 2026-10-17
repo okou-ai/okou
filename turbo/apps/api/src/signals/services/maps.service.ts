@@ -193,7 +193,6 @@ export const mapsSearch$ = command(
       {
         orgId: args.auth.orgId,
         userId: args.auth.userId,
-        ...(runId ? { runId } : {}),
         resource: {
           kind: USAGE_KIND,
           provider: VERTEX_MAPS_PROVIDER,
