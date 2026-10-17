@@ -106,10 +106,13 @@ test("A completed activity appears only after its full event history is ready", 
   ).resolves.toBeInTheDocument();
   expect(screen.getByText("Page one content")).toBeInTheDocument();
   expect(
-    screen.queryByText(
-      "Activity logs do not update automatically. Reload the page to see the latest entries.",
-    ),
+    screen.queryByText("Logs do not update automatically."),
   ).not.toBeInTheDocument();
+  expect(
+    queryAllByRoleFast("button").some((button) => {
+      return button.textContent?.trim() === "Refresh";
+    }),
+  ).toBeFalsy();
   expect(
     queryAllByRoleFast("tab").some((tab) => {
       return tab.textContent?.trim() === "Steps";
@@ -140,8 +143,11 @@ test("An active activity explains how to load the latest logs", async () => {
     screen.findByText("Current activity log"),
   ).resolves.toBeInTheDocument();
   expect(
-    screen.getByText(
-      "Activity logs do not update automatically. Reload the page to see the latest entries.",
-    ),
+    screen.getByText("Logs do not update automatically."),
+  ).toBeInTheDocument();
+  expect(
+    queryAllByRoleFast("button").find((button) => {
+      return button.textContent?.trim() === "Refresh";
+    }),
   ).toBeInTheDocument();
 });

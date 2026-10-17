@@ -7,7 +7,7 @@ import {
   useLastResolved,
 } from "ccstate-react";
 import type { ReactNode } from "react";
-import { Search, Loader2, Download, ChartLine } from "lucide-react";
+import { Search, Loader2, Download, ChartLine, RefreshCw } from "lucide-react";
 import {
   surfaceVariants,
   Button,
@@ -589,11 +589,27 @@ function ActivityStepsContent({
         startedAt={detail.startedAt}
       />
       {isActiveRunStatus(detail.status) && (
-        <p className="text-sm text-muted-foreground">
-          {t(($) => {
-            return $.activity.detail.manualReloadNotice;
-          })}
-        </p>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <p className="text-sm text-muted-foreground">
+            {t(($) => {
+              return $.activity.detail.manualReloadNotice;
+            })}
+          </p>
+          <Button
+            type="button"
+            variant="neutral"
+            size="sm"
+            className="shrink-0"
+            onClick={() => {
+              window.location.reload();
+            }}
+          >
+            <RefreshCw aria-hidden />
+            {t(($) => {
+              return $.activity.detail.refresh;
+            })}
+          </Button>
+        </div>
       )}
     </div>
   );

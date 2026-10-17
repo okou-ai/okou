@@ -134,7 +134,7 @@
         "updateRequired": "この実行はファイル閲覧に対応していません。サンドボックスの更新後に新しい実行を開始してください。"
       },
       "log": "ログ",
-      "manualReloadNotice": "アクティビティログは自動更新されません。最新のログを表示するには、ページを再読み込みしてください。",
+      "manualReloadNotice": "ログは自動更新されません。",
       "modelProvidedBy": "{{model}} は {{provider}} によって提供されます",
       "networkEmpty": {
         "description": "この実行ではネットワーク トラフィックは記録されませんでした。",
@@ -145,6 +145,7 @@
         "description": "このログは存在しないか、現在のワークスペースで表示する権限がありません。",
         "title": "ログが見つかりません"
       },
+      "refresh": "更新",
       "runner": {
         "environment": "環境",
         "framework": "フレームワーク",
