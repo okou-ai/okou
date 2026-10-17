@@ -30,7 +30,7 @@ import {
   sendAgentPhoneMessage,
   sendAgentPhoneTypingIndicator,
 } from "../external/agentphone-client";
-import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { writeDb$, type ReadonlyDb } from "../external/db";
 import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
@@ -1208,7 +1208,6 @@ const persistAgentPhoneChatMessage$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
       readonly userLink: AgentPhoneUserLink;
       readonly agent: WorkspaceAgent;
       readonly event: AgentPhoneMessageEvent;
@@ -1344,7 +1343,6 @@ const runAgentForAgentPhone$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
       readonly userLink: AgentPhoneUserLink;
       readonly agent: WorkspaceAgent;
       readonly event: AgentPhoneMessageEvent;
@@ -1526,7 +1524,6 @@ export const handleAgentPhoneMessage$ = command(
     await set(
       runAgentForAgentPhone$,
       {
-        db,
         userLink,
         agent,
         rootMessageId,
