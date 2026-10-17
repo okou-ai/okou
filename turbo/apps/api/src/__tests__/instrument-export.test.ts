@@ -424,6 +424,33 @@ describe("API telemetry exports", () => {
     Sentry.addBreadcrumb({ category: "http", data: { url: discordUrl } });
     Sentry.captureEvent({ message: proof, request: { url: discordUrl } });
 
+    // Download preparation carries a private path and redemption carries the
+    // one-use credential in its body. Exercise the configured real SDK's
+    // export and retained-breadcrumb boundaries, including encoded paths.
+    const downloadTicket = randomBytes(32).toString("base64url");
+    const downloadPath = Buffer.from(
+      `private-file-${randomBytes(16).toString("hex")}`,
+    ).toString("base64url");
+    for (const pathname of [
+      "/api/runs/9b006e14-3f2c-47b4-81da-03bf670930e7/files/download",
+      "/api/runners/files/downloads/consume",
+      "/api/runners/files/downloads/%63onsume/",
+    ]) {
+      const url = `${origin}${pathname}`;
+      Sentry.addBreadcrumb({
+        category: "http",
+        data: { url, ticket: downloadTicket },
+      });
+      Sentry.captureEvent({
+        message: `Download failure ${downloadTicket}`,
+        request: {
+          url,
+          data: { ticket: downloadTicket, path: [downloadPath] },
+        },
+        extra: { privatePath: downloadPath },
+      });
+    }
+
     // An opaque URL is accepted by the environment schema but cannot resolve
     // relative destinations. Exercise the real HTTP error boundary without a
     // synthetic route or a mocked handler. The configured SDK may omit request
@@ -509,7 +536,7 @@ describe("API telemetry exports", () => {
     const exportedTraces = JSON.stringify(traces);
     expect(exportedTraces).toContain("GET /health");
     expect(exportedTraces).toContain(`${path}-other`);
-    for (const secret of [proof, identity]) {
+    for (const secret of [proof, identity, downloadTicket, downloadPath]) {
       expect(exportedTraces).not.toContain(secret);
       expect(errors.join("\n")).not.toContain(secret);
     }

@@ -32,7 +32,8 @@ fn official_group(directory: &Path) -> io::Result<Option<Gid>> {
 }
 
 fn is_official(directory: &Path) -> io::Result<bool> {
-    Ok(directory == HomePaths::new().map_err(io::Error::other)?.wss_dir())
+    let home = HomePaths::new().map_err(io::Error::other)?;
+    Ok(directory == home.wss_dir() || directory == home.file_download_dir())
 }
 
 fn dedicated_group() -> io::Result<Gid> {

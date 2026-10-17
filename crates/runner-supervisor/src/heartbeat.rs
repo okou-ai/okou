@@ -60,6 +60,7 @@ pub struct HeartbeatContext {
     active_runs: ActiveRuns,
     home_cache_snapshot: HomeCacheStateSnapshot,
     wss_ingress_service_probe: WssIngressServiceProbe,
+    file_download_ready: Option<Arc<std::sync::atomic::AtomicBool>>,
     sandbox_op_reporter: Option<runner_storage::SandboxOpReporter>,
 }
 
@@ -101,8 +102,16 @@ impl HeartbeatContext {
             active_runs: init.active_runs.clone(),
             home_cache_snapshot: init.home_cache_snapshot,
             wss_ingress_service_probe: init.wss_ingress_service_probe,
+            file_download_ready: None,
             sandbox_op_reporter: init.sandbox_op_reporter,
         }
+    }
+    pub(crate) fn with_file_download_readiness(
+        mut self,
+        ready: Option<Arc<std::sync::atomic::AtomicBool>>,
+    ) -> Self {
+        self.file_download_ready = ready;
+        self
     }
 }
 
@@ -364,6 +373,11 @@ async fn send_heartbeat(
         &hb.base.profiles,
     );
     state.wss_ingress_service_active = (hb.wss_ingress_service_probe)().await;
+    state.file_download_service_version = hb
+        .file_download_ready
+        .as_ref()
+        .filter(|ready| ready.load(std::sync::atomic::Ordering::SeqCst))
+        .map(|_| api_contracts::generated::constants::runners::files::VERSION);
     if let Some(reporter) = &hb.sandbox_op_reporter {
         let mut observation = HomeObservation::new(
             HomeObservationKind::Inventory,
@@ -563,6 +577,7 @@ pub fn collect_heartbeat_state(
         held_home_states: Vec::new(),
         active_reuse_producers: Vec::new(),
         wss_ingress_service_active: false,
+        file_download_service_version: None,
         mode: match mode {
             RunnerMode::Starting => "starting".to_string(),
             RunnerMode::Running => "running".to_string(),

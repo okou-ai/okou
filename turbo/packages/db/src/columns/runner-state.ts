@@ -53,6 +53,9 @@ export function runnerStateColumns() {
     wssIngressServiceActive: boolean("wss_ingress_service_active")
       .notNull()
       .default(false),
+    /** Independent observation age: old API writers cannot refresh this capability. */
+    fileDownloadServiceVersion: integer("file_download_service_version"),
+    fileDownloadServiceSeenAt: timestamp("file_download_service_seen_at"),
     lastSeenAt: timestamp("last_seen_at").notNull(),
   };
 }

@@ -261,6 +261,7 @@ function runnerHeartbeatBody(
     readonly heldHomeStates?: RunnerHeartbeatBody["heldHomeStates"];
     readonly activeReuseProducers?: RunnerHeartbeatBody["activeReuseProducers"];
     readonly wssIngressServiceActive?: boolean;
+    readonly fileDownloadServiceVersion?: 1;
     readonly mode?: RunnerHeartbeatBody["mode"];
   } = {},
 ): RunnerHeartbeatBody {
@@ -279,6 +280,9 @@ function runnerHeartbeatBody(
     heldSandboxStates: args.heldSandboxStates ?? [],
     heldHomeStates: args.heldHomeStates ?? [],
     activeReuseProducers: args.activeReuseProducers ?? [],
+    ...(args.fileDownloadServiceVersion === undefined
+      ? {}
+      : { fileDownloadServiceVersion: args.fileDownloadServiceVersion }),
     ...(args.wssIngressServiceActive === undefined
       ? {}
       : { wssIngressServiceActive: args.wssIngressServiceActive }),
@@ -1368,6 +1372,7 @@ export function createRunsApi(context: TestContext) {
         readonly heldHomeStates?: RunnerHeartbeatBody["heldHomeStates"];
         readonly activeReuseProducers?: RunnerHeartbeatBody["activeReuseProducers"];
         readonly wssIngressServiceActive?: boolean;
+        readonly fileDownloadServiceVersion?: 1;
         readonly mode?: RunnerHeartbeatBody["mode"];
       } = {},
     ) {

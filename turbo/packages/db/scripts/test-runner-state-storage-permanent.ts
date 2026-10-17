@@ -66,6 +66,8 @@ async function validateCanonicalRunnerStateStorage(databaseUrl: string) {
       },
     ],
     wssIngressServiceActive: true,
+    fileDownloadServiceVersion: 1,
+    fileDownloadServiceSeenAt: new Date("2026-10-12T01:00:00Z"),
     lastSeenAt: new Date("2026-10-12T01:00:00Z"),
   } satisfies typeof runnerState.$inferInsert;
   const order = (generation: number, sequence: number) => {
@@ -122,6 +124,8 @@ async function validateCanonicalRunnerStateStorage(databaseUrl: string) {
     assert.equal(defaults.heartbeatGeneration, 0);
     assert.equal(defaults.heartbeatSequence, 0);
     assert.equal(defaults.wssIngressServiceActive, false);
+    assert.equal(defaults.fileDownloadServiceVersion, null);
+    assert.equal(defaults.fileDownloadServiceSeenAt, null);
     assert.equal(defaults.mode, "running");
     const [inserted] = await db
       .insert(runnerState)
@@ -138,6 +142,11 @@ async function validateCanonicalRunnerStateStorage(databaseUrl: string) {
     assert.equal(inserted.totalVcpu, 8);
     assert.equal(inserted.allocatedMemoryMb, 4096);
     assert.equal(inserted.wssIngressServiceActive, true);
+    assert.equal(inserted.fileDownloadServiceVersion, 1);
+    assert.deepEqual(
+      inserted.fileDownloadServiceSeenAt,
+      observation.fileDownloadServiceSeenAt,
+    );
     assert.deepEqual(
       await db
         .select()
@@ -153,6 +162,18 @@ async function validateCanonicalRunnerStateStorage(databaseUrl: string) {
       [inserted],
     );
     assert.deepEqual(await holders(), [{ runnerId }]);
+    // An old heartbeat writer updates only the general timestamp. It cannot
+    // prolong the independently observed download listener capability.
+    const [oldWriter] = await db
+      .update(runnerState)
+      .set({ lastSeenAt: new Date("2026-10-12T01:00:31Z") })
+      .where(eq(runnerState.runnerId, runnerId))
+      .returning();
+    assert.ok(oldWriter);
+    assert.deepEqual(
+      oldWriter.fileDownloadServiceSeenAt,
+      observation.fileDownloadServiceSeenAt,
+    );
     const empty = { ...observation, heartbeatSequence: 5, heldHomeStates: [] };
     const [cleared] = await db
       .insert(runnerState)

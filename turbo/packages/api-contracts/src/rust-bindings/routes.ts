@@ -2,6 +2,7 @@ import { runnerRealtimeTokenContract } from "../contracts/realtime";
 import { runnerSshContract } from "../contracts/runner-ssh";
 import { runnerVncContract } from "../contracts/runner-vnc";
 import { runnerWssTicketsContract } from "../contracts/runner-wss-tickets";
+import { runnerFileDownloadsContract } from "../contracts/runner-file-downloads";
 import { runnersRunStartupContract } from "../contracts/runner-startup";
 import {
   runnersCancellationContract,
@@ -35,6 +36,11 @@ export interface RustRouteBinding {
 }
 
 export const rustRouteBindings = [
+  {
+    route: runnerFileDownloadsContract.consume,
+    rustModulePath: ["runners", "files"],
+    rustConstName: "CONSUME",
+  },
   {
     route: runnersRunStartupContract.setStartup,
     rustModulePath: ["runners", "runs", "by_run_id", "startup"],

@@ -119,7 +119,7 @@ test("Auto bootstrap rejects a noncanonical Auto entry before writing preference
   );
 });
 
-test("mock bootstrap provisions both personal subscriptions", async (context) => {
+test("mock bootstrap opts into Activity Files before provisioning personal subscriptions", async (context) => {
   const { result, calls } = await runBootstrap(
     context,
     "runner-mock-claude-bootstrap.bash",
@@ -136,7 +136,9 @@ test("mock bootstrap provisions both personal subscriptions", async (context) =>
       { method: "GET", path: "/api/run-models" },
     ],
   );
-  assert.deepEqual(calls[0].body, { switches: { _realAgentInPreview: false } });
+  assert.deepEqual(calls[0].body, {
+    switches: { _realAgentInPreview: false, _debug: true },
+  });
   assert.deepEqual(calls[1].body, {
     type: "claude-code-oauth-token",
     secret: "mock-oauth-token-for-e2e",

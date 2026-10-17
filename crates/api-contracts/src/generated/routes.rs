@@ -21,6 +21,16 @@ pub mod runners {
         }
     }
 
+    /// Generated route bindings under `runners::files`.
+    pub mod files {
+        /// Redeem an exact-file download grant on its owning official Runner.
+        /// Route contract: `POST /api/runners/files/downloads/consume`.
+        pub const CONSUME: crate::Route = crate::Route {
+            method: crate::Method::Post,
+            path: "/api/runners/files/downloads/consume",
+        };
+    }
+
     /// Generated route bindings under `runners::heartbeat`.
     pub mod heartbeat {
         /// Report runner heartbeat with capacity and state.

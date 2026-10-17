@@ -2,6 +2,18 @@
 {
 	admin off
 	auto_https disable_redirects
+	# Download URLs are bearer credentials. Redact request metadata in error logs
+	# too; access logging is deliberately not enabled on this ingress.
+	log default {
+		format filter {
+			wrap json
+			fields {
+				request>uri delete
+				request>headers delete
+				resp_headers delete
+			}
+		}
+	}
 }
 
 {{ inventory_hostname }} {
@@ -12,7 +24,17 @@
 		}
 	}
 	@runner path_regexp runner ^/ws/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$
+	@download path_regexp download ^/downloads/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[A-Za-z0-9_-]{43}$
 	route {
+		reverse_proxy @download unix//var/lib/vm0-runner/file-downloads/{re.download.1}.sock {
+			# Positive flushing retains upstream cancellation on client disconnect.
+			flush_interval 100ms
+			transport http {
+				versions 1.1
+				dial_timeout 5s
+				response_header_timeout 12s
+			}
+		}
 		reverse_proxy @runner unix//var/lib/vm0-runner/wss/{re.runner.1}.sock
 		respond 404
 	}

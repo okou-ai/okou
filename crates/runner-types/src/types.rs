@@ -1737,6 +1737,9 @@ pub struct HeartbeatState {
     pub active_reuse_producers: Vec<ActiveReuseProducer>,
     /// Host-local WSS ingress service state, not public WSS reachability.
     pub wss_ingress_service_active: bool,
+    /// Complete local HTTP/read consumer; not public Caddy/TLS verification.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_download_service_version: Option<u32>,
     pub mode: String,
 }
 
@@ -2624,6 +2627,7 @@ mod tests {
                 profile: "vm0/default".into(),
             }],
             wss_ingress_service_active: true,
+            file_download_service_version: None,
             mode: "running".into(),
         };
         let json: serde_json::Value = serde_json::to_value(&state).unwrap();
@@ -2705,6 +2709,7 @@ mod tests {
             held_home_states: Vec::new(),
             active_reuse_producers: Vec::new(),
             wss_ingress_service_active: false,
+            file_download_service_version: None,
             mode: "running".into(),
         };
 

@@ -8,10 +8,21 @@ use std::sync::Arc;
 use tokio::net::UnixStream;
 
 fn enable_wss(config: &mut RunConfig, dir: PathBuf) {
+    let download_dir = dir.parent().unwrap().join("file-downloads");
+    if dir.parent().unwrap().is_dir() && !download_dir.exists() {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::create_dir_all(&download_dir).unwrap();
+        std::fs::set_permissions(&download_dir, std::fs::Permissions::from_mode(0o710)).unwrap();
+    }
     config.wss = Some(WssConfig {
+        download_dir,
         socket_dir: dir,
         hostname: Some("runner.okou.ai".to_owned()),
         consumer: Arc::new(runner_wss::ApiTicketConsumer::new(
+            config.exec_config.http.clone(),
+            "test-official-token".to_owned(),
+        )),
+        download_consumer: Arc::new(runner_download::ApiGrantConsumer::new(
             config.exec_config.http.clone(),
             "test-official-token".to_owned(),
         )),
@@ -59,6 +70,11 @@ async fn listener_starts_before_ready_and_is_removed_after_stop() {
     std::fs::create_dir(&dir).unwrap();
     std::fs::set_permissions(&dir, std::os::unix::fs::PermissionsExt::from_mode(0o710)).unwrap();
     let path = dir.join(format!("{}.sock", config.runner.identity.runner_id()));
+    let download_path = env
+        ._temp_dir
+        .path()
+        .join("file-downloads")
+        .join(format!("{}.sock", config.runner.identity.runner_id()));
     enable_wss(&mut config, dir);
     env.handle.block_startup_readiness();
     let status_path = env._temp_dir.path().join("status.json");
@@ -79,6 +95,10 @@ async fn listener_starts_before_ready_and_is_removed_after_stop() {
         tokio::task::yield_now().await;
     }
     assert!(connected, "WSS socket must be connectable before ready");
+    assert!(
+        UnixStream::connect(&download_path).await.is_ok(),
+        "download HTTP listener starts before readiness too"
+    );
     let state: serde_json::Value =
         serde_json::from_slice(&tokio::fs::read(&status_path).await.unwrap()).unwrap();
     assert_eq!(state["mode"], "starting");
@@ -89,6 +109,30 @@ async fn listener_starts_before_ready_and_is_removed_after_stop() {
     assert!(
         !path.exists(),
         "only this process's socket is removed on stop"
+    );
+    assert!(
+        !download_path.exists(),
+        "download socket ownership ends at Runner shutdown"
+    );
+}
+
+#[tokio::test]
+async fn unsafe_download_namespace_prevents_official_readiness_and_claims() {
+    use std::os::unix::fs::PermissionsExt;
+    let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
+    let dir = env._temp_dir.path().join("wss");
+    let downloads = env._temp_dir.path().join("file-downloads");
+    std::fs::create_dir(&dir).unwrap();
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o710)).unwrap();
+    std::fs::create_dir(&downloads).unwrap();
+    std::fs::set_permissions(&downloads, std::fs::Permissions::from_mode(0o777)).unwrap();
+    enable_wss(&mut config, dir);
+    assert!(run(config).await.is_err());
+    assert_eq!(env.handle.startup_readiness_calls(), 0);
+    assert_eq!(env.handle.discover_started_count(), 0);
+    assert_eq!(
+        downloads.metadata().unwrap().permissions().mode() & 0o777,
+        0o777
     );
 }
 

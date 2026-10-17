@@ -3,6 +3,12 @@ import { type RustRouteBinding, rustRouteBindings } from "../routes";
 
 const expectedBindings = [
   {
+    method: "POST",
+    path: "/api/runners/files/downloads/consume",
+    rustModulePath: ["runners", "files"],
+    rustConstName: "CONSUME",
+  },
+  {
     method: "PUT",
     path: "/api/runners/runs/:runId/startup",
     rustModulePath: ["runners", "runs", "by_run_id", "startup"],

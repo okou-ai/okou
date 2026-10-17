@@ -2671,6 +2671,7 @@ mod tests {
             }],
             active_reuse_producers: vec![],
             wss_ingress_service_active: false,
+            file_download_service_version: None,
             mode: "running".to_string(),
         }
     }

@@ -578,6 +578,13 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const wssIngressServiceActive =
     auth.type === "official-runner" &&
     body.data.wssIngressServiceActive === true;
+  const fileDownloadServiceVersion =
+    auth.type === "official-runner" &&
+    body.data.fileDownloadServiceVersion === 1
+      ? 1
+      : null;
+  const fileDownloadServiceSeenAt =
+    fileDownloadServiceVersion === 1 ? currentDate : null;
   const snapshotOrder = {
     generation: body.data.snapshotGeneration,
     sequence: body.data.snapshotSequence,
@@ -602,6 +609,8 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       activeReuseProducers: body.data.activeReuseProducers,
       mode: body.data.mode,
       wssIngressServiceActive,
+      fileDownloadServiceVersion,
+      fileDownloadServiceSeenAt,
       lastSeenAt: currentDate,
     })
     .onConflictDoUpdate({
@@ -625,6 +634,8 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         activeReuseProducers: sql`CASE WHEN ${runnerState.activeReuseProducers} IS DISTINCT FROM excluded.active_reuse_producers THEN excluded.active_reuse_producers ELSE ${runnerState.activeReuseProducers} END`,
         mode: body.data.mode,
         wssIngressServiceActive,
+        fileDownloadServiceVersion,
+        fileDownloadServiceSeenAt,
         lastSeenAt: currentDate,
       },
       setWhere: or(

@@ -111,9 +111,17 @@ describe("instrument", () => {
       "/api/integrations/telegram/auth-callback?hash=synthetic",
       "/api/integrations/telegram/auth-callback?callbackProtocol=invalid",
       "/api/integrations/discord/oauth/callback?code=synthetic",
+      "/api/runs/9b006e14-3f2c-47b4-81da-03bf670930e7/files/download",
+      "/api/runners/files/downloads/consume",
+      "/api/runners/files/downloads/%63onsume?invalid=1",
+      "/api/runners/files/downloads/consume/",
+      "/api/runs/%/files/download",
     ]) {
       expect(ignoreBody?.(url, {})).toBeTruthy();
     }
     expect(ignoreBody?.("/health", {})).toBeFalsy();
+    expect(
+      ignoreBody?.("/api/runners/files/downloads/consume-other", {}),
+    ).toBeFalsy();
   });
 });

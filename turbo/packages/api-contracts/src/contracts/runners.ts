@@ -1497,6 +1497,9 @@ export const heartbeatBodySchema = z
     // This shared endpoint also accepts PAT and older Runner heartbeats without
     // a host observation. Absence is a first-class unknown, never WSS-eligible.
     wssIngressServiceActive: z.boolean().optional(),
+    // Optional for independently deployed old Runner/API writers; never infer it
+    // from general heartbeat freshness or WSS availability.
+    fileDownloadServiceVersion: z.literal(1).optional(),
     mode: z.enum(["starting", "running", "draining", "stopping"]),
   })
   .superRefine((heartbeat, ctx) => {
