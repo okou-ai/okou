@@ -26,7 +26,7 @@ from mitmproxy.test import taddons, tutils
 
 import managed_openrouter as managed
 import mitm_addon
-from tests.managed_openrouter_helpers import PATHS, PRESET, sandbox
+from tests.managed_openrouter_helpers import PATHS, PI_ATTRIBUTION_HEADERS, PRESET, sandbox
 from tests.mitmproxy_http_framing_helpers import start_http_layer
 from tests.request_handler_helpers import _write_registry
 from tests.upstream_connection_helpers import mark_connected_tls_upstream
@@ -88,6 +88,8 @@ async def test_complete_body_is_validated_before_any_upstream_request(
             ),
             content=None,
         )
+        for name, value in PI_ATTRIBUTION_HEADERS:
+            req.headers[name] = value
         if http2:
             req.authority = "openrouter.ai"
         pending = list(stream.handle_event(RequestHeaders(1, req, end_stream=False)))
@@ -145,6 +147,8 @@ async def test_complete_body_is_validated_before_any_upstream_request(
             ]
             assert len(heads) == 1
             assert heads[0].request.headers["Authorization"] == "Bearer synthetic-managed"
+            for name, value in PI_ATTRIBUTION_HEADERS:
+                assert heads[0].request.headers[name] == value
             assert (
                 b"".join(
                     c.event.data

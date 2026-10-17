@@ -12,7 +12,13 @@ import flow_metadata_keys as metadata_keys
 import managed_openrouter as managed
 import mitm_addon
 from tests.firewall_auth_helpers import firewall_auth_response
-from tests.managed_openrouter_helpers import model_config, payload, request, sandbox
+from tests.managed_openrouter_helpers import (
+    PI_ATTRIBUTION_HEADERS,
+    model_config,
+    payload,
+    request,
+    sandbox,
+)
 from tests.request_handler_helpers import _write_registry
 from tests.upstream_connection_helpers import seed_server_binding
 
@@ -39,6 +45,7 @@ async def test_no_auth_or_stream_until_the_complete_body_passes(
     ):
         assert mitm_addon.requestheaders(flow) is None
         auth_fetch.assert_not_called()
+        assert flow.error is None
         assert flow.request.stream is False
         assert "X-Okou-Connector-Intent" not in flow.request.headers
         assert flow.request.headers["Authorization"] == "Bearer sandbox-placeholder"
@@ -49,6 +56,8 @@ async def test_no_auth_or_stream_until_the_complete_body_passes(
         assert flow.request.raw_content == raw
         assert flow.request.headers["Authorization"] == "Bearer managed-token"
         assert flow.request.headers["Accept-Encoding"] == "gzip, br"
+        for name, value in PI_ATTRIBUTION_HEADERS:
+            assert flow.request.headers[name] == value
         assert managed.admission_state_for_tests()[0] == 1
         flow.response = http.Response.make(200, b"{}", {"Content-Type": "application/json"})
         mitm_addon.response(flow)

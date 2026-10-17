@@ -7,6 +7,13 @@ import managed_openrouter
 from tests.request_handler_helpers import _single_firewall_sandbox
 
 PRESET = "@preset/captured-org-route"
+# Pi coding-agent 1.1.0's getDefaultAttributionHeaders adds these after the
+# bare pi-ai request builder. Keep the production client profile in hook tests.
+PI_ATTRIBUTION_HEADERS = (
+    ("HTTP-Referer", "https://pi.dev"),
+    ("X-OpenRouter-Title", "pi"),
+    ("X-OpenRouter-Categories", "cli-agent"),
+)
 PATHS = {
     "openai-completions": "/api/v1/chat/completions",
     "openai-responses": "/api/v1/responses",
@@ -73,4 +80,6 @@ def request(real_flow, body: dict | bytes | None = None, dialect: str = "openai-
     )
     flow.request.headers["Content-Length"] = str(len(raw))
     flow.request.headers["Authorization"] = "Bearer sandbox-placeholder"
+    for name, value in PI_ATTRIBUTION_HEADERS:
+        flow.request.headers[name] = value
     return flow

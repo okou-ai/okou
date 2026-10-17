@@ -58,6 +58,10 @@ _HEADERS = frozenset(
         "tracestate",
         "user-agent",
         "x-client-request-id",
+        # Pi coding-agent adds OpenRouter app attribution after pi-ai builds
+        # the request. These exact metadata headers do not select a route.
+        "x-openrouter-categories",
+        "x-openrouter-title",
         "x-session-id",
         "x-session-affinity",
         "x-title",
