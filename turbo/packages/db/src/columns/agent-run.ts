@@ -91,7 +91,6 @@ export function agentRunColumns() {
     lastEventSequence: integer("last_event_sequence"),
     orgId: text("org_id").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
-    creditAdmitted: boolean("credit_admitted").notNull().default(false),
     startedAt: timestamp("started_at"),
     completedAt: timestamp("completed_at"),
     // Immutable winning official claim attribution. ID/generation is the
