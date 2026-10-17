@@ -232,7 +232,28 @@ pub(crate) struct Stream {
     trace: super::evidence::Trace,
 }
 
+/// Opaque liveness of the actual authenticated peer/address/TCP binding.
+/// Higher protocol layers retain this to fence their own decrypted buffers.
+#[derive(Clone)]
+pub(crate) struct StreamGuard(Arc<Binding>);
+
+impl StreamGuard {
+    pub(crate) fn is_live(&self) -> bool {
+        self.0.live()
+    }
+    pub(crate) async fn retired(&self) {
+        self.0.cancelled().cancelled().await;
+    }
+}
+
 impl Stream {
+    pub(crate) fn guard(&self) -> StreamGuard {
+        StreamGuard(Arc::clone(&self.binding))
+    }
+    /// This stream can only be created by the exact authenticated peer/tuple dial.
+    pub(crate) fn is_live(&self) -> bool {
+        self.binding.live()
+    }
     #[cfg(test)]
     pub(super) fn evidence(&self) -> Option<super::evidence::Snapshot> {
         self.trace.snapshot()

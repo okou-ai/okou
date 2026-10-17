@@ -22,6 +22,7 @@ impl Run {
             cancelled,
             sandbox: sandbox_cancelled,
             session: CancellationToken::new(),
+            native: None,
             deadline,
         };
         let mut writer = ResponseWriter::new(input);

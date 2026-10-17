@@ -16,10 +16,24 @@ use tokio::{
     sync::{Mutex, Semaphore, mpsc},
     task::{JoinHandle, JoinSet},
 };
-use tokio_rustls::TlsAcceptor;
+use tokio_rustls::{TlsAcceptor, server::TlsStream};
 use tokio_util::sync::CancellationToken;
 
-pub(super) enum Event {
+trait PeerIo: crate::cloudflare::ByteIo {
+    fn reset(&self) -> io::Result<()>;
+}
+impl PeerIo for TcpStream {
+    fn reset(&self) -> io::Result<()> {
+        self.set_zero_linger()
+    }
+}
+impl PeerIo for TlsStream<TcpStream> {
+    fn reset(&self) -> io::Result<()> {
+        self.get_ref().0.set_zero_linger()
+    }
+}
+
+pub(crate) enum Event {
     Mode(u8),
     Capture,
     Input(Vec<u8>),
@@ -33,6 +47,7 @@ enum Profile {
     Plain,
     Gssapi,
     InvalidFramebuffer,
+    Classic,
 }
 
 pub(crate) const PLAIN_USERNAME: &str = " operator界 ";
@@ -42,7 +57,7 @@ pub(crate) struct Peer {
     pub(crate) address: std::net::SocketAddr,
     pub(crate) ca: String,
     pub(super) client_identity: Option<(Vec<String>, String)>,
-    pub(super) capture_gate: Arc<Mutex<Option<Arc<Semaphore>>>>,
+    pub(crate) capture_gate: Arc<Mutex<Option<Arc<Semaphore>>>>,
     pub(super) refuse: Arc<AtomicBool>,
     pub(super) disconnect: CancellationToken,
     events: Mutex<mpsc::UnboundedReceiver<Event>>,
@@ -50,6 +65,9 @@ pub(crate) struct Peer {
 }
 
 impl Peer {
+    pub(crate) async fn classic() -> Self {
+        Self::with_profile(Profile::Classic, false).await
+    }
     pub(crate) async fn none() -> Self {
         Self::with_profile(Profile::None, false).await
     }
@@ -179,7 +197,7 @@ impl Peer {
         }
     }
 
-    pub(super) async fn event(&self) -> Event {
+    pub(crate) async fn event(&self) -> Event {
         super::harness::bounded(async { self.events.lock().await.recv().await.unwrap() }).await
     }
 }
@@ -200,28 +218,41 @@ async fn serve(
     profile: Profile,
 ) -> io::Result<()> {
     socket.set_nodelay(true)?;
-    socket.write_all(b"RFB 003.008\n").await?;
+    socket
+        .write_all(if matches!(profile, Profile::Classic) {
+            b"RFB 003.889\n"
+        } else {
+            b"RFB 003.008\n"
+        })
+        .await?;
     let mut banner = [0; 12];
     socket.read_exact(&mut banner).await?;
     assert_eq!(&banner, b"RFB 003.008\n");
-    socket.write_all(&[1, 19]).await?;
-    assert_eq!(socket.read_u8().await?, 19);
-    socket.write_all(&[0, 2]).await?;
-    assert_eq!(socket.read_u16().await?, 2);
-    socket.write_all(&[0, 1]).await?;
-    let subtype = match profile {
-        Profile::None | Profile::InvalidFramebuffer => 260,
-        Profile::Vnc => 261,
-        Profile::Plain => 262,
-        Profile::Gssapi => 263,
+    let mut socket: Box<dyn PeerIo> = if matches!(profile, Profile::Classic) {
+        socket.write_all(&[1, 2]).await?;
+        assert_eq!(socket.read_u8().await?, 2);
+        Box::new(socket)
+    } else {
+        socket.write_all(&[1, 19]).await?;
+        assert_eq!(socket.read_u8().await?, 19);
+        socket.write_all(&[0, 2]).await?;
+        assert_eq!(socket.read_u16().await?, 2);
+        socket.write_all(&[0, 1]).await?;
+        let subtype = match profile {
+            Profile::None | Profile::InvalidFramebuffer => 260,
+            Profile::Vnc => 261,
+            Profile::Plain => 262,
+            Profile::Gssapi => 263,
+            Profile::Classic => return Err(io::ErrorKind::InvalidInput.into()),
+        };
+        socket.write_u32(subtype).await?;
+        assert_eq!(socket.read_u32().await?, subtype);
+        socket.write_u8(1).await?;
+        Box::new(TlsAcceptor::from(config).accept(socket).await?)
     };
-    socket.write_u32(subtype).await?;
-    assert_eq!(socket.read_u32().await?, subtype);
-    socket.write_u8(1).await?;
-    let mut socket = TlsAcceptor::from(config).accept(socket).await?;
     match profile {
         Profile::None | Profile::InvalidFramebuffer => {}
-        Profile::Vnc => {
+        Profile::Vnc | Profile::Classic => {
             socket.write_all(b"0123456789abcdef").await?;
             socket.flush().await?;
             let mut password_response = [0; 16];
@@ -289,7 +320,7 @@ async fn serve(
             () = disconnect.cancelled() => {
                 // Only an explicitly requested test disconnect uses RST. Normal
                 // close drains preceding input before observing client EOF.
-                socket.get_ref().0.set_zero_linger()?;
+                socket.reset()?;
                 return Ok(());
             }
             tag = socket.read_u8() => tag?,

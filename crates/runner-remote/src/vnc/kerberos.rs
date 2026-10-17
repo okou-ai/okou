@@ -4,7 +4,7 @@ use super::{
     Failure, Scope, VncRuntime,
     authority::{Authentication, Credential, Transport},
     network,
-    sessions::DirectOrSshStream,
+    sessions::Carrier,
 };
 use crate::diagnostics::trace::Progress;
 use api_contracts::generated::types::runners::vnc::*;
@@ -65,7 +65,7 @@ pub(super) fn profiles(ssh: bool) -> Vec<ResolveRequestSupportedProfile> {
     use ResolveRequestSupportedProfileSecurityType as S;
     use ResolveRequestSupportedProfileTransportType as R;
     let mut profiles = Vec::with_capacity(10);
-    for rfb in [R::Direct, R::Ssh] {
+    for rfb in [R::Direct, R::Ssh, R::CloudflareAccess, R::Tailscale] {
         if rfb == R::Ssh && !ssh {
             continue;
         }
@@ -121,7 +121,7 @@ pub(super) fn credential(
         return Err(Failure::Authority);
     }
     network::validate_host(&host)?;
-    let transport = super::authority::parse_transport(transport, ssh)?;
+    let (transport, native) = super::authority::parse_transport(transport, ssh)?;
     let ResolveResponseResolvedTransportSecurity::QemuX509Gssapi {
         trust,
         service,
@@ -260,6 +260,7 @@ pub(super) fn credential(
         port,
         generation,
         transport,
+        native,
         authentication: Authentication::Kerberos {
             server_name,
             roots,
@@ -359,6 +360,7 @@ impl kerberos_worker::KdcExchange for Caller<'_> {
         let port = route.port;
         let transport = route.transport;
         let mut stream = match transport {
+            Transport::Cloudflare { .. } | Transport::Tailscale { .. } => return Err(E::Authority),
             Transport::Direct => {
                 let network = Arc::clone(&self.runtime.network);
                 let owner = Arc::clone(&self.owner);
@@ -377,7 +379,7 @@ impl kerberos_worker::KdcExchange for Caller<'_> {
                     snapshot.kdc_address = Some(address);
                 }
                 self.authorize().await?;
-                DirectOrSshStream::Direct(
+                Carrier::Direct(
                     self.scope
                         .wait(self.runtime.network.connect(address))
                         .await
@@ -417,7 +419,7 @@ impl kerberos_worker::KdcExchange for Caller<'_> {
                 self.diagnostics.retain_ssh_stream(connection, &stream);
                 self.binding
                     .record_ssh_generation(&mut self.kdc, transport, learned);
-                DirectOrSshStream::Ssh(Box::new(stream))
+                Carrier::Ssh(Box::new(stream))
             }
         };
         self.diagnostics.set(Stage::KdcTransport, Progress::Passed);
@@ -505,6 +507,7 @@ mod tests {
                 cancelled: h.cancel.child_token(),
                 sandbox: CancellationToken::new(),
                 session: CancellationToken::new(),
+                native: None,
                 deadline: Instant::now() + Duration::from_secs(10),
             },
             ssh: Some(h.ssh()),
@@ -758,20 +761,28 @@ mod tests {
     }
 
     #[test]
-    fn capabilities_are_ten_exact_source_rfb_kdc_tuples() {
+    fn native_rfb_preserves_exact_legacy_kdc_tuples() {
         let full = profiles(true);
-        assert_eq!(full.len(), 10);
+        assert_eq!(full.len(), 20);
         assert_eq!(
             full.iter()
                 .filter(|p| p.kdc_transport_type
                     == Some(ResolveRequestSupportedProfileKdcTransportType::None))
                 .count(),
-            2
+            4
         );
         let direct = profiles(false);
-        assert_eq!(direct.len(), 3);
+        assert_eq!(direct.len(), 9);
         assert!(direct.iter().all(|p| p.transport_type
-            == ResolveRequestSupportedProfileTransportType::Direct
+            != ResolveRequestSupportedProfileTransportType::Ssh
             && p.kdc_transport_type != Some(ResolveRequestSupportedProfileKdcTransportType::Ssh)));
+        assert!(full.iter().all(|p| matches!(
+            p.kdc_transport_type,
+            Some(
+                ResolveRequestSupportedProfileKdcTransportType::None
+                    | ResolveRequestSupportedProfileKdcTransportType::Direct
+                    | ResolveRequestSupportedProfileKdcTransportType::Ssh
+            )
+        )));
     }
 }

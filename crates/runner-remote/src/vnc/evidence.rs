@@ -93,6 +93,8 @@ pub(super) fn route(transport: Transport) -> &'static str {
     match transport {
         Transport::Direct => "direct",
         Transport::Ssh { .. } => "ssh",
+        Transport::Cloudflare { .. } => "cloudflare_access",
+        Transport::Tailscale { .. } => "tailscale",
     }
 }
 

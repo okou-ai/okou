@@ -409,7 +409,7 @@ impl Handle {
         connection: Uuid,
         identity: Identity,
         source: &NativeSource,
-        ssh: Dependency,
+        ssh: Option<Dependency>,
         active: &Arc<AtomicBool>,
     ) -> Option<NativeWatch> {
         let mut watch = self.watch(
@@ -420,7 +420,7 @@ impl Handle {
             active,
         )?;
         watch.protocol = Protocol::Vnc;
-        watch.ssh_dependency = Some(ssh);
+        watch.ssh_dependency = ssh;
         Some(watch)
     }
     pub(crate) fn record(&self, record: Record) -> Option<Report> {
