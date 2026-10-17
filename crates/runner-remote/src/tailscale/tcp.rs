@@ -7,7 +7,7 @@ use std::{
     future::Future,
     io,
     pin::Pin,
-    sync::Arc,
+    sync::{Arc, Weak},
     task::{Context, Poll},
     time::Instant,
 };
@@ -234,21 +234,25 @@ pub(crate) struct Stream {
 
 /// Opaque liveness of the actual authenticated peer/address/TCP binding.
 /// Higher protocol layers retain this to fence their own decrypted buffers.
+/// Observing it must not extend the physical TCP tuple's reservation.
 #[derive(Clone)]
-pub(crate) struct StreamGuard(Arc<Binding>);
+pub(crate) struct StreamGuard(Weak<Binding>);
 
 impl StreamGuard {
     pub(crate) fn is_live(&self) -> bool {
-        self.0.live()
+        self.0.upgrade().is_some_and(|binding| binding.live())
     }
     pub(crate) async fn retired(&self) {
-        self.0.cancelled().cancelled().await;
+        let cancellation = self.0.upgrade().map(|binding| binding.cancelled());
+        if let Some(cancellation) = cancellation {
+            cancellation.cancelled().await;
+        }
     }
 }
 
 impl Stream {
     pub(crate) fn guard(&self) -> StreamGuard {
-        StreamGuard(Arc::clone(&self.binding))
+        StreamGuard(Arc::downgrade(&self.binding))
     }
     /// This stream can only be created by the exact authenticated peer/tuple dial.
     pub(crate) fn is_live(&self) -> bool {

@@ -610,6 +610,10 @@ impl Fixture {
         self.tcp.retire();
     }
 
+    pub(super) fn into_peers(self) -> Peers {
+        self.peers
+    }
+
     pub(super) fn unexpected_b_packet(
         &mut self,
         source: u8,
