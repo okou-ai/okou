@@ -18,8 +18,8 @@ importers:
         specifier: ^26.6.5
         version: 26.6.5
       dotenv:
-        specifier: ^18.0.7
-        version: 18.0.7
+        specifier: ^18.0.8
+        version: 18.0.8
     devDependencies:
       '@okouai/api-contracts':
         specifier: file:../turbo/packages/api-contracts
@@ -332,8 +332,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  dotenv@18.0.7:
-    resolution: {integrity: sha512-QEvMEF8ca3GNZJJnAbOgxpj5ULhBvnMcURp+XKrtvqFNPgjBvYoswQ0Jl2cO7JzCjxZjJhr9ZuIEhlrRxMft/Q==}
+  dotenv@18.0.8:
+    resolution: {integrity: sha512-2KDeoFoK/zRtcnbunCDlLG5VWVMcyqeQc6iK65o231nfNAcuGrKoqUQfJFUtBI+QlShk5HKIHxwebBtUl3rEfA==}
     engines: {node: '>=12'}
     hasBin: true
 
@@ -555,7 +555,7 @@ snapshots:
   '@typescript/typescript-win32-x64@7.0.2':
     optional: true
 
-  dotenv@18.0.7: {}
+  dotenv@18.0.8: {}
 
   esbuild@0.28.2:
     optionalDependencies:
