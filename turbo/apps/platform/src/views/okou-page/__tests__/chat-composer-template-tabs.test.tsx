@@ -3,7 +3,7 @@ import { presentationTemplatesContract } from "@okouai/api-contracts/contracts/p
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
@@ -138,6 +138,9 @@ test("Category arrows select the matching panel and keep focus on the selected t
     "Workflow",
   ]);
   selectedPanel(dialog, "Custom");
+  await waitFor(() => {
+    expect(tabNamed(dialog, "Custom")).toHaveFocus();
+  });
 
   await user.click(tabNamed(dialog, "Custom"));
   await user.keyboard("{ArrowDown}");
@@ -154,11 +157,30 @@ test("Mobile category selection selects the matching panel", async () => {
     name: "Template category",
   });
   expect(category).toHaveTextContent("Custom");
+  await waitFor(() => {
+    expect(category).toHaveFocus();
+  });
   click(category);
   const options = await screen.findByRole("listbox");
   click(within(options).getByRole("option", { name: "Workflow" }));
   selectedPanel(dialog, "Workflow");
   expect(category).toHaveTextContent("Workflow");
+});
+
+test("Reopening the template picker focuses its current category control", async () => {
+  const { user, dialog } = await openPicker();
+  await waitFor(() => {
+    expect(tabNamed(dialog, "Custom")).toHaveFocus();
+  });
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(dialog).not.toBeInTheDocument();
+  });
+  const reopened = await openTemplatePicker(user);
+  expect(reopened).not.toBe(dialog);
+  await waitFor(() => {
+    expect(tabNamed(reopened, "Custom")).toHaveFocus();
+  });
 });
 
 test("Unavailable categories stay hidden and the ordinary picker opens the Presentation tab and panel", async () => {
