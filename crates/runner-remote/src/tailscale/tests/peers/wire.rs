@@ -480,6 +480,15 @@ impl Fixture {
             .endpoint(&self.binding, UnderlayTransportId(1), endpoint)
             .unwrap();
     }
+    pub(super) fn share_b_endpoint(&mut self, binding: &Binding) {
+        self.peers
+            .endpoint(
+                binding,
+                UnderlayTransportId(1),
+                DynEndpoint::udp(self.b.socket.local_addr().unwrap()),
+            )
+            .unwrap();
+    }
     fn transmit(&mut self, mut output: Frames) {
         let client = Arc::clone(&self.client);
         let a = self.a.socket.local_addr().unwrap();

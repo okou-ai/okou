@@ -1,6 +1,7 @@
 //! Real public SDK map, route, crypto and TCP boundaries of the owned candidate.
 
 pub(in crate::tailscale::tests) mod relay;
+mod retirement;
 pub(in crate::tailscale::tests) mod shared_derp;
 pub(super) mod wire;
 
@@ -1014,7 +1015,7 @@ async fn native_reply_admission_never_widens_the_authenticated_reverse_tcp_tuple
 }
 
 #[tokio::test]
-async fn retiring_a_private_stack_flushes_shared_peer_crypto_without_replaying_original_b() {
+async fn retiring_a_private_stack_preserves_shared_peer_crypto_without_replaying_original_b() {
     inside(|control| async move {
         use crate::tailscale::tcp::Connection;
         let mut fixture = wire::Fixture::new().await;
@@ -1051,6 +1052,10 @@ async fn retiring_a_private_stack_flushes_shared_peer_crypto_without_replaying_o
         );
         drop(owner);
         drop(a);
+        assert!(
+            !fixture.unexpected_b_packet(3, 22, 6002).is_empty(),
+            "original peer session still decrypts inbound bytes before any survivor send or handshake"
+        );
         fixture.transfer_b(original_b, 65_536).await;
     })
     .await;
