@@ -306,75 +306,6 @@ type MorningBriefScheduleSettlementOutcome = {
 /** Another settler already settled this occurrence; roll back this transaction. */
 class MorningBriefClaimAlreadySettled extends Error {}
 
-/** Settle a current claim exactly once; publishing a successor and the claim share rollback authority. */
-async function attemptMorningBriefScheduleSettlement(
-  tx: Tx,
-  args: SettleMorningBriefScheduleArgs,
-): Promise<MorningBriefScheduleSettlementOutcome> {
-  const [automation] = await tx
-    .select(workflowAutomationColumns())
-    .from(workflowAutomations)
-    .where(eq(workflowAutomations.id, args.automationId))
-    .limit(1);
-  if (!automation) {
-    return null;
-  }
-  const [claim] = await tx
-    .select()
-    .from(morningBriefScheduleClaims)
-    .where(settlementClaimCondition(args))
-    .limit(1);
-  if (!claim || claim.settlement !== "unsettled") {
-    return null;
-  }
-  const [current] = await tx
-    .select({ claimSequence: morningBriefScheduleClaims.claimSequence })
-    .from(morningBriefScheduleClaims)
-    .where(eq(morningBriefScheduleClaims.automationId, args.automationId))
-    .orderBy(desc(morningBriefScheduleClaims.claimSequence))
-    .limit(1);
-  if (current?.claimSequence !== claim.claimSequence) {
-    return null;
-  }
-  const settledAt = nowDate();
-  const plan = officialMorningBriefSettlementPlan(automation, args, settledAt);
-  const advanced = plan
-    ? await advanceInFlightSchedule(tx, {
-        automationId: args.automationId,
-        read: {
-          scheduleType: "cron",
-          cronExpression: automation.cronExpression,
-          intervalSeconds: automation.intervalSeconds,
-          timezone: automation.timezone,
-        },
-        automationValues: plan.automationValues,
-        at: settledAt,
-        requireEmptySlot: true,
-      })
-    : "superseded";
-  const [settled] = await tx
-    .update(morningBriefScheduleClaims)
-    .set({ settlement: args.settlement, settledAt, updatedAt: settledAt })
-    .where(
-      and(
-        eq(morningBriefScheduleClaims.id, claim.id),
-        eq(morningBriefScheduleClaims.settlement, "unsettled"),
-      ),
-    )
-    .returning({ id: morningBriefScheduleClaims.id });
-  if (!settled) {
-    // Another settler won this occurrence; discard everything written here.
-    throw new MorningBriefClaimAlreadySettled();
-  }
-  return plan?.shouldDisable && advanced === "advanced"
-    ? {
-        orgId: claim.orgId,
-        userId: claim.ownerUserId,
-        consecutiveFailures: plan.consecutiveFailures,
-      }
-    : null;
-}
-
 /** Settle the Official occurrence and its successor in one commit. */
 const commitMorningBriefScheduleSettlement$ = command(
   async (
@@ -386,7 +317,83 @@ const commitMorningBriefScheduleSettlement$ = command(
     const result = await settle(
       // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0189; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
-        const attempted = await attemptMorningBriefScheduleSettlement(tx, args);
+        const attempted =
+          await (async (): Promise<MorningBriefScheduleSettlementOutcome> => {
+            const [automation] = await tx
+              .select(workflowAutomationColumns())
+              .from(workflowAutomations)
+              .where(eq(workflowAutomations.id, args.automationId))
+              .limit(1);
+            if (!automation) {
+              return null;
+            }
+            const [claim] = await tx
+              .select()
+              .from(morningBriefScheduleClaims)
+              .where(settlementClaimCondition(args))
+              .limit(1);
+            if (!claim || claim.settlement !== "unsettled") {
+              return null;
+            }
+            const [current] = await tx
+              .select({
+                claimSequence: morningBriefScheduleClaims.claimSequence,
+              })
+              .from(morningBriefScheduleClaims)
+              .where(
+                eq(morningBriefScheduleClaims.automationId, args.automationId),
+              )
+              .orderBy(desc(morningBriefScheduleClaims.claimSequence))
+              .limit(1);
+            if (current?.claimSequence !== claim.claimSequence) {
+              return null;
+            }
+            const settledAt = nowDate();
+            const plan = officialMorningBriefSettlementPlan(
+              automation,
+              args,
+              settledAt,
+            );
+            const advanced = plan
+              ? await advanceInFlightSchedule(tx, {
+                  automationId: args.automationId,
+                  read: {
+                    scheduleType: "cron",
+                    cronExpression: automation.cronExpression,
+                    intervalSeconds: automation.intervalSeconds,
+                    timezone: automation.timezone,
+                  },
+                  automationValues: plan.automationValues,
+                  at: settledAt,
+                  requireEmptySlot: true,
+                })
+              : "superseded";
+            const [settled] = await tx
+              .update(morningBriefScheduleClaims)
+              .set({
+                settlement: args.settlement,
+                settledAt,
+                updatedAt: settledAt,
+              })
+              .where(
+                and(
+                  eq(morningBriefScheduleClaims.id, claim.id),
+                  eq(morningBriefScheduleClaims.settlement, "unsettled"),
+                ),
+              )
+              .returning({ id: morningBriefScheduleClaims.id });
+            if (!settled) {
+              // Another settler won this occurrence; discard everything written here.
+              throw new MorningBriefClaimAlreadySettled();
+            }
+            return plan?.shouldDisable && advanced === "advanced"
+              ? {
+                  orgId: claim.orgId,
+                  userId: claim.ownerUserId,
+                  consecutiveFailures: plan.consecutiveFailures,
+                }
+              : null;
+          })();
         signal?.throwIfAborted();
         return attempted;
       }),
