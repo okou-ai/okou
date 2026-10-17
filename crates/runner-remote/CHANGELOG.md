@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.4](https://github.com/okou-ai/okou/compare/runner-remote-v0.24.3...runner-remote-v0.24.4) (2026-10-17)
+
+
+### Refactoring
+
+* **runner-remote:** share duplex channel cancellation policy ([#40888](https://github.com/okou-ai/okou/issues/40888)) ([16240ca](https://github.com/okou-ai/okou/commit/16240ca4a4502c7809bc6755ae0e8012e197309a))
+
 ## [0.24.3](https://github.com/okou-ai/okou/compare/runner-remote-v0.24.2...runner-remote-v0.24.3) (2026-10-17)
 
 ## [0.24.2](https://github.com/okou-ai/okou/compare/runner-remote-v0.24.1...runner-remote-v0.24.2) (2026-10-17)

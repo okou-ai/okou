@@ -2084,7 +2084,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent-tests"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -4115,7 +4115,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.234.6"
+version = "0.234.7"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4186,7 +4186,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.14.5"
+version = "0.14.6"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4356,7 +4356,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.24.3"
+version = "0.24.4"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4500,7 +4500,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.17.5"
+version = "0.17.6"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4824,7 +4824,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.52.5"
+version = "0.52.6"
 dependencies = [
  "api-contracts",
  "async-trait",
