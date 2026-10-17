@@ -587,6 +587,13 @@ function ActivityStepsContent({
         isLoading={visibleGroupsLoading}
         startedAt={detail.startedAt}
       />
+      {isActiveRunStatus(detail.status) && (
+        <p className="text-sm text-muted-foreground">
+          {t(($) => {
+            return $.activity.detail.manualReloadNotice;
+          })}
+        </p>
+      )}
     </div>
   );
 }
@@ -1083,13 +1090,6 @@ function ActivityDetailContent({
               features={features}
             />
           </div>
-          {isActiveRunStatus(status) && (
-            <p className="mt-6 text-sm text-muted-foreground">
-              {t(($) => {
-                return $.activity.detail.manualReloadNotice;
-              })}
-            </p>
-          )}
         </div>
       </div>
     </div>

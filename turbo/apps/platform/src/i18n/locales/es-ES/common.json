@@ -136,7 +136,7 @@
         "updateRequired": "Esta ejecución no admite archivos. Inicia otra tras actualizar el entorno aislado."
       },
       "log": "Registro",
-      "manualReloadNotice": "Recarga esta página para ver los registros de actividad más recientes.",
+      "manualReloadNotice": "Los registros de actividad no se actualizan automáticamente. Recarga la página para ver las entradas más recientes.",
       "modelProvidedBy": "{{model}} proporcionado por {{provider}}",
       "networkEmpty": {
         "description": "No se registró tráfico de red durante esta ejecución.",

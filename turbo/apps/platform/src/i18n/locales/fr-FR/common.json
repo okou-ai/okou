@@ -136,7 +136,7 @@
         "updateRequired": "Cette exécution ne prend pas en charge les fichiers. Lance une nouvelle exécution après la mise à jour du bac à sable."
       },
       "log": "Journal",
-      "manualReloadNotice": "Actualisez cette page pour voir les derniers journaux d’activité.",
+      "manualReloadNotice": "Les journaux d’activité ne se mettent pas à jour automatiquement. Actualisez la page pour voir les dernières entrées.",
       "modelProvidedBy": "{{model}} fourni par {{provider}}",
       "networkEmpty": {
         "description": "Aucun trafic réseau n'a été enregistré pour cette exécution.",

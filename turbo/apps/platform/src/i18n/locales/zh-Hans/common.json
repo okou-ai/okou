@@ -134,7 +134,7 @@
         "updateRequired": "此运行不支持文件浏览。请在沙箱更新后开始新的运行。"
       },
       "log": "日志",
-      "manualReloadNotice": "刷新页面即可查看最新的活动日志。",
+      "manualReloadNotice": "活动日志不会自动更新，请刷新页面查看最新记录。",
       "modelProvidedBy": "{{model}}，由 {{provider}} 提供",
       "networkEmpty": {
         "description": "本次运行没有记录到网络流量。",
