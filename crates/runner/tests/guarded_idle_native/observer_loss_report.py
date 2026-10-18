@@ -2,11 +2,11 @@
 """Validate native observer loss without losing accepted saving or progress."""
 
 import argparse
-import hashlib
 import json
 import pathlib
 
 import foreground_report as foreground
+from cleanup_report import COUNTS, accounting, coverage, supplied_policy
 import pressure_report as pressure
 import report
 from startup_report import exact
@@ -15,49 +15,12 @@ PREFIX = "NATIVE_OBSERVER_LOSS_WITNESS "
 CASES = {f"Observer{kind}-{mode}" for kind in ("Drop", "Panic") for mode in ("fresh", "snapshot")}
 PHASES = ("tail_blocked", "observer_lost", "pool_wait_progress", "tail_wait_progress",
           "status_wait_progress", "producers_joined")
-COUNTS = {"registered_operations", "queued", "granted", "started", "uncertain",
-          "ordinary_growth_bytes", "cleanup_growth_bytes", "tracked_tasks"}
-
-
-def accounting(value, closed, policy=None):
-    if (not isinstance(value, dict) or set(value) != COUNTS | {"closed"}
-            or value["closed"] is not closed
-            or any(not pressure.integer(value[k]) for k in COUNTS)):
-        raise ValueError("observer-loss accounting shape or types changed")
-    if policy is None:
-        exact(value, dict.fromkeys(COUNTS, 0) | {"closed": True},
-              "observer-loss accounting did not positively settle")
-    elif (any(value[k] != 0 for k in ("queued", "granted", "uncertain", "ordinary_growth_bytes"))
-          or any(value[k] == 0 for k in ("registered_operations", "started", "tracked_tasks"))
-          or not policy["tail_growth_bytes"] <= value["cleanup_growth_bytes"]
-          <= policy["tail_growth_bytes"] + policy["live_growth_bytes"]):
-        raise ValueError("observer loss prematurely released accepted physical custody")
-
-
-def coverage(value, policy, closed):
-    if not isinstance(value, dict) or "accounting" not in value:
-        raise ValueError("observer loss has no original coverage")
-    accounting(value["accounting"], closed, policy)
-    exact(value, {"allocated": [2, 4096, 1], "accounting": value["accounting"],
-                  "original_lease_active": True, "io_release_withheld": True},
-          "observer loss released its original full lease or IO gate")
 
 
 def validate(directory):
     directory = pathlib.Path(directory)
     result, collector, terminals = report._validate_cases(directory, CASES, report.PHASES)
-    raw = collector["metadata"]["native_observer_loss_policy_json"]
-    if (not isinstance(raw, str)
-            or hashlib.sha256(raw.encode()).hexdigest() != result["artifacts"]["policy_sha256"]):
-        raise ValueError("observer-loss original policy identity changed")
-    policy = json.loads(raw, object_pairs_hook=pressure.unique_object)
-    if (not isinstance(policy, dict) or set(policy) != pressure.POLICY_FIELDS
-            or any(not pressure.integer(v, 1) for v in policy.values())
-            or policy["operating_floor_bytes"] + policy["cleanup_reserve_bytes"] >= policy["host_total_bytes"]
-            or not policy["operating_floor_bytes"] <= policy["critical_available_bytes"]
-            < policy["recovery_available_bytes"] <= policy["host_total_bytes"]
-            or policy["tail_growth_bytes"] < 65 * 1024**2 or policy["max_cleanup_inflight"] < 2):
-        raise ValueError("invalid observer-loss supplied policy")
+    policy = supplied_policy(collector, result, "native_observer_loss_policy_json")
     witnesses = {case: [] for case in CASES}
     for line in (directory / "stdout.log").read_text().splitlines():
         if not line.startswith(PREFIX):

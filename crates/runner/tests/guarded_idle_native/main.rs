@@ -2,6 +2,7 @@
 
 //! Opt-in packaged-guest terminal saving fixture; see README.md in this directory.
 
+mod cleanup_progress;
 mod continuation;
 mod continuation_api;
 mod create_cancellation;
@@ -35,6 +36,7 @@ mod returned_guest_probe;
 mod shared_reads;
 mod snapshot_preparation;
 mod startup;
+mod status_failure;
 mod tail;
 mod transitions;
 
@@ -83,6 +85,7 @@ enum Corpus {
     CreateCancellation,
     ReturnedGuest(sandbox_firecracker::GuestPreparationStage),
     ObserverLoss(bool),
+    StatusFailure,
 }
 
 enum PreparationProbe<'a> {
@@ -544,6 +547,32 @@ fn native_observer_loss_report_requires_joined_saving_and_independent_progress()
     );
 }
 
+#[test]
+fn native_status_failure_report_requires_saved_data_and_current_retry() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/status_failure_report_test.py"
+        ))
+        .output()
+        .expect("native status failure report requires Python3");
+    assert!(
+        output.status.success(),
+        "status failure report failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD inputs and submitted-source status-failure P1 proof"]
+async fn native_status_failure_preserves_saving_and_retries_current_inventory() -> TestResult<()> {
+    measured_selected_corpus(
+        &[NativeScope::Batch(IdleRetirementBatchScope::All)],
+        Corpus::StatusFailure,
+    )
+    .await
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires owned KVM/NBD inputs and submitted-source observer-loss P1 proof"]
 async fn native_observer_loss_keeps_required_saving_and_independent_progress() -> TestResult<()> {
@@ -859,6 +888,8 @@ async fn exercise_selected_factories(
                                 "CreateCancellation".into()
                             } else if let Corpus::ObserverLoss(panic) = corpus {
                                 format!("Observer{}", if panic { "Panic" } else { "Drop" })
+                            } else if corpus == Corpus::StatusFailure {
+                                "StatusFailure".into()
                             } else if let Corpus::ReturnedGuest(stage) = corpus {
                                 format!("ReturnedGuest-{}", stage.label())
                             } else if corpus == Corpus::Continuation {
@@ -1197,6 +1228,7 @@ async fn exercise_retirement(
             | Corpus::CreateCancellation
             | Corpus::ReturnedGuest(_)
             | Corpus::ObserverLoss(_)
+            | Corpus::StatusFailure
     ) || matches!(corpus, Corpus::LogicalProgress | Corpus::IncomingProgress)
         || matches!(
             scope,
@@ -1510,6 +1542,17 @@ async fn exercise_retirement(
                 Ok(None)
             }
             NativeScope::Batch(scope) => {
+                if corpus == Corpus::StatusFailure {
+                    status_failure::exercise(
+                        transitions::Context {
+                            factory: factory.clone(), pool: pool.clone(), status: status.clone(),
+                            operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
+                            rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
+                        }, inputs, proof.ok_or_else(|| io::Error::other("status failure proof missing"))?,
+                        paths.base_dir(),
+                    ).await?;
+                    return Ok(None);
+                }
                 if let Corpus::ObserverLoss(panic) = corpus {
                     observer_loss::exercise(
                         transitions::Context {

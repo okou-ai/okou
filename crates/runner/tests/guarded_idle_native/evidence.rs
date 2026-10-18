@@ -288,6 +288,10 @@ impl Case {
         self.write_event("NATIVE_OBSERVER_LOSS_WITNESS ", phase, evidence)
     }
 
+    pub fn status_failure_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_STATUS_FAILURE_WITNESS ", phase, evidence)
+    }
+
     pub fn shared_reads_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
         self.write_event("NATIVE_SHARED_READS_WITNESS ", phase, evidence)
     }
