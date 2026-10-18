@@ -874,13 +874,24 @@ async function persistCustomConnectorOAuthStart(
   const expiresAt = connectorOAuthStateExpiresAt();
   // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0138; new non-billing transactions are prohibited.
   const result = await db.transaction(async (tx) => {
-    await lockCustomConnectorOAuth2CredentialContract({
-      db: tx,
+    const credentialContractDb = tx;
+    const contractRef = {
       orgId: args.orgId,
       connectorId: connector.id,
       storageVersion: connector.storageVersion,
       authMode: prepared.authMode,
-    });
+    };
+    await (async () => {
+      const plan = customConnectorOAuth2CredentialContractReadPlan(contractRef);
+      const rows = await credentialContractDb
+        .select(plan.columns)
+        .from(plan.from)
+        .leftJoin(plan.join.table, plan.join.on)
+        .where(plan.where)
+        .for("update", { of: plan.from })
+        .limit(1);
+      return customConnectorOAuth2CredentialContractFromRows(rows, contractRef);
+    })();
     const resolution = await resolveConnectorConnectionMutation(tx, {
       orgId: args.orgId,
       userId: args.userId,
@@ -970,13 +981,24 @@ async function persistAutomaticNoAuthConnection(
   const { db, connector, args } = context;
   // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0139; new non-billing transactions are prohibited.
   const transaction = db.transaction(async (tx) => {
-    await lockCustomConnectorOAuth2CredentialContract({
-      db: tx,
+    const credentialContractDb = tx;
+    const contractRef = {
       orgId: args.orgId,
       connectorId: connector.id,
       storageVersion: connector.storageVersion,
-      authMode: "automatic",
-    });
+      authMode: "automatic" as const,
+    };
+    await (async () => {
+      const plan = customConnectorOAuth2CredentialContractReadPlan(contractRef);
+      const rows = await credentialContractDb
+        .select(plan.columns)
+        .from(plan.from)
+        .leftJoin(plan.join.table, plan.join.on)
+        .where(plan.where)
+        .for("update", { of: plan.from })
+        .limit(1);
+      return customConnectorOAuth2CredentialContractFromRows(rows, contractRef);
+    })();
     const resolution = await resolveConnectorConnectionMutation(tx, {
       orgId: args.orgId,
       userId: args.userId,
@@ -1527,37 +1549,43 @@ async function replaceConnectionTokens(args: {
   });
 }
 
-export async function lockCustomConnectorOAuth2CredentialContract(args: {
-  readonly db: Db;
+export function customConnectorOAuth2CredentialContractReadPlan(args: {
   readonly orgId: string;
   readonly connectorId: string;
-  readonly storageVersion: number;
-  readonly authMode: "oauth" | "automatic";
-}): Promise<{
-  readonly providerAdapter: CustomConnectorOAuthProviderAdapter | null;
-}> {
-  const [definition] = await args.db
-    .select({
+}) {
+  return {
+    columns: {
       authMode: orgCustomConnectors.authMode,
       storageVersion: orgCustomConnectors.storageVersion,
       providerAdapter: orgCustomConnectorOauthConfigs.providerAdapter,
-    })
-    .from(orgCustomConnectors)
-    .leftJoin(
-      orgCustomConnectorOauthConfigs,
-      and(
+    },
+    from: orgCustomConnectors,
+    join: {
+      table: orgCustomConnectorOauthConfigs,
+      on: and(
         eq(orgCustomConnectorOauthConfigs.connectorId, orgCustomConnectors.id),
         eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
       ),
-    )
-    .where(
-      and(
-        eq(orgCustomConnectors.id, args.connectorId),
-        eq(orgCustomConnectors.orgId, args.orgId),
-      ),
-    )
-    .for("update", { of: orgCustomConnectors })
-    .limit(1);
+    },
+    where: and(
+      eq(orgCustomConnectors.id, args.connectorId),
+      eq(orgCustomConnectors.orgId, args.orgId),
+    ),
+  };
+}
+
+export function customConnectorOAuth2CredentialContractFromRows(
+  rows: readonly {
+    readonly authMode: CustomConnectorRow["authMode"];
+    readonly storageVersion: number;
+    readonly providerAdapter: CustomConnectorOAuthProviderAdapter | null;
+  }[],
+  args: {
+    readonly storageVersion: number;
+    readonly authMode: "oauth" | "automatic";
+  },
+): { readonly providerAdapter: CustomConnectorOAuthProviderAdapter | null } {
+  const [definition] = rows;
   if (
     !definition ||
     definition.authMode !== args.authMode ||
@@ -1589,29 +1617,31 @@ function customOAuthConnectionTarget(
   };
 }
 
+interface StoreCustomConnectorOAuth2ConnectionArgs {
+  readonly db: Db;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly connectorId: string;
+  readonly storageVersion: number;
+  readonly token: CustomConnectorOAuthTokenResult;
+  readonly featureContext: FeatureSwitchContext;
+  readonly account: ConnectorAccountMutationIntent;
+  readonly insertConnectionId?: string;
+  readonly automaticOAuthBinding?: {
+    readonly issuer: string;
+    readonly resource: string;
+    readonly resourceMetadataUrl: string | null;
+    readonly tokenEndpoint: string;
+    readonly clientId: string;
+    readonly tokenEndpointAuthMethod:
+      "none" | "client_secret_basic" | "client_secret_post";
+    readonly registrationMethod: "cimd" | "dcr";
+    readonly dcrRegistrationId: string | null;
+  };
+}
+
 export async function storeCustomConnectorOAuth2Connection(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorId: string;
-    readonly storageVersion: number;
-    readonly token: CustomConnectorOAuthTokenResult;
-    readonly featureContext: FeatureSwitchContext;
-    readonly account: ConnectorAccountMutationIntent;
-    readonly insertConnectionId?: string;
-    readonly automaticOAuthBinding?: {
-      readonly issuer: string;
-      readonly resource: string;
-      readonly resourceMetadataUrl: string | null;
-      readonly tokenEndpoint: string;
-      readonly clientId: string;
-      readonly tokenEndpointAuthMethod:
-        "none" | "client_secret_basic" | "client_secret_post";
-      readonly registrationMethod: "cimd" | "dcr";
-      readonly dcrRegistrationId: string | null;
-    };
-  },
+  args: StoreCustomConnectorOAuth2ConnectionArgs,
   signal: AbortSignal,
 ): Promise<
   | { readonly kind: "stored"; readonly connectionId: string }
@@ -1633,13 +1663,26 @@ export async function storeCustomConnectorOAuth2Connection(
         .values(slackRewardWalletEntitlement(args.orgId))
         .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
     }
-    const contract = await lockCustomConnectorOAuth2CredentialContract({
-      db: tx,
+    const credentialContractDb = tx;
+    const contractRef = {
       orgId: args.orgId,
       connectorId: args.connectorId,
       storageVersion: args.storageVersion,
-      authMode: args.automaticOAuthBinding ? "automatic" : "oauth",
-    });
+      authMode: args.automaticOAuthBinding
+        ? ("automatic" as const)
+        : ("oauth" as const),
+    };
+    const contract = await (async () => {
+      const plan = customConnectorOAuth2CredentialContractReadPlan(contractRef);
+      const rows = await credentialContractDb
+        .select(plan.columns)
+        .from(plan.from)
+        .leftJoin(plan.join.table, plan.join.on)
+        .where(plan.where)
+        .for("update", { of: plan.from })
+        .limit(1);
+      return customConnectorOAuth2CredentialContractFromRows(rows, contractRef);
+    })();
     signal.throwIfAborted();
     const resolution = await resolveConnectorConnectionMutation(tx, {
       orgId: args.orgId,

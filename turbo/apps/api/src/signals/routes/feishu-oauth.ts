@@ -39,7 +39,8 @@ import {
   isCustomConnectorCustomOAuthStateContext,
   decryptCustomConnectorOAuth2Credentials,
   exchangeCustomConnectorOAuth2Code,
-  lockCustomConnectorOAuth2CredentialContract,
+  customConnectorOAuth2CredentialContractReadPlan,
+  customConnectorOAuth2CredentialContractFromRows,
   parseValidCustomConnectorOAuthState,
   startCustomConnectorOAuth2$,
   storeCustomConnectorOAuth2Connection,
@@ -458,13 +459,24 @@ async function persistFeishuOAuthConnection(
         "Failed to authorize Feishu custom connector: agentNotFound",
       );
     }
-    await lockCustomConnectorOAuth2CredentialContract({
-      db: tx,
+    const credentialContractDb = tx;
+    const contractRef = {
       orgId: args.state.orgId,
       connectorId: args.connector.id,
       storageVersion: args.connector.storageVersion,
-      authMode: "oauth",
-    });
+      authMode: "oauth" as const,
+    };
+    await (async () => {
+      const plan = customConnectorOAuth2CredentialContractReadPlan(contractRef);
+      const rows = await credentialContractDb
+        .select(plan.columns)
+        .from(plan.from)
+        .leftJoin(plan.join.table, plan.join.on)
+        .where(plan.where)
+        .for("update", { of: plan.from })
+        .limit(1);
+      return customConnectorOAuth2CredentialContractFromRows(rows, contractRef);
+    })();
     signal.throwIfAborted();
     const connection = await upsertFeishuConnection(
       {
