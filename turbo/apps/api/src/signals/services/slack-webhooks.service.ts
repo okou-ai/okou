@@ -448,18 +448,6 @@ function decryptSlackBotToken(args: {
   });
 }
 
-async function resolveDefaultComposeId(
-  db: Db,
-  orgId: string,
-): Promise<string | null> {
-  const [row] = await db
-    .select({ defaultAgentId: orgMetadata.defaultAgentId })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, orgId))
-    .limit(1);
-  return row?.defaultAgentId ?? null;
-}
-
 async function getWorkspaceAgent(
   db: Db,
   composeId: string,
@@ -510,7 +498,14 @@ async function resolveEffectiveCompose(
   userId: string,
   orgId: string,
 ): Promise<EffectiveComposeResolution> {
-  const defaultAgentId = await resolveDefaultComposeId(db, orgId);
+  const defaultAgentId = await (async () => {
+    const [row] = await db
+      .select({ defaultAgentId: orgMetadata.defaultAgentId })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, orgId))
+      .limit(1);
+    return row?.defaultAgentId ?? null;
+  })();
   if (!defaultAgentId) {
     return { status: "not_configured" };
   }
@@ -1061,10 +1056,16 @@ const handleMessagesTabOpened$ = command(
     }
     let agentName: string | undefined;
     if (installation.orgId) {
-      const composeId = await resolveDefaultComposeId(
-        args.db,
-        installation.orgId,
-      );
+      const db = args.db;
+      const orgId = installation.orgId;
+      const composeId = await (async () => {
+        const [row] = await db
+          .select({ defaultAgentId: orgMetadata.defaultAgentId })
+          .from(orgMetadata)
+          .where(eq(orgMetadata.orgId, orgId))
+          .limit(1);
+        return row?.defaultAgentId ?? null;
+      })();
       const agent = composeId
         ? await getWorkspaceAgent(args.db, composeId)
         : undefined;
