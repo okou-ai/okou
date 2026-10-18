@@ -280,8 +280,14 @@ fn record_reader_refuses_tampering_nonregular_oversized_and_duplicate_evidence()
         artifacts.snapshot_preparation_sha256 = hex::encode(Sha256::digest(&raw));
         assert!(verify_record(&fixture.config.output_dir, &artifacts).is_err());
     }
-    std::fs::remove_file(fixture.record())?;
-    std::os::unix::fs::symlink(fixture.config.rootfs_path.clone(), fixture.record())?;
+    // Keep valid bytes and the matching digest, so a digest/schema error cannot
+    // hide a reader that incorrectly follows the receipt symlink.
+    std::fs::write(fixture.record(), &original)?;
+    artifacts.snapshot_preparation_sha256 = hex::encode(Sha256::digest(&original));
+    verify_record(&fixture.config.output_dir, &artifacts)?;
+    let matching_record = fixture.producer.with_file_name("matching-record.json");
+    std::fs::rename(fixture.record(), &matching_record)?;
+    std::os::unix::fs::symlink(matching_record, fixture.record())?;
     assert!(verify_record(&fixture.config.output_dir, &artifacts).is_err());
     Ok(())
 }
