@@ -23,6 +23,7 @@ import {
 import { clerkUiAssetPlugin } from "./clerk-ui.ts";
 import { sharedDatabaseWorkerHtmlPlugin } from "./shared-database-worker-html.ts";
 import { dependencyVendorChunks } from "./vendor-chunks.ts";
+import { sandboxFileDownloadWorkerAsset } from "./sandbox-file-download-worker.ts";
 import {
   domGlobalUsageCounts,
   workerDomGlobalsMessage,
@@ -36,27 +37,34 @@ const productionConfigPromise = loadConfigFromFile(
 await test("canonical sourcemap injection preserves content-addressed download workers", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "okou-download-worker-"));
   try {
-    const assets = path.join(root, "assets");
-    await mkdir(assets);
-    const source = await readFile(
-      new URL("../public/sandbox-file-download-v1-sw.js", import.meta.url),
+    const asset = await sandboxFileDownloadWorkerAsset();
+    const output = path.join(root, "dist");
+    const input = path.join(root, "app.js");
+    await writeFile(input, 'console.log("application fixture");');
+    await build({
+      configFile: false,
+      root,
+      logLevel: "silent",
+      plugins: [asset.plugin],
+      build: {
+        outDir: output,
+        rolldownOptions: {
+          input,
+          output: { entryFileNames: "app.js" },
+        },
+      },
+    });
+    const worker = path.join(output, asset.path.replace("/okou-app/", ""));
+    const source = await readFile(worker);
+    assert.equal(
+      path.basename(worker),
+      `sandbox-file-download-v1-${createHash("sha256").update(source).digest("hex")}.js`,
     );
-    const digest = createHash("sha256").update(source).digest("hex");
-    const worker = path.join(assets, `sandbox-file-download-v1-${digest}.js`);
-    const app = path.join(assets, "app.js");
-    await writeFile(worker, source);
-    await writeFile(app, 'console.log("application fixture");');
+    assert.match(source.toString(), /_sentryDebugIds/u);
+    const app = path.join(output, "app.js");
     await promisify(execFile)(
       "pnpm",
-      [
-        "exec",
-        "sentry-cli",
-        "sourcemaps",
-        "inject",
-        root,
-        "--ignore",
-        "**/sandbox-file-download-v1-*.js",
-      ],
+      ["exec", "sentry-cli", "sourcemaps", "inject", output],
       { timeout: 10_000 },
     );
     assert.deepEqual(await readFile(worker), source);

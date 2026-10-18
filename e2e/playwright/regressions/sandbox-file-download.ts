@@ -23,17 +23,30 @@ async function main() {
   const output = process.argv[2];
   assert(output, "An explicit output directory is required");
   await mkdir(output, { recursive: true });
-  const worker = await readFile(
-    path.resolve(
-      __dirname,
-      "../../../turbo/apps/platform/public/sandbox-file-download-v1-sw.js",
-    ),
+  const assets = path.resolve(
+    __dirname,
+    "../../../turbo/apps/platform/dist/assets",
   );
+  const workers = (await readdir(assets)).filter((name) =>
+    /^sandbox-file-download-v1-[a-f0-9]{64}\.js$/u.test(name),
+  );
+  assert.equal(
+    workers.length,
+    1,
+    "Build the production App before browser acceptance",
+  );
+  const workerFile = workers[0];
+  assert(workerFile);
+  const worker = await readFile(path.join(assets, workerFile));
   const notificationWorker = await readFile(
     path.resolve(__dirname, "../../../turbo/apps/platform/public/sw.js"),
   );
   const prefix = "/sandbox-file-downloads/v1/";
-  const scriptPath = `/okou-app/assets/sandbox-file-download-v1-${createHash("sha256").update(worker).digest("hex")}.js`;
+  assert.equal(
+    workerFile,
+    `sandbox-file-download-v1-${createHash("sha256").update(worker).digest("hex")}.js`,
+  );
+  const scriptPath = `/okou-app/assets/${workerFile}`;
   const html = `<!doctype html><meta charset="utf-8"><title>Streaming download fixture</title><script>
 window.probe = {
   produced: 0, held: false, terminal: '', waiting: null,

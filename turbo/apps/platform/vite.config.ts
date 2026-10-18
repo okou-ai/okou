@@ -32,7 +32,7 @@ const APP_ASSET_BASE = "https://static.okou.io/okou-app/";
 const APP_GIT_COMMIT_SHA = process.env.OKOU_APP_GIT_COMMIT_SHA ?? "";
 const APP_VERSION = process.env.OKOU_APP_VERSION ?? platformPackage.version;
 const vendor = dependencyVendorChunks();
-const downloadWorker = sandboxFileDownloadWorkerAsset();
+const downloadWorker = await sandboxFileDownloadWorkerAsset();
 
 const runtimeBuildInfoHtmlPlugin = {
   name: "platform-runtime-build-info-html",
