@@ -2217,10 +2217,15 @@ describe("protected host writes with authorized Runner authority", () => {
           ? { revision: 2, generation: 2 }
           : { revision: 2, username: "rotated-deploy" },
       );
-      expect(["pinned", "configuration_changed"]).toContain(
+      // Either Runner operation can exhaust its bounded freshness retry while
+      // the other requests change the Host. Check its fail-closed response
+      // against the retained state and fresh requests below.
+      expect(["pinned", "configuration_changed", "unavailable"]).toContain(
         pinned.body.outcome,
       );
-      expect(["recorded", "ignored"]).toContain(observed.body.outcome);
+      expect(["recorded", "ignored", "unavailable"]).toContain(
+        observed.body.outcome,
+      );
       const saved = (
         await accept(hosts().list({ headers: owner.headers }), [200])
       ).body.connections.find(({ id }) => {
@@ -2230,6 +2235,7 @@ describe("protected host writes with authorized Runner authority", () => {
         throw new Error("Expected the retained protected SSH host");
       }
       expect(saved).toMatchObject({
+        createdAt: host.createdAt,
         credentialId: credentialBackedSshHost(host).credentialId,
         host: host.host,
         port: host.port,
@@ -2273,6 +2279,8 @@ describe("protected host writes with authorized Runner authority", () => {
       expect((await accept(runner.resolve(request), [200])).body).toMatchObject(
         {
           outcome: "resolved_access",
+          generation:
+            saved.generation + Number(pinned.body.outcome !== "pinned"),
           username: resource === "network" ? login.username : "rotated-deploy",
           authentication: {
             method: "password",
