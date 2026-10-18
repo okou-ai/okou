@@ -13,7 +13,13 @@ enum Scenario {
     RelayFailure,
     RelayWritePending,
     RelayMove,
+    MapFailure,
     Concurrent,
+}
+
+#[tokio::test]
+async fn native_known_map_failure_precedes_generic_pending_tcp_guidance() {
+    exercise(Scenario::MapFailure).await;
 }
 
 #[tokio::test]
@@ -163,6 +169,16 @@ async fn exercise(scenario: Scenario) {
                 }
             }
             Scenario::RelayPending | Scenario::RelayFailure => operation.await,
+            Scenario::MapFailure => {
+                tokio::select! {
+                    result = &mut operation => panic!("operation ended before native traffic: {result:?}"),
+                    frame = frames.next() => assert!(frame.unwrap().unwrap().get().as_type::<frame::SendPacket>().is_some()),
+                }
+                control
+                    .update_map(json!({"Peers":[{"ID":2,"Name":"private-map-canary"}]}))
+                    .await;
+                operation.await
+            }
             Scenario::TcpReset
             | Scenario::SshSilent
             | Scenario::RelayWritePending
@@ -411,6 +427,20 @@ async fn exercise(scenario: Scenario) {
                 "{text}"
             );
         }
+        Scenario::MapFailure => {
+            // Native retirement cancels its still-opening binding.
+            assert_eq!(result["failure_reason"], "cancelled", "{text}");
+            assert!(
+                text.contains("Private TCP: pending at observation;"),
+                "{text}"
+            );
+            assert!(text.contains("terminal root: map stream;"), "{text}");
+            assert!(
+                text.contains("Next step: Inspect the native control/map stream"),
+                "{text}"
+            );
+            assert!(!text.contains("private-map-canary"));
+        }
     }
     let attempt = diagnostic_attempt(result);
     let history = h
@@ -419,7 +449,19 @@ async fn exercise(scenario: Scenario) {
         )
         .await;
     assert_eq!(history.last().unwrap()["data"]["status"], "found");
-    assert_eq!(diagnostic_text(&history.last().unwrap()["data"]), text);
+    let retained = diagnostic_text(&history.last().unwrap()["data"]);
+    if matches!(scenario, Scenario::MapFailure) {
+        // Node cleanup can finish after the operation; its captured path cannot change.
+        let captured = |text: &str| {
+            text.lines()
+                .filter(|line| !line.starts_with("- Native observations:"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        assert_eq!(captured(retained), captured(text));
+    } else {
+        assert_eq!(retained, text);
+    }
     assert!(text.len() <= 8192 && !text.contains("synthetic-secret"));
     // Repeated operations retain the existing resolved host-authority cache.
     resolve.assert_calls_async(1).await;

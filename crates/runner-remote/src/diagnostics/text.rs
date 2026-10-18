@@ -245,18 +245,6 @@ impl Report {
         }
         if matches!(
             cause,
-            Cause::Ssh(S::TimedOut | S::Cancelled | S::NetworkFailure)
-                | Cause::Vnc(
-                    crate::vnc::Failure::TimedOut
-                        | crate::vnc::Failure::Cancelled
-                        | crate::vnc::Failure::Network
-                )
-        ) && let Some(guidance) = self.native_guidance()
-        {
-            return guidance;
-        }
-        if matches!(
-            cause,
             Cause::Native(crate::tailscale::Failure::DomainFailed)
                 | Cause::Ssh(S::NetworkFailure | S::Cancelled | S::AuthorityFailure)
                 | Cause::Vnc(
@@ -280,6 +268,18 @@ impl Report {
                     "Inspect the retained native work/data-plane evidence before any manual retry; current SSH/VNC health remains unknown."
                 }
             };
+        }
+        if matches!(
+            cause,
+            Cause::Ssh(S::TimedOut | S::Cancelled | S::NetworkFailure)
+                | Cause::Vnc(
+                    crate::vnc::Failure::TimedOut
+                        | crate::vnc::Failure::Cancelled
+                        | crate::vnc::Failure::Network
+                )
+        ) && let Some(guidance) = self.native_guidance()
+        {
+            return guidance;
         }
         if matches!(
             cause,
