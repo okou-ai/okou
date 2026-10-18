@@ -47,7 +47,7 @@ import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { clerk$ } from "../external/clerk";
-import { db$, writeDb$, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { safeSync, settle } from "../utils";
 import {
   connectorCatalogCurrentWhere,
@@ -78,10 +78,8 @@ import { encryptStoredSecretValue } from "./crypto.utils";
 import {
   customConnectorDefinitionConnectedAccount,
   customConnectorConnectedConnections,
-  customConnectorRuntimeStorageReadQuery,
   customConnectorRuntimeStorageSnapshot,
   customConnectorValueMarkers,
-  type CustomConnectorCredentialAccess,
   type CustomConnectorCredentialValueMarker,
   type CustomConnectorStoredValue,
 } from "./custom-connector-credential-access.service";
@@ -3369,113 +3367,59 @@ export function renderCustomConnectorRuntimePrefix(args: {
   return validation.ok;
 }
 
-type CustomConnectorRuntimeDataTimingStep =
-  "connectorRows" | "connectorValueRows";
-type CustomConnectorRuntimeDataTimingMeasure = <T>(
-  step: CustomConnectorRuntimeDataTimingStep,
-  operation: () => Promise<T>,
-) => Promise<T>;
-
-export async function loadCustomConnectorRuntimeData(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorIds: readonly string[] | undefined;
-    readonly memberConnectorIdsByCustomConnectorId: ReadonlyMap<string, string>;
-    readonly measure?: CustomConnectorRuntimeDataTimingMeasure;
-  },
-): Promise<
-  readonly {
-    readonly connector: CustomConnectorRow;
-    readonly values: readonly CustomConnectorStoredValueRow[];
-    readonly credentialAccess: CustomConnectorCredentialAccess;
-  }[]
-> {
-  const measure =
-    args.measure ??
-    (async <T>(
-      _step: CustomConnectorRuntimeDataTimingStep,
-      operation: () => Promise<T>,
-    ) => {
-      return await operation();
-    });
-  const connectorRows = await measure("connectorRows", async () => {
-    return await db
-      .select({
-        connector: customConnectorDefinitionSelection(),
-        oauthConfig: orgCustomConnectorOauthConfigs,
-      })
-      .from(orgCustomConnectors)
-      .leftJoin(
-        orgCustomConnectorOauthConfigs,
-        and(
-          eq(
-            orgCustomConnectorOauthConfigs.connectorId,
-            orgCustomConnectors.id,
-          ),
-          eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
+export function customConnectorRuntimeDefinitionReadPlan(args: {
+  readonly orgId: string;
+  readonly connectorIds: readonly string[] | undefined;
+}) {
+  return {
+    columns: {
+      connector: customConnectorDefinitionSelection(),
+      oauthConfig: orgCustomConnectorOauthConfigs,
+    },
+    from: orgCustomConnectors,
+    join: {
+      table: orgCustomConnectorOauthConfigs,
+      on: and(
+        eq(orgCustomConnectorOauthConfigs.connectorId, orgCustomConnectors.id),
+        eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
+      ),
+    },
+    where: args.connectorIds
+      ? and(
+          eq(orgCustomConnectors.orgId, args.orgId),
+          eq(orgCustomConnectors.enabled, true),
+          inArray(orgCustomConnectors.id, [...args.connectorIds]),
+        )
+      : and(
+          eq(orgCustomConnectors.orgId, args.orgId),
+          eq(orgCustomConnectors.enabled, true),
         ),
-      )
-      .where(
-        args.connectorIds
-          ? and(
-              eq(orgCustomConnectors.orgId, args.orgId),
-              eq(orgCustomConnectors.enabled, true),
-              inArray(orgCustomConnectors.id, [...args.connectorIds]),
-            )
-          : and(
-              eq(orgCustomConnectors.orgId, args.orgId),
-              eq(orgCustomConnectors.enabled, true),
-            ),
-      );
+  };
+}
+
+export function customConnectorRuntimeStorageReadInput(
+  connectorRows: readonly {
+    readonly connector: CustomConnectorDefinitionRow;
+  }[],
+  memberConnectorIdsByCustomConnectorId: ReadonlyMap<string, string>,
+) {
+  const definitions = connectorRows.map((row) => {
+    return {
+      id: row.connector.id,
+      authMode: row.connector.authMode,
+      storageVersion: row.connector.storageVersion,
+    };
   });
-  if (connectorRows.length === 0) {
-    return [];
-  }
-
-  return await measure("connectorValueRows", async () => {
-    const definitions = connectorRows.map((row) => {
-      return {
-        id: row.connector.id,
-        authMode: row.connector.authMode,
-        storageVersion: row.connector.storageVersion,
-      };
-    });
-    const connectorIds = definitions.map((definition) => {
-      return definition.id;
-    });
-    const memberConnectorIds = definitions.flatMap((definition) => {
-      const memberConnectorId = args.memberConnectorIdsByCustomConnectorId.get(
-        definition.id,
-      );
-      return memberConnectorId ? [memberConnectorId] : [];
-    });
-    if (memberConnectorIds.length === 0) {
-      return customConnectorRuntimeDataFromRows(
-        connectorRows,
-        customConnectorRuntimeStorageSnapshot(
-          definitions,
-          [],
-          args.memberConnectorIdsByCustomConnectorId,
-        ),
-      );
-    }
-    const query = customConnectorRuntimeStorageReadQuery({
-      orgId: args.orgId,
-      userId: args.userId,
-      connectorIds,
-      memberConnectorIds,
-    });
-    const captured = db.$with("captured_custom_runtime_storage").as(query);
-    const rows = await db.with(captured).select().from(captured);
-    const runtimeStorage = customConnectorRuntimeStorageSnapshot(
-      definitions,
-      rows,
-      args.memberConnectorIdsByCustomConnectorId,
+  const connectorIds = definitions.map((definition) => {
+    return definition.id;
+  });
+  const memberConnectorIds = definitions.flatMap((definition) => {
+    const memberConnectorId = memberConnectorIdsByCustomConnectorId.get(
+      definition.id,
     );
-    return customConnectorRuntimeDataFromRows(connectorRows, runtimeStorage);
+    return memberConnectorId ? [memberConnectorId] : [];
   });
+  return { definitions, connectorIds, memberConnectorIds };
 }
 
 export function customConnectorRuntimeDataFromRows(

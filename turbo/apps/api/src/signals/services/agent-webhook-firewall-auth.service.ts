@@ -136,8 +136,14 @@ import {
 import {
   CUSTOM_CONNECTOR_OAUTH_ACCESS_TOKEN_RUNTIME_KEY,
   customConnectorSecretKey,
-  loadCustomConnectorRuntimeData,
+  customConnectorRuntimeDefinitionReadPlan,
+  customConnectorRuntimeStorageReadInput,
+  customConnectorRuntimeDataFromRows,
 } from "./custom-connector.service";
+import {
+  customConnectorRuntimeStorageReadQuery,
+  customConnectorRuntimeStorageSnapshot,
+} from "./custom-connector-credential-access.service";
 
 import { resolveOrgCreditAvailability$ } from "./run-admission.service";
 
@@ -4976,14 +4982,75 @@ async function loadCurrentCustomConnectorAuthRefs(args: {
   if (memberConnectorId === undefined) {
     return { kind: "unavailable" };
   }
-  const [runtime] = await loadCustomConnectorRuntimeData(args.db, {
+  const db = args.db;
+  const runtimeScope = {
     orgId: args.orgId,
     userId: args.userId,
     connectorIds: [args.customConnectorId],
     memberConnectorIdsByCustomConnectorId: new Map([
       [args.customConnectorId, memberConnectorId],
     ]),
-  });
+  };
+  const [runtime] = await (async () => {
+    const connectorRows = await (async () => {
+      return await (async () => {
+        const plan = customConnectorRuntimeDefinitionReadPlan(runtimeScope);
+        return await db
+          .select(plan.columns)
+          .from(plan.from)
+          .leftJoin(plan.join.table, plan.join.on)
+          .where(plan.where);
+      })();
+    })();
+    if (connectorRows.length === 0) {
+      return [];
+    }
+
+    return await (async () => {
+      return await (async () => {
+        const { definitions, connectorIds, memberConnectorIds } =
+          customConnectorRuntimeStorageReadInput(
+            connectorRows,
+            runtimeScope.memberConnectorIdsByCustomConnectorId,
+          );
+        if (memberConnectorIds.length === 0) {
+          return customConnectorRuntimeDataFromRows(
+            connectorRows,
+            customConnectorRuntimeStorageSnapshot(
+              definitions,
+              [],
+              runtimeScope.memberConnectorIdsByCustomConnectorId,
+            ),
+          );
+        }
+        const query = customConnectorRuntimeStorageReadQuery({
+          orgId: runtimeScope.orgId,
+          userId: runtimeScope.userId,
+          connectorIds,
+          memberConnectorIds,
+        });
+        const captured = db.$with("captured_custom_runtime_storage").as(query);
+        const rows = await db.with(captured).select().from(captured);
+        const runtimeStorage = customConnectorRuntimeStorageSnapshot(
+          definitions,
+          rows,
+          runtimeScope.memberConnectorIdsByCustomConnectorId,
+        );
+        return customConnectorRuntimeDataFromRows(
+          connectorRows,
+          runtimeStorage,
+        );
+      })();
+    })();
+  })();
+  return currentCustomConnectorAuthRefsFromRuntime(runtime, memberConnectorId);
+}
+
+function currentCustomConnectorAuthRefsFromRuntime(
+  runtime:
+    ReturnType<typeof customConnectorRuntimeDataFromRows>[number] | undefined,
+  memberConnectorId: string,
+): CurrentCustomConnectorAuthRefsResolution {
   if (!runtime) {
     return { kind: "unavailable" };
   }
