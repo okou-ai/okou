@@ -14,6 +14,7 @@ import path from "node:path";
 import test from "node:test";
 import { URL } from "node:url";
 import { promisify } from "node:util";
+import { runInNewContext } from "node:vm";
 
 import { build, loadConfigFromFile } from "vite";
 
@@ -51,7 +52,7 @@ await test("canonical sourcemap injection preserves content-addressed download w
     const input = path.join(root, "app.js");
     await writeFile(
       input,
-      'import workerUrl from "virtual:sandbox-file-download-worker"; console.log(workerUrl);',
+      'import workerUrl from "virtual:sandbox-file-download-worker"; globalThis.workerUrl = workerUrl;',
     );
     await build({
       configFile: false,
@@ -84,8 +85,9 @@ await test("canonical sourcemap injection preserves content-addressed download w
     assert.match(source.toString(), /_sentryDebugIds/u);
     const app = path.join(output, "app.js");
     const appSource = await readFile(app, "utf8");
-    assert.ok(appSource.includes(`/okou-app/assets/${workerFile}`));
-    assert.ok(!appSource.includes("https://static.okou.io"));
+    const context: { workerUrl?: string } = {};
+    runInNewContext(appSource, context);
+    assert.equal(context.workerUrl, `/okou-app/assets/${workerFile}`);
     await promisify(execFile)(
       "pnpm",
       ["exec", "sentry-cli", "sourcemaps", "inject", output],
