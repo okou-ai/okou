@@ -143,9 +143,30 @@ test.each(["page.html", "image.svg"])(
   },
 );
 
+test("A wide sparse CSV keeps complete readable source instead of expanding every missing cell", async () => {
+  const source = [
+    Array.from({ length: 101 }, (_, index) => {
+      return `column${index}`;
+    }).join(","),
+    ...Array.from({ length: 100 }, (_, index) => {
+      return `row${index}`;
+    }),
+  ].join("\n");
+  await setupFilesPage(context, {
+    handler: previewGuest({ "wide.csv": textBytes(source) }),
+  });
+  await openFiles();
+  const dialog = await openPreview("wide.csv");
+  await waitFor(() => {
+    expect(dialog.querySelector("pre")?.textContent).toBe(source);
+  });
+  expect(dialog.querySelector("table")).toBeNull();
+  expect(filesButton("Download", dialog)).toBeEnabled();
+});
+
 test("Embedded HTML in Markdown stays readable without creating an executing frame", async () => {
   const html =
-    '<iframe srcdoc="<img src=invalid onerror=parent.__sandboxPreviewExecuted=true>"></iframe>';
+    '<iframe title="&lt;source&gt;" srcdoc="<img src=invalid onerror=parent.__sandboxPreviewExecuted=true>"></iframe>';
   await setupFilesPage(context, {
     handler: previewGuest({
       "untrusted.md": textBytes("# Safe Markdown\n\n" + html),
@@ -158,6 +179,31 @@ test("Embedded HTML in Markdown stays readable without creating an executing fra
   ).resolves.toBeInTheDocument();
   await expect(within(dialog).findByText(html)).resolves.toBeInTheDocument();
   expect(dialog.querySelector("iframe, embed, object, script, img")).toBeNull();
+});
+
+test("A Markdown preview preserves literal code and angle-bracket autolinks", async () => {
+  const inline = "<span>&lt;</span>";
+  const fenced = '<div title="a < b">&lt; source</div>';
+  const source = [
+    "# Code samples",
+    `Use \`${inline}\` literally.`,
+    "",
+    "```html",
+    fenced,
+    "```",
+    "",
+    "<https://example.com/preview>",
+  ].join("\n");
+  await setupFilesPage(context, {
+    handler: previewGuest({ "code.md": textBytes(source) }),
+  });
+  await openFiles();
+  const dialog = await openPreview("code.md");
+  await expect(within(dialog).findByText(inline)).resolves.toBeInTheDocument();
+  expect(dialog.querySelector("pre code")?.textContent?.trimEnd()).toBe(fenced);
+  expect(
+    dialog.querySelector('a[href="https://example.com/preview"]'),
+  ).toBeInTheDocument();
 });
 
 test.each([

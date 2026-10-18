@@ -14,10 +14,7 @@ import { authenticatedSessionKey$ } from "../auth.ts";
 import { currentRunId$ } from "./activity-signals.ts";
 import { onRef, resetSignal, settle, withCleanup } from "../utils.ts";
 import { createAttachmentPreviewSignals } from "../attachment-resource-url.ts";
-import {
-  escapeHtmlTags,
-  parseMarkdownTree,
-} from "../../lib/markdown/pipeline.ts";
+import { parseMarkdownTree } from "../../lib/markdown/pipeline.ts";
 import { createZoomableImageCanvasSignals } from "../zoomable-image-canvas.ts";
 import type { AttachmentLightboxState } from "../okou-page/attachment-chips.ts";
 
@@ -97,7 +94,7 @@ function buildPreview(
           text$,
           markdownTree$: computed(() => {
             return Promise.resolve(
-              parseMarkdownTree(escapeHtmlTags(content.text), {}),
+              parseMarkdownTree(content.text, { escapeHtml: true }),
             );
           }),
         }

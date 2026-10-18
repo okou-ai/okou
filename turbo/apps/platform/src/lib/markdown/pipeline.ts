@@ -52,6 +52,8 @@ declare module "hast" {
 type MarkdownCard = NonNullable<Data["card"]>;
 
 interface MarkdownParseOptions {
+  /** Escape authored HTML tokens; code spans, fences and links keep their syntax. */
+  readonly escapeHtml?: boolean;
   /** Recognize only explicit Agent-message math delimiters. */
   readonly math?: boolean;
   /**
@@ -157,8 +159,16 @@ function isClosedFence(raw: string): boolean {
   );
 }
 
-function createMarkedRenderer(): Renderer {
+function createMarkedRenderer(options: MarkdownParseOptions): Renderer {
   const renderer = new Renderer();
+  if (options.escapeHtml) {
+    renderer.html = (token) => {
+      return escapeHtmlTags(token.text.replaceAll("&", "&amp;"));
+    };
+  }
+  if (!options.mermaid) {
+    return renderer;
+  }
   const renderCode = renderer.code.bind(renderer);
   renderer.code = (token) => {
     const html = renderCode(token);
@@ -466,7 +476,10 @@ export function parseMarkdownTree(
   const parser = math ? new Marked(math.extension) : new Marked();
   const html = parser.parse(source, {
     async: false,
-    renderer: options.mermaid ? createMarkedRenderer() : null,
+    renderer:
+      options.mermaid || options.escapeHtml
+        ? createMarkedRenderer(options)
+        : null,
   });
   const tree: Root = {
     type: "root",

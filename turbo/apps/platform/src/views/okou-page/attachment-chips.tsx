@@ -545,8 +545,11 @@ function ArtifactDialogTextBody({
           );
         }
 
-        if (kind === "csv") {
-          const rows = parseCsvRows(text);
+        const rows = kind === "csv" ? parseCsvRows(text) : null;
+        const header = rows?.[0];
+        // Sparse CSV can expand a small source into rows × header cells.
+        // Keep the complete readable source when that projection is too large.
+        if (rows && (!header || rows.length * header.length <= 10_000)) {
           return (
             <ArtifactDialogStage>
               <ArtifactDialogCard>
