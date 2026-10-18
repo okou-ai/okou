@@ -311,6 +311,7 @@ impl Root {
         super::diagnostics::Stage::LocalNode.record();
         let mut core = evidence::check(Stage::LocalNode, || Core::new(keys, local, port))?;
         core.set_regions(home, regions);
+        core.observe_relays(routes.clone());
         super::diagnostics::Stage::Peers.record();
         evidence::check(Stage::Peers, || core.update(first))?;
         evidence::check(Stage::Peers, || routes.update(None, core.relay_peers()))?;

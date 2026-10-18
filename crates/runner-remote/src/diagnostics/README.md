@@ -22,6 +22,29 @@ change without CLI changes. Human output and JSON
 contain the same text. CLI checks only bounded, terminal-safe text; missing or
 unusable optional text cannot replace a verified business result.
 
+Native explanations distinguish a stage still pending at the recorded observation
+from missing or abandoned detail, with monotonic stage durations. They identify
+the actual embedded Tailscale/DERP path and the selected regional connection
+incarnation, including reused setup and live non-home-region evidence. Ordinary
+failures, passive history and checks use captured copies of those pure facts.
+Later regional replacement cannot rewrite an earlier operation's path evidence.
+Live connections follow authenticated peer-region changes when selecting their
+regional evidence; a completed operation keeps its previously captured region.
+
+TCP SYN output and authenticated exact-tuple TCP reply flags belong to that
+connection. WireGuard output, relay queue/flush and peer-labelled input are
+shared peer observations during the recorded window. Local queue admission or
+flush does not prove remote acknowledgement. A window can span regional changes,
+and its shared counts are not attributed to one region. A DERP source label does not
+prove cryptographic authentication. SDK reset-or-closed remains distinct from
+an observed authenticated TCP RST. Counts, durations and safe error categories
+retain no packet bodies, SDK error strings, credentials or physical resources.
+
+Both retained evidence and rendered text keep the 8192-byte limit. Lower-priority
+completed detail can be omitted with an explicit notice to preserve the incident,
+critical path, context and next action. A pending relay read is normal waiting,
+not evidence that a remote endpoint failed.
+
 Process status/read use their retained terminal receipt. Later unrelated
 operations cannot replace it. Completed remote nonzero exits and intentional
 close do not create failures. Existing business/byte/truncation/EOF/helper-exit

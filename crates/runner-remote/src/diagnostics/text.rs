@@ -3,6 +3,7 @@
 use super::{Cause, Handle, Report};
 use serde::Serialize;
 use serde_json::{Value, value::RawValue};
+mod native;
 
 impl Report {
     pub(crate) fn evidence(&self) -> Option<Value> {
@@ -14,6 +15,22 @@ impl Report {
     }
 
     pub(crate) fn message(&self) -> Option<String> {
+        let text = self.render()?;
+        if text.len() <= super::MAX_REPORT_BYTES {
+            return Some(text);
+        }
+        let mut compact = self.clone();
+        for minimal in [false, true] {
+            compact.compact(minimal);
+            let text = compact.render()?;
+            if text.len() <= super::MAX_REPORT_BYTES {
+                return Some(text);
+            }
+        }
+        None
+    }
+
+    fn render(&self) -> Option<String> {
         let summary = match self.cause {
             Some(failure) => format!(
                 "Failure: {} during {}.",
@@ -25,11 +42,13 @@ impl Report {
                 words(self.protocol)?
             ),
         };
-        let mut text = format!(
-            "{summary}\n\nEvidence:\n- Source boundary: {}; detail: {}.\n",
+        let mut text = format!("{summary}\n");
+        self.native_path(&mut text)?;
+        text.push_str(&format!(
+            "\nEvidence:\n- Source boundary: {}; detail: {}.\n",
             words(self.stage)?,
             words(self.detail)?,
-        );
+        ));
         if let Some(ssh) = &self.ssh {
             text.push_str(&format!(
                 "- Route: {}; transport: {}.\n",
@@ -49,11 +68,25 @@ impl Report {
                 ));
             }
             for step in &ssh.stages {
+                if matches!(ssh.route, super::trace::Route::Tailscale)
+                    && matches!(
+                        step.stage,
+                        super::trace::Stage::Dns
+                            | super::trace::Stage::DestinationPolicy
+                            | super::trace::Stage::AccessTls
+                            | super::trace::Stage::AccessWebsocket
+                    )
+                {
+                    continue;
+                }
                 text.push_str(&format!(
                     "- {}: {}.\n",
                     words(step.stage)?,
                     words(step.status)?,
                 ));
+                if step.timing.elapsed_ms != 0 {
+                    text.push_str(&format!("  Elapsed: {} ms.\n", step.timing.elapsed_ms));
+                }
             }
         }
         if let Some(vnc) = &self.vnc {
@@ -159,8 +192,11 @@ impl Report {
         } else {
             "This is retained evidence; current connectivity has not been checked."
         };
+        if self.truncated {
+            text.push_str("\nDetail omitted to retain the incident and critical path within the report budget.\n");
+        }
         text.push_str(&format!(
-            "\nUnknown: Stages marked not reached, unknown or reused do not establish current health. Finer unobserved stages and the remote/network trigger remain unknown. {boundary}\n\nNext step: {}\n\nContext:\nRun: {}\nAssignment: {}\nAttempt: {}\nSequence: {}\nConnection: {}\nObserved at: {}\nConfiguration: created at {}; generation {}.\n",
+            "\nUnknown: Pending means still waiting at observation, not a proven remote cause. Stages marked not reached, unknown or reused do not establish current health. Finer unobserved stages and the remote/network trigger remain unknown. {boundary}\n\nNext step: {}\n\nContext:\nRun: {}\nAssignment: {}\nAttempt: {}\nSequence: {}\nConnection: {}\nObserved at: {}\nConfiguration: created at {}; generation {}.\n",
             self.guidance(),
             self.run_id,
             self.assignment_id,
@@ -174,7 +210,7 @@ impl Report {
         if let Some(session) = self.session_id {
             text.push_str(&format!("Session: {session}\n"));
         }
-        (text.len() <= super::MAX_REPORT_BYTES).then_some(text)
+        Some(text)
     }
 
     fn guidance(&self) -> &'static str {
@@ -206,6 +242,18 @@ impl Report {
             }) {
                 return "Inspect the independently routed KDC and its authorization/source evidence. A ticket request may have been delivered; preserve its uncertainty and do not replay automatically.";
             }
+        }
+        if matches!(
+            cause,
+            Cause::Ssh(S::TimedOut | S::Cancelled | S::NetworkFailure)
+                | Cause::Vnc(
+                    crate::vnc::Failure::TimedOut
+                        | crate::vnc::Failure::Cancelled
+                        | crate::vnc::Failure::Network
+                )
+        ) && let Some(guidance) = self.native_guidance()
+        {
+            return guidance;
         }
         if matches!(
             cause,

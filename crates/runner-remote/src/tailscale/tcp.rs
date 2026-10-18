@@ -114,11 +114,11 @@ impl Connection {
         if let Some(connect) = self.connecting.as_mut() {
             match connect.as_mut().poll(cx) {
                 Poll::Pending => {}
-                Poll::Ready(Err(_)) => {
+                Poll::Ready(Err(error)) => {
                     self.trace.set(
                         super::evidence::Stage::PrivateTcp,
                         super::evidence::Status::Failed,
-                        super::evidence::Detail::NotExposed,
+                        super::evidence::Detail::netstack(error),
                     );
                     self.trace.seal();
                     self.retire();
@@ -180,6 +180,7 @@ impl Connection {
         if packet.len() > MTU || self.device.incoming.len() >= FRAME_CAPACITY {
             return Err(Failure::ResourceExhausted);
         }
+        self.trace.tcp_packet(packet.as_ref(), true);
         self.device.incoming.push_back(packet);
         Ok(())
     }
@@ -189,12 +190,16 @@ impl Connection {
             self.retire();
             return Err(Failure::Cancelled);
         }
-        Ok(self
+        let packets: Vec<PacketMut> = self
             .device
             .outgoing
             .drain(..)
             .map(|bytes| PacketMut::from(bytes.as_slice()))
-            .collect())
+            .collect();
+        for packet in &packets {
+            self.trace.tcp_packet(packet.as_ref(), false);
+        }
+        Ok(packets)
     }
 
     pub(super) fn retire(&mut self) {

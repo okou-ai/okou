@@ -28,6 +28,7 @@ impl Dial for Verified {
         let trace = Trace::current().with_role(Role::Relay);
         let trace4 = trace.fork();
         let trace6 = trace.fork();
+        trace.dial_branches([trace4.clone(), trace6.clone()]);
         let v4 = trace4.clone().scope(async {
             match server.ipv4 {
                 IpUsage::Disable => std::future::pending().await,
@@ -62,7 +63,14 @@ impl Dial for Verified {
 
 async fn connect(address: std::net::SocketAddr) -> std::io::Result<tokio::net::TcpStream> {
     Trace::current().endpoint(address);
-    evidence::observe(Stage::RelayTcp, tokio::net::TcpStream::connect(address)).await
+    evidence::observe(Stage::RelayTcp, async {
+        tokio::net::TcpStream::connect(address)
+            .await
+            .inspect_err(|error| {
+                evidence::failed(Stage::RelayTcp, Detail::io(error));
+            })
+    })
+    .await
 }
 
 async fn dns(
@@ -118,7 +126,8 @@ impl<D: Dial> Connector for Regional<D> {
                 return Err(Failure::DomainFailed);
             }
             let trace = Trace::current();
-            let attempt_trace = trace.fork().with_role(Role::Relay);
+            trace.replace(&trace.fork());
+            let attempt_trace = trace.clone().with_role(Role::Relay);
             let attempt =
                 attempt_trace
                     .clone()
@@ -138,7 +147,10 @@ impl<D: Dial> Connector for Regional<D> {
                             use super::registration::Tls;
                             let io = evidence::observe(Stage::RelayTls, tls.connect(name, raw))
                                 .await
-                                .map_err(|_| Failure::DomainFailed)?;
+                                .map_err(|error| {
+                                    evidence::failed(Stage::RelayTls, Detail::io(&error));
+                                    Failure::DomainFailed
+                                })?;
                             let client = ts_http_util::http1::connect::<EmptyBody>(io)
                                 .await
                                 .map_err(|_| Failure::DomainFailed)?;
@@ -164,7 +176,6 @@ impl<D: Dial> Connector for Regional<D> {
                     Err(Failure::DomainFailed)
                 }),
             };
-            trace.replace(&attempt_trace);
             if result.is_ok() {
                 return result;
             }

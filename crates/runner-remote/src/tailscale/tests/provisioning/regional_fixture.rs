@@ -18,6 +18,7 @@ use crate::tailscale::{
 pub(crate) struct Relay {
     targets: Arc<BTreeMap<u16, Target>>,
     descriptors: Arc<Mutex<Vec<i32>>>,
+    production_tcp: bool,
 }
 
 struct Target {
@@ -64,6 +65,7 @@ impl Relay {
                 },
             )])),
             descriptors,
+            production_tcp: false,
         }
     }
 
@@ -90,7 +92,15 @@ impl Relay {
                     .collect(),
             ),
             descriptors,
+            production_tcp: false,
         }
+    }
+
+    /// Precision cases include the production address-family dialer. Existing
+    /// ownership cases keep their external socket fixture's fail-fast contract.
+    pub(super) fn production_tcp(mut self) -> Self {
+        self.production_tcp = true;
+        self
     }
 }
 
@@ -102,11 +112,21 @@ impl Dial for Relay {
             server.ipv4,
             IpUsage::FixedAddr("127.0.0.1".parse().unwrap())
         );
-        assert_eq!(server.ipv6, IpUsage::Disable);
+        assert!(
+            server.ipv6 == IpUsage::Disable
+                || server.ipv6 == IpUsage::FixedAddr("::1".parse().unwrap())
+        );
         let target = self.targets.get(&server.https_port).unwrap();
-        let socket = tokio::net::TcpStream::connect(target.address)
-            .await
-            .map_err(|_| Failure::DomainFailed)?;
+        assert_eq!(target.address.port(), server.https_port);
+        let socket = if self.production_tcp {
+            crate::tailscale::regional_relay::Verified(crate::tailscale::resolver::Resolver::new())
+                .tcp(server)
+                .await?
+        } else {
+            tokio::net::TcpStream::connect(target.address)
+                .await
+                .map_err(|_| Failure::DomainFailed)?
+        };
         self.descriptors.lock().unwrap().push(socket.as_raw_fd());
         Ok(PausedTcp::new(socket, Arc::clone(&target.gate)))
     }

@@ -1,6 +1,8 @@
 //! Saved-host RPC and forwarding over genuine SDK encrypted DERP/TCP.
 //! Only external OAuth/control/DERP/SSH peers are synthetic.
 
+mod precision;
+
 use super::*;
 use crate::ssh::tests::{
     files,

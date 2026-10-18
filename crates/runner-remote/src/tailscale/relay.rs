@@ -278,7 +278,13 @@ where
             ),
         )
         .await
-        .map_err(|_| Failure::DomainFailed)?;
+        .map_err(|error| {
+            super::evidence::failed(
+                super::evidence::Stage::RelayProtocol,
+                super::evidence::Detail::derp(&error),
+            );
+            Failure::DomainFailed
+        })?;
         gate.check(None).map_err(|_| Failure::Cancelled)?;
         gate.state.lock().unwrap_or_else(|p| p.into_inner()).phase = Phase::Idle;
         limit.store(true, std::sync::atomic::Ordering::Release);
@@ -316,7 +322,13 @@ where
             .await;
         match result {
             Ok(packet) if !self.poisoned() => Ok(packet),
-            _ => {
+            result => {
+                if let Err(error) = result {
+                    super::evidence::failed(
+                        super::evidence::Stage::RelayRead,
+                        super::evidence::Detail::derp(&error),
+                    );
+                }
                 self.gate.poison();
                 Err(Failure::DomainFailed)
             }
@@ -371,11 +383,18 @@ where
         drop(bytes);
         // A successful SDK send includes flush. A failed or abandoned attempt
         // may retain encoded buffers; poison it and retain capacity until Drop.
-        if result.is_err() {
+        if let Err(error) = result {
+            super::evidence::failed(
+                super::evidence::Stage::RelayWrite,
+                super::evidence::Detail::derp(&error),
+            );
             return Err(Failure::DomainFailed);
         }
         self.gate.check(None).map_err(|_| Failure::Cancelled)?;
         let mut state = self.gate.state.lock().unwrap_or_else(|p| p.into_inner());
+        if let Phase::Packet(stamp) = &state.phase {
+            stamp.observe(super::evidence::Flow::RelayFlushed);
+        }
         state.phase = Phase::Idle;
         state.permit.take();
         attempt.finished = true;

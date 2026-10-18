@@ -1,5 +1,6 @@
 //! Bounded, typed evidence without credentials, streams, leases or native owners.
 
+mod budget;
 pub(crate) mod check;
 mod rpc;
 #[cfg(test)]
@@ -476,7 +477,7 @@ impl Handle {
             .as_ref()
             .and_then(|source| source.connection.as_ref())
             .and_then(crate::tailscale::evidence::Trace::snapshot);
-        let report = Report {
+        let mut report = Report {
             run_id: self.store.run,
             assignment_id: self
                 .store
@@ -513,6 +514,17 @@ impl Handle {
             vnc,
             truncated: false,
         };
+        // Keep the incident and critical path when optional completed detail grows.
+        for minimal in [false, true] {
+            if report
+                .evidence()
+                .and_then(|value| serde_json::to_vec(&value).ok())
+                .is_some_and(|bytes| bytes.len() <= MAX_REPORT_BYTES)
+            {
+                break;
+            }
+            report.compact(minimal);
+        }
         // The schema has no unbounded strings or collections; keep a hard guard as it evolves.
         if !report
             .evidence()
