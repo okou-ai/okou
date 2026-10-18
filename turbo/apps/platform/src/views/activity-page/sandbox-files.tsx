@@ -108,7 +108,11 @@ function FilesDownloadButton({
               type="button"
               variant="quiet"
               size="icon-sm"
-              className="shrink-0 [@media(pointer:coarse)]:size-10"
+              className={cn(
+                "shrink-0 [@media(pointer:coarse)]:size-10",
+                !preparing &&
+                  "[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/files-row:opacity-100 group-has-[:focus-visible]/files-row:opacity-100",
+              )}
               focusableWhenDisabled
               pending={preparing}
               disabled={downloading || navigating}
@@ -201,7 +205,7 @@ function FilesRow({
       );
     }
     return (
-      <div className="flex h-full min-w-0 items-center gap-2 px-3 text-sm">
+      <div className="group/files-row flex h-full min-w-0 items-center gap-2 px-3 text-sm">
         <span className="w-3.5 shrink-0" />
         {entry.kind === "symlink" ? (
           <Link size={16} className="shrink-0 text-muted-foreground" />
