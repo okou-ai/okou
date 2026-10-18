@@ -1240,9 +1240,12 @@ describe("Morning Brief catalog reconciliation", () => {
             )
           ).body.outcome,
         ).toBe("accepted");
-        const { actor, defaultAgentId } = await workflowBdd.setupWorkflowOrg({
-          timezone: "Asia/Tokyo",
-        });
+        // Keep the same S3 object store installed for the entire lifecycle.
+        // setupWorkflowOrg would replace send with a permissive response.
+        const actor = bdd.user();
+        const { defaultAgentId } = await runs.grantProEntitlement(actor);
+        await bdd.updateUserTimezone(actor, "Asia/Tokyo");
+        await runs.ensurePersonalSubscriptionModel(actor);
         if (!actor.orgId) {
           throw new Error("Expected a Morning Brief workspace");
         }
