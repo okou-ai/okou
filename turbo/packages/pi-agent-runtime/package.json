@@ -29,7 +29,7 @@
     "@earendil-works/pi-ai": "1.1.0",
     "@earendil-works/pi-coding-agent": "1.1.0",
     "@okouai/api-contracts": "workspace:*",
-    "gpt-tokenizer": "^3.4.0"
+    "gpt-tokenizer": "^4.0.0"
   },
   "devDependencies": {
     "@okouai/core": "workspace:*",
