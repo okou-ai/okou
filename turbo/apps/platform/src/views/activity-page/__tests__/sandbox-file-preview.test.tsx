@@ -143,20 +143,57 @@ test.each(["page.html", "image.svg"])(
   },
 );
 
-test("A wide sparse CSV keeps complete readable source instead of expanding every missing cell", async () => {
-  const source = [
-    Array.from({ length: 101 }, (_, index) => {
-      return `column${index}`;
-    }).join(","),
-    ...Array.from({ length: 100 }, (_, index) => {
-      return `row${index}`;
-    }),
-  ].join("\n");
+test.each(["sparse", "rectangular"])(
+  "A wide %s CSV keeps complete readable source instead of expanding a large table",
+  async (shape) => {
+    const source = [
+      Array.from({ length: 101 }, (_, index) => {
+        return `column${index}`;
+      }).join(","),
+      ...Array.from({ length: 100 }, (_, index) => {
+        return `row${index}${shape === "rectangular" ? ",".repeat(100) : ""}`;
+      }),
+    ].join("\n");
+    await setupFilesPage(context, {
+      handler: previewGuest({ "wide.csv": textBytes(source) }),
+    });
+    await openFiles();
+    const dialog = await openPreview("wide.csv");
+    await waitFor(() => {
+      expect(dialog.querySelector("pre")?.textContent).toBe(source);
+    });
+    expect(dialog.querySelector("table")).toBeNull();
+    expect(filesButton("Download", dialog)).toBeEnabled();
+  },
+);
+
+test("Quoted CSV fields retain commas, line breaks, escaped quotes and spaces", async () => {
+  const source =
+    'name,note,value\r\n"Doe, Jane","first\r\nsecond ""quoted"" line", 42 \r\n';
   await setupFilesPage(context, {
-    handler: previewGuest({ "wide.csv": textBytes(source) }),
+    handler: previewGuest({ "quoted.csv": textBytes(source) }),
   });
   await openFiles();
-  const dialog = await openPreview("wide.csv");
+  const dialog = await openPreview("quoted.csv");
+  const table = await within(dialog).findByRole("table");
+  expect(
+    Array.from(table.querySelectorAll("tbody td"), (cell) => {
+      return cell.textContent;
+    }),
+  ).toStrictEqual(["Doe, Jane", 'first\r\nsecond "quoted" line', " 42 "]);
+});
+
+test.each([
+  'name,note\nvalue,"unfinished',
+  'name,note\nvalue,bare"quote',
+  'name,note\nvalue,"closed"extra',
+  "name,note\nvalue,one,extra",
+])("Unrepresentable CSV retains its readable source: %s", async (source) => {
+  await setupFilesPage(context, {
+    handler: previewGuest({ "malformed.csv": textBytes(source) }),
+  });
+  await openFiles();
+  const dialog = await openPreview("malformed.csv");
   await waitFor(() => {
     expect(dialog.querySelector("pre")?.textContent).toBe(source);
   });

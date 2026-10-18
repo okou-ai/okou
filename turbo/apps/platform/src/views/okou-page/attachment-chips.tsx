@@ -172,55 +172,124 @@ function formatPlainPreviewText(
   return text;
 }
 
-export function parseCsvRows(text: string): string[][] {
-  return text
-    .split(/\r?\n/)
-    .map((line) => {
-      return line.trimEnd();
-    })
-    .filter((line) => {
-      return line.length > 0;
-    })
-    .map((line) => {
-      return line.split(",").map((cell) => {
-        return cell.trim();
-      });
-    });
+/** Null keeps source visible when CSV cannot form a faithful, bounded table. */
+export function parseCsvPreviewRows(text: string): string[][] | null {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  let closedQuote = false;
+  const finishCell = () => {
+    row.push(cell);
+    cell = "";
+    closedQuote = false;
+  };
+  const finishRow = () => {
+    finishCell();
+    rows.push(row);
+    row = [];
+  };
+  for (let index = 0; index < text.length; index++) {
+    const character = text.charAt(index);
+    if (quoted) {
+      if (character === '"') {
+        if (text.charAt(index + 1) === '"') {
+          cell += '"';
+          index++;
+        } else {
+          quoted = false;
+          closedQuote = true;
+        }
+      } else {
+        cell += character;
+      }
+    } else if (character === ",") {
+      finishCell();
+    } else if (character === "\r" || character === "\n") {
+      finishRow();
+      if (character === "\r" && text.charAt(index + 1) === "\n") {
+        index++;
+      }
+    } else if (closedQuote) {
+      return null;
+    } else if (character === '"') {
+      if (cell !== "") {
+        return null;
+      }
+      quoted = true;
+    } else {
+      cell += character;
+    }
+  }
+  if (quoted) {
+    return null;
+  }
+  if (cell !== "" || closedQuote || row.length > 0) {
+    finishRow();
+  }
+  const [header] = rows;
+  if (
+    header &&
+    (rows.length * header.length > 10_000 ||
+      rows.some((record) => {
+        return record.length !== header.length;
+      }))
+  ) {
+    return null;
+  }
+  return rows;
+}
+
+/** CSV may repeat header labels, cell values and entire records. */
+function keyedCsvItems<T>(items: readonly T[], identity: (item: T) => string) {
+  const occurrences = new Map<string, number>();
+  return items.map((value) => {
+    const content = identity(value);
+    const occurrence = occurrences.get(content) ?? 0;
+    occurrences.set(content, occurrence + 1);
+    return { key: JSON.stringify([content, occurrence]), value };
+  });
 }
 
 export function CsvPreviewTable({ rows }: { rows: string[][] }) {
   const [header, ...body] = rows;
+  const columns = keyedCsvItems(header, (value) => {
+    return value;
+  });
+  const records = keyedCsvItems(body, (value) => {
+    return JSON.stringify(value);
+  });
 
   return (
     <div className="overflow-auto rounded-lg border border-foreground/10">
       <table className="min-w-full divide-y divide-foreground/10 text-sm">
         <thead className="bg-muted/40">
           <tr>
-            {header.map((cell) => {
+            {columns.map((column) => {
               return (
                 <th
-                  key={`header-${cell}`}
-                  className="whitespace-nowrap px-3 py-2 text-left font-medium text-foreground"
+                  key={column.key}
+                  className="whitespace-pre-wrap px-3 py-2 text-left font-medium text-foreground"
                 >
-                  {cell}
+                  {column.value}
                 </th>
               );
             })}
           </tr>
         </thead>
         <tbody className="divide-y divide-foreground/10 bg-background">
-          {body.map((row) => {
-            const rowKey = `row-${row.join("\u0001")}`;
+          {records.map((record) => {
             return (
-              <tr key={rowKey}>
-                {header.map((column, cellIndex) => {
-                  const value = row[cellIndex] ?? "";
+              <tr key={record.key}>
+                {keyedCsvItems(record.value, (value) => {
+                  return value;
+                }).map((cell) => {
                   return (
                     <td
-                      key={`${rowKey}-${column}-${value}`}
-                      className="whitespace-nowrap px-3 py-2 text-foreground"
+                      key={cell.key}
+                      className="whitespace-pre-wrap px-3 py-2 text-foreground"
                     >
-                      {value}
+                      {cell.value}
                     </td>
                   );
                 })}
@@ -545,11 +614,8 @@ function ArtifactDialogTextBody({
           );
         }
 
-        const rows = kind === "csv" ? parseCsvRows(text) : null;
-        const header = rows?.[0];
-        // Sparse CSV can expand a small source into rows × header cells.
-        // Keep the complete readable source when that projection is too large.
-        if (rows && (!header || rows.length * header.length <= 10_000)) {
+        const rows = kind === "csv" ? parseCsvPreviewRows(text) : null;
+        if (rows) {
           return (
             <ArtifactDialogStage>
               <ArtifactDialogCard>

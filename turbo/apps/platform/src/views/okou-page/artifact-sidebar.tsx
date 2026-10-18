@@ -23,7 +23,7 @@ import { useTranslation } from "react-i18next";
 import type { ArtifactRef } from "../../signals/chat-page/thread-sidebar.ts";
 import {
   CsvPreviewTable,
-  parseCsvRows,
+  parseCsvPreviewRows,
   TextPreviewLoader,
 } from "./attachment-chips.tsx";
 import {
@@ -1052,7 +1052,18 @@ function ArtifactCsvBody({ text$ }: { text$: TextPreviewComputed }) {
             </ArtifactStageShell>
           );
         }
-        const rows = parseCsvRows(text);
+        const rows = parseCsvPreviewRows(text);
+        if (rows === null) {
+          return (
+            <ArtifactStageShell>
+              <ArtifactStageCard>
+                <pre className="m-0 h-full overflow-auto whitespace-pre-wrap break-words p-6 text-sm text-foreground">
+                  {text}
+                </pre>
+              </ArtifactStageCard>
+            </ArtifactStageShell>
+          );
+        }
         if (rows.length === 0) {
           return (
             <ArtifactStageShell>
