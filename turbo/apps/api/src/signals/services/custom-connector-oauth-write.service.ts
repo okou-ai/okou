@@ -1,8 +1,6 @@
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
-import { and, asc, eq, or } from "drizzle-orm";
-
-import type { Tx } from "../../lib/db-types";
+import { and, asc, eq, or, type SQL } from "drizzle-orm";
 
 interface ConnectorIdentity {
   readonly connectorId: string;
@@ -10,16 +8,13 @@ interface ConnectorIdentity {
 }
 
 /**
- * Complete mode/config changes in the caller's transaction. Include both the
- * old and new identities when moving a config; acquire these locks before any
- * config write, and let failures roll back the owning transaction. A newly
- * inserted parent is protected by its insert and the ordinary PK/FK checks.
+ * Include old and new identities when moving a config. The caller executes
+ * these locks before config writes; a newly inserted parent is protected by
+ * its insert and the ordinary PK/FK checks.
  */
-export async function writeCustomConnectorOAuthState<Result>(
-  tx: Tx,
+export function customConnectorOAuthStateLockReadPlan(
   connectors: readonly [ConnectorIdentity, ...ConnectorIdentity[]],
-  write: () => Promise<Result>,
-): Promise<Result> {
+) {
   const affected = or(
     ...connectors.map(({ connectorId, orgId }) => {
       return and(
@@ -28,31 +23,36 @@ export async function writeCustomConnectorOAuthState<Result>(
       );
     }),
   );
-  await tx
-    .select({ id: orgCustomConnectors.id })
-    .from(orgCustomConnectors)
-    .where(affected)
-    .orderBy(asc(orgCustomConnectors.id), asc(orgCustomConnectors.orgId))
-    .for("update");
+  return {
+    columns: { id: orgCustomConnectors.id },
+    condition: affected,
+    orderBy: [asc(orgCustomConnectors.id), asc(orgCustomConnectors.orgId)],
+  };
+}
 
-  const result = await write();
-
-  // Like the deferred triggers, validate after all writes, including valid
-  // intermediate states such as changing mode before replacing the config.
-  const states = await tx
-    .select({
+/** Read after all writes, including valid intermediate mode/config states. */
+export function customConnectorOAuthStateValidationReadPlan(
+  condition: SQL | undefined,
+) {
+  return {
+    columns: {
       authMode: orgCustomConnectors.authMode,
       configConnectorId: orgCustomConnectorOauthConfigs.connectorId,
-    })
-    .from(orgCustomConnectors)
-    .leftJoin(
-      orgCustomConnectorOauthConfigs,
-      and(
-        eq(orgCustomConnectorOauthConfigs.connectorId, orgCustomConnectors.id),
-        eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
-      ),
-    )
-    .where(affected);
+    },
+    join: and(
+      eq(orgCustomConnectorOauthConfigs.connectorId, orgCustomConnectors.id),
+      eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
+    ),
+    condition,
+  };
+}
+
+export function assertCustomConnectorOAuthStateRows(
+  states: readonly {
+    readonly authMode: typeof orgCustomConnectors.$inferSelect.authMode;
+    readonly configConnectorId: string | null;
+  }[],
+): void {
   for (const state of states) {
     // The config primary key guarantees at most one row; its composite FK
     // guarantees organization ownership and cascades when a parent is deleted.
@@ -60,5 +60,4 @@ export async function writeCustomConnectorOAuthState<Result>(
       throw new Error("custom connector OAuth mode and config do not match");
     }
   }
-  return result;
 }
