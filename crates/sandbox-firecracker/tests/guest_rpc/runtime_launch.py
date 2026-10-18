@@ -340,6 +340,7 @@ def execute(command, env):
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
+            # The owned process group has already exited and needs no signal.
             pass
         process.wait(timeout=5)
         for stream in (process.stdin, process.stdout, process.stderr):

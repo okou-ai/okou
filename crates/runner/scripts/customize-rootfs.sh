@@ -141,7 +141,7 @@ if [[ ${#GUEST_SOURCES[@]} -eq 0 ]]; then
 fi
 
 missing=()
-for cmd in sudo unshare mount umount mountpoint chroot mktemp sed grep tar gzip python3 readelf mkfs.ext4 e2fsck dumpe2fs fstrim; do
+for cmd in sudo unshare mount umount mountpoint chroot mktemp sed grep tar gzip python3 mkfs.ext4 e2fsck dumpe2fs fstrim; do
   if ! command -v "$cmd" &>/dev/null; then
     missing+=("$cmd")
   fi

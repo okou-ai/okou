@@ -162,8 +162,9 @@ def split(root, output, identity, cli_version):
         dynamic = []
         interpreters = set()
         for name in queue:
-            source = root / name.lstrip("/")
-            headers = run("readelf", "-l", str(source))
+            # The template's compiler toolchain owns binutils. Metal image
+            # builders need no separate Host readelf installation.
+            headers = run("chroot", str(root), "/usr/bin/readelf", "-l", name)
             interpreter = re.search(r"Requesting program interpreter: (.*?)\]", headers)
             if interpreter:
                 original = interpreter[1]
@@ -171,7 +172,7 @@ def split(root, output, identity, cli_version):
                 interpreters.add(actual)
                 if original != actual:
                     alias(original, actual)
-            info = run("readelf", "-d", str(source))
+            info = run("chroot", str(root), "/usr/bin/readelf", "-d", name)
             needed = re.findall(r"\(NEEDED\).*?\[(.*?)\]", info)
             search_dirs = []
             for entry in re.findall(r"\((?:RPATH|RUNPATH)\).*?\[(.*?)\]", info):
