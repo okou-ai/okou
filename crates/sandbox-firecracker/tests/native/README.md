@@ -19,7 +19,8 @@ host authorization and fixtures; do not replay uncertain native execution.
 The selected image generation contains both `rootfs.ext4` and `runtime.ext4`.
 Guest RPC CI also runs `packaged_runtime_executes_real_agents_tools_and_children`:
 the actual packaged Claude, Codex and Pi use bounded local synthetic model peers
-to execute tools and child Agents. Pi reads a real image through its packaged
+to execute tools and child Agents (Claude's native Agent tool, Codex's namespaced
+native subagent, and Pi's managed subagent command). Pi reads a real image through its packaged
 worker/WASM assets. The scenario covers fresh boot, restored snapshots, park and
 reassignment, and fresh boot without a home drive. It checks the public tool CLI
 and its independent Node installation, while fixed Agent paths ignore poisoned

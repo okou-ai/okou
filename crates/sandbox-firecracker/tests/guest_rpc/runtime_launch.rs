@@ -135,7 +135,20 @@ pub(super) async fn exercise(sandbox: &dyn Sandbox, run: &str) -> TestResult<()>
         None
     };
     let cleanup = filesystem::command(sandbox, &format!("rm -f {path}"), false).await;
-    result?;
+    if let Err(error) = result {
+        let stderr = stopped
+            .as_ref()
+            .map(|exit| String::from_utf8_lossy(&exit.stderr).into_owned())
+            .unwrap_or_else(|error| error.to_string());
+        let stdout = match &drained {
+            Some(Ok(Ok(bytes))) => String::from_utf8_lossy(bytes).into_owned(),
+            other => format!("{other:?}"),
+        };
+        return Err(io::Error::other(format!(
+            "{error}; native peer stderr={stderr}; stdout={stdout}"
+        ))
+        .into());
+    }
     let stopped = stopped?;
     if !matches!(
         stopped.termination,

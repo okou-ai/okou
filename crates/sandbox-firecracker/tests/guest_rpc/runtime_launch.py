@@ -34,12 +34,11 @@ FIRST_REQUEST_US = {}
 PEAK_SUM_RSS_KIB = {}
 
 
-def choose(payload, dialect):
-    messages = payload.get("messages", payload.get("input", []))
-    users = [
-        json.dumps(message) for message in messages if message.get("role") == "user"
-    ]
-    text = users[-1] if users else json.dumps(messages)
+def choose(text, dialect, tools):
+    # Codex also makes background memory requests on this model endpoint.
+    # Those requests advertise no tools and must not advance the Agent turn.
+    if not tools:
+        return None, {"text": "No retained memory for this native fixture."}
     name = {"chat": "pi", "anthropic": "claude", "responses": "codex"}[dialect]
     child = name.upper() + "_CHILD" in text and name.upper() + "_MAIN" not in text
     marker = WORK / (name + ("-child" if child else "-tool"))
@@ -103,13 +102,14 @@ class Peer(BaseHTTPRequestHandler):
             self.wfile.write(b"{}")
             return
         if self.path == "/finish":
-            for name in ("claude", "codex", "pi"):
-                for role in ("tool", "child"):
-                    assert (WORK / (name + "-" + role)).read_text() == "complete", (
-                        name,
-                        role,
-                        REQUESTS,
-                    )
+            missing = [
+                name + "-" + role
+                for name in ("claude", "codex", "pi")
+                for role in ("tool", "child")
+                if not (WORK / (name + "-" + role)).is_file()
+                or (WORK / (name + "-" + role)).read_text() != "complete"
+            ]
+            assert not missing, (missing, REQUESTS)
             self.send_response(200)
             self.end_headers()
             self.wfile.write(json.dumps({"requests": REQUESTS}).encode())
@@ -141,10 +141,30 @@ class Peer(BaseHTTPRequestHandler):
                 framework, (time.monotonic_ns() - STARTED[framework]) // 1000
             )
             if len(REQUESTS) >= 64:
+                print(
+                    json.dumps({"request_bound_tail": REQUESTS[-4:]}),
+                    file=sys.stderr,
+                    flush=True,
+                )
                 self.send_error(400, "native request bound")
                 return
-            name, arguments = choose(payload, dialect)
-            REQUESTS.append({"dialect": dialect, "tool": name})
+            messages = payload.get("messages", payload.get("input", []))
+            users = [json.dumps(m) for m in messages if m.get("role") == "user"]
+            text = users[-1] if users else json.dumps(messages)
+            name, arguments = choose(text, dialect, payload.get("tools", []))
+            REQUESTS.append(
+                {
+                    "dialect": dialect,
+                    "tool": name,
+                    "main_prompt": framework.upper() + "_MAIN" in text,
+                    "child_prompt": framework.upper() + "_CHILD" in text,
+                    "outcome": [
+                        str(m.get("output", ""))[-1500:]
+                        for m in messages
+                        if m.get("type") == "function_call_output"
+                    ][-1:],
+                }
+            )
             call = "call_" + str(len(REQUESTS))
         namespaces = {
             sub["name"]: tool["name"]
@@ -415,7 +435,7 @@ def main():
     codex.mkdir(exist_ok=True)
     os.chown(codex, 1000, 1000)
     (codex / "config.toml").write_text(
-        'model = "gpt-5.1-codex-mini"\nmodel_provider = "mock"\napproval_policy = "never"\nsandbox_mode = "danger-full-access"\n[features]\nmulti_agent = true\n[model_providers.mock]\nname = "mock"\nbase_url = '
+        'model = "gpt-5.1-codex-mini"\nmodel_provider = "mock"\napproval_policy = "never"\nsandbox_mode = "danger-full-access"\n[model_providers.mock]\nname = "mock"\nbase_url = '
         + json.dumps(base + "/v1")
         + '\nenv_key = "OPENAI_API_KEY"\nwire_api = "responses"\nrequest_max_retries = 0\nstream_max_retries = 0\n'
     )
