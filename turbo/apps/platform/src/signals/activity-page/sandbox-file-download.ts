@@ -8,8 +8,9 @@ import {
   SANDBOX_FS_LIMITS,
 } from "@okouai/api-contracts/contracts/sandbox-channel-fs";
 import { SandboxChannelError } from "@okouai/api-contracts/contracts/sandbox-channel";
+import { toast } from "@okouai/ui/components/ui/sonner";
+import { i18n } from "../../i18n/index.ts";
 import { createBrowserSandboxChannelPeer } from "../../lib/sandbox-channel-peer.ts";
-import { now } from "../../lib/time.ts";
 import {
   canStreamSandboxDownload,
   downloadWorker,
@@ -21,22 +22,6 @@ import { authenticatedSessionKey$ } from "../auth.ts";
 import { onRejection, resetSignal, tapError, withCleanup } from "../utils.ts";
 import { currentRunId$ } from "./activity-signals.ts";
 
-type Phase =
-  | "starting"
-  | "streaming"
-  | "cancelling"
-  | "complete"
-  | "cancelled"
-  | "changed"
-  | "updateRequired"
-  | "failed";
-interface FileDownloadView {
-  readonly name: string;
-  readonly phase: Phase;
-  readonly received: string;
-  readonly total: string;
-  readonly url: string | null;
-}
 interface DownloadRequest {
   readonly runId: string;
   readonly sessionKey: string;
@@ -50,20 +35,14 @@ interface DownloadSource {
   readonly peer: SandboxChannelPeer;
   bridge: SandboxFileDownload | null;
   complete: boolean;
-  handedOff: boolean;
 }
 
-function failurePhase(error: unknown): Phase {
-  if (error instanceof FileDownloadError) {
-    return error.code === "cancelled"
-      ? "cancelled"
-      : error.code === "updateRequired"
-        ? "updateRequired"
-        : "failed";
-  }
+function failureMessage(error: unknown): string {
   if (error instanceof SandboxChannelError) {
     if (error.code === "file_changed") {
-      return "changed";
+      return i18n.t(($) => {
+        return $.activity.detail.files.downloadChanged;
+      });
     }
     if (
       [
@@ -73,10 +52,19 @@ function failurePhase(error: unknown): Phase {
         "unsupported_schema",
       ].includes(error.code)
     ) {
-      return "updateRequired";
+      return i18n.t(($) => {
+        return $.activity.detail.files.downloadUpdateRequired;
+      });
     }
   }
-  return "failed";
+  if (error instanceof FileDownloadError && error.code === "updateRequired") {
+    return i18n.t(($) => {
+      return $.activity.detail.files.downloadUpdateRequired;
+    });
+  }
+  return i18n.t(($) => {
+    return $.activity.detail.files.downloadFailed;
+  });
 }
 
 function createDownloadGraph() {
@@ -87,7 +75,7 @@ function createDownloadGraph() {
     readonly sessionKey: string | null;
   } | null>(null);
   const job$ = state<DownloadJob | null>(null);
-  const view$ = state<FileDownloadView | null>(null);
+  const url$ = state<string | null>(null);
   const reset$ = resetSignal();
   const owned$ = command(({ get }, job: DownloadJob) => {
     return (
@@ -109,7 +97,7 @@ function createDownloadGraph() {
     generation$,
     identity$,
     job$,
-    view$,
+    url$,
     reset$,
     owned$,
     check$,
@@ -169,18 +157,8 @@ function createStreamCommand(graph: DownloadGraph) {
       signal.throwIfAborted();
       set(graph.check$, job, signal);
       source.complete = size === 0n;
-      const publish = (received: bigint, phase: Phase) => {
-        set(graph.view$, {
-          name: job.name,
-          phase,
-          received: received.toString(),
-          total: opened.fileSize,
-          url,
-        });
-      };
-      publish(0n, "streaming");
+      set(graph.url$, url);
       let offset = 0n;
-      let progressPublishedAt = -Infinity;
       for (;;) {
         const message = await bridge.next();
         signal.throwIfAborted();
@@ -189,8 +167,6 @@ function createStreamCommand(graph: DownloadGraph) {
           if (!source.complete || offset !== size) {
             throw new FileDownloadError("unavailable");
           }
-          source.handedOff = true;
-          publish(size, "complete");
           return;
         }
         const length = downloadChunkLength(size, offset);
@@ -231,13 +207,7 @@ function createStreamCommand(graph: DownloadGraph) {
         worker.postMessage({ type: "progress", id: bridge.id });
         bridge.chunk(offset.toString(), bytes, final);
         source.complete = final;
-        source.handedOff = final;
         offset = next;
-        const timestamp = now();
-        if (final || timestamp - progressPublishedAt >= 100) {
-          progressPublishedAt = timestamp;
-          publish(offset, final ? "complete" : "streaming");
-        }
       }
     },
   );
@@ -250,7 +220,6 @@ function createTransferCommand(graph: DownloadGraph) {
       const source: DownloadSource = {
         bridge: null,
         complete: false,
-        handedOff: false,
         peer: createBrowserSandboxChannelPeer(job.runId, get(apiClient$), {
           categories: [sandboxFsCategory],
           onStateChange: (phase) => {
@@ -270,19 +239,17 @@ function createTransferCommand(graph: DownloadGraph) {
         tapError(
           onRejection(set(stream$, job, source, signal), (error) => {
             if (set(graph.owned$, job)) {
-              const previous = get(graph.view$);
-              if (!previous) {
-                throw new Error("Active file download has no view");
+              set(graph.url$, null);
+              const failure = source.bridge?.failure ?? error;
+              if (
+                !signal.aborted &&
+                !(
+                  failure instanceof FileDownloadError &&
+                  failure.code === "cancelled"
+                )
+              ) {
+                toast.error(failureMessage(failure));
               }
-              set(graph.view$, {
-                ...previous,
-                url: null,
-                phase: signal.aborted
-                  ? source.handedOff
-                    ? "complete"
-                    : "cancelled"
-                  : failurePhase(source.bridge?.failure ?? error),
-              });
             }
           }),
         ),
@@ -298,16 +265,9 @@ function createTransferCommand(graph: DownloadGraph) {
 export function createSandboxFileDownloadSignals() {
   const graph = createDownloadGraph();
   const perform$ = createTransferCommand(graph);
-  const cancel$ = command(({ get, set }) => {
-    const view = get(graph.view$);
-    // Final bytes have been accepted; the browser owns their physical saving.
-    if (view?.phase === "complete") {
-      return;
-    }
-    if (get(graph.job$) && view) {
-      set(graph.view$, { ...view, phase: "cancelling" });
-    }
+  const cancel$ = command(({ set }) => {
     set(graph.reset$);
+    set(graph.url$, null);
   });
   const installOwner$ = command(({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
@@ -319,7 +279,6 @@ export function createSandboxFileDownloadSignals() {
       runId: get(currentRunId$),
       sessionKey: get(authenticatedSessionKey$),
     });
-    set(graph.view$, null);
     signal.addEventListener(
       "abort",
       () => {
@@ -339,11 +298,15 @@ export function createSandboxFileDownloadSignals() {
       signal: AbortSignal,
     ): Promise<void> => {
       signal.throwIfAborted();
-      if (
-        get(graph.job$) ||
-        !get(graph.mounted$) ||
-        !canStreamSandboxDownload()
-      ) {
+      if (get(graph.job$) || !get(graph.mounted$)) {
+        return;
+      }
+      if (!canStreamSandboxDownload()) {
+        toast.error(
+          i18n.t(($) => {
+            return $.activity.detail.files.downloadUnsupported;
+          }),
+        );
         return;
       }
       const job: DownloadJob = {
@@ -351,13 +314,7 @@ export function createSandboxFileDownloadSignals() {
         generation: get(graph.generation$),
       };
       set(graph.job$, job);
-      set(graph.view$, {
-        name: request.name,
-        phase: "starting",
-        received: "0",
-        total: "0",
-        url: null,
-      });
+      set(graph.url$, null);
       const transfer = set(graph.reset$, signal);
       await withCleanup(set(perform$, job, transfer), () => {
         if (get(graph.job$) === job) {
@@ -366,32 +323,37 @@ export function createSandboxFileDownloadSignals() {
       });
     },
   );
+  const current$ = computed((get) => {
+    const identity = get(graph.identity$);
+    const job = get(graph.job$);
+    if (
+      !get(graph.mounted$) ||
+      !identity ||
+      identity.runId !== get(currentRunId$) ||
+      identity.sessionKey !== get(authenticatedSessionKey$) ||
+      (job &&
+        (get(graph.generation$) !== job.generation ||
+          job.runId !== get(currentRunId$) ||
+          job.sessionKey !== get(authenticatedSessionKey$)))
+    ) {
+      return false;
+    }
+    return true;
+  });
   return {
     installOwner$,
     start$,
     cancel$,
-    available$: computed(() => {
-      return canStreamSandboxDownload();
-    }),
     busy$: computed((get) => {
       return get(graph.job$) !== null;
     }),
-    view$: computed((get) => {
-      const identity = get(graph.identity$);
-      const job = get(graph.job$);
-      if (
-        !get(graph.mounted$) ||
-        !identity ||
-        identity.runId !== get(currentRunId$) ||
-        identity.sessionKey !== get(authenticatedSessionKey$) ||
-        (job &&
-          (get(graph.generation$) !== job.generation ||
-            job.runId !== get(currentRunId$) ||
-            job.sessionKey !== get(authenticatedSessionKey$)))
-      ) {
-        return null;
-      }
-      return get(graph.view$);
+    preparingPath$: computed((get) => {
+      return get(current$) && !get(graph.url$)
+        ? (get(graph.job$)?.path ?? null)
+        : null;
+    }),
+    url$: computed((get) => {
+      return get(current$) ? get(graph.url$) : null;
     }),
   };
 }

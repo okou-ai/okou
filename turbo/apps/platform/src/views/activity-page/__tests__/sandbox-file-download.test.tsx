@@ -1,12 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
-import {
-  act,
-  fireEvent,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
 import { click } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
@@ -25,8 +20,6 @@ import {
 } from "./sandbox-files-test-helpers.ts";
 
 const context = testContext();
-const complete =
-  "Download sent to your browser. Check Downloads for the result.";
 
 test.each([0, 70_003])(
   "A user downloads exact complete bytes (%i)",
@@ -37,9 +30,6 @@ test.each([0, 70_003])(
     await screen.findByText("report.bin");
     const control = await readyDownload(files);
     click(control);
-    await expect(
-      within(files).findByText(complete),
-    ).resolves.toBeInTheDocument();
     const result = await browser.outcome;
     expect(result.saved).toBeTruthy();
     const bytes = await readFile(result.file);
@@ -54,10 +44,51 @@ test.each([0, 70_003])(
       "filename*=UTF-8''report.bin",
     );
     expect(result.headers.get("Cache-Control")).toBe("no-store, no-transform");
+    await readyDownload(files);
   },
 );
 
-test("A changed file fails without committing the withheld final chunk", async () => {
+test("Preparation stays on the selected button and native downloading owns progress", async () => {
+  const registration = createDeferredPromise<void>(context.signal);
+  const browser = await downloadBrowser(context, {
+    registration: registration.promise,
+    holdWrite: true,
+  });
+  const guest = fileGuest(1024 * 1024);
+  await setupFilesPage(context, {
+    handler(request) {
+      return request.operation === "list"
+        ? listing([entry("report.bin"), entry("other.bin")])
+        : guest(request);
+    },
+  });
+  const files = await openFiles();
+  const control = await readyDownload(files);
+  const other = filesButton("Download other.bin", files);
+  const user = userEvent.setup();
+  control.focus();
+  await user.keyboard("{Enter}");
+  await browser.registered;
+  await waitFor(() => {
+    expect(control).toHaveAttribute("aria-busy", "true");
+  });
+  expect(control).toHaveFocus();
+  expect(other).not.toHaveAttribute("aria-busy");
+  expect(other).toHaveAttribute("aria-disabled", "true");
+  await act(() => {
+    registration.resolve();
+  });
+  await browser.firstChunk;
+  await waitFor(() => {
+    expect(control).not.toHaveAttribute("aria-busy");
+  });
+  expect(control).toHaveAttribute("aria-disabled", "true");
+  await browser.cancelDownload();
+  expect((await browser.outcome).saved).toBeFalsy();
+  await readyDownload(files);
+});
+
+test("A changed file shows the shared toast without committing the withheld final chunk", async () => {
   const browser = await downloadBrowser(context);
   await setupFilesPage(context, {
     handler: fileGuest(70_003, { failFinish: true }),
@@ -66,9 +97,11 @@ test("A changed file fails without committing the withheld final chunk", async (
   await screen.findByText("report.bin");
   const control = await readyDownload(files);
   click(control);
-  await expect(
-    screen.findByText("This file changed during download. Download it again."),
-  ).resolves.toBeInTheDocument();
+  const message = await screen.findByText(
+    "This file changed during download. Download it again.",
+  );
+  expect(message.closest("[data-sonner-toast]")).toBeInTheDocument();
+  expect(files).not.toContainElement(message);
   const result = await browser.outcome;
   expect(result.saved).toBeFalsy();
   await expect(stat(result.file)).rejects.toMatchObject({ code: "ENOENT" });
@@ -182,22 +215,6 @@ test("A partial preview slice cannot be handed off as a complete download", asyn
   ).toBeNull();
 });
 
-test("A user cancels a download while the browser destination is blocked", async () => {
-  const browser = await downloadBrowser(context, { holdWrite: true });
-  await setupFilesPage(context, { handler: fileGuest(1024 * 1024) });
-  const files = await openFiles();
-  await screen.findByText("report.bin");
-  const control = await readyDownload(files);
-  click(control);
-  await browser.firstChunk;
-  click(filesButton("Cancel download", files));
-  await expect(
-    screen.findByText("Download cancelled"),
-  ).resolves.toBeInTheDocument();
-  browser.releaseWrite();
-  expect((await browser.outcome).saved).toBeFalsy();
-});
-
 test("A browser cancellation retires the transfer and restores Download", async () => {
   const browser = await downloadBrowser(context, { holdWrite: true });
   const fixture = await setupFilesPage(context, {
@@ -212,9 +229,6 @@ test("A browser cancellation retires the transfer and restores Download", async 
     throw new Error("Download source did not connect");
   }
   await browser.cancelDownload();
-  await expect(
-    within(files).findByText("Download cancelled"),
-  ).resolves.toBeInTheDocument();
   expect((await browser.outcome).saved).toBeFalsy();
   await expect(stat(browser.partialFile)).resolves.toMatchObject({
     size: 32_768,
@@ -223,6 +237,9 @@ test("A browser cancellation retires the transfer and restores Download", async 
     expect(source.readyState).toBe(WebSocket.CLOSED);
   });
   await readyDownload(files);
+  expect(
+    screen.queryByText("Download failed. Try again."),
+  ).not.toBeInTheDocument();
 });
 
 test("A blocked disk keeps WSS demand bounded and attachment URLs are one-use", async () => {
@@ -269,8 +286,7 @@ test("A blocked disk keeps WSS demand bounded and attachment URLs are one-use", 
   ).toBe(416);
   expect((await stat(browser.partialFile)).size).toBe(32_768);
   expect(servedBytes).toBe(32_768);
-  click(filesButton("Cancel download", files));
-  browser.releaseWrite();
+  await browser.cancelDownload();
   expect((await browser.outcome).saved).toBeFalsy();
 });
 
@@ -292,16 +308,18 @@ test("Leaving Files cancels a blocked transfer", async () => {
   expect((await browser.outcome).saved).toBeFalsy();
 });
 
-test("Cancelling an empty download before navigation does not claim browser handoff", async () => {
+test("Leaving Files before empty download navigation cancels the pending handoff", async () => {
   const browser = await downloadBrowser(context, { holdNavigation: true });
   await setupFilesPage(context, { handler: fileGuest(0) });
   const files = await openFiles();
   click(await readyDownload(files));
   await browser.navigationRequested;
-  click(filesButton("Cancel download", files));
-  await expect(
-    screen.findByText("Download cancelled"),
-  ).resolves.toBeInTheDocument();
+  click(filesTab("Steps"));
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("region", { name: "Files" }),
+    ).not.toBeInTheDocument();
+  });
   browser.releaseWrite();
   expect((await browser.outcome).saved).toBeFalsy();
 });
@@ -340,12 +358,12 @@ test("Stale worker registration cannot start a late download", async () => {
   const reopened = await openFiles();
   const retry = await readyDownload(reopened);
   click(retry);
-  await expect(screen.findByText(complete)).resolves.toBeInTheDocument();
   expect((await browser.outcome).saved).toBeTruthy();
+  await readyDownload(reopened);
   await act(() => {
     registration.resolve();
   });
-  expect(screen.getByText(complete)).toBeInTheDocument();
+  await readyDownload(reopened);
   expect(
     document.querySelectorAll('iframe[src*="/sandbox-file-downloads/"]'),
   ).toHaveLength(1);
@@ -413,38 +431,32 @@ test("Changing workspace interrupts the previous owner's download", async () => 
   expect(screen.queryByText("report.bin")).not.toBeInTheDocument();
 });
 
-test("Unsupported browser capabilities leave an explicit unavailable download", async () => {
+test("An unsupported browser explains unavailable downloads through the shared toast", async () => {
   vi.stubGlobal("isSecureContext", false);
   await setupFilesPage(context, { handler: fileGuest(70_003) });
   const files = await openFiles();
-  await expect(
-    within(files).findByText(
-      "File downloads aren't supported in this browser.",
-    ),
-  ).resolves.toBeInTheDocument();
-  await screen.findByText("report.bin");
-  expect(filesButton("Download report.bin", files)).toHaveAttribute(
-    "aria-disabled",
-    "true",
+  click(await readyDownload(files));
+  const message = await screen.findByText(
+    "File downloads aren't supported in this browser.",
   );
+  expect(message.closest("[data-sonner-toast]")).toBeInTheDocument();
+  expect(files).not.toContainElement(message);
+  expect(
+    document.querySelector('iframe[src*="/sandbox-file-downloads/"]'),
+  ).toBeNull();
 });
 
-test("Large decimal file sizes stay exact in download progress", async () => {
+test("Large decimal file sizes stay exact in the browser download response", async () => {
   const browser = await downloadBrowser(context, { holdWrite: true });
   await setupFilesPage(context, { handler: fileGuest(9_007_199_254_740_993n) });
   const files = await openFiles();
   const control = await readyDownload(files);
   click(control);
   await browser.firstChunk;
-  await expect(
-    within(files).findByText(/9,007,199,254,740,993 bytes/),
-  ).resolves.toBeInTheDocument();
-  click(filesButton("Cancel download", files));
-  await expect(
-    within(files).findByText("Download cancelled"),
-  ).resolves.toBeInTheDocument();
-  browser.releaseWrite();
-  expect((await browser.outcome).saved).toBeFalsy();
+  await browser.cancelDownload();
+  const result = await browser.outcome;
+  expect(result.saved).toBeFalsy();
+  expect(result.headers.get("Content-Length")).toBe("9007199254740993");
 });
 
 test("Leaving Files does not claim to undo bytes already handed to the browser", async () => {
@@ -453,7 +465,6 @@ test("Leaving Files does not claim to undo bytes already handed to the browser",
   const files = await openFiles();
   const control = await readyDownload(files);
   click(control);
-  await expect(within(files).findByText(complete)).resolves.toBeInTheDocument();
   await browser.firstChunk;
   click(filesTab("Steps"));
   await waitFor(() => {

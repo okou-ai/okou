@@ -38,9 +38,5 @@ test("A file above the complete-preview limit remains fully downloadable", async
     expected.update(bytes);
   }
   expect(actual.digest("hex")).toBe(expected.digest("hex"));
-  await expect(
-    screen.findByText(
-      "Download sent to your browser. Check Downloads for the result.",
-    ),
-  ).resolves.toBeInTheDocument();
+  await readyDownload(files);
 });

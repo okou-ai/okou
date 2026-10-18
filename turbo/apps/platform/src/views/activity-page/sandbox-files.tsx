@@ -28,6 +28,7 @@ import type {
 } from "../../signals/activity-page/sandbox-files.ts";
 import {
   FILES_ROW_HEIGHT,
+  filesDirectoryKey,
   type FilesVirtualRow,
 } from "../../signals/activity-page/sandbox-files-virtual-list.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -35,10 +36,11 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import {
   FILES_HOME_LOCATION,
   filesLocationLabel,
+  filesLocationTokens,
 } from "../../signals/activity-page/sandbox-files-location.ts";
 import { SandboxFilesBreadcrumb } from "./sandbox-files-breadcrumb.tsx";
 import { WorkspaceCanvasBackdrop } from "../okou-page/workspace-inset.tsx";
-import { SandboxFileDownloadStatus } from "./sandbox-file-download.tsx";
+import { SandboxFileDownloadFrame } from "./sandbox-file-download.tsx";
 
 function FilesErrorMessage({ error }: { readonly error: FilesError }) {
   const { t } = useTranslation();
@@ -81,34 +83,52 @@ function FilesDownloadButton({
   const location = useGet(signals.location$);
   const navigating = useGet(signals.navigating$);
   const download = useSet(signals.download$);
-  const downloadAvailable = useGet(signals.download.available$);
   const downloading = useGet(signals.download.busy$);
+  const preparingPath = useGet(signals.download.preparingPath$);
+  const preparing =
+    preparingPath !== null &&
+    filesDirectoryKey(preparingPath) ===
+      filesDirectoryKey([
+        ...filesLocationTokens(location),
+        ...path,
+        entry.nameToken,
+      ]);
+  const label = t(
+    ($) => {
+      return $.activity.detail.files.download;
+    },
+    { name: entry.displayName },
+  );
   return (
-    <Button
-      type="button"
-      variant="quiet"
-      size="icon-sm"
-      showTooltip
-      className="shrink-0 [@media(pointer:coarse)]:size-10"
-      focusableWhenDisabled
-      disabled={!downloadAvailable || downloading || navigating}
-      aria-label={t(
-        ($) => {
-          return $.activity.detail.files.download;
-        },
-        {
-          name: entry.displayName,
-        },
-      )}
-      onClick={() => {
-        detach(
-          download(location, path, entry.nameToken, signal),
-          Reason.DomCallback,
-        );
-      }}
-    >
-      <Download size={16} />
-    </Button>
+    <TooltipProvider delay={200}>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              variant="quiet"
+              size="icon-sm"
+              className="shrink-0 [@media(pointer:coarse)]:size-10"
+              focusableWhenDisabled
+              pending={preparing}
+              disabled={downloading || navigating}
+              aria-label={label}
+              onClick={() => {
+                detach(
+                  download(location, path, entry.nameToken, signal),
+                  Reason.DomCallback,
+                );
+              }}
+            >
+              <Download size={16} />
+            </Button>
+          }
+        />
+        <TooltipContent>
+          <p className="text-xs">{label}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
@@ -535,7 +555,7 @@ export function SandboxFilesBody({
         </Button>
         <FilesRefreshControl signals={signals} errorId={errorId} />
       </div>
-      <SandboxFileDownloadStatus signals={signals.download} />
+      <SandboxFileDownloadFrame signals={signals.download} />
       {phase === "ready" ? (
         <div className="pb-4">
           <FilesVirtualList signals={signals} />
