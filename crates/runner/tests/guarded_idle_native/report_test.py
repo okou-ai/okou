@@ -157,11 +157,13 @@ class NativeReportTests(unittest.TestCase):
 
     def test_positive_process_exit_is_diagnostic_not_zero_or_complete_residency(self):
         clock = self.samples[1]["monotonic_ns"]
-        self.samples[1]["processes"].append({
-            "pid": 999, "start_ticks": 888, "rss_bytes": None, "pss_bytes": None,
-            "residency_state": "exited", "residency_reason": "pidfd_exit",
-            "observed_monotonic_ns": clock, "exit_observed_monotonic_ns": clock - 1,
-        })
+        for sample in self.samples[1:3]:
+            sample["processes"].append({
+                "pid": 999, "start_ticks": 888, "rss_bytes": None, "pss_bytes": None,
+                "residency_state": "exited", "residency_reason": "pidfd_exit",
+                "observed_monotonic_ns": sample["monotonic_ns"],
+                "exit_observed_monotonic_ns": clock,
+            })
         result = self.validate()
         self.assertFalse(result["residency_complete"])
         self.assertFalse(result["memory_envelope_calibrated"])
@@ -195,6 +197,26 @@ class NativeReportTests(unittest.TestCase):
                     original, residency_state="exited", residency_reason="pidfd_exit",
                     rss_bytes=None, pss_bytes=None, exit_observed_monotonic_ns=clock)
                 with self.assertRaisesRegex(ValueError, "exit lacks positive timed evidence"):
+                    self.validate()
+
+    def test_captured_generation_and_positive_exit_cannot_change_across_samples(self):
+        first, second = [dict(sample["processes"][0]) for sample in self.samples[:2]]
+        exited = dict(first, residency_state="exited", residency_reason="pidfd_exit",
+                      rss_bytes=None, pss_bytes=None,
+                      exit_observed_monotonic_ns=first["observed_monotonic_ns"])
+        later_exit = dict(exited, observed_monotonic_ns=second["observed_monotonic_ns"])
+        for initial, following in (
+                (first, dict(second, start_ticks=457)),
+                (exited, second),
+                (exited, dict(later_exit, residency_state="unavailable",
+                              residency_reason="smaps_missing", exit_observed_monotonic_ns=None)),
+                (exited, dict(later_exit, exit_observed_monotonic_ns=second["observed_monotonic_ns"])),
+                (first, later_exit),
+        ):
+            with self.subTest(initial=initial, following=following):
+                self.samples[0]["processes"][0] = initial
+                self.samples[1]["processes"][0] = following
+                with self.assertRaisesRegex(ValueError, "residency"):
                     self.validate()
 
     def test_missing_diagnostics_duplicate_identity_and_old_current_format_are_refused(self):

@@ -6,7 +6,8 @@ New native runs consume `runner-memory-calibration-v2` from the matching
 [owned collector](../../../../.github/scripts/runner-memory-calibrate.md).
 Every process sample carries PID/start generation, explicit residency state and
 reason, the observation clock and any positively observed pidfd-exit clock.
-The shared reader rejects contradictory diagnostics and reports per-phase
+The shared reader rejects contradictory diagnostics, changed generations or
+revoked/changed positive exit observations across samples and reports per-phase
 `missing_residency_reasons`. Missing or raced reads remain distinct from positive
 process exit; both retain null bytes and incomplete residency. Collector exit
 observations never replace the original Guest/backing, accepted-I/O or lease

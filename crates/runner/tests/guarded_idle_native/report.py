@@ -152,6 +152,7 @@ def _validate_cases(directory, cases, phases):
         raise ValueError("wrong native workload profile")
     samples = [json.loads(line) for line in (directory / "samples.jsonl").read_text().splitlines()]
     previous = -1
+    generations, exits = {}, {}
     for sample in samples:
         if (not positive_integer(sample.get("monotonic_ns"))
                 or sample["monotonic_ns"] <= previous
@@ -163,12 +164,18 @@ def _validate_cases(directory, cases, phases):
             if type(sample.get(key)) is not int or sample[key] < 0:
                 raise ValueError("invalid P1 sample age or read duration")
         for process in sample["processes"]:
-            if not positive_integer(process["pid"]) or not positive_integer(process["start_ticks"]):
-                raise ValueError("process observation has no original kernel generation")
-            for key in ("rss_bytes", "pss_bytes"):
-                value = process[key]
-                if value is not None and (type(value) is not int or value < 0):
-                    raise ValueError("invalid residency observation")
+            pid, generation = process["pid"], process["start_ticks"]
+            if pid in generations and generations[pid] != generation:
+                raise ValueError("residency changed its captured process generation")
+            generations[pid] = generation
+            exited = process["exit_observed_monotonic_ns"]
+            if pid in exits:
+                if process["residency_state"] != "exited" or exited != exits[pid]:
+                    raise ValueError("residency revoked or changed positive exit evidence")
+            elif process["residency_state"] == "exited":
+                if exited < sample["monotonic_ns"]:
+                    raise ValueError("first residency exit observation escaped its sample window")
+                exits[pid] = exited
     receipts = {case: [] for case in cases}
     for line in (directory / "stdout.log").read_text().splitlines():
         if not line.startswith(PREFIX):
