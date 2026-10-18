@@ -314,6 +314,10 @@ int main(int argc, char **argv) {
     frozen_env();
     setenv("OKOU_PI_SESSION_ROLE", "child", 1);
     enter_ns('A');
+    /* Cwd selects executable SDK discovery. Only the Run-captured workspace
+       is authority here; an arbitrary invoking tool's cwd is not. */
+    if (chdir("/home/user/workspace"))
+      fail("captured-task-cwd");
     user();
     role("agent_t");
     argv[0] = "/fixture/real-guest-task-exec";
@@ -343,6 +347,41 @@ int main(int argc, char **argv) {
     if (mount(retained, "/home/user/.pi/agent/sessions", NULL, MS_BIND, NULL) ||
         close(sessions))
       fail("retained-session-view");
+    const char *vendors[] = {"claude", "codex", NULL};
+    const char *data[] = {"sessions",        "projects",    "shell-snapshots",
+                          "shell_snapshots", "session-env", NULL};
+    for (int v = 0; vendors[v]; v++) {
+      int descriptors[5];
+      for (int i = 0; data[i]; i++) {
+        char path[256];
+        snprintf(path, sizeof(path), "/home/user/.%s/%s", vendors[v], data[i]);
+        descriptors[i] = open(path, O_PATH | O_DIRECTORY | O_CLOEXEC);
+        if (descriptors[i] < 0)
+          fail("vendor-data-open");
+      }
+      char source[256], target[256];
+      snprintf(source, sizeof(source), "/fixture/%s-resources", vendors[v]);
+      snprintf(target, sizeof(target), "/home/user/.%s", vendors[v]);
+      if (mount(source, target, NULL, MS_BIND, NULL))
+        fail("vendor-resource-view");
+      for (int i = 0; data[i]; i++) {
+        snprintf(source, sizeof(source), "/proc/self/fd/%d", descriptors[i]);
+        snprintf(target, sizeof(target), "/home/user/.%s/%s", vendors[v],
+                 data[i]);
+        if (mount(source, target, NULL, MS_BIND, NULL) || close(descriptors[i]))
+          fail("vendor-retained-data");
+      }
+      const char *parents[] = {"/home/user/workspace", "/home", "", NULL};
+      for (int p = 0; parents[p]; p++) {
+        snprintf(target, sizeof(target), "%s/.%s", parents[p], vendors[v]);
+        if (mount("/fixture/vendor-project-resources", target, NULL, MS_BIND,
+                  NULL))
+          fail("vendor-ancestor-discovery");
+      }
+    }
+    if (mount("/fixture/claude-config.json", "/home/user/.claude.json", NULL,
+              MS_BIND, NULL))
+      fail("claude-fixed-user-config");
     puts("ready");
     fflush(stdout);
     for (;;)
@@ -352,6 +391,10 @@ int main(int argc, char **argv) {
     enter_ns('A');
     user();
     role("agent_t");
+  } else if (!strcmp(argv[1], "gateway")) {
+    placement("gateway");
+    user();
+    role("gateway_t");
   } else if (!strcmp(argv[1], "agent-resource-control")) {
     placement("runtime");
     enter_ns('T');

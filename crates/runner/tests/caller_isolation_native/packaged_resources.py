@@ -2,7 +2,12 @@
 
 import json
 import os
+import select
+import shlex
+import time
 from pathlib import Path
+
+import packaged_vendor_resources
 
 PI_ANCHORS = (
     "/home",
@@ -49,6 +54,7 @@ def prepare(fixture, label):
     )
     bootstrap = fixture / "bundled-loader-control.mjs"
     bootstrap.write_text("globalThis.PI_BUNDLED_NODE=true;\n")
+    packaged_vendor_resources.prepare(fixture, label)
 
 
 def loader_script():
@@ -142,4 +148,64 @@ print(json.dumps({'uid':os.getuid(),'context':Path('/proc/self/attr/current').re
         and identity == {"uid": 1000, "context": "system_u:system_r:workload_t"},
         identity=identity,
         stderr=result.stderr[-2000:],
+    )
+
+
+def nested_child_probe(root, env, as_role, tasks, record):
+    nested = root / "nested-user-project"
+    extension = nested / ".pi/extensions/probe.js"
+    extension.parent.mkdir(parents=True)
+    extension.write_text(
+        'import fs from "node:fs"; export default function() { fs.writeFileSync("/home/user/workspace/nested-extension-executed", "untrusted project extension executed"); }'
+    )
+    for path in (nested, extension.parent.parent, extension.parent, extension):
+        os.chown(path, 1000, 1000)
+    command = (
+        "cd "
+        + shlex.quote(str(nested))
+        + "; okou subagent start 'PI_NESTED_CWD'; python3 -c "
+        + shlex.quote(
+            "import pathlib,time; p=pathlib.Path('/home/user/workspace/nested-child-cwd'); deadline=time.monotonic()+15\nwhile not p.exists() and time.monotonic()<deadline: time.sleep(.02)\nassert p.exists(), 'nested child did not run its actual tool'\nprint(p.read_text())"
+        )
+    )
+    before = set(tasks)
+    run = as_role(
+        "workload", ["/bin/bash", "-c", command], env=env, group="tools", timeout=25
+    )
+    observed = root / "nested-child-cwd"
+    actual = observed.read_text().strip() if observed.exists() else None
+    added = set(tasks) - before
+    empty = False
+    if len(added) == 1:
+        family = tasks[added.pop()]
+        with (family / "cgroup.events").open("rb", buffering=0) as events:
+            observer = select.poll()
+            observer.register(events, select.POLLPRI | select.POLLERR)
+            deadline = time.monotonic() + 10
+            while True:
+                events.seek(0)
+                state = dict(
+                    line.split() for line in events.read().decode().splitlines()
+                )
+                if state.get("populated") == "0":
+                    empty = True
+                    break
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                observer.poll(max(1, int(remaining * 1000)))
+    record(
+        "real_pi_child_uses_captured_workspace",
+        run.returncode == 0
+        and empty
+        and actual == str(root)
+        and not (root / "nested-extension-executed").exists(),
+        exit=run.returncode,
+        requestedToolDirectory=str(nested),
+        observedChildToolDirectory=actual,
+        extensionExecuted=(root / "nested-extension-executed").exists(),
+        familyUnpopulated=empty,
+        contract="protected children use the Run-captured workspace; the arbitrary invoking tool directory is data, never executable discovery authority",
+        stdout=run.stdout[-2000:],
+        stderr=run.stderr[-2000:],
     )

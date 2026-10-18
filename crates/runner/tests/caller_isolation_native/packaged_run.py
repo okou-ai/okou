@@ -12,6 +12,8 @@ import sys
 import time
 from pathlib import Path
 
+from packaged_attestation import validate as validate_attestation
+from packaged_home import create_image
 from packaged_policy import build_policy
 from run import (
     METADATA,
@@ -24,6 +26,24 @@ from run import (
 
 HERE = Path(__file__).resolve().parent
 EXPECTED = {
+    "home_helper_initialization",
+    "home_helper_repeated",
+    "home_workload_retained_data",
+    "gateway_bounded_streaming_accounting",
+    "gateway_local_oom_fails_closed",
+    "gateway_controller_restart",
+    "vendor_executable_configuration_frozen",
+    "claude_configuration_known_load_and_mask",
+    "codex_configuration_known_load_and_mask",
+    "pi_inprocess_read_key",
+    "pi_inprocess_write_config",
+    "claude_inprocess_read_key",
+    "claude_inprocess_write_config",
+    "claude_inprocess_http",
+    "codex_inprocess_read_key",
+    "alternate_resolver_role_admission",
+    "real_pi_paired_startup_accounting",
+    "real_pi_child_uses_captured_workspace",
     "user_bridge_metadata_denied",
     "root_bridge_metadata_denied",
     "user_task_stop_workload",
@@ -147,6 +167,7 @@ def validate_summary(summary, architecture, boot_mode="fresh"):
     ):
         raise ValueError("failed or unqualified packaged case")
     by_name = {c["name"]: c for c in checks}
+    validate_attestation(by_name)
     control = by_name["pi_extension_known_load_control"]
     identity = control.get("identity")
     denied = by_name["untrusted_pi_extension_denied"]
@@ -330,12 +351,16 @@ def main():
         "task-helper",
         "storage-helper",
         "resource-helper",
+        "home-helper",
         "output",
     ):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--rootfs-sha256", required=True)
     parser.add_argument("--source-revision", required=True)
     parser.add_argument("--snapshot-restore", action="store_true")
+    parser.add_argument(
+        "--home-layout", choices=("fresh", "retained"), default="retained"
+    )
     args = parser.parse_args()
     if re.fullmatch(r"[a-f0-9]{40}", args.source_revision) is None:
         parser.error("source revision must be a full lowercase commit SHA")
@@ -368,6 +393,7 @@ def main():
             args.task_helper,
             args.storage_helper,
             args.resource_helper,
+            args.home_helper,
             args.secilc,
         ):
             if not stat.S_ISREG(path.stat().st_mode):
@@ -404,6 +430,7 @@ def main():
             "task": sha256(args.task_helper),
             "storage": sha256(args.storage_helper),
             "resourcePolicy": sha256(args.resource_helper),
+            "home": sha256(args.home_helper),
         }
         compiler = Path(shutil.which("gcc")).resolve()
         policy_compiler = args.secilc.resolve()
@@ -426,6 +453,32 @@ def main():
         if sha256(out / "rootfs.ext4") != args.rootfs_sha256:
             raise ValueError("copied rootfs mismatch")
         (out / "policy.cil").write_text(build_policy())
+        home = create_image(out, args.home_layout)
+        (out / "home-manifest.json").write_text(json.dumps(home))
+        receipt["homeInput"] = {**home, "sha256": sha256(out / "home.ext4")}
+        subprocess.run(
+            [
+                "openssl",
+                "req",
+                "-x509",
+                "-newkey",
+                "rsa:2048",
+                "-nodes",
+                "-keyout",
+                str(out / "gateway-tls-key.pem"),
+                "-out",
+                str(out / "gateway-cert.pem"),
+                "-days",
+                "1",
+                "-subj",
+                "/CN=native-fixture",
+                "-addext",
+                "subjectAltName=IP:127.0.0.1",
+            ],
+            check=True,
+            capture_output=True,
+            timeout=20,
+        )
         subprocess.run(
             [
                 str(policy_compiler),
@@ -481,6 +534,17 @@ def main():
             ("packaged_mcp_peer.py", HERE / "packaged_mcp_peer.py"),
             ("packaged_storage.py", HERE / "packaged_storage.py"),
             ("packaged_lifecycle.py", HERE / "packaged_lifecycle.py"),
+            ("packaged_home.py", HERE / "packaged_home.py"),
+            ("packaged_gateway.py", HERE / "packaged_gateway.py"),
+            ("packaged_gateway_checks.py", HERE / "packaged_gateway_checks.py"),
+            ("packaged_vendor_resources.py", HERE / "packaged_vendor_resources.py"),
+            ("packaged_inprocess.py", HERE / "packaged_inprocess.py"),
+            ("packaged_resolver.py", HERE / "packaged_resolver.py"),
+            ("packaged_startup.py", HERE / "packaged_startup.py"),
+            ("home-manifest.json", out / "home-manifest.json"),
+            ("gateway-cert.pem", out / "gateway-cert.pem"),
+            ("gateway-tls-key.pem", out / "gateway-tls-key.pem"),
+            ("guest-home-mount", args.home_helper),
             ("guest-storage-apply", args.storage_helper),
             ("resource-policy", args.resource_helper),
             ("policy", out / "policy"),
@@ -508,6 +572,12 @@ def main():
                     "is_read_only": False,
                 },
                 {
+                    "drive_id": "home",
+                    "path_on_host": str(out / "home.ext4"),
+                    "is_root_device": False,
+                    "is_read_only": False,
+                },
+                {
                     "drive_id": "sealed",
                     "path_on_host": str(args.base_rootfs.resolve()),
                     "is_root_device": False,
@@ -528,6 +598,8 @@ def main():
                 "policy",
                 "initramfs.gz",
                 "vm.json",
+                "gateway-cert.pem",
+                "gateway-tls-key.pem",
             )
         }
         command = (
@@ -576,11 +648,20 @@ def main():
                     receipt["cleanup"] = "vmm_joined"
                 except (OSError, ValueError, TypeError):
                     receipt["cleanup"] = "snapshot_children_unverified"
-        (out / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
-        # The only mutable drive belongs to this attempt. Retain input identity
-        # and synthetic console/receipt; release its multi-GB disposable copy.
-        if receipt["cleanup"] in ("not_started", "vmm_joined"):
-            (out / "rootfs.ext4").unlink(missing_ok=True)
+        # Both mutable drives belong to this attempt. Retain their initial
+        # identities and observations, then release only these owned copies.
+        receipt["ownedDrivesRemoved"] = False
+        try:
+            if receipt["cleanup"] in ("not_started", "vmm_joined"):
+                (out / "rootfs.ext4").unlink(missing_ok=True)
+                (out / "home.ext4").unlink(missing_ok=True)
+                receipt["ownedDrivesRemoved"] = True
+        except OSError as error:
+            receipt["result"] = "failed"
+            receipt["error"] = f"owned drive cleanup: {error}"
+            raise
+        finally:
+            (out / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
 
 
 if __name__ == "__main__":

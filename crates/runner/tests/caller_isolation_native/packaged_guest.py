@@ -26,11 +26,18 @@ from pathlib import Path
 import packaged_accounting
 import packaged_audit
 import packaged_browser
+import packaged_gateway
+import packaged_gateway_checks
 import packaged_history
+import packaged_home
+import packaged_inprocess
 import packaged_lifecycle
 import packaged_mcp
+import packaged_resolver
 import packaged_resources
+import packaged_startup
 import packaged_storage
+import packaged_vendor_resources
 
 ROOT = Path("/home/user/workspace")
 FIXTURE = Path("/fixture")
@@ -40,12 +47,14 @@ ENTRY = "/fixture/entry"
 CG = Path("/sys/fs/cgroup/vm0-exec/exec-native/workload")
 results = []
 requests = []
+upstream_gets = []
 errors = []
 counter = 0
 tasks = {}
 stop_peers = []
 spawned = set()
 request_counts = {}
+runtime_tool_profiles = {}
 resource_ready = threading.Event()
 resource_release = threading.Event()
 lock = threading.Lock()
@@ -101,7 +110,13 @@ def compact(value):
 
 
 def as_role(role, args, *, env=None, stdin=None, timeout=45, group="runtime"):
-    if group != ("runtime" if role in ("agent", "agent-resource-control") else "tools"):
+    if group != (
+        "gateway"
+        if role == "gateway"
+        else "runtime"
+        if role in ("agent", "agent-resource-control")
+        else "tools"
+    ):
         raise ValueError("role/cgroup mismatch")
     return subprocess.run(
         [ENTRY, role, *args],
@@ -115,14 +130,14 @@ def as_role(role, args, *, env=None, stdin=None, timeout=45, group="runtime"):
     )
 
 
-def pi_session(env, message="PI_MAIN"):
+def pi_session(env, message="PI_MAIN", *, role="agent"):
     records = []
     buffered = b""
     settled = False
     with (FIXTURE / "pi.stderr").open("w") as stderr:
         label(FIXTURE / "pi.stderr", "runtime_log_t")
         pi = subprocess.Popen(
-            [ENTRY, "agent", "/usr/bin/node", CLI, "__agent-loop"],
+            [ENTRY, role, "/usr/bin/node", CLI, "__agent-loop"],
             env=env,
             cwd=ROOT,
             stdin=subprocess.PIPE,
@@ -389,12 +404,24 @@ def tool_command(marker):
 
 def choose(payload, dialect):
     messages = payload.get("messages", payload.get("input", []))
+    inprocess = packaged_inprocess.choose(messages, spawned)
+    if inprocess is not None:
+        return inprocess
     users = [json.dumps(m) for m in messages if m.get("role") == "user"]
     text = users[-1] if users else json.dumps(messages)
     if "_RETAINED_HISTORY" in text:
         return None, {"text": "retained session history reopened"}
     if "PI_RESOURCE_WAIT" in text:
         return None, {"text": "resource pressure completed; real Pi loop continued"}
+    if "PI_STARTUP_PROBE" in text:
+        return None, {"text": "startup model request completed"}
+    if "PI_NESTED_CWD" in text:
+        if "nested-child" not in spawned:
+            spawned.add("nested-child")
+            return "bash", {"command": "pwd > /home/user/workspace/nested-child-cwd"}
+        return None, {"text": "nested child completed at the captured workspace"}
+    if "_CONFIG_DISCOVERY" in text:
+        return None, {"text": "captured configuration launch completed"}
     child = "PI_CHILD" in text and "PI_MAIN" not in text
     if "CLAUDE_CHILD" in text and "CLAUDE_MAIN" not in text:
         child = True
@@ -469,7 +496,23 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_args):
         pass
 
+    def gateway_auth(self):
+        if (
+            self.server.server_port == 18082
+            and self.headers.get("authorization")
+            != "Bearer synthetic-gateway-only-no-provider-authority"
+        ):
+            self.send_error(401)
+            return False
+        return True
+
     def do_GET(self):
+        if not self.gateway_auth():
+            return
+        if self.server.server_port == 18082:
+            upstream_gets.append(self.path)
+        if packaged_gateway.benchmark(self):
+            return
         if self.path == "/native-storage.tar.gz":
             body = (FIXTURE / "native-storage.tar.gz").read_bytes()
             (ROOT / "storage-http-observed").write_text("observed owned archive GET")
@@ -484,6 +527,8 @@ class Handler(BaseHTTPRequestHandler):
             "/mcp-claude-lowered",
             "/mcp-codex-direct",
             "/mcp-codex-lowered",
+            "/mcp-claude-discovery",
+            "/mcp-codex-discovery",
         }:
             (ROOT / (self.path[1:] + "-connected")).write_text(
                 "observed synthetic MCP ingress GET"
@@ -505,8 +550,12 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self):
+        if not self.gateway_auth():
+            return
+        if packaged_gateway.benchmark(self):
+            return
         length = int(self.headers.get("content-length", "0"))
-        if length > 2 * 1024 * 1024:
+        if length > 32 * 1024 * 1024:
             self.send_error(413)
             return
         payload = json.loads(self.rfile.read(length))
@@ -523,7 +572,7 @@ class Handler(BaseHTTPRequestHandler):
             else "anthropic"
         )
         tools = [
-            t.get("name", t.get("function", {}).get("name"))
+            t.get("name", t.get("function", t.get("custom", {})).get("name"))
             for t in payload.get("tools", [])
         ]
         namespaces = {
@@ -536,11 +585,26 @@ class Handler(BaseHTTPRequestHandler):
             tools.extend(s.get("name") for s in t.get("tools", []))
         messages = payload.get("messages", payload.get("input", []))
         with lock:
+            profile = runtime_tool_profiles.setdefault(dialect, {})
+            for entry in payload.get("tools", []):
+                entries = (
+                    entry.get("tools", [])
+                    if entry.get("type") == "namespace"
+                    else [entry.get("function", entry)]
+                )
+                for tool in entries:
+                    name = tool.get("name", "hosted:" + str(tool.get("type")))
+                    parameters = tool.get(
+                        "parameters", tool.get("input_schema", {})
+                    ).get("properties", {})
+                    previous = profile.get(name, [])
+                    profile[name] = sorted(set(previous).union(parameters))
             request = {
+                "receivedMonotonic": time.monotonic(),
                 "path": self.path,
                 "bytes": length,
                 "tools": tools,
-                "lastInput": json.dumps(messages[-1])[-1800:] if messages else "",
+                "lastInput": json.dumps(messages[-1])[-1000:] if messages else "",
             }
             for framework in ("pi", "claude", "codex"):
                 marker = framework.upper() + "_RETAINED_HISTORY"
@@ -554,7 +618,7 @@ class Handler(BaseHTTPRequestHandler):
                     )
             requests.append(request)
             request_counts[dialect] = request_counts.get(dialect, 0) + 1
-            over_budget = request_counts[dialect] > 16
+            over_budget = request_counts[dialect] > 32
             count_tokens = "count_tokens" in self.path
             if not over_budget and not count_tokens:
                 name, arguments = choose(payload, dialect)
@@ -733,6 +797,7 @@ def run_guest(resources):
     # Preserve fallback denials in the kernel buffer without duplicating each
     # syscall/proctitle across the bounded serial transport.
     Path("/proc/sys/kernel/printk").write_text("3\n")
+    packaged_home.probe(record)
     workload_pid = int(os.environ["OKOU_NATIVE_WORKLOAD_KEEPER_PID"])
     if workload_pid <= 1:
         raise ValueError("invalid workload namespace owner")
@@ -740,7 +805,7 @@ def run_guest(resources):
     label("/dev/shm", "workload_data_t")
     # Only this newly owned writable drive is relabelled. The separate immutable
     # drive supplies the protected process's complete OS/runtime dependency view.
-    for top in ("usr", "etc", "opt", "home", "root", "tmp", "var", "run"):
+    for top in ("usr", "etc", "opt", "root", "tmp", "var", "run"):
         path = writable_root / top
         if path.exists():
             for parent, dirs, files in os.walk(path, followlinks=False):
@@ -833,8 +898,16 @@ def run_guest(resources):
     resources.enter_context(namespace_broker(keeper.pid, workload_pid))
     broker("okou-native-placement")
     broker("okou-native-placement-tasks", task=True)
-    server = ThreadingHTTPServer(("127.0.0.1", 18080), Handler)
+    server = ThreadingHTTPServer(("127.0.0.1", 18082), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
+    baseline = ThreadingHTTPServer(
+        ("127.0.0.1", 18083), packaged_gateway.BenchmarkHandler
+    )
+    threading.Thread(target=baseline.serve_forever, daemon=True).start()
+    gateway_group = packaged_gateway_checks.prepare(resources, CG, FIXTURE, label)
+    gateway, gateway_identity = resources.enter_context(
+        packaged_gateway_checks.running(gateway_group, FIXTURE)
+    )
     restoration = {}
     if "caller_restore=1" in Path("/proc/cmdline").read_text().split():
 
@@ -861,6 +934,8 @@ def run_guest(resources):
         ):
             raise ValueError("restore lost enforcing state or namespace identity")
     control_device = Path("/usr/bin/python3").stat().st_dev
+    packaged_home.workload_probe(env, as_role, record)
+    packaged_startup.probe(CG, env, pi_session, requests, record)
     sealed_device = Path("/sealed/usr/bin/python3").stat().st_dev
     workload_device = (writable_root / "usr/bin/python3").stat().st_dev
     record(
@@ -1376,12 +1451,10 @@ print('private credential state inaccessible')""",
         )
     codex_home = Path("/home/user/.codex")
     codex_home.mkdir(exist_ok=True)
-    (codex_home / "config.toml").write_text(
-        'model = "gpt-5.1-codex-mini"\nmodel_provider = "mock"\napproval_policy = "never"\nsandbox_mode = "danger-full-access"\n[features]\nmulti_agent = true\n[model_providers.mock]\nname = "mock"\nbase_url = "http://127.0.0.1:18080/v1"\nenv_key = "OPENAI_API_KEY"\nwire_api = "responses"\nrequest_max_retries = 0\nstream_max_retries = 0\n'
-    )
+    (codex_home / "config.toml").write_text(packaged_vendor_resources.CODEX_CONFIG)
     os.chown(codex_home, 1000, 1000)
     os.chown(codex_home / "config.toml", 1000, 1000)
-    label(codex_home, "workload_data_t")
+    label(codex_home, "resource_anchor_t")
     label(codex_home / "config.toml", "workload_data_t")
     try:
         run = as_role(
@@ -1447,14 +1520,30 @@ print('private credential state inaccessible')""",
             stderr=run.stderr[-1500:],
         )
     packaged_storage.probe(FIXTURE, ROOT, env, as_role, record)
+    packaged_vendor_resources.probe(env, as_role, record)
     packaged_resources.cgroup_probes(env, as_role, record)
     packaged_resources.shared_memory_probe(env, as_role, record)
     packaged_browser.probe(env, as_role, record)
+    packaged_gateway_checks.probe(
+        resources,
+        gateway_group,
+        FIXTURE,
+        env,
+        as_role,
+        record,
+        gateway,
+        gateway_identity,
+    )
     packaged_accounting.probe(
         CG, env, as_role, record, pi_session, resource_ready, resource_release
     )
     packaged_lifecycle.probe(ROOT, env, pi_session, tasks, record)
     packaged_mcp.probe(FIXTURE, ROOT, env, as_role, label, record)
+    packaged_vendor_resources.discovery_probe(FIXTURE, ROOT, env, as_role, record)
+    packaged_inprocess.probe(env, as_role, pi_session, requests, upstream_gets, record)
+    packaged_resolver.probe(env, as_role, record)
+    packaged_resources.nested_child_probe(ROOT, env, as_role, tasks, record)
+    packaged_home.probe(record, repeated=True)
     observations_path = ROOT / "untrusted-shell-observations.jsonl"
     observations = (
         [json.loads(line) for line in observations_path.read_text().splitlines()]
@@ -1491,6 +1580,7 @@ print('private credential state inaccessible')""",
         "restoration": restoration,
         "results": results,
         "requests": requests,
+        "runtimeToolProfiles": runtime_tool_profiles,
         "brokerErrors": errors,
         "gateF": "incomplete",
         "kernel": kernel,

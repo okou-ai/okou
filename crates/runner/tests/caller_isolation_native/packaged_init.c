@@ -31,7 +31,7 @@ int main(void) {
   mkdir("/rootfs", 0755);
   mount_fs("/dev/vda", "/rootfs", "ext4", 0, NULL);
   mkdir("/rootfs/sealed", 0755);
-  mount_fs("/dev/vdb", "/rootfs/sealed", "ext4", MS_RDONLY, NULL);
+  mount_fs("/dev/vdc", "/rootfs/sealed", "ext4", MS_RDONLY, NULL);
   mkdir("/rootfs/fixture", 0755);
   mount_fs("tmpfs", "/rootfs/fixture", "tmpfs", 0, "mode=0755");
   const char *files[] = {"guest.py",
@@ -44,6 +44,17 @@ int main(void) {
                          "packaged_mcp_peer.py",
                          "packaged_storage.py",
                          "packaged_lifecycle.py",
+                         "packaged_home.py",
+                         "packaged_gateway.py",
+                         "packaged_gateway_checks.py",
+                         "packaged_vendor_resources.py",
+                         "packaged_inprocess.py",
+                         "packaged_resolver.py",
+                         "packaged_startup.py",
+                         "home-manifest.json",
+                         "gateway-cert.pem",
+                         "gateway-tls-key.pem",
+                         "guest-home-mount",
                          "guest-storage-apply",
                          "resource-policy",
                          "policy",
@@ -106,6 +117,13 @@ int main(void) {
   close(in);
   close(out);
   free(bytes);
+  out = open("/sys/fs/selinux/enforce", O_WRONLY);
+  if (out < 0 || write(out, "1", 1) != 1 || close(out))
+    fail("enforcing-before-home-mount");
+  /* Unlabelled retained data gets a default label without a recursive relabel.
+     Protected discovery/state overlays receive explicit controller labels. */
+  mount_fs("/dev/vdb", "/home/user", "ext4", 0,
+           "defcontext=system_u:object_r:workload_data_t");
   mount_fs("cgroup2", "/sys/fs/cgroup", "cgroup2", 0, NULL);
   pid_t setup = fork();
   if (setup < 0)

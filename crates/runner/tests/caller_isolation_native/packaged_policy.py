@@ -13,6 +13,7 @@ def build_policy():
     types = [
         "control_t",
         "agent_t",
+        "gateway_t",
         "workload_t",
         "toolbridge_t",
         "taskbridge_t",
@@ -21,9 +22,12 @@ def build_policy():
         "workload_shell_exec_t",
         "workload_data_t",
         "model_port_t",
+        "upstream_port_t",
+        "resolver_port_t",
         "ordinary_port_t",
         "cgroup_t",
         "gateway_key_t",
+        "gateway_log_t",
         "runtime_log_t",
         "resource_anchor_t",
         "resource_config_t",
@@ -78,6 +82,7 @@ def build_policy():
     for source in [
         "control_t",
         "agent_t",
+        "gateway_t",
         "workload_t",
         "toolbridge_t",
         "taskbridge_t",
@@ -89,7 +94,7 @@ def build_policy():
             lines += [
                 f"(typetransition {source} resource_anchor_t {kind} workload_data_t)"
             ]
-    for r in ["agent_t", "workload_t", "toolbridge_t", "taskbridge_t"]:
+    for r in ["agent_t", "gateway_t", "workload_t", "toolbridge_t", "taskbridge_t"]:
         lines += [
             f"(allow {r} self (process (fork sigchld getattr getcap getrlimit setrlimit getsched setsched getpgid setpgid getsession signal sigkill sigstop signull execmem)))",
             f"(allow {r} control_t (process (sigchld)))",
@@ -116,6 +121,7 @@ def build_policy():
             f"(allow {r} self (capability (setuid setgid)))",
             f"(allow {r} all_types (dir (open read getattr search)))",
             f"(allow {r} resource_anchor_t (dir (write add_name remove_name)))",
+            f"(allow {r} resource_config_t (file (open read getattr map)))",
         ]
         for t in [
             "control_t",
@@ -144,6 +150,12 @@ def build_policy():
     # Ordinary execution does not gain a protected role from mutable binaries.
     safe_caps = "chown dac_override dac_read_search fowner fsetid kill setgid setuid setpcap net_bind_service sys_chroot sys_resource audit_write setfcap mknod"
     lines += [
+        "(allow gateway_t gateway_key_t (file (open read getattr)))",
+        "(allow gateway_t gateway_log_t (file (open write append getattr)))",
+        "(allow gateway_t model_port_t (tcp_socket (name_bind)))",
+        "(allow gateway_t control_t (tcp_socket (node_bind)))",
+        "(allow gateway_t upstream_port_t (tcp_socket (name_connect)))",
+        "(allow gateway_t resolver_port_t (tcp_socket (name_connect)))",
         "(typetransition workload_t control_t file workload_data_t)",
         "(typetransition agent_t control_t file agent_t)",
         "(allow agent_t self (file (create setattr map lock)))",
@@ -198,6 +210,12 @@ def build_policy():
     lines += ["(allow taskbridge_t workload_t (process (dyntransition)))"]
     lines += [
         "(portcon tcp (18080 18080) (system_u object_r model_port_t ((s0) (s0))))",
-        "(portcon tcp (18081 65535) (system_u object_r ordinary_port_t ((s0) (s0))))",
+        "(portcon tcp (18081 18081) (system_u object_r ordinary_port_t ((s0) (s0))))",
+        "(portcon tcp (18082 18082) (system_u object_r upstream_port_t ((s0) (s0))))",
+        "(portcon tcp (18083 18083) (system_u object_r ordinary_port_t ((s0) (s0))))",
+        "(portcon tcp (18084 18084) (system_u object_r resolver_port_t ((s0) (s0))))",
+        "(portcon tcp (18085 18085) (system_u object_r ordinary_port_t ((s0) (s0))))",
+        "(portcon tcp (18086 18086) (system_u object_r model_port_t ((s0) (s0))))",
+        "(portcon tcp (18087 65535) (system_u object_r ordinary_port_t ((s0) (s0))))",
     ]
     return "\n".join(lines) + "\n"

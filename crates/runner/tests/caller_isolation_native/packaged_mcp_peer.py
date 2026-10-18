@@ -9,7 +9,14 @@ from pathlib import Path
 
 
 def serve(tag):
-    if tag not in {"claude-direct", "claude-lowered", "codex-direct", "codex-lowered"}:
+    if tag not in {
+        "claude-direct",
+        "claude-lowered",
+        "codex-direct",
+        "codex-lowered",
+        "claude-discovery",
+        "codex-discovery",
+    }:
         raise ValueError("unknown owned MCP case")
     root = Path("/home/user/workspace")
     identity = {

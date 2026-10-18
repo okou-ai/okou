@@ -16,15 +16,243 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
+import packaged_gateway
 import packaged_guest
 import packaged_run as fixture
 import packaged_snapshot
 import test_fixture as primitive_tests
 
 
+class GatewayHttpTest(unittest.TestCase):
+    def setUp(self):
+        self.observations = []
+        observations = self.observations
+
+        class Upstream(packaged_gateway.BenchmarkHandler):
+            def do_POST(self):
+                body = self.rfile.read(int(self.headers.get("content-length", "0")))
+                observations.append(
+                    {
+                        "path": self.path,
+                        "authorization": self.headers.get("authorization"),
+                        "intent": self.headers.get("x-okou-connector-intent"),
+                        "body": body,
+                    }
+                )
+                raw = b"accepted synthetic request"
+                self.send_response(200)
+                self.send_header("content-length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+
+        self.upstream = ThreadingHTTPServer(("127.0.0.1", 0), Upstream)
+        self.gateway = packaged_gateway.Gateway(
+            ("127.0.0.1", 0),
+            packaged_gateway.Handler,
+            "synthetic-fixed-owner",
+            self.upstream.server_address,
+        )
+        for server in (self.upstream, self.gateway):
+            worker = threading.Thread(
+                target=server.serve_forever, kwargs={"poll_interval": 0.01}
+            )
+            worker.start()
+            self.addCleanup(self.stop_server, server, worker)
+
+    @staticmethod
+    def stop_server(server, worker):
+        server.shutdown()
+        server.server_close()
+        worker.join(timeout=2)
+        if worker.is_alive():
+            raise AssertionError("owned HTTP server did not join")
+
+    def test_fixed_upstream_owns_auth_and_ignores_caller_routing_headers(self):
+        peer = http.client.HTTPConnection(*self.gateway.server_address, timeout=2)
+        self.addCleanup(peer.close)
+        peer.request(
+            "POST",
+            "/v1/responses",
+            b'{"input":"synthetic"}',
+            {
+                "authorization": "Bearer caller-value",
+                "x-okou-connector-intent": "different-owner",
+                "host": "untrusted.invalid",
+            },
+        )
+        response = peer.getresponse()
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.read(), b"accepted synthetic request")
+        self.assertEqual(
+            self.observations,
+            [
+                {
+                    "path": "/v1/responses",
+                    "authorization": "Bearer synthetic-fixed-owner",
+                    "intent": None,
+                    "body": b'{"input":"synthetic"}',
+                }
+            ],
+        )
+
+    def test_rejected_framing_and_get_never_reach_upstream(self):
+        for method, target, headers, expected in (
+            ("GET", "/v1/responses", [], 405),
+            ("POST", "http://untrusted.invalid/v1/responses", [], 400),
+            (
+                "POST",
+                "/v1/responses",
+                [("content-length", "1"), ("content-length", "1")],
+                400,
+            ),
+            ("POST", "/v1/responses", [("transfer-encoding", "chunked")], 400),
+            ("POST", "/v1/responses", [("content-length", "33554433")], 413),
+        ):
+            with self.subTest(method=method, target=target, headers=headers):
+                peer = http.client.HTTPConnection(
+                    *self.gateway.server_address, timeout=2
+                )
+                try:
+                    peer.putrequest(method, target)
+                    for name, value in headers:
+                        peer.putheader(name, value)
+                    peer.endheaders()
+                    response = peer.getresponse()
+                    self.assertEqual(response.status, expected)
+                    response.read()
+                finally:
+                    peer.close()
+        self.assertEqual(self.observations, [])
+
+
 def summary():
     checks = [{"name": name, "passed": True} for name in sorted(fixture.EXPECTED)]
     by_name = {check["name"]: check for check in checks}
+    for runtime, version in (
+        ("node", "v24.22.0"),
+        ("claude", "2.1.302 (Claude Code)"),
+        ("codex", "codex-cli 0.163.0"),
+    ):
+        by_name[runtime + "_packaged_version"].update(exit=0, stdout=version)
+    for name in ("home_helper_initialization", "home_helper_repeated"):
+        by_name[name].update(
+            layout="fresh",
+            unlabelledSeed=True,
+            helperExit=0,
+            retainedSha256={},
+            mount=[
+                "42 25 254:16 / /home/user rw - ext4 /dev/vdb rw,defcontext=system_u:object_r:workload_data_t"
+            ],
+            context="system_u:object_r:workload_data_t",
+        )
+    identity = {
+        "context": "system_u:system_r:gateway_t",
+        "cgroup": "0::/vm0-exec/exec-native/workload/gateway",
+    }
+    by_name["gateway_bounded_streaming_accounting"].update(
+        identity=identity,
+        memoryPeakBytes=32 * 1024**2,
+        pidsPeak=18,
+        observed={
+            "overLimitStatus": 413,
+            "concurrentLimitStatus": 503,
+            "aggregateBodyLimitStatus": 503,
+            "directUpstreamDenied": True,
+            "observations": [
+                {"port": port} for port in (18080, 18083) for _ in range(4)
+            ],
+        },
+    )
+    by_name["gateway_local_oom_fails_closed"].update(exit=-9, events={"oom_kill": "1"})
+    by_name["home_workload_retained_data"].update(
+        layout="fresh",
+        observations=[
+            {
+                "role": role,
+                "exit": 0,
+                "identity": {
+                    "uid": 0 if role == "root" else 1000,
+                    "context": "system_u:system_r:workload_t",
+                    "retained": False,
+                },
+            }
+            for role in ("workload", "root")
+        ],
+    )
+    for framework in ("claude", "codex"):
+        by_name[framework + "_configuration_known_load_and_mask"].update(
+            observations=[
+                {
+                    "role": "agent-resource-control",
+                    "exit": 0,
+                    "identity": {
+                        "uid": 1000,
+                        "context": "system_u:system_r:agent_t",
+                        "capEff": "0000000000000000",
+                        "connectErrno": 0,
+                        "initialized": True,
+                    },
+                    "ingressObserved": True,
+                },
+                {
+                    "role": "agent",
+                    "exit": 0,
+                    "identity": None,
+                    "ingressObserved": False,
+                },
+            ]
+        )
+    for name in (
+        "pi_inprocess_read_key",
+        "pi_inprocess_write_config",
+        "claude_inprocess_read_key",
+        "claude_inprocess_write_config",
+        "claude_inprocess_http",
+        "codex_inprocess_read_key",
+    ):
+        by_name[name].update(exit=0, actualToolOutputs=["permission denied"])
+    by_name["claude_inprocess_http"].update(
+        actualToolOutputs=["HTTP 405"], tlsIngressObserved=True, upstreamGetDelta=0
+    )
+    by_name["alternate_resolver_role_admission"].update(
+        actualRequests=[{}],
+        observations=[
+            {
+                "role": role,
+                "exit": 0,
+                "identity": {
+                    "context": "system_u:system_r:"
+                    + ("workload_t" if role in ("workload", "root") else role + "_t"),
+                    "connectErrno": 0 if role == "gateway" else 13,
+                },
+            }
+            for role in ("workload", "root", "agent", "gateway")
+        ],
+    )
+    by_name["real_pi_paired_startup_accounting"].update(
+        samples=[
+            {
+                "role": role,
+                "exit": 0,
+                "settled": True,
+                "firstModelRequestSeconds": 0.1,
+                "settledSeconds": 0.2,
+                "runtimeCpuUsec": 1,
+                "workloadCpuUsec": 2,
+                "runtimePeakBytes": 1024,
+                "workloadPeakBytes": 2048,
+            }
+            for _ in range(3)
+            for role in ("agent-resource-control", "agent")
+        ]
+    )
+    by_name["real_pi_child_uses_captured_workspace"].update(
+        exit=0,
+        observedChildToolDirectory="/home/user/workspace",
+        requestedToolDirectory="/home/user/workspace/nested-user-project",
+        extensionExecuted=False,
+        familyUnpopulated=True,
+    )
     by_name["untrusted_pi_extension_denied"].update(
         qualified=True, executed=None, ingressObserved=False
     )
@@ -148,6 +376,37 @@ class ReceiptTest(unittest.TestCase):
         for raw in ('{"gateF":"passed","gateF":"incomplete"}', " " * 131073):
             with self.subTest(size=len(raw)), self.assertRaises(ValueError):
                 fixture.decode_summary(raw)
+
+    def test_extended_observations_cannot_be_replaced_by_positive_flags(self):
+        for name, field, replacement in (
+            ("codex_packaged_version", "stdout", "codex-cli unqualified"),
+            (
+                "home_helper_initialization",
+                "mount",
+                ["42 25 254:16 / /home/user rw - ext4 /dev/vdc rw"],
+            ),
+            ("claude_configuration_known_load_and_mask", "observations", []),
+            (
+                "gateway_bounded_streaming_accounting",
+                "identity",
+                {"context": "system_u:system_r:control_t"},
+            ),
+            ("gateway_local_oom_fails_closed", "events", {"oom_kill": "0"}),
+            ("claude_inprocess_http", "tlsIngressObserved", False),
+            ("claude_inprocess_http", "upstreamGetDelta", 1),
+            ("alternate_resolver_role_admission", "actualRequests", []),
+            ("real_pi_paired_startup_accounting", "samples", []),
+            (
+                "real_pi_child_uses_captured_workspace",
+                "observedChildToolDirectory",
+                "/home/user/workspace/nested-user-project",
+            ),
+        ):
+            value = summary()
+            case = next(item for item in value["results"] if item["name"] == name)
+            case[field] = replacement
+            with self.subTest(name=name, field=field), self.assertRaises(ValueError):
+                fixture.validate_summary(value, "x86_64")
 
     def test_mcp_success_requires_handshake_lowering_and_actual_ingress(self):
         for change in (
@@ -433,9 +692,9 @@ class ModelPeerTest(unittest.TestCase):
                     responses = list(pool.map(request, range(4)))
                 self.assertTrue(all(status == 200 for status, _ in responses))
                 self.assertEqual(len({identity for _, identity in responses}), 4)
-                for index in range(4, 16):
+                for index in range(4, 32):
                     self.assertEqual(request(index)[0], 200)
-                self.assertEqual(request(16)[0], 400)
+                self.assertEqual(request(32)[0], 400)
             finally:
                 server.shutdown()
                 thread.join(timeout=5)

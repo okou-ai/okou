@@ -97,7 +97,8 @@ the driver checks it before copying and checks the owned copy before boot.
 
 ```bash
 cargo build --manifest-path crates/Cargo.toml --profile local --locked -j1 \
-  -p guest-tool-exec -p guest-task-exec -p guest-storage-apply -p guest-contracts
+  -p guest-tool-exec -p guest-task-exec -p guest-storage-apply -p guest-home-mount \
+  -p guest-contracts
 rustc --edition 2024 \
   crates/runner/tests/caller_isolation_native/packaged_resource_policy.rs \
   --extern guest_contracts=crates/target/local/libguest_contracts.rlib \
@@ -111,14 +112,17 @@ python3 crates/runner/tests/caller_isolation_native/packaged_run.py \
   --tool-helper crates/target/local/guest-tool-exec \
   --task-helper crates/target/local/guest-task-exec \
   --storage-helper crates/target/local/guest-storage-apply \
+  --home-helper crates/target/local/guest-home-mount \
   --resource-helper /owned/experiment/resource-policy \
+  --home-layout retained \
   --output /owned/experiment/new-packaged-attempt \
   --source-revision <exact-40-hex-fixture-source-commit>
 ```
 
 The VM has two vCPUs, 1536 MiB, a 240-second deadline, no NIC/vsock/host mount
-and a 128-KiB console bound. It mounts its own writable copy and a separate
-read-only drive for the protected OS/runtime view. Fixed native entries select
+and a 128-KiB console bound. It mounts its own writable root, a newly created
+96-MiB home at the real helper's fixed `/dev/vdb`, and the separate read-only
+runtime drive at `/dev/vdc`. Fixed native entries select
 the role and obtain namespace handles from a peer-validated control socket.
 Shell exec transitions occur before user startup files run. Actual Rust helpers
 still perform their cgroup placement and OOM adjustment. Ordinary sudo/package,
@@ -154,7 +158,8 @@ identities are recorded separately. Image payloads are reduced to size/hash in
 the receipt. The CLI artifact's source identity is independent of the fixture
 commit; record both in the owning issue.
 
-All 52 named checks, enforcing Guest identity, pinned CLI identity, no broker
+All named checks, enforcing Guest identity, exact Node/Claude/Codex and pinned
+CLI identities, no broker
 errors and a qualified extension negative are required for exit zero. Missing,
 duplicate, failed or unqualified observations fail closed. The positive extension
 control seals the same executable dependencies but retains the user's discovery
@@ -199,7 +204,51 @@ drive cleanup without converting the failed test into success. Unverified
 ownership retains the drive for diagnosis. Snapshot memory files may be large;
 retain them locally on the authorized host and transfer the small receipts.
 
-A successful subset still leaves `gateF: incomplete`. Complete executable
-resource closure for every supported runtime, other helpers and real Run
-lifecycle/resource/resolver coverage remain independent requirements; this
-test is never an activation or rollout fallback.
+The extended qualification uses the unchanged fixed home helper under enforcing
+SELinux. `--home-layout fresh` starts an empty unlabelled ext4 volume;
+`--home-layout retained` seeds only synthetic shell/history/workspace data with
+no SELinux xattrs. A controller-owned `defcontext` mount supplies ordinary data
+labels without recursively relabelling retained files. User/root append and
+restore actual data, and the unchanged helper revalidates the full device and
+workspace after the suite, including after snapshot restore.
+
+Claude and Codex use captured configuration views with writable private runtime
+state and retained session/snapshot directories. Actual known-load MCP controls
+prove that the same user configuration executes in the discovery control and
+is absent in the frozen view. All packaged CLIs reopen their real histories.
+Pi children enter the Run-captured canonical workspace before protected launch;
+an arbitrary invoking tool cwd cannot select another executable discovery root.
+A nested-project probe runs the real public subagent command and waits for its
+actual task family to become unpopulated. Native result metadata records actual
+tool names and parameter keys for the pinned runtime profiles.
+
+A separate `gateway_t` Python process serves all three synthetic model dialects.
+Its HTTP and TLS listeners share 16 request owners, a 32-MiB body limit, a
+128-MiB aggregate body budget and 16-KiB response reads. A 256-MiB/64-PID leaf
+below the workload aggregate charges its real CPU, memory and threads. Slow-body
+admission, the exact body boundary, cancellation/EOF budget reuse, slow-reader
+4-MiB SSE delivery and direct/proxy timings are observed with actual sockets.
+Local gateway OOM kills that group, closes the entrance and permits only a
+controller-owned restart; there is no direct fallback. Paired real Pi startup
+samples use alternating discovery/frozen views, fresh logical sessions and
+same-open-FD cgroup memory peaks. These descriptive samples do not establish a
+resource saving or stable production latency percentile.
+
+Actual Pi/Claude file tools and Codex's supported `view_image` tool cannot read
+the private synthetic gateway key; in-process configuration writes are denied.
+Claude WebFetch uses a generated local test certificate and a trusted test-only
+setting that omits its external domain lookup. The real tool must reach the TLS
+entrance, receive 405 for an inference-path GET and cause zero upstream GETs;
+an incidental network/preflight failure cannot pass. No host trust store or
+production setting changes. The alternate resolver probe uses the real route
+shape and synthetic host-shaped material on its own protected port: only the
+gateway role can reach it. It does not implement or attest the production API's
+authorization.
+
+Receipts always retain `gateF: incomplete`: a native command alone cannot accept
+the current provider/Runner eligibility and alternate-resolver source audit or
+the separately observed deployed connector/catalog bytes. The issue owner must
+combine that audit with exact-source native receipts before accepting the first
+feasibility slice. Later Run lease/epoch/reassignment, deployment and final
+compatibility deletion remain separate integration/rollout gates. This fixture
+is never an activation or rollout fallback.
