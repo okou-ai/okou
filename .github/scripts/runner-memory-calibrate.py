@@ -448,6 +448,13 @@ def collect(
     except (OSError, ValueError, FixtureCancelled) as error:
         errors.append(str(error))
     finally:
+        # Sampling has ended. Retire diagnostics before fallible I/O cleanup;
+        # the independent owned map still governs every signal and positive wait.
+        try:
+            residency_observer.close()
+        except (OSError, FixtureCancelled) as error:
+            cleanup_errors.append(str(error))
+            errors.append(f"residency descriptor retirement uncertain: {error}")
         # Discover adopted children before any signals. pidfds plus generation
         # checks prevent a recycled PID from turning cleanup into cross-owner kill.
         if driver is not None:
@@ -525,11 +532,6 @@ def collect(
         if driver is not None:
             for stream in (driver.stdout, driver.stderr):
                 stream.close()
-        try:
-            residency_observer.close()
-        except (OSError, FixtureCancelled) as error:
-            cleanup_errors.append(str(error))
-            errors.append(f"residency descriptor retirement uncertain: {error}")
     remaining_children = child_pids(os.getpid())
     joined = driver is not None and driver.returncode is not None
     report = {

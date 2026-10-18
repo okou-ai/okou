@@ -208,11 +208,19 @@ spec = importlib.util.spec_from_file_location('owned_collector', sys.argv[1])
 module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
 sys.argv = sys.argv[1:]
 before = len(os.listdir('/proc/self/fd'))
+if FAIL_CLOSE:
+    original_close = module.selectors.DefaultSelector.close
+    def fail_close(selector):
+        if selector.get_map() is not None:
+            original_close(selector)
+            raise OSError(5, 'controlled selector close failure')
+    module.selectors.DefaultSelector.close = fail_close
 code = module.main()
 assert len(os.listdir('/proc/self/fd')) == before, 'collector leaked an observation or I/O fd'
+assert module.child_pids(os.getpid()) == [], 'collector retained a child after cleanup'
 sys.exit(code)
 """
-        for outcome in ("success", "driver_failure", "cancelled"):
+        for outcome in ("success", "driver_failure", "cancelled", "selector_failure"):
             with self.subTest(outcome=outcome):
                 output = self.root / f"{outcome}-fds"
                 program = """
@@ -231,15 +239,25 @@ while time.monotonic() < deadline:
             sys.exit(EXIT_CODE)
     time.sleep(0.01)
 sys.exit(9)
-""".replace("CANCEL", repr(outcome == "cancelled")).replace(
+""".replace("CANCEL", repr(outcome in ("cancelled", "selector_failure"))).replace(
                     "EXIT_CODE", "3" if outcome == "driver_failure" else "0"
                 )
                 command = self.command(output, program)
+                wrapper_program = wrapper.replace(
+                    "FAIL_CLOSE", repr(outcome == "selector_failure")
+                )
                 result = subprocess.run(
-                    [sys.executable, "-c", wrapper, *command[1:]],
+                    [sys.executable, "-c", wrapper_program, *command[1:]],
                     capture_output=True, text=True, timeout=15,
                 )
-                self.assertEqual(result.returncode, int(outcome != "success"), result.stderr)
+                self.assertEqual(
+                    result.returncode, int(outcome != "success"), result.stderr
+                )
+                if outcome == "selector_failure":
+                    self.assertIn("controlled selector close failure", result.stderr)
+                    self.assertNotIn("collector leaked", result.stderr)
+                    self.assertFalse((output / "report.json").exists())
+                    continue
                 report = json.loads((output / "report.json").read_text())
                 self.assertEqual(report["success"], outcome == "success")
                 if outcome == "driver_failure":
