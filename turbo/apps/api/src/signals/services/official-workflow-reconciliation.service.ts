@@ -396,23 +396,6 @@ const loadReconciliationContext$ = command(
   },
 );
 
-function sameAutomationBaseline(
-  expected: OfficialAutomationRow,
-  current: OfficialAutomationRow,
-): boolean {
-  return (
-    expected.id === current.id &&
-    expected.updatedAt.getTime() === current.updatedAt.getTime() &&
-    expected.officialBlueprintKey === current.officialBlueprintKey &&
-    expected.officialAppliedFingerprint ===
-      current.officialAppliedFingerprint &&
-    expected.officialReconciliationStatus ===
-      current.officialReconciliationStatus &&
-    expected.enabled === current.enabled &&
-    expected.officialIntendedEnabled === current.officialIntendedEnabled
-  );
-}
-
 function failedAutomationBaselineCondition(expected: OfficialAutomationRow) {
   // Match the original Date.getTime() comparison, including invalid Dates,
   // without strengthening this baseline to an exact row-version condition.
@@ -3378,7 +3361,7 @@ function acceptedDefinitionOmitsBlueprint(
 
 const pauseRemovedAutomationConfiguration$ = command(
   async (
-    { set },
+    { get, set },
     args: RemoveAutomationConfigurationArgs,
     signal: AbortSignal,
   ): Promise<
@@ -3388,72 +3371,89 @@ const pauseRemovedAutomationConfiguration$ = command(
       }
     | undefined
   > => {
-    const db = set(writeDb$);
-
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0211; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
-      await tx.execute(acceptedCatalogLockStatement());
-      const [catalogRow] = parseRawRows(
-        acceptedCatalogRowSchema,
-        await tx.execute(acceptedCatalogReadStatement()),
+    const readDb = get(db$);
+    const plan = acceptedOfficialWorkflowCatalogReadPlan();
+    const [catalogRow] = acceptedCatalogRowSchema
+      .array()
+      .parse(
+        await readDb
+          .select(plan.columns)
+          .from(officialWorkflowCatalogState)
+          .innerJoin(officialWorkflowCatalogReleases, plan.join)
+          .where(plan.condition)
+          .limit(1),
       );
-      signal.throwIfAborted();
-      if (
-        !acceptedDefinitionOmitsBlueprint(
-          acceptedCatalogFromRow(catalogRow),
-          args.definition.name,
-          args.automation.officialBlueprintKey,
-          args.activeDefinitionOnly,
-        )
-      ) {
-        return undefined;
-      }
-      const [installedWorkflow] = await tx
-        .select({ id: workflows.id })
-        .from(workflows)
-        .where(
-          installedWorkflowCondition(
-            {
-              orgId: args.orgId,
-              userId: args.userId,
-              definitionName: args.definition.name,
-            },
-            args.automation.workflowId,
+    signal.throwIfAborted();
+    const catalog = acceptedCatalogFromRow(catalogRow);
+    if (
+      !catalog ||
+      !acceptedDefinitionOmitsBlueprint(
+        catalog,
+        args.definition.name,
+        args.automation.officialBlueprintKey,
+        args.activeDefinitionOnly,
+      )
+    ) {
+      return undefined;
+    }
+    const previous = args.automation;
+    if (!Number.isFinite(previous.updatedAt.getTime())) {
+      return undefined;
+    }
+
+    const db = set(writeDb$);
+    const currentTime = nowDate();
+    // Catalog and installation authority are observed at the write snapshot.
+    // The existing exact source snapshot owns this single-row transition.
+    const [current] = await db
+      .update(workflowAutomations)
+      .set({
+        enabled: false,
+        nextRunAt: null,
+        officialReconciliationStatus: "reconciling",
+        updatedAt: currentTime,
+      })
+      .where(
+        and(
+          observedWorkflowAutomationCondition(previous),
+          failedAutomationBaselineCondition(previous),
+          exists(
+            db
+              .select({ id: workflows.id })
+              .from(workflows)
+              .where(
+                installedWorkflowCondition(
+                  {
+                    orgId: args.orgId,
+                    userId: args.userId,
+                    definitionName: args.definition.name,
+                  },
+                  previous.workflowId,
+                ),
+              ),
           ),
-        )
-        .for("update")
-        .limit(1);
-      if (!installedWorkflow) {
-        return undefined;
-      }
-      const [current] = await tx
-        .select(workflowAutomationColumns())
-        .from(workflowAutomations)
-        .where(observedWorkflowAutomationCondition(args.automation))
-        .for("update")
-        .limit(1);
-      if (!current || !sameAutomationBaseline(args.automation, current)) {
-        return undefined;
-      }
-      const currentTime = nowDate();
-      const [row] = await tx
-        .update(workflowAutomations)
-        .set({
-          enabled: false,
-          nextRunAt: null,
-          officialReconciliationStatus: "reconciling",
-          updatedAt: currentTime,
-        })
-        .where(eq(workflowAutomations.id, current.id))
-        .returning(workflowAutomationColumns());
-      return row
-        ? {
-            previous: current,
-            current: row,
-          }
-        : undefined;
-    });
+          exists(
+            db
+              .select({
+                releaseId: officialWorkflowCatalogState.acceptedReleaseId,
+              })
+              .from(officialWorkflowCatalogState)
+              .innerJoin(officialWorkflowCatalogReleases, plan.join)
+              .where(
+                and(
+                  plan.condition,
+                  eq(
+                    officialWorkflowCatalogState.acceptedReleaseId,
+                    catalog.releaseId,
+                  ),
+                ),
+              ),
+          ),
+        ),
+      )
+      .returning(workflowAutomationColumns());
+    signal.throwIfAborted();
+    return current ? { previous, current } : undefined;
   },
 );
 
