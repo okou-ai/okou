@@ -5,7 +5,6 @@ import { apiErrorSchema } from "./errors";
 import { sshHostAvailabilitySchema } from "./ssh-access";
 import { remoteHostIdentitySchema } from "./remote-host-identity";
 import { vncConnectionMetadataSchema } from "./vnc-connections";
-import { vncTransportMetadataSchema } from "./vnc-transport";
 import {
   VNC_RSA_AES_SECURITY_TYPES,
   vncRsaAesAuthenticationMethodSchema,
@@ -27,10 +26,7 @@ const vncHostBaseSchema = vncConnectionMetadataSchema
     host: true,
     port: true,
   })
-  .extend({
-    availability: sshHostAvailabilitySchema,
-    transport: vncTransportMetadataSchema.optional(),
-  });
+  .extend({ availability: sshHostAvailabilitySchema });
 
 export const vncHostSchema = z.union([
   vncHostBaseSchema

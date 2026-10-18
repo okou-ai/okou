@@ -166,6 +166,7 @@ test("A Tailscale SSH deletion reviews credential-free identity before acknowled
           revision: 1,
           generation: 1,
           sshHosts: [{ id: host.id, displayName: host.displayName }],
+          vncHosts: [],
           createdAt: host.createdAt,
           updatedAt: host.updatedAt,
         },
