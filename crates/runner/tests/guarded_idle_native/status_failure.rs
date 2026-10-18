@@ -129,8 +129,10 @@ pub async fn exercise(
             "observer": observation, "tracker_shutdown_pending": true,
             "accounting_shutdown_pending": true, "coverage": coverage(&context, inputs, proof, true)?,
         }))?;
-        drop(pool_hold.take());
+        // Bound the release before unlocking: the other worker may receive
+        // its heartbeat acknowledgement before this task is scheduled again.
         let pool_released_ns = evidence::clocks()?.0;
+        drop(pool_hold.take());
         let heartbeat = probe.complete().await?;
         pending(completion.as_mut(), &mut batch_completed).await?;
         pending(tracker_shutdown.as_mut(), &mut tracker_completed).await?;

@@ -128,8 +128,10 @@ pub async fn exercise(
                     "observer": observation, "coverage": coverage(&context, inputs, proof, true)?,
                 }),
             )?;
-            drop(pool_hold.take());
+            // The heartbeat may be acknowledged on the other worker before
+            // this task resumes after unlock, so record the lower bound first.
             let pool_released_ns = evidence::clocks()?.0;
+            drop(pool_hold.take());
             let heartbeat = probe.complete().await?;
             pending(tracker_shutdown.as_mut(), &mut tracker_completed).await?;
             pending(accounting_shutdown.as_mut(), &mut accounting_completed).await?;
