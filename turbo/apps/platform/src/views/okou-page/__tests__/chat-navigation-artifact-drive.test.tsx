@@ -162,6 +162,14 @@ function installDriveMocks(
         sequenceNumber: 1,
         createdAt: "2026-09-01T12:00:00.000Z",
       },
+      {
+        id: "drive-preview-run-completed",
+        role: "assistant",
+        content: null,
+        runId: NAVIGATION_ARTIFACT_RUN_ID,
+        runLifecycleEvent: "completed",
+        createdAt: "2026-09-01T12:00:01.000Z",
+      },
     ],
     artifactRuns: () => {
       return [
