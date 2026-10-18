@@ -1,4 +1,4 @@
-import { command } from "ccstate";
+import { command, type Write } from "ccstate";
 import {
   and,
   asc,
@@ -21,9 +21,8 @@ import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatSearchIndexText } from "../../lib/chat-search-bigram";
-import type { Tx } from "../../lib/db-types";
 import { optionalEnv } from "../../lib/env";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import {
   projectUserMessage,
   requiredUserMessageForEvent,
@@ -155,34 +154,13 @@ function searchMessageProjection(row: {
   return { role, text, textBigram: chatSearchIndexText(text) };
 }
 
-async function loadProjectionRows(
-  tx: Tx,
-  chatThreadId: string,
-  indexedSeqId: number,
-) {
-  return await tx
-    .select({
-      id: chatEvents.id,
-      runId: chatEvents.runId,
-      eventType: chatEvents.eventType,
-      content: canonicalChatEventContent(),
-      userMessage: canonicalChatEventUserMessage(),
-      revokesEventId: chatEvents.revokesEventId,
-      seqId: chatEvents.seqId,
-      createdAt: chatEvents.createdAt,
-    })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.chatThreadId, chatThreadId),
-        gt(chatEvents.seqId, indexedSeqId),
-      ),
-    )
-    .orderBy(asc(chatEvents.seqId))
-    .limit(THREAD_EVENT_LIMIT);
-}
-
-type ProjectionRow = Awaited<ReturnType<typeof loadProjectionRows>>[number];
+type ProjectionRow = Pick<
+  typeof chatEvents.$inferSelect,
+  "id" | "runId" | "eventType" | "revokesEventId" | "seqId" | "createdAt"
+> & {
+  content: string | null;
+  userMessage: UserMessageDocument | null;
+};
 
 function nextProjectionWatermark(
   rows: readonly ProjectionRow[],
@@ -192,65 +170,6 @@ function nextProjectionWatermark(
   return rows.length < THREAD_EVENT_LIMIT
     ? Math.max(lastRow?.seqId ?? 0, lastChatEventSeqId)
     : (lastRow?.seqId ?? lastChatEventSeqId);
-}
-
-async function visibleSearchEventIds(
-  tx: Tx,
-  eventIds: readonly string[],
-): Promise<ReadonlySet<string>> {
-  if (eventIds.length === 0) {
-    return new Set();
-  }
-  const rows = await tx
-    .select({ id: chatEvents.id })
-    .from(chatEvents)
-    .where(
-      and(inArray(chatEvents.id, [...eventIds]), visibleChatEventCondition()),
-    );
-  return new Set(
-    rows.map((row) => {
-      return row.id;
-    }),
-  );
-}
-
-async function loadProjectionThread(
-  tx: Tx,
-  chatThreadId: string,
-): Promise<{ readonly lastChatEventSeqId: number } | null> {
-  const [thread] = await tx
-    .select({
-      lastChatEventSeqId:
-        sql`COALESCE(${chatEventSequences.lastSeqId}, 0)`.mapWith(
-          chatEventSequences.lastSeqId,
-        ),
-    })
-    .from(chatThreads)
-    .leftJoin(
-      chatEventSequences,
-      eq(chatEventSequences.chatThreadId, chatThreads.id),
-    )
-    .where(eq(chatThreads.id, chatThreadId))
-    .limit(1);
-  return thread ?? null;
-}
-
-async function loadThreadProjectionProgress(
-  tx: Tx,
-  chatThreadId: string,
-  lastChatEventSeqId: number,
-): Promise<ThreadProjectionProgress> {
-  const [progress] = await tx
-    .select({ indexedSeqId: chatEventSearchMessageWatermarks.indexedSeqId })
-    .from(chatEventSearchMessageWatermarks)
-    .where(eq(chatEventSearchMessageWatermarks.chatThreadId, chatThreadId))
-    .limit(1);
-  const indexedSeqId = progress?.indexedSeqId ?? 0;
-  const lagging = lastChatEventSeqId > indexedSeqId;
-  const rows = lagging
-    ? await loadProjectionRows(tx, chatThreadId, indexedSeqId)
-    : [];
-  return { lagging, rows };
 }
 
 function collectSearchMessageProjections(rows: readonly ProjectionRow[]): {
@@ -295,114 +214,6 @@ function searchMessage(
   };
 }
 
-async function buildSearchProjectionBatch(
-  tx: Tx,
-  thread: CandidateThread,
-  progress: ThreadProjectionProgress,
-): Promise<SearchProjectionBatch> {
-  // Any event type can revoke an earlier one. Resolve every target before
-  // chat_events retention can remove its stable thread/sequence coordinate.
-  const { projectionByEventId, revokedEventIds } =
-    collectSearchMessageProjections(progress.rows);
-  const visibleEventIds = await visibleSearchEventIds(tx, [
-    ...projectionByEventId.keys(),
-  ]);
-  return {
-    messages: progress.rows.flatMap((row) => {
-      const message = searchMessage(
-        row,
-        thread,
-        projectionByEventId,
-        visibleEventIds,
-      );
-      return message ? [message] : [];
-    }),
-    revokedEventIds: [...revokedEventIds],
-  };
-}
-
-async function insertSearchMessages(
-  tx: Tx,
-  messages: readonly CanonicalSearchMessageInsert[],
-): Promise<number> {
-  if (messages.length === 0) {
-    return 0;
-  }
-  const indexed = await tx
-    .insert(chatEventSearchMessages)
-    .values([...messages])
-    .onConflictDoNothing({
-      target: [
-        chatEventSearchMessages.chatThreadId,
-        chatEventSearchMessages.seqId,
-      ],
-    })
-    .returning({ seqId: chatEventSearchMessages.seqId });
-  return indexed.length;
-}
-
-async function deleteRevokedMessages(
-  tx: Tx,
-  revokedEventIds: readonly string[],
-): Promise<number> {
-  if (revokedEventIds.length === 0) {
-    return 0;
-  }
-  const deleted = await tx
-    .delete(chatEventSearchMessages)
-    .where(
-      exists(
-        tx
-          .select({ id: chatEvents.id })
-          .from(chatEvents)
-          .where(
-            and(
-              inArray(chatEvents.id, [...revokedEventIds]),
-              eq(chatEvents.chatThreadId, chatEventSearchMessages.chatThreadId),
-              eq(chatEvents.seqId, chatEventSearchMessages.seqId),
-            ),
-          ),
-      ),
-    )
-    .returning({
-      chatThreadId: chatEventSearchMessages.chatThreadId,
-      seqId: chatEventSearchMessages.seqId,
-    });
-  return deleted.length;
-}
-
-async function writeSearchProjectionBatch(
-  tx: Tx,
-  batch: SearchProjectionBatch,
-): Promise<SearchProjectionWriteStats> {
-  const indexedEvents = await insertSearchMessages(tx, batch.messages);
-  const deletedDocs = await deleteRevokedMessages(tx, batch.revokedEventIds);
-  return { indexedEvents, deletedDocs };
-}
-
-async function advanceProjectionWatermark(
-  tx: Tx,
-  chatThreadId: string,
-  lastChatEventSeqId: number,
-  progress: ThreadProjectionProgress,
-): Promise<void> {
-  if (!progress.lagging) {
-    return;
-  }
-  await tx
-    .insert(chatEventSearchMessageWatermarks)
-    .values({
-      chatThreadId,
-      indexedSeqId: nextProjectionWatermark(progress.rows, lastChatEventSeqId),
-    })
-    .onConflictDoUpdate({
-      target: chatEventSearchMessageWatermarks.chatThreadId,
-      set: {
-        indexedSeqId: sql`GREATEST(${chatEventSearchMessageWatermarks.indexedSeqId}, EXCLUDED.indexed_seq_id)`,
-      },
-    });
-}
-
 function emptyThreadProjectionStats(): ThreadProjectionStats {
   return {
     thread: 0,
@@ -411,41 +222,239 @@ function emptyThreadProjectionStats(): ThreadProjectionStats {
   };
 }
 
+function projectionThreadSelection() {
+  return {
+    lastChatEventSeqId:
+      sql`COALESCE(${chatEventSequences.lastSeqId}, 0)`.mapWith(
+        chatEventSequences.lastSeqId,
+      ),
+  };
+}
+
+function projectionRowSelection() {
+  return {
+    id: chatEvents.id,
+    runId: chatEvents.runId,
+    eventType: chatEvents.eventType,
+    content: canonicalChatEventContent(),
+    userMessage: canonicalChatEventUserMessage(),
+    revokesEventId: chatEvents.revokesEventId,
+    seqId: chatEvents.seqId,
+    createdAt: chatEvents.createdAt,
+  };
+}
+
+function searchEventVisibilityCondition(eventIds: readonly string[]) {
+  return and(
+    inArray(chatEvents.id, [...eventIds]),
+    visibleChatEventCondition(),
+  );
+}
+
+function projectionRowRangeCondition(
+  chatThreadId: string,
+  indexedSeqId: number,
+) {
+  return and(
+    eq(chatEvents.chatThreadId, chatThreadId),
+    gt(chatEvents.seqId, indexedSeqId),
+  );
+}
+
+function searchProjectionBatch(
+  rows: readonly ProjectionRow[],
+  thread: CandidateThread,
+  projections: ReadonlyMap<string, SearchMessageProjection>,
+  visibleEventIds: ReadonlySet<string>,
+  revokedEventIds: ReadonlySet<string>,
+): SearchProjectionBatch {
+  return {
+    messages: rows.flatMap((row) => {
+      const message = searchMessage(row, thread, projections, visibleEventIds);
+      return message ? [message] : [];
+    }),
+    revokedEventIds: [...revokedEventIds],
+  };
+}
+
+function searchMessageConflict() {
+  return {
+    target: [
+      chatEventSearchMessages.chatThreadId,
+      chatEventSearchMessages.seqId,
+    ],
+  };
+}
+
+function revokedSearchMessageCondition(revokedEventIds: readonly string[]) {
+  return and(
+    inArray(chatEvents.id, [...revokedEventIds]),
+    eq(chatEvents.chatThreadId, chatEventSearchMessages.chatThreadId),
+    eq(chatEvents.seqId, chatEventSearchMessages.seqId),
+  );
+}
+
+function searchProjectionWatermark(
+  chatThreadId: string,
+  lastChatEventSeqId: number,
+  progress: ThreadProjectionProgress,
+) {
+  return {
+    chatThreadId,
+    indexedSeqId: nextProjectionWatermark(progress.rows, lastChatEventSeqId),
+  };
+}
+
+function searchProjectionWatermarkConflict() {
+  return {
+    target: chatEventSearchMessageWatermarks.chatThreadId,
+    set: {
+      indexedSeqId: sql`GREATEST(${chatEventSearchMessageWatermarks.indexedSeqId}, EXCLUDED.indexed_seq_id)`,
+    },
+  };
+}
+
+function threadProjectionStats(
+  progress: ThreadProjectionProgress,
+  writes: SearchProjectionWriteStats,
+): ThreadProjectionStats {
+  return {
+    thread: progress.lagging ? 1 : 0,
+    indexedEvents: writes.indexedEvents,
+    deletedDocs: writes.deletedDocs,
+  };
+}
+
 async function projectThread(
-  db: Db,
+  {
+    set,
+  }: Parameters<Write<Promise<ThreadProjectionStats>, [CandidateThread]>>[0],
   thread: CandidateThread,
 ): Promise<ThreadProjectionStats> {
+  const db = set(writeDb$);
   // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0130; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
-    const projectionThread = await loadProjectionThread(
-      tx,
-      thread.chatThreadId,
-    );
+    const chatThreadId = thread.chatThreadId;
+    const projectionThread = await (async (): Promise<{
+      readonly lastChatEventSeqId: number;
+    } | null> => {
+      const [thread] = await tx
+        .select(projectionThreadSelection())
+        .from(chatThreads)
+        .leftJoin(
+          chatEventSequences,
+          eq(chatEventSequences.chatThreadId, chatThreads.id),
+        )
+        .where(eq(chatThreads.id, chatThreadId))
+        .limit(1);
+      return thread ?? null;
+    })();
     if (!projectionThread) {
       return emptyThreadProjectionStats();
     }
-    const progress = await loadThreadProjectionProgress(
-      tx,
-      thread.chatThreadId,
-      projectionThread.lastChatEventSeqId,
-    );
+    const lastChatEventSeqId = projectionThread.lastChatEventSeqId;
+    const progress = await (async (): Promise<ThreadProjectionProgress> => {
+      const [progress] = await tx
+        .select({ indexedSeqId: chatEventSearchMessageWatermarks.indexedSeqId })
+        .from(chatEventSearchMessageWatermarks)
+        .where(eq(chatEventSearchMessageWatermarks.chatThreadId, chatThreadId))
+        .limit(1);
+      const indexedSeqId = progress?.indexedSeqId ?? 0;
+      const lagging = lastChatEventSeqId > indexedSeqId;
+      const rows = lagging
+        ? await (async () => {
+            return await tx
+              .select(projectionRowSelection())
+              .from(chatEvents)
+              .where(projectionRowRangeCondition(chatThreadId, indexedSeqId))
+              .orderBy(asc(chatEvents.seqId))
+              .limit(THREAD_EVENT_LIMIT);
+          })()
+        : [];
+      return { lagging, rows };
+    })();
 
-    const batch = await buildSearchProjectionBatch(tx, thread, progress);
-    const writes = await writeSearchProjectionBatch(tx, batch);
-    await advanceProjectionWatermark(
-      tx,
-      thread.chatThreadId,
-      projectionThread.lastChatEventSeqId,
-      progress,
-    );
+    const batch = await (async (): Promise<SearchProjectionBatch> => {
+      // Any event type can revoke an earlier one. Resolve every target before
+      // chat_events retention can remove its stable thread/sequence coordinate.
+      const { projectionByEventId, revokedEventIds } =
+        collectSearchMessageProjections(progress.rows);
+      const eventIds = [...projectionByEventId.keys()];
+      const visibleEventIds = await (async (): Promise<ReadonlySet<string>> => {
+        if (eventIds.length === 0) {
+          return new Set();
+        }
+        const rows = await tx
+          .select({ id: chatEvents.id })
+          .from(chatEvents)
+          .where(searchEventVisibilityCondition(eventIds));
+        return new Set(
+          rows.map((row) => {
+            return row.id;
+          }),
+        );
+      })();
+      return searchProjectionBatch(
+        progress.rows,
+        thread,
+        projectionByEventId,
+        visibleEventIds,
+        revokedEventIds,
+      );
+    })();
+    const writes = await (async (): Promise<SearchProjectionWriteStats> => {
+      const messages = batch.messages;
+      const indexedEvents = await (async (): Promise<number> => {
+        if (messages.length === 0) {
+          return 0;
+        }
+        const indexed = await tx
+          .insert(chatEventSearchMessages)
+          .values([...messages])
+          .onConflictDoNothing(searchMessageConflict())
+          .returning({ seqId: chatEventSearchMessages.seqId });
+        return indexed.length;
+      })();
+      const revokedEventIds = batch.revokedEventIds;
+      const deletedDocs = await (async (): Promise<number> => {
+        if (revokedEventIds.length === 0) {
+          return 0;
+        }
+        const deleted = await tx
+          .delete(chatEventSearchMessages)
+          .where(
+            exists(
+              tx
+                .select({ id: chatEvents.id })
+                .from(chatEvents)
+                .where(revokedSearchMessageCondition(revokedEventIds)),
+            ),
+          )
+          .returning({
+            chatThreadId: chatEventSearchMessages.chatThreadId,
+            seqId: chatEventSearchMessages.seqId,
+          });
+        return deleted.length;
+      })();
+      return { indexedEvents, deletedDocs };
+    })();
+    await (async (): Promise<void> => {
+      if (!progress.lagging) {
+        return;
+      }
+      await tx
+        .insert(chatEventSearchMessageWatermarks)
+        .values(
+          searchProjectionWatermark(chatThreadId, lastChatEventSeqId, progress),
+        )
+        .onConflictDoUpdate(searchProjectionWatermarkConflict());
+    })();
 
-    return {
-      thread: progress.lagging ? 1 : 0,
-      indexedEvents: writes.indexedEvents,
-      deletedDocs: writes.deletedDocs,
-    };
+    return threadProjectionStats(progress, writes);
   });
 }
+
+const projectThread$ = command(projectThread);
 
 /**
  * Removes a bounded set of derived rows whose canonical thread is gone.
@@ -578,7 +587,7 @@ export const projectChatEventSearch$ = command(
     let deletedDocs = 0;
     for (const thread of candidateThreads) {
       signal.throwIfAborted();
-      const stats = await projectThread(db, thread);
+      const stats = await set(projectThread$, thread);
       signal.throwIfAborted();
       threads += stats.thread;
       indexedEvents += stats.indexedEvents;
