@@ -2332,6 +2332,13 @@
       "when": 1792132881490,
       "tag": "1410_release_legacy_run_history_retains",
       "breakpoints": true
+    },
+    {
+      "idx": 1411,
+      "version": "7",
+      "when": 1792312718251,
+      "tag": "1411_runner_discovery_protection_origin",
+      "breakpoints": true
     }
   ]
 }
