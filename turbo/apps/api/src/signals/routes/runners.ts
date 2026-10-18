@@ -109,11 +109,6 @@ import {
 } from "../services/agent-run-terminal-transition.service";
 import { notifyRunningChatRunOfPendingInput$ } from "../services/chat-thread-queue-drain.service";
 import {
-  capturedModelRequiresOfficialRunner,
-  isCapturedModelClaimConsistent,
-  type ClaimModelCapture,
-} from "../services/built-in-model-claim";
-import {
   connectorCatalogCurrentWhere,
   connectorRuntimeSlugSelectionReadPlan,
   connectorRuntimeSlugSelectionFromRows,
@@ -923,10 +918,12 @@ interface ClaimableJob {
   readonly run: ClaimedRun;
 }
 
-interface ClaimedRun extends ClaimModelCapture {
+interface ClaimedRun {
   readonly id: string;
   readonly userId: string;
   readonly orgId: string;
+  readonly agentId: string | null;
+  readonly modelProvider: (typeof agentRuns.$inferSelect)["modelProvider"];
   readonly prompt: string;
   readonly appendSystemPrompt: string | null;
   readonly vars: unknown;
@@ -1023,11 +1020,6 @@ const getClaimableJob$ = command(
           appendSystemPrompt: agentRuns.appendSystemPrompt,
           vars: agentRuns.vars,
           modelProvider: agentRuns.modelProvider,
-          modelProviderId: agentRuns.modelProviderId,
-          selectedModel: agentRuns.selectedModel,
-          modelRuntimeProvider: agentRuns.modelRuntimeProvider,
-          modelRuntimeModel: agentRuns.modelRuntimeModel,
-          builtInModelKeyId: agentRuns.builtInModelKeyId,
           // Claim's current input may already belong to this Run; only another
           // run-attributed event is evidence of earlier thread activity.
           isFirstRun: sql`
@@ -1082,7 +1074,7 @@ function claimAuthorizationError(
   if (jobWithRun.run.userId !== auth.userId) {
     return forbidden("Job does not belong to user");
   }
-  if (capturedModelRequiresOfficialRunner(jobWithRun.run)) {
+  if (jobWithRun.run.modelProvider === "built-in") {
     return forbidden("Built-in model jobs require an official runner");
   }
   return isOfficialRunnerGroup(jobWithRun.job.runnerGroup)
@@ -2160,9 +2152,6 @@ const claimAuthorizedJob$ = command(
       return storedContextResult.response;
     }
     const storedContext = storedContextResult.value;
-    if (!isCapturedModelClaimConsistent(run, storedContext)) {
-      return badRequestMessage("Job has inconsistent built-in model capture");
-    }
 
     const responseBody = await set(
       buildClaimResponseBodyForClaim$,
