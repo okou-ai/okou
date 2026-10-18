@@ -531,7 +531,12 @@ async function deliverClerkOrganizationMembershipDeleted(
 
 async function listMorningBriefInstallations(actor: ApiTestUser) {
   const response = await accept(
-    workflowCollectionClient().list({
+    setupApp({
+      context,
+      routes: workflowsRoutes.filter(({ route }) => {
+        return route === workflowsCollectionContract.list;
+      }),
+    })(workflowsCollectionContract).list({
       headers: authHeaders(actor),
       query: {},
     }),
@@ -681,7 +686,12 @@ async function listMorningBriefAutomations(
   workflowId: string,
 ) {
   const response = await accept(
-    automationClient().list({
+    setupApp({
+      context,
+      routes: workflowAutomationsRoutes.filter(({ route }) => {
+        return route === workflowAutomationsContract.list;
+      }),
+    })(workflowAutomationsContract).list({
       headers: authHeaders(actor),
       params: { workflowId },
     }),
