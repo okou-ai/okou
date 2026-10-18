@@ -44,6 +44,7 @@ import {
   isNull,
   isNotNull,
   ne,
+  notExists,
   sql,
 } from "drizzle-orm";
 
@@ -2341,122 +2342,179 @@ const reserveDormantIdentity$ = command(
   },
 );
 
+interface DormantIdentityRetentionArgs {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly workflowId: string;
+  readonly definitionName: string;
+  readonly blueprint: OfficialWorkflowAcceptedBlueprint;
+  readonly activeDefinitionOnly: boolean;
+  readonly bindings: readonly OfficialWorkflowParameterBinding[];
+  readonly state: "needs_reconfiguration" | "failed";
+  readonly fallbackIntendedEnabled: boolean;
+}
+
+function dormantRetentionProjection(
+  args: DormantIdentityRetentionArgs,
+  currentTime: Date,
+) {
+  const identity = officialWorkflowAutomationIdentities;
+  return {
+    id: sql`gen_random_uuid()`.mapWith(identity.id).as("id"),
+    workflowId: workflows.id,
+    automationId: sql`NULL::uuid`.mapWith(pgNullDecoder).as("automation_id"),
+    blueprintKey:
+      sql`${sql.param(args.blueprint.key, identity.blueprintKey)}::varchar`
+        .mapWith(identity.blueprintKey)
+        .as("blueprint_key"),
+    state: sql`${sql.param(args.state, identity.state)}::varchar`
+      .mapWith(identity.state)
+      .as("state"),
+    retainedParameterBindings:
+      sql`${sql.param([...args.bindings], identity.retainedParameterBindings)}::jsonb`
+        .mapWith(identity.retainedParameterBindings)
+        .as("retained_parameter_bindings"),
+    retainedIntendedEnabled:
+      sql`${sql.param(args.fallbackIntendedEnabled, identity.retainedIntendedEnabled)}::boolean`
+        .mapWith(identity.retainedIntendedEnabled)
+        .as("retained_intended_enabled"),
+    retainedAppliedFingerprint: sql`NULL::varchar`
+      .mapWith(pgNullDecoder)
+      .as("retained_applied_fingerprint"),
+    createdAt: sql`${sql.param(currentTime, identity.createdAt)}::timestamp`
+      .mapWith(identity.createdAt)
+      .as("created_at"),
+    updatedAt: sql`${sql.param(currentTime, identity.updatedAt)}::timestamp`
+      .mapWith(identity.updatedAt)
+      .as("updated_at"),
+  };
+}
+
 const retainDormantIdentity$ = command(
   async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly workflowId: string;
-      readonly definitionName: string;
-      readonly blueprint: OfficialWorkflowAcceptedBlueprint;
-      readonly activeDefinitionOnly: boolean;
-      readonly bindings: readonly OfficialWorkflowParameterBinding[];
-      readonly state: "needs_reconfiguration" | "failed";
-      readonly fallbackIntendedEnabled: boolean;
-    },
+    { get, set },
+    args: DormantIdentityRetentionArgs,
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const db = set(writeDb$);
-
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0205; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
-      await tx.execute(acceptedCatalogLockStatement());
-      const [catalogRow] = parseRawRows(
-        acceptedCatalogRowSchema,
-        await tx.execute(acceptedCatalogReadStatement()),
+    const readDb = get(db$);
+    const catalogPlan = acceptedOfficialWorkflowCatalogReadPlan();
+    const [catalogRow] = acceptedCatalogRowSchema
+      .array()
+      .parse(
+        await readDb
+          .select(catalogPlan.columns)
+          .from(officialWorkflowCatalogState)
+          .innerJoin(officialWorkflowCatalogReleases, catalogPlan.join)
+          .where(catalogPlan.condition)
+          .limit(1),
       );
-      signal.throwIfAborted();
-      const catalogIdentity = blueprintAuthorityIdentity(args);
-      const acceptedDefinition = matchingAcceptedBlueprintDefinition(
-        acceptedCatalogFromRow(catalogRow),
-        catalogIdentity,
-      );
-      if (!acceptedDefinition) {
-        return false;
-      }
-      const [revisionRow] = parseRawRows(
-        acceptedRevisionRowSchema,
-        await tx.execute(acceptedRevisionReadStatement(acceptedDefinition)),
-      );
-      signal.throwIfAborted();
-      if (!acceptedRevisionBlueprintMatches(revisionRow, catalogIdentity)) {
-        return false;
-      }
-      const [installedWorkflow] = await tx
-        .select({ id: workflows.id })
-        .from(workflows)
-        .where(installedWorkflowCondition(args, args.workflowId))
-        .for("update")
-        .limit(1);
-      if (!installedWorkflow) {
-        return false;
-      }
-      const [active] = await tx
-        .select({ id: workflowAutomations.id })
-        .from(workflowAutomations)
-        .where(
-          and(
-            eq(workflowAutomations.workflowId, args.workflowId),
-            eq(workflowAutomations.officialBlueprintKey, args.blueprint.key),
-          ),
-        )
-        .for("update")
-        .limit(1);
-      if (active) {
-        return false;
-      }
-      const [identity] = await tx
-        .select()
-        .from(officialWorkflowAutomationIdentities)
-        .where(
-          and(
-            eq(
-              officialWorkflowAutomationIdentities.workflowId,
-              args.workflowId,
-            ),
-            eq(
-              officialWorkflowAutomationIdentities.blueprintKey,
-              args.blueprint.key,
-            ),
-          ),
-        )
-        .for("update")
-        .limit(1);
-      const currentTime = nowDate();
-      const choice = resolveDormantReservationChoice({
-        identity,
-        fallbackIntendedEnabled: args.fallbackIntendedEnabled,
-      });
-      const { id: retainedIdentityId, intendedEnabled } = choice;
-      if (identity) {
-        await tx
-          .update(officialWorkflowAutomationIdentities)
-          .set({
-            automationId: null,
-            state: args.state,
-            retainedParameterBindings: [...args.bindings],
-            retainedIntendedEnabled: intendedEnabled,
-            updatedAt: currentTime,
-          })
-          .where(eq(officialWorkflowAutomationIdentities.id, identity.id));
-        return true;
-      }
-      await tx.insert(officialWorkflowAutomationIdentities).values({
-        ...(retainedIdentityId === null ? {} : { id: retainedIdentityId }),
-        workflowId: args.workflowId,
-        automationId: null,
-        blueprintKey: args.blueprint.key,
-        state: args.state,
-        retainedParameterBindings: [...args.bindings],
-        retainedIntendedEnabled: intendedEnabled,
-        retainedAppliedFingerprint: null,
-        createdAt: currentTime,
-        updatedAt: currentTime,
-      });
-      return true;
+    signal.throwIfAborted();
+    const authority = blueprintAuthorityIdentity(args);
+    const catalog = acceptedCatalogFromRow(catalogRow);
+    const definition = matchingAcceptedBlueprintDefinition(catalog, authority);
+    if (!catalog || !definition) {
+      return false;
+    }
+    const revisionPlan = acceptedOfficialWorkflowRevisionReadPlan({
+      name: definition.name,
+      revision: definition.revision,
     });
+    const [revisionRow] = acceptedRevisionRowSchema
+      .array()
+      .parse(
+        await readDb
+          .select(revisionPlan.columns)
+          .from(officialWorkflowDefinitionRevisions)
+          .innerJoin(storages, revisionPlan.storageJoin)
+          .innerJoin(storageVersions, revisionPlan.storageVersionJoin)
+          .where(revisionPlan.condition)
+          .limit(1),
+      );
+    signal.throwIfAborted();
+    if (
+      !acceptedRevisionBlueprintMatches(revisionRow, authority) ||
+      !revisionRow
+    ) {
+      return false;
+    }
+
+    const db = set(writeDb$);
+    const identity = officialWorkflowAutomationIdentities;
+    const currentTime = nowDate();
+    const keyedAutomation = db
+      .select({ id: workflowAutomations.id })
+      .from(workflowAutomations)
+      .where(
+        and(
+          eq(workflowAutomations.workflowId, args.workflowId),
+          eq(workflowAutomations.officialBlueprintKey, args.blueprint.key),
+        ),
+      );
+    const catalogAuthority = db
+      .select({ authority: officialWorkflowCatalogState.authority })
+      .from(officialWorkflowCatalogState)
+      .where(
+        and(
+          eq(officialWorkflowCatalogState.authority, "official"),
+          eq(officialWorkflowCatalogState.acceptedReleaseId, catalog.releaseId),
+        ),
+      );
+    const revisionAuthority = db
+      .select({ revision: officialWorkflowDefinitionRevisions.revision })
+      .from(officialWorkflowDefinitionRevisions)
+      .innerJoin(storages, revisionPlan.storageJoin)
+      .innerJoin(storageVersions, revisionPlan.storageVersionJoin)
+      .where(
+        and(
+          revisionPlan.condition,
+          eq(
+            officialWorkflowDefinitionRevisions.storageName,
+            revisionRow.storageName,
+          ),
+          eq(
+            officialWorkflowDefinitionRevisions.storageId,
+            revisionRow.storageId,
+          ),
+          eq(
+            officialWorkflowDefinitionRevisions.storageVersion,
+            revisionRow.storageVersion,
+          ),
+        ),
+      );
+    const [retained] = await db
+      .insert(identity)
+      .select(
+        db
+          .select(dormantRetentionProjection(args, currentTime))
+          .from(workflows)
+          .where(
+            and(
+              installedWorkflowCondition(args, args.workflowId),
+              exists(catalogAuthority),
+              exists(revisionAuthority),
+              notExists(keyedAutomation),
+            ),
+          ),
+      )
+      .onConflictDoUpdate({
+        target: [identity.workflowId, identity.blueprintKey],
+        set: {
+          automationId: null,
+          state: sql`excluded.state`,
+          retainedParameterBindings: sql`excluded.retained_parameter_bindings`,
+          retainedIntendedEnabled: sql`COALESCE(${identity.retainedIntendedEnabled}, excluded.retained_intended_enabled)`,
+          updatedAt: sql`excluded.updated_at`,
+        },
+        setWhere: and(
+          ne(identity.state, "active"),
+          isNull(identity.automationId),
+          notExists(keyedAutomation),
+        ),
+      })
+      .returning({ id: identity.id });
+    // Cancellation after autocommit skips this response, not the persisted retention.
+    signal.throwIfAborted();
+    return retained !== undefined;
   },
 );
 interface ReservedCreationOrphanArgs {

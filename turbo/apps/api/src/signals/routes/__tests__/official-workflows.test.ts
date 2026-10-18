@@ -3248,3 +3248,222 @@ describe("Official Workflow Run admission", () => {
     });
   });
 });
+
+describe("Morning Brief dormant partial bindings", () => {
+  it.each(
+    MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.flatMap((definitionName) => {
+      return [false, true].map((paused) => {
+        return { definitionName, paused };
+      });
+    }),
+  )(
+    "retains new partial values across dormant correction ($definitionName, paused=$paused)",
+    async ({ definitionName, paused }) => {
+      await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
+        installCatalogStorageFixture();
+        const initialBlueprint: OfficialWorkflowBlueprint = {
+          key: "daily-delivery",
+          parameters: [],
+          desiredState: {
+            kind: "schedule",
+            schedule: { type: "cron", cronExpression: "0 7 * * *" },
+          },
+        };
+        const source = (blueprints: readonly OfficialWorkflowBlueprint[]) => {
+          return catalog(
+            MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.map((name) => {
+              return activeDefinition(
+                name,
+                name === definitionName ? blueprints : [initialBlueprint],
+              );
+            }),
+          );
+        };
+        expect(
+          (await syncCatalog(source([initialBlueprint]))).body.outcome,
+        ).toBe("accepted");
+        const actor = bdd.user();
+        const { defaultAgentId } = await runs.grantProEntitlement(actor, {
+          stripeTransport: "http",
+        });
+        await bdd.updateUserTimezone(actor, "Asia/Tokyo");
+        await runs.ensurePersonalSubscriptionModel(actor);
+        if (!actor.orgId) {
+          throw new Error("Expected an organization-scoped owner");
+        }
+        await updateFeatureSwitchesForUser(
+          context,
+          { ...actor, orgId: actor.orgId },
+          {
+            [FeatureSwitchKey.AgentSuggestion]:
+              definitionName === "internal-test-morning-brief",
+          },
+        );
+        await connectBriefSourceForAgent(actor, defaultAgentId);
+        await accept(
+          morningBriefPreferenceClient().update({
+            headers: authHeaders(actor),
+            body: { enabled: true },
+          }),
+          [200],
+        );
+        const [installation] = await listMorningBriefInstallations(actor);
+        if (!installation) {
+          throw new Error("Expected the public Morning Brief installation");
+        }
+        const [initial] = await listMorningBriefAutomations(
+          actor,
+          installation.id,
+        );
+        if (!initial) {
+          throw new Error("Expected its initial scheduled automation");
+        }
+        if (paused) {
+          await accept(
+            morningBriefPreferenceClient().update({
+              headers: authHeaders(actor),
+              body: { enabled: false },
+            }),
+            [200],
+          );
+        }
+        expect((await syncCatalog(source([]))).body.outcome).toBe("accepted");
+        await executeAutomationCron();
+        await flushWaitUntilForTest();
+        await expect(
+          listMorningBriefAutomations(actor, installation.id),
+        ).resolves.toStrictEqual([]);
+        await accept(
+          automationClient().get({
+            headers: authHeaders(actor),
+            params: { id: initial.id },
+          }),
+          [404],
+        );
+        await expect(
+          listMorningBriefInstallations(actor),
+        ).resolves.toMatchObject([
+          { id: installation.id, official: { definitionName } },
+        ]);
+        const blueprint = (corrected: boolean): OfficialWorkflowBlueprint => {
+          return {
+            key: "daily-delivery",
+            parameters: [
+              {
+                key: "delivery-cron",
+                type: "string",
+                format: "text",
+                required: true,
+                default: "0 8 * * *",
+              },
+              {
+                key: "delivery-timezone",
+                type: "string",
+                format: "timezone",
+                required: true,
+                ...(corrected ? { default: "America/Los_Angeles" } : {}),
+              },
+              {
+                key: "edition",
+                type: "integer",
+                required: true,
+                default: corrected ? 1 : 0,
+              },
+              {
+                key: "include-summary",
+                type: "boolean",
+                required: true,
+                default: corrected,
+              },
+              {
+                key: "note",
+                type: "string",
+                format: "text",
+                required: true,
+                default: corrected ? "new default" : "",
+              },
+            ],
+            desiredState: {
+              kind: "schedule",
+              schedule: {
+                type: "cron",
+                cronExpression: { parameter: "delivery-cron" },
+                timezone: { parameter: "delivery-timezone" },
+              },
+            },
+          };
+        };
+        expect(
+          (await syncCatalog(source([blueprint(false)]))).body.outcome,
+        ).toBe("accepted");
+        await executeAutomationCron();
+        await flushWaitUntilForTest();
+        await expect(
+          listMorningBriefAutomations(actor, installation.id),
+        ).resolves.toStrictEqual([]);
+        await expect(
+          listMorningBriefInstallations(actor),
+        ).resolves.toMatchObject([
+          { id: installation.id, official: { definitionName } },
+        ]);
+        await accept(
+          automationClient().get({
+            headers: authHeaders(actor),
+            params: { id: initial.id },
+          }),
+          [404],
+        );
+        const outsider = bdd.user();
+        await accept(
+          automationClient().get({
+            headers: authHeaders(outsider),
+            params: { id: initial.id },
+          }),
+          [404],
+        );
+        expect(
+          (await syncCatalog(source([blueprint(true)]))).body.outcome,
+        ).toBe("accepted");
+        await executeAutomationCron();
+        await flushWaitUntilForTest();
+        const [restored] = await listMorningBriefAutomations(
+          actor,
+          installation.id,
+        );
+        expect(restored).toMatchObject({
+          id: initial.id,
+          enabled: !paused,
+          schedule: {
+            type: "cron",
+            cronExpression: "0 8 * * *",
+            timezone: "America/Los_Angeles",
+          },
+          official: {
+            blueprintKey: "daily-delivery",
+            intendedEnabled: !paused,
+            reconciliationStatus: "current",
+            parameterBindings: [
+              { key: "delivery-cron", value: "0 8 * * *" },
+              { key: "delivery-timezone", value: "America/Los_Angeles" },
+              { key: "edition", value: 0 },
+              { key: "include-summary", value: false },
+              { key: "note", value: "" },
+            ],
+          },
+        });
+        await accept(
+          automationClient().get({
+            headers: authHeaders(outsider),
+            params: { id: initial.id },
+          }),
+          [404],
+        );
+        await executeAutomationCron();
+        await flushWaitUntilForTest();
+        await expect(
+          listMorningBriefAutomations(actor, installation.id),
+        ).resolves.toStrictEqual([restored]);
+      });
+    },
+  );
+});
