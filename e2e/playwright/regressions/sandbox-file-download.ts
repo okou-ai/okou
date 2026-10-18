@@ -52,6 +52,8 @@ window.probe = {
       const bytes = new Uint8Array(message.length);
       for (let i = 0; i < bytes.length; i++) bytes[i] = (Number(message.offset) + i) % 251;
       this.produced += bytes.length;
+      // Match the page's progress-triggered worker event, not a periodic ping.
+      worker.postMessage({type: 'progress', version: 1, id});
       channel.port1.postMessage({type: 'chunk', offset: message.offset, data: bytes.buffer, final: this.produced === size}, [bytes.buffer]);
     };
     channel.port1.onmessage = (event) => {

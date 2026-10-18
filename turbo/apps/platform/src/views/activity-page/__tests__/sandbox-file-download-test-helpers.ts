@@ -76,12 +76,24 @@ export async function downloadBrowser(
   const worker = Object.assign(new EventTarget(), {
     state: "activated",
     scriptURL: "https://app.okou.ai/sandbox-file-download-v1-sw.js",
-    postMessage(data: unknown, transfer: Transferable[]) {
+    postMessage(data: unknown, transfer: Transferable[] = []) {
       const transferred = structuredClone(
         { data, ports: transfer },
         { transfer },
       );
       const port = transferred.ports[0];
+      if (transferred.ports.length === 0) {
+        listeners.get("message")?.({
+          data: transferred.data,
+          ports: [],
+          source: {
+            type: "window",
+            id: "page",
+            url: "https://app.okou.ai/activities/run",
+          },
+        });
+        return;
+      }
       if (!(port instanceof NativeMessagePort)) {
         throw new Error("Expected a transferred MessagePort");
       }
