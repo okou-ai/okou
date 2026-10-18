@@ -390,7 +390,7 @@ async fn completed_claims_progress_without_reactor_polling_and_recover_on_result
         entered = env.handle.wait_claim_in_flight(2, Duration::from_secs(10)) => assert!(entered),
     }
     // Deliberately do not poll Reactor again. Both independently scheduled
-    // claims finish, but no result can transfer to activation.
+    // claims/activations can finish, but no guarded result can transfer to an executor.
     env.handle.unblock_claims();
     assert!(
         env.handle
