@@ -29,7 +29,7 @@ class NativeReportTests(unittest.TestCase):
             "required_fixture_tail_bytes": 64 * 1024 * 1024,
         }
         self.collector = {
-            "format": "runner-memory-calibration-v1", "success": True,
+            "format": "runner-memory-calibration-v2", "success": True,
             "cleanup_confirmed": True, "driver_wait_confirmed": True, "driver_exit_code": 0,
             "remaining_children": [], "errors": [],
             "metadata": {"native_terminal_artifacts": self.artifacts},
@@ -58,7 +58,10 @@ class NativeReportTests(unittest.TestCase):
                 self.samples.append({
                     "monotonic_ns": clock + 1, "mem_available_bytes": 100000,
                     "sample_age_ns": 2, "read_duration_ns": 1,
-                    "processes": [{"pid": 123, "start_ticks": 456, "rss_bytes": 4096, "pss_bytes": 2048}],
+                    "processes": [{"pid": 123, "start_ticks": 456, "rss_bytes": 4096, "pss_bytes": 2048,
+                                   "residency_state": "measured", "residency_reason": "smaps_rollup",
+                                   "observed_monotonic_ns": clock + 1,
+                                   "exit_observed_monotonic_ns": None}],
                 })
                 clock += 10
 
@@ -145,9 +148,68 @@ class NativeReportTests(unittest.TestCase):
     def test_unknown_residency_remains_an_explicit_lower_bound(self):
         self.samples[1]["processes"].append({
             "pid": 999, "start_ticks": 888, "rss_bytes": None, "pss_bytes": None,
+            "residency_state": "unavailable", "residency_reason": "permission_denied",
+            "observed_monotonic_ns": self.samples[1]["monotonic_ns"],
+            "exit_observed_monotonic_ns": None,
         })
         result = self.validate()
         self.assertFalse(result["residency_complete"])
+
+    def test_positive_process_exit_is_diagnostic_not_zero_or_complete_residency(self):
+        clock = self.samples[1]["monotonic_ns"]
+        self.samples[1]["processes"].append({
+            "pid": 999, "start_ticks": 888, "rss_bytes": None, "pss_bytes": None,
+            "residency_state": "exited", "residency_reason": "pidfd_exit",
+            "observed_monotonic_ns": clock, "exit_observed_monotonic_ns": clock - 1,
+        })
+        result = self.validate()
+        self.assertFalse(result["residency_complete"])
+        self.assertFalse(result["memory_envelope_calibrated"])
+        self.assertFalse(result["production_protection_proven"])
+        self.assertTrue(any(
+            window.get("missing_residency_reasons", {}).get("pidfd_exit") == 1
+            for case in result["cases"].values() for window in case.values()
+            if isinstance(window, dict)))
+
+    def test_malformed_or_contradictory_residency_diagnostics_are_refused(self):
+        original = dict(self.samples[0]["processes"][0])
+        for changed in (
+                {"pid": True}, {"start_ticks": False},
+                {"residency_state": "exited"}, {"residency_reason": "permission_denied"},
+                {"residency_reason": []}, {"rss_bytes": None}, {"pss_bytes": True},
+                {"observed_monotonic_ns": 0}, {"observed_monotonic_ns": 10**12},
+                {"exit_observed_monotonic_ns": 1},
+                {"residency_state": "unavailable", "residency_reason": "smaps_missing"},
+        ):
+            with self.subTest(changed=changed):
+                self.samples[0]["processes"][0] = dict(original, **changed)
+                with self.assertRaisesRegex(ValueError, "residency"):
+                    self.validate()
+        self.samples[0]["processes"][0] = original
+
+    def test_exit_needs_its_own_positive_consistent_clock(self):
+        original = dict(self.samples[0]["processes"][0])
+        for clock in (None, False, 0, original["observed_monotonic_ns"] + 1):
+            with self.subTest(clock=clock):
+                self.samples[0]["processes"][0] = dict(
+                    original, residency_state="exited", residency_reason="pidfd_exit",
+                    rss_bytes=None, pss_bytes=None, exit_observed_monotonic_ns=clock)
+                with self.assertRaisesRegex(ValueError, "exit lacks positive timed evidence"):
+                    self.validate()
+
+    def test_missing_diagnostics_duplicate_identity_and_old_current_format_are_refused(self):
+        row = self.samples[0]["processes"][0]
+        del row["residency_reason"]
+        with self.assertRaisesRegex(ValueError, "diagnostic contract"):
+            self.validate()
+        row["residency_reason"] = "smaps_rollup"
+        self.samples[0]["processes"].append(dict(row))
+        with self.assertRaisesRegex(ValueError, "duplicate residency identity"):
+            self.validate()
+        self.samples[0]["processes"].pop()
+        self.collector["format"] = "runner-memory-calibration-v1"
+        with self.assertRaisesRegex(ValueError, "collector did not positively"):
+            self.validate()
 
 
 if __name__ == "__main__":

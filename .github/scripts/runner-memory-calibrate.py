@@ -9,6 +9,7 @@ import ctypes
 import json
 import math
 import os
+import select
 import selectors
 import signal
 import stat
@@ -125,14 +126,37 @@ def discover_owned(owned):
             pending.extend((child, pid, generation) for child in children)
 
 
+def residency_record(pid, generation, state, reason, values=None, exited_at=None):
+    return {
+        "pid": pid,
+        "start_ticks": generation,
+        "rss_bytes": None,
+        "pss_bytes": None,
+        **(values or {}),
+        "residency_state": state,
+        "residency_reason": reason,
+        "observed_monotonic_ns": time.monotonic_ns(),
+        "exit_observed_monotonic_ns": exited_at,
+    }
+
+
 def residency(pid, generation):
+    def unavailable(reason):
+        return residency_record(pid, generation, "unavailable", reason)
+
     before = process_identity(pid)
-    if before is None or before[0] != generation or before[1] == "Z":
-        return None
+    if before is None:
+        return unavailable("identity_missing")
+    if before[0] != generation:
+        return unavailable("identity_changed")
+    if before[1] == "Z":
+        return unavailable("zombie")
     try:
         content = bounded_read(f"/proc/{pid}/smaps_rollup").decode("ascii")
-    except (FileNotFoundError, ProcessLookupError, PermissionError):
-        return None
+    except (FileNotFoundError, ProcessLookupError):
+        return unavailable("smaps_missing")
+    except PermissionError:
+        return unavailable("permission_denied")
     values = {}
     for line in content.splitlines():
         key, separator, rest = line.partition(":")
@@ -143,10 +167,79 @@ def residency(pid, generation):
             values[key.lower() + "_bytes"] = int(fields[0]) * 1024
     after = process_identity(pid)
     if after is None or after[0] != generation or after[1] == "Z":
-        return None
+        return unavailable("identity_raced")
     if len(values) != 2:
-        return None
-    return {"pid": pid, "start_ticks": generation, **values}
+        return unavailable("smaps_incomplete")
+    return residency_record(pid, generation, "measured", "smaps_rollup", values)
+
+
+class ResidencyObserver:
+    """Diagnostic pidfds never replace the collector's cleanup ownership map."""
+
+    def __init__(self):
+        self.pidfds = {}
+        self.exited = {}
+
+    def capture(self, pid, generation):
+        before = process_identity(pid)
+        if before is None or before[0] != generation:
+            return
+        try:
+            fd = os.pidfd_open(pid)
+        except ProcessLookupError:
+            return
+        try:
+            after = process_identity(pid)
+            if after is not None and after[0] == generation:
+                self.pidfds[(pid, generation)] = fd
+                return
+        except BaseException:
+            os.close(fd)
+            raise
+        os.close(fd)
+
+    def observe_exit(self, key):
+        fd = self.pidfds.get(key)
+        if fd is None:
+            return
+        poll = select.poll()
+        poll.register(fd, select.POLLIN)
+        for _, event in poll.poll(0):
+            if event & (select.POLLERR | select.POLLNVAL):
+                raise OSError("residency pidfd observation failed")
+            if event & select.POLLIN:
+                self.exited[key] = time.monotonic_ns()
+                # Retire only this observation descriptor, never cleanup custody.
+                del self.pidfds[key]
+                os.close(fd)
+
+    def sample(self, pid, generation):
+        key = (pid, generation)
+        if key not in self.pidfds and key not in self.exited:
+            self.capture(pid, generation)
+        self.observe_exit(key)
+        if key not in self.exited:
+            value = residency(pid, generation)
+            if value["residency_state"] == "measured":
+                return value
+            # Exit can race the stat/smaps reads. Only our fenced pidfd proves it.
+            self.observe_exit(key)
+            if key not in self.exited:
+                return value
+        return residency_record(
+            pid, generation, "exited", "pidfd_exit", exited_at=self.exited[key]
+        )
+
+    def close(self):
+        failures = []
+        for key, fd in list(self.pidfds.items()):
+            del self.pidfds[key]
+            try:
+                os.close(fd)
+            except (OSError, FixtureCancelled) as error:
+                failures.append(error)
+        if failures:
+            raise failures[0]
 
 
 def signal_owned(owned, sig):
@@ -245,6 +338,7 @@ def collect(
         raise OSError(ctypes.get_errno(), "set fixture child subreaper")
     output = create_output(output)
     owned = {}
+    residency_observer = ResidencyObserver()
     waits = []
     errors = []
     cleanup_errors = []
@@ -308,15 +402,7 @@ def collect(
                     host_read_duration = time.monotonic_ns() - read_start
                     measurements = []
                     for pid, generation in owned.items():
-                        value = residency(pid, generation)
-                        if value is None:
-                            value = {
-                                "pid": pid,
-                                "start_ticks": generation,
-                                "rss_bytes": None,
-                                "pss_bytes": None,
-                            }
-                        measurements.append(value)
+                        measurements.append(residency_observer.sample(pid, generation))
                     if any(value["rss_bytes"] is None for value in measurements):
                         residency_incomplete_samples += 1
                     sample = {
@@ -439,10 +525,15 @@ def collect(
         if driver is not None:
             for stream in (driver.stdout, driver.stderr):
                 stream.close()
+        try:
+            residency_observer.close()
+        except (OSError, FixtureCancelled) as error:
+            cleanup_errors.append(str(error))
+            errors.append(f"residency descriptor retirement uncertain: {error}")
     remaining_children = child_pids(os.getpid())
     joined = driver is not None and driver.returncode is not None
     report = {
-        "format": "runner-memory-calibration-v1",
+        "format": "runner-memory-calibration-v2",
         "metadata": metadata,
         "started_monotonic_ns": started,
         "started_unix_ns": started_unix_ns,

@@ -173,6 +173,8 @@ class ContinuationReportTests(unittest.TestCase):
             for process in sample["processes"]:
                 process["rss_bytes"]=None
                 process["pss_bytes"]=None
+                process["residency_state"]="unavailable"
+                process["residency_reason"]="permission_denied"
         with self.assertRaises(ValueError): self.validate()
 
 

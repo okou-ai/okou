@@ -1,5 +1,22 @@
 # Guarded idle terminal fixture
 
+## Current P1 diagnostic contract
+
+New native runs consume `runner-memory-calibration-v2` from the matching
+[owned collector](../../../../.github/scripts/runner-memory-calibrate.md).
+Every process sample carries PID/start generation, explicit residency state and
+reason, the observation clock and any positively observed pidfd-exit clock.
+The shared reader rejects contradictory diagnostics and reports per-phase
+`missing_residency_reasons`. Missing or raced reads remain distinct from positive
+process exit; both retain null bytes and incomplete residency. Collector exit
+observations never replace the original Guest/backing, accepted-I/O or lease
+completion witnesses and establish no physical memory relief.
+
+Historical v1 bundles retain their original frozen consumers and source/producer
+identities. Do not feed them to the current reader as new v2/current-source proof.
+This format change alone does not establish complete residency, calibrated
+envelopes, bootstrap provenance, native Guest execution or production protection.
+
 ## Pressure shutdown with independently accepted readers
 
 `native_pressure_shutdown_retains_independent_accepted_reads` holds two actual

@@ -32,8 +32,12 @@ class SharedReadsReportTests(unittest.TestCase):
                 event["unix_ns"] = event["monotonic_ns"]+1000
             for sample in self.samples[offset*6:offset*6+6]:
                 sample["monotonic_ns"] *= 10**9
+                for process in sample["processes"]:
+                    process["observed_monotonic_ns"] = sample["monotonic_ns"]
                 sample["processes"].append({"pid": 124, "start_ticks": 457,
-                    "rss_bytes": None, "pss_bytes": None})
+                    "rss_bytes": None, "pss_bytes": None,
+                    "residency_state": "unavailable", "residency_reason": "permission_denied",
+                    "observed_monotonic_ns": sample["monotonic_ns"], "exit_observed_monotonic_ns": None})
             base = terminal[1]["monotonic_ns"]
 
             def clock(ms):
