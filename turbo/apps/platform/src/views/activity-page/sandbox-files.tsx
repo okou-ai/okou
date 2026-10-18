@@ -109,7 +109,7 @@ function FilesDownloadButton({
               variant="quiet"
               size="icon-sm"
               className={cn(
-                "shrink-0 [@media(pointer:coarse)]:size-10",
+                "shrink-0 hover:bg-transparent active:bg-transparent [@media(pointer:coarse)]:size-10",
                 !preparing &&
                   "[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/files-row:opacity-100 group-has-[:focus-visible]/files-row:opacity-100",
               )}
@@ -205,7 +205,7 @@ function FilesRow({
       );
     }
     return (
-      <div className="group/files-row flex h-full min-w-0 items-center gap-2 px-3 text-sm">
+      <div className="group/files-row flex h-full min-w-0 items-center gap-2 rounded-lg px-3 text-sm transition-colors hover:bg-state-hover has-[:focus-visible]:bg-state-hover has-[:active]:bg-state-pressed">
         <span className="w-3.5 shrink-0" />
         {entry.kind === "symlink" ? (
           <Link size={16} className="shrink-0 text-muted-foreground" />
