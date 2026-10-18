@@ -131,3 +131,78 @@ async fn close_for_upload_keeps_prequeued_row_when_drain_budget_is_exhausted() {
     // Keep the producer open until after close; EOF must not make this test pass.
     drop(writer);
 }
+
+#[tokio::test]
+async fn close_for_upload_keeps_ready_row_when_drain_ends() {
+    for invalid_utf8 in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("network.jsonl");
+        let manager = NetworkLogManager::new();
+        let session = manager.register_source_ip("10.200.0.2", path.clone()).await;
+        let row = json!({"type": "dns", "host": "terminal.test"});
+        let (mut writer, reader) = UnixStream::pair().unwrap();
+        let mut input = format!("{row}\n").into_bytes();
+        if invalid_utf8 {
+            input.extend_from_slice(b"\xff\n");
+        }
+        writer.write_all(&input).await.unwrap();
+        writer.shutdown().await.unwrap();
+        reader.readable().await.unwrap();
+        let mut lines = BufReader::new(reader).lines();
+        let (producer, mut drain_rx) = NetworkLogDrainProducer::channel("dns");
+        let coordinator = NetworkLogDrainCoordinator::new(vec![producer]);
+        let cancel = CancellationToken::new();
+        let mut on_line = |line: String| {
+            let manager = manager.clone();
+            async move {
+                assert!(
+                    manager
+                        .append_for_ip("10.200.0.2", serde_json::from_str(&line).unwrap())
+                        .await
+                );
+            }
+        };
+
+        let (observation, outcome) = timeout(Duration::from_secs(5), async {
+            tokio::join!(
+                session.close_for_upload(RunId::from(uuid::Uuid::nil()), &coordinator),
+                async {
+                    // Read only after accepting the actual close request, so the
+                    // terminal observation belongs to this drain, not the idle reader.
+                    let request = drain_rx.recv().await.unwrap();
+                    process_drain_request(&mut lines, &cancel, &mut on_line, request).await
+                }
+            )
+        })
+        .await
+        .expect("terminal drain must complete the network-log close");
+
+        assert_eq!(observation.drain_status("dns"), "acknowledged");
+        assert!(!observation.writer_failed());
+        match (invalid_utf8, outcome) {
+            (
+                false,
+                DrainReadyLinesOutcome::Stop(DrainableLineReaderExit::Eof { during_drain: true }),
+            ) => {}
+            (
+                true,
+                DrainReadyLinesOutcome::Stop(DrainableLineReaderExit::ReadError {
+                    during_drain: true,
+                    error,
+                }),
+            ) => assert_eq!(error.kind(), std::io::ErrorKind::InvalidData),
+            other => panic!("unexpected terminal drain: {other:?}"),
+        }
+        let content = std::fs::read_to_string(&path).unwrap();
+        let rows: Vec<serde_json::Value> = content
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(rows, vec![row]);
+        assert!(
+            !manager
+                .append_for_ip("10.200.0.2", json!({"type": "dns", "host": "late.test"}))
+                .await
+        );
+    }
+}
