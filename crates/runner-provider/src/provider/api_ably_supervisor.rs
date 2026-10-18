@@ -258,22 +258,18 @@ impl PollWakeups {
         let defer_job_return =
             outcome == PollOutcome::JobFound && has_new_wakeup && inner.deferred_poll.is_some();
         match outcome {
-            PollOutcome::JobFound => {
-                // A successful poll can mean more eligible work is already queued,
-                // so re-arm the immediate path to drain backlog without waiting
-                // for the ordinary slow/fast cadence.
-                inner.poll_now = true;
+            PollOutcome::JobFound | PollOutcome::Empty => {
                 if !has_new_wakeup {
                     inner.deferred_poll = None;
                     inner.wakeup_retry_at = None;
                 }
-                inner.bump_generation();
-                should_notify = true;
-            }
-            PollOutcome::Empty => {
-                if !has_new_wakeup {
-                    inner.deferred_poll = None;
-                    inner.wakeup_retry_at = None;
+                if outcome == PollOutcome::JobFound {
+                    // A successful poll can mean more eligible work is already queued,
+                    // so re-arm the immediate path to drain backlog without waiting
+                    // for the ordinary slow/fast cadence.
+                    inner.poll_now = true;
+                    inner.bump_generation();
+                    should_notify = true;
                 }
             }
             PollOutcome::Failure if due.reason.is_wakeup() => {
@@ -1340,6 +1336,47 @@ mod tests {
             )
             .await;
         assert_eq!(poll_reason(reason), Some(PollReason::WakeupRetry));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn successful_immediate_poll_retires_pending_wakeup_retry() {
+        let slow_interval = Duration::from_secs(30);
+        let fast_interval = Duration::from_secs(5);
+
+        for outcome in [PollOutcome::JobFound, PollOutcome::Empty] {
+            let wakeups = PollWakeups::new(true);
+            let cancel = CancellationToken::new();
+            let initial = wakeups
+                .wait_for_poll_due(&cancel, slow_interval, fast_interval)
+                .await
+                .unwrap();
+            assert_eq!(initial.reason(), PollReason::Immediate);
+            wakeups.record_poll_result(initial, PollOutcome::Failure, fast_interval);
+
+            wakeups.request_immediate_poll();
+            let due = wakeups
+                .wait_for_poll_due(&cancel, slow_interval, fast_interval)
+                .await
+                .unwrap();
+            assert_eq!(due.reason(), PollReason::Immediate);
+            wakeups.record_poll_result(due, outcome, fast_interval);
+
+            if outcome == PollOutcome::JobFound {
+                let backlog = wakeups
+                    .wait_for_poll_due(&cancel, slow_interval, fast_interval)
+                    .await
+                    .unwrap();
+                assert_eq!(backlog.reason(), PollReason::Immediate);
+            }
+
+            let started = tokio::time::Instant::now();
+            let next = wakeups
+                .wait_for_poll_due(&cancel, slow_interval, fast_interval)
+                .await
+                .unwrap();
+            assert_eq!(next.reason(), PollReason::Slow, "{outcome:?}");
+            assert_eq!(started.elapsed(), slow_interval, "{outcome:?}");
+        }
     }
 
     #[tokio::test(start_paused = true)]
