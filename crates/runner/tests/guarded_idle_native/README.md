@@ -1,5 +1,36 @@
 # Guarded idle terminal fixture
 
+## Pressure shutdown with independently accepted readers
+
+`native_pressure_shutdown_retains_independent_accepted_reads` holds two actual
+guarded File producers after 1 MiB of the original immutable 4 GiB snapshot.
+With an actual observation request held, a retained pressure shutdown must remain
+Pending. The stopped controller refuses a new reader while both original drains
+remain Pending and acknowledged heartbeat/independent host observation complete.
+Releasing the observation joins controller/sampler shutdown while both readers
+still retain two full allowances. Separate physical releases/joins yield cancelled
+exactly-1-MiB outcomes and 2→1→0 allowances with actual fresh settlement samples.
+All dependencies join before original required saving, exact backing exit and
+durable tail. Failure cleanup retains the same shutdown future and joins accepted
+work; timeout remains failure.
+
+Metadata requires `native_read_stop_policy_json`, `native_read_stop_inputs_json`,
+`native_read_stop_snapshot_bytes` (4294967296), and the existing exact original
+terminal artifact/source identities. Validate both fresh and matching-snapshot
+modes with:
+
+```bash
+python3 crates/runner/tests/guarded_idle_native/read_stop_report.py <p1-directory>
+```
+
+This separate `native-read-stop-report-v1` does not change existing reports or
+production startup. Original supplied policy/P1 guards, immutable data and full
+Guest lease remain mandatory. Controller stop or sampler join grants no physical
+memory credit. Production P4, full/cold residency, calibration, provenance,
+broader races/stalled storage, useful memory relief and OOM protection remain
+unverified. Ordinary Cargo runs the Supervisor real-file composition and the
+strict consumer's persisted-file/CLI acceptance/refusal tests without KVM.
+
 ## Accepted read revocation through stale recovery
 
 `native_read_revocation_retains_accepted_custody_through_recovery` holds two

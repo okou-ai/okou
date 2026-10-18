@@ -25,6 +25,7 @@ mod pressure;
 mod pressure_condition;
 mod read_cancellation;
 mod read_revocation;
+mod read_stop;
 mod recovery;
 mod recovery_source;
 mod refusal;
@@ -76,6 +77,7 @@ enum Corpus {
     ReadCancellation,
     SharedReads,
     ReadRevocation,
+    ReadStop,
     CreateCancellation,
     ReturnedGuest(sandbox_firecracker::GuestPreparationStage),
 }
@@ -551,6 +553,28 @@ async fn native_read_revocation_retains_accepted_custody_through_recovery() -> T
     measured_selected_corpus(&[NativeScope::Startup], Corpus::ReadRevocation).await
 }
 
+#[tokio::test]
+#[ignore = "requires explicit packaged Guest artifacts, KVM, original supplied bounds and P1 collector"]
+async fn native_pressure_shutdown_retains_independent_accepted_reads() -> TestResult<()> {
+    measured_selected_corpus(&[NativeScope::Startup], Corpus::ReadStop).await
+}
+
+#[test]
+fn native_read_stop_report_requires_separate_sampler_and_file_joins() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/read_stop_report_test.py"
+        ))
+        .output()
+        .expect("native read stop requires Python 3");
+    assert!(
+        output.status.success(),
+        "native read stop report failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 #[test]
 fn native_read_revocation_report_requires_stale_recovery_and_retained_custody() {
     let output = std::process::Command::new("python3")
@@ -798,6 +822,8 @@ async fn exercise_selected_factories(
                                 "ReadCancellation".into()
                             } else if corpus == Corpus::ReadRevocation {
                                 "ReadRevocation".into()
+                            } else if corpus == Corpus::ReadStop {
+                                "ReadStop".into()
                             } else if corpus == Corpus::SharedReads {
                                 "SharedReads".into()
                             } else if corpus == Corpus::CreateCancellation {
@@ -1238,6 +1264,14 @@ async fn exercise_retirement(
                 Ok(None)
             }
             NativeScope::Startup => {
+                if corpus == Corpus::ReadStop {
+                    read_stop::exercise(transitions::Context {
+                        factory: factory.clone(), pool: pool.clone(), status: status.clone(),
+                        operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
+                        rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
+                    }, inputs, recovery_source.as_ref().ok_or_else(|| io::Error::other("read stop source missing"))?, proof, paths.base_dir()).await?;
+                    return Ok(None);
+                }
                 if corpus == Corpus::ReadRevocation {
                     read_revocation::exercise(transitions::Context {
                         factory: factory.clone(), pool: pool.clone(), status: status.clone(),
