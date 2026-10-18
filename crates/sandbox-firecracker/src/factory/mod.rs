@@ -96,6 +96,7 @@ impl FirecrackerFactory {
             binary_path: config.binary_path.clone(),
             kernel_path: config.kernel_path.clone(),
             rootfs_path: config.rootfs_path.clone(),
+            runtime_path: config.runtime_path.clone(),
             mode,
         })
         .await?;
@@ -720,6 +721,7 @@ mod tests {
             binary_path: PathBuf::from("/tmp/firecracker"),
             kernel_path: PathBuf::from("/tmp/vmlinux"),
             rootfs_path: PathBuf::from("/tmp/rootfs.ext4"),
+            runtime_path: PathBuf::from("/tmp/runtime.ext4"),
             base_dir,
             profile: "vm0/default".into(),
             proxy_port: None,

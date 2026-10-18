@@ -126,7 +126,7 @@ fn build_claude_command_with_config(
         // artifact rather than the sandbox's baked-in `/usr/local/bin`.
         mock_claude_path.to_string()
     } else {
-        "claude".to_string()
+        guest_contracts::runtime_drive::RUNTIME_CLAUDE.to_string()
     };
 
     let mut cmd = vec![bin];
@@ -309,7 +309,7 @@ mod tests {
     #[test]
     fn build_claude_command_uses_claude_binary() {
         let cmd = build_claude_command_for_test(false);
-        assert_eq!(cmd[0], "claude");
+        assert_eq!(cmd[0], guest_contracts::runtime_drive::RUNTIME_CLAUDE);
     }
 
     #[test]

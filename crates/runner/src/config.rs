@@ -344,6 +344,13 @@ async fn validate_profile_rootfs_artifacts(
     let rootfs_paths = RootfsPaths::new(home, &profile.rootfs_hash);
     for path in rootfs_paths.expected_files() {
         check_path_exists(&path, &format!("profile {name} rootfs")).await?;
+        let metadata = tokio::fs::symlink_metadata(&path).await?;
+        if !metadata.is_file() || metadata.len() == 0 {
+            return Err(RunnerError::Config(format!(
+                "profile {name} image is not a nonempty regular file: {}",
+                path.display()
+            )));
+        }
     }
     Ok(rootfs_paths)
 }
@@ -688,6 +695,7 @@ impl RunnerConfig {
             binary_path: firecracker.binary.clone(),
             kernel_path: firecracker.kernel.clone(),
             rootfs_path: rootfs_paths.rootfs(),
+            runtime_path: rootfs_paths.runtime(),
             base_dir: base_dir.to_path_buf(),
             snapshot: Some(sandbox::SnapshotRef {
                 output_dir: snapshot_paths.dir().to_path_buf(),

@@ -261,6 +261,7 @@ prepare_case() {
   : >"${fixture_root}/firecracker/v1/firecracker"
   : >"${fixture_root}/firecracker/v1/vmlinux-test"
   : >"${fixture_root}/images/${rootfs_hash}/rootfs.ext4"
+  : >"${fixture_root}/images/${rootfs_hash}/runtime.ext4"
 }
 
 job_ref_for_start_index() {

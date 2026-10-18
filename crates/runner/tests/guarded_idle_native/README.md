@@ -611,7 +611,7 @@ when status or old teardown is held. Physical coverage and shutdown ownership
 remain with the tracker, so logical release never predicts memory relief.
 
 Supply `OKOU_TEST_RPC_BASE_DIR` as a disposable directory, plus
-`OKOU_TEST_RPC_FIRECRACKER`, `OKOU_TEST_RPC_KERNEL`, `OKOU_TEST_RPC_ROOTFS`,
+`OKOU_TEST_RPC_FIRECRACKER`, `OKOU_TEST_RPC_KERNEL`, `OKOU_TEST_RPC_ROOTFS`, `OKOU_TEST_RPC_RUNTIME`,
 `OKOU_TEST_RPC_SNAPSHOT_DIR`, `OKOU_TEST_RPC_SNAPSHOT_HASH` and
 `OKOU_TEST_IDLE_ROOTFS_HASH` from the matching artifact preparation. Each mode
 creates its own temporary Runner workspace/cache below that base and shuts down
@@ -685,7 +685,7 @@ preflight fits the bounded collector's workload. Record that build option in the
 experiment metadata; it does not establish a calibrated memory envelope.
 
 `OKOU_TEST_TERMINAL_ARTIFACTS` names a JSON object with `source_sha`,
-`test_binary_sha256`, `firecracker_sha256`, `kernel_sha256`, `rootfs_sha256`, `snapshot_id`,
+`test_binary_sha256`, `firecracker_sha256`, `kernel_sha256`, `rootfs_sha256`, `runtime_sha256`, `snapshot_id`,
 `snapshot_files` (filename to SHA-256), `snapshot_preparation_sha256` and
 `policy_sha256`. All hashes are lower-case hexadecimal. The test verifies the
 compiled source value and hashes its actual

@@ -735,6 +735,9 @@ async fn nameless_config_reaches_local_provider_setup_before_runtime() {
     let snapshot = rootfs.snapshot(SNAPSHOT_HASH);
     tokio::fs::create_dir_all(snapshot.dir()).await.unwrap();
     tokio::fs::write(rootfs.rootfs(), b"rootfs").await.unwrap();
+    tokio::fs::write(rootfs.runtime(), b"runtime")
+        .await
+        .unwrap();
     for path in snapshot.required_artifacts() {
         if path == snapshot.runtime_source() {
             continue;
@@ -743,7 +746,7 @@ async fn nameless_config_reaches_local_provider_setup_before_runtime() {
     }
     sandbox_firecracker::record_runtime_source_for_test(
         &snapshot.runtime_source(),
-        &rootfs.rootfs(),
+        &rootfs.runtime(),
     )
     .unwrap();
     tokio::fs::write(

@@ -92,6 +92,7 @@ async fn unexpected_finalizing_provider_states_keep_original_data_and_full_lease
                 firecracker_sha256: "0".repeat(64),
                 kernel_sha256: "0".repeat(64),
                 rootfs_sha256: "0".repeat(64),
+                runtime_sha256: "0".repeat(64),
                 policy_sha256: "0".repeat(64),
                 snapshot_id: "ordinary-fixture".into(),
                 snapshot_files: BTreeMap::new(),

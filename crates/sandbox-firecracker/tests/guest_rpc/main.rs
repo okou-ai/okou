@@ -19,14 +19,53 @@ mod duplex;
 mod file_read;
 mod filesystem;
 mod runtime_backing;
+mod runtime_launch;
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "prepares a new snapshot from an explicitly supplied, owned native image pair"]
+async fn prepare_packaged_runtime_snapshot() -> TestResult<()> {
+    let output = PathBuf::from(std::env::var("OKOU_TEST_RPC_SNAPSHOT_DIR")?);
+    if !nix::unistd::getuid().is_root() || output.exists() {
+        return Err(
+            io::Error::other("snapshot preparation needs root and a new output directory").into(),
+        );
+    }
+    sandbox_firecracker::create_snapshot(sandbox::SnapshotCreateConfig {
+        id: std::env::var("OKOU_TEST_RPC_SNAPSHOT_HASH")?,
+        binary_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_FIRECRACKER")?),
+        kernel_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_KERNEL")?),
+        rootfs_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_ROOTFS")?),
+        runtime_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_RUNTIME")?),
+        output_dir: output,
+        vcpu_count: 2,
+        memory_mb: 4096,
+        home_disk_mb: 16384,
+    })
+    .await?;
+    Ok(())
+}
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires root, KVM, NBD and matching packaged rootfs/snapshot; run by metal CI"]
 async fn packaged_helper_completes_over_fresh_restored_and_reused_firecracker() -> TestResult<()> {
+    native_scenario(false).await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires root, KVM, NBD and the paired real Agent payloads; run by metal CI"]
+async fn packaged_runtime_executes_real_agents_tools_and_children() -> TestResult<()> {
+    native_scenario(true).await
+}
+
+async fn native_scenario(payload: bool) -> TestResult<()> {
     if !nix::unistd::getuid().is_root() {
         return Err(io::Error::other("native guest RPC test requires root").into());
     }
-    let base = PathBuf::from(std::env::var("OKOU_TEST_RPC_BASE_DIR")?);
+    let base = PathBuf::from(std::env::var("OKOU_TEST_RPC_BASE_DIR")?).join(if payload {
+        "payload"
+    } else {
+        "rpc"
+    });
     std::fs::create_dir_all(&base)?;
     let mut runtime = FirecrackerRuntime::new(RuntimeConfig {
         proxy_port: None,
@@ -34,12 +73,59 @@ async fn packaged_helper_completes_over_fresh_restored_and_reused_firecracker() 
         host_cpu_placement: None,
     })
     .await?;
-    let result = exercise_factories(&runtime, base).await;
+    let result = async {
+        exercise_factories(&runtime, base.clone(), payload).await?;
+        if payload {
+            exercise_without_home(&runtime, base.join("without-home")).await?;
+        }
+        Ok(())
+    }
+    .await;
     runtime.shutdown().await;
     result
 }
 
-async fn exercise_factories(runtime: &FirecrackerRuntime, base: PathBuf) -> TestResult<()> {
+async fn exercise_without_home(runtime: &FirecrackerRuntime, base: PathBuf) -> TestResult<()> {
+    let mut factory = runtime
+        .create_factory(FactoryConfig {
+            home_drive_pressure: None,
+            profile: "vm0/runtime-no-home".into(),
+            binary_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_FIRECRACKER")?),
+            kernel_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_KERNEL")?),
+            rootfs_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_ROOTFS")?),
+            runtime_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_RUNTIME")?),
+            base_dir: base,
+            snapshot: None,
+        })
+        .await?;
+    let result = match factory
+        .create(SandboxConfig {
+            id: sandbox::SandboxId::new_v4(),
+            resources: ResourceLimits {
+                cpu_count: 2,
+                memory_mb: 4096,
+            },
+            device_rate_limits: None,
+            home_drive: None,
+        })
+        .await
+    {
+        Ok(mut sandbox) => {
+            let result = exercise_runtime_payload(&mut *sandbox, false).await;
+            factory.destroy(sandbox).await;
+            result
+        }
+        Err(error) => Err(error.into()),
+    };
+    factory.shutdown().await;
+    result
+}
+
+async fn exercise_factories(
+    runtime: &FirecrackerRuntime,
+    base: PathBuf,
+    payload: bool,
+) -> TestResult<()> {
     for restored in [false, true] {
         let snapshot = if restored {
             Some(SnapshotRef {
@@ -49,17 +135,20 @@ async fn exercise_factories(runtime: &FirecrackerRuntime, base: PathBuf) -> Test
         } else {
             None
         };
-        let mut factory = runtime
-            .create_factory(FactoryConfig {
-                home_drive_pressure: None,
-                profile: "vm0/rpc-metal".into(),
-                binary_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_FIRECRACKER")?),
-                kernel_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_KERNEL")?),
-                rootfs_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_ROOTFS")?),
-                base_dir: base.join(if restored { "restored" } else { "fresh" }),
-                snapshot,
-            })
-            .await?;
+        let config = FactoryConfig {
+            home_drive_pressure: None,
+            profile: "vm0/rpc-metal".into(),
+            binary_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_FIRECRACKER")?),
+            kernel_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_KERNEL")?),
+            rootfs_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_ROOTFS")?),
+            runtime_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_RUNTIME")?),
+            base_dir: base.join(if restored { "restored" } else { "fresh" }),
+            snapshot,
+        };
+        if restored && payload {
+            exercise_replaced_runtime_source(runtime, &config).await?;
+        }
+        let mut factory = runtime.create_factory(config).await?;
         // Match the vm0/default image selected by runner-test-prepare in metal CI.
         let created = factory
             .create(SandboxConfig {
@@ -78,7 +167,11 @@ async fn exercise_factories(runtime: &FirecrackerRuntime, base: PathBuf) -> Test
             .await;
         let result = match created {
             Ok(mut sandbox) => {
-                let result = exercise_sandbox(&mut *sandbox).await;
+                let result = if payload {
+                    exercise_runtime_payload(&mut *sandbox, true).await
+                } else {
+                    exercise_sandbox(&mut *sandbox).await
+                };
                 factory.destroy(sandbox).await;
                 result
             }
@@ -91,12 +184,60 @@ async fn exercise_factories(runtime: &FirecrackerRuntime, base: PathBuf) -> Test
     Ok(())
 }
 
+async fn exercise_replaced_runtime_source(
+    runtime: &FirecrackerRuntime,
+    config: &FactoryConfig,
+) -> TestResult<()> {
+    let directory = tempfile::tempdir()?;
+    let replacement = directory.path().join("runtime.ext4");
+    std::fs::copy(&config.runtime_path, &replacement)?;
+    let changed = FactoryConfig {
+        runtime_path: replacement,
+        ..config.clone()
+    };
+    match runtime.create_factory(changed).await {
+        Ok(mut factory) => {
+            factory.shutdown().await;
+            return Err(io::Error::other("restore accepted a replaced runtime source").into());
+        }
+        Err(error) => {
+            if !error
+                .to_string()
+                .contains("snapshot runtime source changed since creation")
+            {
+                return Err(error.into());
+            }
+        }
+    }
+    println!("RUNTIME_SOURCE_FIRECRACKER_PASS replaced-generation=rejected-before-restore");
+    Ok(())
+}
+
+async fn exercise_runtime_payload(
+    sandbox: &mut dyn Sandbox,
+    home_attached: bool,
+) -> TestResult<()> {
+    let run = uuid::Uuid::new_v4().to_string();
+    sandbox.bind_run_control(&run)?;
+    sandbox.start().await?;
+    runtime_backing::exercise(sandbox, home_attached).await?;
+    runtime_launch::exercise(sandbox, &run).await?;
+    if sandbox.park().await? != sandbox::SandboxParkOutcome::Reusable {
+        return Err(io::Error::other("runtime payload did not reach reusable park").into());
+    }
+    let run = uuid::Uuid::new_v4().to_string();
+    sandbox.bind_run_control(&run)?;
+    sandbox.unpark().await?;
+    runtime_backing::exercise(sandbox, home_attached).await?;
+    runtime_launch::exercise(sandbox, &run).await
+}
+
 async fn exercise_sandbox(sandbox: &mut dyn Sandbox) -> TestResult<()> {
     let registry = RunGuestChannels::default();
     let run = uuid::Uuid::new_v4().to_string();
     sandbox.bind_run_control(&run)?;
     sandbox.start().await?;
-    runtime_backing::exercise(sandbox).await?;
+    runtime_backing::exercise(sandbox, true).await?;
     let first_epoch = duplex::exercise(sandbox, &run, &registry, None).await?;
     let retired_handles = first_epoch.handles().clone();
     // The established duplex must not consume or block the independent RPC path.
@@ -114,7 +255,7 @@ async fn exercise_sandbox(sandbox: &mut dyn Sandbox) -> TestResult<()> {
     let next_run = uuid::Uuid::new_v4().to_string();
     sandbox.bind_run_control(&next_run)?;
     sandbox.unpark().await?;
-    runtime_backing::exercise(sandbox).await?;
+    runtime_backing::exercise(sandbox, true).await?;
     if tokio::time::timeout(Duration::from_secs(5), stale.accept())
         .await?
         .is_ok()

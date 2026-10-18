@@ -7,6 +7,13 @@ const OTHER_ROOTFS_HASH: &str = "11111111111111111111111111111111111111111111111
 const OTHER_SNAPSHOT_HASH: &str =
     "2222222222222222222222222222222222222222222222222222222222222222";
 
+async fn write_image_pair_fixture(rootfs: &RootfsPaths) {
+    tokio::fs::write(rootfs.rootfs(), b"rootfs").await.unwrap();
+    tokio::fs::write(rootfs.runtime(), b"runtime")
+        .await
+        .unwrap();
+}
+
 async fn assert_rootfs_lock_held(home: &HomePaths, hash: &str) {
     let error = runner_host::lock::try_acquire(home.rootfs_lock(hash))
         .await
@@ -141,6 +148,9 @@ async fn test_home_with_artifacts(dir: &std::path::Path, hashes: &[(&str, &str)]
         let rootfs = RootfsPaths::new(&home, rootfs_hash);
         tokio::fs::create_dir_all(rootfs.dir()).await.unwrap();
         tokio::fs::write(rootfs.rootfs(), b"rootfs").await.unwrap();
+        tokio::fs::write(rootfs.runtime(), b"runtime")
+            .await
+            .unwrap();
         if !snapshot_hash.is_empty() {
             let snapshot = rootfs.snapshot(snapshot_hash);
             tokio::fs::create_dir_all(snapshot.dir()).await.unwrap();
@@ -152,7 +162,7 @@ async fn test_home_with_artifacts(dir: &std::path::Path, hashes: &[(&str, &str)]
             }
             sandbox_firecracker::record_runtime_source_for_test(
                 &snapshot.runtime_source(),
-                &rootfs.rootfs(),
+                &rootfs.runtime(),
             )
             .unwrap();
             tokio::fs::write(
@@ -839,11 +849,11 @@ async fn load_rejects_excessive_home_disk_mb_in_profile() {
 async fn load_rejects_incomplete_image() {
     let fixture = ConfigFixture::without_image_artifacts().await;
 
-    // Create rootfs.ext4 but NO snapshot files — validation should fail.
+    // Create the image pair but NO snapshot files — validation should fail.
     let home = HomePaths::with_root(fixture.path().join("vm0-runner"));
     let rootfs = RootfsPaths::new(&home, TEST_ROOTFS_HASH);
     tokio::fs::create_dir_all(rootfs.dir()).await.unwrap();
-    tokio::fs::write(rootfs.rootfs(), b"").await.unwrap();
+    write_image_pair_fixture(&rootfs).await;
 
     let yaml = fixture.yaml_with_default_profile("");
 
@@ -876,7 +886,7 @@ async fn load_defers_malformed_complete_marker_check() {
     let home = HomePaths::with_root(fixture.path().join("vm0-runner"));
     let rootfs = RootfsPaths::new(&home, TEST_ROOTFS_HASH);
     tokio::fs::create_dir_all(rootfs.dir()).await.unwrap();
-    tokio::fs::write(rootfs.rootfs(), b"").await.unwrap();
+    write_image_pair_fixture(&rootfs).await;
     let snapshot = rootfs.snapshot(TEST_SNAPSHOT_HASH);
     tokio::fs::create_dir_all(snapshot.dir()).await.unwrap();
     for path in snapshot.required_artifacts() {
@@ -908,7 +918,7 @@ async fn validate_profile_image_artifacts_rejects_missing_cow_bitmap() {
     let home = HomePaths::with_root(dir.path().join("vm0-runner"));
     let rootfs = RootfsPaths::new(&home, TEST_ROOTFS_HASH);
     tokio::fs::create_dir_all(rootfs.dir()).await.unwrap();
-    tokio::fs::write(rootfs.rootfs(), b"").await.unwrap();
+    write_image_pair_fixture(&rootfs).await;
     let snapshot = rootfs.snapshot(TEST_SNAPSHOT_HASH);
     tokio::fs::create_dir_all(snapshot.dir()).await.unwrap();
     for path in [snapshot.snapshot(), snapshot.memory(), snapshot.cow()] {
@@ -1123,7 +1133,7 @@ async fn load_rejects_snapshot_without_complete_marker() {
     let home = HomePaths::with_root(fixture.path().join("vm0-runner"));
     let rootfs = RootfsPaths::new(&home, TEST_ROOTFS_HASH);
     tokio::fs::create_dir_all(rootfs.dir()).await.unwrap();
-    tokio::fs::write(rootfs.rootfs(), b"").await.unwrap();
+    write_image_pair_fixture(&rootfs).await;
     let snapshot = rootfs.snapshot(TEST_SNAPSHOT_HASH);
     tokio::fs::create_dir_all(snapshot.dir()).await.unwrap();
     for path in snapshot.required_artifacts() {
@@ -1149,7 +1159,7 @@ async fn load_rejects_snapshot_with_malformed_complete_marker() {
     let home = HomePaths::with_root(fixture.path().join("vm0-runner"));
     let rootfs = RootfsPaths::new(&home, TEST_ROOTFS_HASH);
     tokio::fs::create_dir_all(rootfs.dir()).await.unwrap();
-    tokio::fs::write(rootfs.rootfs(), b"").await.unwrap();
+    write_image_pair_fixture(&rootfs).await;
     let snapshot = rootfs.snapshot(TEST_SNAPSHOT_HASH);
     tokio::fs::create_dir_all(snapshot.dir()).await.unwrap();
     for path in snapshot.required_artifacts() {
@@ -1351,6 +1361,7 @@ fn factory_config_resolves_paths() {
     assert_eq!(fc.kernel_path, dir.path().join("vmlinux"));
     let rootfs_paths = RootfsPaths::new(&home, TEST_ROOTFS_HASH);
     assert_eq!(fc.rootfs_path, rootfs_paths.rootfs());
+    assert_eq!(fc.runtime_path, rootfs_paths.runtime());
     assert_eq!(fc.profile, "vm0/default");
     let snap = fc.snapshot.unwrap();
     assert_eq!(snap.hash, TEST_SNAPSHOT_HASH);

@@ -6,15 +6,18 @@ use runner_host::paths::RootfsPaths;
 pub(super) struct LocalFilePublish {
     staging: PathBuf,
     stable: PathBuf,
+    runtime_staging: PathBuf,
+    runtime: PathBuf,
 }
 
 impl LocalFilePublish {
-    fn new(staging: PathBuf, stable: PathBuf) -> Self {
-        Self { staging, stable }
-    }
-
     pub(super) fn for_rootfs(rootfs: &RootfsPaths) -> Self {
-        Self::new(rootfs.rootfs_staging(), rootfs.rootfs())
+        Self {
+            staging: rootfs.rootfs_staging(),
+            stable: rootfs.rootfs(),
+            runtime_staging: rootfs.runtime_staging(),
+            runtime: rootfs.runtime(),
+        }
     }
 
     pub(super) fn stable(&self) -> &Path {
@@ -32,30 +35,32 @@ impl LocalFilePublish {
     /// Tokio fs operation can continue on the blocking pool after the lock is
     /// dropped, which is not safe for the fixed staging path.
     pub(super) async fn cleanup_stale_staging_best_effort(&self) {
-        match std::fs::symlink_metadata(&self.staging) {
-            Ok(metadata) => {
-                tracing::warn!(
-                    "removing stale rootfs staging file from a previous failed build: {}",
-                    self.staging.display()
-                );
-                let result = if metadata.file_type().is_dir() {
-                    std::fs::remove_dir_all(&self.staging)
-                } else {
-                    std::fs::remove_file(&self.staging)
-                };
-                if let Err(e) = result {
+        for staging in [&self.staging, &self.runtime_staging] {
+            match std::fs::symlink_metadata(staging) {
+                Ok(metadata) => {
                     tracing::warn!(
-                        "failed to remove stale staging path {}: {e}",
-                        self.staging.display()
+                        "removing stale rootfs staging file from a previous failed build: {}",
+                        staging.display()
+                    );
+                    let result = if metadata.file_type().is_dir() {
+                        std::fs::remove_dir_all(staging)
+                    } else {
+                        std::fs::remove_file(staging)
+                    };
+                    if let Err(e) = result {
+                        tracing::warn!(
+                            "failed to remove stale staging path {}: {e}",
+                            staging.display()
+                        );
+                    }
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => {
+                    tracing::warn!(
+                        "check staging {}: {e} (continuing; any residue will be overwritten)",
+                        staging.display()
                     );
                 }
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => {
-                tracing::warn!(
-                    "check staging {}: {e} (continuing; any residue will be overwritten)",
-                    self.staging.display()
-                );
             }
         }
     }
@@ -65,19 +70,56 @@ impl LocalFilePublish {
     /// Same-filesystem rename is POSIX-atomic, so this is the single step
     /// that makes the published file visible to future presence checks.
     pub(super) async fn commit(&self) -> RunnerResult<()> {
+        use std::os::unix::fs::OpenOptionsExt;
+        // Both staged files are ready before either rename. All operations are
+        // synchronous under the exclusive image lock, including cancellation.
+        for path in [&self.staging, &self.runtime_staging] {
+            let file = std::fs::OpenOptions::new()
+                .read(true)
+                .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+                .open(path)?;
+            let metadata = file.metadata()?;
+            if !metadata.is_file() || metadata.len() == 0 {
+                return Err(RunnerError::Internal(format!(
+                    "incomplete staged image: {}",
+                    path.display()
+                )));
+            }
+            file.sync_all()?;
+        }
+        std::fs::rename(&self.runtime_staging, &self.runtime)?;
+        let sidecar = self.stable.with_file_name("okou-cli.json");
+        match std::fs::File::open(&sidecar) {
+            Ok(file) => file.sync_all()?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+        let directory = std::fs::File::open(
+            self.stable
+                .parent()
+                .ok_or_else(|| RunnerError::Internal("missing image directory".into()))?,
+        )?;
+        directory.sync_all()?;
         std::fs::rename(&self.staging, &self.stable).map_err(|e| {
             RunnerError::Internal(format!(
                 "commit rootfs {} → {}: {e}",
                 self.staging.display(),
                 self.stable.display()
             ))
-        })
+        })?;
+        directory.sync_all()?;
+        Ok(())
     }
 
     pub(super) async fn finish_after_result(&self, result: RunnerResult<()>) -> RunnerResult<()> {
         match result {
             Ok(()) => Ok(()),
             Err(original_err) => {
+                if let Err(error) =
+                    remove_file_if_exists_sync(&self.runtime_staging, "failed runtime staging file")
+                {
+                    tracing::warn!("failed to remove runtime staging: {error}");
+                }
                 match remove_file_if_exists_sync(&self.staging, "failed rootfs staging file") {
                     Ok(()) => Err(original_err),
                     Err(cleanup_err) => {
@@ -108,6 +150,44 @@ fn remove_file_if_exists_sync(path: &Path, label: &str) -> RunnerResult<()> {
 mod tests {
     use super::*;
     use runner_host::paths::HomePaths;
+
+    #[tokio::test]
+    async fn pair_commit_refuses_absent_empty_or_symlinked_runtime() {
+        use std::os::unix::fs::symlink;
+        let dir = tempfile::tempdir().unwrap();
+        let rootfs = RootfsPaths::new(&HomePaths::with_root(dir.path().to_path_buf()), "pair");
+        std::fs::create_dir_all(rootfs.dir()).unwrap();
+        std::fs::write(rootfs.rootfs_staging(), b"root").unwrap();
+        let publish = LocalFilePublish::for_rootfs(&rootfs);
+        assert!(publish.commit().await.is_err());
+        std::fs::write(rootfs.runtime_staging(), b"").unwrap();
+        assert!(publish.commit().await.is_err());
+        std::fs::remove_file(rootfs.runtime_staging()).unwrap();
+        let other = dir.path().join("other-image");
+        std::fs::write(&other, b"not this generation").unwrap();
+        symlink(&other, rootfs.runtime_staging()).unwrap();
+        assert!(publish.commit().await.is_err());
+        assert!(!rootfs.rootfs().exists());
+        assert!(!rootfs.runtime().exists());
+        assert_eq!(std::fs::read(other).unwrap(), b"not this generation");
+    }
+
+    #[tokio::test]
+    async fn failed_final_rename_preserves_the_published_runtime_for_recovery() {
+        let dir = tempfile::tempdir().unwrap();
+        let rootfs = RootfsPaths::new(&HomePaths::with_root(dir.path().to_path_buf()), "pair");
+        std::fs::create_dir_all(rootfs.rootfs()).unwrap();
+        std::fs::write(rootfs.rootfs_staging(), b"root").unwrap();
+        std::fs::write(rootfs.runtime_staging(), b"runtime").unwrap();
+        let publish = LocalFilePublish::for_rootfs(&rootfs);
+        let result = publish.commit().await;
+        assert!(result.is_err());
+        assert!(publish.finish_after_result(result).await.is_err());
+        assert_eq!(std::fs::read(rootfs.runtime()).unwrap(), b"runtime");
+        assert!(!rootfs.rootfs_staging().exists());
+        assert!(!rootfs.runtime_staging().exists());
+        assert!(rootfs.rootfs().is_dir());
+    }
 
     #[tokio::test]
     async fn local_file_publish_removes_stale_file_residue() {
@@ -231,6 +311,9 @@ mod tests {
         tokio::fs::create_dir_all(rootfs.dir()).await.unwrap();
 
         tokio::fs::write(rootfs.rootfs_staging(), b"customized")
+            .await
+            .unwrap();
+        tokio::fs::write(rootfs.runtime_staging(), b"immutable-runtime")
             .await
             .unwrap();
 

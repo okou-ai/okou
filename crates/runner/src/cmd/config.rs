@@ -198,6 +198,9 @@ mod tests {
         let rootfs = runner_host::paths::RootfsPaths::new(home, rootfs_hash);
         tokio::fs::create_dir_all(rootfs.dir()).await.unwrap();
         tokio::fs::write(rootfs.rootfs(), b"rootfs").await.unwrap();
+        tokio::fs::write(rootfs.runtime(), b"runtime")
+            .await
+            .unwrap();
         rootfs
     }
 
@@ -215,7 +218,7 @@ mod tests {
         }
         sandbox_firecracker::record_runtime_source_for_test(
             &snapshot.runtime_source(),
-            &rootfs.rootfs(),
+            &rootfs.runtime(),
         )
         .unwrap();
     }

@@ -31,6 +31,7 @@ pub(super) async fn build_snapshot(
         binary_path: paths.firecracker_bin(FIRECRACKER_VERSION),
         kernel_path: paths.kernel_bin(FIRECRACKER_VERSION, KERNEL_VERSION),
         rootfs_path: rootfs_paths.rootfs(),
+        runtime_path: rootfs_paths.runtime(),
         output_dir: snapshot_dir.to_path_buf(),
         vcpu_count: def.vcpu,
         memory_mb: def.memory_mb,

@@ -794,7 +794,7 @@ fn codex_app_server_config(
         log_info!(LOG_TAG, "Using mock-codex app-server for testing");
         PathBuf::from(runtime.mock_codex_path.as_ref())
     } else {
-        PathBuf::from("codex")
+        PathBuf::from(guest_contracts::runtime_drive::RUNTIME_CODEX)
     };
     let codex_home = PathBuf::from(runtime.codex_home());
     let child_user_env = runtime.child_user_env();
@@ -816,6 +816,13 @@ fn codex_app_server_config(
             .or_else(|| std::env::var("MOCK_CODEX_APP_SERVER_SCENARIO").ok())
             .unwrap_or_else(|| "runtime-turn-complete".to_string());
         config = config.with_env("MOCK_CODEX_APP_SERVER_SCENARIO", scenario);
+    } else {
+        // Preserve the official npm launcher's package ownership metadata when
+        // launching its native executable directly from the immutable image.
+        config = config.with_env("CODEX_MANAGED_BY_NPM", "1").with_env(
+            "CODEX_MANAGED_PACKAGE_ROOT",
+            guest_contracts::runtime_drive::RUNTIME_CODEX_PACKAGE_ROOT,
+        );
     }
     if runtime.codex_oauth_mode {
         config = config.with_env(

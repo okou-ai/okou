@@ -37,6 +37,7 @@ fn main() {
     println!("cargo::rerun-if-changed=../runner-executor/scripts/rootfs-usage.py");
     println!("cargo::rerun-if-changed=scripts/build-template.sh");
     println!("cargo::rerun-if-changed=scripts/customize-rootfs.sh");
+    println!("cargo::rerun-if-changed=scripts/build-runtime.py");
     println!("cargo::rerun-if-changed=scripts/verify-rootfs.sh");
     println!("cargo::rerun-if-changed={GUEST_BINARIES_FILE}");
     println!("cargo::rerun-if-changed=cli_package.rs");

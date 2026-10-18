@@ -37,7 +37,7 @@ pub(super) fn rootfs_input<'a>(
             rootfs_disk_mb: 8192,
         },
         rootfs_paths: rootfs,
-        rootfs_hash: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        runtime_hash: "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
         guests,
         okou_cli: None,
     }

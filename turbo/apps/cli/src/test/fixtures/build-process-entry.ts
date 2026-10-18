@@ -20,7 +20,14 @@ export async function buildProcessEntry(source: string) {
     };
     await build({
       config: false,
-      entry: { okou: source },
+      entry: source.endsWith("/okou.ts")
+        ? {
+            okou: source,
+            "agent/agent": fileURLToPath(
+              new URL("../../agent.ts", import.meta.url),
+            ),
+          }
+        : { okou: source },
       outDir: directory,
       platform: "node",
       target: "node22",

@@ -12,6 +12,8 @@ use crate::test_fixtures::ignored_child::{
 };
 use runner_host::lock;
 
+mod runtime_pair;
+
 fn rootfs_state_with_deletion(
     rootfs_path: PathBuf,
     rootfs_hash: &str,

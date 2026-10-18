@@ -301,10 +301,10 @@ struct TemplateInput<'a> {
 struct RootfsBuildInput<'a> {
     template: TemplateInput<'a>,
     rootfs_paths: &'a RootfsPaths,
-    rootfs_hash: &'a str,
+    runtime_hash: &'a str,
     guests: &'a GuestBinaries,
     /// Versioned CLI installed into the customize layer when bundled.
-    /// CLI-free local builds remain possible; Pi then uses the task's CLI URL.
+    /// CLI-free local builds remain possible; Pi requires the paired artifact.
     okou_cli: Option<&'a OkouCliArtifact>,
 }
 
@@ -382,6 +382,7 @@ struct BuildHashes {
     template_hash: String,
     rootfs_hash: Option<String>,
     snapshot_hash: Option<String>,
+    runtime_hash: Option<String>,
 }
 
 /// Build an image (template from R2 cache or local build, snapshot always local).
@@ -405,6 +406,7 @@ pub async fn run_build(mut args: BuildArgs, provider: &dyn SnapshotProvider) -> 
             template_hash: compute_template_hash(def.rootfs_disk_mb),
             rootfs_hash: None,
             snapshot_hash: None,
+            runtime_hash: None,
         },
         BuildMode::FullImage => {
             let guests = guests.as_ref().ok_or_else(|| {
@@ -437,6 +439,7 @@ pub async fn run_build(mut args: BuildArgs, provider: &dyn SnapshotProvider) -> 
                 template_hash: rootfs_hashes.template_hash,
                 rootfs_hash: Some(rootfs_hashes.rootfs_hash),
                 snapshot_hash: Some(snapshot_hash),
+                runtime_hash: Some(rootfs_hashes.runtime_hash),
             }
         }
     };
@@ -561,8 +564,11 @@ pub async fn run_build(mut args: BuildArgs, provider: &dyn SnapshotProvider) -> 
             let input = RootfsBuildInput {
                 template: template_input,
                 rootfs_paths,
-                rootfs_hash,
                 guests,
+                runtime_hash: hashes
+                    .runtime_hash
+                    .as_deref()
+                    .ok_or_else(|| RunnerError::Internal("missing runtime input hash".into()))?,
                 okou_cli: okou_cli.as_ref(),
             };
             if let RootfsImageLock::Exclusive { guard } = &_rootfs_lock {
@@ -618,6 +624,21 @@ async fn ensure_rootfs_under_lock(
     // staging-rename contract; see `RootfsPaths::rootfs_staging`.
     publish.cleanup_stale_staging_best_effort().await;
 
+    // Exclusive image ownership excludes every source lease. Recover only this
+    // incomplete generation; a committed pair is never generic error cleanup.
+    if !is_rootfs_present(input.rootfs_paths).await? {
+        for path in [
+            input.rootfs_paths.rootfs(),
+            input.rootfs_paths.runtime_staging(),
+        ] {
+            match std::fs::remove_file(&path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+    }
+
     let need_rootfs = !is_rootfs_present(input.rootfs_paths).await?;
     let mut scripts = RootfsScripts::new(rootfs_lock, None);
 
@@ -628,7 +649,7 @@ async fn ensure_rootfs_under_lock(
             customize_rootfs_staging(&input, &work_dir_path).await?;
             verify_rootfs(
                 input.rootfs_paths,
-                input.rootfs_hash,
+                input.runtime_hash,
                 &work_dir_path,
                 input.okou_cli,
             )
@@ -1264,11 +1285,15 @@ async fn customize_rootfs_staging(
     cmd.command
         .arg("--rootfs")
         .arg(&staging)
+        .arg("--runtime")
+        .arg(input.rootfs_paths.runtime_staging())
         .arg("--ca-dir")
         .arg(&ca_dir)
         .arg("--dns-nameserver")
         .arg(DNS_PROBE_RESOLVER_IPV4.to_string());
-    cmd.command.arg("--runtime-identity").arg(input.rootfs_hash);
+    cmd.command
+        .arg("--runtime-identity")
+        .arg(input.runtime_hash);
     for guest in input.guests.iter() {
         cmd.command
             .arg("--guest")
@@ -1306,12 +1331,12 @@ async fn write_okou_cli_sidecar(
 ) -> RunnerResult<()> {
     let sidecar = rootfs_paths.okou_cli_manifest();
     match okou_cli {
-        Some(okou_cli) => tokio::fs::write(&sidecar, okou_cli.installed_manifest_bytes())
-            .await
-            .map_err(|e| {
+        Some(okou_cli) => {
+            std::fs::write(&sidecar, okou_cli.installed_manifest_bytes()).map_err(|e| {
                 RunnerError::Internal(format!("write Okou CLI sidecar {}: {e}", sidecar.display()))
-            }),
-        None => match tokio::fs::remove_file(&sidecar).await {
+            })
+        }
+        None => match std::fs::remove_file(&sidecar) {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
             Err(e) => Err(RunnerError::Internal(format!(
@@ -1355,9 +1380,20 @@ async fn verify_cli_sidecar(
 /// in-progress build writes to `rootfs.ext4.staging`, which this function
 /// intentionally ignores.
 async fn is_rootfs_present(rootfs: &RootfsPaths) -> RunnerResult<bool> {
-    tokio::fs::try_exists(rootfs.rootfs())
-        .await
-        .map_err(|e| RunnerError::Internal(format!("check {}: {e}", rootfs.rootfs().display())))
+    for path in rootfs.expected_files() {
+        match tokio::fs::symlink_metadata(&path).await {
+            Ok(metadata) if metadata.is_file() && metadata.len() > 0 => {}
+            Ok(_) => return Ok(false),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => {
+                return Err(RunnerError::Internal(format!(
+                    "check {}: {error}",
+                    path.display()
+                )));
+            }
+        }
+    }
+    Ok(true)
 }
 
 #[cfg(test)]

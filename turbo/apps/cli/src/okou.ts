@@ -149,7 +149,9 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     name: "__subagent_loop__",
     description: "Internal child Pi loop",
     load: async () => {
-      return (await import("./commands/__subagent_loop__")).subagentLoopCommand;
+      return (await import("./lib/agent-entry")).agentEntryCommand(
+        "__subagent_loop__",
+      );
     },
   },
   {
@@ -163,7 +165,9 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     name: "__agent-loop",
     description: "Internal sandbox agent loop",
     load: async () => {
-      return (await import("./commands/__agent-loop")).agentLoopCommand;
+      return (await import("./lib/agent-entry")).agentEntryCommand(
+        "__agent-loop",
+      );
     },
   },
   {

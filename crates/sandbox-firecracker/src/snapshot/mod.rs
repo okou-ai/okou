@@ -84,6 +84,7 @@ async fn create_uncommitted_snapshot(
         binary_path: config.binary_path.clone(),
         kernel_path: config.kernel_path.clone(),
         rootfs_path: config.rootfs_path.clone(),
+        runtime_path: config.runtime_path.clone(),
         mode: prerequisites::PrerequisiteMode::SnapshotCreate,
     })
     .await
@@ -95,7 +96,7 @@ async fn create_uncommitted_snapshot(
     let work = prepare_snapshot_output(&output).await?;
     let runtime_source = output.runtime_source();
     output::run_snapshot_blocking_fs(|| {
-        crate::runtime_backing::record(&runtime_source, &config.rootfs_path)
+        crate::runtime_backing::record(&runtime_source, &config.runtime_path)
     })
     .map_err(|e| SnapshotError::Setup(format!("record snapshot runtime source: {e}")))?;
 
@@ -204,6 +205,7 @@ mod tests {
             binary_path: tmp.path().join("firecracker"),
             kernel_path: tmp.path().join("vmlinux"),
             rootfs_path: tmp.path().join("rootfs.ext4"),
+            runtime_path: tmp.path().join("runtime.ext4"),
             output_dir,
             vcpu_count: 2,
             memory_mb: 512,
@@ -238,6 +240,7 @@ mod tests {
             binary_path: tmp.path().join("firecracker"),
             kernel_path: tmp.path().join("vmlinux"),
             rootfs_path: tmp.path().join("rootfs.ext4"),
+            runtime_path: tmp.path().join("runtime.ext4"),
             output_dir,
             vcpu_count: 2,
             memory_mb: 512,

@@ -369,7 +369,7 @@ impl SnapshotAttempt {
                 drive_bind: &drive_bind,
                 home_image: &home_image,
                 home_drive_bind: &home_drive_bind,
-                runtime_image: &config.rootfs_path,
+                runtime_image: &config.runtime_path,
                 runtime_drive_bind: &self.paths.runtime_device_bind(),
                 network_name: &network_name,
                 binary_path: &config.binary_path,

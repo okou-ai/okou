@@ -120,6 +120,7 @@ XURL_VERSION="1.3.4"
 AGENT_BROWSER_VERSION="0.38.1-vm0.1"
 PNPM_VERSION="12.14.0"
 UV_VERSION="0.13.1"
+PATCHELF_VERSION="0.19.2"
 CHROMIUM_VERSION="155.0.8059.79-1~deb12u1"
 CHROMIUM_SECURITY_SNAPSHOT_URL="https://snapshot.debian.org/archive/debian-security/20261016T210249Z"
 
@@ -418,6 +419,25 @@ EOF
 # ---------------------------------------------------------------------------
 
 install_runtimes() {
+  # The runtime split rewrites ELF search/interpreter paths. Pin the producer
+  # instead of depending on whichever distro patchelf happens to be installed.
+  sudo chroot "$ROOTFS_DIR" bash -s -- "$PATCHELF_VERSION" <<'INSTALL_PATCHELF'
+set -euo pipefail
+version=$1
+case "$(dpkg --print-architecture)" in
+  amd64) platform=x86_64; checksum=2abdc34fbe949c995a1baa4ec310896a085588a45a99cd0d726851bdfac2a4bb ;;
+  arm64) platform=aarch64; checksum=ba6850c1a6f4cbdb050e1cc22fa5239159ad31c43606846e49c408d335f594ff ;;
+  *) echo "unsupported patchelf architecture" >&2; exit 1 ;;
+esac
+patch_tmp=$(mktemp -d)
+trap 'rm -rf -- "$patch_tmp"' EXIT
+curl -fsSL --connect-timeout 10 --max-time 60 \
+  "https://github.com/NixOS/patchelf/releases/download/${version}/patchelf-${version}-${platform}.tar.gz" \
+  -o "$patch_tmp/package.tgz"
+printf '%s  %s\n' "$checksum" "$patch_tmp/package.tgz" | sha256sum -c -
+tar -xzf "$patch_tmp/package.tgz" -C "$patch_tmp" ./bin/patchelf
+install -m 755 "$patch_tmp/bin/patchelf" /usr/local/bin/patchelf
+INSTALL_PATCHELF
   echo "installing language runtimes and CLIs..."
 
   # User account (Ubuntu 24.04 ships 'ubuntu' at UID 1000; remove it first)

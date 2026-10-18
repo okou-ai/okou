@@ -39,6 +39,8 @@ pub struct SnapshotCreateConfig {
     pub kernel_path: PathBuf,
     /// Path to the root filesystem image.
     pub rootfs_path: PathBuf,
+    /// Distinct immutable Agent image paired with the tool rootfs.
+    pub runtime_path: PathBuf,
     /// Directory where snapshot artifacts will be written.
     pub output_dir: PathBuf,
     /// Number of vCPUs for the VM.

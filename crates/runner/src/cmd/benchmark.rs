@@ -1259,6 +1259,7 @@ mod tests {
             binary_path: PathBuf::from("/firecracker"),
             kernel_path: PathBuf::from("/vmlinux"),
             rootfs_path: PathBuf::from("/rootfs.ext4"),
+            runtime_path: PathBuf::from("/runtime.ext4"),
             base_dir: PathBuf::from("/tmp/vm0-test"),
             snapshot: None,
         }

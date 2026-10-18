@@ -15,14 +15,15 @@ done
 # The unchanged postbuild projection supplies this dist package; exercise the
 # new identity writer and the actual artifact packer against synthetic JS assets.
 cat > "${fixture}/turbo/apps/cli/dist/package.json" <<'JSON'
-{"name":"@okouai/cli","version":"9.353.0","private":true,"bin":{"okou":"okou.js"},"files":["*.js","*.js.map","*.wasm","migrations/*.sql"]}
+{"name":"@okouai/cli","version":"9.353.0","private":true,"bin":{"okou":"okou.js"},"files":["*.js","*.js.map","*.wasm","agent","migrations/*.sql"]}
 JSON
 cat > "${fixture}/turbo/packages/pi-agent-runtime/package.json" <<'JSON'
 {"version":"1.36.0","dependencies":{"@earendil-works/pi-coding-agent":"0.86.1"}}
 JSON
 printf 'first patch\n' > "${fixture}/turbo/patches/@earendil-works__a.patch"
 printf 'second patch\n' > "${fixture}/turbo/patches/@earendil-works__b.patch"
-for asset in okou.js image-resize-worker.js photon_rs_bg.wasm; do
+mkdir -p "${fixture}/turbo/apps/cli/dist/agent"
+for asset in okou.js agent/agent.js agent/image-resize-worker.js agent/photon_rs_bg.wasm; do
   printf 'synthetic %s\n' "$asset" > "${fixture}/turbo/apps/cli/dist/${asset}"
 done
 node "${fixture}/turbo/apps/cli/scripts/write-dist-package.mjs"

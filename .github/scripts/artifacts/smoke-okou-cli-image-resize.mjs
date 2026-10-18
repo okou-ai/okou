@@ -18,7 +18,7 @@ function resolvePackageDirectory() {
   return dirname(realpathSync(okouExecutable));
 }
 
-const packageDirectory = resolvePackageDirectory();
+const packageDirectory = join(resolvePackageDirectory(), "agent");
 
 const timeout = setTimeout(() => {
   throw new Error("Packaged image resize smoke test timed out");
@@ -33,9 +33,7 @@ function pngDimensions(bytes) {
 }
 
 const packageEntries = await readdir(packageDirectory);
-const agentLoopChunks = packageEntries.filter(
-  (entry) => entry.startsWith("__agent-loop-") && entry.endsWith(".js"),
-);
+const agentLoopChunks = packageEntries.filter((entry) => entry === "agent.js");
 assert.equal(
   agentLoopChunks.length,
   1,
@@ -64,7 +62,7 @@ assert.equal(
   "expected one packaged Pi read tool module",
 );
 const readToolModule = readToolModules[0];
-const readToolStart = readToolModule.source.lastIndexOf(readToolMarker);
+const readToolStart = readToolModule.source.indexOf(readToolMarker);
 const nextModuleStart = readToolModule.source.indexOf(
   "\n// ",
   readToolStart + 1,
@@ -75,12 +73,18 @@ const readToolSource = readToolModule.source.slice(
   nextModuleStart,
 );
 const createReadToolMatch = readToolSource.match(
-  /function (createReadTool(?:Definition)?\d*)\(cwd, options\)/,
+  /function (createReadTool\d*)\(cwd, options\)/,
 );
 assert(createReadToolMatch, "packaged Pi read tool is missing its constructor");
+// The private command graph initializes lazily. Exercise the real bundled
+// module initializer before calling its constructor in this disposable copy.
+const initializer = readToolSource.match(
+  /var (init_read\d*) = __esm\(\{\s+"[^"\n]*\/core\/tools\/read\.js"\(\)/,
+);
+assert(initializer, "packaged Pi read tool is missing its initializer");
 await appendFile(
   readToolModule.path,
-  `\nexport { ${createReadToolMatch[1]} as __smokeCreateReadTool };\n`,
+  `\n${initializer[1]}();\nexport { ${createReadToolMatch[1]} as __smokeCreateReadTool };\n`,
 );
 
 const { __smokeCreateReadTool: createReadTool } = await import(

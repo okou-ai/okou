@@ -18,6 +18,7 @@ pub(crate) struct PrerequisiteConfig {
     pub binary_path: PathBuf,
     pub kernel_path: PathBuf,
     pub rootfs_path: PathBuf,
+    pub runtime_path: PathBuf,
     pub mode: PrerequisiteMode,
 }
 
@@ -153,11 +154,22 @@ fn check_artifact_prerequisites(config: &PrerequisiteConfig, errors: &mut Vec<St
     check_non_empty_readable_file(&config.kernel_path, "kernel", errors);
     let rootfs_blocks = check_readable_file(&config.rootfs_path, "rootfs", errors)
         .and_then(|metadata| check_rootfs_size(&config.rootfs_path, metadata.len(), errors));
+    check_non_empty_readable_file(&config.runtime_path, "runtime", errors);
+    if let (Ok(root), Ok(runtime)) = (
+        std::fs::metadata(&config.rootfs_path),
+        std::fs::metadata(&config.runtime_path),
+    ) {
+        use std::os::unix::fs::MetadataExt;
+        if root.dev() == runtime.dev() && root.ino() == runtime.ino() {
+            errors.push("runtime must be a distinct image from rootfs".into());
+        }
+    }
 
     if let Some(snapshot) = config.mode.snapshot() {
-        if let Err(error) =
-            crate::runtime_backing::verify(&snapshot.runtime_source_path, Some(&config.rootfs_path))
-        {
+        if let Err(error) = crate::runtime_backing::verify(
+            &snapshot.runtime_source_path,
+            Some(&config.runtime_path),
+        ) {
             errors.push(format!("snapshot runtime source: {error}"));
         }
         check_non_empty_readable_file(&snapshot.snapshot_path, "snapshot state", errors);
@@ -376,6 +388,7 @@ mod tests {
         binary_path: PathBuf,
         kernel_path: PathBuf,
         rootfs_path: PathBuf,
+        runtime_path: PathBuf,
         snapshot: SnapshotConfig,
     }
 
@@ -385,6 +398,7 @@ mod tests {
             let binary_path = dir.path().join("firecracker");
             let kernel_path = dir.path().join("vmlinux");
             let rootfs_path = dir.path().join("rootfs.ext4");
+            let runtime_path = dir.path().join("runtime.ext4");
             let snapshot_path = dir.path().join("snapshot.bin");
             let memory_path = dir.path().join("memory.bin");
             let cow_path = dir.path().join("cow.img");
@@ -395,18 +409,20 @@ mod tests {
                 .expect("chmod binary");
             write_sized_file(&kernel_path, 1);
             write_sized_file(&rootfs_path, nbd_cow::BLOCK_SIZE as u64);
+            write_sized_file(&runtime_path, nbd_cow::BLOCK_SIZE as u64);
             write_sized_file(&snapshot_path, 1);
             write_sized_file(&memory_path, 1);
             write_sized_file(&cow_path, nbd_cow::BLOCK_SIZE as u64);
             write_bitmap_file(&bitmap_path, 1, 0);
             let runtime_source_path = dir.path().join("runtime-source.json");
-            crate::runtime_backing::record(&runtime_source_path, &rootfs_path).unwrap();
+            crate::runtime_backing::record(&runtime_source_path, &runtime_path).unwrap();
 
             Self {
                 _dir: dir,
                 binary_path,
                 kernel_path,
                 rootfs_path,
+                runtime_path,
                 snapshot: SnapshotConfig {
                     snapshot_path,
                     memory_path,
@@ -429,6 +445,7 @@ mod tests {
                 binary_path: self.binary_path.clone(),
                 kernel_path: self.kernel_path.clone(),
                 rootfs_path: self.rootfs_path.clone(),
+                runtime_path: self.runtime_path.clone(),
                 mode: PrerequisiteMode::FactoryFresh,
             }
         }
@@ -438,6 +455,7 @@ mod tests {
                 binary_path: self.binary_path.clone(),
                 kernel_path: self.kernel_path.clone(),
                 rootfs_path: self.rootfs_path.clone(),
+                runtime_path: self.runtime_path.clone(),
                 mode: PrerequisiteMode::SnapshotCreate,
             }
         }
@@ -447,6 +465,7 @@ mod tests {
                 binary_path: self.binary_path.clone(),
                 kernel_path: self.kernel_path.clone(),
                 rootfs_path: self.rootfs_path.clone(),
+                runtime_path: self.runtime_path.clone(),
                 mode: PrerequisiteMode::FactorySnapshotRestore {
                     snapshot: self.snapshot.clone(),
                 },
@@ -762,12 +781,30 @@ mod tests {
     }
 
     #[test]
+    fn fresh_boot_refuses_missing_empty_and_rootfs_aliased_runtime() {
+        let fixture = ArtifactFixture::new();
+        std::fs::remove_file(&fixture.runtime_path).unwrap();
+        assert_error_contains(
+            &artifact_errors(fixture.fresh_config()),
+            "runtime not found",
+        );
+        write_sized_file(&fixture.runtime_path, 0);
+        assert_error_contains(&artifact_errors(fixture.fresh_config()), "runtime is empty");
+        std::fs::remove_file(&fixture.runtime_path).unwrap();
+        std::fs::hard_link(&fixture.rootfs_path, &fixture.runtime_path).unwrap();
+        assert_error_contains(
+            &artifact_errors(fixture.fresh_config()),
+            "runtime must be a distinct image",
+        );
+    }
+
+    #[test]
     fn restore_rejects_a_different_runtime_image_before_resource_allocation() {
         let fixture = ArtifactFixture::new();
         let mut config = fixture.restore_config();
         let replacement = fixture._dir.path().join("different-runtime.ext4");
         write_sized_file(&replacement, nbd_cow::BLOCK_SIZE as u64);
-        config.rootfs_path = replacement;
+        config.runtime_path = replacement;
         assert_error_contains(
             &artifact_errors(config),
             "snapshot runtime source changed since creation",

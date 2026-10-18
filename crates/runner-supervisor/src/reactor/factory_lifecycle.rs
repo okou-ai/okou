@@ -256,6 +256,7 @@ mod tests {
                 binary_path: binary_kernel.0.clone(),
                 kernel_path: binary_kernel.1.clone(),
                 rootfs_path: rootfs.rootfs(),
+                runtime_path: rootfs.runtime(),
                 base_dir: base_dir.to_path_buf(),
                 snapshot: Some(sandbox::SnapshotRef {
                     output_dir: rootfs.snapshot_dir(snapshot_hash),

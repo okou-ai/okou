@@ -219,6 +219,8 @@ pub struct FactoryConfig {
     pub kernel_path: PathBuf,
     /// Path to the root filesystem image.
     pub rootfs_path: PathBuf,
+    /// Distinct immutable Agent image paired with the tool rootfs.
+    pub runtime_path: PathBuf,
     /// Base directory for runtime data (workspaces, COW devices, etc.).
     pub base_dir: PathBuf,
     /// Snapshot to restore from. When set, VMs boot via snapshot restore.

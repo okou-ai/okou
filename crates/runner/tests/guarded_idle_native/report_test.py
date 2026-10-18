@@ -21,7 +21,7 @@ spec.loader.exec_module(report)
 def prepare_snapshot_record(root, artifacts):
     """Write synthetic real-file evidence for ordinary consumer tests, never a native run."""
     inputs = {key: artifacts[key] for key in (
-        "source_sha", "firecracker_sha256", "kernel_sha256", "rootfs_sha256", "snapshot_id", "profile")}
+        "source_sha", "firecracker_sha256", "kernel_sha256", "rootfs_sha256", "runtime_sha256", "snapshot_id", "profile")}
     inputs["producer_test_binary_sha256"] = artifacts["test_binary_sha256"]
     record = {"format": "native-snapshot-preparation-v1", "inputs": inputs,
               "snapshot_files": artifacts["snapshot_files"],
@@ -42,7 +42,7 @@ class NativeReportTests(unittest.TestCase):
             "source_sha": "a" * 40, "test_binary_sha256": "b" * 64,
             "firecracker_sha256": "c" * 64, "kernel_sha256": "d" * 64,
             "snapshot_id": "native-fixture",
-            "rootfs_sha256": "e" * 64, "snapshot_files": {name: "f" * 64 for name in (
+            "rootfs_sha256": "e" * 64, "runtime_sha256": "2" * 64, "snapshot_files": {name: "f" * 64 for name in (
                 "snapshot.bin", "memory.bin", "cow.img", "cow.img.bitmap", ".snapshot-complete")},
             "policy_sha256": "1" * 64,
             "profile": {"vcpu": 2, "memory_mib": 4096, "home_mib": 16384},
@@ -113,7 +113,7 @@ class NativeReportTests(unittest.TestCase):
     def test_preparation_rejects_every_unbound_creation_input_and_output(self):
         original = json.loads((self.root / "snapshot-preparation.json").read_bytes())
         for field in ("source_sha", "producer_test_binary_sha256", "firecracker_sha256",
-                      "kernel_sha256", "rootfs_sha256", "snapshot_id", "profile", "snapshot_files"):
+                      "kernel_sha256", "rootfs_sha256", "runtime_sha256", "snapshot_id", "profile", "snapshot_files"):
             with self.subTest(field=field):
                 value = copy.deepcopy(original)
                 if field == "snapshot_files":

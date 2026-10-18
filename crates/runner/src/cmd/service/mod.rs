@@ -1235,6 +1235,9 @@ profiles:
         let rootfs = RootfsPaths::new(home, TEST_ROOTFS_HASH);
         tokio::fs::create_dir_all(rootfs.dir()).await.unwrap();
         tokio::fs::write(rootfs.rootfs(), b"rootfs").await.unwrap();
+        tokio::fs::write(rootfs.runtime(), b"runtime")
+            .await
+            .unwrap();
 
         let snapshot = rootfs.snapshot(TEST_SNAPSHOT_HASH);
         tokio::fs::create_dir_all(snapshot.dir()).await.unwrap();
@@ -1246,7 +1249,7 @@ profiles:
         }
         sandbox_firecracker::record_runtime_source_for_test(
             &snapshot.runtime_source(),
-            &rootfs.rootfs(),
+            &rootfs.runtime(),
         )
         .unwrap();
         tokio::fs::write(

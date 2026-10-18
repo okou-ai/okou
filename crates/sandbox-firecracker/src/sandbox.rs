@@ -1252,7 +1252,7 @@ impl FirecrackerSandbox {
                 kernel_path,
                 rootfs_path: cow_device_path,
                 home_path: home_device_path,
-                runtime_path: self.factory_config.rootfs_path.display().to_string(),
+                runtime_path: self.factory_config.runtime_path.display().to_string(),
                 vsock_path,
             },
             self.device_rate_limits.as_ref(),
@@ -1451,7 +1451,7 @@ impl FirecrackerSandbox {
                 rootfs: BindMount::new(cow_device_path, &snapshot.drive_bind_path),
                 home: BindMount::new(&home_image_path, &snapshot.home_drive_bind_path),
                 runtime: BindMount::new(
-                    &self.factory_config.rootfs_path,
+                    &self.factory_config.runtime_path,
                     &snapshot.runtime_drive_bind_path,
                 ),
             },

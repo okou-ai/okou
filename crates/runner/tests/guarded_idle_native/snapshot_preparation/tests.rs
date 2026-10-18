@@ -11,7 +11,7 @@ struct Fixture {
 impl Fixture {
     fn new() -> TestResult<Self> {
         let directory = tempfile::tempdir()?;
-        for name in ["producer", "vmm", "kernel", "rootfs"] {
+        for name in ["producer", "vmm", "kernel", "rootfs", "runtime"] {
             std::fs::write(
                 directory.path().join(name),
                 format!("ordinary {name} bytes"),
@@ -22,6 +22,7 @@ impl Fixture {
             binary_path: directory.path().join("vmm"),
             kernel_path: directory.path().join("kernel"),
             rootfs_path: directory.path().join("rootfs"),
+            runtime_path: directory.path().join("runtime"),
             output_dir: directory.path().join("snapshot"),
             vcpu_count: 2,
             memory_mb: 4096,
@@ -68,6 +69,7 @@ impl Fixture {
             firecracker_sha256: hex::encode(Sha256::digest(b"ordinary vmm bytes")),
             kernel_sha256: hex::encode(Sha256::digest(b"ordinary kernel bytes")),
             rootfs_sha256: hex::encode(Sha256::digest(b"ordinary rootfs bytes")),
+            runtime_sha256: hex::encode(Sha256::digest(b"ordinary runtime bytes")),
             snapshot_id: self.config.id.clone(),
             snapshot_files,
             policy_sha256: "0".repeat(64),
@@ -110,6 +112,7 @@ fn published_record_binds_original_inputs_complete_outputs_and_creator_clocks() 
             "firecracker_sha256": artifacts.firecracker_sha256,
             "kernel_sha256": artifacts.kernel_sha256,
             "rootfs_sha256": artifacts.rootfs_sha256,
+            "runtime_sha256": artifacts.runtime_sha256,
             "snapshot_id": artifacts.snapshot_id,
             "snapshot_files": artifacts.snapshot_files,
             "snapshot_preparation_sha256": artifacts.snapshot_preparation_sha256,
@@ -221,6 +224,7 @@ fn record_reader_refuses_mismatched_creation_fields_even_with_matching_record_ha
         "firecracker_sha256",
         "kernel_sha256",
         "rootfs_sha256",
+        "runtime_sha256",
         "snapshot_id",
         "profile",
         "snapshot_files",

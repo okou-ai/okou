@@ -1,4 +1,6 @@
 import { execFile } from "node:child_process";
+import { readFile, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { agentLoopCommand } from "../__agent-loop";
@@ -98,6 +100,29 @@ afterEach(() => {
   process.exitCode = previousExit;
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
+});
+
+it("preserves the private child signal through the public entry", async () => {
+  const childEntry = join(dirname(compiled.entry), "agent/agent.js");
+  const original = await readFile(childEntry);
+  try {
+    // The child program is the external process boundary of this forwarding
+    // command. Keep the real public parser, spawn and exit observation.
+    await writeFile(childEntry, 'process.kill(process.pid, "SIGTERM");\n');
+    const signal = await new Promise<NodeJS.Signals | null>((resolve) => {
+      execFile(
+        process.execPath,
+        [compiled.entry, "__agent-loop"],
+        { env: { ...process.env, SENTRY_DSN: "" } },
+        (error) => {
+          resolve(error?.signal ?? null);
+        },
+      );
+    });
+    expect(signal).toBe("SIGTERM");
+  } finally {
+    await writeFile(childEntry, original);
+  }
 });
 
 it("keeps a failed command terminal when its stderr sink throws", async () => {

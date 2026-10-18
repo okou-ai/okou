@@ -377,6 +377,16 @@ impl RootfsPaths {
         self.dir.join("rootfs.ext4")
     }
 
+    /// Independently read-only Agent image in this leased image generation.
+    pub fn runtime(&self) -> PathBuf {
+        self.dir.join("runtime.ext4")
+    }
+
+    /// Runtime staging retained by the same writer and lock as rootfs staging.
+    pub fn runtime_staging(&self) -> PathBuf {
+        self.dir.join("runtime.ext4.staging")
+    }
+
     /// Pre-commit staging path for the rootfs image.
     ///
     /// Rootfs customization runs against this path. Only after every
@@ -391,8 +401,8 @@ impl RootfsPaths {
     }
 
     /// All files that must exist for the rootfs to be considered complete.
-    pub fn expected_files(&self) -> [PathBuf; 1] {
-        [self.rootfs()]
+    pub fn expected_files(&self) -> [PathBuf; 2] {
+        [self.rootfs(), self.runtime()]
     }
 
     /// Sidecar copy of the Okou CLI manifest installed into this rootfs.
@@ -719,8 +729,9 @@ mod tests {
         let home = HomePaths::with_root(PathBuf::from("/test"));
         let rp = RootfsPaths::new(&home, "aaa");
         let files = rp.expected_files();
-        assert_eq!(files.len(), 1);
+        assert_eq!(files.len(), 2);
         assert_eq!(files[0], rp.rootfs());
+        assert_eq!(files[1], rp.runtime());
     }
 
     #[test]

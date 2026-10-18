@@ -38,7 +38,7 @@ class PressureReportTests(unittest.TestCase):
         self.artifacts = {
             "source_sha": "a"*40, "test_binary_sha256": "b"*64,
             "firecracker_sha256": "c"*64, "kernel_sha256": "d"*64,
-            "rootfs_sha256": "e"*64, "snapshot_id": "native-pressure-fixture",
+            "rootfs_sha256": "e"*64, "runtime_sha256": "2"*64, "snapshot_id": "native-pressure-fixture",
             "snapshot_files": {name: "f"*64 for name in (
                 "snapshot.bin", "memory.bin", "cow.img", "cow.img.bitmap", ".snapshot-complete")},
             "policy_sha256": hashlib.sha256(raw_policy.encode()).hexdigest(),

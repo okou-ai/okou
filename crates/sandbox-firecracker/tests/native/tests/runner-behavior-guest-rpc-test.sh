@@ -37,22 +37,24 @@ cat >"$TEST_ROOT/bin/systemd-run" <<'SYSTEMD_RUN'
 set -euo pipefail
 printf '%s\n' "$@" >"$RPC_CASE/launch"
 case " $* " in
-  *" --property=RuntimeMaxSec=180 "*) ;;
+  *" --property=RuntimeMaxSec=480 "*) ;;
   *) exit 90 ;;
 esac
 case " $* " in
-  *" --ignored --exact packaged_helper_completes_over_fresh_restored_and_reused_firecracker --nocapture --test-threads=1 ") ;;
+  *" --ignored --exact packaged_helper_completes_over_fresh_restored_and_reused_firecracker packaged_runtime_executes_real_agents_tools_and_children --nocapture --test-threads=1 ") ;;
   *) exit 91 ;;
 esac
 rootfs_seen=false
+runtime_seen=false
 snapshot_seen=false
 for argument in "$@"; do
   case "$argument" in
     --setenv=OKOU_TEST_RPC_ROOTFS=*) test -s "${argument#*=*=}"; rootfs_seen=true ;;
+    --setenv=OKOU_TEST_RPC_RUNTIME=*) test -s "${argument#*=*=}"; runtime_seen=true ;;
     --setenv=OKOU_TEST_RPC_SNAPSHOT_DIR=*) test -s "${argument#*=*=}/snapshot.bin"; snapshot_seen=true ;;
   esac
 done
-test "$rootfs_seen" = true && test "$snapshot_seen" = true
+test "$rootfs_seen" = true && test "$runtime_seen" = true && test "$snapshot_seen" = true
 # Both image locks must remain held throughout native execution.
 for lock in "$RPC_CASE/fixtures/locks/"*; do
   if flock --exclusive --nonblock "$lock" true; then exit 92; fi
@@ -64,6 +66,7 @@ cat >"$TEST_ROOT/native-test" <<'TEST_BIN'
 set -euo pipefail
 test "$*" = '--ignored --list'
 echo 'packaged_helper_completes_over_fresh_restored_and_reused_firecracker: test'
+echo 'packaged_runtime_executes_real_agents_tools_and_children: test'
 TEST_BIN
 chmod +x "$TEST_ROOT/bin/"* "$TEST_ROOT/native-test"
 ROOTFS_HASH=$(printf 'a%.0s' {1..64})
@@ -79,6 +82,7 @@ for native_status in 0 42; do
   for fixture in "$fixture_dir/firecracker/$FC_VERSION/firecracker" \
     "$fixture_dir/firecracker/$FC_VERSION/vmlinux-$KERNEL_VERSION" \
     "$fixture_dir/images/$ROOTFS_HASH/rootfs.ext4" \
+    "$fixture_dir/images/$ROOTFS_HASH/runtime.ext4" \
     "$snapshot_dir/snapshot.bin" "$snapshot_dir/memory.bin" "$snapshot_dir/cow.img"; do
     printf 'immutable fixture\n' >"$fixture"
   done

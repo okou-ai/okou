@@ -35,7 +35,7 @@ async function buildImageResizeWorker(): Promise<void> {
         "utils/image-resize-worker.js",
       ),
     },
-    outDir: "dist",
+    outDir: "dist/agent",
     format: ["esm"],
     platform: "node",
     splitting: false,
@@ -52,7 +52,7 @@ async function buildImageResizeWorker(): Promise<void> {
 
   copyFileSync(
     resolve(dirname(photonEntry), "photon_rs_bg.wasm"),
-    resolve("dist/photon_rs_bg.wasm"),
+    resolve("dist/agent/photon_rs_bg.wasm"),
   );
 }
 
@@ -79,6 +79,29 @@ export default defineConfig({
     ),
   },
   onSuccess: async () => {
+    await build({
+      config: false,
+      entry: { agent: "src/agent.ts" },
+      outDir: "dist/agent",
+      format: ["esm"],
+      platform: "node",
+      splitting: false,
+      dts: false,
+      sourcemap: true,
+      clean: true,
+      shims: true,
+      removeNodeProtocol: false,
+      banner: { js: banner },
+      define: {
+        __CLI_VERSION__: JSON.stringify(pkg.version),
+        __DEFAULT_SENTRY_DSN__: JSON.stringify(
+          process.env.DEFAULT_SENTRY_DSN ?? "",
+        ),
+      },
+      esbuildOptions(options) {
+        options.nodePaths = [resolve("node_modules")];
+      },
+    });
     await buildImageResizeWorker();
 
     if (!isWatchMode) {

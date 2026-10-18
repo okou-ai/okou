@@ -100,6 +100,7 @@ async fn runtime_creates_factory() {
         binary_path: "/bin/test".into(),
         kernel_path: "/boot/test".into(),
         rootfs_path: "/rootfs/test".into(),
+        runtime_path: "/runtime/test".into(),
         base_dir: "/tmp/test".into(),
         snapshot: None,
     };

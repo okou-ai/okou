@@ -1,11 +1,11 @@
-//! Canonical executable destinations for binaries delivered in the guest rootfs.
+//! Canonical executable entry points in the paired Guest images.
 //!
 //! The runner's `guest-binaries.json` inventory remains authoritative for
-//! delivery metadata. Its integration test requires every inventory entry to
-//! match these paths so runner and guest runtime consumers stay in lockstep.
+//! staging delivery metadata. Customization moves guest-agent into the runtime;
+//! bootstrap and workload helpers retain their rootfs destinations.
 
 /// Production path of the Guest Agent executable.
-pub const AGENT_PATH: &str = "/usr/local/bin/guest-agent";
+pub const AGENT_PATH: &str = crate::runtime_drive::RUNTIME_GUEST_AGENT;
 
 /// Production path of the guest storage-manifest application executable.
 pub const STORAGE_APPLY_PATH: &str = "/usr/local/bin/guest-storage-apply";

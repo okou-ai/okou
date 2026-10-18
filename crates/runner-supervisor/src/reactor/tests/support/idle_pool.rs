@@ -176,6 +176,7 @@ async fn seed_idle_pool_with_overrides_and_generation(
             binary_path: PathBuf::new(),
             kernel_path: PathBuf::new(),
             rootfs_path: PathBuf::new(),
+            runtime_path: PathBuf::new(),
             base_dir: PathBuf::new(),
             snapshot: None,
         })

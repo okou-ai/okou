@@ -116,7 +116,8 @@ FIRECRACKER_DIR=$(find /var/lib/vm0-runner/firecracker \
 FIRECRACKER="${FIRECRACKER_DIR}/firecracker"
 KERNEL=$(find "$FIRECRACKER_DIR" -maxdepth 1 -type f -name 'vmlinux-*' | sort | tail -1)
 ROOTFS="/var/lib/vm0-runner/images/${ROOTFS_HASH}/rootfs.ext4"
-for fixture in "$TEST_BIN" "$FIRECRACKER" "$KERNEL" "$ROOTFS"; do
+RUNTIME="/var/lib/vm0-runner/images/${ROOTFS_HASH}/runtime.ext4"
+for fixture in "$TEST_BIN" "$FIRECRACKER" "$KERNEL" "$ROOTFS" "$RUNTIME"; do
   if [ ! -f "$fixture" ]; then
     echo "required host CPU fairness fixture is missing: $fixture" >&2
     exit 1
@@ -151,5 +152,6 @@ sudo systemd-run \
   "--setenv=OKOU_TEST_HOST_CPU_FIRECRACKER=${FIRECRACKER}" \
   "--setenv=OKOU_TEST_HOST_CPU_KERNEL=${KERNEL}" \
   "--setenv=OKOU_TEST_HOST_CPU_ROOTFS=${ROOTFS}" \
+  "--setenv=OKOU_TEST_HOST_CPU_RUNTIME=${RUNTIME}" \
   "--setenv=OKOU_TEST_HOST_CPU_BASE_DIR=${BASE_DIR}" \
   "$TEST_BIN" --ignored --exact "$SELECTED_TEST" --test-threads=1 --nocapture

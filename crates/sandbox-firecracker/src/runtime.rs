@@ -125,6 +125,7 @@ impl FirecrackerRuntime {
             binary_path: config.binary_path,
             kernel_path: config.kernel_path,
             rootfs_path: config.rootfs_path,
+            runtime_path: config.runtime_path,
             base_dir: config.base_dir,
             profile: config.profile,
             proxy_port: self.proxy_port,

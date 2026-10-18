@@ -529,12 +529,16 @@ impl<'a> CliRuntimeConfig<'a> {
         Cow::Owned(user_env)
     }
 
-    fn pi_cli_path(&self) -> &str {
+    fn pi_command(&self) -> Vec<String> {
         #[cfg(debug_assertions)]
         if let Some(path) = self.test_pi_cli_path {
-            return path;
+            return vec![path.to_string(), "__agent-loop".to_string()];
         }
-        guest_contracts::okou_cli::OKOU_CLI_LAUNCHER_PATH
+        vec![
+            guest_contracts::runtime_drive::RUNTIME_NODE.to_string(),
+            guest_contracts::runtime_drive::RUNTIME_PI_ENTRY.to_string(),
+            "__agent-loop".to_string(),
+        ]
     }
 }
 
@@ -554,10 +558,7 @@ fn build_pi_command_for_runtime(runtime: &CliRuntimeConfig<'_>) -> Result<Vec<St
             )));
         }
     }
-    Ok(vec![
-        runtime.pi_cli_path().to_string(),
-        "__agent-loop".to_string(),
-    ])
+    Ok(runtime.pi_command())
 }
 
 fn is_pi_memory_maintenance(runtime: &CliRuntimeConfig<'_>) -> Result<bool, AgentError> {

@@ -47,7 +47,7 @@ def validate_snapshot_preparation(directory, artifacts):
             "completed_monotonic_ns", "started_unix_ns", "completed_unix_ns"}:
         raise ValueError("incomplete snapshot preparation record")
     expected_inputs = {key: artifacts[key] for key in (
-        "source_sha", "firecracker_sha256", "kernel_sha256", "rootfs_sha256", "snapshot_id", "profile")}
+        "source_sha", "firecracker_sha256", "kernel_sha256", "rootfs_sha256", "runtime_sha256", "snapshot_id", "profile")}
     expected_inputs["producer_test_binary_sha256"] = artifacts["test_binary_sha256"]
     if (record["format"] != "native-snapshot-preparation-v1"
             or record["inputs"] != expected_inputs
@@ -173,13 +173,13 @@ def _validate_cases(directory, cases, phases):
     expected = collector["metadata"]["native_terminal_artifacts"]
     if not isinstance(expected, dict) or set(expected) != {
             "source_sha", "test_binary_sha256", "firecracker_sha256", "kernel_sha256",
-            "rootfs_sha256", "snapshot_id", "snapshot_files", "snapshot_preparation_sha256", "policy_sha256", "profile",
+            "rootfs_sha256", "runtime_sha256", "snapshot_id", "snapshot_files", "snapshot_preparation_sha256", "policy_sha256", "profile",
             "required_fixture_tail_bytes"}:
         raise ValueError("incomplete native artifact manifest")
     if not isinstance(expected["source_sha"], str) or not re.fullmatch(r"[0-9a-f]{40}", expected["source_sha"]):
         raise ValueError("invalid native source identity")
     hashes = [expected[k] for k in (
-        "test_binary_sha256", "firecracker_sha256", "kernel_sha256", "rootfs_sha256", "policy_sha256",
+        "test_binary_sha256", "firecracker_sha256", "kernel_sha256", "rootfs_sha256", "runtime_sha256", "policy_sha256",
         "snapshot_preparation_sha256")]
     if not isinstance(expected["snapshot_id"], str) or not re.fullmatch(
             r"[A-Za-z0-9_.-]{1,70}", expected["snapshot_id"]) or expected["snapshot_id"] in (".", ".."):

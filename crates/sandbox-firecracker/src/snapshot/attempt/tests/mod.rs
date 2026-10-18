@@ -356,6 +356,7 @@ async fn snapshot_attempt_prepare_firecracker_files_rejects_socket_symlink() {
         binary_path: dir.path().join("firecracker"),
         kernel_path: dir.path().join("vmlinux"),
         rootfs_path: dir.path().join("rootfs.ext4"),
+        runtime_path: dir.path().join("runtime.ext4"),
         output_dir: dir.path().join("output"),
         vcpu_count: 2,
         memory_mb: 512,

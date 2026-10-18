@@ -46,6 +46,7 @@ fn test_profile(
             binary_path: PathBuf::new(),
             kernel_path: PathBuf::new(),
             rootfs_path: rootfs.rootfs(),
+            runtime_path: rootfs.runtime(),
             base_dir: PathBuf::new(),
             snapshot: Some(sandbox::SnapshotRef {
                 output_dir: rootfs.snapshot_dir(snapshot_hash),

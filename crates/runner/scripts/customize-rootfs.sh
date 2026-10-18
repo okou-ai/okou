@@ -14,7 +14,7 @@
 #     --rootfs /path/to/rootfs.ext4.staging \
 #     --ca-dir /path/to/ca \
 #     --dns-nameserver 8.8.8.8 \
-#     --runtime-identity <rootfs-input-sha256> \
+#     --runtime-identity <runtime-input-sha256> \
 #     --guest /path/to/guest-agent /usr/local/bin/guest-agent \
 #     [--guest SOURCE DESTINATION ...] \
 #     [--okou-cli /path/to/package.tgz 9.353.0 /path/to/installed.json]
@@ -40,6 +40,7 @@ fi
 shift
 
 ROOTFS=""
+RUNTIME=""
 CA_DIR=""
 DNS_NAMESERVER=""
 RUNTIME_IDENTITY=""
@@ -101,6 +102,7 @@ trap 'echo "error: command failed at line ${LINENO}: ${BASH_COMMAND}" >&2' ERR
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --rootfs)             ROOTFS="$2";             shift 2 ;;
+    --runtime)            RUNTIME="$2";            shift 2 ;;
     --ca-dir)             CA_DIR="$2";             shift 2 ;;
     --dns-nameserver)     DNS_NAMESERVER="$2";     shift 2 ;;
     --runtime-identity)   RUNTIME_IDENTITY="$2";   shift 2 ;;
@@ -123,14 +125,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-for var in ROOTFS CA_DIR DNS_NAMESERVER RUNTIME_IDENTITY; do
+for var in ROOTFS RUNTIME CA_DIR DNS_NAMESERVER RUNTIME_IDENTITY; do
   if [[ -z "${!var}" ]]; then
     echo "error: --$(echo "$var" | tr '_' '-' | tr '[:upper:]' '[:lower:]') is required" >&2
     exit 1
   fi
 done
 if [[ ! "$RUNTIME_IDENTITY" =~ ^[0-9a-f]{64}$ ]]; then
-  echo "error: runtime identity must be the rootfs input SHA-256" >&2
+  echo "error: runtime identity must be the runtime build-input SHA-256" >&2
   exit 1
 fi
 if [[ ${#GUEST_SOURCES[@]} -eq 0 ]]; then
@@ -139,7 +141,7 @@ if [[ ${#GUEST_SOURCES[@]} -eq 0 ]]; then
 fi
 
 missing=()
-for cmd in sudo unshare mount umount mountpoint chroot mktemp sed grep tar gzip; do
+for cmd in sudo unshare mount umount mountpoint chroot mktemp sed grep tar gzip python3 readelf mkfs.ext4 e2fsck dumpe2fs fstrim; do
   if ! command -v "$cmd" &>/dev/null; then
     missing+=("$cmd")
   fi
@@ -345,8 +347,8 @@ CHROOT_TMP_HOST="$(sudo mktemp -d -p "$MOUNT_DIR" ".vm0-rootfs-customize.XXXXXX"
 CHROOT_TMP="/${CHROOT_TMP_HOST##*/}"
 sudo chmod 700 "$CHROOT_TMP_HOST"
 
-# Bind the two filesystem views to the already-computed rootfs input identity.
-printf '%s\n' "$RUNTIME_IDENTITY" | install_inline_file "/etc/okou/runtime-rootfs-id" 644
+# Bind the two filesystem views to the independently computed runtime input identity.
+printf '%s\n' "$RUNTIME_IDENTITY" | install_inline_file "/etc/okou/runtime-build-id" 644
 
 # Rootfs resolv.conf for the VM (single nameserver — UDP 53 redirected to dnsmasq).
 printf 'nameserver %s\n' "$DNS_NAMESERVER" | install_inline_file "/etc/resolv.conf" 644
@@ -447,8 +449,16 @@ sudo chroot "$MOUNT_DIR" keytool -importcert -trustcacerts \
   -alias vm0-proxy-ca \
   -file "/${CA_ROOTFS_DEST}"
 
+sudo python3 "$(dirname "$0")/build-runtime.py" \
+  --rootfs-dir "$MOUNT_DIR" --output "$RUNTIME" \
+  --identity "$RUNTIME_IDENTITY" --cli-version "$OKOU_CLI_VERSION"
+
 sudo rm -rf --one-file-system "$CHROOT_TMP_HOST"
 CHROOT_TMP=""
 CHROOT_TMP_HOST=""
+
+# Return freed Agent and temporary build blocks to the sparse backing file.
+# Otherwise ext4 deletion would leave a second physical copy in unused blocks.
+sudo fstrim "$MOUNT_DIR"
 
 echo "[OK] rootfs customized"

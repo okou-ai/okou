@@ -12,7 +12,7 @@
 # Usage:
 #   bash verify-rootfs.sh --rootfs /path/to/image.ext4 [--mode template|rootfs] \
 #     --guest-dest /usr/local/bin/guest-agent [--guest-dest DESTINATION ...] \
-#     [--runtime-identity <required-rootfs-input-sha256-in-rootfs-mode>] \
+#     [--runtime-identity <required-runtime-input-sha256-in-rootfs-mode>] \
 #     [--okou-cli-version 9.353.0 --okou-cli-manifest /path/to/installed.json]
 #
 # `--okou-cli-version` asserts that exactly that Okou CLI bundle is installed
@@ -323,12 +323,12 @@ fi
 
 if [[ "$MODE" == "rootfs" ]]; then
   if [[ ! "$RUNTIME_IDENTITY" =~ ^[0-9a-f]{64}$ ]] \
-      || [[ ! -f "${MOUNT_DIR}/etc/okou/runtime-rootfs-id" ]] \
-      || [[ -L "${MOUNT_DIR}/etc/okou/runtime-rootfs-id" ]] \
+      || [[ ! -f "${MOUNT_DIR}/etc/okou/runtime-build-id" ]] \
+      || [[ -L "${MOUNT_DIR}/etc/okou/runtime-build-id" ]] \
       || [[ -L "${MOUNT_DIR}/etc/okou" ]] \
       || [[ -L "${MOUNT_DIR}/etc" ]] \
-      || ! printf '%s\n' "$RUNTIME_IDENTITY" | cmp -s - "${MOUNT_DIR}/etc/okou/runtime-rootfs-id"; then
-    errors+=("runtime image identity does not match the rootfs input hash")
+      || ! printf '%s\n' "$RUNTIME_IDENTITY" | cmp -s - "${MOUNT_DIR}/etc/okou/runtime-build-id"; then
+    errors+=("runtime image identity does not match the runtime build-input hash")
   fi
   # Check guest binaries
   for dest in "${GUEST_DESTINATIONS[@]}"; do
@@ -440,9 +440,14 @@ check_required_executable "/usr/local/bin/agent-browser" "agent-browser CLI"
 check_required_executable "/usr/local/bin/uv" "uv"
 check_required_executable "/usr/local/bin/uvx" "uvx"
 check_required_executable "$CLAUDE_CLI_DEST" "Claude Code CLI"
-check_required_file_contains "$CLAUDE_CLI_DEST" \
-  '--append-system-prompt-file' \
-  "Claude Code append-system-prompt-file support"
+if [[ "$MODE" == "template" ]]; then
+  check_required_file_contains "$CLAUDE_CLI_DEST" \
+    '--append-system-prompt-file' \
+    "Claude Code append-system-prompt-file support"
+else
+  check_required_file_contains "$CLAUDE_CLI_DEST" \
+    '/run/okou/runtime/usr/local/bin/claude' "Claude runtime entry"
+fi
 
 if [[ -f "${MOUNT_DIR}/usr/bin/gh" ]]; then
   echo "  gh CLI: found"
@@ -529,7 +534,7 @@ if [[ "$MODE" == "rootfs" ]]; then
   fi
 else
   template_contamination=0
-  if [[ -e "${MOUNT_DIR}/etc/okou/runtime-rootfs-id" || -L "${MOUNT_DIR}/etc/okou/runtime-rootfs-id" ]]; then
+  if [[ -e "${MOUNT_DIR}/etc/okou/runtime-build-id" || -L "${MOUNT_DIR}/etc/okou/runtime-build-id" ]]; then
     errors+=("template contains rootfs-only runtime identity")
     template_contamination=1
   fi

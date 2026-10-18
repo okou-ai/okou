@@ -16,6 +16,28 @@ Preserve stable CPU locks, held image locks, bounded systemd work, inherited SSH
 transport and original failure/cleanup behavior. Manual commands need the same
 host authorization and fixtures; do not replay uncertain native execution.
 
+The selected image generation contains both `rootfs.ext4` and `runtime.ext4`.
+Guest RPC CI also runs `packaged_runtime_executes_real_agents_tools_and_children`:
+the actual packaged Claude, Codex and Pi use bounded local synthetic model peers
+to execute tools and child Agents. Pi reads a real image through its packaged
+worker/WASM assets. The scenario covers fresh boot, restored snapshots, park and
+reassignment, and fresh boot without a home drive. It checks the public tool CLI
+and its independent Node installation, while fixed Agent paths ignore poisoned
+PATH entries. The image-directory lease retains both source files through both
+native tests. The additional payload scenario has an explicit bounded lifetime;
+its resource observations do not establish production savings or caller MAC.
+
+For manually supplied owned pairs, the ignored `prepare_packaged_runtime_snapshot`
+test invokes the production snapshot creator with the same `OKOU_TEST_RPC_*`
+paths, a new snapshot directory, and the 2-vCPU/4-GiB/16-GiB-home test profile.
+Record the exact source, producer binary and image hashes before and after this
+fixture preparation. Restore consumes the production `runtime-source.json`
+generation binding. This helper does not produce the separate
+`guarded_idle_native` preparation receipt or qualify its lifetime/resource gates.
+The payload test starts each framework through `StartAgentProcess`; the local
+model peer is a separately supervised process. Explicit no-home fixtures prepare
+the normal CLI cwd before launching Agents.
+
 The `host-cpu-fairness-test` CI job explicitly sets `HOST_CPU_TEST_MODE=placement`,
 also the driver's default. It runs only
 `real_firecracker_guests_have_managed_host_cpu_placement`: real cgroup delegation,

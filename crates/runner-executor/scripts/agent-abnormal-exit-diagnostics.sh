@@ -14,15 +14,15 @@ uname -a 2>&1
 pwd 2>&1
 
 section guest-agent-binary
-ls -l /usr/local/bin/guest-agent 2>&1
-stat /usr/local/bin/guest-agent 2>&1
+ls -l /run/okou/runtime/usr/local/bin/guest-agent 2>&1
+stat /run/okou/runtime/usr/local/bin/guest-agent 2>&1
 if command -v file >/dev/null 2>&1; then
-  file /usr/local/bin/guest-agent 2>&1
+  file /run/okou/runtime/usr/local/bin/guest-agent 2>&1
 else
   echo "file: unavailable"
 fi
 if command -v sha256sum >/dev/null 2>&1; then
-  sha256sum /usr/local/bin/guest-agent 2>&1
+  sha256sum /run/okou/runtime/usr/local/bin/guest-agent 2>&1
 else
   echo "sha256sum: unavailable"
 fi

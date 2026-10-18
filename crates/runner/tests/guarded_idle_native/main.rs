@@ -781,6 +781,7 @@ async fn prepare_native_terminal_snapshot() -> TestResult<()> {
         binary_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_FIRECRACKER")?),
         kernel_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_KERNEL")?),
         rootfs_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_ROOTFS")?),
+        runtime_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_RUNTIME")?),
         output_dir,
         vcpu_count: 2,
         memory_mb: 4096,
@@ -890,6 +891,7 @@ async fn exercise_selected_factories(
                 binary_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_FIRECRACKER")?),
                 kernel_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_KERNEL")?),
                 rootfs_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_ROOTFS")?),
+                runtime_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_RUNTIME")?),
                 base_dir: owned.clone(),
                 snapshot,
             };

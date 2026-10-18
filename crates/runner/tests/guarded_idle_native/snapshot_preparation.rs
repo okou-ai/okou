@@ -44,6 +44,7 @@ struct Inputs {
     firecracker_sha256: String,
     kernel_sha256: String,
     rootfs_sha256: String,
+    runtime_sha256: String,
     snapshot_id: String,
     profile: Profile,
 }
@@ -90,7 +91,7 @@ where
 
 struct Creation {
     inputs: Inputs,
-    paths: [PathBuf; 4],
+    paths: [PathBuf; 5],
     output: SnapshotOutputPaths,
     creator_boot_id: String,
     started_monotonic_ns: u64,
@@ -138,6 +139,7 @@ impl Creation {
             config.binary_path.clone(),
             config.kernel_path.clone(),
             config.rootfs_path.clone(),
+            config.runtime_path.clone(),
         ];
         let inputs = Inputs {
             source_sha: source.to_owned(),
@@ -145,6 +147,7 @@ impl Creation {
             firecracker_sha256: file_sha256(&paths[1])?,
             kernel_sha256: file_sha256(&paths[2])?,
             rootfs_sha256: file_sha256(&paths[3])?,
+            runtime_sha256: file_sha256(&paths[4])?,
             snapshot_id: config.id.clone(),
             profile,
         };
@@ -192,6 +195,7 @@ impl Creation {
             &self.inputs.firecracker_sha256,
             &self.inputs.kernel_sha256,
             &self.inputs.rootfs_sha256,
+            &self.inputs.runtime_sha256,
         ]) {
             if file_sha256(path)? != *expected {
                 return Err(
@@ -265,6 +269,7 @@ pub(super) fn verify_record(directory: &Path, artifacts: &Artifacts) -> TestResu
         firecracker_sha256: artifacts.firecracker_sha256.clone(),
         kernel_sha256: artifacts.kernel_sha256.clone(),
         rootfs_sha256: artifacts.rootfs_sha256.clone(),
+        runtime_sha256: artifacts.runtime_sha256.clone(),
         snapshot_id: artifacts.snapshot_id.clone(),
         profile: Profile::native(),
     };

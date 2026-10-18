@@ -9,7 +9,7 @@ use crate::ca;
 use crate::error::{RunnerError, RunnerResult};
 use runner_host::paths::HomePaths;
 
-use super::scripts::{CUSTOMIZE_SCRIPT, TEMPLATE_BUILD_SCRIPT};
+use super::scripts::{CUSTOMIZE_SCRIPT, RUNTIME_BUILD_SCRIPT, TEMPLATE_BUILD_SCRIPT};
 
 /// Bump to invalidate all shared template images in R2.
 ///
@@ -37,6 +37,7 @@ pub(super) struct OkouCliHashInput<'a> {
 pub(super) struct RootfsBuildHashes {
     pub(super) template_hash: String,
     pub(super) rootfs_hash: String,
+    pub(super) runtime_hash: String,
 }
 
 /// Compute a template hash for shared R2 image caching.
@@ -148,7 +149,7 @@ pub(super) async fn compute_rootfs_build_hashes(
     okou_cli: Option<&OkouCliHashInput<'_>>,
 ) -> RunnerResult<RootfsBuildHashes> {
     let template_hash = compute_template_hash(rootfs_disk_mb);
-    let rootfs_hash = compute_rootfs_hash(
+    let inputs_hash = compute_rootfs_hash(
         &template_hash,
         guest_bins,
         ca_fingerprint,
@@ -158,9 +159,25 @@ pub(super) async fn compute_rootfs_build_hashes(
     )
     .await?;
 
+    // Hash inputs, never either output image. Runtime is independently bound
+    // and the final rootfs identity incorporates the paired runtime recipe.
+    let mut runtime = Sha256::new();
+    update_rootfs_hash_field(&mut runtime, b"runtime_inputs:", inputs_hash.as_bytes())?;
+    update_rootfs_hash_field(
+        &mut runtime,
+        b"runtime_recipe:",
+        RUNTIME_BUILD_SCRIPT.as_bytes(),
+    )?;
+    let runtime_hash = hex::encode(runtime.finalize());
+    let mut rootfs = Sha256::new();
+    update_rootfs_hash_field(&mut rootfs, b"tool_inputs:", inputs_hash.as_bytes())?;
+    update_rootfs_hash_field(&mut rootfs, b"runtime_inputs:", runtime_hash.as_bytes())?;
+    let rootfs_hash = hex::encode(rootfs.finalize());
+
     Ok(RootfsBuildHashes {
         template_hash,
         rootfs_hash,
+        runtime_hash,
     })
 }
 

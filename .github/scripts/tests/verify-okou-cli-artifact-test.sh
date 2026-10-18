@@ -21,7 +21,8 @@ create_artifact() {
   local versions="${5:-$versions_json}"
   local package_root="${artifact_dir}/contents/package"
 
-  mkdir -p "$package_root"
+  mkdir -p "$package_root/agent"
+  printf 'agent entry\n' >"$package_root/agent/agent.js"
   jq -n \
     --arg version "$package_version" \
     '{
@@ -37,10 +38,10 @@ create_artifact() {
     }' >"${package_root}/package.json"
   printf 'okou\n' >"${package_root}/okou.js"
   if [[ "$include_worker" == "true" ]]; then
-    printf 'worker\n' >"${package_root}/image-resize-worker.js"
+    printf 'worker\n' >"${package_root}/agent/image-resize-worker.js"
   fi
   if [[ "$include_wasm" == "true" ]]; then
-    printf 'wasm\n' >"${package_root}/photon_rs_bg.wasm"
+    printf 'wasm\n' >"${package_root}/agent/photon_rs_bg.wasm"
   fi
 
   tar -czf "${artifact_dir}/package.tgz" \

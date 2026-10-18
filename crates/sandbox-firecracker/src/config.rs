@@ -16,6 +16,8 @@ pub struct FirecrackerConfig {
     pub kernel_path: PathBuf,
     /// Path to the rootfs image used as the microVM drive.
     pub rootfs_path: PathBuf,
+    /// Distinct mandatory read-only Agent image.
+    pub runtime_path: PathBuf,
     /// Base directory for runtime data (workspaces, COW devices, etc.).
     pub base_dir: PathBuf,
     /// Profile name (e.g., "vm0/default") used for per-profile isolation.

@@ -10,6 +10,7 @@ fn test_snapshot_config(output_dir: PathBuf) -> SnapshotCreateConfig {
         binary_path: "/tmp/firecracker".into(),
         kernel_path: "/tmp/kernel".into(),
         rootfs_path: "/tmp/rootfs.ext4".into(),
+        runtime_path: "/tmp/runtime.ext4".into(),
         output_dir,
         vcpu_count: 2,
         memory_mb: 1024,
@@ -36,6 +37,7 @@ fn test_factory_config() -> FactoryConfig {
         binary_path: "/bin/test".into(),
         kernel_path: "/boot/test".into(),
         rootfs_path: "/rootfs/test".into(),
+        runtime_path: "/rootfs/test".into(),
         base_dir: "/tmp/test".into(),
         snapshot: None,
     }

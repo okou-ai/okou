@@ -36,6 +36,7 @@ async fn snapshot_provider_default_create_snapshot_commits_pending_publish() {
             binary_path: "/tmp/firecracker".into(),
             kernel_path: "/tmp/kernel".into(),
             rootfs_path: "/tmp/rootfs.ext4".into(),
+            runtime_path: "/tmp/runtime.ext4".into(),
             output_dir: output_dir.clone(),
             vcpu_count: 1,
             memory_mb: 128,

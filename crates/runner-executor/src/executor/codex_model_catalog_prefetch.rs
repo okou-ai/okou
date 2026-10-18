@@ -25,7 +25,7 @@ const PREFETCH_CANCEL_WRITE_TIMEOUT: Duration = Duration::from_secs(1);
 const PREFETCH_STDERR_LIMIT_BYTES: u32 = 4 * 1024;
 
 const PREFETCH_COMMAND: &str = r#"set -eu
-version_output="$(codex --version)"
+version_output="$(/run/okou/runtime/usr/local/bin/codex --version)"
 case "$version_output" in
   "codex-cli "*) client_version="${version_output#codex-cli }" ;;
   *) exit 64 ;;

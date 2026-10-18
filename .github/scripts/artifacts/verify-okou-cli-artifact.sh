@@ -85,11 +85,15 @@ if ! grep -Fxq 'package/okou.js' <<<"$package_contents"; then
   echo "CLI package is missing the canonical okou.js implementation" >&2
   exit 1
 fi
-if ! grep -Fxq 'package/image-resize-worker.js' <<<"$package_contents"; then
+if ! grep -Fxq 'package/agent/agent.js' <<<"$package_contents"; then
+  echo "CLI package is missing the private Agent entry" >&2
+  exit 1
+fi
+if ! grep -Fxq 'package/agent/image-resize-worker.js' <<<"$package_contents"; then
   echo "CLI package is missing image-resize-worker.js" >&2
   exit 1
 fi
-if ! grep -Fxq 'package/photon_rs_bg.wasm' <<<"$package_contents"; then
+if ! grep -Fxq 'package/agent/photon_rs_bg.wasm' <<<"$package_contents"; then
   echo "CLI package is missing photon_rs_bg.wasm" >&2
   exit 1
 fi

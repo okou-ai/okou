@@ -214,7 +214,8 @@ export async function startSubagent(
     1024 * 1024
   )
     throw new Error("Subagent prompt exceeds 1 MiB.");
-  const entry = options.entry ?? process.argv[1];
+  const entry =
+    options.entry ?? "/run/okou/runtime/usr/local/lib/okou-agent/agent.js";
   if (!entry)
     throw new Error("Cannot locate the current Okou CLI entry point.");
   const { id, directory } = await allocateDirectory();
@@ -230,9 +231,9 @@ export async function startSubagent(
     const stderr = openSync(join(directory, "stderr"), "wx", 0o600);
     descriptors.push(stderr);
     task = await launchGuestTask(
-      process.execPath,
+      options.entry ? process.execPath : "/run/okou/runtime/usr/bin/node",
       [
-        ...(options.execArgv ?? process.execArgv),
+        ...(options.entry ? (options.execArgv ?? process.execArgv) : []),
         entry,
         LOOP_COMMAND,
         directory,

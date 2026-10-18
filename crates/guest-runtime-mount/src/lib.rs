@@ -150,7 +150,7 @@ fn runtime_device() -> io::Result<RuntimeDevice> {
 fn create_mount_directory(target: &Path) -> io::Result<()> {
     reject_symlinks(Path::new("/run"))?;
     for path in [Path::new("/run/okou"), target] {
-        match fs::DirBuilder::new().mode(0o700).create(path) {
+        match fs::DirBuilder::new().mode(0o755).create(path) {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
             Err(error) => return Err(error),

@@ -29,17 +29,22 @@ const HASH_VSOCK_PATH: &str = "/vsock";
 ///   "Invalid API key" but still loads the complete module graph. The claude
 ///   binary is a Bun-compiled executable (not Node.js), so
 ///   `NODE_COMPILE_CACHE` has no effect.
-/// - `codex --help`: npm `@openai/codex` uses a Node.js launcher to run the
-///   native Rust CLI. The help command runs without credentials and exits
+/// - `codex --help`: the public wrapper forwards to the paired native Rust
+///   CLI. The help command runs without credentials and exits
 ///   before the VM is paused, so no live CLI process or reusable process-local
 ///   V8 JIT state is preserved. It may warm the guest's file/page cache for
 ///   files read during startup; any startup benefit requires measurement.
 ///   Each warmup is wrapped in its own
 ///   `(... || true)` sub-shell so a failure on one framework does not block
 ///   the other from warming.
+/// - Private Pi `--help` loads the paired Node/SDK graph when the optional CLI
+///   package is installed. It exits before snapshot capture and grants no role.
 pub const PREWARM_SCRIPT: &str = "\
     (claude --print --verbose --output-format stream-json hi 2>/dev/null || true); \
-    (codex --help >/dev/null 2>&1 || true)";
+    (codex --help >/dev/null 2>&1 || true); \
+    if [ -f /run/okou/runtime/usr/local/lib/okou-agent/agent.js ]; then \
+      /run/okou/runtime/usr/bin/node /run/okou/runtime/usr/local/lib/okou-agent/agent.js --help >/dev/null 2>&1; \
+    fi";
 
 /// Invariant configuration shared by all sandboxes.
 ///
@@ -153,7 +158,7 @@ mod tests {
     }
 
     #[test]
-    fn prewarm_script_warms_both_frameworks() {
+    fn prewarm_script_warms_installed_frameworks() {
         assert!(
             PREWARM_SCRIPT.contains("claude"),
             "PREWARM_SCRIPT must warm the claude CLI"
@@ -162,6 +167,8 @@ mod tests {
             PREWARM_SCRIPT.contains("codex"),
             "PREWARM_SCRIPT must warm the codex CLI"
         );
+        assert!(PREWARM_SCRIPT.contains(guest_contracts::runtime_drive::RUNTIME_NODE));
+        assert!(PREWARM_SCRIPT.contains(guest_contracts::runtime_drive::RUNTIME_PI_ENTRY));
     }
 
     #[test]

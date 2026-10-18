@@ -97,6 +97,7 @@ impl HostCpuFixture {
                 binary_path: firecracker,
                 kernel_path: kernel,
                 rootfs_path: rootfs,
+                runtime_path: required_path("OKOU_TEST_HOST_CPU_RUNTIME")?,
                 base_dir,
                 snapshot: None,
             })

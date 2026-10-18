@@ -15,6 +15,9 @@ async fn existing_rootfs_best_effort_allows_missing_r2_cache() {
     let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let rootfs = RootfsPaths::new(&home, "best-effort-local-hash");
     tokio::fs::create_dir_all(rootfs.dir()).await.unwrap();
+    tokio::fs::write(rootfs.runtime(), b"runtime")
+        .await
+        .unwrap();
     tokio::fs::write(rootfs.rootfs(), b"local-rootfs")
         .await
         .unwrap();
@@ -39,6 +42,9 @@ async fn existing_rootfs_completes_while_template_writer_is_active() {
     let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let rootfs = RootfsPaths::new(&home, "release-local-hash");
     tokio::fs::create_dir_all(rootfs.dir()).await.unwrap();
+    tokio::fs::write(rootfs.runtime(), b"runtime")
+        .await
+        .unwrap();
     tokio::fs::write(rootfs.rootfs(), b"local-rootfs")
         .await
         .unwrap();
@@ -78,7 +84,13 @@ async fn is_rootfs_present_checks_rootfs_file() {
 
     assert!(!is_rootfs_present(&rootfs).await.unwrap());
 
-    tokio::fs::write(rootfs.rootfs(), b"").await.unwrap();
+    tokio::fs::write(rootfs.rootfs(), b"rootfs").await.unwrap();
+    assert!(!is_rootfs_present(&rootfs).await.unwrap());
+    tokio::fs::write(rootfs.runtime(), b"").await.unwrap();
+    assert!(!is_rootfs_present(&rootfs).await.unwrap());
+    tokio::fs::write(rootfs.runtime(), b"runtime")
+        .await
+        .unwrap();
     assert!(is_rootfs_present(&rootfs).await.unwrap());
 }
 
@@ -123,6 +135,9 @@ async fn rootfs_image_lock_uses_shared_for_existing_rootfs_in_use() {
     let rootfs_hash = "existing-rootfs-hash";
     let rootfs = RootfsPaths::new(&home, rootfs_hash);
     tokio::fs::create_dir_all(rootfs.dir()).await.unwrap();
+    tokio::fs::write(rootfs.runtime(), b"runtime")
+        .await
+        .unwrap();
     tokio::fs::write(rootfs.rootfs(), b"rootfs").await.unwrap();
     let _running_runner = lock::acquire_shared(home.rootfs_lock(rootfs_hash))
         .await
@@ -162,6 +177,9 @@ async fn rootfs_image_lock_retries_exclusive_when_existing_rootfs_disappears() {
     let rootfs_hash = "disappearing-rootfs-hash";
     let rootfs = RootfsPaths::new(&home, rootfs_hash);
     tokio::fs::create_dir_all(rootfs.dir()).await.unwrap();
+    tokio::fs::write(rootfs.runtime(), b"runtime")
+        .await
+        .unwrap();
     tokio::fs::write(rootfs.rootfs(), b"rootfs").await.unwrap();
 
     let mut removed = false;
@@ -194,6 +212,9 @@ async fn rootfs_image_lock_retries_shared_when_another_builder_commits_rootfs() 
         acquire_rootfs_lock_for_image_build(&task_home, &task_rootfs_hash, &task_rootfs).await
     });
 
+    tokio::fs::write(rootfs.runtime(), b"runtime")
+        .await
+        .unwrap();
     tokio::fs::write(rootfs.rootfs(), b"rootfs").await.unwrap();
     drop(builder_lock);
 

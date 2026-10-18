@@ -15,6 +15,7 @@ mod process_tests;
 pub(super) const TEMPLATE_BUILD_SCRIPT: &str = include_str!("../../../scripts/build-template.sh");
 const VERIFY_SCRIPT: &str = include_str!("../../../scripts/verify-rootfs.sh");
 pub(super) const CUSTOMIZE_SCRIPT: &str = include_str!("../../../scripts/customize-rootfs.sh");
+pub(super) const RUNTIME_BUILD_SCRIPT: &str = include_str!("../../../scripts/build-runtime.py");
 
 pub(super) struct RootfsScripts {
     temp_dir: Option<Arc<tempfile::TempDir>>,
@@ -108,6 +109,9 @@ impl RootfsScripts {
 async fn create_rootfs_scripts_dir() -> RunnerResult<tempfile::TempDir> {
     let dir =
         tempfile::tempdir().map_err(|e| RunnerError::Internal(format!("create temp dir: {e}")))?;
+    tokio::fs::write(dir.path().join("build-runtime.py"), RUNTIME_BUILD_SCRIPT)
+        .await
+        .map_err(|e| RunnerError::Internal(format!("write runtime build script: {e}")))?;
     tokio::fs::write(dir.path().join("build-template.sh"), TEMPLATE_BUILD_SCRIPT)
         .await
         .map_err(|e| RunnerError::Internal(format!("write template build script: {e}")))?;

@@ -57,7 +57,10 @@ async fn is_rootfs_present_ignores_staging_file() {
         .unwrap();
     assert!(!is_rootfs_present(&rootfs).await.unwrap());
 
-    // Committed file means present, even with lingering staging.
+    // Only the complete committed pair is present, even with lingering staging.
+    tokio::fs::write(rootfs.runtime(), b"runtime")
+        .await
+        .unwrap();
     tokio::fs::write(rootfs.rootfs(), b"committed")
         .await
         .unwrap();
@@ -82,6 +85,9 @@ async fn staging_contract_happy_path() {
 
     // Customize staging, then commit.
     tokio::fs::write(rootfs.rootfs_staging(), b"customized")
+        .await
+        .unwrap();
+    tokio::fs::write(rootfs.runtime_staging(), b"runtime")
         .await
         .unwrap();
     publish.commit().await.unwrap();

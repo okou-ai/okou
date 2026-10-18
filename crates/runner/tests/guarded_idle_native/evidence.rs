@@ -27,6 +27,7 @@ pub struct Artifacts {
     pub firecracker_sha256: String,
     pub kernel_sha256: String,
     pub rootfs_sha256: String,
+    pub runtime_sha256: String,
     pub snapshot_id: String,
     pub snapshot_files: std::collections::BTreeMap<String, String>,
     pub snapshot_preparation_sha256: String,
@@ -46,6 +47,7 @@ impl Artifacts {
             ("OKOU_TEST_RPC_FIRECRACKER", &value.firecracker_sha256),
             ("OKOU_TEST_RPC_KERNEL", &value.kernel_sha256),
             ("OKOU_TEST_RPC_ROOTFS", &value.rootfs_sha256),
+            ("OKOU_TEST_RPC_RUNTIME", &value.runtime_sha256),
             ("OKOU_TEST_IDLE_MEMORY_POLICY", &value.policy_sha256),
         ] {
             verify_file(Path::new(&std::env::var(name)?), expected)?;
@@ -93,6 +95,7 @@ impl Artifacts {
             "firecracker_sha256": self.firecracker_sha256,
             "kernel_sha256": self.kernel_sha256,
             "rootfs_sha256": self.rootfs_sha256,
+            "runtime_sha256": self.runtime_sha256,
             "snapshot_id": self.snapshot_id,
             "snapshot_files": self.snapshot_files,
             "snapshot_preparation_sha256": self.snapshot_preparation_sha256,

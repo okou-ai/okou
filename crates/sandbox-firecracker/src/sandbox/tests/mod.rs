@@ -173,6 +173,7 @@ fn test_sandbox_with_state(state: SandboxState) -> FirecrackerSandbox {
             binary_path: base_dir.join("firecracker"),
             kernel_path: base_dir.join("vmlinux"),
             rootfs_path: base_dir.join("rootfs.ext4"),
+            runtime_path: base_dir.join("runtime.ext4"),
             base_dir: base_dir.clone(),
             profile: "test".into(),
             proxy_port: None,

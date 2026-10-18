@@ -316,6 +316,7 @@ mod tests {
             binary_path: PathBuf::from("/tmp/firecracker"),
             kernel_path: PathBuf::from("/tmp/vmlinux"),
             rootfs_path: PathBuf::from("/tmp/rootfs.ext4"),
+            runtime_path: PathBuf::from("/tmp/runtime.ext4"),
             output_dir,
             vcpu_count: 2,
             memory_mb: 512,
