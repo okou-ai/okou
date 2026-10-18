@@ -365,7 +365,17 @@ async function previewText(
     // still a complete, bounded preview; never throw from the React renderer.
     const formatted = await settle(() => {
       const parsed = jsonParseOr<unknown>(text, null);
-      return parsed === null ? text : JSON.stringify(parsed, null, 2);
+      if (parsed === null) {
+        return text;
+      }
+      // Parsing can round numbers, replace overflow with null, or drop duplicate
+      // keys. Pretty-print only when serialization changes whitespace alone.
+      const compact = text.replace(/"(?:\\.|[^"\\])*"|\s+/g, (token) => {
+        return token.startsWith('"') ? token : "";
+      });
+      return JSON.stringify(parsed) === compact
+        ? JSON.stringify(parsed, null, 2)
+        : text;
     }, signal);
     signal.throwIfAborted();
     if (

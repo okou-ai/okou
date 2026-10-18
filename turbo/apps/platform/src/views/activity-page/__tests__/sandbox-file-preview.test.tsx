@@ -105,7 +105,7 @@ async function openPreview(name: string) {
 test.each([
   ["notes.txt", "A short note"],
   ["guide.md", "# Preview heading"],
-  ["answer.json", '{"answer":42}'],
+  ["answer.json", String.raw`{"answer":42,"note":" a b \"quoted\" \\ tail "}`],
   ["data.csv", "name,value\nalpha,42"],
 ])("A user previews %s through the shared renderer", async (name, source) => {
   await setupFilesPage(context, {
@@ -254,6 +254,10 @@ test.each([
     ),
   ],
   ["malformed", '{"unfinished":'],
+  ["large-integer", '{"id":9223372036854775807}'],
+  ["overflowing-number", '{"value":1e309}'],
+  ["negative-zero", '{"value":-0}'],
+  ["duplicate-keys", '{"mode":"first","mode":"second"}'],
 ])(
   "A %s JSON document remains readable without breaking the page",
   async (_name, source) => {
