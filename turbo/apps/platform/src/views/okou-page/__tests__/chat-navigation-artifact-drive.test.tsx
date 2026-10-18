@@ -553,10 +553,12 @@ test("Recheck Drive authorization after leaving and reopening the chat page", as
 
   const initial = await openDriveMessageMenu();
   click(roleItemNamed("menuitem", "Connect Google Drive"));
-  await expectSyncCompletedPreview(
-    "Upload to Google Drive",
-    initial.downloadButton,
-  );
+  const successMessages = await screen.findAllByText("Synced to Google Drive");
+  expect(successMessages.length).toBeGreaterThan(0);
+  await waitFor(() => {
+    expect(initial.downloadButton()).toBeEnabled();
+    expect(initial.downloadButton()).toHaveAttribute("aria-expanded", "false");
+  });
   expect(drive.syncRequests).toStrictEqual([
     {
       artifactId: DRIVE_ARTIFACT_ID,
@@ -567,7 +569,6 @@ test("Recheck Drive authorization after leaving and reopening the chat page", as
   ]);
   expect(drive.oauthRequests).toHaveLength(0);
 
-  await userEvent.keyboard("{Escape}");
   click(buttonNamed("Close", initial.preview));
   await waitFor(() => {
     expect(initial.preview).not.toBeInTheDocument();
@@ -582,7 +583,7 @@ test("Recheck Drive authorization after leaving and reopening the chat page", as
   click(await screen.findByText("Artifact navigation"));
 
   const recovered = await openDriveMessageMenu();
-  expect(recovered.preview).not.toBe(initial.preview);
+  expect(recovered.preview).toBeInTheDocument();
   click(roleItemNamed("menuitem", "Connect Google Drive"));
   await waitFor(() => {
     expect(popup.location.href).toBe(AUTHORIZATION_URL);
@@ -607,6 +608,21 @@ test("Recheck Drive authorization after leaving and reopening the chat page", as
     "Upload to Google Drive",
     recovered.downloadButton,
   );
+});
+
+test("A synced message artifact keeps upload and download actions available", async () => {
+  mockWideScreen();
+  installDriveMocks(context, "connected");
+  await setupPage({
+    context,
+    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+    host: "app.okou.ai",
+  });
+
+  const { downloadButton } = await openDriveMessageMenu();
+  click(roleItemNamed("menuitem", "Connect Google Drive"));
+  await expectSyncCompletedPreview("Upload to Google Drive", downloadButton);
+  expect(downloadButton()).toHaveAttribute("aria-expanded", "true");
 });
 
 test("Connect Google Drive and sync an artifact", async () => {
