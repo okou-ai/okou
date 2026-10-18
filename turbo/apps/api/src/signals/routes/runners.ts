@@ -923,6 +923,7 @@ interface ClaimedRun {
   readonly userId: string;
   readonly orgId: string;
   readonly agentId: string | null;
+  readonly modelProvider: (typeof agentRuns.$inferSelect)["modelProvider"];
   readonly prompt: string;
   readonly appendSystemPrompt: string | null;
   readonly vars: unknown;
@@ -1018,6 +1019,7 @@ const getClaimableJob$ = command(
           prompt: agentRuns.prompt,
           appendSystemPrompt: agentRuns.appendSystemPrompt,
           vars: agentRuns.vars,
+          modelProvider: agentRuns.modelProvider,
           // Claim's current input may already belong to this Run; only another
           // run-attributed event is evidence of earlier thread activity.
           isFirstRun: sql`
@@ -1071,6 +1073,9 @@ function claimAuthorizationError(
 
   if (jobWithRun.run.userId !== auth.userId) {
     return forbidden("Job does not belong to user");
+  }
+  if (jobWithRun.run.modelProvider === "built-in") {
+    return forbidden("Built-in model jobs require an official runner");
   }
   return isOfficialRunnerGroup(jobWithRun.job.runnerGroup)
     ? null
