@@ -187,9 +187,11 @@ function createStreamCommand(graph: DownloadGraph) {
         if (result.offset !== offset.toString() || result.length !== length) {
           throw new FileDownloadError("unavailable");
         }
-        const bytes = Uint8Array.from(atob(result.data), (char) => {
-          return char.charCodeAt(0);
-        });
+        const decoded = atob(result.data);
+        const bytes = new Uint8Array(decoded.length);
+        for (let index = 0; index < decoded.length; index++) {
+          bytes[index] = decoded.charCodeAt(index);
+        }
         const next = offset + BigInt(length);
         const final = next === size;
         if (final) {
