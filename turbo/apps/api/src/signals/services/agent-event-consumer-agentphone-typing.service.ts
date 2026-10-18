@@ -7,7 +7,7 @@ import { eventConsumerPayload$ } from "../../lib/event-consumer/route";
 import { logger } from "../../lib/log";
 import { waitUntil } from "../context/wait-until";
 import { sendAgentPhoneTypingIndicator } from "../external/agentphone-client";
-import { db$, type ReadonlyDb } from "../external/db";
+import { db$ } from "../external/db";
 import { internalRunCallbackKindForRecord } from "../services/internal-run-callback";
 import { tapError } from "../utils";
 
@@ -47,62 +47,57 @@ function parseCanonicalAgentPhoneTypingTarget(
   );
 }
 
-async function agentPhoneTypingTargetsForRun(
-  db: ReadonlyDb,
-  runId: string,
-  signal: AbortSignal,
-): Promise<Map<string, AgentPhoneTypingTarget>> {
-  const callbacks = await db
-    .select({
-      url: agentRunCallbacks.url,
-      internalKind: agentRunCallbacks.internalKind,
-      payload: agentRunCallbacks.payload,
-    })
-    .from(agentRunCallbacks)
-    .innerJoin(agentRuns, eq(agentRunCallbacks.runId, agentRuns.id))
-    .where(
-      and(
-        eq(agentRunCallbacks.runId, runId),
-        eq(agentRunCallbacks.status, "pending"),
-        inArray(agentRuns.status, ["pending", "running"]),
-      ),
-    );
-  signal.throwIfAborted();
+const agentPhoneTypingTargetsForRun$ = command(
+  async (
+    { get },
+    runId: string,
+    signal: AbortSignal,
+  ): Promise<Map<string, AgentPhoneTypingTarget>> => {
+    const db = get(db$);
+    const callbacks = await db
+      .select({
+        url: agentRunCallbacks.url,
+        internalKind: agentRunCallbacks.internalKind,
+        payload: agentRunCallbacks.payload,
+      })
+      .from(agentRunCallbacks)
+      .innerJoin(agentRuns, eq(agentRunCallbacks.runId, agentRuns.id))
+      .where(
+        and(
+          eq(agentRunCallbacks.runId, runId),
+          eq(agentRunCallbacks.status, "pending"),
+          inArray(agentRuns.status, ["pending", "running"]),
+        ),
+      );
+    signal.throwIfAborted();
 
-  const targets = new Map<string, AgentPhoneTypingTarget>();
-  for (const callback of callbacks) {
-    const kind = internalRunCallbackKindForRecord(callback);
-    const target =
-      kind === "chat"
-        ? parseCanonicalAgentPhoneTypingTarget(callback.payload)
-        : kind === "agentphone:chat"
-          ? parseAgentPhoneTypingTarget(callback.payload)
-          : undefined;
-    if (target) {
-      targets.set(target.conversationId, target);
+    const targets = new Map<string, AgentPhoneTypingTarget>();
+    for (const callback of callbacks) {
+      const kind = internalRunCallbackKindForRecord(callback);
+      const target =
+        kind === "chat"
+          ? parseCanonicalAgentPhoneTypingTarget(callback.payload)
+          : kind === "agentphone:chat"
+            ? parseAgentPhoneTypingTarget(callback.payload)
+            : undefined;
+      if (target) {
+        targets.set(target.conversationId, target);
+      }
     }
-  }
-  return targets;
-}
+    return targets;
+  },
+);
 
 export const hasAgentPhoneTypingTargetForRun$ = command(
-  async ({ get }, runId: string, signal: AbortSignal): Promise<boolean> => {
-    const targets = await agentPhoneTypingTargetsForRun(
-      get(db$),
-      runId,
-      signal,
-    );
+  async ({ set }, runId: string, signal: AbortSignal): Promise<boolean> => {
+    const targets = await set(agentPhoneTypingTargetsForRun$, runId, signal);
     return targets.size > 0;
   },
 );
 
 export const refreshAgentPhoneTypingForRun$ = command(
-  async ({ get }, runId: string, signal: AbortSignal): Promise<void> => {
-    const targets = await agentPhoneTypingTargetsForRun(
-      get(db$),
-      runId,
-      signal,
-    );
+  async ({ set }, runId: string, signal: AbortSignal): Promise<void> => {
+    const targets = await set(agentPhoneTypingTargetsForRun$, runId, signal);
     for (const target of targets.values()) {
       await sendAgentPhoneTypingIndicator(
         { conversationId: target.conversationId },
