@@ -60,7 +60,10 @@ import { safeJsonParse, settle } from "../utils";
 import { isUniqueViolation, safeSqlStateCode } from "../../lib/pg-errors";
 import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
 import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
-import { invalidateNotionPendingEventsForConnector } from "./notion-automation-account.service";
+import {
+  notionPendingEventsReconnectScope,
+  notionPendingEventsSkipWrite,
+} from "./notion-automation-account.service";
 import { isConnectorCatalogUnavailableError } from "./connector-catalog-reader.service";
 import {
   builtinConnectorCredentialStorageIsCompatible,
@@ -1685,7 +1688,21 @@ export async function prepareConnectorAccountDeletionWithTargetLocked(
     args.target.kind === "builtin" &&
     args.target.connectorSlug === "notion"
   ) {
-    await invalidateNotionPendingEventsForConnector(db, args.connectionId);
+    const pendingEventDb = db;
+    const invalidatedConnectorId = args.connectionId;
+    await (async () => {
+      const scope = notionPendingEventsReconnectScope(invalidatedConnectorId);
+      await (async () => {
+        const write = notionPendingEventsSkipWrite(
+          scope.condition,
+          scope.reason,
+        );
+        await pendingEventDb
+          .update(write.table)
+          .set(write.values)
+          .where(write.where);
+      })();
+    })();
   }
   await reprojectWorkflowAutomationsForOwner(db, args, signal);
 
