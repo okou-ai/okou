@@ -41,6 +41,7 @@ import {
 import { SandboxFilesBreadcrumb } from "./sandbox-files-breadcrumb.tsx";
 import { WorkspaceCanvasBackdrop } from "../okou-page/workspace-inset.tsx";
 import { SandboxFileDownloadFrame } from "./sandbox-file-download.tsx";
+import { SandboxFilePreviewDialog } from "./sandbox-file-preview.tsx";
 
 function FilesErrorMessage({ error }: { readonly error: FilesError }) {
   const { t } = useTranslation();
@@ -119,7 +120,10 @@ function FilesDownloadButton({
               aria-label={label}
               onClick={() => {
                 detach(
-                  download(location, path, entry.nameToken, signal),
+                  download(
+                    { origin: location, path, nameToken: entry.nameToken },
+                    signal,
+                  ),
                   Reason.DomCallback,
                 );
               }}
@@ -136,13 +140,61 @@ function FilesDownloadButton({
   );
 }
 
-function FilesRow({
+function FilesPreviewButton({
   signals,
-  row,
+  entry,
+  path,
 }: {
   readonly signals: SandboxFilesSignals;
-  readonly row: FilesVirtualRow;
+  readonly entry: FilesEntry;
+  readonly path: readonly string[];
 }) {
+  const { t } = useTranslation();
+  const signal = useGet(pageSignal$);
+  const location = useGet(signals.location$);
+  const navigating = useGet(signals.navigating$);
+  const preview = useSet(signals.preview$);
+  return (
+    <Button
+      type="button"
+      variant="quiet"
+      size="sm"
+      disabled={navigating}
+      focusableWhenDisabled
+      className="h-full min-w-0 flex-1 justify-start px-0 text-left text-foreground hover:bg-transparent active:bg-transparent"
+      title={entry.displayName}
+      aria-label={t(
+        ($) => {
+          return $.activity.detail.files.preview;
+        },
+        { name: entry.displayName },
+      )}
+      onClick={(event) => {
+        detach(
+          preview(
+            {
+              origin: location,
+              path,
+              nameToken: entry.nameToken,
+              trigger: event.currentTarget,
+            },
+            signal,
+          ),
+          Reason.DomCallback,
+        );
+      }}
+    >
+      <span className="truncate">{entry.displayName}</span>
+    </Button>
+  );
+}
+
+interface FilesRowProps {
+  readonly signals: SandboxFilesSignals;
+  readonly row: FilesVirtualRow;
+}
+
+function FilesRow({ signals, row }: FilesRowProps) {
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
   const toggle = useSet(signals.toggle$);
@@ -212,9 +264,13 @@ function FilesRow({
         ) : (
           <File size={16} className="shrink-0 text-muted-foreground" />
         )}
-        <span className="min-w-0 flex-1 truncate" title={entry.displayName}>
-          {entry.displayName}
-        </span>
+        {entry.kind === "file" ? (
+          <FilesPreviewButton signals={signals} entry={entry} path={row.path} />
+        ) : (
+          <span className="min-w-0 flex-1 truncate" title={entry.displayName}>
+            {entry.displayName}
+          </span>
+        )}
         {entry.kind === "file" && (
           <FilesDownloadButton
             signals={signals}
@@ -560,6 +616,7 @@ export function SandboxFilesBody({
         <FilesRefreshControl signals={signals} errorId={errorId} />
       </div>
       <SandboxFileDownloadFrame signals={signals.download} />
+      <SandboxFilePreviewDialog signals={signals} />
       {phase === "ready" ? (
         <div className="pb-4">
           <FilesVirtualList signals={signals} />

@@ -187,19 +187,22 @@ type Settled<T> =
   | { readonly ok: false; readonly error: unknown };
 
 /**
- * Settle `p` into a discriminated union. Abort errors propagate (re-throw),
- * either from `p` itself or from `signal` if one is passed — so the returned
+ * Settle an operation into a discriminated union. A factory also catches
+ * synchronous failures before a promise exists. Abort errors propagate (re-throw),
+ * either from the operation itself or from `signal` if one is passed — so the returned
  * union is guaranteed to never represent a cancellation. Use as a
  * `.then(onOk, onErr)` replacement when the caller needs to map both
  * branches to a value rather than swallow the error.
  */
 export async function settle<T>(
-  p: Promise<T>,
+  operation: Promise<T> | (() => T | Promise<T>),
   signal?: AbortSignal,
 ): Promise<Settled<T>> {
   // eslint-disable-next-line no-restricted-syntax
   try {
-    const value = await p;
+    const value = await (typeof operation === "function"
+      ? operation()
+      : operation);
     signal?.throwIfAborted();
     return { ok: true, value };
   } catch (error) {
