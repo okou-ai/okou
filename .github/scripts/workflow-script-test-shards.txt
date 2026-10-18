@@ -121,6 +121,7 @@
 4 run-semgrep-test.sh
 4 runner-attribution-ansible-test.sh
 4 crates/runner/tests/behavior/tests/runner-behavior-exec-inventory-test.sh
+4 crates/runner/tests/behavior/tests/runner-behavior-chromium-https-test.sh
 4 crates/sandbox-firecracker/tests/native/tests/runner-behavior-host-cpu-fairness-test.sh
 4 runner-binary-build-test.sh
 4 runner-binary-cache-plan-test.sh
