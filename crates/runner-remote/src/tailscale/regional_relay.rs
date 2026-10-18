@@ -46,9 +46,15 @@ impl Dial for Verified {
         // Both owned branches remain within the retained runtime; dropping a
         // losing resolver future does not release the node's physical receipt.
         tokio::pin!(v4, v6);
-        let (result, selected) = tokio::select! {
-            result = &mut v4 => match result { Ok(io) => (Ok(io), &trace4), Err(_) => (v6.await, &trace6) },
-            result = &mut v6 => match result { Ok(io) => (Ok(io), &trace6), Err(_) => (v4.await, &trace4) },
+        // Only enabled families can remain candidates after a failed attempt.
+        let (result, selected) = match (server.ipv4, server.ipv6) {
+            (IpUsage::Disable, IpUsage::Disable) => return Err(Failure::DomainFailed),
+            (IpUsage::Disable, _) => (v6.await, &trace6),
+            (_, IpUsage::Disable) => (v4.await, &trace4),
+            _ => tokio::select! {
+                result = &mut v4 => match result { Ok(io) => (Ok(io), &trace4), Err(_) => (v6.await, &trace6) },
+                result = &mut v6 => match result { Ok(io) => (Ok(io), &trace6), Err(_) => (v4.await, &trace4) },
+            },
         };
         trace.adopt(selected);
         let io = result.map_err(|_| Failure::DomainFailed)?;
