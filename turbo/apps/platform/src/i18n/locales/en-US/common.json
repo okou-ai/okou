@@ -134,7 +134,7 @@
         "updateRequired": "This run does not support files. Start a new run after the sandbox is updated."
       },
       "log": "Log",
-      "manualReloadNotice": "Activity logs do not update automatically. Reload the page to see the latest entries.",
+      "manualReloadNotice": "Logs do not update automatically.",
       "modelProvidedBy": "{{model}} provided by {{provider}}",
       "networkEmpty": {
         "description": "No network traffic was recorded for this run.",
@@ -145,6 +145,7 @@
         "description": "This log doesn't exist or you don't have permission to view it in the current workspace.",
         "title": "Log not found"
       },
+      "refresh": "Refresh",
       "runner": {
         "environment": "Environment",
         "framework": "Framework",

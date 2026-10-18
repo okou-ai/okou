@@ -136,7 +136,7 @@
         "updateRequired": "Esta execução não oferece suporte a arquivos. Inicie outra após atualizar o ambiente isolado."
       },
       "log": "Log",
-      "manualReloadNotice": "Os registros de atividade não são atualizados automaticamente. Recarregue a página para ver os registros mais recentes.",
+      "manualReloadNotice": "Os registros não são atualizados automaticamente.",
       "modelProvidedBy": "{{model}} fornecido por {{provider}}",
       "networkEmpty": {
         "description": "Nenhum tráfego de rede foi registrado para esta execução.",
@@ -147,6 +147,7 @@
         "description": "Este log não existe ou você não tem permissão para visualizá-lo no espaço de trabalho atual.",
         "title": "Log não encontrado"
       },
+      "refresh": "Atualizar",
       "runner": {
         "environment": "Ambiente",
         "framework": "Framework",

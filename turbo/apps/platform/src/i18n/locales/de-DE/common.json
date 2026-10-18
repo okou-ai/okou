@@ -134,7 +134,7 @@
         "updateRequired": "Dieser Lauf unterstützt keine Dateien. Starte nach der Sandbox-Aktualisierung einen neuen Lauf."
       },
       "log": "Log",
-      "manualReloadNotice": "Aktivitätsprotokolle werden nicht automatisch aktualisiert. Laden Sie die Seite neu, um die neuesten Einträge zu sehen.",
+      "manualReloadNotice": "Protokolle werden nicht automatisch aktualisiert.",
       "modelProvidedBy": "{{model}} bereitgestellt von {{provider}}",
       "networkEmpty": {
         "description": "Für diese Ausführung wurde kein Netzwerkverkehr aufgezeichnet.",
@@ -145,6 +145,7 @@
         "description": "Dieses Protokoll existiert nicht oder Sie haben keine Berechtigung, es im aktuellen Arbeitsbereich anzuzeigen.",
         "title": "Protokoll nicht gefunden"
       },
+      "refresh": "Aktualisieren",
       "runner": {
         "environment": "Umgebung",
         "framework": "Framework",

@@ -136,7 +136,7 @@
         "updateRequired": "Esta ejecución no admite archivos. Inicia otra tras actualizar el entorno aislado."
       },
       "log": "Registro",
-      "manualReloadNotice": "Los registros de actividad no se actualizan automáticamente. Recarga la página para ver las entradas más recientes.",
+      "manualReloadNotice": "Los registros no se actualizan automáticamente.",
       "modelProvidedBy": "{{model}} proporcionado por {{provider}}",
       "networkEmpty": {
         "description": "No se registró tráfico de red durante esta ejecución.",
@@ -147,6 +147,7 @@
         "description": "Este registro no existe o no tienes permiso para verlo en el espacio de trabajo actual.",
         "title": "Registro no encontrado"
       },
+      "refresh": "Actualizar",
       "runner": {
         "environment": "Entorno",
         "framework": "Framework",

@@ -136,7 +136,7 @@
         "updateRequired": "Questa esecuzione non supporta i file. Avvia una nuova esecuzione dopo l’aggiornamento della sandbox."
       },
       "log": "Log",
-      "manualReloadNotice": "I registri delle attività non si aggiornano automaticamente. Ricarica la pagina per vedere le voci più recenti.",
+      "manualReloadNotice": "I registri non si aggiornano automaticamente.",
       "modelProvidedBy": "{{model}} fornito da {{provider}}",
       "networkEmpty": {
         "description": "Nessun traffico di rete registrato per questa esecuzione.",
@@ -147,6 +147,7 @@
         "description": "Questo log non esiste oppure non disponi dell'autorizzazione per visualizzarlo nell'area di lavoro corrente.",
         "title": "Log non trovato"
       },
+      "refresh": "Aggiorna",
       "runner": {
         "environment": "Ambiente",
         "framework": "Framework",
