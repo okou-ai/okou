@@ -5,6 +5,7 @@ import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { completePublicClaudeRun } from "./helpers/public-native-run";
 
 const context = testContext();
 
@@ -302,6 +303,108 @@ describe("canonical API home affinity", () => {
       });
     }
     await cancel(f);
+  });
+
+  it("keeps poll recovery and the fixed deadline when Ably publication fails", async () => {
+    const f = await setup();
+    await heartbeat(f);
+    await cancel(f);
+    context.mocks.ably.publish.mockImplementation((event) => {
+      if (event === "job") {
+        return Promise.reject(new Error("Ably publication unavailable"));
+      }
+      return Promise.resolve();
+    });
+    const run = await f.api.createThreadRun(f.actor, {
+      agentId: f.agentId,
+      threadId: f.run.threadId,
+      prompt: "Recover a committed job through poll",
+    });
+    const next = { ...f, run };
+    const expectedPreference = {
+      kind: "preference",
+      tier: "homeCache",
+      runnerIdentity: { runnerId: f.runnerId, heartbeatGeneration: 7 },
+      expiresAt: new Date(f.clock + 2000).toISOString(),
+    };
+    mockNow(f.clock + 750);
+    expect((await poll(next))?.runnerPreference).toStrictEqual(
+      expectedPreference,
+    );
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      "job",
+      expect.objectContaining({
+        runId: run.runId,
+        runnerPreference: expectedPreference,
+      }),
+    );
+    mockNow(f.clock + 2000);
+    expect((await poll(next))?.runnerPreference).toStrictEqual({
+      kind: "noPreference",
+      reason: "expired",
+    });
+    await cancel(next);
+  });
+
+  it("ends exact-generation protection before the shared generic deadline", async () => {
+    const f = await setup();
+    await heartbeat(f);
+    const claimed = await f.api.requestClaimRunnerJob(
+      true,
+      f.run.runId,
+      [200],
+      {
+        runnerIdentity: { runnerId: f.runnerId, heartbeatGeneration: 7 },
+      },
+    );
+    if (claimed.status !== 200) {
+      throw new Error("Expected native Run claim");
+    }
+    await completePublicClaudeRun(
+      context,
+      f.run,
+      { authorization: `Bearer ${claimed.body.sandboxToken}` },
+      "Preserve a completed native generation",
+    );
+    await heartbeat(f, {
+      snapshotSequence: 2,
+      heldSandboxStates: [
+        {
+          reuseKey: f.reuseKey,
+          lastCompletedAt: nowDate().toISOString(),
+          reusableSandbox: {
+            profile: "vm0/default",
+            historyGenerationRunId: f.run.runId,
+          },
+        },
+      ],
+    });
+    const run = await f.api.createThreadRun(f.actor, {
+      agentId: f.agentId,
+      threadId: f.run.threadId,
+      prompt: "Continue the saved native generation",
+    });
+    const next = { ...f, run };
+    expect((await poll(next))?.runnerPreference).toMatchObject({
+      tier: "exactSandbox",
+      expiresAt: new Date(f.clock + 1000).toISOString(),
+    });
+    mockNow(f.clock + 1000);
+    expect((await poll(next))?.runnerPreference).toMatchObject({
+      tier: "finalizingPredecessor",
+      expiresAt: new Date(f.clock + 1500).toISOString(),
+    });
+    mockNow(f.clock + 1500);
+    expect((await poll(next))?.runnerPreference).toMatchObject({
+      tier: "reusableSandbox",
+      expiresAt: new Date(f.clock + 2000).toISOString(),
+    });
+    mockNow(f.clock + 2000);
+    expect((await poll(next))?.runnerPreference).toStrictEqual({
+      kind: "noPreference",
+      reason: "expired",
+    });
+    await cancel(next);
   });
 
   it("ranks a real reusable sandbox ahead of a home image", async () => {
