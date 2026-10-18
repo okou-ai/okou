@@ -1,6 +1,6 @@
 // GitHub-script entry point. Requires Actions write access on a main push.
 // CodeQL restores the newest compatible base by prefix, not a commit-specific
-// base. Keep a preceding database while making room for native dependency caches.
+// base. Keep only the latest base; older snapshots do not improve current PR restores.
 export default async function pruneCodeqlCaches({ github, context, core }) {
   if (context.eventName !== "push" || context.ref !== "refs/heads/main") {
     throw new Error("CodeQL cache pruning requires a push to main");
@@ -31,7 +31,7 @@ export default async function pruneCodeqlCaches({ github, context, core }) {
       Date.parse(b.created_at) - Date.parse(a.created_at) || b.id - a.id,
   );
 
-  for (const cache of bases.slice(2)) {
+  for (const cache of bases.slice(1)) {
     try {
       await github.rest.actions.deleteActionsCacheById({
         ...context.repo,
@@ -46,6 +46,6 @@ export default async function pruneCodeqlCaches({ github, context, core }) {
     }
   }
   core.info(
-    `Retained ${Math.min(2, bases.length)} newest CodeQL base caches on main`,
+    `Retained ${Math.min(1, bases.length)} latest CodeQL base cache on main`,
   );
 }

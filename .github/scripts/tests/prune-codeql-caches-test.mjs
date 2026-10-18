@@ -55,7 +55,7 @@ function fixture(caches) {
   return { input, store };
 }
 
-test("retains the newest two bases across all pages and preserves unrelated caches", async () => {
+test("retains only the latest base across all pages and preserves unrelated caches", async () => {
   const caches = Array.from({ length: 105 }, (_, index) => cache(index + 1));
   caches.push(
     cache(106, { key: "kerberos-native-v3-fixture" }),
@@ -67,28 +67,28 @@ test("retains the newest two bases across all pages and preserves unrelated cach
   await prune(input);
   assert.deepEqual(
     [...store.keys()].sort((a, b) => a - b),
-    [104, 105, 106, 107, 108, 109],
+    [105, 106, 107, 108, 109],
   );
   await prune(input);
   assert.deepEqual(
     [...store.keys()].sort((a, b) => a - b),
-    [104, 105, 106, 107, 108, 109],
+    [105, 106, 107, 108, 109],
   );
 });
 
-test("preserves an empty or partially populated cache", async () => {
-  for (const caches of [[], [cache(1)], [cache(1), cache(2)]]) {
+test("preserves an empty inventory or its sole base", async () => {
+  for (const caches of [[], [cache(1)]]) {
     const { input, store } = fixture(caches);
     await prune(input);
     assert.deepEqual([...store.values()], caches);
   }
 });
 
-test("overlapping listing pages preserve two distinct newest bases", async () => {
+test("overlapping listing pages preserve the latest base", async () => {
   const { input, store } = fixture([cache(1), cache(2), cache(3)]);
   input.github.paginate = async () => [cache(3), cache(2), cache(3), cache(1)];
   await prune(input);
-  assert.deepEqual([...store.keys()], [2, 3]);
+  assert.deepEqual([...store.keys()], [3]);
 });
 
 test("rejects PRs and non-main pushes before accessing caches", async () => {
@@ -128,7 +128,7 @@ test("concurrent pruning is idempotent while other deletion errors remain visibl
     };
     if (status === 404) {
       await prune(input);
-      assert.deepEqual([...store.keys()], [2, 3]);
+      assert.deepEqual([...store.keys()], [3]);
     } else {
       await assert.rejects(prune(input), /cache API response/);
       assert.deepEqual([...store.keys()], [1, 2, 3]);
