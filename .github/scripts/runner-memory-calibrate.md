@@ -72,9 +72,10 @@ existing incomplete-sample/lower-bound decision. Exit diagnostics never delete
 the captured cleanup identity, settle a Runner/P2 allowance, prove accepted I/O
 completion or imply zero memory or physical RAM relief. The current native reader
 rejects missing or contradictory diagnostic fields, identities and clocks, and
-rejects changed generations, revoked exit proof or changed first exit clocks
-across samples. It summarizes missing reasons per phase while retaining
-conservative completeness.
+rejects dropped captured process rows, changed generations, revoked exit proof
+or changed first exit clocks across samples. Every later sample must retain all
+previously captured identities, including unknown and exited processes. It
+summarizes missing reasons per phase while retaining conservative completeness.
 
 Exit status is zero only for a successful command with confirmed cleanup and no
 pressure stop, timeout, error or descendant cleanup intervention. Unsupported

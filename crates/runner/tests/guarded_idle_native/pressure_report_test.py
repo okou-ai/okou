@@ -214,9 +214,10 @@ class PressureReportTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.validate()
 
     def test_partial_residency_remains_unknown_and_intervention_is_refused(self):
-        self.samples[3]["processes"].append({"pid": 999, "start_ticks": 888, "rss_bytes": None, "pss_bytes": None,
-            "residency_state": "unavailable", "residency_reason": "permission_denied",
-            "observed_monotonic_ns": self.samples[3]["monotonic_ns"], "exit_observed_monotonic_ns": None})
+        for sample in self.samples[3:]:
+            sample["processes"].append({"pid": 999, "start_ticks": 888, "rss_bytes": None, "pss_bytes": None,
+                "residency_state": "unavailable", "residency_reason": "permission_denied",
+                "observed_monotonic_ns": sample["monotonic_ns"], "exit_observed_monotonic_ns": None})
         self.assertFalse(self.validate()["residency_complete"])
         self.collector["cleanup_intervened"] = True
         with self.assertRaises(ValueError): self.validate()

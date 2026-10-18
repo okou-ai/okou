@@ -191,10 +191,16 @@ sys.exit(3)
         self.assertTrue(report["success"])
         self.assertGreater(report["residency_incomplete_samples"], 0)
         pid = int((output / "stdout.log").read_text().strip())
+        samples = [json.loads(line) for line in (output / "samples.jsonl").read_text().splitlines()]
+        captured = set()
+        for sample in samples:
+            identities = {(row["pid"], row["start_ticks"]) for row in sample["processes"]}
+            self.assertLessEqual(captured, identities)
+            captured = identities
         rows = [
             row
-            for line in (output / "samples.jsonl").read_text().splitlines()
-            for row in json.loads(line)["processes"]
+            for sample in samples
+            for row in sample["processes"]
             if row["pid"] == pid
         ]
         self.assertEqual(len({row["start_ticks"] for row in rows}), 1)

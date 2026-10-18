@@ -146,18 +146,19 @@ class NativeReportTests(unittest.TestCase):
             self.validate()
 
     def test_unknown_residency_remains_an_explicit_lower_bound(self):
-        self.samples[1]["processes"].append({
-            "pid": 999, "start_ticks": 888, "rss_bytes": None, "pss_bytes": None,
-            "residency_state": "unavailable", "residency_reason": "permission_denied",
-            "observed_monotonic_ns": self.samples[1]["monotonic_ns"],
-            "exit_observed_monotonic_ns": None,
-        })
+        for sample in self.samples[1:]:
+            sample["processes"].append({
+                "pid": 999, "start_ticks": 888, "rss_bytes": None, "pss_bytes": None,
+                "residency_state": "unavailable", "residency_reason": "permission_denied",
+                "observed_monotonic_ns": sample["monotonic_ns"],
+                "exit_observed_monotonic_ns": None,
+            })
         result = self.validate()
         self.assertFalse(result["residency_complete"])
 
     def test_positive_process_exit_is_diagnostic_not_zero_or_complete_residency(self):
         clock = self.samples[1]["monotonic_ns"]
-        for sample in self.samples[1:3]:
+        for sample in self.samples[1:]:
             sample["processes"].append({
                 "pid": 999, "start_ticks": 888, "rss_bytes": None, "pss_bytes": None,
                 "residency_state": "exited", "residency_reason": "pidfd_exit",
@@ -232,6 +233,22 @@ class NativeReportTests(unittest.TestCase):
         self.collector["format"] = "runner-memory-calibration-v1"
         with self.assertRaisesRegex(ValueError, "collector did not positively"):
             self.validate()
+
+    def test_captured_process_cannot_disappear_from_later_samples(self):
+        sample = self.samples[0]
+        original = dict(sample["processes"][0])
+        for state, reason in (("measured", "smaps_rollup"),
+                              ("unavailable", "permission_denied"), ("exited", "pidfd_exit")):
+            with self.subTest(state=state):
+                row = dict(original, pid=999, start_ticks=888,
+                           residency_state=state, residency_reason=reason)
+                if state != "measured":
+                    row.update(rss_bytes=None, pss_bytes=None)
+                if state == "exited":
+                    row["exit_observed_monotonic_ns"] = sample["monotonic_ns"]
+                sample["processes"] = [original, row]
+                with self.assertRaisesRegex(ValueError, "captured residency identity disappeared"):
+                    self.validate()
 
 
 if __name__ == "__main__":

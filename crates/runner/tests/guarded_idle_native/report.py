@@ -160,6 +160,8 @@ def _validate_cases(directory, cases, phases):
             raise ValueError("invalid or unordered P1 sample clocks")
         previous = sample["monotonic_ns"]
         validate_residency(sample)
+        if not generations.keys() <= {process["pid"] for process in sample["processes"]}:
+            raise ValueError("captured residency identity disappeared from later sample")
         for key in ("sample_age_ns", "read_duration_ns"):
             if type(sample.get(key)) is not int or sample[key] < 0:
                 raise ValueError("invalid P1 sample age or read duration")
