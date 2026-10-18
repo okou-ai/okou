@@ -44,6 +44,7 @@ import {
   type FilesViewPreference,
 } from "./sandbox-files-location.ts";
 import { createSandboxFileDownloadSignals } from "./sandbox-file-download.ts";
+import { createSandboxFilePreviewSignals } from "./sandbox-file-preview.ts";
 
 export type FilesEntry = z.infer<
   typeof sandboxFsListResultSchema
@@ -145,6 +146,7 @@ function createFilesGraph() {
   const status$ = state<RunStatus | null>(null);
   return {
     download: createSandboxFileDownloadSignals(),
+    preview: createSandboxFilePreviewSignals(),
     targetRunId$,
     status$,
     directories$,
@@ -1429,6 +1431,7 @@ function createRunLifecycleCommands(
   });
   const stop$ = command(({ set }) => {
     set(graph.download.cancel$);
+    set(graph.preview.close$);
     set(resetRun$);
     set(started$, false);
     set(graph.resetPolling$);
@@ -1564,6 +1567,7 @@ function createDemandCommands(
   startRun$: Command<void, [string, AbortSignal]>,
   rememberView$: Command<void, []>,
 ) {
+  const section$ = state<HTMLElement | null>(null);
   const observation = createRunObservationCommands(
     graph,
     createRunLifecycleCommands(graph, startRun$),
@@ -1576,6 +1580,7 @@ function createDemandCommands(
         return;
       }
       set(graph.virtual.scroll.attachSection$, element, signal);
+      set(section$, element);
       set(graph.ownerKey$, sessionKey);
       const locationOwner = `${sessionKey}:${runId}`;
       if (get(graph.locationOwner$) !== locationOwner) {
@@ -1592,6 +1597,7 @@ function createDemandCommands(
       set(graph.mounted$, true);
       const owner = set(graph.resetDemand$, signal, get(pageSignal$));
       set(graph.download.installOwner$, owner);
+      set(graph.preview.installOwner$, owner, element);
       signal.addEventListener(
         "abort",
         () => {
@@ -1602,6 +1608,7 @@ function createDemandCommands(
           set(graph.resetDemand$);
           set(observation.stop$);
           set(graph.mounted$, false);
+          set(section$, null);
           set(graph.targetRunId$, null);
           set(graph.status$, null);
           set(graph.navigation$, null);
@@ -1632,6 +1639,7 @@ function createDemandCommands(
         set(graph.phase$, "connecting");
         const owner = set(graph.resetDemand$, signal, get(pageSignal$));
         set(graph.download.installOwner$, owner);
+        set(graph.preview.installOwner$, owner, get(section$));
         detach(
           set(observation.start$, runId, owner),
           Reason.Daemon,
@@ -1643,16 +1651,23 @@ function createDemandCommands(
   return { mount$, retry$ };
 }
 
-function createFilesDownloadCommand(graph: FilesGraph) {
+function createFilesReadCommand(
+  graph: FilesGraph,
+  mode: "download" | "preview",
+) {
   return command(
     async (
       { get, set },
-      origin: FilesLocation,
-      path: readonly string[],
-      nameToken: string,
+      target: {
+        readonly origin: FilesLocation;
+        readonly path: readonly string[];
+        readonly nameToken: string;
+        readonly trigger?: HTMLElement;
+      },
       signal: AbortSignal,
     ): Promise<void> => {
       signal.throwIfAborted();
+      const { origin, path, nameToken, trigger } = target;
       const connection = get(graph.connection$);
       if (
         !connection ||
@@ -1674,16 +1689,17 @@ function createFilesDownloadCommand(graph: FilesGraph) {
       if (!entry) {
         return;
       }
-      await set(
-        graph.download.start$,
-        {
-          runId: connection.runId,
-          sessionKey: connection.sessionKey,
-          path: [...filesLocationTokens(origin), ...path, nameToken],
-          name: entry.displayName,
-        },
-        signal,
-      );
+      const request = {
+        runId: connection.runId,
+        sessionKey: connection.sessionKey,
+        path: [...filesLocationTokens(origin), ...path, nameToken],
+        name: entry.displayName,
+      };
+      if (mode === "preview") {
+        await set(graph.preview.open$, request, trigger, signal);
+      } else {
+        await set(graph.download.start$, request, signal);
+      }
     },
   );
 }
@@ -1693,7 +1709,8 @@ function createFilesActions(
   listing: ListingCommands,
   navigation: NavigationCommands,
 ) {
-  const download$ = createFilesDownloadCommand(graph);
+  const download$ = createFilesReadCommand(graph, "download");
+  const preview$ = createFilesReadCommand(graph, "preview");
   const refreshRequest$ = state<{ readonly connection: Connection } | null>(
     null,
   );
@@ -1776,7 +1793,7 @@ function createFilesActions(
       return set(listing.load$, path, true, signal);
     },
   );
-  return { toggle$, refresh$, refreshing$, more$, download$ };
+  return { toggle$, refresh$, refreshing$, more$, download$, preview$ };
 }
 
 /** Construct the Activity graph without network work; its visible ref owns demand. */
@@ -1788,6 +1805,7 @@ function createSandboxFilesSignals() {
   const connection = createConnectionCommands(graph, listing, navigation);
   return {
     download: graph.download,
+    preview: graph.preview,
     ...createDemandCommands(graph, connection.startRun$, navigation.remember$),
     ...createFilesActions(graph, listing, navigation),
     enter$: navigation.enter$,

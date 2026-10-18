@@ -503,9 +503,11 @@ function ArtifactDialogMarkdownBody({
 function ArtifactDialogTextBody({
   kind,
   text$,
+  maxCharacters,
 }: {
   kind: "text" | "json" | "csv";
   text$: TextPreviewComputed;
+  maxCharacters: number;
 }) {
   const { t } = useTranslation();
   const kindLabel =
@@ -571,8 +573,8 @@ function ArtifactDialogTextBody({
 
         const formatted = formatPlainPreviewText(kind, text);
         const display =
-          formatted.length > 16_000
-            ? `${formatted.slice(0, 16_000)}\n\n…`
+          formatted.length > maxCharacters
+            ? `${formatted.slice(0, maxCharacters)}\n\n…`
             : formatted;
 
         return (
@@ -923,6 +925,7 @@ export function ArtifactPreviewBody({
   imageCanvasSignals,
   imageNavigation,
   preview,
+  textMaxCharacters = 16_000,
 }: {
   artifact: AttachmentArtifactMetadata | undefined;
   focusHtmlOnMount?: boolean;
@@ -930,6 +933,7 @@ export function ArtifactPreviewBody({
   imageCanvasSignals: ZoomableImageCanvasSignals;
   imageNavigation?: ArtifactImageNavigationActions;
   preview: AttachmentLightboxState;
+  textMaxCharacters?: number;
 }) {
   const filename = artifactDialogFilename(preview);
 
@@ -976,7 +980,13 @@ export function ArtifactPreviewBody({
     preview.kind === "json" ||
     preview.kind === "csv"
   ) {
-    return <ArtifactDialogTextBody kind={preview.kind} text$={preview.text$} />;
+    return (
+      <ArtifactDialogTextBody
+        kind={preview.kind}
+        text$={preview.text$}
+        maxCharacters={textMaxCharacters}
+      />
+    );
   }
 
   if (preview.kind === "html") {
