@@ -1443,7 +1443,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                 if !claim_tasks.is_empty() || claim_tasks.is_preparing() =>
             {
                 let Some(result) = result else { continue };
-                let result = match claim_tasks.consume(result, &mut jobs).await {
+                let result = match claim_tasks.consume(result, &mut jobs) {
                     Ok(result) => result,
                     Err(failure) => {
                         let (reason, error) = failure.into_stopping_failure();
@@ -1716,7 +1716,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     }
     teardown.phase_complete("status_stopping", phase);
 
-    // Release retained discovery before settling claims. Admission tasks run
+    // Release retained discovery before settling claims. Admission/activation tasks run
     // independently and must finish before idle or provider teardown; successful
     // outcomes still enter the existing activation/executor ownership path.
     drop(discover_fut);
@@ -1724,7 +1724,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     home_cache_observation.stop_watching();
     let phase = teardown.phase_start("claims_drain");
     while let Some(result) = claim_tasks.next().await {
-        if let Err(failure) = claim_tasks.consume(result, &mut jobs).await {
+        if let Err(failure) = claim_tasks.consume(result, &mut jobs) {
             let (reason, error) = failure.into_stopping_failure();
             handle_stopping_signal(
                 reason,

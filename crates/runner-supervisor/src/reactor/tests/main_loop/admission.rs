@@ -6,7 +6,7 @@ use super::super::support::{
     seed_idle_pool_with_overrides, seed_idle_pool_with_speculative_timezone, shutdown,
     status_idle_reuse_keys_and_active_runs, test_profiles, two_profiles, wait_budget_count,
     wait_cancel_handle, wait_cancel_token, wait_cancel_token_removed, wait_discover_entered,
-    wait_idle_pool_len, wait_status_idle_reuse_keys_and_active_runs,
+    wait_idle_pool_len, wait_status_idle_reuse_keys_and_active_runs, wait_status_mode,
 };
 use sandbox::SandboxId;
 use std::sync::Arc;
@@ -753,7 +753,7 @@ async fn reserved_reuse_running_status_timeout_recovers_claim_and_sandbox() {
     shutdown(&env, run_handle).await;
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn hard_shutdown_during_reserved_reuse_running_status_stall_converges() {
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     crate::idle_reuse_preparation::add_healthy_reuse_preparation_matcher(&overrides);
@@ -804,12 +804,16 @@ async fn hard_shutdown_during_reserved_reuse_running_status_stall_converges() {
     let stopping = tokio::spawn(async move {
         handle_stopping_signal("TEST", &cancel, &cancel_tokens, &lifecycle).await;
     });
-    tokio::task::yield_now().await;
+    // Independent activation lets Reactor publish Stopping while the transfer
+    // is still gated. Finish that real I/O before advancing just the deadline.
+    wait_status_mode(&status_path, "stopping", Duration::from_secs(5)).await;
     assert!(
         !stopping.is_finished(),
         "hard shutdown should wait for the claimed activation transfer"
     );
+    tokio::time::pause();
     tokio::time::advance(Duration::from_secs(5)).await;
+    tokio::time::resume();
     stopping.await.unwrap();
     let completion = env
         .handle
@@ -1036,8 +1040,8 @@ async fn uncertain_activation_destroy_keeps_active_status_for_orphan_reconciliat
     shutdown(&env, run_handle).await;
 }
 
-#[tokio::test(start_paused = true)]
-async fn reserved_reuse_activation_task_abort_recovers_claim_and_sandbox() {
+#[tokio::test]
+async fn reserved_reuse_activation_outlives_reactor_abort_and_recovers_claim_and_sandbox() {
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     crate::idle_reuse_preparation::add_healthy_reuse_preparation_matcher(&overrides);
     let (mut config, env) =
@@ -1056,11 +1060,12 @@ async fn reserved_reuse_activation_task_abort_recovers_claim_and_sandbox() {
     .await;
     let status_path = env._temp_dir.path().join("status.json");
     let write_started = Arc::new(tokio::sync::Notify::new());
+    let write_release = Arc::new(tokio::sync::Semaphore::new(0));
     config.shared.status = Arc::new(StatusTracker::new_with_write_gate(
         status_path.clone(),
         4,
         Arc::clone(&write_started),
-        Arc::new(tokio::sync::Semaphore::new(0)),
+        Arc::clone(&write_release),
     ));
     let run_handle = tokio::spawn(run(config));
     wait_discover_entered(&env, Duration::from_secs(2)).await;
@@ -1084,11 +1089,18 @@ async fn reserved_reuse_activation_task_abort_recovers_claim_and_sandbox() {
 
     run_handle.abort();
     assert!(run_handle.await.unwrap_err().is_cancelled());
+    assert!(env.handle.completions.lock().unwrap().is_empty());
+    assert_eq!(budget.allocated(), (2, 4096, 1));
+    assert!(env.active_runs.contains(run_id));
+    assert!(env.cancel_tokens.handle(run_id).await.is_some());
+    // Reactor observation is gone, but the accepted activation stays alive.
+    // Its eventual guarded result must recover when nobody can consume it.
+    write_release.add_permits(1);
     let completion = env
         .handle
         .wait_completion(run_id, Duration::from_secs(5))
         .await
-        .expect("dropping the activation task should complete the provider claim");
+        .expect("the unconsumed activation result should complete the provider claim");
     assert!(
         completion
             .error
@@ -1341,6 +1353,68 @@ async fn reusable_active_run_discovery_does_not_bypass_ordinary_capacity_admissi
     drop(occupied);
     drop(active_guard);
     shutdown(&env, run_handle).await;
+}
+
+#[tokio::test]
+async fn dropped_reactor_recovers_a_finalizing_claim_without_dispatch() {
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    let (config, env) =
+        mock_run_config_with_overrides(test_profiles(), 2, 4096, 1, Arc::clone(&overrides));
+    let budget = Arc::clone(&config.capacity.budget);
+    let occupied = ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap();
+    let reuse_key = "thread:lost-finalizing-result";
+    let predecessor_id = RunId::new_v4();
+    let predecessor = env.active_runs.register(
+        predecessor_id,
+        Some(reuse_key.to_owned()),
+        "vm0/default".into(),
+    );
+    let run_id = RunId::new_v4();
+    env.handle.block_claim(run_id);
+    env.handle.block_completions();
+    env.provider
+        .set_claim_result(run_id, Some(context_with_reuse_key(run_id, reuse_key)));
+    env.handle
+        .discover_tx
+        .send(finalizing_candidate(
+            run_id,
+            reuse_key,
+            predecessor_id,
+            TEST_RUNNER_ID,
+            TEST_HEARTBEAT_GENERATION,
+        ))
+        .unwrap();
+    let mut reactor = Box::pin(run(config));
+    tokio::select! {
+        result = &mut reactor => panic!("reactor exited before finalizing claim: {result:?}"),
+        entered = env.handle.wait_run_claim_in_flight(run_id, Duration::from_secs(5)) => assert!(entered),
+    }
+    drop(reactor);
+    env.handle.unblock_claim(run_id);
+    let completion = env
+        .handle
+        .wait_completion(run_id, Duration::from_secs(5))
+        .await
+        .expect("the unconsumed finalizing claim must retain completion ownership");
+    assert_ne!(completion.exit_code, 0);
+    assert!(completion.error.is_some());
+    assert_eq!(completion.sandbox_id, None);
+    assert!(env.cancel_tokens.handle(run_id).await.is_some());
+    assert!(env.active_runs.contains(predecessor_id));
+    assert!(!env.active_runs.contains(run_id));
+    assert_eq!(budget.allocated(), (2, 4096, 1));
+    assert!(overrides.start_agent_process_calls().is_empty());
+    assert_eq!(overrides.unpark_call_count(), 0);
+    assert_eq!(overrides.destroy_call_count(), 0);
+    env.handle.unblock_completions();
+    wait_cancel_token_removed(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
+    assert_eq!(env.handle.completions.lock().unwrap().len(), 1);
+    drop(predecessor);
+    drop(occupied);
+    assert_eq!(budget.allocated(), (0, 0, 0));
+    let status_path = env._temp_dir.path().join("status.json");
+    let (_, active_runs) = status_idle_reuse_keys_and_active_runs(&status_path).await;
+    assert!(active_runs.is_empty());
 }
 
 #[tokio::test]
