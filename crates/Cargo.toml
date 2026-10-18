@@ -22,6 +22,7 @@ members = [
     "guest-state-restore",
     "guest-write-file",
     "guest-home-mount",
+    "guest-runtime-mount",
     "linux-mountinfo",
     "kerberos-credentials",
     "kerberos-worker",
@@ -75,6 +76,7 @@ codex-mock = { path = "codex-mock" }
 guest-state-restore = { path = "guest-state-restore" }
 guest-write-file = { path = "guest-write-file" }
 guest-home-mount = { path = "guest-home-mount" }
+guest-runtime-mount = { path = "guest-runtime-mount" }
 linux-mountinfo = { path = "linux-mountinfo" }
 kerberos-credentials = { path = "kerberos-credentials" }
 kerberos-worker = { path = "kerberos-worker" }

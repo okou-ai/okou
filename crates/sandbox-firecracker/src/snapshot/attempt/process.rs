@@ -46,6 +46,8 @@ pub(super) struct SnapshotProcessSpawn<'a> {
     pub(super) drive_bind: &'a Path,
     pub(super) home_image: &'a Path,
     pub(super) home_drive_bind: &'a Path,
+    pub(super) runtime_image: &'a Path,
+    pub(super) runtime_drive_bind: &'a Path,
     pub(super) network_name: &'a str,
     pub(super) binary_path: &'a Path,
     pub(super) api_sock: &'a Path,
@@ -88,6 +90,7 @@ impl SnapshotProcess {
             SnapshotMountMode::Creation {
                 rootfs: BindMount::new(spawn.cow_device_path, spawn.drive_bind),
                 home: BindMount::new(spawn.home_image, spawn.home_drive_bind),
+                runtime: BindMount::new(spawn.runtime_image, spawn.runtime_drive_bind),
             },
             spawn.network_name,
             spawn.binary_path,
@@ -538,6 +541,8 @@ mod tests {
             cow_path: "/tmp/cow.img".into(),
             drive_bind_path: "/tmp/cow-device-bind".into(),
             home_drive_bind_path: "/tmp/home-device-bind".into(),
+            runtime_drive_bind_path: "/tmp/runtime-device-bind".into(),
+            runtime_source_path: "/tmp/runtime-source.json".into(),
             vsock_bind_dir: "/tmp/vsock".into(),
         }
     }

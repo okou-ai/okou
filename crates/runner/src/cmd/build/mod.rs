@@ -301,6 +301,7 @@ struct TemplateInput<'a> {
 struct RootfsBuildInput<'a> {
     template: TemplateInput<'a>,
     rootfs_paths: &'a RootfsPaths,
+    rootfs_hash: &'a str,
     guests: &'a GuestBinaries,
     /// Versioned CLI installed into the customize layer when bundled.
     /// CLI-free local builds remain possible; Pi then uses the task's CLI URL.
@@ -560,6 +561,7 @@ pub async fn run_build(mut args: BuildArgs, provider: &dyn SnapshotProvider) -> 
             let input = RootfsBuildInput {
                 template: template_input,
                 rootfs_paths,
+                rootfs_hash,
                 guests,
                 okou_cli: okou_cli.as_ref(),
             };
@@ -624,7 +626,13 @@ async fn ensure_rootfs_under_lock(
             obtain_template_to_staging(&input.template, input.rootfs_paths, &mut scripts).await?;
             let work_dir_path = scripts.path().await?;
             customize_rootfs_staging(&input, &work_dir_path).await?;
-            verify_rootfs(input.rootfs_paths, &work_dir_path, input.okou_cli).await?;
+            verify_rootfs(
+                input.rootfs_paths,
+                input.rootfs_hash,
+                &work_dir_path,
+                input.okou_cli,
+            )
+            .await?;
             write_okou_cli_sidecar(input.rootfs_paths, input.okou_cli).await?;
             verify_cli_sidecar(input.rootfs_paths, input.okou_cli).await?;
             // Commit the rootfs. Same-filesystem rename is POSIX-atomic, so
@@ -1143,10 +1151,18 @@ async fn build_template_locally(
 
 async fn verify_rootfs(
     rootfs_paths: &RootfsPaths,
+    rootfs_hash: &str,
     work_dir: &RootfsScriptDir,
     okou_cli: Option<&OkouCliArtifact>,
 ) -> RunnerResult<()> {
-    verify_rootfs_file(&rootfs_paths.rootfs_staging(), work_dir, "rootfs", okou_cli).await?;
+    verify_rootfs_file(
+        &rootfs_paths.rootfs_staging(),
+        work_dir,
+        "rootfs",
+        Some(rootfs_hash),
+        okou_cli,
+    )
+    .await?;
 
     let rootfs_sz = file_sizes(&rootfs_paths.rootfs_staging()).await;
     tracing::info!(
@@ -1160,7 +1176,7 @@ async fn verify_rootfs(
 
 async fn verify_template_file(rootfs: &Path, work_dir: &RootfsScriptDir) -> RunnerResult<()> {
     tracing::info!("starting template verification");
-    verify_rootfs_file(rootfs, work_dir, "template", None).await?;
+    verify_rootfs_file(rootfs, work_dir, "template", None, None).await?;
 
     let rootfs_sz = file_sizes(rootfs).await;
     tracing::info!(
@@ -1176,6 +1192,7 @@ async fn verify_rootfs_file(
     rootfs: &Path,
     work_dir: &RootfsScriptDir,
     mode: &str,
+    rootfs_hash: Option<&str>,
     okou_cli: Option<&OkouCliArtifact>,
 ) -> RunnerResult<()> {
     let mut cmd = rootfs_script_command(work_dir, "verify-rootfs.sh")?;
@@ -1184,6 +1201,9 @@ async fn verify_rootfs_file(
         .arg(rootfs)
         .arg("--mode")
         .arg(mode);
+    if let Some(rootfs_hash) = rootfs_hash {
+        cmd.command.arg("--runtime-identity").arg(rootfs_hash);
+    }
     for definition in guest_definitions() {
         cmd.command.arg("--guest-dest").arg(definition.destination);
     }
@@ -1248,6 +1268,7 @@ async fn customize_rootfs_staging(
         .arg(&ca_dir)
         .arg("--dns-nameserver")
         .arg(DNS_PROBE_RESOLVER_IPV4.to_string());
+    cmd.command.arg("--runtime-identity").arg(input.rootfs_hash);
     for guest in input.guests.iter() {
         cmd.command
             .arg("--guest")

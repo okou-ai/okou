@@ -231,6 +231,15 @@ impl SnapshotAttempt {
         }
 
         let home_drive_bind = self.paths.home_device_bind();
+        let runtime_drive_bind = self.paths.runtime_device_bind();
+        if let Err(e) = tokio::fs::write(&runtime_drive_bind, b"").await {
+            self.cleanup_resources
+                .destroy_cow_after_setup_error("create runtime bind target")
+                .await;
+            return Err(SnapshotError::Setup(format!(
+                "create runtime bind target: {e}"
+            )));
+        }
         if let Err(e) = tokio::fs::write(&home_drive_bind, b"").await {
             self.cleanup_resources
                 .destroy_cow_after_setup_error("create home bind target")
@@ -360,6 +369,8 @@ impl SnapshotAttempt {
                 drive_bind: &drive_bind,
                 home_image: &home_image,
                 home_drive_bind: &home_drive_bind,
+                runtime_image: &config.rootfs_path,
+                runtime_drive_bind: &self.paths.runtime_device_bind(),
                 network_name: &network_name,
                 binary_path: &config.binary_path,
                 api_sock: &api_sock,

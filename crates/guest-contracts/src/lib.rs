@@ -30,6 +30,7 @@ pub mod oom_evidence;
 pub mod private_duplex;
 pub mod process_containment;
 pub mod reuse_preparation;
+pub mod runtime_drive;
 pub mod runtime_paths;
 pub mod sandbox_channel;
 pub mod sandbox_startup;

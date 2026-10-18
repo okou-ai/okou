@@ -72,10 +72,14 @@ mod tests {
 
         async fn write_required_snapshot_artifacts(&self) {
             for artifact in self.output.required_artifacts() {
+                if artifact == self.output.runtime_source() {
+                    continue;
+                }
                 tokio::fs::write(&artifact, b"snapshot artifact")
                     .await
                     .unwrap_or_else(|e| panic!("write {}: {e}", artifact.display()));
             }
+            crate::runtime_backing::record_fixture(&self.output);
         }
     }
 
@@ -83,6 +87,41 @@ mod tests {
         tokio::fs::write(output.complete_marker(), SNAPSHOT_COMPLETE_MARKER_CONTENT)
             .await
             .expect("write complete marker");
+    }
+
+    #[tokio::test]
+    async fn snapshot_provider_rejects_changed_runtime_image_generation() {
+        let fixture = SnapshotOutputFixture::new().await;
+        fixture.write_required_snapshot_artifacts().await;
+        publish_snapshot_complete_marker(&fixture.output).unwrap();
+        let provider = FirecrackerSnapshotProvider;
+        assert!(provider.is_complete(fixture.output.dir()).await.unwrap());
+        let source = fixture.output.dir().join("fixture-runtime.ext4");
+        // A different inode at the same pathname must not pass based on the
+        // cached Guest identity or merely on the file still existing.
+        let replacement = fixture.output.dir().join("replacement.ext4");
+        tokio::fs::write(&replacement, b"owned fixture runtime image")
+            .await
+            .unwrap();
+        tokio::fs::rename(replacement, &source).await.unwrap();
+        assert!(!provider.is_complete(fixture.output.dir()).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn snapshot_provider_rejects_missing_or_malformed_runtime_receipt() {
+        let fixture = SnapshotOutputFixture::new().await;
+        fixture.write_required_snapshot_artifacts().await;
+        publish_snapshot_complete_marker(&fixture.output).unwrap();
+        let provider = FirecrackerSnapshotProvider;
+        let receipt = fixture.output.runtime_source();
+        tokio::fs::write(&receipt, b"{} trailing data")
+            .await
+            .unwrap();
+        assert!(!provider.is_complete(fixture.output.dir()).await.unwrap());
+        tokio::fs::write(&receipt, vec![b'x'; 8193]).await.unwrap();
+        assert!(!provider.is_complete(fixture.output.dir()).await.unwrap());
+        tokio::fs::remove_file(receipt).await.unwrap();
+        assert!(!provider.is_complete(fixture.output.dir()).await.unwrap());
     }
 
     #[tokio::test]

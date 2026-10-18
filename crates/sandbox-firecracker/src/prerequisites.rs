@@ -155,6 +155,11 @@ fn check_artifact_prerequisites(config: &PrerequisiteConfig, errors: &mut Vec<St
         .and_then(|metadata| check_rootfs_size(&config.rootfs_path, metadata.len(), errors));
 
     if let Some(snapshot) = config.mode.snapshot() {
+        if let Err(error) =
+            crate::runtime_backing::verify(&snapshot.runtime_source_path, Some(&config.rootfs_path))
+        {
+            errors.push(format!("snapshot runtime source: {error}"));
+        }
         check_non_empty_readable_file(&snapshot.snapshot_path, "snapshot state", errors);
         check_non_empty_readable_file(&snapshot.memory_path, "snapshot memory", errors);
         let snapshot_cow_len =
@@ -394,6 +399,8 @@ mod tests {
             write_sized_file(&memory_path, 1);
             write_sized_file(&cow_path, nbd_cow::BLOCK_SIZE as u64);
             write_bitmap_file(&bitmap_path, 1, 0);
+            let runtime_source_path = dir.path().join("runtime-source.json");
+            crate::runtime_backing::record(&runtime_source_path, &rootfs_path).unwrap();
 
             Self {
                 _dir: dir,
@@ -406,6 +413,8 @@ mod tests {
                     cow_path,
                     drive_bind_path: PathBuf::from("/tmp/cow-device-bind"),
                     home_drive_bind_path: PathBuf::from("/tmp/home-device-bind"),
+                    runtime_drive_bind_path: PathBuf::from("/tmp/runtime-device-bind"),
+                    runtime_source_path,
                     vsock_bind_dir: PathBuf::from("/tmp/vsock"),
                 },
             }
@@ -497,6 +506,8 @@ mod tests {
             cow_path: PathBuf::from("/tmp/cow.img"),
             drive_bind_path: PathBuf::from("/tmp/cow-device-bind"),
             home_drive_bind_path: PathBuf::from("/tmp/home-device-bind"),
+            runtime_drive_bind_path: PathBuf::from("/tmp/runtime-device-bind"),
+            runtime_source_path: PathBuf::from("/tmp/runtime-source.json"),
             vsock_bind_dir: PathBuf::from("/tmp/vsock"),
         }
     }
@@ -748,6 +759,19 @@ mod tests {
         let errors = artifact_errors(fixture.fresh_config());
 
         assert_no_errors(&errors);
+    }
+
+    #[test]
+    fn restore_rejects_a_different_runtime_image_before_resource_allocation() {
+        let fixture = ArtifactFixture::new();
+        let mut config = fixture.restore_config();
+        let replacement = fixture._dir.path().join("different-runtime.ext4");
+        write_sized_file(&replacement, nbd_cow::BLOCK_SIZE as u64);
+        config.rootfs_path = replacement;
+        assert_error_contains(
+            &artifact_errors(config),
+            "snapshot runtime source changed since creation",
+        );
     }
 
     #[test]

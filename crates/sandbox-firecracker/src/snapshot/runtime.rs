@@ -291,6 +291,7 @@ fn build_snapshot_boot_config(
         kernel_path: config.kernel_path.display().to_string(),
         rootfs_path: paths.cow_device_bind().display().to_string(),
         home_path: Some(paths.home_device_bind().display().to_string()),
+        runtime_path: paths.runtime_device_bind().display().to_string(),
         vsock_path: sock_paths.vsock().display().to_string(),
     })
 }
@@ -468,15 +469,16 @@ mod tests {
         let snapshot_boot_config =
             build_snapshot_boot_config(&config, &paths, &sock_paths, &invariant);
         let fresh_boot_config = build_fresh_boot_firecracker_config(
-            &invariant,
-            &sandbox::ResourceLimits {
-                cpu_count: config.vcpu_count,
+            BootConfigInput {
+                invariant: &invariant,
+                vcpu_count: config.vcpu_count,
                 memory_mb: config.memory_mb,
+                kernel_path: config.kernel_path.display().to_string(),
+                rootfs_path: paths.cow_device_bind().display().to_string(),
+                home_path: Some(paths.home_device_bind().display().to_string()),
+                runtime_path: paths.runtime_device_bind().display().to_string(),
+                vsock_path: sock_paths.vsock().display().to_string(),
             },
-            config.kernel_path.display().to_string(),
-            paths.cow_device_bind().display().to_string(),
-            Some(paths.home_device_bind().display().to_string()),
-            sock_paths.vsock().display().to_string(),
             None,
         )
         .unwrap();
@@ -527,7 +529,7 @@ mod tests {
         .expect("snapshot VM configuration should succeed");
 
         let mut requests = Vec::new();
-        for _ in 0..7 {
+        for _ in 0..expected_bodies.len() {
             requests.push(api.next_request().await);
         }
 

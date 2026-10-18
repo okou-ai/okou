@@ -52,6 +52,7 @@ mod prerequisites;
 mod process;
 mod process_log;
 mod runtime;
+mod runtime_backing;
 mod runtime_dirs;
 mod sandbox;
 mod snapshot;
@@ -81,6 +82,17 @@ pub use preparation_checkpoint::{
 };
 pub use prerequisites::runtime_required_commands;
 pub use runtime::{FirecrackerRuntime, FirecrackerRuntimeProvider};
+#[cfg(feature = "test-support")]
+/// Write a real runtime-source receipt for cross-crate snapshot fixtures.
+///
+/// Uses the same bounded writer as snapshot creation. The source must be an
+/// owned, nonempty image; `path` must not already exist.
+pub fn record_runtime_source_for_test(
+    path: &std::path::Path,
+    source: &std::path::Path,
+) -> std::io::Result<()> {
+    runtime_backing::record(path, source)
+}
 pub use sandbox::FirecrackerSandbox;
 pub use snapshot::{
     FirecrackerSnapshotProvider, SNAPSHOT_COMPLETE_MARKER_CONTENT, SnapshotError,

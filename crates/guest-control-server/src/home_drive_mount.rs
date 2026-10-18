@@ -55,7 +55,10 @@ impl HomeDriveMountProgram {
         // process group keeps timeout, disconnect, and pre-reap descendant
         // cleanup without creating a generic workload cgroup for each mount.
         let mut command = match self {
-            Self::Production => Command::new(HOME_MOUNT_PATH),
+            Self::Production => {
+                guest_runtime_mount::verify()?;
+                Command::new(HOME_MOUNT_PATH)
+            }
             Self::Test { path, .. } => Command::new(path),
         };
         command

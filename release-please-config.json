@@ -136,6 +136,9 @@
     "crates/guest-home-mount": {
       "release-type": "rust"
     },
+    "crates/guest-runtime-mount": {
+      "release-type": "rust"
+    },
     "crates/runner": {
       "release-type": "rust",
       "component": "runner-rs"

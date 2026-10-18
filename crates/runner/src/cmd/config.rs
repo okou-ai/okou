@@ -208,8 +208,16 @@ mod tests {
         let snapshot = rootfs.snapshot(snapshot_hash);
         tokio::fs::create_dir_all(snapshot.dir()).await.unwrap();
         for path in snapshot.required_artifacts() {
+            if path == snapshot.runtime_source() {
+                continue;
+            }
             tokio::fs::write(path, b"snapshot").await.unwrap();
         }
+        sandbox_firecracker::record_runtime_source_for_test(
+            &snapshot.runtime_source(),
+            &rootfs.rootfs(),
+        )
+        .unwrap();
     }
 
     async fn write_complete_snapshot(

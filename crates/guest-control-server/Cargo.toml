@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 chrono = { workspace = true, features = ["std"] }
 guest-contracts.workspace = true
+guest-runtime-mount.workspace = true
 process-control-ipc.workspace = true
 process-launch.workspace = true
 libc = { workspace = true, features = ["std"] }

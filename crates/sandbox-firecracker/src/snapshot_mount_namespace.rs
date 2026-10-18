@@ -40,11 +40,13 @@ pub(crate) enum SnapshotMountMode<'a> {
     Creation {
         rootfs: BindMount<'a>,
         home: BindMount<'a>,
+        runtime: BindMount<'a>,
     },
     Restore {
         vsock: BindMount<'a>,
         rootfs: BindMount<'a>,
         home: BindMount<'a>,
+        runtime: BindMount<'a>,
     },
 }
 
@@ -66,18 +68,23 @@ pub(crate) fn build_command(
     ]);
 
     match mounts {
-        SnapshotMountMode::Creation { rootfs, home } => {
-            append_sections(&mut command, &[], &[rootfs, home]);
+        SnapshotMountMode::Creation {
+            rootfs,
+            home,
+            runtime,
+        } => {
+            append_sections(&mut command, &[], &[rootfs, home, runtime]);
         }
         SnapshotMountMode::Restore {
             vsock,
             rootfs,
             home,
+            runtime,
         } => {
             append_sections(
                 &mut command,
-                &[rootfs.target, home.target],
-                &[vsock, rootfs, home],
+                &[rootfs.target, home.target, runtime.target],
+                &[vsock, rootfs, home, runtime],
             );
         }
     }
@@ -123,6 +130,10 @@ mod tests {
                     Path::new("/images/home image"),
                     Path::new("/snapshot/workspace bind"),
                 ),
+                runtime: BindMount::new(
+                    Path::new("/images/immutable runtime"),
+                    Path::new("/snapshot/runtime bind"),
+                ),
             },
             "snapshot-network",
             Path::new("/opt/firecracker binary"),
@@ -141,11 +152,13 @@ mod tests {
                 OsString::from(INNER_COMMAND),
                 OsString::from("_"),
                 OsString::from("0"),
-                OsString::from("2"),
+                OsString::from("3"),
                 OsString::from("/dev/root device"),
                 OsString::from("/snapshot/root bind"),
                 OsString::from("/images/home image"),
                 OsString::from("/snapshot/workspace bind"),
+                OsString::from("/images/immutable runtime"),
+                OsString::from("/snapshot/runtime bind"),
                 OsString::from("snapshot-network"),
                 OsString::from("/opt/firecracker binary"),
                 OsString::from("--api-sock"),
@@ -172,6 +185,10 @@ mod tests {
                     Path::new("/images/home image"),
                     Path::new("/snapshot/workspace bind"),
                 ),
+                runtime: BindMount::new(
+                    Path::new("/images/immutable runtime"),
+                    Path::new("/snapshot/runtime bind"),
+                ),
             },
             "restore-network",
             Path::new("/opt/firecracker binary"),
@@ -189,16 +206,19 @@ mod tests {
                 OsString::from("-c"),
                 OsString::from(INNER_COMMAND),
                 OsString::from("_"),
-                OsString::from("2"),
+                OsString::from("3"),
                 OsString::from("/snapshot/root bind"),
                 OsString::from("/snapshot/workspace bind"),
-                OsString::from("3"),
+                OsString::from("/snapshot/runtime bind"),
+                OsString::from("4"),
                 OsString::from("/run/sandbox vsock"),
                 OsString::from("/snapshot/vsock bind"),
                 OsString::from("/dev/root device"),
                 OsString::from("/snapshot/root bind"),
                 OsString::from("/images/home image"),
                 OsString::from("/snapshot/workspace bind"),
+                OsString::from("/images/immutable runtime"),
+                OsString::from("/snapshot/runtime bind"),
                 OsString::from("restore-network"),
                 OsString::from("/opt/firecracker binary"),
                 OsString::from("--api-sock"),

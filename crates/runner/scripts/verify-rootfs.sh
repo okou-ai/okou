@@ -12,6 +12,7 @@
 # Usage:
 #   bash verify-rootfs.sh --rootfs /path/to/image.ext4 [--mode template|rootfs] \
 #     --guest-dest /usr/local/bin/guest-agent [--guest-dest DESTINATION ...] \
+#     [--runtime-identity <required-rootfs-input-sha256-in-rootfs-mode>] \
 #     [--okou-cli-version 9.353.0 --okou-cli-manifest /path/to/installed.json]
 #
 # `--okou-cli-version` asserts that exactly that Okou CLI bundle is installed
@@ -39,6 +40,7 @@ shift
 
 ROOTFS=""
 MODE="rootfs"
+RUNTIME_IDENTITY=""
 GUEST_DESTINATIONS=()
 OKOU_CLI_VERSION=""
 OKOU_CLI_MANIFEST=""
@@ -47,6 +49,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --rootfs) ROOTFS="$2"; shift 2 ;;
     --mode)   MODE="$2";   shift 2 ;;
+    --runtime-identity) RUNTIME_IDENTITY="$2"; shift 2 ;;
     --guest-dest) GUEST_DESTINATIONS+=("$2"); shift 2 ;;
     --okou-cli-version) OKOU_CLI_VERSION="$2"; shift 2 ;;
     --okou-cli-manifest) OKOU_CLI_MANIFEST="$2"; shift 2 ;;
@@ -147,7 +150,7 @@ trap cleanup EXIT
 # ---------------------------------------------------------------------------
 
 missing=()
-for cmd in sudo unshare mount umount mountpoint stat mktemp sed grep readlink; do
+for cmd in sudo unshare mount umount mountpoint stat mktemp sed grep readlink cmp; do
   if ! command -v "$cmd" &> /dev/null; then
     missing+=("$cmd")
   fi
@@ -319,6 +322,14 @@ else
 fi
 
 if [[ "$MODE" == "rootfs" ]]; then
+  if [[ ! "$RUNTIME_IDENTITY" =~ ^[0-9a-f]{64}$ ]] \
+      || [[ ! -f "${MOUNT_DIR}/etc/okou/runtime-rootfs-id" ]] \
+      || [[ -L "${MOUNT_DIR}/etc/okou/runtime-rootfs-id" ]] \
+      || [[ -L "${MOUNT_DIR}/etc/okou" ]] \
+      || [[ -L "${MOUNT_DIR}/etc" ]] \
+      || ! printf '%s\n' "$RUNTIME_IDENTITY" | cmp -s - "${MOUNT_DIR}/etc/okou/runtime-rootfs-id"; then
+    errors+=("runtime image identity does not match the rootfs input hash")
+  fi
   # Check guest binaries
   for dest in "${GUEST_DESTINATIONS[@]}"; do
     check_required_executable "$dest" "$dest"
@@ -518,6 +529,10 @@ if [[ "$MODE" == "rootfs" ]]; then
   fi
 else
   template_contamination=0
+  if [[ -e "${MOUNT_DIR}/etc/okou/runtime-rootfs-id" || -L "${MOUNT_DIR}/etc/okou/runtime-rootfs-id" ]]; then
+    errors+=("template contains rootfs-only runtime identity")
+    template_contamination=1
+  fi
   if [[ -e "$ca_path" || -L "$ca_path" ]]; then
     errors+=("template contains rootfs-only proxy CA certificate")
     template_contamination=1
