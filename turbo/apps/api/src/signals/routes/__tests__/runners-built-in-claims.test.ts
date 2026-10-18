@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
@@ -7,6 +8,7 @@ import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { publicChatActor } from "./helpers/public-chat-actor";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 
 const context = testContext();
@@ -104,6 +106,45 @@ describe("Runner built-in claim authorization", () => {
       const claimedDecryptions = kms.decryptCalls;
       await api.requestClaimRunnerJob(true, queued.runId, [404]);
       expect(kms.decryptCalls).toBe(claimedDecryptions);
+    });
+  });
+
+  it("claims the captured native Codex Auto route after its execution switch changes", async () => {
+    const owned = await publicChatActor(context);
+    owned.ownsFeatureSwitches();
+    const { actor, agentId, runnerGroup } = owned;
+    if (!actor.orgId) {
+      throw new Error("Expected a workspace owner");
+    }
+    const switchOwner = { ...actor, orgId: actor.orgId };
+    await owned.run(async () => {
+      await updateFeatureSwitchesForUser(context, switchOwner, {
+        [FeatureSwitchKey.CodexExecution]: true,
+      });
+      const queued = await api.createThreadRun(actor, {
+        agentId,
+        prompt: "use the captured native Codex Auto route",
+        model: "auto",
+      });
+      await updateFeatureSwitchesForUser(context, switchOwner, {
+        [FeatureSwitchKey.CodexExecution]: false,
+      });
+      const key = await api.createCliToken(actor);
+      await owned.claimPatRun(`Bearer ${key.token}`, queued.runId, [403]);
+      const { claim } = await owned.claimChatRun(runnerGroup, queued.runId);
+      expect(claim).toMatchObject({
+        cliAgentType: "codex",
+        codexRuntimeConfig: {
+          providerId: "openrouter-codex",
+          baseUrl: "https://openrouter.ai/api/v1",
+          envKey: "OPENAI_API_KEY",
+          wireApi: "responses",
+        },
+      });
+      await expect(api.readRun(actor, queued.runId)).resolves.toMatchObject({
+        status: "running",
+        source: { providerType: "built-in", model: "auto" },
+      });
     });
   });
 
