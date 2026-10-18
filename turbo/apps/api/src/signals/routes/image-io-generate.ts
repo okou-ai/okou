@@ -5,10 +5,7 @@ import { command } from "ccstate";
 import { imageIoGenerateContract } from "@okouai/api-contracts/contracts/image-io-generate";
 import type { BuiltInGenerationRealtimeSubscription } from "@okouai/api-contracts/contracts/built-in-generation";
 import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
-import {
-  DEFAULT_IMAGE_MODEL,
-  type ImageModel,
-} from "@okouai/core/image-model-catalog";
+import { DEFAULT_IMAGE_MODEL } from "@okouai/core/image-model-catalog";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { and, eq, isNotNull } from "drizzle-orm";
 
@@ -20,7 +17,7 @@ import { settle } from "../utils";
 import { logger } from "../../lib/log";
 import type { RouteEntry } from "../route-entry";
 import { env } from "../../lib/env";
-import { db$, type ReadonlyDb } from "../external/db";
+import { db$ } from "../external/db";
 import { createBuiltInGenerationRealtimeSubscription } from "../external/realtime";
 import {
   checkImageCredits$,
@@ -78,40 +75,6 @@ interface ImageJobArgs {
   readonly admission: RunBuiltInAdmission | null;
   readonly options: ImageOptions;
   readonly pricing: ImagePricing;
-}
-
-/**
- * The image model snapshotted onto the calling run, so every image in a run
- * uses the model its system prompt announced.
- */
-async function loadRunImageModel(
-  db: ReadonlyDb,
-  orgId: string,
-  userId: string,
-  runId: string | undefined,
-  signal: AbortSignal,
-): Promise<ImageModel | null> {
-  if (!runId) {
-    return null;
-  }
-
-  const [run] = await db
-    .select({ selectedImageModel: agentRuns.selectedImageModel })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.id, runId),
-        eq(agentRuns.orgId, orgId),
-        eq(agentRuns.userId, userId),
-        isNotNull(agentRuns.triggerSource),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (!run) {
-    return null;
-  }
-  return isImageModelId(run.selectedImageModel) ? run.selectedImageModel : null;
 }
 
 function isGenerationError(value: unknown): value is GenerationError {
@@ -406,13 +369,33 @@ const prepareImageRequest$ = command(async ({ get }, signal: AbortSignal) => {
     auth.tokenType === "agent" || auth.tokenType === "sandbox"
       ? auth.runId
       : undefined;
-  const runImageModel = await loadRunImageModel(
-    db,
-    auth.orgId,
-    auth.userId,
-    runId,
-    signal,
-  );
+  const orgId = auth.orgId;
+  const userId = auth.userId;
+  const runImageModel = await (async (querySignal: AbortSignal) => {
+    if (!runId) {
+      return null;
+    }
+
+    const [run] = await db
+      .select({ selectedImageModel: agentRuns.selectedImageModel })
+      .from(agentRuns)
+      .where(
+        and(
+          eq(agentRuns.id, runId),
+          eq(agentRuns.orgId, orgId),
+          eq(agentRuns.userId, userId),
+          isNotNull(agentRuns.triggerSource),
+        ),
+      )
+      .limit(1);
+    querySignal.throwIfAborted();
+    if (!run) {
+      return null;
+    }
+    return isImageModelId(run.selectedImageModel)
+      ? run.selectedImageModel
+      : null;
+  })(signal);
   const memberImageModel =
     runImageModel === null
       ? (
