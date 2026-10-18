@@ -1,4 +1,5 @@
 import { z } from "zod";
+import workerUrl from "virtual:sandbox-file-download-worker";
 import type { SandboxChannelPeer } from "@okouai/core/sandbox-channel-peer";
 import { sandboxFileOffsetSchema } from "@okouai/api-contracts/contracts/sandbox-channel-fs";
 import {
@@ -9,7 +10,6 @@ import {
   type DeferredPromise,
 } from "../signals/utils.ts";
 
-const SCRIPT = __OKOU_FILE_DOWNLOAD_WORKER_PATH__;
 const SCOPE = "/sandbox-file-downloads/";
 const IDLE_MS = 30_000;
 const messageSchema = z.discriminatedUnion("type", [
@@ -60,7 +60,7 @@ export async function downloadWorker(
   // Registration belongs to the origin and cannot be aborted. Retire this
   // caller's wait before opening WSS or preparing an attachment on a late reply.
   const registration = await waitForOperation(
-    navigator.serviceWorker.register(SCRIPT, {
+    navigator.serviceWorker.register(workerUrl, {
       scope: SCOPE,
       updateViaCache: "none",
     }),
@@ -69,7 +69,10 @@ export async function downloadWorker(
   signal.throwIfAborted();
   const worker =
     registration.active ?? registration.installing ?? registration.waiting;
-  if (!worker || worker.scriptURL !== new URL(SCRIPT, location.origin).href) {
+  if (
+    !worker ||
+    worker.scriptURL !== new URL(workerUrl, location.origin).href
+  ) {
     throw new FileDownloadError("updateRequired");
   }
   if (worker.state === "activated") {

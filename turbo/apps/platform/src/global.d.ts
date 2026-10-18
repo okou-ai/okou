@@ -57,7 +57,6 @@ interface OkouGlobal {
 
 declare global {
   const __OKOU_APP_VERSION__: string;
-  const __OKOU_FILE_DOWNLOAD_WORKER_PATH__: string;
 
   interface Window {
     _okou: OkouGlobal | undefined;

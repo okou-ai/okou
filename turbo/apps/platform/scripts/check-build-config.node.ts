@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -23,7 +30,10 @@ import {
 import { clerkUiAssetPlugin } from "./clerk-ui.ts";
 import { sharedDatabaseWorkerHtmlPlugin } from "./shared-database-worker-html.ts";
 import { dependencyVendorChunks } from "./vendor-chunks.ts";
-import { sandboxFileDownloadWorkerAsset } from "./sandbox-file-download-worker.ts";
+import {
+  DOWNLOAD_WORKER_ASSET_PATTERN,
+  sandboxFileDownloadWorkerPlugin,
+} from "./sandbox-file-download-worker.ts";
 import {
   domGlobalUsageCounts,
   workerDomGlobalsMessage,
@@ -37,15 +47,18 @@ const productionConfigPromise = loadConfigFromFile(
 await test("canonical sourcemap injection preserves content-addressed download workers", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "okou-download-worker-"));
   try {
-    const asset = await sandboxFileDownloadWorkerAsset();
     const output = path.join(root, "dist");
     const input = path.join(root, "app.js");
-    await writeFile(input, 'console.log("application fixture");');
+    await writeFile(
+      input,
+      'import workerUrl from "virtual:sandbox-file-download-worker"; console.log(workerUrl);',
+    );
     await build({
       configFile: false,
       root,
+      base: "https://static.okou.io/okou-app/",
       logLevel: "silent",
-      plugins: [asset.plugin],
+      plugins: [sandboxFileDownloadWorkerPlugin()],
       build: {
         outDir: output,
         rolldownOptions: {
@@ -54,7 +67,15 @@ await test("canonical sourcemap injection preserves content-addressed download w
         },
       },
     });
-    const worker = path.join(output, asset.path.replace("/okou-app/", ""));
+    const workerFiles = (await readdir(path.join(output, "assets"))).filter(
+      (name) => {
+        return DOWNLOAD_WORKER_ASSET_PATTERN.test(`assets/${name}`);
+      },
+    );
+    assert.equal(workerFiles.length, 1);
+    const workerFile = workerFiles[0];
+    assert.ok(workerFile);
+    const worker = path.join(output, "assets", workerFile);
     const source = await readFile(worker);
     assert.equal(
       path.basename(worker),
@@ -62,6 +83,9 @@ await test("canonical sourcemap injection preserves content-addressed download w
     );
     assert.match(source.toString(), /_sentryDebugIds/u);
     const app = path.join(output, "app.js");
+    const appSource = await readFile(app, "utf8");
+    assert.ok(appSource.includes(`/okou-app/assets/${workerFile}`));
+    assert.ok(!appSource.includes("https://static.okou.io"));
     await promisify(execFile)(
       "pnpm",
       ["exec", "sentry-cli", "sourcemaps", "inject", output],

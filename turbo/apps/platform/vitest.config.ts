@@ -1,9 +1,10 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 import path from "path";
+import { sandboxFileDownloadWorkerPlugin } from "./scripts/sandbox-file-download-worker.ts";
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), sandboxFileDownloadWorkerPlugin()],
   resolve: {
     alias: {
       // Hosted Clerk components render through the Clerk core in a real
@@ -48,9 +49,6 @@ export default defineConfig({
     },
   },
   define: {
-    __OKOU_FILE_DOWNLOAD_WORKER_PATH__: JSON.stringify(
-      "/sandbox-file-download-sw.js",
-    ),
     __OKOU_APP_VERSION__: JSON.stringify("0.540.0"),
   },
   test: {

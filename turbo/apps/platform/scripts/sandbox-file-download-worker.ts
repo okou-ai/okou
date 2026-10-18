@@ -11,7 +11,7 @@ export const DOWNLOAD_WORKER_ASSET_PATTERN =
   /^assets\/sandbox-file-download-[a-f0-9]{64}\.js$/u;
 
 /** Keep the browser-resident script immutable and available to old App pages. */
-export async function sandboxFileDownloadWorkerAsset() {
+async function buildDownloadWorkerAsset() {
   const root = await mkdtemp(path.join(tmpdir(), "okou-download-worker-"));
   let source: Buffer;
   try {
@@ -38,14 +38,41 @@ export async function sandboxFileDownloadWorkerAsset() {
   }
   const digest = createHash("sha256").update(source).digest("hex");
   const fileName = `assets/sandbox-file-download-${digest}.js`;
+  return { fileName, source };
+}
+
+/** Import the same-origin worker URL in production, development and tests. */
+export function sandboxFileDownloadWorkerPlugin(): Plugin {
+  const resolvedModuleId = "\0virtual:sandbox-file-download-worker";
+  let workerPath = "/sandbox-file-download-sw.js";
+  let asset: Awaited<ReturnType<typeof buildDownloadWorkerAsset>> | null = null;
   return {
-    path: `/okou-app/${fileName}`,
-    plugin: {
-      apply: "build",
-      name: "platform-sandbox-file-download-worker",
-      generateBundle() {
-        this.emitFile({ type: "asset", fileName, source });
+    name: "platform-sandbox-file-download-worker",
+    async configResolved(config) {
+      if (config.command === "build") {
+        asset = await buildDownloadWorkerAsset();
+        workerPath = `/okou-app/${asset.fileName}`;
+      }
+    },
+    resolveId: {
+      filter: { id: /^virtual:sandbox-file-download-worker$/u },
+      handler() {
+        return resolvedModuleId;
       },
-    } satisfies Plugin,
+    },
+    load: {
+      filter: { id: /virtual:sandbox-file-download-worker$/u },
+      handler(id) {
+        return id === resolvedModuleId
+          ? `export default ${JSON.stringify(workerPath)};`
+          : null;
+      },
+    },
+    generateBundle() {
+      if (!asset) {
+        throw new Error("Download worker asset was not prepared");
+      }
+      this.emitFile({ type: "asset", ...asset });
+    },
   };
 }
