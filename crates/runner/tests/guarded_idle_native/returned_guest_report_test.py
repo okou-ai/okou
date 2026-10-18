@@ -33,6 +33,8 @@ class ReturnedGuestTests(unittest.TestCase):
             self.events.extend(terminal)
             for sample in copy.deepcopy(sample_template):
                 sample["monotonic_ns"] += index*10_000_000_000
+                for process in sample["processes"]:
+                    process["observed_monotonic_ns"] = sample["monotonic_ns"]
                 self.samples.append(sample)
             base = terminal[1]["monotonic_ns"]
             def clock(ms): return base+ms*1_000_000

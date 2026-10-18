@@ -22,6 +22,9 @@ class ReadCancellationTests(unittest.TestCase):
         self.events, self.samples = self.events[:12], self.samples[:12]
         for item in self.events+self.samples:
             item["monotonic_ns"] *= 100_000_000
+        for sample in self.samples:
+            for process in sample["processes"]:
+                process["observed_monotonic_ns"] = sample["monotonic_ns"]
         raw_policy, raw_inputs = json.dumps(self.policy), json.dumps(self.inputs)
         self.collector["metadata"].update(native_read_cancellation_policy_json=raw_policy,
             native_read_cancellation_inputs_json=raw_inputs, native_read_cancellation_snapshot_bytes=startup.BYTES)
