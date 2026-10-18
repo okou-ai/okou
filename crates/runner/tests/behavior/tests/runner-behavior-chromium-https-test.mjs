@@ -10,7 +10,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -29,7 +29,7 @@ import { Socket } from "node:net";
 
 const scenario = process.env.CHROMIUM_TEST_CASE;
 assert.ok(!process.argv.some((arg) => arg.includes("ignore-certificate-errors")));
-const profile = process.argv.find((arg) => arg.startsWith("--user-data-dir="))?.split("=")[1];
+const profile = process.argv.find((arg) => arg.startsWith("--user-data-dir="))?.slice("--user-data-dir=".length);
 assert.ok(profile, "browser needs an isolated profile");
 writeFileSync(process.env.CHROMIUM_TEST_RECORD, JSON.stringify({profile, pid: process.pid}));
 function send(message) {
@@ -87,7 +87,7 @@ for await (const chunk of new Socket({fd: 3, readable: true, writable: false}).s
 `;
 
 async function runProbe(t, scenario, throughRunner = false) {
-  const root = await mkdtemp(join(tmpdir(), "chromium-https-test-"));
+  const root = await mkdtemp(join(tmpdir(), "chromium https=test-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const binary = join(root, "chromium");
   const record = join(root, "browser.json");
@@ -171,6 +171,7 @@ if (guest[0] === "timeout") {
     return { code, output: Buffer.concat(output).toString() };
   }
   const { profile, pid } = JSON.parse(await readFile(record, "utf8"));
+  assert.equal(dirname(profile), root, "record the exact owned profile path");
   assert.equal(
     existsSync(profile),
     false,
