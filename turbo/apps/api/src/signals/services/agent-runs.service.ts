@@ -23,7 +23,7 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { and, asc, count, desc, eq, inArray } from "drizzle-orm";
 
-import { db$, type Db } from "../external/db";
+import { db$ } from "../external/db";
 import {
   activePaidConcurrencySlots,
   cappedBaseConcurrencyLimit,
@@ -32,7 +32,6 @@ import {
 import { orgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
 
-type ReadDb = Pick<Db, "select">;
 type RunningTaskItem = QueueResponse["runningTasks"][number];
 type RunSourceRow = Pick<
   typeof agentRuns.$inferSelect,
@@ -185,49 +184,10 @@ function runningTaskItem(
   };
 }
 
-async function persistedRunSource(
-  db: ReadDb,
+function runSourceResponse(
   run: RunSourceRow,
-  owner: { readonly userId: string; readonly orgId: string },
-): Promise<NonNullable<GetRunResponse["source"]>> {
-  let account: NonNullable<GetRunResponse["source"]>["account"] = {
-    status: "unknown",
-  };
-  if (
-    run.modelProviderCredentialScope === "member" &&
-    run.modelProviderId &&
-    run.modelProviderAccountIdentity &&
-    (run.modelProvider === "codex-oauth-token" ||
-      run.modelProvider === "claude-code-oauth-token")
-  ) {
-    const [captured] = await db
-      .select({
-        id: modelProviderAccounts.id,
-        type: modelProviderAccounts.type,
-        externalAccountId: modelProviderAccounts.externalAccountId,
-        accountEmail: modelProviderAccounts.accountEmail,
-        workspaceName: modelProviderAccounts.workspaceName,
-        disconnectedAt: modelProviderAccounts.disconnectedAt,
-      })
-      .from(modelProviderAccounts)
-      .where(
-        and(
-          eq(modelProviderAccounts.id, run.modelProviderId),
-          eq(modelProviderAccounts.orgId, owner.orgId),
-          eq(modelProviderAccounts.userId, owner.userId),
-          eq(modelProviderAccounts.type, run.modelProvider),
-        ),
-      )
-      .limit(1);
-    account =
-      !captured || captured.disconnectedAt
-        ? { status: "unavailable" }
-        : personalSubscriptionAccountIdentity(captured) ===
-            run.modelProviderAccountIdentity
-          ? { status: "connected", id: captured.id }
-          : { status: "unknown" };
-  }
-
+  account: NonNullable<GetRunResponse["source"]>["account"],
+): NonNullable<GetRunResponse["source"]> {
   return {
     providerType: run.modelProvider
       ? (modelProviderTypeSchema.safeParse(run.modelProvider).data ?? null)
@@ -288,7 +248,49 @@ export function agentRunById(args: {
       return null;
     }
 
-    const source = await persistedRunSource(get(db$), run, args);
+    const sourceDb = get(db$);
+    const source = await (async (): Promise<
+      NonNullable<GetRunResponse["source"]>
+    > => {
+      let account: NonNullable<GetRunResponse["source"]>["account"] = {
+        status: "unknown",
+      };
+      if (
+        run.modelProviderCredentialScope === "member" &&
+        run.modelProviderId &&
+        run.modelProviderAccountIdentity &&
+        (run.modelProvider === "codex-oauth-token" ||
+          run.modelProvider === "claude-code-oauth-token")
+      ) {
+        const [captured] = await sourceDb
+          .select({
+            id: modelProviderAccounts.id,
+            type: modelProviderAccounts.type,
+            externalAccountId: modelProviderAccounts.externalAccountId,
+            accountEmail: modelProviderAccounts.accountEmail,
+            workspaceName: modelProviderAccounts.workspaceName,
+            disconnectedAt: modelProviderAccounts.disconnectedAt,
+          })
+          .from(modelProviderAccounts)
+          .where(
+            and(
+              eq(modelProviderAccounts.id, run.modelProviderId),
+              eq(modelProviderAccounts.orgId, args.orgId),
+              eq(modelProviderAccounts.userId, args.userId),
+              eq(modelProviderAccounts.type, run.modelProvider),
+            ),
+          )
+          .limit(1);
+        account =
+          !captured || captured.disconnectedAt
+            ? { status: "unavailable" }
+            : personalSubscriptionAccountIdentity(captured) ===
+                run.modelProviderAccountIdentity
+              ? { status: "connected", id: captured.id }
+              : { status: "unknown" };
+      }
+      return runSourceResponse(run, account);
+    })();
 
     return {
       runId: run.id,
