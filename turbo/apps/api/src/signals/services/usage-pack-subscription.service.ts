@@ -96,6 +96,7 @@ import {
   usagePackCheckoutAllocationsMatch,
   usagePackCheckoutConfigurationMatches,
   pendingUsagePackCheckoutFingerprint,
+  UsagePackPendingSnapshotConflict,
 } from "./usage-pack-pending-snapshot-plan";
 import {
   PLAN_PURCHASE_CLAIM_STALE_MS,
@@ -3606,12 +3607,32 @@ const retireReconciledUsagePackSnapshot$ = command(
             ),
           );
       }
-      await publishUsagePackPendingSnapshotCount(
-        tx,
-        args.orgId,
-        pendingCount,
-        pendingCount - retired.length,
-      );
+      const publicationOrgId = args.orgId;
+      const publicationBefore = pendingCount;
+      const publicationAfter = pendingCount - retired.length;
+      await (async (): Promise<void> => {
+        if (publicationBefore === publicationAfter) {
+          return;
+        }
+        const [published] = await tx
+          .update(usagePackPendingSnapshotGuards)
+          .set({ pendingSnapshotCount: publicationAfter })
+          .where(
+            and(
+              eq(usagePackPendingSnapshotGuards.orgId, publicationOrgId),
+              eq(
+                usagePackPendingSnapshotGuards.pendingSnapshotCount,
+                publicationBefore,
+              ),
+            ),
+          )
+          .returning({ orgId: usagePackPendingSnapshotGuards.orgId });
+        if (!published) {
+          throw new UsagePackPendingSnapshotConflict(
+            "Usage pack pending snapshot count changed during publication",
+          );
+        }
+      })();
     });
   },
 );
