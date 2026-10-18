@@ -198,7 +198,7 @@ pub(super) struct DirectCandidatePopOutcome {
 struct DirectCandidateInboxInner {
     order: VecDeque<RunId>,
     candidates: HashMap<RunId, DirectJobCandidate>,
-    overflow_active: bool,
+    /// Zero means there is no active overflow episode.
     overflow_count: u64,
 }
 
@@ -218,7 +218,6 @@ impl DirectCandidateInbox {
             inner: Mutex::new(DirectCandidateInboxInner {
                 order: VecDeque::new(),
                 candidates: HashMap::new(),
-                overflow_active: false,
                 overflow_count: 0,
             }),
             notify: Notify::new(),
@@ -239,9 +238,8 @@ impl DirectCandidateInbox {
         }
 
         if inner.order.len() >= self.capacity {
+            let should_wake_poll = inner.overflow_count == 0;
             inner.overflow_count = inner.overflow_count.saturating_add(1);
-            let should_wake_poll = !inner.overflow_active;
-            inner.overflow_active = true;
             return DirectCandidateInsertOutcome::Overflow {
                 snapshot: snapshot(inner.order.len(), self.capacity),
                 coalesced_count: inner.overflow_count,
@@ -275,7 +273,6 @@ impl DirectCandidateInbox {
         );
         let candidate = pop_candidate(&mut inner);
         if (candidate.is_some() || pruned.is_some()) && inner.order.len() < self.capacity {
-            inner.overflow_active = false;
             inner.overflow_count = 0;
         }
         DirectCandidatePopOutcome { candidate, pruned }
@@ -339,7 +336,6 @@ fn prune_stale_candidates(
         return None;
     }
     if inner.order.len() < capacity {
-        inner.overflow_active = false;
         inner.overflow_count = 0;
     }
     Some(DirectCandidatePruneSnapshot {
