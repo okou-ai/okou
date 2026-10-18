@@ -252,21 +252,56 @@ describe("canonical API home affinity", () => {
       prompt: "Broadcast carries canonical home affinity",
     });
     const next = { ...f, run };
-    expect((await poll(next))?.runnerPreference).toMatchObject({
+    mockNow(f.clock + 750);
+    const preference = (await poll(next))?.runnerPreference;
+    expect(preference).toMatchObject({
       tier: "homeCache",
+      expiresAt: new Date(f.clock + 2000).toISOString(),
     });
     expect(context.mocks.ably.publish).toHaveBeenCalledWith(
       "job",
       expect.objectContaining({
         runId: run.runId,
-        runnerPreference: expect.objectContaining({
-          kind: "preference",
-          tier: "homeCache",
-          runnerIdentity: { runnerId: f.runnerId, heartbeatGeneration: 7 },
-        }),
+        runnerPreference: preference,
       }),
     );
     await cancel(next);
+  });
+
+  it("keeps the discovery deadline across concurrent polls and later holder updates", async () => {
+    const f = await setup();
+    await heartbeat(f);
+    const reader = randomUUID();
+    await heartbeat(f, { runnerId: reader, heldHomeStates: [] });
+    const expectedPreference = {
+      kind: "preference",
+      tier: "homeCache",
+      runnerIdentity: { runnerId: f.runnerId, heartbeatGeneration: 7 },
+      expiresAt: new Date(f.clock + 2000).toISOString(),
+    };
+
+    mockNow(f.clock + 500);
+    const jobs = await Promise.all([poll(f), poll(f, reader)]);
+    for (const job of jobs) {
+      expect(job?.runnerPreference).toStrictEqual(expectedPreference);
+    }
+
+    mockNow(f.clock + 1500);
+    await heartbeat(f, { snapshotSequence: 2 });
+    expect((await poll(f, reader))?.runnerPreference).toStrictEqual(
+      expectedPreference,
+    );
+
+    mockNow(f.clock + 2000);
+    await heartbeat(f, { snapshotSequence: 3 });
+    const expiredJobs = await Promise.all([poll(f), poll(f, reader)]);
+    for (const job of expiredJobs) {
+      expect(job?.runnerPreference).toStrictEqual({
+        kind: "noPreference",
+        reason: "expired",
+      });
+    }
+    await cancel(f);
   });
 
   it("ranks a real reusable sandbox ahead of a home image", async () => {

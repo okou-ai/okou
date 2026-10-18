@@ -747,8 +747,7 @@ const resolvePollRunnerReusePreference$ = command(
       readonly profile: string;
       readonly reuseKey: string | null;
       readonly historyGenerationRunId: string | undefined;
-      readonly createdAt: Date;
-      readonly currentDate: Date;
+      readonly discoveryStartedAt: Date | null;
     },
   ) => {
     const resolution = await tapError(
@@ -788,6 +787,7 @@ const findPendingRunnerJob$ = command(
             nullableDriverValueDecoder(pgTextDecoder),
           ),
         createdAt: runnerJobQueue.createdAt,
+        discoveryStartedAt: runnerJobQueue.discoveryStartedAt,
       })
       .from(runnerJobQueue)
       .innerJoin(agentRuns, eq(runnerJobQueue.runId, agentRuns.id))
@@ -862,8 +862,7 @@ const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     profile: pendingJob.profile,
     reuseKey: pendingJob.reuseKey,
     historyGenerationRunId: pendingJob.historyGenerationRunId ?? undefined,
-    createdAt: pendingJob.createdAt,
-    currentDate,
+    discoveryStartedAt: pendingJob.discoveryStartedAt,
   });
   signal.throwIfAborted();
   recordPollTimingMetrics({
