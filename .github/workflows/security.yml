@@ -191,6 +191,26 @@ jobs:
         with:
           category: codeql
 
+  prune-codeql-caches:
+    name: Prune CodeQL cache history
+    needs: [codeql]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Cache maintenance must not change the required security scan result.
+    continue-on-error: true
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Keep the two newest CodeQL base databases
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { default: prune } = await import(`${process.env.GITHUB_WORKSPACE}/.github/scripts/prune-codeql-caches.mjs`);
+            await prune({ github, context, core });
+
   pnpm-audit:
     needs: [detect-release, detect-native-only]
     name: pnpm audit (SCA)
@@ -371,6 +391,7 @@ jobs:
             crates/runner/tests/behavior/tests/runner-behavior-caller-isolation-test.sh \
             crates/runner/tests/behavior/tests/runner-behavior-upgrade-local-test.sh \
             .github/scripts/tests/workflow-script-test-shards-test.sh \
+            .github/scripts/tests/prune-codeql-caches-test.sh \
             e2e/scripts/ensure-stripe-cli.sh \
             e2e/helpers/browser.bash \
             e2e/helpers/trace-cli.sh \
