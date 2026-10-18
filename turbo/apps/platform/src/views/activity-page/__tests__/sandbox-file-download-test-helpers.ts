@@ -101,6 +101,7 @@ export async function downloadBrowser(
       }
     },
   });
+  let registrations = 0;
   Object.assign(navigator.serviceWorker, {
     async register(script: string) {
       if (script !== "/sandbox-file-download-v1-sw.js") {
@@ -109,7 +110,9 @@ export async function downloadBrowser(
       if (!registered.settled()) {
         registered.resolve();
       }
-      await options.registration;
+      if (registrations++ === 0) {
+        await options.registration;
+      }
       return { active: worker };
     },
   });

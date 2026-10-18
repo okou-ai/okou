@@ -310,12 +310,18 @@ test("Stale worker registration cannot start a late download", async () => {
       screen.queryByRole("region", { name: "Files" }),
     ).not.toBeInTheDocument();
   });
-  registration.resolve();
   const reopened = await openFiles();
   const retry = await readyDownload(reopened);
   click(retry);
   await expect(screen.findByText(complete)).resolves.toBeInTheDocument();
   expect((await browser.outcome).saved).toBeTruthy();
+  await act(() => {
+    registration.resolve();
+  });
+  expect(screen.getByText(complete)).toBeInTheDocument();
+  expect(
+    document.querySelectorAll('iframe[src*="/sandbox-file-downloads/v1/"]'),
+  ).toHaveLength(1);
 });
 
 test("Run completion interrupts an active download", async () => {

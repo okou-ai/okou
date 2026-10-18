@@ -4,6 +4,7 @@ import { sandboxFileOffsetSchema } from "@okouai/api-contracts/contracts/sandbox
 import {
   createDeferredPromise,
   onRejection,
+  waitForOperation,
   withCleanup,
   type DeferredPromise,
 } from "../signals/utils.ts";
@@ -57,10 +58,15 @@ export async function downloadWorker(
   if (!canStreamSandboxDownload()) {
     throw new FileDownloadError("unavailable");
   }
-  const registration = await navigator.serviceWorker.register(SCRIPT, {
-    scope: SCOPE,
-    updateViaCache: "none",
-  });
+  // Registration belongs to the origin and cannot be aborted. Retire this
+  // caller's wait before opening WSS or preparing an attachment on a late reply.
+  const registration = await waitForOperation(
+    navigator.serviceWorker.register(SCRIPT, {
+      scope: SCOPE,
+      updateViaCache: "none",
+    }),
+    AbortSignal.any([signal, AbortSignal.timeout(IDLE_MS)]),
+  );
   signal.throwIfAborted();
   const worker =
     registration.active ?? registration.installing ?? registration.waiting;
