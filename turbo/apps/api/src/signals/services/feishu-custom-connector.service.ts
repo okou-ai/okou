@@ -44,7 +44,11 @@ import {
   type CustomConnectorDefinitionRow,
 } from "./custom-connector-definition-selection";
 import type { Tx } from "../../lib/db-types";
-import { writeCustomConnectorOAuthState } from "./custom-connector-oauth-write.service";
+import {
+  customConnectorOAuthStateLockReadPlan,
+  customConnectorOAuthStateValidationReadPlan,
+  assertCustomConnectorOAuthStateRows,
+} from "./custom-connector-oauth-write.service";
 import type { PreparedServerSideVolume } from "./storage-volume-publication.service";
 import {
   connectorAccountResolutionReadPlan,
@@ -268,10 +272,20 @@ async function createFeishuCustomConnector(
   prepared: PreparedFeishuCustomConnectorSkill,
   signal: AbortSignal,
 ): Promise<ReconciledFeishuCustomConnector> {
-  return await writeCustomConnectorOAuthState(
-    tx,
-    [{ connectorId: prepared.connectorId, orgId: args.orgId }],
-    async () => {
+  const oauthStateDb = tx;
+  const oauthStateConnectors = [
+    { connectorId: prepared.connectorId, orgId: args.orgId },
+  ] as const;
+  return await (async () => {
+    const lockPlan =
+      customConnectorOAuthStateLockReadPlan(oauthStateConnectors);
+    await oauthStateDb
+      .select(lockPlan.columns)
+      .from(orgCustomConnectors)
+      .where(lockPlan.condition)
+      .orderBy(...lockPlan.orderBy)
+      .for("update");
+    const result = await (async () => {
       const [connector] = await tx
         .insert(orgCustomConnectors)
         .values({
@@ -300,8 +314,18 @@ async function createFeishuCustomConnector(
         definitionChanged: true,
         runtimeChanged: false,
       };
-    },
-  );
+    })();
+    const statePlan = customConnectorOAuthStateValidationReadPlan(
+      lockPlan.condition,
+    );
+    const states = await oauthStateDb
+      .select(statePlan.columns)
+      .from(orgCustomConnectors)
+      .leftJoin(orgCustomConnectorOauthConfigs, statePlan.join)
+      .where(statePlan.condition);
+    assertCustomConnectorOAuthStateRows(states);
+    return result;
+  })();
 }
 
 async function repairFeishuCustomConnector(
@@ -311,10 +335,20 @@ async function repairFeishuCustomConnector(
   skillStorageVersionId: string,
   signal: AbortSignal,
 ): Promise<ReconciledFeishuCustomConnector> {
-  return await writeCustomConnectorOAuthState(
-    tx,
-    [{ connectorId: existing.connector.id, orgId: installation.orgId }],
-    async () => {
+  const oauthStateDb = tx;
+  const oauthStateConnectors = [
+    { connectorId: existing.connector.id, orgId: installation.orgId },
+  ] as const;
+  return await (async () => {
+    const lockPlan =
+      customConnectorOAuthStateLockReadPlan(oauthStateConnectors);
+    await oauthStateDb
+      .select(lockPlan.columns)
+      .from(orgCustomConnectors)
+      .where(lockPlan.condition)
+      .orderBy(...lockPlan.orderBy)
+      .for("update");
+    const result = await (async () => {
       const credentialContractChanged =
         existing.connector.authMode !== "oauth" ||
         !isDeepStrictEqual(existing.connector.fields, []) ||
@@ -351,8 +385,18 @@ async function repairFeishuCustomConnector(
         definitionChanged: true,
         runtimeChanged: true,
       };
-    },
-  );
+    })();
+    const statePlan = customConnectorOAuthStateValidationReadPlan(
+      lockPlan.condition,
+    );
+    const states = await oauthStateDb
+      .select(statePlan.columns)
+      .from(orgCustomConnectors)
+      .leftJoin(orgCustomConnectorOauthConfigs, statePlan.join)
+      .where(statePlan.condition);
+    assertCustomConnectorOAuthStateRows(states);
+    return result;
+  })();
 }
 
 async function preflightFeishuCustomConnectorId(
