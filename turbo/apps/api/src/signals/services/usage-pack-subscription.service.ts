@@ -61,7 +61,7 @@ import {
 
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   getStripeClient,
   listAllStripeSubscriptions,
@@ -2987,30 +2987,6 @@ const usagePackInvoiceAlreadyFulfilled$ = command(
 /** Another live subscription already holds the organization entitlement. */
 class DuplicateUsagePackEntitlement extends Error {}
 
-async function requireOrgBillingRecord(
-  tx: Pick<Db, "select">,
-  orgId: string,
-  subscription: UsagePackSubscriptionRow,
-): Promise<never> {
-  const [org] = await tx
-    .select({ orgId: orgMetadata.orgId })
-    .from(orgMetadata)
-    .where(
-      and(
-        eq(orgMetadata.orgId, orgId),
-        eq(orgMetadata.stripeCustomerId, subscription.stripeCustomerId),
-      ),
-    );
-  if (org) {
-    throw new DuplicateUsagePackEntitlement(
-      `Organization ${orgId} entitlement belongs to another live subscription`,
-    );
-  }
-  throw new Error(
-    `Usage pack subscription ${subscription.id} has no matching organization billing record`,
-  );
-}
-
 function throwUsagePackOrgBillingMismatch(
   org: { readonly orgId: string } | undefined,
   orgId: string,
@@ -3346,7 +3322,21 @@ const commitUsagePackFulfillment$ = command(
           .where(projection.orgWhere)
           .returning({ orgId: orgMetadata.orgId });
         if (orgs.length !== 1) {
-          await requireOrgBillingRecord(tx, orgId, subscription);
+          await (async (): Promise<never> => {
+            const [org] = await tx
+              .select({ orgId: orgMetadata.orgId })
+              .from(orgMetadata)
+              .where(
+                and(
+                  eq(orgMetadata.orgId, orgId),
+                  eq(
+                    orgMetadata.stripeCustomerId,
+                    subscription.stripeCustomerId,
+                  ),
+                ),
+              );
+            return throwUsagePackOrgBillingMismatch(org, orgId, subscription);
+          })();
         }
         const [owner] = await tx
           .select({ orgId: orgPlanEntitlements.orgId })
