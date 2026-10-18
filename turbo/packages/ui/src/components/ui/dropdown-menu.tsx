@@ -6,7 +6,7 @@ import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { MENU_ROW_HEIGHT_CLASS } from "./menu-row";
 import { anchoredPopupTransitionClassName } from "./popup-motion";
 import { cn } from "../../lib/utils";
-import { resolveCollisionPadding } from "../../lib/safe-area";
+import { SafeAreaCollisionPadding } from "../../lib/safe-area";
 
 function DropdownMenu(props: MenuPrimitive.Root.Props) {
   return <MenuPrimitive.Root data-slot="dropdown-menu" {...props} />;
@@ -81,33 +81,39 @@ const DropdownMenuContent = React.forwardRef<
   ) => {
     return (
       <DropdownMenuPortal>
-        <MenuPrimitive.Positioner
-          align={align}
-          alignOffset={alignOffset}
-          anchor={anchor}
-          className="outline-none"
-          collisionAvoidance={collisionAvoidance}
-          collisionBoundary={collisionBoundary}
-          collisionPadding={resolveCollisionPadding(collisionPadding)}
-          disableAnchorTracking={disableAnchorTracking}
-          positionMethod={positionMethod}
-          side={side}
-          sideOffset={sideOffset}
-          sticky={sticky}
-        >
-          <MenuPrimitive.Popup
-            ref={ref}
-            data-slot="dropdown-menu-content"
-            className={cn(
-              anchoredPopupTransitionClassName,
-              "max-h-[var(--available-height)] min-w-[8rem] overflow-x-hidden overflow-y-auto rounded-xl border border-[hsl(var(--gray-400))] bg-card p-1 text-foreground shadow-lg outline-none dark:shadow-[0_8px_40px_-8px_rgba(0,0,0,0.6)]",
-              className,
-            )}
-            {...props}
-          >
-            {children}
-          </MenuPrimitive.Popup>
-        </MenuPrimitive.Positioner>
+        <SafeAreaCollisionPadding requested={collisionPadding}>
+          {(padding) => {
+            return (
+              <MenuPrimitive.Positioner
+                align={align}
+                alignOffset={alignOffset}
+                anchor={anchor}
+                className="outline-none"
+                collisionAvoidance={collisionAvoidance}
+                collisionBoundary={collisionBoundary}
+                collisionPadding={padding}
+                disableAnchorTracking={disableAnchorTracking}
+                positionMethod={positionMethod}
+                side={side}
+                sideOffset={sideOffset}
+                sticky={sticky}
+              >
+                <MenuPrimitive.Popup
+                  ref={ref}
+                  data-slot="dropdown-menu-content"
+                  className={cn(
+                    anchoredPopupTransitionClassName,
+                    "max-h-[var(--available-height)] min-w-[8rem] overflow-x-hidden overflow-y-auto rounded-xl border border-[hsl(var(--gray-400))] bg-card p-1 text-foreground shadow-lg outline-none dark:shadow-[0_8px_40px_-8px_rgba(0,0,0,0.6)]",
+                    className,
+                  )}
+                  {...props}
+                >
+                  {children}
+                </MenuPrimitive.Popup>
+              </MenuPrimitive.Positioner>
+            );
+          }}
+        </SafeAreaCollisionPadding>
       </DropdownMenuPortal>
     );
   },
