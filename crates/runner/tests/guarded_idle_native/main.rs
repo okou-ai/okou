@@ -32,6 +32,7 @@ mod refusal;
 mod returned_guest;
 mod returned_guest_probe;
 mod shared_reads;
+mod snapshot_preparation;
 mod startup;
 mod tail;
 mod transitions;
@@ -747,7 +748,7 @@ async fn prepare_native_terminal_snapshot() -> TestResult<()> {
             io::Error::other("snapshot preparation requires a new output directory").into(),
         );
     }
-    sandbox_firecracker::create_snapshot(sandbox::SnapshotCreateConfig {
+    snapshot_preparation::prepare(sandbox::SnapshotCreateConfig {
         id: std::env::var("OKOU_TEST_RPC_SNAPSHOT_HASH")?,
         binary_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_FIRECRACKER")?),
         kernel_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_KERNEL")?),

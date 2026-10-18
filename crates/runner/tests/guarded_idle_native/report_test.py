@@ -2,8 +2,13 @@
 """Consumer regressions against real receipt/log/sample files."""
 
 import importlib.util
+import hashlib
+import copy
 import json
+import os
 import pathlib
+import subprocess
+import sys
 import tempfile
 import unittest
 import uuid
@@ -11,6 +16,21 @@ import uuid
 spec = importlib.util.spec_from_file_location("native_report", pathlib.Path(__file__).with_name("report.py"))
 report = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(report)
+
+
+def prepare_snapshot_record(root, artifacts):
+    """Write synthetic real-file evidence for ordinary consumer tests, never a native run."""
+    inputs = {key: artifacts[key] for key in (
+        "source_sha", "firecracker_sha256", "kernel_sha256", "rootfs_sha256", "snapshot_id", "profile")}
+    inputs["producer_test_binary_sha256"] = artifacts["test_binary_sha256"]
+    record = {"format": "native-snapshot-preparation-v1", "inputs": inputs,
+              "snapshot_files": artifacts["snapshot_files"],
+              "creator_boot_id": "00000000-0000-0000-0000-000000000001",
+              "started_monotonic_ns": 1, "completed_monotonic_ns": 2,
+              "started_unix_ns": 1001, "completed_unix_ns": 1002}
+    raw = json.dumps(record).encode()
+    (root / "snapshot-preparation.json").write_bytes(raw)
+    artifacts["snapshot_preparation_sha256"] = hashlib.sha256(raw).hexdigest()
 
 
 class NativeReportTests(unittest.TestCase):
@@ -28,6 +48,7 @@ class NativeReportTests(unittest.TestCase):
             "profile": {"vcpu": 2, "memory_mib": 4096, "home_mib": 16384},
             "required_fixture_tail_bytes": 64 * 1024 * 1024,
         }
+        prepare_snapshot_record(self.root, self.artifacts)
         self.collector = {
             "format": "runner-memory-calibration-v2", "success": True,
             "cleanup_confirmed": True, "driver_wait_confirmed": True, "driver_exit_code": 0,
@@ -76,6 +97,103 @@ class NativeReportTests(unittest.TestCase):
         result = self.validate()
         self.assertEqual(len(result["cases"]), 12)
         self.assertFalse(result["memory_envelope_calibrated"])
+        self.assertTrue(result["snapshot_creation_inputs_verified"])
+        self.assertFalse(result["bootstrap_provenance_verified"])
+
+    def test_missing_snapshot_preparation_record_is_refused(self):
+        (self.root / "snapshot-preparation.json").unlink(missing_ok=True)
+        with self.assertRaisesRegex(ValueError, "snapshot preparation"):
+            self.validate()
+
+    def write_preparation(self, record):
+        raw = json.dumps(record).encode() if isinstance(record, dict) else record
+        (self.root / "snapshot-preparation.json").write_bytes(raw)
+        self.artifacts["snapshot_preparation_sha256"] = hashlib.sha256(raw).hexdigest()
+
+    def test_preparation_rejects_every_unbound_creation_input_and_output(self):
+        original = json.loads((self.root / "snapshot-preparation.json").read_bytes())
+        for field in ("source_sha", "producer_test_binary_sha256", "firecracker_sha256",
+                      "kernel_sha256", "rootfs_sha256", "snapshot_id", "profile", "snapshot_files"):
+            with self.subTest(field=field):
+                value = copy.deepcopy(original)
+                if field == "snapshot_files":
+                    value[field]["memory.bin"] = "0" * 64
+                elif field == "profile":
+                    value["inputs"][field]["memory_mib"] = 8192
+                elif field == "snapshot_id":
+                    value["inputs"][field] = "different-original-snapshot"
+                else:
+                    value["inputs"][field] = "0" * (40 if field == "source_sha" else 64)
+                self.write_preparation(value)
+                with self.assertRaisesRegex(ValueError, "snapshot preparation input/output"):
+                    self.validate()
+
+    def test_preparation_rejects_invalid_clocks_identity_shape_and_types(self):
+        original = json.loads((self.root / "snapshot-preparation.json").read_bytes())
+        changes = [
+            ("started_monotonic_ns", 0), ("started_monotonic_ns", True),
+            ("completed_monotonic_ns", 1), ("completed_monotonic_ns", 2**64),
+            ("started_unix_ns", -1), ("completed_unix_ns", 2**128),
+            ("creator_boot_id", "invalid-boot"), ("format", "unobserved-producer-v0"),
+            ("unknown_field", True),
+        ]
+        for field, item in changes:
+            with self.subTest(field=field, value=item):
+                value = copy.deepcopy(original)
+                value[field] = item
+                self.write_preparation(value)
+                with self.assertRaises(ValueError):
+                    self.validate()
+        value = copy.deepcopy(original)
+        value["inputs"]["profile"]["vcpu"] = 2.0
+        self.write_preparation(value)
+        with self.assertRaises(ValueError):
+            self.validate()
+
+    def test_preparation_hash_tampering_and_oversize_are_refused(self):
+        path = self.root / "snapshot-preparation.json"
+        path.write_bytes(path.read_bytes() + b" ")
+        with self.assertRaisesRegex(ValueError, "snapshot preparation record hash"):
+            self.validate()
+        self.write_preparation(b" " * 65537)
+        with self.assertRaisesRegex(ValueError, "snapshot preparation record hash or size"):
+            self.validate()
+
+    def test_preparation_duplicate_members_are_refused_at_both_object_levels(self):
+        raw = (self.root / "snapshot-preparation.json").read_bytes()
+        for member in (b'"format":', b'"memory.bin":'):
+            with self.subTest(member=member):
+                self.write_preparation(raw.replace(member, member + b'"duplicate",' + member, 1))
+                with self.assertRaisesRegex(ValueError, "duplicate field"):
+                    self.validate()
+
+    def test_preparation_symlink_and_fifo_are_refused_by_real_cli(self):
+        self.validate()
+        path = self.root / "snapshot-preparation.json"
+        foreign = self.root / "foreign-record.json"
+        foreign.write_bytes(path.read_bytes())
+        path.unlink()
+        command = [sys.executable, report.__file__, str(self.root)]
+        path.symlink_to(foreign)
+        result = subprocess.run(command, capture_output=True, text=True, timeout=5)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("snapshot preparation", result.stderr)
+        path.unlink()
+        os.mkfifo(path)
+        result = subprocess.run(command, capture_output=True, text=True, timeout=5)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("not a regular file", result.stderr)
+
+    def test_real_cli_transports_creation_record_and_retains_parent_limits(self):
+        self.validate()
+        command = [sys.executable, report.__file__, str(self.root)]
+        result = subprocess.run(command, capture_output=True, text=True, timeout=5, check=True)
+        value = json.loads(result.stdout)
+        self.assertTrue(value["snapshot_creation_inputs_verified"])
+        self.assertFalse(value["bootstrap_provenance_verified"])
+        self.assertFalse(value["production_protection_proven"])
+        (self.root / "snapshot-preparation.json").unlink()
+        self.assertNotEqual(subprocess.run(command, capture_output=True, timeout=5).returncode, 0)
 
     def test_missing_scope_and_duplicate_phase_are_refused(self):
         self.events.pop()
