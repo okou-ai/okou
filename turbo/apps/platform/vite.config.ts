@@ -25,12 +25,14 @@ import {
   VENDOR_GROUP_IDS,
 } from "./scripts/vendor-chunks.ts";
 import { workerDomGlobalsPlugin } from "./scripts/worker-dom-globals.ts";
+import { sandboxFileDownloadWorkerAsset } from "./scripts/sandbox-file-download-worker.ts";
 import { SENTRY_APPLICATION_KEY } from "./src/lib/sentry-application-key.ts";
 
 const APP_ASSET_BASE = "https://static.okou.io/okou-app/";
 const APP_GIT_COMMIT_SHA = process.env.OKOU_APP_GIT_COMMIT_SHA ?? "";
 const APP_VERSION = process.env.OKOU_APP_VERSION ?? platformPackage.version;
 const vendor = dependencyVendorChunks();
+const downloadWorker = sandboxFileDownloadWorkerAsset();
 
 const runtimeBuildInfoHtmlPlugin = {
   name: "platform-runtime-build-info-html",
@@ -57,6 +59,11 @@ export default defineConfig(({ command }) => ({
   base: command === "build" ? APP_ASSET_BASE : "/",
   define: {
     __OKOU_APP_VERSION__: JSON.stringify(APP_VERSION),
+    __OKOU_FILE_DOWNLOAD_WORKER_PATH__: JSON.stringify(
+      command === "build"
+        ? downloadWorker.path
+        : "/sandbox-file-download-v1-sw.js",
+    ),
   },
   experimental: {
     renderBuiltUrl(filename, { hostType, type }) {
@@ -92,7 +99,8 @@ export default defineConfig(({ command }) => ({
     clerkUiAssetPlugin(),
     runtimeBuildInfoHtmlPlugin,
     vendor.plugin,
-    applicationJavaScriptBundlePlugin(VENDOR_GROUP_IDS.length),
+    downloadWorker.plugin,
+    applicationJavaScriptBundlePlugin(VENDOR_GROUP_IDS.length, true),
     applicationResourcePriorityHtmlPlugin(),
     sharedDatabaseWorkerHtmlPlugin(),
     // Tags bundles with the application key for the runtime third-party filter.

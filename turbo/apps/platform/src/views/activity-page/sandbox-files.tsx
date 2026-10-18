@@ -7,6 +7,7 @@ import {
   Link,
   RefreshCw,
   ArrowRightToLine,
+  Download,
 } from "lucide-react";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -21,6 +22,7 @@ import {
 } from "@okouai/ui";
 import type {
   FilesError,
+  FilesEntry,
   FilesDirectory,
   SandboxFilesSignals,
 } from "../../signals/activity-page/sandbox-files.ts";
@@ -36,6 +38,7 @@ import {
 } from "../../signals/activity-page/sandbox-files-location.ts";
 import { SandboxFilesBreadcrumb } from "./sandbox-files-breadcrumb.tsx";
 import { WorkspaceCanvasBackdrop } from "../okou-page/workspace-inset.tsx";
+import { SandboxFileDownloadStatus } from "./sandbox-file-download.tsx";
 
 function FilesErrorMessage({ error }: { readonly error: FilesError }) {
   const { t } = useTranslation();
@@ -63,6 +66,51 @@ function FilesErrorMessage({ error }: { readonly error: FilesError }) {
   }
 }
 const DEPTH_PADDING = ["pl-2", "pl-6", "pl-10", "pl-14", "pl-18"] as const;
+
+function FilesDownloadButton({
+  signals,
+  entry,
+  path,
+}: {
+  readonly signals: SandboxFilesSignals;
+  readonly entry: FilesEntry;
+  readonly path: readonly string[];
+}) {
+  const { t } = useTranslation();
+  const signal = useGet(pageSignal$);
+  const location = useGet(signals.location$);
+  const navigating = useGet(signals.navigating$);
+  const download = useSet(signals.download$);
+  const downloadAvailable = useGet(signals.download.available$);
+  const downloading = useGet(signals.download.busy$);
+  return (
+    <Button
+      type="button"
+      variant="quiet"
+      size="icon-sm"
+      showTooltip
+      className="shrink-0 [@media(pointer:coarse)]:size-10"
+      focusableWhenDisabled
+      disabled={!downloadAvailable || downloading || navigating}
+      aria-label={t(
+        ($) => {
+          return $.activity.detail.files.download;
+        },
+        {
+          name: entry.displayName,
+        },
+      )}
+      onClick={() => {
+        detach(
+          download(location, path, entry.nameToken, signal),
+          Reason.DomCallback,
+        );
+      }}
+    >
+      <Download size={16} />
+    </Button>
+  );
+}
 
 function FilesRow({
   signals,
@@ -140,9 +188,16 @@ function FilesRow({
         ) : (
           <File size={16} className="shrink-0 text-muted-foreground" />
         )}
-        <span className="min-w-0 truncate" title={entry.displayName}>
+        <span className="min-w-0 flex-1 truncate" title={entry.displayName}>
           {entry.displayName}
         </span>
+        {entry.kind === "file" && (
+          <FilesDownloadButton
+            signals={signals}
+            entry={entry}
+            path={row.path}
+          />
+        )}
         {entry.kind === "symlink" && (
           <span className="shrink-0 text-xs text-muted-foreground">
             {t(($) => {
@@ -480,6 +535,7 @@ export function SandboxFilesBody({
         </Button>
         <FilesRefreshControl signals={signals} errorId={errorId} />
       </div>
+      <SandboxFileDownloadStatus signals={signals.download} />
       {phase === "ready" ? (
         <div className="pb-4">
           <FilesVirtualList signals={signals} />

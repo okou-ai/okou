@@ -48,6 +48,9 @@ export default defineConfig({
     },
   },
   define: {
+    __OKOU_FILE_DOWNLOAD_WORKER_PATH__: JSON.stringify(
+      "/sandbox-file-download-v1-sw.js",
+    ),
     __OKOU_APP_VERSION__: JSON.stringify("0.540.0"),
   },
   test: {
