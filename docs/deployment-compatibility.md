@@ -181,7 +181,21 @@ non-GA.
 
 ## Required Change Patterns
 
-Prefer additive cross-version changes:
+Use focused PRs and multiple deployments to minimize backward-compatibility
+logic and technical debt. Merge and deploy each stage, then verify its serving
+artifacts and applicable [drain and rollback gates](#drain-and-rollback-gates)
+before merging the next stage. Prefer controlling deployment order over adding
+compatibility branches. Do not add version negotiation or multi-version parsing
+when deployment ordering can make the transition safe.
+
+For Runner changes, deploy the required API or Runner preparation before
+activating its dependent behavior in a later PR and deployment. Before removing
+the old path, verify that old Runner owners have finished claimed work and
+finalization and exited, and exclude incompatible rollback artifacts. Retained
+data and historical package references still require their own compatibility
+or migration gates.
+
+When reachable consumers require overlapping contracts, prefer additive changes:
 
 - add optional request fields before requiring them;
 - add response fields without requiring old clients to read them;
@@ -198,15 +212,22 @@ them.
 
 For an incompatible change, separate the phases:
 
-1. **Prepare:** readers and handlers accept both shapes.
+1. **Prepare:** deploy the prerequisites for the replacement while preserving the
+   current contract. Accept both shapes only when reachable consumers or retained
+   data require it.
 2. **Migrate:** clients and writers start using the replacement.
-3. **Clean up:** remove the bridge only after all affected old consumers are no
-   longer reachable.
+3. **Clean up:** remove the old path or temporary bridge only after all affected
+   old consumers are no longer reachable and retained data and rollback targets
+   satisfy their gates.
 
 Separate PRs included in one unreleased deployment do not establish reader-first
 ordering. Verify the actual deployed artifact and consumer population.
-Compatibility branches must name their surface, removal condition, and owning
-follow-up; see [fallback declarations](fallback.md#9-declare-new-fallbacks-in-the-pr-summary-and-the-review).
+Every rollout compatibility branch is temporary technical debt and must name
+its surface, removal condition, and owning follow-up; see
+[fallback declarations](fallback.md#9-declare-new-fallbacks-in-the-pr-summary-and-the-review).
+Completing the rollout includes removing all of its backward-compatibility
+branches, superseded contracts, and their tests after every applicable gate
+passes. The final implementation supports only the replacement contract.
 Do not add broad defaults to hide corrupt data or incompatible protocols.
 
 An explicitly accepted breaking cutover must record the affected consumers,
