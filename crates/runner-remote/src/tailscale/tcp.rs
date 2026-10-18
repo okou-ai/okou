@@ -196,8 +196,10 @@ impl Connection {
             .drain(..)
             .map(|bytes| PacketMut::from(bytes.as_slice()))
             .collect();
-        for packet in &packets {
-            self.trace.tcp_packet(packet.as_ref(), false);
+        if self.trace.enabled() {
+            for packet in &packets {
+                self.trace.tcp_packet(packet.as_ref(), false);
+            }
         }
         Ok(packets)
     }

@@ -96,7 +96,9 @@ impl Core {
     }
 
     pub(super) fn observe_relays(&mut self, routes: super::regional_driver::Routes) {
-        self.relays = Some(routes);
+        self.relays = super::evidence::Trace::current()
+            .enabled()
+            .then_some(routes);
     }
 
     fn retire_regions(&mut self) {

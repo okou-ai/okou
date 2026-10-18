@@ -154,7 +154,7 @@ No cross-Run archive exists.
 Evidence contains finite stages and typed identifiers, never provider/peer
 bodies, hostnames, credentials, auth URLs, commands/output, file paths/content,
 screenshots, input, maps or packets. Only the selected policy-approved address
-is recorded, not a complete DNS answer set. Incomplete stages stay unknown;
+is recorded, not a complete DNS answer set. Unobserved or abandoned stages stay unknown;
 reused setup cannot prove fresh health. File causes remain file causes.
 The first Cloudflare cause survives later carrier/cleanup failures. Safe logs
 and explanation text use the same typed source facts.
