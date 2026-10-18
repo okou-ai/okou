@@ -187,8 +187,14 @@ test("VNC access alone can create a reusable Tailscale configuration from networ
 });
 
 test("A rejected native configuration can be replaced without discarding the draft or either trust layer", async () => {
+  const selected = mockNativeNetworks();
   const original: VncConnectionResponse = {
     ...host,
+    port: 443,
+    transport: {
+      type: "cloudflare_access",
+      configId: selected.id,
+    },
     security: {
       type: "x509_vnc",
       serverName: "inner.example.com",
@@ -196,13 +202,23 @@ test("A rejected native configuration can be replaced without discarding the dra
     },
   };
   mockSettings({ connections: [original] });
-  const selected = mockNativeNetworks();
   const replacement = {
     ...selected,
     id: "b0000000-0000-4000-8000-000000000002",
     name: "Replacement network",
   };
-  let available = [selected];
+  let available = [
+    {
+      ...selected,
+      vncHosts: [
+        {
+          id: original.id,
+          displayName: original.displayName,
+          roles: ["rfb" as const],
+        },
+      ],
+    },
+  ];
   context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs: available });
   });
@@ -215,7 +231,14 @@ test("A rejected native configuration can be replaced without discarding the dra
         error: { code: "VNC_UNAVAILABLE", message: "Network unavailable" },
       });
     }
-    return respond(200, { ...original, generation: original.generation + 1 });
+    return respond(200, {
+      ...original,
+      displayName: body.displayName ?? original.displayName,
+      host: body.host ?? original.host,
+      port: body.port ?? original.port,
+      transport: body.transport ?? original.transport,
+      generation: original.generation + 1,
+    });
   });
   await page();
   click(
@@ -228,8 +251,6 @@ test("A rejected native configuration can be replaced without discarding the dra
     within(dialog).getByLabelText("Display name"),
     "Preserved network draft",
   );
-  await choose(dialog, "Connection route", "Cloudflare Access");
-  await choose(dialog, "Network configuration", selected.name);
   await fill(
     within(dialog).getByLabelText("RFB destination host"),
     "gateway.example.com",
@@ -245,6 +266,22 @@ test("A rejected native configuration can be replaced without discarding the dra
   await waitFor(() => {
     expect(requests).toHaveLength(1);
   });
+  expect(requests[0]).toMatchObject({
+    displayName: "Preserved network draft",
+    host: "gateway.example.com",
+    port: 443,
+    expectedGeneration: original.generation,
+    transport: {
+      type: "cloudflare_access",
+      configId: selected.id,
+      originTls: {
+        serverName: "origin.example.com",
+        trust: { mode: "system" },
+      },
+    },
+    credential: { id: credential.id },
+    security: original.security,
+  });
   await within(dialog).findByText(/needs a new configuration/u);
   await choose(dialog, "Network configuration", replacement.name);
   expect(within(dialog).getByLabelText("Display name")).toHaveValue(
@@ -259,6 +296,8 @@ test("A rejected native configuration can be replaced without discarding the dra
   });
   expect(requests[1]).toMatchObject({
     displayName: "Preserved network draft",
+    host: "gateway.example.com",
+    port: 443,
     expectedGeneration: original.generation,
     transport: {
       type: "cloudflare_access",
@@ -335,8 +374,7 @@ test("Mac Cloudflare setup requires independently named origin TLS and keeps the
     within(dialog).getByLabelText("RFB destination host"),
     "mac-gateway.example.com",
   );
-  await fill(
-    within(dialog).getByLabelText("Origin TLS server name"),
+  expect(within(dialog).getByLabelText("Origin TLS server name")).toHaveValue(
     "mac-origin.example.com",
   );
   click(getAction("button", "Save", dialog));
