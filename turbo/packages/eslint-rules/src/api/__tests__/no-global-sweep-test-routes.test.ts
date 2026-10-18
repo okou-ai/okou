@@ -17,6 +17,12 @@ const piLifecycle =
   "/repo/turbo/apps/api/src/signals/routes/__tests__/pi-memory-maintenance-publication.test.ts";
 const piCleanupImport =
   'import { cronCleanupSandboxesRoutes } from "../cron-cleanup-sandboxes";';
+const claimRecovery =
+  "/repo/turbo/apps/api/src/signals/routes/__tests__/run-claim.recovery.test.ts";
+const claimRecoveryMount = `${piCleanupImport}
+  import { setupApp } from "../../../__tests__/test-helpers";
+  (await setupApp({ context, routes: cronCleanupSandboxesRoutes, isolatePg: true }))(contract);
+`;
 const computerUseRetention =
   "/repo/turbo/apps/api/src/signals/routes/__tests__/computer-use-retention.test.ts";
 const computerUseCleanupImport =
@@ -52,6 +58,11 @@ const stripeDueCase = `${stripeDueImports}
 
 ruleTester.run("no-global-sweep-test-routes", noGlobalSweepTestRoutes, {
   valid: [
+    {
+      name: "the exact claim recovery suite uses the isolated canonical operator",
+      filename: claimRecovery,
+      code: claimRecoveryMount,
+    },
     {
       name: "the registered Stripe operator case directly awaits its isolated canonical client",
       filename: stripeDueOperator,
@@ -663,6 +674,54 @@ ruleTester.run("no-global-sweep-test-routes", noGlobalSweepTestRoutes, {
         import { setupApp } from "../../../__tests__/test-helpers";
         setupApp({ context, routes: cronComputerUseScreenshotCleanupRoutes });
       `,
+      errors: [{ messageId: "globalSweep" }],
+    },
+    {
+      name: "claim recovery must explicitly isolate its database",
+      filename: claimRecovery,
+      code: claimRecoveryMount.replace(", isolatePg: true", ""),
+      errors: [{ messageId: "globalSweep" }],
+    },
+    {
+      name: "claim recovery cannot disable isolation",
+      filename: claimRecovery,
+      code: claimRecoveryMount.replace("isolatePg: true", "isolatePg: false"),
+      errors: [{ messageId: "globalSweep" }],
+    },
+    {
+      name: "claim recovery cannot override isolation through a spread",
+      filename: claimRecovery,
+      code: claimRecoveryMount.replace(
+        "isolatePg: true",
+        "isolatePg: true, ...options",
+      ),
+      errors: [{ messageId: "globalSweep" }],
+    },
+    {
+      name: "claim recovery cannot override isolation through duplicate keys",
+      filename: claimRecovery,
+      code: claimRecoveryMount.replace(
+        "isolatePg: true",
+        "isolatePg: true, isolatePg: false",
+      ),
+      errors: [{ messageId: "globalSweep" }],
+    },
+    {
+      name: "claim recovery cannot use an unrelated global operator",
+      filename: claimRecovery,
+      code: routeImport,
+      errors: [{ messageId: "globalSweep" }],
+    },
+    {
+      name: "a lookalike file cannot borrow the claim recovery registration",
+      filename: claimRecovery.replace("/turbo/apps/api", ""),
+      code: claimRecoveryMount,
+      errors: [{ messageId: "globalSweep" }],
+    },
+    {
+      name: "claim recovery cannot alias the registered operator",
+      filename: claimRecovery,
+      code: `${piCleanupImport} const alias = cronCleanupSandboxesRoutes;`,
       errors: [{ messageId: "globalSweep" }],
     },
     {

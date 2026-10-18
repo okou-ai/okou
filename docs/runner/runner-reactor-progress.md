@@ -44,6 +44,31 @@ teardown path and are returned as terminal errors. Ordinary optional GC or statu
 retry errors remain warnings. Runtime task ownership does not make an individual
 filesystem or network operation infinitely fast or cancellation-safe.
 
+## API claim ownership
+
+After authentication, authorization, context/capability checks and the
+deterministic connector identity check, the API atomically claims the queued
+Run, records Runner attribution and initializes its recovery heartbeat. Only
+the winner prepares secrets and current connector policies. Those checks must
+finish before credentials leave the API. A final check of the same claim's
+identity and running state suppresses a successful response after cancellation
+or timeout has committed during preparation.
+
+Preparation errors, application abort, process loss and lost response delivery
+keep that persisted ownership. The API does not requeue an uncertain claim.
+Existing silent-Run maintenance settles it and frees its slot: ordinary running
+silence becomes eligible after two minutes, debug silence after sixty minutes,
+plus maintenance scheduling. Cancellation retains its terminal status and uses
+the existing silent-terminal slot cleanup. Known preparation errors therefore
+can retain active concurrency until maintenance. An HTTP disconnect alone does
+not cancel the API application's root signal.
+
+The state and wire formats are unchanged across API/Runner versions. startedAt
+includes response preparation after ownership; it does not prove sandbox
+execution began. Request-to-transition and response-readiness timings remain
+separate. The final state check adds a response-side database read; earlier
+exclusive ownership alone establishes no end-to-end performance saving.
+
 ## Startup-fact delivery
 
 Once preparation and replacement settle the actual resource, Executor starts an

@@ -1216,6 +1216,13 @@ function buildClaimTransitionSql(
             )}
             RETURNING ${agentRuns.id} AS "id", ${agentRuns.startedAt} AS "claimedAt"
           ),
+          refreshed_heartbeat AS (
+            UPDATE ${activeAgentRuns}
+            SET last_heartbeat_at = updated_run."claimedAt"
+            FROM updated_run
+            WHERE ${eq(activeAgentRuns.runId, sql`updated_run."id"`)}
+            RETURNING ${activeAgentRuns.runId}
+          ),
           deleted_job AS (
             DELETE FROM ${runnerJobQueue}
             USING locked_run, locked_job
@@ -1265,40 +1272,56 @@ function buildClaimTransitionSql(
           `;
 }
 
-async function transitionClaimedJobToRunning(
-  db: Db,
-  runId: string,
-  runnerAttribution: RunnerClaimAttribution | undefined,
-  signal: AbortSignal,
-  timing: ClaimRouteTimingCollector,
-): Promise<ClaimTransitionResult> {
-  const query = buildClaimTransitionSql(
-    runId,
-    runnerAttribution?.runnerIdentity.runnerId ?? null,
-    runnerAttribution?.runnerIdentity.heartbeatGeneration ?? null,
-    runnerAttribution?.runnerHostname ?? null,
-    runnerAttribution?.runnerVersion ?? null,
-  );
-  const result = await timing.measure(
-    "claim_route_transition_execute",
-    "nested",
-    async () => {
-      const rowSchema = claimTransitionSqlRowSchema;
-      return await (async () => {
-        return parseRawRows(rowSchema, await db.execute(query));
-      })();
+const transitionClaimedJobToRunning$ = command(
+  async (
+    { set },
+    args: {
+      readonly runId: string;
+      readonly runnerAttribution: RunnerClaimAttribution | undefined;
+      readonly timing: ClaimRouteTimingCollector;
     },
-  );
-  const transition = decodeClaimTransitionResult(result);
-  if (transition.status === "claimed") {
-    await db
-      .update(activeAgentRuns)
-      .set({ lastHeartbeatAt: transition.claimedAt })
-      .where(eq(activeAgentRuns.runId, runId));
-  }
-  signal.throwIfAborted();
-  return transition;
-}
+    signal: AbortSignal,
+  ): Promise<ClaimTransitionResult> => {
+    const transitionStartedAt = now();
+    const db = set(writeDb$);
+    const { runId, runnerAttribution, timing } = args;
+    const query = buildClaimTransitionSql(
+      runId,
+      runnerAttribution?.runnerIdentity.runnerId ?? null,
+      runnerAttribution?.runnerIdentity.heartbeatGeneration ?? null,
+      runnerAttribution?.runnerHostname ?? null,
+      runnerAttribution?.runnerVersion ?? null,
+    );
+    // Ownership, queue removal and its initial recovery heartbeat commit
+    // together, including when the result is lost or the caller aborts.
+    const executeStartedAt = now();
+    const result = await settle(
+      (async () => {
+        return decodeClaimTransitionResult(
+          parseRawRows(claimTransitionSqlRowSchema, await db.execute(query)),
+        );
+      })(),
+    );
+    signal.throwIfAborted();
+    const finishedAt = now();
+    timing.recordElapsed(
+      "claim_route_transition_execute",
+      "nested",
+      executeStartedAt,
+      finishedAt,
+    );
+    timing.recordElapsed(
+      "claim_route_transition_running",
+      "top_level",
+      transitionStartedAt,
+      finishedAt,
+    );
+    if (!result.ok) {
+      throw result.error;
+    }
+    return result.value;
+  },
+);
 
 type PoisonJobResult =
   | {
@@ -1442,7 +1465,6 @@ const readClaimNetworkPolicyRefreshes$ = command(
     Pick<StoredExecutionContext, "networkPolicies" | "networkPolicyRefreshes">
   > => {
     const storedNetworkPolicies = args.storedContext.networkPolicies ?? {};
-    assertClaimConnectorIdentity(args.run, args.storedContext);
     if (Object.keys(storedNetworkPolicies).length === 0) {
       return {
         networkPolicies: args.storedContext.networkPolicies,
@@ -2112,7 +2134,6 @@ const claimAuthorizedJob$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
       readonly runId: string;
       readonly authType: RunnerAuthContext["type"];
       readonly runnerAttribution: RunnerClaimAttribution | undefined;
@@ -2125,7 +2146,8 @@ const claimAuthorizedJob$ = command(
     },
     signal: AbortSignal,
   ) => {
-    const { db, runId, jobWithRun, claimRouteTiming } = args;
+    const { runId, jobWithRun, claimRouteTiming } = args;
+    const db = set(writeDb$);
     const run = jobWithRun.run;
 
     const storedContextResult = await resolveStoredExecutionContextForClaim(
@@ -2147,7 +2169,32 @@ const claimAuthorizedJob$ = command(
       return storedContextResult.response;
     }
     const storedContext = storedContextResult.value;
+    assertClaimConnectorIdentity(run, storedContext);
+    signal.throwIfAborted();
 
+    claimRouteTiming.recordElapsed(
+      "claim_route_request_to_transition_start",
+      "parent",
+      args.claimRequestStartedAtMs,
+    );
+    const claimResult = await set(
+      transitionClaimedJobToRunning$,
+      {
+        runId,
+        runnerAttribution: args.runnerAttribution,
+        timing: claimRouteTiming,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (claimResult.status !== "claimed") {
+      return claimTransitionErrorResponse(claimResult);
+    }
+
+    // A winner alone prepares credentials/current permissions. If preparation,
+    // cancellation or delivery fails, persisted ownership remains authoritative:
+    // existing silent-Run maintenance settles it and releases its slot. Never
+    // requeue an unknown claim or undo another contender after a lost result.
     const responseBody = await set(
       buildClaimResponseBodyForClaim$,
       {
@@ -2160,32 +2207,35 @@ const claimAuthorizedJob$ = command(
     );
     signal.throwIfAborted();
 
-    claimRouteTiming.recordElapsed(
-      "claim_route_request_to_transition_start",
-      "parent",
-      args.claimRequestStartedAtMs,
-    );
-    const claimResult = await claimRouteTiming.measure(
-      "claim_route_transition_running",
-      "top_level",
-      async () => {
-        return await transitionClaimedJobToRunning(
-          db,
-          runId,
-          args.runnerAttribution,
-          signal,
-          claimRouteTiming,
-        );
-      },
-    );
-    if (signal.aborted) {
-      L.debug("Runner claim request aborted after committed transition", {
-        runId,
-      });
-    }
+    // Preparation may outlive cancellation or the heartbeat timeout. Do not
+    // hand credentials to a Runner after that terminal transition has won.
+    const runnerIdentity = args.runnerAttribution?.runnerIdentity;
+    const [ownedRun] = await db
+      .select({ id: agentRuns.id })
+      .from(agentRuns)
+      .where(
+        and(
+          eq(agentRuns.id, runId),
+          eq(agentRuns.status, "running"),
+          eq(agentRuns.startedAt, claimResult.claimedAt),
+          runnerIdentity
+            ? and(
+                eq(agentRuns.runnerId, runnerIdentity.runnerId),
+                eq(
+                  agentRuns.runnerHeartbeatGeneration,
+                  runnerIdentity.heartbeatGeneration,
+                ),
+              )
+            : and(
+                isNull(agentRuns.runnerId),
+                isNull(agentRuns.runnerHeartbeatGeneration),
+              ),
+        ),
+      )
+      .limit(1);
     signal.throwIfAborted();
-    if (claimResult.status !== "claimed") {
-      return claimTransitionErrorResponse(claimResult);
+    if (!ownedRun) {
+      return notFound("Run not found");
     }
 
     const response = {
@@ -2248,7 +2298,7 @@ const claimInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       : undefined;
 
   const runId = get(pathParamsOf(runnersJobClaimContract.claim)).id;
-  const db = set(writeDb$);
+  set(writeDb$);
   claimRouteTiming.recordElapsed(
     "claim_route_request_prepare",
     "top_level",
@@ -2285,7 +2335,6 @@ const claimInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   return await set(
     claimAuthorizedJob$,
     {
-      db,
       runId,
       authType: auth.type,
       runnerAttribution,

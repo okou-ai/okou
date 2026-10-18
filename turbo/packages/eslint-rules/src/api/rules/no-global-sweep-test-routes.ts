@@ -99,6 +99,8 @@ const PI_LIFECYCLE_SUFFIX =
   "/turbo/apps/api/src/signals/routes/__tests__/pi-memory-maintenance-publication.test.ts";
 const COMPUTER_USE_RETENTION_SUFFIX =
   "/turbo/apps/api/src/signals/routes/__tests__/computer-use-retention.test.ts";
+const CLAIM_RECOVERY_SUFFIX =
+  "/turbo/apps/api/src/signals/routes/__tests__/run-claim.recovery.test.ts";
 const CONTRACT_HELPER_SUFFIX =
   "/signals/routes/__tests__/helpers/global-sweep-contract";
 const CONTRACT_HELPER_RELATIVE = "./helpers/global-sweep-contract";
@@ -257,7 +259,7 @@ function isStripeDueCase(
   );
 }
 
-function isStripeDueOptions(
+function isIsolatedOperatorOptions(
   options: TSESTree.ObjectExpression,
   route: TSESTree.Identifier,
 ): boolean {
@@ -369,7 +371,7 @@ function isStripeDueReference(
     call?.type === AST_NODE_TYPES.CallExpression &&
     call.arguments.length === 1 &&
     call.arguments[0] === options &&
-    isStripeDueOptions(options, route) &&
+    isIsolatedOperatorOptions(options, route) &&
     stripeDueMountCase(call, sourceCode) !== null
   );
 }
@@ -1068,7 +1070,8 @@ export const noGlobalSweepTestRoutes = createRule({
           // Approved operator boundaries use isolated databases and construct
           // business state through the normal public lifecycle.
           if (
-            ((filename.endsWith(PI_LIFECYCLE_SUFFIX) &&
+            (((filename.endsWith(PI_LIFECYCLE_SUFFIX) ||
+              filename.endsWith(CLAIM_RECOVERY_SUFFIX)) &&
               node.source.value === "../cron-cleanup-sandboxes" &&
               boundary.exportName === "cronCleanupSandboxesRoutes") ||
               (filename.endsWith(COMPUTER_USE_RETENTION_SUFFIX) &&
@@ -1205,6 +1208,8 @@ export const noGlobalSweepTestRoutes = createRule({
                 call?.type !== AST_NODE_TYPES.CallExpression ||
                 call.arguments[0] !== options ||
                 !isCanonicalSystemBoundaryMount(call) ||
+                (filename.endsWith(CLAIM_RECOVERY_SUFFIX) &&
+                  !isIsolatedOperatorOptions(options, identifier)) ||
                 (filename.endsWith(COMPUTER_USE_RETENTION_SUFFIX) &&
                   (options.properties.some((entry) => {
                     return entry.type === AST_NODE_TYPES.SpreadElement;
