@@ -58,7 +58,9 @@ function authHeaders() {
 }
 
 function accountClient() {
-  return setupApp({ context, routes })(connectorAccountsContract);
+  return setupApp({ context, routes: connectorAccountRoutes })(
+    connectorAccountsContract,
+  );
 }
 
 function connectorClient() {
@@ -1287,7 +1289,9 @@ describe("connector account lifecycle routes", () => {
     // public accounts instead of provisioning an API key for every row.
     const connectorsApi = setupApp({
       context,
-      routes: builtinConnectorsRoutes,
+      routes: builtinConnectorsRoutes.filter(({ route }) => {
+        return route === builtinConnectorNoAuthGrantContract.connect;
+      }),
     })(builtinConnectorNoAuthGrantContract);
     // Up to sixteen owned streams keep requests moving without unbounded
     // fan-out. Wait for every stream before fixture cleanup after a failure.
