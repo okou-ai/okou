@@ -525,6 +525,33 @@ test("Closing a pending read suppresses its stale result after another file open
   expect(within(next).queryByText("stale")).not.toBeInTheDocument();
 });
 
+test("A failed initial preview connection shows an error and permits an explicit retry", async () => {
+  let networkUnavailable = false;
+  await setupFilesPage(context, {
+    handler: previewGuest({ "notes.txt": textBytes("reconnected source") }),
+    get bootstrapUnavailable() {
+      return networkUnavailable ? "network" : false;
+    },
+  });
+  await openFiles();
+  await screen.findByText("notes.txt");
+  networkUnavailable = true;
+  const dialog = await openPreview("notes.txt");
+  await expect(within(dialog).findByRole("alert")).resolves.toHaveTextContent(
+    "Preview unavailable",
+  );
+  expect(filesButton("Download", dialog)).toBeEnabled();
+  networkUnavailable = false;
+  click(filesButton("Close", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  const next = await openPreview("notes.txt");
+  await expect(
+    within(next).findByText("reconnected source"),
+  ).resolves.toBeInTheDocument();
+});
+
 test.each(["Files leave", "Run completion", "Workspace change", "Logout"])(
   "%s releases a resident preview",
   async (reason) => {

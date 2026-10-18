@@ -12,7 +12,13 @@ import {
 import { apiClient$ } from "../api-client.ts";
 import { authenticatedSessionKey$ } from "../auth.ts";
 import { currentRunId$ } from "./activity-signals.ts";
-import { onRef, resetSignal, settle, withCleanup } from "../utils.ts";
+import {
+  onRef,
+  onRejection,
+  resetSignal,
+  settle,
+  withCleanup,
+} from "../utils.ts";
 import { createAttachmentPreviewSignals } from "../attachment-resource-url.ts";
 import { parseMarkdownTree } from "../../lib/markdown/pipeline.ts";
 import { createZoomableImageCanvasSignals } from "../zoomable-image-canvas.ts";
@@ -197,7 +203,19 @@ function createOpenCommand(graph: ReturnType<typeof createPreviewGraph>) {
       );
       const outcome = await settle(
         withCleanup(
-          readSandboxFilePreview(peer, request.path, request.name, lifetime),
+          onRejection(
+            readSandboxFilePreview(peer, request.path, request.name, lifetime),
+            (error) => {
+              lifetime.throwIfAborted();
+              // Peer retirement is a source failure; only owner cancellation is quiet.
+              if (
+                error instanceof DOMException &&
+                error.name === "AbortError"
+              ) {
+                throw new FilePreviewError("unavailable");
+              }
+            },
+          ),
           () => {
             peer.close();
           },

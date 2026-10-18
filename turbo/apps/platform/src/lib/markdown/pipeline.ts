@@ -163,7 +163,7 @@ function createMarkedRenderer(options: MarkdownParseOptions): Renderer {
   const renderer = new Renderer();
   if (options.escapeHtml) {
     renderer.html = (token) => {
-      return escapeHtmlTags(token.text.replaceAll("&", "&amp;"));
+      return escapeHtmlTags(token.text.replace(/&/g, "&amp;"));
     };
   }
   if (!options.mermaid) {

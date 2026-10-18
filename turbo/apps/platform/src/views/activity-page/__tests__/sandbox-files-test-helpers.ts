@@ -117,7 +117,7 @@ export async function setupFilesPage(
     readonly mobile?: boolean;
     readonly viewportHeight?: number;
     readonly activityHeaderHeight?: number;
-    readonly bootstrapUnavailable?: boolean;
+    readonly bootstrapUnavailable?: boolean | "network";
     readonly initialTab?: string;
     readonly statusHandler?: (runId: string) => RunStatus | Promise<RunStatus>;
     readonly helloError?: SandboxChannelWireError;
@@ -325,6 +325,9 @@ export async function setupFilesPage(
     runnerWssTicketsContract.bootstrap,
     ({ params, respond }) => {
       bootstraps.push(params.runId);
+      if (options.bootstrapUnavailable === "network") {
+        throw Response.error();
+      }
       if (options.bootstrapUnavailable) {
         return respond(404, {
           error: { message: "unavailable", code: "NOT_FOUND" },
