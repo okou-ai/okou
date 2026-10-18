@@ -98,6 +98,40 @@ fn published_record_binds_original_inputs_complete_outputs_and_creator_clocks() 
     assert!(record.completed_monotonic_ns > record.started_monotonic_ns);
     assert!(record.started_unix_ns > 0 && record.completed_unix_ns > 0);
     assert!(uuid::Uuid::parse_str(&record.creator_boot_id).is_ok());
+
+    // Consume the Rust writer's actual bytes in the independently implemented
+    // Python reader; two separately manufactured fixtures could hide schema drift.
+    let manifest = fixture.producer.with_file_name("report-artifacts.json");
+    std::fs::write(
+        &manifest,
+        serde_json::to_vec(&serde_json::json!({
+            "source_sha": artifacts.source_sha,
+            "test_binary_sha256": artifacts.test_binary_sha256,
+            "firecracker_sha256": artifacts.firecracker_sha256,
+            "kernel_sha256": artifacts.kernel_sha256,
+            "rootfs_sha256": artifacts.rootfs_sha256,
+            "snapshot_id": artifacts.snapshot_id,
+            "snapshot_files": artifacts.snapshot_files,
+            "snapshot_preparation_sha256": artifacts.snapshot_preparation_sha256,
+            "profile": {"vcpu": 2, "memory_mib": 4096, "home_mib": 16384},
+        }))?,
+    )?;
+    let result = std::process::Command::new("python3")
+        .args(["-B", "-c", r#"
+import json, pathlib, sys
+sys.path.insert(0, sys.argv[1])
+import report
+report.validate_snapshot_preparation(pathlib.Path(sys.argv[2]), json.loads(pathlib.Path(sys.argv[3]).read_bytes()))
+"#])
+        .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/guarded_idle_native"))
+        .arg(&fixture.config.output_dir)
+        .arg(manifest)
+        .output()?;
+    assert!(
+        result.status.success(),
+        "Rust-created record failed Python preflight: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
     Ok(())
 }
 
