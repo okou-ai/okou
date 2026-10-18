@@ -276,7 +276,11 @@ pub(super) fn verify_record(directory: &Path, artifacts: &Artifacts) -> TestResu
     if record.format != FORMAT
         || record.inputs != expected
         || record.snapshot_files != artifacts.snapshot_files
-        || record.snapshot_files.len() != 5
+        || record.snapshot_files.len()
+            != SnapshotOutputPaths::new(directory.to_path_buf())
+                .required_artifacts()
+                .len()
+                + 1
         || record.started_monotonic_ns == 0
         || record.completed_monotonic_ns <= record.started_monotonic_ns
         || record.started_unix_ns == 0

@@ -43,7 +43,7 @@ class NativeReportTests(unittest.TestCase):
             "firecracker_sha256": "c" * 64, "kernel_sha256": "d" * 64,
             "snapshot_id": "native-fixture",
             "rootfs_sha256": "e" * 64, "runtime_sha256": "2" * 64, "snapshot_files": {name: "f" * 64 for name in (
-                "snapshot.bin", "memory.bin", "cow.img", "cow.img.bitmap", ".snapshot-complete")},
+                "snapshot.bin", "memory.bin", "cow.img", "cow.img.bitmap", "runtime-source.json", ".snapshot-complete")},
             "policy_sha256": "1" * 64,
             "profile": {"vcpu": 2, "memory_mib": 4096, "home_mib": 16384},
             "required_fixture_tail_bytes": 64 * 1024 * 1024,
@@ -103,6 +103,14 @@ class NativeReportTests(unittest.TestCase):
     def test_missing_snapshot_preparation_record_is_refused(self):
         (self.root / "snapshot-preparation.json").unlink(missing_ok=True)
         with self.assertRaisesRegex(ValueError, "snapshot preparation"):
+            self.validate()
+
+    def test_snapshot_manifest_requires_runtime_source_even_with_matching_record(self):
+        self.artifacts["snapshot_files"].pop("runtime-source.json")
+        record = json.loads((self.root / "snapshot-preparation.json").read_bytes())
+        record["snapshot_files"] = self.artifacts["snapshot_files"]
+        self.write_preparation(record)
+        with self.assertRaisesRegex(ValueError, "invalid native snapshot manifest"):
             self.validate()
 
     def write_preparation(self, record):

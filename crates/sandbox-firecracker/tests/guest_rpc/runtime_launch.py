@@ -6,7 +6,6 @@ not mandatory caller isolation or production/provider behavior.
 
 import json
 import os
-import select
 import shlex
 import shutil
 import signal
@@ -292,7 +291,7 @@ class Peer(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
-def execute(command, env, prompt=None):
+def execute(command, env):
     started = time.monotonic()
     process = subprocess.Popen(
         command,
@@ -301,78 +300,23 @@ def execute(command, env, prompt=None):
         user=1000,
         group=1000,
         extra_groups=[],
-        stdin=subprocess.PIPE if prompt else subprocess.DEVNULL,
+        stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         start_new_session=True,
     )
-    samples = []
-    completed = threading.Event()
-
-    def observe_leader():
-        while not completed.is_set():
-            try:
-                for line in (
-                    Path(f"/proc/{process.pid}/status").read_text().splitlines()
-                ):
-                    if line.startswith("VmRSS:"):
-                        samples.append(int(line.split()[1]))
-            except FileNotFoundError:
-                return
-            completed.wait(0.05)
-
-    observer = threading.Thread(target=observe_leader)
-    observer.start()
     try:
-        if prompt:
-            process.stdin.write(
-                json.dumps(
-                    {"id": "native", "type": "prompt", "message": prompt}
-                ).encode()
-                + b"\n"
-            )
-            process.stdin.flush()
-            buffered = b""
-            total = 0
-            deadline = time.monotonic() + 45
-            settled = False
-            while not settled and time.monotonic() < deadline:
-                if not select.select(
-                    [process.stdout], [], [], max(0, deadline - time.monotonic())
-                )[0]:
-                    break
-                part = os.read(process.stdout.fileno(), 16384)
-                if not part:
-                    break
-                buffered += part
-                total += len(part)
-                if total > 2 * 1024 * 1024:
-                    raise ValueError("native Pi output bound")
-                while b"\n" in buffered:
-                    line, buffered = buffered.split(b"\n", 1)
-                    if json.loads(line).get("type") == "agent_settled":
-                        settled = True
-            if not settled:
-                process.kill()
-                stdout, stderr = process.communicate(timeout=5)
-                raise ValueError(
-                    f"real Pi did not settle: {stderr[-6000:]!r} {stdout[-4000:]!r}"
-                )
-            process.stdin.close()
-            process.stdin = None
-        stdout, stderr = process.communicate(timeout=45)
+        stdout, stderr = process.communicate(timeout=20)
         if process.returncode:
             raise ValueError(
                 f"real packaged {command[0]} failed {process.returncode}: {stderr[-6000:]!r} {stdout[-4000:]!r}"
             )
         return {
-            "turn_seconds": time.monotonic() - started,
-            "max_observed_leader_rss_kib": max(samples) if samples else None,
+            "version_seconds": time.monotonic() - started,
             "exit": process.returncode,
+            "stdout": stdout.decode()[:4096],
         }
     finally:
-        completed.set()
-        observer.join(timeout=5)
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:

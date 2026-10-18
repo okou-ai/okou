@@ -186,7 +186,7 @@ def _validate_cases(directory, cases, phases):
         raise ValueError("invalid native snapshot creation identity")
     snapshot = expected["snapshot_files"]
     if not isinstance(snapshot, dict) or set(snapshot) != {
-            "snapshot.bin", "memory.bin", "cow.img", "cow.img.bitmap", ".snapshot-complete"
+            "snapshot.bin", "memory.bin", "cow.img", "cow.img.bitmap", "runtime-source.json", ".snapshot-complete"
     } or any(
             not isinstance(name, str) or pathlib.PurePosixPath(name).name != name
             or name in ("", ".", "..") for name in snapshot):

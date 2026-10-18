@@ -40,7 +40,7 @@ class PressureReportTests(unittest.TestCase):
             "firecracker_sha256": "c"*64, "kernel_sha256": "d"*64,
             "rootfs_sha256": "e"*64, "runtime_sha256": "2"*64, "snapshot_id": "native-pressure-fixture",
             "snapshot_files": {name: "f"*64 for name in (
-                "snapshot.bin", "memory.bin", "cow.img", "cow.img.bitmap", ".snapshot-complete")},
+                "snapshot.bin", "memory.bin", "cow.img", "cow.img.bitmap", "runtime-source.json", ".snapshot-complete")},
             "policy_sha256": hashlib.sha256(raw_policy.encode()).hexdigest(),
             "profile": {"vcpu": 2, "memory_mib": 4096, "home_mib": 16384},
             "required_fixture_tail_bytes": 64*1024**2,
