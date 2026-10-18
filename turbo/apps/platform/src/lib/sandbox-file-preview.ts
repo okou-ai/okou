@@ -12,7 +12,8 @@ import {
   withCleanup,
 } from "../signals/utils.ts";
 
-type PreviewKind = "text" | "markdown" | "json" | "csv" | "image" | "pdf";
+type PreviewKind =
+  "text" | "markdown" | "json" | "csv" | "image" | "pdf" | "unknown";
 export type FilePreviewFailure =
   | "unsupported"
   | "size"
@@ -62,7 +63,9 @@ function previewFormat(name: string): { kind: PreviewKind; mime: string } {
   ) {
     return { kind: "text", mime: "text/plain" };
   }
-  throw new FilePreviewError("unsupported");
+  // Linux text files may have any name. Validate their bounded prefix before
+  // showing escaped source; an unknown suffix is not evidence of binary data.
+  return { kind: "unknown", mime: "text/plain" };
 }
 
 function signature(
@@ -347,16 +350,23 @@ async function previewText(
 ): Promise<SandboxPreviewContent> {
   // Streaming decode discards an incomplete final code point only for a prefix.
   // Fatal decoding still rejects malformed bytes anywhere before that boundary.
-  const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes, {
-    stream: truncated,
-  });
+  const decoded = await settle(() => {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes, {
+      stream: truncated,
+    });
+  }, signal);
+  const decodeFailure = kind === "unknown" ? "unsupported" : "decode";
+  if (!decoded.ok) {
+    throw new FilePreviewError(decodeFailure);
+  }
+  const text = decoded.value;
   if (
     Array.from(text).some((character) => {
       const code = character.charCodeAt(0);
       return code < 32 && code !== 9 && code !== 10 && code !== 13;
     })
   ) {
-    throw new FilePreviewError("decode");
+    throw new FilePreviewError(decodeFailure);
   }
   let display = text;
   if (kind === "json" && !truncated) {

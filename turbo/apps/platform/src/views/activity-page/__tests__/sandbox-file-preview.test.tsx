@@ -126,7 +126,23 @@ test.each([
   expect(within(dialog).queryByLabelText("Copy link")).not.toBeInTheDocument();
 });
 
-test.each(["page.html", "image.svg"])(
+test.each(["config", ".bashrc", "config.custom"])(
+  "An unrecognized filename %s still previews validated UTF-8 text",
+  async (name) => {
+    const source = '#!/bin/sh\nprintf "你好 🌍"\nVALUE=" a < b "\t# note\n';
+    await setupFilesPage(context, {
+      handler: previewGuest({ [name]: textBytes(source) }),
+    });
+    await openFiles();
+    const dialog = await openPreview(name);
+    await waitFor(() => {
+      expect(dialog.querySelector("pre")?.textContent).toBe(source);
+    });
+    expect(filesButton("Download", dialog)).toBeEnabled();
+  },
+);
+
+test.each(["page.html", "image.svg", "document"])(
   "%s stays escaped source without an executing frame",
   async (name) => {
     const source =
@@ -273,7 +289,7 @@ test.each([
   },
 );
 
-test.each(["partial.json", "partial.csv", "partial.txt"])(
+test.each(["partial.json", "partial.csv", "partial.txt", "config"])(
   "%s shows a bounded UTF-8 prefix as readable source",
   async (name) => {
     const bytes = textBytes("a".repeat(65_535) + "€tail");
@@ -302,7 +318,7 @@ test.each(["partial.json", "partial.csv", "partial.txt"])(
   },
 );
 
-test.each(["empty.txt", "empty.pdf"])(
+test.each(["empty.txt", "empty.pdf", "empty"])(
   "%s has an explicit empty state",
   async (name) => {
     await setupFilesPage(context, {
@@ -462,38 +478,61 @@ test("A validated PDF uses the shared native document frame and releases its URL
   });
 });
 
-test("Closing a truncated preview leaves its independent full-file Download intact", async () => {
-  const browser = await downloadBrowser(context, { holdWrite: true });
-  const bytes = textBytes("full content\n".repeat(6000));
-  const fixture = await setupFilesPage(context, {
-    handler: previewGuest({ "notes.txt": bytes }),
+test.each([
+  ["program", Uint8Array.of(127, 69, 76, 70, 0, 1)],
+  [".cache", Uint8Array.of(255, 254, 97, 0)],
+])("An unknown binary %s remains download-only", async (name, bytes) => {
+  const browser = await downloadBrowser(context);
+  await setupFilesPage(context, {
+    handler: previewGuest({ [name]: bytes }),
   });
   await openFiles();
-  const dialog = await openPreview("notes.txt");
-  await within(dialog).findByText(
-    "Showing the first 64 KiB. Download the file for its full contents.",
+  const dialog = await openPreview(name);
+  await expect(within(dialog).findByRole("alert")).resolves.toHaveTextContent(
+    "Preview isn't available for this file type. You can still download it.",
   );
+  expect(dialog.querySelector("pre, img, iframe")).toBeNull();
   click(filesButton("Download", dialog));
-  await browser.firstChunk;
-  click(filesButton("Close", dialog));
-  browser.releaseWrite();
   const saved = await browser.outcome;
   expect(saved.saved).toBeTruthy();
-  const savedBytes = await readFile(saved.file);
-  expect(savedBytes).toHaveLength(bytes.length);
-  expect(createHash("sha256").update(savedBytes).digest("hex")).toBe(
-    createHash("sha256").update(bytes).digest("hex"),
-  );
-  expect(
-    fixture.requests
-      .filter((request) => {
-        return request.operation === "open";
-      })
-      .map((request) => {
-        return request.params.mode;
-      }),
-  ).toStrictEqual(["prefix", "download"]);
+  await expect(readFile(saved.file)).resolves.toStrictEqual(Buffer.from(bytes));
 });
+
+test.each(["notes.txt", "notes"])(
+  "Closing a truncated %s preview leaves its independent full-file Download intact",
+  async (name) => {
+    const browser = await downloadBrowser(context, { holdWrite: true });
+    const bytes = textBytes("full content\n".repeat(6000));
+    const fixture = await setupFilesPage(context, {
+      handler: previewGuest({ [name]: bytes }),
+    });
+    await openFiles();
+    const dialog = await openPreview(name);
+    await within(dialog).findByText(
+      "Showing the first 64 KiB. Download the file for its full contents.",
+    );
+    click(filesButton("Download", dialog));
+    await browser.firstChunk;
+    click(filesButton("Close", dialog));
+    browser.releaseWrite();
+    const saved = await browser.outcome;
+    expect(saved.saved).toBeTruthy();
+    const savedBytes = await readFile(saved.file);
+    expect(savedBytes).toHaveLength(bytes.length);
+    expect(createHash("sha256").update(savedBytes).digest("hex")).toBe(
+      createHash("sha256").update(bytes).digest("hex"),
+    );
+    expect(
+      fixture.requests
+        .filter((request) => {
+          return request.operation === "open";
+        })
+        .map((request) => {
+          return request.params.mode;
+        }),
+    ).toStrictEqual(["prefix", "download"]);
+  },
+);
 
 test("Dialog Download preparation retains keyboard focus and survives closing the preview", async () => {
   const registration = createDeferredPromise<void>(context.signal);
