@@ -652,11 +652,14 @@ experiment metadata; it does not establish a calibrated memory envelope.
 
 `OKOU_TEST_TERMINAL_ARTIFACTS` names a JSON object with `source_sha`,
 `test_binary_sha256`, `firecracker_sha256`, `kernel_sha256`, `rootfs_sha256`, `snapshot_id`,
-`snapshot_files` (filename to SHA-256) and `policy_sha256`. All hashes are lower-case
-hexadecimal. The test verifies the compiled source value and hashes its actual
+`snapshot_files` (filename to SHA-256), `snapshot_preparation_sha256` and
+`policy_sha256`. All hashes are lower-case hexadecimal. The test verifies the
+compiled source value and hashes its actual
 executable and supplied artifacts before starting a VM. Preserve the source
 checkout and build log alongside the manifest; the compiled value is not a
 signature proving where a rootfs was produced.
+See [Snapshot creation input record](#snapshot-creation-input-record) for the
+required record's generation and transport into the P1 bundle.
 
 The measured factory adds an explicit **fixture** post-exit tail: it writes and
 syncs 64 MiB in 1 MiB chunks, then reads and verifies every byte. The original full
