@@ -26,7 +26,6 @@
     "src/lib/time.ts",
     "src/signals/context/wait-until.ts",
     "src/signals/external/sandbox-op-log.ts",
-    "src/signals/services/agent-draft-write.service.ts",
     "src/signals/services/agent-instructions-storage-transaction.service.ts",
     "src/signals/services/agent-lifecycle.service.ts",
     "src/signals/services/canonical-chat-event-read.service.ts",
