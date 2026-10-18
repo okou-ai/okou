@@ -284,6 +284,10 @@ impl Case {
         self.write_event("NATIVE_READ_STOP_WITNESS ", phase, evidence)
     }
 
+    pub fn observer_loss_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_OBSERVER_LOSS_WITNESS ", phase, evidence)
+    }
+
     pub fn shared_reads_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
         self.write_event("NATIVE_SHARED_READS_WITNESS ", phase, evidence)
     }
