@@ -1,3 +1,4 @@
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { connectors } from "@okouai/db/schema/connector";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { secrets } from "@okouai/db/schema/secret";
@@ -19,7 +20,9 @@ import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import {
   fetchFeishuBotInfo,
-  getFeishuTenantAccessToken,
+  FeishuApiError,
+  resolveFeishuRequestCredentials,
+  feishuTokenUpdateValues,
 } from "../external/feishu-client";
 import { tapError } from "../utils";
 import {
@@ -37,7 +40,12 @@ import {
   publishCustomConnectorUserInvalidationAfterCommit,
   type CapturedConnectorClientInvalidationAbort,
 } from "./connector-client-invalidation.service";
-import { feishuCallbackUrl, feishuOAuthAppCallbackUrl } from "./feishu-config";
+import {
+  feishuCallbackUrl,
+  feishuOAuthAppCallbackUrl,
+  feishuInstallationAvailabilityReadPlan,
+  feishuInstallationEnabledFromRows,
+} from "./feishu-config";
 import { buildFeishuOAuthConnectUrl } from "./feishu-oauth-state";
 
 const L = logger("FeishuConnect");
@@ -439,16 +447,49 @@ type UpdateFeishuInstallationResult =
   | { readonly kind: "installation_not_found" }
   | { readonly kind: "bot_identity_mismatch" };
 
+interface UpdateFeishuInstallationAgentArgs {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly installationId: string;
+  readonly platform?: FeishuPlatform;
+  readonly setupCompleted?: boolean;
+}
+
+function feishuInstallationAgentUpdateValues(
+  args: UpdateFeishuInstallationAgentArgs,
+  botInfo: Awaited<ReturnType<typeof fetchFeishuBotInfo>> | undefined,
+) {
+  return {
+    ...(args.setupCompleted
+      ? {
+          ...(botInfo
+            ? {
+                botOpenId: botInfo.openId,
+                botName: botInfo.name,
+                botAvatarUrl: botInfo.avatarUrl,
+              }
+            : {}),
+          setupCompletedAt: nowDate(),
+        }
+      : {}),
+    updatedAt: nowDate(),
+  };
+}
+
+function feishuInstallationAgentUpdateCondition(
+  args: UpdateFeishuInstallationAgentArgs,
+) {
+  return and(
+    eq(feishuOrgInstallations.id, args.installationId),
+    eq(feishuOrgInstallations.orgId, args.orgId),
+    eq(feishuOrgInstallations.platform, args.platform ?? "feishu"),
+  );
+}
+
 export const updateFeishuInstallationAgent$ = command(
   async (
     { set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly installationId: string;
-      readonly platform?: FeishuPlatform;
-      readonly setupCompleted?: boolean;
-    },
+    args: UpdateFeishuInstallationAgentArgs,
     signal: AbortSignal,
   ): Promise<UpdateFeishuInstallationResult> => {
     const db = set(writeDb$);
@@ -473,16 +514,63 @@ export const updateFeishuInstallationAgent$ = command(
     const botInfo = args.setupCompleted
       ? await tapError(
           (async () => {
+            const botPlatform = installation.platform;
+            const setupArgs = {
+              db,
+              installationId: args.installationId,
+            };
+            const setupSignal = signal;
+            const setupRead = (async () => {
+              const [installation] = await setupArgs.db
+                .select()
+                .from(feishuOrgInstallations)
+                .where(eq(feishuOrgInstallations.id, setupArgs.installationId))
+                .limit(1);
+              setupSignal.throwIfAborted();
+              if (!installation) {
+                throw new Error("Bot installation not found");
+              }
+              if (
+                !(await (async () => {
+                  const plan =
+                    feishuInstallationAvailabilityReadPlan(installation);
+                  if (plan.kind === "resolved") {
+                    return plan.enabled;
+                  }
+                  const rows = await setupArgs.db
+                    .select(plan.columns)
+                    .from(userFeatureSwitches)
+                    .where(plan.condition);
+                  return feishuInstallationEnabledFromRows(plan.scope, rows);
+                })())
+              ) {
+                throw new FeishuApiError(
+                  "Lark integration is not enabled",
+                  403,
+                );
+              }
+              const credentials = await resolveFeishuRequestCredentials(
+                installation,
+                setupSignal,
+              );
+              if (credentials.refreshedToken) {
+                await setupArgs.db
+                  .update(feishuOrgInstallations)
+                  .set(feishuTokenUpdateValues(credentials.refreshedToken))
+                  .where(
+                    eq(feishuOrgInstallations.id, setupArgs.installationId),
+                  );
+                setupSignal.throwIfAborted();
+              }
+              return credentials.context;
+            })();
+            const setupToken = await (async () => {
+              return (await setupRead).token;
+            })();
             return await fetchFeishuBotInfo(
               {
-                platform: installation.platform,
-                tenantAccessToken: await getFeishuTenantAccessToken(
-                  {
-                    db,
-                    installationId: args.installationId,
-                  },
-                  signal,
-                ),
+                platform: botPlatform,
+                tenantAccessToken: setupToken,
               },
               signal,
             );
@@ -505,28 +593,8 @@ export const updateFeishuInstallationAgent$ = command(
     }
     const rows = await db
       .update(feishuOrgInstallations)
-      .set({
-        ...(args.setupCompleted
-          ? {
-              ...(botInfo
-                ? {
-                    botOpenId: botInfo.openId,
-                    botName: botInfo.name,
-                    botAvatarUrl: botInfo.avatarUrl,
-                  }
-                : {}),
-              setupCompletedAt: nowDate(),
-            }
-          : {}),
-        updatedAt: nowDate(),
-      })
-      .where(
-        and(
-          eq(feishuOrgInstallations.id, args.installationId),
-          eq(feishuOrgInstallations.orgId, args.orgId),
-          eq(feishuOrgInstallations.platform, args.platform ?? "feishu"),
-        ),
-      )
+      .set(feishuInstallationAgentUpdateValues(args, botInfo))
+      .where(feishuInstallationAgentUpdateCondition(args))
       .returning({ id: feishuOrgInstallations.id });
     signal.throwIfAborted();
     if (rows.length === 0) {

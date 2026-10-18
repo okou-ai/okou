@@ -15,7 +15,9 @@ import { pathParamsOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
 import {
   fetchFeishuBotInfo,
-  getFeishuTenantAccessToken,
+  FeishuApiError,
+  resolveFeishuRequestCredentials,
+  feishuTokenUpdateValues,
 } from "../external/feishu-client";
 import { writeDb$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
@@ -275,13 +277,59 @@ const ensureInboundBotIdentity$ = command(
     }
     const bot = await tapError(
       (async () => {
-        const tenantAccessToken = await getFeishuTenantAccessToken(
-          {
-            db,
-            installationId: args.config.id,
-          },
-          signal,
-        );
+        const inboundContextArgs = {
+          db,
+          installationId: args.config.id,
+        };
+        const inboundContextSignal = signal;
+        const inboundContextRead = (async () => {
+          const [installation] = await inboundContextArgs.db
+            .select()
+            .from(feishuOrgInstallations)
+            .where(
+              eq(feishuOrgInstallations.id, inboundContextArgs.installationId),
+            )
+            .limit(1);
+          inboundContextSignal.throwIfAborted();
+          if (!installation) {
+            throw new Error("Bot installation not found");
+          }
+          if (
+            !(await (async () => {
+              const plan = feishuInstallationAvailabilityReadPlan(installation);
+              if (plan.kind === "resolved") {
+                return plan.enabled;
+              }
+              const rows = await inboundContextArgs.db
+                .select(plan.columns)
+                .from(userFeatureSwitches)
+                .where(plan.condition);
+              return feishuInstallationEnabledFromRows(plan.scope, rows);
+            })())
+          ) {
+            throw new FeishuApiError("Lark integration is not enabled", 403);
+          }
+          const credentials = await resolveFeishuRequestCredentials(
+            installation,
+            inboundContextSignal,
+          );
+          if (credentials.refreshedToken) {
+            await inboundContextArgs.db
+              .update(feishuOrgInstallations)
+              .set(feishuTokenUpdateValues(credentials.refreshedToken))
+              .where(
+                eq(
+                  feishuOrgInstallations.id,
+                  inboundContextArgs.installationId,
+                ),
+              );
+            inboundContextSignal.throwIfAborted();
+          }
+          return credentials.context;
+        })();
+        const tenantAccessToken = await (async () => {
+          return (await inboundContextRead).token;
+        })();
         return await fetchFeishuBotInfo(
           {
             platform: args.config.platform,
