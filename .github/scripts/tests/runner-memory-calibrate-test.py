@@ -201,7 +201,7 @@ sys.exit(3)
         self.assertTrue(any(row["residency_state"] == "measured" for row in rows))
         self.assertTrue(any(row["residency_state"] == "exited" for row in rows))
 
-    def test_collector_retires_observation_fds_on_success_and_cancellation(self):
+    def test_collector_retires_observation_fds_on_success_failure_and_cancellation(self):
         wrapper = """
 import importlib.util, os, sys
 spec = importlib.util.spec_from_file_location('owned_collector', sys.argv[1])
@@ -212,9 +212,9 @@ code = module.main()
 assert len(os.listdir('/proc/self/fd')) == before, 'collector leaked an observation or I/O fd'
 sys.exit(code)
 """
-        for cancel in (False, True):
-            with self.subTest(cancel=cancel):
-                output = self.root / ("cancelled-fds" if cancel else "success-fds")
+        for outcome in ("success", "driver_failure", "cancelled"):
+            with self.subTest(outcome=outcome):
+                output = self.root / f"{outcome}-fds"
                 program = """
 import json, os, signal, sys, time
 from pathlib import Path
@@ -228,18 +228,22 @@ while time.monotonic() < deadline:
             if CANCEL:
                 os.kill(os.getppid(), signal.SIGTERM)
                 time.sleep(60)
-            sys.exit(0)
+            sys.exit(EXIT_CODE)
     time.sleep(0.01)
-sys.exit(3)
-""".replace("CANCEL", repr(cancel))
+sys.exit(9)
+""".replace("CANCEL", repr(outcome == "cancelled")).replace(
+                    "EXIT_CODE", "3" if outcome == "driver_failure" else "0"
+                )
                 command = self.command(output, program)
                 result = subprocess.run(
                     [sys.executable, "-c", wrapper, *command[1:]],
                     capture_output=True, text=True, timeout=15,
                 )
-                self.assertEqual(result.returncode, int(cancel), result.stderr)
+                self.assertEqual(result.returncode, int(outcome != "success"), result.stderr)
                 report = json.loads((output / "report.json").read_text())
-                self.assertEqual(report["success"], not cancel)
+                self.assertEqual(report["success"], outcome == "success")
+                if outcome == "driver_failure":
+                    self.assertEqual(report["driver_exit_code"], 3)
                 self.assertEqual(report["remaining_children"], [])
                 self.assertTrue(report["cleanup_confirmed"])
 
