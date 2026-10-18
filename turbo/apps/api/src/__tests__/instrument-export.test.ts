@@ -386,7 +386,7 @@ describe("API telemetry exports", () => {
     });
     const path = "/api/integrations/telegram/auth-callback";
     const cases = [
-      [path, "", 200],
+      [path, "", 422],
       [
         path,
         "&callbackProtocol=2&operationId=51326918-3b76-4fea-a42f-d8f58e426d9b&bot=official",
@@ -396,7 +396,7 @@ describe("API telemetry exports", () => {
       [path, "&callbackProtocol=9", 422],
       [path, "&callbackProtocol=2&callbackProtocol=2", 422],
       [`${path}/`, "&callbackProtocol=2", 404],
-      ["/api/integrations/%74elegram/auth-callback", "", 200],
+      ["/api/integrations/%74elegram/auth-callback", "", 422],
     ] as const;
     for (const [pathname, contextQuery, status] of cases) {
       const url = `${origin}${pathname}?${providerQuery}${contextQuery}`;

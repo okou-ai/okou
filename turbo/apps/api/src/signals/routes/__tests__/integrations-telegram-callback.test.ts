@@ -220,19 +220,18 @@ function authorizedUrl(fragment = false) {
 
 describe("Telegram callback HTTP/browser protocol", () => {
   it.each([false, true])(
-    "preserves the legacy identity envelope and close (fragment=%s)",
+    "fails closed without explicit callback context (fragment=%s)",
     async (fragment) => {
       const url = authorizedUrl(fragment);
       for (const key of ["callbackProtocol", "operationId", "bot"]) {
         url.searchParams.delete(key);
       }
       const page = await browser(url);
-      expect(page.response.status).toBe(200);
-      expect(page.messages).toStrictEqual([
-        { message: { type: "telegram-auth", data: PROOF }, target: ORIGIN },
-      ]);
-      expect(page.closed()).toBeTruthy();
+      expect(page.response.status).toBe(422);
+      expect(page.messages).toStrictEqual([]);
+      expect(page.closed()).toBeFalsy();
       expect(page.navigation).toStrictEqual([]);
+      expect(page.status()).toContain("interrupted");
     },
   );
 
