@@ -101,7 +101,7 @@ browser.stdio[3].on("error", (error) => browser.stdio[4].destroy(error));
 let phase = "launch";
 try {
   const { product } = await command("Browser.getVersion");
-  console.log(`Chromium HTTPS browser: ${product}`);
+  console.log("Chromium HTTPS browser: %s", product);
   const { targetId } = await command("Target.createTarget", {
     url: "about:blank",
   });
@@ -159,7 +159,7 @@ try {
     text.includes(expectedText),
     "HTTPS response is missing expected text",
   );
-  console.log(`Chromium HTTPS response: HTTP 200, expected text received`);
+  console.log("Chromium HTTPS response: HTTP 200, expected text received");
   phase = "browser shutdown";
   // Close the browser directly, avoiding --dump-dom's Target.closeTarget path.
   await command("Browser.close");
@@ -169,7 +169,11 @@ try {
   assert.equal(code, 0, `Chromium exited with code ${code}, signal ${signal}`);
   assert.ok(!interrupted, `Chromium probe interrupted by ${interrupted}`);
 } catch (error) {
-  console.error(`Chromium HTTPS failed during ${phase}:`, launchError ?? error);
+  console.error(
+    "Chromium HTTPS failed during %s:",
+    phase,
+    launchError ?? error,
+  );
   process.exitCode = 1;
 } finally {
   stopBrowser();
