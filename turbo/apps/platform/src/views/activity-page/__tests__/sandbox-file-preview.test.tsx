@@ -130,7 +130,7 @@ test.each(["page.html", "image.svg"])(
   "%s stays escaped source without an executing frame",
   async (name) => {
     const source =
-      '<script>alert("sandbox")</script><img src="https://untrusted.example/image">';
+      '<img src="invalid" onerror="window.__sandboxPreviewExecuted = true">';
     await setupFilesPage(context, {
       handler: previewGuest({ [name]: textBytes(source) }),
     });
@@ -389,6 +389,37 @@ test("Closing a truncated preview leaves its independent full-file Download inta
         return request.params.mode;
       }),
   ).toStrictEqual(["prefix", "download"]);
+});
+
+test("Dialog Download preparation retains keyboard focus and survives closing the preview", async () => {
+  const registration = createDeferredPromise<void>(context.signal);
+  const browser = await downloadBrowser(context, {
+    registration: registration.promise,
+  });
+  await setupFilesPage(context, {
+    handler: previewGuest({ "notes.txt": textBytes("complete") }),
+  });
+  await openFiles();
+  const dialog = await openPreview("notes.txt");
+  await within(dialog).findByText("complete");
+  const button = filesButton("Download", dialog);
+  const user = userEvent.setup();
+  button.focus();
+  await user.keyboard("{Enter}");
+  await browser.registered;
+  await waitFor(() => {
+    expect(button).toHaveAttribute("aria-busy", "true");
+  });
+  expect(button).toHaveFocus();
+  click(filesButton("Close", dialog));
+  await act(() => {
+    registration.resolve();
+  });
+  const saved = await browser.outcome;
+  expect(saved.saved).toBeTruthy();
+  await expect(readFile(saved.file)).resolves.toStrictEqual(
+    Buffer.from("complete"),
+  );
 });
 
 test("Closing a pending read suppresses its stale result after another file opens", async () => {

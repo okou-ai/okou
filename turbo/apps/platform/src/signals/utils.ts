@@ -189,7 +189,7 @@ type Settled<T> =
 /**
  * Settle an operation into a discriminated union. A factory also catches
  * synchronous failures before a promise exists. Abort errors propagate (re-throw),
- * either from `p` itself or from `signal` if one is passed — so the returned
+ * either from the operation itself or from `signal` if one is passed — so the returned
  * union is guaranteed to never represent a cancellation. Use as a
  * `.then(onOk, onErr)` replacement when the caller needs to map both
  * branches to a value rather than swallow the error.

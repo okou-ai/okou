@@ -6,6 +6,10 @@ import {
   DialogBody,
   DialogContent,
   DialogTitle,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
 } from "@okouai/ui";
 import { Download } from "lucide-react";
 import type { SandboxFilesSignals } from "../../signals/activity-page/sandbox-files.ts";
@@ -56,6 +60,55 @@ function PreviewFailure({ error }: { readonly error: FilePreviewFailure }) {
   }
 }
 
+/** Keep the tooltip's DOM composition stable when Download becomes disabled. */
+function PreviewDownloadButton({
+  signals,
+}: {
+  readonly signals: SandboxFilesSignals;
+}) {
+  const { t } = useTranslation();
+  const request = useGet(signals.preview.request$);
+  const download = useSet(signals.download.start$);
+  const busy = useGet(signals.download.busy$);
+  const preparingPath = useGet(signals.download.preparingPath$);
+  const signal = useGet(pageSignal$);
+  const preparing =
+    request !== null &&
+    preparingPath !== null &&
+    filesDirectoryKey(request.path) === filesDirectoryKey(preparingPath);
+  const label = t(($) => {
+    return $.artifacts.actions.download;
+  });
+  return (
+    <TooltipProvider delay={200}>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              variant="quiet"
+              size="icon-sm"
+              focusableWhenDisabled
+              disabled={busy || !request}
+              pending={preparing}
+              aria-label={label}
+              onClick={() => {
+                if (request) {
+                  detach(download(request, signal), Reason.DomCallback);
+                }
+              }}
+            >
+              <Download size={18} />
+            </Button>
+          }
+        />
+        <TooltipContent>
+          <p className="text-xs">{label}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 /** The preview's Download always enters the independent full-file transfer. */
 export function SandboxFilePreviewDialog({
   signals,
@@ -69,14 +122,6 @@ export function SandboxFilePreviewDialog({
   const finalFocus = useSet(signals.preview.finalFocus$);
   const initialFocus = useSet(signals.preview.initialFocus$);
   const popupRef = useSet(signals.preview.popupRef$);
-  const download = useSet(signals.download.start$);
-  const busy = useGet(signals.download.busy$);
-  const preparingPath = useGet(signals.download.preparingPath$);
-  const signal = useGet(pageSignal$);
-  const preparing =
-    request !== null &&
-    preparingPath !== null &&
-    filesDirectoryKey(request.path) === filesDirectoryKey(preparingPath);
   return (
     <Dialog
       open={request !== null}
@@ -102,24 +147,7 @@ export function SandboxFilePreviewDialog({
           <DialogTitle className="min-w-0 flex-1 truncate text-sm font-medium">
             {request?.name}
           </DialogTitle>
-          <Button
-            variant="quiet"
-            size="icon-sm"
-            showTooltip
-            focusableWhenDisabled
-            disabled={busy || !request}
-            pending={preparing}
-            aria-label={t(($) => {
-              return $.artifacts.actions.download;
-            })}
-            onClick={() => {
-              if (request) {
-                detach(download(request, signal), Reason.DomCallback);
-              }
-            }}
-          >
-            <Download size={18} />
-          </Button>
+          <PreviewDownloadButton signals={signals} />
         </div>
         {result.status === "ready" && result.truncated && (
           <p

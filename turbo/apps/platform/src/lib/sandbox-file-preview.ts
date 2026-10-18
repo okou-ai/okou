@@ -245,7 +245,7 @@ async function validateImage(
 
 export type SandboxPreviewContent =
   | {
-      readonly kind: "text" | "markdown" | "json" | "csv";
+      readonly kind: "text" | "markdown" | "csv";
       readonly text: string;
       readonly truncated: boolean;
       readonly empty: boolean;
