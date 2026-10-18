@@ -800,26 +800,6 @@ export function storageManifestPresignedUrlCacheLookupPairs(
   return { pairs, cacheKeysByRequest };
 }
 
-async function lookupStoragePresignedUrlCacheRows(args: {
-  readonly db: ReadonlyDb;
-  readonly scope: StoragePresignedUrlCacheScope;
-  readonly cacheKeys: readonly string[];
-}): Promise<readonly SelectedStoragePresignedUrlCacheRow[]> {
-  return await args.db
-    .select({
-      cacheKey: systemStoragePresignedUrlCache.cacheKey,
-      presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
-      expiresAt: systemStoragePresignedUrlCache.expiresAt,
-    })
-    .from(systemStoragePresignedUrlCache)
-    .where(
-      and(
-        eq(systemStoragePresignedUrlCache.scope, args.scope),
-        inArray(systemStoragePresignedUrlCache.cacheKey, args.cacheKeys),
-      ),
-    );
-}
-
 async function storagePresignedUrlCacheRows(args: {
   readonly db: ReadonlyDb;
   readonly scope: StoragePresignedUrlCacheScope;
@@ -838,11 +818,24 @@ async function storagePresignedUrlCacheRows(args: {
   }
   const lookup = async () => {
     const query = async () => {
-      return await lookupStoragePresignedUrlCacheRows({
-        db: args.db,
-        scope: args.scope,
-        cacheKeys: args.cacheKeys,
-      });
+      const db = args.db;
+      const scope = args.scope;
+      const cacheKeys = args.cacheKeys;
+      return await (async () => {
+        return await db
+          .select({
+            cacheKey: systemStoragePresignedUrlCache.cacheKey,
+            presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
+            expiresAt: systemStoragePresignedUrlCache.expiresAt,
+          })
+          .from(systemStoragePresignedUrlCache)
+          .where(
+            and(
+              eq(systemStoragePresignedUrlCache.scope, scope),
+              inArray(systemStoragePresignedUrlCache.cacheKey, cacheKeys),
+            ),
+          );
+      })();
     };
     const timing = args.timing;
     if (!timing) {
