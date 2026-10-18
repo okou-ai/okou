@@ -99,6 +99,7 @@ import { notionConfigWithConnectorId } from "./notion-automation-account.service
 import {
   acceptedCatalogFromRow,
   acceptedOfficialWorkflowCatalogReadPlan,
+  acceptedOfficialWorkflowRevisionReadPlan,
   type AcceptedOfficialWorkflowCatalog,
   readAcceptedOfficialWorkflowCatalog$,
   readAcceptedOfficialWorkflowRevision$,
@@ -2458,108 +2459,189 @@ const retainDormantIdentity$ = command(
     });
   },
 );
+interface ReservedCreationOrphanArgs {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly workflowId: string;
+  readonly definitionName: string;
+  readonly blueprint: OfficialWorkflowAcceptedBlueprint;
+  readonly activeDefinitionOnly: boolean;
+  readonly reservationId: string;
+}
+
+function reservedCreationIdentityCondition(args: ReservedCreationOrphanArgs) {
+  return and(
+    eq(officialWorkflowAutomationIdentities.id, args.reservationId),
+    eq(officialWorkflowAutomationIdentities.workflowId, args.workflowId),
+    eq(officialWorkflowAutomationIdentities.blueprintKey, args.blueprint.key),
+    eq(officialWorkflowAutomationIdentities.state, "reconciling"),
+    isNull(officialWorkflowAutomationIdentities.automationId),
+    eq(
+      officialWorkflowAutomationIdentities.retainedAppliedFingerprint,
+      args.blueprint.fingerprint,
+    ),
+  );
+}
+
+function reservedCreationOrphanCondition(args: ReservedCreationOrphanArgs) {
+  return and(
+    eq(workflowAutomations.id, args.reservationId),
+    eq(workflowAutomations.orgId, args.orgId),
+    eq(workflowAutomations.ownerUserId, args.userId),
+    eq(workflowAutomations.workflowId, args.workflowId),
+    eq(workflowAutomations.enabled, false),
+    isNull(workflowAutomations.officialBlueprintKey),
+    isNull(workflowAutomations.officialAppliedFingerprint),
+    isNull(workflowAutomations.officialReconciliationStatus),
+    isNull(workflowAutomations.officialParameterBindings),
+    isNull(workflowAutomations.officialIntendedEnabled),
+  );
+}
+
+function admittedCreationRevisionCondition(
+  revision: Pick<
+    typeof officialWorkflowDefinitionRevisions.$inferSelect,
+    "storageName" | "storageId" | "storageVersion"
+  >,
+) {
+  return and(
+    eq(officialWorkflowDefinitionRevisions.storageName, revision.storageName),
+    eq(officialWorkflowDefinitionRevisions.storageId, revision.storageId),
+    eq(
+      officialWorkflowDefinitionRevisions.storageVersion,
+      revision.storageVersion,
+    ),
+  );
+}
+
 const deleteReservedCreationOrphan$ = command(
   async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly workflowId: string;
-      readonly definitionName: string;
-      readonly blueprint: OfficialWorkflowAcceptedBlueprint;
-      readonly activeDefinitionOnly: boolean;
-      readonly reservationId: string;
-    },
+    { get, set },
+    args: ReservedCreationOrphanArgs,
     signal: AbortSignal,
   ) => {
+    const readDb = get(db$);
+    const catalogPlan = acceptedOfficialWorkflowCatalogReadPlan();
+    const [catalogRow] = acceptedCatalogRowSchema
+      .array()
+      .parse(
+        await readDb
+          .select(catalogPlan.columns)
+          .from(officialWorkflowCatalogState)
+          .innerJoin(officialWorkflowCatalogReleases, catalogPlan.join)
+          .where(catalogPlan.condition)
+          .limit(1),
+      );
+    signal.throwIfAborted();
+    const catalog = acceptedCatalogFromRow(catalogRow);
+    const catalogIdentity = blueprintAuthorityIdentity(args);
+    const acceptedDefinition = matchingAcceptedBlueprintDefinition(
+      catalog,
+      catalogIdentity,
+    );
+    if (!catalog || !acceptedDefinition) {
+      return { kind: "blocked" as const };
+    }
+    const revisionPlan =
+      acceptedOfficialWorkflowRevisionReadPlan(acceptedDefinition);
+    const [revisionRow] = acceptedRevisionRowSchema
+      .array()
+      .parse(
+        await readDb
+          .select(revisionPlan.columns)
+          .from(officialWorkflowDefinitionRevisions)
+          .innerJoin(storages, revisionPlan.storageJoin)
+          .innerJoin(storageVersions, revisionPlan.storageVersionJoin)
+          .where(revisionPlan.condition)
+          .limit(1),
+      );
+    signal.throwIfAborted();
+    if (
+      !revisionRow ||
+      !acceptedRevisionBlueprintMatches(revisionRow, catalogIdentity)
+    ) {
+      return { kind: "blocked" as const };
+    }
+
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0206; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
-      await tx.execute(acceptedCatalogLockStatement());
-      const [catalogRow] = parseRawRows(
-        acceptedCatalogRowSchema,
-        await tx.execute(acceptedCatalogReadStatement()),
-      );
-      signal.throwIfAborted();
-      const catalogIdentity = blueprintAuthorityIdentity(args);
-      const acceptedDefinition = matchingAcceptedBlueprintDefinition(
-        acceptedCatalogFromRow(catalogRow),
-        catalogIdentity,
-      );
-      if (!acceptedDefinition) {
-        return { kind: "blocked" as const };
-      }
-      const [revisionRow] = parseRawRows(
-        acceptedRevisionRowSchema,
-        await tx.execute(acceptedRevisionReadStatement(acceptedDefinition)),
-      );
-      signal.throwIfAborted();
-      if (!acceptedRevisionBlueprintMatches(revisionRow, catalogIdentity)) {
-        return { kind: "blocked" as const };
-      }
-      const [installedWorkflow] = await tx
-        .select({ id: workflows.id })
-        .from(workflows)
-        .where(installedWorkflowCondition(args, args.workflowId))
-        .for("update")
-        .limit(1);
-      if (!installedWorkflow) {
-        return { kind: "blocked" as const };
-      }
-      const [automation] = await tx
-        .select(workflowAutomationColumns())
-        .from(workflowAutomations)
-        .where(eq(workflowAutomations.id, args.reservationId))
-        .for("update")
-        .limit(1);
-      const [identity] = await tx
-        .select()
-        .from(officialWorkflowAutomationIdentities)
+    const catalogAuthority = exists(
+      db
+        .select({ releaseId: officialWorkflowCatalogState.acceptedReleaseId })
+        .from(officialWorkflowCatalogState)
+        .innerJoin(officialWorkflowCatalogReleases, catalogPlan.join)
         .where(
           and(
-            eq(officialWorkflowAutomationIdentities.id, args.reservationId),
+            catalogPlan.condition,
             eq(
-              officialWorkflowAutomationIdentities.workflowId,
-              args.workflowId,
-            ),
-            eq(
-              officialWorkflowAutomationIdentities.blueprintKey,
-              args.blueprint.key,
+              officialWorkflowCatalogState.acceptedReleaseId,
+              catalog.releaseId,
             ),
           ),
-        )
-        .for("update")
-        .limit(1);
-      if (
-        !identity ||
-        identity.state !== "reconciling" ||
-        identity.automationId !== null ||
-        identity.retainedAppliedFingerprint !== args.blueprint.fingerprint
-      ) {
-        return { kind: "blocked" as const };
-      }
-      if (!automation) {
-        return { kind: "none" as const };
-      }
-      const isRecoverableOrphan =
-        automation.orgId === args.orgId &&
-        automation.ownerUserId === args.userId &&
-        automation.workflowId === args.workflowId &&
-        !automation.enabled &&
-        automation.officialBlueprintKey === null &&
-        automation.officialAppliedFingerprint === null &&
-        automation.officialReconciliationStatus === null &&
-        automation.officialParameterBindings === null &&
-        automation.officialIntendedEnabled === null;
-      if (!isRecoverableOrphan) {
-        return { kind: "blocked" as const };
-      }
-      await tx
-        .delete(workflowAutomations)
-        .where(eq(workflowAutomations.id, automation.id));
+        ),
+    );
+    const revisionAuthority = exists(
+      db
+        .select({ revision: officialWorkflowDefinitionRevisions.revision })
+        .from(officialWorkflowDefinitionRevisions)
+        .innerJoin(storages, revisionPlan.storageJoin)
+        .innerJoin(storageVersions, revisionPlan.storageVersionJoin)
+        .where(
+          and(
+            revisionPlan.condition,
+            admittedCreationRevisionCondition(revisionRow),
+          ),
+        ),
+    );
+    const identityAuthority = exists(
+      db
+        .select({ id: officialWorkflowAutomationIdentities.id })
+        .from(officialWorkflowAutomationIdentities)
+        .where(reservedCreationIdentityCondition(args)),
+    );
+    const installedAuthority = exists(
+      db
+        .select({ id: workflows.id })
+        .from(workflows)
+        .where(installedWorkflowCondition(args, args.workflowId)),
+    );
+    const [automation] = await db
+      .delete(workflowAutomations)
+      .where(
+        and(
+          reservedCreationOrphanCondition(args),
+          catalogAuthority,
+          revisionAuthority,
+          identityAuthority,
+          installedAuthority,
+        ),
+      )
+      .returning(workflowAutomationColumns());
+    signal.throwIfAborted();
+    if (automation) {
       return { kind: "deleted" as const, automation };
-    });
+    }
+
+    // This is a new observation after an empty DELETE, not its old snapshot.
+    const [admission] = await readDb
+      .select({ automationId: workflowAutomations.id })
+      .from(workflows)
+      .leftJoin(
+        workflowAutomations,
+        eq(workflowAutomations.id, args.reservationId),
+      )
+      .where(
+        and(
+          installedWorkflowCondition(args, args.workflowId),
+          catalogAuthority,
+          revisionAuthority,
+          identityAuthority,
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return admission && admission.automationId === null
+      ? { kind: "none" as const }
+      : { kind: "blocked" as const };
   },
 );
 const removeDormantCreationOrphan$ = command(
