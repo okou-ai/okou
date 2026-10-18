@@ -69,7 +69,7 @@ import {
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import {
   addUserCustomConnector,
-  lockUserCustomConnectorGrantScope,
+  userCustomConnectorGrantAgentReadPlan,
 } from "../services/user-connectors.service";
 import { commitConnectorRuntimeMutation } from "../services/connector-runtime-wakeup.service";
 import { publishCustomConnectorUserInvalidationAfterCommit } from "../services/connector-client-invalidation.service";
@@ -427,32 +427,48 @@ async function loadInstallationForConnector(args: {
   return { ...installation, defaultAgentId: installation.defaultAgentId };
 }
 
-async function persistFeishuOAuthConnection(
-  args: {
-    readonly db: Db;
-    readonly state: FeishuConnectionState;
-    readonly installation: FeishuInstallationOAuthRow;
-    readonly connector: CustomConnectorHttpRow;
-    readonly token: CustomConnectorOAuthTokenResult;
-    readonly userInfo: FeishuUserInfo;
-    readonly featureContext: FeatureSwitchContext;
-  },
-  signal: AbortSignal,
-): Promise<
+interface PersistFeishuOAuthConnectionArgs {
+  readonly db: Db;
+  readonly state: FeishuConnectionState;
+  readonly installation: FeishuInstallationOAuthRow;
+  readonly connector: CustomConnectorHttpRow;
+  readonly token: CustomConnectorOAuthTokenResult;
+  readonly userInfo: FeishuUserInfo;
+  readonly featureContext: FeatureSwitchContext;
+}
+
+type PersistFeishuOAuthConnectionResult =
   | { readonly connected: false }
   | {
       readonly connected: true;
       readonly connectionId: string;
       readonly shouldNotify: boolean;
-    }
-> {
+    };
+
+async function persistFeishuOAuthConnection(
+  args: PersistFeishuOAuthConnectionArgs,
+  signal: AbortSignal,
+): Promise<PersistFeishuOAuthConnectionResult> {
   // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0018; new non-billing transactions are prohibited.
   return await args.db.transaction(async (tx) => {
-    const agentLocked = await lockUserCustomConnectorGrantScope(tx, {
+    const grantDb = tx;
+    const grantScope = {
       orgId: args.state.orgId,
       userId: args.state.userId,
       agentId: args.installation.defaultAgentId,
-    });
+    };
+    const agentLocked = await (async () => {
+      return await (async () => {
+        const plan = userCustomConnectorGrantAgentReadPlan(grantScope);
+        const [agent] = await grantDb
+          .select(plan.columns)
+          .from(plan.from)
+          .where(plan.where)
+          .for("update")
+          .limit(1);
+        return agent !== undefined;
+      })();
+    })();
     signal.throwIfAborted();
     if (!agentLocked) {
       throw new Error(
