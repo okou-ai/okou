@@ -20,6 +20,7 @@ mod incoming_progress;
 mod incoming_work;
 mod logical_progress;
 mod logical_work;
+mod observer_loss;
 mod optional;
 mod pressure;
 mod pressure_condition;
@@ -81,6 +82,7 @@ enum Corpus {
     ReadStop,
     CreateCancellation,
     ReturnedGuest(sandbox_firecracker::GuestPreparationStage),
+    ObserverLoss(bool),
 }
 
 enum PreparationProbe<'a> {
@@ -527,6 +529,32 @@ async fn native_critical_records_independent_contention_progress() -> TestResult
 }
 
 #[test]
+fn native_observer_loss_report_requires_joined_saving_and_independent_progress() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/observer_loss_report_test.py"
+        ))
+        .output()
+        .expect("native observer loss report requires Python3");
+    assert!(
+        output.status.success(),
+        "observer loss report failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD inputs and submitted-source observer-loss P1 proof"]
+async fn native_observer_loss_keeps_required_saving_and_independent_progress() -> TestResult<()> {
+    measured_selected_corpora(
+        &[NativeScope::Batch(IdleRetirementBatchScope::All)],
+        &[Corpus::ObserverLoss(false), Corpus::ObserverLoss(true)],
+    )
+    .await
+}
+
+#[test]
 fn native_read_cancellation_report_requires_actual_bytes_and_retained_custody() {
     let output = std::process::Command::new("python3")
         .arg(concat!(
@@ -829,6 +857,8 @@ async fn exercise_selected_factories(
                                 "SharedReads".into()
                             } else if corpus == Corpus::CreateCancellation {
                                 "CreateCancellation".into()
+                            } else if let Corpus::ObserverLoss(panic) = corpus {
+                                format!("Observer{}", if panic { "Panic" } else { "Drop" })
                             } else if let Corpus::ReturnedGuest(stage) = corpus {
                                 format!("ReturnedGuest-{}", stage.label())
                             } else if corpus == Corpus::Continuation {
@@ -1163,7 +1193,10 @@ async fn exercise_retirement(
     let tracker = IdleDestroyTracker::new(Arc::new(Notify::new()));
     if (matches!(
         corpus,
-        Corpus::Optional | Corpus::CreateCancellation | Corpus::ReturnedGuest(_)
+        Corpus::Optional
+            | Corpus::CreateCancellation
+            | Corpus::ReturnedGuest(_)
+            | Corpus::ObserverLoss(_)
     ) || matches!(corpus, Corpus::LogicalProgress | Corpus::IncomingProgress)
         || matches!(
             scope,
@@ -1477,6 +1510,17 @@ async fn exercise_retirement(
                 Ok(None)
             }
             NativeScope::Batch(scope) => {
+                if let Corpus::ObserverLoss(panic) = corpus {
+                    observer_loss::exercise(
+                        transitions::Context {
+                            factory: factory.clone(), pool: pool.clone(), status: status.clone(),
+                            operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
+                            rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
+                        }, inputs, proof.ok_or_else(|| io::Error::other("observer loss proof missing"))?,
+                        paths.base_dir(), panic,
+                    ).await?;
+                    return Ok(None);
+                }
                 let mut task = tracker
                     .start_pool_retirement_batch(
                         pool.clone(),

@@ -1,5 +1,39 @@
 # Guarded idle terminal fixture
 
+## Cleanup observer loss
+
+`native_observer_loss_keeps_required_saving_and_independent_progress` runs four
+cases: dropping or panicking the external completion observer, each with fresh
+and matching-snapshot factories. The original batch is positively Pending at the
+accepted physical IO boundary before its observer is lost. The independently
+owned required saving keeps the exact original full lease and cleanup growth;
+tracker/accounting shutdown remains Pending until the actual work finishes.
+
+The corpus holds a real pool/status boundary while an independent host-memory
+read completes. After pool release, the real heartbeat controller/provider must
+receive HTTP 204 while status and physical IO remain held. Releasing only the
+owned IO gate permits the complete durable 64-MiB tail; final status publication
+must then poll Pending while accounting joins and another heartbeat completes.
+Status release precedes joined tracker/reporting shutdown. Inherited complete
+home restoration, original backing exit and dependency cleanup remain required.
+
+Use the existing artifact and supplied memory-policy inputs, selecting this exact
+ignored entry through bounded P1. Include `native_observer_loss_policy_json` as
+the exact raw policy file text and the existing `native_terminal_artifacts`
+manifest. Retain the original `snapshot-preparation.json` alongside P1 files.
+Validate the complete files with:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/observer_loss_report.py <p1-directory>
+```
+
+Default Cargo runs the real-file/CLI report regressions. Actual KVM/NBD execution
+remains opt-in and requires matching submitted-source/Host/input verification.
+The failure is the external observer's panic or disappearance; it does not claim
+provider failure, stalled storage, complete residency, a calibrated resource
+envelope, physical memory relief or production protection. Other failure families
+and final measurement acceptance remain in #39998.
+
 ## Current P1 diagnostic contract
 
 New native runs consume `runner-memory-calibration-v2` from the matching
