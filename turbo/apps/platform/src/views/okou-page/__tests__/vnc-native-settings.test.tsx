@@ -17,7 +17,12 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  fill,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { getAction } from "./connector-integrations-test-helpers.ts";
 
@@ -112,7 +117,19 @@ async function openAddHostPage() {
 }
 async function choose(dialog: HTMLElement, label: string, name: string) {
   click(await within(dialog).findByLabelText(label));
-  click(await screen.findByRole("option", { name }));
+  const option = await waitFor(() => {
+    const matches = queryAllByRoleFast("option").filter((candidate) => {
+      return candidate.textContent?.replace(/\s+/gu, " ").trim() === name;
+    });
+    const [match] = matches;
+    if (matches.length !== 1 || !match) {
+      throw new Error(`Expected one option named "${name}"`);
+    }
+    expect(match).toBeVisible();
+    expect(match).toHaveAccessibleName(name);
+    return match;
+  });
+  click(option);
 }
 
 function mockNativeNetworks() {
