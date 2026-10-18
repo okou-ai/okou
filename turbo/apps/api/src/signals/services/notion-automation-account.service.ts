@@ -70,37 +70,31 @@ export function notionConfigConnectorId(
   return null;
 }
 
-async function skipActivePendingEvents(
-  db: Db,
+export function notionPendingEventsSkipWrite(
   condition: ReturnType<typeof eq>,
   reason: string,
-): Promise<void> {
+) {
   const currentTime = nowDate();
-  await db
-    .update(notionWorkflowPendingEvents)
-    .set({
-      status: "skipped",
+  return {
+    table: notionWorkflowPendingEvents,
+    values: {
+      status: "skipped" as const,
       skipReason: reason,
       processedAt: currentTime,
       updatedAt: currentTime,
-    })
-    .where(
-      and(
-        condition,
-        inArray(notionWorkflowPendingEvents.status, ["pending", "running"]),
-      ),
-    );
+    },
+    where: and(
+      condition,
+      inArray(notionWorkflowPendingEvents.status, ["pending", "running"]),
+    ),
+  };
 }
 
-export async function invalidateNotionPendingEventsForConnector(
-  db: Db,
-  connectorId: string,
-): Promise<void> {
-  await skipActivePendingEvents(
-    db,
-    eq(notionWorkflowPendingEvents.connectorId, connectorId),
-    NOTION_ACCOUNT_RECONNECTED_SKIP_REASON,
-  );
+export function notionPendingEventsReconnectScope(connectorId: string) {
+  return {
+    condition: eq(notionWorkflowPendingEvents.connectorId, connectorId),
+    reason: NOTION_ACCOUNT_RECONNECTED_SKIP_REASON,
+  };
 }
 
 export async function reprojectNotionAutomationsForOwner(
@@ -184,10 +178,21 @@ export async function reprojectNotionAutomationsForOwner(
         ...(eventConfig === null ? {} : { eventConfig }),
       })
       .where(eq(workflowAutomations.id, automation.id));
-    await skipActivePendingEvents(
-      db,
-      eq(notionWorkflowPendingEvents.automationId, automation.id),
-      NOTION_ACCOUNT_CHANGED_SKIP_REASON,
+    const pendingEventDb = db;
+    const pendingEventCondition = eq(
+      notionWorkflowPendingEvents.automationId,
+      automation.id,
     );
+    const pendingEventReason = NOTION_ACCOUNT_CHANGED_SKIP_REASON;
+    await (async () => {
+      const write = notionPendingEventsSkipWrite(
+        pendingEventCondition,
+        pendingEventReason,
+      );
+      await pendingEventDb
+        .update(write.table)
+        .set(write.values)
+        .where(write.where);
+    })();
   }
 }

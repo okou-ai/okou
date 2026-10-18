@@ -14,21 +14,19 @@ import {
 
 const GMAIL_EVENT_TYPES = ["gmail-new-message", "gmail-label-applied"] as const;
 
-export async function invalidateGmailAutomationResolvedLabelIds(
-  db: Db,
+export function gmailAutomationResolvedLabelInvalidationWrite(
   connectorId: string,
-): Promise<void> {
-  await db
-    .update(workflowAutomations)
-    .set({
+) {
+  return {
+    table: workflowAutomations,
+    values: {
       eventConfig: sql`${workflowAutomations.eventConfig} - 'resolvedLabelId'`,
-    })
-    .where(
-      and(
-        eq(workflowAutomations.eventConnectorId, connectorId),
-        eq(workflowAutomations.eventType, "gmail-label-applied"),
-      ),
-    );
+    },
+    where: and(
+      eq(workflowAutomations.eventConnectorId, connectorId),
+      eq(workflowAutomations.eventType, "gmail-label-applied"),
+    ),
+  };
 }
 
 export async function reprojectGmailAutomationsForOwner(
