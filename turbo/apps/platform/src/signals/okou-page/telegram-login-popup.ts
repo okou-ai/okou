@@ -29,7 +29,6 @@ interface TelegramLoginOptions {
   loginBotId: string;
   bot: string;
   callbackBase: string;
-  protocol2: boolean;
 }
 
 function telegramAuthUrls(options: TelegramLoginOptions, operationId: string) {
@@ -38,11 +37,9 @@ function telegramAuthUrls(options: TelegramLoginOptions, operationId: string) {
     options.callbackBase,
   );
   callbackUrl.searchParams.set("targetOrigin", window.location.origin);
-  if (options.protocol2) {
-    callbackUrl.searchParams.set("callbackProtocol", "2");
-    callbackUrl.searchParams.set("operationId", operationId);
-    callbackUrl.searchParams.set("bot", options.bot);
-  }
+  callbackUrl.searchParams.set("callbackProtocol", "2");
+  callbackUrl.searchParams.set("operationId", operationId);
+  callbackUrl.searchParams.set("bot", options.bot);
   const authUrl = new URL(TELEGRAM_OAUTH_BASE_URL);
   authUrl.searchParams.set("bot_id", options.loginBotId);
   authUrl.searchParams.set("origin", window.location.origin);
@@ -107,7 +104,7 @@ export function requestTelegramAuth(
   signal: AbortSignal,
 ) {
   signal.throwIfAborted();
-  const { tab, bot, protocol2 } = options;
+  const { tab, bot } = options;
   const operationId = crypto.randomUUID();
   const { callbackUrl, authUrl } = telegramAuthUrls(options, operationId);
   const identity = createDeferredPromise<TelegramAuthResult | null>(signal);
@@ -115,7 +112,6 @@ export function requestTelegramAuth(
   const expiresAt = now() + 120_000;
   let ready = false;
   let callbackIdentity = false;
-  let legacy = false;
   let terminal: TelegramAuthOutcome | null = null;
   let disposed = false;
   const send = telegramSender(tab, callbackUrl.origin, operationId, bot);
@@ -159,7 +155,6 @@ export function requestTelegramAuth(
       nativeOrigin: authUrl.origin,
       operationId,
       bot,
-      protocol2,
     });
     if (!message) {
       return;
@@ -184,16 +179,9 @@ export function requestTelegramAuth(
       }
     } else if (message.kind === "result-ack" && terminal) {
       dispose();
-    } else if (
-      message.kind === "legacy-identity" ||
-      message.kind === "native-identity"
-    ) {
-      legacy = message.kind === "legacy-identity" || legacy;
+    } else if (message.kind === "native-identity") {
       if (!identity.settled()) {
         identity.resolve(message.auth);
-      }
-      if (legacy && terminal) {
-        dispose();
       }
     }
   }
@@ -221,7 +209,7 @@ export function requestTelegramAuth(
         return;
       }
       terminal = status;
-      if (!protocol2 || legacy || tab.closed) {
+      if (tab.closed) {
         dispose();
       } else {
         deliver();

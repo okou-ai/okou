@@ -333,6 +333,7 @@ test.each([
             id: "official",
             botUsername: "okou_bot",
             loginBotId: "987654321",
+            authCallbackProtocol: 2,
             domainConfigured: false,
           },
         });
@@ -406,6 +407,7 @@ test("Telegram authorizes the official bot in a new tab and keeps onboarding ope
           id: "official",
           botUsername: "okou_bot",
           loginBotId: "987654321",
+          authCallbackProtocol: 2,
           domainConfigured: true,
         },
       });
@@ -475,9 +477,19 @@ test("Telegram authorizes the official bot in a new tab and keeps onboarding ope
   expect(callbackUrl.searchParams.get("targetOrigin")).toBe(
     window.location.origin,
   );
+  const callback = {
+    protocol: 2,
+    operationId: callbackUrl.searchParams.get("operationId"),
+    bot: "official",
+  };
   act(() => {
     context.mocks.browser.message(
+      { ...callback, type: "telegram-auth-bridge-ready" },
+      { source: authorizationWindow, origin: callbackUrl.origin },
+    );
+    context.mocks.browser.message(
       {
+        ...callback,
         type: "telegram-auth",
         data: {
           id: "99001",
