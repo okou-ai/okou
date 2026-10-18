@@ -19,9 +19,9 @@ import { chromium, firefox, webkit, expect } from "@playwright/test";
 // pnpm exec tsx playwright/regressions/sandbox-file-download.ts <output-dir> [engine] [mode]
 // The explicit "long" mode sends one chunk every six seconds for over five
 // minutes, exercising browser worker lifetime while making regular progress.
-// Firefox source failures require a headed native-UI check: Playwright does not
-// report the helper-app error reliably. Such rows are NATIVE_UI_REQUIRED and
-// leave exit code 2; they are never counted as automatic passes.
+// Firefox source failures and Linux WebKit native cancellation require a native
+// UI/API check. The helper-app error and source-page polling after MiniBrowser
+// cancellation are unreliable. NATIVE_UI_REQUIRED leaves exit code 2, never PASS.
 async function main() {
   const output = process.argv[2];
   assert(output, "An explicit output directory is required");
@@ -238,6 +238,29 @@ window.probe = {
             : []),
         ] as const) {
           if (process.argv[4] && process.argv[4] !== mode) continue;
+          if (
+            name === "webkit" &&
+            process.platform === "linux" &&
+            mode === "cancel"
+          ) {
+            // An independent streaming worker reproduces page replacement
+            // during cancellation. Verify the native incomplete-file outcome
+            // AND source connection closure through independent native UI/API
+            // evidence; an Inspector RPC or old-page query proves neither.
+            const result = {
+              engine: name,
+              version: browser.version(),
+              mode,
+              size,
+              result: "NATIVE_UI_REQUIRED",
+              reason:
+                "Verify native WebKit cancellation leaves an incomplete file and closes its source connection; Linux MiniBrowser may replace the source page during cancellation.",
+            };
+            results.push(result);
+            process.stdout.write(JSON.stringify(result) + "\n");
+            process.exitCode = 2;
+            continue;
+          }
           const context = await browser.newContext({ acceptDownloads: true });
           const startedAt = performance.now();
           let readState: (() => Promise<unknown>) | undefined;

@@ -238,6 +238,14 @@ export async function downloadBrowser(
     registered: registered.promise,
     request,
     partialFile: path.join(root, "download.partial"),
+    async cancelDownload() {
+      for (const reader of readers) {
+        await reader.cancel();
+      }
+      if (!writeGate.settled()) {
+        writeGate.resolve();
+      }
+    },
     releaseWrite() {
       if (!writeGate.settled()) {
         writeGate.resolve();

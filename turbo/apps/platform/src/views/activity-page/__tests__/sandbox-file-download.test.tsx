@@ -198,6 +198,33 @@ test("A user cancels a download while the browser destination is blocked", async
   expect((await browser.outcome).saved).toBeFalsy();
 });
 
+test("A browser cancellation retires the transfer and restores Download", async () => {
+  const browser = await downloadBrowser(context, { holdWrite: true });
+  const fixture = await setupFilesPage(context, {
+    handler: fileGuest(1024 * 1024),
+  });
+  const files = await openFiles();
+  await screen.findByText("report.bin");
+  click(await readyDownload(files));
+  await browser.firstChunk;
+  const source = fixture.sockets.at(-1);
+  if (!source) {
+    throw new Error("Download source did not connect");
+  }
+  await browser.cancelDownload();
+  await expect(
+    within(files).findByText("Download cancelled"),
+  ).resolves.toBeInTheDocument();
+  expect((await browser.outcome).saved).toBeFalsy();
+  await expect(stat(browser.partialFile)).resolves.toMatchObject({
+    size: 32_768,
+  });
+  await waitFor(() => {
+    expect(source.readyState).toBe(WebSocket.CLOSED);
+  });
+  await readyDownload(files);
+});
+
 test("A blocked disk keeps WSS demand bounded and attachment URLs are one-use", async () => {
   const browser = await downloadBrowser(context, { holdWrite: true });
   const guest = fileGuest(128 * 1024 * 1024);
