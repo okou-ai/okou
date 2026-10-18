@@ -12,6 +12,7 @@ import uuid
 
 import pressure_report
 import report
+from report_test import prepare_snapshot_record
 
 
 class PressureReportTests(unittest.TestCase):
@@ -44,6 +45,7 @@ class PressureReportTests(unittest.TestCase):
             "profile": {"vcpu": 2, "memory_mib": 4096, "home_mib": 16384},
             "required_fixture_tail_bytes": 64*1024**2,
         }
+        prepare_snapshot_record(self.root, self.artifacts)
         self.collector = {
             "format": "runner-memory-calibration-v2", "success": True,
             "cleanup_confirmed": True, "driver_wait_confirmed": True, "driver_exit_code": 0,

@@ -19,6 +19,53 @@ identities. Do not feed them to the current reader as new v2/current-source proo
 This format change alone does not establish complete residency, calibrated
 envelopes, bootstrap provenance, native Guest execution or production protection.
 
+## Snapshot creation input record
+
+Current native artifact manifests also require `snapshot_preparation_sha256`.
+The existing ignored `prepare_native_terminal_snapshot` entry now produces
+`snapshot-preparation.json` in its new snapshot directory, after the real
+snapshot creator succeeds. Use the same exact-source test executable for
+preparation and the measured cases, compiled with `OKOU_TEST_BUILD_SOURCE_SHA`.
+The [measured corpus instructions](#measured-terminal-corpus) still define the
+immutable disposable inputs, explicit environment and complete native profile.
+
+The record format is `native-snapshot-preparation-v1`. It binds the compiled
+source and actual producer executable, Firecracker/kernel/rootfs bytes, original
+snapshot creation ID, 2-vCPU/4096-MiB/16384-MiB profile and every required snapshot
+output, including the exact production completion marker. Preparation hashes the
+inputs before creation and rechecks them after hashing all outputs. Changed or
+non-regular files, incomplete output and an existing record fail publication.
+The record is published atomically without overwrite after its file is synced;
+the output directory is then synced. Keep partial failures for investigation;
+never synthesize a successful record from their remaining files.
+
+Put the SHA-256 of the exact record bytes in `snapshot_preparation_sha256` and
+retain those bytes in the measured bundle. After the bounded collector completes,
+copy the record into its invocation-owned output before running any report:
+
+```sh
+cp -- "$OWNED_NATIVE_SNAPSHOT_DIR/snapshot-preparation.json" \
+  "$P1_OUTPUT_DIRECTORY/snapshot-preparation.json"
+```
+
+Native preflight and the shared report reader both require the same hash and
+matching source, executable, inputs, profile, ID and output inventory. Record
+reads are bounded to 64 KiB and reject symlinks, non-regular files, duplicate or
+unknown fields, invalid types and invalid clocks. Creator monotonic/wall clocks
+and boot identity describe that preparation; clocks from different hosts/boots
+are not implicitly comparable. The production snapshot format and completion
+marker are unchanged.
+
+The shared phase report exposes `snapshot_creation_inputs_verified=true` and
+`bootstrap_provenance_verified=false`. This record verifies the snapshot link;
+it does not identify the rootfs/bootstrap/Guest producers, calibrate residency or
+prove physical relief, P2 settlement or production protection. Immutable owned
+inputs and retained source/compiler logs remain necessary; unsigned local
+receipts are not supply-chain signatures or adversarial tamper resistance.
+Historical bundles without this record retain their original frozen consumers.
+Do not retrofit them with invented producer records or feed them to current
+readers as new-source acceptance.
+
 ## Pressure shutdown with independently accepted readers
 
 `native_pressure_shutdown_retains_independent_accepted_reads` holds two actual
@@ -605,11 +652,14 @@ experiment metadata; it does not establish a calibrated memory envelope.
 
 `OKOU_TEST_TERMINAL_ARTIFACTS` names a JSON object with `source_sha`,
 `test_binary_sha256`, `firecracker_sha256`, `kernel_sha256`, `rootfs_sha256`, `snapshot_id`,
-`snapshot_files` (filename to SHA-256) and `policy_sha256`. All hashes are lower-case
-hexadecimal. The test verifies the compiled source value and hashes its actual
+`snapshot_files` (filename to SHA-256), `snapshot_preparation_sha256` and
+`policy_sha256`. All hashes are lower-case hexadecimal. The test verifies the
+compiled source value and hashes its actual
 executable and supplied artifacts before starting a VM. Preserve the source
 checkout and build log alongside the manifest; the compiled value is not a
 signature proving where a rootfs was produced.
+See [Snapshot creation input record](#snapshot-creation-input-record) for the
+required record's generation and transport into the P1 bundle.
 
 The measured factory adds an explicit **fixture** post-exit tail: it writes and
 syncs 64 MiB in 1 MiB chunks, then reads and verifies every byte. The original full

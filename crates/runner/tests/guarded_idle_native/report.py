@@ -2,9 +2,12 @@
 """Validate native terminal receipts and correlate their real P1 sample windows."""
 
 import argparse
+import hashlib
 import json
+import os
 import pathlib
 import re
+import stat
 import uuid
 
 PREFIX = "NATIVE_TERMINAL_RECEIPT "
@@ -17,6 +20,49 @@ PHASES = (
     "case_started", "terminal_started", "backing_exit_confirmed",
     "required_tail_started", "required_tail_completed", "case_completed",
 )
+
+
+def validate_snapshot_preparation(directory, artifacts):
+    def unique_fields(pairs):
+        result = {}
+        for name, value in pairs:
+            if name in result:
+                raise ValueError("duplicate field in snapshot preparation record")
+            result[name] = value
+        return result
+
+    try:
+        fd = os.open(directory / "snapshot-preparation.json", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as stream:
+            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                raise ValueError("snapshot preparation record is not a regular file")
+            raw = stream.read(65537)
+    except OSError as error:
+        raise ValueError("snapshot preparation record is unavailable") from error
+    if len(raw) > 65536 or hashlib.sha256(raw).hexdigest() != artifacts["snapshot_preparation_sha256"]:
+        raise ValueError("snapshot preparation record hash or size mismatch")
+    record = json.loads(raw, object_pairs_hook=unique_fields)
+    if not isinstance(record, dict) or set(record) != {
+            "format", "inputs", "snapshot_files", "creator_boot_id", "started_monotonic_ns",
+            "completed_monotonic_ns", "started_unix_ns", "completed_unix_ns"}:
+        raise ValueError("incomplete snapshot preparation record")
+    expected_inputs = {key: artifacts[key] for key in (
+        "source_sha", "firecracker_sha256", "kernel_sha256", "rootfs_sha256", "snapshot_id", "profile")}
+    expected_inputs["producer_test_binary_sha256"] = artifacts["test_binary_sha256"]
+    if (record["format"] != "native-snapshot-preparation-v1"
+            or record["inputs"] != expected_inputs
+            or any(type(value) is not int for value in record["inputs"]["profile"].values())
+            or record["snapshot_files"] != artifacts["snapshot_files"]):
+        raise ValueError("snapshot preparation input/output binding mismatch")
+    for field in ("started_monotonic_ns", "completed_monotonic_ns", "started_unix_ns", "completed_unix_ns"):
+        limit = 2**64 if field.endswith("monotonic_ns") else 2**128
+        if not positive_integer(record[field]) or record[field] >= limit:
+            raise ValueError("invalid snapshot preparation observation clock")
+    if record["completed_monotonic_ns"] <= record["started_monotonic_ns"]:
+        raise ValueError("unordered snapshot preparation observation clocks")
+    boot = record["creator_boot_id"]
+    if not isinstance(boot, str) or str(uuid.UUID(boot)) != boot:
+        raise ValueError("invalid snapshot preparation creator boot identity")
 
 
 def positive_integer(value):
@@ -127,20 +173,21 @@ def _validate_cases(directory, cases, phases):
     expected = collector["metadata"]["native_terminal_artifacts"]
     if not isinstance(expected, dict) or set(expected) != {
             "source_sha", "test_binary_sha256", "firecracker_sha256", "kernel_sha256",
-            "rootfs_sha256", "snapshot_id", "snapshot_files", "policy_sha256", "profile",
+            "rootfs_sha256", "snapshot_id", "snapshot_files", "snapshot_preparation_sha256", "policy_sha256", "profile",
             "required_fixture_tail_bytes"}:
         raise ValueError("incomplete native artifact manifest")
     if not isinstance(expected["source_sha"], str) or not re.fullmatch(r"[0-9a-f]{40}", expected["source_sha"]):
         raise ValueError("invalid native source identity")
     hashes = [expected[k] for k in (
-        "test_binary_sha256", "firecracker_sha256", "kernel_sha256", "rootfs_sha256", "policy_sha256")]
+        "test_binary_sha256", "firecracker_sha256", "kernel_sha256", "rootfs_sha256", "policy_sha256",
+        "snapshot_preparation_sha256")]
     if not isinstance(expected["snapshot_id"], str) or not re.fullmatch(
             r"[A-Za-z0-9_.-]{1,70}", expected["snapshot_id"]) or expected["snapshot_id"] in (".", ".."):
         raise ValueError("invalid native snapshot creation identity")
     snapshot = expected["snapshot_files"]
-    if not isinstance(snapshot, dict) or not {
+    if not isinstance(snapshot, dict) or set(snapshot) != {
             "snapshot.bin", "memory.bin", "cow.img", "cow.img.bitmap", ".snapshot-complete"
-    }.issubset(snapshot) or any(
+    } or any(
             not isinstance(name, str) or pathlib.PurePosixPath(name).name != name
             or name in ("", ".", "..") for name in snapshot):
         raise ValueError("invalid native snapshot manifest")
@@ -148,8 +195,10 @@ def _validate_cases(directory, cases, phases):
     if any(not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value) for value in hashes):
         raise ValueError("invalid native artifact hash")
     if (expected["profile"] != {"vcpu": 2, "memory_mib": 4096, "home_mib": 16384}
+            or any(type(value) is not int for value in expected["profile"].values())
             or expected["required_fixture_tail_bytes"] != 64 * 1024 * 1024):
         raise ValueError("wrong native workload profile")
+    validate_snapshot_preparation(directory, expected)
     samples = [json.loads(line) for line in (directory / "samples.jsonl").read_text().splitlines()]
     previous = -1
     generations, exits = {}, {}
@@ -237,6 +286,7 @@ def _validate_cases(directory, cases, phases):
         "residency_complete": all(w["residency_complete"] for c in results.values()
                                   for w in (c["live_saving"], c["required_post_exit_io"])),
         "memory_envelope_calibrated": False, "production_protection_proven": False,
+        "snapshot_creation_inputs_verified": True, "bootstrap_provenance_verified": False,
         "measurement_scope": "owned sampled residency lower bounds and host availability; unknown samples retained",
         "remaining_parent_gate": "complete native pressure/foreground/session-history/optional/race corpus in P3d2",
     }
