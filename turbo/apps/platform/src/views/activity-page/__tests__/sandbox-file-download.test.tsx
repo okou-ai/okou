@@ -342,6 +342,24 @@ test("Run completion interrupts an active download", async () => {
   expect((await browser.outcome).saved).toBeFalsy();
 });
 
+test("Retrying Files connectivity restores an owned Download action", async () => {
+  const browser = await downloadBrowser(context);
+  const fixture = await setupFilesPage(context, { handler: fileGuest(70_003) });
+  const files = await openFiles();
+  await readyDownload(files);
+  fixture.setStatusUnavailable(true);
+  fireEvent(document, new Event("visibilitychange"));
+  await expect(
+    screen.findByText("Files are unavailable. Try again."),
+  ).resolves.toBeInTheDocument();
+  fixture.setStatusUnavailable(false);
+  click(filesButton("Retry", files));
+  click(await readyDownload(files));
+  const result = await browser.outcome;
+  expect(result.saved).toBeTruthy();
+  expect((await stat(result.file)).size).toBe(70_003);
+});
+
 test("Changing workspace interrupts the previous owner's download", async () => {
   const browser = await downloadBrowser(context, { holdWrite: true });
   const fixture = await setupFilesPage(context, {

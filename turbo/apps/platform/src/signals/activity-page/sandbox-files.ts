@@ -1646,6 +1646,7 @@ function createDemandCommands(
         set(graph.status$, null);
         set(graph.phase$, "connecting");
         const owner = set(graph.resetDemand$, signal, get(pageSignal$));
+        set(graph.download.installOwner$, owner);
         detach(
           set(observation.start$, runId, owner),
           Reason.Daemon,
