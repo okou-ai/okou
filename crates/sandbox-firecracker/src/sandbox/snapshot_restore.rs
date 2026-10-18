@@ -3,6 +3,7 @@ use std::io;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
+use guest_contracts::runtime_drive::RUNTIME_DRIVE_ID;
 use sandbox::SandboxError;
 use tracing::info;
 
@@ -28,7 +29,7 @@ pub(super) async fn load_snapshot_and_apply_rate_limits(
     if let Some(rate_limits) = rate_limits {
         let drive_rate_limiter = rate_limits
             .block_drive_limiter(
-                nonzero_drive_count([ROOTFS_DRIVE_ID, HOME_DRIVE_ID].len())
+                nonzero_drive_count([ROOTFS_DRIVE_ID, HOME_DRIVE_ID, RUNTIME_DRIVE_ID].len())
                     .map_err(|error| SandboxError::Start { message: error })?,
             )
             .map_err(|e| SandboxError::Start {
@@ -45,6 +46,12 @@ pub(super) async fn load_snapshot_and_apply_rate_limits(
             .await
             .map_err(|e| SandboxError::Start {
                 message: format!("snapshot home drive rate limiter patch failed: {e}"),
+            })?;
+        client
+            .patch_drive_rate_limiter(RUNTIME_DRIVE_ID, &drive_rate_limiter)
+            .await
+            .map_err(|e| SandboxError::Start {
+                message: format!("snapshot runtime drive rate limiter patch failed: {e}"),
             })?;
         let inv = InvariantConfig::new();
         client

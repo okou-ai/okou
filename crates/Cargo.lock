@@ -2174,6 +2174,7 @@ dependencies = [
  "chrono",
  "guest-contracts",
  "guest-control-proto",
+ "guest-runtime-mount",
  "libc",
  "process-control-ipc",
  "process-launch",
@@ -2224,8 +2225,21 @@ dependencies = [
  "guest-contracts",
  "guest-control-server",
  "guest-home-mount",
+ "guest-runtime-mount",
  "libc",
  "nix",
+ "tempfile",
+]
+
+[[package]]
+name = "guest-runtime-mount"
+version = "0.1.0"
+dependencies = [
+ "guest-contracts",
+ "libc",
+ "linux-mountinfo",
+ "nix",
+ "rustix",
  "tempfile",
 ]
 

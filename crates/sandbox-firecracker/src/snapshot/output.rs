@@ -35,6 +35,8 @@ pub enum SnapshotOutputValidation {
     NotRegularFile(PathBuf),
     /// The completion marker exists but does not contain the exact expected bytes.
     InvalidCompleteMarker(PathBuf),
+    /// The recorded immutable image generation is missing, changed or malformed.
+    InvalidRuntimeSource(PathBuf),
 }
 
 impl fmt::Display for SnapshotOutputValidation {
@@ -53,6 +55,9 @@ impl fmt::Display for SnapshotOutputValidation {
             }
             Self::InvalidCompleteMarker(path) => {
                 write!(f, "snapshot complete marker is invalid: {}", path.display())
+            }
+            Self::InvalidRuntimeSource(path) => {
+                write!(f, "snapshot runtime source is invalid: {}", path.display())
             }
         }
     }
@@ -155,7 +160,19 @@ pub async fn validate_snapshot_output(
             Err(e) => return Err(io_error_with_path("stat snapshot artifact", &artifact, e)),
         }
     }
-    Ok(SnapshotOutputValidation::Complete)
+    let source = output.runtime_source();
+    match run_snapshot_blocking_fs(|| crate::runtime_backing::verify(&source, None)) {
+        Ok(()) => Ok(SnapshotOutputValidation::Complete),
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::InvalidData
+            ) =>
+        {
+            Ok(SnapshotOutputValidation::InvalidRuntimeSource(source))
+        }
+        Err(error) => Err(io_error_with_path("verify runtime source", &source, error)),
+    }
 }
 
 pub(super) fn remove_file_if_exists_sync(path: &Path) -> std::io::Result<()> {
@@ -331,10 +348,14 @@ mod tests {
             .await
             .expect("create output dir");
         for artifact in output.required_artifacts() {
+            if artifact == output.runtime_source() {
+                continue;
+            }
             tokio::fs::write(&artifact, b"snapshot artifact")
                 .await
                 .unwrap_or_else(|e| panic!("write {}: {e}", artifact.display()));
         }
+        crate::runtime_backing::record_fixture(output);
     }
 
     #[test]
@@ -348,6 +369,7 @@ mod tests {
                 output.memory(),
                 output.cow(),
                 output.cow_bitmap(),
+                output.runtime_source(),
             ]
         );
     }
@@ -454,6 +476,10 @@ mod tests {
         let output = SnapshotOutputPaths::new(dir.path().to_path_buf());
         write_required_snapshot_artifacts(&output).await;
         let marker = output.complete_marker();
+        let artifacts = output.required_artifacts().map(|path| {
+            let content = std::fs::read(&path).unwrap();
+            (path, content)
+        });
 
         let err = publish_snapshot_complete_marker_with_syncs(
             &output,
@@ -478,13 +504,13 @@ mod tests {
             !tokio::fs::try_exists(&marker).await.unwrap(),
             "failed publication must remove its complete marker"
         );
-        for artifact in output.required_artifacts() {
+        for (artifact, original) in artifacts {
             let content = tokio::fs::read(&artifact)
                 .await
                 .unwrap_or_else(|e| panic!("read {}: {e}", artifact.display()));
             assert_eq!(
                 content,
-                b"snapshot artifact",
+                original,
                 "failed publication must preserve {}",
                 artifact.display()
             );
@@ -509,6 +535,10 @@ mod tests {
         let output = SnapshotOutputPaths::new(dir.path().to_path_buf());
         write_required_snapshot_artifacts(&output).await;
         let marker = output.complete_marker();
+        let artifacts = output.required_artifacts().map(|path| {
+            let content = std::fs::read(&path).unwrap();
+            (path, content)
+        });
         let mut directory_sync_attempts = 0;
 
         let err =
@@ -545,13 +575,13 @@ mod tests {
             !tokio::fs::try_exists(&marker).await.unwrap(),
             "failed publication must remove its complete marker"
         );
-        for artifact in output.required_artifacts() {
+        for (artifact, original) in artifacts {
             let content = tokio::fs::read(&artifact)
                 .await
                 .unwrap_or_else(|e| panic!("read {}: {e}", artifact.display()));
             assert_eq!(
                 content,
-                b"snapshot artifact",
+                original,
                 "failed publication must preserve {}",
                 artifact.display()
             );

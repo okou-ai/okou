@@ -50,6 +50,7 @@
   "crates/runner-rpc-client": "0.5.0",
   "crates/runner-rpc-proto": "0.5.0",
   "crates/guest-home-mount": "0.2.20",
+  "crates/guest-runtime-mount": "0.1.0",
   "crates/linux-mountinfo": "0.2.0",
   "crates/kerberos-worker": "0.3.7",
   "crates/rfb-client": "0.24.0",

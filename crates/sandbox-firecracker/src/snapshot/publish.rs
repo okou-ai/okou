@@ -416,9 +416,9 @@ fn commit_snapshot_cow_output(
     std::fs::rename(&kept_cow.bitmap_file, output.cow_bitmap())?;
     std::fs::rename(&kept_cow.cow_file, output.cow())?;
     cleanup_snapshot_attempt_dir_for_cow_sync(&kept_cow.cow_file);
-    // Persist the output directory so all four artifact dir entries
+    // Persist the output directory so all five artifact dir entries
     // (snapshot.bin and memory.bin written by Firecracker via the API,
-    // cow.img and cow.img.bitmap just renamed in) are durable. Without
+    // cow.img and cow.img.bitmap just renamed in, and the runtime source receipt) are durable. Without
     // this fsync, rename(2) and Firecracker's creates return once the
     // update is journaled but the entry may not hit disk until the FS's
     // next commit (~5s on ext4 data=ordered). A crash in that window can
@@ -459,6 +459,7 @@ mod tests {
                 .await
                 .unwrap_or_else(|e| panic!("write {}: {e}", artifact.display()));
         }
+        crate::runtime_backing::record_fixture(output);
     }
 
     async fn write_kept_cow_for_test(work: &Path, token: &str) -> KeptCow {

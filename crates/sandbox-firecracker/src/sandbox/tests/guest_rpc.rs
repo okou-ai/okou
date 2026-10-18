@@ -46,6 +46,8 @@ async fn fresh_and_restore_entrypoints_bind_before_backend_launch_and_clean_up_o
                 cow_path: dir.path().join("cow.img"),
                 drive_bind_path: dir.path().join("drive"),
                 home_drive_bind_path: dir.path().join("workspace"),
+                runtime_drive_bind_path: dir.path().join("runtime"),
+                runtime_source_path: dir.path().join("runtime-source.json"),
                 vsock_bind_dir: dir.path().join("snapshot-vsock"),
             });
         }

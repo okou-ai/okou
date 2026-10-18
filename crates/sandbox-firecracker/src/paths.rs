@@ -151,6 +151,11 @@ impl SandboxPaths {
     pub fn home_device_bind(&self) -> PathBuf {
         self.workspace.join("home-device-bind")
     }
+
+    /// Private namespace target for the immutable runtime image.
+    pub fn runtime_device_bind(&self) -> PathBuf {
+        self.workspace.join("runtime-device-bind")
+    }
 }
 
 /// Per-sandbox runtime socket paths.
@@ -246,16 +251,22 @@ impl SnapshotOutputPaths {
         self.output_dir.join("cow.img.bitmap")
     }
 
-    /// Returns the four regular files required for a reusable snapshot.
+    /// Host-owned immutable image generation receipt, `runtime-source.json`.
+    pub fn runtime_source(&self) -> PathBuf {
+        self.output_dir.join("runtime-source.json")
+    }
+
+    /// Returns the five regular files required for a reusable snapshot.
     ///
     /// The completion marker is intentionally separate because it is the
     /// publication commit signal rather than a snapshot data artifact.
-    pub fn required_artifacts(&self) -> [PathBuf; 4] {
+    pub fn required_artifacts(&self) -> [PathBuf; 5] {
         [
             self.snapshot(),
             self.memory(),
             self.cow(),
             self.cow_bitmap(),
+            self.runtime_source(),
         ]
     }
 
@@ -292,6 +303,8 @@ impl SnapshotOutputPaths {
             cow_path: self.cow(),
             drive_bind_path: work.cow_device_bind(),
             home_drive_bind_path: work.home_device_bind(),
+            runtime_drive_bind_path: work.runtime_device_bind(),
+            runtime_source_path: self.runtime_source(),
             vsock_bind_dir: sock.vsock_dir(),
         }
     }

@@ -709,13 +709,18 @@ fn fresh_boot_config_json(
     rate_limits: Option<&FirecrackerDeviceRateLimits>,
 ) -> serde_json::Value {
     let invariant = InvariantConfig::new();
+    let resources = test_resources();
     let config = build_fresh_boot_firecracker_config(
-        &invariant,
-        &test_resources(),
-        "/kernel".to_string(),
-        "/dev/nbd0".to_string(),
-        home_device_path,
-        "/run/vsock.sock".to_string(),
+        BootConfigInput {
+            invariant: &invariant,
+            vcpu_count: resources.cpu_count,
+            memory_mb: resources.memory_mb,
+            kernel_path: "/kernel".to_string(),
+            rootfs_path: "/dev/nbd0".to_string(),
+            home_path: home_device_path,
+            runtime_path: "/images/immutable-rootfs.ext4".to_string(),
+            vsock_path: "/run/vsock.sock".to_string(),
+        },
         rate_limits,
     )
     .unwrap();
@@ -747,8 +752,8 @@ fn fresh_boot_config_includes_rate_limiters_when_enabled() {
     assert_eq!(
         config["drives"][0]["rate_limiter"],
         serde_json::json!({
-            "bandwidth": { "size": 1024, "refill_time": 100 },
-            "ops": { "size": 10, "refill_time": 100 },
+            "bandwidth": { "size": 512, "refill_time": 100 },
+            "ops": { "size": 5, "refill_time": 100 },
         })
     );
     assert_eq!(
@@ -799,12 +804,41 @@ fn fresh_boot_config_includes_home_drive_and_splits_block_limiters() {
     assert_eq!(config["drives"][1]["is_read_only"], false);
     assert_eq!(
         config["drives"][0]["rate_limiter"]["bandwidth"]["size"],
-        512
+        341
     );
     assert_eq!(
         config["drives"][1]["rate_limiter"]["bandwidth"]["size"],
-        512
+        341
     );
+    assert_eq!(config["drives"][2]["drive_id"], "runtime");
+    let drives = config["drives"].as_array().unwrap();
+    assert_eq!(drives.len(), 3);
+    let bandwidth = drives
+        .iter()
+        .map(|drive| drive["rate_limiter"]["bandwidth"]["size"].as_u64().unwrap())
+        .sum::<u64>();
+    let operations = drives
+        .iter()
+        .map(|drive| drive["rate_limiter"]["ops"]["size"].as_u64().unwrap())
+        .sum::<u64>();
+    assert!(bandwidth <= 1024);
+    assert!(operations <= 10);
+}
+
+#[test]
+fn immutable_runtime_is_a_separate_readonly_drive_in_both_home_layouts() {
+    for home in [None, Some("/workspaces/test/home.ext4".to_string())] {
+        let config = fresh_boot_config_json(home.clone(), None);
+        let drives = config["drives"].as_array().unwrap();
+        assert_eq!(drives.len(), if home.is_some() { 3 } else { 2 });
+        let runtime = drives.last().unwrap();
+        assert_eq!(runtime["drive_id"], "runtime");
+        assert_eq!(runtime["path_on_host"], "/images/immutable-rootfs.ext4");
+        assert_eq!(runtime["is_root_device"], false);
+        assert_eq!(runtime["is_read_only"], true);
+        assert_eq!(drives[0]["is_read_only"], false);
+        assert_ne!(runtime["path_on_host"], drives[0]["path_on_host"]);
+    }
 }
 
 fn stdout_eof_notifying_log_reader_for_test<R>(
@@ -6850,8 +6884,8 @@ async fn snapshot_restore_with_limiters_loads_paused_patches_then_resumes() {
     let reqs = api.drain_requests();
     assert_eq!(
         reqs.len(),
-        5,
-        "expected load, rootfs drive patch, home drive patch, network patch, resume"
+        6,
+        "expected load, three drive patches, network patch, resume"
     );
     assert_eq!(reqs[0].method, "PUT");
     assert_eq!(reqs[0].path, "/snapshot/load");
@@ -6861,30 +6895,41 @@ async fn snapshot_restore_with_limiters_loads_paused_patches_then_resumes() {
     assert_eq!(reqs[1].path, "/drives/rootfs");
     assert_eq!(
         mock_request_body_json(&reqs[1])["rate_limiter"]["bandwidth"]["size"],
-        512
+        341
     );
 
     assert_eq!(reqs[2].method, "PATCH");
     assert_eq!(reqs[2].path, "/drives/home");
     assert_eq!(
         mock_request_body_json(&reqs[2])["rate_limiter"]["bandwidth"]["size"],
-        512
+        341
     );
 
     assert_eq!(reqs[3].method, "PATCH");
-    assert_eq!(reqs[3].path, "/network-interfaces/eth0");
+    assert_eq!(reqs[3].path, "/drives/runtime");
+    let mut total_bandwidth = 0;
+    let mut total_ops = 0;
+    for request in &reqs[1..=3] {
+        let limiter = &mock_request_body_json(request)["rate_limiter"];
+        total_bandwidth += limiter["bandwidth"]["size"].as_u64().unwrap();
+        total_ops += limiter["ops"]["size"].as_u64().unwrap();
+    }
+    assert!(total_bandwidth <= 1024);
+    assert!(total_ops <= 10);
+    assert_eq!(reqs[4].method, "PATCH");
+    assert_eq!(reqs[4].path, "/network-interfaces/eth0");
     assert_eq!(
-        mock_request_body_json(&reqs[3])["rx_rate_limiter"]["bandwidth"]["size"],
+        mock_request_body_json(&reqs[4])["rx_rate_limiter"]["bandwidth"]["size"],
         2048
     );
     assert_eq!(
-        mock_request_body_json(&reqs[3])["tx_rate_limiter"]["bandwidth"]["size"],
+        mock_request_body_json(&reqs[4])["tx_rate_limiter"]["bandwidth"]["size"],
         4096
     );
 
-    assert_eq!(reqs[4].method, "PATCH");
-    assert_eq!(reqs[4].path, "/vm");
-    assert!(reqs[4].body.contains("Resumed"));
+    assert_eq!(reqs[5].method, "PATCH");
+    assert_eq!(reqs[5].path, "/vm");
+    assert!(reqs[5].body.contains("Resumed"));
 }
 
 #[tokio::test]
@@ -6965,9 +7010,33 @@ async fn snapshot_restore_workspace_limiter_patch_failure_does_not_resume() {
 }
 
 #[tokio::test]
-async fn snapshot_restore_network_limiter_patch_failure_does_not_resume() {
+async fn snapshot_restore_runtime_limiter_patch_failure_does_not_resume() {
     let mut api =
         MockLifecycleApi::new(std::collections::VecDeque::from(vec![204, 204, 500]), None);
+    let client = ApiClient::new(api.socket_path()).unwrap();
+    let err = load_snapshot_and_apply_rate_limits(
+        &client,
+        "/snap/state",
+        "/snap/memory",
+        Some(&test_rate_limits()),
+    )
+    .await
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("snapshot runtime drive rate limiter patch failed"));
+    let requests = api.drain_requests();
+    assert_eq!(requests.len(), 4);
+    assert_eq!(mock_request_body_json(&requests[0])["resume_vm"], false);
+    assert_eq!(requests[3].path, "/drives/runtime");
+    assert!(requests.iter().all(|request| request.path != "/vm"));
+}
+
+#[tokio::test]
+async fn snapshot_restore_network_limiter_patch_failure_does_not_resume() {
+    let mut api = MockLifecycleApi::new(
+        std::collections::VecDeque::from(vec![204, 204, 204, 500]),
+        None,
+    );
     let client = ApiClient::new(api.socket_path()).unwrap();
     let rate_limits = test_rate_limits();
 
@@ -6983,12 +7052,13 @@ async fn snapshot_restore_network_limiter_patch_failure_does_not_resume() {
 
     assert!(err.contains("snapshot network rate limiter patch failed"));
     let reqs = api.drain_requests();
-    assert_eq!(reqs.len(), 4, "resume must not be attempted");
+    assert_eq!(reqs.len(), 5, "resume must not be attempted");
     assert_eq!(reqs[0].path, "/snapshot/load");
     assert_eq!(mock_request_body_json(&reqs[0])["resume_vm"], false);
     assert_eq!(reqs[1].path, "/drives/rootfs");
     assert_eq!(reqs[2].path, "/drives/home");
-    assert_eq!(reqs[3].path, "/network-interfaces/eth0");
+    assert_eq!(reqs[3].path, "/drives/runtime");
+    assert_eq!(reqs[4].path, "/network-interfaces/eth0");
     assert!(reqs.iter().all(|request| request.path != "/vm"));
 }
 

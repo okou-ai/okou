@@ -93,6 +93,11 @@ async fn create_uncommitted_snapshot(
 
     // 1. Clean stale snapshot output from a previous failed attempt and create work dir.
     let work = prepare_snapshot_output(&output).await?;
+    let runtime_source = output.runtime_source();
+    output::run_snapshot_blocking_fs(|| {
+        crate::runtime_backing::record(&runtime_source, &config.rootfs_path)
+    })
+    .map_err(|e| SnapshotError::Setup(format!("record snapshot runtime source: {e}")))?;
 
     // Socket directory under /run, keyed by config id so concurrent builds don't collide.
     cleanup_existing_snapshot_sock_dir(&sock_dir).await;

@@ -898,9 +898,9 @@ exit 18
         );
         assert!(
             VERIFY_SCRIPT.contains(
-                "for cmd in sudo unshare mount umount mountpoint stat mktemp sed grep readlink; do"
+                "for cmd in sudo unshare mount umount mountpoint stat mktemp sed grep readlink cmp; do"
             ),
-            "verify-rootfs.sh should declare readlink as a host dependency for safe symlink resolution"
+            "verify-rootfs.sh should declare host dependencies for safe path resolution and identity comparison"
         );
         assert!(
             VERIFY_SCRIPT

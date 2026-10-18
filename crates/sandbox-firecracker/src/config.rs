@@ -43,6 +43,10 @@ pub struct SnapshotConfig {
     pub drive_bind_path: PathBuf,
     /// Home drive path recorded in the snapshot's Firecracker config.
     pub home_drive_bind_path: PathBuf,
+    /// Immutable runtime drive path recorded by snapshot creation.
+    pub runtime_drive_bind_path: PathBuf,
+    /// Host-owned receipt binding this snapshot to its immutable image generation.
+    pub runtime_source_path: PathBuf,
     /// Vsock directory recorded in the snapshot's Firecracker config.
     ///
     /// Restore expects this to be the private runtime bind target

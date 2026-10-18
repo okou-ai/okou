@@ -140,13 +140,21 @@ async fn test_home_with_artifacts(dir: &std::path::Path, hashes: &[(&str, &str)]
     for &(rootfs_hash, snapshot_hash) in hashes {
         let rootfs = RootfsPaths::new(&home, rootfs_hash);
         tokio::fs::create_dir_all(rootfs.dir()).await.unwrap();
-        tokio::fs::write(rootfs.rootfs(), b"").await.unwrap();
+        tokio::fs::write(rootfs.rootfs(), b"rootfs").await.unwrap();
         if !snapshot_hash.is_empty() {
             let snapshot = rootfs.snapshot(snapshot_hash);
             tokio::fs::create_dir_all(snapshot.dir()).await.unwrap();
             for path in snapshot.required_artifacts() {
+                if path == snapshot.runtime_source() {
+                    continue;
+                }
                 tokio::fs::write(&path, b"").await.unwrap();
             }
+            sandbox_firecracker::record_runtime_source_for_test(
+                &snapshot.runtime_source(),
+                &rootfs.rootfs(),
+            )
+            .unwrap();
             tokio::fs::write(
                 snapshot.complete_marker(),
                 sandbox_firecracker::SNAPSHOT_COMPLETE_MARKER_CONTENT,

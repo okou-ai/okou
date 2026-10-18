@@ -2,6 +2,7 @@ use std::num::NonZeroU64;
 
 use crate::config::{FirecrackerDeviceRateLimits, RateLimiterConfig};
 use crate::factory::InvariantConfig;
+use guest_contracts::runtime_drive::RUNTIME_DRIVE_ID;
 
 pub(crate) const ROOTFS_DRIVE_ID: &str = "rootfs";
 pub(crate) const HOME_DRIVE_ID: &str = "home";
@@ -79,6 +80,7 @@ pub(crate) struct BootConfigInput<'a> {
     pub(crate) kernel_path: String,
     pub(crate) rootfs_path: String,
     pub(crate) home_path: Option<String>,
+    pub(crate) runtime_path: String,
     pub(crate) vsock_path: String,
 }
 
@@ -91,6 +93,7 @@ impl FirecrackerBootConfig {
             kernel_path,
             rootfs_path,
             home_path,
+            runtime_path,
             vsock_path,
         } = input;
         let mut drives = vec![DriveConfig {
@@ -109,6 +112,13 @@ impl FirecrackerBootConfig {
                 rate_limiter: None,
             });
         }
+        drives.push(DriveConfig {
+            drive_id: RUNTIME_DRIVE_ID.to_owned(),
+            path_on_host: runtime_path,
+            is_root_device: false,
+            is_read_only: true,
+            rate_limiter: None,
+        });
 
         Self {
             boot_source: BootSourceConfig {

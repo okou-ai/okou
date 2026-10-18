@@ -8,6 +8,7 @@ const HASH_MEMORY_MB: u32 = 1;
 const HASH_KERNEL_PATH: &str = "/kernel";
 const HASH_ROOTFS_PATH: &str = "/rootfs";
 const HASH_HOME_PATH: &str = "/home-image";
+const HASH_RUNTIME_PATH: &str = "/immutable-runtime";
 const HASH_VSOCK_PATH: &str = "/vsock";
 
 /// Shell command executed during snapshot creation to pre-warm guest state.
@@ -119,6 +120,7 @@ fn canonical_snapshot_boot_config(invariant: &InvariantConfig) -> FirecrackerBoo
         kernel_path: HASH_KERNEL_PATH.to_owned(),
         rootfs_path: HASH_ROOTFS_PATH.to_owned(),
         home_path: Some(HASH_HOME_PATH.to_owned()),
+        runtime_path: HASH_RUNTIME_PATH.to_owned(),
         vsock_path: HASH_VSOCK_PATH.to_owned(),
     })
 }
@@ -172,7 +174,7 @@ mod tests {
                 .iter()
                 .map(|drive| drive.drive_id.as_str())
                 .collect::<Vec<_>>(),
-            ["rootfs", "home"]
+            ["rootfs", "home", "runtime"]
         );
 
         let json = serde_json::to_value(config).unwrap();

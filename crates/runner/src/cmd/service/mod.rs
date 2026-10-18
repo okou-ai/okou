@@ -1239,8 +1239,16 @@ profiles:
         let snapshot = rootfs.snapshot(TEST_SNAPSHOT_HASH);
         tokio::fs::create_dir_all(snapshot.dir()).await.unwrap();
         for path in snapshot.required_artifacts() {
+            if path == snapshot.runtime_source() {
+                continue;
+            }
             tokio::fs::write(path, b"snapshot").await.unwrap();
         }
+        sandbox_firecracker::record_runtime_source_for_test(
+            &snapshot.runtime_source(),
+            &rootfs.rootfs(),
+        )
+        .unwrap();
         tokio::fs::write(
             snapshot.complete_marker(),
             sandbox_firecracker::SNAPSHOT_COMPLETE_MARKER_CONTENT,

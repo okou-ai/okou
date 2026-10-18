@@ -18,6 +18,7 @@ type TestResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 mod duplex;
 mod file_read;
 mod filesystem;
+mod runtime_backing;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires root, KVM, NBD and matching packaged rootfs/snapshot; run by metal CI"]
@@ -95,6 +96,7 @@ async fn exercise_sandbox(sandbox: &mut dyn Sandbox) -> TestResult<()> {
     let run = uuid::Uuid::new_v4().to_string();
     sandbox.bind_run_control(&run)?;
     sandbox.start().await?;
+    runtime_backing::exercise(sandbox).await?;
     let first_epoch = duplex::exercise(sandbox, &run, &registry, None).await?;
     let retired_handles = first_epoch.handles().clone();
     // The established duplex must not consume or block the independent RPC path.
@@ -112,6 +114,7 @@ async fn exercise_sandbox(sandbox: &mut dyn Sandbox) -> TestResult<()> {
     let next_run = uuid::Uuid::new_v4().to_string();
     sandbox.bind_run_control(&next_run)?;
     sandbox.unpark().await?;
+    runtime_backing::exercise(sandbox).await?;
     if tokio::time::timeout(Duration::from_secs(5), stale.accept())
         .await?
         .is_ok()

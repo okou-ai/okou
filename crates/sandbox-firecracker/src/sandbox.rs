@@ -249,23 +249,10 @@ struct SnapshotLoadPaths {
 }
 
 pub(crate) fn build_fresh_boot_firecracker_config(
-    invariant: &InvariantConfig,
-    resources: &sandbox::ResourceLimits,
-    kernel_path: String,
-    cow_device_path: String,
-    home_device_path: Option<String>,
-    vsock_path: String,
+    input: BootConfigInput<'_>,
     device_rate_limits: Option<&FirecrackerDeviceRateLimits>,
 ) -> sandbox::Result<FirecrackerBootConfig> {
-    let config = FirecrackerBootConfig::new(BootConfigInput {
-        invariant,
-        vcpu_count: resources.cpu_count,
-        memory_mb: resources.memory_mb,
-        kernel_path,
-        rootfs_path: cow_device_path,
-        home_path: home_device_path,
-        vsock_path,
-    });
+    let config = FirecrackerBootConfig::new(input);
     match device_rate_limits {
         Some(rate_limits) => config
             .with_device_rate_limits(rate_limits)
@@ -1258,12 +1245,16 @@ impl FirecrackerSandbox {
         let vsock_path = self.sock_paths.vsock().display().to_string();
 
         build_fresh_boot_firecracker_config(
-            &invariant,
-            &self.config.resources,
-            kernel_path,
-            cow_device_path,
-            home_device_path,
-            vsock_path,
+            BootConfigInput {
+                invariant: &invariant,
+                vcpu_count: self.config.resources.cpu_count,
+                memory_mb: self.config.resources.memory_mb,
+                kernel_path,
+                rootfs_path: cow_device_path,
+                home_path: home_device_path,
+                runtime_path: self.factory_config.rootfs_path.display().to_string(),
+                vsock_path,
+            },
             self.device_rate_limits.as_ref(),
         )
     }
@@ -1414,6 +1405,7 @@ impl FirecrackerSandbox {
 
         ensure_snapshot_drive_bind_target(&snapshot.drive_bind_path).await?;
         ensure_snapshot_drive_bind_target(&snapshot.home_drive_bind_path).await?;
+        ensure_snapshot_drive_bind_target(&snapshot.runtime_drive_bind_path).await?;
 
         // Verify sock dir exists before spawning — if this fails, we know
         // the directory was never created or was removed before spawn.
@@ -1458,6 +1450,10 @@ impl FirecrackerSandbox {
                 vsock: BindMount::new(&self.sock_paths.vsock_dir(), &snapshot.vsock_bind_dir),
                 rootfs: BindMount::new(cow_device_path, &snapshot.drive_bind_path),
                 home: BindMount::new(&home_image_path, &snapshot.home_drive_bind_path),
+                runtime: BindMount::new(
+                    &self.factory_config.rootfs_path,
+                    &snapshot.runtime_drive_bind_path,
+                ),
             },
             self.network.name(),
             &self.factory_config.binary_path,

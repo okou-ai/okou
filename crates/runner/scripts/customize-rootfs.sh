@@ -14,6 +14,7 @@
 #     --rootfs /path/to/rootfs.ext4.staging \
 #     --ca-dir /path/to/ca \
 #     --dns-nameserver 8.8.8.8 \
+#     --runtime-identity <rootfs-input-sha256> \
 #     --guest /path/to/guest-agent /usr/local/bin/guest-agent \
 #     [--guest SOURCE DESTINATION ...] \
 #     [--okou-cli /path/to/package.tgz 9.353.0 /path/to/installed.json]
@@ -41,6 +42,7 @@ shift
 ROOTFS=""
 CA_DIR=""
 DNS_NAMESERVER=""
+RUNTIME_IDENTITY=""
 GUEST_SOURCES=()
 GUEST_DESTINATIONS=()
 OKOU_CLI_PACKAGE=""
@@ -101,6 +103,7 @@ while [[ $# -gt 0 ]]; do
     --rootfs)             ROOTFS="$2";             shift 2 ;;
     --ca-dir)             CA_DIR="$2";             shift 2 ;;
     --dns-nameserver)     DNS_NAMESERVER="$2";     shift 2 ;;
+    --runtime-identity)   RUNTIME_IDENTITY="$2";   shift 2 ;;
     --guest)
       GUEST_SOURCES+=("$2")
       GUEST_DESTINATIONS+=("$3")
@@ -120,12 +123,16 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-for var in ROOTFS CA_DIR DNS_NAMESERVER; do
+for var in ROOTFS CA_DIR DNS_NAMESERVER RUNTIME_IDENTITY; do
   if [[ -z "${!var}" ]]; then
     echo "error: --$(echo "$var" | tr '_' '-' | tr '[:upper:]' '[:lower:]') is required" >&2
     exit 1
   fi
 done
+if [[ ! "$RUNTIME_IDENTITY" =~ ^[0-9a-f]{64}$ ]]; then
+  echo "error: runtime identity must be the rootfs input SHA-256" >&2
+  exit 1
+fi
 if [[ ${#GUEST_SOURCES[@]} -eq 0 ]]; then
   echo "error: at least one --guest SOURCE DESTINATION is required" >&2
   exit 1
@@ -337,6 +344,9 @@ sudo mount -o loop "$ROOTFS" "$MOUNT_DIR"
 CHROOT_TMP_HOST="$(sudo mktemp -d -p "$MOUNT_DIR" ".vm0-rootfs-customize.XXXXXX")"
 CHROOT_TMP="/${CHROOT_TMP_HOST##*/}"
 sudo chmod 700 "$CHROOT_TMP_HOST"
+
+# Bind the two filesystem views to the already-computed rootfs input identity.
+printf '%s\n' "$RUNTIME_IDENTITY" | install_inline_file "/etc/okou/runtime-rootfs-id" 644
 
 # Rootfs resolv.conf for the VM (single nameserver — UDP 53 redirected to dnsmasq).
 printf 'nameserver %s\n' "$DNS_NAMESERVER" | install_inline_file "/etc/resolv.conf" 644
