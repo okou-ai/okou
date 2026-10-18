@@ -197,27 +197,17 @@ function validateAgentVisibilityUpdate(
   );
 }
 
-async function readAgentForResponse(
-  writeDb: Pick<Db, "select">,
-  orgId: string,
-  agentId: string,
-) {
-  const rows = await writeDb
-    .select({
-      agentId: agents.id,
-      defaultAgentId: orgMetadata.defaultAgentId,
-      owner: agents.owner,
-      displayName: agents.displayName,
-      description: agents.description,
-      sound: agents.sound,
-      avatarUrl: agents.avatarUrl,
-      visibility: agents.visibility,
-    })
-    .from(agents)
-    .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
-    .where(and(eq(agents.orgId, orgId), eq(agents.id, agentId)))
-    .limit(1);
-  return rows[0] ?? null;
+function agentUpdateResponseSelection() {
+  return {
+    agentId: agents.id,
+    defaultAgentId: orgMetadata.defaultAgentId,
+    owner: agents.owner,
+    displayName: agents.displayName,
+    description: agents.description,
+    sound: agents.sound,
+    avatarUrl: agents.avatarUrl,
+    visibility: agents.visibility,
+  };
 }
 
 function agentCreateSelection(values: typeof agents.$inferSelect) {
@@ -606,7 +596,20 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       .update(agents)
       .set(buildAgentUpsertConflictSet(updateBody, nowDate()))
       .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)));
-    const agent = await readAgentForResponse(tx, auth.orgId, params.id);
+    const responseDb = tx;
+    const responseOrgId = auth.orgId;
+    const responseAgentId = params.id;
+    const agent = await (async () => {
+      const rows = await responseDb
+        .select(agentUpdateResponseSelection())
+        .from(agents)
+        .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
+        .where(
+          and(eq(agents.orgId, responseOrgId), eq(agents.id, responseAgentId)),
+        )
+        .limit(1);
+      return rows[0] ?? null;
+    })();
     if (!agent) {
       throw new Error(`Canonical Agent missing after update: ${params.id}`);
     }
@@ -731,7 +734,23 @@ const updateAgentMetadataInner$ = command(
         .update(agents)
         .set(buildAgentUpsertConflictSet(updateBody, nowDate()))
         .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)));
-      const agent = await readAgentForResponse(tx, auth.orgId, params.id);
+      const responseDb = tx;
+      const responseOrgId = auth.orgId;
+      const responseAgentId = params.id;
+      const agent = await (async () => {
+        const rows = await responseDb
+          .select(agentUpdateResponseSelection())
+          .from(agents)
+          .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
+          .where(
+            and(
+              eq(agents.orgId, responseOrgId),
+              eq(agents.id, responseAgentId),
+            ),
+          )
+          .limit(1);
+        return rows[0] ?? null;
+      })();
       if (!agent) {
         throw new Error(`Canonical Agent missing after update: ${params.id}`);
       }
