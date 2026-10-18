@@ -19,6 +19,9 @@ import { chromium, firefox, webkit, expect } from "@playwright/test";
 // pnpm exec tsx playwright/regressions/sandbox-file-download.ts <output-dir> [engine] [mode]
 // The explicit "long" mode sends one chunk every six seconds for over five
 // minutes, exercising browser worker lifetime while making regular progress.
+// Firefox source failures require a headed native-UI check: Playwright does not
+// report the helper-app error reliably. Such rows are NATIVE_UI_REQUIRED and
+// leave exit code 2; they are never counted as automatic passes.
 async function main() {
   const output = process.argv[2];
   assert(output, "An explicit output directory is required");
@@ -78,7 +81,10 @@ window.probe = {
         } else if (mode === 'failure' && Number(message.offset) >= size - 32768) {
           channel.port1.postMessage({type: 'abort'});
         } else if ((mode === 'held' || mode === 'cancel') && this.produced >= 4 * 1024 * 1024 && !this.resumed) {
-          this.held = true; this.waiting = () => send(message);
+          this.held = true;
+          // Cancel the consumer while its producer still answers demand.
+          // Blocking the producer here delays Firefox's cancel until idle.
+          if (mode === 'cancel') send(message); else this.waiting = () => send(message);
         } else send(message);
       } else {
         this.terminal = message.type;
@@ -298,6 +304,33 @@ window.probe = {
               mode === "cancel" ||
               mode === "http-failure"
             ) {
+              if (
+                name === "firefox" &&
+                (mode === "failure" || mode === "http-failure")
+              ) {
+                if (mode === "failure") {
+                  await page.waitForFunction(
+                    () => window.probe.terminal === "cancelled",
+                  );
+                }
+                // Firefox's helper-app error prompt lives in browser chrome.
+                // It blocks failure(), which returns null after dismissal even
+                // though the native UI says the source could not be read.
+                // Require native UI evidence instead of a false automatic pass.
+                const result = {
+                  engine: name,
+                  version: browser.version(),
+                  mode,
+                  size,
+                  result: "NATIVE_UI_REQUIRED",
+                  reason:
+                    "Verify the headed browser reports an incomplete download; Playwright failure() cannot observe this native error reliably.",
+                };
+                results.push(result);
+                process.stdout.write(JSON.stringify(result) + "\n");
+                process.exitCode = 2;
+                continue;
+              }
               let timer: ReturnType<typeof setTimeout> | undefined;
               const failed = await Promise.race([
                 download.failure(),
@@ -307,26 +340,6 @@ window.probe = {
               ]);
               clearTimeout(timer);
               if (failed === "deadline") {
-                const downloadsPage = await context.newPage();
-                if (name === "firefox") {
-                  await downloadsPage
-                    .goto("about:downloads", {
-                      waitUntil: "commit",
-                      timeout: 5000,
-                    })
-                    .catch(() => undefined);
-                  const nativeUI = await downloadsPage
-                    .locator("body")
-                    .innerText({ timeout: 1000 })
-                    .catch(() => "unavailable");
-                  process.stdout.write(
-                    JSON.stringify({
-                      engine: name,
-                      mode,
-                      nativeDownloadUI: nativeUI.slice(0, 1200),
-                    }) + "\n",
-                  );
-                }
                 throw new Error(
                   `${name} ${mode}: download failure did not settle`,
                 );
