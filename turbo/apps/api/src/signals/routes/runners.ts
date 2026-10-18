@@ -927,7 +927,6 @@ interface ClaimedRun extends ClaimModelCapture {
   readonly id: string;
   readonly userId: string;
   readonly orgId: string;
-  readonly agentId: string | null;
   readonly prompt: string;
   readonly appendSystemPrompt: string | null;
   readonly vars: unknown;

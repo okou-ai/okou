@@ -10,10 +10,15 @@ import {
   isAutoSelectedModel,
 } from "@okouai/core/auto-run-model";
 import type { agentRuns } from "@okouai/db/runtime/agent-run";
-import { isBuiltInModelRuntimeRoutePermitted } from "./built-in-model-runtime-route.service";
+import {
+  isBuiltInModelRuntimeRoutePermitted,
+  type BuiltInModelRuntimeRoute,
+} from "./built-in-model-runtime-route.service";
+import { PI_MEMORY_BUILTIN_BINDING } from "./pi-memory-builtin-config";
 
 export type ClaimModelCapture = Pick<
   typeof agentRuns.$inferSelect,
+  | "agentId"
   | "modelProvider"
   | "modelProviderId"
   | "selectedModel"
@@ -41,7 +46,8 @@ function hasManagedModelContext(context: StoredExecutionContext): boolean {
     (context.cliAgentType === "codex" &&
       context.codexRuntimeConfig?.providerId === AUTO_RUN_PROVIDER) ||
     ((context.cliAgentType === "pi" || context.cliAgentType === "codex") &&
-      isAutoRunPreset(context.environment?.OPENAI_MODEL))
+      (isAutoRunPreset(context.environment?.OPENAI_MODEL) ||
+        isAutoRunPreset(context.platformEnvironment.OPENAI_MODEL)))
   );
 }
 
@@ -89,6 +95,48 @@ function isConsistentCodexModelCapture(
   );
 }
 
+function isPermittedCapturedModelRoute(
+  route: BuiltInModelRuntimeRoute,
+  agentId: ClaimModelCapture["agentId"],
+  context: StoredExecutionContext,
+): boolean {
+  if (isBuiltInModelRuntimeRoutePermitted(route)) {
+    return true;
+  }
+  // This existing private binding is never a foreground model candidate.
+  return (
+    agentId === null &&
+    context.cliAgentType === "pi" &&
+    context.piLaunchConfig?.maintenance !== undefined &&
+    context.piModelConfig?.dialect === "openai-completions" &&
+    route.selectedModel === PI_MEMORY_BUILTIN_BINDING.selectedModel &&
+    route.providerType === PI_MEMORY_BUILTIN_BINDING.providerType &&
+    route.upstreamModel === PI_MEMORY_BUILTIN_BINDING.upstreamModel
+  );
+}
+
+function isConsistentModelEnvironment(
+  upstreamModel: string,
+  context: StoredExecutionContext,
+): boolean {
+  // Runner applies the trusted platform overlay after the model environment.
+  const model =
+    context.platformEnvironment.OPENAI_MODEL ??
+    context.environment?.OPENAI_MODEL;
+  const baseUrl =
+    context.platformEnvironment.OPENAI_BASE_URL ??
+    context.environment?.OPENAI_BASE_URL;
+  const credential =
+    context.platformEnvironment.OPENAI_API_KEY ??
+    context.environment?.OPENAI_API_KEY;
+  return (
+    model === upstreamModel &&
+    baseUrl ===
+      MODEL_PROVIDER_TYPES[AUTO_RUN_PROVIDER].envBindings.OPENAI_BASE_URL &&
+    credential === MODEL_PROVIDER_ENV_PLACEHOLDERS.OPENAI_API_KEY
+  );
+}
+
 /** Validate the captured owner/route without loading keys or mutable catalog state. */
 export function isCapturedModelClaimConsistent(
   run: ClaimModelCapture,
@@ -106,24 +154,25 @@ export function isCapturedModelClaimConsistent(
     run.selectedModel === null ||
     run.modelRuntimeProvider !== AUTO_RUN_PROVIDER ||
     run.modelRuntimeModel === null ||
-    !run.builtInModelKeyId ||
-    !isBuiltInModelRuntimeRoutePermitted({
-      selectedModel: run.selectedModel,
-      providerType: run.modelRuntimeProvider,
-      upstreamModel: run.modelRuntimeModel,
-      modelKeyId: run.builtInModelKeyId,
-    })
+    !run.builtInModelKeyId
   ) {
     return false;
   }
-  const provider = MODEL_PROVIDER_TYPES[AUTO_RUN_PROVIDER];
-  const baseUrl = provider.envBindings.OPENAI_BASE_URL;
   if (
-    context.environment?.OPENAI_MODEL !== run.modelRuntimeModel ||
-    context.environment.OPENAI_BASE_URL !== baseUrl ||
-    context.environment.OPENAI_API_KEY !==
-      MODEL_PROVIDER_ENV_PLACEHOLDERS.OPENAI_API_KEY
+    !isPermittedCapturedModelRoute(
+      {
+        selectedModel: run.selectedModel,
+        providerType: run.modelRuntimeProvider,
+        upstreamModel: run.modelRuntimeModel,
+        modelKeyId: run.builtInModelKeyId,
+      },
+      run.agentId,
+      context,
+    )
   ) {
+    return false;
+  }
+  if (!isConsistentModelEnvironment(run.modelRuntimeModel, context)) {
     return false;
   }
   if (context.cliAgentType === "pi") {
