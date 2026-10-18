@@ -8,7 +8,6 @@ import {
   SANDBOX_FS_LIMITS,
 } from "@okouai/api-contracts/contracts/sandbox-channel-fs";
 import { SandboxChannelError } from "@okouai/api-contracts/contracts/sandbox-channel";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createBrowserSandboxChannelPeer } from "../../lib/sandbox-channel-peer.ts";
 import { now } from "../../lib/time.ts";
 import {
@@ -19,7 +18,6 @@ import {
 } from "../../lib/sandbox-file-download.ts";
 import { apiClient$ } from "../api-client.ts";
 import { authenticatedSessionKey$ } from "../auth.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { onRejection, resetSignal, tapError, withCleanup } from "../utils.ts";
 import { currentRunId$ } from "./activity-signals.ts";
 
@@ -97,8 +95,7 @@ function createDownloadGraph() {
       get(generation$) === job.generation &&
       get(mounted$) &&
       get(currentRunId$) === job.runId &&
-      get(authenticatedSessionKey$) === job.sessionKey &&
-      get(featureSwitch$)[FeatureSwitchKey.OkouDebug]
+      get(authenticatedSessionKey$) === job.sessionKey
     );
   });
   const check$ = command(({ set }, job: DownloadJob, signal: AbortSignal) => {
@@ -387,7 +384,6 @@ export function createSandboxFileDownloadSignals() {
         !identity ||
         identity.runId !== get(currentRunId$) ||
         identity.sessionKey !== get(authenticatedSessionKey$) ||
-        !get(featureSwitch$)[FeatureSwitchKey.OkouDebug] ||
         (job &&
           (get(graph.generation$) !== job.generation ||
             job.runId !== get(currentRunId$) ||

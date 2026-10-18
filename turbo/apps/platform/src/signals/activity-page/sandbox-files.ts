@@ -2,7 +2,6 @@ import { command, computed, state, type Command } from "ccstate";
 import { runsByIdContract } from "@okouai/api-contracts/contracts/run-routes";
 import type { RunStatus } from "@okouai/api-contracts/contracts/runs";
 import type { z } from "zod";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type {
   SandboxChannelPeer,
   SandboxChannelState,
@@ -18,7 +17,6 @@ import { createBrowserSandboxChannelPeer } from "../../lib/sandbox-channel-peer.
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { authenticatedSessionKey$ } from "../auth.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { pageSignal$ } from "../page-signal.ts";
 import {
   bestEffort,
@@ -187,8 +185,7 @@ function createCursorCommands(graph: FilesGraph) {
     return (
       connection === get(graph.connection$) &&
       connection.runId === get(currentRunId$) &&
-      connection.sessionKey === get(authenticatedSessionKey$) &&
-      get(featureSwitch$)[FeatureSwitchKey.OkouDebug]
+      connection.sessionKey === get(authenticatedSessionKey$)
     );
   });
   const current$ = command(({ get, set }, request: ListingRequest) => {
@@ -268,7 +265,6 @@ function createPrepareListingCommand(graph: FilesGraph) {
         !connection ||
         connection.runId !== get(currentRunId$) ||
         connection.peer.state !== "ready" ||
-        !get(featureSwitch$)[FeatureSwitchKey.OkouDebug] ||
         connection.sessionKey !== get(authenticatedSessionKey$)
       ) {
         return null;
@@ -1375,7 +1371,6 @@ function createConnectionCommands(
       if (
         signal.aborted ||
         runId !== get(currentRunId$) ||
-        !get(featureSwitch$)[FeatureSwitchKey.OkouDebug] ||
         !get(graph.ownerKey$) ||
         get(graph.ownerKey$) !== get(authenticatedSessionKey$)
       ) {
@@ -1429,8 +1424,7 @@ function createRunLifecycleCommands(
       get(graph.mounted$) &&
       get(currentRunId$) === runId &&
       get(graph.targetRunId$) === runId &&
-      get(graph.ownerKey$) === get(authenticatedSessionKey$) &&
-      get(featureSwitch$)[FeatureSwitchKey.OkouDebug]
+      get(graph.ownerKey$) === get(authenticatedSessionKey$)
     );
   });
   const stop$ = command(({ set }) => {
@@ -1576,9 +1570,6 @@ function createDemandCommands(
   );
   const mount$ = onRef(
     command(({ get, set }, element: HTMLElement, signal: AbortSignal) => {
-      if (!get(featureSwitch$)[FeatureSwitchKey.OkouDebug]) {
-        return;
-      }
       const sessionKey = get(authenticatedSessionKey$);
       const runId = get(currentRunId$);
       if (!sessionKey || !runId) {
@@ -1616,10 +1607,7 @@ function createDemandCommands(
           set(graph.navigation$, null);
           set(graph.navigationFailure$, null);
           set(graph.directories$, new Map());
-          if (
-            !get(featureSwitch$)[FeatureSwitchKey.OkouDebug] ||
-            sessionKey !== get(authenticatedSessionKey$)
-          ) {
+          if (sessionKey !== get(authenticatedSessionKey$)) {
             set(graph.location$, FILES_HOME_LOCATION);
             set(graph.preferences$, new Map());
             set(graph.locationOwner$, null);
@@ -1636,10 +1624,7 @@ function createDemandCommands(
   );
   const retry$ = command(({ get, set }, signal: AbortSignal): void => {
     signal.throwIfAborted();
-    if (
-      get(graph.mounted$) &&
-      get(featureSwitch$)[FeatureSwitchKey.OkouDebug]
-    ) {
+    if (get(graph.mounted$)) {
       const runId = get(graph.targetRunId$);
       if (runId) {
         set(observation.stop$);
@@ -1676,7 +1661,6 @@ function createFilesDownloadCommand(graph: FilesGraph) {
         get(graph.navigation$) ||
         connection.runId !== get(currentRunId$) ||
         connection.sessionKey !== get(authenticatedSessionKey$) ||
-        !get(featureSwitch$)[FeatureSwitchKey.OkouDebug] ||
         filesDirectoryKey(filesLocationTokens(origin)) !==
           filesDirectoryKey(filesLocationTokens(get(graph.location$)))
       ) {
