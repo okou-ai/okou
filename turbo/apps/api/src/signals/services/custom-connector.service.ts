@@ -86,10 +86,12 @@ import {
 import {
   connectorOwnedSecretWrite,
   connectorOwnedVariableWrite,
+  deleteConnectorCredentialStorageConnection,
 } from "./connector-credential-storage-write.service";
+import { prepareConnectorAccountDeletionWithTargetLocked } from "./connector-account-lifecycle.service";
 import {
-  deleteCustomConnectorMemberConnectionExact,
   customConnectorStorageDeclaration,
+  type CustomConnectorMemberConnectionDeletionResult,
   type PreparedCustomConnectorValue,
 } from "./custom-connector-credential-storage.service";
 import {
@@ -3191,11 +3193,40 @@ export const deleteCustomConnectorAccount$ = command(
         ) {
           return { kind: "managed" as const };
         }
-        return await deleteCustomConnectorMemberConnectionExact(
-          tx,
-          args,
-          signal,
-        );
+        const memberDeletionDb = tx;
+        const memberDeletionArgs = args;
+        return await (async (): Promise<CustomConnectorMemberConnectionDeletionResult> => {
+          const deletion =
+            await prepareConnectorAccountDeletionWithTargetLocked(
+              memberDeletionDb,
+              {
+                orgId: memberDeletionArgs.orgId,
+                userId: memberDeletionArgs.userId,
+                target: {
+                  kind: "custom",
+                  customConnectorId: memberDeletionArgs.connectorId,
+                },
+                connectionId: memberDeletionArgs.memberConnectorId,
+              },
+              signal,
+            );
+          signal.throwIfAborted();
+          if (deletion.kind !== "ready") {
+            return deletion;
+          }
+          const lateSelectionCount =
+            await deleteConnectorCredentialStorageConnection(
+              memberDeletionDb,
+              { connectorId: memberDeletionArgs.memberConnectorId },
+              signal,
+            );
+          return {
+            kind: "deleted",
+            resolvedSelectionCount:
+              deletion.resolvedSelectionCount + lateSelectionCount,
+            promotedDefaultConnectionId: deletion.promotedDefaultConnectionId,
+          };
+        })();
       },
       { isolationLevel: "read committed" },
     );

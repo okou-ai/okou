@@ -32,7 +32,7 @@ import {
   publishCustomConnectorOrganizationInvalidationAfterCommit,
   type CapturedConnectorClientInvalidationAbort,
 } from "./connector-client-invalidation.service";
-import { deleteCustomConnectorMemberConnectionById } from "./custom-connector-credential-storage.service";
+import { deleteConnectorCredentialStorageConnection } from "./connector-credential-storage-write.service";
 import { prepareCustomConnectorSkillVolume$ } from "./custom-connector-skill-volume.service";
 import {
   FEISHU_CUSTOM_CONNECTOR_SKILL_METADATA,
@@ -904,15 +904,17 @@ export function feishuOAuthCredentialReadPlan(args: {
   };
 }
 
+interface DisconnectFeishuCustomConnectorOAuthConnectionArgs {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly installationId: string;
+  readonly memberConnectorId?: string | null;
+  readonly feishuOpenId?: string;
+}
+
 export async function disconnectFeishuCustomConnectorOAuthConnection(
   db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly installationId: string;
-    readonly memberConnectorId?: string | null;
-    readonly feishuOpenId?: string;
-  },
+  args: DisconnectFeishuCustomConnectorOAuthConnectionArgs,
   signal: AbortSignal,
 ): Promise<void> {
   const [installation] = await db
@@ -1000,14 +1002,36 @@ export async function disconnectFeishuCustomConnectorOAuthConnection(
   if (!memberConnectorId) {
     return;
   }
-  await deleteCustomConnectorMemberConnectionById(
-    db,
-    {
-      connectorId: installation.customConnectorId,
-      memberConnectorId,
-      orgId: args.orgId,
-      userId: args.userId,
-    },
-    signal,
-  );
+  const memberDeletionDb = db;
+  const memberDeletionArgs = {
+    connectorId: installation.customConnectorId,
+    memberConnectorId,
+    orgId: args.orgId,
+    userId: args.userId,
+  };
+  await (async (): Promise<boolean> => {
+    const [connection] = await memberDeletionDb
+      .select({ id: connectors.id })
+      .from(connectors)
+      .where(
+        and(
+          eq(connectors.customConnectorId, memberDeletionArgs.connectorId),
+          eq(connectors.id, memberDeletionArgs.memberConnectorId),
+          eq(connectors.userId, memberDeletionArgs.userId),
+          eq(connectors.orgId, memberDeletionArgs.orgId),
+        ),
+      )
+      .for("update")
+      .limit(1);
+    signal.throwIfAborted();
+    if (!connection) {
+      return false;
+    }
+    await deleteConnectorCredentialStorageConnection(
+      memberDeletionDb,
+      { connectorId: connection.id },
+      signal,
+    );
+    return true;
+  })();
 }
