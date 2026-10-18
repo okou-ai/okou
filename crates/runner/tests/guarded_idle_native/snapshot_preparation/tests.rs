@@ -159,26 +159,33 @@ fn changed_creation_inputs_cannot_publish_a_record() -> TestResult<()> {
 
 #[test]
 fn incomplete_invalid_or_symlinked_outputs_do_not_publish() -> TestResult<()> {
-    for invalid in ["missing", "marker", "directory", "symlink"] {
+    #[derive(Debug)]
+    enum InvalidOutput {
+        Missing,
+        Marker,
+        Directory,
+        Symlink,
+    }
+    use InvalidOutput::*;
+    for invalid in [Missing, Marker, Directory, Symlink] {
         let fixture = Fixture::new()?;
         let creation = fixture.capture()?;
         fixture.output()?;
         let output = SnapshotOutputPaths::new(fixture.config.output_dir.clone());
         match invalid {
-            "missing" => std::fs::remove_file(output.memory())?,
-            "marker" => std::fs::write(output.complete_marker(), b"snapshot-complete-v1\n")?,
-            "directory" => {
+            Missing => std::fs::remove_file(output.memory())?,
+            Marker => std::fs::write(output.complete_marker(), b"snapshot-complete-v1\n")?,
+            Directory => {
                 std::fs::remove_file(output.cow())?;
                 std::fs::create_dir(output.cow())?;
             }
-            "symlink" => {
+            Symlink => {
                 std::fs::remove_file(output.memory())?;
                 std::os::unix::fs::symlink(output.snapshot(), output.memory())?;
             }
-            _ => unreachable!(),
         }
-        assert!(creation.publish().is_err(), "{invalid}");
-        assert!(!fixture.record().exists(), "{invalid}");
+        assert!(creation.publish().is_err(), "{invalid:?}");
+        assert!(!fixture.record().exists(), "{invalid:?}");
     }
     Ok(())
 }
