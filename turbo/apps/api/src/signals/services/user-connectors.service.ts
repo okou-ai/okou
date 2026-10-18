@@ -111,48 +111,16 @@ function grantAgentCondition(args: {
   );
 }
 
-async function lockAgentForConnectorReplace(
-  db: Pick<Db, "select">,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly agentId: string;
-  },
-): Promise<boolean> {
-  const [agent] = await db
-    .select({ id: agents.id })
-    .from(agents)
-    .where(grantAgentCondition(args))
-    .for("update")
-    .limit(1);
-  return agent !== undefined;
-}
-
-async function grantAgentVisible(
-  db: Pick<Db, "select">,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly agentId: string;
-  },
-): Promise<boolean> {
-  const [agent] = await db
-    .select({ id: agents.id })
-    .from(agents)
-    .where(grantAgentCondition(args))
-    .limit(1);
-  return agent !== undefined;
-}
-
-export async function lockUserCustomConnectorGrantScope(
-  db: Pick<Db, "select">,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly agentId: string;
-  },
-): Promise<boolean> {
-  return await lockAgentForConnectorReplace(db, args);
+export function userCustomConnectorGrantAgentReadPlan(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly agentId: string;
+}) {
+  return {
+    columns: { id: agents.id },
+    from: agents,
+    where: grantAgentCondition(args),
+  };
 }
 
 interface CustomConnectorDefinitionRow {
@@ -631,7 +599,19 @@ async function persistUserCustomConnectors(args: {
   readonly operation: UserCustomConnectorUpdateOperation;
   readonly readsConnectorCatalog: boolean;
 }): Promise<UserCustomConnectorUpdateOutcome> {
-  if (!(await grantAgentVisible(args.db, args.request))) {
+  const grantDb = args.db;
+  const grantScope = args.request;
+  if (
+    !(await (async () => {
+      const plan = userCustomConnectorGrantAgentReadPlan(grantScope);
+      const [agent] = await grantDb
+        .select(plan.columns)
+        .from(plan.from)
+        .where(plan.where)
+        .limit(1);
+      return agent !== undefined;
+    })())
+  ) {
     return { result: { status: "agentNotFound" }, changedConnectorIds: [] };
   }
   const previousRows = await args.db
