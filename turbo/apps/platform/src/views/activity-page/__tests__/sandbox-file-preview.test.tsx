@@ -143,6 +143,23 @@ test.each(["page.html", "image.svg"])(
   },
 );
 
+test("Embedded HTML in Markdown stays readable without creating an executing frame", async () => {
+  const html =
+    '<iframe srcdoc="<img src=invalid onerror=parent.__sandboxPreviewExecuted=true>"></iframe>';
+  await setupFilesPage(context, {
+    handler: previewGuest({
+      "untrusted.md": textBytes("# Safe Markdown\n\n" + html),
+    }),
+  });
+  await openFiles();
+  const dialog = await openPreview("untrusted.md");
+  await expect(
+    within(dialog).findByText("Safe Markdown"),
+  ).resolves.toBeInTheDocument();
+  await expect(within(dialog).findByText(html)).resolves.toBeInTheDocument();
+  expect(dialog.querySelector("iframe, embed, object, script, img")).toBeNull();
+});
+
 test.each([
   ["deep", "[".repeat(10_000) + "0" + "]".repeat(10_000)],
   [
