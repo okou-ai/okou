@@ -3011,6 +3011,21 @@ async function requireOrgBillingRecord(
   );
 }
 
+function throwUsagePackOrgBillingMismatch(
+  org: { readonly orgId: string } | undefined,
+  orgId: string,
+  subscription: UsagePackSubscriptionRow,
+): never {
+  if (org) {
+    throw new DuplicateUsagePackEntitlement(
+      `Organization ${orgId} entitlement belongs to another live subscription`,
+    );
+  }
+  throw new Error(
+    `Usage pack subscription ${subscription.id} has no matching organization billing record`,
+  );
+}
+
 const commitUsagePackPlanActivation$ = command(
   async (
     { set },
@@ -3099,7 +3114,21 @@ const commitUsagePackPlanActivation$ = command(
           )
           .returning({ orgId: orgMetadata.orgId });
         if (orgRows.length !== 1) {
-          await requireOrgBillingRecord(tx, orgId, subscription);
+          await (async (): Promise<never> => {
+            const [org] = await tx
+              .select({ orgId: orgMetadata.orgId })
+              .from(orgMetadata)
+              .where(
+                and(
+                  eq(orgMetadata.orgId, orgId),
+                  eq(
+                    orgMetadata.stripeCustomerId,
+                    subscription.stripeCustomerId,
+                  ),
+                ),
+              );
+            return throwUsagePackOrgBillingMismatch(org, orgId, subscription);
+          })();
         }
         const [owner] = await tx
           .select({ orgId: orgPlanEntitlements.orgId })
