@@ -2,6 +2,7 @@ import { useGet, useLoadable, useSet } from "ccstate-react";
 import { KerberosConnectionFields } from "./vnc-kerberos-fields.tsx";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
+import type { ReactNode } from "react";
 import {
   Button,
   Dialog,
@@ -19,6 +20,7 @@ import {
   vncCredentials$,
   vncDialog$,
   vncEditor$,
+  vncProfile$,
   vncCredentialMatchesProfile,
   isVncReviewableConflict,
   vncSaveMessage$,
@@ -284,27 +286,26 @@ function VncFormActions({
   );
 }
 
-function VncForm({
-  dialog,
-  saving,
-  save,
-}: {
+interface VncFormProps {
   readonly dialog: VncDialogState;
   readonly saving: boolean;
   readonly save: (form: HTMLFormElement, signal: AbortSignal) => Promise<void>;
-}) {
+}
+
+function VncFormBoundary({
+  dialog,
+  saving,
+  save,
+  children,
+}: VncFormProps & { readonly children: ReactNode }) {
   const uncertain = useGet(vncSaveUncertain$);
   const conflict = useGet(vncConflict$);
   const mount = useSet(mountVncForm$);
-  const editor = useGet(vncEditor$);
-  const { t } = useTranslation();
   const signal = useGet(pageSignal$);
   const blocked = useSaveBlocked(dialog);
   const { title } = useDialogCopy(dialog.kind);
-  const hostEditor = dialog.kind === "create" || dialog.kind === "edit";
   const destructive =
     dialog.kind === "delete" || dialog.kind === "delete-credential";
-  const disabled = saving || uncertain || conflict;
   return (
     <form
       ref={mount}
@@ -318,6 +319,28 @@ function VncForm({
         }
       }}
     >
+      {children}
+      <VncFormActions
+        saving={saving}
+        blocked={blocked}
+        destructive={destructive}
+        title={title}
+      />
+    </form>
+  );
+}
+
+function VncForm({ dialog, saving, save }: VncFormProps) {
+  const uncertain = useGet(vncSaveUncertain$);
+  const conflict = useGet(vncConflict$);
+  const profile = useGet(vncProfile$);
+  const { t } = useTranslation();
+  const hostEditor = dialog.kind === "create" || dialog.kind === "edit";
+  const destructive =
+    dialog.kind === "delete" || dialog.kind === "delete-credential";
+  const disabled = saving || uncertain || conflict;
+  return (
+    <VncFormBoundary dialog={dialog} saving={saving} save={save}>
       <DialogBody className="grid gap-4">
         {!destructive && (
           <fieldset disabled={disabled} className="grid min-w-0 gap-5">
@@ -331,7 +354,7 @@ function VncForm({
                   </legend>
                   <VncDisplayNameField connection={dialog.connection} />
                   <VncSecurityProfileField
-                    profile={editor.profile}
+                    profile={profile}
                     disabled={disabled}
                   />
                   <VncTransportFields disabled={disabled} />
@@ -342,7 +365,7 @@ function VncForm({
                     disabled={disabled}
                   />
                 </fieldset>
-                {editor.profile !== "x509_none" && (
+                {profile !== "x509_none" && (
                   <VncCredentialSelection disabled={disabled} />
                 )}
               </>
@@ -366,13 +389,7 @@ function VncForm({
         <VncSaveNotice saving={saving} dialog={dialog} />
         <VncConflictReview dialog={dialog} />
       </DialogBody>
-      <VncFormActions
-        saving={saving}
-        blocked={blocked}
-        destructive={destructive}
-        title={title}
-      />
-    </form>
+    </VncFormBoundary>
   );
 }
 

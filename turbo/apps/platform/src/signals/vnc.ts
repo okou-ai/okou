@@ -460,6 +460,9 @@ export const vncDialog$ = computed(async (get) => {
 export const vncEditor$ = computed((get) => {
   return get(editor$);
 });
+export const vncProfile$ = computed((get) => {
+  return get(editor$).profile;
+});
 export const vncSaveUncertain$ = computed((get) => {
   return get(uncertain$);
 });

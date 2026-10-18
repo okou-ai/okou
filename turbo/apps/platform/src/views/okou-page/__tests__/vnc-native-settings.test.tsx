@@ -368,7 +368,9 @@ test("Mac Cloudflare setup requires independently named origin TLS and keeps the
     "mac-origin.example.com",
   );
   await choose(dialog, "Security profile", "Mac VNC (classic VNC password)");
+  expect(getAction("button", "Save", dialog)).toBeDisabled();
   await choose(dialog, "Credential", credential.name);
+  expect(getAction("button", "Save", dialog)).toBeEnabled();
   await fill(within(dialog).getByLabelText("Display name"), "Native Mac");
   await fill(
     within(dialog).getByLabelText("RFB destination host"),
