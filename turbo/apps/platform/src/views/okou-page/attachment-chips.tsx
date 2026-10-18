@@ -1,13 +1,10 @@
-import type { ReactNode } from "react";
-import { ArtifactDiagramLightbox } from "../components/artifact-diagram-lightbox.tsx";
 import {
-  PreserveScrollAnchor,
-  Button,
-  Dialog,
-  DialogBody,
-  DialogContent,
-  cn,
-} from "@okouai/ui";
+  ArtifactPreviewCloseButton,
+  ArtifactPreviewDialogFrame,
+  DialogIconButton,
+} from "./artifact-preview-dialog-frame.tsx";
+import type { ReactNode } from "react";
+import { Button, DialogBody, cn } from "@okouai/ui";
 import {
   useGet,
   useLastLoadable,
@@ -43,8 +40,6 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import {
   connectorConnectionProgressActive$,
-  cancelConnectorConnection$,
-  connectorConnectionAttempt$,
   registerConnectorConnectionDialog$,
 } from "../../signals/connector-connection-progress.ts";
 import { ConnectorConnectionStatus } from "../components/connector-connection-dialog-body.tsx";
@@ -60,15 +55,10 @@ import { ArtifactMarkdownDocument } from "../components/artifact-markdown-docume
 import {
   attachmentSidebarRef,
   attachmentLightboxImageCanvasSignals,
-  attachmentDiagramPreview,
   lightboxUrl$,
   closeLightboxImmediately$,
   closeLightboxWithDialogExit$,
   lightboxDialogFullscreen$,
-  lightboxDialogVisible$,
-  lightboxDialogMountRef$,
-  completeLightboxDialogExit$,
-  lightboxDialogInitialFocus$,
   navigateImageLightbox$,
   openAudioLightbox$,
   openDocumentLightbox$,
@@ -80,7 +70,6 @@ import {
 } from "../../signals/okou-page/attachment-chips.ts";
 import { openThreadArtifactSplitView$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { ArtifactImageNavigationRegion } from "./artifact-image-navigation-region.tsx";
-import { closeArtifactCatalogPreview$ } from "../../signals/artifacts-page/artifact-catalog-signals.ts";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import {
   artifactPreviewUrlsMatch,
@@ -241,31 +230,6 @@ export function CsvPreviewTable({ rows }: { rows: string[][] }) {
         </tbody>
       </table>
     </div>
-  );
-}
-
-function DialogIconButton({
-  ariaLabel,
-  children,
-  onClick,
-}: {
-  ariaLabel: string;
-  children: ReactNode;
-  onClick: () => void;
-}) {
-  return (
-    <Button
-      showTooltip
-      type="button"
-      onClick={onClick}
-      variant="quiet"
-      size="icon-sm"
-      className="shrink-0"
-      aria-label={ariaLabel}
-      title={ariaLabel}
-    >
-      {children}
-    </Button>
   );
 }
 
@@ -1270,32 +1234,6 @@ function ArtifactPreviewDialogThreadResolver({
   );
 }
 
-function useCloseArtifactPreview() {
-  const rootSignal = useGet(rootSignal$);
-  const closeArtifactCatalogPreview = useSet(closeArtifactCatalogPreview$);
-  const cancelConnection = useSet(cancelConnectorConnection$);
-  const connectionAttempt = useGet(connectorConnectionAttempt$);
-  return () => {
-    cancelConnection(connectionAttempt);
-    closeArtifactCatalogPreview(rootSignal);
-  };
-}
-
-function ArtifactPreviewCloseButton() {
-  const { t } = useTranslation();
-  const close = useCloseArtifactPreview();
-  return (
-    <DialogIconButton
-      ariaLabel={t(($) => {
-        return $.artifacts.actions.close;
-      })}
-      onClick={close}
-    >
-      <X size={18} />
-    </DialogIconButton>
-  );
-}
-
 function ArtifactPreviewDialogActions({
   artifact,
   fullscreen,
@@ -1388,6 +1326,54 @@ function ArtifactPreviewDialogActions({
   );
 }
 
+function ArtifactPreviewDialogHeaderActions({
+  artifact,
+  preview,
+}: {
+  artifact: AttachmentArtifactMetadata | undefined;
+  preview: AttachmentLightboxState;
+}) {
+  const connectionProgressActive = useGet(connectorConnectionProgressActive$);
+  const fullscreen = useGet(lightboxDialogFullscreen$);
+
+  return connectionProgressActive ? (
+    <ArtifactPreviewCloseButton />
+  ) : (
+    <ArtifactPreviewDialogActions
+      artifact={artifact}
+      fullscreen={fullscreen}
+      preview={preview}
+    />
+  );
+}
+
+function ArtifactPreviewDialogBody({
+  artifact,
+  imageNavigation,
+  preview,
+}: {
+  artifact: AttachmentArtifactMetadata | undefined;
+  imageNavigation?: ArtifactImageNavigationActions;
+  preview: AttachmentLightboxState;
+}) {
+  const connectionProgressActive = useGet(connectorConnectionProgressActive$);
+  const fullscreen = useGet(lightboxDialogFullscreen$);
+
+  return connectionProgressActive ? (
+    <div className="flex h-full items-center justify-center p-6">
+      <ConnectorConnectionStatus />
+    </div>
+  ) : (
+    <ArtifactPreviewBody
+      artifact={artifact}
+      fullscreen={fullscreen}
+      imageCanvasSignals={attachmentLightboxImageCanvasSignals}
+      imageNavigation={imageNavigation}
+      preview={preview}
+    />
+  );
+}
+
 function ArtifactPreviewDialogContent({
   artifact,
   imageNavigation,
@@ -1398,111 +1384,49 @@ function ArtifactPreviewDialogContent({
   preview: AttachmentLightboxState;
 }) {
   const { t } = useTranslation();
-  const dialogMountRef = useSet(lightboxDialogMountRef$);
-  const initialFocus = useSet(lightboxDialogInitialFocus$);
-  const completeDialogExit = useSet(completeLightboxDialogExit$);
   const registerConnectionDialog = useSet(registerConnectorConnectionDialog$);
-  const connectionProgressActive = useGet(connectorConnectionProgressActive$);
-  const closeWithAnimation = useCloseArtifactPreview();
   const filename = artifact?.filename ?? artifactDialogFilename(preview);
   const subtitle = artifactDialogKindLabel(preview, artifact);
   const titleLink = artifact ? artifactTitleLink(preview.kind, artifact) : null;
-  const visible = useGet(lightboxDialogVisible$);
-  const fullscreen = useGet(lightboxDialogFullscreen$);
 
   return (
-    <Dialog
-      open={visible}
-      onOpenChangeComplete={completeDialogExit}
-      onOpenChange={(nextOpen, details) => {
-        if (
-          !nextOpen &&
-          connectionProgressActive &&
-          details.reason === "outside-press"
-        ) {
-          details.cancel();
-          return;
-        }
-        if (!nextOpen && visible) {
-          closeWithAnimation();
-        }
-      }}
+    <ArtifactPreviewDialogFrame
+      ariaLabel={t(
+        ($) => {
+          return $.artifacts.preview.dialogLabel;
+        },
+        { filename },
+      )}
+      kind={preview.kind}
     >
-      <DialogContent
-        ref={dialogMountRef}
-        initialFocus={initialFocus}
-        showCloseButton={false}
-        // The backdrop is fixed, so a standalone PWA clips it above the bottom
-        // safe inset; extending `bottom` keeps it covering the screen edge.
-        overlayClassName="[@media(display-mode:standalone)]:-bottom-safe bg-gray-900/45 dark:bg-gray-900/45"
-        maxWidth={1440}
-        height={1000}
-        surface="canvas"
-        mode={fullscreen ? "fullscreen" : "windowed"}
-        contentClassName="flex flex-col gap-0 overflow-hidden bg-background p-0"
-        aria-label={t(
-          ($) => {
-            return $.artifacts.preview.dialogLabel;
-          },
-          { filename },
-        )}
-        data-testid="attachment-lightbox"
+      <div
+        ref={registerConnectionDialog}
+        className="relative flex min-h-0 flex-1 flex-col overflow-hidden text-foreground"
+        data-testid="attachment-lightbox-panel"
       >
-        <PreserveScrollAnchor
-          layoutKey={fullscreen}
-          anchor={
-            preview.kind === "markdown"
-              ? {
-                  viewportSelector: '[data-testid="artifact-dialog-stage"]',
-                  anchorSelector: "h1, h2, h3, h4, h5, h6, p, pre, li, tr",
-                }
-              : undefined
-          }
-        >
-          <div
-            ref={registerConnectionDialog}
-            className="relative flex min-h-0 flex-1 flex-col overflow-hidden text-foreground"
-            data-testid="attachment-lightbox-panel"
-          >
-            <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border/70 pl-4 pr-3">
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium">
-                  <ArtifactTitle filename={filename} link={titleLink} />
-                </div>
-                <div className="truncate text-xs text-muted-foreground">
-                  {subtitle}
-                </div>
-              </div>
-              {connectionProgressActive ? (
-                <ArtifactPreviewCloseButton />
-              ) : (
-                <ArtifactPreviewDialogActions
-                  artifact={artifact}
-                  fullscreen={fullscreen}
-                  preview={preview}
-                />
-              )}
+        <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border/70 pl-4 pr-3">
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-medium">
+              <ArtifactTitle filename={filename} link={titleLink} />
             </div>
-            <DialogBody className="overflow-hidden bg-background">
-              {connectionProgressActive ? (
-                <div className="flex h-full items-center justify-center p-6">
-                  <ConnectorConnectionStatus />
-                </div>
-              ) : (
-                <ArtifactPreviewBody
-                  artifact={artifact}
-                  fullscreen={fullscreen}
-                  imageCanvasSignals={attachmentLightboxImageCanvasSignals}
-                  imageNavigation={imageNavigation}
-                  preview={preview}
-                />
-              )}
-            </DialogBody>
+            <div className="truncate text-xs text-muted-foreground">
+              {subtitle}
+            </div>
           </div>
-        </PreserveScrollAnchor>
-      </DialogContent>
-      <ArtifactDiagramLightbox signals={attachmentDiagramPreview} />
-    </Dialog>
+          <ArtifactPreviewDialogHeaderActions
+            artifact={artifact}
+            preview={preview}
+          />
+        </div>
+        <DialogBody className="overflow-hidden bg-background">
+          <ArtifactPreviewDialogBody
+            artifact={artifact}
+            imageNavigation={imageNavigation}
+            preview={preview}
+          />
+        </DialogBody>
+      </div>
+    </ArtifactPreviewDialogFrame>
   );
 }
 
