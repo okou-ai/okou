@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 import type { Plugin } from "vite";
 
 export const DOWNLOAD_WORKER_ASSET_PATTERN =
-  /^assets\/sandbox-file-download-v1-[a-f0-9]{64}\.js$/u;
+  /^assets\/sandbox-file-download-[a-f0-9]{64}\.js$/u;
 
 /** Keep the browser-resident script immutable and available to old App pages. */
 export async function sandboxFileDownloadWorkerAsset() {
@@ -19,7 +19,7 @@ export async function sandboxFileDownloadWorkerAsset() {
     await writeFile(
       script,
       await readFile(
-        new URL("../public/sandbox-file-download-v1-sw.js", import.meta.url),
+        new URL("../public/sandbox-file-download-sw.js", import.meta.url),
       ),
     );
     // Finalize the same debug-ID transformation used by publication before
@@ -37,7 +37,7 @@ export async function sandboxFileDownloadWorkerAsset() {
     await rm(root, { recursive: true, force: true });
   }
   const digest = createHash("sha256").update(source).digest("hex");
-  const fileName = `assets/sandbox-file-download-v1-${digest}.js`;
+  const fileName = `assets/sandbox-file-download-${digest}.js`;
   return {
     path: `/okou-app/${fileName}`,
     plugin: {

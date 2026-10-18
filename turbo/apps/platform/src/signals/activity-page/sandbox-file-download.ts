@@ -231,7 +231,7 @@ function createStreamCommand(graph: DownloadGraph) {
         // MessagePort traffic alone lets Firefox retire an actively streaming
         // worker. A real chunk also dispatches a worker event; its no-port
         // message grants no authority and does not reset the worker idle timer.
-        worker.postMessage({ type: "progress", version: 1, id: bridge.id });
+        worker.postMessage({ type: "progress", id: bridge.id });
         bridge.chunk(offset.toString(), bytes, final);
         source.complete = final;
         source.handedOff = final;

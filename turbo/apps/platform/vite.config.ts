@@ -62,7 +62,7 @@ export default defineConfig(({ command }) => ({
     __OKOU_FILE_DOWNLOAD_WORKER_PATH__: JSON.stringify(
       command === "build"
         ? downloadWorker.path
-        : "/sandbox-file-download-v1-sw.js",
+        : "/sandbox-file-download-sw.js",
     ),
   },
   experimental: {

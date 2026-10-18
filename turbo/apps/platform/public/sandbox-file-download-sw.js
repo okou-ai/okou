@@ -1,6 +1,6 @@
 // A first-party, narrowly scoped attachment sink. File authority stays in WSS.
 // Build finalizes debug IDs before naming the immutable published script.
-const PREFIX = "/sandbox-file-downloads/v1/";
+const PREFIX = "/sandbox-file-downloads/";
 const CHUNK_BYTES = 32_768;
 const IDLE_MS = 30_000;
 const pending = new Map();
@@ -60,8 +60,7 @@ function isPreparation(data, source) {
     !data ||
     typeof data !== "object" ||
     Array.isArray(data) ||
-    data.type !== "prepare" ||
-    data.version !== 1
+    data.type !== "prepare"
   );
 }
 
@@ -79,7 +78,7 @@ self.addEventListener("message", (event) => {
   }
   if (
     event.ports.length !== 1 ||
-    Object.keys(data).length !== 5 ||
+    Object.keys(data).length !== 4 ||
     typeof data.id !== "string" ||
     !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
       data.id,
@@ -158,7 +157,7 @@ self.addEventListener("message", (event) => {
     pull.resolve();
   });
   port.start();
-  port.postMessage({ type: "ready", version: 1, id: entry.id });
+  port.postMessage({ type: "ready", id: entry.id });
 });
 
 self.addEventListener("fetch", (event) => {

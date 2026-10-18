@@ -10,12 +10,11 @@ import {
 } from "../signals/utils.ts";
 
 const SCRIPT = __OKOU_FILE_DOWNLOAD_WORKER_PATH__;
-const SCOPE = "/sandbox-file-downloads/v1/";
+const SCOPE = "/sandbox-file-downloads/";
 const IDLE_MS = 30_000;
 const messageSchema = z.discriminatedUnion("type", [
   z.strictObject({
     type: z.literal("ready"),
-    version: z.literal(1),
     id: z.uuid(),
   }),
   z.strictObject({
@@ -124,10 +123,9 @@ export class SandboxFileDownload {
     name: string,
   ): Promise<string> {
     this.signal.throwIfAborted();
-    worker.postMessage(
-      { type: "prepare", version: 1, id: this.id, size, name },
-      [this.channel.port2],
-    );
+    worker.postMessage({ type: "prepare", id: this.id, size, name }, [
+      this.channel.port2,
+    ]);
     const result = await this.next();
     this.signal.throwIfAborted();
     if (this.failure || this.closed) {

@@ -31,7 +31,7 @@ async function main() {
     "../../../turbo/apps/platform/dist/assets",
   );
   const workers = (await readdir(assets)).filter((name) =>
-    /^sandbox-file-download-v1-[a-f0-9]{64}\.js$/u.test(name),
+    /^sandbox-file-download-[a-f0-9]{64}\.js$/u.test(name),
   );
   assert.equal(
     workers.length,
@@ -44,10 +44,10 @@ async function main() {
   const notificationWorker = await readFile(
     path.resolve(__dirname, "../../../turbo/apps/platform/public/sw.js"),
   );
-  const prefix = "/sandbox-file-downloads/v1/";
+  const prefix = "/sandbox-file-downloads/";
   assert.equal(
     workerFile,
-    `sandbox-file-download-v1-${createHash("sha256").update(worker).digest("hex")}.js`,
+    `sandbox-file-download-${createHash("sha256").update(worker).digest("hex")}.js`,
   );
   const scriptPath = `/okou-app/assets/${workerFile}`;
   const html = `<!doctype html><meta charset="utf-8"><title>Streaming download fixture</title><script>
@@ -69,7 +69,7 @@ window.probe = {
       for (let i = 0; i < bytes.length; i++) bytes[i] = (Number(message.offset) + i) % 251;
       this.produced += bytes.length;
       // Match the page's progress-triggered worker event, not a periodic ping.
-      worker.postMessage({type: 'progress', version: 1, id});
+      worker.postMessage({type: 'progress', id});
       channel.port1.postMessage({type: 'chunk', offset: message.offset, data: bytes.buffer, final: this.produced === size}, [bytes.buffer]);
     };
     channel.port1.onmessage = (event) => {
@@ -93,7 +93,7 @@ window.probe = {
       }
     };
     channel.port1.start();
-    worker.postMessage({type: 'prepare', version: 1, id, size: String(size), name: 'report-汉字.bin'}, [channel.port2]);
+    worker.postMessage({type: 'prepare', id, size: String(size), name: 'report-汉字.bin'}, [channel.port2]);
     await ready.promise;
     const frame = document.createElement('iframe');
     frame.referrerPolicy = 'no-referrer';

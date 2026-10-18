@@ -1636,7 +1636,7 @@ assert.equal(
   "public, max-age=31536000, immutable",
 );
 
-const downloadWorkerPath = `/okou-app/assets/sandbox-file-download-v1-${"a".repeat(64)}.js`;
+const downloadWorkerPath = `/okou-app/assets/sandbox-file-download-${"a".repeat(64)}.js`;
 const downloadWorkerScript = await worker.fetch(
   new Request(`https://app.okou.ai${downloadWorkerPath}`),
   assetEnvironment(),
@@ -1646,7 +1646,7 @@ assert.equal(await downloadWorkerScript.text(), "export const worker = true;");
 assert.equal(observedR2Key, downloadWorkerPath.slice(1));
 assert.equal(
   downloadWorkerScript.headers.get("Service-Worker-Allowed"),
-  "/sandbox-file-downloads/v1/",
+  "/sandbox-file-downloads/",
 );
 assert.equal(
   downloadWorkerScript.headers.get("Content-Type"),

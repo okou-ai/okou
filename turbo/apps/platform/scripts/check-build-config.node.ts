@@ -58,7 +58,7 @@ await test("canonical sourcemap injection preserves content-addressed download w
     const source = await readFile(worker);
     assert.equal(
       path.basename(worker),
-      `sandbox-file-download-v1-${createHash("sha256").update(source).digest("hex")}.js`,
+      `sandbox-file-download-${createHash("sha256").update(source).digest("hex")}.js`,
     );
     assert.match(source.toString(), /_sentryDebugIds/u);
     const app = path.join(output, "app.js");

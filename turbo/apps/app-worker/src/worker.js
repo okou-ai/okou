@@ -823,12 +823,12 @@ function withAppHeaders(response, requestUrl) {
     headers.set("Cache-Control", "public, max-age=0, must-revalidate");
     headers.set("Service-Worker-Allowed", "/");
   } else if (
-    /^\/okou-app\/assets\/sandbox-file-download-v1-[a-f0-9]{64}\.js$/u.test(
+    /^\/okou-app\/assets\/sandbox-file-download-[a-f0-9]{64}\.js$/u.test(
       requestUrl.pathname,
     ) &&
     (response.ok || response.status === 304)
   ) {
-    headers.set("Service-Worker-Allowed", "/sandbox-file-downloads/v1/");
+    headers.set("Service-Worker-Allowed", "/sandbox-file-downloads/");
   } else if (requestUrl.pathname === "/robots.txt") {
     headers.set("Cache-Control", "public, max-age=3600, must-revalidate");
   } else if (

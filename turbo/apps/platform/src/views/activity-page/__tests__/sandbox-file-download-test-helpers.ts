@@ -29,13 +29,13 @@ export async function downloadBrowser(
     readonly holdWrite?: boolean;
     readonly holdNavigation?: boolean;
     readonly registration?: Promise<void>;
-    readonly oldWorker?: boolean;
+    readonly staleWorker?: boolean;
   } = {},
 ) {
   const source = await readFile(
     path.resolve(
       import.meta.dirname,
-      "../../../../public/sandbox-file-download-v1-sw.js",
+      "../../../../public/sandbox-file-download-sw.js",
     ),
     "utf8",
   );
@@ -54,7 +54,7 @@ export async function downloadBrowser(
   vi.stubGlobal("MessagePort", NativeMessagePort);
   runInNewContext(source, {
     self: {
-      location: new URL("https://app.okou.ai/sandbox-file-download-v1-sw.js"),
+      location: new URL("https://app.okou.ai/sandbox-file-download-sw.js"),
       setTimeout: globalThis.setTimeout,
       clearTimeout: globalThis.clearTimeout,
       addEventListener(type: string, listener: (event: unknown) => void) {
@@ -75,7 +75,9 @@ export async function downloadBrowser(
   vi.stubGlobal("isSecureContext", true);
   const worker = Object.assign(new EventTarget(), {
     state: "activated",
-    scriptURL: "https://app.okou.ai/sandbox-file-download-v1-sw.js",
+    scriptURL: options.staleWorker
+      ? "https://app.okou.ai/sandbox-file-download-stale-sw.js"
+      : "https://app.okou.ai/sandbox-file-download-sw.js",
     postMessage(data: unknown, transfer: Transferable[] = []) {
       const transferred = structuredClone(
         { data, ports: transfer },
@@ -97,26 +99,21 @@ export async function downloadBrowser(
       if (!(port instanceof NativeMessagePort)) {
         throw new Error("Expected a transferred MessagePort");
       }
-      if (options.oldWorker) {
-        port.postMessage({ type: "error", code: "updateRequired" });
-        port.close();
-      } else {
-        listeners.get("message")?.({
-          data: transferred.data,
-          ports: [port],
-          source: {
-            type: "window",
-            id: "page",
-            url: "https://app.okou.ai/activities/run",
-          },
-        });
-      }
+      listeners.get("message")?.({
+        data: transferred.data,
+        ports: [port],
+        source: {
+          type: "window",
+          id: "page",
+          url: "https://app.okou.ai/activities/run",
+        },
+      });
     },
   });
   let registrations = 0;
   Object.assign(navigator.serviceWorker, {
     async register(script: string) {
-      if (script !== "/sandbox-file-download-v1-sw.js") {
+      if (script !== "/sandbox-file-download-sw.js") {
         return { active: null };
       }
       if (!registered.settled()) {
@@ -206,7 +203,7 @@ export async function downloadBrowser(
   const seen = new Set<string>();
   const observer = new MutationObserver(() => {
     for (const frame of document.querySelectorAll<HTMLIFrameElement>(
-      'iframe[src*="/sandbox-file-downloads/v1/"]',
+      'iframe[src*="/sandbox-file-downloads/"]',
     )) {
       if (seen.has(frame.src)) {
         continue;

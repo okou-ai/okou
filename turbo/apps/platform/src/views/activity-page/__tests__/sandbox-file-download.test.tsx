@@ -178,7 +178,7 @@ test("A partial preview slice cannot be handed off as a complete download", asyn
     screen.findByText("Download failed. Try again."),
   ).resolves.toBeInTheDocument();
   expect(
-    document.querySelector('iframe[src*="/sandbox-file-downloads/v1/"]'),
+    document.querySelector('iframe[src*="/sandbox-file-downloads/"]'),
   ).toBeNull();
 });
 
@@ -245,7 +245,7 @@ test("A blocked disk keeps WSS demand bounded and attachment URLs are one-use", 
   click(await readyDownload(files));
   await browser.firstChunk;
   const frame = document.querySelector<HTMLIFrameElement>(
-    'iframe[src*="/sandbox-file-downloads/v1/"]',
+    'iframe[src*="/sandbox-file-downloads/"]',
   );
   if (!frame) {
     throw new Error("Download frame missing");
@@ -306,8 +306,8 @@ test("Cancelling an empty download before navigation does not claim browser hand
   expect((await browser.outcome).saved).toBeFalsy();
 });
 
-test("An incompatible resident worker asks the user to refresh", async () => {
-  await downloadBrowser(context, { oldWorker: true });
+test("A resident worker with a different script asks the user to refresh", async () => {
+  await downloadBrowser(context, { staleWorker: true });
   await setupFilesPage(context, { handler: fileGuest(70_003) });
   const files = await openFiles();
   await screen.findByText("report.bin");
@@ -347,7 +347,7 @@ test("Stale worker registration cannot start a late download", async () => {
   });
   expect(screen.getByText(complete)).toBeInTheDocument();
   expect(
-    document.querySelectorAll('iframe[src*="/sandbox-file-downloads/v1/"]'),
+    document.querySelectorAll('iframe[src*="/sandbox-file-downloads/"]'),
   ).toHaveLength(1);
 });
 
