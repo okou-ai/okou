@@ -31,6 +31,7 @@ const config: ScopedCloudflareAccessConfig = Object.freeze({
   revision: 1,
   generation: 1,
   sshHosts: [],
+  vncHosts: [],
   createdAt: timestamp,
   updatedAt: timestamp,
 });
@@ -70,7 +71,7 @@ function expectConversionActionsInOrder(dialog: HTMLElement) {
   expect(actions).toStrictEqual(["Cancel", "Make personal"]);
 }
 
-test("Prepared VNC references retain both roles and prevent personal network deletion", async () => {
+test("VNC references retain both roles and prevent personal network deletion", async () => {
   context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, {
       configs: [

@@ -142,7 +142,10 @@ describe("okou vnc host list", () => {
     const text = output.mock.calls.flat().join("\n");
     expect(text).toContain(blocked.id);
     expect(text).toContain("blocked: needs_rebind");
-    expect(text).toContain("rebind the underlying SSH host");
+    expect(text).toContain(
+      "rebind the saved VNC route or its underlying SSH host",
+    );
+    expect(text).toContain("no automatic Direct fallback");
     expect(text).toContain("explicitly choose Direct");
   });
 

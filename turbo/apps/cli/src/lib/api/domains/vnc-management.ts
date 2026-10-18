@@ -30,7 +30,7 @@ const kdcRouteMetadataSchema = z.union([
     needsRebind: z.literal(true),
   }),
 ]);
-export const vncRouteMetadataSchema = z.union([
+const vncRouteMetadataSchema = z.union([
   ...nonAccessRoutes,
   z.object({
     type: z.literal("cloudflare_access"),

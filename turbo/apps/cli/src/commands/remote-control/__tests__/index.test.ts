@@ -42,6 +42,7 @@ function config(scope: "personal" | "organization" = "personal") {
     generation: 3,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-02T00:00:00.000Z",
+    vncHosts: [],
     sshHosts: [
       {
         id: HOST_ID,
@@ -126,6 +127,7 @@ for (const kind of ["cloudflare-access", "tailscale"] as const) {
             tags: ["tag:work"],
             revision: 7,
             generation: 3,
+            vncHosts: [],
             sshHosts: [{ id: HOST_ID, displayName: "SSH reference" }],
           },
         ],
@@ -144,37 +146,51 @@ for (const kind of ["cloudflare-access", "tailscale"] as const) {
       noCredentials();
     });
 
-    it("preserves VNC roles and protocol identity while stripping nested provider secrets", async () => {
-      server.use(
-        http.get(url, () => {
-          return HttpResponse.json({
-            configs: [
-              {
-                ...config(),
-                vncHosts: [
-                  {
-                    id: HOST_ID,
-                    displayName: "VNC reference",
-                    roles: ["rfb", "kdc"],
-                    credentials,
-                    clientSecret: SECRET,
-                  },
-                ],
-              },
-            ],
-          });
-        }),
-      );
-      await run("list", "--json");
-      const result = JSON.parse(String(log.mock.calls[0]?.[0]));
-      expect(result.configs[0].sshHosts).toEqual([
-        { id: HOST_ID, displayName: "SSH reference" },
-      ]);
-      expect(result.configs[0].vncHosts).toEqual([
-        { id: HOST_ID, displayName: "VNC reference", roles: ["rfb", "kdc"] },
-      ]);
-      noCredentials();
-    });
+    it.each([
+      { label: "empty", ssh: false, roles: [] },
+      { label: "VNC-only", ssh: false, roles: ["rfb"] },
+      { label: "KDC-only", ssh: false, roles: ["kdc"] },
+      { label: "dual-role with SSH", ssh: true, roles: ["rfb", "kdc"] },
+    ])(
+      "preserves canonical $label references while stripping nested provider secrets",
+      async ({ ssh, roles }) => {
+        server.use(
+          http.get(url, () => {
+            const metadata = config();
+            return HttpResponse.json({
+              configs: [
+                {
+                  ...metadata,
+                  sshHosts: ssh ? metadata.sshHosts : [],
+                  vncHosts: roles.length
+                    ? [
+                        {
+                          id: HOST_ID,
+                          displayName: "VNC reference",
+                          roles,
+                          credentials,
+                          clientSecret: SECRET,
+                        },
+                      ]
+                    : [],
+                },
+              ],
+            });
+          }),
+        );
+        await run("list", "--json");
+        const result = JSON.parse(String(log.mock.calls[0]?.[0]));
+        expect(result.configs[0].sshHosts).toEqual(
+          ssh ? [{ id: HOST_ID, displayName: "SSH reference" }] : [],
+        );
+        expect(result.configs[0].vncHosts).toEqual(
+          roles.length
+            ? [{ id: HOST_ID, displayName: "VNC reference", roles }]
+            : [],
+        );
+        noCredentials();
+      },
+    );
 
     it("creates a default UUID using only POST with credentials in the JSON body", async () => {
       const body = {
@@ -196,6 +212,26 @@ for (const kind of ["cloudflare-access", "tailscale"] as const) {
         id: expect.stringMatching(
           /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
         ),
+      });
+      noCredentials();
+    });
+
+    it("preserves an idempotent create acknowledgement without inventing configuration metadata", async () => {
+      const body = {
+        id: ID,
+        name: "Work",
+        credentials,
+        ...(kind === "tailscale" ? { tags: ["tag:work"] } : {}),
+      };
+      server.use(
+        http.post(url, async ({ request }) => {
+          expect(await request.json()).toStrictEqual(body);
+          return new HttpResponse(null, { status: 204 });
+        }),
+      );
+      await run("create", "--input", input(body), "--json");
+      expect(JSON.parse(String(log.mock.calls[0]?.[0]))).toStrictEqual({
+        id: ID,
       });
       noCredentials();
     });
