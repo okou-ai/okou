@@ -49,6 +49,9 @@ Input is sent once, without replay. outcome=unknown or delivery=unknown means no
 const GEOMETRY_HELP = `
 Use --geometry '{"sessionId":"<geometry-id>","epoch":0}' from a fresh screenshot, not the RPC session ID. Coordinates are integer framebuffer pixels (0–65535); Runner also checks current dimensions. Geometry can become stale after a resize. Re-capture and re-evaluate; never retry input automatically.`;
 
+const REBIND_HELP =
+  "Ask the owner to rebind the affected saved VNC or KDC route to a permitted Cloudflare Access or Tailscale configuration, or rebind its underlying SSH host as applicable. Native routes require an explicit configuration ID. The owner may explicitly choose Direct in the relevant settings only when the security profile permits it; there is no automatic Direct fallback.";
+
 function inputCommand(name: string, description: string) {
   return new Command(name)
     .description(description)
@@ -92,7 +95,7 @@ function createSessionCommand() {
       .option("--json", "Print session ID and requested mode")
       .addHelpText(
         "after",
-        "\nUse an exact current ID with availability.status=ready from okou vnc host list --json. A blocked needs_rebind host is diagnostic only: ask the owner to rebind its SSH host to permitted Cloudflare Access or explicitly choose Direct in SSH settings. List again after an unknown or unavailable ID. Shared viewers can interfere with one another. Exclusive mode can disconnect other viewers; the VNC server may refuse or override it. Success is not proof of exclusive control. Never retry with another mode automatically.",
+        `\nUse an exact current ID with availability.status=ready from okou vnc host list --json. A blocked needs_rebind host is diagnostic only. ${REBIND_HELP} List again after an unknown or unavailable ID. Shared viewers can interfere with one another. Exclusive mode can disconnect other viewers; the VNC server may refuse or override it. Success is not proof of exclusive control. Never retry with another mode automatically.`,
       )
       .action(
         withErrorHandler(
@@ -149,7 +152,7 @@ export function createVncCommand() {
     .addHelpText(
       "after",
       `
-Start with okou vnc host list --json and use an exact current ID only when availability.status=ready; blocked needs_rebind IDs are diagnostic only. Ask the owner to rebind the underlying SSH host to permitted Cloudflare Access or explicitly choose Direct in SSH settings. Read the relevant subcommand's --help. Execution uses saved credentials and trust configuration, with no endpoint, password or insecure override. Manage owned configuration with host list --scope configured and credential commands (connector:read/write); management does not grant VNC execution access. Supply credential-bearing JSON only through --input <file|->.
+Start with okou vnc host list --json and use an exact current ID only when availability.status=ready; blocked needs_rebind IDs are diagnostic only. ${REBIND_HELP} Read the relevant subcommand's --help. Execution uses saved credentials and trust configuration, with no endpoint, password or insecure override. Manage owned configuration with host list --scope configured and credential commands (connector:read/write); management does not grant VNC execution access. Supply credential-bearing JSON only through --input <file|->.
 
 Choose session start --mode shared or --mode exclusive explicitly. Shared viewers can interfere; exclusive requests may disconnect other viewers or be refused/overridden by the server. Neither mode provides an Okou-wide control lock.
 
