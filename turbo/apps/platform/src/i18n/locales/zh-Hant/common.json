@@ -112,6 +112,12 @@
       "files": {
         "connecting": "正在連線至檔案…",
         "currentFolder": "目前資料夾",
+        "download": "下載 {{name}}",
+        "downloadChanged": "檔案在下載時發生變更，請重新下載。",
+        "downloadFailed": "下載失敗，請重試。",
+        "downloadFrame": "檔案下載",
+        "downloadUnsupported": "此瀏覽器不支援檔案下載。",
+        "downloadUpdateRequired": "請重新整理頁面後重試。如果仍無法下載，請開始新的執行。",
         "empty": "此資料夾為空。",
         "enterFolder": "進入 {{name}}",
         "goHome": "返回主目錄",

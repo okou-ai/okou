@@ -114,6 +114,12 @@
       "files": {
         "connecting": "Connessione ai file…",
         "currentFolder": "Cartella attuale",
+        "download": "Scarica {{name}}",
+        "downloadChanged": "Il file è cambiato durante il download. Scaricalo di nuovo.",
+        "downloadFailed": "Download non riuscito. Riprova.",
+        "downloadFrame": "Download del file",
+        "downloadUnsupported": "Questo browser non supporta il download dei file.",
+        "downloadUpdateRequired": "Aggiorna la pagina e riprova. Se i download non sono ancora disponibili, avvia una nuova esecuzione.",
         "empty": "Questa cartella è vuota.",
         "enterFolder": "Apri la cartella {{name}}",
         "goHome": "Vai alla cartella home",

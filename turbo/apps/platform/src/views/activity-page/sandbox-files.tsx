@@ -7,6 +7,7 @@ import {
   Link,
   RefreshCw,
   ArrowRightToLine,
+  Download,
 } from "lucide-react";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -21,11 +22,13 @@ import {
 } from "@okouai/ui";
 import type {
   FilesError,
+  FilesEntry,
   FilesDirectory,
   SandboxFilesSignals,
 } from "../../signals/activity-page/sandbox-files.ts";
 import {
   FILES_ROW_HEIGHT,
+  filesDirectoryKey,
   type FilesVirtualRow,
 } from "../../signals/activity-page/sandbox-files-virtual-list.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -33,9 +36,11 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import {
   FILES_HOME_LOCATION,
   filesLocationLabel,
+  filesLocationTokens,
 } from "../../signals/activity-page/sandbox-files-location.ts";
 import { SandboxFilesBreadcrumb } from "./sandbox-files-breadcrumb.tsx";
 import { WorkspaceCanvasBackdrop } from "../okou-page/workspace-inset.tsx";
+import { SandboxFileDownloadFrame } from "./sandbox-file-download.tsx";
 
 function FilesErrorMessage({ error }: { readonly error: FilesError }) {
   const { t } = useTranslation();
@@ -63,6 +68,73 @@ function FilesErrorMessage({ error }: { readonly error: FilesError }) {
   }
 }
 const DEPTH_PADDING = ["pl-2", "pl-6", "pl-10", "pl-14", "pl-18"] as const;
+
+function FilesDownloadButton({
+  signals,
+  entry,
+  path,
+}: {
+  readonly signals: SandboxFilesSignals;
+  readonly entry: FilesEntry;
+  readonly path: readonly string[];
+}) {
+  const { t } = useTranslation();
+  const signal = useGet(pageSignal$);
+  const location = useGet(signals.location$);
+  const navigating = useGet(signals.navigating$);
+  const download = useSet(signals.download$);
+  const downloading = useGet(signals.download.busy$);
+  const preparingPath = useGet(signals.download.preparingPath$);
+  const preparing =
+    preparingPath !== null &&
+    filesDirectoryKey(preparingPath) ===
+      filesDirectoryKey([
+        ...filesLocationTokens(location),
+        ...path,
+        entry.nameToken,
+      ]);
+  const label = t(
+    ($) => {
+      return $.activity.detail.files.download;
+    },
+    { name: entry.displayName },
+  );
+  return (
+    <TooltipProvider delay={200}>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              variant="quiet"
+              size="icon-sm"
+              className={cn(
+                "shrink-0 hover:bg-transparent active:bg-transparent [@media(pointer:coarse)]:size-10",
+                !preparing &&
+                  "[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/files-row:opacity-100 group-has-[:focus-visible]/files-row:opacity-100",
+              )}
+              focusableWhenDisabled
+              pending={preparing}
+              disabled={downloading || navigating}
+              aria-label={label}
+              onClick={() => {
+                detach(
+                  download(location, path, entry.nameToken, signal),
+                  Reason.DomCallback,
+                );
+              }}
+            >
+              <Download size={16} />
+            </Button>
+          }
+        />
+        <TooltipContent>
+          <p className="text-xs">{label}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
 
 function FilesRow({
   signals,
@@ -133,16 +205,23 @@ function FilesRow({
       );
     }
     return (
-      <div className="flex h-full min-w-0 items-center gap-2 px-3 text-sm">
+      <div className="group/files-row flex h-full min-w-0 items-center gap-2 rounded-lg px-3 text-sm transition-colors hover:bg-state-hover has-[:focus-visible]:bg-state-hover has-[:active]:bg-state-pressed">
         <span className="w-3.5 shrink-0" />
         {entry.kind === "symlink" ? (
           <Link size={16} className="shrink-0 text-muted-foreground" />
         ) : (
           <File size={16} className="shrink-0 text-muted-foreground" />
         )}
-        <span className="min-w-0 truncate" title={entry.displayName}>
+        <span className="min-w-0 flex-1 truncate" title={entry.displayName}>
           {entry.displayName}
         </span>
+        {entry.kind === "file" && (
+          <FilesDownloadButton
+            signals={signals}
+            entry={entry}
+            path={row.path}
+          />
+        )}
         {entry.kind === "symlink" && (
           <span className="shrink-0 text-xs text-muted-foreground">
             {t(($) => {
@@ -480,6 +559,7 @@ export function SandboxFilesBody({
         </Button>
         <FilesRefreshControl signals={signals} errorId={errorId} />
       </div>
+      <SandboxFileDownloadFrame signals={signals.download} />
       {phase === "ready" ? (
         <div className="pb-4">
           <FilesVirtualList signals={signals} />

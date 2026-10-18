@@ -112,6 +112,12 @@
       "files": {
         "connecting": "ファイルに接続中…",
         "currentFolder": "現在のフォルダー",
+        "download": "{{name}} をダウンロード",
+        "downloadChanged": "ダウンロード中にファイルが変更されました。もう一度ダウンロードしてください。",
+        "downloadFailed": "ダウンロードに失敗しました。もう一度お試しください。",
+        "downloadFrame": "ファイルのダウンロード",
+        "downloadUnsupported": "このブラウザーはファイルのダウンロードに対応していません。",
+        "downloadUpdateRequired": "ページを再読み込みしてお試しください。引き続き利用できない場合は、新しい実行を開始してください。",
         "empty": "このフォルダーは空です。",
         "enterFolder": "{{name}} を開く",
         "goHome": "ホームフォルダーに戻る",

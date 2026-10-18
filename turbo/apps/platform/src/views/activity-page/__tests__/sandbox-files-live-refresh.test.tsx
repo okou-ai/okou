@@ -43,6 +43,11 @@ test("Foreground refresh updates expanded files silently and stops after switchi
   await expect(
     within(panel).findByText("old.txt"),
   ).resolves.toBeInTheDocument();
+  const beforeRefreshStatuses = within(panel)
+    .queryAllByRole("status")
+    .map((element) => {
+      return element.textContent;
+    });
   generation++;
   fireEvent(document, new Event("visibilitychange"));
   await expect(
@@ -53,7 +58,13 @@ test("Foreground refresh updates expanded files silently and stops after switchi
     "aria-expanded",
     "true",
   );
-  expect(within(panel).queryByRole("status")).toBeNull();
+  expect(
+    within(panel)
+      .queryAllByRole("status")
+      .map((element) => {
+        return element.textContent;
+      }),
+  ).toStrictEqual(beforeRefreshStatuses);
   click(filesTab("Steps"));
   await waitFor(() => {
     expect(screen.queryByRole("region", { name: "Files" })).toBeNull();

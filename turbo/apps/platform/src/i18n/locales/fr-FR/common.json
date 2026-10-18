@@ -114,6 +114,12 @@
       "files": {
         "connecting": "Connexion aux fichiers…",
         "currentFolder": "Dossier actuel",
+        "download": "Télécharger {{name}}",
+        "downloadChanged": "Le fichier a changé pendant le téléchargement. Téléchargez-le à nouveau.",
+        "downloadFailed": "Échec du téléchargement. Réessayez.",
+        "downloadFrame": "Téléchargement de fichier",
+        "downloadUnsupported": "Ce navigateur ne prend pas en charge le téléchargement de fichiers.",
+        "downloadUpdateRequired": "Actualisez la page et réessayez. Si les téléchargements restent indisponibles, démarrez une nouvelle exécution.",
         "empty": "Ce dossier est vide.",
         "enterFolder": "Ouvrir le dossier {{name}}",
         "goHome": "Aller au dossier personnel",

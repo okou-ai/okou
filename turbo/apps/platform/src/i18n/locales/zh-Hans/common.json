@@ -112,6 +112,12 @@
       "files": {
         "connecting": "正在连接文件…",
         "currentFolder": "当前文件夹",
+        "download": "下载 {{name}}",
+        "downloadChanged": "文件在下载时发生变化，请重新下载。",
+        "downloadFailed": "下载失败，请重试。",
+        "downloadFrame": "文件下载",
+        "downloadUnsupported": "此浏览器不支持文件下载。",
+        "downloadUpdateRequired": "请刷新页面后重试。如果仍无法下载，请开始新的运行。",
         "empty": "此文件夹为空。",
         "enterFolder": "进入 {{name}}",
         "goHome": "返回主目录",
