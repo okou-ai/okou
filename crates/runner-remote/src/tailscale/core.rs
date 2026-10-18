@@ -38,6 +38,7 @@ pub(super) struct Core {
     work: u8,
     capacity: Option<Capacity>,
     regions: Option<(ts_derp::RegionId, Vec<ts_derp::RegionId>)>,
+    relays: Option<super::regional_driver::Routes>,
 }
 
 impl Core {
@@ -54,11 +55,23 @@ impl Core {
             work: 0,
             capacity: None,
             regions: None,
+            relays: None,
         })
     }
 
     pub(super) fn update(&mut self, update: StateUpdate) -> Result<(), Failure> {
         self.peers.update(update)?;
+        if let Some(routes) = &self.relays {
+            for active in &self.active {
+                if active.binding.live()
+                    && let Some(region) = self.peers.region(&active.binding)
+                {
+                    let trace = active.binding.trace();
+                    trace.region(region.0.get());
+                    trace.relay(routes.evidence(region));
+                }
+            }
+        }
         self.retire_regions();
         self.retire();
         Ok(())
@@ -80,6 +93,12 @@ impl Core {
         self.regions = Some((home, regions));
         self.retire_regions();
         self.retire();
+    }
+
+    pub(super) fn observe_relays(&mut self, routes: super::regional_driver::Routes) {
+        self.relays = super::evidence::Trace::current()
+            .enabled()
+            .then_some(routes);
     }
 
     fn retire_regions(&mut self) {
@@ -150,7 +169,11 @@ impl Core {
         }
         self.next_port = local_port.checked_add(1);
         if let Some(region) = self.peers.region(&binding) {
-            super::evidence::Trace::current().region(region.0.get());
+            let trace = super::evidence::Trace::current();
+            trace.region(region.0.get());
+            if let Some(routes) = &self.relays {
+                trace.relay(routes.evidence(region));
+            }
         }
         self.peers.endpoint(
             &binding,

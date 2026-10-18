@@ -4,6 +4,7 @@ use serde::Serialize;
 use std::{
     net::IpAddr,
     sync::{Arc, Mutex},
+    time::Instant,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -42,6 +43,7 @@ const STAGES: [Stage; 12] = [
 pub(crate) enum Progress {
     NotReached,
     Running,
+    Pending,
     Passed,
     Failed,
     Unknown,
@@ -74,6 +76,33 @@ pub(super) enum Family {
 pub(super) struct Step {
     pub(super) stage: Stage,
     pub(super) status: Progress,
+    #[serde(flatten)]
+    pub(super) timing: Timing,
+}
+
+/// Monotonic local duration, frozen before evidence leaves its live owner.
+#[derive(Clone, Default, Serialize)]
+pub(crate) struct Timing {
+    #[serde(skip_serializing_if = "is_zero")]
+    pub(crate) elapsed_ms: u64,
+    #[serde(skip)]
+    started: Option<Instant>,
+}
+
+fn is_zero(value: &u64) -> bool {
+    *value == 0
+}
+
+impl Timing {
+    pub(crate) fn start(&mut self) {
+        self.elapsed_ms = 0;
+        self.started = Some(Instant::now());
+    }
+    pub(crate) fn freeze(&mut self) {
+        if let Some(started) = self.started.take() {
+            self.elapsed_ms = started.elapsed().as_millis().min(u64::MAX as u128) as u64;
+        }
+    }
 }
 #[derive(Clone, Serialize)]
 pub(crate) struct Snapshot {
@@ -97,6 +126,7 @@ impl Default for Snapshot {
                 .map(|stage| Step {
                     stage,
                     status: Progress::NotReached,
+                    timing: Timing::default(),
                 })
                 .collect(),
         }
@@ -117,6 +147,11 @@ impl Trace {
     pub(crate) fn set(&self, stage: Stage, status: Progress) {
         self.update(|state| {
             if let Some(step) = state.stages.iter_mut().find(|s| s.stage == stage) {
+                if status == Progress::Running && step.status != Progress::Running {
+                    step.timing.start();
+                } else if status != Progress::Running {
+                    step.timing.freeze();
+                }
                 step.status = status;
             }
         });
@@ -126,6 +161,7 @@ impl Trace {
             if let Some(step) = state.stages.iter_mut().find(|s| s.stage == stage)
                 && step.status == Progress::Running
             {
+                step.timing.freeze();
                 step.status = status;
             }
         });
@@ -178,8 +214,9 @@ impl Trace {
             .unwrap_or_else(|p| p.into_inner())
             .clone();
         for step in &mut snapshot.stages {
+            step.timing.freeze();
             if step.status == Progress::Running {
-                step.status = Progress::Unknown;
+                step.status = Progress::Pending;
             }
         }
         Some(snapshot)
@@ -238,8 +275,12 @@ impl Snapshot {
         }
     }
     pub(crate) fn failed_at(&self, stage: Stage) -> bool {
-        self.stages
-            .iter()
-            .any(|s| s.stage == stage && matches!(s.status, Progress::Failed | Progress::Unknown))
+        self.stages.iter().any(|s| {
+            s.stage == stage
+                && matches!(
+                    s.status,
+                    Progress::Failed | Progress::Unknown | Progress::Pending
+                )
+        })
     }
 }

@@ -39,10 +39,13 @@ impl Incoming {
 
 impl Port {
     pub(super) fn send(&self, packet: Outbound) -> Result<(), Failure> {
-        self.outgoing.try_send(packet).map_err(|error| match error {
+        let permit = self.outgoing.try_reserve().map_err(|error| match error {
             mpsc::error::TrySendError::Full(_) => Failure::ResourceExhausted,
             mpsc::error::TrySendError::Closed(_) => Failure::Cancelled,
-        })
+        })?;
+        packet.stamp.observe(super::evidence::Flow::RelayQueued);
+        permit.send(packet);
+        Ok(())
     }
 
     #[cfg(test)]

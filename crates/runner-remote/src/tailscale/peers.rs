@@ -47,6 +47,7 @@ struct Generation {
 }
 
 pub(super) struct FrameStamp {
+    diagnostics: bool,
     generation: Weak<Generation>,
     epoch: u64,
     expires: Option<chrono::DateTime<chrono::Utc>>,
@@ -57,6 +58,13 @@ pub(super) struct FrameStamp {
 }
 
 impl FrameStamp {
+    pub(super) fn observe(&self, flow: super::evidence::Flow) {
+        if self.diagnostics && self.current() {
+            for binding in self.bindings.iter().filter_map(Weak::upgrade) {
+                binding.trace.flow(flow, 1);
+            }
+        }
+    }
     pub(super) fn poll_current(&mut self, cx: &mut Context<'_>, writing: bool) -> bool {
         // Completion seals the frame even if a wall-clock adjustment makes
         // the absolute key expiry appear future again. Never repoll a finished
@@ -244,9 +252,13 @@ pub(super) struct Binding {
     remote: SocketAddr,
     cancelled: CancellationToken,
     started: AtomicBool,
+    trace: super::evidence::Trace,
 }
 
 impl Binding {
+    pub(super) fn trace(&self) -> &super::evidence::Trace {
+        &self.trace
+    }
     pub(super) fn peer_key(&self) -> NodePublicKey {
         self.identity.key
     }
@@ -270,6 +282,7 @@ impl Drop for Binding {
 }
 
 pub(super) struct Peers {
+    diagnostics: bool,
     owner: Arc<()>,
     local: Identity,
     peers: HashMap<NodeId, Peer>,
@@ -327,6 +340,7 @@ impl Peers {
         plane.or_in.swap(incoming);
         Ok(Self {
             owner: Arc::new(()),
+            diagnostics: super::evidence::Trace::current().enabled(),
             local,
             peers: HashMap::new(),
             next_handle: 0,
@@ -632,6 +646,7 @@ impl Peers {
             remote: SocketAddr::new(remote_ip, port),
             cancelled,
             started: AtomicBool::new(false),
+            trace: super::evidence::Trace::current(),
         });
         self.bindings.push(HeldBinding {
             binding: Arc::downgrade(&binding),
@@ -805,6 +820,7 @@ impl Peers {
         }) {
             return Ok(None);
         }
+        self.observe_peer(source, super::evidence::Flow::LabelledInput, 1);
         let (mut frames, mut received) = self.incoming(vec![packet])?;
         // DERP's source label is not a substitute for authenticated WireGuard
         // identity. Require both before an exact TCP stack adopts plaintext or
@@ -867,6 +883,13 @@ impl Peers {
         let count = output.values().map(Vec::len).sum::<usize>();
         if count > MAX_PACKETS || output.values().flatten().any(|packet| packet.len() > 2048) {
             return self.fail();
+        }
+        if self.diagnostics {
+            for ((_, endpoint), packets) in &output {
+                if let Some(peer) = endpoint.as_derp() {
+                    self.observe_peer(peer, super::evidence::Flow::EncryptedOutput, packets.len());
+                }
+            }
         }
         for (destination, packets) in &output {
             if !packets.iter().any(|packet| {
@@ -969,6 +992,7 @@ impl Peers {
             bytes,
             permit,
             stamp: FrameStamp {
+                diagnostics: self.diagnostics,
                 generation: Arc::downgrade(&self.generation),
                 epoch: self.frame_epoch,
                 expires,
@@ -1044,6 +1068,21 @@ impl Peers {
             drop(input.permit.as_mut().and_then(|permit| permit.split(1)));
         }
         Ok(count)
+    }
+
+    fn observe_peer(&self, peer: NodePublicKey, flow: super::evidence::Flow, count: usize) {
+        if !self.diagnostics {
+            return;
+        }
+        for binding in self
+            .bindings
+            .iter()
+            .filter_map(|held| held.binding.upgrade())
+        {
+            if binding.peer_key() == peer && self.current(&binding).is_ok() {
+                binding.trace.flow(flow, count);
+            }
+        }
     }
 
     fn invalidate_frames(&mut self) {
