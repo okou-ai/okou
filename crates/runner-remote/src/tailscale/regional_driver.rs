@@ -117,14 +117,16 @@ impl Routes {
                 cancelled.cancel();
             }
         }
-        let needed: HashSet<_> = state
-            .active
-            .keys()
-            .copied()
-            .chain(state.peers.values().copied())
-            .chain(std::iter::once(state.home))
-            .collect();
-        state.evidence.retain(|id, _| needed.contains(id));
+        if !state.evidence.is_empty() {
+            let needed: HashSet<_> = state
+                .active
+                .keys()
+                .copied()
+                .chain(state.peers.values().copied())
+                .chain(std::iter::once(state.home))
+                .collect();
+            state.evidence.retain(|id, _| needed.contains(id));
+        }
         Ok(())
     }
 }
