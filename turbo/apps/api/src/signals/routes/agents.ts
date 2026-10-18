@@ -118,25 +118,6 @@ function buildAgentUpsertConflictSet(body: AgentUpdateBody, updatedAt: Date) {
   };
 }
 
-async function findAgentMetadataForUpdate(
-  writeDb: Pick<Db, "select">,
-  orgId: string,
-  agentId: string,
-) {
-  const rows = await writeDb
-    .select({
-      id: agents.id,
-      owner: agents.owner,
-      visibility: agents.visibility,
-      defaultAgentId: orgMetadata.defaultAgentId,
-    })
-    .from(agents)
-    .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
-    .where(and(eq(agents.orgId, orgId), eq(agents.id, agentId)))
-    .limit(1);
-  return rows[0] ?? null;
-}
-
 function requireAgentConfigurationPermission(
   existing: ExistingAgentForUpdate,
   member: AgentMember,
@@ -680,11 +661,28 @@ const updateAgentMetadataInner$ = command(
         .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)))
         .for("update");
 
-      const existing = await findAgentMetadataForUpdate(
-        tx,
-        auth.orgId,
-        params.id,
-      );
+      const existingDb = tx;
+      const existingOrgId = auth.orgId;
+      const existingAgentId = params.id;
+      const existing: ExistingAgentForUpdate | null = await (async () => {
+        const rows = await existingDb
+          .select({
+            id: agents.id,
+            owner: agents.owner,
+            visibility: agents.visibility,
+            defaultAgentId: orgMetadata.defaultAgentId,
+          })
+          .from(agents)
+          .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
+          .where(
+            and(
+              eq(agents.orgId, existingOrgId),
+              eq(agents.id, existingAgentId),
+            ),
+          )
+          .limit(1);
+        return rows[0] ?? null;
+      })();
       if (!existing) {
         return { response: agentNotFound(params.id) };
       }
