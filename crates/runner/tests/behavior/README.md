@@ -91,6 +91,14 @@ scenario commands receive `<binary-directory> <sandbox-id>`:
 | `clients.sh`   | Complete packaged Claude/Codex compatibility programs.        |
 | `https.sh`     | Runtime proxy/CA checks with separate build/request budgets.  |
 
+The Chromium HTTPS probe uses a fresh profile and the packaged browser's CDP pipe
+to navigate to a static HTTPS document, require HTTP 200 and expected response
+content, and close the whole browser. It retains certificate validation and the
+30-second Guest / 40-second Runner bounds, without depending on `--dump-dom`'s
+implicit tab-close lifecycle. Failure or cancellation retires its owned browser
+process group and removes the temporary profile. The local Chromium regression
+controls the external CDP peer; the native lane owns actual browser/proxy results.
+
 For an already-owned sandbox on the provisioned host, an individual scenario
 can be invoked as `bash inventory.sh "$BIN_DIR" "$SANDBOX_ID"` from its staged
 entry directory. It inherits the caller's environment and returns nonzero on
