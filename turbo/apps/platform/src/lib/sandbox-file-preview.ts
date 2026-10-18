@@ -5,7 +5,12 @@ import {
   sandboxFsRead,
   sandboxFsFinish,
 } from "@okouai/api-contracts/contracts/sandbox-channel-fs";
-import { createDeferredPromise, withCleanup } from "../signals/utils.ts";
+import {
+  createDeferredPromise,
+  jsonParseOr,
+  settle,
+  withCleanup,
+} from "../signals/utils.ts";
 
 type PreviewKind = "text" | "markdown" | "json" | "csv" | "image" | "pdf";
 export type FilePreviewFailure =
@@ -331,14 +336,15 @@ export async function readSandboxFilePreview(
       empty: false,
     };
   }
-  return previewText(bytes, opened.truncated, format.kind);
+  return previewText(bytes, opened.truncated, format.kind, signal);
 }
 
-function previewText(
+async function previewText(
   bytes: Uint8Array,
   truncated: boolean,
   kind: PreviewKind,
-): SandboxPreviewContent {
+  signal: AbortSignal,
+): Promise<SandboxPreviewContent> {
   // Streaming decode discards an incomplete final code point only for a prefix.
   // Fatal decoding still rejects malformed bytes anywhere before that boundary.
   const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes, {
@@ -352,14 +358,31 @@ function previewText(
   ) {
     throw new FilePreviewError("decode");
   }
+  let display = text;
+  if (kind === "json" && !truncated) {
+    // Formatting untrusted deep JSON can overflow the serializer's stack or
+    // expand past the visible prefix. In either case its escaped source is
+    // still a complete, bounded preview; never throw from the React renderer.
+    const formatted = await settle(() => {
+      const parsed = jsonParseOr<unknown>(text, null);
+      return parsed === null ? text : JSON.stringify(parsed, null, 2);
+    }, signal);
+    signal.throwIfAborted();
+    if (
+      formatted.ok &&
+      formatted.value.length <= SANDBOX_FS_LIMITS.maxPrefixBytes
+    ) {
+      display = formatted.value;
+    }
+  }
   return {
     kind:
-      truncated && (kind === "json" || kind === "csv")
-        ? "text"
-        : kind === "markdown" || kind === "json" || kind === "csv"
-          ? kind
+      kind === "markdown"
+        ? "markdown"
+        : kind === "csv" && !truncated
+          ? "csv"
           : "text",
-    text,
+    text: display,
     truncated,
     empty: bytes.length === 0,
   };

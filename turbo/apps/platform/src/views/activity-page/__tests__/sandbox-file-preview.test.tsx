@@ -143,6 +143,32 @@ test.each(["page.html", "image.svg"])(
   },
 );
 
+test.each([
+  ["deep", "[".repeat(10_000) + "0" + "]".repeat(10_000)],
+  [
+    "expanded",
+    JSON.stringify(
+      Array.from({ length: 20_000 }, () => {
+        return 0;
+      }),
+    ),
+  ],
+  ["malformed", '{"unfinished":'],
+])(
+  "A %s JSON document remains readable without breaking the page",
+  async (_name, source) => {
+    await setupFilesPage(context, {
+      handler: previewGuest({ "source.json": textBytes(source) }),
+    });
+    await openFiles();
+    const dialog = await openPreview("source.json");
+    await waitFor(() => {
+      expect(dialog.querySelector("pre")?.textContent).toBe(source);
+    });
+    expect(filesButton("Download", dialog)).toBeEnabled();
+  },
+);
+
 test.each(["partial.json", "partial.csv", "partial.txt"])(
   "%s shows a bounded UTF-8 prefix as readable source",
   async (name) => {
@@ -227,10 +253,33 @@ test.each([
 
 const png = Uint8Array.from(
   Buffer.from(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=",
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4AWL6z8DwHwAAAP//A3ONEwAAAAZJREFUAwAFCgIByRpMngAAAABJRU5ErkJggg==",
     "base64",
   ),
 );
+
+test.each([
+  [
+    "valid.jpg",
+    "/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/2wBDAQMDAwQDBAgEBAgQCwkLEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBD/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAj/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAABwn/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdAAYqm//Z",
+  ],
+  [
+    "valid.webp",
+    "UklGRh4CAABXRUJQVlA4WAoAAAAgAAAAAAAAAAAASUNDUMgBAAAAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADZWUDggMAAAANABAJ0BKgEAAQABQCYloAJ0ugH4AAOwAP7y63/82BXNc+/3/9Lg/S4P0uD/0pAAAA==",
+  ],
+  ["valid.gif", "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"],
+])("A validated %s uses the shared image renderer", async (name, base64) => {
+  const urls = context.mocks.browser.imageDimensions({ width: 1, height: 1 });
+  await setupFilesPage(context, {
+    handler: previewGuest({
+      [name]: Uint8Array.from(Buffer.from(base64, "base64")),
+    }),
+  });
+  await openFiles();
+  const dialog = await openPreview(name);
+  const image = await within(dialog).findByAltText(name);
+  expect(image).toHaveAttribute("src", urls.createdUrls.at(-1));
+});
 
 test("An image preview releases its temporary and rendered object URLs on close and restores focus", async () => {
   const images = context.mocks.browser.imageDimensions({ width: 1, height: 1 });
