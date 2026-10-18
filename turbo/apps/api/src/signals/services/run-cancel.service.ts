@@ -1,4 +1,6 @@
+import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { command } from "ccstate";
+import { and, eq, inArray } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import { writeDb$ } from "../external/db";
 import {
@@ -7,10 +9,7 @@ import {
   publishRunQueueChangedForOrgSafely,
 } from "../external/realtime";
 import { tapError } from "../utils";
-import {
-  dispatchRunCallbacks$,
-  undeliveredChatCallbackIdForRun,
-} from "./agent-run-callback.service";
+import { dispatchRunCallbacks$ } from "./agent-run-callback.service";
 import type { CancelRunResult } from "./agent-run-terminal-transition.service";
 import { processOrgUsageEvents$ } from "./credit-usage.service";
 
@@ -116,7 +115,21 @@ export const dispatchCancelSideEffects$ = command(
     // lifecycle marker, and its replay is idempotent. An acknowledged callback
     // already committed that work and is never replayed.
     const redriveCallbackId = recoveryRedrive
-      ? await undeliveredChatCallbackIdForRun(db, result.runId)
+      ? await (async () => {
+          const runId = result.runId;
+          const [callback] = await db
+            .select({ id: agentRunCallbacks.id })
+            .from(agentRunCallbacks)
+            .where(
+              and(
+                eq(agentRunCallbacks.runId, runId),
+                eq(agentRunCallbacks.internalKind, "chat"),
+                inArray(agentRunCallbacks.status, ["pending", "failed"]),
+              ),
+            )
+            .limit(1);
+          return callback?.id;
+        })()
       : undefined;
     signal.throwIfAborted();
     if (!recoveryRedrive || redriveCallbackId !== undefined) {
