@@ -132,7 +132,7 @@ function createPreviewGraph() {
     set(imageCanvas.reset$);
   });
   const installOwner$ = command(
-    ({ get, set }, signal: AbortSignal, element: HTMLElement | null) => {
+    ({ get, set }, element: HTMLElement | null, signal: AbortSignal) => {
       signal.throwIfAborted();
       set(close$);
       const generation = get(ownerGeneration$) + 1;

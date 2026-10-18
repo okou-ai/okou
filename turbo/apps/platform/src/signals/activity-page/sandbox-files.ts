@@ -1597,7 +1597,7 @@ function createDemandCommands(
       set(graph.mounted$, true);
       const owner = set(graph.resetDemand$, signal, get(pageSignal$));
       set(graph.download.installOwner$, owner);
-      set(graph.preview.installOwner$, owner, element);
+      set(graph.preview.installOwner$, element, owner);
       signal.addEventListener(
         "abort",
         () => {
@@ -1639,7 +1639,7 @@ function createDemandCommands(
         set(graph.phase$, "connecting");
         const owner = set(graph.resetDemand$, signal, get(pageSignal$));
         set(graph.download.installOwner$, owner);
-        set(graph.preview.installOwner$, owner, get(section$));
+        set(graph.preview.installOwner$, get(section$), owner);
         detach(
           set(observation.start$, runId, owner),
           Reason.Daemon,
