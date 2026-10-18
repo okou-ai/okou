@@ -10,7 +10,11 @@ import { publishPersonalModelProvidersChangedSafely } from "../external/realtime
 import {
   isPersonalSubscriptionProviderType,
   personalSubscriptionAccountAccessCondition,
-  readPersonalSubscriptionCredentialBundle,
+  personalSubscriptionAccountCiphertextsReadPlan,
+  personalSubscriptionAccountCiphertextsFromRows,
+  personalSubscriptionCredentialValues,
+  type PersonalSubscriptionCredentialScope,
+  type PersonalSubscriptionCredentialBundle,
 } from "./model-provider-account.service";
 import {
   isFetchNetworkError,
@@ -229,27 +233,88 @@ interface FirewallAuthResolutionContext {
   readonly subscriptionBundles: SubscriptionBundleReads;
 }
 
+type PersonalSubscriptionCredentialReadArgs =
+  PersonalSubscriptionCredentialScope & { readonly db: Db };
+
 /** Request-scoped subscription credential reads. One firewall request decrypts
  * a bundle once; a refresh in the same request clears it so the rotated bundle
  * is read once more. */
 type SubscriptionBundleReads = Map<
   string,
-  ReturnType<typeof readPersonalSubscriptionCredentialBundle>
+  Promise<PersonalSubscriptionCredentialBundle>
 >;
 
 function readSubscriptionBundle(
   reads: SubscriptionBundleReads | undefined,
-  args: Parameters<typeof readPersonalSubscriptionCredentialBundle>[0],
-): ReturnType<typeof readPersonalSubscriptionCredentialBundle> {
+  args: PersonalSubscriptionCredentialReadArgs,
+): Promise<PersonalSubscriptionCredentialBundle> {
   if (!reads) {
-    return readPersonalSubscriptionCredentialBundle(args);
+    const uncachedCredentialReadArgs = args;
+    return (async () => {
+      if (!uncachedCredentialReadArgs.sourceId) {
+        return null;
+      }
+      const uncachedCiphertextReadArgs = {
+        ...uncachedCredentialReadArgs,
+        sourceId: uncachedCredentialReadArgs.sourceId,
+      };
+      const credentialCiphertexts = await (async () => {
+        const ciphertextPlan = personalSubscriptionAccountCiphertextsReadPlan(
+          uncachedCiphertextReadArgs,
+        );
+        const ciphertextRows = await uncachedCiphertextReadArgs.db
+          .select(ciphertextPlan.columns)
+          .from(ciphertextPlan.from)
+          .leftJoin(ciphertextPlan.join.table, ciphertextPlan.join.on)
+          .where(ciphertextPlan.where);
+        return personalSubscriptionAccountCiphertextsFromRows(ciphertextRows);
+      })();
+      return credentialCiphertexts
+        ? {
+            account: credentialCiphertexts.account,
+            values: await personalSubscriptionCredentialValues(
+              credentialCiphertexts.secrets,
+              uncachedCredentialReadArgs.featureSwitchContext,
+            ),
+          }
+        : null;
+    })();
   }
   const key = JSON.stringify([args.type, args.userId, args.sourceId ?? null]);
   const cached = reads.get(key);
   if (cached) {
     return cached;
   }
-  const read = readPersonalSubscriptionCredentialBundle(args);
+  const cachedCredentialReadArgs = args;
+  const read = (async () => {
+    if (!cachedCredentialReadArgs.sourceId) {
+      return null;
+    }
+    const cachedCiphertextReadArgs = {
+      ...cachedCredentialReadArgs,
+      sourceId: cachedCredentialReadArgs.sourceId,
+    };
+    const credentialCiphertexts = await (async () => {
+      const ciphertextPlan = personalSubscriptionAccountCiphertextsReadPlan(
+        cachedCiphertextReadArgs,
+      );
+      const ciphertextRows = await cachedCiphertextReadArgs.db
+        .select(ciphertextPlan.columns)
+        .from(ciphertextPlan.from)
+        .leftJoin(ciphertextPlan.join.table, ciphertextPlan.join.on)
+        .where(ciphertextPlan.where);
+      return personalSubscriptionAccountCiphertextsFromRows(ciphertextRows);
+    })();
+    return credentialCiphertexts
+      ? {
+          account: credentialCiphertexts.account,
+          values: await personalSubscriptionCredentialValues(
+            credentialCiphertexts.secrets,
+            cachedCredentialReadArgs.featureSwitchContext,
+          ),
+        }
+      : null;
+  })();
   reads.set(key, read);
   return read;
 }
@@ -3117,10 +3182,39 @@ async function getModelProviderRuntimeSecretValue(args: {
   if (!isPersonalSubscriptionProviderType(args.providerType)) {
     return null;
   }
-  const bundle = await readPersonalSubscriptionCredentialBundle({
+  const runtimeCredentialReadArgs = {
     ...args,
     type: args.providerType,
-  });
+  };
+  const bundle = await (async () => {
+    if (!runtimeCredentialReadArgs.sourceId) {
+      return null;
+    }
+    const runtimeCiphertextReadArgs = {
+      ...runtimeCredentialReadArgs,
+      sourceId: runtimeCredentialReadArgs.sourceId,
+    };
+    const credentialCiphertexts = await (async () => {
+      const ciphertextPlan = personalSubscriptionAccountCiphertextsReadPlan(
+        runtimeCiphertextReadArgs,
+      );
+      const ciphertextRows = await runtimeCiphertextReadArgs.db
+        .select(ciphertextPlan.columns)
+        .from(ciphertextPlan.from)
+        .leftJoin(ciphertextPlan.join.table, ciphertextPlan.join.on)
+        .where(ciphertextPlan.where);
+      return personalSubscriptionAccountCiphertextsFromRows(ciphertextRows);
+    })();
+    return credentialCiphertexts
+      ? {
+          account: credentialCiphertexts.account,
+          values: await personalSubscriptionCredentialValues(
+            credentialCiphertexts.secrets,
+            runtimeCredentialReadArgs.featureSwitchContext,
+          ),
+        }
+      : null;
+  })();
   return bundle?.values.get(args.secretName) ?? null;
 }
 
@@ -6166,7 +6260,36 @@ export async function resolveCurrentPersonalSubscriptionBundleForApi(
     runId: args.runId,
     featureSwitchContext: args.featureSwitchContext,
   };
-  const initial = await readPersonalSubscriptionCredentialBundle(bundleArgs);
+  const initialCredentialReadArgs = bundleArgs;
+  const initial = await (async () => {
+    if (!initialCredentialReadArgs.sourceId) {
+      return null;
+    }
+    const initialCiphertextReadArgs = {
+      ...initialCredentialReadArgs,
+      sourceId: initialCredentialReadArgs.sourceId,
+    };
+    const credentialCiphertexts = await (async () => {
+      const ciphertextPlan = personalSubscriptionAccountCiphertextsReadPlan(
+        initialCiphertextReadArgs,
+      );
+      const ciphertextRows = await initialCiphertextReadArgs.db
+        .select(ciphertextPlan.columns)
+        .from(ciphertextPlan.from)
+        .leftJoin(ciphertextPlan.join.table, ciphertextPlan.join.on)
+        .where(ciphertextPlan.where);
+      return personalSubscriptionAccountCiphertextsFromRows(ciphertextRows);
+    })();
+    return credentialCiphertexts
+      ? {
+          account: credentialCiphertexts.account,
+          values: await personalSubscriptionCredentialValues(
+            credentialCiphertexts.secrets,
+            initialCredentialReadArgs.featureSwitchContext,
+          ),
+        }
+      : null;
+  })();
   signal.throwIfAborted();
   const refreshMetadata = getModelProviderRefreshMetadata(args.providerKey);
   if (
@@ -6185,7 +6308,36 @@ export async function resolveCurrentPersonalSubscriptionBundleForApi(
   if (current.status === "unavailable") {
     return current;
   }
-  const bundle = await readPersonalSubscriptionCredentialBundle(bundleArgs);
+  const refreshedCredentialReadArgs = bundleArgs;
+  const bundle = await (async () => {
+    if (!refreshedCredentialReadArgs.sourceId) {
+      return null;
+    }
+    const refreshedCiphertextReadArgs = {
+      ...refreshedCredentialReadArgs,
+      sourceId: refreshedCredentialReadArgs.sourceId,
+    };
+    const credentialCiphertexts = await (async () => {
+      const ciphertextPlan = personalSubscriptionAccountCiphertextsReadPlan(
+        refreshedCiphertextReadArgs,
+      );
+      const ciphertextRows = await refreshedCiphertextReadArgs.db
+        .select(ciphertextPlan.columns)
+        .from(ciphertextPlan.from)
+        .leftJoin(ciphertextPlan.join.table, ciphertextPlan.join.on)
+        .where(ciphertextPlan.where);
+      return personalSubscriptionAccountCiphertextsFromRows(ciphertextRows);
+    })();
+    return credentialCiphertexts
+      ? {
+          account: credentialCiphertexts.account,
+          values: await personalSubscriptionCredentialValues(
+            credentialCiphertexts.secrets,
+            refreshedCredentialReadArgs.featureSwitchContext,
+          ),
+        }
+      : null;
+  })();
   return bundle && !bundle.account.needsReconnect
     ? { status: "available" as const, values: bundle.values }
     : {
