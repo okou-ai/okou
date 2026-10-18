@@ -1,4 +1,5 @@
 // A first-party, narrowly scoped attachment sink. File authority stays in WSS.
+// Published verbatim: sourcemap debug-ID injection excludes this immutable script.
 const PREFIX = "/sandbox-file-downloads/v1/";
 const CHUNK_BYTES = 32_768;
 const IDLE_MS = 30_000;

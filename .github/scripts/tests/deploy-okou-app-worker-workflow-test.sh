@@ -143,7 +143,7 @@ with tempfile.TemporaryDirectory() as directory:
     )
     if command_log.read_text().splitlines() != [
         "--filter @okouai/app exec vite build --sourcemap",
-        "--filter @okouai/app exec sentry-cli sourcemaps inject dist",
+        "--filter @okouai/app exec sentry-cli sourcemaps inject dist --ignore **/sandbox-file-download-v1-*.js",
     ]:
         raise RuntimeError("App deployment must build once and retain source map injection")
 for shell_prepare_step in (prepare_step, preview_prepare_step):

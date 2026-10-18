@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { URL } from "node:url";
+import { promisify } from "node:util";
 
 import { build, loadConfigFromFile } from "vite";
 
@@ -29,6 +32,39 @@ const productionConfigPromise = loadConfigFromFile(
   { command: "build", mode: "production" },
   new URL("../vite.config.ts", import.meta.url).pathname,
 );
+
+await test("canonical sourcemap injection preserves content-addressed download workers", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "okou-download-worker-"));
+  try {
+    const assets = path.join(root, "assets");
+    await mkdir(assets);
+    const source = await readFile(
+      new URL("../public/sandbox-file-download-v1-sw.js", import.meta.url),
+    );
+    const digest = createHash("sha256").update(source).digest("hex");
+    const worker = path.join(assets, `sandbox-file-download-v1-${digest}.js`);
+    const app = path.join(assets, "app.js");
+    await writeFile(worker, source);
+    await writeFile(app, 'console.log("application fixture");');
+    await promisify(execFile)(
+      "pnpm",
+      [
+        "exec",
+        "sentry-cli",
+        "sourcemaps",
+        "inject",
+        root,
+        "--ignore",
+        "**/sandbox-file-download-v1-*.js",
+      ],
+      { timeout: 10_000 },
+    );
+    assert.deepEqual(await readFile(worker), source);
+    assert.match(await readFile(app, "utf8"), /_sentryDebugIds/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 await test("production build isolates the configured lazy dependency", async () => {
   const loaded = await productionConfigPromise;

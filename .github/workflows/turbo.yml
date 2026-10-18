@@ -1516,7 +1516,7 @@ jobs:
         run: |
           cd turbo
           pnpm --filter @okouai/app exec vite build --sourcemap
-          pnpm --filter @okouai/app exec sentry-cli sourcemaps inject dist
+          pnpm --filter @okouai/app exec sentry-cli sourcemaps inject dist --ignore '**/sandbox-file-download-v1-*.js'
 
       - name: Create artifact manifest
         if: steps.existing.outputs.exists != 'true'
