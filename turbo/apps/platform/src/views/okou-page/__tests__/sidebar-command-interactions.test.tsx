@@ -5,11 +5,15 @@ import { expect, test } from "vitest";
 import { click } from "../../../__tests__/page-helper.ts";
 import {
   AGENT_ID,
+  commandItemByText,
   context,
   pinnedAgentNames,
   prepareAgents,
   prepareDefaultAgent,
+  prepareOverflowingPinnedAgents,
+  RESEARCH_AGENT_ID,
   setupSidebarPage,
+  SUPPORT_AGENT_ID,
 } from "./sidebar-test-helpers.tsx";
 
 async function openPinManager() {
@@ -109,4 +113,47 @@ test("Create the first agent from an empty pin manager with Enter", async () => 
   await expect(
     screen.findByRole("dialog", { name: "Create a new agent" }),
   ).resolves.toBeInTheDocument();
+});
+
+test("Move the pin control to the header once agents fill the first grid row", async () => {
+  const user = userEvent.setup({ delay: null });
+  prepareOverflowingPinnedAgents();
+  context.mocks.data.userPreferences({
+    pinnedAgentIds: [RESEARCH_AGENT_ID, SUPPORT_AGENT_ID],
+  });
+  await setupSidebarPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  const section = await screen.findByTestId("pinned-agents-horizontal");
+  const grid = within(section).getByTestId("pinned-agents-grid");
+  await waitFor(() => {
+    expect(pinnedAgentNames(grid)).toStrictEqual([
+      "Nova",
+      "Research Agent",
+      "Support Agent",
+    ]);
+  });
+
+  await user.click(within(grid).getByLabelText("Pin an agent"));
+  const dialog = await screen.findByRole("dialog", { name: "Pin an agent" });
+  const dialogList = within(dialog).getByTestId("pin-agent-dialog-list");
+  await user.click(
+    within(commandItemByText(dialogList, "Operations Agent")).getByText("Pin"),
+  );
+
+  await waitFor(() => {
+    expect(pinnedAgentNames(grid)).toStrictEqual([
+      "Nova",
+      "Research Agent",
+      "Support Agent",
+      "Operations Agent",
+    ]);
+  });
+  expect(within(grid).queryByLabelText("Pin an agent")).not.toBeInTheDocument();
+  const headerControl = within(section).getByLabelText("Pin an agent");
+
+  await user.keyboard("{Escape}");
+
+  await waitFor(() => {
+    expect(headerControl).toHaveFocus();
+  });
+  expect(dialog).not.toBeInTheDocument();
 });

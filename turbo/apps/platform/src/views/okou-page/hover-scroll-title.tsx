@@ -7,14 +7,20 @@ import { titleOverflowRef$ } from "../../signals/chat-page/title-overflow.ts";
  * or keyboard-focused. The measured overflow drives both the mask and travel,
  * so fitting titles stay still. The registered shift property is inherited by
  * the text span and stays at zero for reduced motion.
+ *
+ * `align="center"` centres a title that fits. Auto inline margins cannot go
+ * negative, so a clipped title still starts at the leading edge, where the
+ * measured overflow and the trailing fade expect it.
  */
 export function HoverScrollTitle({
   title,
   className,
+  align = "start",
   "data-slot": slot = "hover-scroll-title",
 }: {
   readonly title: string;
   readonly className?: string;
+  readonly align?: "start" | "center";
   readonly "data-slot"?: string;
 }) {
   const measureTitle = useSet(titleOverflowRef$);
@@ -37,7 +43,12 @@ export function HoverScrollTitle({
         className,
       )}
     >
-      <span className="block w-max whitespace-nowrap [transform:translateX(var(--okou-nav-title-shift))]">
+      <span
+        className={cn(
+          "block w-max whitespace-nowrap [transform:translateX(var(--okou-nav-title-shift))]",
+          align === "center" && "mx-auto",
+        )}
+      >
         {title}
       </span>
     </span>

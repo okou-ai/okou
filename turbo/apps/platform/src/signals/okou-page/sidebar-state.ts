@@ -1,7 +1,7 @@
 import { command, computed, state } from "ccstate";
 import { debounceCommand } from "../command-scheduling.ts";
 import { localStorageSignals } from "../external/local-storage.ts";
-import { resetSignal } from "../utils.ts";
+import { onRef, resetSignal } from "../utils.ts";
 import { hideKeyboardShortcutHints$ } from "../keyboard-shortcut-hints.ts";
 import { openCreateAgentDialog$ } from "./jobs-page.ts";
 
@@ -230,6 +230,29 @@ const internalPinAgentDialogHandoff$ = state(false);
 export const pinAgentDialogHandoff$ = computed((get) => {
   return get(internalPinAgentDialogHandoff$);
 });
+
+// The pin control sits in the grid while the pinned agents and it share one
+// row, and moves to the section header once they no longer do. Pinning or
+// unpinning from the dialog can therefore unmount the control that opened it,
+// so the dialog returns focus to whichever control is mounted when it closes.
+const internalPinAgentControl$ = state<HTMLElement | null>(null);
+export const pinAgentControl$ = computed((get) => {
+  return get(internalPinAgentControl$);
+});
+export const pinAgentControlRef$ = onRef(
+  command(({ get, set }, element: HTMLElement, signal: AbortSignal) => {
+    set(internalPinAgentControl$, element);
+    signal.addEventListener(
+      "abort",
+      () => {
+        if (get(internalPinAgentControl$) === element) {
+          set(internalPinAgentControl$, null);
+        }
+      },
+      { once: true },
+    );
+  }),
+);
 
 export const openPinAgentDialog$ = command(({ set }) => {
   set(internalPinAgentDialogHandoff$, false);
