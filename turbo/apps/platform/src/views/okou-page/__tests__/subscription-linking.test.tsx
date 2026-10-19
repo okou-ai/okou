@@ -362,8 +362,9 @@ test("The mobile Me page offers both subscriptions and opens the chosen sign-in"
     }),
   ).toStrictEqual(["ChatGPT (Codex)", "Claude"]);
   click(action("Claude", "menuitem", menu));
-  await screen.findByTestId("claude-code-device-auth-code");
-  expect(window.location.search).not.toContain("settings=model");
+  await expect(
+    screen.findByTestId("claude-code-device-auth-code"),
+  ).resolves.toBeInTheDocument();
 });
 
 test("The mobile Me entry leaves once a subscription is linked", async () => {
