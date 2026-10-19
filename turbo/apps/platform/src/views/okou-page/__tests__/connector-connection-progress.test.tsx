@@ -48,6 +48,16 @@ function expectBoundedWaitDiagnostics(oauthAttemptId: string, enabled = true) {
   const breadcrumbs = oauthWaitDiagnostics();
   expect(breadcrumbs.length > 0).toBe(enabled);
   expect(breadcrumbs.length).toBeLessThanOrEqual(4);
+  const started = expect.objectContaining({
+    message: "started",
+    data: expect.objectContaining({
+      parent_aborted: false,
+      wait_aborted: false,
+      current: true,
+      completion_verified: false,
+    }),
+  });
+  expect(breadcrumbs.at(0)).toStrictEqual(enabled ? started : undefined);
   expect(
     new Set(
       breadcrumbs.map((entry) => {
@@ -165,6 +175,17 @@ async function expectCancelledConnection(
     parent_aborted: true,
     wait_aborted: true,
     error_kind: "aborted",
+  });
+  expect(
+    oauthWaitDiagnostics().find((entry) => {
+      return entry.message === "cleanup";
+    })?.data,
+  ).toMatchObject({
+    cleanup_owned: false,
+    parent_aborted: true,
+    wait_aborted: true,
+    current: false,
+    completion_verified: false,
   });
 }
 
@@ -324,6 +345,17 @@ test.each([
     });
     const enabled = diagnostics === "active";
     const breadcrumbs = expectBoundedWaitDiagnostics(oauthAttemptId, enabled);
+    const cleanup = expect.objectContaining({
+      cleanup_owned: true,
+      parent_aborted: false,
+      wait_aborted: true,
+      current: true,
+    });
+    expect(
+      breadcrumbs.find((entry) => {
+        return entry.message === "cleanup";
+      })?.data,
+    ).toStrictEqual(enabled ? cleanup : undefined);
     const accepted = expect.objectContaining({
       message: "finished",
       data: expect.objectContaining({
@@ -426,6 +458,17 @@ test.each(["popup", "cancel", "forbidden"] as const)(
       );
     });
     const breadcrumbs = expectBoundedWaitDiagnostics(oauthAttemptId);
+    expect(
+      breadcrumbs.find((entry) => {
+        return entry.message === "cleanup";
+      })?.data,
+    ).toMatchObject({
+      cleanup_owned: finish !== "cancel",
+      parent_aborted: finish === "cancel",
+      wait_aborted: true,
+      current: finish !== "cancel",
+      completion_verified: false,
+    });
     const popupBranch = expect.objectContaining({ branch: "popupClosed" });
     expect(
       breadcrumbs.find((entry) => {
