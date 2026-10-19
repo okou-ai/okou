@@ -49,7 +49,7 @@ async function enable(actor: ApiTestUser, enabled = true) {
   await updateFeatureSwitchesForUser(
     context,
     { ...actor, orgId: actor.orgId },
-    { [FeatureSwitchKey.ChatRelations]: enabled },
+    { [FeatureSwitchKey.ChatResourcePanel]: enabled },
   );
 }
 async function sourceFixture() {
