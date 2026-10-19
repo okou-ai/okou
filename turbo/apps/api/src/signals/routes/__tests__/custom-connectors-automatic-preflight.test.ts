@@ -20,12 +20,16 @@ import { createRouteMocks } from "./helpers/route-test";
 const context = testContext();
 const connectors = createConnectorBddApi(context);
 
-async function fixture(registration: "cimd" | "dcr" | "none") {
+async function fixture(
+  registration: "cimd" | "dcr" | "none",
+  endpoint?: string,
+) {
   mockEnv("APP_URL", "https://app.okou.ai");
   mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
   mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
   const provider = mockAutomaticMcpOAuthProvider(context, {
     registration,
+    ...(endpoint === undefined ? {} : { endpoint }),
     ...(registration === "none" ? { authentication: "none" } : {}),
   });
   const bdd = createBddApi(context);
@@ -74,6 +78,33 @@ async function complete(authorizationUrl: string, issuer: string) {
 }
 
 describe("Automatic custom connector preflight", () => {
+  it("preserves endpoint queries through OAuth discovery and connection", async () => {
+    const endpoint =
+      "https://automatic-mcp.example.test/server?hl=en&tag=one&tag=two&empty=&encoded=a%20b&literal=a+b";
+    const { actor, connector, provider } = await fixture("cimd", endpoint);
+    const started = await connectors.requestStartCustomConnectorOAuth2(
+      actor,
+      connector.id,
+      [200],
+    );
+    if (started.status !== 200 || started.body.result !== "authorization") {
+      throw new Error("Expected an Automatic OAuth authorization URL");
+    }
+    expect(
+      new URL(started.body.authorizationUrl).searchParams.get("resource"),
+    ).toBe(endpoint);
+    await complete(started.body.authorizationUrl, provider.issuer);
+    const accounts = await connectors.listCustomConnectorAccounts(
+      actor,
+      connector.id,
+    );
+    expect(accounts).toHaveLength(1);
+    expect(new Set(provider.endpointRequests)).toStrictEqual(
+      new Set([endpoint]),
+    );
+    expect(provider.tokenBodies[0]?.get("resource")).toBe(endpoint);
+  });
+
   it.each(["cimd", "dcr", "none"] as const)(
     "adds and reconnects %s accounts only for the exact user, org and definition",
     async (registration) => {
