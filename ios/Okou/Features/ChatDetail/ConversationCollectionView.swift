@@ -64,6 +64,7 @@ struct ConversationCollectionView<Content: View>: UIViewControllerRepresentable 
   let rows: [ConversationCollectionRow]
   let markdown: MessageMarkdownCache
   var measurements = ConversationMeasurementCache()
+  var contentInsets = EdgeInsets()
   let anchor: ConversationScrollAnchor
   let scroll: ConversationCollectionScroll
   let followsBottom: Bool
@@ -156,10 +157,13 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     collection.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     collection.backgroundColor = .clear
     collection.alwaysBounceVertical = true
+    collection.topEdgeEffect.style = .soft
+    collection.bottomEdgeEffect.style = .soft
     collection.keyboardDismissMode = .interactive
     collection.selfSizingInvalidation = .disabled
     collection.register(UICollectionViewCell.self, forCellWithReuseIdentifier: "message")
     collection.delegate = self
+    updateContentInsets()
     (collection as? ConversationAccessibilityCollection)?.beginsAccessibilityScroll = {
       [weak self] in
       guard let self else { return }
@@ -235,7 +239,21 @@ final class ConversationCollectionController<Content: View>: UIViewController,
 
   func update(_ source: ConversationCollectionView<Content>) {
     self.source = source
-    if isViewLoaded { prepareRowsIfNeeded() }
+    if isViewLoaded {
+      updateContentInsets()
+      prepareRowsIfNeeded()
+    }
+  }
+
+  private func updateContentInsets() {
+    let insets = UIEdgeInsets(
+      top: source.contentInsets.top, left: source.contentInsets.leading,
+      bottom: source.contentInsets.bottom, right: source.contentInsets.trailing)
+    guard collection.contentInset != insets else { return }
+    collection.contentInset = insets
+    collection.verticalScrollIndicatorInsets = insets
+    publishViewportChange()
+    publishMetrics()
   }
 
   func stop() {
@@ -357,8 +375,9 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   private func measure(_ rows: [ConversationCollectionRow], width: CGFloat) async -> [CGFloat] {
     let hosts = rows.map { row in
       let host = UIHostingController(
-        rootView: source.content(row, nil).fixedSize(horizontal: false, vertical: true)
-          .ignoresSafeArea())
+        rootView: source.content(row, nil).fixedSize(horizontal: false, vertical: true))
+      // System bars must not contribute to intrinsic row sizes in the offscreen measurement host.
+      host.safeAreaRegions = []
       addChild(host)
       host.view.isUserInteractionEnabled = false
       host.view.accessibilityElementsHidden = true

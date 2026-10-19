@@ -73,7 +73,7 @@ struct ChatComposerView: View {
         .padding(.trailing, isFocused ? 18 : 58)
         .padding(.top, isFocused ? 17 : 15)
         .padding(.bottom, isFocused ? 62 : 15)
-        .frame(minHeight: isFocused ? 116 : 54, alignment: .topLeading)
+        .frame(minHeight: isFocused ? 116 : 54, alignment: isFocused ? .topLeading : .leading)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: isFocused ? 28 : 30))
         .overlay(alignment: isFocused ? .bottomLeading : .leading) {
           Menu {
@@ -101,21 +101,24 @@ struct ChatComposerView: View {
               if showsProgress {
                 ProgressView()
                   .controlSize(.small)
-                  .tint(Color.primary)
+                  .tint(Color(uiColor: .systemBackground))
               } else {
                 Image(systemName: showsStop ? "stop.fill" : "arrow.up")
               }
             }
-            .font(.system(size: 18, weight: .semibold))
+            .font(.system(size: 16, weight: .semibold))
+            .frame(width: 22, height: 22)
             .foregroundStyle(Color(uiColor: .systemBackground))
           }
-          .buttonStyle(.borderedProminent)
+          .buttonStyle(.glassProminent)
           .buttonBorderShape(.circle)
-          .controlSize(.large)
+          .controlSize(.small)
           .tint(Color.primary)
           .disabled((!hasContent && !showsStop) || !attachments.isReady || isBusy || needsUpgrade)
           .accessibilityLabel(showsStop ? "Stop" : "Send message")
           .accessibilityIdentifier(showsStop ? "stop-message" : "send-message")
+          .frame(width: 44, height: 44)
+          .contentShape(Circle())
           .padding(.trailing, 7)
           .padding(.bottom, isFocused ? 8 : 0)
         }
@@ -124,7 +127,6 @@ struct ChatComposerView: View {
     .padding(.horizontal, 16)
     .padding(.top, 8)
     .padding(.bottom, 8)
-    .background(Color(uiColor: .systemBackground))
     .photosPicker(
       isPresented: $showsPhotos, selection: $selectedPhotos,
       matching: .any(of: [.images, .videos]), preferredItemEncoding: .current

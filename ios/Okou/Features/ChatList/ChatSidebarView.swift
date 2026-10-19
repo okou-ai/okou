@@ -25,51 +25,45 @@ struct ChatSidebarView: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 0) {
+    List {
+      pinnedAgentsSection
+      if let error = store.list.navigationError {
+        Text(error)
+          .font(.footnote)
+          .foregroundStyle(.secondary)
+      }
+      if let error = store.list.error ?? store.error {
+        VStack(alignment: .leading, spacing: 8) {
+          Text(error).font(.footnote).foregroundStyle(.secondary)
+          Button("Try again") { Task { await store.refresh() } }
+            .font(.footnote.weight(.semibold))
+        }
+      }
+      if store.list.isLoading && store.list.threads.isEmpty {
+        ProgressView("Loading chats…")
+          .frame(maxWidth: .infinity)
+      } else {
+        threadSection
+        if visibleThreads.isEmpty && store.list.error == nil && store.error == nil {
+          Text("Your conversations will appear here.")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+        }
+      }
+    }
+    .listStyle(.plain)
+    .listSectionSpacing(.compact)
+    .listRowSpacing(0)
+    .environment(\.defaultMinListRowHeight, 0)
+    .environment(\.defaultMinListHeaderHeight, 0)
+    .scrollContentBackground(.hidden)
+    .scrollEdgeEffectStyle(.soft, for: .vertical)
+    .safeAreaBar(edge: .top, spacing: 0) {
       header
         .padding(.horizontal, 16)
         .padding(.top, 14)
-        .padding(.bottom, 0)
-
-      List {
-        pinnedAgentsSection
-        if let error = store.list.navigationError {
-          Text(error)
-            .font(.footnote)
-            .foregroundStyle(.secondary)
-        }
-        if let error = store.list.error ?? store.error {
-          VStack(alignment: .leading, spacing: 8) {
-            Text(error).font(.footnote).foregroundStyle(.secondary)
-            Button("Try again") { Task { await store.refresh() } }
-              .font(.footnote.weight(.semibold))
-          }
-        }
-        if store.list.isLoading && store.list.threads.isEmpty {
-          ProgressView("Loading chats…")
-            .frame(maxWidth: .infinity)
-        } else {
-          threadSection
-          if visibleThreads.isEmpty && store.list.error == nil && store.error == nil {
-            Text("Your conversations will appear here.")
-              .font(.subheadline)
-              .foregroundStyle(.secondary)
-          }
-        }
-        Color.clear
-          .frame(height: 80)
-          .listRowInsets(EdgeInsets())
-          .listRowSeparator(.hidden)
-          .listRowBackground(Color.clear)
-      }
-      .listStyle(.plain)
-      .listSectionSpacing(.compact)
-      .listRowSpacing(0)
-      .environment(\.defaultMinListRowHeight, 0)
-      .environment(\.defaultMinListHeaderHeight, 0)
-      .scrollContentBackground(.hidden)
-      .overlay(alignment: .bottom) { footer }
     }
+    .safeAreaBar(edge: .bottom, spacing: 0) { footer }
     .background(Color(uiColor: .systemBackground))
     .alert(
       "Rename chat",
@@ -131,6 +125,7 @@ struct ChatSidebarView: View {
 
   private var pinnedAgentsSection: some View {
     Section {
+      scrollingSectionHeading("Pinned Agents")
       ForEach(store.list.visiblePinnedAgents, id: \.agentId) { agent in
         Button {
           newChat(agent.agentId)
@@ -169,14 +164,12 @@ struct ChatSidebarView: View {
         )
         .accessibilityIdentifier("agent-\(agent.agentId)")
       }
-    } header: {
-      Text("Pinned Agents")
-        .textCase(nil)
     }
   }
 
   private var threadSection: some View {
     Section {
+      scrollingSectionHeading(store.list.canArchiveChats && showArchived ? "Archived" : "Recent")
       ForEach(visibleThreads) { thread in
         Button {
           store.selectChat(thread.id)
@@ -196,6 +189,11 @@ struct ChatSidebarView: View {
                 .fill(Color.accentColor)
                 .frame(width: 7, height: 7)
                 .accessibilityLabel("Unread")
+            } else if thread.pinnedAt != nil {
+              Image(systemName: "pin.fill")
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             }
           }
           .frame(height: 48)
@@ -214,10 +212,15 @@ struct ChatSidebarView: View {
         )
         .accessibilityIdentifier("chat-\(thread.id)")
         .accessibilityAddTraits(store.selectedThreadID == thread.id ? .isSelected : [])
+        .accessibilityValue(thread.pinnedAt != nil ? "Pinned" : "")
         .contextMenu {
-          Button(thread.pinnedAt == nil ? "Pin" : "Unpin", systemImage: "pin") {
+          Button(
+            thread.pinnedAt == nil ? "Pin" : "Unpin",
+            systemImage: thread.pinnedAt == nil ? "pin" : "pin.slash"
+          ) {
             Task { await store.list.setPinned(thread, pinned: thread.pinnedAt == nil) }
           }
+          .disabled(store.list.updatingThreads.contains(thread.id))
           Button("Rename", systemImage: "pencil") {
             renameTitle = thread.displayTitle
             renamingThread = thread
@@ -242,11 +245,18 @@ struct ChatSidebarView: View {
           }
         }
       }
-    } header: {
-      Text(store.list.canArchiveChats && showArchived ? "Archived" : "Recent")
-        .lineLimit(1)
-        .textCase(nil)
     }
+  }
+
+  private func scrollingSectionHeading(_ title: String) -> some View {
+    Text(title)
+      .font(.subheadline.weight(.semibold))
+      .foregroundStyle(.secondary)
+      .lineLimit(1)
+      .accessibilityAddTraits(.isHeader)
+      .listRowInsets(EdgeInsets(top: 14, leading: 16, bottom: 8, trailing: 16))
+      .listRowSeparator(.hidden)
+      .listRowBackground(Color.clear)
   }
 
   private var footer: some View {
@@ -256,12 +266,11 @@ struct ChatSidebarView: View {
       } label: {
         Label("Chat", systemImage: "square.and.pencil")
           .font(.system(size: 17, weight: .semibold))
-          .foregroundStyle(Color(uiColor: .systemBackground))
+          .foregroundStyle(.primary)
       }
-      .buttonStyle(.borderedProminent)
+      .buttonStyle(.glass)
       .buttonBorderShape(.capsule)
       .controlSize(.large)
-      .tint(Color.primary)
       .accessibilityLabel("New chat")
       .accessibilityIdentifier("new-chat")
       Spacer()
