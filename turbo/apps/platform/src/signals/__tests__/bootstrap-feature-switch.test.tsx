@@ -3,11 +3,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
-import {
-  queryAllByRoleFast,
-  setupPage,
-  startPage,
-} from "../../__tests__/page-helper.ts";
+import { setupPage, startPage } from "../../__tests__/page-helper.ts";
 import {
   AGENT_ID,
   context,
@@ -39,7 +35,7 @@ test("A signed-in workspace receives its enabled features", async () => {
   await screen.findByRole("textbox", { name: "Message" });
   await openTemplates();
   await waitFor(() => {
-    expect(customTemplatesTab()).toBeVisible();
+    expect(customTemplatesSection()).toBeVisible();
   });
 });
 
@@ -80,10 +76,8 @@ async function setupEmailRolloutPage(args: {
   await openTemplates();
 }
 
-function customTemplatesTab(): HTMLElement | undefined {
-  return queryAllByRoleFast("tab").find((tab) => {
-    return tab.textContent?.trim() === "Custom";
-  });
+function customTemplatesSection(): HTMLElement | null {
+  return screen.queryByRole("region", { name: "Custom" });
 }
 
 test("Bingjie retains the custom template rollout after feature loading", async () => {
@@ -94,7 +88,7 @@ test("Bingjie retains the custom template rollout after feature loading", async 
   });
 
   await waitFor(() => {
-    expect(customTemplatesTab()).toBeVisible();
+    expect(customTemplatesSection()).toBeVisible();
   });
 });
 
@@ -105,7 +99,7 @@ test("another member does not receive the custom template rollout", async () => 
     userId: "user_other_member",
   });
 
-  expect(customTemplatesTab()).toBeUndefined();
+  expect(customTemplatesSection()).not.toBeInTheDocument();
 });
 
 test("A signed-out page does not load workspace features", async () => {

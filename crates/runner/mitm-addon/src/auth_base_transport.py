@@ -8,6 +8,7 @@ the low-level HTTP and destination-validation details for that forward path.
 import asyncio
 import errno
 import http.client as http_client
+import io
 import ipaddress
 import socket
 import ssl
@@ -18,6 +19,7 @@ from collections.abc import Callable
 from contextlib import suppress
 from typing import NamedTuple, Protocol
 
+import h11
 import mitmproxy_rs
 from mitmproxy import http
 
@@ -50,6 +52,8 @@ DEFAULT_HTTPS_PORT = 443
 MAX_AUTH_BASE_REQUEST_BODY_BYTES = 32 * 1024 * 1024
 MAX_AUTH_BASE_RESPONSE_BODY_BYTES = 32 * 1024 * 1024
 _AUTH_BASE_RESPONSE_READ_BUFFER_BYTES = 64 * 1024
+_AUTH_BASE_RESPONSE_MAX_LINE_BYTES = 64 * 1024
+_AUTH_BASE_RESPONSE_MAX_HEADER_LINES = 100
 _PERCENT_DECODED_UPSTREAM_HOST_SYNTAX_CHARS = frozenset("{}*.\u3002\uff0e\uff61,")
 _UPSTREAM_HOST_FORBIDDEN_CHARS = frozenset("{}*")
 _https_context: ssl.SSLContext | None = None
@@ -81,6 +85,9 @@ class ForwardRequestAbort(Protocol):
         raise NotImplementedError
 
     def raise_if_aborted(self) -> None:
+        raise NotImplementedError
+
+    def abort_for_deadline(self) -> bool:
         raise NotImplementedError
 
 
@@ -408,7 +415,7 @@ def _filter_response_headers(headers: list[tuple[str, str]]) -> http.Headers:
     The response body is fully read, so headers like transfer-encoding must
     not be forwarded. Headers named by Connection are hop-by-hop too.
 
-    ``HTTPResponse.getheaders()`` exposes raw field octets through a one-to-one
+    ``http.client.parse_headers()`` exposes raw field octets through a one-to-one
     ISO-8859-1 decode. Encode with the same codec to restore those octets for
     mitmproxy's byte-backed header container.
     """
@@ -487,26 +494,64 @@ def _outbound_request_headers(
     return outbound
 
 
-def _read_response_body(resp) -> bytes:
-    body = bytearray()
-    buffer = bytearray(
-        min(_AUTH_BASE_RESPONSE_READ_BUFFER_BYTES, MAX_AUTH_BASE_RESPONSE_BODY_BYTES + 1)
-    )
-    view = memoryview(buffer)
-    while True:
-        read_size = min(len(buffer), MAX_AUTH_BASE_RESPONSE_BODY_BYTES + 1 - len(body))
-        # HTTPResponse.read() retains a list of wire chunks before joining them.
-        # readinto() fills this reusable buffer without accumulating chunk objects.
-        count = resp.readinto(view[:read_size])
-        if not count:
+def _read_response_head(
+    protocol: h11.Connection,
+    source: io.BufferedIOBase,
+    conn: _ValidatedTLSConnection,
+) -> tuple[h11.InformationalResponse | h11.Response, list[tuple[str, str]]]:
+    conn.set_remaining_timeout()
+    status_line = source.readline(_AUTH_BASE_RESPONSE_MAX_LINE_BYTES + 1)
+    if not status_line:
+        raise h11.RemoteProtocolError("Upstream closed before a final response")
+    if len(status_line) > _AUTH_BASE_RESPONSE_MAX_LINE_BYTES:
+        raise h11.RemoteProtocolError("Upstream response status line too long")
+
+    header_bytes = bytearray()
+    for _ in range(_AUTH_BASE_RESPONSE_MAX_HEADER_LINES):
+        conn.set_remaining_timeout()
+        line = source.readline(_AUTH_BASE_RESPONSE_MAX_LINE_BYTES + 1)
+        if not line:
+            raise h11.RemoteProtocolError("Upstream closed during response headers")
+        if len(line) > _AUTH_BASE_RESPONSE_MAX_LINE_BYTES:
+            raise h11.RemoteProtocolError("Upstream response header line too long")
+        header_bytes.extend(line)
+        if line in (b"\r\n", b"\n"):
             break
-        body.extend(view[:count])
-        if len(body) > MAX_AUTH_BASE_RESPONSE_BODY_BYTES:
-            raise ForwardedResponseTooLargeError("Forwarded auth.base response body too large")
-    remaining = resp.length
-    if remaining is not None and remaining > 0:
-        raise http_client.IncompleteRead(bytes(body), remaining)
-    return bytes(body)
+    else:
+        raise h11.RemoteProtocolError("Upstream response has too many headers")
+
+    protocol.receive_data(status_line + header_bytes)
+    event = protocol.next_event()
+    if not isinstance(event, (h11.InformationalResponse, h11.Response)):
+        raise h11.RemoteProtocolError("Expected an upstream response head")
+    # h11 owns framing validation. Keep original metadata because it normalizes
+    # equivalent Content-Length fields that HEAD/304 handling must still see.
+    headers = http_client.parse_headers(io.BytesIO(header_bytes))
+    return event, list(headers.items())
+
+
+def _read_response_body(
+    protocol: h11.Connection,
+    source: io.BufferedIOBase,
+    conn: _ValidatedTLSConnection,
+) -> bytes:
+    body = bytearray()
+    while True:
+        event = protocol.next_event()
+        if event is h11.NEED_DATA:
+            conn.set_remaining_timeout()
+            # read1 returns available bytes without waiting to fill a buffer on
+            # a keep-alive peer. Wire reads also carry chunk framing/trailers,
+            # so retain their bounded window even at the payload cap.
+            protocol.receive_data(source.read1(_AUTH_BASE_RESPONSE_READ_BUFFER_BYTES))
+        elif isinstance(event, h11.Data):
+            if len(event.data) > MAX_AUTH_BASE_RESPONSE_BODY_BYTES - len(body):
+                raise ForwardedResponseTooLargeError("Forwarded auth.base response body too large")
+            body.extend(event.data)
+        elif isinstance(event, h11.EndOfMessage):
+            return bytes(body)
+        else:
+            raise h11.RemoteProtocolError("Incomplete or upgraded upstream response")
 
 
 def validate_request_body_size(body: bytes | None) -> None:
@@ -614,33 +659,49 @@ def forward_request_sync(
         abort_handle=abort_handle,
         validated_addresses=validated_addresses,
     )
-    resp = None
     try:
-        conn.putrequest(
-            method,
-            prepared.target,
-            skip_host=True,
-            skip_accept_encoding=True,
+        protocol = h11.Connection(
+            h11.CLIENT, max_incomplete_event_size=_AUTH_BASE_RESPONSE_MAX_LINE_BYTES
         )
-        for header_name, header_value in _outbound_request_headers(
-            headers,
-            prepared.host,
-            prepared.port,
-            body,
-        ):
-            conn.putheader(header_name, header_value)
-        conn.endheaders(body)
-        conn.set_remaining_timeout()
-        resp = conn.getresponse()
-        conn.set_remaining_timeout()
-        resp_body = _read_response_body(resp)
-        return resp.status, resp_body, _filter_response_headers(resp.getheaders())
+        # h11 takes field content without the surrounding HTTP OWS (SP/HTAB).
+        request = h11.Request(
+            method=method,
+            target=prepared.target,
+            headers=[
+                (name.encode("latin-1"), value.strip(" \t").encode("latin-1"))
+                for name, value in _outbound_request_headers(
+                    headers, prepared.host, prepared.port, body
+                )
+            ],
+        )
+        events: list[h11.Event] = [request]
+        if body is not None:
+            events.append(h11.Data(data=body))
+        events.append(h11.EndOfMessage())
+        for event in events:
+            wire = protocol.send(event)
+            if wire:
+                conn.set_remaining_timeout()
+                conn.send(wire)
+
+        if conn.sock is None:
+            raise http_client.NotConnected()
+        with io.BufferedReader(conn.sock.makefile("rb", buffering=0)) as source:
+            while True:
+                response, response_headers = _read_response_head(protocol, source, conn)
+                if isinstance(response, h11.Response):
+                    break
+                if response.status_code == http_client.SWITCHING_PROTOCOLS:
+                    raise h11.RemoteProtocolError("auth.base does not support protocol upgrades")
+            response_body = _read_response_body(protocol, source, conn)
+            return response.status_code, response_body, _filter_response_headers(response_headers)
+    except (TimeoutError, AuthBaseForwardingDeadlineExceededError):
+        # A synchronous timeout can win the race with the event-loop timer.
+        # Mark/abort while the socket is still owned, before cleanup clears it.
+        abort_handle.abort_for_deadline()
+        raise
     finally:
         try:
-            if resp is not None:
-                resp.close()
+            conn.close()
         finally:
-            try:
-                conn.close()
-            finally:
-                conn._release_abort_socket()
+            conn._release_abort_socket()

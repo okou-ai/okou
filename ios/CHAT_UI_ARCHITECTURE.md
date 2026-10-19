@@ -57,7 +57,10 @@ user, and workspace so a renewed session can reuse confirmed data.
 
 ThreadListStore owns the thread list, navigation data, and list action state.
 ConversationStore owns one thread's projected history, draft, optimistic inputs,
-and loading/send/stop state. Detail views consume the conversation directly;
+loading/send/stop state, and a bounded disposable row-measurement cache. Rebuilding
+the detail view reuses sizes only for an equal row revision, width, and Dynamic
+Type category. Memory pressure and conversation closure clear these sizes.
+Detail views consume the conversation directly;
 the composer accepts a draft binding and explicit action inputs. They do not
 index workspace-wide message or operation dictionaries.
 
@@ -107,6 +110,19 @@ a failed SQLite write also prevent eviction until persistence succeeds. A memory
 warning clears Markdown preparation and releases eligible dormant conversations,
 including their clean raw history cache. Reopening hydrates SQLite and catches up
 from its cursor; event replay is never truncated to achieve a memory bound.
+
+WorkspaceStore also owns one coalesced background history-warming task. It warms
+the latest 100 threads by activity time and threads with active/unread indicators,
+excluding resident conversations that already own foreground synchronization.
+The existing batch event endpoint advances SQLite cursors without constructing
+conversation stores or retaining unopened histories in memory. Snapshot recovery
+stays outside the per-thread foreground lock, and publication skips a batch whose
+starting cursor has been overtaken by a foreground read. Closing the workspace or
+receiving memory pressure cancels warming. Ordinary warming failures leave the
+normal cache-first open path available; a force-upgrade response blocks the scope.
+Data and native-layout loading indicators reveal only after 100 ms, matching the
+web transcript's short-wait policy. Cache-ready rows commit without another
+asynchronous measurement pass.
 
 Network decoding, event replay, and SQLite access belong to their existing
 service/storage actors. Markdown parsing now runs serially on a separate actor.

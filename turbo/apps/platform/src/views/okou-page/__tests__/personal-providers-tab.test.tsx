@@ -331,6 +331,11 @@ test("Organize personal subscriptions in accessible provider tables", async () =
     name: "Claude",
   });
   const codexHeading = screen.getByRole("heading", { name: "ChatGPT (Codex)" });
+  // Every subscription entry lists ChatGPT before Claude.
+  expect(
+    codexHeading.compareDocumentPosition(claudeHeading) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
   expect(codexTable.parentElement).toContainElement(codexHeading);
   expect(codexTable).toHaveAttribute("aria-labelledby", codexHeading.id);
   expect(within(codexTable).getByTestId(`oauth-account-${accountA.id}`)).toBe(

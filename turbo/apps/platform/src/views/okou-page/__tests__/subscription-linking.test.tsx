@@ -338,16 +338,33 @@ test("An unresolved subscription lookup offers no entry yet", async () => {
   });
 });
 
-test("The mobile Me page opens Models to connect a subscription", async () => {
+test("The mobile Me page offers both subscriptions and opens the chosen sign-in", async () => {
+  context.mocks.api(claudeCodeDeviceAuthContract.start, ({ respond }) => {
+    return respond(200, {
+      sessionToken: "me-claude-session",
+      type: "claude-code",
+      status: "pending",
+      scope: "personal",
+      browserUrl: "https://claude.ai/oauth/authorize",
+      expiresIn: 30,
+    });
+  });
   await setupLinking({ mobile: true, path: "/me" });
   await screen.findByRole("heading", { name: "Me" });
   await waitFor(() => {
     expect(action("Use more models")).toBeInTheDocument();
   });
   click(action("Use more models"));
-  await waitFor(() => {
-    expect(window.location.search).toContain("settings=model");
-  });
+  const menu = await screen.findByRole("menu");
+  expect(
+    queryAllByRoleFast("menuitem", menu).map((item) => {
+      return item.textContent?.trim();
+    }),
+  ).toStrictEqual(["ChatGPT (Codex)", "Claude"]);
+  click(action("Claude", "menuitem", menu));
+  await expect(
+    screen.findByTestId("claude-code-device-auth-code"),
+  ).resolves.toBeInTheDocument();
 });
 
 test("The mobile Me entry leaves once a subscription is linked", async () => {

@@ -76,7 +76,9 @@ export const agentInstructionsResponseSchema = z.object({
  * Agent instructions update request schema
  */
 export const agentInstructionsRequestSchema = z.object({
-  content: z.string(),
+  content: z.string().refine((content) => {
+    return !content.includes("\0");
+  }, "Instructions must not contain NUL characters"),
 });
 
 /**

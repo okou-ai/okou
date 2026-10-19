@@ -1578,6 +1578,8 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
     );
 
     let required_private_files_started = Instant::now();
+    // Storage cleanup must finish before inline instructions replace managed files.
+    super::storage::apply_agent_instructions(sandbox, context).await?;
     let required_files =
         match write_required_agent_files(sandbox, context, &mut user_env_map, &run_payload).await {
             Ok(required_files) => {

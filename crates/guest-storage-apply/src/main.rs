@@ -9,10 +9,10 @@ use std::time::Instant;
 
 const LOG_TAG: &str = "sandbox:guest-storage-apply";
 const MANIFEST_STDIN_ARG: &str = "--manifest-stdin";
-const USAGE: &str =
-    "Usage: guest-storage-apply <manifest_path> | --manifest-stdin | --storage-files-stdin";
+const USAGE: &str = "Usage: guest-storage-apply <manifest_path> | --manifest-stdin | --storage-files-stdin | --instructions <framework> <private-source>";
 
 enum ManifestInput {
+    Instructions { framework: String, source: String },
     Path(String),
     Stdin,
     FilesStdin,
@@ -68,6 +68,14 @@ fn install_runtime_log_paths() -> Result<(), String> {
 fn manifest_input_from_args() -> Option<ManifestInput> {
     let mut args = std::env::args().skip(1);
     let arg = args.next()?;
+    if arg == "--instructions" {
+        let framework = args.next()?;
+        let source = args.next()?;
+        return args
+            .next()
+            .is_none()
+            .then_some(ManifestInput::Instructions { framework, source });
+    }
     if args.next().is_some() {
         return None;
     }
@@ -82,6 +90,15 @@ fn manifest_input_from_args() -> Option<ManifestInput> {
 
 fn run(input: ManifestInput) -> bool {
     match input {
+        ManifestInput::Instructions { framework, source } => {
+            let result = guest_storage_apply::apply_agent_instructions(
+                std::path::Path::new("/home/user"),
+                &framework,
+                std::path::Path::new(&source),
+            );
+            let removed = remove_manifest_file(&source);
+            result && removed
+        }
         ManifestInput::FilesStdin => {
             let stale_start = Instant::now();
             let stale_removed = remove_stale_manifest_file(runtime_paths::STORAGE_MANIFEST_PATH);

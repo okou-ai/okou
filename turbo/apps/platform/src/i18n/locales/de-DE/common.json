@@ -699,9 +699,10 @@
       "illustrationPreview": "{{title}} Illustrationsvorschau",
       "importDeck": "Eigenes Deck importieren",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
+      "importDocument": "Eigenes Dokument importieren",
+      "importDocumentHint": "(.docx, .doc)",
       "importedSlides_one": "{{count}} Folie",
       "importedSlides_other": "{{count}} Folien",
-      "importFile": "Vorlage importieren",
       "importImage": "Eigenes Bild importieren",
       "importImageHint": "Als Stil speichern",
       "multiAccent": "Multi-Akzent",
@@ -4899,7 +4900,7 @@
         "accountFallback": "Konto {{number}}",
         "activeAccount": "Aktiv",
         "autoCredits": "Nutzt Okou-Credits",
-        "autoDescription": "Verbinde dein Claude- oder ChatGPT-Konto, um mehr Modelle zu nutzen.",
+        "autoDescription": "Verbinde dein ChatGPT- oder Claude-Konto, um mehr Modelle zu nutzen.",
         "autoTitle": "Mehr Modelle nutzen",
         "claudeGroup": "Dein Claude-Plan",
         "claudePlans": "Pro oder Max",
@@ -5664,7 +5665,7 @@
       "preview": "{{title}} in der Vorschau anzeigen",
       "rename": "Vorlage umbenennen"
     },
-    "clearSearch": "Suche löschen",
+    "builtIn": "Integriert",
     "custom": "Eigene",
     "delete": {
       "cancel": "Abbrechen",
@@ -5678,14 +5679,6 @@
       "back": "Eigene Vorlagen",
       "page": "Seite {{number}}"
     },
-    "empty": {
-      "description": "Importiere ein Dokument, eine Präsentation oder ein Bild, um das Design wiederzuverwenden.",
-      "document": "Noch keine Dokumente",
-      "illustration": "Noch keine Bilder",
-      "presentation": "Noch keine Präsentationen",
-      "title": "Mach es zu deiner Vorlage"
-    },
-    "importHint": "Importiere ein Dokument, eine Präsentation oder ein Bild.",
     "loadFailed": "Vorlagen konnten nicht geladen werden.",
     "rename": {
       "action": "Umbenennen",

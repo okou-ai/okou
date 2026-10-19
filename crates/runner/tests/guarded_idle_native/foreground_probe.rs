@@ -65,6 +65,16 @@ pub struct Probe {
 }
 
 impl Probe {
+    pub fn hold_claim(
+        &self,
+        run: super::RunId,
+    ) -> TestResult<(Arc<dyn JobProvider>, Arc<super::claim_peer::Gate>)> {
+        Ok((
+            self.provider.clone(),
+            self.api.hold_claim(run, self.runner)?,
+        ))
+    }
+
     pub async fn new(
         pool: &SharedIdlePool,
         budget: &Arc<ResourceBudget>,

@@ -79,6 +79,13 @@ pub struct ExecutionContext {
     pub prompt: String,
     #[serde(default)]
     pub append_system_prompt: Option<String>,
+    /// Absent for captured Storage instructions; empty explicitly replaces the managed file.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_agent_instructions",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub agent_instructions: Option<String>,
     // Vars are passed to the proxy registry for auth header template resolution.
     #[serde(default)]
     pub vars: Option<HashMap<String, String>>,
@@ -1642,6 +1649,14 @@ pub struct ConnectorRuntimeSyncBatchResponse {
     pub results: Vec<ConnectorRuntimeSyncResult>,
 }
 
+fn deserialize_agent_instructions<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    // Absence selects the legacy protocol; a present null is not that protocol.
+    String::deserialize(deserializer).map(Some)
+}
+
 impl ExecutionContext {
     pub fn reuse_key(&self) -> Option<&str> {
         self.reuse_key.as_deref()
@@ -1963,6 +1978,28 @@ mod tests {
                 .and_then(|config| config["model"].as_str()),
             Some("openai/gpt-6-luna")
         );
+    }
+
+    #[test]
+    fn execution_context_distinguishes_absent_empty_and_invalid_instructions() {
+        let claim = json!({
+            "runId": "11111111-1111-4111-8111-111111111111",
+            "prompt": "hello", "sandboxToken": "tok", "cliAgentType": "codex",
+            "platformEnvironment": {}, "connectorRuntimeTargets": []
+        });
+        let legacy: ExecutionContext = serde_json::from_value(claim.clone()).unwrap();
+        assert_eq!(legacy.agent_instructions, None);
+        for body in ["", "  指令\n\n"] {
+            let mut current = claim.clone();
+            current["agentInstructions"] = json!(body);
+            let context: ExecutionContext = serde_json::from_value(current).unwrap();
+            assert_eq!(context.agent_instructions.as_deref(), Some(body));
+        }
+        for invalid in [json!(null), json!(42)] {
+            let mut current = claim.clone();
+            current["agentInstructions"] = invalid;
+            assert!(serde_json::from_value::<ExecutionContext>(current).is_err());
+        }
     }
 
     #[test]

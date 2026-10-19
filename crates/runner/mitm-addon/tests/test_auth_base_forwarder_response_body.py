@@ -1,14 +1,20 @@
 """Response framing and allocation bounds through the real auth.base forwarder."""
 
 import gc
-import http.client as http_client
 import tracemalloc
+from unittest.mock import patch
 
+import h11
 import pytest
 
 import auth_base_forwarder as forwarder
 import auth_base_transport as transport
-from tests.auth_base_forwarder_helpers import FakeSocket, fake_forwarder_upstream, http_response
+from tests.auth_base_forwarder_helpers import (
+    FakeResponseFile,
+    FakeSocket,
+    fake_forwarder_upstream,
+    http_response,
+)
 
 
 def _response(payload: bytes, framing: str) -> bytes:
@@ -64,13 +70,10 @@ async def test_rejects_truncated_response_after_multiple_read_buffers(framing: s
 
     with (
         fake_forwarder_upstream(socket_factory=lambda: FakeSocket(raw_response)) as upstream,
-        pytest.raises(http_client.IncompleteRead) as exc_info,
+        pytest.raises(h11.RemoteProtocolError),
     ):
         await forwarder.forward_request("https://example.com", "GET", [], None)
 
-    if framing == "fixed":
-        assert exc_info.value.partial == payload
-        assert exc_info.value.expected == 3
     assert upstream.socket.response_file is not None
     assert upstream.socket.response_file.closed
     assert upstream.socket.closed
@@ -114,3 +117,52 @@ async def test_tiny_chunks_keep_peak_allocations_comparable_to_fixed_length(size
     assert peaks["fixed"] < 3 * size + 512 * 1024, peaks
     assert peaks["tiny-chunks"] < 3 * size + 512 * 1024, peaks
     assert peaks["tiny-chunks"] < peaks["fixed"] + size + 512 * 1024, peaks
+
+
+@pytest.mark.parametrize("body_size", [3, 4])
+async def test_chunked_tail_reads_stay_buffered_near_body_cap(body_size: int):
+    payload = b"x" * body_size
+    prefix = http_response(
+        body=f"{body_size:x}\r\n".encode() + payload,
+        headers=[("Transfer-Encoding", "chunked")],
+    )
+    wire = prefix + b"\r\n0\r\nX-Trailer: " + b"y" * 16384 + b"\r\n\r\n"
+
+    class LateTrailerFile(FakeResponseFile):
+        def __init__(self) -> None:
+            super().__init__(wire)
+            self.read_calls = 0
+
+        def readinto(self, buffer) -> int:
+            self.read_calls += 1
+            # Model a packet boundary between payload and subsequent framing.
+            remaining_prefix = len(prefix) - self.tell()
+            if remaining_prefix > 0:
+                buffer = memoryview(buffer)[:remaining_prefix]
+            return super().readinto(buffer)
+
+    source = LateTrailerFile()
+
+    class LateTrailerSocket(FakeSocket):
+        def makefile(self, *_args, **_kwargs) -> FakeResponseFile:
+            self.response_file = source
+            return source
+
+    with (
+        patch.object(transport, "MAX_AUTH_BASE_RESPONSE_BODY_BYTES", 4),
+        fake_forwarder_upstream(socket_factory=lambda: LateTrailerSocket(wire)) as upstream,
+    ):
+        status, body, headers = await forwarder.forward_request(
+            "https://example.com", "GET", [], None
+        )
+
+    assert status == 200
+    assert body == payload
+    assert "Transfer-Encoding" not in headers
+    assert "X-Trailer" not in headers
+    # A small payload allowance must not turn a buffered trailer into one raw
+    # read per byte. Permit several block reads without a wall-clock threshold.
+    assert source.read_calls <= 8
+    assert source.closed
+    assert upstream.socket.closed
+    assert forwarder.forward_request_admission_state_for_tests() == (0, 0)

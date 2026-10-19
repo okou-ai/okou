@@ -63,6 +63,7 @@ final class ConversationCollectionScroll {
 struct ConversationCollectionView<Content: View>: UIViewControllerRepresentable {
   let rows: [ConversationCollectionRow]
   let markdown: MessageMarkdownCache
+  var measurements = ConversationMeasurementCache()
   let anchor: ConversationScrollAnchor
   let scroll: ConversationCollectionScroll
   let followsBottom: Bool
@@ -94,12 +95,7 @@ struct ConversationCollectionView<Content: View>: UIViewControllerRepresentable 
 final class ConversationCollectionController<Content: View>: UIViewController,
   UICollectionViewDelegateFlowLayout, ConversationCollectionScrolling
 {
-  private struct Measurement: Equatable {
-    let row: ConversationCollectionRow
-    let width: CGFloat
-    let category: UIContentSizeCategory
-    var height: CGFloat
-  }
+  private typealias Measurement = ConversationMeasurementCache.Measurement
 
   private struct PreparedRows {
     let rows: [ConversationCollectionRow]
@@ -140,6 +136,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   private var stopped = false
   private var animatesScroll = false
   private let loading = UIActivityIndicatorView(style: .medium)
+  private var loadingTask: Task<Void, Never>?
 
   init(source: ConversationCollectionView<Content>) {
     self.source = source
@@ -243,6 +240,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
 
   func stop() {
     stopped = true
+    stopLoading()
     preparation?.cancel()
     preparation = nil
     refreshTask?.cancel()
@@ -286,23 +284,37 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     requestedWidth = width
     requestedCategory = category
     preparation?.cancel()
+    preparation = nil
     let generation = UUID()
     preparationID = generation
     preparedRows = nil
     let rows = source.rows
-    let missing = rows.filter {
-      guard let measured = measurements[$0.id] else { return true }
-      return measured.row != $0 || measured.width != width || measured.category != category
+    var preparedMeasurements: [String: Measurement] = [:]
+    for row in rows {
+      if let measured = measurements[row.id], measured.row == row, measured.width == width,
+        measured.category == category
+      {
+        preparedMeasurements[row.id] = measured
+      } else if let measured = source.measurements.measurement(
+        for: row, width: width, category: category)
+      {
+        preparedMeasurements[row.id] = measured
+      }
     }
+    let missing = rows.filter { preparedMeasurements[$0.id] == nil }
     let validIDs = Set(rows.map(\.id)).subtracting(missing.map(\.id))
     for id in resizeTasks.keys where !validIDs.contains(id) {
       resizeTasks.removeValue(forKey: id)?.cancel()
       resizeIDs.removeValue(forKey: id)
     }
     observedHeights = observedHeights.filter { validIDs.contains($0.key) }
-    var preparedMeasurements = measurements.filter { validIDs.contains($0.key) }
+    if missing.isEmpty {
+      preparedRows = PreparedRows(rows: rows, measurements: preparedMeasurements)
+      applyPreparedRows()
+      return
+    }
     if displayedRows.isEmpty && rows.contains(where: { $0.message != nil }) {
-      loading.startAnimating()
+      revealLoadingAfterDelay()
     }
     preparation = Task { [weak self] in
       guard let self else { return }
@@ -325,6 +337,21 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       preparedRows = PreparedRows(rows: rows, measurements: preparedMeasurements)
       applyPreparedRows()
     }
+  }
+
+  private func revealLoadingAfterDelay() {
+    guard loadingTask == nil, !loading.isAnimating else { return }
+    loadingTask = Task { [weak self] in
+      do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
+      guard let self, !stopped else { return }
+      loading.startAnimating()
+    }
+  }
+
+  private func stopLoading() {
+    loadingTask?.cancel()
+    loadingTask = nil
+    loading.stopAnimating()
   }
 
   private func measure(_ rows: [ConversationCollectionRow], width: CGFloat) async -> [CGFloat] {
@@ -399,6 +426,9 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     }.map(\.id)
     for row in rows { displayedRows[row.id] = row }
     measurements = updatedMeasurements
+    for row in rows {
+      if let measurement = measurements[row.id] { source.measurements.store(measurement) }
+    }
     displayedWidth = requestedWidth
     displayedCategory = requestedCategory
     var snapshot = NSDiffableDataSourceSnapshot<Int, String>()
@@ -412,7 +442,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       displayedRows = displayedRows.filter { ids.contains($0.key) }
       measurements = measurements.filter { ids.contains($0.key) }
       collection.layoutIfNeeded()
-      loading.stopAnimating()
+      stopLoading()
       if isScrolling {
         publishMetrics()
         return
@@ -580,6 +610,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
         abs(previous.height - observed.height) > 0.5
       {
         measurements[id]?.height = observed.height
+        if let measurement = measurements[id] { source.measurements.store(measurement) }
         changed.append(id)
       }
     }

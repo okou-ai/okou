@@ -1,5 +1,27 @@
 # Changelog
 
+## [9.403.0](https://github.com/okou-ai/okou/compare/cli-v9.402.1...cli-v9.403.0) (2026-10-19)
+
+
+### Features
+
+* **wallet:** continue chats after link purchase approval ([#41375](https://github.com/okou-ai/okou/issues/41375)) ([43b3fb0](https://github.com/okou-ai/okou/commit/43b3fb081ff5be33d39c48b9896ddf86aa03ebba))
+
+
+### Bug Fixes
+
+* **connectors:** preserve custom mcp endpoint queries ([#41338](https://github.com/okou-ai/okou/issues/41338)) ([e45d0c3](https://github.com/okou-ai/okou/commit/e45d0c344252fa0830ec939dab9da39b1d8d187c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.576.0
+    * @okouai/connectors bumped to 3.16.11
+    * @okouai/core bumped to 8.770.0
+    * @okouai/pi-agent-runtime bumped to 1.50.26
+
 ## [9.402.1](https://github.com/okou-ai/okou/compare/cli-v9.402.0...cli-v9.402.1) (2026-10-19)
 
 

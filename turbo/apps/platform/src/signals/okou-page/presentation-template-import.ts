@@ -1,7 +1,4 @@
-import {
-  USER_TEMPLATE_KINDS,
-  type UserTemplateKind,
-} from "@okouai/api-contracts/contracts/user-templates";
+import type { UserTemplateKind } from "@okouai/api-contracts/contracts/user-templates";
 import { command } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
@@ -55,14 +52,8 @@ export const PRESENTATION_TEMPLATE_IMPORT_ACCEPT = acceptList(["presentation"]);
 /** The Image shelf imports only still images into the custom style catalog. */
 export const IMAGE_TEMPLATE_IMPORT_ACCEPT = acceptList(["illustration"]);
 
-/**
- * The Custom pane's import action, which publishes to the user template catalog.
- *
- * One entry for every kind rather than one entry per kind: the user picks a
- * file and the file decides what it becomes, so nothing asks them to classify
- * their own document before the analysis has read it.
- */
-export const CUSTOM_TEMPLATE_IMPORT_ACCEPT = acceptList(USER_TEMPLATE_KINDS);
+/** The Document tab imports Word documents into the custom catalog. */
+export const DOCUMENT_TEMPLATE_IMPORT_ACCEPT = acceptList(["document"]);
 
 /**
  * The message the deck is sent with.
@@ -193,6 +184,9 @@ export const importPresentationTemplateDeck$ = command(
     if (!attached) {
       return false;
     }
+    // Import analyses the source, regardless of which creation task opened
+    // the picker. Do not append that task's generation instructions.
+    set(signals.create.setMode$, null, false);
     set(signals.draft.setDraftInput$, message.prompt);
 
     const action = await get(signals.submission.primaryAction$);

@@ -698,9 +698,10 @@
       "illustrationPreview": "{{title}} イラストのプレビュー",
       "importDeck": "自分のデッキをインポート",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
+      "importDocument": "自分のドキュメントをインポート",
+      "importDocumentHint": "（.docx、.doc）",
       "importedSlides_one": "{{count}} 枚",
       "importedSlides_other": "{{count}} 枚",
-      "importFile": "テンプレートをインポート",
       "importImage": "自分の画像を取り込む",
       "importImageHint": "スタイルとして保存",
       "multiAccent": "マルチアクセント",
@@ -4880,7 +4881,7 @@
         "accountFallback": "アカウント {{number}}",
         "activeAccount": "使用中",
         "autoCredits": "Okouクレジットを使用",
-        "autoDescription": "Claude または ChatGPT アカウントを接続すると、より多くのモデルを使えます。",
+        "autoDescription": "ChatGPT または Claude アカウントを接続すると、より多くのモデルを使えます。",
         "autoTitle": "より多くのモデルを使う",
         "claudeGroup": "Claudeのプラン",
         "claudePlans": "Pro、Max",
@@ -5640,7 +5641,7 @@
       "preview": "{{title}} をプレビュー",
       "rename": "テンプレート名を変更"
     },
-    "clearSearch": "検索をクリア",
+    "builtIn": "組み込み",
     "custom": "カスタム",
     "delete": {
       "cancel": "キャンセル",
@@ -5654,14 +5655,6 @@
       "back": "カスタムテンプレート",
       "page": "{{number}} ページ目"
     },
-    "empty": {
-      "description": "ドキュメント、プレゼンテーション、画像をインポートしてデザインを再利用できます。",
-      "document": "ドキュメントはまだありません",
-      "illustration": "画像はまだありません",
-      "presentation": "プレゼンテーションはまだありません",
-      "title": "自分だけのテンプレートに"
-    },
-    "importHint": "ドキュメント、プレゼンテーション、画像をインポートできます。",
     "loadFailed": "テンプレートを読み込めませんでした。",
     "rename": {
       "action": "名前の変更",

@@ -717,10 +717,11 @@
       "illustrationPreview": "{{title}} anteprima dell'illustrazione",
       "importDeck": "Importa la tua presentazione",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
+      "importDocument": "Importa il tuo documento",
+      "importDocumentHint": "(.docx, .doc)",
       "importedSlides_one": "{{count}} diapositiva",
       "importedSlides_many": "{{count}} diapositive",
       "importedSlides_other": "{{count}} diapositive",
-      "importFile": "Importa modello",
       "importImage": "Importa la tua immagine",
       "importImageHint": "Salva come stile",
       "multiAccent": "Multiaccento",
@@ -4963,7 +4964,7 @@
         "accountFallback": "Account {{number}}",
         "activeAccount": "Attivo",
         "autoCredits": "Usa i crediti Okou",
-        "autoDescription": "Collega il tuo account Claude o ChatGPT per usare più modelli.",
+        "autoDescription": "Collega il tuo account ChatGPT o Claude per usare più modelli.",
         "autoTitle": "Usa più modelli",
         "claudeGroup": "Il tuo piano Claude",
         "claudePlans": "Pro o Max",
@@ -5736,7 +5737,7 @@
       "preview": "Anteprima di {{title}}",
       "rename": "Rinomina modello"
     },
-    "clearSearch": "Cancella ricerca",
+    "builtIn": "Integrati",
     "custom": "Personalizzati",
     "delete": {
       "cancel": "Annulla",
@@ -5750,14 +5751,6 @@
       "back": "Modelli personalizzati",
       "page": "Pagina {{number}}"
     },
-    "empty": {
-      "description": "Importa un documento, una presentazione o un’immagine per riutilizzarne il design.",
-      "document": "Ancora nessun documento",
-      "illustration": "Ancora nessuna immagine",
-      "presentation": "Ancora nessuna presentazione",
-      "title": "Fallo tuo"
-    },
-    "importHint": "Importa un documento, una presentazione o un’immagine.",
     "loadFailed": "Impossibile caricare i modelli.",
     "rename": {
       "action": "Rinomina",

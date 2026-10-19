@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.15](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.14...runner-executor-v0.14.15) (2026-10-19)
+
+
+### Refactoring
+
+* **runner-executor:** share pre-spawn cancellation reporting ([#41401](https://github.com/okou-ai/okou/issues/41401)) ([9774313](https://github.com/okou-ai/okou/commit/97743130583b526f819a02ba0390a49b469a7a23))
+
 ## [0.14.14](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.13...runner-executor-v0.14.14) (2026-10-19)
 
 ## [0.14.13](https://github.com/okou-ai/okou/compare/runner-executor-v0.14.12...runner-executor-v0.14.13) (2026-10-19)

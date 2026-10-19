@@ -1172,6 +1172,8 @@ export const claimCompatibleStoredExecutionContextSchema =
  * See `crates/runner-types/src/types.rs`.
  */
 const executionContextObjectSchema = z.object({
+  // Release 1 prepares the reader; producers omit this until DB cutover (#41367).
+  agentInstructions: z.string().optional(),
   // Response-only telemetry context; unavailable for non-chat or older claims.
   isFirstRun: z.boolean().optional(),
   runId: z.uuid(),

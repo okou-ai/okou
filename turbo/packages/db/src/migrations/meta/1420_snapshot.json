@@ -1,5 +1,5 @@
 {
-  "id": "3738682f-53c2-4973-b020-8552a9e68e6c",
+  "id": "ccf264d0-9fcb-48cb-ae75-8c3611de1ce5",
   "prevId": "06aec404-4f95-4ea0-bd20-e72615398fdc",
   "version": "7",
   "dialect": "postgresql",
@@ -1141,6 +1141,12 @@
         },
         "description": {
           "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "instructions": {
+          "name": "instructions",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -24280,6 +24286,33 @@
         }
       },
       "indexes": {
+        "canonical_asset_deliveries_asset_provider_operation_unique": {
+          "name": "canonical_asset_deliveries_asset_provider_operation_unique",
+          "columns": [
+            {
+              "expression": "asset_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "provider",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "operation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "canonical_asset_deliveries_asset_operation_unique": {
           "name": "canonical_asset_deliveries_asset_operation_unique",
           "columns": [

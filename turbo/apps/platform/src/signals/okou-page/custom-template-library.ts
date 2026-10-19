@@ -92,7 +92,7 @@ export const customTemplateCatalog$ = computed(
 /**
  * Read the catalog once, when a selection needs it. The composer resolves a
  * chosen template here instead of subscribing while it renders. The picker
- * and the presentation/image task shelves subscribe only while shown.
+ * and the presentation, document and image task shelves subscribe only while shown.
  */
 export const loadCustomTemplateCatalog$ = command(
   async (
@@ -153,27 +153,6 @@ export const subscribeCustomTemplatesChanged$ = command(
   },
 );
 
-const internalSearchQuery$ = state("");
-// Prefer documents on entry; an empty document category must not hide the
-// available catalog behind its empty state, which has no kind filters.
-const internalKindFilter$ = state<UserTemplateKind | null>(null);
-
-export const setCustomTemplateKindFilter$ = command(
-  ({ set }, kind: UserTemplateKind) => {
-    set(internalKindFilter$, kind);
-  },
-);
-
-export const customTemplateSearchQuery$ = computed((get) => {
-  return get(internalSearchQuery$);
-});
-
-export const setCustomTemplateSearchQuery$ = command(
-  ({ set }, query: string) => {
-    set(internalSearchQuery$, query);
-  },
-);
-
 /**
  * Title and source file name, matched case-insensitively on the already loaded
  * catalog. The file name is in scope because people remember what they called
@@ -196,29 +175,19 @@ function matchesCustomTemplateQuery(
 
 export const projectCustomTemplatePicker$ = computed((get) => {
   const project = get(projectCustomTemplate$);
-  const query = get(internalSearchQuery$);
-  const selectedKind = get(internalKindFilter$);
-  return (templates: readonly UserTemplateCatalogEntry[]) => {
-    const catalog = templates.flatMap((template) => {
+  return (
+    templates: readonly UserTemplateCatalogEntry[],
+    kind: UserTemplateKind,
+    query: string,
+  ) => {
+    return templates.flatMap((template) => {
       const projected = project(template);
-      return projected === null ? [] : [projected];
+      return projected !== null &&
+        projected.kind === kind &&
+        matchesCustomTemplateQuery(projected, query)
+        ? [projected]
+        : [];
     });
-    const kind =
-      selectedKind ??
-      (catalog.some((template) => {
-        return template.kind === "document";
-      })
-        ? "document"
-        : (catalog[0]?.kind ?? "document"));
-    return {
-      kind,
-      isEmptyCatalog: catalog.length === 0,
-      templates: catalog.filter((template) => {
-        return (
-          template.kind === kind && matchesCustomTemplateQuery(template, query)
-        );
-      }),
-    };
   };
 });
 
@@ -465,13 +434,11 @@ export const showCustomTemplateExample$ = command(
 );
 
 /**
- * Reopening the current category clears its filters, detail view and any
+ * Closing the picker clears its detail view and any
  * removal still waiting to be confirmed, so a picker torn down mid-question
  * does not reopen on it.
  */
-export const resetCustomTemplatePickerView$ = command(({ set }) => {
-  set(internalSearchQuery$, "");
-  set(internalKindFilter$, null);
+const resetCustomTemplatePickerView$ = command(({ set }) => {
   set(internalOpenTemplate$, null);
   set(internalPendingDeletion$, null);
   set(internalActiveExamples$, new Map());
