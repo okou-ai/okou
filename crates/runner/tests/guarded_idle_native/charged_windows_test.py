@@ -237,6 +237,7 @@ class ReplayTests(unittest.TestCase):
             "lost_peer_peak": lambda: self.rows[3].update(peak_bytes=6 * MIB),
             "lost_transient": lambda: self.rows[4].update(peak_bytes=7 * MIB),
             "sampled_live_only": lambda: self.rows[4].update(current_bytes=24 * MIB),
+            "peak_below_current": lambda: self.rows[5].update(peak_bytes=40 * MIB),
             "negative_counter": lambda: self.rows[4].update(peak_bytes=-1),
             "bool_counter": lambda: self.rows[4].update(file_bytes=False),
             "reversed_clock": lambda: self.rows[3].update(completed_monotonic_ns=1200),

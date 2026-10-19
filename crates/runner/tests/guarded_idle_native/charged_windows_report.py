@@ -302,6 +302,10 @@ def replay(root, invocation, source_sha256):
             counters[name] = row["counter"]
         for field in ("current_bytes", "peak_bytes", "file_bytes"):
             number(row[field])
+        require(
+            row["peak_bytes"] >= row["current_bytes"],
+            "peak is below the earlier current observation",
+        )
         require(row["peak_bytes"] >= peaks.get(name, 0), "counter lost an earlier peak")
         peaks[name] = row["peak_bytes"]
     require(
