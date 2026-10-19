@@ -314,14 +314,15 @@ pub async fn exercise(
         let rollback_joined_ns = evidence::clocks()?.0;
         let current = context.pool.lock().await.status_snapshot();
         if result.snapshot.revision != current.revision || current.revision <= revision
-            || current.idle_sandboxes.len() != 1 || current.idle_sandboxes[0].sandbox_id != old_id
-            || current.idle_sandboxes[0].reuse_key != context.reuse_key || !current.blank_sandboxes.is_empty() {
+            || current.idle_sandboxes.len() != 1
+            || current.idle_sandboxes.first().is_none_or(|entry| entry.sandbox_id != old_id || entry.reuse_key != context.reuse_key)
+            || !current.blank_sandboxes.is_empty() {
             return Err(io::Error::other("claim rollback did not preserve exact original insertion/history").into());
         }
         live(&context,proof,&backing).await?;
         probe.request()?;
         let heartbeat = probe.complete().await?;
-        if heartbeat["receipt"]["state"]["heldSandboxStates"] != held_states {
+        if heartbeat.pointer("/receipt/state/heldSandboxStates") != Some(&held_states) {
             return Err(io::Error::other("claim rollback lost original advertised history/profile").into());
         }
         proof.claim_loss_witness("original_restored",json!({
