@@ -185,11 +185,8 @@ function MessageRow({
     });
   const content = (
     <>
-      <span className="block whitespace-pre-wrap break-words text-[13px] leading-5.25">
-        {preview}
-      </span>
-      <span className="flex items-center gap-2 text-xs text-muted-foreground">
-        <span>
+      <span className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-muted-foreground">
+        <span className="font-medium">
           {t(($) => {
             return message.direction === "sent"
               ? $.chat.relations.sent
@@ -198,13 +195,16 @@ function MessageRow({
         </span>
         <MessageTime value={message.createdAt} />
       </span>
+      <span className="block whitespace-pre-wrap break-words text-[13px] leading-5.25">
+        {preview}
+      </span>
     </>
   );
   return (
     <li>
       {unavailable && message.direction === "sent" ? (
         <div
-          className="block min-w-0 space-y-1 px-2 py-2 text-muted-foreground"
+          className="block min-w-0 space-y-1.5 px-2 py-3 text-muted-foreground"
           title={preview}
         >
           {content}
@@ -218,7 +218,7 @@ function MessageRow({
               ? `run-${message.targetRunId}`
               : undefined,
           }}
-          className="block min-w-0 space-y-1 rounded-lg px-2 py-2 transition-colors hover:bg-state-hover"
+          className="block min-w-0 space-y-1.5 rounded-lg px-2 py-3 transition-colors hover:bg-state-hover"
           title={preview}
         >
           {content}
@@ -327,7 +327,7 @@ function Messages({
           </Button>
         </div>
       ) : (
-        <ul className="m-0 list-none p-0">
+        <ul className="m-0 list-none divide-y divide-border-on-fill p-0">
           {data.data.items.map((message) => {
             return (
               <MessageRow
