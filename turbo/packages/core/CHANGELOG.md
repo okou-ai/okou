@@ -1,5 +1,31 @@
 # Changelog
 
+## [8.770.0](https://github.com/okou-ai/okou/compare/core-v8.769.3...core-v8.770.0) (2026-10-19)
+
+
+### Features
+
+* **api:** pin official workflows to auto and configure thread visibility ([#41404](https://github.com/okou-ai/okou/issues/41404)) ([a6fb382](https://github.com/okou-ai/okou/commit/a6fb382f4dc9f56f62813a5a1ff7378faffa859f))
+* **app:** add source-faithful json tree previews ([#41382](https://github.com/okou-ai/okou/issues/41382)) ([ab10e87](https://github.com/okou-ai/okou/commit/ab10e87b60bba9468f6e0fa642416ac4b2f7ce32))
+* **wallet:** continue chats after link purchase approval ([#41375](https://github.com/okou-ai/okou/issues/41375)) ([43b3fb0](https://github.com/okou-ai/okou/commit/43b3fb081ff5be33d39c48b9896ddf86aa03ebba))
+
+
+### Bug Fixes
+
+* **host:** keep renamed site addresses current across artifacts ([#41405](https://github.com/okou-ai/okou/issues/41405)) ([14f3a65](https://github.com/okou-ai/okou/commit/14f3a65e91d3a93968ae4b1c4c375efde32d2baf))
+
+
+### Refactoring
+
+* **app:** remove composer slash hint feature switch ([#41346](https://github.com/okou-ai/okou/issues/41346)) ([9c7d149](https://github.com/okou-ai/okou/commit/9c7d149a6d204aa3278340ab2a3b3349ac50a259))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.576.0
+
 ## [8.769.3](https://github.com/okou-ai/okou/compare/core-v8.769.2...core-v8.769.3) (2026-10-19)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.11](https://github.com/okou-ai/okou/compare/runner-types-v0.7.10...runner-types-v0.7.11) (2026-10-19)
+
+
+### Bug Fixes
+
+* **firewall:** reject encoded joiner hostnames ([#41328](https://github.com/okou-ai/okou/issues/41328)) ([49c0eff](https://github.com/okou-ai/okou/commit/49c0eff1d7233fb09fc9a2913468ddd753398b9f))
+
 ## [0.7.10](https://github.com/okou-ai/okou/compare/runner-types-v0.7.9...runner-types-v0.7.10) (2026-10-19)
 
 

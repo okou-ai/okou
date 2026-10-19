@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.53.7](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.6...sandbox-firecracker-v0.53.7) (2026-10-19)
+
+
+### Documentation
+
+* **sandbox-firecracker:** clarify cleanup success semantics ([#41410](https://github.com/okou-ai/okou/issues/41410)) ([093e1b1](https://github.com/okou-ai/okou/commit/093e1b1dfb7f2663e1320961d2846c7dc39fb449))
+
+
+### Refactoring
+
+* **runner:** share the foreground home reclamation deadline ([#41384](https://github.com/okou-ai/okou/issues/41384)) ([b7ccae0](https://github.com/okou-ai/okou/commit/b7ccae0fad7398bdf66fbad6b994bc1602a11f2e))
+
 ## [0.53.6](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.5...sandbox-firecracker-v0.53.6) (2026-10-19)
 
 ## [0.53.5](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.4...sandbox-firecracker-v0.53.5) (2026-10-19)
