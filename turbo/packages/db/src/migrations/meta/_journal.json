@@ -2346,6 +2346,13 @@
       "when": 1792378877107,
       "tag": "1412_wechat_resume_boundary",
       "breakpoints": true
+    },
+    {
+      "idx": 1413,
+      "version": "7",
+      "when": 1792383333800,
+      "tag": "1413_threadless_run_cleanup_index",
+      "breakpoints": true
     }
   ]
 }
