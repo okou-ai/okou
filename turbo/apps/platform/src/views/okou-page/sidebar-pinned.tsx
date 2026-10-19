@@ -367,9 +367,9 @@ function PinnedAgentGridCard({
       <HoverScrollTitle
         data-slot="pinned-agent-title"
         title={displayName}
-        align="center"
+        variant="tile"
         className={cn(
-          "w-full flex-none text-[11px] text-[color:var(--nav-copy,inherit)] [--okou-nav-title-fade:12px]",
+          "text-[11px] text-[color:var(--nav-copy,inherit)]",
           pinnedAgentGridLabelFrameClassName,
           isPrimarySelected && "font-medium",
           isDragging && "opacity-0",

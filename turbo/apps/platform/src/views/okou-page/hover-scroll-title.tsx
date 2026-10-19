@@ -8,19 +8,21 @@ import { titleOverflowRef$ } from "../../signals/chat-page/title-overflow.ts";
  * so fitting titles stay still. The registered shift property is inherited by
  * the text span and stays at zero for reduced motion.
  *
- * `align="center"` centres a title that fits. Auto inline margins cannot go
- * negative, so a clipped title still starts at the leading edge, where the
- * measured overflow and the trailing fade expect it.
+ * `variant="tile"` labels an icon tile: the title fills the tile's width,
+ * centres when it fits, and fades over 12px because the label is only a few
+ * dozen pixels wide. Auto inline margins cannot go negative, so a clipped tile
+ * title still starts at the leading edge, where the measured overflow and the
+ * trailing fade expect it.
  */
 export function HoverScrollTitle({
   title,
   className,
-  align = "start",
+  variant = "row",
   "data-slot": slot = "hover-scroll-title",
 }: {
   readonly title: string;
   readonly className?: string;
-  readonly align?: "start" | "center";
+  readonly variant?: "row" | "tile";
   readonly "data-slot"?: string;
 }) {
   const measureTitle = useSet(titleOverflowRef$);
@@ -30,8 +32,11 @@ export function HoverScrollTitle({
       data-slot={slot}
       ref={measureTitle}
       className={cn(
-        "min-w-0 flex-1 overflow-hidden",
-        "[--okou-nav-title-overflow:0px] [--okou-nav-title-duration:780ms] [--okou-nav-title-fade:24px]",
+        "min-w-0 overflow-hidden",
+        variant === "tile"
+          ? "w-full [--okou-nav-title-fade:12px]"
+          : "flex-1 [--okou-nav-title-fade:24px]",
+        "[--okou-nav-title-overflow:0px] [--okou-nav-title-duration:780ms]",
         "[mask-image:linear-gradient(90deg,transparent_0,#000_clamp(0px,calc(-1*var(--okou-nav-title-shift)),var(--okou-nav-title-fade)),#000_calc(100%_-_clamp(0px,calc(var(--okou-nav-title-overflow)_+_var(--okou-nav-title-shift)),var(--okou-nav-title-fade))),transparent_100%)]",
         "mask-no-repeat [mask-size:100%_100%]",
         // Restore the start without a delay when the pointer or focus leaves.
@@ -46,7 +51,7 @@ export function HoverScrollTitle({
       <span
         className={cn(
           "block w-max whitespace-nowrap [transform:translateX(var(--okou-nav-title-shift))]",
-          align === "center" && "mx-auto",
+          variant === "tile" && "mx-auto",
         )}
       >
         {title}
