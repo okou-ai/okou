@@ -1316,3 +1316,46 @@ This is #40230 under #40173/#39997. #40231 retains Critical bounded-wave optiona
 suppression, startup readers, independent foreground/heartbeat progress and
 Guest/provider/cancellation/late-result integration. #39998 and higher/P4 retain
 full provenance, residency, envelope and activation gates; no parent closes here.
+
+## Two required histories in one physical cache entry
+
+`native_same_entry_replacement_preserves_both_required_histories` selects original
+success and nonzero exit, each in fresh and matching-snapshot factories. Both
+Guests run the real Executor and packaged mock Codex, with distinct committed
+sessions, complete history bytes, ordinary home files, private run files and
+64 KiB home/workspace payloads. The original promotion holds the physical cache
+entry's exclusive lease. Incoming therefore first completes with `LockBusy`;
+its exact Guest and full logical lease remain owned through the existing C6
+replacement, stale-batch refusal, contention and required-saving guards.
+
+The fixture restores and saves the complete original generation before allowing
+supersession. It then activates that same incoming Guest through the public idle
+owner and actual Executor reuse dispatch. This acquires the now available same
+physical entry and extends the incoming session. A valid promotion produced by
+that execution must survive guarded retirement, after which an independent
+Executor restores the complete first-plus-continued history and home/workspace
+bytes. Both restoration producers, API peers, physical backings, full logical
+leases, tracker and memory operations must join. Accepted native work remains
+outside the race's observation timeout; failures preserve its owners.
+
+Use the immutable artifact, supplied P2 policy and bounded P1 requirements above,
+including `USE_MOCK_CODEX=true` and the authorized `OKOU_TEST_NATIVE_API_HOST`.
+P1 metadata must contain `native_dual_history_policy_json` with the exact raw
+policy file text and the original `native_terminal_artifacts` manifest.
+
+```sh
+"$OWNED_NATIVE_TEST_BINARY" \
+  native_same_entry_replacement_preserves_both_required_histories \
+  --ignored --exact --nocapture --test-threads=1
+
+python3 crates/runner/tests/guarded_idle_native/dual_history_report.py "$P1_OUTPUT_DIRECTORY"
+```
+
+The strict reader requires all four cases, complete canonical byte oracles,
+actual same-entry/generation bindings, private-directory removal and positive
+producer joins in addition to every C6/P1 guard. Ordinary Cargo runs its
+original-file and CLI refusal regressions. Native KVM/NBD execution remains
+opt-in. This phased sequence does not claim simultaneous promotion leases,
+permanent retention of two cache generations, an actual API claim-loss race,
+calibrated physical relief, full residency, bootstrap provenance or production
+activation. Parent aggregate acceptance remains separate.

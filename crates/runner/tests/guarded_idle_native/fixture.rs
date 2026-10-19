@@ -175,7 +175,7 @@ pub async fn sandbox_config(id: SandboxId, home: &mut HomeImageLease) -> TestRes
     })
 }
 
-fn runtime_dir(run_id: RunId) -> TestResult<String> {
+pub(super) fn runtime_dir(run_id: RunId) -> TestResult<String> {
     Ok(
         guest_contracts::runtime_paths::run_dir_for_home(HOME, &run_id.to_string())?
             .to_string_lossy()

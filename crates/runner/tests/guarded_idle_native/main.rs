@@ -13,6 +13,7 @@ mod continuation_api;
 mod create_cancellation;
 mod critical;
 mod critical_progress;
+mod dual_history;
 mod evidence;
 mod fences;
 mod finalizing;
@@ -99,6 +100,7 @@ enum Corpus {
     BatchReplacement,
     ClaimLoss,
     SpeculativeFault(bool),
+    DualHistory(bool),
 }
 
 enum PreparationProbe<'a> {
@@ -679,6 +681,32 @@ async fn native_same_key_replacement_fences_captured_batch_and_preserves_incomin
     measured_selected_corpus(&[NativeScope::Replacement], Corpus::BatchReplacement).await
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD inputs, mock Codex and exact-source dual-history P1 proof"]
+async fn native_same_entry_replacement_preserves_both_required_histories() -> TestResult<()> {
+    measured_selected_corpora(
+        &[NativeScope::Replacement],
+        &[Corpus::DualHistory(false), Corpus::DualHistory(true)],
+    )
+    .await
+}
+
+#[test]
+fn native_dual_history_report_requires_complete_bytes_and_same_entry_generations() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/dual_history_report_test.py"
+        ))
+        .output()
+        .expect("native dual history report requires Python3");
+    assert!(
+        output.status.success(),
+        "dual history report failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 #[test]
 fn native_claim_rejection_report_requires_actual_request_and_original_custody() {
     let output = std::process::Command::new("python3")
@@ -1071,6 +1099,11 @@ async fn exercise_selected_factories(
                                 "BatchRepark".into()
                             } else if corpus == Corpus::BatchReplacement {
                                 "BatchReplacement".into()
+                            } else if let Corpus::DualHistory(nonzero) = corpus {
+                                format!(
+                                    "DualHistory{}",
+                                    if nonzero { "Nonzero" } else { "Success" }
+                                )
                             } else if corpus == Corpus::ClaimLoss {
                                 "ClaimLoss".into()
                             } else if let Corpus::SpeculativeFault(panic) = corpus {
@@ -1226,6 +1259,7 @@ async fn exercise_retirement(
             | Corpus::BatchAba
             | Corpus::BatchRepark
             | Corpus::BatchReplacement
+            | Corpus::DualHistory(_)
     ) || matches!(
         scope,
         NativeScope::Recovery
@@ -1240,6 +1274,27 @@ async fn exercise_retirement(
         None => inputs.operations()?,
     };
     let budget = native_budget(scope);
+    if let Corpus::DualHistory(nonzero) = corpus {
+        return dual_history::exercise(dual_history::Setup {
+            factory,
+            paths,
+            cache,
+            status,
+            budget,
+            operations,
+            source: recovery_source
+                .as_deref()
+                .ok_or_else(|| io::Error::other("dual history source missing"))?,
+            proof: proof.ok_or_else(|| io::Error::other("dual history proof missing"))?,
+            inputs,
+            rootfs: rootfs_hash,
+            original: run_id,
+            id: sandbox_id,
+            key: reuse_key,
+            nonzero,
+        })
+        .await;
+    }
     let mut first_lease = None;
     let mut session_identity = None;
     let mut original_history = Vec::new();
@@ -1524,7 +1579,7 @@ async fn exercise_retirement(
                     operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
                     rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
                 }, inputs, recovery_source.as_deref().ok_or_else(|| io::Error::other("replacement source missing"))?,
-                   proof.ok_or_else(|| io::Error::other("replacement proof missing"))?, paths.base_dir(), backing.clone()).await?;
+                   proof.ok_or_else(|| io::Error::other("replacement proof missing"))?, paths.base_dir(), backing.clone(), None).await?;
                 Ok(None)
             }
             NativeScope::LaterParking => {

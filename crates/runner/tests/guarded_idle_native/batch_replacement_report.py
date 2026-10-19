@@ -37,11 +37,11 @@ def covered(value, policy):
           "replacement lost either full lease or accepted IO")
 
 
-def validate(directory):
+def validate(directory, cases=CASES, policy_key="native_batch_replacement_policy_json"):
     directory = pathlib.Path(directory)
-    result, collector, terminals = report._validate_cases(directory, CASES, report.PHASES)
-    policy = supplied_policy(collector, result, "native_batch_replacement_policy_json")
-    witnesses = {case: [] for case in CASES}
+    result, collector, terminals = report._validate_cases(directory, cases, report.PHASES)
+    policy = supplied_policy(collector, result, policy_key)
+    witnesses = {case: [] for case in cases}
     for line in (directory / "stdout.log").read_text().splitlines():
         if not line.startswith(PREFIX):
             continue
@@ -49,7 +49,7 @@ def validate(directory):
         if (not isinstance(event, dict) or set(event) != {"version", "case", "phase", "monotonic_ns",
                 "unix_ns", "sandbox_id", "backing_generation", "evidence"}
                 or type(event["version"]) is not int or event["version"] != 1
-                or event.get("case") not in CASES or not isinstance(event["evidence"], dict)
+                or event.get("case") not in cases or not isinstance(event["evidence"], dict)
                 or not report.positive_integer(event["monotonic_ns"])
                 or not report.positive_integer(event["unix_ns"])):
             raise ValueError("invalid replacement witness")
