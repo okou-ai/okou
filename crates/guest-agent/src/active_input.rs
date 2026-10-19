@@ -37,7 +37,11 @@ impl ActiveInputFrame {
 /// Result returned to the process-control caller for an active-input payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ActiveInputControlOutcome {
-    /// The payload was accepted and queued for the CLI follow-up sink.
+    /// A new follow-up frame was queued, or a matching, non-failed delivery was
+    /// already known.
+    ///
+    /// A retry acknowledgement does not enqueue another frame. This outcome
+    /// alone confirms neither backend delivery nor that active input is open.
     Accepted,
     /// The payload was rejected without being queued.
     Rejected { diagnostic: &'static str },
@@ -470,10 +474,18 @@ impl ActiveInputController {
     /// {"type":"active-input","eventId":"b1e2ad6d-930a-4d51-aa40-7952d54f978b","text":"follow-up prompt"}
     /// ```
     ///
-    /// The method returns [`ActiveInputControlOutcome::Accepted`] only after the
-    /// follow-up frame has been queued for the paired writer, or a known
-    /// event ID has already been queued or accepted. Unsupported, invalid,
-    /// disabled, or closed inputs are rejected. A bounded backlog returns
+    /// For an enabled controller, [`ActiveInputControlOutcome::Accepted`] means
+    /// a new follow-up frame was queued for the paired writer, or a retry
+    /// matched the text of a known queued, writing, or backend-accepted delivery.
+    /// Known IDs are checked before lifecycle state, so such retries remain
+    /// accepted after closure without enqueueing another frame. This
+    /// acknowledgement confirms neither backend delivery nor that active input
+    /// is open. Reusing a known ID with different text or retrying a failed
+    /// delivery is rejected.
+    ///
+    /// Unsupported, invalid, or disabled payloads are rejected. New valid event
+    /// IDs are rejected as closed when active input is closing or closed.
+    /// A bounded backlog returns
     /// [`ActiveInputControlOutcome::QueueFull`] so callers can distinguish
     /// backpressure from validation rejection. Callers should branch on the
     /// outcome variant rather than treating diagnostic text as a stable
@@ -749,9 +761,15 @@ impl ActiveInputController {
 
     /// Closes active input terminally for this run.
     ///
-    /// This wakes the paired writer, causes future [`ActiveInputWriter::next_frame`]
-    /// calls to resolve with `None`, and makes subsequent enabled control
-    /// payloads reject as closed.
+    /// This wakes the paired writer and causes future
+    /// [`ActiveInputWriter::next_frame`] calls to resolve with `None`. For enabled
+    /// controllers, new valid active-input event IDs are rejected as closed.
+    ///
+    /// Existing delivery records are retained. [`Self::handle_control_payload`]
+    /// still acknowledges matching retries of queued, writing, or backend-accepted
+    /// deliveries without enqueueing another frame or implying backend delivery
+    /// or an open runtime. Conflicting text and previously failed deliveries
+    /// remain rejected.
     pub fn close_terminal(&self) {
         let mut state = self.inner.state.lock().unwrap_or_else(|e| e.into_inner());
         state.lifecycle = Lifecycle::Closed;
