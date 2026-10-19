@@ -378,7 +378,7 @@ IP registration. The same request/generation checks reject stale callers.
 No delivery method reads policy files or changes registry/auth ownership.
 
 `delivery.flush` returns `state: admitted|coalesced`, acknowledging only a wake
-for the existing billing/retained-diagnostic owners. One delivery worker plus
+for the existing billing usage buffer. One delivery worker plus
 one queued wake bound admission. Repeated wakes cannot create parallel flush
 workers. Actual buffer admission or synchronous fallback may block that worker;
 neither the control loop nor its short snapshot lock waits for delivery I/O.
@@ -392,6 +392,10 @@ report delivery cycles, including the existing HTTP retries inside each cycle;
 they are not source-record counts, billable units or per-request/run totals.
 They reset on process restart and omit losses before webhook admission.
 `flushFailures` counts internal worker flush failures separately.
+These observations cover billing usage, not process diagnostics or run-local
+JSONL writes. Process diagnostics make one best-effort nonblocking stderr write
+without retention or retries; delivery controls cannot replay dropped events.
+See [Logging Boundaries](#logging-boundaries) for the separate logging paths.
 
 One `delivery.drain` observer is admitted at a time; another receives `busy`.
 The observer requests the existing worker at most once per second and checks
@@ -413,8 +417,9 @@ stops automatic requests because execution is unknown.
 
 After control stops, `done()` closes delivery admission and joins the actual
 flush worker before shutting down the usage executor. It then retries retained
-billing and diagnostics synchronously under their existing retry/idempotency
-owners.
+billing usage synchronously under its existing retry/idempotency owner.
+Process diagnostics have no shutdown drain. The independent JSONL writer's
+shutdown is bounded and best effort; a timeout can leave accepted entries pending.
 Runner's existing outer SIGTERM/SIGKILL process stop remains the ultimate bound
 for a stuck kernel/network call; no caller deadline safely cancels that call.
 
