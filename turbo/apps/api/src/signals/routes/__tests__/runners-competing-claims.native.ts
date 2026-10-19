@@ -133,7 +133,16 @@ it("composes actual PostgreSQL claim arbitration with both native Guest owners",
           completedAt: predecessor.completedAt,
         });
       }
-      const fixture = await startNativeClaimApi(context, cases);
+      const fixture = await startNativeClaimApi(
+        context,
+        cases,
+        async (runId) => {
+          const running = await api.readRun(owned.actor, runId);
+          expect(running.status).toBe("running");
+          expect(running.startedAt).toBeDefined();
+          return running;
+        },
+      );
       const manifest = join(directory, "api-inputs.json");
       const publicObservations: unknown[] = [];
       await writeFile(

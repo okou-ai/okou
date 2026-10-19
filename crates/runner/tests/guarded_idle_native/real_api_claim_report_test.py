@@ -69,6 +69,8 @@ class RealApiClaimReportTests(unittest.TestCase):
                                  "nativeContinuationSupported": True},
                         "enteredNs": str(at(2)), "forwardedNs": str(at(12 if won or order == "both" else 19)),
                         "completedNs": str(at(18 if won else 19.5)), "status": 200 if won else 404,
+                        "running": {"status": "running", "startedAt": "2026-10-19T01:00:00Z"} if won else None,
+                        "runningObservedNs": str(at(17)) if won else None,
                         "response": {"runId": run, "reuseKey": reuse, "sandboxToken": authority} if won else
                             {"error": {"code": "NOT_FOUND", "message": "Run not found"}}})
                     def heartbeat(sequence, begin, end, allocated):
@@ -97,6 +99,8 @@ class RealApiClaimReportTests(unittest.TestCase):
                         {"run_id": run, "original_run_id": original, "runner_identity": identity,
                          "role": role, "order": order, "allocated": [2, 4096, 1],
                          "original_full_lease_active": True, "preparation_polled_pending": True,
+                         "pool_held_ns": at(2), "heartbeat_pending_ns": at(2.5), "pool_released_ns": at(4.5),
+                         "heartbeat_polled_pending": True,
                          "observer": observer(3, 4), "heartbeat": heartbeat(1, 5, 6, (2, 4096))}, outcome,
                         {"coverage": coverage, "original_exit_confirmed": True, "receiver_polled_pending": True},
                         {"coverage": coverage, "observer": observer(35, 36), "heartbeat": heartbeat(2, 37, 38, (2, 4096))},
@@ -165,6 +169,8 @@ class RealApiClaimReportTests(unittest.TestCase):
             lambda i, a, e, w, s: a.update(producerSha256="0"*64),
             lambda i, a, e, w, s: w[15]["evidence"].update(won=True),
             lambda i, a, e, w, s: a["claims"][0].update(completedNs=a["claims"][1]["forwardedNs"]),
+            lambda i, a, e, w, s: a["claims"][0].update(running={"status": "pending"}),
+            lambda i, a, e, w, s: w[0]["evidence"].update(heartbeat_polled_pending=False),
         ]
         for index, change in enumerate(changes):
             with self.subTest(change=index):

@@ -37,6 +37,8 @@ interface ClaimReceipt {
   completedNs?: string;
   status?: number;
   response?: unknown;
+  running?: unknown;
+  runningObservedNs?: string;
 }
 
 const claimantSchema = z.object({
@@ -61,7 +63,11 @@ async function regularFile(path: string): Promise<boolean> {
 }
 
 /** Transport controls delay requests, never choose an application response. */
-function claimGate(input: NativeClaimCase, signal: AbortSignal) {
+function claimGate(
+  input: NativeClaimCase,
+  signal: AbortSignal,
+  observeWinner?: (runId: string) => Promise<unknown>,
+) {
   const entered = createDeferredPromise<void>(signal);
   const ready = createDeferredPromise<void>(signal);
   const firstFinished = createDeferredPromise<void>(signal);
@@ -158,6 +164,10 @@ function claimGate(input: NativeClaimCase, signal: AbortSignal) {
         const response = await dispatch();
         receipt.status = response.status;
         receipt.response = await response.clone().json();
+        if (response.status === 200 && observeWinner) {
+          receipt.running = await observeWinner(input.runId);
+          receipt.runningObservedNs = process.hrtime.bigint().toString();
+        }
         receipt.completedNs = process.hrtime.bigint().toString();
         return response;
       });
@@ -176,6 +186,7 @@ function claimGate(input: NativeClaimCase, signal: AbortSignal) {
 export async function startNativeClaimApi(
   context: TestContext,
   cases: readonly NativeClaimCase[],
+  observeWinner?: (runId: string) => Promise<unknown>,
 ) {
   const stop = new AbortController();
   const signal = AbortSignal.any([context.signal, stop.signal]);
@@ -186,7 +197,7 @@ export async function startNativeClaimApi(
       if (gates.has(entry.runId)) {
         throw new Error("Duplicate native API claim case");
       }
-      const gate = claimGate(entry, signal);
+      const gate = claimGate(entry, signal, observeWinner);
       gates.set(entry.runId, gate);
       void gate.monitor.catch((error: unknown) => {
         failures.push(error);

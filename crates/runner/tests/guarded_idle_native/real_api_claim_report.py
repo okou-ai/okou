@@ -76,7 +76,14 @@ def validate_owner(events, terminal, policy, native_input, claim, role, order, s
             or progress.get("preparation_polled_pending") is not True):
         raise ValueError("pending claim lost original full native custody")
     foreground.observer(progress.get("observer"), terminal[1]["monotonic_ns"], events[0]["monotonic_ns"])
+    held = batch.clock(progress.get("pool_held_ns"), terminal[1]["monotonic_ns"], events[0]["monotonic_ns"])
+    pending = batch.clock(progress.get("heartbeat_pending_ns"), held, progress["observer"]["started_ns"])
+    released = batch.clock(progress.get("pool_released_ns"), progress["observer"]["completed_ns"], events[0]["monotonic_ns"])
+    if not pending < released or progress.get("heartbeat_polled_pending") is not True:
+        raise ValueError("claim heartbeat did not positively wait for its held pool")
     heartbeat = foreground.heartbeat(progress.get("heartbeat"), 1, terminal[1]["monotonic_ns"], events[0]["monotonic_ns"], (2, 4096))
+    if progress["heartbeat"]["receipt"]["received_ns"] <= released:
+        raise ValueError("heartbeat bypassed the held pool")
     if outcome.get("original_full_lease_active") is not True or outcome.get("allocated") != [2, 4096, 1]:
         raise ValueError("claim outcome prematurely released its complete lease")
     marker = {"run_id": run, "runner_id": runner, "role": role, "source_sha": source}
@@ -219,6 +226,12 @@ def validate(directory):
                 if not 0 < clocks[0] < clocks[1] < clocks[2]:
                     raise ValueError("API claim clocks do not order accepted work")
                 if claim["status"] == 200:
+                    observed = claim.get("running")
+                    observed_ns = int(claim.get("runningObservedNs", "-1"))
+                    if (not isinstance(observed, dict) or observed.get("status") != "running"
+                            or not observed.get("startedAt")
+                            or not clocks[1] < observed_ns < clocks[2]):
+                        raise ValueError("winner has no public running state before native execution")
                     response = claim.get("response")
                     if (not isinstance(response, dict) or response.get("runId") != run
                             or response.get("reuseKey") != native_input["reuse_key"]

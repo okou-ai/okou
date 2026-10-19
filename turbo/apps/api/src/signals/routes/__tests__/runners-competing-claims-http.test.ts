@@ -30,9 +30,13 @@ it.each(["a", "b", "both"] as const)(
         model: "claude-fable-5-1",
       });
       const runnerIds = [randomUUID(), randomUUID()] as const;
-      const fixture = await startNativeClaimApi(context, [
-        { runId: run.runId, runnerIds, controlDirectory: root, first },
-      ]);
+      const fixture = await startNativeClaimApi(
+        context,
+        [{ runId: run.runId, runnerIds, controlDirectory: root, first }],
+        async (runId) => {
+          return api.readRun(owned.actor, runId);
+        },
+      );
       const headers = {
         authorization: `Bearer ${OFFICIAL_RUNNER_TOKEN_PREFIX}${env("OFFICIAL_RUNNER_SECRET")}`,
         "content-type": "application/json",
@@ -116,6 +120,9 @@ it.each(["a", "b", "both"] as const)(
           expect(receipt.authorization).toBe(headers.authorization);
           expect(receipt.path).toBe(`/api/runners/jobs/${run.runId}/claim`);
           expect(receipt.status).toBeDefined();
+          if (receipt.status === 200) {
+            expect(receipt.running).toMatchObject({ status: "running" });
+          }
         }
       });
       const joined = await settleIncludingAbort(fixture.finish());

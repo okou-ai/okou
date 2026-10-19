@@ -54,8 +54,11 @@ def main():
     raw_policy = policy_file.read_text()
     if sha(policy_file) != artifacts["policy_sha256"]:
         raise ValueError("supplied uncalibrated policy changed")
-    if shutil.disk_usage(root).free < 80 * 1024**3:
-        raise ValueError("insufficient space for two independent owners")
+    # Two corpus arms each retain an original home and restore one saved home.
+    # Existing rootfs/snapshot inputs are already allocated before this check.
+    minimum_disk = 4 * artifacts["profile"]["home_mib"] * 1024**2
+    if shutil.disk_usage(root).free < minimum_disk:
+        raise ValueError("insufficient space for all four complete home-image owners")
     invocation = Path("/var/tmp/okou-issue-41467-" + revision[:12] + "-" + root.name)
     invocation.mkdir(mode=0o700)
     work = invocation / "work"
@@ -85,6 +88,7 @@ def main():
         *(k+"="+v for k, v in sorted(env.items())), binaries["host"]["path"],
         "native_real_api_competing_claims_preserve_both_owners", "--ignored", "--exact", "--nocapture", "--test-threads=1"]
     receipt = {"source_sha": revision, "command": command, "driver_sha256": sha(__file__),
+        "minimum_available_disk_bytes": minimum_disk, "available_disk_bytes_before": shutil.disk_usage(root).free,
         "started_monotonic_ns": time.monotonic_ns(), "started_unix_ns": time.time_ns()}
     with (root/"collector.log").open("x") as log:
         process = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT)

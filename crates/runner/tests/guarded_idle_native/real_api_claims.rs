@@ -310,11 +310,24 @@ pub async fn exercise(
         let mut prepared = None;
         pending(prepare.as_mut(), &mut prepared).await?;
         proof.require_full_lease()?;
+        let pool_hold = context.pool.lock().await;
+        let pool_held_ns = evidence::clocks()?.0;
         probe.request()?;
-        let heartbeat = probe.complete().await?;
+        {
+            let heartbeat = probe.complete();tokio::pin!(heartbeat);
+            if futures_util::poll!(&mut heartbeat).is_ready() {
+                return Err(io::Error::other("real claimant heartbeat ignored its held pool").into());
+            }
+        }
+        let heartbeat_pending_ns = evidence::clocks()?.0;
         let observer = foreground_probe::observe().await?;
+        let pool_released_ns = evidence::clocks()?.0;
+        drop(pool_hold);
+        let heartbeat = probe.complete().await?;
         proof.real_claim_witness("claim_wait_progress",json!({"run_id":input.run,"original_run_id":input.original_run_id,
             "runner_identity":input.runner,"role":input.role,"order":input.order,"heartbeat":heartbeat,"observer":observer,
+            "pool_held_ns":pool_held_ns,"heartbeat_pending_ns":heartbeat_pending_ns,
+            "pool_released_ns":pool_released_ns,"heartbeat_polled_pending":true,
             "preparation_polled_pending":true,"original_full_lease_active":true,"allocated":context.budget.allocated()}))?;
         let mut ready = OpenOptions::new().write(true).create_new(true).open(input.control.join(format!("{}.ready",input.role)))?;
         ready.write_all(b"accepted native owner and independent progress\n")?;

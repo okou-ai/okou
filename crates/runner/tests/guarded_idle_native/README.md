@@ -1450,7 +1450,10 @@ The transport waits for both actual requests and both positively observed native
 owners, then forwards A first, B first, or both concurrently. It never selects a
 status. Each order covers fresh and newly matching-snapshot Guests. Concurrent
 release observes overlapping HTTP lifetimes; it does not establish an internal
-database schedule. The winner keeps its original returned context and token,
+database schedule. Before releasing a successful response, the bridge records
+the actor's public running state. Each pending native owner also records an
+independent host observation while its pool blocks heartbeat publication, then
+joins the acknowledged heartbeat after releasing that pool. The winner keeps its original returned context and token,
 executes one exclusive synthetic GuestRPC task, and completes through the public
 protocol. The loser reparks through production guarded rollback. Both complete
 the existing full home/data, 64 MiB required saving, private-runtime removal,
@@ -1477,6 +1480,10 @@ privileges, run `pnpm test:native-competing-claims`. Supply
 paths in code and refuses source/input changes. It uses unchanged P1 duration,
 sampling, headroom, log and cleanup guards. Failed cases retain original evidence
 and uncertain ownership; diagnose them before starting a new invocation.
+Disk preflight reserves four complete profile-sized Home images for the two
+original owners and their saved-home verification; existing rootfs and snapshot
+inputs are already allocated. This is a fixture capacity check, not a measured
+production storage envelope.
 
 ```bash
 python3 crates/runner/tests/guarded_idle_native/real_api_claim_report.py <results-root>
