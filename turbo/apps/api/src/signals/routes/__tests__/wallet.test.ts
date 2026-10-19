@@ -3286,6 +3286,27 @@ test("a final approval observation uses the original deadline and timeout never 
   ).toBeFalsy();
 });
 
+test("an approved purchase waiting for its active chat notifies the card when automatic waiting expires", async () => {
+  const fixture = await trackedPurchase();
+  fixture.provider.approve();
+  expect((await pollPurchase(fixture.spend.id)).body).toStrictEqual({
+    state: "waiting",
+  });
+  expect((await approvalCard(fixture)).body.status).toBe("approved");
+  await flushWaitUntilForTest();
+  context.mocks.ably.publish.mockClear();
+
+  mockNow(new Date(fixture.spend.expiresAt).getTime());
+  expect((await pollPurchase(fixture.spend.id)).body).toStrictEqual({
+    state: "waiting",
+  });
+  await flushWaitUntilForTest();
+  expect(context.mocks.ably.publish).toHaveBeenCalledWith("wallet:changed", {
+    orgId: fixture.actor.orgId,
+  });
+  expect((await approvalCard(fixture)).body.status).toBe("stopped");
+});
+
 test("approval callbacks authenticate exact bodies and stop after the feature is disabled", async () => {
   const fixture = await trackedPurchase();
   expect(
@@ -3442,6 +3463,16 @@ test("a provider outage remains retryable and cannot manufacture approval or den
   expect(response.status).toBe(500);
   expect(response.body).not.toStrictEqual({ state: "done" });
   expect((await approvalCard(fixture)).body.status).toBe("pending");
+
+  await flushWaitUntilForTest();
+  context.mocks.ably.publish.mockClear();
+  mockNow(new Date(fixture.spend.expiresAt).getTime());
+  expect((await pollPurchase(fixture.spend.id)).status).toBe(500);
+  await flushWaitUntilForTest();
+  expect(context.mocks.ably.publish).toHaveBeenCalledWith("wallet:changed", {
+    orgId: fixture.actor.orgId,
+  });
+  expect((await approvalCard(fixture)).body.status).toBe("stopped");
 });
 
 test("a disconnected grant stops the approval watch and cannot start a purchase run", async () => {

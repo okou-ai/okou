@@ -180,16 +180,19 @@ export const pollLinkApproval$ = command(
       signal,
     );
     signal.throwIfAborted();
+    // The card must leave its waiting state at the deadline even when the
+    // provider fails or an approved purchase is waiting for an active chat.
+    if (now() >= row.expiresAt.getTime()) {
+      await publishUserSignal([row.userId], "wallet:changed", {
+        orgId: row.orgId,
+      });
+      signal.throwIfAborted();
+    }
     if (!observed.ok) {
       return await set(approvalFailureState$, row, observed.error, signal);
     }
     const spend = observed.value;
     if (spend.status !== "approved") {
-      if (now() >= row.expiresAt.getTime()) {
-        await publishUserSignal([row.userId], "wallet:changed", {
-          orgId: row.orgId,
-        });
-      }
       return {
         state:
           now() < row.expiresAt.getTime() &&

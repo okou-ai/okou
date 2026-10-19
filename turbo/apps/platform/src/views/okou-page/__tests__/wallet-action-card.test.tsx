@@ -464,9 +464,8 @@ test("wallet URLs in code and user messages do not become action cards", async (
   );
 });
 
-test("purchase approval cards follow server notifications without sending a second continuation", async () => {
+test("purchase approval cards follow server notifications and disable the completed action", async () => {
   let status: "pending" | "approved" | "continued" = "pending";
-  let messages = 0;
   context.mocks.api(walletUserContract.spendStatus, ({ body, respond }) => {
     expect(body).toStrictEqual({
       agentId: AGENT_ID,
@@ -474,10 +473,6 @@ test("purchase approval cards follow server notifications without sending a seco
       approvalUrl: APPROVAL_URL,
     });
     return respond(200, { status });
-  });
-  context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    messages++;
-    return respond(201, { threadId: context.resourceId });
   });
   await openChat(APPROVAL_URL, "direct", {
     [FeatureSwitchKey.LinkWalletApprovalContinuation]: true,
@@ -492,19 +487,31 @@ test("purchase approval cards follow server notifications without sending a seco
   ).not.toBeInTheDocument();
   context.mocks.ably.trigger("wallet:changed", { orgId: "org_default" });
   await screen.findByText("Approved; waiting to continue");
+  await expect(
+    findControl("button", "Status recorded"),
+  ).resolves.toBeDisabled();
   status = "continued";
   context.mocks.ably.trigger("wallet:changed", { orgId: "org_default" });
   await screen.findByText("Purchase request continued");
-  expect(messages).toBe(0);
+  await expect(
+    findControl("button", "Status recorded"),
+  ).resolves.toBeDisabled();
 });
 
 test("ending the automatic approval watch keeps the original Link action available for manual continuation", async () => {
+  let status: "approved" | "stopped" = "approved";
   context.mocks.api(walletUserContract.spendStatus, ({ respond }) => {
-    return respond(200, { status: "stopped" });
+    return respond(200, { status });
   });
   await openChat(APPROVAL_URL, "direct", {
     [FeatureSwitchKey.LinkWalletApprovalContinuation]: true,
   });
+  await screen.findByText("Approved; waiting to continue");
+  await expect(
+    findControl("button", "Status recorded"),
+  ).resolves.toBeDisabled();
+  status = "stopped";
+  context.mocks.ably.trigger("wallet:changed", { orgId: "org_default" });
   await screen.findByText("Automatic waiting ended; you can continue manually");
   const link = await findControl("link", "Review purchase");
   expect(link).toHaveAttribute("href", APPROVAL_URL);
