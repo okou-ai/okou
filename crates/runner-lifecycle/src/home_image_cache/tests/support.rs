@@ -12,6 +12,10 @@ pub(super) const ROOTFS: &str = "test-rootfs-full-hash";
 pub(super) const PROFILE: &str = "vm0/default";
 pub(super) const CWD: &str = "/home/user/workspace";
 
+pub(super) fn reclamation_deadline() -> tokio::time::Instant {
+    tokio::time::Instant::now() + sandbox::HOME_DRIVE_RECLAIM_OBSERVATION
+}
+
 pub(super) struct Fixture {
     pub dir: tempfile::TempDir,
     pub paths: RunnerPaths,

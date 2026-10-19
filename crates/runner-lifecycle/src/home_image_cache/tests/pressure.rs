@@ -34,7 +34,7 @@ async fn foreground_target_and_cheap_background_watermarks_remain_independent() 
         .dev();
     let demand = f
         .cache
-        .reclaim_home_image_headroom(device, 51 * GIB)
+        .reclaim_home_image_headroom(device, 51 * GIB, reclamation_deadline())
         .await
         .unwrap();
     assert_eq!(demand.status, HomeCacheReclaimStatus::TargetSatisfied);
@@ -251,6 +251,70 @@ async fn routine_pressure_turn_releases_both_owners_and_retains_inventory_betwee
 }
 
 #[tokio::test]
+async fn policy_uses_the_callers_remaining_deadline_and_retains_accepted_work() {
+    let f = Fixture::new().await;
+    let committed = f
+        .commit("home", b"owned-home", "2026-10-09T09:00:00Z")
+        .await;
+    low_space(&f.cache);
+    let gate = HomeImagePrepareLockTestGate::default();
+    let cache = f.cache.clone().with_pressure_turn_test_gate(gate.clone());
+    let device = std::fs::metadata(f.cache.home_image_cache_dir())
+        .unwrap()
+        .dev();
+    let allowance = sandbox::HOME_DRIVE_RECLAIM_OBSERVATION;
+
+    // Some of the caller's nondefault allowance has already elapsed before
+    // entering the policy. No real filesystem work is pending while paused.
+    tokio::time::pause();
+    let deadline = tokio::time::Instant::now() + allowance * 4;
+    tokio::time::advance(allowance).await;
+    tokio::time::resume();
+    let policy = cache.home_drive_pressure_policy();
+    let mut observer = policy.reclaim(device, 60 * GIB, deadline);
+    tokio::select! {
+        () = &mut observer => panic!("observer ended before accepting gated recovery"),
+        () = gate.wait_entered(Duration::from_secs(5)) => {}
+    }
+
+    // Physical IO and lock setup has completed and the worker is parked. Poll
+    // the observer directly, so the result does not depend on task scheduling.
+    tokio::time::pause();
+    tokio::time::advance(allowance).await;
+    let still_observing = futures_util::poll!(&mut observer).is_pending();
+    let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+    // Tokio timers round up to the next millisecond.
+    tokio::time::advance(remaining + Duration::from_millis(1)).await;
+    let expired = still_observing && futures_util::poll!(&mut observer).is_ready();
+    tokio::time::resume();
+
+    assert!(f.image("home", &committed).exists());
+    assert!(matches!(
+        runner_host::lock::try_acquire_or_busy(f.cache.capacity_lock_path())
+            .await
+            .unwrap(),
+        runner_host::lock::TryLock::Busy
+    ));
+    let drain = cache.drain_pressure_reclamation();
+    tokio::pin!(drain);
+    assert!(futures_util::poll!(&mut drain).is_pending());
+    gate.release();
+    drain.await;
+    assert!(
+        still_observing,
+        "policy imposed a separate default allowance"
+    );
+    assert!(expired, "policy restarted or ignored the caller's deadline");
+    assert!(!f.image("home", &committed).exists());
+    assert!(matches!(
+        runner_host::lock::try_acquire_or_busy(f.cache.capacity_lock_path())
+            .await
+            .unwrap(),
+        runner_host::lock::TryLock::Acquired(_)
+    ));
+}
+
+#[tokio::test]
 async fn demand_timeout_keeps_accepted_lock_custody_and_shutdown_joins_the_worker() {
     let f = Fixture::new().await;
     let committed = f
@@ -265,14 +329,14 @@ async fn demand_timeout_keeps_accepted_lock_custody_and_shutdown_joins_the_worke
     let observer_cache = cache.clone();
     let observer = tokio::spawn(async move {
         observer_cache
-            .reclaim_home_image_headroom(device, 60 * GIB)
+            .reclaim_home_image_headroom(device, 60 * GIB, reclamation_deadline())
             .await
     });
     gate.wait_entered(Duration::from_secs(5)).await;
     // The real filesystem/lock boundary has completed. Advance only the
     // observer's in-process deadline, then resume before more kernel IO.
     tokio::time::pause();
-    tokio::time::advance(Duration::from_millis(250)).await;
+    tokio::time::advance(sandbox::HOME_DRIVE_RECLAIM_OBSERVATION).await;
     tokio::time::resume();
     let observed = observer.await.unwrap().unwrap();
     assert_eq!(observed.status, HomeCacheReclaimStatus::ObserverTimedOut);
@@ -311,7 +375,7 @@ async fn cancelled_observer_does_not_cancel_accepted_reclamation() {
     let observer_cache = cache.clone();
     let observer = tokio::spawn(async move {
         observer_cache
-            .reclaim_home_image_headroom(device, 60 * GIB)
+            .reclaim_home_image_headroom(device, 60 * GIB, reclamation_deadline())
             .await
     });
     gate.wait_entered(Duration::from_secs(5)).await;
@@ -340,7 +404,7 @@ async fn demand_contention_preserves_entries_and_a_later_request_can_reclaim() {
         let lock = runner_host::lock::acquire(path).await.unwrap();
         let outcome = f
             .cache
-            .reclaim_home_image_headroom(device, 60 * GIB)
+            .reclaim_home_image_headroom(device, 60 * GIB, reclamation_deadline())
             .await
             .unwrap();
         assert_eq!(outcome.status, HomeCacheReclaimStatus::Contended);
@@ -349,7 +413,7 @@ async fn demand_contention_preserves_entries_and_a_later_request_can_reclaim() {
     }
     let outcome = f
         .cache
-        .reclaim_home_image_headroom(device, 60 * GIB)
+        .reclaim_home_image_headroom(device, 60 * GIB, reclamation_deadline())
         .await
         .unwrap();
     assert_eq!(outcome.status, HomeCacheReclaimStatus::NoEligibleProgress);
@@ -403,7 +467,7 @@ async fn different_receiving_device_does_not_reclaim_this_cache() {
     f.cache.reset_gc_root_scan_count();
     let outcome = f
         .cache
-        .reclaim_home_image_headroom(other_device, 60 * GIB)
+        .reclaim_home_image_headroom(other_device, 60 * GIB, reclamation_deadline())
         .await
         .unwrap();
     assert_eq!(outcome.status, HomeCacheReclaimStatus::DifferentFilesystem);
@@ -427,7 +491,7 @@ async fn real_filesystem_observations_do_not_claim_release_of_an_open_unlinked_i
     // A held positive allocation makes all filesystem capacity unavailable as
     // a free-space target, independent of other writers' timing.
     let outcome = cache
-        .reclaim_home_image_headroom(device, stats.total_bytes)
+        .reclaim_home_image_headroom(device, stats.total_bytes, reclamation_deadline())
         .await
         .unwrap();
     assert!(matches!(
