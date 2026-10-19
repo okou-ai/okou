@@ -700,11 +700,6 @@ const metricDataSchema = z.object({
   scheduled_lag_ms: z.number().optional(),
   mem_used: z.number(),
   mem_total: z.number(),
-  // Old Guest writers/replays still supply these during the rollout. Remove
-  // them in #41244 after old producers, replay sources and incompatible rollback
-  // artifacts are excluded and retained-history consumers are migrated.
-  disk_used: z.number().optional(),
-  disk_total: z.number().optional(),
   // A bad optional filesystem sample must not reject the telemetry batch.
   rootfs: filesystemObservationSchema.optional().catch(undefined),
   home: filesystemObservationSchema.optional().catch(undefined),

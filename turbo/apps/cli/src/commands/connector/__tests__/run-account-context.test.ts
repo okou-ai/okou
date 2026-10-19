@@ -92,6 +92,19 @@ describe("run connector account inspection", () => {
     listCommand.setOptionValue("json", false);
     statusCommand.setOptionValue("agent", undefined);
     statusCommand.setOptionValue("json", false);
+    server.use(
+      http.get("http://localhost:3000/api/connector-accounts", () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "UNAVAILABLE",
+              message: "Member summaries unavailable",
+            },
+          },
+          { status: 503 },
+        );
+      }),
+    );
   });
 
   afterEach(() => {

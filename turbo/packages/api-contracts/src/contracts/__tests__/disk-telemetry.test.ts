@@ -12,11 +12,6 @@ const metric = {
   mem_used: 10,
   mem_total: 100,
 };
-const legacyMetric = {
-  ...metric,
-  disk_used: 20,
-  disk_total: 100,
-};
 const rootfs = {
   used_bytes: 20,
   total_bytes: 100,
@@ -42,11 +37,7 @@ function parse(metric: unknown) {
   });
 }
 
-describe("independent filesystem telemetry compatibility", () => {
-  it("accepts legacy snapshots without inventing filesystem measurements", () => {
-    expect(parse(legacyMetric).metrics).toStrictEqual([legacyMetric]);
-  });
-
+describe("independent filesystem telemetry", () => {
   it("preserves separate byte/inode observations and real zero", () => {
     const observed = { ...metric, rootfs, home };
     expect(parse(observed).metrics).toStrictEqual([observed]);
@@ -59,31 +50,13 @@ describe("independent filesystem telemetry compatibility", () => {
     expect(parse(metric).metrics).toStrictEqual([metric]);
   });
 
-  it.each([
-    { disk_used: 0 },
-    { disk_total: 0 },
-    { disk_used: 0, disk_total: 0 },
-  ])("preserves independently supplied legacy numbers: %j", (legacyFields) => {
-    const observed = { ...metric, ...legacyFields, rootfs, home };
-    expect(parse(observed).metrics).toStrictEqual([observed]);
-  });
-
-  it.each(["disk_used", "disk_total"])(
-    "validates %s when supplied",
-    (field) => {
-      for (const invalid of [null, "20"]) {
-        expect(
-          webhookTelemetryContract.send.body.safeParse({
-            runId: "run",
-            metrics: [{ ...metric, [field]: invalid, rootfs, home }],
-          }).success,
-        ).toBe(false);
-      }
-    },
-  );
-
-  it("preserves mixed old and pair-free metrics with unavailable observations in one batch", () => {
-    const metrics = [legacyMetric, { ...metric, rootfs, home }, metric];
+  it("preserves independent and unavailable observations in one batch", () => {
+    const metrics = [
+      { ...metric, rootfs, home },
+      { ...metric, rootfs },
+      { ...metric, home },
+      metric,
+    ];
     const body = webhookTelemetryContract.send.body.parse({
       runId: "run",
       systemLog: "preserved",

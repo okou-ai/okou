@@ -13,6 +13,10 @@ import { server } from "../../../mocks/server";
 import { statusCommand } from "../status";
 import chalk from "chalk";
 import {
+  catalogAccountSummaries,
+  stubConnectorAccountSummaries,
+} from "../../__tests__/helpers/connector-accounts";
+import {
   authCodeMethod,
   catalogStatusItem,
   stubConnectorCatalogStatus,
@@ -56,6 +60,11 @@ function stubConnector(
   connectorSlug = "github",
 ) {
   if (status === 200) {
+    server.use(
+      stubConnectorAccountSummaries(
+        catalogAccountSummaries([statusItemFromConnector(body)]),
+      ),
+    );
     return stubConnectorCatalogStatus([statusItemFromConnector(body)]);
   }
   if (status === 404) {
@@ -128,6 +137,7 @@ describe("okou connector status command", () => {
     vi.stubEnv("OKOU_CHAT_THREAD_ID", "");
     statusCommand.setOptionValue("agent", undefined);
     statusCommand.setOptionValue("json", false);
+    server.use(stubConnectorAccountSummaries([]));
   });
 
   afterEach(() => {
@@ -325,6 +335,10 @@ describe("okou connector status command", () => {
           [statusItemFromConnector(connectedGithub)],
           apiOrigin,
         ),
+        stubConnectorAccountSummaries(
+          catalogAccountSummaries([statusItemFromConnector(connectedGithub)]),
+          apiOrigin,
+        ),
         stubAgent(AGENT_UUID, "maya", apiOrigin),
         stubUserConnectors(AGENT_UUID, [], apiOrigin),
       );
@@ -351,6 +365,10 @@ describe("okou connector status command", () => {
       server.use(
         stubConnectorCatalogStatus(
           [statusItemFromConnector(connectedGithub)],
+          apiOrigin,
+        ),
+        stubConnectorAccountSummaries(
+          catalogAccountSummaries([statusItemFromConnector(connectedGithub)]),
           apiOrigin,
         ),
         stubAgent(AGENT_UUID, "maya", apiOrigin),

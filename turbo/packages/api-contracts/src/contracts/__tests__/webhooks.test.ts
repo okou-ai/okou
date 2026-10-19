@@ -653,7 +653,7 @@ describe("agent completion failure reasons", () => {
 });
 
 describe("webhook telemetry contract", () => {
-  it("preserves metric payload compatibility across Guest and API rollout", () => {
+  it("preserves complete and partial filesystem metric payloads", () => {
     const runId = "00000000-0000-4000-8000-000000000000";
     const metric = {
       ts: "2026-09-01T00:00:00.000Z",
@@ -661,7 +661,6 @@ describe("webhook telemetry contract", () => {
       mem_used: 1024,
       mem_total: 2048,
     };
-    const oldMetric = { ...metric, disk_used: 4096, disk_total: 8192 };
     const fullMetric = {
       ...metric,
       rootfs: {
@@ -687,12 +686,6 @@ describe("webhook telemetry contract", () => {
       workload_cpu_usage_usec: 301,
     };
 
-    expect(
-      webhookTelemetryContract.send.body.parse({
-        runId,
-        metrics: [oldMetric],
-      }).metrics,
-    ).toStrictEqual([oldMetric]);
     expect(
       webhookTelemetryContract.send.body.parse({
         runId,
