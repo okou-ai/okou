@@ -139,8 +139,10 @@ test("Remote control opens management before setup, without standalone credentia
 });
 test("Direct SSH requires a name, retains input through username help and saves through the contract", async () => {
   const requests: unknown[] = [];
+  let savedId = "";
   context.mocks.api(sshConnectionsContract.create, ({ body, respond }) => {
     requests.push(body);
+    savedId = body.id;
     return respond(201, {
       id: body.id,
       displayName: body.displayName,
@@ -192,7 +194,7 @@ test("Direct SSH requires a name, retains input through username help and saves 
   expect(screen.getByText(/Saved, but not checked yet/u)).toBeInTheDocument();
   expect(queryAction("link", "Open chat")).toBeNull();
   expect(getAction("link", "View connection").getAttribute("href")).toContain(
-    "remoteResource=ssh%3A",
+    `remoteResource=ssh%3A${savedId}`,
   );
 });
 test("Tailscale setup adds a narrow grant with the selected port and leaves the target untagged", async () => {
@@ -356,8 +358,10 @@ test("A rejected SSH save retains the entered name and does not show a success s
 
 test("VNC saves only after the separate login and server-identity steps", async () => {
   const requests: unknown[] = [];
+  let savedId = "";
   context.mocks.api(vncConnectionsContract.create, ({ body, respond }) => {
     requests.push(body);
+    savedId = body.id;
     return respond(201, {
       id: body.id,
       displayName: body.displayName,
@@ -411,6 +415,9 @@ test("VNC saves only after the separate login and server-identity steps", async 
   );
   click(getAction("button", "Save only"));
   await screen.findByRole("heading", { name: "Connection added" });
+  expect(getAction("link", "View connection").getAttribute("href")).toContain(
+    `remoteResource=vnc%3A${savedId}`,
+  );
   expect(requests).toStrictEqual([
     expect.objectContaining({
       displayName: "Office screen",

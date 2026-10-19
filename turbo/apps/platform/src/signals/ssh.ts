@@ -1060,50 +1060,52 @@ const saveSshHost$ = command(
       if (!set(finishSshSave$, dialog, result, retrying)) {
         return false;
       }
+      return {
+        savedId: result.status === 201 ? result.body.id : id,
+        connection: null,
+      };
+    }
+    const connection = dialog.connection;
+    if (!connection) {
+      throw new Error("SSH edit requires a connection");
+    }
+    const params = { connectionId: connection.id };
+    if (dialog.kind === "delete") {
+      return await set(deleteSshHost$, client, connection, signal);
+    } else if (dialog.kind === "reset") {
+      const result = await accept(
+        client.resetHostKey({
+          params,
+          body: {
+            expectedGeneration: get(reviewedVersion$) ?? connection.generation,
+          },
+          fetchOptions: { signal },
+        }),
+        [200, 409],
+        signal,
+      );
+      conflicted = result.status === 409 ? result.body.error.code : null;
     } else {
-      const connection = dialog.connection;
-      if (!connection) {
-        throw new Error("SSH edit requires a connection");
+      const parsed = updateSshConnectionRequestSchema.safeParse({
+        expectedGeneration: get(reviewedVersion$) ?? connection.generation,
+        ...fields,
+      });
+      if (!parsed.success) {
+        set(saveMessage$, SSH_ERROR_CODES.INVALID_INPUT);
+        return false;
       }
-      const params = { connectionId: connection.id };
-      if (dialog.kind === "delete") {
-        return await set(deleteSshHost$, client, connection, signal);
-      } else if (dialog.kind === "reset") {
-        const result = await accept(
-          client.resetHostKey({
-            params,
-            body: {
-              expectedGeneration:
-                get(reviewedVersion$) ?? connection.generation,
-            },
-            fetchOptions: { signal },
-          }),
-          [200, 409],
-          signal,
-        );
-        conflicted = result.status === 409 ? result.body.error.code : null;
-      } else {
-        const parsed = updateSshConnectionRequestSchema.safeParse({
-          expectedGeneration: get(reviewedVersion$) ?? connection.generation,
-          ...fields,
-        });
-        if (!parsed.success) {
-          set(saveMessage$, SSH_ERROR_CODES.INVALID_INPUT);
-          return false;
-        }
-        const body = parsed.data;
-        set(beginSshSave$, dialog, null);
-        const result = await accept(
-          client.update({ params, body, fetchOptions: { signal } }),
-          [200, 400, 404, 409, 500],
-          signal,
-        );
-        if (!set(finishSshSave$, dialog, result, retrying)) {
-          return false;
-        }
-        if (result.status === 200) {
-          return result.body;
-        }
+      const body = parsed.data;
+      set(beginSshSave$, dialog, null);
+      const result = await accept(
+        client.update({ params, body, fetchOptions: { signal } }),
+        [200, 400, 404, 409, 500],
+        signal,
+      );
+      if (!set(finishSshSave$, dialog, result, retrying)) {
+        return false;
+      }
+      if (result.status === 200) {
+        return { savedId: result.body.id, connection: result.body };
       }
     }
 
@@ -1135,8 +1137,6 @@ const prepareSshFormSave$ = command(
         name.value = textField(form, "displayName").trim();
       }
     }
-    const savedConnectionId =
-      dialog.kind === "create" ? set(getSshCreationId$) : dialog.connection?.id;
     const login =
       dialog.kind === "edit" &&
       dialog.loginCredential &&
@@ -1149,7 +1149,7 @@ const prepareSshFormSave$ = command(
       set(saveMessage$, SSH_ERROR_CODES.INVALID_INPUT);
       return;
     }
-    return { dialog, clients, retrying, editor, savedConnectionId, login };
+    return { dialog, clients, retrying, editor, login };
   },
 );
 
@@ -1161,8 +1161,8 @@ export const saveSsh$ = command(
     if (!prepared) {
       return;
     }
-    const { dialog, clients, retrying, editor, savedConnectionId, login } =
-      prepared;
+    const { dialog, clients, retrying, editor, login } = prepared;
+    let savedConnectionId = dialog.connection?.id;
     let activeDialog = dialog;
     let conflicted: string | null = null;
     if (dialog.kind === "create-credential") {
@@ -1191,10 +1191,11 @@ export const saveSsh$ = command(
         return;
       }
       if (typeof result === "object" && result !== null) {
-        if (login?.success && dialog.loginCredential) {
+        savedConnectionId = result.savedId;
+        if (login?.success && dialog.loginCredential && result.connection) {
           activeDialog = {
             ...dialog,
-            connection: result,
+            connection: result.connection,
             connectionSaved: true,
           };
           set(dialog$, activeDialog);

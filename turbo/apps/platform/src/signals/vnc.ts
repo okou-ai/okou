@@ -1861,6 +1861,12 @@ export const saveVnc$ = command(
       200 | 201 | 204 | 400 | 404 | 409 | 500
     >(request(), [200, 201, 204, 400, 404, 409, 500], signal);
     signal.throwIfAborted();
+    const savedConnectionId =
+      (result.status === 200 || result.status === 201) && "host" in result.body
+        ? result.body.id
+        : dialog.kind === "create"
+          ? dialog.creationId
+          : dialog.connection?.id;
     if (
       get(dialog$) !== dialog ||
       dialog.identity !== (await get(vncIdentity$))
@@ -1906,9 +1912,7 @@ export const saveVnc$ = command(
     ) {
       set(closeVncDialog$);
       set(invalidateVnc$);
-      return dialog.kind === "create"
-        ? dialog.creationId
-        : dialog.connection?.id;
+      return savedConnectionId;
     }
     return set(
       handleVncSaveFailure$,
