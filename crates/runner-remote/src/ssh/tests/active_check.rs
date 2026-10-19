@@ -21,7 +21,7 @@ async fn rpc(h: &Harness, method: &str, params: Value) -> Value {
 async fn active_check_is_fresh_has_no_channels_and_preserves_operational_history() {
     const OTHER: &str = "a90d4e85-16c1-4d29-81ea-3745807481a6";
     let mut h = Harness::new(Reply::default()).await;
-    h.enable_checks(&["ssh:write"]).await;
+    h.enable_checks(&["ssh:read", "ssh:write"]).await;
     let _inventory = h
         .api
         .mock_async(|when, then| {
@@ -67,6 +67,45 @@ async fn active_check_is_fresh_has_no_channels_and_preserves_operational_history
     assert!(diagnostic_text(&passed).len() <= 8192 && diagnostic_text(&failed).len() <= 8192);
     assert_eq!(rpc(&h, "ssh.diagnose", json!({})).await, before);
     assert_eq!(h.observed.commands.lock().unwrap().len(), 1);
+    let attempts = h.observed.attempts.lock().unwrap().len();
+    for receipt in [&passed, &failed] {
+        let selected = rpc(
+            &h,
+            "ssh.diagnose",
+            json!({"checks":true,"attemptId":diagnostic_attempt(receipt)}),
+        )
+        .await;
+        assert_eq!(selected["status"], "found");
+        assert_eq!(diagnostic_text(&selected), diagnostic_text(receipt));
+        assert_eq!(
+            rpc(
+                &h,
+                "ssh.diagnose",
+                json!({"attemptId":diagnostic_attempt(receipt)})
+            )
+            .await["status"],
+            "not_retained"
+        );
+    }
+    assert_eq!(
+        rpc(
+            &h,
+            "ssh.diagnose",
+            json!({"checks":true,"connectionId":CONNECTION,"attemptId":diagnostic_attempt(&failed)})
+        )
+        .await["status"],
+        "not_retained"
+    );
+    assert_eq!(
+        rpc(
+            &h,
+            "ssh.diagnose",
+            json!({"checks":true,"connectionId":OTHER})
+        )
+        .await["message"],
+        failed["message"]
+    );
+    assert_eq!(h.observed.attempts.lock().unwrap().len(), attempts);
     good.delete_async().await;
     // Cached authority is invalidated explicitly by the normal path, not by a check.
     h.expire_idle().await;
@@ -140,7 +179,8 @@ async fn active_vnc_check_nested_ssh_failure_keeps_an_existing_shell_alive() {
     .unwrap()
     .unwrap();
     h.restart_with_vnc(vnc).await;
-    h.enable_checks(&["ssh:write", "vnc:write"]).await;
+    h.enable_checks(&["ssh:read", "ssh:write", "vnc:read", "vnc:write"])
+        .await;
     let dispatcher = h.take_dispatcher();
     let _resolve = h.resolve(h.credential(true)).await;
     let observation = h
@@ -165,13 +205,76 @@ async fn active_vnc_check_nested_ssh_failure_keeps_an_existing_shell_alive() {
     // The old physical session remains connected to the original peer. A new
     // dial sees a changed server key and must fail without revoking that session.
     *h.network.target.lock().unwrap() = *changed_peer.network.target.lock().unwrap();
-    let result = rpc(&h, "vnc.check", json!({"connectionId":VNC,"mode":"shared"})).await;
+    let (result, ssh_result) = tokio::join!(
+        rpc(&h, "vnc.check", json!({"connectionId":VNC,"mode":"shared"})),
+        rpc(&h, "ssh.check", json!({"connectionId":CONNECTION}))
+    );
     assert_eq!(result["status"], "failed", "{result}");
     assert!(diagnostic_text(&result).contains("SSH host key mismatch"));
     assert_eq!(
         sessions::rpc(&h, "status", json!({"sessionId":shell})).await["session"]["state"]["type"],
         "running"
     );
+    assert_eq!(h.observed.closed.load(Ordering::SeqCst), 0);
+    let vnc_inventory = h
+        .api
+        .mock_async(|when, then| {
+            when.method("GET").path("/api/vnc/hosts");
+            then.status(200)
+                .json_body(remote_inventory(&[(VNC, 11)], CREATED_AT));
+        })
+        .await;
+    let ssh_denied = h
+        .api
+        .mock_async(|when, then| {
+            when.method("GET").path("/api/ssh/hosts");
+            then.status(403).body("private-authority-canary");
+        })
+        .await;
+    let selection = json!({"checks":true,"attemptId":diagnostic_attempt(&result)});
+    let hidden = rpc(&h, "vnc.diagnose", selection.clone()).await;
+    assert_eq!(hidden["status"], "authority_unavailable");
+    assert!(!diagnostic_text(&hidden).contains(CONNECTION));
+    assert!(!hidden.to_string().contains("private-authority-canary"));
+    ssh_denied.delete_async().await;
+    let _ssh_inventory = h
+        .api
+        .mock_async(|when, then| {
+            when.method("GET").path("/api/ssh/hosts");
+            then.status(200)
+                .json_body(remote_inventory(&[(CONNECTION, 7)], CREATED_AT));
+        })
+        .await;
+    let retained = rpc(&h, "vnc.diagnose", selection).await;
+    assert_eq!(retained["status"], "found");
+    assert_eq!(retained["message"], result["message"]);
+    let ssh_retained = rpc(
+        &h,
+        "ssh.diagnose",
+        json!({"checks":true,"attemptId":diagnostic_attempt(&ssh_result)}),
+    )
+    .await;
+    assert_eq!(ssh_retained["status"], "found");
+    assert_eq!(ssh_retained["message"], ssh_result["message"]);
+    assert_eq!(
+        rpc(
+            &h,
+            "ssh.diagnose",
+            json!({"checks":true,"attemptId":diagnostic_attempt(&result)})
+        )
+        .await["status"],
+        "not_retained"
+    );
+    assert_eq!(
+        rpc(
+            &h,
+            "vnc.diagnose",
+            json!({"checks":true,"attemptId":diagnostic_attempt(&ssh_result)})
+        )
+        .await["status"],
+        "not_retained"
+    );
+    vnc_inventory.assert_calls_async(3).await;
     assert_eq!(h.observed.closed.load(Ordering::SeqCst), 0);
     sessions::rpc(&h, "close", json!({"sessionId":shell})).await;
     dispatcher.shutdown().await.unwrap();

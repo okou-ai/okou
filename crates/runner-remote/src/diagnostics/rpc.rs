@@ -274,7 +274,16 @@ impl Handle {
         {
             return query;
         }
-        let report = self.select(protocol, &selector);
+        let check = if selector.checks {
+            self.select_check(protocol, &selector)
+        } else {
+            None
+        };
+        let report = if selector.checks {
+            check.as_ref().map(|receipt| receipt.report.clone())
+        } else {
+            self.select(protocol, &selector)
+        };
         if let Some(report) = &report {
             if !permits(
                 &hosts,
@@ -313,7 +322,8 @@ impl Handle {
         }
         query.status = if report.is_some() {
             Status::Found
-        } else if selector.connection_id.is_some()
+        } else if selector.checks
+            || selector.connection_id.is_some()
             || selector.attempt_id.is_some()
             || selector.session_id.is_some()
         {
@@ -321,12 +331,17 @@ impl Handle {
         } else {
             Status::NoFailure
         };
-        let message = report.as_ref().and_then(super::Report::message);
+        let message = if selector.checks {
+            check.map(|receipt| receipt.message)
+        } else {
+            report.as_ref().and_then(super::Report::message)
+        };
         if report.is_some() && message.is_none() {
             query.status = Status::Unavailable;
         }
         query.message = message.unwrap_or_else(|| match query.status {
             Status::NoFailure => "No operational failure was recorded in this Run. Current connectivity has not been checked.".into(),
+            Status::NotRetained if selector.checks => "No matching completed check is retained in this Run's bounded check history (64 latest completions across SSH/VNC, no pins). The original attempt may be unknown, unfinished or evicted. Missing evidence proves neither connectivity nor cleanup; no check has been replayed.".into(),
             Status::NotRetained => "No matching failure is retained in this Run's bounded history (64 detailed reports, latest failures pinned). Current connectivity has not been checked.".into(),
             _ => "Diagnostic detail is unavailable. Current connectivity has not been checked.".into(),
         });

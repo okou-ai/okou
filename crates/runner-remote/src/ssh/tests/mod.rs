@@ -3,6 +3,7 @@ mod active_check;
 mod admission;
 mod automatic_diagnostics;
 mod cache;
+mod check_history;
 mod credentials;
 mod diagnostics;
 pub(crate) mod files;

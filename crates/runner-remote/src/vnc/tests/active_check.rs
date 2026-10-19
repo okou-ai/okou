@@ -3,14 +3,16 @@ use super::{
     harness::{CONNECTION, CREATED_AT, Harness},
     mode,
 };
-use crate::test_fixtures::{diagnostic_text, remote_inventory};
+use crate::test_fixtures::{diagnostic_attempt, diagnostic_text, remote_inventory};
 use serde_json::json;
 use std::sync::atomic::Ordering;
 
 #[tokio::test]
 async fn active_check_initializes_each_mode_closes_only_itself_and_preserves_failure() {
     let mut h = Harness::new().await;
-    h.run.enable_checks(&h.runtime, &["vnc:write"]).await;
+    h.run
+        .enable_checks(&h.runtime, &["vnc:read", "vnc:write"])
+        .await;
     let _resolve = h.resolve().await;
     let _authority = h.check("valid", 200).await;
     let _inventory = h
@@ -42,6 +44,15 @@ async fn active_check_initializes_each_mode_closes_only_itself_and_preserves_fai
         mode(&h, flag).await;
         closed(&h).await;
         assert_eq!(h.run.passive("vnc.diagnose", json!({})).await, before);
+        let retained = h
+            .run
+            .passive(
+                "vnc.diagnose",
+                json!({"checks":true,"attemptId":diagnostic_attempt(&result)}),
+            )
+            .await;
+        assert_eq!(retained["status"], "found");
+        assert_eq!(retained["message"], result["message"]);
         assert_eq!(
             h.run.request("vnc.session.list", json!({})).await.result()["sessions"]
                 .as_array()
@@ -58,6 +69,15 @@ async fn active_check_initializes_each_mode_closes_only_itself_and_preserves_fai
         .active_check(json!({"connectionId":CONNECTION,"mode":"shared"}))
         .await;
     assert_eq!(blocked["status"], "blocked", "{blocked}");
+    let retained = h
+        .run
+        .passive(
+            "vnc.diagnose",
+            json!({"checks":true,"attemptId":diagnostic_attempt(&blocked)}),
+        )
+        .await;
+    assert_eq!(retained["status"], "found");
+    assert_eq!(retained["message"], blocked["message"]);
     assert_eq!(h.network.attempts.lock().unwrap().len(), attempts);
     assert_eq!(
         h.run.request("vnc.session.list", json!({})).await.result()["sessions"]
@@ -76,6 +96,15 @@ async fn active_check_initializes_each_mode_closes_only_itself_and_preserves_fai
         .active_check(json!({"connectionId":CONNECTION,"mode":"shared"}))
         .await;
     assert_eq!(failed["status"], "failed", "{failed}");
+    let retained = h
+        .run
+        .passive(
+            "vnc.diagnose",
+            json!({"checks":true,"attemptId":diagnostic_attempt(&failed)}),
+        )
+        .await;
+    assert_eq!(retained["status"], "found");
+    assert_eq!(retained["message"], failed["message"]);
     closed(&h).await;
     assert_eq!(h.run.passive("vnc.diagnose", json!({})).await, before);
     h.run
@@ -83,6 +112,115 @@ async fn active_check_initializes_each_mode_closes_only_itself_and_preserves_fai
         .await;
     closed(&h).await;
     h.run.shutdown().await;
+}
+
+#[tokio::test]
+async fn check_history_survives_failed_vnc_delivery_without_replay() {
+    use super::harness::bounded;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut h = Harness::new().await;
+    h.run
+        .enable_checks(&h.runtime, &["vnc:read", "vnc:write"])
+        .await;
+    let resolve = h.resolve().await;
+    let _authority = h.check("valid", 200).await;
+    let inventory = h
+        .api
+        .mock_async(|when, then| {
+            when.method("GET").path("/api/vnc/hosts");
+            then.status(200)
+                .json_body(remote_inventory(&[(CONNECTION, 7)], CREATED_AT));
+        })
+        .await;
+    let mut guest = h.run.open_failing_output().await;
+    let request = json!({"version":1,"method":"vnc.check","remaining_ms":10000,
+        "params":{"connectionId":CONNECTION,"mode":"shared"}})
+    .to_string();
+    guest.write_u32(request.len() as u32).await.unwrap();
+    guest.write_all(request.as_bytes()).await.unwrap();
+    // The production response writer fails after Runner has finished the check.
+    let mut bytes = Vec::new();
+    assert_eq!(bounded(guest.read_to_end(&mut bytes)).await.unwrap(), 0);
+    mode(&h, 1).await;
+    closed(&h).await;
+    let retained = h
+        .run
+        .passive(
+            "vnc.diagnose",
+            json!({"checks":true,"connectionId":CONNECTION}),
+        )
+        .await;
+    assert_eq!(retained["status"], "found", "{retained}");
+    assert!(diagnostic_text(&retained).starts_with("Active check (VNC): passed. Checked at:"));
+    assert!(diagnostic_text(&retained).contains("Helper delivery is unconfirmed"));
+    let attempt = diagnostic_attempt(&retained);
+    assert_eq!(
+        h.run
+            .passive("vnc.diagnose", json!({"checks":true,"attemptId":attempt}))
+            .await,
+        retained
+    );
+    assert_eq!(
+        h.run.passive("vnc.diagnose", json!({})).await["status"],
+        "no_failure"
+    );
+    inventory.assert_calls_async(3).await;
+    resolve.assert_calls_async(1).await;
+    assert_eq!(h.network.attempts.lock().unwrap().len(), 1);
+    h.run.shutdown().await;
+}
+
+#[tokio::test]
+async fn check_history_query_cannot_disclose_after_assignment_changes_during_authorization() {
+    use super::harness::{TestRun, bounded, resolved_response};
+    use super::peer::Peer;
+    use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut server = RawHttpTestServer::spawn(vec![
+        RawHttpAction::Respond(resolved_response(
+            &json!({"outcome":"unavailable"}).to_string(),
+        )),
+        RawHttpAction::Stall,
+    ])
+    .await;
+    let mut h = Harness::with_authority(Peer::new().await, Some(server.url())).await;
+    h.run
+        .enable_checks(&h.runtime, &["vnc:read", "vnc:write"])
+        .await;
+    let receipt = h
+        .run
+        .active_check(json!({"connectionId":CONNECTION,"mode":"shared"}))
+        .await;
+    assert_eq!(receipt["status"], "blocked");
+    assert!(
+        server
+            .next_request("check credential authority")
+            .await
+            .contains("/vnc/resolve")
+    );
+    let attempt = diagnostic_attempt(&receipt);
+    let mut guest = h.run.open().await;
+    let request = json!({"version":1,"method":"vnc.diagnose",
+        "params":{"checks":true,"attemptId":attempt}})
+    .to_string();
+    guest.write_u32(request.len() as u32).await.unwrap();
+    guest.write_all(request.as_bytes()).await.unwrap();
+    // The external metadata server holds this read across assignment replacement.
+    assert!(
+        server
+            .next_request("pending check-history authority")
+            .await
+            .starts_with("GET /api/vnc/hosts ")
+    );
+    let mut replacement = TestRun::with_id(&h.runtime, h.run.id);
+    let mut stale = Vec::new();
+    bounded(guest.read_to_end(&mut stale)).await.unwrap();
+    assert!(!String::from_utf8_lossy(&stale).contains(CONNECTION));
+    assert!(!String::from_utf8_lossy(&stale).contains(&attempt.to_string()));
+    assert!(h.network.attempts.lock().unwrap().is_empty());
+    replacement.shutdown().await;
+    h.run.shutdown().await;
+    server.cancel_and_reap().await;
 }
 
 #[tokio::test]
