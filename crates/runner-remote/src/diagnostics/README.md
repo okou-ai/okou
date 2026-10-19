@@ -121,6 +121,16 @@ These non-GA query formats do not retain old report-format decoders.
 `found` explains one matching failure. `no_failure` means none was recorded
 in this Run, not successful connectivity. `not_retained` never substitutes
 an unrelated incident. `authority_unavailable` discloses no retained details.
+Its opaque explanation distinguishes an authority API read denial (401/403),
+a lookup timeout (including HTTP 408), request/response transport failure,
+service failure or rate limit (5xx/429), and an invalid response (including
+unexpected statuses, malformed or inconsistent identities and declared/streamed
+inventory overflow). The same finite explanations apply to dependency lookups,
+without exposing which dependency was checked, tokens, URLs, response bodies or
+host data. Successful inventories that omit, revoke or recreate a subject keep
+the generic authority explanation. These are failures to read history, not
+evidence that the remote SSH/VNC target failed; current connectivity remains
+unchecked. The `{status,message}` envelope and CLI exit behavior are unchanged.
 `unavailable` covers a disabled/retired owner or unavailable detail.
 Queries perform no target login, capture, input, command replay or provisioning.
 

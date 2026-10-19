@@ -150,6 +150,25 @@ it("passes arbitrary Runner wording unchanged in human output", async () => {
   await invoke("vnc");
   expect(output).toHaveBeenCalledWith(found("vnc").message);
 });
+it.each(["ssh", "vnc"] as const)(
+  "preserves opaque %s authority failure guidance in human and JSON output",
+  async (protocol) => {
+    const query = {
+      status: "authority_unavailable",
+      message:
+        "Diagnostic history could not be read because the authority lookup timed out. Check API availability and the Runner's API connection. Current connectivity has not been checked.",
+    };
+    response(query);
+    await invoke(protocol);
+    expect(output).toHaveBeenLastCalledWith(query.message);
+    expect(process.exitCode).toBe(1);
+    response(query);
+    await invoke(protocol, "--json");
+    expect(result()).toEqual(query);
+    expect(process.exitCode).toBe(1);
+    expect(helper.requests).toHaveLength(2);
+  },
+);
 it.each(["no_failure", "not_retained", "authority_unavailable", "unavailable"])(
   "preserves %s and its explanation without inventing connectivity",
   async (status) => {
