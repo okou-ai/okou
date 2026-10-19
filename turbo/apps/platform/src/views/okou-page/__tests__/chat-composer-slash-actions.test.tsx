@@ -502,7 +502,6 @@ test("Template counts include the custom templates listed beside the built-in on
   const { menu } = await openSlashActions({
     featureSwitches: {
       [FeatureSwitchKey.CustomTemplates]: true,
-      [FeatureSwitchKey.ComposerSlashCustomTemplates]: true,
       [FeatureSwitchKey.BuiltinDocumentTemplates]: false,
     },
   });
@@ -557,7 +556,6 @@ test("A template type with nothing to show gets no tab", async () => {
   const { menu } = await openSlashActions({
     featureSwitches: {
       [FeatureSwitchKey.CustomTemplates]: true,
-      [FeatureSwitchKey.ComposerSlashCustomTemplates]: true,
       [FeatureSwitchKey.BuiltinDocumentTemplates]: false,
     },
   });
