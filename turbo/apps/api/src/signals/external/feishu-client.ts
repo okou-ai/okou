@@ -829,76 +829,18 @@ export async function replyWithFeishuMessage(
   );
 }
 
-export async function addFeishuMessageReaction(
-  args: {
-    readonly db: Db;
-    readonly installationId: string;
-    readonly messageId: string;
-    readonly emojiType: string;
-  },
-  signal: AbortSignal,
-): Promise<string> {
-  const addReactionContextArgs = args;
-  const addReactionContextSignal = signal;
-  const { token, apiOrigin, providerName } = await (async () => {
-    const [installation] = await addReactionContextArgs.db
-      .select()
-      .from(feishuOrgInstallations)
-      .where(
-        eq(feishuOrgInstallations.id, addReactionContextArgs.installationId),
-      )
-      .limit(1);
-    addReactionContextSignal.throwIfAborted();
-    if (!installation) {
-      throw new Error("Bot installation not found");
-    }
-    if (
-      !(await (async () => {
-        const plan = feishuInstallationAvailabilityReadPlan(installation);
-        if (plan.kind === "resolved") {
-          return plan.enabled;
-        }
-        const rows = await addReactionContextArgs.db
-          .select(plan.columns)
-          .from(userFeatureSwitches)
-          .where(plan.condition);
-        return feishuInstallationEnabledFromRows(plan.scope, rows);
-      })())
-    ) {
-      throw new FeishuApiError("Lark integration is not enabled", 403);
-    }
-    const credentials = await resolveFeishuRequestCredentials(
-      installation,
-      addReactionContextSignal,
-    );
-    if (credentials.refreshedToken) {
-      await addReactionContextArgs.db
-        .update(feishuOrgInstallations)
-        .set(feishuTokenUpdateValues(credentials.refreshedToken))
-        .where(
-          eq(feishuOrgInstallations.id, addReactionContextArgs.installationId),
-        );
-      addReactionContextSignal.throwIfAborted();
-    }
-    return credentials.context;
-  })();
-  const response = await fetch(
-    `${apiOrigin}/open-apis/im/v1/messages/${encodeURIComponent(args.messageId)}/reactions`,
-    {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json; charset=utf-8",
-      },
-      body: JSON.stringify({
-        reaction_type: { emoji_type: args.emojiType },
-      }),
-      signal,
-    },
-  );
-  const parsed = feishuReactionResponseSchema.parse(
-    await readJson(response, providerName),
-  );
+export function feishuReactionCreationUrl(
+  apiOrigin: string,
+  messageId: string,
+): string {
+  return `${apiOrigin}/open-apis/im/v1/messages/${encodeURIComponent(messageId)}/reactions`;
+}
+
+export function parseFeishuReactionCreationResponse(
+  value: unknown,
+  providerName: string,
+): string {
+  const parsed = feishuReactionResponseSchema.parse(value);
   if (parsed.code !== 0) {
     throw new FeishuApiError(
       parsed.msg ?? `${providerName} message reaction failed`,
