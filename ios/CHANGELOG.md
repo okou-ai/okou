@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.0](https://github.com/okou-ai/okou/compare/ios-v0.8.2...ios-v0.9.0) (2026-10-19)
+
+
+### Features
+
+* **api:** pin official workflows to auto and configure thread visibility ([#41404](https://github.com/okou-ai/okou/issues/41404)) ([a6fb382](https://github.com/okou-ai/okou/commit/a6fb382f4dc9f56f62813a5a1ff7378faffa859f))
+* **ios:** align chat transcript presentation with pwa ([#41354](https://github.com/okou-ai/okou/issues/41354)) ([371cb2b](https://github.com/okou-ai/okou/commit/371cb2bfea8e4cb1b5c491ec5b3ba21bf8de9fd4))
+
 ## [0.8.2](https://github.com/okou-ai/okou/compare/ios-v0.8.1...ios-v0.8.2) (2026-10-13)
 
 

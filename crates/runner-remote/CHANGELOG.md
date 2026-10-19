@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.2](https://github.com/okou-ai/okou/compare/runner-remote-v0.28.1...runner-remote-v0.28.2) (2026-10-19)
+
+
+### Bug Fixes
+
+* **remote:** preserve diagnostic evidence and execution scope ([#41339](https://github.com/okou-ai/okou/issues/41339)) ([eaec565](https://github.com/okou-ai/okou/commit/eaec5657eb9f06282efccb9889dbe749ad30ca40))
+
 ## [0.28.1](https://github.com/okou-ai/okou/compare/runner-remote-v0.28.0...runner-remote-v0.28.1) (2026-10-19)
 
 ## [0.28.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.27.3...runner-remote-v0.28.0) (2026-10-19)

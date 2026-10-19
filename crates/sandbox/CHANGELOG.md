@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.1](https://github.com/okou-ai/okou/compare/sandbox-v0.28.0...sandbox-v0.28.1) (2026-10-19)
+
+
+### Refactoring
+
+* **runner:** share the foreground home reclamation deadline ([#41384](https://github.com/okou-ai/okou/issues/41384)) ([b7ccae0](https://github.com/okou-ai/okou/commit/b7ccae0fad7398bdf66fbad6b994bc1602a11f2e))
+
 ## [0.28.0](https://github.com/okou-ai/okou/compare/sandbox-v0.27.1...sandbox-v0.28.0) (2026-10-16)
 
 

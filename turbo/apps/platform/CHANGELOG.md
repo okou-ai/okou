@@ -12,6 +12,43 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1043.0](https://github.com/okou-ai/okou/compare/app-v0.1042.0...app-v0.1043.0) (2026-10-19)
+
+
+### Features
+
+* **api:** pin official workflows to auto and configure thread visibility ([#41404](https://github.com/okou-ai/okou/issues/41404)) ([a6fb382](https://github.com/okou-ai/okou/commit/a6fb382f4dc9f56f62813a5a1ff7378faffa859f))
+* **app:** add source-faithful json tree previews ([#41382](https://github.com/okou-ai/okou/issues/41382)) ([ab10e87](https://github.com/okou-ai/okou/commit/ab10e87b60bba9468f6e0fa642416ac4b2f7ce32))
+* **wallet:** continue chats after link purchase approval ([#41375](https://github.com/okou-ai/okou/issues/41375)) ([43b3fb0](https://github.com/okou-ai/okou/commit/43b3fb081ff5be33d39c48b9896ddf86aa03ebba))
+
+
+### Bug Fixes
+
+* **app:** group connectors by saved account status ([#41355](https://github.com/okou-ai/okou/issues/41355)) ([3ae324b](https://github.com/okou-ai/okou/commit/3ae324b5eb29230bc1da50e95ed9a00d72ba48d4))
+* **app:** hide resource copy buttons after pointer focus ([#41353](https://github.com/okou-ai/okou/issues/41353)) ([3d93d89](https://github.com/okou-ai/okou/commit/3d93d8911258c78ca4840c2b9d91b07d9ce39d1a))
+* **app:** keep model menu stable while subscription usage loads ([#41376](https://github.com/okou-ai/okou/issues/41376)) ([a5db54a](https://github.com/okou-ai/okou/commit/a5db54a2b085ae7d0950117155248a3d0be05a84))
+* **app:** keep related chat titles in sync after rename ([#41396](https://github.com/okou-ai/okou/issues/41396)) ([260da3c](https://github.com/okou-ai/okou/commit/260da3ca71d0e604529a6a95014572dbbf20f6ad))
+* **app:** restore network log row expansion ([#41403](https://github.com/okou-ai/okou/issues/41403)) ([0cb0681](https://github.com/okou-ai/okou/commit/0cb068130927fbbe538a0c622b1d879dca9a2e47))
+* **app:** scroll overflowing chat resource titles on hover ([#41358](https://github.com/okou-ai/okou/issues/41358)) ([86555ee](https://github.com/okou-ai/okou/commit/86555eeffafc12e88fa67bbac0150d5ef7f3fb0e))
+* **app:** show slash hint before existing composer text ([#41362](https://github.com/okou-ai/okou/issues/41362)) ([0301de8](https://github.com/okou-ai/okou/commit/0301de8ee1d0f81204674bdd2cc14dcf1197514c))
+* **host:** keep renamed site addresses current across artifacts ([#41405](https://github.com/okou-ai/okou/issues/41405)) ([14f3a65](https://github.com/okou-ai/okou/commit/14f3a65e91d3a93968ae4b1c4c375efde32d2baf))
+* **wallet:** show saved cards and align refresh behavior ([#41406](https://github.com/okou-ai/okou/issues/41406)) ([dda2817](https://github.com/okou-ai/okou/commit/dda28176ba075edeaf3656ecc5f22563bae4af1c))
+
+
+### Refactoring
+
+* **app:** remove composer slash hint feature switch ([#41346](https://github.com/okou-ai/okou/issues/41346)) ([9c7d149](https://github.com/okou-ai/okou/commit/9c7d149a6d204aa3278340ab2a3b3349ac50a259))
+* **platform:** bound sandbox download pull loop ([#41364](https://github.com/okou-ai/okou/issues/41364)) ([5fbaafa](https://github.com/okou-ai/okou/commit/5fbaafa62243032f977eb6a90079866ee24b39d6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.576.0
+    * @okouai/connectors bumped to 3.16.11
+    * @okouai/core bumped to 8.770.0
+
 ## [0.1042.0](https://github.com/okou-ai/okou/compare/app-v0.1041.0...app-v0.1042.0) (2026-10-19)
 
 
