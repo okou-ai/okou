@@ -947,6 +947,11 @@ function ComposerSuggestionMenu({
     composer.suggestion.setSuggestionMenuRef$,
   );
   const setSlashHintMenuRef = useSet(composer.suggestion.setSlashHintMenuRef$);
+  const setMentionHintMenuRef = useSet(
+    composer.suggestion.setMentionHintMenuRef$,
+  );
+  const features = useGet(featureSwitch$);
+  const mentionHintEnabled = features[FeatureSwitchKey.ComposerMentionHint];
 
   return (
     <Popover
@@ -1023,7 +1028,9 @@ function ComposerSuggestionMenu({
       )}
       {suggestionMenu.showMentions && (
         <ComposerMentionSuggestionMenu
-          menuRef={setSuggestionMenuRef}
+          menuRef={
+            mentionHintEnabled ? setMentionHintMenuRef : setSuggestionMenuRef
+          }
           anchor={suggestionAnchor}
           reversed={suggestionMenu.reversed}
           agents={suggestionMenu.agents}
