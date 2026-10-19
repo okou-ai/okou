@@ -27,7 +27,7 @@ import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { secrets } from "@okouai/db/schema/secret";
 import { nowDate } from "../../lib/time";
 import { clerk$ } from "../external/clerk";
-import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 import {
   publishCustomConnectorOrganizationInvalidationAfterCommit,
   type CapturedConnectorClientInvalidationAbort,
@@ -399,28 +399,19 @@ async function repairFeishuCustomConnector(
   })();
 }
 
-async function preflightFeishuCustomConnectorId(
-  db: ReadonlyDb,
+function feishuCustomConnectorIdColumns() {
+  return {
+    customConnectorId: feishuOrgInstallations.customConnectorId,
+  };
+}
+
+function feishuCustomConnectorIdCondition(
   args: EnsureFeishuCustomConnectorArgs,
-  signal: AbortSignal,
-): Promise<string | null> {
-  const [target] = await db
-    .select({
-      customConnectorId: feishuOrgInstallations.customConnectorId,
-    })
-    .from(feishuOrgInstallations)
-    .where(
-      and(
-        eq(feishuOrgInstallations.id, args.installationId),
-        eq(feishuOrgInstallations.orgId, args.orgId),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (!target) {
-    return null;
-  }
-  return target.customConnectorId ?? randomUUID();
+) {
+  return and(
+    eq(feishuOrgInstallations.id, args.installationId),
+    eq(feishuOrgInstallations.orgId, args.orgId),
+  );
 }
 
 async function reconcileFeishuCustomConnector(
@@ -596,7 +587,17 @@ export const ensureFeishuCustomConnector$ = command(
     if (!installation || installation.orgId !== args.orgId) {
       return null;
     }
-    let connectorId = await preflightFeishuCustomConnectorId(db, args, signal);
+    let connectorId = await (async (
+      signal: AbortSignal,
+    ): Promise<string | null> => {
+      const [target] = await db
+        .select(feishuCustomConnectorIdColumns())
+        .from(feishuOrgInstallations)
+        .where(feishuCustomConnectorIdCondition(args))
+        .limit(1);
+      signal.throwIfAborted();
+      return target ? (target.customConnectorId ?? randomUUID()) : null;
+    })(signal);
     while (connectorId) {
       const volume = await set(
         prepareCustomConnectorSkillVolume$,
