@@ -3626,7 +3626,9 @@ export function TemplateImportCard({
           kind === "illustration"
             ? "aspect-[4/5]"
             : kind === "document"
-              ? "aspect-[4/3]"
+              ? compact
+                ? "aspect-[210/297]"
+                : "aspect-[4/3]"
               : "aspect-video",
           compact && "bg-gray-50 group-hover/tile:bg-state-hover",
         )}
@@ -3669,7 +3671,8 @@ export function TemplateImportCard({
         <span
           className={cn(
             compact ? RAIL_TILE_CAPTION : TEMPLATE_TILE_NAME,
-            kind === "illustration" && "whitespace-normal",
+            (kind === "illustration" || kind === "document") &&
+              "whitespace-normal",
           )}
         >
           {label}

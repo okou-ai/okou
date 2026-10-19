@@ -92,7 +92,7 @@ export const customTemplateCatalog$ = computed(
 /**
  * Read the catalog once, when a selection needs it. The composer resolves a
  * chosen template here instead of subscribing while it renders. The picker
- * and the presentation/image task shelves subscribe only while shown.
+ * and the presentation, document and image task shelves subscribe only while shown.
  */
 export const loadCustomTemplateCatalog$ = command(
   async (
