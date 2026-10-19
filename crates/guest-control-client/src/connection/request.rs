@@ -33,6 +33,16 @@ struct RequestBudget {
     timeout: Duration,
 }
 
+impl RequestBudget {
+    fn is_expired(&self) -> bool {
+        Instant::now() >= self.deadline
+    }
+
+    fn before_write_timeout(&self) -> io::Error {
+        request_timeout_error(RequestTimeoutStage::BeforeFrameWrite, self.timeout)
+    }
+}
+
 impl GuestControlClient {
     /// Read the latest guest file-write stage without changing operation gates.
     ///
@@ -155,14 +165,20 @@ pub(crate) async fn request_on_shared(
 async fn write_request_frame(
     shared: &Arc<Shared>,
     data: &[u8],
+    budget: &RequestBudget,
     before_write: impl FnOnce() -> io::Result<()>,
     progress: &RequestWriteProgress,
     timing: Option<&mut StorageManifestRequestTiming>,
 ) -> io::Result<()> {
-    shared
+    let decision = shared
         .write_frame(
             data,
             || {
+                // A ready lock can be polled before timeout_at notices expiry.
+                // Reject before tracker/observer side effects or partial writes.
+                if budget.is_expired() {
+                    return Ok(FrameWriteDecision::Skip);
+                }
                 before_write()?;
                 progress.mark_frame_write();
                 Ok(FrameWriteDecision::Write)
@@ -175,6 +191,10 @@ async fn write_request_frame(
             },
         )
         .await?;
+    if decision == FrameWriteDecision::Skip {
+        // Keep deadline errors distinct from ordinary admission/write errors.
+        return Err(budget.before_write_timeout());
+    }
     progress.mark_awaiting_terminal_response();
     Ok(())
 }
@@ -183,14 +203,20 @@ async fn write_request_frame(
 pub(crate) async fn write_request_frame_with_builder(
     shared: &Arc<Shared>,
     seq: u32,
+    timeout: Duration,
     build_frame: impl FnOnce(u32, &mut Vec<u8>) -> io::Result<()>,
     before_write: impl FnOnce() -> io::Result<()>,
 ) -> io::Result<()> {
     let progress = RequestWriteProgress::default();
+    let budget = RequestBudget {
+        deadline: deadline_after(timeout, "request timeout overflowed")?,
+        timeout,
+    };
     write_request_frame_with_builder_and_progress(
         shared,
         seq,
         build_frame,
+        &budget,
         before_write,
         &progress,
         None,
@@ -202,6 +228,7 @@ async fn write_request_frame_with_builder_and_progress(
     shared: &Arc<Shared>,
     seq: u32,
     build_frame: impl FnOnce(u32, &mut Vec<u8>) -> io::Result<()>,
+    budget: &RequestBudget,
     before_write: impl FnOnce() -> io::Result<()>,
     progress: &RequestWriteProgress,
     mut timing: Option<&mut StorageManifestRequestTiming>,
@@ -211,6 +238,9 @@ async fn write_request_frame_with_builder_and_progress(
     if let (Some(timing), Some(started)) = (timing.as_deref_mut(), wait_started) {
         timing.frame_builder_wait = Some(started.elapsed());
     }
+    if budget.is_expired() {
+        return Err(budget.before_write_timeout());
+    }
     let mut frame = Vec::new();
     let encode_started = timing.as_ref().map(|_| Instant::now());
     let encoded = build_frame(seq, &mut frame);
@@ -218,7 +248,7 @@ async fn write_request_frame_with_builder_and_progress(
         timing.frame_encode = Some(started.elapsed());
     }
     encoded?;
-    let result = write_request_frame(shared, &frame, before_write, progress, timing).await;
+    let result = write_request_frame(shared, &frame, budget, before_write, progress, timing).await;
     drop(frame);
     drop(frame_builder_guard);
     result
@@ -271,9 +301,10 @@ async fn write_registered_request_and_wait(
     // helper separately poisons the connection if cancellation interrupts an
     // in-progress frame write.
     let progress = RequestWriteProgress::default();
+    let budget = RequestBudget { deadline, timeout };
     time::timeout_at(
         deadline,
-        write_request_frame(shared, data, before_write, &progress, None),
+        write_request_frame(shared, data, &budget, before_write, &progress, None),
     )
     .await
     .map_err(|_| request_timeout_error(progress.timeout_stage(), timeout))??;
@@ -297,6 +328,7 @@ async fn write_registered_request_and_wait_with_frame_builder(
             shared,
             seq,
             build_frame,
+            &budget,
             before_write,
             &progress,
             timing.as_deref_mut(),
