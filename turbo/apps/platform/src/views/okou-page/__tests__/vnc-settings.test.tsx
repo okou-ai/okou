@@ -461,11 +461,15 @@ test("VNC settings refresh observations when their SSH carrier changes", async (
     orgId: auth.organization.activeOrg.id,
   });
   await started.promise;
-  expect(
-    screen.queryByText(
-      "Authentication or server identity verification failed.",
-    ),
-  ).not.toBeInTheDocument();
+  try {
+    expect(
+      screen.queryByText(
+        "Authentication or server identity verification failed.",
+      ),
+    ).not.toBeInTheDocument();
+  } finally {
+    release.resolve();
+  }
   await waitFor(() => {
     expect(
       screen.queryByText(
