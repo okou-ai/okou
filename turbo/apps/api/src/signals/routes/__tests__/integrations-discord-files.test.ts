@@ -1212,47 +1212,52 @@ describe("Canonical Discord file publication and delivery", () => {
     expect(catalog.body.artifacts).toStrictEqual([]);
   });
 
-  it("does not send a file again after Discord's response is lost", async () => {
-    const fixture = await boundFixture();
-    const upload = await canonicalUpload(fixture);
-    const client = fileClients();
-    await accept(
-      client.materialize({ headers: fixture.headers, body: upload.operation }),
-      [200],
-    );
-    let sends = 0;
-    server.use(
-      http.post(
-        `${discordApiOrigin}/channels/${fixture.channelId}/messages`,
-        async ({ request }) => {
-          sends += 1;
-          await expectUploadedDiscordFile(request, upload.bytes);
-          return HttpResponse.error();
-        },
-      ),
-    );
-    const unconfirmed = await accept(
-      client.complete({ headers: fixture.headers, body: upload.operation }),
-      [200],
-    );
+  it(
+    "does not send a file again after Discord's response is lost",
+    withPublishedDiscordFixture(async (fixture) => {
+      const upload = await canonicalUpload(fixture);
+      const client = fileClients();
+      await accept(
+        client.materialize({
+          headers: fixture.headers,
+          body: upload.operation,
+        }),
+        [200],
+      );
+      let sends = 0;
+      server.use(
+        http.post(
+          `${discordApiOrigin}/channels/${fixture.channelId}/messages`,
+          async ({ request }) => {
+            sends += 1;
+            await expectUploadedDiscordFile(request, upload.bytes);
+            return HttpResponse.error();
+          },
+        ),
+      );
+      const unconfirmed = await accept(
+        client.complete({ headers: fixture.headers, body: upload.operation }),
+        [200],
+      );
 
-    expect(unconfirmed.body).toMatchObject({
-      ...upload.operation,
-      url: upload.initialized.url,
-      delivery: { status: "failed", retryable: false },
-    });
-    const repeated = await accept(
-      client.complete({ headers: fixture.headers, body: upload.operation }),
-      [200],
-    );
-    expect(repeated.body.delivery).toStrictEqual(unconfirmed.body.delivery);
-    expect(sends).toBe(1);
-    const catalog = await accept(
-      catalogClient().list({ headers: fixture.headers }),
-      [200],
-    );
-    expect(catalog.body.artifacts).toHaveLength(1);
-  });
+      expect(unconfirmed.body).toMatchObject({
+        ...upload.operation,
+        url: upload.initialized.url,
+        delivery: { status: "failed", retryable: false },
+      });
+      const repeated = await accept(
+        client.complete({ headers: fixture.headers, body: upload.operation }),
+        [200],
+      );
+      expect(repeated.body.delivery).toStrictEqual(unconfirmed.body.delivery);
+      expect(sends).toBe(1);
+      const catalog = await accept(
+        catalogClient().list({ headers: fixture.headers }),
+        [200],
+      );
+      expect(catalog.body.artifacts).toHaveLength(1);
+    }),
+  );
 
   it("records the receipt when Discord normalizes the attachment filename", async () => {
     const fixture = await boundFixture();
@@ -1303,45 +1308,50 @@ describe("Canonical Discord file publication and delivery", () => {
     });
   });
 
-  it("reports a Discord rate limit without sending again on a later completion", async () => {
-    const fixture = await boundFixture();
-    const upload = await canonicalUpload(fixture);
-    const client = fileClients();
-    await accept(
-      client.materialize({ headers: fixture.headers, body: upload.operation }),
-      [200],
-    );
-    let sends = 0;
-    server.use(
-      http.post(
-        `${discordApiOrigin}/channels/${fixture.channelId}/messages`,
-        async ({ request }) => {
-          sends += 1;
-          await expectUploadedDiscordFile(request, upload.bytes);
-          return HttpResponse.json(
-            { retry_after: 0, global: false },
-            { status: 429 },
-          );
-        },
-      ),
-    );
-    const limited = await accept(
-      client.complete({ headers: fixture.headers, body: upload.operation }),
-      [200],
-    );
+  it(
+    "reports a Discord rate limit without sending again on a later completion",
+    withPublishedDiscordFixture(async (fixture) => {
+      const upload = await canonicalUpload(fixture);
+      const client = fileClients();
+      await accept(
+        client.materialize({
+          headers: fixture.headers,
+          body: upload.operation,
+        }),
+        [200],
+      );
+      let sends = 0;
+      server.use(
+        http.post(
+          `${discordApiOrigin}/channels/${fixture.channelId}/messages`,
+          async ({ request }) => {
+            sends += 1;
+            await expectUploadedDiscordFile(request, upload.bytes);
+            return HttpResponse.json(
+              { retry_after: 0, global: false },
+              { status: 429 },
+            );
+          },
+        ),
+      );
+      const limited = await accept(
+        client.complete({ headers: fixture.headers, body: upload.operation }),
+        [200],
+      );
 
-    expect(limited.body.delivery).toStrictEqual({
-      status: "failed",
-      message: "Discord rejected the file delivery",
-      retryable: false,
-    });
-    const repeated = await accept(
-      client.complete({ headers: fixture.headers, body: upload.operation }),
-      [200],
-    );
-    expect(repeated.body.delivery).toStrictEqual(limited.body.delivery);
-    expect(sends).toBe(1);
-  });
+      expect(limited.body.delivery).toStrictEqual({
+        status: "failed",
+        message: "Discord rejected the file delivery",
+        retryable: false,
+      });
+      const repeated = await accept(
+        client.complete({ headers: fixture.headers, body: upload.operation }),
+        [200],
+      );
+      expect(repeated.body.delivery).toStrictEqual(limited.body.delivery);
+      expect(sends).toBe(1);
+    }),
+  );
 
   it("allows only one external message when completion requests overlap", async () => {
     const fixture = await boundFixture();
