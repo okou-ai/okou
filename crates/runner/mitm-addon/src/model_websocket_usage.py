@@ -35,6 +35,7 @@ _WebSocketCorrelationReason = Literal[
     "invalid_lifecycle",
     "server_error",
     "correlation_cap",
+    "inspection_interrupted",
 ]
 
 
@@ -59,6 +60,17 @@ def release_state(flow: http.HTTPFlow) -> None:
     """Disable usage extraction after a terminal WebSocket or error hook."""
     flow.metadata.pop(_MODEL_WEBSOCKET_USAGE_ENABLED, None)
     flow.metadata.pop(_MODEL_WEBSOCKET_PREWARM_STATE, None)
+
+
+def interrupt_inspection(flow: http.HTTPFlow) -> None:
+    """Discard incomplete evidence without claiming observed zero usage."""
+    if not is_enabled(flow):
+        return
+    run_usage.mark(flow, "parse_error")
+    run_usage.mark(flow, "interrupted")
+    state = flow.metadata.get(_MODEL_WEBSOCKET_PREWARM_STATE)
+    if isinstance(state, _OpenAIResponsesPrewarmState):
+        _mark_correlation_ambiguous(flow, state, "inspection_interrupted")
 
 
 def _clear_correlation_candidate(state: _OpenAIResponsesPrewarmState) -> None:
