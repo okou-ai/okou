@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.107.16](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.15...guest-agent-v0.107.16) (2026-10-19)
+
+
+### Refactoring
+
+* **guest-agent:** stop legacy disk telemetry emission ([#41330](https://github.com/okou-ai/okou/issues/41330)) ([625c460](https://github.com/okou-ai/okou/commit/625c4607ccdcd2d46a5c7227f61419928035e13f))
+
 ## [0.107.15](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.14...guest-agent-v0.107.15) (2026-10-19)
 
 ## [0.107.14](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.13...guest-agent-v0.107.14) (2026-10-19)

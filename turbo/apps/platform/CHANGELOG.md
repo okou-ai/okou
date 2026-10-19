@@ -12,6 +12,30 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1042.0](https://github.com/okou-ai/okou/compare/app-v0.1041.0...app-v0.1042.0) (2026-10-19)
+
+
+### Features
+
+* add a new agent entry to the pin agent dialog ([#41316](https://github.com/okou-ai/okou/issues/41316)) ([1ed3196](https://github.com/okou-ai/okou/commit/1ed3196f226008a0c552715fd3d3f0637e4ccdce))
+* **wallet:** show saved cards with link management ([#41337](https://github.com/okou-ai/okou/issues/41337)) ([ad98740](https://github.com/okou-ai/okou/commit/ad98740b5d40ad6589f4b0ba03e3606ef08a8450))
+
+
+### Bug Fixes
+
+* **app:** reconnect saved custom default accounts ([#41291](https://github.com/okou-ai/okou/issues/41291)) ([83fef1f](https://github.com/okou-ai/okou/commit/83fef1f3e6c07fb5fc9715b317df127bb2539af8))
+* **app:** reflect completed google editor conversions in artifact menus ([#41317](https://github.com/okou-ai/okou/issues/41317)) ([aa744f6](https://github.com/okou-ai/okou/commit/aa744f6f3f71ac47ac310e1fd5f0625d45b813b2))
+* **platform:** rank workflow search by relevance and recent use ([#41313](https://github.com/okou-ai/okou/issues/41313)) ([cb839d8](https://github.com/okou-ai/okou/commit/cb839d8b79d43db4ea36e605db81a09dbf54ec89))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.575.0
+    * @okouai/core bumped to 8.769.3
+    * @okouai/ui bumped to 1.16.0
+
 ## [0.1041.0](https://github.com/okou-ai/okou/compare/app-v0.1040.0...app-v0.1041.0) (2026-10-19)
 
 
