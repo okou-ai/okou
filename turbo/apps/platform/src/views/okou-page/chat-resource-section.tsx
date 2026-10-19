@@ -1,27 +1,19 @@
 import { Button } from "@okouai/ui";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { formatLocalizedNumber } from "../../i18n/format.ts";
 
 export const RESOURCE_PREVIEW_LIMIT = 3;
 
 export function ChatResourceSectionHeading({
   title,
-  count,
 }: {
   readonly title: string;
-  readonly count?: number;
 }) {
   return (
     <div className="sticky top-0 z-1 mb-0.5 flex min-h-7 items-center gap-2 bg-card px-1">
       <h3 className="text-xs leading-4.5 font-medium text-foreground">
         {title}
       </h3>
-      {count !== undefined && count > 1 && (
-        <span className="text-xs leading-4.5 tabular-nums text-muted-foreground">
-          {formatLocalizedNumber(count)}
-        </span>
-      )}
     </div>
   );
 }
