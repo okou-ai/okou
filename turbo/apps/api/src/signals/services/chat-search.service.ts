@@ -114,7 +114,7 @@ export function chatSearch(
         .limit(CHAT_SEARCH_CANDIDATE_LIMIT)
         .as("chat_search_keyword_candidates");
 
-      const newestCandidates = db
+      const newest = db
         .select({
           chatThreadId: keywordCandidates.chatThreadId,
           seqId: keywordCandidates.seqId,
@@ -140,20 +140,20 @@ export function chatSearch(
           existingChatThreadId: chatThreads.id,
           agentName: agents.name,
         })
-        .from(newestCandidates)
+        .from(newest)
         .innerJoin(
           chatEventSearchMessages,
           and(
-            eq(chatEventSearchMessages.chatThreadId, newestCandidates.chatThreadId),
-            eq(chatEventSearchMessages.seqId, newestCandidates.seqId),
+            eq(chatEventSearchMessages.chatThreadId, newest.chatThreadId),
+            eq(chatEventSearchMessages.seqId, newest.seqId),
           ),
         )
-        .leftJoin(chatThreads, eq(chatThreads.id, newestCandidates.chatThreadId))
+        .leftJoin(chatThreads, eq(chatThreads.id, newest.chatThreadId))
         .leftJoin(agents, eq(agents.id, chatEventSearchMessages.agentId))
         .orderBy(
-          desc(newestCandidates.createdAt),
-          desc(newestCandidates.chatThreadId),
-          desc(newestCandidates.seqId),
+          desc(newest.createdAt),
+          desc(newest.chatThreadId),
+          desc(newest.seqId),
         );
 
       return matches.flatMap((candidate): ChatSearchMatchRow[] => {
