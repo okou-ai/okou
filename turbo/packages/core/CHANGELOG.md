@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.769.2](https://github.com/okou-ai/okou/compare/core-v8.769.1...core-v8.769.2) (2026-10-19)
+
+
+### Bug Fixes
+
+* **app:** unify custom templates behind one feature switch ([#41304](https://github.com/okou-ai/okou/issues/41304)) ([cb96699](https://github.com/okou-ai/okou/commit/cb966995a4749e6c374ca624720bf89ba6bfea09))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.574.0
+
 ## [8.769.1](https://github.com/okou-ai/okou/compare/core-v8.769.0...core-v8.769.1) (2026-10-19)
 
 
