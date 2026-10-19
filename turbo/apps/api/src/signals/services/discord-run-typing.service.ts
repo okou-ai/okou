@@ -1,6 +1,7 @@
 import { command } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
 
 import { logger } from "../../lib/log";
 import { singleton } from "../../lib/singleton";
@@ -12,7 +13,7 @@ import { tapError } from "../utils";
 import { requireDiscordBinding$ } from "./discord-access.service";
 import type { DiscordFailureResponse } from "./discord-api-response";
 import type { DiscordDeliveryTarget } from "./discord-chat-callback-payload";
-import { findDiscordChatRoute } from "./discord-chat-route-access.service";
+import { discordChatRouteReadPlan } from "./discord-chat-route-access.service";
 import { resolveDiscordProviderAccess } from "./discord-provider-access";
 
 const L = logger("DiscordRunTyping");
@@ -200,7 +201,15 @@ const currentTypingAccess$ = command(
     readonly accessKey: string;
     readonly channelId: string;
   } | null> => {
-    const route = await findDiscordChatRoute(db, args);
+    const route = await (async () => {
+      const plan = discordChatRouteReadPlan(args);
+      const [route] = await db
+        .select(plan.columns)
+        .from(discordChatThreadRoutes)
+        .where(plan.condition)
+        .limit(plan.limit);
+      return route;
+    })();
     signal.throwIfAborted();
     if (!route) {
       return null;

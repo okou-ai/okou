@@ -15,45 +15,31 @@ interface DiscordChatRouteAccessArgs {
 }
 
 /** The sender's sticky route still owns this chat and exact destination. */
-export async function findDiscordChatRoute(
-  db: Db,
+export function discordChatRouteReadPlan(
   args: Pick<DiscordChatRouteAccessArgs, "chatThreadId" | "userId" | "target">,
-): Promise<
-  | {
-      readonly id: string;
-      readonly channelId: string;
-      readonly destinationChannelId: string | null;
-    }
-  | undefined
-> {
-  const [route] = await db
-    .select({
+) {
+  return {
+    columns: {
       id: discordChatThreadRoutes.id,
       channelId: discordChatThreadRoutes.channelId,
       destinationChannelId: discordChatThreadRoutes.destinationChannelId,
-    })
-    .from(discordChatThreadRoutes)
-    .where(
-      and(
-        eq(discordChatThreadRoutes.chatThreadId, args.chatThreadId),
-        eq(discordChatThreadRoutes.connectionId, args.target.connectionId),
-        eq(discordChatThreadRoutes.id, args.target.routeId),
-        or(
-          eq(
-            discordChatThreadRoutes.destinationChannelId,
-            args.target.channelId,
-          ),
-          and(
-            isNull(discordChatThreadRoutes.destinationChannelId),
-            eq(discordChatThreadRoutes.sessionKey, args.target.channelId),
-          ),
+    },
+    condition: and(
+      eq(discordChatThreadRoutes.chatThreadId, args.chatThreadId),
+      eq(discordChatThreadRoutes.connectionId, args.target.connectionId),
+      eq(discordChatThreadRoutes.id, args.target.routeId),
+      or(
+        eq(discordChatThreadRoutes.destinationChannelId, args.target.channelId),
+        and(
+          isNull(discordChatThreadRoutes.destinationChannelId),
+          eq(discordChatThreadRoutes.sessionKey, args.target.channelId),
         ),
-        eq(discordChatThreadRoutes.sessionKey, args.target.sessionKey),
-        eq(discordChatThreadRoutes.userId, args.userId),
       ),
-    )
-    .limit(1);
-  return route;
+      eq(discordChatThreadRoutes.sessionKey, args.target.sessionKey),
+      eq(discordChatThreadRoutes.userId, args.userId),
+    ),
+    limit: 1,
+  };
 }
 
 export const loadDiscordChatRouteAccess$ = command(
@@ -63,7 +49,15 @@ export const loadDiscordChatRouteAccess$ = command(
     args: DiscordChatRouteAccessArgs,
     signal: AbortSignal,
   ) => {
-    const route = await findDiscordChatRoute(db, args);
+    const route = await (async () => {
+      const plan = discordChatRouteReadPlan(args);
+      const [route] = await db
+        .select(plan.columns)
+        .from(discordChatThreadRoutes)
+        .where(plan.condition)
+        .limit(plan.limit);
+      return route;
+    })();
     signal.throwIfAborted();
     if (!route) {
       return null;
