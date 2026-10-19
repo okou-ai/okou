@@ -24,6 +24,8 @@
 //! preferred abstraction for normal sandbox lifecycle code.
 
 mod api;
+#[cfg(feature = "test-support")]
+pub mod api_request_gate;
 mod balloon;
 mod boot_config;
 mod command;
