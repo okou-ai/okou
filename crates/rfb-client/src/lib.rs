@@ -455,11 +455,10 @@ impl fmt::Debug for ClientCertificateAuthentication {
 /// independently authenticated, full-session protective transport when crossing
 /// an untrusted network.
 ///
-/// The Runner admits a saved Apple DH profile only through an independently
-/// authorized, host-key-verified SSH connection terminating on the Mac and a
-/// literal loopback VNC destination (`127.0.0.1` or `::1`). VNC authorization
-/// remains independently required; profile support does not enable `VncAccess`
-/// or establish deployment acceptance.
+/// The Runner requires an independently authorized protective stream: verified
+/// SSH to Mac loopback, an exact authenticated native Tailscale peer, or verified
+/// server-local origin TLS inside Cloudflare WSS. VNC authorization remains
+/// independently required; engine support does not establish deployment acceptance.
 pub async fn authenticate_apple_dh<S>(
     stream: S,
     credentials: AppleDhCredentials,
@@ -486,9 +485,9 @@ where
 /// Authenticate exactly the optional classic VNC password (RFB security type 2)
 /// offered by the tested Apple Remote Management server on a caller-owned stream.
 /// The password authenticates the client, not the server, and does not encrypt
-/// post-authentication RFB data. Product callers must independently require a
-/// saved host-key-verified SSH connection terminating on the Mac and literal
-/// loopback RFB destination. This engine entry point admits no saved profile.
+/// post-authentication RFB data. Product callers must independently verify the
+/// full-session protective transport ending on the Mac before calling this API.
+/// This engine entry point admits no saved profile.
 pub async fn authenticate_apple_vnc_password<S>(
     stream: S,
     password: VncPassword,
@@ -516,8 +515,8 @@ where
 /// stream. The server is authenticated by its SRP proof before the stream is
 /// returned, but post-authentication RFB traffic is not encrypted. The caller
 /// must provide a verified protective transport across untrusted networks.
-/// Product callers must enforce the saved SSH-to-Mac-loopback route and
-/// independent VNC and SSH authorization before using this entry point.
+/// Product callers must enforce an authorized protective transport ending on the
+/// Mac before using this entry point.
 pub async fn authenticate_apple_srp<S>(
     stream: S,
     credentials: AppleSrpCredentials,
@@ -543,8 +542,8 @@ where
 
 /// Authenticate exactly Apple RSA/SRP security type 33 on a caller-owned stream.
 /// The RSA key is received from the peer and is not a trusted server identity.
-/// A future product caller must independently enforce verified SSH terminating
-/// on the Mac and a literal loopback RFB destination before using this engine.
+/// Product callers must independently enforce a verified protective transport
+/// ending on the Mac before using this engine.
 /// No direct/raw saved profile is admitted by this crate.
 pub async fn authenticate_apple_rsa_srp<S>(
     stream: S,

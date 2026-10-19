@@ -1,9 +1,12 @@
 //! Run-owned VNC sessions. Guest requests carry saved IDs, never authority.
 
 mod authority;
+mod check;
 mod diagnostics;
+pub(crate) mod evidence;
 mod invalidation;
 mod kerberos;
+mod native;
 mod network;
 mod observation;
 mod operations;
@@ -140,6 +143,10 @@ pub struct VncRuntime {
     capacity: Arc<Semaphore>,
     runs: Mutex<HashMap<RunId, Weak<Run>>>,
     reports: Arc<Semaphore>,
+    #[cfg(test)]
+    pub(crate) native_services: Mutex<Option<crate::tailscale::TestServices>>,
+    #[cfg(test)]
+    access_tls: Mutex<Option<Arc<rustls::ClientConfig>>>,
 }
 
 impl VncRuntime {
@@ -164,6 +171,10 @@ impl VncRuntime {
             capacity: Arc::new(Semaphore::new(4)),
             runs: Mutex::new(HashMap::new()),
             reports: Arc::new(Semaphore::new(4)),
+            #[cfg(test)]
+            native_services: Mutex::new(None),
+            #[cfg(test)]
+            access_tls: Mutex::new(None),
         })))
     }
 
@@ -172,8 +183,15 @@ impl VncRuntime {
         run: RunId,
         cancel: &CancellationToken,
         ssh: Option<Arc<crate::ssh::Run>>,
+        native: Arc<crate::native::Run>,
     ) -> Arc<Run> {
-        let owner = Arc::new(Run::new(Arc::clone(self), run, cancel.child_token(), ssh));
+        let owner = Arc::new(Run::new(
+            Arc::clone(self),
+            run,
+            cancel.child_token(),
+            ssh,
+            native,
+        ));
         let previous = self
             .runs
             .lock()

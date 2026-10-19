@@ -205,6 +205,8 @@ fn test_sandbox_with_state(state: SandboxState) -> FirecrackerSandbox {
         guest_duplex_endpoint: None,
         runtime_cancel: CancellationToken::new(),
         host_cpu_cgroup: None,
+        #[cfg(feature = "test-support")]
+        preparation_checkpoint: None,
     }
 }
 

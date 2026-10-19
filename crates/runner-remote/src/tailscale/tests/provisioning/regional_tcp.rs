@@ -3,6 +3,9 @@
 
 mod capacity;
 mod common;
+mod kdc;
+mod vnc;
+mod vnc_shared;
 
 use std::{
     collections::VecDeque,
@@ -397,6 +400,17 @@ async fn independent_b(retirement: u8) {
         peers.transfer(&mut ca, &mut sa).await;
         peers.transfer(&mut cb, &mut sb).await;
         assert_eq!(descriptors.lock().unwrap().len(), 3);
+        let next_a = ca.evidence().unwrap().relay.unwrap().attempt_id;
+        let next_b = cb.evidence().unwrap().relay.unwrap().attempt_id;
+        let old_a = evidence_a.relay.as_ref().unwrap().attempt_id;
+        let old_b = evidence_b.relay.as_ref().unwrap().attempt_id;
+        if index == 0 {
+            assert_ne!(next_b, old_b);
+            assert_eq!(next_a, old_a);
+        } else {
+            assert_ne!(next_a, old_a);
+            assert_eq!(next_b, old_b);
+        }
         run.close();
         bounded(native.physical()).await.unwrap();
         bounded(run.shutdown_native()).await.unwrap();

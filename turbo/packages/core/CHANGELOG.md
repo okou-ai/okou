@@ -1,5 +1,81 @@
 # Changelog
 
+## [8.767.1](https://github.com/okou-ai/okou/compare/core-v8.767.0...core-v8.767.1) (2026-10-19)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.573.1
+
+## [8.767.0](https://github.com/okou-ai/okou/compare/core-v8.766.1...core-v8.767.0) (2026-10-17)
+
+
+### Features
+
+* **sandbox:** add bounded file reads to fs v3 ([#40931](https://github.com/okou-ai/okou/issues/40931)) ([cc0d352](https://github.com/okou-ai/okou/commit/cc0d352860e96b1f45746e30bb17112b293003e2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.573.0
+
+## [8.766.1](https://github.com/okou-ai/okou/compare/core-v8.766.0...core-v8.766.1) (2026-10-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.5
+
+## [8.766.0](https://github.com/okou-ai/okou/compare/core-v8.765.2...core-v8.766.0) (2026-10-17)
+
+
+### Features
+
+* **app:** add a gated inline slash hint to the composer ([#40673](https://github.com/okou-ai/okou/issues/40673)) ([8ff3d51](https://github.com/okou-ai/okou/commit/8ff3d518c92a7c43e196716712d32a78984d994b))
+
+## [8.765.2](https://github.com/okou-ai/okou/compare/core-v8.765.1...core-v8.765.2) (2026-10-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.4
+
+## [8.765.1](https://github.com/okou-ai/okou/compare/core-v8.765.0...core-v8.765.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **api:** prefer public og with bounded slack previews and a personal switch ([#40683](https://github.com/okou-ai/okou/issues/40683)) ([fdaa8bd](https://github.com/okou-ai/okou/commit/fdaa8bdfd023f10eba503b63c099d17224b23c51))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.3
+
+## [8.765.0](https://github.com/okou-ai/okou/compare/core-v8.764.2...core-v8.765.0) (2026-10-16)
+
+
+### Features
+
+* **app:** include custom templates in slash commands ([#40685](https://github.com/okou-ai/okou/issues/40685)) ([5c673b4](https://github.com/okou-ai/okou/commit/5c673b4757de42b7bbba75eceb972be3c7a71c20))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.2
+
 ## [8.764.2](https://github.com/okou-ai/okou/compare/core-v8.764.1...core-v8.764.2) (2026-10-16)
 
 

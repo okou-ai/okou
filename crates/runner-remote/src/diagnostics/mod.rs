@@ -1,5 +1,7 @@
 //! Bounded, typed evidence without credentials, streams, leases or native owners.
 
+mod budget;
+pub(crate) mod check;
 mod rpc;
 #[cfg(test)]
 mod tests;
@@ -28,9 +30,10 @@ pub(crate) enum Protocol {
     Vnc,
 }
 
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Operation {
+    ActiveCheck,
     Exec,
     Session,
     File,
@@ -199,11 +202,12 @@ pub(crate) struct Report {
     configuration_generation: Option<i64>,
     operation: Operation,
     stage: Stage,
-    cause: Cause,
+    cause: Option<Cause>,
     pub(crate) dependencies: Vec<Dependency>,
     native: Option<NativeSource>,
     native_layers: Option<crate::tailscale::evidence::Snapshot>,
     native_connection: Option<crate::tailscale::evidence::Snapshot>,
+    vnc: Option<crate::vnc::evidence::Snapshot>,
     #[serde(skip)]
     ssh: Option<trace::Snapshot>,
     // Finer stages are deliberately not inferred from an operation's final code.
@@ -216,10 +220,11 @@ pub(crate) struct Record {
     pub(crate) connection: Uuid,
     pub(crate) operation: Operation,
     pub(crate) identity: Identity,
-    pub(crate) cause: Cause,
+    pub(crate) cause: Option<Cause>,
     pub(crate) dependency: Option<Dependency>,
     pub(crate) native: Option<NativeSource>,
     pub(crate) ssh: Option<trace::Snapshot>,
+    pub(crate) vnc: Option<crate::vnc::evidence::Snapshot>,
 }
 
 #[derive(Clone, Copy, Serialize)]
@@ -244,12 +249,14 @@ struct State {
     reports: VecDeque<Report>,
     latest_ssh: Option<Report>,
     latest_vnc: Option<Report>,
+    last_check: Option<Report>,
     evicted: u64,
 }
 
 struct Store {
     run: RunId,
     state: Mutex<State>,
+    parent: Option<Handle>,
 }
 
 #[derive(Clone)]
@@ -269,13 +276,26 @@ pub(crate) struct NativeWatch {
     protocol: Protocol,
     ssh_dependency: Option<Dependency>,
     active: Weak<AtomicBool>,
+    vnc: Option<crate::vnc::evidence::Snapshot>,
+    native_connection: Option<crate::tailscale::evidence::Trace>,
 }
 
 impl NativeWatch {
+    pub(crate) fn with_vnc(
+        mut self,
+        vnc: Option<crate::vnc::evidence::Snapshot>,
+        connection: Option<crate::tailscale::evidence::Trace>,
+    ) -> Self {
+        self.vnc = vnc;
+        self.native_connection = connection;
+        self
+    }
     fn active(&self) -> bool {
-        self.active
-            .upgrade()
-            .is_some_and(|active| active.load(Ordering::Acquire))
+        self.store.strong_count() > 0
+            && self
+                .active
+                .upgrade()
+                .is_some_and(|active| active.load(Ordering::Acquire))
     }
     pub(crate) fn same_subject(&self, other: &Self) -> bool {
         self.assignment == other.assignment
@@ -284,6 +304,14 @@ impl NativeWatch {
             && self.identity.created_at == other.identity.created_at
             && self.identity.generation == other.identity.generation
             && self.identity.session == other.identity.session
+            && self
+                .native_connection
+                .as_ref()
+                .and_then(crate::tailscale::evidence::Trace::id)
+                == other
+                    .native_connection
+                    .as_ref()
+                    .and_then(crate::tailscale::evidence::Trace::id)
     }
     pub(crate) fn failed(
         &self,
@@ -304,7 +332,7 @@ impl NativeWatch {
                 connection: self.connection,
                 operation: Operation::Native,
                 identity: self.identity.clone(),
-                cause: Cause::Native(failure),
+                cause: Some(Cause::Native(failure)),
                 dependency: self.ssh_dependency.clone().map(|mut dependency| {
                     dependency.cause = Some(Cause::Native(failure));
                     dependency
@@ -314,9 +342,13 @@ impl NativeWatch {
                     generation: self.generation,
                     resource_id: evidence.resource_id,
                     evidence: Arc::clone(evidence),
-                    connection: None,
+                    connection: self.native_connection.clone(),
                 }),
                 ssh: None,
+                vnc: self
+                    .vnc
+                    .as_ref()
+                    .map(|snapshot| snapshot.native_failure(evidence.resource_id)),
             });
         }
     }
@@ -336,6 +368,7 @@ impl Handle {
         Self {
             store: Arc::new(Store {
                 run,
+                parent: None,
                 state: Mutex::new(State {
                     assignment,
                     ..State::default()
@@ -361,13 +394,18 @@ impl Handle {
     pub(crate) fn enabled(&self) -> bool {
         self.enabled
     }
+    pub(crate) fn is_check(&self) -> bool {
+        self.store.parent.is_some()
+    }
     pub(crate) fn current(&self) -> bool {
-        self.store
+        let current = self
+            .store
             .state
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .assignment
-            == self.assignment
+            == self.assignment;
+        current && self.store.parent.as_ref().is_none_or(Handle::current)
     }
     pub(crate) fn watch(
         &self,
@@ -387,6 +425,8 @@ impl Handle {
             protocol: Protocol::Ssh,
             ssh_dependency: None,
             active: Arc::downgrade(active),
+            vnc: None,
+            native_connection: None,
         })
     }
     pub(crate) fn watch_vnc(
@@ -394,7 +434,7 @@ impl Handle {
         connection: Uuid,
         identity: Identity,
         source: &NativeSource,
-        ssh: Dependency,
+        ssh: Option<Dependency>,
         active: &Arc<AtomicBool>,
     ) -> Option<NativeWatch> {
         let mut watch = self.watch(
@@ -405,7 +445,7 @@ impl Handle {
             active,
         )?;
         watch.protocol = Protocol::Vnc;
-        watch.ssh_dependency = Some(ssh);
+        watch.ssh_dependency = ssh;
         Some(watch)
     }
     pub(crate) fn record(&self, record: Record) -> Option<Report> {
@@ -418,8 +458,9 @@ impl Handle {
             dependency,
             native,
             ssh,
+            vnc,
         } = record;
-        if !self.enabled {
+        if !self.enabled || !self.current() {
             return None;
         }
         let mut state = self.store.state.lock().unwrap_or_else(|p| p.into_inner());
@@ -436,9 +477,13 @@ impl Handle {
             .as_ref()
             .and_then(|source| source.connection.as_ref())
             .and_then(crate::tailscale::evidence::Trace::snapshot);
-        let report = Report {
+        let mut report = Report {
             run_id: self.store.run,
-            assignment_id: self.assignment,
+            assignment_id: self
+                .store
+                .parent
+                .as_ref()
+                .map_or(self.assignment, |p| p.assignment),
             attempt_id: Uuid::new_v4(),
             sequence: state.sequence,
             observed_at: Utc::now(),
@@ -449,7 +494,7 @@ impl Handle {
             configuration_generation: identity.generation,
             operation,
             stage: match cause {
-                Cause::Native(_) => Stage::NativeRuntime,
+                Some(Cause::Native(_)) => Stage::NativeRuntime,
                 _ => match protocol {
                     Protocol::Ssh => Stage::SshOperation,
                     Protocol::Vnc => Stage::VncOperation,
@@ -460,14 +505,26 @@ impl Handle {
             native,
             native_layers,
             native_connection,
-            detail: if ssh.is_some() {
+            detail: if ssh.is_some() || vnc.is_some() {
                 Detail::Partial
             } else {
                 Detail::NotObserved
             },
             ssh,
+            vnc,
             truncated: false,
         };
+        // Keep the incident and critical path when optional completed detail grows.
+        for minimal in [false, true] {
+            if report
+                .evidence()
+                .and_then(|value| serde_json::to_vec(&value).ok())
+                .is_some_and(|bytes| bytes.len() <= MAX_REPORT_BYTES)
+            {
+                break;
+            }
+            report.compact(minimal);
+        }
         // The schema has no unbounded strings or collections; keep a hard guard as it evolves.
         if !report
             .evidence()
@@ -487,7 +544,11 @@ impl Handle {
         state.reports.push_back(report.clone());
         drop(state);
         if let Some(value) = report.evidence() {
-            tracing::info!(diagnostic = %value, "Remote operation failure retained");
+            if self.store.parent.is_some() {
+                tracing::info!(diagnostic = %value, "Remote check evidence captured");
+            } else {
+                tracing::info!(diagnostic = %value, "Remote operation failure retained");
+            }
         }
         Some(report)
     }

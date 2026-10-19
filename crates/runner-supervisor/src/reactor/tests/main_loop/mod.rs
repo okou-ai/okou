@@ -1,10 +1,14 @@
+mod activation_custody;
+mod activation_progress;
 mod admission;
+mod blank_status_publication;
 mod drain_resume;
 mod exact_reuse_speculation;
 mod heartbeat;
 mod host_memory;
 mod idle_pressure;
 mod job_flow;
+mod maintenance_lifecycle;
 mod optional_prefetch;
 mod parallel_claim;
 mod runner_wss;

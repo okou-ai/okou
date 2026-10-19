@@ -84,6 +84,9 @@ impl StartupOwner {
                 warn!(%error, "failed to shut down factories after WSS startup failure");
             }
         }
+        if let Some(cache) = ctx.exec_config.home_cache.as_ref() {
+            cache.drain_pressure_reclamation().await;
+        }
         let StartupResources {
             sandbox_runtime: SandboxRuntimeConfig { mut runtime },
             proxy:
@@ -232,6 +235,7 @@ pub(super) async fn start(
         let factories = start_factories(
             &ctx.runner.profiles,
             startup.resources.sandbox_runtime.runtime.as_mut(),
+            ctx.exec_config.home_cache.as_ref(),
         );
         tokio::pin!(factories);
         tokio::select! {
@@ -253,6 +257,7 @@ pub(super) async fn start(
             start_factories(
                 &ctx.runner.profiles,
                 startup.resources.sandbox_runtime.runtime.as_mut(),
+                ctx.exec_config.home_cache.as_ref(),
             )
             .await,
             None,

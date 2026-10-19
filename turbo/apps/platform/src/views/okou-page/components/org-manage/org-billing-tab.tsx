@@ -35,8 +35,6 @@ import {
   setConcurrencySubscriptionQuantity$,
   apiTierToBillingTier,
   openDowngradeDialog$,
-  closeDowngradeDialog$,
-  confirmDowngrade$,
   downgradeDialogOpen$,
   openRestoreDialog$,
   closeRestoreDialog$,
@@ -86,6 +84,10 @@ import {
   dismissBillingPlans$,
   openSettingsUsagePackUpgrade$,
 } from "../../../../signals/okou-page/settings/settings-dialog.ts";
+import {
+  confirmPlanDowngrade$,
+  dismissPlanDowngrade$,
+} from "../../../../signals/okou-page/settings/billing-plan-actions.ts";
 import { billingPricingMode$ } from "../../../../signals/okou-page/settings/billing-pricing.ts";
 import {
   BillingPricingDialog,
@@ -221,17 +223,16 @@ function DowngradeConfirmDialogContent({
   periodEnd: string | null | undefined;
 }) {
   const pageSignal = useGet(pageSignal$);
-  const [downgradeLoadable, confirm] = useLoadableSet(confirmDowngrade$);
+  const [downgradeLoadable, confirm] = useLoadableSet(confirmPlanDowngrade$);
   const loading = downgradeLoadable.state === "loading";
   const error =
     downgradeLoadable.state === "hasError"
       ? String(downgradeLoadable.error)
       : null;
-  const close = useSet(closeDowngradeDialog$);
+  const close = useSet(dismissPlanDowngrade$);
   const selectedTarget = useGet(selectedTarget$);
   const lockedTarget = useGet(lockedTarget$);
   const setSelectedTarget = useSet(setSelectedTarget$);
-  const setLockedTarget = useSet(setLockedTarget$);
 
   const isTeam = currentTier === "team";
   const isLockedTarget = lockedTarget !== null;
@@ -240,19 +241,11 @@ function DowngradeConfirmDialogContent({
   const proPlanPrice = getPlanPrice("pro");
   const freePlanPrice = getPlanPrice("limited-free-1");
 
-  const confirmAndResetTarget = async (): Promise<void> => {
-    await confirm(downgradeTarget, pageSignal);
-    setLockedTarget(null);
-  };
-
   const handleConfirm = () => {
-    detach(confirmAndResetTarget(), Reason.DomCallback);
+    detach(confirm(downgradeTarget, pageSignal), Reason.DomCallback);
   };
 
-  const handleClose = () => {
-    close();
-    setLockedTarget(null);
-  };
+  const handleClose = close;
 
   return (
     <Dialog
@@ -2024,7 +2017,6 @@ function UsagePackPricingFlowContent({
         migrationOpen={migrationOpen}
         migrationTargetTier={migrationTargetTier}
         onBack={onMigrationBack}
-        onClose={onClose}
         onSelect={onSelectMigration}
       />
     );

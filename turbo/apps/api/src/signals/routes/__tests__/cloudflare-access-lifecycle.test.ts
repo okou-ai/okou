@@ -2,26 +2,43 @@ import { randomUUID } from "node:crypto";
 
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
+import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
+import { orgDeleteContract } from "@okouai/api-contracts/contracts/org-routes";
 import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
-import { createStore } from "ccstate";
-import { expect, test } from "vitest";
+import { createStore, state } from "ccstate";
+import { beforeEach, expect, onTestFinished, test } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { joinAll } from "../../utils";
 import { cloudflareAccessRoutes } from "../cloudflare-access";
 import { sshConnectionsRoutes } from "../ssh-connections";
+import { orgDeleteRoutes } from "../org-delete";
 import { webhooksClerkRoutes } from "../webhooks-clerk";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
+import {
+  cleanupCloudflareAccessLifecycle,
+  type CloudflareAccessLifecycleOwner,
+} from "./helpers/cloudflare-access-lifecycle-cleanup";
 
 const context = testContext();
 const store = createStore();
 const mocks = createRouteMocks(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const query = Object.freeze({ view: "scoped" as const });
+const owners$ = state<readonly CloudflareAccessLifecycleOwner[]>([]);
+
+beforeEach(() => {
+  store.set(owners$, []);
+  onTestFinished(async () => {
+    await cleanupCloudflareAccessLifecycle(context, store.get(owners$));
+  });
+});
+
 const configs = () => {
   return setupApp({ context, routes: cloudflareAccessRoutes })(
     cloudflareAccessContract,
@@ -42,6 +59,7 @@ async function owner(
     userId: `user_shared_access_${randomUUID()}`,
     membershipId: `orgmem_${randomUUID()}`,
   };
+  store.set(owners$, [...store.get(owners$), value]);
   await store.set(seedOrgMembership$, { ...value, role }, context.signal);
   mocks.clerk.session(value.userId, value.orgId, `org:${role}`);
   mocks.s3.listObjects([]);
@@ -95,6 +113,18 @@ async function createHost(configId: string) {
   return created;
 }
 
+function forgetErasedOwners(
+  type: "user.deleted" | "organization.deleted",
+  id: string,
+) {
+  store.set(
+    owners$,
+    store.get(owners$).filter((owner) => {
+      return type === "user.deleted" ? owner.userId !== id : owner.orgId !== id;
+    }),
+  );
+}
+
 async function webhook(
   type: "user.deleted" | "organization.deleted",
   id: string,
@@ -114,9 +144,10 @@ async function webhook(
     [200],
   );
   await flushWaitUntilForTest();
+  forgetErasedOwners(type, id);
 }
 
-test("creator deletion preserves shared Access and another member's SSH host", async () => {
+test("creator deletion erases private Access while preserving shared Access and another member's SSH host", async () => {
   useSecretKmsProbe();
   const creator = await owner();
   const shared = await createShared();
@@ -145,65 +176,139 @@ test("creator deletion preserves shared Access and another member's SSH host", a
   await webhook("user.deleted", creator.userId);
 
   mocks.clerk.session(member.userId, member.orgId, "org:member");
-  await accept(
+  const recreated = await accept(
     configs().create({
       headers,
       query,
       body: {
         id: personal.id,
         scope: "personal",
-        name: "Cannot claim retained creator gateway",
+        name: "Replacement after creator erasure",
         credentials: { clientId: "peer-id", clientSecret: "peer-secret" },
       },
     }),
-    [409],
+    [201],
   );
   expect(
     (await accept(configs().list({ headers, query }), [200])).body.configs,
-  ).toMatchObject([{ id: shared.id, scope: "organization" }]);
+  ).toStrictEqual([
+    { ...shared, sshHosts: [{ id: host.id, displayName: host.displayName }] },
+    recreated.body,
+  ]);
   expect(
     (await accept(hosts().list({ headers }), [200])).body.connections,
   ).toContainEqual(expect.objectContaining({ id: host.id }));
 });
 
-test("organization deletion retains shared Access identities without granting a foreign owner access", async () => {
-  useSecretKmsProbe();
-  const creator = await owner();
-  const shared = await createShared();
-  await owner(creator.orgId, "member");
-  await createHost(shared.id);
-  const survivor = await owner();
-  const ownConfig = await createShared();
-  const ownHost = await createHost(ownConfig.id);
+test.each(["Clerk webhook", "manual"] as const)(
+  "%s organization deletion erases remote identities while preserving another organization's resources",
+  async (entry) => {
+    useSecretKmsProbe();
+    const creator = await owner();
+    const shared = await createShared();
+    await owner(creator.orgId, "member");
+    const departedHost = await createHost(shared.id);
+    const survivor = await owner();
+    const ownConfig = await createShared();
+    const ownHost = await createHost(ownConfig.id);
 
-  await webhook("organization.deleted", creator.orgId);
+    if (entry === "manual") {
+      mocks.clerk.session(creator.userId, creator.orgId, "org:admin");
+      context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
+        id: creator.orgId,
+      });
+      context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+        { data: [] },
+      );
+      context.mocks.clerk.organizations.deleteOrganization.mockResolvedValue(
+        {},
+      );
+      await accept(
+        setupApp({ context, routes: orgDeleteRoutes })(
+          orgDeleteContract,
+        ).delete({
+          headers,
+          body: { confirm: "confirm" },
+        }),
+        [200],
+      );
+      forgetErasedOwners("organization.deleted", creator.orgId);
+    } else {
+      await webhook("organization.deleted", creator.orgId);
+    }
 
-  mocks.clerk.session(survivor.userId, survivor.orgId, "org:admin");
-  await accept(
-    configs().create({
-      headers,
-      query,
-      body: {
-        id: shared.id,
-        scope: "organization",
-        name: "Cannot claim retained foreign gateway",
-        credentials: { clientId: "foreign-id", clientSecret: "foreign-secret" },
+    mocks.clerk.session(survivor.userId, survivor.orgId, "org:admin");
+    const recreated = await accept(
+      configs().create({
+        headers,
+        query,
+        body: {
+          id: shared.id,
+          scope: "organization",
+          name: "Replacement after organization erasure",
+          credentials: {
+            clientId: "foreign-id",
+            clientSecret: "foreign-secret",
+          },
+        },
+      }),
+      [201],
+    );
+    expect(
+      (await accept(configs().list({ headers, query }), [200])).body.configs,
+    ).toStrictEqual([
+      {
+        ...ownConfig,
+        sshHosts: [{ id: ownHost.id, displayName: ownHost.displayName }],
       },
-    }),
-    [409],
-  );
-  expect(
-    (await accept(configs().list({ headers, query }), [200])).body.configs,
-  ).toStrictEqual([
-    {
-      ...ownConfig,
-      sshHosts: [{ id: ownHost.id, displayName: ownHost.displayName }],
-    },
-  ]);
-  expect(
-    (await accept(hosts().list({ headers }), [200])).body.connections,
-  ).toStrictEqual([ownHost]);
-});
+      recreated.body,
+    ]);
+    expect(
+      (await accept(hosts().list({ headers }), [200])).body.connections,
+    ).toStrictEqual([ownHost]);
+    const recreatedLogin = (
+      await accept(
+        setupApp({ context, routes: sshConnectionsRoutes })(
+          sshCredentialsContract,
+        ).create({
+          headers,
+          body: {
+            id: departedHost.credentialId,
+            name: "Replacement login after erasure",
+            username: "replacement",
+            authentication: {
+              method: "password",
+              password: "replacement-password",
+            },
+          },
+        }),
+        [201],
+      )
+    ).body;
+    const recreatedHost = (
+      await accept(
+        hosts().create({
+          headers,
+          body: {
+            id: departedHost.id,
+            displayName: "Replacement host after erasure",
+            host: "replacement.example.com",
+            port: 443,
+            credential: { id: recreatedLogin.id },
+            transport: {
+              type: "cloudflare_access",
+              configId: recreated.body.id,
+            },
+          },
+        }),
+        [201],
+      )
+    ).body;
+    expect(
+      (await accept(hosts().list({ headers }), [200])).body.connections,
+    ).toStrictEqual([ownHost, recreatedHost]);
+  },
+);
 
 test("admin conversion retains the config and hosts while other owners must rebind", async () => {
   useSecretKmsProbe();
@@ -426,7 +531,7 @@ test("conversion and concurrent host binding retain a valid admin-owned referenc
       [200],
     )
   ).body;
-  const [converted, host] = await Promise.all([
+  const [converted, host] = await joinAll([
     accept(
       configs().convertToPersonal({
         headers,

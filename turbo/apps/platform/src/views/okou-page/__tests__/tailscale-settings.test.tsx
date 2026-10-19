@@ -37,6 +37,7 @@ const config: TailscaleConfig = Object.freeze({
   revision: 1,
   generation: 1,
   sshHosts: [],
+  vncHosts: [],
   createdAt: "2026-10-12T00:00:00.000Z",
   updatedAt: "2026-10-12T00:00:00.000Z",
 });
@@ -79,7 +80,7 @@ async function networkSection() {
   return await screen.findByRole("region", { name: "Tailscale" });
 }
 
-test("Prepared VNC-only references prevent personal Tailscale deletion", async () => {
+test("VNC-only references prevent personal Tailscale deletion", async () => {
   context.mocks.api(tailscaleContract.list, ({ respond }) => {
     return respond(200, {
       configs: [

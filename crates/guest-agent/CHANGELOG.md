@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.107.11](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.10...guest-agent-v0.107.11) (2026-10-17)
+
+## [0.107.10](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.9...guest-agent-v0.107.10) (2026-10-16)
+
+
+### Performance Improvements
+
+* **test:** share compiled guest-agent integration fixtures ([#40752](https://github.com/okou-ai/okou/issues/40752)) ([ac86c5e](https://github.com/okou-ai/okou/commit/ac86c5e2b78752e5b564eeda087f7358e56a9612))
+
+## [0.107.9](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.8...guest-agent-v0.107.9) (2026-10-16)
+
+
+### Performance Improvements
+
+* **guest-agent:** count json string bytes without decoding ([#40684](https://github.com/okou-ai/okou/issues/40684)) ([1778654](https://github.com/okou-ai/okou/commit/177865407bad3b0e7c42f2ca0c6b9190f37d4f47))
+
 ## [0.107.8](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.7...guest-agent-v0.107.8) (2026-10-16)
 
 

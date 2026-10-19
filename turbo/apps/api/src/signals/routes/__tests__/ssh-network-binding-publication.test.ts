@@ -52,16 +52,22 @@ beforeEach(() => {
   useSecretKmsProbe();
 });
 async function createConfig(provider: Provider) {
+  const app = await setupApp({ context, routes, isolatePg: true });
   const body = {
     id: randomUUID(),
     name: "Private network",
     credentials: oauth,
   };
   return provider === "cloudflare_access"
-    ? (await accept(cloudflare().create({ headers, query, body }), [201])).body
+    ? (
+        await accept(
+          app(cloudflareAccessContract).create({ headers, query, body }),
+          [201],
+        )
+      ).body
     : (
         await accept(
-          tailscale().create({
+          app(tailscaleContract).create({
             headers,
             body: { ...body, tags: ["tag:okou"] },
           }),

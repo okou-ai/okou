@@ -1,6 +1,6 @@
 import type { ReactNode, UIEvent } from "react";
 import { useLastLoadable, useSet } from "ccstate-react";
-import { Button, Tabs, TabsContent, TabsList, TabsTrigger } from "@okouai/ui";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
@@ -26,7 +26,6 @@ export function ThreadResourceTabs({
   const { t } = useTranslation();
   const selectSection = useSet(openThreadArtifacts$);
   const links = useLastLoadable(thread.resources.links$);
-  const retry = useSet(thread.reloadArtifacts$);
   return (
     <Tabs
       value={section}
@@ -95,11 +94,6 @@ export function ThreadResourceTabs({
                 return $.chat.resources.loadFailed;
               })}
             </p>
-            <Button variant="quiet" size="sm" onClick={retry}>
-              {t(($) => {
-                return $.chat.resources.retry;
-              })}
-            </Button>
           </div>
         ) : (
           <p

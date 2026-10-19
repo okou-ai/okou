@@ -177,25 +177,6 @@ export function scheduleDiscordAdmissionTyping(args: {
   });
 }
 
-async function activeRunOwner(
-  db: ReadonlyDb,
-  args: { readonly runId: string; readonly chatThreadId: string },
-) {
-  const [run] = await db
-    .select({ orgId: agentRuns.orgId, userId: agentRuns.userId })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.id, args.runId),
-        eq(agentRuns.chatThreadId, args.chatThreadId),
-        eq(agentRuns.triggerSource, "discord"),
-        inArray(agentRuns.status, ACTIVE_RUN_STATUSES),
-      ),
-    )
-    .limit(1);
-  return run;
-}
-
 /** Returns null when access is gone; throws when the failure is transient. */
 function typingAccessDenied(response: DiscordFailureResponse): null {
   const retryAfterSeconds = response.body.error.retryAfterSeconds;
@@ -303,7 +284,21 @@ const refreshDiscordRunTyping$ = command(
     if (typingHeld(args.target.channelId)) {
       return;
     }
-    const run = await activeRunOwner(db, args);
+    const run = await (async () => {
+      const [run] = await db
+        .select({ orgId: agentRuns.orgId, userId: agentRuns.userId })
+        .from(agentRuns)
+        .where(
+          and(
+            eq(agentRuns.id, args.runId),
+            eq(agentRuns.chatThreadId, args.chatThreadId),
+            eq(agentRuns.triggerSource, "discord"),
+            inArray(agentRuns.status, ACTIVE_RUN_STATUSES),
+          ),
+        )
+        .limit(1);
+      return run;
+    })();
     signal.throwIfAborted();
     if (!run) {
       return;
@@ -318,7 +313,21 @@ const refreshDiscordRunTyping$ = command(
       return;
     }
     // Provider checks take time; a reply may have been delivered meanwhile.
-    const stillActive = await activeRunOwner(db, args);
+    const stillActive = await (async () => {
+      const [run] = await db
+        .select({ orgId: agentRuns.orgId, userId: agentRuns.userId })
+        .from(agentRuns)
+        .where(
+          and(
+            eq(agentRuns.id, args.runId),
+            eq(agentRuns.chatThreadId, args.chatThreadId),
+            eq(agentRuns.triggerSource, "discord"),
+            inArray(agentRuns.status, ACTIVE_RUN_STATUSES),
+          ),
+        )
+        .limit(1);
+      return run;
+    })();
     signal.throwIfAborted();
     if (!stillActive) {
       return;

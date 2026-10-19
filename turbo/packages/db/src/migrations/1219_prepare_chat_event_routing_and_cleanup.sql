@@ -1,4 +1,4 @@
--- vm0:non-transactional
+-- okou:non-transactional
 -- Existing hot tables receive online indexes. Every batch below commits independently.
 SET lock_timeout = '1s';
 --> statement-breakpoint

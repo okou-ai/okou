@@ -27,7 +27,7 @@ fn fixtures() -> Result<Fixtures, serde_json::Error> {
     serde_json::from_slice(include_bytes!("fixtures/sandbox-channel.json"))
 }
 fn categories() -> BTreeMap<String, u64> {
-    BTreeMap::from([("fs".to_owned(), 2), ("diagnostics".to_owned(), 1)])
+    BTreeMap::from([("fs".to_owned(), 3), ("diagnostics".to_owned(), 1)])
 }
 
 #[test]
@@ -83,11 +83,11 @@ fn ordered_category_and_role_gates() {
     let local = categories();
     let mut peer = categories();
     assert_eq!(
-        channel::operation_contract("fs", 2, "list", Role::External, &local, &peer),
+        channel::operation_contract("fs", 3, "list", Role::External, &local, &peer),
         Ok(Operation::FsList)
     );
     assert_eq!(
-        channel::operation_contract("fs", 2, "list", Role::Guest, &local, &peer),
+        channel::operation_contract("fs", 3, "list", Role::Guest, &local, &peer),
         Err(ChannelError::Forbidden)
     );
     assert_eq!(
@@ -100,7 +100,7 @@ fn ordered_category_and_role_gates() {
     );
     peer.insert("fs".to_owned(), 1);
     assert_eq!(
-        channel::operation_contract("fs", 2, "unknown", Role::External, &local, &peer),
+        channel::operation_contract("fs", 3, "unknown", Role::External, &local, &peer),
         Err(ChannelError::CategoryVersionMismatch)
     );
     assert_eq!(

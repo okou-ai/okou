@@ -16,7 +16,7 @@ import { DiscordQueuedLaunchUnavailableError } from "./discord-queued-launch-con
 import { WechatLaunchUnavailableError } from "./wechat-context.service";
 import {
   activeInputDeliveryPromptFitsControlPayload,
-  activeInputRowsByIds,
+  activeInputSourceFields,
   materializeActiveInputSource$,
   type ActiveInputSourceRow,
 } from "./active-input-prompt.service";
@@ -154,9 +154,17 @@ async function consumeActiveInputSource(
   sourceEventId: string,
   append: boolean,
 ): Promise<ActiveInputConsumption> {
-  const [source] = await activeInputRowsByIds(db, scope.chatThreadId, [
-    sourceEventId,
-  ]);
+  const sourceChatThreadId = scope.chatThreadId;
+  const sourceEventIds = [sourceEventId];
+  const [source] = await db
+    .select(activeInputSourceFields())
+    .from(chatEvents)
+    .where(
+      and(
+        eq(chatEvents.chatThreadId, sourceChatThreadId),
+        inArray(chatEvents.id, sourceEventIds),
+      ),
+    );
   if (
     !source?.userMessage ||
     (source.eventType !== "input.prompt" &&
@@ -286,9 +294,17 @@ export const loadNextSteerableInput$ = command(
     if (!next) {
       return { outcome: "found", input: null };
     }
-    const [source] = await activeInputRowsByIds(db, scope.chatThreadId, [
-      next.id,
-    ]);
+    const sourceChatThreadId = scope.chatThreadId;
+    const sourceEventIds = [next.id];
+    const [source] = await db
+      .select(activeInputSourceFields())
+      .from(chatEvents)
+      .where(
+        and(
+          eq(chatEvents.chatThreadId, sourceChatThreadId),
+          inArray(chatEvents.id, sourceEventIds),
+        ),
+      );
     signal.throwIfAborted();
     if (!source) {
       throw new Error("Pending steerable input disappeared from its thread");
@@ -396,9 +412,17 @@ async function revokePendingRunTimeBudgetInput(
   db: Db,
   args: ActiveInputRunThread,
 ): Promise<boolean> {
-  const [source] = await activeInputRowsByIds(db, args.chatThreadId, [
-    runTimeBudgetEventIdForRun(args.runId),
-  ]);
+  const sourceChatThreadId = args.chatThreadId;
+  const sourceEventIds = [runTimeBudgetEventIdForRun(args.runId)];
+  const [source] = await db
+    .select(activeInputSourceFields())
+    .from(chatEvents)
+    .where(
+      and(
+        eq(chatEvents.chatThreadId, sourceChatThreadId),
+        inArray(chatEvents.id, sourceEventIds),
+      ),
+    );
   if (!source) {
     return false;
   }

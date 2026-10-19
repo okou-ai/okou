@@ -138,18 +138,6 @@ function ownerWhere(auth: Pick<Actor, "orgId" | "userId">, jobId: string) {
   );
 }
 
-async function findOwnedJob(
-  db: Db,
-  auth: Pick<Actor, "orgId" | "userId">,
-  jobId: string,
-): Promise<Job | undefined> {
-  const [job] = await db
-    .select()
-    .from(socialDataJobs)
-    .where(ownerWhere(auth, jobId));
-  return job;
-}
-
 function requestWhere(auth: Actor, body: SocialDataCreateRequest) {
   return and(
     eq(socialDataJobs.orgId, auth.orgId),
@@ -294,7 +282,6 @@ async function checkBudget(
       label: "Okou Social",
       reservedCredits:
         (reservation?.credits ?? 0) + args.maxCredits - args.estimatedCredits,
-      enforceBalance: true,
     },
     signal,
   );
@@ -707,7 +694,15 @@ export const getSocialDataJob$ = command(
     | ErrorResponse
   > => {
     const db = set(writeDb$);
-    let job = await findOwnedJob(db, args.auth, args.jobId);
+    const initialAuth = args.auth;
+    const initialJobId = args.jobId;
+    let job = await (async (): Promise<Job | undefined> => {
+      const [owned] = await db
+        .select()
+        .from(socialDataJobs)
+        .where(ownerWhere(initialAuth, initialJobId));
+      return owned;
+    })();
     signal.throwIfAborted();
     if (!job) {
       return errorResponse(404, "NOT_FOUND", "Social data job not found.");
@@ -715,7 +710,15 @@ export const getSocialDataJob$ = command(
     if (job.creditsCharged === null) {
       await set(advanceSocialDataJob$, job.id, signal);
       signal.throwIfAborted();
-      job = await findOwnedJob(db, args.auth, args.jobId);
+      const refreshedAuth = args.auth;
+      const refreshedJobId = args.jobId;
+      job = await (async (): Promise<Job | undefined> => {
+        const [owned] = await db
+          .select()
+          .from(socialDataJobs)
+          .where(ownerWhere(refreshedAuth, refreshedJobId));
+        return owned;
+      })();
     }
     if (!job) {
       return errorResponse(404, "NOT_FOUND", "Social data job not found.");
@@ -734,8 +737,17 @@ export const listSocialDataJobs$ = command(
     | ErrorResponse
   > => {
     const db = set(writeDb$);
-    const cursor = args.query.cursor
-      ? await findOwnedJob(db, args.auth, args.query.cursor)
+    const cursorLookup = args.query.cursor
+      ? { auth: args.auth, jobId: args.query.cursor }
+      : undefined;
+    const cursor = cursorLookup
+      ? await (async (): Promise<Job | undefined> => {
+          const [owned] = await db
+            .select()
+            .from(socialDataJobs)
+            .where(ownerWhere(cursorLookup.auth, cursorLookup.jobId));
+          return owned;
+        })()
       : undefined;
     signal.throwIfAborted();
     if (args.query.cursor && !cursor) {

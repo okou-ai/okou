@@ -21,6 +21,7 @@ import { createSessionCommand } from "./sessions";
 import { createFileCommand } from "./files";
 import { FILE_LIMIT_HELP } from "./file-protocol";
 import { createDiagnoseCommand } from "../../lib/remote-diagnostics";
+import { createCheckCommand } from "../../lib/remote-check";
 import { printSshDiagnostics } from "../../lib/ssh-diagnostics";
 
 function requireCapability(capability: "ssh:read" | "ssh:write") {
@@ -167,6 +168,7 @@ Safety:
 
 export const sshCommand = new Command("ssh")
   .addCommand(createDiagnoseCommand("ssh"))
+  .addCommand(createCheckCommand("ssh"))
   .description("Access owner-configured SSH hosts from an authorized Run")
   .addHelpText(
     "after",

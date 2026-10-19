@@ -1,3 +1,4 @@
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import type { FeishuPlatform } from "@okouai/core/feishu-platform";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { command } from "ccstate";
@@ -8,9 +9,15 @@ import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { fetchFeishuTenantAccessToken } from "../external/feishu-client";
 import { settle } from "../utils";
-import { encryptPersistentSecretValue } from "./crypto.utils";
 import {
-  loadFeishuInstallationConfig,
+  encryptPersistentSecretValue,
+  decryptPersistentSecretValue,
+} from "./crypto.utils";
+import {
+  feishuInstallationConfigReadPlan,
+  feishuInstallationConfigFromSecrets,
+  feishuInstallationAvailabilityReadPlan,
+  feishuInstallationEnabledFromRows,
   type FeishuInstallationConfig,
 } from "./feishu-config";
 import { ensureFeishuCustomConnector$ } from "./feishu-custom-connector.service";
@@ -329,8 +336,52 @@ export const configureFeishuInstallation$ = command(
     if (preflight.kind !== "target") {
       return preflight;
     }
-    const existing = preflight.installationId
-      ? await loadFeishuInstallationConfig(db, preflight.installationId)
+    const installationId = preflight.installationId;
+    const existing = installationId
+      ? await (async () => {
+          const plan = feishuInstallationConfigReadPlan(installationId);
+          const [installation] = await db
+            .select(plan.columns)
+            .from(feishuOrgInstallations)
+            .where(plan.condition)
+            .limit(1);
+          if (
+            !installation ||
+            !(await (async () => {
+              const availability =
+                feishuInstallationAvailabilityReadPlan(installation);
+              if (availability.kind === "resolved") {
+                return availability.enabled;
+              }
+              const rows = await db
+                .select(availability.columns)
+                .from(userFeatureSwitches)
+                .where(availability.condition);
+              return feishuInstallationEnabledFromRows(
+                availability.scope,
+                rows,
+              );
+            })())
+          ) {
+            return null;
+          }
+          const context = { orgId: installation.orgId };
+          const secrets = await Promise.all([
+            decryptPersistentSecretValue(
+              installation.encryptedAppSecret,
+              context,
+            ),
+            decryptPersistentSecretValue(
+              installation.encryptedVerificationToken,
+              context,
+            ),
+            decryptPersistentSecretValue(
+              installation.encryptedEncryptKey,
+              context,
+            ),
+          ]);
+          return feishuInstallationConfigFromSecrets(installation, secrets);
+        })()
       : null;
     signal.throwIfAborted();
     if (existing && existing.appId !== args.appId) {

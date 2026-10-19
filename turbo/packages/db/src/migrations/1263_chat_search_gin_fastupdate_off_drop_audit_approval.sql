@@ -1,4 +1,4 @@
--- vm0:non-transactional
+-- okou:non-transactional
 -- 1) Contract computer_use_command_audit_events.approval_outcome. #36984 stopped
 -- naming it in audit INSERT and SELECT and is in production; the API rollback
 -- floor excludes older writers. DROP COLUMN needs a brief ACCESS EXCLUSIVE lock,

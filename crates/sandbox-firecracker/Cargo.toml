@@ -1,7 +1,10 @@
 [package]
 name = "sandbox-firecracker"
-version = "0.51.9"
+version = "0.53.1"
 edition.workspace = true
+
+[features]
+test-support = []
 
 [dependencies]
 async-trait.workspace = true

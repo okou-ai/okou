@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { Popover } from "@base-ui/react/popover";
 
 /**
@@ -80,4 +81,15 @@ export function resolveCollisionPadding(
     bottom: Math.max(safe.bottom, inset.bottom),
     left: Math.max(safe.left, inset.left),
   };
+}
+
+/** Read current insets only when the owning portal renders its children. */
+export function SafeAreaCollisionPadding({
+  children,
+  requested,
+}: {
+  readonly children: (padding: CollisionInset) => ReactNode;
+  readonly requested: CollisionPadding | undefined;
+}): ReactNode {
+  return children(resolveCollisionPadding(requested));
 }

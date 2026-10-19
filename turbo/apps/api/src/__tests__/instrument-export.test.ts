@@ -11,6 +11,7 @@ import {
 } from "@opentelemetry/api";
 import { http, HttpResponse, passthrough } from "msw";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import { z } from "zod";
 
 import { mockEnv } from "../lib/env";
 import { server } from "../mocks/server";
@@ -19,6 +20,228 @@ import { integrationsTelegramRoutes } from "../signals/routes/integrations-teleg
 import { healthRoutes } from "../signals/routes/health";
 
 import { testContext } from "./test-context";
+
+// Numeric callback fixtures can occur in SDK timestamps and random IDs. Keep
+// their assertions on content, preserving arbitrary nested payloads in full.
+const attributeContent = z.object({ attributes: z.unknown().optional() });
+const namedContent = attributeContent.extend({ name: z.string() });
+const traceContent = z.object({
+  resourceSpans: z.array(
+    z.object({
+      resource: attributeContent.optional(),
+      scopeSpans: z.array(
+        z.object({
+          scope: attributeContent.optional(),
+          spans: z.array(
+            namedContent.extend({
+              traceState: z.string().nullish(),
+              events: z.array(namedContent).optional(),
+              links: z
+                .array(
+                  attributeContent.extend({
+                    traceState: z.string().optional(),
+                  }),
+                )
+                .optional(),
+              status: z.object({ message: z.string().optional() }).optional(),
+            }),
+          ),
+        }),
+      ),
+    }),
+  ),
+});
+const errorContent = z.object({
+  message: z.string().optional(),
+  logentry: z.unknown().optional(),
+  request: z.unknown().optional(),
+  exception: z.unknown().optional(),
+  threads: z.unknown().optional(),
+  extra: z.unknown().optional(),
+  user: z.unknown().optional(),
+  tags: z.unknown().optional(),
+  contexts: z
+    .object({
+      trace: z
+        .object({
+          op: z.string().optional(),
+          description: z.string().optional(),
+          data: z.unknown().optional(),
+          tags: z.unknown().optional(),
+          links: z.array(attributeContent).optional(),
+        })
+        .optional(),
+    })
+    .catchall(z.unknown())
+    .optional(),
+  breadcrumbs: z
+    .array(
+      z.object({
+        type: z.string().optional(),
+        category: z.string().optional(),
+        message: z.string().optional(),
+        data: z.unknown().optional(),
+      }),
+    )
+    .optional(),
+  transaction: z.string().optional(),
+  logger: z.string().optional(),
+  fingerprint: z.unknown().optional(),
+});
+
+function exportedCallbackContent(traces: unknown[], errors: unknown[]): string {
+  return JSON.stringify({
+    traces: z.array(traceContent).parse(traces),
+    errors: z.array(errorContent).parse(errors),
+  });
+}
+
+function traceExport(span: unknown): unknown[] {
+  return [{ resourceSpans: [{ scopeSpans: [{ spans: [span] }] }] }];
+}
+
+describe("callback export content assertions", () => {
+  it("ignores numeric fixture collisions in SDK metadata and retains ordinary content", () => {
+    const traces = traceExport({
+      name: "GET /health",
+      traceId: "abcdef123456789abcde1700000000ab",
+      spanId: "abcdef123456789a",
+      startTimeUnixNano: "1792148081700000000",
+      endTimeUnixNano: "1792148081700000001",
+      events: [{ name: "ordinary event", timeUnixNano: "1792148081700000000" }],
+      links: [
+        {
+          traceId: "abcdef123456789abcde1700000000ab",
+          spanId: "abcdef123456789a",
+        },
+      ],
+    });
+    const errors = [
+      {
+        event_id: "abcdef123456789abcde1700000000ab",
+        timestamp: 1_700_000_000.123,
+        message: "ordinary error",
+        contexts: {
+          trace: {
+            trace_id: "abcdef123456789abcde1700000000ab",
+            span_id: "abcdef123456789a",
+            links: [
+              {
+                trace_id: "abcdef123456789abcde1700000000ab",
+                span_id: "abcdef123456789a",
+              },
+            ],
+          },
+        },
+        breadcrumbs: [
+          {
+            timestamp: 1_700_000_000,
+            event_id: "abcdef123456789abcde1700000000ab",
+            message: "ordinary breadcrumb",
+          },
+        ],
+      },
+    ];
+    const content = exportedCallbackContent(traces, errors);
+    for (const secret of ["123456789", "1700000000"]) {
+      expect(JSON.stringify({ traces, errors })).toContain(secret);
+      expect(content).not.toContain(secret);
+    }
+    for (const ordinary of [
+      "GET /health",
+      "ordinary event",
+      "ordinary error",
+      "ordinary breadcrumb",
+    ]) {
+      expect(content).toContain(ordinary);
+    }
+  });
+
+  it.each(["123456789", "1700000000"])(
+    "retains leaked callback value %s in trace content",
+    (secret) => {
+      const attributes = [{ key: "callback", value: { stringValue: secret } }];
+      for (const span of [
+        { name: `request ${secret}` },
+        { name: "ordinary", attributes },
+        {
+          name: "ordinary",
+          attributes: [{ key: "id", value: { intValue: Number(secret) } }],
+        },
+        { name: "ordinary", traceState: `callback=${secret}` },
+        { name: "ordinary", status: { message: `failure ${secret}` } },
+        { name: "ordinary", events: [{ name: `event ${secret}` }] },
+        { name: "ordinary", events: [{ name: "event", attributes }] },
+        { name: "ordinary", links: [{ attributes }] },
+        { name: "ordinary", links: [{ traceState: `callback=${secret}` }] },
+        {
+          name: "ordinary",
+          attributes: [
+            {
+              key: "data",
+              value: {
+                kvlistValue: {
+                  values: [
+                    { key: "timestamp", value: { stringValue: secret } },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      ]) {
+        expect(exportedCallbackContent(traceExport(span), [])).toContain(
+          secret,
+        );
+      }
+      for (const resource of [
+        { resource: { attributes }, scopeSpans: [] },
+        { scopeSpans: [{ scope: { attributes }, spans: [] }] },
+      ]) {
+        expect(
+          exportedCallbackContent([{ resourceSpans: [resource] }], []),
+        ).toContain(secret);
+      }
+    },
+  );
+
+  it.each(["123456789", "1700000000"])(
+    "retains leaked callback value %s in error content",
+    (secret) => {
+      for (const event of [
+        { message: `callback ${secret}` },
+        { logentry: { message: "callback %s", params: [secret] } },
+        {
+          request: {
+            url: `/callback?auth_date=${secret}`,
+            data: { id: Number(secret) },
+          },
+        },
+        { exception: { values: [{ value: `failure ${secret}` }] } },
+        { extra: { timestamp: secret, event_id: secret } },
+        { user: { id: Number(secret) } },
+        { tags: { callback: secret } },
+        { contexts: { callback: { timestamp: secret } } },
+        { contexts: { trace: { data: { id: secret } } } },
+        { contexts: { trace: { tags: { callback: secret } } } },
+        {
+          contexts: {
+            trace: { links: [{ attributes: { callback: secret } }] },
+          },
+        },
+        { contexts: { trace: { description: `callback ${secret}` } } },
+        { breadcrumbs: [{ message: `callback ${secret}` }] },
+        {
+          breadcrumbs: [
+            { data: { url: `/callback?id=${secret}`, timestamp: secret } },
+          ],
+        },
+      ]) {
+        expect(exportedCallbackContent([], [event])).toContain(secret);
+      }
+    },
+  );
+});
 
 async function httpRequest(
   url: string,
@@ -163,7 +386,7 @@ describe("API telemetry exports", () => {
     });
     const path = "/api/integrations/telegram/auth-callback";
     const cases = [
-      [path, "", 200],
+      [path, "", 422],
       [
         path,
         "&callbackProtocol=2&operationId=51326918-3b76-4fea-a42f-d8f58e426d9b&bot=official",
@@ -173,7 +396,7 @@ describe("API telemetry exports", () => {
       [path, "&callbackProtocol=9", 422],
       [path, "&callbackProtocol=2&callbackProtocol=2", 422],
       [`${path}/`, "&callbackProtocol=2", 404],
-      ["/api/integrations/%74elegram/auth-callback", "", 200],
+      ["/api/integrations/%74elegram/auth-callback", "", 422],
     ] as const;
     for (const [pathname, contextQuery, status] of cases) {
       const url = `${origin}${pathname}?${providerQuery}${contextQuery}`;
@@ -286,9 +509,13 @@ describe("API telemetry exports", () => {
     const exportedTraces = JSON.stringify(traces);
     expect(exportedTraces).toContain("GET /health");
     expect(exportedTraces).toContain(`${path}-other`);
-    for (const secret of [proof, identity, "123456789", "1700000000"]) {
+    for (const secret of [proof, identity]) {
       expect(exportedTraces).not.toContain(secret);
       expect(errors.join("\n")).not.toContain(secret);
+    }
+    const callbackContent = exportedCallbackContent(traces, errorEvents);
+    for (const secret of ["123456789", "1700000000"]) {
+      expect(callbackContent).not.toContain(secret);
     }
   });
 });

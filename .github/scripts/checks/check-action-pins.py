@@ -14,7 +14,7 @@ APPROVED_ACTIONS = {
     "actions/cache/restore": "55cc8345863c7cc4c66a329aec7e433d2d1c52a9",  # v6.1.0
     "actions/cache/save": "55cc8345863c7cc4c66a329aec7e433d2d1c52a9",  # v6.1.0
     "actions/checkout": "3d3c42e5aac5ba805825da76410c181273ba90b1",  # v7.0.1
-    "actions/create-github-app-token": "bcd2ba49218906704ab6c1aa796996da409d3eb1",  # v3.2.0
+    "actions/create-github-app-token": "64ab729a6294000f5aa4a4bc0b73d1f32bc45510",  # v3.3.0
     "actions/download-artifact": "9000827ccba6bdab643e8b6fd33ac0654aef8333",  # v8.0.2
     "actions/github-script": "3a2844b7e9c422d3c10d287c895573f7108da1b3",  # v9.0.0
     "actions/setup-node": "949feb2413d6458794dcd2491c4babbbce0c15c1",  # v7.1.0
@@ -35,7 +35,7 @@ APPROVED_ACTIONS = {
     "pnpm/action-setup": "ea17c68df8912ef543352723c149a84f56e3d413",  # v6.1.0
     "slackapi/slack-github-action": "dcb1066f776dd043e64d0e8ba94ca15cc7e1875d",  # v4.0.0
     "swatinem/rust-cache": "6323deb102c322ba6fcbdcafc7e3dddab59af2b6",  # v2.9.2
-    "taiki-e/install-action": "ab6895351a88b908e96a4697860d4ffea5e57dbe",  # v2.87.27
+    "taiki-e/install-action": "1168f6810a3cb30a3514bf5756a3b7f0422c6df8",  # v2.87.28
 }
 SHA_PATTERN = re.compile(r"[0-9a-f]{40}")
 

@@ -154,6 +154,67 @@ async fn legacy_rejection_completes_even_when_stream_input_never_arrives() {
 }
 
 #[tokio::test]
+async fn optional_error_text_preserves_partial_stream_delivery_and_unusable_text_cannot_replace_it()
+{
+    for diagnostic in [
+        json!("Runner capture evidence"),
+        json!(null),
+        json!({"unusable":true}),
+        json!("x".repeat(8193)),
+    ] {
+        let mut request = input().await;
+        Writer::input(&mut request).send(&Frame::End).await.unwrap();
+        let (client, mut server) = UnixStream::pair().unwrap();
+        let mut output = Vec::new();
+        let calls = AtomicUsize::new(0);
+        let helper =
+            runner_rpc_client::stream::run_with_io(request.as_slice(), &mut output, || async {
+                calls.fetch_add(1, Ordering::Relaxed);
+                Ok(client)
+            });
+        let host = async {
+            runner_rpc_proto::read_request(&mut server).await.unwrap();
+            assert!(matches!(
+                Reader::input(&mut server).next().await.unwrap(),
+                Some(Frame::End)
+            ));
+            let mut wire = Vec::new();
+            Writer::responses(&mut wire)
+                .send(&Frame::Data(vec![42]))
+                .await
+                .unwrap();
+            let error = serde_json::to_vec(&json!({"type":"error", "code":"transport", "delivery":"unknown", "diagnostic_text":diagnostic})).unwrap();
+            wire.extend((error.len() as u32).to_be_bytes());
+            wire.extend(error);
+            server.write_all(&wire).await.unwrap();
+            server.shutdown().await.unwrap();
+        };
+        let (success, ()) = timeout(Duration::from_secs(2), async { tokio::join!(helper, host) })
+            .await
+            .unwrap();
+        assert!(!success.unwrap());
+        let mut reader = Reader::responses(output.as_slice());
+        assert!(matches!(reader.next().await.unwrap(), Some(Frame::Data(data)) if data == [42]));
+        let Some(Frame::Control(Response::Error {
+            code,
+            delivery,
+            diagnostic_text,
+        })) = reader.next().await.unwrap()
+        else {
+            panic!("missing exact error")
+        };
+        assert_eq!(code, ErrorCode::Transport);
+        assert_eq!(delivery, Delivery::Unknown);
+        assert_eq!(
+            diagnostic_text.as_deref(),
+            diagnostic.as_str().filter(|text| text.len() <= 8192)
+        );
+        assert!(reader.next().await.unwrap().is_none());
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+    }
+}
+
+#[tokio::test]
 async fn invalid_header_and_caller_budget_never_connect_or_echo_data() {
     let calls = AtomicUsize::new(0);
     for bytes in [vec![], vec![255; 4], {

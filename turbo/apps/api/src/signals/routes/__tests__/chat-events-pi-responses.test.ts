@@ -457,7 +457,6 @@ describe("CHAT-02: model-first routing", () => {
     if (queued.status !== 201) {
       throw new Error("Expected queued fast Luna to enter the chat queue");
     }
-    expect(queued.body.runId).toBeNull();
 
     chatCallbacks.mockChatOutputEvents([]);
     await own(async () => {

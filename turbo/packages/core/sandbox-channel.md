@@ -129,7 +129,7 @@ resource; UI view invalidation must not silently orphan a returned cursor.
 
 ## Native readonly filesystem role
 
-The packaged Guest installs the complete fs v2 role alongside diagnostics.
+The packaged Guest installs the complete fs v3 role alongside diagnostics.
 It captures Guest `/` for each connection's first filesystem job; process HOME
 and cwd never select that root. Paths are canonical raw basename tokens relative
 to `/`; an empty path denotes Guest root. A consumer initially displaying
@@ -179,6 +179,55 @@ Node Run suite checks actual root/home/home-user and nested/paged fixtures and
 explicit release. UI navigation owns its current location separately from the
 connection: capture that raw prefix per call, and release obsolete results on
 their original epoch without applying them to a newly selected directory.
+
+## Regular-file reads in fs v3
+
+The existing `fs` category is version 3 and includes `open`, `read`, `finish`
+and `close` alongside `list`/`list.close`. Schema v1 and listing payloads stay
+unchanged. All file operations require exact category-version agreement.
+A stale client must refresh before use; no separate reader category, old-version
+adapter or fallback is provided. Advertise fs v3 only with all six operations.
+Listing and read DTOs, generated Rust bindings and finite policies share the
+same `fs` namespace.
+
+Open accepts a nonempty raw-token path and one selection mode: `download` selects
+the complete file without a product byte cap; `preview` selects the complete file
+only within 16 MiB; `prefix` selects at most 64 KiB and reports truncation. Preview
+eligibility does not prevent a separate complete-download open. Metadata includes
+the owned opaque handle, raw basename, safe display label and exact decimal-string
+`fileSize`/`selectedSize`. Sizes and offsets use the native nonnegative signed
+file-offset domain, preserving integers beyond JavaScript's safe numeric range.
+
+Read accepts that handle, a decimal offset and a positive length up to 32 KiB.
+Results identify the exact offset, actual byte length and canonical padded base64.
+Reads are positional and may be requested in any offset order. The last selected
+chunk is shortened to the remaining selection; an offset at selected EOF returns
+zero bytes. An offset beyond the selection is invalid. A premature physical EOF
+fails the reader. Complete response JSON remains within 48 KiB/current 64 KiB frames.
+
+The fixed filesystem worker pins terminal O_PATH/no-follow metadata, rejects links
+and special files before opening contents, then intentionally reopens the held
+regular inode through the kernel fd link. That internal generated fd path does not
+relax user-path resolution. Ancestors must retain their device/inode identities;
+unrelated sibling writes alone do not invalidate a stable target. The target's
+device/inode/size/mtime/ctime are checked around reads and at finish. Observed
+modification/replacement fails with `file_changed` and disposes the reader. These
+observations do not promise an atomic snapshot or lock out concurrent writers.
+
+Finish validates observed stability and releases; close abandons without an
+integrity claim. Neither proves that a downstream browser saved the file. A
+complete-delivery consumer must withhold its completion until finish succeeds.
+Foreign, expired and released handles return `handle_expired`; non-regular entries
+return `not_regular_file` without opening their contents. Four handles and four
+physical in-flight reads per connection bound retained work. Handles expire after
+30 seconds of idle time, refreshed by successful reads; progressing downloads have
+no fixed total lifetime. Connection/Run retirement and abandoned open results release
+state. Physical jobs retain their permits until they actually retire, even when the
+async observer has already cancelled.
+
+Shared TS/Rust vectors, framed real-file tests, both pinned-kernel architecture
+legs and admitted public WSS probes cover this role. HTTP download delivery and
+Activities rendering are separate consumers, not provided by the reader itself.
 
 ## Evolution
 

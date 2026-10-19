@@ -26,7 +26,7 @@ import { githubUserLinks } from "@okouai/db/schema/github-user-link";
 import { z } from "zod";
 import { command } from "ccstate";
 
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { safeJsonParse, tapError } from "../utils";
 import {
   connectorOAuthStateExpiresAt,
@@ -690,68 +690,71 @@ export async function isGithubOauthStateSignatureValid(args: {
   );
 }
 
-export async function linkGithubUser(
-  args: {
-    readonly db: Db;
-    readonly installRecordId: string;
-    readonly userId: string;
-    readonly knownGithubUserId?: string | null;
-  },
-  signal: AbortSignal,
-): Promise<string | null> {
-  let githubUserId = args.knownGithubUserId ?? null;
+export const linkGithubUser$ = command(
+  async (
+    { set },
+    args: {
+      readonly installRecordId: string;
+      readonly userId: string;
+      readonly knownGithubUserId?: string | null;
+    },
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    const db = set(writeDb$);
+    let githubUserId = args.knownGithubUserId ?? null;
 
-  if (!githubUserId) {
-    const [connector] = await args.db
-      .select({ externalId: connectors.externalId })
-      .from(connectors)
-      .innerJoin(
-        githubInstallations,
-        and(
-          eq(githubInstallations.id, args.installRecordId),
-          eq(githubInstallations.orgId, connectors.orgId),
-        ),
-      )
+    if (!githubUserId) {
+      const [connector] = await db
+        .select({ externalId: connectors.externalId })
+        .from(connectors)
+        .innerJoin(
+          githubInstallations,
+          and(
+            eq(githubInstallations.id, args.installRecordId),
+            eq(githubInstallations.orgId, connectors.orgId),
+          ),
+        )
+        .where(
+          and(
+            eq(connectors.userId, args.userId),
+            eq(connectors.connectorSlug, "github"),
+            eq(connectors.isDefault, true),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+
+      githubUserId = connector?.externalId ?? null;
+    }
+
+    if (!githubUserId) {
+      return null;
+    }
+
+    await db
+      .delete(githubUserLinks)
       .where(
         and(
-          eq(connectors.userId, args.userId),
-          eq(connectors.connectorSlug, "github"),
-          eq(connectors.isDefault, true),
+          eq(githubUserLinks.installationId, args.installRecordId),
+          eq(githubUserLinks.userId, args.userId),
         ),
-      )
-      .limit(1);
+      );
     signal.throwIfAborted();
 
-    githubUserId = connector?.externalId ?? null;
-  }
+    const [link] = await db
+      .insert(githubUserLinks)
+      .values({
+        githubUserId,
+        installationId: args.installRecordId,
+        userId: args.userId,
+      })
+      .onConflictDoNothing()
+      .returning({ githubUserId: githubUserLinks.githubUserId });
+    signal.throwIfAborted();
 
-  if (!githubUserId) {
-    return null;
-  }
-
-  await args.db
-    .delete(githubUserLinks)
-    .where(
-      and(
-        eq(githubUserLinks.installationId, args.installRecordId),
-        eq(githubUserLinks.userId, args.userId),
-      ),
-    );
-  signal.throwIfAborted();
-
-  const [link] = await args.db
-    .insert(githubUserLinks)
-    .values({
-      githubUserId,
-      installationId: args.installRecordId,
-      userId: args.userId,
-    })
-    .onConflictDoNothing()
-    .returning({ githubUserId: githubUserLinks.githubUserId });
-  signal.throwIfAborted();
-
-  return link?.githubUserId ?? null;
-}
+    return link?.githubUserId ?? null;
+  },
+);
 
 export const loadActiveGithubInstallationForOrg$ = command(
   async (
@@ -776,94 +779,101 @@ export const loadActiveGithubInstallationForOrg$ = command(
   },
 );
 
-export async function tryLinkGithubFromLocalRecord(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-  },
-  signal: AbortSignal,
-): Promise<boolean> {
-  const [existing] = await args.db
-    .select({
-      id: githubInstallations.id,
-      adminGithubUserId: githubInstallations.adminGithubUserId,
-    })
-    .from(githubInstallations)
-    .where(
-      and(
-        eq(githubInstallations.orgId, args.orgId),
-        eq(githubInstallations.status, "active"),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-
-  if (!existing) {
-    return false;
-  }
-
-  const githubUserId = await linkGithubUser(
-    {
-      db: args.db,
-      installRecordId: existing.id,
-      userId: args.userId,
+export const tryLinkGithubFromLocalRecord$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
     },
-    signal,
-  );
-
-  if (!githubUserId) {
-    return false;
-  }
-
-  if (!existing.adminGithubUserId) {
-    await args.db
-      .update(githubInstallations)
-      .set({ adminGithubUserId: githubUserId })
-      .where(eq(githubInstallations.id, existing.id));
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    const [existing] = await db
+      .select({
+        id: githubInstallations.id,
+        adminGithubUserId: githubInstallations.adminGithubUserId,
+      })
+      .from(githubInstallations)
+      .where(
+        and(
+          eq(githubInstallations.orgId, args.orgId),
+          eq(githubInstallations.status, "active"),
+        ),
+      )
+      .limit(1);
     signal.throwIfAborted();
-  }
 
-  return true;
-}
+    if (!existing) {
+      return false;
+    }
 
-export async function loadComposeFeatureSwitchContext(
-  args: {
-    readonly db: Db;
-    readonly composeId: string;
-    readonly userId?: string | null;
-  },
-  signal: AbortSignal,
-): Promise<FeatureSwitchContext> {
-  const [compose] = await args.db
-    .select({ orgId: agents.orgId, userId: agents.owner })
-    .from(agents)
-    .where(eq(agents.id, args.composeId))
-    .limit(1);
-  signal.throwIfAborted();
-
-  if (!compose) {
-    throw new Error(`Agent compose not found: composeId=${args.composeId}`);
-  }
-
-  const featureSwitchContextRows0 = await args.db
-    .select({
-      userId: userFeatureSwitches.userId,
-      switches: userFeatureSwitches.switches,
-    })
-    .from(userFeatureSwitches)
-    .where(
-      userFeatureSwitchRowCondition(
-        compose.orgId,
-        args.userId ?? compose.userId,
-      ),
+    const githubUserId = await set(
+      linkGithubUser$,
+      {
+        installRecordId: existing.id,
+        userId: args.userId,
+      },
+      signal,
     );
-  return featureSwitchContextFromRows(
-    compose.orgId,
-    args.userId ?? compose.userId,
-    featureSwitchContextRows0,
-  );
-}
+
+    if (!githubUserId) {
+      return false;
+    }
+
+    if (!existing.adminGithubUserId) {
+      await db
+        .update(githubInstallations)
+        .set({ adminGithubUserId: githubUserId })
+        .where(eq(githubInstallations.id, existing.id));
+      signal.throwIfAborted();
+    }
+
+    return true;
+  },
+);
+
+export const loadComposeFeatureSwitchContext$ = command(
+  async (
+    { get },
+    args: {
+      readonly composeId: string;
+      readonly userId?: string | null;
+    },
+    signal: AbortSignal,
+  ): Promise<FeatureSwitchContext> => {
+    const db = get(db$);
+    const [compose] = await db
+      .select({ orgId: agents.orgId, userId: agents.owner })
+      .from(agents)
+      .where(eq(agents.id, args.composeId))
+      .limit(1);
+    signal.throwIfAborted();
+
+    if (!compose) {
+      throw new Error(`Agent compose not found: composeId=${args.composeId}`);
+    }
+
+    const featureSwitchContextRows0 = await db
+      .select({
+        userId: userFeatureSwitches.userId,
+        switches: userFeatureSwitches.switches,
+      })
+      .from(userFeatureSwitches)
+      .where(
+        userFeatureSwitchRowCondition(
+          compose.orgId,
+          args.userId ?? compose.userId,
+        ),
+      );
+    signal.throwIfAborted();
+    return featureSwitchContextFromRows(
+      compose.orgId,
+      args.userId ?? compose.userId,
+      featureSwitchContextRows0,
+    );
+  },
+);
 
 export const resolveGithubOauthOrgId$ = command(
   async (
@@ -925,9 +935,9 @@ const linkExistingGithubAppInstallation$ = command(
         .where(eq(githubInstallations.id, args.installation.id));
       signal.throwIfAborted();
     }
-    const linked = await linkGithubUser(
+    const linked = await set(
+      linkGithubUser$,
       {
-        db,
         installRecordId: args.installation.id,
         userId: args.userId,
       },
@@ -998,7 +1008,7 @@ export const tryLinkGithubFromRemoteInstallations$ = command(
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const db = set(writeDb$);
+    set(writeDb$);
     const installations = await set(
       discoverGithubAppInstallations$,
       { appId: args.appId, privateKey: args.privateKey },
@@ -1056,9 +1066,9 @@ export const tryLinkGithubFromRemoteInstallations$ = command(
       { orgId: args.orgId, composeId: args.composeId },
       signal,
     );
-    const featureSwitchContext = await loadComposeFeatureSwitchContext(
+    const featureSwitchContext = await set(
+      loadComposeFeatureSwitchContext$,
       {
-        db,
         composeId: args.composeId,
         userId: args.userId,
       },
@@ -1098,9 +1108,9 @@ export const tryLinkGithubFromRemoteInstallations$ = command(
       return false;
     }
 
-    await linkGithubUser(
+    await set(
+      linkGithubUser$,
       {
-        db,
         installRecordId: newInstall.id,
         userId: args.userId,
         knownGithubUserId: adminGithubUserId,

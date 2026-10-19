@@ -12,7 +12,7 @@
 
 use std::time::Duration;
 
-use sandbox::{EXEC_OUTPUT_LIMIT_64_KIB, ExecRequest, Sandbox};
+use sandbox::{EXEC_OUTPUT_LIMIT_64_KIB, ExecRequest, ExecResult, Sandbox};
 use shell_quote::quote_shell_arg;
 
 use crate::error::{LifecycleError, LifecycleResult};
@@ -41,19 +41,7 @@ pub async fn ensure_home_drive_mounted(
             error: LifecycleError::from(error),
             guest_duration: None,
         })?;
-    let guest_duration = result
-        .guest_duration_ms
-        .map(|duration_ms| Duration::from_millis(u64::from(duration_ms)));
-    if helper_exec_succeeded(&result) {
-        return Ok(guest_duration);
-    }
-
-    let mut message = format_helper_exec_failure("mount home drive", &result);
-    message.push_str(&format!("; diagnostic id: {diagnostic_id}"));
-    Err(HomeDriveMountError {
-        error: LifecycleError::Internal(message),
-        guest_duration,
-    })
+    interpret_home_drive_result(&result, diagnostic_id, "mount home drive")
 }
 
 pub async fn freeze_home_drive(
@@ -99,14 +87,22 @@ async fn run_home_drive_command(
             error: LifecycleError::from(error),
             guest_duration: None,
         })?;
+    interpret_home_drive_result(&result, diagnostic_id, operation)
+}
+
+fn interpret_home_drive_result(
+    result: &ExecResult,
+    diagnostic_id: impl std::fmt::Display,
+    operation: &'static str,
+) -> Result<Option<Duration>, HomeDriveMountError> {
     let guest_duration = result
         .guest_duration_ms
         .map(|duration_ms| Duration::from_millis(u64::from(duration_ms)));
-    if helper_exec_succeeded(&result) {
+    if helper_exec_succeeded(result) {
         return Ok(guest_duration);
     }
 
-    let mut message = format_helper_exec_failure(operation, &result);
+    let mut message = format_helper_exec_failure(operation, result);
     message.push_str(&format!("; diagnostic id: {diagnostic_id}"));
     Err(HomeDriveMountError {
         error: LifecycleError::Internal(message),

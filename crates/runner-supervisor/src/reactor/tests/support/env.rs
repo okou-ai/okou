@@ -41,6 +41,7 @@ fn test_profile(
         rootfs_disk_mb: 12288,
         home_disk_mb,
         factory_config: sandbox::FactoryConfig {
+            home_drive_pressure: None,
             profile: name.into(),
             binary_path: PathBuf::new(),
             kernel_path: PathBuf::new(),
@@ -370,6 +371,7 @@ fn build_mock_run_config_with_runtime(
             after_initial_home_cache_scan: None,
             manual_routine_heartbeat_rx: None,
             manual_home_cache_gc_rx: None,
+            manual_home_cache_pressure_rx: None,
         },
     };
 

@@ -16,8 +16,6 @@ import {
   discordApprovalAvailable$,
   discordApprovalRequest$,
   discordApprovalSucceeded$,
-  continueDiscordApproval$,
-  discordApprovalContinuation$,
 } from "../../signals/okou-page/discord-oauth-approval.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
@@ -64,8 +62,6 @@ function DiscordApprovalState() {
   const request = useLoadable(discordApprovalRequest$);
   const approve = useSet(approveDiscordAuthorization$);
   const pageSignal = useGet(pageSignal$);
-  const continuation = useGet(discordApprovalContinuation$);
-  const [recovery, continueApproval] = useLoadableSet(continueDiscordApproval$);
   const failed = request.state === "hasError";
   if (failed) {
     return (
@@ -97,33 +93,6 @@ function DiscordApprovalState() {
   return (
     <>
       <ConnectCheckingState />
-      {continuation ? (
-        <>
-          <p className="text-center text-sm text-muted-foreground">
-            {t(($) => {
-              return $.works.discord.continueDescription;
-            })}
-          </p>
-          <ConnectErrorAlert
-            error={
-              recovery.state === "hasError"
-                ? t(($) => {
-                    return $.works.discord.popupBlocked;
-                  })
-                : null
-            }
-          />
-          <ConnectSubmitButton
-            connecting={false}
-            label={t(($) => {
-              return $.works.discord.continueInNewTab;
-            })}
-            onConnect={() => {
-              detach(continueApproval(pageSignal), Reason.DomCallback);
-            }}
-          />
-        </>
-      ) : null}
       <SettingsBackLink />
     </>
   );
@@ -217,9 +186,6 @@ function DiscordConnectionActions({
       ) : (
         <DiscordConnectIntro data={data} installing={installing} />
       )}
-      {(failedAttempt || installing) && data?.isConnected ? (
-        <DiscordIdentity data={data} existing={failedAttempt} />
-      ) : null}
       <ConnectErrorAlert error={error} />
       {data &&
       (installing || failedAttempt
@@ -305,49 +271,6 @@ function DiscordAttemptFailure() {
   );
 }
 
-function DiscordIdentity({
-  data,
-  existing = false,
-}: {
-  data: DiscordOrgStatus;
-  existing?: boolean;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="text-center text-sm text-muted-foreground">
-      {existing ? (
-        <p>
-          {t(($) => {
-            return $.works.discord.existingConnection;
-          })}
-        </p>
-      ) : null}
-      {data.discordUserId ? (
-        <p>
-          {t(
-            ($) => {
-              return $.works.discord.connectedIdentity;
-            },
-            {
-              id: data.discordUserId,
-            },
-          )}
-        </p>
-      ) : null}
-      {data.guildName ? (
-        <p>
-          {t(
-            ($) => {
-              return $.works.discord.connectedServer;
-            },
-            { name: data.guildName },
-          )}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
 function DiscordConnectIntro({
   data,
   installing,
@@ -409,7 +332,6 @@ function DiscordSuccessState({
           return $.works.discord.description;
         })}
       />
-      <DiscordIdentity data={data} />
       <div className="flex w-full flex-col gap-3">
         <a
           href={`discord://-/${destination}`}
@@ -418,16 +340,6 @@ function DiscordSuccessState({
           <DiscordMark size={16} />
           {t(($) => {
             return $.works.discord.open;
-          })}
-        </a>
-        <a
-          href={`https://discord.com/${destination}`}
-          target="_blank"
-          rel="noreferrer"
-          className="text-center text-sm text-muted-foreground transition-colors hover:text-foreground"
-        >
-          {t(($) => {
-            return $.works.discord.openInBrowser;
           })}
         </a>
         <div className="flex justify-center">

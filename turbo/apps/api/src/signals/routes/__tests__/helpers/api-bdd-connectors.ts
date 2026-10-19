@@ -404,6 +404,8 @@ interface AutomaticMcpOAuthProviderOptions {
   readonly resourceMetadataStatus?: number;
   readonly challengeScope?: string | null;
   readonly metadataScopes?: readonly string[];
+  readonly authorizationServerScopes?: readonly string[];
+  readonly grantTypesSupported?: readonly string[] | null;
   readonly authorizationCodeScopes?: readonly string[];
   readonly refreshError?:
     "invalid_client" | "invalid_grant" | "temporarily_unavailable";
@@ -433,6 +435,7 @@ interface AutomaticMcpOAuthProviderRecorder {
   readonly issuer: string;
   readonly registrationBodies: readonly Record<string, unknown>[];
   advertiseAuthorizationServers(issuers: readonly string[]): void;
+  advertiseAuthorizationServerScopes(scopes: readonly string[]): void;
   setChallengeScope(scope: string | null): void;
   authorizationServerDiscoveryCalls(): number;
   readonly tokenBodies: readonly URLSearchParams[];
@@ -495,6 +498,20 @@ function automaticOAuthProviderIssuer(
   return options.issuer ?? "https://automatic-issuer.example.test";
 }
 
+function automaticOAuthGrantTypes(
+  options: AutomaticMcpOAuthProviderOptions,
+): readonly string[] | undefined {
+  if (options.grantTypesSupported === null) {
+    return undefined;
+  }
+  return (
+    options.grantTypesSupported ??
+    (options.authorizationCodeSupported === false
+      ? ["refresh_token"]
+      : ["authorization_code", "refresh_token"])
+  );
+}
+
 export function mockAutomaticMcpOAuthProvider(
   context: TestContext,
   options: AutomaticMcpOAuthProviderOptions,
@@ -521,10 +538,8 @@ export function mockAutomaticMcpOAuthProvider(
     token_endpoint: tokenUrl,
     response_types_supported:
       options.authorizationCodeSupported === false ? ["token"] : ["code"],
-    grant_types_supported:
-      options.authorizationCodeSupported === false
-        ? ["refresh_token"]
-        : ["authorization_code", "refresh_token"],
+    grant_types_supported: automaticOAuthGrantTypes(options),
+    scopes_supported: options.authorizationServerScopes,
     code_challenge_methods_supported:
       options.pkceS256Supported === false ? ["plain"] : ["S256"],
     token_endpoint_auth_methods_supported:
@@ -792,6 +807,9 @@ export function mockAutomaticMcpOAuthProvider(
     endpoint,
     issuer,
     registrationBodies,
+    advertiseAuthorizationServerScopes(scopes: readonly string[]): void {
+      authorizationServerMetadata.scopes_supported = [...scopes];
+    },
     advertiseAuthorizationServers(issuers: readonly string[]): void {
       advertisedAuthorizationServers = [...issuers];
     },

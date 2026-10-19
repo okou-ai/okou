@@ -51,15 +51,20 @@ function helperFailure(
   method: VncMethod,
   terminal: Extract<VncTerminal, { type: "error" }>,
 ): VncOutcome {
-  return failure(
-    method,
-    terminal.code === "unknown_method"
-      ? "unsupported_runner"
-      : terminal.code === "invalid_request"
-        ? "protocol"
-        : terminal.code,
-    terminal.delivery,
-  );
+  return {
+    ...failure(
+      method,
+      terminal.code === "unknown_method"
+        ? "unsupported_runner"
+        : terminal.code === "invalid_request"
+          ? "protocol"
+          : terminal.code,
+      terminal.delivery,
+    ),
+    ...(terminal.diagnostic_text
+      ? { diagnostic_text: terminal.diagnostic_text }
+      : {}),
+  };
 }
 
 interface CaptureDestination {

@@ -2813,6 +2813,124 @@ describe("Browser user-action route", () => {
     });
   });
 
+  it.each([false, true])(
+    "rechecks native input creation at the lease deadline (renewed=%s)",
+    async (renewDuringPreparation) => {
+      const owned = await setupOwnedNativeFileBrowserScenario();
+      await owned.run(async () => {
+        const { current } = await setupNativeFileScenario(owned);
+        const headers = { authorization: "Bearer clerk-session" };
+        const params = { threadId: current.threadId };
+        const initial = await accept(
+          client().leaseByThread({ headers, params, body: {} }),
+          [200],
+        );
+        const idleExpiresAt = initial.body.browser.idleExpiresAt;
+        if (!idleExpiresAt) {
+          throw new Error("Expected the public Browser idle lease");
+        }
+        const deadline = Date.parse(idleExpiresAt);
+        mockNow(deadline - MINUTE_MS);
+        const entered = createDeferredPromise<void>(context.signal);
+        const release = createDeferredPromise<void>(context.signal);
+        let holdNextRead = true;
+        server.use(
+          http.get(
+            `${BROWSER_USE_API_URL}/browsers/:id`,
+            async ({ params }) => {
+              if (holdNextRead) {
+                holdNextRead = false;
+                entered.resolve(undefined);
+                await release.promise;
+              }
+              return HttpResponse.json(providerBrowser(String(params.id)));
+            },
+          ),
+        );
+        const body = {
+          kind: "input" as const,
+          title: "Choose a document",
+          reason: "The website requires a document to continue.",
+          callbackPrompt: "Continue after choosing the document",
+          pageTargetId: "native-input-target",
+          fields: [
+            {
+              key: "document",
+              label: "Document",
+              fieldKind: "file" as const,
+              required: false,
+              backendNodeId: 45,
+            },
+          ],
+        };
+        const creating = settleIncludingAbort(
+          userActionClient().create({
+            headers: current.claim.browserHeaders,
+            body,
+          }),
+        );
+        const transition = await settleIncludingAbort(async () => {
+          await entered.promise;
+          if (renewDuringPreparation) {
+            const renewed = await accept(
+              client().leaseByThread({ headers, params, body: {} }),
+              [200],
+            );
+            const renewedExpiry = renewed.body.browser.idleExpiresAt;
+            if (!renewedExpiry) {
+              throw new Error("Expected the renewed public Browser lease");
+            }
+            expect(Date.parse(renewedExpiry)).toBeGreaterThan(deadline);
+          }
+          mockNow(deadline);
+        });
+        if (!release.settled()) {
+          release.resolve(undefined);
+        }
+        const created = await creating;
+        if (created.ok && created.value.status === 201) {
+          owned.rememberAction(created.value.body.action.requestToken);
+        }
+        if (!transition.ok && !created.ok) {
+          throw new AggregateError(
+            [transition.error, created.error],
+            "Browser lease transition and creation failed",
+          );
+        }
+        if (!transition.ok) {
+          throw transition.error;
+        }
+        if (!created.ok) {
+          throw created.error;
+        }
+        expect(created.value.status).toBe(renewDuringPreparation ? 201 : 404);
+        if (created.value.status === 201) {
+          const pending = await accept(
+            userActionClient().get({
+              headers,
+              params: { requestToken: created.value.body.action.requestToken },
+            }),
+            [200],
+          );
+          expect(pending.body.state).toBe("pending");
+        } else {
+          expect(created.value).toMatchObject({
+            status: 404,
+            body: { error: { code: "BROWSER_USER_ACTION_NOT_FOUND" } },
+          });
+          const stillExpired = await userActionClient().create({
+            headers: current.claim.browserHeaders,
+            body,
+          });
+          expect(stillExpired).toMatchObject({
+            status: 409,
+            body: { error: { code: "BROWSER_USER_ACTION_BROWSER_NOT_LIVE" } },
+          });
+        }
+      });
+    },
+  );
+
   it.each([
     { failure: "HTTP 503", status: 502, code: "BROWSER_USE_ERROR" },
     {

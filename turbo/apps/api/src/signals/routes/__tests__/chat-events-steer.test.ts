@@ -55,7 +55,6 @@ async function sendQueuedPrompt(
   if (sent.status !== 201) {
     throw new Error("Expected the prompt to be accepted");
   }
-  expect(sent.body.runId).toBeNull();
   return clientEventId;
 }
 

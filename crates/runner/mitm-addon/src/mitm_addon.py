@@ -60,6 +60,7 @@ import flow_metadata_keys as metadata_keys
 import http_header_syntax
 import http_local_responses
 import http_network_log
+import managed_openrouter
 import matching
 import mitmproxy_compat
 import model_websocket_usage
@@ -422,6 +423,9 @@ def _prebind_bounded_requestheaders_upstream_destination(
             allowed_kinds=frozenset(("connector_auth",)),
         )
         and not _request_may_use_aws_sigv4(flow)
+        # A bound connection cannot skip managed OpenRouter body admission.
+        # The canonical classifier below still selects the credential owner.
+        and trusted_authority.host != managed_openrouter.HOST
     ):
         return None
     classification = _classify_request_for_flow_with_trusted_authority(
@@ -860,6 +864,10 @@ def requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
         except BaseException:
             _restore_request_headers_probe_metadata(flow, metadata_snapshot)
             raise
+        if bounded_classification is not None and _admit_managed_openrouter_from_headers(
+            flow, bounded_classification
+        ):
+            return None
         if (
             bounded_classification is None
             or bounded_classification.kind != "firewall_allow"
@@ -878,6 +886,8 @@ def requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
             flow,
             defer_unresolved_public_destination=True,
         )
+    if _admit_managed_openrouter_from_headers(flow, classification):
+        return None
     if classification.kind == "public_destination_denied":
         _start_request_timing(flow)
         _block_public_destination_denied(
@@ -1036,6 +1046,62 @@ def requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
 
     _restore_request_headers_probe_metadata(flow, metadata_snapshot)
     return None
+
+
+def _reject_managed_openrouter_request(
+    flow: http.HTTPFlow,
+    classification: request_classification.FirewallAllow,
+    reason: str,
+    *,
+    terminate: bool = False,
+) -> None:
+    prepare_firewall_metadata(flow, classification.firewall_allow, classification.sandbox_info)
+    flow.request.stream = False
+    flow.metadata[metadata_keys.SUPPRESS_REQUEST_BODY_CAPTURE] = True
+    flow.metadata[metadata_keys.FIREWALL_BILLABLE] = False
+    flow_metadata.set_firewall_decision(
+        flow.metadata, "BLOCK", error="managed_openrouter_request_rejected"
+    )
+    log_proxy_entry(
+        flow_metadata.proxy_log_path(flow.metadata),
+        "warn",
+        "Managed OpenRouter request rejected",
+        type="managed_model_policy",
+        reason=reason,
+    )
+    if terminate:
+        request_classification.pop_cached_classification(flow)
+        flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
+        managed_openrouter.release_from_flow(flow)
+        flow.kill()
+    else:
+        flow.response = http_local_responses.make_local_json_response(
+            flow,
+            403,
+            {
+                "error": "managed_openrouter_request_rejected",
+                "reason": reason,
+                "message": "Request blocked by the managed model preset policy",
+            },
+        )
+
+
+def _admit_managed_openrouter_from_headers(
+    flow: http.HTTPFlow, classification: request_classification.RequestClassification
+) -> bool:
+    """Intercept managed auth before every header-phase streaming fast path."""
+    if (
+        classification.kind != "firewall_allow"
+        or classification.firewall_allow.name != managed_openrouter.OWNER
+    ):
+        return False
+    _start_request_timing(flow)
+    _prebind_requestheaders_upstream_destination(flow, classification)
+    try:
+        managed_openrouter.admit_request(flow, classification.sandbox_info)
+    except managed_openrouter.RequestRejectedError as error:
+        _reject_managed_openrouter_request(flow, classification, str(error), terminate=True)
+    return True
 
 
 def _admit_buffered_public_destination_request(
@@ -1288,6 +1354,7 @@ def _revalidate_current_firewall_authorization_for_request(
     *,
     expected_run_id: str,
     expected_request: _FirewallRequestIdentity,
+    expected_managed_policy: managed_openrouter.PresetPolicy | None = None,
 ) -> bool:
     current_classification = _current_firewall_authorization_classification(
         flow, original_authority=expected_request.authority
@@ -1298,6 +1365,13 @@ def _revalidate_current_firewall_authorization_for_request(
         expected_run_id=expected_run_id,
     )
     if current_allow is None or not _firewall_request_identity_is_current(flow, expected_request):
+        _block_current_firewall_authorization(flow, current_classification)
+        return False
+    if allow.name == managed_openrouter.OWNER and (
+        expected_managed_policy is None
+        or managed_openrouter.policy_for_sandbox(current_allow.sandbox_info)
+        != expected_managed_policy
+    ):
         _block_current_firewall_authorization(flow, current_classification)
         return False
     if _firewall_allow_injects_ordinary_upstream_credentials(
@@ -1501,6 +1575,7 @@ async def request(flow: http.HTTPFlow) -> None:
     order. This hook dispatches the current-state result.
     """
     if flow.metadata.get(_REQUEST_HEADERS_TERMINATED):
+        managed_openrouter.release_from_flow(flow)
         auth_base_forwarder.release_forward_request_admission_from_flow(flow)
         aws_sigv4_body_admission.release_from_flow(flow)
         public_destination_body_admission.release_from_flow(flow)
@@ -1512,6 +1587,7 @@ async def request(flow: http.HTTPFlow) -> None:
     connector_intent.capture_and_strip(flow)
 
     if flow.response is not None or flow.error is not None:
+        managed_openrouter.release_from_flow(flow)
         auth_base_forwarder.release_forward_request_admission_from_flow(flow)
         aws_sigv4_body_admission.release_from_flow(flow)
         public_destination_body_admission.release_from_flow(flow)
@@ -1579,6 +1655,13 @@ async def request(flow: http.HTTPFlow) -> None:
         if classification.kind == "firewall_allow":
             allow = classification.firewall_allow
             sandbox_info = classification.sandbox_info
+            managed_policy = None
+            if allow.name == managed_openrouter.OWNER:
+                try:
+                    managed_policy = managed_openrouter.validate_request(flow, sandbox_info)
+                except managed_openrouter.RequestRejectedError as error:
+                    _reject_managed_openrouter_request(flow, classification, str(error))
+                    return
             if connector_diagnostics.maybe_make_connector_owner_local_response(
                 flow,
                 classification,
@@ -1625,6 +1708,7 @@ async def request(flow: http.HTTPFlow) -> None:
                         allow,
                         expected_run_id=expected_run_id,
                         expected_request=expected_request,
+                        expected_managed_policy=managed_policy,
                     )
                 ),
             )
@@ -1664,6 +1748,7 @@ async def request(flow: http.HTTPFlow) -> None:
         auth_base_forwarder.release_forward_request_admission_from_flow(flow)
         aws_sigv4_body_admission.release_from_flow(flow)
         public_destination_body_admission.release_from_flow(flow)
+        managed_openrouter.release_from_flow(flow)
         terminal_usage.release_tracked_flow(flow)
         raise
     finally:
@@ -1848,6 +1933,7 @@ def _release_terminal_flow_state(
     response_streaming.release_response_stream_state(flow)
     auth_base_forwarder.release_forward_request_admission_from_flow(flow)
     public_destination_body_admission.release_from_flow(flow)
+    managed_openrouter.release_from_flow(flow)
     if release_aws_sigv4_body_admission:
         aws_sigv4_body_admission.release_from_flow(flow)
     if release_tracking:

@@ -117,6 +117,7 @@ pub enum HomeImagePromotionIdentityMismatch {
     ImageSizeBytes,
     ActiveImage,
     CacheKey,
+    PublicationStarted,
 }
 impl HomeImagePromotionIdentityMismatch {
     pub fn as_str(self) -> &'static str {
@@ -130,6 +131,7 @@ impl HomeImagePromotionIdentityMismatch {
             Self::ImageSizeBytes => "image size mismatch",
             Self::ActiveImage => "active image path mismatch",
             Self::CacheKey => "cache key mismatch",
+            Self::PublicationStarted => "home publication already started",
         }
     }
 }
@@ -162,14 +164,55 @@ pub struct CacheBudget {
     pub max_cache_bytes: u64,
     pub target_after_gc_bytes: u64,
     pub min_free_bytes: u64,
+    /// Legacy byte projections are unknown when allocation was only partial.
+    pub complete: bool,
 }
 impl CacheBudget {
-    pub fn from_fs_stats(stats: FsStats) -> Self {
-        let max_cache_bytes = stats.total_bytes.saturating_mul(50) / 100;
+    pub(super) fn from_observed_allocation(stats: FsStats, allocated: Option<u64>) -> Self {
+        let pressure = HomeCachePressureThresholds::from_fs_stats(stats);
         Self {
-            max_cache_bytes,
-            target_after_gc_bytes: max_cache_bytes.saturating_mul(75) / 100,
-            min_free_bytes: HOME_IMAGE_SPACE_RESERVE.bytes_for_capacity(stats.total_bytes),
+            max_cache_bytes: allocated.map_or(0, |bytes| {
+                bytes
+                    .saturating_add(stats.available_bytes)
+                    .min(stats.total_bytes)
+                    .saturating_sub(pressure.reserve_bytes)
+            }),
+            target_after_gc_bytes: allocated.map_or(0, |bytes| {
+                bytes.saturating_sub(
+                    pressure
+                        .high_free_bytes
+                        .saturating_sub(stats.available_bytes),
+                )
+            }),
+            min_free_bytes: pressure.reserve_bytes,
+            complete: allocated.is_some(),
+        }
+    }
+}
+
+/// Observed receiving-filesystem watermarks, independent of retained-cache size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HomeCachePressureThresholds {
+    pub reserve_bytes: u64,
+    pub low_free_bytes: u64,
+    pub high_free_bytes: u64,
+    pub reserve_feasible: bool,
+}
+
+impl HomeCachePressureThresholds {
+    pub fn from_fs_stats(stats: FsStats) -> Self {
+        Self::with_reserve(stats, HOME_IMAGE_SPACE_RESERVE)
+    }
+
+    pub(super) fn with_reserve(stats: FsStats, reserve: sandbox::HomeDriveSpaceReserve) -> Self {
+        let reserve_bytes = reserve.bytes_for_capacity(stats.total_bytes);
+        let margin = reserve_bytes.min(stats.total_bytes.saturating_sub(reserve_bytes)) / 4;
+        Self {
+            reserve_bytes,
+            low_free_bytes: reserve_bytes.saturating_add(margin),
+            high_free_bytes: reserve_bytes.saturating_add(margin.saturating_mul(2)),
+            reserve_feasible: reserve_bytes <= stats.total_bytes,
         }
     }
 }
@@ -180,6 +223,7 @@ pub struct HomeImageCacheInspection {
     pub lock_dir: String,
     pub fs_stats: FsStats,
     pub budget: CacheBudget,
+    pub pressure: HomeCachePressureThresholds,
     pub summary: HomeImageCacheInspectionSummary,
     pub entries: Vec<HomeImageCacheInspectionEntry>,
 }

@@ -24,6 +24,8 @@ case "${1:-}" in
   merge-base)
     if [ "${3:-}" = "dfff1605013103371cd90962ee5b54c80fc93140" ]; then
       [ "${MOCK_BUNDLED_CLI_RUNNER_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "37e6bb51029f05ff1d7a7a6c28b03f139dfd067c" ]; then
+      [ "${MOCK_LINK_GRANT_WRITER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "52525252525252525252525252525252525252ab" ]; then
       [ "${MOCK_WORKFLOW_NAME_SCOPES_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "4747474747474747474747474747474747474747" ]; then
@@ -122,6 +124,8 @@ case "${1:-}" in
       [ "${MOCK_OFFICIAL_RESULT_EMAIL_STORAGE_CONTRACTION_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "5151515151515151515151515151515151515151" ]; then
       [ "${MOCK_SSH_NEEDS_REBIND_INDEPENDENT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "5757575757575757575757575757575757575757" ]; then
+      [ "${MOCK_VNC_CANONICAL_METADATA_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "5656565656565656565656565656565656565656" ]; then
       [ "${MOCK_SESSION_CONVERSATION_RUNTIME_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "5252525252525252525252525252525252525252" ]; then
@@ -183,6 +187,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_OFFICIAL_RESULT_EMAIL_RUNTIME_COMMIT-4949494949494949494949494949494949494949}"
     elif [[ "$*" == *1386_drop_official_result_email_storage.sql* ]]; then
       printf '%s\n' "${MOCK_OFFICIAL_RESULT_EMAIL_STORAGE_CONTRACTION_COMMIT-5050505050505050505050505050505050505050}"
+    elif [[ "$*" == *.github/rollback-floors/vnc-native-networks-canonical-metadata* ]]; then
+      printf '%s\n' "${MOCK_VNC_CANONICAL_METADATA_COMMIT-5757575757575757575757575757575757575757}"
     elif [[ "$*" == *.github/rollback-floors/session-conversation-runtime* ]]; then
       printf '%s\n' "${MOCK_SESSION_CONVERSATION_RUNTIME_COMMIT-5656565656565656565656565656565656565656}"
     elif [[ "$*" == *runtime/agent-session.ts* ]]; then
@@ -295,6 +301,7 @@ assert_failure() {
 : >"${tmp_dir}/boundaries.log"
 output_file="${tmp_dir}/success.output"
 run_resolver "$output_file" >"${tmp_dir}/success.log"
+grep -Fxq "git merge-base --is-ancestor 5757575757575757575757575757575757575757 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "eligible API artifact must satisfy the canonical VNC producer floor"
 grep -Fxq "git merge-base --is-ancestor 52525252525252525252525252525252525252ab ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Workflow namespace preparation floor"
 grep -Fxq "git merge-base --is-ancestor 77357abdb29ce96b2caf9ee679299602757844dc ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must select Luna for memory"
 grep -Fxq "git merge-base --is-ancestor 39d60bba6aa3a317948d653b4c1d09781719b466 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must omit Pi memory compatibility storage"
@@ -842,6 +849,32 @@ if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "SSH preparation floor must fail before artifact or host access"
 fi
 
+# The producer artifact itself is eligible, as well as the descendant covered
+# by the ordinary successful resolver case above.
+: >"${tmp_dir}/boundaries.log"
+run_resolver "${tmp_dir}/vnc-canonical-exact.output" "MOCK_VNC_CANONICAL_METADATA_COMMIT=${target_commit}" >"${tmp_dir}/vnc-canonical-exact.log"
+[ -s "${tmp_dir}/vnc-canonical-exact.output" ] || fail "exact VNC producer artifact must remain eligible"
+grep -Fxq "git merge-base --is-ancestor ${target_commit} ${target_commit}" "${tmp_dir}/boundaries.log" || fail "exact VNC producer must be checked against the requested artifact"
+
+for producer_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged VNC canonical metadata producer" \
+    run_resolver "${tmp_dir}/vnc-canonical-history.output" "MOCK_VNC_CANONICAL_METADATA_COMMIT=${producer_commit}"
+  [ ! -s "${tmp_dir}/vnc-canonical-history.output" ] || fail "invalid VNC producer history must not publish outputs"
+  if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+    fail "VNC history must be validated before artifact or host access"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the VNC canonical metadata producer" \
+  run_resolver "${tmp_dir}/vnc-canonical-floor.output" MOCK_VNC_CANONICAL_METADATA_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/vnc-canonical-floor.output" ] || fail "B-F API must not publish rollback outputs"
+grep -Fq '5757575757575757575757575757575757575757' "${tmp_dir}/failure.err" || fail "VNC floor must identify its merged producer"
+grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- .github/rollback-floors/vnc-native-networks-canonical-metadata" "${tmp_dir}/boundaries.log" || fail "VNC floor must resolve main history, not target history"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "VNC floor must fail before artifact or host access"
+fi
+
 # A native producer excludes Session-dependent rollback artifacts before any
 # deployment/artifact side effects are attempted.
 : >"${tmp_dir}/boundaries.log"
@@ -1042,6 +1075,9 @@ assert_failure "found 0" run_resolver "${tmp_dir}/zero.output" MOCK_VERCEL_MATCH
 [ ! -s "${tmp_dir}/zero.output" ] || fail "failed resolution must not publish outputs"
 
 : >"${tmp_dir}/boundaries.log"
+assert_failure "predates the Link wallet grant metadata writer" \
+  run_resolver "${tmp_dir}/link-grant-writer.output" MOCK_LINK_GRANT_WRITER_FLOOR_VALID=0
+
 assert_failure "predates bundled-only CLI startup" \
   run_resolver "${tmp_dir}/bundled-cli-runner.output" MOCK_BUNDLED_CLI_RUNNER_FLOOR_VALID=0
 [ ! -s "${tmp_dir}/bundled-cli-runner.output" ] || fail "incompatible CLI Runner must not publish outputs"
@@ -1094,7 +1130,9 @@ ruby -e '
     raise "release bodies, changelogs, and complete outputs must not enter the release target resolver environment"
   end
 
-  configured_paths = JSON.parse(File.read(ARGV[1])).fetch("packages").keys
+  # Version-managed private packages do not emit a release SHA or tag.
+  configured_paths = JSON.parse(File.read(ARGV[1])).fetch("packages")
+    .reject { |_, config| config["skip-github-release"] == true }.keys
   missing_paths = configured_paths - projected_paths
   unknown_paths = projected_paths - configured_paths
   duplicate_paths = projected_paths.group_by(&:itself).select { |_, paths| paths.length > 1 }.keys
@@ -1167,7 +1205,9 @@ ruby -e '
     raise "release bodies, changelogs, and complete outputs must not enter the release tag resolver environment"
   end
 
-  configured_paths = JSON.parse(File.read(ARGV[1])).fetch("packages").keys
+  # Version-managed private packages do not emit a release SHA or tag.
+  configured_paths = JSON.parse(File.read(ARGV[1])).fetch("packages")
+    .reject { |_, config| config["skip-github-release"] == true }.keys
   missing_paths = configured_paths - projected_paths
   unknown_paths = projected_paths - configured_paths
   duplicate_paths = projected_paths.group_by(&:itself).select { |_, paths| paths.length > 1 }.keys

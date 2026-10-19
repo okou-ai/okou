@@ -403,6 +403,14 @@ impl Service {
         bounded(self.key_task).await.unwrap();
         bounded(self.noise.task).await.unwrap();
     }
+
+    pub(in crate::tailscale::tests) async fn finish_unused(self) {
+        assert!(self.control_fd.lock().unwrap().is_none());
+        self.key_task.abort();
+        self.noise.task.abort();
+        assert!(matches!(self.key_task.await, Err(error) if error.is_cancelled()));
+        assert!(matches!(self.noise.task.await, Err(error) if error.is_cancelled()));
+    }
 }
 
 fn configuration() -> Key {

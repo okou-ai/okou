@@ -37,7 +37,6 @@ import type { ModelProviderSelection } from "../../views/okou-page/components/mo
 interface ChatThreadRealtimeInvalidations {
   readonly threadDetail: RealtimeInvalidationCommands;
   readonly automations: RealtimeInvalidationCommands;
-  readonly artifacts: RealtimeInvalidationCommands;
 }
 
 interface ChatThreadRealtimeHandlers {
@@ -243,11 +242,6 @@ export const subscribeChatThreadRealtime$ = command(
         kind: "invalidate",
         topic: `chatThreadAutomationsChanged:${threadId}`,
         invalidations: invalidations.automations,
-      },
-      {
-        kind: "invalidate",
-        topic: `chatThreadArtifactsChanged:${threadId}`,
-        invalidations: invalidations.artifacts,
       },
       {
         kind: "command",

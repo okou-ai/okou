@@ -1,4 +1,4 @@
--- vm0:non-transactional
+-- okou:non-transactional
 -- V8 pointers are already published for every thread. Keep the constraint
 -- unvalidated while V7 rows are present; it blocks new V7 pointers immediately.
 SET lock_timeout = '1s';

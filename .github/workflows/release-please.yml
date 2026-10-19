@@ -1692,13 +1692,26 @@ jobs:
 
       - name: Upload App source maps to Sentry
         env:
+          APP_RELEASE: ${{ needs.release-please.outputs.app_version }}
           CANONICAL_DIST: ${{ steps.worker-production.outputs.canonical-dist }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ vars.SENTRY_ORG }}
           SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT_APP }}
         working-directory: turbo
         run: |
-          pnpm --filter @okouai/app exec sentry-cli sourcemaps upload "$CANONICAL_DIST"
+          set -euo pipefail
+
+          # app_version is empty for an app-worker-only release. Skip the upload
+          # there: without an explicit release, sentry-cli names it after the
+          # commit hash, which the runtime release (the platform version) never matches.
+          if [[ -z "$APP_RELEASE" ]]; then
+            echo "::warning::No App platform version in this release; skipping Sentry source map upload"
+            exit 0
+          fi
+
+          export SENTRY_RELEASE="$APP_RELEASE"
+          pnpm --filter @okouai/app exec sentry-cli releases new "$APP_RELEASE" --finalize
+          pnpm --filter @okouai/app exec sentry-cli sourcemaps upload --release "$APP_RELEASE" "$CANONICAL_DIST"
 
       - name: Deploy App Worker production
         env:

@@ -1,6 +1,8 @@
 mod cleanup_group;
 mod create_timing;
 mod create_transaction;
+#[cfg(any(test, feature = "test-support"))]
+mod home_checkpoint;
 mod invariant;
 mod leak_cleaner;
 
@@ -33,6 +35,14 @@ use crate::prerequisites;
 use crate::runtime_dirs::prepare_runtime_socket_dir;
 use crate::sandbox::{FirecrackerSandbox, FirecrackerSandboxInit};
 
+#[cfg(any(test, feature = "test-support"))]
+use home_checkpoint::FactoryCheckpoint;
+#[cfg(any(test, feature = "test-support"))]
+pub use home_checkpoint::HomeCreateCheckpoint;
+#[cfg(feature = "test-support")]
+pub(crate) use home_checkpoint::wrap as checkpoint_factory;
+#[cfg(feature = "test-support")]
+pub(crate) use home_checkpoint::wrap_guest as guest_checkpoint_factory;
 pub(crate) use invariant::InvariantConfig;
 pub use invariant::{PREWARM_SCRIPT, config_hash};
 
@@ -45,6 +55,7 @@ pub(crate) struct FirecrackerFactory {
     /// Best-effort release authority for sandboxes destroyed after shutdown.
     shutdown_netns_pool: Option<NetnsPoolHandle>,
     host_cpu_cgroup: Option<Arc<HostCpuCgroupManager>>,
+    home_drive_pressure: Option<Arc<dyn sandbox::HomeDrivePressurePolicy>>,
 }
 
 struct StartedFactoryResources {
@@ -72,6 +83,7 @@ impl FirecrackerFactory {
         netns_pool: Option<NetnsPoolHandle>,
         device_pool: nbd_cow::pool::DevicePoolHandle,
         host_cpu_cgroup: Option<Arc<HostCpuCgroupManager>>,
+        home_drive_pressure: Option<Arc<dyn sandbox::HomeDrivePressurePolicy>>,
     ) -> Result<Self, SandboxError> {
         let t = std::time::Instant::now();
         let mode = match config.snapshot.as_ref() {
@@ -174,6 +186,7 @@ impl FirecrackerFactory {
             }),
             shutdown_netns_pool: None,
             host_cpu_cgroup,
+            home_drive_pressure,
         })
     }
 
@@ -211,7 +224,12 @@ impl FirecrackerFactory {
         config: SandboxConfig,
         observer: Option<&mut dyn SandboxCreateObserver>,
         custody: Option<sandbox::SandboxCreateCustody>,
+        #[cfg(any(test, feature = "test-support"))] checkpoint: Option<FactoryCheckpoint>,
     ) -> sandbox::Result<Box<dyn Sandbox>> {
+        #[cfg(feature = "test-support")]
+        let guest_checkpoint = checkpoint.as_ref().and_then(FactoryCheckpoint::guest);
+        #[cfg(any(test, feature = "test-support"))]
+        let home_checkpoint = checkpoint.and_then(FactoryCheckpoint::home);
         let resources = self.resources()?;
         let device_rate_limits = convert_device_rate_limits(config.device_rate_limits.as_ref())?;
         let leak_tx = resources.leak_cleaner.sender();
@@ -254,20 +272,33 @@ impl FirecrackerFactory {
             let prepare_result = if custody.is_some() {
                 let path = sandbox_paths.home_image();
                 let config = home_drive.clone();
+                let pressure = self.home_drive_pressure.clone();
                 let (owned_tx, result) = tokio::spawn(async move {
-                    let result = prepare_home_drive_image(&path, &config, None).await;
-                    (tx, result)
+                    let result =
+                        prepare_home_drive_image(&path, &config, pressure.as_deref(), None).await;
+                    #[cfg(any(test, feature = "test-support"))]
+                    let (tx, result) = if result.is_ok() {
+                        home_checkpoint::run(tx, path, home_checkpoint).await?
+                    } else {
+                        (tx, result)
+                    };
+                    Ok::<_, SandboxError>((tx, result))
                 })
                 .await
                 .map_err(|error| SandboxError::Initialization {
                     phase: SandboxInitializationPhase::SandboxAllocation,
                     message: format!("owned home preparation producer: {error}"),
-                })?;
+                })??;
                 tx = owned_tx;
                 result
             } else {
-                prepare_home_drive_image(&sandbox_paths.home_image(), home_drive, Some(&mut timing))
-                    .await
+                prepare_home_drive_image(
+                    &sandbox_paths.home_image(),
+                    home_drive,
+                    self.home_drive_pressure.as_deref(),
+                    Some(&mut timing),
+                )
+                .await
             };
             if let Err(error) = timing.record_stage_result(
                 SandboxCreateStage::HomeDrivePrepare,
@@ -408,6 +439,8 @@ impl FirecrackerFactory {
             leak_tx,
             host_cpu_cgroup: self.host_cpu_cgroup.clone(),
         });
+        #[cfg(feature = "test-support")]
+        let sandbox = crate::preparation_checkpoint::attach(sandbox, guest_checkpoint);
         Ok(Box::new(sandbox))
     }
 }
@@ -423,7 +456,14 @@ impl SandboxFactory for FirecrackerFactory {
     }
 
     async fn create(&self, config: SandboxConfig) -> sandbox::Result<Box<dyn Sandbox>> {
-        self.create_inner(config, None, None).await
+        self.create_inner(
+            config,
+            None,
+            None,
+            #[cfg(any(test, feature = "test-support"))]
+            None,
+        )
+        .await
     }
 
     async fn create_with_custody(
@@ -431,7 +471,14 @@ impl SandboxFactory for FirecrackerFactory {
         config: SandboxConfig,
         custody: sandbox::SandboxCreateCustody,
     ) -> sandbox::Result<Box<dyn Sandbox>> {
-        self.create_inner(config, None, Some(custody)).await
+        self.create_inner(
+            config,
+            None,
+            Some(custody),
+            #[cfg(any(test, feature = "test-support"))]
+            None,
+        )
+        .await
     }
 
     async fn create_with_observer(
@@ -439,7 +486,14 @@ impl SandboxFactory for FirecrackerFactory {
         config: SandboxConfig,
         observer: &mut dyn SandboxCreateObserver,
     ) -> sandbox::Result<Box<dyn Sandbox>> {
-        self.create_inner(config, Some(observer), None).await
+        self.create_inner(
+            config,
+            Some(observer),
+            None,
+            #[cfg(any(test, feature = "test-support"))]
+            None,
+        )
+        .await
     }
 
     async fn destroy(&self, sandbox: Box<dyn Sandbox>) {
@@ -676,6 +730,7 @@ mod tests {
 
     fn test_factory_without_resources() -> FirecrackerFactory {
         FirecrackerFactory {
+            home_drive_pressure: None,
             config: test_config(PathBuf::from("/tmp/factory-test-base")),
             factory_paths: FactoryPaths::new(PathBuf::from("/tmp/factory-test")),
             runtime_paths: RuntimePaths::new(),
@@ -711,6 +766,7 @@ mod tests {
         let cleanup_group = FactoryCleanupGroup::new();
         cleanup_group.start_accepting();
         FirecrackerFactory {
+            home_drive_pressure: None,
             config: test_config(PathBuf::from("/tmp/factory-test-base")),
             factory_paths,
             runtime_paths: RuntimePaths::new(),

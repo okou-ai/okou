@@ -6,11 +6,9 @@ import {
   userPresentationTemplateDirectory,
 } from "@okouai/core/presentation-template-selection";
 import { getPresentationTemplateStorageName } from "@okouai/core/storage-names";
-import { presentationTemplates } from "@okouai/db/schema/presentation-template";
-import { and, desc, eq, or } from "drizzle-orm";
+import type { presentationTemplates } from "@okouai/db/schema/presentation-template";
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import type { ReadonlyDb } from "../external/db";
 
 export type PresentationTemplateRow = typeof presentationTemplates.$inferSelect;
 
@@ -122,51 +120,4 @@ export function presentationTemplateSummary(
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
-}
-
-export async function loadAccessiblePresentationTemplate(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly templateId: string;
-  },
-): Promise<PresentationTemplateRow | null> {
-  const [row] = await db
-    .select()
-    .from(presentationTemplates)
-    .where(
-      and(
-        eq(presentationTemplates.id, args.templateId),
-        eq(presentationTemplates.orgId, args.orgId),
-        or(
-          eq(presentationTemplates.ownerUserId, args.userId),
-          eq(presentationTemplates.visibility, "public"),
-        ),
-      ),
-    )
-    .limit(1);
-  return row ?? null;
-}
-
-export async function listAccessiblePresentationTemplates(
-  db: ReadonlyDb,
-  args: { readonly orgId: string; readonly userId: string },
-): Promise<readonly PresentationTemplateRow[]> {
-  return await db
-    .select()
-    .from(presentationTemplates)
-    .where(
-      and(
-        eq(presentationTemplates.orgId, args.orgId),
-        or(
-          eq(presentationTemplates.ownerUserId, args.userId),
-          eq(presentationTemplates.visibility, "public"),
-        ),
-      ),
-    )
-    .orderBy(
-      desc(eq(presentationTemplates.ownerUserId, args.userId)),
-      desc(presentationTemplates.createdAt),
-    );
 }

@@ -5,7 +5,7 @@ import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip";
 
 import { anchoredPopupTransitionClassName } from "./popup-motion";
 import { cn } from "../../lib/utils";
-import { resolveCollisionPadding } from "../../lib/safe-area";
+import { SafeAreaCollisionPadding } from "../../lib/safe-area";
 
 function TooltipProvider({
   delay = 0,
@@ -72,29 +72,35 @@ const TooltipContent = React.forwardRef<HTMLDivElement, TooltipContentProps>(
   ) => {
     return (
       <TooltipPrimitive.Portal>
-        <TooltipPrimitive.Positioner
-          align={align}
-          alignOffset={alignOffset}
-          collisionAvoidance={collisionAvoidance}
-          collisionBoundary={collisionBoundary}
-          collisionPadding={resolveCollisionPadding(collisionPadding)}
-          positionMethod={positionMethod}
-          side={side}
-          sideOffset={sideOffset}
-        >
-          <TooltipPrimitive.Popup
-            ref={ref}
-            data-slot="tooltip-content"
-            className={cn(
-              anchoredPopupTransitionClassName,
-              "max-w-xs overflow-hidden rounded-md bg-[var(--tooltip-bg,#1a1a1a)] px-2 py-1 text-xs text-[hsl(var(--on-filled))] data-instant:transition-none",
-              className,
-            )}
-            {...props}
-          >
-            {children}
-          </TooltipPrimitive.Popup>
-        </TooltipPrimitive.Positioner>
+        <SafeAreaCollisionPadding requested={collisionPadding}>
+          {(padding) => {
+            return (
+              <TooltipPrimitive.Positioner
+                align={align}
+                alignOffset={alignOffset}
+                collisionAvoidance={collisionAvoidance}
+                collisionBoundary={collisionBoundary}
+                collisionPadding={padding}
+                positionMethod={positionMethod}
+                side={side}
+                sideOffset={sideOffset}
+              >
+                <TooltipPrimitive.Popup
+                  ref={ref}
+                  data-slot="tooltip-content"
+                  className={cn(
+                    anchoredPopupTransitionClassName,
+                    "max-w-xs overflow-hidden rounded-md bg-[var(--tooltip-bg,#1a1a1a)] px-2 py-1 text-xs text-[hsl(var(--on-filled))] data-instant:transition-none",
+                    className,
+                  )}
+                  {...props}
+                >
+                  {children}
+                </TooltipPrimitive.Popup>
+              </TooltipPrimitive.Positioner>
+            );
+          }}
+        </SafeAreaCollisionPadding>
       </TooltipPrimitive.Portal>
     );
   },

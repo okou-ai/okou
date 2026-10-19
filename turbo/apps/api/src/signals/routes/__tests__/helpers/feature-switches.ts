@@ -38,10 +38,20 @@ export async function updateFeatureSwitchesForUser(
   context: TestContext,
   actor: FeatureSwitchActor,
   switches: Readonly<Record<string, boolean>>,
+  options: { readonly isolatePg?: true } = {},
 ): Promise<void> {
+  const client = options.isolatePg
+    ? (
+        await setupApp({
+          context,
+          routes: featureSwitchesRoutes,
+          isolatePg: true,
+        })
+      )(featureSwitchesContract)
+    : featureSwitchesClient(context);
   authenticateFeatureSwitchActor(context, actor);
   await accept(
-    featureSwitchesClient(context).update({
+    client.update({
       headers: authHeaders(),
       body: { switches },
     }),

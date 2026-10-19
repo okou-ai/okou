@@ -583,7 +583,7 @@ function failedMaintenancePublicationWrites(): SQL {
           "id", "user_id", "agent_id", "status", "prompt", "append_system_prompt",
           "vars", "secret_names", "storage_mounts", "launch_snapshot",
           "official_workflow_provenance", "error", "org_id", "created_at",
-          "credit_admitted", "completed_at", "runner_group", "trigger_source",
+          "completed_at", "runner_group", "trigger_source",
           "autonomy_budget", "workflow_automation_id", "model_provider",
           "model_provider_id", "model_provider_account_identity",
           "model_provider_credential_scope", "selected_model",
@@ -597,7 +597,7 @@ function failedMaintenancePublicationWrites(): SQL {
           written_attribution.run_id, input.run_user_id, NULL, 'failed',
           input.prompt, input.append_system_prompt, NULL, input.secret_names,
           NULL, input.launch_snapshot, NULL, input.error, input.run_org_id,
-          input.created_at, false, input.created_at, NULL, input.trigger_source,
+          input.created_at, input.created_at, NULL, input.trigger_source,
           input.autonomy_budget, NULL, input.model_provider, input.model_provider_id,
           NULL, input.model_provider_credential_scope, input.selected_model,
           input.model_runtime_provider, input.model_runtime_model, NULL, NULL,
@@ -1332,7 +1332,6 @@ function maintenanceRunValues(args: {
   readonly status: "pending" | "failed";
   readonly runStorageMounts: readonly PersistedStorageMount[] | null;
   readonly runnerGroup: string | null;
-  readonly creditAdmitted: boolean;
   readonly accountIdentity: string | null;
   readonly error: string | null;
 }): typeof agentRuns.$inferInsert {
@@ -1344,7 +1343,6 @@ function maintenanceRunValues(args: {
     orgId: record.orgId,
     status: args.status,
     agentId: null,
-    creditAdmitted: args.creditAdmitted,
     prompt: record.prompt,
     appendSystemPrompt: record.appendSystemPrompt,
     vars: null,
@@ -1450,7 +1448,6 @@ function maintenancePendingRunInput(
     status: "pending" as const,
     runStorageMounts: args.launch.runStorageMounts,
     runnerGroup: args.launch.runnerGroup,
-    creditAdmitted: false,
     accountIdentity: null,
     error: null,
   };

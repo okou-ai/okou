@@ -12,6 +12,195 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1038.0](https://github.com/okou-ai/okou/compare/app-v0.1037.0...app-v0.1038.0) (2026-10-19)
+
+
+### Features
+
+* **activity:** add bounded sandbox file previews ([#41074](https://github.com/okou-ai/okou/issues/41074)) ([4f0ea9f](https://github.com/okou-ai/okou/commit/4f0ea9f627c5dae7bb59f2ca8225bbec96a0d63c))
+* **activity:** stream sandbox file downloads over wss ([#40955](https://github.com/okou-ai/okou/issues/40955)) ([2276bff](https://github.com/okou-ai/okou/commit/2276bff830145270100a7ae1cadc9fa8175ec6ab))
+
+
+### Bug Fixes
+
+* **platform:** refresh activity logs in place ([#40965](https://github.com/okou-ai/okou/issues/40965)) ([d93f725](https://github.com/okou-ai/okou/commit/d93f725a0bfab0043f788149b391423f0ada97c7))
+
+
+### Refactoring
+
+* remove expired teams and discord app compatibility ([#40999](https://github.com/okou-ai/okou/issues/40999)) ([c9de2e1](https://github.com/okou-ai/okou/commit/c9de2e178f18abcdb28ae8048cb8df09909d9b71))
+* remove expired telegram legacy callback compatibility ([#41126](https://github.com/okou-ai/okou/issues/41126)) ([d9601cf](https://github.com/okou-ai/okou/commit/d9601cf97f8ff391308971b2706bc3966a202a47))
+* **vnc:** require canonical private-network metadata ([#41009](https://github.com/okou-ai/okou/issues/41009)) ([38331a6](https://github.com/okou-ai/okou/commit/38331a61885b86154b21c5585387e250bede70ae))
+
+
+### Performance Improvements
+
+* **app:** reduce sandbox download byte conversion work ([#41092](https://github.com/okou-ai/okou/issues/41092)) ([5ad8390](https://github.com/okou-ai/okou/commit/5ad8390ce72e2f421b308203e320719b720a302c))
+* **platform:** isolate vnc form validation renders ([#41031](https://github.com/okou-ai/okou/issues/41031)) ([c2aef63](https://github.com/okou-ai/okou/commit/c2aef6354cd48ee8b0e63a425fe0006362253f59))
+* reduce sidebar rendering and account fixture setup ([#41061](https://github.com/okou-ai/okou/issues/41061)) ([4a9c48f](https://github.com/okou-ai/okou/commit/4a9c48f9045fb3e3d1cb09d6f08928fbee94e7b7))
+* **ts:** reduce artifact preview and schedule fixture work ([#41064](https://github.com/okou-ai/okou/issues/41064)) ([3aae624](https://github.com/okou-ai/okou/commit/3aae624ceecfebef1440acf7b9c3f13bc2f0525c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.573.1
+    * @okouai/core bumped to 8.767.1
+    * @okouai/ui bumped to 1.15.4
+
+## [0.1037.0](https://github.com/okou-ai/okou/compare/app-v0.1036.2...app-v0.1037.0) (2026-10-17)
+
+
+### Features
+
+* **sandbox:** add bounded file reads to fs v3 ([#40931](https://github.com/okou-ai/okou/issues/40931)) ([cc0d352](https://github.com/okou-ai/okou/commit/cc0d352860e96b1f45746e30bb17112b293003e2))
+* **vnc:** publish native network setup and canonical metadata ([#40923](https://github.com/okou-ai/okou/issues/40923)) ([5108add](https://github.com/okou-ai/okou/commit/5108add25e7a403e75d73157552d52df7d1e8da0))
+
+
+### Performance Improvements
+
+* **platform:** avoid template gallery focus scans ([#40927](https://github.com/okou-ai/okou/issues/40927)) ([57c703c](https://github.com/okou-ai/okou/commit/57c703cae1bb665320f46716eb39b10fcb071bad))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.573.0
+    * @okouai/core bumped to 8.767.0
+
+## [0.1036.2](https://github.com/okou-ai/okou/compare/app-v0.1036.1...app-v0.1036.2) (2026-10-17)
+
+
+### Bug Fixes
+
+* **app:** blend activity files toolbar into workspace canvas ([#40900](https://github.com/okou-ai/okou/issues/40900)) ([5365b53](https://github.com/okou-ai/okou/commit/5365b5384fcb2a3bff5320085abc98e02c787fb8))
+
+
+### Performance Improvements
+
+* remove thread artifact list refresh paths ([#40912](https://github.com/okou-ai/okou/issues/40912)) ([432a2d9](https://github.com/okou-ai/okou/commit/432a2d9b83ba6770e66fa6d7714ed8bc6adac6e4))
+
+## [0.1036.1](https://github.com/okou-ai/okou/compare/app-v0.1036.0...app-v0.1036.1) (2026-10-17)
+
+
+### Bug Fixes
+
+* **app:** unify activity files scrolling with sticky navigation ([#40878](https://github.com/okou-ai/okou/issues/40878)) ([e1f856a](https://github.com/okou-ai/okou/commit/e1f856a7afc7b2647b49e5b5ec6780f3669f9e45))
+* **platform:** scope activity log reload notice to steps ([#40877](https://github.com/okou-ai/okou/issues/40877)) ([52c8e80](https://github.com/okou-ai/okou/commit/52c8e80e152101167dc530015ffacbe5aef28795))
+
+
+### Performance Improvements
+
+* resolve chat card posters without thread artifact lists ([#40866](https://github.com/okou-ai/okou/issues/40866)) ([0f32ccb](https://github.com/okou-ai/okou/commit/0f32ccb082949a2af8694f443936d2a0cf32f3eb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.5
+    * @okouai/core bumped to 8.766.1
+
+## [0.1036.0](https://github.com/okou-ai/okou/compare/app-v0.1035.3...app-v0.1036.0) (2026-10-17)
+
+
+### Features
+
+* **app:** add a gated inline slash hint to the composer ([#40673](https://github.com/okou-ai/okou/issues/40673)) ([8ff3d51](https://github.com/okou-ai/okou/commit/8ff3d518c92a7c43e196716712d32a78984d994b))
+
+
+### Bug Fixes
+
+* **ci:** name app source map upload after the platform release ([#40836](https://github.com/okou-ai/okou/issues/40836)) ([6d0a4a2](https://github.com/okou-ai/okou/commit/6d0a4a29f90c0c76c96caf2bb3f15a54320ead9f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.766.0
+
+## [0.1035.3](https://github.com/okou-ai/okou/compare/app-v0.1035.2...app-v0.1035.3) (2026-10-17)
+
+
+### Bug Fixes
+
+* refresh runner platform api and cli release markers ([#40789](https://github.com/okou-ai/okou/issues/40789)) ([8473d96](https://github.com/okou-ai/okou/commit/8473d964e20c44952d93d8a5bf210e65c7d6a794))
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#40811](https://github.com/okou-ai/okou/issues/40811)) ([b53e5a5](https://github.com/okou-ai/okou/commit/b53e5a5fc6437b2b15412d21a42d90344c18191f))
+* remove remaining expired compatibility from the daily cleanup backlog ([#40820](https://github.com/okou-ai/okou/issues/40820)) ([9ef42db](https://github.com/okou-ai/okou/commit/9ef42db5a3c1c8bfe040a7e41b6aafa6941d4510))
+
+
+### Performance Improvements
+
+* avoid redundant preview updates and test connector grants ([#40822](https://github.com/okou-ai/okou/issues/40822)) ([60bb4b8](https://github.com/okou-ai/okou/commit/60bb4b86402b77a50cba81bcaa5a81a333c72377))
+* defer unused chat context and stabilize ci fixtures ([#40794](https://github.com/okou-ai/okou/issues/40794)) ([302066c](https://github.com/okou-ai/okou/commit/302066cd123a9e02e6a323f983e35648011d5e11))
+* **platform:** load chat resources only when the popup opens ([#40826](https://github.com/okou-ai/okou/issues/40826)) ([bd7a111](https://github.com/okou-ai/okou/commit/bd7a11162586324540cf19c5ee841ef8dd52c4bd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.4
+    * @okouai/core bumped to 8.765.2
+
+## [0.1035.2](https://github.com/okou-ai/okou/compare/app-v0.1035.1...app-v0.1035.2) (2026-10-16)
+
+
+### Refactoring
+
+* **app:** keep business continuations in page-owned actions ([#40729](https://github.com/okou-ai/okou/issues/40729)) ([e9db5e3](https://github.com/okou-ai/okou/commit/e9db5e3e1200ad0b06331f14e5d3ebc0f118303a))
+
+## [0.1035.1](https://github.com/okou-ai/okou/compare/app-v0.1035.0...app-v0.1035.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **app:** center the office preview loading spinner ([#40700](https://github.com/okou-ai/okou/issues/40700)) ([19badfa](https://github.com/okou-ai/okou/commit/19badfa25abb133fbc4f8fa7bcf622cf523ea990))
+* **app:** retry unauthorized api requests once ([#40720](https://github.com/okou-ai/okou/issues/40720)) ([b5a44ef](https://github.com/okou-ai/okou/commit/b5a44ef267c6fa43dafdacec8a4b7228af51bd9f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.3
+    * @okouai/core bumped to 8.765.1
+
+## [0.1035.0](https://github.com/okou-ai/okou/compare/app-v0.1034.1...app-v0.1035.0) (2026-10-16)
+
+
+### Features
+
+* **app:** include custom templates in slash commands ([#40685](https://github.com/okou-ai/okou/issues/40685)) ([5c673b4](https://github.com/okou-ai/okou/commit/5c673b4757de42b7bbba75eceb972be3c7a71c20))
+* **app:** simplify chat resource popover ([#40584](https://github.com/okou-ai/okou/issues/40584)) ([b54cef2](https://github.com/okou-ai/okou/commit/b54cef25d6b2e4b60802acfbb3aa3dba92ade024))
+
+
+### Bug Fixes
+
+* **app:** align integration connection pages and restore slack auto-open ([#40641](https://github.com/okou-ai/okou/issues/40641)) ([9913258](https://github.com/okou-ai/okou/commit/9913258f0024e12dd8c078d40da60e1a87d5eb86))
+* **app:** hide home task chips after selection ([#40680](https://github.com/okou-ai/okou/issues/40680)) ([9c53c73](https://github.com/okou-ai/okou/commit/9c53c73fd5f7a0c6abe7ea5ec6c16aaf7881ca87))
+* **app:** separate google workspace and drive upload progress ([#40691](https://github.com/okou-ai/okou/issues/40691)) ([8ee7a21](https://github.com/okou-ai/okou/commit/8ee7a21eb727e84bcec34cab9798da4126dfc872))
+
+
+### Refactoring
+
+* **wallet:** migrate and require link grant metadata ([#40627](https://github.com/okou-ai/okou/issues/40627)) ([86adc57](https://github.com/okou-ai/okou/commit/86adc578e06477316a04b479d7c30043264f3e9c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.572.2
+    * @okouai/core bumped to 8.765.0
+
 ## [0.1034.1](https://github.com/okou-ai/okou/compare/app-v0.1034.0...app-v0.1034.1) (2026-10-16)
 
 

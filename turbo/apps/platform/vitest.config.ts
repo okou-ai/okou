@@ -1,9 +1,10 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 import path from "path";
+import { sandboxFileDownloadWorkerPlugin } from "./scripts/sandbox-file-download-worker.ts";
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), sandboxFileDownloadWorkerPlugin()],
   resolve: {
     alias: {
       // Hosted Clerk components render through the Clerk core in a real

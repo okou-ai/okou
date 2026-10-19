@@ -1,6 +1,6 @@
 [package]
 name = "runner"
-version = "0.233.13"
+version = "0.234.10"
 edition.workspace = true
 
 [dependencies]
@@ -64,6 +64,7 @@ name = "cli_package_build"
 path = "cli_package.rs"
 
 [dev-dependencies]
+sandbox-firecracker = { workspace = true, features = ["test-support"] }
 runner-remote = { workspace = true, features = ["test-support"] }
 hyper = { workspace = true, features = ["server", "http1", "http2"] }
 hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }

@@ -46,6 +46,7 @@ import { buildGenerationTemplatePrompt } from "../../lib/generation-template-pro
 import { now, nowDate } from "../../lib/time";
 import type { AuthContext } from "../../types/auth";
 import { organizationAuthContext$ } from "../auth/auth-context";
+import { apiStartTime$ } from "../context/hono";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
 import {
@@ -195,6 +196,11 @@ interface NormalSendArgs {
    * send and its model selection share one read.
    */
   readonly orgPlanCapabilities?: OrgPlanCapabilities | null;
+  /**
+   * Route-entry time of `POST /api/chat/events`. A run picked by this request
+   * for this input is measured from it; other callers omit it.
+   */
+  readonly requestReceivedAt?: number;
 }
 type NormalSendFailure =
   | ReturnType<typeof notFound>
@@ -212,7 +218,6 @@ interface CreatedChatEventResponse {
   readonly replayed?: boolean;
   readonly status: 201;
   readonly body: {
-    readonly runId: null;
     readonly threadId: string;
     readonly createdAt: string;
   };
@@ -255,7 +260,7 @@ function acceptedSendResponse(
   return {
     replayed,
     status: 201,
-    body: { runId: null, threadId, createdAt: createdAt.toISOString() },
+    body: { threadId, createdAt: createdAt.toISOString() },
   };
 }
 function normalSendTriggerSource(
@@ -820,6 +825,9 @@ function normalSendRequestFacts(
       modelSelection: event.modelSelection,
       requiredOfficialWorkflowIds: args.requiredOfficialWorkflowIds,
       captureNetworkBodies: Boolean(args.body.captureNetworkBodies),
+      ...(args.requestReceivedAt === undefined
+        ? {}
+        : { requestReceivedAt: args.requestReceivedAt }),
     },
   };
 }
@@ -2374,7 +2382,6 @@ const handleRecallSend$ = command(
     return {
       status: 201 as const,
       body: {
-        runId: null,
         threadId: args.body.threadId,
         createdAt: result.createdAt.toISOString(),
       },
@@ -2446,7 +2453,6 @@ const handleInterruptSend$ = command(
     return {
       status: 201 as const,
       body: {
-        runId: null,
         threadId: args.body.threadId,
         createdAt: result.createdAt.toISOString(),
       },
@@ -2485,6 +2491,7 @@ export const handleSendChatEvent$ = command(
         auth: auth.tokenType === "oauth" ? { ...auth, clientName } : auth,
         userId: auth.userId,
         orgId: auth.orgId,
+        requestReceivedAt: get(apiStartTime$),
       },
       signal,
     );

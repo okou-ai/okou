@@ -197,6 +197,38 @@ pub async fn write_private_new(path: &Path, content: &[u8], context: &str) -> io
     Ok(())
 }
 
+/// Read bounded contents after the caller's descriptor validation.
+/// The caller retains its public error classification and decoding policy.
+pub(crate) async fn read_bounded_contents(
+    file: tokio::fs::File,
+    path: &Path,
+    max_bytes: u64,
+    context: &str,
+) -> io::Result<Vec<u8>> {
+    use tokio::io::AsyncReadExt;
+
+    let read_limit = max_bytes.checked_add(1).ok_or_else(|| {
+        io::Error::other(format!(
+            "{context} {} read limit is too large",
+            path.display()
+        ))
+    })?;
+    let mut limited = file.take(read_limit);
+    let mut contents = Vec::new();
+    limited
+        .read_to_end(&mut contents)
+        .await
+        .map_err(|error| wrap_io(error, format!("read {context} {}", path.display())))?;
+    if contents.len() as u64 > max_bytes {
+        return Err(io::Error::other(format!(
+            "{context} {} exceeds {} bytes",
+            path.display(),
+            max_bytes
+        )));
+    }
+    Ok(contents)
+}
+
 /// Publish a private file through same-directory atomic replacement on Unix.
 ///
 /// The caller remains responsible for parent-directory trust. This operation

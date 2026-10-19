@@ -1,5 +1,390 @@
 # Guarded idle terminal fixture
 
+## Later parking after a fixed batch capture
+
+`native_fixed_batch_preserves_later_exact_and_blank_inventory` runs four cases:
+fresh/snapshot factories, each with a distinct later exact or blank Guest. The
+incoming Guest is prepared through actual GuestRPC and physically parked before
+the original batch starts, retaining its separate full lease outside the pool.
+Only after the original captured entry reaches held accepted durable tail IO is
+the incoming owner inserted through guarded pool insertion.
+
+Both full leases and required cleanup growth remain owned while the pool/status
+locks and original IO are held. An independent actual memory read completes;
+pool release permits an HTTP 204 acknowledged heartbeat with both allocations.
+Releasing only IO permits complete durable 64-MiB saving and positive original
+backing exit. Another heartbeat observes only the later lease while original
+batch completion still waits for status. After status release, the original
+report completes exactly one selection, and the actual regular status file
+contains only the later live exact identity/key or blank identity. A separate
+guarded batch must retire that later entry before joined shutdown and zero
+accounting. Complete original required-home restoration remains mandatory.
+
+Use the existing supplied artifacts/policy and bounded P1 collector to invoke
+this exact ignored entry. Include the exact raw
+`native_later_parking_policy_json` and `native_terminal_artifacts` in metadata,
+and retain the original matching `snapshot-preparation.json`. Validate with:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/later_parking_report.py <p1-directory>
+```
+
+Default Cargo runs synthetic real-file/CLI refusal regressions and an ordinary
+owner test preserving both required homes. Actual KVM/NBD execution is opt-in
+and requires verified committed source, frozen Host and matching inputs. The
+blank wire status contains only its sandbox identity; profile compatibility is
+checked through the prepared fixture. This corpus does not cover same-key/ABA
+replacement, concurrent preparation cancellation, complete residency, calibrated
+bounds, physical relief, OOM or production protection. Other C/D acceptance
+remains in #39998.
+
+## Final status write failure
+
+`native_status_failure_preserves_saving_and_retries_current_inventory` runs fresh
+and matching-snapshot factories. It first publishes the original parked inventory,
+then positively observes held accepted saving and pool/status contention. An
+independent host-memory read and acknowledged heartbeat must progress while the
+original full lease and required IO remain owned.
+
+After complete durable 64-MiB tail IO, the final status write must positively wait
+for the held status lock while accounting is joined/zero and another heartbeat
+completes. Only the invocation's private `status.json` destination is then replaced
+with a directory. The original batch must return an actual `Write` error with all
+physical work completed and `is_complete=false`. Repairing that private fault and
+calling the existing current-snapshot retry must publish empty inventory without
+resurrecting the original parked sandbox or rewriting the failed report. Complete
+original home restoration and joined dependencies remain required.
+
+Use the existing supplied artifacts/policy and bounded P1 collector with this exact
+ignored entry. Metadata must include `native_status_failure_policy_json` as the
+raw policy text and `native_terminal_artifacts`; retain the original
+`snapshot-preparation.json`. Validate the original files with:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/status_failure_report.py <p1-directory>
+```
+
+Default Cargo runs synthetic real-file/CLI consumer regressions. Actual KVM/NBD
+execution is opt-in, requires submitted-source/Host/input verification and uses
+only owned disposable resources. This is a deterministic private status-write
+failure, not a status timeout, stalled storage or provider panic. It does not
+establish complete residency, calibrated resource bounds, physical relief, OOM or
+production protection. Remaining C/D acceptance stays in #39998.
+
+## Cleanup observer loss
+
+`native_observer_loss_keeps_required_saving_and_independent_progress` runs four
+cases: dropping or panicking the external completion observer, each with fresh
+and matching-snapshot factories. The original batch is positively Pending at the
+accepted physical IO boundary before its observer is lost. The independently
+owned required saving keeps the exact original full lease and cleanup growth;
+tracker/accounting shutdown remains Pending until the actual work finishes.
+
+The corpus holds a real pool/status boundary while an independent host-memory
+read completes. After pool release, the real heartbeat controller/provider must
+receive HTTP 204 while status and physical IO remain held. Releasing only the
+owned IO gate permits the complete durable 64-MiB tail; final status publication
+must then poll Pending while accounting joins and another heartbeat completes.
+Status release precedes joined tracker/reporting shutdown. Inherited complete
+home restoration, original backing exit and dependency cleanup remain required.
+
+Use the existing artifact and supplied memory-policy inputs, selecting this exact
+ignored entry through bounded P1. Include `native_observer_loss_policy_json` as
+the exact raw policy file text and the existing `native_terminal_artifacts`
+manifest. Retain the original `snapshot-preparation.json` alongside P1 files.
+Validate the complete files with:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/observer_loss_report.py <p1-directory>
+```
+
+Default Cargo runs the real-file/CLI report regressions. Actual KVM/NBD execution
+remains opt-in and requires matching submitted-source/Host/input verification.
+The failure is the external observer's panic or disappearance; it does not claim
+provider failure, stalled storage, complete residency, a calibrated resource
+envelope, physical memory relief or production protection. Other failure families
+and final measurement acceptance remain in #39998.
+
+## Current P1 diagnostic contract
+
+New native runs consume `runner-memory-calibration-v2` from the matching
+[owned collector](../../../../.github/scripts/runner-memory-calibrate.md).
+Every process sample carries PID/start generation, explicit residency state and
+reason, the observation clock and any positively observed pidfd-exit clock.
+The shared reader rejects contradictory diagnostics, dropped captured identities,
+changed generations or revoked/changed positive exit observations across samples
+and reports per-phase `missing_residency_reasons`. Missing or raced reads remain
+distinct from positive process exit; both retain null bytes and incomplete
+residency. Collector exit
+observations never replace the original Guest/backing, accepted-I/O or lease
+completion witnesses and establish no physical memory relief.
+
+Historical v1 bundles retain their original frozen consumers and source/producer
+identities. Do not feed them to the current reader as new v2/current-source proof.
+This format change alone does not establish complete residency, calibrated
+envelopes, bootstrap provenance, native Guest execution or production protection.
+
+## Snapshot creation input record
+
+Current native artifact manifests also require `snapshot_preparation_sha256`.
+The existing ignored `prepare_native_terminal_snapshot` entry now produces
+`snapshot-preparation.json` in its new snapshot directory, after the real
+snapshot creator succeeds. Use the same exact-source test executable for
+preparation and the measured cases, compiled with `OKOU_TEST_BUILD_SOURCE_SHA`.
+The [measured corpus instructions](#measured-terminal-corpus) still define the
+immutable disposable inputs, explicit environment and complete native profile.
+
+The record format is `native-snapshot-preparation-v1`. It binds the compiled
+source and actual producer executable, Firecracker/kernel/rootfs bytes, original
+snapshot creation ID, 2-vCPU/4096-MiB/16384-MiB profile and every required snapshot
+output, including the exact production completion marker. Preparation hashes the
+inputs before creation and rechecks them after hashing all outputs. Changed or
+non-regular files, incomplete output and an existing record fail publication.
+The record is published atomically without overwrite after its file is synced;
+the output directory is then synced. Keep partial failures for investigation;
+never synthesize a successful record from their remaining files.
+
+Put the SHA-256 of the exact record bytes in `snapshot_preparation_sha256` and
+retain those bytes in the measured bundle. After the bounded collector completes,
+copy the record into its invocation-owned output before running any report:
+
+```sh
+cp -- "$OWNED_NATIVE_SNAPSHOT_DIR/snapshot-preparation.json" \
+  "$P1_OUTPUT_DIRECTORY/snapshot-preparation.json"
+```
+
+Native preflight and the shared report reader both require the same hash and
+matching source, executable, inputs, profile, ID and output inventory. Record
+reads are bounded to 64 KiB and reject symlinks, non-regular files, duplicate or
+unknown fields, invalid types and invalid clocks. Creator monotonic/wall clocks
+and boot identity describe that preparation; clocks from different hosts/boots
+are not implicitly comparable. The production snapshot format and completion
+marker are unchanged.
+
+The shared phase report exposes `snapshot_creation_inputs_verified=true` and
+`bootstrap_provenance_verified=false`. This record verifies the snapshot link;
+it does not identify the rootfs/bootstrap/Guest producers, calibrate residency or
+prove physical relief, P2 settlement or production protection. Immutable owned
+inputs and retained source/compiler logs remain necessary; unsigned local
+receipts are not supply-chain signatures or adversarial tamper resistance.
+Historical bundles without this record retain their original frozen consumers.
+Do not retrofit them with invented producer records or feed them to current
+readers as new-source acceptance.
+
+## Pressure shutdown with independently accepted readers
+
+`native_pressure_shutdown_retains_independent_accepted_reads` holds two actual
+guarded File producers after 1 MiB of the original immutable 4 GiB snapshot.
+With an actual observation request held, a retained pressure shutdown must remain
+Pending. The stopped controller refuses a new reader while both original drains
+remain Pending and acknowledged heartbeat/independent host observation complete.
+Releasing the observation joins controller/sampler shutdown while both readers
+still retain two full allowances. Separate physical releases/joins yield cancelled
+exactly-1-MiB outcomes and 2→1→0 allowances with actual fresh settlement samples.
+All dependencies join before original required saving, exact backing exit and
+durable tail. Failure cleanup retains the same shutdown future and joins accepted
+work; timeout remains failure.
+
+Metadata requires `native_read_stop_policy_json`, `native_read_stop_inputs_json`,
+`native_read_stop_snapshot_bytes` (4294967296), and the existing exact original
+terminal artifact/source identities. Validate both fresh and matching-snapshot
+modes with:
+
+```bash
+python3 crates/runner/tests/guarded_idle_native/read_stop_report.py <p1-directory>
+```
+
+This separate `native-read-stop-report-v1` does not change existing reports or
+production startup. Original supplied policy/P1 guards, immutable data and full
+Guest lease remain mandatory. Controller stop or sampler join grants no physical
+memory credit. Production P4, full/cold residency, calibration, provenance,
+broader races/stalled storage, useful memory relief and OOM protection remain
+unverified. Ordinary Cargo runs the Supervisor real-file composition and the
+strict consumer's persisted-file/CLI acceptance/refusal tests without KVM.
+
+## Accepted read revocation through stale recovery
+
+`native_read_revocation_retains_accepted_custody_through_recovery` holds two
+guarded readers after each physically reads 1 MiB of the original immutable
+4 GiB `memory.bin`. It holds an actual source request until its unchanged last
+sample expires to `Unknown(Stale)`, retaining that state through an acknowledged
+heartbeat and independent host observation. Dropped/replacement drain observers
+remain Pending while the original full allowances remain held.
+
+Real sustained observations then restore Ready. A third fitting reader completes
+all 4 GiB while the two old physical producers remain held. Releasing the old
+readers separately must yield cancelled results with exactly 1 MiB each, without
+explicitly cancelling their owners on the successful path. Accounting retains
+two, then three, two, one and zero full allowances until the corresponding
+physical joins. All reporting/pressure/provider/peer dependencies join before
+original Guest saving, backing exit and durable tail verification. Fresh and
+matching-snapshot modes retain the original supplied policy and P1 guards.
+
+Metadata requires `native_read_revocation_policy_json`,
+`native_read_revocation_inputs_json`, `native_read_revocation_snapshot_bytes`
+(4294967296), and the existing original terminal artifact/source identities.
+Validate both modes with:
+
+```bash
+python3 crates/runner/tests/guarded_idle_native/read_revocation_report.py <p1-directory>
+```
+
+This separate `native-read-revocation-report-v1` format does not change the prior
+paired-reader report. Production startup remains unguarded and P4 owns its
+installation/calibration/full-runtime/overlap gates. This witnessed stale window
+does not prove every transient/coalesced notification race, stalled storage,
+complete cold residency, useful memory relief or production OOM protection.
+
+## Concurrent guarded snapshot readers
+
+`native_shared_reads_retain_independent_physical_custody` runs two guarded
+readers of the same immutable original 4 GiB `memory.bin`, sharing the original
+pressure/P2 authority in fresh and matching-snapshot Guest factories. Both wait
+under initial Unknown, then actual sustained Ready admits two complete declared
+growth allowances. Existing test-only checkpoints hold each producer after its
+actual first 1 MiB; they do not model stalled storage.
+
+Cancelling the first reader leaves its dropped/replacement drain observers
+Pending while an acknowledged API heartbeat and actual host observation finish.
+Both allowances remain held. Positive release and physical join settle only the
+first allowance; the second producer stays held and independently completes all
+4 GiB after its own release. Every reader, sampler and reporting dependency joins
+before original saving, complete home data, exact backing exit and durable
+64 MiB tail. Failure cleanup also releases owned gates and joins accepted work.
+
+Select this ignored test with the bounded P1 invocation below, supplying metadata
+`native_shared_reads_policy_json`, `native_shared_reads_inputs_json` and
+`native_shared_reads_snapshot_bytes` (4294967296), plus the original terminal
+artifact metadata. Validate both cases with:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/shared_reads_report.py <p1-directory>
+```
+
+Ordinary Cargo runs the shared-headroom and independent-cancellation real-file
+regressions and the report's real-file/CLI refusal checks. This is component
+composition evidence: production startup still uses unguarded `spawn`.
+Production startup/P2 installation, full/cold residency, calibration, unknown
+bootstrap provenance, broader failure/race coverage, useful memory savings and
+OOM protection retain their existing parent/P4 gates.
+
+## Accepted actual snapshot-read cancellation
+
+`native_read_cancellation_retains_actual_io_through_drain` runs the production
+startup and guarded runtime readers on the immutable original 4 GiB `memory.bin`,
+in fresh and matching-snapshot Guest factories. A non-default test-support
+checkpoint runs after the actual File reader returns its first 1 MiB. It holds
+that same physical producer on an invocation-owned blocking Unix read; the
+storage File read itself is not claimed to be stalled.
+
+Startup remains unguarded under held Unknown. Runtime is admitted under actual
+sustained Ready using the original P2 authority. Cancellation must leave both a
+first drain observer Pending and, after dropping it, a second drain Pending.
+Actual independent host observation and acknowledged API heartbeat finish while
+the release byte remains withheld. The original full lease/data remain owned;
+the guarded operation retains its original registration, declared full growth
+and tracked physical owner. Only actual checkpoint release, positive physical
+drain and fresh phase settlement permit the cancelled exact-byte outcome and
+zero remaining P2 custody. Cancellation supplies no numerical memory credit.
+
+All readers, sampler, heartbeat/provider and peer join before required original
+saving. The inherited complete immutable snapshot hash, original home bytes,
+full lease, exact backing wait, durable 64 MiB tail and factory/runtime dependency
+joins remain mandatory. Every failure also releases owned gates and positively
+joins accepted work; timeout remains failure.
+
+Select the ignored test with the exact-source bounded P1 invocation below.
+Metadata additionally requires `native_read_cancellation_policy_json`,
+`native_read_cancellation_inputs_json` and
+`native_read_cancellation_snapshot_bytes` (4294967296). Validate both cases:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/read_cancellation_report.py "$P1_OUTPUT_DIRECTORY"
+```
+
+Ordinary Cargo runs actual-file checkpoint/ownership regressions and the
+real-file/CLI refusal consumer without KVM. Accepted Guest/provider creation,
+rollback and late results plus final ancestor reconciliation remain #40760
+under #40355. Full production Reactor/P2 installation, stalled-storage progress,
+numerical relief, full/cold residency, calibrated envelopes, unknown original
+template provenance and OOM protection remain unverified.
+
+## Native Critical contention progress
+
+`native_critical_records_independent_contention_progress` supplements the actual
+three-wave Critical corpus in fresh and matching-snapshot factories. Startup
+completely reads the original 4 GiB under held Unknown. Runtime preparation stays
+suppressed throughout actual Critical observations from the supplied policy.
+
+The pressure owner's actual initial pool-lock future must poll Pending before
+independent host observation completes. After pool release and the first blank's
+joined cleanup, its actual status publication must poll Pending; acknowledged API
+heartbeat and new host observation complete while that status lock remains held.
+This preserves production cleanup-before-publication ordering.
+
+After two resolved single-entry waves, the original required durable-tail IO stays
+blocked in the kernel. A separate fitting Fresh foreground caller positively waits
+on the held pool and status locks, then completes real Guest RPC, its original P2
+phase and exact new-backing exit while the original full lease and IO gate remain
+held. Observation completes during the pool wait; acknowledged heartbeat and new
+observation complete during status and IO waits. Only then is the original IO
+released. The final wave requires a new actual post-completion sample and all
+original physical, data, durable-tail and producer joins.
+
+Select the ignored test with the exact-source bounded P1 invocation below.
+Metadata additionally requires `native_critical_policy_json`,
+`native_critical_inputs_json` and `native_critical_snapshot_bytes` (4294967296).
+Validate both cases and their inherited complete physical proof:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/critical_progress_report.py "$P1_OUTPUT_DIRECTORY"
+```
+
+Ordinary Cargo runs the real-file/CLI refusal contracts and actual pool Pending
+observer regression without KVM. The supplied policy classifies actual host reads
+as Critical without inducing host pressure. Numerical relief, full production
+Reactor/P2 installation, full/cold residency, calibrated envelopes, original
+template provenance and OOM protection remain unverified. Accepted cancellation,
+provider late results and final ancestor reconciliation remain separate.
+
+## Native incoming inventory progress
+
+`native_incoming_records_reader_heartbeat_and_cleanup_contention` runs actual
+replacement, exact restoration and aged replenishment in fresh and matching
+snapshot factories. Every case completely reads the original 4 GiB at startup
+under Unknown, then through the guarded runtime reader under sustained actual
+Ready while the public incoming caller still waits on the held pool.
+
+After pool release, the exact StatusTracker lock observer proves the status
+publication is Pending. Replacement/restoration compose public insertion with
+public status publication; aged uses its actual internal publication. Independent
+host observation and acknowledged API heartbeat finish while status remains
+held, then again while original required saving waits on the real kernel IO gate.
+
+Replacement retains separate new and original full leases. Restoration returns
+the exact original reservation and retires a distinct competing blank. Aged joins
+the old original cleanup and durable tail before its new blank factory creation;
+the receipt observes that actual factory boundary. Every new preparation settles
+its original Fresh P2 phase, and both original and new backing exits are positively
+joined. The original full lease stays active through complete original data,
+durable 64 MiB tail and producer/dependency joins before main releases it.
+
+Select the ignored incoming test with the exact-source bounded P1 invocation
+below. Metadata additionally requires `native_incoming_policy_json`,
+`native_incoming_inputs_json` and `native_incoming_snapshot_bytes` (4294967296).
+Validate all six cases and the inherited complete physical proof:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/incoming_report.py "$P1_OUTPUT_DIRECTORY"
+```
+
+Ordinary Cargo executes its real-file/CLI refusal contracts. Independent Critical
+contention/mapping remains separate, as do accepted cancellation and provider late
+results. Full production Reactor/P2 installation, numerical relief, full/cold
+residency, calibrated envelopes, original template provenance and OOM protection
+remain unverified. No physical credit is inferred from insertion or logical lease
+custody.
+
 ## Native logical substitution progress
 
 `native_logical_records_reader_heartbeat_and_cleanup_contention` starts with the
@@ -372,11 +757,14 @@ experiment metadata; it does not establish a calibrated memory envelope.
 
 `OKOU_TEST_TERMINAL_ARTIFACTS` names a JSON object with `source_sha`,
 `test_binary_sha256`, `firecracker_sha256`, `kernel_sha256`, `rootfs_sha256`, `snapshot_id`,
-`snapshot_files` (filename to SHA-256) and `policy_sha256`. All hashes are lower-case
-hexadecimal. The test verifies the compiled source value and hashes its actual
+`snapshot_files` (filename to SHA-256), `snapshot_preparation_sha256` and
+`policy_sha256`. All hashes are lower-case hexadecimal. The test verifies the
+compiled source value and hashes its actual
 executable and supplied artifacts before starting a VM. Preserve the source
 checkout and build log alongside the manifest; the compiled value is not a
 signature proving where a rootfs was produced.
+See [Snapshot creation input record](#snapshot-creation-input-record) for the
+required record's generation and transport into the P1 bundle.
 
 The measured factory adds an explicit **fixture** post-exit tail: it writes and
 syncs 64 MiB in 1 MiB chunks, then reads and verifies every byte. The original full
@@ -596,6 +984,84 @@ suppression, paced recovery and cancellation/late-result integration remain
 #39998 and the parents/P4. No calibrated RAM relief, OOM protection or production
 composition-root activation follows from these supplied test-policy observations.
 
+## Actual create cancellation and rollback
+
+`native_create_cancellation_retains_actual_transaction_through_rollback` selects
+`CreateCancellation-fresh` and `CreateCancellation-snapshot`. It creates the
+actual provider home image, reads its complete 1 KiB ext4 superblock, and holds
+the original transaction inside a separate blocking Unix read. The non-default
+`sandbox-firecracker/test-support` checkpoint is invocation-owned; default
+production factories expose no checkpoint. This establishes accepted physical
+creation custody after real file preparation, without claiming stalled storage.
+
+Cancellation must leave both original and creating full leases and the same P2
+Fresh allowance alive through positively Pending dropped/replacement observers,
+foreground CPU admission, an acknowledged heartbeat and an independent actual
+host-memory read. Positive workspace deletion is observed before the final
+custody drops. No new Guest is returned or published. The cancelled Fresh row
+remains registered and uncertain with its entire original growth allowance,
+including at P2 shutdown; cleanup is not numerical memory credit. The existing
+original immutable snapshot/home, exact backing exit, durable 64 MiB tail,
+restored original data and all provider/factory/runtime joins remain required.
+
+Use the existing optional input file and supply exact raw metadata fields
+`native_create_cancellation_policy_json`,
+`native_create_cancellation_inputs_json`,
+`native_create_cancellation_snapshot_bytes` and `native_terminal_artifacts`.
+Validate all bounded P1 files with:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/create_cancellation_report.py <p1-directory>
+```
+
+The report checks actual superblock bytes/hash, distinct new workspace identity,
+original source/input identity, fresh sustained observations, cancellation and
+cleanup clocks, original full resources, pending observers and preserved Fresh
+uncertainty. Real-file/CLI refusal tests run in default CI; actual KVM/NBD remains
+opt-in. This completes only #40786. Returned actual Guest/late results (#40787)
+and post-merge reconciliation (#40788), production activation, numerical relief,
+full residency, calibrated envelopes, unknown bootstrap provenance and OOM
+protection remain open under #40760 and the delivery parents.
+
+## Actual returned Guest cancellation and late cleanup
+
+`native_returned_guest_cancellation_retains_actual_stages_and_late_cleanup`
+selects actual successful start, home-mount RPC and reusable park, each in fresh
+and matching-snapshot factories. Before these six cases accept creation, a real
+pool acquisition must poll Pending, cancel under foreground CPU preemption and
+join while the pool remains held, without entering the provider or P2.
+
+The feature-only, invocation-owned checkpoint holds a separate Unix read after
+the actual stage succeeds. It retains the exact returned Guest, ext4 home UUID
+and backing generation. Draining cancellation, dropped and replacement Pending
+observers, foreground CPU, acknowledged heartbeat and independent host observation
+must preserve both full leases and original Fresh growth. Releasing the stage
+must join a late cancelled success without preparing or publishing inventory.
+
+Invalid publication enters the existing required cleanup engine. Actual factory
+destruction, exact backing wait and workspace absence precede a second owned IO
+checkpoint. Heartbeat and observation progress while required tail accounting,
+uncertain Fresh growth and both full leases remain held. Only positive cleanup
+completion releases the new lease; the original lease/data survive through all
+producer joins and the inherited original saving, complete snapshot hash, durable
+64 MiB tail and exact original backing exit. P2 close retains the cancelled Fresh
+row and its complete growth; no numerical credit is inferred.
+
+Supply `native_returned_guest_policy_json`, `native_returned_guest_inputs_json`,
+`native_returned_guest_snapshot_bytes` and the original terminal artifact metadata.
+The nine ordered phases per case are checked with the inherited physical proof:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/returned_guest_report.py <p1-directory>
+```
+
+Default Cargo executes the real-file/CLI refusal contract. KVM/NBD execution
+remains opt-in. Checkpoints establish late result custody, not stalled storage or
+Guest transport. This completes only #40787; #40788 still requires both merges
+before final ancestor reconciliation. Production Reactor/P2 activation, full/cold
+residency, calibrated envelopes, unknown original bootstrap provenance, numerical
+relief and OOM protection remain unverified.
+
 ## Native observation gaps and recovery
 
 For a bounded native run using the local profile, optimize the verification hash
@@ -604,7 +1070,7 @@ dependency while retaining complete artifact and snapshot byte checks:
 ```sh
 OKOU_TEST_BUILD_SOURCE_SHA="$(git rev-parse HEAD)" \
   cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \
-  --config 'profile.local.package."sha2@0.11.0".opt-level=3' \
+  --config 'profile.local.package."sha2@0.11.1".opt-level=3' \
   -p runner --test guarded_idle_native --no-run --message-format=json
 ```
 

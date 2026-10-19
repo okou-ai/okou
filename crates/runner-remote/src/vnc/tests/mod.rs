@@ -1,11 +1,13 @@
+mod active_check;
 mod authority_cache;
 mod boundaries;
 mod delivery;
 mod diagnostics;
-mod harness;
+pub(crate) mod harness;
 mod history;
 mod list;
 mod list_lifecycle;
+pub(crate) mod native;
 mod notifications;
 mod observations;
 pub(crate) mod peer;
@@ -316,7 +318,7 @@ async fn malformed_or_cross_paired_credentials_fail_before_dns_or_connect() {
 }
 
 #[tokio::test]
-async fn prepared_native_routes_fail_before_network_or_session_admission() {
+async fn malformed_native_rfb_and_kdc_fail_before_network_or_session_admission() {
     for (kind, kdc) in [
         ("cloudflare_access", false),
         ("tailscale", false),
@@ -333,6 +335,7 @@ async fn prepared_native_routes_fail_before_network_or_session_admission() {
         } else if !kdc {
             transport["originTls"] = serde_json::Value::Null;
         }
+        transport["configId"] = json!("invalid-config-id");
         let mut response = json!({
             "outcome":"resolved_transport", "host":"vnc.example.test", "port":5900,
             "generation":7, "serverName":"vnc.example.test", "transport":transport,
@@ -355,7 +358,7 @@ async fn prepared_native_routes_fail_before_network_or_session_admission() {
                     "ticketLifetimeSeconds":1200,"renewableLifetimeSeconds":7200}
             });
         }
-        // The mock also verifies that only installed Direct/SSH profiles were advertised.
+        // The exact installed declaration includes independently authorized native KDC tuples.
         let resolve = h.resolve_response(response).await;
         assert_eq!(
             h.start("shared").await.result(),
@@ -401,6 +404,7 @@ async fn denied_changed_and_failed_authority_admission_closes_before_any_input()
 #[tokio::test]
 async fn unsafe_dns_answer_rejects_without_connecting() {
     let mut h = Harness::new().await;
+    h.run.enable_diagnostics(&h.runtime).await;
     let resolve = h.resolve().await;
     let _check = h.check("valid", 200).await;
     let public = h.network.answers.lock().unwrap().first().copied().unwrap();
@@ -417,6 +421,9 @@ async fn unsafe_dns_answer_rejects_without_connecting() {
         let reply = h.start("shared").await;
         assert_eq!(reply.result()["outcome"], "failed");
         assert_eq!(reply.result()["reason"], "unsafe_destination");
+        let text = crate::test_fixtures::diagnostic_text(reply.result());
+        assert!(text.contains("VNC destination: failed."), "{text}");
+        assert!(text.contains("VNC transport: not reached."), "{text}");
         assert!(h.network.attempts.lock().unwrap().is_empty());
     }
     resolve.assert_calls_async(2).await;
@@ -426,6 +433,7 @@ async fn unsafe_dns_answer_rejects_without_connecting() {
 #[tokio::test]
 async fn session_limits_apply_per_run_and_host_and_close_returns_capacity() {
     let mut h = Harness::new().await;
+    h.run.enable_diagnostics(&h.runtime).await;
     let resolve = h.resolve().await;
     let _check = h.check("valid", 200).await;
     let mut second = TestRun::new(&h.runtime);
@@ -434,10 +442,11 @@ async fn session_limits_apply_per_run_and_host_and_close_returns_capacity() {
     mode(&h, 1).await;
     h.start("shared").await.session();
     mode(&h, 1).await;
-    assert_eq!(
-        h.start("shared").await.result()["reason"],
-        "resource_exhausted"
-    );
+    let limit = h.start("shared").await;
+    assert_eq!(limit.result()["reason"], "resource_exhausted");
+    let text = crate::test_fixtures::diagnostic_text(limit.result());
+    assert!(text.contains("VNC admission: failed."), "{text}");
+    assert!(text.contains("VNC credential: not reached."), "{text}");
     for _ in 0..2 {
         second
             .request(

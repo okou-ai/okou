@@ -23,8 +23,7 @@ runner_image_validate_target "$TARGET_TRIPLE"
 [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]] || fail "invalid source SHA"
 [[ "$GITHUB_RUN_ID" =~ ^[1-9][0-9]*$ && "$PRODUCER_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || fail "invalid producer identity"
 case "$TEST_NAME" in
-  host_cpu_fairness) profile=release; profile_args=(--release) ;;
-  guest_rpc) profile=ci; profile_args=(--profile ci) ;;
+  host_cpu_fairness|guest_rpc) profile=ci; profile_args=(--profile ci) ;;
   *) fail "unsupported integration test: $TEST_NAME" ;;
 esac
 
@@ -68,7 +67,8 @@ prepare_r2() {
 
 r2_put() {
   local key=$1 body=$2 content_type=$3
-  if ! AWS_MAX_ATTEMPTS=1 AWS_RETRY_MODE=standard AWS_CLI_ERROR_FORMAT=json \
+  # The three-attempt limit includes the initial request.
+  if ! AWS_MAX_ATTEMPTS=3 AWS_RETRY_MODE=standard AWS_CLI_ERROR_FORMAT=json \
     AWS_PAGER='' AWS_CLI_AUTO_PROMPT=off \
     timeout --kill-after=5s 120s aws s3api put-object \
       --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \

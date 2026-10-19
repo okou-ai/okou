@@ -15,28 +15,11 @@ import {
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { pgTextDecoder } from "../../lib/db-structured-result";
+import { enteringNetworkConfig } from "./network-config-binding";
 import type {
   PreparedSshConnectionCreation,
   PreparedSshConnectionUpdate,
 } from "./ssh-connection.service";
-
-// Publish new reference-set members without changing logical config metadata.
-// Retained members publish through their actual Host update instead.
-// Drizzle's sessionless builder needs a schema-owned DML leaf.
-export function enteringSshNetworkConfig(
-  qb: QueryBuilder,
-  alias: string,
-  provider: "cloudflare_access" | "tailscale",
-  predicate: SQL,
-) {
-  const config =
-    provider === "tailscale" ? tailscaleConfigs : cloudflareAccessConfigs;
-  return qb
-    .$with(alias, { id: config.id })
-    .as(
-      sql`UPDATE ${config} SET ${sql.identifier(config.name.name)} = ${config.name} WHERE ${predicate} RETURNING ${config.id}`,
-    );
-}
 
 export function selectedSshNetworkConfig(
   qb: QueryBuilder,
@@ -49,7 +32,7 @@ export function selectedSshNetworkConfig(
   if (entering === undefined) {
     throw new Error("SSH network entry predicate is missing");
   }
-  const entered = enteringSshNetworkConfig(
+  const entered = enteringNetworkConfig(
     qb,
     `${alias}_entered`,
     provider,
@@ -197,7 +180,7 @@ export function createSshCreationReads(
     args,
     exists(qb.select({ id: ready.id }).from(ready)),
   );
-  const access = enteringSshNetworkConfig(
+  const access = enteringNetworkConfig(
     qb,
     "selected_ssh_creation_access",
     "cloudflare_access",

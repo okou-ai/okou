@@ -245,7 +245,7 @@ describe("POST /api/uploads/complete", () => {
     });
   });
 
-  it("keeps a completed upload successful when realtime invalidation fails", async () => {
+  it("completes and catalogs an upload when realtime is unavailable", async () => {
     const fixture = await createRunUploadFixture({ chatThread: true });
     const fileId = randomUUID();
     addUploadObject(fixture, fileId, "realtime-independent.pdf");
@@ -268,13 +268,15 @@ describe("POST /api/uploads/complete", () => {
       contentType: "application/pdf",
       size: 1234,
     });
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      expect.stringMatching(/^chatThreadArtifactsChanged:/u),
-      null,
+    const catalog = await chat.listArtifactCatalog(fixture.actor, {
+      kind: "file",
+    });
+    expect(catalog.artifacts).toContainEqual(
+      expect.objectContaining({ title: "realtime-independent.pdf" }),
     );
   });
 
-  it("publishes completed-run uploads to their owning thread and retains files after thread deletion", async () => {
+  it("associates completed-run uploads with their owning thread and retains files after thread deletion", async () => {
     const { actor, agentId, runnerGroup } =
       await eventsFixture.entitledNativeChatActor();
     const orgId = requireOrgId(actor);
@@ -296,7 +298,6 @@ describe("POST /api/uploads/complete", () => {
     })}`;
     const fileId = randomUUID();
     addUploadObject(uploadFixture, fileId, "completed-run.pdf");
-    context.mocks.ably.publish.mockClear();
 
     const completedUpload = await chat.completeUploadWithBearer(
       bearer,
@@ -308,14 +309,16 @@ describe("POST /api/uploads/complete", () => {
       id: fileId,
       filename: "completed-run.pdf",
     });
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      `chatThreadArtifactsChanged:${run.threadId}`,
-      null,
+    const threadCatalog = await chat.listArtifactCatalog(actor, {
+      kind: "file",
+      chatThreadId: run.threadId,
+    });
+    expect(threadCatalog.artifacts).toContainEqual(
+      expect.objectContaining({ title: "completed-run.pdf" }),
     );
 
     await chat.deleteThread(actor, run.threadId);
     await flushWaitUntilForTest();
-    context.mocks.ably.publish.mockClear();
     const detachedFileId = randomUUID();
     addUploadObject(uploadFixture, detachedFileId, "deleted-thread.pdf");
     const detachedUpload = await chat.completeUploadWithBearer(
@@ -328,10 +331,6 @@ describe("POST /api/uploads/complete", () => {
       id: detachedFileId,
       filename: "deleted-thread.pdf",
     });
-    expect(context.mocks.ably.publish).not.toHaveBeenCalledWith(
-      `chatThreadArtifactsChanged:${run.threadId}`,
-      null,
-    );
     const catalog = await chat.listArtifactCatalog(actor, { kind: "file" });
     expect(catalog.artifacts).toStrictEqual(
       expect.arrayContaining([

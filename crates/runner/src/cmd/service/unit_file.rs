@@ -19,6 +19,28 @@ pub(super) const RUNNER_SERVICE_CONTROL_SUBGROUP_DIRECTIVE: &str = "DelegateSubg
 const UNIT_FILE_MODE: u32 = 0o600;
 static UNIT_STAGING_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+struct UnitStagingCleanup<'a> {
+    path: Option<&'a Path>,
+}
+
+impl<'a> UnitStagingCleanup<'a> {
+    fn new(path: &'a Path) -> Self {
+        Self { path: Some(path) }
+    }
+
+    fn disarm(mut self) {
+        self.path = None;
+    }
+}
+
+impl Drop for UnitStagingCleanup<'_> {
+    fn drop(&mut self) {
+        if let Some(path) = self.path {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
 /// Resolve a config path to an absolute path.
 pub(super) fn resolve_config_path(path: &Path) -> RunnerResult<PathBuf> {
     std::fs::canonicalize(path).map_err(|e| {
@@ -317,11 +339,13 @@ fn write_unit_file_with(
                 )));
             }
         };
+        // Acquire cleanup only after exclusive creation. Declare it after the
+        // file so earlier failures unlink staging before closing the descriptor.
+        let staging_cleanup = UnitStagingCleanup::new(&tmp);
 
         #[cfg(unix)]
         {
             if let Err(e) = file.set_permissions(std::fs::Permissions::from_mode(UNIT_FILE_MODE)) {
-                let _ = std::fs::remove_file(&tmp);
                 return Err(RunnerError::Internal(format!(
                     "set permissions on staging unit file {}: {e}",
                     tmp.display()
@@ -329,7 +353,6 @@ fn write_unit_file_with(
             }
         }
         if let Err(e) = write(&mut file, content.as_bytes()) {
-            let _ = std::fs::remove_file(&tmp);
             return Err(RunnerError::Internal(format!(
                 "write {}: {e}",
                 tmp.display()
@@ -341,13 +364,13 @@ fn write_unit_file_with(
             // Unlike short-lived dirs elsewhere in the crate, unit files live
             // in /etc/systemd/system/ which no GC path sweeps, and the staged
             // content contains Environment= secrets.
-            let _ = std::fs::remove_file(&tmp);
             return Err(RunnerError::Internal(format!(
                 "rename {} -> {}: {e}",
                 tmp.display(),
                 path.display()
             )));
         }
+        staging_cleanup.disarm();
         return Ok(());
     }
 

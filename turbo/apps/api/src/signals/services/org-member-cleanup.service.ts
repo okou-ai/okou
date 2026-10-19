@@ -23,7 +23,7 @@ import {
 } from "./agent-run-terminal-transition.service";
 import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-claim.service";
 import { eraseVncOwnerData$ } from "./vnc-owner-lifecycle.service";
-import { eraseSshOwnerData$ } from "./ssh-owner-lifecycle.service";
+import { eraseRemoteOwnerData$ } from "./remote-owner-erasure.service";
 import { deleteDiscordOrgMemberData$ } from "./discord-owner-cleanup.service";
 import { eraseMailNotifications$ } from "./mail-notification.service";
 
@@ -99,8 +99,10 @@ export const cleanupOrgMemberResources$ = command(
     signal.throwIfAborted();
     await revokeOrgMemberRunAuthority(db, args, onSlotsReleased, signal);
     signal.throwIfAborted();
+    // Keep the earlier VNC invalidation before Run revocation. Recheck both
+    // protocols here before removing the member's independent configurations.
     await set(
-      eraseSshOwnerData$,
+      eraseRemoteOwnerData$,
       { kind: "owner", orgId: args.orgId, userId: args.userId },
       signal,
     );

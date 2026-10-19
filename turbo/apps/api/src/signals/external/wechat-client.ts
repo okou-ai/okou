@@ -1,7 +1,9 @@
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
+import { isAbortError, settleIncludingAbort } from "../utils";
 import { parseWechatJson } from "./wechat-json";
 export const WECHAT_ORIGIN = "https://ilinkai.weixin.qq.com";
+const REQUEST_TIMEOUT_MS = 40_000;
 /** Only Tencent iLink HTTPS origins may receive credentials. */
 export function wechatOrigin(value: string): string {
   const url = new URL(value);
@@ -28,7 +30,36 @@ const resultSchema = z.object({
   errcode: z.number().optional(),
 });
 export class WechatSessionExpiredError extends Error {}
-export async function wechatRequest(
+export class WechatRequestError extends Error {
+  constructor(
+    readonly statusCode: number,
+    readonly ret?: number,
+    readonly errcode?: number,
+  ) {
+    super(
+      ret === undefined && errcode === undefined
+        ? `WeChat request failed (${statusCode})`
+        : `WeChat rejected the request (ret=${ret ?? 0}, errcode=${errcode ?? 0})`,
+    );
+    this.name = "WechatRequestError";
+  }
+}
+export function wechatRequest(
+  baseUrl: string,
+  path: string,
+  body: unknown | undefined,
+  token: string | undefined,
+  signal: AbortSignal,
+): Promise<unknown> {
+  return requestWechat(
+    baseUrl,
+    path,
+    body,
+    token,
+    AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
+  );
+}
+async function requestWechat(
   baseUrl: string,
   path: string,
   body: unknown | undefined,
@@ -54,10 +85,10 @@ export async function wechatRequest(
     redirect: "error",
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.any([signal, AbortSignal.timeout(40_000)]),
+    signal,
   });
   if (!response.ok) {
-    throw new Error(`WeChat request failed (${response.status})`);
+    throw new WechatRequestError(response.status);
   }
   const text = await response.text();
   if (text.length > 2_000_000) {
@@ -69,7 +100,7 @@ export async function wechatRequest(
     throw new WechatSessionExpiredError("WeChat session expired");
   }
   if ((result.ret ?? 0) !== 0 || (result.errcode ?? 0) !== 0) {
-    throw new Error("WeChat rejected the request");
+    throw new WechatRequestError(response.status, result.ret, result.errcode);
   }
   return data;
 }
@@ -193,15 +224,29 @@ export async function getWechatUpdates(
   cursor: string,
   signal: AbortSignal,
 ) {
-  return wechatUpdatesSchema.parse(
-    await wechatRequest(
+  const timeoutSignal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+  const result = await settleIncludingAbort(
+    requestWechat(
       baseUrl,
       "/ilink/bot/getupdates",
       { get_updates_buf: cursor, base_info: baseInfo },
       token,
-      signal,
+      AbortSignal.any([signal, timeoutSignal]),
     ),
   );
+  signal.throwIfAborted();
+  if (!result.ok) {
+    if (
+      timeoutSignal.aborted &&
+      (result.error === timeoutSignal.reason || isAbortError(result.error))
+    ) {
+      // An idle long poll ends without advancing the cursor. Only this
+      // request's deadline is expected; caller cancellation remains an error.
+      return null;
+    }
+    throw result.error;
+  }
+  return wechatUpdatesSchema.parse(result.value);
 }
 const wechatConfigSchema = z.object({
   typing_ticket: z.string().optional(),

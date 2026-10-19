@@ -625,6 +625,215 @@ describe("banking access request lifecycle", () => {
     return { authorization: "Bearer clerk-session" } as const;
   }
 
+  it("reuses each owner connection while keeping users and organizations separate", async () => {
+    const bdd = createBddApi(context);
+    bdd.acceptAgentStorageWrites();
+    const firstOwner = bdd.user();
+    const owners = [
+      firstOwner,
+      bdd.user({ orgId: firstOwner.orgId }),
+      bdd.user({ userId: firstOwner.userId }),
+    ];
+    const client = setupApp({ context, routes: bankingRoutes })(
+      bankingUserContract,
+    );
+    server.use(
+      finicityAuthHandler(),
+      http.post(`${FINICITY_BASE_URL}/aggregation/v2/customers/testing`, () => {
+        return HttpResponse.json(
+          { message: "Customer creation is unavailable" },
+          { status: 503 },
+        );
+      }),
+      http.post(FINICITY_CONNECT_URL, async ({ request }) => {
+        const body: unknown = await request.json();
+        if (
+          typeof body !== "object" ||
+          body === null ||
+          !("customerId" in body) ||
+          typeof body.customerId !== "string"
+        ) {
+          throw new Error(
+            "Expected a provider customer in the connect request",
+          );
+        }
+        return HttpResponse.json({
+          link: `https://connect.example.test/${body.customerId}`,
+        });
+      }),
+    );
+
+    const connectionIds: string[] = [];
+    for (const owner of owners) {
+      if (!owner.orgId) {
+        throw new Error("Banking requires an org-scoped actor");
+      }
+      const agent = await bdd.createAgent(
+        owner,
+        {
+          displayName: "Banking Connection Owner",
+          visibility: "private",
+        },
+        { isolatePg: true },
+      );
+      await updateFeatureSwitchesForUser(
+        context,
+        { userId: owner.userId, orgId: owner.orgId },
+        { [FeatureSwitchKey.Banking]: true },
+      );
+      const before = await accept(
+        client.accessRequestStatus({
+          headers: sessionHeaders(),
+          params: { agentId: agent.agentId },
+        }),
+        [200],
+      );
+      expect(before.body.connection).toBeNull();
+
+      const providerCustomerId = randomProviderId("customer");
+      server.use(
+        http.post(
+          `${FINICITY_BASE_URL}/aggregation/v2/customers/testing`,
+          () => {
+            return HttpResponse.json({ id: providerCustomerId });
+          },
+          { once: true },
+        ),
+      );
+      const initial = await accept(
+        client.createConnectSession({
+          headers: sessionHeaders(),
+          body: { agentId: agent.agentId, mode: "connect" },
+        }),
+        [200],
+      );
+      expect(initial.body.url).toBe(
+        `https://connect.example.test/${providerCustomerId}`,
+      );
+      const connected = await accept(
+        client.accessRequestStatus({
+          headers: sessionHeaders(),
+          params: { agentId: agent.agentId },
+        }),
+        [200],
+      );
+      const connectionId = connected.body.connection?.id;
+      if (!connectionId) {
+        throw new Error("Expected a publicly connected banking owner");
+      }
+      expect(connectionIds).not.toContain(connectionId);
+      connectionIds.push(connectionId);
+
+      const repeated = await accept(
+        client.createConnectSession({
+          headers: sessionHeaders(),
+          body: { agentId: agent.agentId, mode: "connect" },
+        }),
+        [200],
+      );
+      expect(repeated.body.url).toBe(initial.body.url);
+      expect(repeated.body.sessionId).not.toBe(initial.body.sessionId);
+      const reused = await accept(
+        client.accessRequestStatus({
+          headers: sessionHeaders(),
+          params: { agentId: agent.agentId },
+        }),
+        [200],
+      );
+      expect(reused.body.connection?.id).toBe(connectionId);
+      expect(reused.body.session).toMatchObject({
+        id: repeated.body.sessionId,
+        status: "pending",
+      });
+    }
+  });
+
+  it("leaves connect empty after customer creation fails and allows a later attempt", async () => {
+    const bdd = createBddApi(context);
+    const owner = bdd.user();
+    if (!owner.orgId) {
+      throw new Error("Banking requires an org-scoped actor");
+    }
+    bdd.acceptAgentStorageWrites();
+    const agent = await bdd.createAgent(
+      owner,
+      {
+        displayName: "Banking Connection Retry",
+        visibility: "private",
+      },
+      { isolatePg: true },
+    );
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: owner.userId, orgId: owner.orgId },
+      { [FeatureSwitchKey.Banking]: true },
+    );
+    server.use(
+      finicityAuthHandler(),
+      http.post(`${FINICITY_BASE_URL}/aggregation/v2/customers/testing`, () => {
+        return HttpResponse.json(
+          { message: "Customer creation is unavailable" },
+          { status: 503 },
+        );
+      }),
+      http.post(FINICITY_CONNECT_URL, () => {
+        return HttpResponse.json({
+          link: "https://connect.example.test/recovered-session",
+        });
+      }),
+    );
+    const client = setupApp({ context, routes: bankingRoutes })(
+      bankingUserContract,
+    );
+    const failed = await accept(
+      client.createConnectSession({
+        headers: sessionHeaders(),
+        body: { agentId: agent.agentId, mode: "connect" },
+      }),
+      [502],
+    );
+    expect(failed.body.error).toMatchObject({ code: "FINICITY_ERROR" });
+    const empty = await accept(
+      client.accessRequestStatus({
+        headers: sessionHeaders(),
+        params: { agentId: agent.agentId },
+      }),
+      [200],
+    );
+    expect(empty.body).toMatchObject({ connection: null, session: null });
+
+    server.use(
+      http.post(`${FINICITY_BASE_URL}/aggregation/v2/customers/testing`, () => {
+        return HttpResponse.json({ id: randomProviderId("customer") });
+      }),
+    );
+    const recovered = await accept(
+      client.createConnectSession({
+        headers: sessionHeaders(),
+        body: { agentId: agent.agentId, mode: "connect" },
+      }),
+      [200],
+    );
+    expect(recovered.body.url).toBe(
+      "https://connect.example.test/recovered-session",
+    );
+    const ready = await accept(
+      client.accessRequestStatus({
+        headers: sessionHeaders(),
+        params: { agentId: agent.agentId },
+      }),
+      [200],
+    );
+    expect(ready.body.connection).toMatchObject({
+      status: "active",
+      accounts: [],
+    });
+    expect(ready.body.session).toMatchObject({
+      id: recovered.body.sessionId,
+      status: "pending",
+    });
+  });
+
   it("creates an expiring account-scoped grant and revokes it independently", async () => {
     const fixture = await connectBankingFixture();
     const client = setupApp({ context, routes: bankingRoutes })(

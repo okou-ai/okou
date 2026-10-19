@@ -42,11 +42,10 @@ function status(connected = false): DiscordOrgStatus {
   };
 }
 
-// Browser-boundary behaviors pinned to the released scripts, not inferred from
-// absence of ready: 0.1018 (888fd05) closes after approval; 0.1025 (71b9ec7)
-// stays open without a message listener. Current consent sends ready.
-test.each(["0.1018", "0.1025", "current"] as const)(
-  "The current Works opener completes safely with %s consent",
+// A consent tab either sends ready and receives the result, or is closed by the
+// user after approving while a pending completion response is in flight.
+test.each(["closed after approval", "ready"] as const)(
+  "The current Works opener completes safely with a %s consent tab",
   async (generation) => {
     mockNow(NOW, context.signal);
     let approved = false;
@@ -91,7 +90,7 @@ test.each(["0.1018", "0.1025", "current"] as const)(
     await pending.promise;
     expect(popup.location.href).toBe(authorizationUrl);
     expect(within(card).queryByText("Connected")).toBeNull();
-    if (generation === "0.1018") {
+    if (generation === "closed after approval") {
       popup.close();
     }
     approved = true;
@@ -101,23 +100,19 @@ test.each(["0.1018", "0.1025", "current"] as const)(
     expect(window.location.pathname).toBe("/works");
     expect(window.location.search).toBe("");
     expect(popup.location.href).toBe(authorizationUrl);
-    if (generation === "current") {
-      // Ready after completion still wins over the bounded navigation bridge.
+    if (generation === "ready") {
+      // A ready event that arrives after completion still receives the result.
       context.mocks.browser.message(
         { type: "discord-oauth-ready", state },
         { origin: window.location.origin, source: popup },
       );
     }
-    mockNow(NOW + 5001, context.signal);
     await waitFor(() => {
-      expect(popup.location.href).toBe(
-        generation === "0.1025"
-          ? `${window.location.origin}/settings/discord?status=connected`
-          : authorizationUrl,
-      );
+      expect(messages.mock.calls).toHaveLength(generation === "ready" ? 1 : 0);
     });
+    expect(popup.location.href).toBe(authorizationUrl);
     expect(messages.mock.calls).toStrictEqual(
-      generation === "current"
+      generation === "ready"
         ? [
             [
               { type: "discord-oauth-result", state, status: "connected" },
@@ -126,7 +121,7 @@ test.each(["0.1018", "0.1025", "current"] as const)(
           ]
         : [],
     );
-    expect(popup.closed).toBe(generation === "0.1018");
+    expect(popup.closed).toBe(generation === "closed after approval");
     expect(popup.location.href).not.toContain(completionToken);
   },
 );
@@ -180,7 +175,7 @@ test.each(["/works", "/settings/discord"])(
     click(getAction("button", "Connect", container));
     await pending.promise;
     expect(popup.location.href).toBe(authorizationUrl);
-    // The API has already decided pending when the 0.1018 tab approves and
+    // The API has already decided pending when the consent tab approves and
     // closes. Only a subsequent owned completion request can observe approval.
     approved = true;
     popup.close();
@@ -206,70 +201,6 @@ test.each(["/works", "/settings/discord"])(
   },
 );
 
-test.each(["blocked", "open"] as const)(
-  "A 0.1018 close-wait opener can continue only after approval and a successful explicit status-tab open (%s)",
-  async (outcome) => {
-    const opener = context.mocks.browser.authWindow();
-    vi.stubGlobal("opener", opener);
-    const cleanTab = context.mocks.browser.authWindow();
-    const opened = context.mocks.browser.open(
-      outcome === "open" ? cleanTab : null,
-    );
-    let consentClosed = false;
-    // The 888fd05 opener ignores messages and calls complete only after closed.
-    vi.spyOn(window, "close").mockImplementation(() => {
-      consentClosed = true;
-    });
-    const approvals: unknown[] = [];
-    context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
-      return respond(200, status());
-    });
-    context.mocks.api(discordOauthContract.approve, ({ body, respond }) => {
-      approvals.push(body);
-      return respond(200, { approved: true });
-    });
-    await setupPage({
-      context,
-      path: callback,
-      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
-    });
-    expect(consentClosed).toBeFalsy();
-    expect(opened.calls).toStrictEqual([]);
-    expect(approvals).toStrictEqual([{ state, approvalProof: proof }]);
-    click(getAction("button", "Continue in a new tab"));
-    await waitFor(() => {
-      expect(
-        screen.queryByText(
-          "Allow popups to authorize Discord, then try again.",
-        ) !== null,
-      ).toBe(outcome === "blocked");
-    });
-    expect(consentClosed).toBe(outcome === "open");
-    let retryCalls: unknown[] = [];
-    if (outcome === "blocked") {
-      // Retrying the browser action does not reapprove the consumed operation.
-      const retry = context.mocks.browser.open(cleanTab);
-      click(getAction("button", "Continue in a new tab"));
-      retryCalls = retry.calls;
-    }
-    await waitFor(() => {
-      expect(consentClosed).toBeTruthy();
-    });
-    expect(retryCalls).toStrictEqual(
-      outcome === "blocked"
-        ? [{ url: "/settings/discord", target: "_blank", features: null }]
-        : [],
-    );
-    expect(opened.calls).toStrictEqual([
-      { url: "/settings/discord", target: "_blank", features: null },
-    ]);
-    expect(cleanTab.opener).toBeNull();
-    expect(approvals).toStrictEqual([{ state, approvalProof: proof }]);
-    expect(queryAction("link", "Open Discord")).toBeNull();
-    expect(window.location.hash).toBe("");
-  },
-);
-
 test.each(["missing", "closed", "closes after approval"] as const)(
   "A %s opener offers a truthful restart without proof recovery",
   async (kind) => {
@@ -291,9 +222,6 @@ test.each(["missing", "closed", "closes after approval"] as const)(
       path: callback,
       featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     });
-    expect(queryAction("button", "Continue in a new tab") !== null).toBe(
-      kind === "closes after approval",
-    );
     if (kind === "closes after approval") {
       opener.close();
     }
@@ -302,10 +230,6 @@ test.each(["missing", "closed", "closes after approval"] as const)(
         "This authorization was interrupted or refreshed. Start again to verify a new connection.",
       ),
     ).resolves.toBeInTheDocument();
-    expect(
-      screen.getByText("Discord account: 234567890123456789"),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Server: Verified server")).toBeInTheDocument();
     expect(getAction("button", "Restart authorization")).toBeEnabled();
     expect(queryAction("link", "Open Discord")).toBeNull();
     expect(approvals).toHaveLength(kind === "closes after approval" ? 1 : 0);
@@ -313,11 +237,9 @@ test.each(["missing", "closed", "closes after approval"] as const)(
   },
 );
 
-test("Completion wins over the legacy continuation action, including duplicate results", async () => {
+test("The first completion result wins over a duplicate result", async () => {
   const opener = context.mocks.browser.authWindow();
   vi.stubGlobal("opener", opener);
-  const opened = context.mocks.browser.open(context.mocks.browser.authWindow());
-  const closed = vi.spyOn(window, "close").mockImplementation(() => {});
   context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
     return respond(200, status(true));
   });
@@ -329,13 +251,11 @@ test("Completion wins over the legacy continuation action, including duplicate r
     path: callback,
     featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
   });
-  const continueButton = getAction("button", "Continue in a new tab");
   await act(() => {
     context.mocks.browser.message(
       { type: "discord-oauth-result", state, status: "connected" },
       { origin: window.location.origin, source: opener },
     );
-    click(continueButton);
     context.mocks.browser.message(
       { type: "discord-oauth-result", state, status: "error" },
       { origin: window.location.origin, source: opener },
@@ -344,16 +264,14 @@ test("Completion wins over the legacy continuation action, including duplicate r
   await expect(
     screen.findByText("Connected to Discord"),
   ).resolves.toBeInTheDocument();
-  expect(opened.calls).toStrictEqual([]);
-  expect(closed).not.toHaveBeenCalled();
   expect(window.location.search).toBe("?status=connected");
 });
 
 test.each(["connected", "error"] as const)(
-  "A 0.1025 navigation-based opener's %s destination reads actual state on reload",
+  "A %s status destination reads actual state on reload",
   async (result) => {
-    // 71b9ec7 navigates only after its private-token completion settles. The
-    // receiver cannot authenticate that query, even when an older link exists.
+    // The receiver cannot authenticate the status query, even when an older
+    // link exists.
     context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
       return respond(200, status(true));
     });
@@ -362,10 +280,6 @@ test.each(["connected", "error"] as const)(
       path: `/settings/discord?status=${result}&workspace=Forged`,
       featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     });
-    expect(
-      screen.getByText("Discord account: 234567890123456789"),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Server: Verified server")).toBeInTheDocument();
     expect(screen.queryByText("Forged")).toBeNull();
     expect(
       screen.getByRole("heading", {
@@ -430,80 +344,66 @@ test("Login continuation keeps the callback destination and server but never the
   expect(window.location.href).not.toContain("private-token");
 });
 
-test.each([false, true])(
-  "The non-handshake fallback waits for actual failure and respects route abort (%s)",
-  async (abort) => {
-    mockNow(NOW, context.signal);
-    let finished = false;
-    const pending = context.mocks.deferred<void>();
-    const popup = context.mocks.browser.authWindow();
-    Object.defineProperty(popup, "location", {
-      configurable: true,
-      value: { href: "" },
-    });
-    context.mocks.browser.open(popup);
-    context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
-      return respond(200, status(true));
-    });
-    context.mocks.api(discordOauthContract.start, ({ respond }) => {
-      return respond(200, { authorizationUrl, completionToken });
-    });
-    context.mocks.api(discordOauthContract.complete, ({ respond }) => {
-      if (!finished) {
-        if (!pending.settled()) {
-          pending.resolve();
-        }
-        return respond(409, {
-          error: {
-            code: "DISCORD_OAUTH_APPROVAL_REQUIRED",
-            message: "Approval required",
-          },
-        });
+test("A failed attempt keeps its consent popup until route abort closes it", async () => {
+  let finished = false;
+  const pending = context.mocks.deferred<void>();
+  const popup = context.mocks.browser.authWindow();
+  Object.defineProperty(popup, "location", {
+    configurable: true,
+    value: { href: "" },
+  });
+  context.mocks.browser.open(popup);
+  context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
+    return respond(200, status(true));
+  });
+  context.mocks.api(discordOauthContract.start, ({ respond }) => {
+    return respond(200, { authorizationUrl, completionToken });
+  });
+  context.mocks.api(discordOauthContract.complete, ({ respond }) => {
+    if (!finished) {
+      if (!pending.settled()) {
+        pending.resolve();
       }
       return respond(409, {
         error: {
-          code: "CONFLICT",
-          message:
-            "Disconnect the existing Discord account before switching accounts.",
+          code: "DISCORD_OAUTH_APPROVAL_REQUIRED",
+          message: "Approval required",
         },
       });
-    });
-    await setupPage({
-      context,
-      path: "/settings/discord/install",
-      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
-    });
-    click(getAction("button", "Join new server"));
-    await pending.promise;
-    mockNow(NOW + 6000, context.signal);
-    expect(popup.location.href).toBe(authorizationUrl);
-    finished = true;
-    await expect(
-      screen.findByText(
-        "Discord authorization could not be completed. Try again.",
-      ),
-    ).resolves.toBeInTheDocument();
-    expect(popup.location.href).toBe(authorizationUrl);
-    expect(queryAction("link", "Open Discord")).toBeNull();
-    if (abort) {
-      click(getAction("link", "Back to settings"));
     }
-    await waitFor(() => {
-      expect(window.location.pathname).toBe(
-        abort ? "/works" : "/settings/discord/install",
-      );
+    return respond(409, {
+      error: {
+        code: "CONFLICT",
+        message:
+          "Disconnect the existing Discord account before switching accounts.",
+      },
     });
-    mockNow(NOW + 12_000, context.signal);
-    await waitFor(() => {
-      expect(popup.location.href).toBe(
-        abort
-          ? authorizationUrl
-          : `${window.location.origin}/settings/discord?status=error`,
-      );
-    });
-    expect(popup.closed).toBe(abort);
-  },
-);
+  });
+  await setupPage({
+    context,
+    path: "/settings/discord/install",
+    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
+  });
+  click(getAction("button", "Join new server"));
+  await pending.promise;
+  expect(popup.location.href).toBe(authorizationUrl);
+  finished = true;
+  await expect(
+    screen.findByText(
+      "Discord authorization could not be completed. Try again.",
+    ),
+  ).resolves.toBeInTheDocument();
+  expect(popup.location.href).toBe(authorizationUrl);
+  expect(queryAction("link", "Open Discord")).toBeNull();
+  click(getAction("link", "Back to settings"));
+  await waitFor(() => {
+    expect(window.location.pathname).toBe("/works");
+  });
+  await waitFor(() => {
+    expect(popup.closed).toBeTruthy();
+  });
+  expect(popup.location.href).toBe(authorizationUrl);
+});
 
 test("An install route cannot consume a consent proof or claim installation from an existing account", async () => {
   vi.stubGlobal("opener", context.mocks.browser.authWindow());

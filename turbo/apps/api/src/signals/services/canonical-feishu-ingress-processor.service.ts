@@ -1,8 +1,13 @@
+import { connectors } from "@okouai/db/schema/connector";
+import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
+import { secrets } from "@okouai/db/schema/secret";
 import type { FeishuPlatform } from "@okouai/api-contracts/contracts/feishu-platform";
+import { agents } from "@okouai/db/schema/agent";
 import { feishuChatIngress } from "@okouai/db/schema/feishu-chat-ingress";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { command } from "ccstate";
 import { and, asc, eq, inArray, lt, or } from "drizzle-orm";
 import { z } from "zod";
@@ -38,9 +43,17 @@ import {
 } from "./feishu-chat-ingress.service";
 import {
   buildFeishuChatOpenUrl,
-  isFeishuInstallationEnabled,
+  feishuInstallationAvailabilityReadPlan,
+  feishuInstallationEnabledFromRows,
 } from "./feishu-config";
-import { resolveFeishuCustomConnectorOAuthConnection } from "./feishu-custom-connector.service";
+import {
+  feishuOAuthMemberReadPlan,
+  feishuOAuthMemberFromRows,
+  feishuOAuthInstallationReadPlan,
+  feishuOAuthAccountReadPlan,
+  feishuOAuthAccountFromRows,
+  feishuOAuthCredentialReadPlan,
+} from "./feishu-custom-connector.service";
 import {
   addFeishuThinkingReaction,
   dispatchConnectedFeishuCommand$,
@@ -48,7 +61,8 @@ import {
   markFeishuMessageReceived,
   replyFeishuAgentUnavailable,
   replyToUnconnectedFeishuMessage,
-  resolveEffectiveFeishuAgent,
+  feishuEffectiveAgentReadPlan,
+  feishuEffectiveAgentFromRows,
   type FeishuDispatchConnection,
   type FeishuDispatchInstallation,
   type FeishuInboundMessage,
@@ -202,13 +216,72 @@ async function loadConnection(
   if (!connection) {
     return undefined;
   }
-  const connectorId = await resolveFeishuCustomConnectorOAuthConnection(db, {
-    orgId,
-    userId: connection.userId,
-    installationId: message.installationId,
-    memberConnectorId: connection.connectorId,
-    feishuOpenId: message.openId,
-  });
+  const connectorId = await (async () => {
+    const scope = {
+      orgId,
+      userId: connection.userId,
+      installationId: message.installationId,
+      memberConnectorId: connection.connectorId,
+      feishuOpenId: message.openId,
+    };
+    const memberPlan = feishuOAuthMemberReadPlan(scope);
+    const memberRows = memberPlan.needsRead
+      ? await db
+          .select(memberPlan.columns)
+          .from(feishuOrgConnections)
+          .where(memberPlan.condition)
+          .limit(2)
+      : [];
+    const member = feishuOAuthMemberFromRows(scope, memberRows);
+    if (!member) {
+      return null;
+    }
+    const installationPlan = feishuOAuthInstallationReadPlan(scope);
+    const [installation] = await db
+      .select(installationPlan.columns)
+      .from(feishuOrgInstallations)
+      .where(installationPlan.condition)
+      .limit(1);
+    const customConnectorId = installation?.customConnectorId;
+    if (!customConnectorId) {
+      return null;
+    }
+    const accountScope = { ...scope, ...member, customConnectorId };
+    const accountPlan = feishuOAuthAccountReadPlan(accountScope);
+    const [exactRows, defaultRows] = await Promise.all([
+      accountPlan.exactWhere
+        ? db
+            .select(accountPlan.columns)
+            .from(connectors)
+            .where(accountPlan.exactWhere)
+        : [],
+      accountPlan.defaultWhere
+        ? db
+            .select(accountPlan.columns)
+            .from(connectors)
+            .where(accountPlan.defaultWhere)
+        : [],
+    ]);
+    const accountId = feishuOAuthAccountFromRows(accountPlan, {
+      exactRows,
+      defaultRows,
+    });
+    if (accountId === null) {
+      return null;
+    }
+    const credentialPlan = feishuOAuthCredentialReadPlan({
+      ...accountScope,
+      memberConnectorId: accountId,
+    });
+    const [matchedConnection] = await db
+      .select(credentialPlan.columns)
+      .from(connectors)
+      .innerJoin(orgCustomConnectors, credentialPlan.connectorJoin)
+      .innerJoin(secrets, credentialPlan.secretJoin)
+      .where(credentialPlan.condition)
+      .limit(1);
+    return matchedConnection?.id ?? null;
+  })();
   return connectorId ? { ...connection, connectorId } : undefined;
 }
 
@@ -553,7 +626,19 @@ async function loadFeishuIngressDispatchContext(
   if (!ingress) {
     throw new Error("Canonical Feishu ingress is unavailable");
   }
-  if (!(await isFeishuInstallationEnabled(db, ingress))) {
+  if (
+    !(await (async () => {
+      const plan = feishuInstallationAvailabilityReadPlan(ingress);
+      if (plan.kind === "resolved") {
+        return plan.enabled;
+      }
+      const rows = await db
+        .select(plan.columns)
+        .from(userFeatureSwitches)
+        .where(plan.condition);
+      return feishuInstallationEnabledFromRows(plan.scope, rows);
+    })())
+  ) {
     throw new Error("Lark integration is not enabled");
   }
   const message = parseMatchingMessage(ingress);
@@ -622,11 +707,26 @@ const processClaimedIngress$ = command(
       return null;
     }
 
-    const effectiveAgent = await resolveEffectiveFeishuAgent({
-      db: args.db,
-      installation,
-      connection,
-    });
+    const effectiveAgent = await (async () => {
+      const plan = feishuEffectiveAgentReadPlan({ installation, connection });
+      const agent = await (async () => {
+        const [visibleAgent] = await args.db
+          .select(plan.visibleColumns)
+          .from(agents)
+          .where(plan.visibleCondition)
+          .limit(1);
+        return visibleAgent;
+      })();
+      if (agent) {
+        return feishuEffectiveAgentFromRows(agent, undefined);
+      }
+      const [existing] = await args.db
+        .select(plan.existingColumns)
+        .from(agents)
+        .where(plan.existingCondition)
+        .limit(1);
+      return feishuEffectiveAgentFromRows(agent, existing);
+    })();
     signal.throwIfAborted();
     if (effectiveAgent.status !== "resolved") {
       await finishUnavailableAgentFeishuIngress(

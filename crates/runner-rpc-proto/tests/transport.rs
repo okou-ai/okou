@@ -246,6 +246,8 @@ async fn response_shapes_order_and_missing_or_duplicate_terminals_fail_closed() 
         vec![json!({"type": "result"})],
         vec![json!({"type": "result", "data": null, "code": null})],
         vec![json!({"type": "result", "data": null, "delivery": "unknown"})],
+        vec![json!({"type": "result", "data": null, "diagnostic_text": "misplaced text"})],
+        vec![json!({"type": "event", "data": {}, "diagnostic_text": "misplaced text"})],
         vec![json!({"type": "error", "code": "unavailable", "delivery": "unknown", "data": null})],
         vec![json!({"type": "error", "code": "secret", "delivery": "unknown"})],
         vec![json!({"type": "error", "code": "transport", "delivery": "not_started"})],

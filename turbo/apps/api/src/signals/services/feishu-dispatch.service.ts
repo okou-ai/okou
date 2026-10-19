@@ -6,6 +6,7 @@ import {
 import { agents } from "@okouai/db/schema/agent";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { command } from "ccstate";
 import { and, eq, isNull, or } from "drizzle-orm";
 import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
@@ -22,6 +23,7 @@ import {
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
+import { publishUserSignal } from "../external/realtime";
 import {
   addFeishuMessageReaction,
   listFeishuMessages,
@@ -33,7 +35,10 @@ import { tapError } from "../utils";
 import { publishCustomConnectorUserInvalidationAfterCommit } from "./connector-client-invalidation.service";
 import { buildFeishuConnectUrl } from "./feishu-connect-token";
 import { disconnectFeishuCustomConnectorOAuthConnection } from "./feishu-custom-connector.service";
-import { publishFeishuOrgChanged } from "./feishu-realtime.service";
+import {
+  feishuOrgChangedAdminReadPlan,
+  feishuOrgChangedUserIds,
+} from "./feishu-realtime.service";
 
 const L = logger("FeishuDispatch");
 const FEISHU_THINKING_EMOJI = "Typing";
@@ -213,52 +218,40 @@ export async function replyToUnconnectedFeishuMessage(
   );
 }
 
-async function getVisibleAgent(args: {
-  readonly db: Db;
-  readonly composeId: string;
-  readonly orgId: string;
-  readonly userId: string;
-}): Promise<FeishuAgent | undefined> {
-  const [agent] = await args.db
-    .select({
+export function feishuEffectiveAgentReadPlan(args: {
+  readonly installation: FeishuDispatchInstallation;
+  readonly connection: FeishuDispatchConnection;
+}) {
+  const composeId = args.installation.defaultAgentId;
+  return {
+    visibleColumns: {
       id: agents.id,
       name: agents.name,
       displayName: agents.displayName,
-    })
-    .from(agents)
-    .where(
-      and(
-        eq(agents.id, args.composeId),
-        eq(agents.orgId, args.orgId),
-        or(eq(agents.visibility, "public"), eq(agents.owner, args.userId)),
+    },
+    visibleCondition: and(
+      eq(agents.id, composeId),
+      eq(agents.orgId, args.installation.orgId),
+      or(
+        eq(agents.visibility, "public"),
+        eq(agents.owner, args.connection.userId),
       ),
-    )
-    .limit(1);
-  return agent;
+    ),
+    existingColumns: { id: agents.id },
+    existingCondition: and(
+      eq(agents.id, composeId),
+      eq(agents.orgId, args.installation.orgId),
+    ),
+  };
 }
 
-export async function resolveEffectiveFeishuAgent(args: {
-  readonly db: Db;
-  readonly installation: FeishuDispatchInstallation;
-  readonly connection: FeishuDispatchConnection;
-}): Promise<EffectiveAgentResolution> {
-  const composeId = args.installation.defaultAgentId;
-  const agent = await getVisibleAgent({
-    db: args.db,
-    composeId,
-    orgId: args.installation.orgId,
-    userId: args.connection.userId,
-  });
+export function feishuEffectiveAgentFromRows(
+  agent: FeishuAgent | undefined,
+  existing: { readonly id: string } | undefined,
+): EffectiveAgentResolution {
   if (agent) {
     return { status: "resolved", agent };
   }
-  const [existing] = await args.db
-    .select({ id: agents.id })
-    .from(agents)
-    .where(
-      and(eq(agents.id, composeId), eq(agents.orgId, args.installation.orgId)),
-    )
-    .limit(1);
   return { status: existing ? "not_accessible" : "not_found" };
 }
 
@@ -584,11 +577,21 @@ export async function markFeishuMessageReceived(
     .returning({ id: feishuOrgInstallations.id });
   signal.throwIfAborted();
   if (markedAsReceived) {
-    await publishFeishuOrgChanged(
-      args.db,
-      args.installation.orgId,
-      args.installation.ownerUserId,
-    );
+    await (async () => {
+      const plan = feishuOrgChangedAdminReadPlan(args.installation.orgId);
+      const admins = await args.db
+        .select(plan.columns)
+        .from(orgMembersCache)
+        .where(plan.condition);
+      const userIds = feishuOrgChangedUserIds(
+        admins,
+        args.installation.ownerUserId,
+      );
+      if (userIds.length === 0) {
+        return;
+      }
+      await publishUserSignal(userIds, "feishu:changed");
+    })();
   }
 }
 
@@ -618,12 +621,22 @@ async function handleDisconnectCommand(
     args.connection.userId,
     signal,
   );
-  await publishFeishuOrgChanged(
-    args.db,
-    args.installation.orgId,
-    args.installation.ownerUserId,
-    [args.connection.userId],
-  );
+  await (async () => {
+    const plan = feishuOrgChangedAdminReadPlan(args.installation.orgId);
+    const admins = await args.db
+      .select(plan.columns)
+      .from(orgMembersCache)
+      .where(plan.condition);
+    const userIds = feishuOrgChangedUserIds(
+      admins,
+      args.installation.ownerUserId,
+      [args.connection.userId],
+    );
+    if (userIds.length === 0) {
+      return;
+    }
+    await publishUserSignal(userIds, "feishu:changed");
+  })();
   await replyNotice(
     {
       db: args.db,

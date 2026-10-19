@@ -25,6 +25,16 @@ pub(crate) struct Node {
     completion: Arc<Completion>,
 }
 
+pub(crate) struct Acquisition {
+    pub(crate) node: Arc<Node>,
+    pub(crate) reused: bool,
+}
+
+pub(crate) struct Rejection {
+    pub(crate) reason: Failure,
+    pub(crate) source: Option<crate::diagnostics::NativeSource>,
+}
+
 impl Node {
     pub(crate) fn diagnostic_source(&self, key: Key) -> crate::diagnostics::NativeSource {
         crate::diagnostics::NativeSource {
@@ -116,14 +126,30 @@ pub(crate) struct Registry {
 
 impl Registry {
     pub(crate) fn diagnostic_source(&self, key: Key) -> Option<crate::diagnostics::NativeSource> {
-        let node = self
+        let state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        self.source_in(&state, key)
+    }
+
+    fn source_in(&self, state: &State, key: Key) -> Option<crate::diagnostics::NativeSource> {
+        let node = state.nodes.get(&key).and_then(Weak::upgrade);
+        if let Some(node) = node {
+            return Some(node.diagnostic_source(key));
+        }
+        let evidence = self
+            .effects
             .state
             .lock()
             .unwrap_or_else(|p| p.into_inner())
-            .nodes
+            .entries
             .get(&key)?
-            .upgrade()?;
-        Some(node.diagnostic_source(key))
+            .evidence()?;
+        Some(crate::diagnostics::NativeSource {
+            configuration_id: key.configuration,
+            generation: key.generation,
+            resource_id: evidence.resource_id,
+            evidence,
+            connection: None,
+        })
     }
 
     pub(crate) fn new(pool: Arc<Pool>) -> Self {
@@ -185,8 +211,21 @@ impl Registry {
         configuration: Configuration,
         factory: impl FnOnce(Configuration, Arc<Journal>) -> Work,
     ) -> Result<Arc<Node>, Failure> {
+        self.acquire_configured_diagnosed(configuration, false, factory)
+            .map(|acquired| acquired.node)
+            .map_err(|rejected| rejected.reason)
+    }
+
+    pub(crate) fn acquire_configured_diagnosed(
+        &self,
+        configuration: Configuration,
+        for_check: bool,
+        factory: impl FnOnce(Configuration, Arc<Journal>) -> Work,
+    ) -> Result<Acquisition, Rejection> {
         let key = configuration.key();
-        self.acquire_with(key, |state| {
+        let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        let previous = state.nodes.get(&key).and_then(Weak::upgrade);
+        let result = self.acquire_locked(&mut state, key, |state| {
             let mut effects = self.effects.state.lock().unwrap_or_else(|p| p.into_inner());
             if let Some(failure) = state
                 .previous
@@ -220,6 +259,19 @@ impl Registry {
             {
                 return Err(Failure::DomainFailed);
             }
+            // Check after physical eligibility: completed work has already
+            // sealed its first terminal cause. Keep this decision, source and
+            // allocation under the same admission lock, even after node removal.
+            if for_check
+                && effects
+                    .entries
+                    .get(&key)
+                    .and_then(|journal| journal.evidence())
+                    .and_then(|evidence| evidence.terminal())
+                    .is_some_and(|failure| failure != Failure::Cancelled)
+            {
+                return Err(Failure::DomainFailed);
+            }
             // Same-Run registration replacement keeps the receipt, including
             // an unfinished physical owner, after the weak node disappears.
             if !effects.entries.contains_key(&key) && effects.entries.len() >= 64 {
@@ -229,15 +281,34 @@ impl Registry {
             let work = factory(configuration, Arc::clone(&journal));
             effects.entries.insert(key, Arc::clone(&journal));
             Ok((work, Some(journal)))
-        })
+        });
+        result
+            .map(|node| Acquisition {
+                node,
+                reused: previous.is_some(),
+            })
+            .map_err(|reason| Rejection {
+                reason,
+                source: self.source_in(&state, key),
+            })
     }
 
+    #[cfg(test)]
     fn acquire_with(
         &self,
         key: Key,
         factory: impl FnOnce(&mut State) -> Result<(Work, Option<Arc<Journal>>), Failure>,
     ) -> Result<Arc<Node>, Failure> {
         let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        self.acquire_locked(&mut state, key, factory)
+    }
+
+    fn acquire_locked(
+        &self,
+        state: &mut State,
+        key: Key,
+        factory: impl FnOnce(&mut State) -> Result<(Work, Option<Arc<Journal>>), Failure>,
+    ) -> Result<Arc<Node>, Failure> {
         if let Some(failure) = state.failed {
             return Err(failure);
         }
@@ -265,7 +336,7 @@ impl Registry {
         state
             .physical
             .retain(|completion| !completion.physically_finished());
-        let (work, journal) = factory(&mut state)?;
+        let (work, journal) = factory(state)?;
         let completion = match self.pool.allocate(work, journal.clone()) {
             Ok(completion) => completion,
             Err(failure) => {
@@ -275,6 +346,9 @@ impl Registry {
                 return Err(failure);
             }
         };
+        if let Some(journal) = journal {
+            journal.retain_evidence(Arc::clone(&completion.evidence));
+        }
         // Both the actual thread join and this Run's cleanup receipt exist before startup.
         state.physical.push(Arc::clone(&completion));
         let node = Arc::new(Node { completion });

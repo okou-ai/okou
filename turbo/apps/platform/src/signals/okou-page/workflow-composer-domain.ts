@@ -144,7 +144,7 @@ export function findActiveSlashWorkflowRange(
   }
 
   const beforeCaret = value.slice(0, caretIndex);
-  const match = /(?:^|\s)\/((?:create\s+[a-z]*)|[a-z0-9-]*)$/i.exec(
+  const match = /(?:^|\s)\/((?:create\s+[a-z]*)|[\p{L}\p{M}\p{N}-]*)$/iu.exec(
     beforeCaret,
   );
   if (!match) {

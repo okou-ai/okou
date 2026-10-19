@@ -31,7 +31,7 @@ import {
   createClerkReadContext,
   type ClerkClient,
 } from "../external/clerk";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { getStripeClient } from "../external/stripe-client";
 import {
   activePriceId,
@@ -46,7 +46,6 @@ import {
 } from "../services/billing-checkout.service";
 import {
   confirmUsagePackPurchase$,
-  activeUsagePackBillingContext,
   loadUsagePackCatalog,
   startUsagePackPurchase$,
   TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES,
@@ -201,42 +200,57 @@ async function validateUsagePackSubscriptionMembers(
     : "members_changed";
 }
 
-async function routeUsagePackSubscriptionChangePayment(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly preview: UsagePackSubscriptionChangePreviewResponse;
-    readonly returnUrl: string;
-  },
-  signal: AbortSignal,
-): Promise<
-  | { readonly kind: "not_found" }
-  | {
-      readonly kind: "response";
-      readonly body: UsagePackSubscriptionChangePreviewResponse;
-    }
-> {
-  const billing = await activeUsagePackBillingContext(args.db, args.orgId);
-  signal.throwIfAborted();
-  if (!billing) {
-    return { kind: "not_found" };
-  }
-  const route = await routeBillingPurchasePreview(
-    {
-      stripe: getStripeClient(),
-      orgId: args.orgId,
-      customerId: billing.stripeCustomerId,
-      subscriptionId: billing.stripeSubscriptionId,
-      operation: "usage_pack_subscription",
-      operationId: args.preview.changeId,
-      returnUrl: args.returnUrl,
-    },
-    signal,
+type UsagePackBillingCondition = ReturnType<typeof and>;
+type UsagePackBillingRow = {
+  readonly usagePackSubscriptionId: string;
+  readonly stripeCustomerId: string;
+  readonly stripeSubscriptionId: string | null;
+};
+type UsagePackBillingResult = {
+  readonly usagePackSubscriptionId: string;
+  readonly stripeCustomerId: string;
+  readonly stripeSubscriptionId: string;
+} | null;
+type UsagePackPaymentResponse = {
+  readonly kind: "response";
+  readonly body: UsagePackSubscriptionChangePreviewResponse;
+};
+type UsagePackPaymentResult =
+  { readonly kind: "not_found" } | UsagePackPaymentResponse;
+type UsagePackPurchaseRoute = Awaited<
+  ReturnType<typeof routeBillingPurchasePreview>
+>;
+
+function usagePackBillingWhere(orgId: string): UsagePackBillingCondition {
+  return and(
+    eq(usagePackSubscriptions.orgId, orgId),
+    isNotNull(usagePackSubscriptions.stripeSubscriptionId),
+    notInArray(usagePackSubscriptions.subscriptionStatus, [
+      ...TERMINAL_USAGE_PACK_SUBSCRIPTION_STATUSES,
+    ]),
   );
+}
+
+function mapUsagePackBillingRow(
+  row: UsagePackBillingRow | undefined,
+): UsagePackBillingResult {
+  return row?.stripeSubscriptionId
+    ? {
+        usagePackSubscriptionId: row.usagePackSubscriptionId,
+        stripeCustomerId: row.stripeCustomerId,
+        stripeSubscriptionId: row.stripeSubscriptionId,
+      }
+    : null;
+}
+
+function usagePackPaymentResponse(
+  preview: UsagePackSubscriptionChangePreviewResponse,
+  route: UsagePackPurchaseRoute,
+): UsagePackPaymentResponse {
   return {
     kind: "response",
     body: {
-      ...args.preview,
+      ...preview,
       ...(route.paymentMethodPreviewToken
         ? { paymentMethodPreviewToken: route.paymentMethodPreviewToken }
         : {}),
@@ -1453,15 +1467,44 @@ const usagePackSubscriptionChangePreviewAuthed$ = command(
       previewEnabled &&
       bodyResult.data.returnUrl
     ) {
-      const paymentRoute = await routeUsagePackSubscriptionChangePayment(
-        {
-          db,
-          orgId: access.auth.orgId,
-          preview: result.preview,
-          returnUrl: bodyResult.data.returnUrl,
-        },
-        signal,
-      );
+      const paymentDb = db;
+      const orgId = access.auth.orgId;
+      const preview = result.preview;
+      const returnUrl = bodyResult.data.returnUrl;
+      const paymentRoute = await (async (
+        paymentSignal: AbortSignal,
+      ): Promise<UsagePackPaymentResult> => {
+        const billing = await (async (): Promise<UsagePackBillingResult> => {
+          const [subscription] = await paymentDb
+            .select({
+              usagePackSubscriptionId: usagePackSubscriptions.id,
+              stripeCustomerId: usagePackSubscriptions.stripeCustomerId,
+              stripeSubscriptionId: usagePackSubscriptions.stripeSubscriptionId,
+            })
+            .from(usagePackSubscriptions)
+            .where(usagePackBillingWhere(orgId))
+            .orderBy(desc(usagePackSubscriptions.updatedAt))
+            .limit(1);
+          return mapUsagePackBillingRow(subscription);
+        })();
+        paymentSignal.throwIfAborted();
+        if (!billing) {
+          return { kind: "not_found" };
+        }
+        const route = await routeBillingPurchasePreview(
+          {
+            stripe: getStripeClient(),
+            orgId,
+            customerId: billing.stripeCustomerId,
+            subscriptionId: billing.stripeSubscriptionId,
+            operation: "usage_pack_subscription",
+            operationId: preview.changeId,
+            returnUrl,
+          },
+          paymentSignal,
+        );
+        return usagePackPaymentResponse(preview, route);
+      })(signal);
       if (paymentRoute.kind === "not_found") {
         return notFound("Usage pack subscription not found");
       }

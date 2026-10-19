@@ -3,7 +3,7 @@
 -- its full timestamp precision. No established anchor or financial field changes.
 -- Probe stable and legacy identities separately so unlinked usage does not
 -- become a broad lookup path for every Run when NULL statistics are stale.
--- vm0:batch-by-uuid
+-- okou:batch-by-uuid
 WITH batch AS MATERIALIZED (
   SELECT id FROM agent_runs
   WHERE ($1::uuid IS NULL OR id > $1::uuid)
@@ -86,7 +86,7 @@ SELECT (SELECT id FROM batch ORDER BY id DESC LIMIT 1) AS next_cursor;
 -- An unavailable Run is acceptable when independent attribution already exists.
 -- Conflicting identities, owners, anchors, sources and Thread facts are left
 -- untouched for explicit reconciliation; they are never silently rewritten.
--- vm0:batch-by-uuid
+-- okou:batch-by-uuid
 WITH batch AS MATERIALIZED (
   SELECT id FROM usage_event
   WHERE ($1::uuid IS NULL OR id > $1::uuid)
@@ -141,7 +141,7 @@ SELECT (SELECT id FROM batch ORDER BY id DESC LIMIT 1) AS next_cursor;
 -- An unavailable Run is acceptable when independent attribution already exists.
 -- Conflicting identities, owners, anchors, sources and Thread facts are left
 -- untouched for explicit reconciliation; they are never silently rewritten.
--- vm0:batch-by-uuid
+-- okou:batch-by-uuid
 WITH batch AS MATERIALIZED (
   SELECT id FROM usage_event_hourly_rollup
   WHERE ($1::uuid IS NULL OR id > $1::uuid)

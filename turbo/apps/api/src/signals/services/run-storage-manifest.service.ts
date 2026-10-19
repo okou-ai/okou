@@ -109,7 +109,6 @@ interface StorageManifestInputs {
 }
 
 interface BuildStorageManifestEntriesArgs {
-  readonly db: ReadonlyDb;
   readonly bucket: string;
   readonly storageIndex: StorageIndex;
   readonly agentOrgId: string;
@@ -557,7 +556,6 @@ function volumeStorageLookup(
 }
 
 function resolveVolumeStorage(args: {
-  readonly db: ReadonlyDb;
   readonly index: StorageIndex;
   readonly volume: ResolvedVolume | AdditionalVolume;
   readonly primaryOrgId: string;
@@ -587,14 +585,12 @@ function resolveVolumeStorage(args: {
 }
 
 function resolveComposeStorageInput(args: {
-  readonly db: ReadonlyDb;
   readonly index: StorageIndex;
   readonly agentOrgId: string;
   readonly volume: ResolvedVolume;
 }): ResolvedManifestStorageInput | null {
   const resolvedResult = safeSync(() => {
     return resolveVolumeStorage({
-      db: args.db,
       index: args.index,
       volume: args.volume,
       primaryOrgId: args.agentOrgId,
@@ -621,7 +617,6 @@ function resolveComposeStorageInput(args: {
 }
 
 function resolveAdditionalStorageInput(args: {
-  readonly db: ReadonlyDb;
   readonly index: StorageIndex;
   readonly runtimeOrgId: string;
   readonly volume: AdditionalVolume;
@@ -647,7 +642,6 @@ function resolveAdditionalStorageInput(args: {
   }
   const resolvedResult = safeSync(() => {
     return resolveVolumeStorage({
-      db: args.db,
       index: args.index,
       volume: args.volume,
       primaryOrgId: args.runtimeOrgId,
@@ -784,7 +778,6 @@ function resolveOfficialWorkflowStorageInput(args: {
 }
 
 function resolveArtifactStorageInput(args: {
-  readonly db: ReadonlyDb;
   readonly index: StorageIndex;
   readonly runtimeOrgId: string;
   readonly userId: string;
@@ -844,7 +837,6 @@ function readOnlyStorageEntryMetadata(args: {
 }
 
 async function buildComposeStorageEntry(args: {
-  readonly db: ReadonlyDb;
   readonly index: StorageIndex;
   readonly agentOrgId: string;
   readonly volume: ResolvedVolume;
@@ -853,7 +845,6 @@ async function buildComposeStorageEntry(args: {
 }): Promise<ResolvedManifestStoragePlan | null> {
   const input = await args.phaseTiming.measureResolve(() => {
     return resolveComposeStorageInput({
-      db: args.db,
       index: args.index,
       agentOrgId: args.agentOrgId,
       volume: args.volume,
@@ -868,7 +859,6 @@ async function buildComposeStorageEntry(args: {
 }
 
 async function buildAdditionalStorageEntry(args: {
-  readonly db: ReadonlyDb;
   readonly index: StorageIndex;
   readonly runtimeOrgId: string;
   readonly volume: AdditionalVolume;
@@ -878,7 +868,6 @@ async function buildAdditionalStorageEntry(args: {
 }): Promise<ResolvedManifestStoragePlan | null> {
   const input = await args.phaseTiming.measureResolve(() => {
     return resolveAdditionalStorageInput({
-      db: args.db,
       index: args.index,
       runtimeOrgId: args.runtimeOrgId,
       volume: args.volume,
@@ -915,9 +904,12 @@ function normalizeAdditionalVolumeSources(args: {
   return args.sources;
 }
 
-export async function resolveStorageManifestInputs(
-  args: PrepareAgentRunStorageManifestArgs,
-): Promise<StorageManifestInputs> {
+export async function resolveStorageManifestInputs(args: {
+  readonly instructionsStorageName: string;
+  readonly framework: SupportedFramework | "pi";
+  readonly artifacts: readonly ContextArtifact[];
+  readonly timing?: ApiDispatchTimingCollector;
+}): Promise<StorageManifestInputs> {
   return await measureApiDispatchTiming(
     args.timing,
     "api_dispatch_prepare_storage_manifest_resolve_inputs",
@@ -1058,7 +1050,6 @@ async function resolveStorageManifestEntryPlans(args: {
         return await Promise.all(
           input.composeVolumes.map((volume) => {
             return buildComposeStorageEntry({
-              db: input.db,
               index: input.storageIndex,
               agentOrgId: input.agentOrgId,
               volume,
@@ -1077,7 +1068,6 @@ async function resolveStorageManifestEntryPlans(args: {
         return await Promise.all(
           (input.additionalVolumes ?? []).map((volume, index) => {
             return buildAdditionalStorageEntry({
-              db: input.db,
               index: input.storageIndex,
               runtimeOrgId: input.runtimeOrgId,
               volume,
@@ -1101,7 +1091,6 @@ async function resolveStorageManifestEntryPlans(args: {
           input.artifacts.map((artifact) => {
             return args.phaseTimings.artifact.measureResolve(() => {
               return resolveArtifactStorageInput({
-                db: input.db,
                 index: input.storageIndex,
                 runtimeOrgId: input.runtimeOrgId,
                 userId: input.userId,
@@ -1206,7 +1195,6 @@ export function persistedStorageMountRequests(
 }
 
 function resolvePersistedStorageMounts(args: {
-  readonly db: ReadonlyDb;
   readonly index: StorageIndex;
   readonly mounts: readonly PersistedStorageMount[];
 }): ResolvedStorageManifestEntryPlans {
@@ -1282,7 +1270,6 @@ function resolvePersistedStorageMounts(args: {
 }
 
 export function resolveValidatedPersistedStorageMounts(args: {
-  readonly db: ReadonlyDb;
   readonly bucket: string;
   readonly storageIndex: StorageIndex;
   readonly mounts: readonly PersistedStorageMount[];
@@ -1293,7 +1280,6 @@ export function resolveValidatedPersistedStorageMounts(args: {
   const phaseTimings = createStorageManifestEntryPhaseTimings(args);
   const result = safeSync(() => {
     const input: BuildStorageManifestEntriesArgs = {
-      db: args.db,
       bucket: args.bucket,
       storageIndex: args.storageIndex,
       agentOrgId: "",
@@ -1307,7 +1293,6 @@ export function resolveValidatedPersistedStorageMounts(args: {
       stats: args.stats,
     };
     const resolved = resolvePersistedStorageMounts({
-      db: args.db,
       index: args.storageIndex,
       mounts: args.mounts,
     });
@@ -1333,7 +1318,17 @@ export function resolveValidatedPersistedStorageMounts(args: {
 }
 
 export function prepareRequestStorageResolution(
-  args: PrepareAgentRunStorageManifestArgs,
+  args: {
+    readonly agentOrgId: string;
+    readonly runtimeOrgId: string;
+    readonly userId: string;
+    readonly artifacts: readonly ContextArtifact[];
+    readonly additionalVolumes: readonly AdditionalVolume[] | undefined;
+    readonly additionalVolumeSources:
+      readonly StorageManifestSource[] | undefined;
+    readonly timing?: ApiDispatchTimingCollector;
+    readonly stats?: StorageManifestBuildStats;
+  },
   bucket: string,
   composeVolumes: readonly ResolvedVolume[],
   artifacts: readonly ContextArtifact[],
@@ -1350,7 +1345,6 @@ export function prepareRequestStorageResolution(
   });
 
   const input: UnindexedStorageManifestEntriesArgs = {
-    db: args.db,
     bucket,
     agentOrgId: args.agentOrgId,
     runtimeOrgId: args.runtimeOrgId,

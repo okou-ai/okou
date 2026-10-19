@@ -26,6 +26,7 @@ import {
 import { sshConnections$ } from "../../signals/ssh.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { VncNetworkFields } from "./vnc-network-fields.tsx";
 
 export function useKerberosProfileItems() {
   const { t } = useTranslation();
@@ -215,8 +216,10 @@ function KerberosTicketServiceFields({
 
 export function KerberosConnectionFields({
   connection,
+  disabled,
 }: {
   readonly connection: VncConnectionResponse | null;
+  readonly disabled: boolean;
 }) {
   const { t } = useTranslation();
   const editor = useGet(vncEditor$);
@@ -256,7 +259,7 @@ export function KerberosConnectionFields({
         />
       </label>
       {editor.profile !== "qemu_kerberos_ticket" && (
-        <KerberosKdcFields saved={saved} />
+        <KerberosKdcFields saved={saved} disabled={disabled} />
       )}
     </fieldset>
   );
@@ -267,50 +270,38 @@ type KerberosConnectionSecurity = Extract<
   { type: "qemu_x509_gssapi" }
 >;
 
-function KerberosKdcFields({
-  saved,
-}: {
-  readonly saved: KerberosConnectionSecurity | null;
-}) {
+function KerberosKdcSshFields({ disabled }: { readonly disabled: boolean }) {
   const { t } = useTranslation();
   const editor = useGet(vncEditor$);
   const hosts = useLoadable(sshConnections$);
   const choose = useSet(chooseVncKdcSsh$);
-  const editHost = useSet(editVncKdcHost$);
-  const routes = [
-    {
-      value: "direct",
-      label: t(($) => {
-        return $.vnc.transport.direct;
-      }),
-    },
-    ...(hosts.state === "hasData" && hosts.data
+  const routes =
+    hosts.state === "hasData" && hosts.data
       ? hosts.data.map((host) => {
           return { value: host.id, label: host.displayName };
         })
-      : []),
-  ];
+      : [];
   return (
     <>
-      <p className="text-sm text-muted-foreground">
+      <label htmlFor="vnc-kdc-ssh" className="text-sm">
         {t(($) => {
-          return $.vnc.kerberos.onlineHelp;
-        })}
-      </p>
-      <label htmlFor="vnc-kdc-route" className="text-sm">
-        {t(($) => {
-          return $.vnc.kerberos.kdcRoute;
+          return $.vnc.transport.sshConnection;
         })}
       </label>
       <Select
         items={routes}
-        value={editor.kdcSshConnectionId || "direct"}
+        value={editor.kdcSshConnectionId || null}
+        disabled={disabled || hosts.state !== "hasData" || !hosts.data}
         onValueChange={(value) => {
           return choose(value);
         }}
       >
-        <SelectTrigger id="vnc-kdc-route">
-          <SelectValue />
+        <SelectTrigger id="vnc-kdc-ssh">
+          <SelectValue
+            placeholder={t(($) => {
+              return $.vnc.transport.select;
+            })}
+          />
         </SelectTrigger>
         <SelectContent>
           {routes.map((route) => {
@@ -333,6 +324,31 @@ function KerberosKdcFields({
             })}
           </p>
         )}
+    </>
+  );
+}
+
+function KerberosKdcFields({
+  saved,
+  disabled,
+}: {
+  readonly saved: KerberosConnectionSecurity | null;
+  readonly disabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const editor = useGet(vncEditor$);
+  const editHost = useSet(editVncKdcHost$);
+  return (
+    <>
+      <p className="text-sm text-muted-foreground">
+        {t(($) => {
+          return $.vnc.kerberos.onlineHelp;
+        })}
+      </p>
+      <VncNetworkFields role="kdc" disabled={disabled} />
+      {editor.kdcTransport === "ssh" && (
+        <KerberosKdcSshFields disabled={disabled} />
+      )}
       <Input
         name="kdcSshConnectionId"
         type="hidden"
@@ -353,13 +369,20 @@ function KerberosKdcFields({
             return editHost(event.currentTarget.value);
           }}
           pattern={
-            editor.kdcSshConnectionId
+            editor.kdcTransport === "ssh"
               ? String.raw`(127\.0\.0\.1|::1)`
               : undefined
           }
           maxLength={253}
         />
       </label>
+      {editor.kdcTransport === "direct" && (
+        <p className="text-sm text-muted-foreground">
+          {t(($) => {
+            return $.vnc.transport.privateDirectHelp;
+          })}
+        </p>
+      )}
       <label className="grid gap-2 text-sm">
         <span>
           {t(($) => {
@@ -367,12 +390,18 @@ function KerberosKdcFields({
           })}
         </span>
         <Input
+          key={editor.kdcTransport}
           name="kdcPort"
           type="number"
           min={1}
           max={65_535}
           required
-          defaultValue={saved?.kdc?.port ?? 88}
+          defaultValue={
+            editor.kdcTransport === "cloudflare_access"
+              ? 443
+              : (saved?.kdc?.port ?? 88)
+          }
+          readOnly={editor.kdcTransport === "cloudflare_access"}
         />
       </label>
       <KerberosLifetimeFields saved={saved} />

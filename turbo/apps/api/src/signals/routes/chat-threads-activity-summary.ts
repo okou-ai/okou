@@ -5,9 +5,8 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf } from "../context/request";
-import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
-import { requestActivitySummary } from "../services/chat-activity-summary.service";
+import { requestActivitySummary$ } from "../services/chat-activity-summary.service";
 
 const body$ = bodyResultOf(chatThreadActivitySummaryContract.summarize);
 const summarize$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -19,8 +18,8 @@ const summarize$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
   set(setResHeader$, "Cache-Control", "no-store");
-  const result = await requestActivitySummary(
-    set(writeDb$),
+  const result = await set(
+    requestActivitySummary$,
     {
       threadId: params.id,
       runId: body.data.runId,

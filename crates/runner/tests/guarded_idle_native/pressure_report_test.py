@@ -12,6 +12,7 @@ import uuid
 
 import pressure_report
 import report
+from report_test import prepare_snapshot_record
 
 
 class PressureReportTests(unittest.TestCase):
@@ -44,8 +45,9 @@ class PressureReportTests(unittest.TestCase):
             "profile": {"vcpu": 2, "memory_mib": 4096, "home_mib": 16384},
             "required_fixture_tail_bytes": 64*1024**2,
         }
+        prepare_snapshot_record(self.root, self.artifacts)
         self.collector = {
-            "format": "runner-memory-calibration-v1", "success": True,
+            "format": "runner-memory-calibration-v2", "success": True,
             "cleanup_confirmed": True, "driver_wait_confirmed": True, "driver_exit_code": 0,
             "remaining_children": [], "errors": [],
             "metadata": {"native_terminal_artifacts": self.artifacts,
@@ -79,7 +81,11 @@ class PressureReportTests(unittest.TestCase):
                 self.samples.append({"monotonic_ns": clock+1, "mem_available_bytes": 10*gib,
                                      "sample_age_ns": 2, "read_duration_ns": 1,
                                      "processes": [{"pid": 123, "start_ticks": 456,
-                                                    "rss_bytes": 4096, "pss_bytes": 2048}]})
+                                                    "rss_bytes": 4096, "pss_bytes": 2048,
+                                                    "residency_state": "measured",
+                                                    "residency_reason": "smaps_rollup",
+                                                    "observed_monotonic_ns": clock+1,
+                                                    "exit_observed_monotonic_ns": None}]})
                 clock += 10
             if kind == "physical":
                 values = [("wave_completed", {"selected": 1, "completed": 1, "uncertain": 0,
@@ -210,7 +216,10 @@ class PressureReportTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.validate()
 
     def test_partial_residency_remains_unknown_and_intervention_is_refused(self):
-        self.samples[3]["processes"].append({"pid": 999, "start_ticks": 888, "rss_bytes": None, "pss_bytes": None})
+        for sample in self.samples[3:]:
+            sample["processes"].append({"pid": 999, "start_ticks": 888, "rss_bytes": None, "pss_bytes": None,
+                "residency_state": "unavailable", "residency_reason": "permission_denied",
+                "observed_monotonic_ns": sample["monotonic_ns"], "exit_observed_monotonic_ns": None})
         self.assertFalse(self.validate()["residency_complete"])
         self.collector["cleanup_intervened"] = True
         with self.assertRaises(ValueError): self.validate()

@@ -1,4 +1,4 @@
--- vm0:non-transactional
+-- okou:non-transactional
 -- Heartbeat updates rewrote both heartbeat indexes on every write, and no query
 -- uses them: active-run scans filter by status only. Build the status-only
 -- index first so those scans never lose index support, then drop the heartbeat

@@ -36,7 +36,7 @@ import {
 import {
   connectorCatalogDiscovery$,
   connectBuiltinConnectorOAuthAuthCodeAndSettle$,
-  connectBuiltinConnectorNoAuth$,
+  connectBuiltinConnectorNoAuthAndSettle$,
   builtinConnectFlowSlug$,
   runBuiltinConnectorConnectSuccess$,
   connectorsSearch$,
@@ -1358,7 +1358,7 @@ export function ConnectorsPage() {
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
   const connectFlowSlug = useGet(builtinConnectFlowSlug$);
   const connect = useSet(connectBuiltinConnectorOAuthAuthCodeAndSettle$);
-  const connectNoAuth = useSet(connectBuiltinConnectorNoAuth$);
+  const connectNoAuth = useSet(connectBuiltinConnectorNoAuthAndSettle$);
   const signal = useGet(pageSignal$);
   const scopeReviewSelection = useGet(builtinConnectorScopeReviewSelection$);
   const setScopeReviewSelection = useSet(
@@ -1462,7 +1462,7 @@ export function ConnectorsPage() {
         );
       },
       connectNoAuth: async (authMethod) => {
-        const result = await connectNoAuth(
+        await connectNoAuth(
           {
             connectorSlug: connector.slug,
             authMethod,
@@ -1471,17 +1471,16 @@ export function ConnectorsPage() {
               authorizeVisibleAgents: true,
               connectorLabel: connector.label,
             },
+            onSuccess: (connectionId, attemptSignal) => {
+              return finishExplicitAccountAdd(
+                connector,
+                connectionId,
+                attemptSignal,
+              );
+            },
           },
           signal,
         );
-        if (result) {
-          await finishExplicitAccountAdd(
-            connector,
-            result.connectionId,
-            signal,
-          );
-        }
-        return result;
       },
     };
   };

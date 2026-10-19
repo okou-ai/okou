@@ -1,19 +1,16 @@
 import { command } from "ccstate";
 import { getUserTemplateStorageName } from "@okouai/core/storage-names";
 import { userTemplates } from "@okouai/db/schema/user-template";
-import { eq } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 
 import { badRequestMessage } from "../../lib/error";
 import { nowDate } from "../../lib/time";
-import { writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   loadTemplatePackage$,
   resolveTemplateUploads$,
 } from "./template-package.service";
-import {
-  loadAccessibleUserTemplate,
-  type UserTemplateRow,
-} from "./user-template-data.service";
+import type { UserTemplateRow } from "./user-template-data.service";
 import { packageLimitsFor } from "./user-template-publish.service";
 import { uploadVolumeServerSide$ } from "./storage-volume-upload.service";
 
@@ -48,7 +45,7 @@ function rejected(message: string): RepackageResult {
  */
 export const replaceUserTemplatePackage$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -58,12 +55,24 @@ export const replaceUserTemplatePackage$ = command(
     signal: AbortSignal,
   ): Promise<RepackageResult> => {
     const db = set(writeDb$);
-    const row = await loadAccessibleUserTemplate(db, {
-      orgId: args.orgId,
-      userId: args.userId,
-      templateId: args.templateId,
-    });
+    const [selectedRow] = await get(db$)
+      .select()
+      .from(userTemplates)
+      .where(
+        and(
+          eq(userTemplates.id, args.templateId),
+          and(
+            eq(userTemplates.orgId, args.orgId),
+            or(
+              eq(userTemplates.ownerUserId, args.userId),
+              eq(userTemplates.visibility, "organization"),
+            ),
+          ),
+        ),
+      )
+      .limit(1);
     signal.throwIfAborted();
+    const row = selectedRow ?? null;
     // A template the caller may see but not manage answers the same way as one
     // that does not exist. Saying "you may read this but not change it" would
     // confirm a colleague's private row to someone who cannot act on it.

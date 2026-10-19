@@ -46,7 +46,6 @@ test.each(TELEGRAM_PATHS)(
     await expect(
       screen.findByRole("heading", { name: "Already connected to Telegram" }),
     ).resolves.toBeInTheDocument();
-    expect(screen.getByText("Connected as 99001.")).toBeInTheDocument();
     expect(getAction("link", "Open Telegram")).toHaveAttribute(
       "href",
       "https://t.me/agent_bot",

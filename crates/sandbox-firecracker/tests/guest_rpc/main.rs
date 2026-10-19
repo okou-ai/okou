@@ -16,6 +16,7 @@ use serde_json::{Value, json, value::RawValue};
 type TestResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
 mod duplex;
+mod file_read;
 mod filesystem;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -49,6 +50,7 @@ async fn exercise_factories(runtime: &FirecrackerRuntime, base: PathBuf) -> Test
         };
         let mut factory = runtime
             .create_factory(FactoryConfig {
+                home_drive_pressure: None,
                 profile: "vm0/rpc-metal".into(),
                 binary_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_FIRECRACKER")?),
                 kernel_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_KERNEL")?),
@@ -94,7 +96,7 @@ async fn exercise_sandbox(sandbox: &mut dyn Sandbox) -> TestResult<()> {
     sandbox.bind_run_control(&run)?;
     sandbox.start().await?;
     let first_epoch = duplex::exercise(sandbox, &run, &registry, None).await?;
-    let retired_cursor = first_epoch.cursor().to_owned();
+    let retired_handles = first_epoch.handles().clone();
     // The established duplex must not consume or block the independent RPC path.
     exercise_requests(sandbox, &run).await?;
     let stale = sandbox
@@ -122,7 +124,8 @@ async fn exercise_sandbox(sandbox: &mut dyn Sandbox) -> TestResult<()> {
     {
         return Err(io::Error::other("old Run duplex acceptor survived park/reassignment").into());
     }
-    let next_epoch = duplex::exercise(sandbox, &next_run, &registry, Some(&retired_cursor)).await?;
+    let next_epoch =
+        duplex::exercise(sandbox, &next_run, &registry, Some(&retired_handles)).await?;
     exercise_requests(sandbox, &next_run).await?;
     next_epoch.verify_provider_stop(sandbox).await?;
     println!(

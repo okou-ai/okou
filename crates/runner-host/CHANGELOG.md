@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.9.11](https://github.com/okou-ai/okou/compare/runner-host-v0.9.10...runner-host-v0.9.11) (2026-10-19)
+
+
+### Refactoring
+
+* **runner-host:** converge status command failure retirement ([#41136](https://github.com/okou-ai/okou/issues/41136)) ([c92bedc](https://github.com/okou-ai/okou/commit/c92bedc380cc47c3c228668a35c5c1e5fce8e73a))
+
+## [0.9.10](https://github.com/okou-ai/okou/compare/runner-host-v0.9.9...runner-host-v0.9.10) (2026-10-17)
+
+## [0.9.9](https://github.com/okou-ai/okou/compare/runner-host-v0.9.8...runner-host-v0.9.9) (2026-10-17)
+
+
+### Refactoring
+
+* **runner-host:** share bounded file content reads ([#40910](https://github.com/okou-ai/okou/issues/40910)) ([086e283](https://github.com/okou-ai/okou/commit/086e2832b605fc8e24ee2174a19a532180f2f87d))
+
+## [0.9.8](https://github.com/okou-ai/okou/compare/runner-host-v0.9.7...runner-host-v0.9.8) (2026-10-17)
+
+
+### Performance Improvements
+
+* **runner:** publish independent home cache entries concurrently ([#40750](https://github.com/okou-ai/okou/issues/40750)) ([a184cdc](https://github.com/okou-ai/okou/commit/a184cdca83dda487a92c2f7e1f6f921e3115179d))
+
+## [0.9.7](https://github.com/okou-ai/okou/compare/runner-host-v0.9.6...runner-host-v0.9.7) (2026-10-16)
+
 ## [0.9.6](https://github.com/okou-ai/okou/compare/runner-host-v0.9.5...runner-host-v0.9.6) (2026-10-16)
 
 ## [0.9.5](https://github.com/okou-ai/okou/compare/runner-host-v0.9.4...runner-host-v0.9.5) (2026-10-16)

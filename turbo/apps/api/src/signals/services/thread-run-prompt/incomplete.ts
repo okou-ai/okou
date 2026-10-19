@@ -22,7 +22,7 @@ import {
 } from "@okouai/api-contracts/contracts/chat-events";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { executeRawRows } from "../../../lib/db-raw-rows";
+import { parseRawRows } from "../../../lib/db-raw-rows";
 import { pgBooleanDecoder } from "../../../lib/db-structured-result";
 import { db$, rawSqlReadDb$ } from "../../external/db";
 import { canonicalChatEventContent } from "../canonical-chat-event-read.service";
@@ -267,9 +267,7 @@ function createIncompleteRoundSelection(
     // Handwritten raw SQL needs `execute`; see rawSqlReadDb$.
     const db = get(rawSqlReadDb$);
     const { newestAnchor, precedingAnchor } = anchors;
-    const rows = await executeRawRows(
-      db,
-      sql`
+    const frontierQuery = sql`
       WITH RECURSIVE incomplete_frontier AS (
         SELECT candidate.*, 1 AS depth
         FROM (${newestAnchor}) AS candidate(run_id, run_status, is_success, seq_id)
@@ -286,9 +284,11 @@ function createIncompleteRoundSelection(
       SELECT run_id AS "runId", run_status AS "runStatus", is_success AS "isSuccess"
       FROM incomplete_frontier
       ORDER BY depth
-    `,
-      incompleteRoundFrontierRowSchema,
-    );
+    `;
+    const rowSchema = incompleteRoundFrontierRowSchema;
+    const rows = await (async () => {
+      return parseRawRows(rowSchema, await db.execute(frontierQuery));
+    })();
     const rounds: IncompleteRoundSelection[] = [];
     for (const row of rows) {
       if (row.isSuccess) {

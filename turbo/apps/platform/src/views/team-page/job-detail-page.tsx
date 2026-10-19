@@ -57,24 +57,22 @@ import {
   buildAgentInstructions$,
 } from "../../signals/okou-page/job-detail/instructions";
 import { updateAgentSettings$ } from "../../signals/okou-page/job-detail/settings";
-import { deleteAgent$ } from "../../signals/okou-page/job-detail/delete";
+import { deleteAgentAndReturnToList$ } from "../../signals/okou-page/job-detail/actions.ts";
 import {
   agentAuthorizedConnectors$,
-  authorizeAgentConnector$,
-  deauthorizeAgentConnector$,
-  saveAgentConnectors$,
+  toggleAgentConnector$,
 } from "../../signals/okou-page/job-detail/connectors";
 import {
   agentActiveTab$,
   setAgentActiveTab$,
 } from "../../signals/okou-page/job-detail/agent-name";
 import { Link } from "../router/link.tsx";
-import { detachedNavigateTo$ } from "../../signals/route.ts";
 import {
   bestEffort,
   detach,
   onDomEventFn,
   Reason,
+  withCleanup,
 } from "../../signals/utils.ts";
 import { AgentAvatarImg } from "../okou-page/sidebar-shared.tsx";
 import { openAvatarMaker$ } from "../../signals/okou-page/settings/avatar-maker.ts";
@@ -705,9 +703,9 @@ function JobPermissionsTab({
   const connectorsLoadable = useLastLoadable(agentAuthorizedConnectors$);
   const authorizedConnectors =
     connectorsLoadable.state === "hasData" ? connectorsLoadable.data : [];
-  const authorizeFn = useSet(authorizeAgentConnector$);
-  const deauthorizeFn = useSet(deauthorizeAgentConnector$);
-  const saveConnectors = useSet(saveAgentConnectors$);
+  const [toggleLoadable, toggleConnector] = useLoadableSet(
+    toggleAgentConnector$,
+  );
   const pageSignal = useGet(pageSignal$);
   const userGrantsLoadable = useLoadable(currentAgentUserPermissionGrants$);
   const userGrants =
@@ -727,6 +725,12 @@ function JobPermissionsTab({
   const setSearchActive = useSet(setPermSearchActive$);
   const savingConnectorSlug = useGet(permSavingConnectorSlug$);
   const setSavingConnectorSlug = useSet(setPermSavingConnectorSlug$);
+  const toggleError = loadableErrorMessage(
+    toggleLoadable,
+    t(($) => {
+      return $.errors.unknown;
+    }),
+  );
 
   const connectorsLoading = connectorsLoadable.state === "loading";
 
@@ -756,26 +760,22 @@ function JobPermissionsTab({
     if (savingConnectorSlug !== null) {
       return;
     }
-    const modify = checked
-      ? authorizeFn(targetConnectorSlug, pageSignal)
-      : deauthorizeFn(targetConnectorSlug, pageSignal);
     setSavingConnectorSlug(targetConnectorSlug);
-    await bestEffort(
-      (async () => {
-        await modify;
-        await saveConnectors(
-          targetConnectorSlug,
-          checked ? "add" : "remove",
-          pageSignal,
-        );
-        toast.success(
-          t(($) => {
-            return $.authorization.connectorsSaved;
-          }),
-        );
-      })(),
+    await withCleanup(
+      bestEffort(
+        (async () => {
+          await toggleConnector(targetConnectorSlug, checked, pageSignal);
+          toast.success(
+            t(($) => {
+              return $.authorization.connectorsSaved;
+            }),
+          );
+        })(),
+      ),
+      () => {
+        setSavingConnectorSlug(null);
+      },
     );
-    setSavingConnectorSlug(null);
   };
 
   const status =
@@ -792,6 +792,11 @@ function JobPermissionsTab({
 
   return (
     <div className="mx-auto w-full max-w-[900px] flex flex-col gap-4">
+      {toggleError && (
+        <p role="alert" className="text-sm text-destructive">
+          {toggleError}
+        </p>
+      )}
       {connectedConnectors.length === 0 ? (
         <NoConnectedConnectors />
       ) : (
@@ -1126,13 +1131,13 @@ function AgentTabContent({
   visibility: "public" | "private";
   canEditVisibility: boolean;
 }) {
-  const deleteAgent = useSet(deleteAgent$);
-  const nav = useSet(detachedNavigateTo$);
+  const [, deleteAgentAndReturnToList] = useLoadableSet(
+    deleteAgentAndReturnToList$,
+  );
   const pageSignal = useGet(pageSignal$);
 
   const handleDelete = async () => {
-    await deleteAgent(pageSignal);
-    nav("/agents");
+    await deleteAgentAndReturnToList(pageSignal);
   };
 
   switch (activeTab) {

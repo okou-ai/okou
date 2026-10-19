@@ -35,6 +35,8 @@ class RecoveryReportTests(unittest.TestCase):
                 event["unix_ns"] = event["monotonic_ns"]+1000
             for sample in self.samples[offset*6:offset*6+6]:
                 sample["monotonic_ns"] = (sample["monotonic_ns"]-1)*10**10+1
+                for process in sample["processes"]:
+                    process["observed_monotonic_ns"] = sample["monotonic_ns"]
             base = terminal[1]["monotonic_ns"]
             def clock(seconds):
                 return base+int(seconds*10**9)
@@ -182,7 +184,10 @@ class RecoveryReportTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.validate()
 
     def test_unknown_residency_stays_an_explicit_lower_bound(self):
-        self.samples[1]["processes"].append({"pid": 999, "start_ticks": 888, "rss_bytes": None, "pss_bytes": None})
+        for sample in self.samples[1:]:
+            sample["processes"].append({"pid": 999, "start_ticks": 888, "rss_bytes": None, "pss_bytes": None,
+                "residency_state": "unavailable", "residency_reason": "permission_denied",
+                "observed_monotonic_ns": sample["monotonic_ns"], "exit_observed_monotonic_ns": None})
         self.assertFalse(self.validate()["residency_complete"])
 
     def test_raw_policy_tampering_and_duplicate_keys_fail(self):

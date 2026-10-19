@@ -897,11 +897,6 @@ export const setBuiltinConnectorScopeReviewSelection$ = command(
 const manualGrantFormValues$ = state<Record<string, Record<string, string>>>(
   {},
 );
-export const builtinManualGrantFormSubmitting$ = computed((get) => {
-  return get(internalManualGrantFormSubmitting$);
-});
-const internalManualGrantFormSubmitting$ = state<string | null>(null);
-
 export const setBuiltinManualGrantFormValue$ = command(
   ({ get, set }, connectorSlug: ConnectorSlug, name: string, value: string) => {
     const current = get(manualGrantFormValues$);
@@ -927,12 +922,6 @@ export const builtinManualGrantFormValuesFor$ = computed((get) => {
     return values[connectorSlug] ?? {};
   };
 });
-
-export const setBuiltinManualGrantFormSubmitting$ = command(
-  ({ set }, value: string | null) => {
-    set(internalManualGrantFormSubmitting$, value);
-  },
-);
 
 type FinishConnectorConnectionOptions = PostConnectOptions & {
   readonly clearSelectedConnector?: boolean;
@@ -1101,6 +1090,28 @@ export const submitBuiltinManualGrant$ = command(
         }
       },
     );
+  },
+);
+
+/** Keep manual grant submission busy until its continuation has settled. */
+export const submitBuiltinManualGrantAndSettle$ = command(
+  async (
+    { set },
+    args: SubmitManualGrantParams & {
+      readonly onSuccess: ConnectorConnectSuccess;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const connected = await set(submitBuiltinManualGrant$, args, signal);
+    if (connected) {
+      await set(
+        runBuiltinConnectorConnectSuccess$,
+        args.connectorSlug,
+        args.onSuccess,
+        connected.connectionId,
+        signal,
+      );
+    }
   },
 );
 

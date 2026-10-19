@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.53.1](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.0...sandbox-firecracker-v0.53.1) (2026-10-19)
+
+
+### Refactoring
+
+* **sandbox-firecracker:** encode factory cleanup lifecycle ([#41051](https://github.com/okou-ai/okou/issues/41051)) ([92291f8](https://github.com/okou-ai/okou/commit/92291f87e78b101f0cfef54ea96de6e7055d3f3d))
+
+## [0.53.0](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.52.7...sandbox-firecracker-v0.53.0) (2026-10-17)
+
+
+### Features
+
+* **sandbox:** add bounded file reads to fs v3 ([#40931](https://github.com/okou-ai/okou/issues/40931)) ([cc0d352](https://github.com/okou-ai/okou/commit/cc0d352860e96b1f45746e30bb17112b293003e2))
+
+## [0.52.7](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.52.6...sandbox-firecracker-v0.52.7) (2026-10-17)
+
+## [0.52.6](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.52.5...sandbox-firecracker-v0.52.6) (2026-10-17)
+
+## [0.52.5](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.52.4...sandbox-firecracker-v0.52.5) (2026-10-17)
+
+## [0.52.4](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.52.3...sandbox-firecracker-v0.52.4) (2026-10-17)
+
+## [0.52.3](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.52.2...sandbox-firecracker-v0.52.3) (2026-10-16)
+
+## [0.52.2](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.52.1...sandbox-firecracker-v0.52.2) (2026-10-16)
+
+## [0.52.1](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.52.0...sandbox-firecracker-v0.52.1) (2026-10-16)
+
+## [0.52.0](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.51.9...sandbox-firecracker-v0.52.0) (2026-10-16)
+
+
+### Features
+
+* **runner:** retain home cache by filesystem pressure ([#40658](https://github.com/okou-ai/okou/issues/40658)) ([713e66c](https://github.com/okou-ai/okou/commit/713e66cc7d558d4626834ea5186cfa0f2517e207))
+
 ## [0.51.9](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.51.8...sandbox-firecracker-v0.51.9) (2026-10-16)
 
 

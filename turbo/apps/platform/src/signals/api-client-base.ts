@@ -126,7 +126,6 @@ export function createAuthedContractClient<T extends AppRouter>(
       const requestWithToken = async (
         token: string | null,
         diagnostic: AuthDiagnosticContext,
-        requestSignal?: AbortSignal,
       ) => {
         const headers = new Headers(args.headers);
         if (token) {
@@ -138,7 +137,6 @@ export function createAuthedContractClient<T extends AppRouter>(
           headers.set("X-Vercel-Protection-Bypass", vercelProtectionBypass);
         }
         const startedAt = now();
-        const requestId = headers.get(CLIENT_REQUEST_ID_HEADER) ?? undefined;
         const response = await observeAuthHttpRequest(
           () => {
             return trpcRestFetchApi({
@@ -146,7 +144,6 @@ export function createAuthedContractClient<T extends AppRouter>(
               fetchOptions: {
                 ...args.fetchOptions,
                 credentials: "include",
-                ...(requestSignal ? { signal: requestSignal } : {}),
               },
               headers,
               path,
@@ -154,7 +151,7 @@ export function createAuthedContractClient<T extends AppRouter>(
           },
           diagnostic,
           {
-            requestId,
+            requestId: headers.get(CLIENT_REQUEST_ID_HEADER) ?? undefined,
             method: args.route.method,
             route: args.route.path,
             token,
@@ -180,45 +177,53 @@ export function createAuthedContractClient<T extends AppRouter>(
         bootstrapResponse ??
         (await (async () => {
           const validateToken = options.getTokenGuard?.();
-          const diagnostic: AuthDiagnosticContext = {
-            ...options.authDiagnosticContext,
-            operationId: createAuthDiagnosticId(),
+          const request = async () => {
+            signal?.throwIfAborted();
+            validateToken?.();
+            const diagnostic: AuthDiagnosticContext = {
+              ...options.authDiagnosticContext,
+              operationId: createAuthDiagnosticId(),
+            };
+            const token = await observeAuthTokenRead(
+              () => {
+                return options.getToken(diagnostic, signal);
+              },
+              diagnostic,
+              { method: args.route.method, route: args.route.path },
+              signal,
+            );
+            signal?.throwIfAborted();
+            validateToken?.();
+            const measurement = startClientTelemetryMeasurement();
+            const requestTelemetry = {
+              event_name: "http.request",
+              method: args.route.method,
+              route: args.route.path,
+            } satisfies ClientTelemetryOperation;
+            const networkResponse = await onRejection(
+              requestWithToken(token, diagnostic),
+              (error) => {
+                recordClientTelemetry(
+                  measurement,
+                  requestTelemetry,
+                  clientTelemetryOutcomeForError(error),
+                );
+              },
+            );
+            recordClientTelemetry(
+              measurement,
+              {
+                ...requestTelemetry,
+                response_status_code: networkResponse.status,
+              },
+              networkResponse.status >= 500 ? "error" : "success",
+            );
+            return networkResponse;
           };
-          const token = await observeAuthTokenRead(
-            () => {
-              return options.getToken(diagnostic, signal);
-            },
-            diagnostic,
-            { method: args.route.method, route: args.route.path },
-            signal,
-          );
-          signal?.throwIfAborted();
-          validateToken?.();
-          const measurement = startClientTelemetryMeasurement();
-          const requestTelemetry = {
-            event_name: "http.request",
-            method: args.route.method,
-            route: args.route.path,
-          } satisfies ClientTelemetryOperation;
-          const networkResponse = await onRejection(
-            requestWithToken(token, diagnostic, signal),
-            (error) => {
-              recordClientTelemetry(
-                measurement,
-                requestTelemetry,
-                clientTelemetryOutcomeForError(error),
-              );
-            },
-          );
-          recordClientTelemetry(
-            measurement,
-            {
-              ...requestTelemetry,
-              response_status_code: networkResponse.status,
-            },
-            networkResponse.status >= 500 ? "error" : "success",
-          );
-          return networkResponse;
+          const firstResponse = await request();
+          // A suspended runtime can outlive its token. Read again and replay
+          // once; a second failure belongs to the existing caller boundary.
+          return firstResponse.status === 401 ? await request() : firstResponse;
         })());
 
       if (reportForceUpgradeResponse(response, options.onForceUpgrade)) {

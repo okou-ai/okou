@@ -63,55 +63,6 @@ function requiredSlackPermalink(deliveryUrl: string | null): string {
   return deliveryUrl;
 }
 
-async function canonicalSlackDeliveryRow(
-  db: Db,
-  args: {
-    readonly assetId: string;
-    readonly operationId: string;
-    readonly runId: string;
-    readonly userId: string;
-  },
-): Promise<CanonicalSlackDeliveryRow | undefined> {
-  const [row] = await db
-    .select({
-      assetId: runUploadedFiles.id,
-      filename: runUploadedFiles.filename,
-      sizeBytes: runUploadedFiles.sizeBytes,
-      assetUrl: runUploadedFiles.url,
-      operationId: canonicalAssetDeliveries.operationId,
-      status: canonicalAssetDeliveries.status,
-      destination: canonicalAssetDeliveries.destination,
-      externalId: canonicalAssetDeliveries.externalId,
-      deliveryUrl: canonicalAssetDeliveries.url,
-      lastError: canonicalAssetDeliveries.lastError,
-    })
-    .from(canonicalAssetDeliveries)
-    .innerJoin(
-      runUploadedFiles,
-      eq(runUploadedFiles.id, canonicalAssetDeliveries.assetId),
-    )
-    .where(
-      and(
-        eq(runUploadedFiles.id, args.assetId),
-        eq(runUploadedFiles.runId, args.runId),
-        eq(runUploadedFiles.userId, args.userId),
-        eq(runUploadedFiles.assetVersion, CANONICAL_ASSET_VERSION),
-        eq(runUploadedFiles.classification, "published-output"),
-        eq(runUploadedFiles.materializationStatus, "ready"),
-        eq(canonicalAssetDeliveries.provider, "slack"),
-        eq(canonicalAssetDeliveries.operationId, args.operationId),
-      ),
-    )
-    .limit(1);
-  if (!row) {
-    return undefined;
-  }
-  if (row.destination.provider !== undefined) {
-    throw new Error("Slack delivery has a Discord destination");
-  }
-  return { ...row, destination: row.destination };
-}
-
 function deliveredResult(
   row: CanonicalSlackDeliveryRow,
 ): CanonicalSlackDeliveryResult {
@@ -344,7 +295,49 @@ export const prepareCanonicalSlackDelivery$ = command(
     signal: AbortSignal,
   ): Promise<CanonicalSlackDeliveryResult | null> => {
     const db = set(writeDb$);
-    const row = await canonicalSlackDeliveryRow(db, args);
+    const readDelivery = async (): Promise<
+      CanonicalSlackDeliveryRow | undefined
+    > => {
+      const [row] = await db
+        .select({
+          assetId: runUploadedFiles.id,
+          filename: runUploadedFiles.filename,
+          sizeBytes: runUploadedFiles.sizeBytes,
+          assetUrl: runUploadedFiles.url,
+          operationId: canonicalAssetDeliveries.operationId,
+          status: canonicalAssetDeliveries.status,
+          destination: canonicalAssetDeliveries.destination,
+          externalId: canonicalAssetDeliveries.externalId,
+          deliveryUrl: canonicalAssetDeliveries.url,
+          lastError: canonicalAssetDeliveries.lastError,
+        })
+        .from(canonicalAssetDeliveries)
+        .innerJoin(
+          runUploadedFiles,
+          eq(runUploadedFiles.id, canonicalAssetDeliveries.assetId),
+        )
+        .where(
+          and(
+            eq(runUploadedFiles.id, args.assetId),
+            eq(runUploadedFiles.runId, args.runId),
+            eq(runUploadedFiles.userId, args.userId),
+            eq(runUploadedFiles.assetVersion, CANONICAL_ASSET_VERSION),
+            eq(runUploadedFiles.classification, "published-output"),
+            eq(runUploadedFiles.materializationStatus, "ready"),
+            eq(canonicalAssetDeliveries.provider, "slack"),
+            eq(canonicalAssetDeliveries.operationId, args.operationId),
+          ),
+        )
+        .limit(1);
+      if (!row) {
+        return undefined;
+      }
+      if (row.destination.provider !== undefined) {
+        throw new Error("Slack delivery has a Discord destination");
+      }
+      return { ...row, destination: row.destination };
+    };
+    const row = await readDelivery();
     signal.throwIfAborted();
     if (!row) {
       return null;
@@ -420,70 +413,6 @@ interface CompleteCanonicalSlackDeliveryArgs {
   readonly client: SlackClient;
 }
 
-async function completeLoadedSlackDelivery(
-  db: Db,
-  row: CanonicalSlackDeliveryRow,
-  args: CompleteCanonicalSlackDeliveryArgs,
-  signal: AbortSignal,
-): Promise<CanonicalSlackDeliveryResult> {
-  if (row.status === "delivered") {
-    return deliveredResult(row);
-  }
-  if (row.externalId !== args.fileId) {
-    return await deliveryResultAfterTransitionConflict(db, row);
-  }
-  if (args.uploadError) {
-    return await markDeliveryFailed(db, row, {
-      code: "slack-upload-failed",
-      message: args.uploadError,
-      retryable: true,
-    });
-  }
-
-  const completion = await settle(
-    args.client.completeUploadExternal({
-      fileId: args.fileId,
-      channel: row.destination.channelId,
-      threadTs: row.destination.threadTs,
-      title: row.destination.title,
-      initialComment: row.destination.initialComment,
-    }),
-    signal,
-  );
-  signal.throwIfAborted();
-  if (!completion.ok) {
-    return await markDeliveryFailed(db, row, {
-      code: "slack-request-failed",
-      message: providerFailureMessage(completion.error),
-      retryable: true,
-    });
-  }
-  const completed = completion.value;
-  if (completed.kind === "slack_error") {
-    return await markDeliveryFailed(db, row, {
-      code: completed.error,
-      message: `Slack delivery failed: ${completed.error}`,
-      retryable: true,
-    });
-  }
-
-  const infoResult = await settle(args.client.getFileInfo(args.fileId), signal);
-  signal.throwIfAborted();
-  if (!infoResult.ok) {
-    return await markDeliveryFailed(db, row, {
-      code: "slack-request-failed",
-      message: providerFailureMessage(infoResult.error),
-      retryable: true,
-    });
-  }
-  const info = infoResult.value;
-  const permalinkResult = resolveSlackFilePermalink(info);
-  if (!permalinkResult.ok) {
-    return await markDeliveryFailed(db, row, permalinkResult.error);
-  }
-  return await markDeliveryDelivered(db, row, permalinkResult.permalink);
-}
-
 /**
  * Completes a canonical Slack delivery to its persisted destination and
  * reports that destination's channel alongside the delivery result.
@@ -544,7 +473,70 @@ export const completeCanonicalSlackDelivery$ = command(
     if (!row) {
       return null;
     }
-    const result = await completeLoadedSlackDelivery(db, row, args, signal);
+    const completeDelivery = async (
+      deliverySignal: AbortSignal,
+    ): Promise<CanonicalSlackDeliveryResult> => {
+      if (row.status === "delivered") {
+        return deliveredResult(row);
+      }
+      if (row.externalId !== args.fileId) {
+        return await deliveryResultAfterTransitionConflict(db, row);
+      }
+      if (args.uploadError) {
+        return await markDeliveryFailed(db, row, {
+          code: "slack-upload-failed",
+          message: args.uploadError,
+          retryable: true,
+        });
+      }
+
+      const completion = await settle(
+        args.client.completeUploadExternal({
+          fileId: args.fileId,
+          channel: row.destination.channelId,
+          threadTs: row.destination.threadTs,
+          title: row.destination.title,
+          initialComment: row.destination.initialComment,
+        }),
+        deliverySignal,
+      );
+      deliverySignal.throwIfAborted();
+      if (!completion.ok) {
+        return await markDeliveryFailed(db, row, {
+          code: "slack-request-failed",
+          message: providerFailureMessage(completion.error),
+          retryable: true,
+        });
+      }
+      const completed = completion.value;
+      if (completed.kind === "slack_error") {
+        return await markDeliveryFailed(db, row, {
+          code: completed.error,
+          message: `Slack delivery failed: ${completed.error}`,
+          retryable: true,
+        });
+      }
+
+      const infoResult = await settle(
+        args.client.getFileInfo(args.fileId),
+        deliverySignal,
+      );
+      deliverySignal.throwIfAborted();
+      if (!infoResult.ok) {
+        return await markDeliveryFailed(db, row, {
+          code: "slack-request-failed",
+          message: providerFailureMessage(infoResult.error),
+          retryable: true,
+        });
+      }
+      const info = infoResult.value;
+      const permalinkResult = resolveSlackFilePermalink(info);
+      if (!permalinkResult.ok) {
+        return await markDeliveryFailed(db, row, permalinkResult.error);
+      }
+      return await markDeliveryDelivered(db, row, permalinkResult.permalink);
+    };
+    const result = await completeDelivery(signal);
     return { ...result, channelId: row.destination.channelId };
   },
 );

@@ -177,27 +177,29 @@ pub(super) struct FactoryCleanupGroup {
     state: StdMutex<FactoryCleanupGroupState>,
 }
 
-/// Mutable task ownership and lifecycle state for `FactoryCleanupGroup`.
-struct FactoryCleanupGroupState {
-    /// Whether the group is in its normal accepting condition.
-    ///
-    /// When this and `closed` are both false, shutdown has begun but may have
-    /// been cancelled; new registrations remain tracked for the current or a
-    /// later shutdown attempt.
-    accepting: bool,
-    /// Whether shutdown has exhausted tracked work.
+enum FactoryCleanupLifecycle {
+    /// New cleanup is spawned and tracked normally.
+    Accepting,
+    /// Shutdown has begun but may have been cancelled; new registrations remain
+    /// tracked for the current or a later shutdown attempt.
+    ShuttingDown,
+    /// Shutdown has exhausted tracked work.
     ///
     /// A closed group defers new cleanup to the caller until `start_accepting`
     /// reopens it.
-    closed: bool,
+    Closed,
+}
+
+/// Mutable task ownership and lifecycle state for `FactoryCleanupGroup`.
+struct FactoryCleanupGroupState {
+    lifecycle: FactoryCleanupLifecycle,
     tasks: Vec<FactoryCleanupTaskHandle>,
 }
 
 impl FactoryCleanupGroupState {
     fn new() -> Self {
         Self {
-            accepting: true,
-            closed: false,
+            lifecycle: FactoryCleanupLifecycle::Accepting,
             tasks: Vec::new(),
         }
     }
@@ -386,8 +388,7 @@ impl FactoryCleanupGroup {
     pub(super) fn start_accepting(&self) {
         let mut state = self.lock_state();
         Self::reap_completed_locked(&mut state);
-        state.accepting = true;
-        state.closed = false;
+        state.lifecycle = FactoryCleanupLifecycle::Accepting;
     }
 
     /// Register cleanup for factory ownership and return its completion handle.
@@ -410,25 +411,27 @@ impl FactoryCleanupGroup {
         let waiter_label = label.clone();
         let mut state = self.lock_state();
         Self::reap_completed_locked(&mut state);
-        if state.closed {
-            warn!(
-                kind = kind.as_str(),
-                label = %label,
-                "factory cleanup group is closed; rejecting tracked cleanup registration"
-            );
-            return FactoryCleanupRegistration::Rejected(FactoryCleanupRejected {
-                kind,
-                label,
-                cleanup,
-            });
-        }
-
-        if !state.accepting {
-            warn!(
-                kind = kind.as_str(),
-                label = %label,
-                "factory cleanup group is shutting down; registered cleanup task for shutdown drain"
-            );
+        match state.lifecycle {
+            FactoryCleanupLifecycle::Accepting => {}
+            FactoryCleanupLifecycle::ShuttingDown => {
+                warn!(
+                    kind = kind.as_str(),
+                    label = %label,
+                    "factory cleanup group is shutting down; registered cleanup task for shutdown drain"
+                );
+            }
+            FactoryCleanupLifecycle::Closed => {
+                warn!(
+                    kind = kind.as_str(),
+                    label = %label,
+                    "factory cleanup group is closed; rejecting tracked cleanup registration"
+                );
+                return FactoryCleanupRegistration::Rejected(FactoryCleanupRejected {
+                    kind,
+                    label,
+                    cleanup,
+                });
+            }
         }
 
         let (done_tx, done_rx) = tokio::sync::oneshot::channel();
@@ -477,10 +480,10 @@ impl FactoryCleanupGroup {
 
     fn take_shutdown_batch(&self) -> Option<FactoryCleanupBatch<'_>> {
         let mut state = self.lock_state();
-        state.accepting = false;
+        state.lifecycle = FactoryCleanupLifecycle::ShuttingDown;
         Self::reap_completed_locked(&mut state);
         if state.tasks.is_empty() {
-            state.closed = true;
+            state.lifecycle = FactoryCleanupLifecycle::Closed;
             return None;
         }
         Some(FactoryCleanupBatch {
@@ -564,10 +567,10 @@ impl FactoryCleanupGroup {
         loop {
             let mut batch = {
                 let mut state = self.lock_state();
-                state.accepting = false;
+                state.lifecycle = FactoryCleanupLifecycle::ShuttingDown;
                 Self::reap_completed_locked(&mut state);
                 if state.tasks.is_empty() {
-                    state.closed = true;
+                    state.lifecycle = FactoryCleanupLifecycle::Closed;
                     return;
                 }
                 FactoryCleanupBatch {

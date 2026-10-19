@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.15.7](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.15.6...runner-lifecycle-v0.15.7) (2026-10-19)
+
+## [0.15.6](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.15.5...runner-lifecycle-v0.15.6) (2026-10-17)
+
+
+### Bug Fixes
+
+* **runner:** admit claims using reclaimable parked capacity ([#40942](https://github.com/okou-ai/okou/issues/40942)) ([4be79e5](https://github.com/okou-ai/okou/commit/4be79e5a74bdc54d26efe2ebb301f86054076f11))
+
+## [0.15.5](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.15.4...runner-lifecycle-v0.15.5) (2026-10-17)
+
+## [0.15.4](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.15.3...runner-lifecycle-v0.15.4) (2026-10-17)
+
+
+### Performance Improvements
+
+* **runner:** publish independent home cache entries concurrently ([#40750](https://github.com/okou-ai/okou/issues/40750)) ([a184cdc](https://github.com/okou-ai/okou/commit/a184cdca83dda487a92c2f7e1f6f921e3115179d))
+
+## [0.15.3](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.15.2...runner-lifecycle-v0.15.3) (2026-10-17)
+
+## [0.15.2](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.15.1...runner-lifecycle-v0.15.2) (2026-10-16)
+
+## [0.15.1](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.15.0...runner-lifecycle-v0.15.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **runner:** stop background home cache gc during drain ([#40721](https://github.com/okou-ai/okou/issues/40721)) ([f32f299](https://github.com/okou-ai/okou/commit/f32f2993681e4b7074b7789ce3cc5f4e0ac373dd))
+
+
+### Refactoring
+
+* **runner-lifecycle:** share home drive helper result interpretation ([#40717](https://github.com/okou-ai/okou/issues/40717)) ([2132ff6](https://github.com/okou-ai/okou/commit/2132ff6fd345b4dd219f449139616b2c30604113))
+
+## [0.15.0](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.14.10...runner-lifecycle-v0.15.0) (2026-10-16)
+
+
+### Features
+
+* **runner:** retain home cache by filesystem pressure ([#40658](https://github.com/okou-ai/okou/issues/40658)) ([713e66c](https://github.com/okou-ai/okou/commit/713e66cc7d558d4626834ea5186cfa0f2517e207))
+
 ## [0.14.10](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.14.9...runner-lifecycle-v0.14.10) (2026-10-16)
 
 

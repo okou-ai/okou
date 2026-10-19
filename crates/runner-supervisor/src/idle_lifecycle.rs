@@ -86,6 +86,8 @@ pub struct IdleDestroyTracker {
     finalizing_owners:
         Arc<std::sync::Mutex<Vec<crate::finalizing_admission::GuardedFinalizingRecovery>>>,
     pressure_owners: Arc<std::sync::Mutex<Vec<RetainedActivationCleanup>>>,
+    #[cfg(any(test, feature = "test-support"))]
+    pressure_pool_waits: tokio::sync::watch::Sender<u64>,
     pub(crate) optional_blank_owners:
         Arc<std::sync::Mutex<Vec<crate::blank_pool::OptionalBlankResult>>>,
 }
@@ -102,6 +104,8 @@ impl IdleDestroyTracker {
             activation_owners: Arc::new(std::sync::Mutex::new(Vec::new())),
             finalizing_owners: Arc::new(std::sync::Mutex::new(Vec::new())),
             pressure_owners: Arc::new(std::sync::Mutex::new(Vec::new())),
+            #[cfg(any(test, feature = "test-support"))]
+            pressure_pool_waits: tokio::sync::watch::channel(0).0,
             optional_blank_owners: Arc::new(std::sync::Mutex::new(Vec::new())),
         }
     }
@@ -415,6 +419,13 @@ pub enum IdlePressureSelection {
     Exhausted(Vec<BudgetLease>),
 }
 
+pub struct IdlePressureOutcome {
+    pub selection: IdlePressureSelection,
+    pub blank_pool_selection: Option<BlankPoolSelection>,
+    /// Eviction publication belongs to the caller; reuse carries its own snapshot.
+    pub idle_snapshot: Option<IdlePoolSnapshot>,
+}
+
 /// A reuse reservation paired with the idle snapshot captured by the pool
 /// mutation or direct handoff. Its reservation retains the parked/running
 /// distinction so cancellation cannot restore a running sandbox to the pool.
@@ -554,15 +565,15 @@ impl RetiringIdleEntry {
 /// consumed. Resource-budget substitution takes only its short synchronous
 /// mutex inside that pool lock and never carries a guard across an await. Every
 /// evicted payload obtains tracked cleanup ownership before the final pool
-/// snapshot is captured and persisted once.
+/// snapshot is captured. The caller owns publication so pre-claim admission
+/// can register it independently without waiting for status state or IO.
 pub async fn select_idle_entries_for_pressure(
     idle_pool: &SharedIdlePool,
-    status: &StatusTracker,
     tracker: &IdleDestroyTracker,
     budget: &Arc<ResourceBudget>,
     mut retiring_leases: Vec<BudgetLease>,
     request: IdlePressureRequest<'_>,
-) -> (IdlePressureSelection, Option<BlankPoolSelection>) {
+) -> IdlePressureOutcome {
     let (selection, blank_pool_selection, snapshot) = {
         let mut pool = idle_pool.lock().await;
         let (reservation, blank_pool_selection) =
@@ -625,10 +636,11 @@ pub async fn select_idle_entries_for_pressure(
             (selection, blank_pool_selection, snapshot)
         }
     };
-    if let Some(snapshot) = snapshot {
-        set_idle_status_snapshot(status, snapshot).await;
+    IdlePressureOutcome {
+        selection,
+        blank_pool_selection,
+        idle_snapshot: snapshot,
     }
-    (selection, blank_pool_selection)
 }
 
 fn reserve_pressure_reuse(

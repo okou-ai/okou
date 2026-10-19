@@ -470,9 +470,13 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
     }
   });
 
-  it.each(["cimd", "dcr"] as const)(
-    "reauthorizes the exact Automatic OAuth account pinned to the run with %s",
-    async (registration) => {
+  it.each([
+    { registration: "cimd", offlineAccessRegistered: false },
+    { registration: "dcr", offlineAccessRegistered: true },
+    { registration: "dcr", offlineAccessRegistered: false },
+  ] as const)(
+    "reauthorizes the pinned $registration account with offline access registered=$offlineAccessRegistered",
+    async ({ registration, offlineAccessRegistered }) => {
       bdd.acceptAgentStorageWrites();
       runs.acceptStorageDownloads();
       runs.acceptTelemetryIngest();
@@ -483,7 +487,10 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       const provider = mockAutomaticMcpOAuthProvider(context, {
         registration,
         initialExpiresIn: 3600,
-        authorizationCodeScopes: ["read", "read", "read admin"],
+        authorizationCodeScopes: ["read", "read", "read admin offline_access"],
+        authorizationServerScopes: offlineAccessRegistered
+          ? ["read", "write", "offline_access", "unrequested"]
+          : ["read", "write", "unrequested"],
       });
       const actor = bdd.user({ orgRole: "org:admin" });
       const owned: (typeof ownedReauthorizations)[number] = { actor };
@@ -566,6 +573,29 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
         provider.issuer,
         "https://alternate-issuer.example.test",
       ]);
+      provider.advertiseAuthorizationServerScopes([
+        "read",
+        "admin",
+        "offline_access",
+        "unrequested",
+      ]);
+      if (registration === "dcr" && !offlineAccessRegistered) {
+        const rejected = await accept(
+          client().reauthorizeOAuth({
+            headers: headers(okouToken),
+            body: {
+              target: { kind: "custom", customConnectorId: connector.id },
+              scopes: ["admin"],
+            },
+          }),
+          [409],
+        );
+        expect(rejected.body).toMatchObject({
+          error: { code: "MCP_OAUTH_CLIENT_REGISTRATION_CONFLICT" },
+        });
+        expect(provider.registrationBodies).toHaveLength(registrationCount);
+        return;
+      }
 
       const response = await accept(
         client().reauthorizeOAuth({
@@ -579,7 +609,9 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       );
 
       const authorizationUrl = new URL(response.body.authorizationUrl);
-      expect(authorizationUrl.searchParams.get("scope")).toBe("read admin");
+      expect(authorizationUrl.searchParams.get("scope")).toBe(
+        "read admin offline_access",
+      );
       expect(response.body).toMatchObject({
         kind: "oauth",
         expiresAt: expect.any(String),
@@ -605,7 +637,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
         upgradedAccounts.find((account) => {
           return account.id === pinnedAccount.id;
         })?.oauthScopes,
-      ).toStrictEqual(["read", "admin"]);
+      ).toStrictEqual(["read", "admin", "offline_access"]);
       expect(
         upgradedAccounts.find((account) => {
           return account.id === siblingAccount.id;

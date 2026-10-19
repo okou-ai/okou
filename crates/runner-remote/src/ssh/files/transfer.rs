@@ -17,35 +17,133 @@ const WINDOW: usize = 8;
 
 #[derive(Default)]
 pub(super) struct Staging {
-    directory: String,
-    file: String,
-    owned: bool,
-    file_exists: bool,
-    handle: Option<Vec<u8>>,
+    directory: Option<OwnedDirectory>,
+}
+
+struct OwnedDirectory {
+    path: String,
+    file: StagedFile,
+}
+
+enum StagedFile {
+    Unacknowledged,
+    Open(Vec<u8>),
+    // Cleanup has consumed local custody, not confirmed remote closure.
+    CloseUnconfirmed,
+    Closed,
+    Removed,
+}
+
+impl StagedFile {
+    fn take_cleanup_handle(&mut self) -> Option<Vec<u8>> {
+        match self {
+            Self::Open(handle) => {
+                let handle = std::mem::take(handle);
+                *self = Self::CloseUnconfirmed;
+                Some(handle)
+            }
+            _ => None,
+        }
+    }
+}
+
+impl OwnedDirectory {
+    fn file_path(&self) -> String {
+        format!("{}/data", self.path)
+    }
+
+    async fn open<S: AsyncRead + AsyncWrite + Unpin>(
+        &mut self,
+        client: &mut Client<S>,
+    ) -> Result<Vec<u8>, Error> {
+        let handle = client.open(&self.file_path(), true).await?;
+        self.file = StagedFile::Open(handle.clone());
+        Ok(handle)
+    }
+
+    async fn close<S: AsyncRead + AsyncWrite + Unpin>(
+        &mut self,
+        client: &mut Client<S>,
+        handle: &[u8],
+    ) -> Result<(), Error> {
+        client.close(handle).await?;
+        self.file = StagedFile::Closed;
+        Ok(())
+    }
+
+    async fn publish<S: AsyncRead + AsyncWrite + Unpin>(
+        &mut self,
+        client: &mut Client<S>,
+        path: &str,
+        overwrite: bool,
+    ) -> Result<(), Error> {
+        client.publish(&self.file_path(), path, overwrite).await?;
+        if overwrite {
+            self.file = StagedFile::Removed;
+        }
+        Ok(())
+    }
+
+    async fn cleanup<S: AsyncRead + AsyncWrite + Unpin>(
+        &mut self,
+        client: &mut Client<S>,
+    ) -> Result<(), Error> {
+        if let Some(handle) = self.file.take_cleanup_handle() {
+            self.close(client, &handle).await?;
+        }
+        match self.file {
+            StagedFile::Open(_) | StagedFile::CloseUnconfirmed | StagedFile::Closed => {
+                client.remove(&self.file_path(), false).await?;
+                self.file = StagedFile::Removed;
+            }
+            StagedFile::Unacknowledged | StagedFile::Removed => {}
+        }
+        client.remove(&self.path, true).await
+    }
 }
 
 impl Staging {
+    async fn create<S: AsyncRead + AsyncWrite + Unpin>(
+        &mut self,
+        client: &mut Client<S>,
+        outcome: &mut Outcome,
+        parent: &str,
+    ) -> Result<&mut OwnedDirectory, Failure> {
+        let directory = format!(
+            "{}/.okou-transfer-{}",
+            parent.trim_end_matches('/'),
+            Uuid::new_v4()
+        );
+        if format!("{directory}/data").len() > PATH_BYTES {
+            return Err(FileFailure::InvalidPath.into());
+        }
+        outcome.residue = Some(directory.clone());
+        if let Err(error) = client.mkdir(&directory).await {
+            if matches!(error, Error::Status(_)) {
+                outcome.residue = None;
+            }
+            return Err(error.into());
+        }
+        Ok(self.directory.insert(OwnedDirectory {
+            path: directory,
+            file: StagedFile::Unacknowledged,
+        }))
+    }
+
     /// Only the same healthy channel may clean its acknowledged private staging.
     pub(super) async fn cleanup<S: AsyncRead + AsyncWrite + Unpin>(
         &mut self,
         client: &mut Client<S>,
         outcome: &mut Outcome,
     ) -> Result<(), Error> {
-        if !self.owned {
+        let Some(directory) = &mut self.directory else {
             return Ok(());
-        }
+        };
         if !client.healthy() {
             client.settle_file_requests().await?;
         }
-        if let Some(handle) = self.handle.take() {
-            client.close(&handle).await?;
-        }
-        if self.file_exists {
-            client.remove(&self.file, false).await?;
-            self.file_exists = false;
-        }
-        client.remove(&self.directory, true).await?;
-        self.owned = false;
+        directory.cleanup(client).await?;
+        self.directory = None;
         outcome.residue = None;
         Ok(())
     }
@@ -125,26 +223,8 @@ where
         return Err(FileFailure::UnsupportedOperation.into());
     }
     destination(client, path, request.overwrite).await?;
-    staging.directory = format!(
-        "{}/.okou-transfer-{}",
-        parent.trim_end_matches('/'),
-        Uuid::new_v4()
-    );
-    staging.file = format!("{}/data", staging.directory);
-    if staging.file.len() > PATH_BYTES {
-        return Err(FileFailure::InvalidPath.into());
-    }
-    outcome.residue = Some(staging.directory.clone());
-    if let Err(error) = client.mkdir(&staging.directory).await {
-        if matches!(error, Error::Status(_)) {
-            outcome.residue = None;
-        }
-        return Err(error.into());
-    }
-    staging.owned = true;
-    let handle = client.open(&staging.file, true).await?;
-    staging.file_exists = true;
-    staging.handle = Some(handle.clone());
+    let directory = staging.create(client, outcome, parent).await?;
+    let handle = directory.open(client).await?;
     let mut hash = Sha256::new();
     let mut pending = Vec::with_capacity(WINDOW);
     let mut queued_bytes = 0_u64;
@@ -177,20 +257,16 @@ where
     if !attrs.regular() || attrs.size != Some(outcome.bytes) {
         return Err(FileFailure::SourceChanged.into());
     }
-    client.close(&handle).await?;
-    staging.handle = None;
+    directory.close(client, &handle).await?;
     destination(client, path, request.overwrite).await?;
     outcome.effects = Effects::Unknown;
-    if let Err(error) = client.publish(&staging.file, path, request.overwrite).await {
+    if let Err(error) = directory.publish(client, path, request.overwrite).await {
         if matches!(error, Error::Status(_)) {
             outcome.effects = Effects::NotStarted;
         }
         return Err(error.into());
     }
     outcome.effects = Effects::Completed;
-    if request.overwrite {
-        staging.file_exists = false;
-    }
     outcome.sha256 = Some(hex::encode(hash.finalize()));
     Ok(())
 }

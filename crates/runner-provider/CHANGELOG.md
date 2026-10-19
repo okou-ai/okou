@@ -1,5 +1,58 @@
 # Changelog
 
+## [0.8.15](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.14...runner-provider-v0.8.15) (2026-10-19)
+
+
+### Refactoring
+
+* **runner-provider:** remove redundant inbox overflow state ([#41086](https://github.com/okou-ai/okou/issues/41086)) ([dff8b90](https://github.com/okou-ai/okou/commit/dff8b908ba24d57fc725de71111b483e69b4e40d))
+* **runner-provider:** share successful poll wakeup completion ([#41112](https://github.com/okou-ai/okou/issues/41112)) ([bd2208e](https://github.com/okou-ai/okou/commit/bd2208e003fc0022257fbbb3e9be08340d421be6))
+
+## [0.8.14](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.13...runner-provider-v0.8.14) (2026-10-17)
+
+
+### Refactoring
+
+* **runner-provider:** own local queue staging cleanup ([#40943](https://github.com/okou-ai/okou/issues/40943)) ([1097b2c](https://github.com/okou-ai/okou/commit/1097b2c150ad5921c0fa90e4a1f4ecbd502e5d5e))
+
+## [0.8.13](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.12...runner-provider-v0.8.13) (2026-10-17)
+
+
+### Bug Fixes
+
+* **runner:** enforce captured openrouter presets before auth ([#40884](https://github.com/okou-ai/okou/issues/40884)) ([1d2a780](https://github.com/okou-ai/okou/commit/1d2a780d35d7a8b2b5ceab760321470d8e06c489))
+
+## [0.8.12](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.11...runner-provider-v0.8.12) (2026-10-17)
+
+## [0.8.11](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.10...runner-provider-v0.8.11) (2026-10-17)
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#40811](https://github.com/okou-ai/okou/issues/40811)) ([b53e5a5](https://github.com/okou-ai/okou/commit/b53e5a5fc6437b2b15412d21a42d90344c18191f))
+* remove remaining expired compatibility from the daily cleanup backlog ([#40820](https://github.com/okou-ai/okou/issues/40820)) ([9ef42db](https://github.com/okou-ai/okou/commit/9ef42db5a3c1c8bfe040a7e41b6aafa6941d4510))
+
+## [0.8.10](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.9...runner-provider-v0.8.10) (2026-10-16)
+
+
+### Refactoring
+
+* **runner-provider:** own ably disconnect episodes ([#40742](https://github.com/okou-ai/okou/issues/40742)) ([eaec130](https://github.com/okou-ai/okou/commit/eaec1301db7352859f5c6eccc03d38960e0173fb))
+
+## [0.8.9](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.8...runner-provider-v0.8.9) (2026-10-16)
+
+
+### Refactoring
+
+* **runner-provider:** centralize current connector sync identity checks ([#40716](https://github.com/okou-ai/okou/issues/40716)) ([e2e886c](https://github.com/okou-ai/okou/commit/e2e886cf7a73409b3534eba274b1a9e6068def5b))
+
+## [0.8.8](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.7...runner-provider-v0.8.8) (2026-10-16)
+
+
+### Refactoring
+
+* **runner-provider:** own abandoned local result marker custody ([#40667](https://github.com/okou-ai/okou/issues/40667)) ([a9a257c](https://github.com/okou-ai/okou/commit/a9a257c329ed81cf41582e1900443c4af35a5798))
+
 ## [0.8.7](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.6...runner-provider-v0.8.7) (2026-10-16)
 
 

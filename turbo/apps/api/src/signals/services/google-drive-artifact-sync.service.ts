@@ -30,17 +30,12 @@ import {
   privateHostedDeployments,
 } from "@okouai/db/runtime/hosted-site";
 import { agents } from "@okouai/db/schema/agent";
-import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { connectors } from "@okouai/db/schema/connector";
-import {
-  CANONICAL_ASSET_VERSION,
-  runUploadedFiles,
-} from "@okouai/db/schema/run-uploaded-file";
 import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { ZipArchive } from "archiver";
 import { command, computed, type Command, type Computed } from "ccstate";
-import { and, eq, exists, isNotNull, isNull, or } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 import { env, optionalEnv } from "../../lib/env";
@@ -70,7 +65,6 @@ import {
   type BuiltinConnectorCredentialConnection,
 } from "./builtin-connector-credential-runtime.service";
 
-import { runOwnedChatEventForRunCondition } from "./chat-event-type.service";
 import type { ConnectorRuntimeAuthLookup } from "./connector-catalog-runtime.service";
 import {
   connectorCatalogCurrentWhere,
@@ -827,80 +821,6 @@ async function assembleZip(
   return await Promise.race([done.promise, finalized]);
 }
 
-const loadArtifactFile$ = command(
-  async (
-    { set },
-    args: {
-      readonly threadId: string;
-      readonly runId: string;
-      readonly fileId: string;
-      readonly userId: string;
-    },
-  ): Promise<ArtifactFileRow | null> => {
-    const db = set(writeDb$);
-    const [thread] = await db
-      .select({ id: chatThreads.id })
-      .from(chatThreads)
-      .where(
-        and(
-          eq(chatThreads.id, args.threadId),
-          eq(chatThreads.userId, args.userId),
-        ),
-      )
-      .limit(1);
-    if (!thread) {
-      return null;
-    }
-
-    const [row] = await db
-      .select({
-        runId: runUploadedFiles.runId,
-        source: runUploadedFiles.source,
-        externalId: runUploadedFiles.externalId,
-        filename: runUploadedFiles.filename,
-        contentType: runUploadedFiles.contentType,
-        url: runUploadedFiles.url,
-        metadata: runUploadedFiles.metadata,
-      })
-      .from(runUploadedFiles)
-      .where(
-        and(
-          isNotNull(runUploadedFiles.runId),
-          eq(runUploadedFiles.userId, args.userId),
-          eq(runUploadedFiles.runId, args.runId),
-          or(
-            eq(runUploadedFiles.externalId, args.fileId),
-            and(
-              eq(runUploadedFiles.id, args.fileId),
-              eq(runUploadedFiles.assetVersion, CANONICAL_ASSET_VERSION),
-              eq(runUploadedFiles.classification, "published-output"),
-              eq(runUploadedFiles.accessLevel, "published"),
-            ),
-          ),
-          or(
-            eq(runUploadedFiles.chatThreadId, args.threadId),
-            exists(
-              db
-                .select({ one: chatEvents.id })
-                .from(chatEvents)
-                .where(
-                  runOwnedChatEventForRunCondition({
-                    runId: runUploadedFiles.runId,
-                    chatThreadId: args.threadId,
-                  }),
-                ),
-            ),
-          ),
-        ),
-      )
-      .limit(1);
-    if (!row?.runId) {
-      return null;
-    }
-    return { ...row, runId: row.runId };
-  },
-);
-
 function resolveArtifactS3ObjectFromKey(
   value: string,
   userId: string,
@@ -1576,15 +1496,7 @@ function resolveSlidesTarget(
   return { kind: "target", mimeType: GOOGLE_SLIDES_MIME_TYPE };
 }
 
-interface LegacySyncArtifactArgs {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly threadId: string;
-  readonly runId: string;
-  readonly fileId: string;
-}
-
-interface CatalogSyncArtifactArgs {
+interface SyncArtifactArgs {
   readonly orgId: string;
   readonly userId: string;
   readonly artifactId: string;
@@ -1593,8 +1505,6 @@ interface CatalogSyncArtifactArgs {
   readonly authorizedRunId?: string;
   readonly mode?: GoogleDriveUploadMode;
 }
-
-type SyncArtifactArgs = LegacySyncArtifactArgs | CatalogSyncArtifactArgs;
 
 interface ArtifactUploadSource {
   readonly threadId: string | null;
@@ -1664,12 +1574,14 @@ type NotFoundResponse = ReturnType<typeof notFound>;
 type BadRequestResponse = ReturnType<typeof badRequestMessage>;
 
 /**
- * Sync a chat-thread artifact file to the caller's connected Google Drive.
+ * Upload an owned artifact to the caller's authorized Google Drive account.
  *
- * Error mapping (preserves legacy web behavior where applicable):
- *  - 404 "Artifact file not found" — thread missing/cross-user, or no row.
- *  - 400 "Connect Google Drive before syncing artifacts" — connector
- *    absent, `needsReconnect`, or not authorized for the thread's agent.
+ * Error mapping:
+ *  - 404 "Artifact file not found" — no owned, ready artifact for the id.
+ *  - 400 "Connect and authorize Google Drive for this agent before uploading
+ *    artifacts" — no Agent grant or no matching connected account.
+ *  - 400 "Connect Google Drive before syncing artifacts" — the account
+ *    needs reconnection or has no usable credentials.
  *  - 400 "This artifact file cannot be synced to Google Drive" — file
  *    location is missing or doesn't match a caller-owned artifact prefix.
  *  - 400 "Google Drive upload failed with HTTP <status>" — upload error
@@ -1695,39 +1607,26 @@ export const syncArtifactToGoogleDrive$ = command(
       userId: args.userId,
       overrides: featureSwitchOverrides,
     };
-    const catalogArtifact =
-      "artifactId" in args
-        ? await set(ownedGoogleDriveArtifact$, args, signal)
-        : null;
+    const artifact = await set(ownedGoogleDriveArtifact$, args, signal);
     signal.throwIfAborted();
-    if ("artifactId" in args && !catalogArtifact) {
+    if (!artifact) {
       return notFound("Artifact file not found");
     }
-    if ("artifactId" in args && args.mode === "google" && catalogArtifact) {
+    if (args.mode === "google") {
       const target = resolveGoogleConversionTarget(
-        catalogArtifact.filename ?? "",
+        artifact.filename ?? "",
         featureSwitchContext,
       );
       if (isBadRequestResponse(target)) {
         return target;
       }
     }
-    const connectorId =
-      "artifactId" in args
-        ? await set(artifactGoogleDriveAccount$, args, signal)
-        : null;
+    const connectorId = await set(artifactGoogleDriveAccount$, args, signal);
     signal.throwIfAborted();
-    let accountSelector:
-      { readonly connectorId: string } | { readonly threadId: string };
-    if ("artifactId" in args) {
-      if (!connectorId) {
-        return badRequestMessage(
-          "Connect and authorize Google Drive for this agent before uploading artifacts",
-        );
-      }
-      accountSelector = { connectorId };
-    } else {
-      accountSelector = { threadId: args.threadId };
+    if (!connectorId) {
+      return badRequestMessage(
+        "Connect and authorize Google Drive for this agent before uploading artifacts",
+      );
     }
     const catalogDb = set(writeDb$);
     const catalogPlan = connectorRuntimeAuthSelectionReadPlan({
@@ -1748,7 +1647,7 @@ export const syncArtifactToGoogleDrive$ = command(
       {
         orgId: args.orgId,
         userId: args.userId,
-        ...accountSelector,
+        connectorId,
         featureSwitchContext,
         snapshot,
       },
@@ -1759,28 +1658,6 @@ export const syncArtifactToGoogleDrive$ = command(
       return badRequestMessage("Connect Google Drive before syncing artifacts");
     }
     const { tokens } = connection;
-
-    const artifact =
-      "artifactId" in args
-        ? catalogArtifact
-        : await set(loadArtifactFile$, args);
-    signal.throwIfAborted();
-    if (!artifact) {
-      return notFound("Artifact file not found");
-    }
-    // Only old App clients use the chat-scoped adapter. The new upload path
-    // has already authorized the resource and Agent/account above.
-    const authorized =
-      "artifactId" in args ||
-      (await set(threadAllowsGoogleDriveArtifactSync$, {
-        orgId: args.orgId,
-        userId: args.userId,
-        threadId: args.threadId,
-      }));
-    signal.throwIfAborted();
-    if (!authorized) {
-      return badRequestMessage("Connect Google Drive before syncing artifacts");
-    }
 
     return await set(
       uploadResolvedArtifact$,
@@ -2054,11 +1931,7 @@ const uploadResolvedArtifact$ = command(
       );
     }
 
-    const plan = prepareDriveUpload(
-      content,
-      featureSwitchContext,
-      "artifactId" in args ? args.mode : undefined,
-    );
+    const plan = prepareDriveUpload(content, featureSwitchContext, args.mode);
     if (isBadRequestResponse(plan)) {
       return plan;
     }
@@ -2099,15 +1972,12 @@ const uploadResolvedArtifact$ = command(
       uploadArtifactRefreshingToken$,
       {
         args,
-        source:
-          "artifactId" in args
-            ? {
-                artifactId: args.artifactId,
-                threadId: artifact.threadId ?? null,
-                runId: artifact.runId,
-                fileId: artifact.externalId,
-              }
-            : args,
+        source: {
+          artifactId: args.artifactId,
+          threadId: artifact.threadId ?? null,
+          runId: artifact.runId,
+          fileId: artifact.externalId,
+        },
         content: uploadContent,
         featureSwitchContext,
         targetMimeType,

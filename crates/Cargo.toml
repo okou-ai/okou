@@ -5,6 +5,7 @@ members = [
     "api-contracts",
     "cli-test-support",
     "guest-agent",
+    "guest-agent-tests",
     "guest-contracts",
     "runner-rpc-client",
     "guest-tool-exec",

@@ -241,15 +241,16 @@ describe("Discord Gateway relay", () => {
         },
       });
     }
-    // A genuine server-requested heartbeat observes the last consumed sequence
-    // before closing; ignored dispatches have no delivery to use as a barrier.
+    // A server-requested heartbeat observes the last consumed sequence before
+    // requesting a reconnect; ignored dispatches have no delivery as a barrier.
     await expect
       .poll(async () => {
         gateway.send({ op: 1, d: null });
         return (await gateway.next(1)).d;
       })
       .toBe(3);
-    gateway.socket.close(4000, "Unknown error");
+    gateway.send({ op: 7, d: null });
+    expect((await gateway.closed.promise).code).toBe(4000);
     const resumed = await relay.connections.next();
     resumed.hello();
     expect(await resumed.next(6)).toEqual({

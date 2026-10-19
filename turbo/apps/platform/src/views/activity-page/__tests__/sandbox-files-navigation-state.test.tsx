@@ -15,6 +15,7 @@ import {
   filesMenuItem,
   filesPath,
   filesTab,
+  filesViewport,
   listing,
   navigationListing,
   openFiles,
@@ -60,52 +61,56 @@ test("Returning to Files and reconnecting reload the selected same-Run directory
   ).toStrictEqual(filesPath("home", "user", "workspace"));
 });
 
-test("Returning through ancestors restores loaded expansion and scroll without reusing cursor handles", async () => {
-  await setupFilesPage(context, {
-    handler: (request) => {
-      if (
-        JSON.stringify(request.params.path) ===
-        JSON.stringify(filesPath("home", "user"))
-      ) {
-        return listing([
-          entry("workspace", "directory"),
-          ...Array.from({ length: 20 }, (_, index) => {
-            return entry(`home-${index}.txt`);
-          }),
-        ]);
-      }
-      return navigationListing(request);
-    },
-  });
-  const panel = await openFiles();
-  await expect(
-    within(panel).findByText("workspace"),
-  ).resolves.toBeInTheDocument();
-  click(filesButton("workspace", panel));
-  await expect(
-    within(panel).findByText("workspace.txt"),
-  ).resolves.toBeInTheDocument();
-  const viewport = within(panel).getByTestId("sandbox-files-viewport");
-  fireEvent.scroll(viewport, { target: { scrollTop: 440 } });
-  click(filesButton("home", panel));
-  await expect(
-    waitFor(() => {
-      return filesButton("Open user as current folder", panel);
-    }),
-  ).resolves.toBeInTheDocument();
-  click(filesButton("Open user as current folder", panel));
-  await waitFor(() => {
-    expect(viewport.scrollTop).toBe(440);
-  });
-  fireEvent.scroll(viewport, { target: { scrollTop: 0 } });
-  await waitFor(() => {
-    expect(filesButton("workspace", panel)).toHaveAttribute(
-      "aria-expanded",
-      "true",
-    );
-  });
-  expect(within(panel).getByText("workspace.txt")).toBeInTheDocument();
-});
+test.each([0, 220])(
+  "Returning through ancestors restores expansion and scroll below Activity information (%d)",
+  async (activityHeaderHeight) => {
+    await setupFilesPage(context, {
+      activityHeaderHeight,
+      handler: (request) => {
+        if (
+          JSON.stringify(request.params.path) ===
+          JSON.stringify(filesPath("home", "user"))
+        ) {
+          return listing([
+            entry("workspace", "directory"),
+            ...Array.from({ length: 20 }, (_, index) => {
+              return entry(`home-${index}.txt`);
+            }),
+          ]);
+        }
+        return navigationListing(request);
+      },
+    });
+    const panel = await openFiles();
+    await expect(
+      within(panel).findByText("workspace"),
+    ).resolves.toBeInTheDocument();
+    click(filesButton("workspace", panel));
+    await expect(
+      within(panel).findByText("workspace.txt"),
+    ).resolves.toBeInTheDocument();
+    const viewport = filesViewport(panel);
+    fireEvent.scroll(viewport, { target: { scrollTop: 440 } });
+    click(filesButton("home", panel));
+    await expect(
+      waitFor(() => {
+        return filesButton("Open user as current folder", panel);
+      }),
+    ).resolves.toBeInTheDocument();
+    click(filesButton("Open user as current folder", panel));
+    await waitFor(() => {
+      expect(viewport.scrollTop).toBe(440);
+    });
+    fireEvent.scroll(viewport, { target: { scrollTop: 0 } });
+    await waitFor(() => {
+      expect(filesButton("workspace", panel)).toHaveAttribute(
+        "aria-expanded",
+        "true",
+      );
+    });
+    expect(within(panel).getByText("workspace.txt")).toBeInTheDocument();
+  },
+);
 
 test("Long breadcrumbs expose omitted ancestors in a keyboard-owned menu", async () => {
   await setupFilesPage(context, { handler: navigationListing });

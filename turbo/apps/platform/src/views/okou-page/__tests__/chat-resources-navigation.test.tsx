@@ -80,7 +80,7 @@ test.each([
   { pendingSource: "messages", relationsEnabled: true },
   { pendingSource: "artifacts", relationsEnabled: true },
 ])(
-  "Hide the previous chat's resources until the next chat's $pendingSource finish loading (relationships enabled: $relationsEnabled)",
+  "Show no previous resources while the next chat's $pendingSource load (relationships enabled: $relationsEnabled)",
   async ({ pendingSource, relationsEnabled }) => {
     installResourceGeometry(480);
     context.mocks.browser.matchMedia(true);
@@ -214,7 +214,16 @@ test.each([
         "Second resources",
       );
     });
-    expect(resourcePanel()).not.toBeInTheDocument();
+    const loadingPanel = await screen.findByRole("region", {
+      name: "Resources",
+    });
+    expect(resourceButton()).toBeInTheDocument();
+    expect(
+      within(loadingPanel).queryByText("First resources guide"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(loadingPanel).queryByText("first.pdf"),
+    ).not.toBeInTheDocument();
     resourcesResponse.resolve();
     await waitFor(() => {
       expect(

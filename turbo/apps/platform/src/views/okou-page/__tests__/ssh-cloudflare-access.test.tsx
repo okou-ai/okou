@@ -31,6 +31,7 @@ const config: ScopedCloudflareAccessConfig = Object.freeze({
   revision: 1,
   generation: 1,
   sshHosts: [],
+  vncHosts: [],
   createdAt: timestamp,
   updatedAt: timestamp,
 });

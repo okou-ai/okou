@@ -31,6 +31,7 @@ fn test_sandbox_config() -> SandboxConfig {
 
 fn test_factory_config() -> FactoryConfig {
     FactoryConfig {
+        home_drive_pressure: None,
         profile: "test".into(),
         binary_path: "/bin/test".into(),
         kernel_path: "/boot/test".into(),

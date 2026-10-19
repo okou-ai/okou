@@ -2,7 +2,6 @@ import { command, computed, state, type Command } from "ccstate";
 import { runsByIdContract } from "@okouai/api-contracts/contracts/run-routes";
 import type { RunStatus } from "@okouai/api-contracts/contracts/runs";
 import type { z } from "zod";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type {
   SandboxChannelPeer,
   SandboxChannelState,
@@ -18,7 +17,6 @@ import { createBrowserSandboxChannelPeer } from "../../lib/sandbox-channel-peer.
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { authenticatedSessionKey$ } from "../auth.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { pageSignal$ } from "../page-signal.ts";
 import {
   bestEffort,
@@ -45,6 +43,8 @@ import {
   type FilesLocation,
   type FilesViewPreference,
 } from "./sandbox-files-location.ts";
+import { createSandboxFileDownloadSignals } from "./sandbox-file-download.ts";
+import { createSandboxFilePreviewSignals } from "./sandbox-file-preview.ts";
 
 export type FilesEntry = z.infer<
   typeof sandboxFsListResultSchema
@@ -145,6 +145,8 @@ function createFilesGraph() {
   const targetRunId$ = state<string | null>(null);
   const status$ = state<RunStatus | null>(null);
   return {
+    download: createSandboxFileDownloadSignals(),
+    preview: createSandboxFilePreviewSignals(),
     targetRunId$,
     status$,
     directories$,
@@ -185,8 +187,7 @@ function createCursorCommands(graph: FilesGraph) {
     return (
       connection === get(graph.connection$) &&
       connection.runId === get(currentRunId$) &&
-      connection.sessionKey === get(authenticatedSessionKey$) &&
-      get(featureSwitch$)[FeatureSwitchKey.OkouDebug]
+      connection.sessionKey === get(authenticatedSessionKey$)
     );
   });
   const current$ = command(({ get, set }, request: ListingRequest) => {
@@ -266,7 +267,6 @@ function createPrepareListingCommand(graph: FilesGraph) {
         !connection ||
         connection.runId !== get(currentRunId$) ||
         connection.peer.state !== "ready" ||
-        !get(featureSwitch$)[FeatureSwitchKey.OkouDebug] ||
         connection.sessionKey !== get(authenticatedSessionKey$)
       ) {
         return null;
@@ -1373,7 +1373,6 @@ function createConnectionCommands(
       if (
         signal.aborted ||
         runId !== get(currentRunId$) ||
-        !get(featureSwitch$)[FeatureSwitchKey.OkouDebug] ||
         !get(graph.ownerKey$) ||
         get(graph.ownerKey$) !== get(authenticatedSessionKey$)
       ) {
@@ -1427,11 +1426,12 @@ function createRunLifecycleCommands(
       get(graph.mounted$) &&
       get(currentRunId$) === runId &&
       get(graph.targetRunId$) === runId &&
-      get(graph.ownerKey$) === get(authenticatedSessionKey$) &&
-      get(featureSwitch$)[FeatureSwitchKey.OkouDebug]
+      get(graph.ownerKey$) === get(authenticatedSessionKey$)
     );
   });
   const stop$ = command(({ set }) => {
+    set(graph.download.cancel$);
+    set(graph.preview.close$);
     set(resetRun$);
     set(started$, false);
     set(graph.resetPolling$);
@@ -1567,20 +1567,20 @@ function createDemandCommands(
   startRun$: Command<void, [string, AbortSignal]>,
   rememberView$: Command<void, []>,
 ) {
+  const section$ = state<HTMLElement | null>(null);
   const observation = createRunObservationCommands(
     graph,
     createRunLifecycleCommands(graph, startRun$),
   );
   const mount$ = onRef(
-    command(({ get, set }, _element: HTMLElement, signal: AbortSignal) => {
-      if (!get(featureSwitch$)[FeatureSwitchKey.OkouDebug]) {
-        return;
-      }
+    command(({ get, set }, element: HTMLElement, signal: AbortSignal) => {
       const sessionKey = get(authenticatedSessionKey$);
       const runId = get(currentRunId$);
       if (!sessionKey || !runId) {
         return;
       }
+      set(graph.virtual.scroll.attachSection$, element, signal);
+      set(section$, element);
       set(graph.ownerKey$, sessionKey);
       const locationOwner = `${sessionKey}:${runId}`;
       if (get(graph.locationOwner$) !== locationOwner) {
@@ -1596,6 +1596,8 @@ function createDemandCommands(
       set(graph.mountVersion$, version);
       set(graph.mounted$, true);
       const owner = set(graph.resetDemand$, signal, get(pageSignal$));
+      set(graph.download.installOwner$, owner);
+      set(graph.preview.installOwner$, element, owner);
       signal.addEventListener(
         "abort",
         () => {
@@ -1606,15 +1608,13 @@ function createDemandCommands(
           set(graph.resetDemand$);
           set(observation.stop$);
           set(graph.mounted$, false);
+          set(section$, null);
           set(graph.targetRunId$, null);
           set(graph.status$, null);
           set(graph.navigation$, null);
           set(graph.navigationFailure$, null);
           set(graph.directories$, new Map());
-          if (
-            !get(featureSwitch$)[FeatureSwitchKey.OkouDebug] ||
-            sessionKey !== get(authenticatedSessionKey$)
-          ) {
+          if (sessionKey !== get(authenticatedSessionKey$)) {
             set(graph.location$, FILES_HOME_LOCATION);
             set(graph.preferences$, new Map());
             set(graph.locationOwner$, null);
@@ -1631,16 +1631,15 @@ function createDemandCommands(
   );
   const retry$ = command(({ get, set }, signal: AbortSignal): void => {
     signal.throwIfAborted();
-    if (
-      get(graph.mounted$) &&
-      get(featureSwitch$)[FeatureSwitchKey.OkouDebug]
-    ) {
+    if (get(graph.mounted$)) {
       const runId = get(graph.targetRunId$);
       if (runId) {
         set(observation.stop$);
         set(graph.status$, null);
         set(graph.phase$, "connecting");
         const owner = set(graph.resetDemand$, signal, get(pageSignal$));
+        set(graph.download.installOwner$, owner);
+        set(graph.preview.installOwner$, get(section$), owner);
         detach(
           set(observation.start$, runId, owner),
           Reason.Daemon,
@@ -1652,11 +1651,66 @@ function createDemandCommands(
   return { mount$, retry$ };
 }
 
+function createFilesReadCommand(
+  graph: FilesGraph,
+  mode: "download" | "preview",
+) {
+  return command(
+    async (
+      { get, set },
+      target: {
+        readonly origin: FilesLocation;
+        readonly path: readonly string[];
+        readonly nameToken: string;
+        readonly trigger?: HTMLElement;
+      },
+      signal: AbortSignal,
+    ): Promise<void> => {
+      signal.throwIfAborted();
+      const { origin, path, nameToken, trigger } = target;
+      const connection = get(graph.connection$);
+      if (
+        !connection ||
+        !get(graph.mounted$) ||
+        get(graph.phase$) !== "ready" ||
+        get(graph.navigation$) ||
+        connection.runId !== get(currentRunId$) ||
+        connection.sessionKey !== get(authenticatedSessionKey$) ||
+        filesDirectoryKey(filesLocationTokens(origin)) !==
+          filesDirectoryKey(filesLocationTokens(get(graph.location$)))
+      ) {
+        return;
+      }
+      const entry = get(graph.directories$)
+        .get(filesDirectoryKey(path))
+        ?.entries.find((candidate) => {
+          return candidate.nameToken === nameToken && candidate.kind === "file";
+        });
+      if (!entry) {
+        return;
+      }
+      const request = {
+        runId: connection.runId,
+        sessionKey: connection.sessionKey,
+        path: [...filesLocationTokens(origin), ...path, nameToken],
+        name: entry.displayName,
+      };
+      if (mode === "preview") {
+        await set(graph.preview.open$, request, trigger, signal);
+      } else {
+        await set(graph.download.start$, request, signal);
+      }
+    },
+  );
+}
+
 function createFilesActions(
   graph: FilesGraph,
   listing: ListingCommands,
   navigation: NavigationCommands,
 ) {
+  const download$ = createFilesReadCommand(graph, "download");
+  const preview$ = createFilesReadCommand(graph, "preview");
   const refreshRequest$ = state<{ readonly connection: Connection } | null>(
     null,
   );
@@ -1739,7 +1793,7 @@ function createFilesActions(
       return set(listing.load$, path, true, signal);
     },
   );
-  return { toggle$, refresh$, refreshing$, more$ };
+  return { toggle$, refresh$, refreshing$, more$, download$, preview$ };
 }
 
 /** Construct the Activity graph without network work; its visible ref owns demand. */
@@ -1750,6 +1804,8 @@ function createSandboxFilesSignals() {
   const navigation = createNavigationCommands(graph, listing, cursors);
   const connection = createConnectionCommands(graph, listing, navigation);
   return {
+    download: graph.download,
+    preview: graph.preview,
     ...createDemandCommands(graph, connection.startRun$, navigation.remember$),
     ...createFilesActions(graph, listing, navigation),
     enter$: navigation.enter$,

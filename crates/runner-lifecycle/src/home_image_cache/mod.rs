@@ -1,10 +1,11 @@
 //! Home image cache. There is no old directory/layout/metadata reader.
 //!
 //! Entry locks own checkout, publication, and orphan reclamation. Promotion
-//! retries capacity asynchronously with bounded contention while holding entry;
-//! GC holds capacity and attempts entries non-blockingly. Routine inventory
-//! releases entry locks before attempting capacity. A capacity owner must never
-//! wait for an entry lock.
+//! retains accepted physical work and phase-aware retry under the original entry
+//! custody. New publishers share the canonical capacity barrier; legacy exclusive
+//! owners still exclude their tree growth and IO. All new collectors own the
+//! routine singleton and only try barrier/entry locks. A barrier owner must never
+//! wait for an entry lock or request another collector.
 //!
 //! A checkout removes the commit before moving its selected immutable image.
 //! Publication syncs a new generation and directories before a single atomic
@@ -21,16 +22,19 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio_util::task::TaskTracker;
 
+mod background;
 mod entry;
 mod fs;
 mod gc;
 mod gc_metadata;
+mod gc_pressure;
 mod inspection;
 mod inventory;
 mod io_context;
 mod lifecycle;
 mod metadata;
 mod path_safety;
+mod pressure;
 mod reclamation;
 use reclamation::IdleHomeReclamation;
 pub use reclamation::IdleHomeReclamationPermit;
@@ -39,22 +43,25 @@ pub mod snapshot;
 mod tests;
 mod types;
 mod watcher;
+use background::BackgroundGcActivity;
 #[cfg(any(test, feature = "test-support"))]
 pub use entry::CacheEntryPaths;
+pub use gc_pressure::{HomeCacheReclaimOutcome, HomeCacheReclaimStatus};
 pub use inventory::{HomeCacheInventory, HomeCacheKeyUpdates};
 pub use lifecycle::{
     HomeImageLease, HomeImagePromotionContext, HomeImagePromotionIdentityFailure,
     HomeImagePromotionOutcome, cap_held_home_states,
 };
+use pressure::PressureReclamation;
 pub use runner_host::paths::HomeImageCacheKey;
 use types::HomeCacheLockOwner;
 pub use types::{
-    CacheBudget, FsStats, HomeCacheCheckoutResult, HomeCacheTerminalStatus,
-    HomeImageCacheInspection, HomeImageCacheInspectionEntry, HomeImageCacheInspectionStatus,
-    HomeImageCacheInspectionSummary, HomeImageLeaseIdentity, HomeImageLeaseRequest,
-    HomeImagePrepareLockPolicy, HomeImagePrepareRequest, HomeImagePromotionIdentity,
-    HomeImagePromotionIdentityMismatch, HomeImagePromotionIdentityRequest,
-    HomeImagePromotionRequest, HomeImageSourceIdentity,
+    CacheBudget, FsStats, HomeCacheCheckoutResult, HomeCachePressureThresholds,
+    HomeCacheTerminalStatus, HomeImageCacheInspection, HomeImageCacheInspectionEntry,
+    HomeImageCacheInspectionStatus, HomeImageCacheInspectionSummary, HomeImageLeaseIdentity,
+    HomeImageLeaseRequest, HomeImagePrepareLockPolicy, HomeImagePrepareRequest,
+    HomeImagePromotionIdentity, HomeImagePromotionIdentityMismatch,
+    HomeImagePromotionIdentityRequest, HomeImagePromotionRequest, HomeImageSourceIdentity,
 };
 use watcher::SelectionReleases;
 pub use watcher::{HomeCacheChange, HomeCacheWatcher};
@@ -67,6 +74,7 @@ const MIN_FREE_BYTES_FLOOR: u64 = 50 * GIB;
 pub const HOME_IMAGE_SPACE_RESERVE: sandbox::HomeDriveSpaceReserve =
     sandbox::HomeDriveSpaceReserve::new(MIN_FREE_BYTES_FLOOR, 10);
 const MAX_HOME_PROMOTION_CONCURRENCY: usize = 4;
+const HOME_PUBLICATION_IO_SLOTS: usize = 4;
 #[cfg(any(test, feature = "test-support"))]
 const TEST_FS_TOTAL_BYTES: u64 = 2_000 * GIB;
 #[cfg(any(test, feature = "test-support"))]
@@ -78,6 +86,7 @@ pub struct HomeImageCache {
     is_first_run: Option<bool>,
     inner: Arc<HomeImageCacheInner>,
     idle_home_reclamation: Arc<IdleHomeReclamation>,
+    background_gc: BackgroundGcActivity,
     #[cfg(any(test, feature = "test-support"))]
     prepare_lock_test_gate: Option<HomeImagePrepareLockTestGate>,
     #[cfg(any(test, feature = "test-support"))]
@@ -92,6 +101,20 @@ pub struct HomeImageCache {
     promotion_capacity_lock_test_gate: Option<(Arc<tokio::sync::Notify>, Arc<Semaphore>)>,
     #[cfg(test)]
     publication_capacity_held_test_gate: Option<(Arc<tokio::sync::Notify>, Arc<Semaphore>)>,
+    #[cfg(test)]
+    publication_sync_test_gate: Option<HomeImageHandoffTestGate>,
+    #[cfg(test)]
+    publication_copy_test_gate: Option<HomeImagePrepareLockTestGate>,
+    #[cfg(any(test, feature = "test-support"))]
+    use_actual_fs_stats: bool,
+    #[cfg(test)]
+    pressure_reserve_override: Option<sandbox::HomeDriveSpaceReserve>,
+    #[cfg(any(test, feature = "test-support"))]
+    pressure_turn_test_gate: Option<HomeImagePrepareLockTestGate>,
+    #[cfg(test)]
+    pressure_completion_test_gate: Option<HomeImagePrepareLockTestGate>,
+    #[cfg(test)]
+    pressure_inventory_stopped_test_gate: Option<HomeImagePrepareLockTestGate>,
 }
 #[cfg(any(test, feature = "test-support"))]
 #[derive(Clone, Default)]
@@ -165,10 +188,13 @@ struct HomeImageCacheInner {
     publication_admission: Semaphore,
     checkout_io: TaskTracker,
     selection_releases: SelectionReleases,
+    pressure_reclamation: PressureReclamation,
+    #[cfg(test)]
+    pressure_demand_accepted: tokio::sync::Notify,
     #[cfg(test)]
     publication_admission_entered: Semaphore,
     #[cfg(any(test, feature = "test-support"))]
-    fs_stats_override: FsStats,
+    fs_stats_override: Mutex<FsStats>,
     #[cfg(any(test, feature = "test-support"))]
     gc_root_scan_count: AtomicUsize,
     #[cfg(any(test, feature = "test-support"))]
@@ -197,6 +223,11 @@ enum PublicationFault {
     BeforeMetadataRename,
     AfterMetadataRename,
     RemoveStagingBeforeImageRename,
+    UnexpectedExdev,
+    BeforeCopy,
+    BeforeCandidateDirectorySync,
+    BeforeMetadataSync,
+    PartialMetadataWrite,
 }
 
 impl HomeImageCache {
@@ -246,13 +277,15 @@ impl HomeImageCache {
                     lock_dir,
                     cache_scope: scope.to_owned(),
                     entry_lock_owners: Mutex::new(HashMap::new()),
-                    publication_admission: Semaphore::new(1),
+                    publication_admission: Semaphore::new(HOME_PUBLICATION_IO_SLOTS),
                     checkout_io: TaskTracker::new(),
                     selection_releases: SelectionReleases::default(),
+                    pressure_reclamation: PressureReclamation::new(),
                 }),
                 idle_home_reclamation: Arc::new(IdleHomeReclamation::new(
                     MAX_HOME_PROMOTION_CONCURRENCY,
                 )),
+                background_gc: BackgroundGcActivity::default(),
             }
         }
     }
@@ -273,12 +306,15 @@ impl HomeImageCache {
                 lock_dir,
                 cache_scope: scope.to_owned(),
                 entry_lock_owners: Mutex::new(HashMap::new()),
-                publication_admission: Semaphore::new(1),
+                publication_admission: Semaphore::new(HOME_PUBLICATION_IO_SLOTS),
                 checkout_io: TaskTracker::new(),
                 selection_releases: SelectionReleases::default(),
+                pressure_reclamation: PressureReclamation::new(),
+                #[cfg(test)]
+                pressure_demand_accepted: tokio::sync::Notify::new(),
                 #[cfg(test)]
                 publication_admission_entered: Semaphore::new(0),
-                fs_stats_override: stats,
+                fs_stats_override: Mutex::new(stats),
                 gc_root_scan_count: AtomicUsize::new(0),
                 held_state_root_scan_count: AtomicUsize::new(0),
                 held_state_root_scan_notify: tokio::sync::Notify::new(),
@@ -288,6 +324,7 @@ impl HomeImageCache {
             idle_home_reclamation: Arc::new(IdleHomeReclamation::new(
                 MAX_HOME_PROMOTION_CONCURRENCY,
             )),
+            background_gc: BackgroundGcActivity::default(),
             prepare_lock_test_gate: None,
             inventory_test_gate: None,
             handoff_test_gate: None,
@@ -298,10 +335,35 @@ impl HomeImageCache {
             promotion_capacity_lock_test_gate: None,
             #[cfg(test)]
             publication_capacity_held_test_gate: None,
+            #[cfg(test)]
+            publication_sync_test_gate: None,
+            #[cfg(test)]
+            publication_copy_test_gate: None,
+            use_actual_fs_stats: false,
+            #[cfg(test)]
+            pressure_reserve_override: None,
+            pressure_turn_test_gate: None,
+            #[cfg(test)]
+            pressure_completion_test_gate: None,
+            #[cfg(test)]
+            pressure_inventory_stopped_test_gate: None,
         }
     }
     pub fn with_telemetry(mut self, telemetry: SandboxOpReporter) -> Self {
         self.telemetry = Some(telemetry);
+        self
+    }
+
+    /// Bind only background collection to the current Running generation.
+    /// Foreground demand, publication and explicit manual GC keep their authority.
+    /// A later mode change expires this clone's background work permanently;
+    /// resumed admission must bind a fresh clone to the new generation.
+    pub fn with_background_gc_lifecycle(
+        mut self,
+        mut mode: tokio::sync::watch::Receiver<crate::lifecycle::RunnerMode>,
+    ) -> Self {
+        mode.borrow_and_update();
+        self.background_gc = BackgroundGcActivity::Running(mode);
         self
     }
 

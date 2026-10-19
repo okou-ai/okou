@@ -7,6 +7,7 @@ import {
 } from "@okouai/api-contracts/contracts/sandbox-channel";
 import {
   sandboxFsCategory,
+  SANDBOX_FS_VERSION,
   sandboxFsList,
 } from "@okouai/api-contracts/contracts/sandbox-channel-fs";
 import { createBrowserSandboxChannelPeer } from "../sandbox-channel-peer.ts";
@@ -25,7 +26,7 @@ class Socket extends EventTarget {
   readonly application: SandboxChannelMessage[] = [];
   admission: unknown;
   readonly responses = [
-    { categories: { fs: 2 } },
+    { categories: { fs: SANDBOX_FS_VERSION } },
     {
       listingId: "home",
       entries: [
@@ -129,7 +130,7 @@ test("the inert Platform factory uses authenticated bootstrap and shared busines
     nextCursor: null,
   });
   expect(remote?.application).toMatchObject([
-    { type: "hello", categories: { fs: 2 } },
+    { type: "hello", categories: { fs: SANDBOX_FS_VERSION } },
     {
       type: "request",
       category: "fs",

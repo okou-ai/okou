@@ -1,6 +1,5 @@
 import { ProviderCardMenu } from "./components/provider-card-menu.tsx";
 import { ConnectedIndicator } from "./components/connected-indicator.tsx";
-import { ROUTES } from "../../signals/route-paths.ts";
 import {
   useGet,
   useSet,
@@ -64,7 +63,6 @@ import {
 import { authorizeTelegramBot$ } from "../../signals/okou-page/telegram-authorization.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { teamsEntryUrl } from "../../signals/okou-page/teams-connect-context.ts";
-import { TeamsStatusRefresh } from "./teams-status-refresh.tsx";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { openFreshOAuth } from "../../lib/oauth-window.ts";
 import { WechatCard } from "./wechat-card.tsx";
@@ -667,10 +665,6 @@ function TeamsCard({ displayName }: { displayName: string }) {
           />
         </div>
 
-        <div className="px-4 pb-3">
-          <TeamsStatusRefresh />
-        </div>
-
         <PermissionWarning
           reinstallUrl={
             isAdmin && permissionMismatch
@@ -803,29 +797,21 @@ function TelegramConnectionFeedback({
   connection: Loadable<unknown> | { state: "idle" };
 }) {
   const { t } = useTranslation();
+  if (
+    connected ||
+    !(
+      connection.state === "hasError" ||
+      (connection.state === "hasData" && !connection.data)
+    )
+  ) {
+    return null;
+  }
   return (
-    <>
-      {" "}
-      {!connected &&
-      (connection.state === "hasError" ||
-        (connection.state === "hasData" && !connection.data)) ? (
-        <p role="status" className="px-4 pb-2 text-sm text-muted-foreground">
-          {t(($) => {
-            return $.connectors.providerConnect.telegram.interrupted;
-          })}
-        </p>
-      ) : null}
-      <a
-        href={ROUTES.settingsTelegram}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="px-4 pb-4 text-sm text-primary underline-offset-4 hover:underline"
-      >
-        {t(($) => {
-          return $.connectors.providerConnect.telegram.viewSettings;
-        })}
-      </a>
-    </>
+    <p role="status" className="px-4 pb-2 text-sm text-muted-foreground">
+      {t(($) => {
+        return $.connectors.providerConnect.telegram.interrupted;
+      })}
+    </p>
   );
 }
 

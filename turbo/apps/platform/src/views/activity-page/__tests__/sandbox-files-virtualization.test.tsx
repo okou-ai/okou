@@ -5,6 +5,7 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   entry,
   filesButton,
+  filesViewport,
   listing,
   openFiles,
   setupFilesPage,
@@ -12,6 +13,45 @@ import {
 } from "./sandbox-files-test-helpers.ts";
 
 const context = testContext();
+
+test.each([
+  { mobile: false, activityHeaderHeight: 220, viewportHeight: 600 },
+  { mobile: true, activityHeaderHeight: 310, viewportHeight: 260 },
+  { mobile: true, activityHeaderHeight: 100, viewportHeight: 160 },
+])(
+  "Page scrolling reaches long Files lists below Activity information (%j)",
+  async (layout) => {
+    await setupFilesPage(context, {
+      ...layout,
+      handler: () => {
+        return listing(
+          Array.from({ length: 128 }, (_unused, index) => {
+            return entry(`file-${String(index).padStart(3, "0")}.txt`);
+          }),
+        );
+      },
+    });
+    const panel = await openFiles();
+    await expect(
+      within(panel).findByText("file-000.txt"),
+    ).resolves.toBeInTheDocument();
+    const viewport = filesViewport(panel);
+    fireEvent.scroll(viewport, {
+      target: { scrollTop: layout.activityHeaderHeight + 80 * 44 },
+    });
+    await expect(
+      within(panel).findByText("file-080.txt"),
+    ).resolves.toBeInTheDocument();
+    expect(within(panel).queryByText("file-071.txt")).toBeNull();
+    expect(filesButton("Go to home folder", panel)).toBeEnabled();
+    expect(filesButton("Refresh", panel)).toBeEnabled();
+    scrollFilesToEnd(panel);
+    await expect(
+      within(panel).findByText("file-127.txt"),
+    ).resolves.toBeInTheDocument();
+    expect(panel.querySelectorAll("li").length).toBeLessThan(40);
+  },
+);
 
 test("The Files virtual viewport scrolls, resizes and retains a focused folder", async () => {
   await setupFilesPage(context, {
@@ -35,7 +75,7 @@ test("The Files virtual viewport scrolls, resizes and retains a focused folder",
     within(panel).findByText("folder-000"),
   ).resolves.toBeInTheDocument();
   const folder = filesButton("folder-000", panel);
-  const viewport = within(panel).getByTestId("sandbox-files-viewport");
+  const viewport = filesViewport(panel);
   folder.focus();
   scrollFilesToEnd(panel);
   await expect(
@@ -60,7 +100,7 @@ test("The Files virtual viewport scrolls, resizes and retains a focused folder",
   vi.spyOn(viewport, "clientHeight", "get").mockReturnValue(528);
   fireEvent(window, new Event("resize"));
   await expect(
-    within(panel).findByText("folder-019"),
+    within(panel).findByText("folder-018"),
   ).resolves.toBeInTheDocument();
   expect(within(panel).queryByText("folder-025")).toBeNull();
 });

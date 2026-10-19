@@ -3,6 +3,7 @@ set -euo pipefail
 
 BIN_DIR=$1
 SANDBOX_ID=$2
+SCENARIO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fail() { echo "FAIL: $1"; exit 1; }
 
 # Test 11: verify HTTPS works through proxy for each runtime
@@ -52,7 +53,18 @@ tls_check "php"       "php -r \"file_get_contents('$TLS_URL');\""
 # the proxy. Accept only the exact cargo registry response above; other cargo
 # failures remain fatal.
 tls_check "cargo"     "env CARGO_HOME=/tmp/cargo-test cargo search --limit 1 serde" 30 true
-tls_check "chromium"  "chromium --headless --disable-gpu --no-sandbox --dump-dom $TLS_URL >/dev/null" 30
+
+# A static document exercises Chromium's real HTTPS/proxy trust without Google
+# page scripts or --dump-dom's implicit tab-close lifecycle. Preserve both bounds.
+if CHROMIUM_OUTPUT=$(sudo "$BIN_DIR/runner" exec --timeout 40 \
+  --sandbox "$SANDBOX_ID" -- timeout --kill-after=5s 30 \
+  node --input-type=module --eval "$(<"$SCENARIO_DIR/chromium-https.mjs")" \
+  "$TLS_URL/robots.txt" "User-agent:" 2>&1); then
+  echo "  HTTPS chromium: ok"
+else
+  CHROMIUM_STATUS=$?
+  fail "HTTPS chromium failed with exit code $CHROMIUM_STATUS: ${CHROMIUM_OUTPUT:-no output}"
+fi
 
 # Java and Go need multi-line scripts.
 sudo "$BIN_DIR/runner" exec --sandbox "$SANDBOX_ID" -- sh -c "printf '%s\n' 'import java.net.*;import java.net.http.*;' 'var c=HttpClient.newHttpClient();' 'var r=HttpRequest.newBuilder(URI.create(\"$TLS_URL\")).build();' 'c.send(r,HttpResponse.BodyHandlers.discarding());' '/exit' | timeout 30 jshell -" \

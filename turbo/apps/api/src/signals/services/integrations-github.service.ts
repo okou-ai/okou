@@ -20,7 +20,7 @@ import {
   startGithubUserOAuth$,
   findGithubInstallationByInstallationId$,
   getGithubOAuthAuthMethod,
-  linkGithubUser,
+  linkGithubUser$,
   verifyGithubConnectSignature,
 } from "./github-oauth.service";
 import { connectorActionResolver } from "./connector-action-resolver.service";
@@ -162,7 +162,7 @@ const userGithubConnectorUsername$ = computed(
 export const connectGithubUser$ = command(
   async ({ get, set }, body: GithubConnectUserBody, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    const db = set(writeDb$);
+    set(writeDb$);
     const connectSignature = body?.connectSignature;
     if (
       connectSignature &&
@@ -198,9 +198,9 @@ export const connectGithubUser$ = command(
       return errorResponse(404, "No GitHub installation found", "NOT_FOUND");
     }
 
-    const githubUserId = await linkGithubUser(
+    const githubUserId = await set(
+      linkGithubUser$,
       {
-        db,
         installRecordId: installation.id,
         userId: auth.userId,
         knownGithubUserId: connectSignature?.githubUserId,

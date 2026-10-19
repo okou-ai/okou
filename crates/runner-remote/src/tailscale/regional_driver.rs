@@ -33,6 +33,7 @@ struct State {
     peers: HashMap<NodePublicKey, RegionId>,
     active: BTreeMap<RegionId, CancellationToken>,
     failed: HashSet<RegionId>,
+    evidence: BTreeMap<RegionId, super::evidence::Trace>,
     changed: Rc<Notify>,
 }
 
@@ -40,6 +41,22 @@ struct State {
 pub(super) struct Routes(Rc<RefCell<State>>);
 
 impl Routes {
+    pub(super) fn evidence(&self, id: RegionId) -> super::evidence::Trace {
+        let current = super::evidence::Trace::current();
+        if current.id().is_none() {
+            return current;
+        }
+        self.0
+            .borrow_mut()
+            .evidence
+            .entry(id)
+            .or_insert_with(|| {
+                let trace = current.fork();
+                trace.region(id.0.get());
+                trace
+            })
+            .clone()
+    }
     pub(super) fn changed(&self) -> Rc<Notify> {
         Rc::clone(&self.0.borrow().changed)
     }
@@ -99,6 +116,16 @@ impl Routes {
             if *id != state.home && !state.peers.values().any(|region| region == id) {
                 cancelled.cancel();
             }
+        }
+        if !state.evidence.is_empty() {
+            let needed: HashSet<_> = state
+                .active
+                .keys()
+                .copied()
+                .chain(state.peers.values().copied())
+                .chain(std::iter::once(state.home))
+                .collect();
+            state.evidence.retain(|id, _| needed.contains(id));
         }
         Ok(())
     }
@@ -179,6 +206,7 @@ impl<D: Dial> RegionalDriver<D> {
             peers: HashMap::new(),
             active: BTreeMap::new(),
             failed: HashSet::new(),
+            evidence: BTreeMap::new(),
             changed: Rc::new(Notify::new()),
         })));
         let (driver, port) = Driver::new(cancelled.clone());
@@ -209,6 +237,7 @@ impl<D: Dial> RegionalDriver<D> {
     }
 
     fn ensure(&mut self, id: RegionId) -> Result<bool, Failure> {
+        let trace = self.routes.evidence(id);
         let mut state = self.routes.0.borrow_mut();
         if state.failed.contains(&id) {
             return Ok(false);
@@ -240,7 +269,7 @@ impl<D: Dial> RegionalDriver<D> {
         };
         state.active.insert(id, cancelled);
         self.sending.insert(id, sender);
-        let trace = super::evidence::Trace::current().fork();
+        trace.replace(&trace.fork());
         trace.region(id.0.get());
         self.jobs.push(Box::pin(async move {
             let result = trace

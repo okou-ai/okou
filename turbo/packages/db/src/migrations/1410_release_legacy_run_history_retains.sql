@@ -1,18 +1,31 @@
--- vm0:non-transactional
+-- okou:non-transactional
 -- Release only Run-owned archive retains; keep Runs, Memory and blob metadata.
 -- v5 no longer produces remote native History. The supported rollback floor
 -- already requires native continuation; these hashes never authorize resume.
 -- Each batch commits independently and a retry starts again at the first UUID.
+-- Build a migration-owned lookup before applying the short batch deadline.
+-- Retrying a failed concurrent build must replace its possibly invalid index.
+SET statement_timeout = '5min';
+--> statement-breakpoint
+DROP INDEX CONCURRENTLY IF EXISTS public.migration_1410_run_history_hash_idx;
+--> statement-breakpoint
+CREATE INDEX CONCURRENTLY migration_1410_run_history_hash_idx
+  ON public.agent_runs (legacy_conversation_history_hash)
+  WHERE legacy_conversation_history_hash IS NOT NULL;
+--> statement-breakpoint
+ANALYZE public.agent_runs (legacy_conversation_history_hash);
+--> statement-breakpoint
 SET statement_timeout = '2s';
 --> statement-breakpoint
--- vm0:batch-by-uuid
+-- okou:batch-by-uuid
+-- okou:explain-on-timeout
 WITH batch AS MATERIALIZED (
   SELECT id, legacy_conversation_history_hash AS hash
   FROM agent_runs
   WHERE ($1::uuid IS NULL OR id > $1::uuid)
     AND legacy_conversation_history_hash IS NOT NULL
   ORDER BY id
-  LIMIT 500
+  LIMIT 100
 ), target_hashes AS MATERIALIZED (
   SELECT DISTINCT hash FROM batch
 ), run_refs AS MATERIALIZED (
@@ -71,5 +84,9 @@ SELECT CASE
   ELSE format('History retain accounting mismatch: cleared=%s released=%s',
     (SELECT count(*) FROM cleared), (SELECT coalesce(sum(refs), 0) FROM released))::uuid
 END AS next_cursor;
+--> statement-breakpoint
+SET statement_timeout = '5min';
+--> statement-breakpoint
+DROP INDEX CONCURRENTLY IF EXISTS public.migration_1410_run_history_hash_idx;
 --> statement-breakpoint
 RESET statement_timeout;

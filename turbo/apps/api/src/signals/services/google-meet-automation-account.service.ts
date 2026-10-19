@@ -1,22 +1,11 @@
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { and, eq } from "drizzle-orm";
 
-import type { Db, ReadonlyDb } from "../external/db";
-import { resolveWorkflowAutomationConnectorId } from "./workflow-automation-account.service";
-
-export async function resolveGoogleMeetAutomationConnectorId(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly workflowId: string;
-  },
-): Promise<string | null> {
-  return await resolveWorkflowAutomationConnectorId(db, {
-    ...args,
-    connectorSlug: "google-meet",
-  });
-}
+import type { Db } from "../external/db";
+import {
+  workflowAutomationDefaultAccountReadPlan,
+  workflowAutomationSelectedAccountReadPlan,
+} from "./workflow-automation-account.service";
 
 export async function reprojectGoogleMeetAutomationsForOwner(
   db: Db,
@@ -42,10 +31,36 @@ export async function reprojectGoogleMeetAutomationsForOwner(
     );
 
   for (const automation of automations) {
-    const eventConnectorId = await resolveGoogleMeetAutomationConnectorId(db, {
+    const workflowScope = {
       ...args,
       workflowId: automation.workflowId,
-    });
+    };
+    const eventConnectorId = await (async () => {
+      const accountScope = {
+        ...workflowScope,
+        connectorSlug: "google-meet" as const,
+      };
+      return await (async () => {
+        const selected =
+          workflowAutomationSelectedAccountReadPlan(accountScope);
+        const [selection] = await db
+          .select(selected.columns)
+          .from(selected.from)
+          .innerJoin(selected.join.table, selected.join.on)
+          .where(selected.where)
+          .limit(selected.limit);
+        if (selection) {
+          return selection.connectorId;
+        }
+        const fallback = workflowAutomationDefaultAccountReadPlan(accountScope);
+        const [defaultAccount] = await db
+          .select(fallback.columns)
+          .from(fallback.from)
+          .where(fallback.where)
+          .limit(fallback.limit);
+        return defaultAccount?.connectorId ?? null;
+      })();
+    })();
     if (automation.eventConnectorId === eventConnectorId) {
       continue;
     }

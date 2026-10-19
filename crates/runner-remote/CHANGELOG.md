@@ -1,5 +1,82 @@
 # Changelog
 
+## [0.27.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.26.0...runner-remote-v0.27.0) (2026-10-19)
+
+
+### Features
+
+* **remote:** explain native tcp waits with correlated path evidence ([#41012](https://github.com/okou-ai/okou/issues/41012)) ([2ab7476](https://github.com/okou-ai/okou/commit/2ab7476b8fc882bd6530fa88308ca1b656ac54d4))
+
+
+### Bug Fixes
+
+* **runner:** finish relay dialing when the only enabled family fails ([#41025](https://github.com/okou-ai/okou/issues/41025)) ([b247bd3](https://github.com/okou-ai/okou/commit/b247bd34bf84b78e6378a7e603de75ed5a8f7abb))
+
+## [0.26.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.25.0...runner-remote-v0.26.0) (2026-10-17)
+
+
+### Features
+
+* **vnc:** retain native route diagnostics and checks ([#40946](https://github.com/okou-ai/okou/issues/40946)) ([c4b0a51](https://github.com/okou-ai/okou/commit/c4b0a51b88fefc0739b97df1b186c7dd0f02b857))
+
+
+### Bug Fixes
+
+* **runner:** install diagnostics with trusted agent token ([#40967](https://github.com/okou-ai/okou/issues/40967)) ([6abf9c3](https://github.com/okou-ai/okou/commit/6abf9c3423d9c805ae2d082351b44642e7e4f80f))
+* **tailscale:** preserve shared crypto when native bindings retire ([#40963](https://github.com/okou-ai/okou/issues/40963)) ([458d2a0](https://github.com/okou-ai/okou/commit/458d2a06d20aae0e6f7ec707a4f2d4fad4d37346))
+
+## [0.25.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.24.4...runner-remote-v0.25.0) (2026-10-17)
+
+
+### Features
+
+* **vnc:** support independent native kdc routes ([#40902](https://github.com/okou-ai/okou/issues/40902)) ([c951fc4](https://github.com/okou-ai/okou/commit/c951fc445df5676aa1f29ad2a967df878e623356))
+* **vnc:** support protected native rfb transports ([#40892](https://github.com/okou-ai/okou/issues/40892)) ([72c4484](https://github.com/okou-ai/okou/commit/72c4484957579669367dfde45a0c91e50ca675a8))
+
+## [0.24.4](https://github.com/okou-ai/okou/compare/runner-remote-v0.24.3...runner-remote-v0.24.4) (2026-10-17)
+
+
+### Refactoring
+
+* **runner-remote:** share duplex channel cancellation policy ([#40888](https://github.com/okou-ai/okou/issues/40888)) ([16240ca](https://github.com/okou-ai/okou/commit/16240ca4a4502c7809bc6755ae0e8012e197309a))
+
+## [0.24.3](https://github.com/okou-ai/okou/compare/runner-remote-v0.24.2...runner-remote-v0.24.3) (2026-10-17)
+
+## [0.24.2](https://github.com/okou-ai/okou/compare/runner-remote-v0.24.1...runner-remote-v0.24.2) (2026-10-17)
+
+## [0.24.1](https://github.com/okou-ai/okou/compare/runner-remote-v0.24.0...runner-remote-v0.24.1) (2026-10-16)
+
+
+### Refactoring
+
+* **runner-remote:** encode acknowledged sftp staging ownership ([#40749](https://github.com/okou-ai/okou/issues/40749)) ([dde8df1](https://github.com/okou-ai/okou/commit/dde8df1da3508f9fee62b98e8ee64fb5316acd1e))
+
+## [0.24.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.23.1...runner-remote-v0.24.0) (2026-10-16)
+
+
+### Features
+
+* **cli:** add active ssh and vnc connectivity checks ([#40724](https://github.com/okou-ai/okou/issues/40724)) ([680e006](https://github.com/okou-ai/okou/commit/680e006659273013a0e514f7d38e05c3402496d9))
+
+## [0.23.1](https://github.com/okou-ai/okou/compare/runner-remote-v0.23.0...runner-remote-v0.23.1) (2026-10-16)
+
+
+### Refactoring
+
+* **runner-remote:** own ssh session terminal retention state ([#40719](https://github.com/okou-ai/okou/issues/40719)) ([2eb8337](https://github.com/okou-ai/okou/commit/2eb8337e3df2b287555e84e5683cd9944d3f0b48))
+
+## [0.23.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.22.0...runner-remote-v0.23.0) (2026-10-16)
+
+
+### Features
+
+* **remote:** explain vnc failures with retained source evidence ([#40669](https://github.com/okou-ai/okou/issues/40669)) ([07b1a90](https://github.com/okou-ai/okou/commit/07b1a902af74b7a3ebde6434b86e4efb35b1de7e))
+
+
+### Refactoring
+
+* **runner-remote:** converge ssh credential preparation completion ([#40666](https://github.com/okou-ai/okou/issues/40666)) ([218e28c](https://github.com/okou-ai/okou/commit/218e28cc7d5f970e18b9a9943f63a1b383f17d71))
+
 ## [0.22.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.21.1...runner-remote-v0.22.0) (2026-10-16)
 
 

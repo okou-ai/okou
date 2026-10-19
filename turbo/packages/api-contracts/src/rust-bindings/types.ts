@@ -65,7 +65,7 @@ export const rustTypeModuleDocs = [
   },
   {
     rustModulePath: ["sandbox_channel", "fs"],
-    rustDoc: ["Readonly home-directory category contracts."],
+    rustDoc: ["Readonly filesystem listing and regular-file contracts."],
   },
   {
     rustModulePath: ["sandbox_channel", "diagnostics"],

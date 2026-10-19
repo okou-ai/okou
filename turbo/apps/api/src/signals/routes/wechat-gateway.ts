@@ -5,6 +5,7 @@ import { wechatGatewayContract } from "@okouai/api-contracts/contracts/integrati
 import { wechatConnections } from "@okouai/db/schema/wechat";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
+import { logger } from "../../lib/log";
 import { verifyWechatGatewaySignature } from "../../lib/wechat-gateway-verification";
 import { request$ } from "../context/hono";
 import { writeDb$ } from "../external/db";
@@ -19,7 +20,10 @@ import {
 } from "../services/crypto.utils";
 import { wechatEnabled$ } from "../services/wechat-config";
 import { receiveWechatMessage$ } from "../services/wechat-ingress.service";
+import { sendWechatNotice$ } from "../services/wechat-notice.service";
 import type { RouteEntry } from "../route-entry";
+
+const log = logger("api:wechat:gateway");
 
 const poll$ = command(async ({ get, set }, signal: AbortSignal) => {
   const req = get(request$);
@@ -32,8 +36,8 @@ const poll$ = command(async ({ get, set }, signal: AbortSignal) => {
     !secret ||
     !verifyWechatGatewaySignature(
       secret,
-      req.header("x-wechat-timestamp") ?? null,
-      req.header("x-wechat-signature") ?? null,
+      req.raw.headers.get("x-wechat-timestamp"),
+      req.raw.headers.get("x-wechat-signature"),
       raw,
     )
   ) {
@@ -61,7 +65,7 @@ const poll$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   if (
     !connection ||
-    connection.status !== "active" ||
+    connection.status === "reconnect_required" ||
     !(await set(wechatEnabled$, connection.orgId, connection.userId, signal))
   ) {
     return Response.json({ active: false });
@@ -70,7 +74,7 @@ const poll$ = command(async ({ get, set }, signal: AbortSignal) => {
   const live = and(
     eq(wechatConnections.id, connection.id),
     eq(wechatConnections.generation, connection.generation),
-    eq(wechatConnections.status, "active"),
+    eq(wechatConnections.status, connection.status),
   );
   let batchCiphertext = connection.pendingBatchCiphertext;
   if (!batchCiphertext) {
@@ -87,15 +91,22 @@ const poll$ = command(async ({ get, set }, signal: AbortSignal) => {
       if (!(fetched.error instanceof WechatSessionExpiredError)) {
         throw fetched.error;
       }
-      await db
-        .update(wechatConnections)
-        .set({ status: "reconnect_required", updatedAt: nowDate() })
-        .where(live);
+      if (connection.status === "disconnected") {
+        await db.delete(wechatConnections).where(live);
+      } else {
+        await db
+          .update(wechatConnections)
+          .set({ status: "reconnect_required", updatedAt: nowDate() })
+          .where(live);
+      }
       signal.throwIfAborted();
       return Response.json({ active: false });
     }
 
     const updates = fetched.value;
+    if (updates === null) {
+      return Response.json({ active: true });
+    }
     batchCiphertext = await encryptStoredSecretValue(JSON.stringify(updates));
 
     const [saved] = await db
@@ -123,7 +134,17 @@ const poll$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
 
   for (const message of batch.msgs ?? []) {
-    await set(receiveWechatMessage$, { connection, message }, signal);
+    // A notice failure must not block a user's prompt or replay an ambiguous send.
+    const notice = await settle(
+      set(sendWechatNotice$, { connection, message }, signal),
+      signal,
+    );
+    if (!notice.ok) {
+      log.warn("WeChat notice failed", { error: notice.error });
+    }
+    if (connection.status === "active") {
+      await set(receiveWechatMessage$, { connection, message }, signal);
+    }
   }
   await db
     .update(wechatConnections)

@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import {
   workflowsDetailContract,
   type WorkflowDetailResponse,
+  type WorkflowUpdateRequest,
 } from "@okouai/api-contracts/contracts/workflows";
 import { expect, test } from "vitest";
 
@@ -37,6 +38,77 @@ function workflow(): WorkflowDetailResponse {
     automations: [],
   };
 }
+
+test.each([
+  { name: "instructions", query: "", label: "Workflow instruction" },
+  {
+    name: "Markdown file",
+    query: "?file=notes.md",
+    label: "Workflow file content",
+  },
+])(
+  "Retain the $name draft on failure and clear it only after a successful save",
+  async ({ query, label }) => {
+    let detail = workflow();
+    let rejectSave = true;
+    const submitted: WorkflowUpdateRequest[] = [];
+    context.mocks.api(workflowsDetailContract.get, ({ respond }) => {
+      return respond(200, detail);
+    });
+    context.mocks.api(workflowsDetailContract.update, ({ body, respond }) => {
+      submitted.push(body);
+      if (rejectSave) {
+        return respond(409, {
+          error: { code: "CONFLICT", message: "Workflow changed; try again" },
+        });
+      }
+      detail = {
+        ...detail,
+        ...(body.instruction !== undefined
+          ? { instruction: body.instruction }
+          : {}),
+        ...(body.files !== undefined
+          ? {
+              files: body.files.map((file) => {
+                return { path: file.path, size: file.content.length };
+              }),
+              fileContents: body.files,
+            }
+          : {}),
+      };
+      return respond(200, detail);
+    });
+    await setupPage({
+      context,
+      path: `/workflows/${WORKFLOW_ID}/instructions${query}`,
+    });
+    await fill(await screen.findByLabelText(label), "Saved release review");
+    click(screen.getByTestId("save-button"));
+
+    await expect(
+      screen.findByText("Workflow changed; try again"),
+    ).resolves.toBeInTheDocument();
+    expect(screen.getByLabelText(label)).toHaveTextContent(
+      "Saved release review",
+    );
+    expect(screen.getByTestId("unsaved-bar")).toBeInTheDocument();
+    expect(screen.getByTestId("save-button")).toBeEnabled();
+
+    rejectSave = false;
+    click(screen.getByTestId("save-button"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("unsaved-bar")).not.toBeInTheDocument();
+      expect(screen.getByLabelText(label)).toHaveTextContent(
+        "Saved release review",
+      );
+    });
+    expect(submitted.at(-1)).toStrictEqual(
+      query
+        ? { files: [{ path: "notes.md", content: "Saved release review" }] }
+        : { instruction: "Saved release review" },
+    );
+  },
+);
 
 test.each([
   { name: "instructions", query: "", label: "Workflow instruction" },

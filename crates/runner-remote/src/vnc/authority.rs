@@ -75,6 +75,7 @@ pub(super) struct Credential {
     pub(super) port: u16,
     pub(super) generation: i64,
     pub(super) transport: Transport,
+    pub(super) native: Option<super::native::Configuration>,
     pub(super) authentication: Authentication,
 }
 
@@ -114,10 +115,37 @@ pub(super) enum Authentication {
     },
 }
 
+impl Authentication {
+    pub(super) fn requires_outer_protection(&self) -> bool {
+        matches!(
+            self,
+            Self::AppleVncPassword(_)
+                | Self::AppleDh(_)
+                | Self::AppleSrp(_)
+                | Self::AppleRsaSrp(_)
+                | Self::RsaAes {
+                    security: RsaAesSecurity::Ra2ne | RsaAesSecurity::Ra2ne256,
+                    ..
+                }
+        )
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Transport {
     Direct,
-    Ssh { connection: Uuid, generation: i64 },
+    Ssh {
+        connection: Uuid,
+        generation: i64,
+    },
+    Cloudflare {
+        configuration: Uuid,
+        generation: i64,
+    },
+    Tailscale {
+        configuration: Uuid,
+        generation: i64,
+    },
 }
 
 #[expect(
@@ -136,7 +164,7 @@ fn rsa_aes_credential(
 ) -> Result<Credential, Failure> {
     let port = valid_port_and_generation(port, generation)?;
     super::network::validate_host(&host)?;
-    let transport = parse_transport(transport, supports_ssh)?;
+    let (transport, native) = parse_transport(transport, supports_ssh)?;
     let (security, encoded_pin) = match security {
         ResolveResponseResolvedTransportSecurity::RsaAesRa2 { server_key_sha256 } => {
             (RsaAesSecurity::Ra2, server_key_sha256)
@@ -153,8 +181,7 @@ fn rsa_aes_credential(
         _ => return Err(Failure::Authority),
     };
     if matches!(security, RsaAesSecurity::Ra2ne | RsaAesSecurity::Ra2ne256)
-        && (!matches!(transport, Transport::Ssh { .. })
-            || !matches!(host.as_str(), "127.0.0.1" | "::1"))
+        && !super::native::raw_route_allowed(&host, transport, native.as_ref())
     {
         return Err(Failure::Authority);
     }
@@ -189,6 +216,7 @@ fn rsa_aes_credential(
             pin: RsaServerKeyPin::new(pin),
             credentials,
         },
+        native,
     })
 }
 
@@ -236,9 +264,9 @@ pub(super) fn valid_port_and_generation(port: u64, generation: i64) -> Result<u1
 pub(super) fn parse_transport(
     transport: ResolveResponseResolvedTransportTransport,
     supports_ssh: bool,
-) -> Result<Transport, Failure> {
+) -> Result<(Transport, Option<super::native::Configuration>), Failure> {
     match transport {
-        ResolveResponseResolvedTransportTransport::Direct => Ok(Transport::Direct),
+        ResolveResponseResolvedTransportTransport::Direct => Ok((Transport::Direct, None)),
         ResolveResponseResolvedTransportTransport::Ssh {
             connection_id,
             generation,
@@ -246,33 +274,32 @@ pub(super) fn parse_transport(
             if !supports_ssh || !(1..=i64::from(i32::MAX)).contains(&generation) {
                 return Err(Failure::Authority);
             }
-            Ok(Transport::Ssh {
-                connection: connection_id.parse().map_err(|_| Failure::Authority)?,
-                generation,
-            })
+            Ok((
+                Transport::Ssh {
+                    connection: connection_id.parse().map_err(|_| Failure::Authority)?,
+                    generation,
+                },
+                None,
+            ))
         }
-        // B prepares the private contract before E implements/advertises native RFB.
-        ResolveResponseResolvedTransportTransport::CloudflareAccess { .. }
-        | ResolveResponseResolvedTransportTransport::Tailscale { .. } => Err(Failure::Authority),
+        native => super::native::parse(native),
     }
 }
 
-fn apple_ssh_endpoint(
+fn apple_endpoint(
     host: &str,
     port: u64,
     generation: i64,
     transport: ResolveResponseResolvedTransportTransport,
     supports_ssh: bool,
-) -> Result<(u16, Transport), Failure> {
+) -> Result<(u16, Transport, Option<super::native::Configuration>), Failure> {
     let port = valid_port_and_generation(port, generation)?;
-    if !supports_ssh || !matches!(host, "127.0.0.1" | "::1") {
+    super::network::validate_host(host)?;
+    let (transport, native) = parse_transport(transport, supports_ssh)?;
+    if !super::native::raw_route_allowed(host, transport, native.as_ref()) {
         return Err(Failure::Authority);
     }
-    let transport = match parse_transport(transport, supports_ssh)? {
-        ssh @ Transport::Ssh { .. } => ssh,
-        Transport::Direct => return Err(Failure::Authority),
-    };
-    Ok((port, transport))
+    Ok((port, transport, native))
 }
 
 #[expect(
@@ -289,7 +316,8 @@ fn apple_vnc_password_credential(
     security: ResolveResponseResolvedTransportSecurity,
     supports_ssh: bool,
 ) -> Result<Credential, Failure> {
-    let (port, transport) = apple_ssh_endpoint(&host, port, generation, transport, supports_ssh)?;
+    let (port, transport, native) =
+        apple_endpoint(&host, port, generation, transport, supports_ssh)?;
     let password = match (authentication, security) {
         (
             ResolveResponseResolvedTransportAuthentication::VncPassword { password },
@@ -305,6 +333,7 @@ fn apple_vnc_password_credential(
         generation,
         transport,
         authentication: Authentication::AppleVncPassword(password),
+        native,
     })
 }
 
@@ -322,7 +351,8 @@ fn apple_dh_credential(
     security: ResolveResponseResolvedTransportSecurity,
     supports_ssh: bool,
 ) -> Result<Credential, Failure> {
-    let (port, transport) = apple_ssh_endpoint(&host, port, generation, transport, supports_ssh)?;
+    let (port, transport, native) =
+        apple_endpoint(&host, port, generation, transport, supports_ssh)?;
     let credentials = match (authentication, security) {
         (
             ResolveResponseResolvedTransportAuthentication::AppleDhUsernamePassword {
@@ -341,6 +371,7 @@ fn apple_dh_credential(
         generation,
         transport,
         authentication: Authentication::AppleDh(credentials),
+        native,
     })
 }
 
@@ -358,7 +389,8 @@ fn apple_srp_credential(
     security: ResolveResponseResolvedTransportSecurity,
     supports_ssh: bool,
 ) -> Result<Credential, Failure> {
-    let (port, transport) = apple_ssh_endpoint(&host, port, generation, transport, supports_ssh)?;
+    let (port, transport, native) =
+        apple_endpoint(&host, port, generation, transport, supports_ssh)?;
     let credentials = match (authentication, security) {
         (
             ResolveResponseResolvedTransportAuthentication::AppleSrpUsernamePassword {
@@ -377,6 +409,7 @@ fn apple_srp_credential(
         generation,
         transport,
         authentication: Authentication::AppleSrp(credentials),
+        native,
     })
 }
 
@@ -394,7 +427,8 @@ fn apple_rsa_srp_credential(
     security: ResolveResponseResolvedTransportSecurity,
     supports_ssh: bool,
 ) -> Result<Credential, Failure> {
-    let (port, transport) = apple_ssh_endpoint(&host, port, generation, transport, supports_ssh)?;
+    let (port, transport, native) =
+        apple_endpoint(&host, port, generation, transport, supports_ssh)?;
     let credentials = match (authentication, security) {
         (
             ResolveResponseResolvedTransportAuthentication::AppleRsaSrpUsernamePassword {
@@ -413,6 +447,7 @@ fn apple_rsa_srp_credential(
         generation,
         transport,
         authentication: Authentication::AppleRsaSrp(credentials),
+        native,
     })
 }
 
@@ -810,6 +845,20 @@ impl Authority {
     ) {
         let transport = |route| match route {
             Transport::Direct => ObservationRequestExpectedTransport::Direct,
+            Transport::Cloudflare {
+                configuration,
+                generation,
+            } => ObservationRequestExpectedTransport::CloudflareAccess {
+                config_id: configuration.to_string(),
+                generation,
+            },
+            Transport::Tailscale {
+                configuration,
+                generation,
+            } => ObservationRequestExpectedTransport::Tailscale {
+                config_id: configuration.to_string(),
+                generation,
+            },
             Transport::Ssh {
                 connection,
                 generation,
@@ -840,6 +889,20 @@ impl Authority {
                 .and_then(|binding| binding.kdc)
                 .map(|route| match route {
                     Transport::Direct => ObservationRequestExpectedKdcTransport::Direct,
+                    Transport::Cloudflare {
+                        configuration,
+                        generation,
+                    } => ObservationRequestExpectedKdcTransport::CloudflareAccess {
+                        config_id: configuration.to_string(),
+                        generation,
+                    },
+                    Transport::Tailscale {
+                        configuration,
+                        generation,
+                    } => ObservationRequestExpectedKdcTransport::Tailscale {
+                        config_id: configuration.to_string(),
+                        generation,
+                    },
                     Transport::Ssh {
                         connection,
                         generation,
@@ -1056,6 +1119,7 @@ impl Authority {
             ]);
         }
         supported_profiles.extend(rsa_aes_profiles(supports_ssh));
+        supported_profiles.extend(super::native::profiles());
         let kerberos_admitted = if let Some((root, owner, deadline)) = kerberos_probe {
             Box::pin(kerberos_worker::probe_owned(root, deadline, Some(owner)))
                 .await
@@ -1242,7 +1306,7 @@ impl Authority {
             };
         let port = valid_port_and_generation(port, generation)?;
         super::network::validate_host(&host)?;
-        let transport = parse_transport(transport, supports_ssh)?;
+        let (transport, native) = parse_transport(transport, supports_ssh)?;
         let (authentication, trust) = match (authentication, security) {
             (
                 ResolveResponseResolvedTransportAuthentication::None,
@@ -1341,6 +1405,7 @@ impl Authority {
             port,
             generation,
             transport,
+            native,
             authentication: match authentication {
                 X509Choice::Legacy(authentication) => Authentication::X509 {
                     server_name,
@@ -1369,6 +1434,20 @@ impl Authority {
     ) -> Result<(), Failure> {
         let expected_transport = match transport {
             Transport::Direct => CheckRequestExpectedTransport::Direct,
+            Transport::Cloudflare {
+                configuration,
+                generation,
+            } => CheckRequestExpectedTransport::CloudflareAccess {
+                config_id: configuration.to_string(),
+                generation,
+            },
+            Transport::Tailscale {
+                configuration,
+                generation,
+            } => CheckRequestExpectedTransport::Tailscale {
+                config_id: configuration.to_string(),
+                generation,
+            },
             Transport::Ssh {
                 connection,
                 generation,
@@ -1389,6 +1468,20 @@ impl Authority {
             expected_kdc_transport: kerberos.and_then(|binding| binding.kdc).map(
                 |route| match route {
                     Transport::Direct => CheckRequestExpectedKdcTransport::Direct,
+                    Transport::Cloudflare {
+                        configuration,
+                        generation,
+                    } => CheckRequestExpectedKdcTransport::CloudflareAccess {
+                        config_id: configuration.to_string(),
+                        generation,
+                    },
+                    Transport::Tailscale {
+                        configuration,
+                        generation,
+                    } => CheckRequestExpectedKdcTransport::Tailscale {
+                        config_id: configuration.to_string(),
+                        generation,
+                    },
                     Transport::Ssh {
                         connection,
                         generation,

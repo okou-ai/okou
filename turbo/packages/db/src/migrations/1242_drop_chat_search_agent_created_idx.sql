@@ -1,4 +1,4 @@
--- vm0:non-transactional
+-- okou:non-transactional
 -- No query needs (user_id, org_id, agent_id, created_at) order since #36456.
 -- Agent-scoped chat search is served by chat_event_search_messages_user_tsv_gin_idx.
 -- CONCURRENTLY does not block chat search reads or projector writes, but it

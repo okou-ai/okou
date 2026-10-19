@@ -8,7 +8,7 @@ import { env, optionalEnv } from "../../lib/env";
 import { computeHmacSignature } from "../../lib/event-consumer/hmac";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
@@ -72,24 +72,6 @@ interface DispatchSingleCallbackInput {
   readonly error?: string;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly balanceContext: Parameters<typeof formatRunBalanceError>[0];
-}
-
-export async function undeliveredChatCallbackIdForRun(
-  db: Pick<Db, "select">,
-  runId: string,
-): Promise<string | undefined> {
-  const [callback] = await db
-    .select({ id: agentRunCallbacks.id })
-    .from(agentRunCallbacks)
-    .where(
-      and(
-        eq(agentRunCallbacks.runId, runId),
-        eq(agentRunCallbacks.internalKind, "chat"),
-        inArray(agentRunCallbacks.status, ["pending", "failed"]),
-      ),
-    )
-    .limit(1);
-  return callback?.id;
 }
 
 interface DispatchInternalRunCallbackInput {

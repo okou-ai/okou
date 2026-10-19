@@ -459,18 +459,18 @@ function ChatWorkspace({
   );
 }
 
-function SidebarLayoutInner({ children }: { children: ReactNode }) {
-  const paletteColorTheme = useGet(paletteColorTheme$);
-  const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
+function SidebarWorkspace({
+  children,
+  isDesktop,
+  pwaNavigation,
+}: {
+  children: ReactNode;
+  isDesktop: boolean;
+  pwaNavigation: boolean;
+}) {
   const chatListHidden = useGet(sidebarOff$);
-  const shellDocumentAttributesRef = useSet(shellDocumentAttributesRef$);
-  const pwaNavigation = useGet(pwaNavigationEnabled$);
   const chatListVisible = useGet(pwaChatListVisible$);
   const activeRoute = useGet(activeRoute$);
-
-  if (activeRoute === "me" && !pwaNavigation) {
-    return <NotFoundPage />;
-  }
 
   const workspaceHeader = (
     <>
@@ -499,6 +499,30 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
   const workspaceFooter = pwaNavigation ? <PwaBottomNavigation /> : null;
   const beside = chatListHidden ? "nav-rail" : "chat-list";
 
+  return activeRoute === "chat" ? (
+    <ChatWorkspace
+      beside={beside}
+      header={workspaceHeader}
+      footer={workspaceFooter}
+      pwaNavigation={pwaNavigation}
+    >
+      {workspaceContent}
+    </ChatWorkspace>
+  ) : (
+    <WorkspaceInset beside={beside}>
+      {workspaceHeader}
+      {workspaceContent}
+      {workspaceFooter}
+    </WorkspaceInset>
+  );
+}
+
+function SidebarLayoutInner({ children }: { children: ReactNode }) {
+  const paletteColorTheme = useGet(paletteColorTheme$);
+  const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
+  const shellDocumentAttributesRef = useSet(shellDocumentAttributesRef$);
+  const pwaNavigation = useGet(pwaNavigationEnabled$);
+
   return withChatScrollLayout(
     <div
       ref={shellDocumentAttributesRef}
@@ -526,27 +550,27 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
       ) : isDesktop ? (
         <Sidebar isDesktop />
       ) : null}
-      {activeRoute === "chat" ? (
-        <ChatWorkspace
-          beside={beside}
-          header={workspaceHeader}
-          footer={workspaceFooter}
-          pwaNavigation={pwaNavigation}
-        >
-          {workspaceContent}
-        </ChatWorkspace>
-      ) : (
-        <WorkspaceInset beside={beside}>
-          {workspaceHeader}
-          {workspaceContent}
-          {workspaceFooter}
-        </WorkspaceInset>
-      )}
+      <SidebarWorkspace isDesktop={isDesktop} pwaNavigation={pwaNavigation}>
+        {children}
+      </SidebarWorkspace>
     </div>,
     { measureWidth: true },
   );
 }
 
+function SidebarRouteGuard({ children }: { children: ReactNode }) {
+  const activeRoute = useGet(activeRoute$);
+  const pwaNavigation = useGet(pwaNavigationEnabled$);
+
+  return activeRoute === "me" && !pwaNavigation ? <NotFoundPage /> : children;
+}
+
 export function SidebarLayout({ children }: { children: ReactNode }) {
-  return <SidebarLayoutInner>{children}</SidebarLayoutInner>;
+  // Route availability updates the guard while the shell keeps its element
+  // identity. Route-specific workspace and navigation own their subscriptions.
+  return (
+    <SidebarRouteGuard>
+      <SidebarLayoutInner>{children}</SidebarLayoutInner>
+    </SidebarRouteGuard>
+  );
 }

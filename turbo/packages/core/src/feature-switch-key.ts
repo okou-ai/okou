@@ -48,6 +48,7 @@ export enum FeatureSwitchKey {
   PwaNavigation = "pwaNavigation",
   FeishuIntegration = "_feishuIntegration",
   LarkIntegration = "larkIntegration",
+  SlackOpenGraphPreviews = "slackOpenGraphPreviews",
   WechatIntegration = "wechatIntegration",
   DiscordIntegration = "discordIntegration",
   VncAccess = "vncAccess",
@@ -59,6 +60,7 @@ export enum FeatureSwitchKey {
   ChatThreadMuting = "chatThreadMuting",
   ChatThreadInlineRename = "chatThreadInlineRename",
   CustomTemplates = "customTemplates",
+  ComposerSlashCustomTemplates = "composerSlashCustomTemplates",
   BuiltinDocumentTemplates = "builtinDocumentTemplates",
   PresentationConvert = "presentationConvert",
   DeliveryFormatGuidance = "deliveryFormatGuidance",
@@ -67,4 +69,6 @@ export enum FeatureSwitchKey {
   BrowserNativeInput = "browserNativeInput",
   AgentSuggestion = "agentSuggestion",
   SubscriptionLinkingEntry = "subscriptionLinkingEntry",
+  ComposerSlashHint = "composerSlashHint",
+  SlashActions = "slashActions",
 }

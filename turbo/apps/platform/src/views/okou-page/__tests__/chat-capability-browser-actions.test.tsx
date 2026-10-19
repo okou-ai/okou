@@ -608,7 +608,6 @@ test.each([true, false])(
       expect(body.clientEventId).toBe(BROWSER_INPUT_SUCCESS_CLIENT_ID);
       expect(body.chatThreadSortEventId).toBe(BROWSER_INPUT_SUCCESS_SORT_ID);
       return respond(201, {
-        runId: crypto.randomUUID(),
         threadId: RUN_THREAD_ID,
       });
     });
@@ -893,7 +892,6 @@ test("An inline native datetime-local picker keeps a wall-clock string through c
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     expect(body.prompt).toBe(BROWSER_INPUT_CALLBACK);
     return respond(201, {
-      runId: crypto.randomUUID(),
       threadId: RUN_THREAD_ID,
     });
   });
@@ -963,7 +961,6 @@ test("An inline Browser input dialog confirms a required native checkbox", async
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     expect(body.prompt).toBe(BROWSER_INPUT_CALLBACK);
     return respond(201, {
-      runId: crypto.randomUUID(),
       threadId: RUN_THREAD_ID,
     });
   });
@@ -1054,7 +1051,6 @@ test("An inline Browser slider confirms the observed website position without na
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     expect(body.prompt).toBe(BROWSER_INPUT_CALLBACK);
     return respond(201, {
-      runId: crypto.randomUUID(),
       threadId: RUN_THREAD_ID,
     });
   });
@@ -1132,7 +1128,6 @@ test("An inline Browser color picker confirms the observed website selection wit
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     expect(body.prompt).toBe(BROWSER_INPUT_CALLBACK);
     return respond(201, {
-      runId: crypto.randomUUID(),
       threadId: RUN_THREAD_ID,
     });
   });
@@ -1245,7 +1240,6 @@ test("An inline Browser file picker binds local bytes only after confirmation", 
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     expect(body.prompt).toBe(BROWSER_INPUT_CALLBACK);
     return respond(201, {
-      runId: crypto.randomUUID(),
       threadId: RUN_THREAD_ID,
     });
   });
@@ -1355,7 +1349,6 @@ test("An inline Browser dialog confirms an existing radio choice and preserves t
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
     expect(body.prompt).toBe(BROWSER_INPUT_CALLBACK);
     return respond(201, {
-      runId: crypto.randomUUID(),
       threadId: RUN_THREAD_ID,
     });
   });
@@ -1447,7 +1440,6 @@ test.each(["apply", "cancel"] as const)(
           : BROWSER_INPUT_CANCEL_SORT_ID,
       );
       return respond(201, {
-        runId: crypto.randomUUID(),
         threadId: RUN_THREAD_ID,
       });
     });

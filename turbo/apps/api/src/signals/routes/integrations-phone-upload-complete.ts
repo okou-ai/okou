@@ -1,3 +1,7 @@
+import type { LinkLayout } from "@okouai/api-contracts/contracts/link-layout";
+import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
+import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
+import { and, desc, eq } from "drizzle-orm";
 import { command } from "ccstate";
 import {
   integrationsPhoneUploadCompleteContract,
@@ -7,7 +11,7 @@ import {
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
-import { writeDb$ } from "../external/db";
+import { db$ } from "../external/db";
 import {
   isAgentPhoneApiError,
   sendAgentPhoneMessage,
@@ -19,8 +23,7 @@ import {
 import { recordAgentPhoneUploadedFile$ } from "../services/run-uploaded-files.service";
 import {
   agentPhoneChannelForLinkedHandle,
-  resolveAgentPhoneAgentIdForUserLink,
-  resolveAgentPhoneUserLinkForMember,
+  normalizeAgentPhoneHandle,
   storeOutboundAgentPhoneMessage$,
 } from "../services/agentphone.service";
 import type { RouteEntry } from "../route-entry";
@@ -74,6 +77,62 @@ function buildMetadata(params: {
   };
 }
 
+interface PhoneFileDelivery {
+  readonly runId: string | undefined;
+  readonly auth: {
+    readonly userId: string;
+    readonly orgId: string;
+  };
+  readonly userLinkId: string;
+  readonly mimetype: string;
+  readonly body: PhoneUploadCompleteBody;
+  readonly uploadedFile: UploadedFileInfo;
+  readonly layout: LinkLayout;
+  readonly sent: Awaited<ReturnType<typeof sendAgentPhoneMessage>>;
+  readonly phoneHandle: string;
+  readonly userChannel: ReturnType<typeof agentPhoneChannelForLinkedHandle>;
+  readonly agentphoneAgentId: string;
+}
+
+function uploadedFileRecordValues(args: PhoneFileDelivery) {
+  return {
+    runId: args.runId,
+    externalId: args.sent.id,
+    userId: args.auth.userId,
+    orgId: args.auth.orgId,
+    filename: args.uploadedFile.filename,
+    contentType: args.mimetype,
+    sizeBytes: args.uploadedFile.size,
+    url: args.uploadedFile.fileUrl,
+    layout: args.layout,
+    metadata: buildMetadata({
+      body: args.body,
+      toNumber: args.phoneHandle,
+      uploadId: args.body.uploadId,
+      s3Key: args.uploadedFile.key,
+      sourceUrl: args.uploadedFile.fileUrl,
+      agentphoneMessageId: args.sent.id,
+    }),
+  };
+}
+
+function outboundPhoneFileValues(args: PhoneFileDelivery) {
+  return {
+    agentphoneMessageId: args.sent.id,
+    conversationId: null,
+    agentphoneAgentId: args.agentphoneAgentId,
+    userLinkId: args.userLinkId,
+    phoneHandle: args.phoneHandle,
+    fromNumber: args.sent.fromNumber ?? "",
+    toNumber: args.sent.toNumber ?? args.phoneHandle,
+    body: args.body.caption,
+    channel: args.sent.channel,
+    userChannel: args.userChannel,
+    mediaUrl: args.uploadedFile.fileUrl,
+    visibilityRecipients: [],
+  };
+}
+
 const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const runId =
@@ -103,12 +162,19 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
     fileUrl: object.url,
   };
 
-  const db = set(writeDb$);
-  const userLink = await resolveAgentPhoneUserLinkForMember(db, {
-    userId: auth.userId,
-    orgId: auth.orgId,
-  });
+  const db = get(db$);
+  const [link] = await db
+    .select()
+    .from(agentphoneUserLinks)
+    .where(
+      and(
+        eq(agentphoneUserLinks.userId, auth.userId),
+        eq(agentphoneUserLinks.orgId, auth.orgId),
+      ),
+    )
+    .limit(1);
   signal.throwIfAborted();
+  const userLink = link ?? null;
   if (!userLink) {
     return routeError(
       404,
@@ -119,13 +185,26 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   const phoneHandle = userLink.phoneHandle;
   const userChannel = agentPhoneChannelForLinkedHandle(phoneHandle);
 
-  const agentphoneAgentId = await resolveAgentPhoneAgentIdForUserLink(db, {
-    userLinkId: userLink.id,
-    phoneHandle,
-    channel: userChannel,
-    agentphoneAgentId: body.agentphoneAgentId,
-  });
+  const agentRows = body.agentphoneAgentId
+    ? Promise.resolve([])
+    : db
+        .select({ agentphoneAgentId: agentphoneMessages.agentphoneAgentId })
+        .from(agentphoneMessages)
+        .where(
+          and(
+            eq(agentphoneMessages.agentphoneUserLinkId, userLink.id),
+            eq(
+              agentphoneMessages.phoneHandle,
+              normalizeAgentPhoneHandle(phoneHandle, userChannel),
+            ),
+          ),
+        )
+        .orderBy(desc(agentphoneMessages.createdAt))
+        .limit(1);
+  const [message] = await agentRows;
   signal.throwIfAborted();
+  const agentphoneAgentId =
+    body.agentphoneAgentId || (message?.agentphoneAgentId ?? null);
   if (!agentphoneAgentId) {
     return routeError(404, "Phone agent not found", "NOT_FOUND");
   }
@@ -154,45 +233,27 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const sent = sendResult.value;
 
+  const delivery: PhoneFileDelivery = {
+    runId,
+    auth,
+    userLinkId: userLink.id,
+    mimetype,
+    body,
+    uploadedFile,
+    layout: object.layout,
+    sent,
+    phoneHandle,
+    userChannel,
+    agentphoneAgentId,
+  };
   await set(
     recordAgentPhoneUploadedFile$,
-    {
-      runId,
-      externalId: sent.id,
-      userId: auth.userId,
-      orgId: auth.orgId,
-      filename: uploadedFile.filename,
-      contentType: mimetype,
-      sizeBytes: uploadedFile.size,
-      url: uploadedFile.fileUrl,
-      layout: object.layout,
-      metadata: buildMetadata({
-        body,
-        toNumber: phoneHandle,
-        uploadId: body.uploadId,
-        s3Key: uploadedFile.key,
-        sourceUrl: uploadedFile.fileUrl,
-        agentphoneMessageId: sent.id,
-      }),
-    },
+    uploadedFileRecordValues(delivery),
     signal,
   );
   signal.throwIfAborted();
 
-  await set(storeOutboundAgentPhoneMessage$, {
-    agentphoneMessageId: sent.id,
-    conversationId: null,
-    agentphoneAgentId,
-    userLinkId: userLink.id,
-    phoneHandle,
-    fromNumber: sent.fromNumber ?? "",
-    toNumber: sent.toNumber ?? phoneHandle,
-    body: body.caption,
-    channel: sent.channel,
-    userChannel,
-    mediaUrl: uploadedFile.fileUrl,
-    visibilityRecipients: [],
-  });
+  await set(storeOutboundAgentPhoneMessage$, outboundPhoneFileValues(delivery));
   signal.throwIfAborted();
 
   return {

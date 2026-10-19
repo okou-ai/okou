@@ -12,8 +12,7 @@ use std::{
 use super::super::{
     R2DownloadError, R2Error,
     archive::{MAX_TEMPLATE_METADATA_BYTES, TEMPLATE_FILE},
-    download::{TEMPLATE_TRANSFER_TIMEOUT, file_staging_dir, finish_file_staging_error},
-    io_other,
+    download::{TEMPLATE_TRANSFER_TIMEOUT, file_staging_dir},
 };
 use super::fixtures::{
     archive_limits, archive_with_type, deterministic_bytes, empty_template_archive,
@@ -745,21 +744,98 @@ async fn stale_staging_cleanup_failure_is_local() {
 }
 
 #[tokio::test]
-async fn cleanup_failure_does_not_mask_original_invalid_object() {
+async fn staging_creation_failure_preserves_original_local_error() {
+    use aws_sdk_s3::Client;
+    use aws_sdk_s3::operation::get_object::GetObjectOutput;
+
     let dst = tempfile::tempdir().unwrap();
-    let staging = dst.path().join("template.ext4.download.tmp");
+    let destination = dst.path().join("template.ext4");
+    tokio::fs::write(&destination, b"existing-rootfs")
+        .await
+        .unwrap();
+    let staging = file_staging_dir(&destination);
+    let staging_at_request = staging.clone();
+    let get = mock!(Client::get_object).then_output(move || {
+        assert!(!staging_at_request.exists());
+        std::fs::write(&staging_at_request, b"not a directory").unwrap();
+        GetObjectOutput::builder()
+            .body(ByteStream::from(regular_template_archive(b"hello")))
+            .build()
+    });
+    let cache = mock_cache("test-bucket", &[&get]);
+
+    let error = cache
+        .try_download_template_to_file("hash", &destination, SMALL_TEMPLATE_BYTES)
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        R2DownloadError::Local(R2Error::Io(ref error))
+            if error.kind() == std::io::ErrorKind::AlreadyExists
+    ));
+    assert_eq!(tokio::fs::read(&staging).await.unwrap(), b"not a directory");
+    assert_eq!(
+        tokio::fs::read(&destination).await.unwrap(),
+        b"existing-rootfs"
+    );
+}
+
+#[tokio::test]
+async fn cleanup_failure_does_not_mask_original_invalid_object() {
+    use aws_sdk_s3::Client;
+    use aws_sdk_s3::operation::get_object::GetObjectOutput;
+
+    let controller = ControlledBodyController::new();
+    let body_state = Arc::clone(&controller.state);
+    let archive = regular_template_archive(b"hello");
+    let prefix = Bytes::copy_from_slice(&archive[..archive.len() / 2]);
+    let get = mock!(Client::get_object).then_output(move || {
+        GetObjectOutput::builder()
+            .body(ByteStream::from_body_1_x(ControlledBody {
+                bytes: Some(prefix.clone()),
+                state: Arc::clone(&body_state),
+            }))
+            .build()
+    });
+    let cache = mock_cache("test-bucket", &[&get]);
+    let dst = tempfile::tempdir().unwrap();
+    let destination = dst.path().join("template.ext4");
+    tokio::fs::write(&destination, b"existing-rootfs")
+        .await
+        .unwrap();
+    let staging = file_staging_dir(&destination);
+    let destination_for_download = destination.clone();
+    let download = tokio::spawn(async move {
+        cache
+            .try_download_template_to_file("hash", &destination_for_download, SMALL_TEMPLATE_BYTES)
+            .await
+    });
+
+    controller.wait_until_blocked().await;
+    // Keep the extractor's directory alive while an external filesystem change
+    // makes removal of its original staging path fail.
+    tokio::fs::rename(&staging, dst.path().join("moved-staging"))
+        .await
+        .unwrap();
     tokio::fs::write(&staging, b"not a directory")
         .await
         .unwrap();
+    controller.release();
 
-    let error = finish_file_staging_error(
-        &staging,
-        R2DownloadError::InvalidObject(R2Error::Io(io_other("bad archive"))),
-    )
-    .await;
+    let error = tokio::time::timeout(BODY_CONTROL_TIMEOUT, download)
+        .await
+        .expect("truncated body must finish extraction before returning")
+        .unwrap()
+        .unwrap_err();
+    controller.wait_until_dropped().await;
 
     assert!(matches!(error, R2DownloadError::InvalidObject(_)));
-    assert!(staging.exists());
+    assert_eq!(tokio::fs::read(&staging).await.unwrap(), b"not a directory");
+    assert_eq!(
+        tokio::fs::read(&destination).await.unwrap(),
+        b"existing-rootfs"
+    );
 }
 
 async fn assert_invalid_preserves_destination(

@@ -37,6 +37,8 @@ class FenceReportTests(unittest.TestCase):
                 sample["finished_ns"] += 20_000_000_000
         for sample in self.samples:
             sample["monotonic_ns"] += 20_000_000_000
+            for process in sample["processes"]:
+                process["observed_monotonic_ns"] = sample["monotonic_ns"]
         self.fences = []
         for offset, case in enumerate(sorted(fence.foreground.CASES)):
             original = self.events[offset * 6 + 1]

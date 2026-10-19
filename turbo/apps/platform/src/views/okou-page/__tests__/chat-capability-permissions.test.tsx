@@ -3,6 +3,7 @@ import {
   type PublicConnectorCatalogPermissionDetail,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   userPermissionGrantsContract,
   type ApplyUserPermissionGrantsRequest,
@@ -24,6 +25,7 @@ import {
   installCapabilityChat,
   readyChat,
   RUN_PATH,
+  RUN_THREAD_ID,
 } from "./chat-capability-test-helpers.ts";
 import {
   permissionActionUrl,
@@ -358,6 +360,80 @@ test("Reflect current connector permission decisions", async () => {
     await within(expiredCard).findByText("Already allowed");
   expect(externallyAllowed).toBeVisible();
   expect(queryButton("Confirm", expiredCard)).not.toBeInTheDocument();
+});
+
+test("Permission cards keep callback work pending and expose a retryable callback failure", async () => {
+  const connectorSlug = "callback-service";
+  const permission = "reports.read";
+  const callbackStarted = context.mocks.deferred<void>();
+  const callbackResponse = context.mocks.deferred<void>();
+  let callbackAvailable = false;
+  let grants: UserPermissionGrantResponse[] = [];
+  installPermissionMetadata((slug) => {
+    return slug === connectorSlug
+      ? permissionMetadata({
+          connectorSlug,
+          label: "Callback Service",
+          permissions: [permission],
+        })
+      : null;
+  });
+  context.mocks.api(userPermissionGrantsContract.list, ({ respond }) => {
+    return respond(200, grants);
+  });
+  context.mocks.api(userPermissionGrantsContract.apply, ({ respond }) => {
+    grants = [activeGrant({ connectorSlug, permission, action: "allow" })];
+    return respond(200, grants);
+  });
+  installActionConversation({
+    lines: [
+      permissionActionUrl({
+        connectorSlug,
+        permission,
+        callbackPrompt: "Continue the report",
+      }),
+    ],
+  });
+  context.mocks.api(chatEventsContract.send, async ({ respond }) => {
+    if (!callbackAvailable) {
+      callbackStarted.resolve(undefined);
+      await callbackResponse.promise;
+      return respond(500, {
+        error: { code: "INTERNAL_SERVER_ERROR", message: "Chat unavailable" },
+      });
+    }
+    return respond(201, {
+      threadId: RUN_THREAD_ID,
+    });
+  });
+  await setupPage({ context, path: RUN_PATH });
+  await readyChat();
+  const card = await screen.findByTestId("permission-action-card");
+  await waitFor(() => {
+    expect(getButton("Confirm", card)).toBeEnabled();
+  });
+
+  click(getButton("Confirm", card));
+
+  await callbackStarted.promise;
+  await waitFor(() => {
+    expect(getButton("Saving...", card)).toBeDisabled();
+  });
+  expect(
+    within(card).queryByText("Permissions updated"),
+  ).not.toBeInTheDocument();
+  callbackResponse.resolve(undefined);
+  await expect(
+    within(card).findByText("Couldn't update permissions"),
+  ).resolves.toBeInTheDocument();
+  expect(getButton("Confirm", card)).toBeEnabled();
+  expect(within(card).queryByText("Already allowed")).not.toBeInTheDocument();
+
+  callbackAvailable = true;
+  click(getButton("Confirm", card));
+  await expect(
+    within(card).findByText("Permissions updated"),
+  ).resolves.toBeInTheDocument();
 });
 
 test("Review and confirm connector permissions individually", async () => {

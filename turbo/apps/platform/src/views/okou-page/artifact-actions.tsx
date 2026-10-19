@@ -42,7 +42,6 @@ import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
 import type { PlatformConnectorAccountMutationIntent } from "../../signals/connector-domain.ts";
 import { downloadAttachment$ } from "../../signals/attachment-download.ts";
-import { apiClient$ } from "../../signals/api-client.ts";
 import {
   builtinConnectors$,
   connectorCatalogItemBySlug,
@@ -51,9 +50,9 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { connectorConnectionPending$ } from "../../signals/connector-connection-progress.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
-  authorizeGoogleDriveForAgent,
-  syncArtifactFileToGoogleDrive$,
+  syncArtifactAndRefresh$,
   googleDriveSyncPending$,
+  googleDriveSyncAccount$,
 } from "../../signals/chat-page/artifact-google-drive-sync.ts";
 import {
   connectBuiltinConnectorOAuthAuthCodeWithDialogAndSettle$,
@@ -107,7 +106,7 @@ export type ArtifactDownloadSyncTarget = {
   readonly artifactId: string;
   readonly connectionId: string | undefined;
   readonly filename: string;
-  readonly onSyncSuccess: () => void;
+  readonly onSyncSuccess?: () => void;
   readonly recovery: ChatThreadArtifactGoogleDriveRecovery | undefined;
   readonly synced: boolean;
   readonly mimeType?: string | undefined;
@@ -263,7 +262,15 @@ function useGoogleDriveAvailability(
     googleDriveConnector === null
       ? null
       : getOnlyAvailableCatalogBrowserAuthMethodDetail(googleDriveConnector);
-  const accountReady = syncTarget?.accountReady === true;
+  const completedAccount = useGet(googleDriveSyncAccount$);
+  const selectedAccount =
+    completedAccount &&
+    completedAccount.artifactId === syncTarget?.artifactId &&
+    completedAccount.agentId === syncTarget.agentId
+      ? completedAccount
+      : undefined;
+  const accountReady =
+    selectedAccount !== undefined || syncTarget?.accountReady === true;
 
   return {
     connectorListLoaded:
@@ -274,6 +281,9 @@ function useGoogleDriveAvailability(
     googleDriveConnected,
     googleDriveConnector,
     googleDriveReady: accountReady,
+    googleDriveConnectionId: selectedAccount
+      ? selectedAccount.connectionId
+      : syncTarget?.connectionId,
   };
 }
 
@@ -399,8 +409,7 @@ function useGoogleDriveMenuAction(
   availability: ReturnType<typeof useGoogleDriveAvailability>,
   mode: GoogleDriveUploadMode,
 ): () => void {
-  const createClient = useGet(apiClient$);
-  const syncArtifact = useSet(syncArtifactFileToGoogleDrive$);
+  const syncArtifact = useSet(syncArtifactAndRefresh$);
   const pageSignal = useGet(pageSignal$);
   const connectGoogleDrive = useSet(
     connectBuiltinConnectorOAuthAuthCodeWithDialogAndSettle$,
@@ -410,31 +419,33 @@ function useGoogleDriveMenuAction(
     if (!syncTarget) {
       return;
     }
-    const run = async (
+    const run = (
+      connectedAccountId: string | undefined,
+      authorize: boolean,
       signal: AbortSignal,
-      connectedAccountId = syncTarget.connectionId,
     ) => {
       if (!syncTarget.agentId) {
-        return;
+        return Promise.resolve();
       }
-      const success = await syncArtifact(
+      return syncArtifact(
         {
-          createClient,
           agentId: syncTarget.agentId,
           artifactId: syncTarget.artifactId,
           ...(connectedAccountId ? { connectionId: connectedAccountId } : {}),
           filename: syncTarget.filename,
           mode,
+          authorize,
+          onSyncSuccess: syncTarget.onSyncSuccess,
         },
         signal,
       );
-      signal.throwIfAborted();
-      if (success) {
-        syncTarget.onSyncSuccess();
-      }
     };
     if (availability.googleDriveReady) {
-      detach(run(pageSignal), Reason.DomCallback, "artifact google drive sync");
+      detach(
+        run(availability.googleDriveConnectionId, false, pageSignal),
+        Reason.DomCallback,
+        "artifact google drive sync",
+      );
       return;
     }
     const action = resolveGoogleDrivePendingAction({
@@ -458,13 +469,7 @@ function useGoogleDriveMenuAction(
     const agentId = syncTarget.agentId;
     if (action.kind === "authorize") {
       detach(
-        (async () => {
-          await authorizeGoogleDriveForAgent(
-            { agentId, createClient },
-            pageSignal,
-          );
-          await run(pageSignal);
-        })(),
+        run(syncTarget.connectionId, true, pageSignal),
         Reason.DomCallback,
         "artifact google drive authorize sync",
       );
@@ -482,7 +487,7 @@ function useGoogleDriveMenuAction(
           connectorSlug: GOOGLE_DRIVE_CONNECTOR_SLUG,
           method: availability.googleDriveAuthMethod,
           onSuccess: (connectionId, signal) => {
-            return run(signal, connectionId ?? syncTarget.connectionId);
+            return run(connectionId ?? syncTarget.connectionId, false, signal);
           },
           options: {
             account: action.account,
@@ -618,10 +623,11 @@ function GoogleDriveMenuItem({
   const connectionPending = useGet(connectorConnectionPending$);
   const workspaceTarget = useGoogleWorkspaceTarget(filename);
   const target = original ? undefined : workspaceTarget;
+  const mode = target ? "google" : "original";
   const syncOrConnect = useGoogleDriveMenuAction(
     syncTarget,
     availability,
-    target ? "google" : "original",
+    mode,
   );
   const pending = useGet(googleDriveSyncPending$);
   const labels = useGoogleDriveMenuLabels(target);
@@ -642,7 +648,8 @@ function GoogleDriveMenuItem({
     return <GoogleDriveCompletedMenuItem action={completed} />;
   }
 
-  if (pending.has(syncTarget.artifactId)) {
+  const pendingMode = pending.get(syncTarget.artifactId);
+  if (pendingMode === mode) {
     return (
       <DropdownMenuItem disabled>
         <Loader2 size={14} className="animate-spin" />
@@ -653,7 +660,7 @@ function GoogleDriveMenuItem({
     );
   }
 
-  if (!connectorListLoaded || connectionPending) {
+  if (pendingMode || !connectorListLoaded || connectionPending) {
     return (
       <GoogleDriveDisabledMenuItem
         kind={syncTarget.disconnected ? "connect" : "upload"}

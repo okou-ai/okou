@@ -123,7 +123,7 @@ export const rustConstantModuleDocs = [
   },
   {
     rustModulePath: ["sandbox_channel", "fs"],
-    rustDoc: ["Readonly directory category version and finite policies."],
+    rustDoc: ["Readonly filesystem category version and finite policies."],
   },
   {
     rustModulePath: ["sandbox_channel", "diagnostics"],

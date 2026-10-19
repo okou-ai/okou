@@ -27,6 +27,15 @@ export const tailscaleEnabled$ = computed((get) => {
   return get(featureSwitch$)[FeatureSwitchKey.TailscaleAccess];
 });
 
+/** VNC uses reusable networks without enabling the Tailscale SSH editor. */
+export const tailscaleSettingsEnabled$ = computed((get) => {
+  const switches = get(featureSwitch$);
+  return (
+    switches[FeatureSwitchKey.TailscaleAccess] ||
+    switches[FeatureSwitchKey.VncAccess]
+  );
+});
+
 export const tailscaleIdentity$ = computed(async (get) => {
   const sessionKey = get(authenticatedSessionKey$);
   const [user, identity, clerk] = await Promise.all([
@@ -82,9 +91,10 @@ export const invalidateTailscale$ = command(({ set }) => {
   set(invalidateRemoteAccess$);
 });
 
-export const tailscaleConfigs$ = computed(async (get) => {
+/** Shared owner metadata; each settings surface owns its existing UI gate. */
+export const scopedTailscaleConfigs$ = computed(async (get) => {
   get(reload$);
-  if (!get(tailscaleEnabled$) || !(await get(tailscaleIdentity$))) {
+  if (!(await get(tailscaleIdentity$))) {
     return null;
   }
   const result = await accept(
@@ -94,6 +104,11 @@ export const tailscaleConfigs$ = computed(async (get) => {
     { showErrorToast: false },
   );
   return result.body.configs;
+});
+export const tailscaleConfigs$ = computed(async (get) => {
+  return get(tailscaleSettingsEnabled$)
+    ? await get(scopedTailscaleConfigs$)
+    : null;
 });
 
 export const retryTailscale$ = command(({ set }, signal: AbortSignal) => {
@@ -159,7 +174,7 @@ const resetSave$ = resetSignal();
 export const tailscaleDialog$ = computed(async (get) => {
   const dialog = get(dialog$);
   if (
-    !get(tailscaleEnabled$) ||
+    !get(tailscaleSettingsEnabled$) ||
     !dialog ||
     dialog.sessionKey !== get(authenticatedSessionKey$)
   ) {
@@ -224,7 +239,7 @@ export const mountTailscaleForm$ = onRef(
         form.reset();
         if (get(dialog$) === mounted) {
           if (
-            !get(tailscaleEnabled$) ||
+            !get(tailscaleSettingsEnabled$) ||
             mounted?.sessionKey !== get(authenticatedSessionKey$)
           ) {
             set(closeTailscaleDialog$);
@@ -265,7 +280,7 @@ export const openTailscaleDialog$ = command(
       get(isOrgAdmin$),
     ]);
     signal.throwIfAborted();
-    if (!identity || !get(tailscaleEnabled$)) {
+    if (!identity || !get(tailscaleSettingsEnabled$)) {
       return;
     }
     if (kind !== "create" && !config) {
@@ -433,7 +448,7 @@ const createTailscale$ = command(
     if (
       clients.identity !== dialog.identity ||
       get(dialog$) !== dialog ||
-      !get(tailscaleEnabled$)
+      !get(tailscaleSettingsEnabled$)
     ) {
       return false;
     }
@@ -493,7 +508,7 @@ const editTailscale$ = command(
     if (
       clients.identity !== dialog.identity ||
       get(dialog$) !== dialog ||
-      !get(tailscaleEnabled$)
+      !get(tailscaleSettingsEnabled$)
     ) {
       return false;
     }
@@ -594,7 +609,7 @@ const confirmTailscaleChange$ = command(
     if (
       clients.identity !== dialog.identity ||
       get(dialog$) !== dialog ||
-      !get(tailscaleEnabled$)
+      !get(tailscaleSettingsEnabled$)
     ) {
       return false;
     }
@@ -688,7 +703,7 @@ export const saveTailscale$ = command(
       set(error$, TAILSCALE_ERROR_CODES.FORBIDDEN);
       return;
     }
-    if (get(dialog$) !== dialog || !get(tailscaleEnabled$)) {
+    if (get(dialog$) !== dialog || !get(tailscaleSettingsEnabled$)) {
       return;
     }
     let completed: boolean;

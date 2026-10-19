@@ -40,6 +40,11 @@ pub(crate) struct Control {
 type Finalizer = Pin<Box<dyn Future<Output = Result<(), Failure>>>>;
 
 impl Control {
+    /// Record an observed root outcome before its live peer bindings are dropped.
+    pub(super) fn record_failure(&self, failure: Failure) {
+        self.completion.evidence.terminate(failure);
+    }
+
     pub(super) fn ready(&self) {
         self.completion.publish_ready(Ok(()));
     }

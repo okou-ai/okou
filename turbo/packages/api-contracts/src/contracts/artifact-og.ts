@@ -26,6 +26,20 @@ const imageResponse = c.otherResponse({
   body: c.type<Blob>(),
 });
 export const artifactOgContract = c.router({
+  slackImage: {
+    method: "GET",
+    path: "/api/artifact-og/slack.png",
+    query: z.object({
+      url: z.url().max(2048),
+      signature: z.string().regex(/^[a-f0-9]{64}$/u),
+    }),
+    responses: {
+      200: imageResponse,
+      400: apiErrorSchema,
+      403: c.noBody(),
+    },
+    summary: "Read a signed, size-limited thumbnail for a Slack link preview",
+  },
   metadata: {
     method: "GET",
     path: "/api/artifact-og/metadata",

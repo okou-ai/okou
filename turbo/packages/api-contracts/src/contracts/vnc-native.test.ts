@@ -40,7 +40,7 @@ const host = {
   },
 };
 
-describe("prepared native VNC contracts", () => {
+describe("native VNC contracts", () => {
   it("accepts the complete 100-tuple native declaration within the bounded request", () => {
     const profiles: object[] = [];
     for (const transportType of routes) {
@@ -166,7 +166,7 @@ describe("prepared native VNC contracts", () => {
     expect(vncConnectionResponseSchema.parse(host)).toEqual(host);
   });
 
-  it("keeps native RFB/KDC and origin TLS out of public create/update input", () => {
+  it("accepts bound native RFB/KDC input while rejecting misplaced origin TLS and detached bindings", () => {
     const create = {
       id,
       displayName: host.displayName,
@@ -180,13 +180,13 @@ describe("prepared native VNC contracts", () => {
       expect(
         createVncConnectionRequestSchema.safeParse({ ...create, transport })
           .success,
-      ).toBe(false);
+      ).toBe(true);
       expect(
         updateVncConnectionRequestSchema.safeParse({
           expectedGeneration: 1,
           transport,
         }).success,
-      ).toBe(false);
+      ).toBe(true);
       const security = {
         type: "qemu_x509_gssapi",
         trust: { mode: "system" },
@@ -196,11 +196,25 @@ describe("prepared native VNC contracts", () => {
       expect(
         createVncConnectionRequestSchema.safeParse({ ...create, security })
           .success,
-      ).toBe(false);
+      ).toBe(true);
       expect(
         updateVncConnectionRequestSchema.safeParse({
           expectedGeneration: 1,
           security,
+        }).success,
+      ).toBe(true);
+    }
+    expect(
+      createVncConnectionRequestSchema.safeParse({
+        ...create,
+        transport: { type: "cloudflare_access", configId: id, originTls },
+      }).success,
+    ).toBe(true);
+    for (const type of ["cloudflare_access", "tailscale"]) {
+      expect(
+        createVncConnectionRequestSchema.safeParse({
+          ...create,
+          transport: { type, needsRebind: true },
         }).success,
       ).toBe(false);
     }
@@ -305,7 +319,7 @@ describe("prepared native VNC contracts", () => {
     ).toBe(false);
   });
 
-  it("reads omitted, empty and mixed role-aware provider references without accepting duplicate roles", () => {
+  it("reads canonical empty, SSH-only, VNC-only and mixed role-aware provider references without accepting duplicate roles", () => {
     for (const contract of [cloudflareAccessContract, tailscaleContract]) {
       const config = {
         id,
@@ -313,15 +327,19 @@ describe("prepared native VNC contracts", () => {
         scope: "personal",
         revision: 1,
         generation: 1,
-        sshHosts: [{ id, displayName: "SSH" }],
         createdAt: host.createdAt,
         updatedAt: host.updatedAt,
         ...(contract === tailscaleContract ? { tags: ["tag:okou"] } : {}),
       };
       for (const references of [
-        {},
-        { vncHosts: [] },
+        { sshHosts: [], vncHosts: [] },
+        { sshHosts: [{ id, displayName: "SSH" }], vncHosts: [] },
         {
+          sshHosts: [],
+          vncHosts: [{ id, displayName: "Desktop", roles: ["rfb"] }],
+        },
+        {
+          sshHosts: [{ id, displayName: "SSH" }],
           vncHosts: [
             { id, displayName: "Desktop and KDC", roles: ["rfb", "kdc"] },
           ],
@@ -338,6 +356,7 @@ describe("prepared native VNC contracts", () => {
           configs: [
             {
               ...config,
+              sshHosts: [],
               vncHosts: [{ id, displayName: "Invalid", roles: ["rfb", "rfb"] }],
             },
           ],

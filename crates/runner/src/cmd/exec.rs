@@ -14,6 +14,8 @@ use crate::error::{RunnerError, RunnerResult};
 use crate::run_resolution;
 use runner_host::paths::HomePaths;
 
+use super::terminal_diagnostic::write_terminal_diagnostic;
+
 // ---------------------------------------------------------------------------
 // CLI args
 // ---------------------------------------------------------------------------
@@ -163,42 +165,19 @@ fn write_remote_exec_stderr(
     let _ = stderr.write_all(&result.stderr);
     let mut line_open = !result.stderr.is_empty() && !result.stderr.ends_with(b"\n");
 
-    write_remote_exec_terminal_diagnostic(stderr, result, show_diagnostic, &mut line_open);
+    write_terminal_diagnostic(
+        stderr,
+        &result.termination,
+        &result.stderr,
+        &result.diagnostic,
+        show_diagnostic,
+        &mut line_open,
+    );
     if result.stdout_truncated {
         write_remote_exec_warning(stderr, &mut line_open, REMOTE_EXEC_STDOUT_TRUNCATED_WARNING);
     }
     if result.stderr_truncated {
         write_remote_exec_warning(stderr, &mut line_open, REMOTE_EXEC_STDERR_TRUNCATED_WARNING);
-    }
-}
-
-fn write_remote_exec_terminal_diagnostic(
-    stderr: &mut impl Write,
-    result: &RemoteExecResult,
-    show_diagnostic: bool,
-    line_open: &mut bool,
-) {
-    let (fallback, include_terminal_diagnostic) = match result.termination {
-        ExecTermination::Exited { .. } => (None, false),
-        ExecTermination::TimedOut => (Some("Timeout"), false),
-        ExecTermination::Cancelled => (Some("Cancelled"), true),
-        ExecTermination::StartFailed | ExecTermination::WaitFailed => (None, true),
-    };
-    let include_diagnostic = show_diagnostic || include_terminal_diagnostic;
-
-    if result.stderr.is_empty() {
-        if let Some(message) = fallback {
-            let _ = writeln!(stderr, "{message}");
-            *line_open = false;
-        }
-    } else if include_diagnostic && !result.diagnostic.is_empty() && *line_open {
-        let _ = writeln!(stderr);
-        *line_open = false;
-    }
-
-    if include_diagnostic && !result.diagnostic.is_empty() {
-        let _ = writeln!(stderr, "{}", result.diagnostic);
-        *line_open = false;
     }
 }
 
@@ -305,6 +284,105 @@ mod tests {
         assert_eq!(result, ExitCode::from(42));
         assert_eq!(stdout, b"command output\n");
         assert_eq!(stderr, b"command warning\n");
+    }
+
+    #[tokio::test]
+    async fn terminal_results_preserve_binary_output_and_exit_policy() {
+        for (termination, raw_stderr, expected_stderr, expected_exit) in [
+            (
+                ExecTermination::Exited { exit_code: 42 },
+                b"\xff\0".as_slice(),
+                b"\xff\0".as_slice(),
+                42,
+            ),
+            (
+                ExecTermination::TimedOut,
+                b"\xff\0".as_slice(),
+                b"\xff\0".as_slice(),
+                124,
+            ),
+            (
+                ExecTermination::Cancelled,
+                b"\xff\0".as_slice(),
+                b"\xff\0\nterminal diagnostic\n".as_slice(),
+                1,
+            ),
+            (
+                ExecTermination::StartFailed,
+                b"".as_slice(),
+                b"terminal diagnostic\n".as_slice(),
+                1,
+            ),
+            (
+                ExecTermination::WaitFailed,
+                b"\xff\0\n".as_slice(),
+                b"\xff\0\nterminal diagnostic\n".as_slice(),
+                1,
+            ),
+        ] {
+            let control = MockSandboxControl::new("/tmp");
+            control.push_exec_remote_result(Ok(RemoteExecResult {
+                termination,
+                stdout: b"\0\xfe\n".to_vec(),
+                stderr: raw_stderr.to_vec(),
+                diagnostic: "terminal diagnostic".into(),
+                stdout_truncated: false,
+                stderr_truncated: false,
+            }));
+            let mut stdout = Vec::new();
+            let mut stderr = Vec::new();
+
+            let exit = run_exec_with_writers(
+                make_args("test-id", "command"),
+                &control,
+                &mut stdout,
+                &mut stderr,
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(exit, ExitCode::from(expected_exit), "{termination:?}");
+            assert_eq!(stdout, b"\0\xfe\n", "{termination:?}");
+            assert_eq!(stderr, expected_stderr, "{termination:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn opt_in_timeout_diagnostic_precedes_truncation_warnings() {
+        for (raw_stderr, expected_prefix) in [
+            (b"".as_slice(), b"Timeout\ntimeout diagnostic\n".as_slice()),
+            (
+                b"\xff\0".as_slice(),
+                b"\xff\0\ntimeout diagnostic\n".as_slice(),
+            ),
+        ] {
+            let control = MockSandboxControl::new("/tmp");
+            control.push_exec_remote_result(Ok(RemoteExecResult {
+                termination: ExecTermination::TimedOut,
+                stdout: b"\xfe\0".to_vec(),
+                stderr: raw_stderr.to_vec(),
+                diagnostic: "timeout diagnostic".into(),
+                stdout_truncated: true,
+                stderr_truncated: true,
+            }));
+            let mut args = make_args("test-id", "command");
+            args.show_diagnostic = true;
+            let mut stdout = Vec::new();
+            let mut stderr = Vec::new();
+
+            let exit = run_exec_with_writers(args, &control, &mut stdout, &mut stderr)
+                .await
+                .unwrap();
+
+            let mut expected = expected_prefix.to_vec();
+            expected.extend_from_slice(
+                format!("{REMOTE_EXEC_STDOUT_TRUNCATED_WARNING}\n{REMOTE_EXEC_STDERR_TRUNCATED_WARNING}\n")
+                    .as_bytes(),
+            );
+            assert_eq!(exit, ExitCode::from(124));
+            assert_eq!(stdout, b"\xfe\0");
+            assert_eq!(stderr, expected);
+        }
     }
 
     #[tokio::test]

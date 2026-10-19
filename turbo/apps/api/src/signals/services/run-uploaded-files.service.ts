@@ -23,7 +23,6 @@ import {
   queueRecordedArtifactCatalogFileSql,
   syncArtifactCatalogForFile$,
 } from "./artifact-catalog.service";
-import { publishArtifactsChangedForRun$ } from "./artifact-realtime.service";
 
 interface RecordWebUploadedFileArgs {
   readonly runId: string | undefined;
@@ -290,16 +289,14 @@ export const recordHostedSiteArtifact$ = command(
     }
 
     await set(syncArtifactCatalogForFile$, row.id, signal);
-    await set(publishArtifactsChangedForRun$, args.runId, signal);
     return row;
   },
 );
 
 /**
  * Insert (or upsert) a `run_uploaded_files` row for a successful web
- * upload, then publish the chat-thread artifacts-changed signal if the
- * run is linked to a thread. No-op when `runId` is undefined (ordinary
- * session callers without a run-scoped token).
+ * upload, then sync its artifact catalog entry. No-op when `runId` is
+ * undefined (ordinary session callers without a run-scoped token).
  *
  * Verbatim port from the removed `apps/web` app; no upstream copy
  * remains to keep in sync.
@@ -347,7 +344,6 @@ export const recordWebUploadedFile$ = command(
     }
 
     await set(syncArtifactCatalogForFile$, row.id, signal);
-    await set(publishArtifactsChangedForRun$, args.runId, signal);
   },
 );
 
@@ -366,9 +362,8 @@ interface RecordTelegramUploadedFileArgs {
 
 /**
  * Insert (or upsert) a `run_uploaded_files` row for a Telegram-delivered
- * upload, then publish the chat-thread artifacts-changed signal if the
- * run is linked to a thread. No-op when `runId` is undefined (sandbox
- * callers without a run-scoped token).
+ * upload, then sync its artifact catalog entry. No-op when `runId` is
+ * undefined (sandbox callers without a run-scoped token).
  *
  * Verbatim port from the removed `apps/web` app, scoped to the
  * `"telegram"` source; no upstream copy remains to keep in sync.
@@ -413,7 +408,6 @@ export const recordTelegramUploadedFile$ = command(
     }
 
     await set(syncArtifactCatalogForFile$, row.id, signal);
-    await set(publishArtifactsChangedForRun$, args.runId, signal);
   },
 );
 
@@ -521,7 +515,6 @@ export const recordGithubUploadedFile$ = command(
     }
 
     await set(syncArtifactCatalogForFile$, row.id, signal);
-    await set(publishArtifactsChangedForRun$, args.runId, signal);
   },
 );
 
@@ -564,7 +557,6 @@ export const recordFeishuUploadedFile$ = command(
     }
 
     await set(syncArtifactCatalogForFile$, row.id, signal);
-    await set(publishArtifactsChangedForRun$, args.runId, signal);
   },
 );
 
@@ -607,15 +599,13 @@ export const recordTeamsUploadedFile$ = command(
     }
 
     await set(syncArtifactCatalogForFile$, row.id, signal);
-    await set(publishArtifactsChangedForRun$, args.runId, signal);
   },
 );
 
 /**
  * Insert (or upsert) a `run_uploaded_files` row for an AgentPhone-delivered
- * upload, then publish the chat-thread artifacts-changed signal if the
- * run is linked to a thread. No-op when `runId` is undefined (sandbox
- * callers without a run-scoped token).
+ * upload, then sync its artifact catalog entry. No-op when `runId` is
+ * undefined (sandbox callers without a run-scoped token).
  */
 export const recordAgentPhoneUploadedFile$ = command(
   async (
@@ -656,15 +646,13 @@ export const recordAgentPhoneUploadedFile$ = command(
     }
 
     await set(syncArtifactCatalogForFile$, row.id, signal);
-    await set(publishArtifactsChangedForRun$, args.runId, signal);
   },
 );
 
 /**
  * Insert (or upsert) a `run_uploaded_files` row for a Slack-delivered
- * upload, then publish the chat-thread artifacts-changed signal if the
- * run is linked to a thread. No-op when `runId` is undefined (sandbox
- * callers without a run-scoped token).
+ * upload, then sync its artifact catalog entry. No-op when `runId` is
+ * undefined (sandbox callers without a run-scoped token).
  *
  * Mirrors recordTelegramUploadedFile$ but scoped to the `"slack"` source
  * and allows nullable metadata fields because Slack's files.info may not
@@ -710,6 +698,5 @@ export const recordSlackUploadedFile$ = command(
     }
 
     await set(syncArtifactCatalogForFile$, row.id, signal);
-    await set(publishArtifactsChangedForRun$, args.runId, signal);
   },
 );

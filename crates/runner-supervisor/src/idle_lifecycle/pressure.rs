@@ -65,6 +65,26 @@ pub(crate) struct IdlePressureWaveRequest {
 const CONTEXT: &str = "guarded_idle_pressure";
 
 impl IdleDestroyTracker {
+    /// Observe the actual pressure cohort's initial inventory-lock Pending poll.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn pressure_pool_waits_for_test(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.pressure_pool_waits.subscribe()
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    async fn lock_pressure_pool_for_test<'a>(
+        &self,
+        pool: &'a SharedIdlePool,
+    ) -> tokio::sync::MutexGuard<'a, IdlePool> {
+        let lock = pool.lock();
+        tokio::pin!(lock);
+        match futures_util::poll!(&mut lock) {
+            std::task::Poll::Ready(pool) => return pool,
+            std::task::Poll::Pending => self.pressure_pool_waits.send_modify(|count| *count += 1),
+        }
+        lock.await
+    }
+
     /// Register the entire attempt before its first pool/grant wait. Physical
     /// acceptance separately installs each existing guarded cleanup observer.
     pub(crate) fn start_pressure_wave(
@@ -156,13 +176,17 @@ async fn run_wave(
         stop: None,
         status_error: None,
     };
+    #[cfg(any(test, feature = "test-support"))]
+    let pool_lock = tracker.lock_pressure_pool_for_test(&request.pool);
+    #[cfg(not(any(test, feature = "test-support")))]
+    let pool_lock = request.pool.lock();
     let selections = tokio::select! {
         biased;
         () = request.cancel.cancelled() => {
             report.stop(0, IdlePressureWaveStop::Stopping);
             return report;
         }
-        pool = request.pool.lock() => {
+        pool = pool_lock => {
             pool.pressure_candidates(request.policy.max_wave_entries)
                 .into_iter()
                 .map(|candidate| {
@@ -325,4 +349,31 @@ async fn run_wave(
         report.status_error = request.status.set_idle_snapshot(snapshot).await.err();
     }
     report
+}
+
+#[cfg(test)]
+mod wait_observer_tests {
+    use super::*;
+    use runner_lifecycle::idle_pool::IdlePoolConfig;
+
+    #[tokio::test]
+    async fn pressure_inventory_observer_requires_an_actual_pending_lock() {
+        let pool = Arc::new(tokio::sync::Mutex::new(IdlePool::new(IdlePoolConfig {
+            max_idle: 1,
+        })));
+        let tracker = IdleDestroyTracker::new(Arc::new(tokio::sync::Notify::new()));
+        let mut waits = tracker.pressure_pool_waits_for_test();
+        drop(tracker.lock_pressure_pool_for_test(&pool).await);
+        assert_eq!(*waits.borrow_and_update(), 0);
+        let held = pool.lock().await;
+        let waiting = tracker.lock_pressure_pool_for_test(&pool);
+        tokio::pin!(waiting);
+        assert!(futures_util::poll!(&mut waiting).is_pending());
+        waits.changed().await.unwrap();
+        assert_eq!(*waits.borrow_and_update(), 1);
+        drop(held);
+        assert!(waiting.await.is_empty());
+        assert_eq!(*waits.borrow_and_update(), 1);
+        tracker.close_and_wait().await;
+    }
 }

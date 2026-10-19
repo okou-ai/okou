@@ -61,6 +61,17 @@ impl Attempt {
         session: Option<uuid::Uuid>,
         cause: crate::diagnostics::Cause,
     ) -> Option<crate::diagnostics::Report> {
+        self.snapshot(diagnostics, connection, operation, session, Some(cause))
+    }
+
+    pub(super) fn snapshot(
+        &self,
+        diagnostics: &crate::diagnostics::Handle,
+        connection: uuid::Uuid,
+        operation: crate::diagnostics::Operation,
+        session: Option<uuid::Uuid>,
+        cause: Option<crate::diagnostics::Cause>,
+    ) -> Option<crate::diagnostics::Report> {
         use crate::diagnostics::trace::{Progress, Stage};
         if let Some(failure) = self
             .carrier_trace
@@ -72,7 +83,9 @@ impl Attempt {
         }
         let status = if matches!(
             cause,
-            crate::diagnostics::Cause::Ssh(FailureReason::Cancelled | FailureReason::TimedOut)
+            Some(crate::diagnostics::Cause::Ssh(
+                FailureReason::Cancelled | FailureReason::TimedOut
+            ))
         ) {
             Progress::Unknown
         } else {
@@ -103,6 +116,7 @@ impl Attempt {
             dependency: None,
             native: self.native.clone(),
             ssh: self.trace.snapshot(),
+            vnc: None,
         })
     }
     pub(super) fn finish(&self, failure: Option<FailureReason>) -> Option<Observation> {

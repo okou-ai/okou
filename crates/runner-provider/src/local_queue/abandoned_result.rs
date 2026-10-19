@@ -73,26 +73,14 @@ impl LocalQueue {
         let mut file =
             super::open_private_new_file(&tmp_path, "local abandoned result marker temporary file")
                 .ok()?;
-        if file.write_all(&json).is_err() {
-            let _ = std::fs::remove_file(&tmp_path);
-            return None;
-        }
-        let metadata = match file.metadata() {
-            Ok(metadata) => metadata,
-            Err(_) => {
-                let _ = std::fs::remove_file(&tmp_path);
-                return None;
-            }
-        };
+        let _temporary_cleanup = super::fs::TemporaryFileCleanup::new(&tmp_path);
+        file.write_all(&json).ok()?;
+        let metadata = file.metadata().ok()?;
         drop(file);
 
         // A no-clobber hard link preserves a runner result that wins the race.
         // Ordinary runner results deliberately use their separate rename policy.
-        if std::fs::hard_link(&tmp_path, &result_path).is_err() {
-            let _ = std::fs::remove_file(&tmp_path);
-            return None;
-        }
-        let _ = std::fs::remove_file(&tmp_path);
+        std::fs::hard_link(&tmp_path, &result_path).ok()?;
         Some(AbandonedResultMarker {
             result_path,
             bytes: json,

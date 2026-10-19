@@ -93,6 +93,7 @@ pub(crate) struct Access {
     connection: uuid::Uuid,
     entry: Arc<Entry>,
     cached: bool,
+    diagnostics: Option<crate::diagnostics::Handle>,
 }
 
 impl Cache {
@@ -194,6 +195,7 @@ impl Registration {
             connection,
             entry,
             cached,
+            diagnostics: None,
         })
     }
 
@@ -220,6 +222,10 @@ impl Drop for Registration {
 }
 
 impl Access {
+    pub(super) fn with_diagnostics(mut self, handle: crate::diagnostics::Handle) -> Self {
+        self.diagnostics = Some(handle);
+        self
+    }
     pub(crate) fn diagnostic_identity(&self) -> crate::diagnostics::Identity {
         self.entry
             .value
@@ -232,7 +238,7 @@ impl Access {
             .unwrap_or_default()
     }
     pub(crate) fn native_source(&self) -> Option<crate::diagnostics::NativeSource> {
-        if !self.registration.native.diagnostics.enabled() {
+        if !self.diagnostics().enabled() {
             return None;
         }
         let credential = self.entry.value.get()?;
@@ -247,7 +253,9 @@ impl Access {
     }
 
     pub(crate) fn diagnostics(&self) -> crate::diagnostics::Handle {
-        self.registration.diagnostics()
+        self.diagnostics
+            .clone()
+            .unwrap_or_else(|| self.registration.diagnostics())
     }
     pub(crate) fn native_configured(
         &self,
@@ -356,6 +364,13 @@ impl Access {
         &self,
         prepare: impl Future<Output = Result<PreparedCredential, FailureReason>>,
     ) -> Result<Arc<PreparedCredential>, FailureReason> {
+        if self
+            .diagnostics
+            .as_ref()
+            .is_some_and(crate::diagnostics::Handle::is_check)
+        {
+            return self.prepare_session(prepare).await;
+        }
         let value = self
             .entry
             .value

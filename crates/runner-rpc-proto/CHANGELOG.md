@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/okou-ai/okou/compare/runner-rpc-proto-v0.4.0...runner-rpc-proto-v0.5.0) (2026-10-16)
+
+
+### Features
+
+* **remote:** explain vnc failures with retained source evidence ([#40669](https://github.com/okou-ai/okou/issues/40669)) ([07b1a90](https://github.com/okou-ai/okou/commit/07b1a902af74b7a3ebde6434b86e4efb35b1de7e))
+
 ## [0.4.0](https://github.com/vm0-ai/vm0/compare/runner-rpc-proto-v0.3.1...runner-rpc-proto-v0.4.0) (2026-09-14)
 
 

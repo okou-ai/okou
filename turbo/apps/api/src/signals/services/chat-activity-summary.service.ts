@@ -2,9 +2,10 @@ import { randomUUID } from "node:crypto";
 import type { ActivitySummaryResponse } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
+import { command } from "ccstate";
 import { and, eq, isNull, lte, or, sql } from "drizzle-orm";
 import { activityExcerpt, activityPhrases } from "../../lib/run-activity";
-import type { Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { VERTEX_TEXT_MODEL } from "../external/vertex-models";
 import { generateVertexText } from "../external/vertex-text";
 import { settleIncludingAbort } from "../utils";
@@ -116,163 +117,165 @@ async function generatePhrase(
   );
 }
 
-async function generateSummary(
-  db: Db,
-  identity: ActivityRunIdentity,
-  prompt: string,
-  signal: AbortSignal,
-): Promise<ActivitySummaryResponse> {
-  const active = and(
-    eq(activeAgentRuns.runId, identity.runId),
-    eq(activeAgentRuns.userId, identity.userId),
-  );
-  const [row] = await db
-    .select({
-      entries: activeAgentRuns.activityEntries,
-      revision: activeAgentRuns.activityRevision,
-      summary: activeAgentRuns.summary,
-      summaryRevision: activeAgentRuns.summaryRevision,
-    })
-    .from(activeAgentRuns)
-    .where(active);
-  signal.throwIfAborted();
-  if (!row) {
-    return emptyResponse(identity.runId, "ineligible");
-  }
-  if (row.summaryRevision === row.revision) {
-    return storedResponse(identity.runId, row.summary);
-  }
-  const claimId = randomUUID();
-  const [claimed] = await db
-    .update(activeAgentRuns)
-    .set({
-      claimId,
-      claimExpiresAt: afterMs(CLAIM_MS),
-      nextAttemptAt: afterMs(ATTEMPT_INTERVAL_MS),
-    })
-    .where(
-      and(
-        active,
-        sql`${activeAgentRuns.summaryRevision} IS DISTINCT FROM ${row.revision}`,
-        or(
-          isNull(activeAgentRuns.claimExpiresAt),
-          lte(activeAgentRuns.claimExpiresAt, activityClock),
-        ),
-        or(
-          isNull(activeAgentRuns.nextAttemptAt),
-          lte(activeAgentRuns.nextAttemptAt, activityClock),
-        ),
-      ),
-    )
-    .returning({ claimId: activeAgentRuns.claimId });
-  signal.throwIfAborted();
-  if (!claimed) {
-    // Another viewer holds the attempt, or it is cooling down. Show whatever
-    // batch exists; the next poll picks up a fresh one.
-    return row.summary === null
-      ? emptyResponse(identity.runId, "unavailable")
-      : storedResponse(identity.runId, row.summary);
-  }
-  const trimmed = prompt.trim();
-  const phrase = await generatePhrase(
-    identity,
-    {
-      messages: trimmed
-        ? [{ role: "user", content: activityExcerpt(trimmed) }]
-        : [],
-      activity: row.entries,
-    },
-    signal,
-  );
-  const [completed] = await db
-    .update(activeAgentRuns)
-    .set({
-      claimId: null,
-      claimExpiresAt: null,
-      ...(phrase
-        ? { summary: phrase, summaryRevision: row.revision }
-        : { nextAttemptAt: afterMs(FAILURE_COOLDOWN_MS) }),
-    })
-    .where(
-      and(
-        eq(activeAgentRuns.runId, identity.runId),
-        eq(activeAgentRuns.claimId, claimId),
-      ),
-    )
-    .returning({ summary: activeAgentRuns.summary });
-  signal.throwIfAborted();
-  if (!completed) {
-    // The run ended (its active row is gone) or a replacement owner took the
-    // expired lease; answer like a caller that found the claim taken.
-    const [current] = await db
-      .select({ summary: activeAgentRuns.summary })
+const generateSummary$ = command(
+  async (
+    { set },
+    identity: ActivityRunIdentity,
+    prompt: string,
+    signal: AbortSignal,
+  ): Promise<ActivitySummaryResponse> => {
+    const db = set(writeDb$);
+    const active = and(
+      eq(activeAgentRuns.runId, identity.runId),
+      eq(activeAgentRuns.userId, identity.userId),
+    );
+    const [row] = await db
+      .select({
+        entries: activeAgentRuns.activityEntries,
+        revision: activeAgentRuns.activityRevision,
+        summary: activeAgentRuns.summary,
+        summaryRevision: activeAgentRuns.summaryRevision,
+      })
       .from(activeAgentRuns)
       .where(active);
     signal.throwIfAborted();
-    if (!current) {
+    if (!row) {
       return emptyResponse(identity.runId, "ineligible");
     }
-    return current.summary === null
-      ? emptyResponse(identity.runId, "unavailable")
-      : storedResponse(identity.runId, current.summary);
-  }
-  return storedResponse(identity.runId, completed.summary);
-}
+    if (row.summaryRevision === row.revision) {
+      return storedResponse(identity.runId, row.summary);
+    }
+    const claimId = randomUUID();
+    const [claimed] = await db
+      .update(activeAgentRuns)
+      .set({
+        claimId,
+        claimExpiresAt: afterMs(CLAIM_MS),
+        nextAttemptAt: afterMs(ATTEMPT_INTERVAL_MS),
+      })
+      .where(
+        and(
+          active,
+          sql`${activeAgentRuns.summaryRevision} IS DISTINCT FROM ${row.revision}`,
+          or(
+            isNull(activeAgentRuns.claimExpiresAt),
+            lte(activeAgentRuns.claimExpiresAt, activityClock),
+          ),
+          or(
+            isNull(activeAgentRuns.nextAttemptAt),
+            lte(activeAgentRuns.nextAttemptAt, activityClock),
+          ),
+        ),
+      )
+      .returning({ claimId: activeAgentRuns.claimId });
+    signal.throwIfAborted();
+    if (!claimed) {
+      // Another viewer holds the attempt, or it is cooling down. Show whatever
+      // batch exists; the next poll picks up a fresh one.
+      return row.summary === null
+        ? emptyResponse(identity.runId, "unavailable")
+        : storedResponse(identity.runId, row.summary);
+    }
+    const trimmed = prompt.trim();
+    const phrase = await generatePhrase(
+      identity,
+      {
+        messages: trimmed
+          ? [{ role: "user", content: activityExcerpt(trimmed) }]
+          : [],
+        activity: row.entries,
+      },
+      signal,
+    );
+    const [completed] = await db
+      .update(activeAgentRuns)
+      .set({
+        claimId: null,
+        claimExpiresAt: null,
+        ...(phrase
+          ? { summary: phrase, summaryRevision: row.revision }
+          : { nextAttemptAt: afterMs(FAILURE_COOLDOWN_MS) }),
+      })
+      .where(
+        and(
+          eq(activeAgentRuns.runId, identity.runId),
+          eq(activeAgentRuns.claimId, claimId),
+        ),
+      )
+      .returning({ summary: activeAgentRuns.summary });
+    signal.throwIfAborted();
+    if (!completed) {
+      // The run ended (its active row is gone) or a replacement owner took the
+      // expired lease; answer like a caller that found the claim taken.
+      const [current] = await db
+        .select({ summary: activeAgentRuns.summary })
+        .from(activeAgentRuns)
+        .where(active);
+      signal.throwIfAborted();
+      if (!current) {
+        return emptyResponse(identity.runId, "ineligible");
+      }
+      return current.summary === null
+        ? emptyResponse(identity.runId, "unavailable")
+        : storedResponse(identity.runId, current.summary);
+    }
+    return storedResponse(identity.runId, completed.summary);
+  },
+);
 
-export async function requestActivitySummary(
-  db: Db,
-  identity: ActivityRunIdentity,
-  signal: AbortSignal,
-) {
-  const [run] = await db
-    .select({
-      userId: agentRuns.userId,
-      orgId: agentRuns.orgId,
-      chatThreadId: agentRuns.chatThreadId,
-      status: agentRuns.status,
-      prompt: agentRuns.prompt,
-    })
-    .from(agentRuns)
-    .where(eq(agentRuns.id, identity.runId));
-  signal.throwIfAborted();
-  if (
-    !run ||
-    run.userId !== identity.userId ||
-    run.orgId !== identity.orgId ||
-    run.chatThreadId !== identity.threadId
-  ) {
-    return { kind: "not-found" as const };
-  }
-  if (!isProgressStatus(run.status)) {
+export const requestActivitySummary$ = command(
+  async ({ set }, identity: ActivityRunIdentity, signal: AbortSignal) => {
+    const db = set(writeDb$);
+    const [run] = await db
+      .select({
+        userId: agentRuns.userId,
+        orgId: agentRuns.orgId,
+        chatThreadId: agentRuns.chatThreadId,
+        status: agentRuns.status,
+        prompt: agentRuns.prompt,
+      })
+      .from(agentRuns)
+      .where(eq(agentRuns.id, identity.runId));
+    signal.throwIfAborted();
+    if (
+      !run ||
+      run.userId !== identity.userId ||
+      run.orgId !== identity.orgId ||
+      run.chatThreadId !== identity.threadId
+    ) {
+      return { kind: "not-found" as const };
+    }
+    if (!isProgressStatus(run.status)) {
+      return {
+        kind: "summary" as const,
+        response: emptyResponse(identity.runId, "ineligible"),
+      };
+    }
+    const response = await set(generateSummary$, identity, run.prompt, signal);
+    if (response.status === "ineligible") {
+      return { kind: "summary" as const, response };
+    }
+    // A run that turned terminal while this request ran keeps its active row
+    // until its runner stops, so recheck the run itself before answering.
+    const [current] = await db
+      .select({
+        status: agentRuns.status,
+        chatThreadId: agentRuns.chatThreadId,
+      })
+      .from(agentRuns)
+      .where(eq(agentRuns.id, identity.runId));
+    signal.throwIfAborted();
     return {
       kind: "summary" as const,
-      response: emptyResponse(identity.runId, "ineligible"),
+      response:
+        current &&
+        current.chatThreadId === identity.threadId &&
+        isProgressStatus(current.status)
+          ? response
+          : emptyResponse(identity.runId, "ineligible"),
     };
-  }
-  const response = await generateSummary(db, identity, run.prompt, signal);
-  if (response.status === "ineligible") {
-    return { kind: "summary" as const, response };
-  }
-  // A run that turned terminal while this request ran keeps its active row
-  // until its runner stops, so recheck the run itself before answering.
-  const [current] = await db
-    .select({
-      status: agentRuns.status,
-      chatThreadId: agentRuns.chatThreadId,
-    })
-    .from(agentRuns)
-    .where(eq(agentRuns.id, identity.runId));
-  signal.throwIfAborted();
-  return {
-    kind: "summary" as const,
-    response:
-      current &&
-      current.chatThreadId === identity.threadId &&
-      isProgressStatus(current.status)
-        ? response
-        : emptyResponse(identity.runId, "ineligible"),
-  };
-}
+  },
+);
 
 /** Queued runs have not started; terminal runs show no progress even while
  * their runner is still recovering and the active row remains.

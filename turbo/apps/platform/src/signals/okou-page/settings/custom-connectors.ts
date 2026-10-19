@@ -39,6 +39,10 @@ import {
   readConnectorOAuthCompletion,
 } from "./connector-accounts.ts";
 import type { ConnectorConnectSuccess } from "./connectors.ts";
+import type {
+  ConnectorAccountConnectMode,
+  ConnectorAccountMutationOptions,
+} from "./connector-account-dialogs.ts";
 
 const internalReload$ = state(0);
 const internalAuthorizedAgentsReload$ = state(0);
@@ -793,6 +797,68 @@ export const connectCustomConnectorAuthorizationForAgent$ = command(
       signal,
     );
   },
+);
+
+const submitCustomConnectorConnectionCommand$ = command(
+  async (
+    { set },
+    args: {
+      readonly connector: CustomConnectorResponse;
+      readonly agentId?: string;
+      readonly values: readonly CustomConnectorValueInput[];
+      readonly accountOptions: ConnectorAccountMutationOptions;
+      readonly accountMode?: ConnectorAccountConnectMode;
+    },
+    onSuccess: ConnectorConnectSuccess | undefined,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const finish = async (
+      result: CustomConnectorConnectionResult,
+      attemptSignal: AbortSignal,
+    ) => {
+      if (result.connected && (result.targetAuthorized || args.accountMode)) {
+        await onSuccess?.(result.connectionId, attemptSignal);
+        attemptSignal.throwIfAborted();
+      }
+    };
+    if (
+      args.connector.authMode === "oauth" ||
+      args.connector.authMode === "automatic"
+    ) {
+      const options = {
+        id: args.connector.id,
+        ...args.accountOptions,
+        onSuccess: finish,
+      };
+      const result = args.agentId
+        ? await set(
+            connectCustomConnectorAuthorizationForAgent$,
+            { ...options, agentId: args.agentId },
+            signal,
+          )
+        : await set(connectCustomConnectorAuthorization$, options, signal);
+      return result.connected;
+    }
+    const options = {
+      id: args.connector.id,
+      values: args.values,
+      account: args.accountOptions.account,
+    };
+    const result = args.agentId
+      ? await set(
+          setCustomConnectorValuesForAgent$,
+          { ...options, agentId: args.agentId },
+          signal,
+        )
+      : await set(setCustomConnectorValues$, options, signal);
+    await finish(result, signal);
+    return result.connected;
+  },
+);
+
+/** One loadable owns connection, target authorization, and the continuation. */
+export const submitCustomConnectorConnection$ = withConnectorConnectionProgress(
+  submitCustomConnectorConnectionCommand$,
 );
 
 // ---------------------------------------------------------------------------

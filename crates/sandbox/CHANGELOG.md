@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.0](https://github.com/okou-ai/okou/compare/sandbox-v0.27.1...sandbox-v0.28.0) (2026-10-16)
+
+
+### Features
+
+* **runner:** retain home cache by filesystem pressure ([#40658](https://github.com/okou-ai/okou/issues/40658)) ([713e66c](https://github.com/okou-ai/okou/commit/713e66cc7d558d4626834ea5186cfa0f2517e207))
+
 ## [0.27.1](https://github.com/okou-ai/okou/compare/sandbox-v0.27.0...sandbox-v0.27.1) (2026-10-14)
 
 

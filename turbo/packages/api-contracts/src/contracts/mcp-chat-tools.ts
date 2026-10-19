@@ -33,11 +33,13 @@ export const mcpRevokeQueuedMessageInputSchema = z
   .strict();
 
 export const mcpSendChatMessageOutputSchema =
-  chatEventsContract.send.responses[201].omit({ runId: true }).extend({
+  chatEventsContract.send.responses[201].extend({
     threadId: mcpThreadIdSchema,
     eventId: mcpEventIdSchema,
   });
 
+// The published MCP output keeps its always-null runId; the Web send response
+// no longer carries one.
 export const mcpRevokeQueuedMessageOutputSchema =
   chatEventsContract.send.responses[201].extend({
     threadId: mcpThreadIdSchema,

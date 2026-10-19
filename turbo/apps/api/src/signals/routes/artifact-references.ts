@@ -13,6 +13,7 @@ import { s3ObjectHead } from "../external/s3";
 import { resolveArtifactPreviewUrl$ } from "../services/artifact-preview-url.service";
 import { resolveArtifactDownloadUrl$ } from "../services/artifact-download-url.service";
 import { privateArtifactRecord$ } from "../services/private-artifact-storage.service";
+import { uploadedArtifactPreviewImageUrl$ } from "../services/uploaded-artifact.service";
 import {
   resolveArtifactShare$,
   resolveArtifactTargetShare$,
@@ -66,6 +67,11 @@ const resolveFileReference$ = command(
         signal,
       );
       const downloadUrl = await set(resolveArtifactDownloadUrl$, file, signal);
+      const previewImageUrl = await set(
+        uploadedArtifactPreviewImageUrl$,
+        { id: file.id, userId: file.userId, orgId: file.orgId },
+        signal,
+      );
       signal.throwIfAborted();
       return {
         status: 200 as const,
@@ -74,6 +80,7 @@ const resolveFileReference$ = command(
           downloadUrl,
           filename: file.filename,
           contentType: file.contentType,
+          ...(previewImageUrl ? { previewImageUrl } : {}),
           target: { kind: "file" as const, id },
         },
       };

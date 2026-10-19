@@ -48,8 +48,6 @@ import {
   closeUsagePackSubscriptionChangePreview$,
   confirmUsagePackSubscriptionChange$,
   previewUsagePackSubscriptionChange$,
-  confirmUsagePackMigration$,
-  confirmUsagePackMigrationRevision$,
   previewUsagePackMigrationRevision$,
   previewUsagePackMigration$,
   startUsagePackCheckout$,
@@ -57,6 +55,10 @@ import {
   memberUsagePackOptionsAsync$,
   usagePackManagementAsync$,
 } from "../../../../signals/okou-page/billing.ts";
+import {
+  confirmBillingMigration$,
+  confirmBillingMigrationRevision$,
+} from "../../../../signals/okou-page/settings/billing-plan-actions.ts";
 import {
   orgMembers$,
   orgPendingInvitations$,
@@ -2818,16 +2820,14 @@ function MigrationRevisionOrderSummary({
 }
 
 function MigrationReviewDialog({
-  onComplete,
   totals,
 }: {
-  readonly onComplete: () => void;
   readonly totals: MemberUsageTotals;
 }) {
   const pageSignal = useGet(pageSignal$);
   const preview = useGet(usagePackMigrationPreview$);
   const [confirmLoadable, confirmMigration] = useLoadableSet(
-    confirmUsagePackMigration$,
+    confirmBillingMigration$,
   );
   const confirming = confirmLoadable.state === "loading";
   const error = confirmLoadable.state === "hasError";
@@ -2836,7 +2836,6 @@ function MigrationReviewDialog({
       return;
     }
     await confirmMigration(preview.migrationId, pageSignal);
-    onComplete();
   };
   return preview ? (
     <MigrationReviewStepContent
@@ -2853,21 +2852,19 @@ function MigrationRevisionReviewDialog({
   catalog,
   members,
   migrationId,
-  onComplete,
   selections,
   totals,
 }: {
   readonly catalog: readonly MemberUsagePackOption[] | null;
   readonly members: readonly MemberDisplay[] | undefined;
   readonly migrationId: string;
-  readonly onComplete: () => void;
   readonly selections: Readonly<Record<string, MemberUsageSelection>>;
   readonly totals: MemberUsageTotals;
 }) {
   const pageSignal = useGet(pageSignal$);
   const preview = useGet(usagePackMigrationRevisionPreview$);
   const [confirmLoadable, confirmRevision] = useLoadableSet(
-    confirmUsagePackMigrationRevision$,
+    confirmBillingMigrationRevision$,
   );
   const confirming = confirmLoadable.state === "loading";
   const error = confirmLoadable.state === "hasError";
@@ -2887,7 +2884,6 @@ function MigrationRevisionReviewDialog({
       },
       pageSignal,
     );
-    onComplete();
   };
   return preview && members ? (
     <MigrationReviewStepContent
@@ -3240,14 +3236,12 @@ function UsagePackMigrationPage({
   configuration,
   effectiveAt,
   migrationId,
-  onComplete,
   sourceTier,
   targetTier,
 }: {
   readonly configuration: UsagePackMigrationConfiguration | null;
   readonly effectiveAt: string;
   readonly migrationId: string | null;
-  readonly onComplete: () => void;
   readonly sourceTier: UsagePackPlanTier;
   readonly targetTier: UsagePackPlanTier;
 }) {
@@ -3283,14 +3277,13 @@ function UsagePackMigrationPage({
         catalog={catalog}
         members={members}
         migrationId={migrationId}
-        onComplete={onComplete}
         selections={selections}
         totals={totals}
       />
     );
   }
   if (!viewState.revising && migrationPreview) {
-    return <MigrationReviewDialog onComplete={onComplete} totals={totals} />;
+    return <MigrationReviewDialog totals={totals} />;
   }
   return (
     <UsagePackMigrationConfigurationStep
@@ -3313,7 +3306,6 @@ export function UsagePackMigrationContent({
   migrationOpen,
   migrationTargetTier,
   onBack,
-  onClose,
   onSelect,
 }: {
   readonly currentTier: BillingTier;
@@ -3321,7 +3313,6 @@ export function UsagePackMigrationContent({
   readonly migrationOpen: boolean;
   readonly migrationTargetTier: UsagePackPlanTier | null;
   readonly onBack: () => void;
-  readonly onClose: () => void;
   readonly onSelect: (tier: UsagePackPlanTier) => void;
 }) {
   const migrationPreview = useGet(usagePackMigrationPreview$);
@@ -3373,7 +3364,6 @@ export function UsagePackMigrationContent({
           configuration={migration.configuration ?? null}
           effectiveAt={configurationStep.effectiveAt}
           migrationId={migration.migrationId}
-          onComplete={onClose}
           sourceTier={migration.tier}
           targetTier={configurationStep.targetTier}
         />

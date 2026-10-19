@@ -35,6 +35,8 @@ class CriticalReportTests(unittest.TestCase):
                 event["unix_ns"] = event["monotonic_ns"]+1000
             for sample in self.samples[offset*6:offset*6+6]:
                 sample["monotonic_ns"] *= 10**9
+                for process in sample["processes"]:
+                    process["observed_monotonic_ns"] = sample["monotonic_ns"]
             base = terminal[1]["monotonic_ns"]
             blanks = [{"sandbox_id": str(uuid.uuid4()), "backing_generation": str(uuid.uuid4())}
                       for _ in range(2)]

@@ -697,7 +697,7 @@ the complete SQL here.
 
 ### Bound a backfill by UUID
 
-Mark a statement with `-- vm0:batch-by-uuid` to have the migration runner send
+Mark a statement with `-- okou:batch-by-uuid` to have the migration runner send
 one SQL query per batch. In a transactional migration, each query runs inside
 the existing migration transaction and gets its statement timeout independently.
 The entire migration and
@@ -709,7 +709,7 @@ bounded, materialized batch before joining other tables. Return exactly one
 `next_cursor` UUID: the greatest selected ID, or SQL `NULL` when no targets
 remain. Advance by selected rows even when none qualify for an update, so a gap
 cannot skip later targets. Non-null cursors must strictly increase. This marker
-also works in migrations marked `-- vm0:non-transactional`. In that mode each
+also works in migrations marked `-- okou:non-transactional`. In that mode each
 batch is a separately committed, atomic statement; earlier batches survive a
 failure, and retry starts the cursor at SQL `NULL`. Every batch must therefore
 be idempotent, including after a lost response or a journal failure. Keep related
@@ -718,7 +718,7 @@ advance by selected rows even when a batch changes nothing. No automatic retry
 is performed. The journal is written only after all statements finish.
 
 ```sql
--- vm0:batch-by-uuid
+-- okou:batch-by-uuid
 WITH batch AS MATERIALIZED (
   SELECT id FROM example_table
   WHERE ($1::uuid IS NULL OR id > $1::uuid) AND canonical_value IS NULL
@@ -730,6 +730,26 @@ WITH batch AS MATERIALIZED (
 )
 SELECT (SELECT id FROM batch ORDER BY id DESC LIMIT 1) AS next_cursor;
 ```
+
+### Diagnose an opted-in batch timeout on the smoke clone
+
+Add `-- okou:explain-on-timeout` to an individually replayable UUID batch in a
+non-transactional migration. The marker alone does not enable diagnosis.
+Production uses `db:migrate`; only the disposable production-smoke clone uses
+`db:migrate:smoke`, which explicitly enables diagnostics.
+
+After a marked batch exceeds its statement timeout, the smoke runner executes
+`EXPLAIN (ANALYZE, BUFFERS, WAL, SETTINGS, FORMAT JSON)` once with the failed
+batch's original cursor and a separate 30-second diagnostic deadline. This can
+commit that batch on the clone. Do not mark SQL with external effects or SQL that
+cannot safely be replayed after its failed statement rolls back. Transactional
+migrations and non-batch statements do not support this marker.
+
+The runner publishes only plan structure and numeric measurements, omitting
+expressions, bound values and row contents. A failed diagnostic is reported
+separately. The original migration failure remains authoritative: no subsequent
+statement or journal write runs, the smoke check fails, production promotion
+stops, and the workflow still deletes its clone.
 
 ### Add and validate a constraint online
 
@@ -752,7 +772,7 @@ VALIDATE CONSTRAINT "child_table_parent_id_parent_table_id_fk";
 must use the non-transactional marker:
 
 ```sql
--- vm0:non-transactional
+-- okou:non-transactional
 CREATE INDEX CONCURRENTLY IF NOT EXISTS "table_created_at_idx"
 ON "table" ("created_at");
 ```

@@ -1,6 +1,5 @@
 import {
   vncConnectionResponseSchema,
-  vncSecuritySchema,
   type CreateVncConnectionRequest,
   type UpdateVncConnectionRequest,
   type VncConnectionResponse,
@@ -9,16 +8,20 @@ import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { sshConnections } from "@okouai/db/runtime/ssh-connection";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
-import { and, asc, count, eq, sql } from "drizzle-orm";
+import { and, asc, count, eq, sql, type SQL } from "drizzle-orm";
 import {
   QueryBuilder,
+  type PgUpdateSetSource,
   type WithSubqueryWithSelection,
 } from "drizzle-orm/pg-core";
-import { isForeignKeyViolation } from "../../lib/pg-errors";
+import { isForeignKeyViolation, safeSqlStateCode } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { command } from "ccstate";
 import { writeDb$ } from "../external/db";
-import { settle } from "../utils";
+import { bestEffort, settle } from "../utils";
+import { publishCloudflareAccessClientInvalidation } from "./cloudflare-access-client-invalidation.service";
+import { publishTailscaleClientInvalidation } from "./tailscale-client-invalidation.service";
 import {
   canonicalizeVncHost,
   isVncProfileCompatible,
@@ -37,10 +40,16 @@ import {
   validVncClientAuthentication,
 } from "./vnc-credential.service";
 import type { VncOwner } from "./vnc-owner-lifecycle.service";
-import { preparedVncRoutePredicate } from "./vnc-prepared-route";
+import {
+  validateVncNetworkReferences$,
+  vncNetworkPublication,
+} from "./vnc-network-publication";
+import {
+  storedVncSecurity,
+  storedVncTransportMetadata,
+} from "./vnc-stored-route";
 import { vncCreationTimestamp } from "./remote-connection-creation-timestamp.utils";
 import { publishRemoteRunnerInvalidation$ } from "./remote-runtime-wakeup.service";
-import { isVncRsaAesSecurityType } from "@okouai/api-contracts/contracts/vnc-rsa-aes";
 import {
   isVncKerberosMethod,
   sameKerberosPrincipal,
@@ -59,8 +68,18 @@ const notifyVncConnectionChange$ = command(
       "vnc",
     );
     signal.throwIfAborted();
+    await publishVncNetworkReferenceChange(args.owner);
+    signal.throwIfAborted();
   },
 );
+
+/** Owner-scoped reference metadata contains no other member's Host details. */
+async function publishVncNetworkReferenceChange(owner: VncOwner) {
+  await Promise.all([
+    bestEffort(publishCloudflareAccessClientInvalidation(owner)),
+    bestEffort(publishTailscaleClientInvalidation(owner)),
+  ]);
+}
 
 const vncCredentialMetadata = Object.freeze({
   id: vncCredentials.id,
@@ -81,6 +100,13 @@ const metadata = Object.freeze({
   port: vncConnections.port,
   transportType: vncConnections.transportType,
   sshConnectionId: vncConnections.sshConnectionId,
+  cloudflareAccessId: vncConnections.cloudflareAccessId,
+  tailscaleId: vncConnections.tailscaleId,
+  originTlsServerName: vncConnections.originTlsServerName,
+  originTlsTrustMode: vncConnections.originTlsTrustMode,
+  originTlsCaBundle: vncConnections.originTlsCaBundle,
+  kdcCloudflareAccessId: vncConnections.kdcCloudflareAccessId,
+  kdcTailscaleId: vncConnections.kdcTailscaleId,
   x509ServerName: vncConnections.x509ServerName,
   credentialId: vncConnections.credentialId,
   authMethod: vncConnections.authMethod,
@@ -113,7 +139,6 @@ function ownedConnections(owner: VncOwner) {
   return and(
     eq(vncConnections.orgId, owner.orgId),
     eq(vncConnections.userId, owner.userId),
-    preparedVncRoutePredicate,
   );
 }
 
@@ -121,112 +146,13 @@ function ownedConnection(owner: VncOwner, connectionId: string) {
   return and(ownedConnections(owner), eq(vncConnections.id, connectionId));
 }
 
-function validateStoredRsaTrust(row: Metadata): void {
-  if (
-    row.trustMode !== "none" ||
-    row.caBundle !== null ||
-    row.x509ServerName !== null ||
-    row.rsaServerKeySha256 === null ||
-    !/^[a-f0-9]{64}$/u.test(row.rsaServerKeySha256)
-  ) {
-    throw new Error("VNC connection has an invalid RSA trust configuration");
-  }
-}
-
-function validateStoredTrust(row: Metadata): void {
-  if (isVncRsaAesSecurityType(row.securityType)) {
-    validateStoredRsaTrust(row);
-    return;
-  }
-  if (row.rsaServerKeySha256 !== null) {
-    throw new Error("VNC connection has unexpected RSA trust");
-  }
-  if (
-    ((row.securityType === "apple_vnc_password" ||
-      row.securityType === "apple_dh" ||
-      row.securityType === "apple_srp" ||
-      row.securityType === "apple_rsa_srp") &&
-      (row.trustMode !== "none" ||
-        row.caBundle !== null ||
-        row.x509ServerName !== null)) ||
-    (row.securityType !== "apple_vnc_password" &&
-      row.securityType !== "apple_dh" &&
-      row.securityType !== "apple_srp" &&
-      row.securityType !== "apple_rsa_srp" &&
-      ((row.trustMode === "system" && row.caBundle !== null) ||
-        (row.trustMode === "custom_ca" && row.caBundle === null) ||
-        row.trustMode === "none"))
-  ) {
-    throw new Error("VNC connection has an invalid trust configuration");
-  }
-}
-
-function responseSecurity(row: Metadata): VncConnectionResponse["security"] {
-  if (isVncRsaAesSecurityType(row.securityType)) {
-    if (row.rsaServerKeySha256 === null) {
-      throw new Error("VNC connection is missing RSA trust");
-    }
-    return { type: row.securityType, serverKeySha256: row.rsaServerKeySha256 };
-  }
-  const trust =
-    row.trustMode === "custom_ca" && row.caBundle !== null
-      ? ({ mode: "custom_ca", caBundle: row.caBundle } as const)
-      : ({ mode: "system" } as const);
-  if (row.securityType === "qemu_x509_gssapi") {
-    return vncSecuritySchema.parse({
-      type: row.securityType,
-      trust,
-      service: row.kerberosService,
-      ...(row.x509ServerName === null
-        ? {}
-        : { serverName: row.x509ServerName }),
-      ...(row.kdcHost === null
-        ? {}
-        : {
-            kdc: {
-              host: row.kdcHost,
-              port: row.kdcPort,
-              transport:
-                row.kdcTransportType === "direct"
-                  ? { type: "direct" }
-                  : {
-                      type: "ssh",
-                      connectionId: row.kdcSshConnectionId,
-                    },
-              ticketLifetimeSeconds: row.kerberosTicketLifetimeSeconds,
-              renewableLifetimeSeconds: row.kerberosRenewableLifetimeSeconds,
-            },
-          }),
-    });
-  }
-  if (
-    row.securityType === "apple_vnc_password" ||
-    row.securityType === "apple_dh" ||
-    row.securityType === "apple_srp" ||
-    row.securityType === "apple_rsa_srp"
-  ) {
-    return { type: row.securityType };
-  }
-  return {
-    type: row.securityType,
-    trust,
-    ...(row.x509ServerName === null ? {} : { serverName: row.x509ServerName }),
-  };
-}
-
 function response(
   row: Metadata,
   credential: { readonly name: string } | null,
 ): VncConnectionResponse {
-  validateStoredTrust(row);
+  const transport = storedVncTransportMetadata(row);
   if (!isVncProfileCompatible(row.authMethod, row.securityType)) {
     throw new Error("VNC connection has an invalid stored profile");
-  }
-  if (
-    (row.transportType === "direct" && row.sshConnectionId !== null) ||
-    (row.transportType === "ssh" && row.sshConnectionId === null)
-  ) {
-    throw new Error("VNC connection has an invalid stored transport");
   }
   const credentialless = row.authMethod === "none";
   if (credentialless !== (row.credentialId === null && credential === null)) {
@@ -235,14 +161,7 @@ function response(
     );
   }
   return vncConnectionResponseSchema.parse({
-    ...(row.transportType === "ssh" && row.sshConnectionId !== null
-      ? {
-          transport: {
-            type: "ssh" as const,
-            connectionId: row.sshConnectionId,
-          },
-        }
-      : {}),
+    ...(transport.type === "direct" ? {} : { transport }),
     ...(row.authMethod === "rsa_aes_password" ||
     row.authMethod === "rsa_aes_username_password"
       ? { rsaAesAuthentication: row.authMethod }
@@ -264,7 +183,7 @@ function response(
             ? { clientCertificateAuthentication: row.authMethod }
             : {}),
         }),
-    security: responseSecurity(row),
+    security: storedVncSecurity(row),
     generation: row.generation,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt.toISOString(),
@@ -534,7 +453,11 @@ const prepareCreateVncConnection$ = command(
     if (!security.ok) {
       return security;
     }
-    const transport = prepareVncTransport(args.body.transport, host.value);
+    const transport = prepareVncTransport(
+      args.body.transport,
+      host.value,
+      args.body.port,
+    );
     if (!transport.ok) {
       return transport;
     }
@@ -542,6 +465,8 @@ const prepareCreateVncConnection$ = command(
       security.value.securityType,
       host.value,
       transport.value.transportType,
+      transport.value.originTlsServerName,
+      security.value.x509ServerName,
     );
     if (!route.ok) {
       return route;
@@ -560,6 +485,19 @@ const prepareCreateVncConnection$ = command(
     );
     if (invalidCredential) {
       return vncFailure(invalidCredential);
+    }
+    if (
+      !(await set(
+        validateVncNetworkReferences$,
+        args.owner,
+        {
+          ...transport.value,
+          ...security.value,
+        },
+        signal,
+      ))
+    ) {
+      return vncFailure("networkConfigUnavailable");
     }
     if (security.value.kdcSshConnectionId !== null) {
       const [ssh] = await set(writeDb$)
@@ -588,14 +526,16 @@ const prepareCreateVncConnection$ = command(
   },
 );
 
+type PreparedVncCreate = NonNullable<
+  Extract<
+    Awaited<ReturnType<typeof prepareCreateVncConnection$.write>>,
+    { readonly ok: true }
+  >["value"]
+>;
+
 function vncConnectionCreationValues(
   args: CreateVncConnectionArgs,
-  prepared: NonNullable<
-    Extract<
-      Awaited<ReturnType<typeof prepareCreateVncConnection$.write>>,
-      { readonly ok: true }
-    >["value"]
-  >,
+  prepared: PreparedVncCreate,
 ) {
   return {
     ...args.owner,
@@ -607,6 +547,61 @@ function vncConnectionCreationValues(
     ...prepared.security.value,
   };
 }
+
+const writeInlineVncConnectionCreate$ = command(
+  async (
+    { set },
+    args: CreateVncConnectionArgs,
+    prepared: PreparedVncCreate,
+    create: Parameters<typeof inlineVncCredentialCtes>[1],
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    const publication = vncNetworkPublication(args.owner, {
+      ...prepared.security.value,
+      ...prepared.transport.value,
+    });
+    const { generated, createdCredential, exhausted } = inlineVncCredentialCtes(
+      args.owner,
+      create,
+    );
+    const connection = db.$with(createdVncConnectionCteName).as(
+      db
+        .insert(vncConnections)
+        .values({
+          ...vncConnectionCreationValues(args, prepared),
+          credentialId: sql`(select ${generated.id} from ${generated})`,
+          authMethod: create.authMethod,
+        })
+        .returning({ ...metadata }),
+    );
+    const complete = publication.completion(connection);
+    const [created] = await db
+      .with(
+        ...publication.ctes,
+        generated,
+        connection,
+        createdCredential,
+        complete,
+      )
+      .select()
+      .from(complete)
+      .crossJoin(exhausted)
+      .leftJoin(connection, sql`true`)
+      .leftJoin(createdCredential, sql`true`);
+    signal.throwIfAborted();
+    if (!created?.created_vnc_connection || !created.created_vnc_credential) {
+      throw new Error("VNC connection insert returned no row");
+    }
+    return {
+      ok: true as const,
+      value: response(
+        created.created_vnc_connection,
+        created.created_vnc_credential,
+      ),
+    };
+  },
+);
 
 export const createVncConnection$ = command(
   async (
@@ -621,6 +616,10 @@ export const createVncConnection$ = command(
       return prepared;
     }
     const { security, transport, preparedCredential } = prepared.value;
+    const publication = vncNetworkPublication(args.owner, {
+      ...security.value,
+      ...transport.value,
+    });
     const written = await settle(
       (async () => {
         const owner = args.owner;
@@ -631,6 +630,7 @@ export const createVncConnection$ = command(
           })
           .from(vncConnections)
           .where(eq(vncConnections.id, args.body.id));
+        signal.throwIfAborted();
         if (existing) {
           return existing.orgId === owner.orgId &&
             existing.userId === owner.userId
@@ -642,6 +642,7 @@ export const createVncConnection$ = command(
             .select({ id: sshConnections.id })
             .from(sshConnections)
             .where(ownedSshConnection(owner, transport.value.sshConnectionId));
+          signal.throwIfAborted();
           if (ssh === undefined) {
             return vncFailure("sshConnectionNotFound");
           }
@@ -657,40 +658,19 @@ export const createVncConnection$ = command(
           ) {
             return vncFailure("profileMismatch");
           }
-          const { generated, createdCredential, exhausted } =
-            inlineVncCredentialCtes(owner, create);
-          const connection = db.$with(createdVncConnectionCteName).as(
-            db
-              .insert(vncConnections)
-              .values({
-                ...vncConnectionCreationValues(args, prepared.value),
-                credentialId: sql`(select ${generated.id} from ${generated})`,
-                authMethod: create.authMethod,
-              })
-              .returning({ ...metadata }),
+          return set(
+            writeInlineVncConnectionCreate$,
+            args,
+            prepared.value,
+            create,
+            signal,
           );
-          const [created] = await db
-            .with(generated, connection, createdCredential)
-            .select()
-            .from(connection)
-            .crossJoin(exhausted)
-            .crossJoin(createdCredential);
-          if (!created) {
-            throw new Error("VNC connection insert returned no row");
-          }
-          // Both writes have committed before decoding/response validation.
-          return {
-            ok: true as const,
-            value: response(
-              created.created_vnc_connection,
-              created.created_vnc_credential,
-            ),
-          };
         } else if (preparedCredential !== null) {
           [credential] = await db
             .select(vncCredentialMetadata)
             .from(vncCredentials)
             .where(ownedCredential(owner, preparedCredential.id));
+          signal.throwIfAborted();
         }
         if (credential === undefined) {
           return vncFailure("credentialNotFound");
@@ -698,21 +678,38 @@ export const createVncConnection$ = command(
         if (!validSelectedCredentialProfile(credential, security.value)) {
           return vncFailure("profileMismatch");
         }
+        const connection = db.$with(createdVncConnectionCteName).as(
+          db
+            .insert(vncConnections)
+            .values({
+              ...vncConnectionCreationValues(args, prepared.value),
+              ...credentialDatabaseValues(credential),
+            })
+            .returning({ ...metadata }),
+        );
+        const complete = publication.completion(connection);
         const [created] = await db
-          .insert(vncConnections)
-          .values({
-            ...vncConnectionCreationValues(args, prepared.value),
-            ...credentialDatabaseValues(credential),
-          })
-          .returning(metadata);
-        if (!created) {
+          .with(...publication.ctes, connection, complete)
+          .select()
+          .from(complete)
+          .leftJoin(connection, sql`true`);
+        if (!created?.created_vnc_connection) {
           throw new Error("VNC connection insert returned no row");
         }
-        return { ok: true as const, value: response(created, credential) };
+        return {
+          ok: true as const,
+          value: response(created.created_vnc_connection, credential),
+        };
       })(),
     );
     signal.throwIfAborted();
     if (!written.ok) {
+      if (safeSqlStateCode(written.error) === "40P01") {
+        return vncFailure("generationConflict");
+      }
+      if (safeSqlStateCode(written.error) === "22012") {
+        return vncFailure("networkConfigUnavailable");
+      }
       const reference = referenceViolation(written.error);
       if (reference) {
         return vncFailure(reference);
@@ -727,6 +724,9 @@ export const createVncConnection$ = command(
         },
         signal,
       );
+    }
+    if (written.value.ok && written.value.value !== undefined) {
+      await publishVncNetworkReferenceChange(args.owner);
     }
     return written.value;
   },
@@ -793,6 +793,19 @@ const prepareUpdateVncConnection$ = command(
       return vncFailure(invalidCredential);
     }
     const selectedSecurity = security?.value ?? initial;
+    if (
+      !(await set(
+        validateVncNetworkReferences$,
+        args.owner,
+        {
+          ...selectedSecurity,
+          ...prospective.value.transport.value,
+        },
+        signal,
+      ))
+    ) {
+      return vncFailure("networkConfigUnavailable");
+    }
     if (selectedSecurity.kdcSshConnectionId !== null) {
       const [ssh] = await db
         .select({ id: sshConnections.id })
@@ -828,14 +841,11 @@ function resolveVncConnectionUpdate(
   const newHost = (host?.ok ? host.value : undefined) ?? current.host;
   const newPort = args.body.port ?? current.port;
   const requestedTransport =
-    args.body.transport ??
-    (current.transportType === "ssh" && current.sshConnectionId !== null
-      ? ({
-          type: "ssh",
-          connectionId: current.sshConnectionId,
-        } as const)
-      : ({ type: "direct" } as const));
-  const transport = prepareVncTransport(requestedTransport, newHost);
+    args.body.transport ?? storedVncTransportMetadata(current);
+  if ("needsRebind" in requestedTransport) {
+    return vncFailure("rebindRequired");
+  }
+  const transport = prepareVncTransport(requestedTransport, newHost, newPort);
   if (!transport.ok) {
     return transport;
   }
@@ -846,6 +856,8 @@ function resolveVncConnectionUpdate(
     securityType,
     newHost,
     transport.value.transportType,
+    transport.value.originTlsServerName,
+    security?.ok ? security.value.x509ServerName : current.x509ServerName,
   );
   if (!route.ok) {
     return route;
@@ -878,6 +890,7 @@ function referenceViolation(
   | "sshConnectionNotFound"
   | "credentialNotFound"
   | "profileMismatch"
+  | "networkConfigUnavailable"
   | undefined {
   if (
     !isForeignKeyViolation(error) ||
@@ -889,6 +902,12 @@ function referenceViolation(
     return undefined;
   }
   switch (error.cause.constraint) {
+    case "vnc_connections_cloudflare_org_fk":
+    case "vnc_connections_tailscale_org_fk":
+    case "vnc_connections_kdc_cloudflare_org_fk":
+    case "vnc_connections_kdc_tailscale_org_fk": {
+      return "networkConfigUnavailable";
+    }
     case "vnc_connections_ssh_owner_fk": {
       return "sshConnectionNotFound";
     }
@@ -967,6 +986,13 @@ function inlineVncCredentialParts(
         port: updated.port,
         transportType: updated.transportType,
         sshConnectionId: updated.sshConnectionId,
+        cloudflareAccessId: updated.cloudflareAccessId,
+        tailscaleId: updated.tailscaleId,
+        originTlsServerName: updated.originTlsServerName,
+        originTlsTrustMode: updated.originTlsTrustMode,
+        originTlsCaBundle: updated.originTlsCaBundle,
+        kdcCloudflareAccessId: updated.kdcCloudflareAccessId,
+        kdcTailscaleId: updated.kdcTailscaleId,
         x509ServerName: updated.x509ServerName,
         credentialId: updated.credentialId,
         authMethod: updated.authMethod,
@@ -1003,13 +1029,59 @@ function inlineVncCredentialParts(
 
 function inlineVncConnectionResult(
   row:
-    | { readonly connection: Metadata; readonly credential: CredentialMetadata }
+    | {
+        readonly connection: Metadata | null;
+        readonly credential: CredentialMetadata | null;
+      }
     | undefined,
 ): VncResult<VncConnectionResponse> {
-  return row
+  return row?.connection && row.credential
     ? { ok: true, value: response(row.connection, row.credential) }
     : vncFailure("generationConflict");
 }
+
+const writeInlineVncConnectionUpdate$ = command(
+  async (
+    { set },
+    args: {
+      readonly owner: VncOwner;
+      readonly changes: PgUpdateSetSource<typeof vncConnections>;
+      readonly expectedConnection: SQL | undefined;
+      readonly create: Parameters<typeof inlineVncCredentialCtes>[1];
+      readonly publication: ReturnType<typeof vncNetworkPublication>;
+    },
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    const { owner, changes, expectedConnection, create, publication } = args;
+    const newId = newVncCredentialIdQuery();
+    const updated = db.$with("updated_vnc_connection").as(
+      db
+        .update(vncConnections)
+        .set({
+          ...changes,
+          credentialId: newId.id,
+          authMethod: create.authMethod,
+          updatedAt: nowDate(),
+        })
+        .from(newId)
+        .where(expectedConnection)
+        .returning({ ...metadata }),
+    );
+    const parts = inlineVncCredentialParts(owner, create, updated);
+    const { created, exhausted } = parts;
+    const complete = publication.completion(updated);
+    const [written] = await db
+      .with(...publication.ctes, newId, updated, created, exhausted, complete)
+      .select({ ...parts.metadata, complete: complete.complete })
+      .from(complete)
+      .crossJoin(exhausted)
+      .leftJoin(updated, sql`true`)
+      .leftJoin(created, eq(created.id, updated.credentialId));
+    signal.throwIfAborted();
+    return inlineVncConnectionResult(written);
+  },
+);
 
 const writeVncConnectionUpdate$ = command(
   async (
@@ -1021,12 +1093,13 @@ const writeVncConnectionUpdate$ = command(
     const db = set(writeDb$);
     const { host, security, preparedCredential } = prepared;
     const owner = args.owner;
-    const expectedConnection = and(
-      ownedConnection(owner, args.connectionId),
-      eq(vncConnections.generation, args.body.expectedGeneration),
-    );
     const [current] = await db
-      .select(metadata)
+      .select({
+        ...metadata,
+        version: sql`${vncConnections}.xmin::text`
+          .mapWith(pgTextDecoder)
+          .as("host_version"),
+      })
       .from(vncConnections)
       .where(ownedConnection(owner, args.connectionId));
     signal.throwIfAborted();
@@ -1039,6 +1112,11 @@ const writeVncConnectionUpdate$ = command(
     if (current.generation === 2_147_483_647) {
       return vncFailure("exhausted");
     }
+    const expectedConnection = and(
+      ownedConnection(owner, args.connectionId),
+      eq(vncConnections.generation, args.body.expectedGeneration),
+      eq(sql`${vncConnections}.xmin::text`, current.version),
+    );
     const resolved = resolveVncConnectionUpdate(
       current,
       args,
@@ -1051,6 +1129,11 @@ const writeVncConnectionUpdate$ = command(
     }
     const { newHost, newPort, transport, securityType } = resolved.value;
     const selectedSecurity = security?.value ?? current;
+    const publication = vncNetworkPublication(
+      owner,
+      { ...selectedSecurity, ...transport.value },
+      current,
+    );
     const changes = {
       displayName: args.body.displayName,
       host: newHost,
@@ -1071,31 +1154,17 @@ const writeVncConnectionUpdate$ = command(
     }
     let credential: CredentialMetadata | undefined | null = null;
     if (preparedCredential?.create !== undefined) {
-      const create = preparedCredential.create;
-      const newId = newVncCredentialIdQuery();
-      const updated = db.$with("updated_vnc_connection").as(
-        db
-          .update(vncConnections)
-          .set({
-            ...changes,
-            credentialId: newId.id,
-            authMethod: create.authMethod,
-            updatedAt: nowDate(),
-          })
-          .from(newId)
-          .where(expectedConnection)
-          .returning({ ...metadata }),
+      return set(
+        writeInlineVncConnectionUpdate$,
+        {
+          owner,
+          changes,
+          expectedConnection,
+          create: preparedCredential.create,
+          publication,
+        },
+        signal,
       );
-      const parts = inlineVncCredentialParts(owner, create, updated);
-      const { created, exhausted } = parts;
-      const [written] = await db
-        .with(newId, updated, created, exhausted)
-        .select(parts.metadata)
-        .from(exhausted)
-        .innerJoin(updated, eq(exhausted.total, 1))
-        .innerJoin(created, eq(created.id, updated.credentialId));
-      signal.throwIfAborted();
-      return inlineVncConnectionResult(written);
     } else if (securityType !== "x509_none") {
       const credentialId = preparedCredential?.id ?? current.credentialId;
       if (credentialId === null) {
@@ -1113,20 +1182,31 @@ const writeVncConnectionUpdate$ = command(
     if (!validSelectedCredentialProfile(credential, selectedSecurity)) {
       return vncFailure("profileMismatch");
     }
+    const changed = db.$with("updated_vnc_connection").as(
+      db
+        .update(vncConnections)
+        .set({
+          ...changes,
+          ...credentialDatabaseValues(credential),
+          updatedAt: nowDate(),
+        })
+        .where(expectedConnection)
+        .returning({ ...metadata }),
+    );
+    const complete = publication.completion(changed);
     const [updated] = await db
-      .update(vncConnections)
-      .set({
-        ...changes,
-        ...credentialDatabaseValues(credential),
-        updatedAt: nowDate(),
-      })
-      .where(expectedConnection)
-      .returning(metadata);
+      .with(...publication.ctes, changed, complete)
+      .select()
+      .from(complete)
+      .leftJoin(changed, sql`true`);
     signal.throwIfAborted();
-    if (!updated) {
+    if (!updated?.updated_vnc_connection) {
       return vncFailure("generationConflict");
     }
-    return { ok: true as const, value: response(updated, credential) };
+    return {
+      ok: true as const,
+      value: response(updated.updated_vnc_connection, credential),
+    };
   },
 );
 
@@ -1152,6 +1232,12 @@ export const updateVncConnection$ = command(
       return written.value;
     }
     const reference = referenceViolation(written.error);
+    if (
+      safeSqlStateCode(written.error) === "22012" ||
+      safeSqlStateCode(written.error) === "40P01"
+    ) {
+      return vncFailure("generationConflict");
+    }
     if (reference) {
       return vncFailure(reference);
     }

@@ -1,8 +1,12 @@
+import { connectors } from "@okouai/db/schema/connector";
+import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
+import { secrets } from "@okouai/db/schema/secret";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { feishuBrowserConnectContract } from "@okouai/api-contracts/contracts/feishu-browser-connect";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { env } from "../../lib/env";
@@ -18,12 +22,18 @@ import type { RouteEntry } from "../route-entry";
 import { startCustomConnectorOAuth2$ } from "../services/custom-connector-oauth2.service";
 import {
   ensureFeishuCustomConnector$,
-  hasFeishuCustomConnectorOAuthConnection,
+  feishuOAuthMemberReadPlan,
+  feishuOAuthMemberFromRows,
+  feishuOAuthInstallationReadPlan,
+  feishuOAuthAccountReadPlan,
+  feishuOAuthAccountFromRows,
+  feishuOAuthCredentialReadPlan,
   feishuConnectorAccountMutationReadPlan,
   feishuConnectorAccountMutationFromRows,
 } from "../services/feishu-custom-connector.service";
 import {
-  isFeishuInstallationEnabled,
+  feishuInstallationAvailabilityReadPlan,
+  feishuInstallationEnabledFromRows,
   feishuBotOpenUrl,
   feishuOAuthAppCallbackUrl,
 } from "../services/feishu-config";
@@ -100,7 +110,19 @@ const startFeishuAccountOAuth$ = command(
     if (args.orgId !== installation.orgId) {
       return { kind: "wrong_organization" };
     }
-    if (!(await isFeishuInstallationEnabled(db, installation))) {
+    if (
+      !(await (async () => {
+        const plan = feishuInstallationAvailabilityReadPlan(installation);
+        if (plan.kind === "resolved") {
+          return plan.enabled;
+        }
+        const rows = await db
+          .select(plan.columns)
+          .from(userFeatureSwitches)
+          .where(plan.condition);
+        return feishuInstallationEnabledFromRows(plan.scope, rows);
+      })())
+    ) {
       return { kind: "installation_not_found" };
     }
     if (!installation.setupCompletedAt) {
@@ -276,6 +298,64 @@ const connectFromApp$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 });
 
+function browserInstallationReadPlan(installationId: string) {
+  return {
+    columns: {
+      orgId: feishuOrgInstallations.orgId,
+      platform: feishuOrgInstallations.platform,
+      ownerUserId: feishuOrgInstallations.ownerUserId,
+      appId: feishuOrgInstallations.appId,
+      botName: feishuOrgInstallations.botName,
+    },
+    condition: eq(feishuOrgInstallations.id, installationId),
+  };
+}
+
+function browserMemberReadPlan(query: {
+  readonly installationId: string;
+  readonly openId: string;
+}) {
+  return {
+    columns: {
+      userId: feishuOrgConnections.userId,
+      connectorId: feishuOrgConnections.connectorId,
+    },
+    condition: and(
+      eq(feishuOrgConnections.installationId, query.installationId),
+      eq(feishuOrgConnections.feishuOpenId, query.openId),
+    ),
+  };
+}
+
+function wrongFeishuOrganization() {
+  return {
+    status: 403 as const,
+    body: {
+      error: {
+        message: "Switch to the organization connected to this bot",
+        code: "FORBIDDEN" as const,
+      },
+    },
+  };
+}
+
+function feishuBrowserStatus(
+  installation: Pick<
+    typeof feishuOrgInstallations.$inferSelect,
+    "botName" | "appId" | "platform"
+  >,
+  isConnected: boolean,
+) {
+  return {
+    status: 200 as const,
+    body: {
+      isConnected,
+      botName: installation.botName,
+      openUrl: feishuBotOpenUrl(installation.appId, installation.platform),
+    },
+  };
+}
+
 const getStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const query = get(queryOf(feishuBrowserConnectContract.getStatus));
@@ -292,47 +372,39 @@ const getStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 
   const db = set(writeDb$);
+  const installationPlan = browserInstallationReadPlan(query.installationId);
   const [installation] = await db
-    .select({
-      orgId: feishuOrgInstallations.orgId,
-      platform: feishuOrgInstallations.platform,
-      ownerUserId: feishuOrgInstallations.ownerUserId,
-      appId: feishuOrgInstallations.appId,
-      botName: feishuOrgInstallations.botName,
-    })
+    .select(installationPlan.columns)
     .from(feishuOrgInstallations)
-    .where(eq(feishuOrgInstallations.id, query.installationId))
+    .where(installationPlan.condition)
     .limit(1);
   signal.throwIfAborted();
   if (!installation) {
     return notFound("Bot installation not found");
   }
-  if (!(await isFeishuInstallationEnabled(db, installation))) {
+  if (
+    !(await (async () => {
+      const plan = feishuInstallationAvailabilityReadPlan(installation);
+      if (plan.kind === "resolved") {
+        return plan.enabled;
+      }
+      const rows = await db
+        .select(plan.columns)
+        .from(userFeatureSwitches)
+        .where(plan.condition);
+      return feishuInstallationEnabledFromRows(plan.scope, rows);
+    })())
+  ) {
     return notFound("Bot integration is unavailable");
   }
   if (installation.orgId !== auth.orgId) {
-    return {
-      status: 403 as const,
-      body: {
-        error: {
-          message: "Switch to the organization connected to this bot",
-          code: "FORBIDDEN" as const,
-        },
-      },
-    };
+    return wrongFeishuOrganization();
   }
+  const connectionPlan = browserMemberReadPlan(query);
   const [connection] = await db
-    .select({
-      userId: feishuOrgConnections.userId,
-      connectorId: feishuOrgConnections.connectorId,
-    })
+    .select(connectionPlan.columns)
     .from(feishuOrgConnections)
-    .where(
-      and(
-        eq(feishuOrgConnections.installationId, query.installationId),
-        eq(feishuOrgConnections.feishuOpenId, query.openId),
-      ),
-    )
+    .where(connectionPlan.condition)
     .limit(1);
   signal.throwIfAborted();
   if (connection && connection.userId !== auth.userId) {
@@ -340,22 +412,78 @@ const getStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const isConnected =
     connection?.userId === auth.userId &&
-    (await hasFeishuCustomConnectorOAuthConnection(db, {
-      orgId: auth.orgId,
-      userId: auth.userId,
-      installationId: query.installationId,
-      memberConnectorId: connection.connectorId,
-      feishuOpenId: query.openId,
-    }));
+    (await (async () => {
+      const scope = {
+        orgId: auth.orgId,
+        userId: auth.userId,
+        installationId: query.installationId,
+        memberConnectorId: connection.connectorId,
+        feishuOpenId: query.openId,
+      };
+      return (
+        (await (async () => {
+          const memberPlan = feishuOAuthMemberReadPlan(scope);
+          const memberRows = memberPlan.needsRead
+            ? await db
+                .select(memberPlan.columns)
+                .from(feishuOrgConnections)
+                .where(memberPlan.condition)
+                .limit(2)
+            : [];
+          const member = feishuOAuthMemberFromRows(scope, memberRows);
+          if (!member) {
+            return null;
+          }
+          const installationPlan = feishuOAuthInstallationReadPlan(scope);
+          const [installation] = await db
+            .select(installationPlan.columns)
+            .from(feishuOrgInstallations)
+            .where(installationPlan.condition)
+            .limit(1);
+          const customConnectorId = installation?.customConnectorId;
+          if (!customConnectorId) {
+            return null;
+          }
+          const accountScope = { ...scope, ...member, customConnectorId };
+          const accountPlan = feishuOAuthAccountReadPlan(accountScope);
+          const [exactRows, defaultRows] = await Promise.all([
+            accountPlan.exactWhere
+              ? db
+                  .select(accountPlan.columns)
+                  .from(connectors)
+                  .where(accountPlan.exactWhere)
+              : [],
+            accountPlan.defaultWhere
+              ? db
+                  .select(accountPlan.columns)
+                  .from(connectors)
+                  .where(accountPlan.defaultWhere)
+              : [],
+          ]);
+          const accountId = feishuOAuthAccountFromRows(accountPlan, {
+            exactRows,
+            defaultRows,
+          });
+          if (accountId === null) {
+            return null;
+          }
+          const credentialPlan = feishuOAuthCredentialReadPlan({
+            ...accountScope,
+            memberConnectorId: accountId,
+          });
+          const [matchedConnection] = await db
+            .select(credentialPlan.columns)
+            .from(connectors)
+            .innerJoin(orgCustomConnectors, credentialPlan.connectorJoin)
+            .innerJoin(secrets, credentialPlan.secretJoin)
+            .where(credentialPlan.condition)
+            .limit(1);
+          return matchedConnection?.id ?? null;
+        })()) !== null
+      );
+    })());
   signal.throwIfAborted();
-  return {
-    status: 200 as const,
-    body: {
-      isConnected,
-      botName: installation.botName,
-      openUrl: feishuBotOpenUrl(installation.appId, installation.platform),
-    },
-  };
+  return feishuBrowserStatus(installation, isConnected);
 });
 
 export const feishuBrowserConnectRoutes: readonly RouteEntry[] = [

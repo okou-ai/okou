@@ -7,8 +7,6 @@ import { integrationsTelegramContract } from "@okouai/api-contracts/contracts/in
 import { CLIENT_REQUEST_ID_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 
 import { telegramAuthCallbackV2Response } from "../../lib/telegram-auth-callback";
-import { allowedCorsOrigin } from "../../lib/cors";
-import { env } from "../../lib/env";
 import { inferMimetype } from "../../lib/mimetype";
 import {
   organizationAuthContext$,
@@ -400,50 +398,9 @@ async function loadTelegramAvatar(
 }
 
 const getIntegrationTelegramAuthCallback$ = computed((get): Response => {
-  const query = get(queryOf(integrationsTelegramContract.authCallback));
-  // Retained Apps and in-flight URLs require the original envelope and close.
-  // #40196 owns removal only after those callers are no longer reachable.
-  if (query.callbackProtocol !== undefined) {
-    return telegramAuthCallbackV2Response(new URL(get(request$).url));
-  }
-  const fallbackTargetOrigin = new URL(env("APP_URL")).origin;
-  const targetOrigin = query.targetOrigin
-    ? allowedCorsOrigin(query.targetOrigin)
-    : fallbackTargetOrigin;
-  if (!targetOrigin) {
-    return new Response("Invalid target origin", {
-      status: 400,
-      headers: { "Content-Type": "text/plain; charset=utf-8" },
-    });
-  }
-  const serializedTargetOrigin = JSON.stringify(targetOrigin);
-  const html = `<!DOCTYPE html>
-<html><head><title>Telegram Auth</title></head>
-<body><script>
-(function() {
-  var params = new URLSearchParams(window.location.search);
-  if (!params.get("id")) {
-    params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-  }
-  var targetOrigin = ${serializedTargetOrigin};
-  var data = {};
-  ["id","first_name","last_name","username","photo_url","auth_date","hash"].forEach(function(k) {
-    var v = params.get(k);
-    if (v !== null) data[k] = v;
-  });
-  if (window.opener && data.id) {
-    window.opener.postMessage(
-      { type: "telegram-auth", data: data },
-      targetOrigin
-    );
-  }
-  window.close();
-})();
-</script></body></html>`;
-
-  return new Response(html, {
-    headers: { "Content-Type": "text/html; charset=utf-8" },
-  });
+  // Every supported App opts into the v2 bridge. Requests without its explicit
+  // context fail closed instead of posting provider identity to the opener.
+  return telegramAuthCallbackV2Response(new URL(get(request$).url));
 });
 
 export const integrationsTelegramRoutes: readonly RouteEntry[] = [
