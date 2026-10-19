@@ -2106,7 +2106,6 @@
       "origin": "Von",
       "queued": "In Warteschlange",
       "received": "Empfangen",
-      "refresh": "Aktualisieren",
       "running": "Läuft",
       "sent": "Gesendet",
       "toggleMessages": "Nachrichten mit {{title}}",

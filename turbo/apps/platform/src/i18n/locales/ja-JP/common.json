@@ -2099,7 +2099,6 @@
       "origin": "開始元",
       "queued": "待機中",
       "received": "受信",
-      "refresh": "更新",
       "running": "実行中",
       "sent": "送信",
       "toggleMessages": "{{title}} とのメッセージ",

@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { Button } from "@okouai/ui";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -9,26 +8,20 @@ export const RESOURCE_PREVIEW_LIMIT = 3;
 export function ChatResourceSectionHeading({
   title,
   count,
-  hasMore = false,
-  children,
 }: {
   readonly title: string;
   readonly count?: number;
-  readonly hasMore?: boolean;
-  readonly children?: ReactNode;
 }) {
   return (
-    <div className="group/heading sticky top-0 z-1 mb-0.5 flex min-h-7 items-center gap-2 bg-card px-1">
+    <div className="sticky top-0 z-1 mb-0.5 flex min-h-7 items-center gap-2 bg-card px-1">
       <h3 className="text-xs leading-4.5 font-medium text-foreground">
         {title}
       </h3>
-      {count !== undefined && (count > 1 || hasMore) && (
+      {count !== undefined && count > 1 && (
         <span className="text-xs leading-4.5 tabular-nums text-muted-foreground">
           {formatLocalizedNumber(count)}
-          {hasMore ? "+" : ""}
         </span>
       )}
-      <div className="ml-auto flex items-center gap-0.5">{children}</div>
     </div>
   );
 }

@@ -309,7 +309,7 @@ export function createChatRelationSignals(
     readonly initialEventsReady$: Computed<boolean>;
   },
 ) {
-  const refresh$ = state(0);
+  const retryRevision$ = state(0);
   const eventRevision$ = computed((get) => {
     const events = get(events$);
     for (let index = events.length - 1; index >= 0; index--) {
@@ -330,7 +330,7 @@ export function createChatRelationSignals(
     return {
       threads: get(eventDrivenChatThreads$),
       latestEventId: get(eventRevision$),
-      refresh: get(refresh$),
+      retry: get(retryRevision$),
     };
   });
   const origin$ = computed((get): ChatOrigin | null => {
@@ -403,8 +403,8 @@ export function createChatRelationSignals(
     origin$,
     chats: createResourceChats(children, communications),
     ...createPeerMessages(threadId, revision$),
-    reload$: command(({ set }) => {
-      set(refresh$, (value) => {
+    retry$: command(({ set }) => {
+      set(retryRevision$, (value) => {
         return value + 1;
       });
     }),

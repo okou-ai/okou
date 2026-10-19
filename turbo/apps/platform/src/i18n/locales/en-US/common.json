@@ -2106,7 +2106,6 @@
       "origin": "From",
       "queued": "Queued",
       "received": "Received",
-      "refresh": "Refresh",
       "running": "Running",
       "sent": "Sent",
       "toggleMessages": "Messages with {{title}}",

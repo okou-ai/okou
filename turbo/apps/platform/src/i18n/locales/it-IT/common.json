@@ -2146,7 +2146,6 @@
       "origin": "Da",
       "queued": "In coda",
       "received": "Ricevuto",
-      "refresh": "Aggiorna",
       "running": "In esecuzione",
       "sent": "Inviato",
       "toggleMessages": "Messaggi con {{title}}",

@@ -2099,7 +2099,6 @@
       "origin": "发起自",
       "queued": "排队中",
       "received": "收到",
-      "refresh": "刷新",
       "running": "运行中",
       "sent": "发出",
       "toggleMessages": "与 {{title}} 的消息往来",

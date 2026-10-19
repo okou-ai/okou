@@ -1,11 +1,6 @@
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import {
-  ChevronDown,
-  ChevronRight,
-  CircleSlash,
-  RefreshCw,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, CircleSlash } from "lucide-react";
 import { Button, cn } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type {
@@ -222,7 +217,7 @@ function ResourceChatRow({
   readonly signals: ChatRelationSignals;
 }) {
   const { t } = useTranslation();
-  const reload = useSet(signals.reload$);
+  const retry = useSet(signals.retry$);
   const toggle = useSet(signals.togglePeer$);
   const selectedPeer = useGet(signals.selectedPeer$);
   const messages = useGet(signals.messages$);
@@ -269,7 +264,7 @@ function ResourceChatRow({
       {expanded && messages && (
         <Messages
           list={messages}
-          reload={reload}
+          retry={retry}
           unavailable={chat.status === "unavailable"}
         />
       )}
@@ -279,11 +274,11 @@ function ResourceChatRow({
 
 function Messages({
   list,
-  reload,
+  retry,
   unavailable,
 }: {
   readonly list: ChatRelationList<ChatRelationMessage>;
-  readonly reload: () => void;
+  readonly retry: () => void;
   readonly unavailable: boolean;
 }) {
   const { t } = useTranslation();
@@ -306,7 +301,7 @@ function Messages({
               return $.chat.relations.loadFailed;
             })}
           </p>
-          <Button variant="quiet" size="xs" onClick={reload}>
+          <Button variant="quiet" size="xs" onClick={retry}>
             {t(($) => {
               return $.chat.resources.retry;
             })}
@@ -341,7 +336,7 @@ function RelationshipsInner({ thread }: { readonly thread: ChatPanelSignals }) {
   const chatsId = `${thread.threadId}-resource-messages`;
   const { t } = useTranslation();
   const signals = thread.relations;
-  const reload = useSet(signals.reload$);
+  const retry = useSet(signals.retry$);
   const chats = useLastLoadable(signals.chats.data$);
   const expanded = useGet(thread.resources.expandedSections$).messages;
   const toggleSection = useSet(thread.resources.toggleSection$);
@@ -363,22 +358,7 @@ function RelationshipsInner({ thread }: { readonly thread: ChatPanelSignals }) {
         title={t(($) => {
           return $.chat.relations.communications;
         })}
-        count={data?.items.length}
-        hasMore={data?.hasMore || data?.failed}
-      >
-        <Button
-          variant="quiet"
-          size="icon-xs"
-          showTooltip
-          className="text-muted-foreground hover:bg-gray-50 focus-visible:bg-gray-50 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/heading:opacity-100 group-focus-within/heading:opacity-100 [&_svg]:size-3.5"
-          aria-label={t(($) => {
-            return $.chat.relations.refresh;
-          })}
-          onClick={reload}
-        >
-          <RefreshCw size={14} />
-        </Button>
-      </ChatResourceSectionHeading>
+      />
       {(!data || data.failed) && (
         <div
           role="alert"
@@ -389,7 +369,7 @@ function RelationshipsInner({ thread }: { readonly thread: ChatPanelSignals }) {
               return $.chat.relations.loadFailed;
             })}
           </p>
-          <Button variant="quiet" size="sm" onClick={reload}>
+          <Button variant="quiet" size="sm" onClick={retry}>
             {t(($) => {
               return $.chat.resources.retry;
             })}

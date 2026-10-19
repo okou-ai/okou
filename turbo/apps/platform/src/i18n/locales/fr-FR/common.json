@@ -2146,7 +2146,6 @@
       "origin": "Depuis",
       "queued": "En attente",
       "received": "Reçu",
-      "refresh": "Actualiser",
       "running": "En cours",
       "sent": "Envoyé",
       "toggleMessages": "Messages avec {{title}}",

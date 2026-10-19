@@ -184,7 +184,6 @@ async function setupRelations(
     readonly events?: MockChatEventInput[];
     readonly enabled?: boolean;
     readonly narrow?: boolean;
-    readonly locale?: "de-DE";
     readonly mock?: () => void;
   } = {},
 ) {
@@ -203,7 +202,6 @@ async function setupRelations(
   await setupPage({
     context,
     path: `/chats/${THREAD}`,
-    locale: options.locale,
     featureSwitches: {
       [FeatureSwitchKey.ChatResourcePanel]: true,
       [FeatureSwitchKey.ChatRelations]: options.enabled ?? true,
@@ -269,14 +267,14 @@ test.each(["children", "communications"] as const)(
   },
 );
 
-test("Keep loaded relationships visible while refreshing", async () => {
+test("Keep loaded relationships visible while retrying a failed source", async () => {
   const requested = createDeferredPromise<void>(context.signal);
   const response = createDeferredPromise<void>(context.signal);
-  let refreshing = false;
+  let retrying = false;
   await setupRelations({
     mock: () => {
       context.mocks.api(chatRelationsContract.children, async ({ respond }) => {
-        if (refreshing) {
+        if (retrying) {
           if (!requested.settled()) {
             requested.resolve();
           }
@@ -284,17 +282,28 @@ test("Keep loaded relationships visible while refreshing", async () => {
         }
         return respond(200, {
           items: [
-            createdChat(CHILD, refreshing ? "Updated child" : "Research child"),
+            createdChat(CHILD, retrying ? "Updated child" : "Research child"),
           ],
           nextCursor: null,
         });
+      });
+      context.mocks.api(chatRelationsContract.communications, ({ respond }) => {
+        return retrying
+          ? respond(200, { items: [], nextCursor: null })
+          : respond(500, {
+              error: {
+                code: "INTERNAL_SERVER_ERROR",
+                message: "Temporarily unavailable",
+              },
+            });
       });
     },
   });
   const panel = await screen.findByRole("region", { name: "Resources" });
   await within(panel).findByText("Research child");
-  refreshing = true;
-  click(buttonNamed("Refresh", panel));
+  expect(within(panel).queryByLabelText("Refresh")).not.toBeInTheDocument();
+  retrying = true;
+  click(buttonNamed("Try again", panel));
   await requested.promise;
   expect(within(panel).getByText("Research child")).toBeInTheDocument();
   expect(within(panel).queryByRole("status")).not.toBeInTheDocument();
@@ -312,13 +321,23 @@ test("Hide the resources popup and trigger when the last resource disappears", a
           nextCursor: null,
         });
       });
+      context.mocks.api(chatRelationsContract.communications, ({ respond }) => {
+        return empty
+          ? respond(200, { items: [], nextCursor: null })
+          : respond(500, {
+              error: {
+                code: "INTERNAL_SERVER_ERROR",
+                message: "Temporarily unavailable",
+              },
+            });
+      });
     },
   });
   const panel = await screen.findByRole("region", { name: "Resources" });
   await within(panel).findByText("Research child");
   expect(within(panel).queryByText("No artifacts yet")).not.toBeInTheDocument();
   empty = true;
-  click(buttonNamed("Refresh", panel));
+  click(buttonNamed("Try again", panel));
   await waitFor(() => {
     expect(within(panel).queryByText("Research child")).not.toBeInTheDocument();
   });
@@ -565,26 +584,6 @@ test("Retry a failed relationship list without hiding the other sections", async
   ).resolves.toBeInTheDocument();
 });
 
-test("Format the related chat count using the German locale", async () => {
-  await setupRelations({
-    locale: "de-DE",
-    mock: () => {
-      context.mocks.api(chatRelationsContract.children, ({ respond }) => {
-        return respond(200, {
-          items: Array.from({ length: 1000 }, (_, index) => {
-            const id = `d0000000-0000-4000-a000-${String(index).padStart(12, "0")}`;
-            return { ...createdChat(id, `Child ${index}`), id };
-          }),
-          nextCursor: null,
-        });
-      });
-    },
-  });
-  const panel = await screen.findByRole("region", { name: "Resources" });
-  await expect(within(panel).findByText("1.000")).resolves.toBeInTheDocument();
-  expect(document.documentElement).toHaveAttribute("lang", "de-DE");
-});
-
 test("Keep the relationship panel hidden while the feature is disabled", async () => {
   await setupRelations({ enabled: false });
   await screen.findByText("Plan the launch");
@@ -821,7 +820,7 @@ test("Preview three unique chats and expand the remaining chat", async () => {
   );
 });
 
-test("Deduplicate later relationship pages and keep their count marked as incomplete until exhausted", async () => {
+test("Deduplicate related chats while automatically loading subsequent pages", async () => {
   const revealEnd = installResourceIntersections();
   await setupRelations({
     mock: () => {
@@ -849,7 +848,7 @@ test("Deduplicate later relationship pages and keep their count marked as incomp
     },
   });
   const messages = await screen.findByRole("region", { name: "Messages" });
-  expect(within(messages).getByText("2+")).toBeInTheDocument();
+  expect(within(messages).getAllByRole("listitem")).toHaveLength(2);
   click(buttonNamed("Expand", messages));
   revealEnd();
   await within(messages).findByText("Older child");
@@ -857,7 +856,7 @@ test("Deduplicate later relationship pages and keep their count marked as incomp
     1,
   );
   expect(within(messages).queryByText("Created peer")).not.toBeInTheDocument();
-  expect(within(messages).getByText("3")).toBeInTheDocument();
+  expect(within(messages).getAllByRole("listitem")).toHaveLength(3);
   expect(within(messages).queryByText("More")).not.toBeInTheDocument();
 });
 
