@@ -351,13 +351,22 @@ export const saveRemoteCloudflare$ = command(
     }
   },
 );
+function connectionName(form: HTMLFormElement) {
+  const field = form.elements.namedItem("displayName");
+  if (!(field instanceof HTMLInputElement)) {
+    throw new Error("Missing connection name field");
+  }
+  // An uncertain save locks controls; FormData omits those disabled inputs.
+  return field.value.trim();
+}
+
 export const saveRemoteSsh$ = command(
   async ({ get, set }, form: HTMLFormElement, signal: AbortSignal) => {
     const current = get(remoteSetup$);
     if (!current) {
       return;
     }
-    const name = new FormData(form).get("displayName");
+    const name = connectionName(form);
     await set(saveSsh$, form, signal);
     signal.throwIfAborted();
     if (
@@ -368,7 +377,7 @@ export const saveRemoteSsh$ = command(
       set(updateRemoteSetup$, {
         step: "saved",
         formStarted: false,
-        savedName: typeof name === "string" ? name : "",
+        savedName: name,
       });
     }
   },
@@ -379,7 +388,7 @@ export const saveRemoteVnc$ = command(
     if (!current) {
       return;
     }
-    const name = new FormData(form).get("displayName");
+    const name = connectionName(form);
     await set(saveVnc$, form, signal);
     signal.throwIfAborted();
     if (
@@ -390,7 +399,7 @@ export const saveRemoteVnc$ = command(
       set(updateRemoteSetup$, {
         step: "saved",
         formStarted: false,
-        savedName: typeof name === "string" ? name : "",
+        savedName: name,
       });
     }
   },

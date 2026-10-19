@@ -442,3 +442,35 @@ test("Leaving setup cancels an editor that is still loading credentials", async 
   await screen.findByRole("heading", { name: "Remote connections" });
   expect(screen.queryByLabelText("SSH username")).toBeNull();
 });
+
+test("An idempotent retry keeps the connection name from the locked draft", async () => {
+  const requests: unknown[] = [];
+  context.mocks.api(sshConnectionsContract.create, ({ body, respond }) => {
+    requests.push(body);
+    return requests.length === 1
+      ? respond(500, {
+          error: {
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Save outcome unknown",
+          },
+        })
+      : respond(204);
+  });
+  const username = await directForm();
+  await fill(screen.getByLabelText("Computer address"), "retry.example.com");
+  await fill(username, "operator");
+  await fill(screen.getByLabelText("Credential name"), "Office login");
+  await fill(screen.getByLabelText("Password"), "test-only-password");
+  const name = screen.getByLabelText(/Connection name/u);
+  await fill(name, "Office retry");
+  click(getAction("button", "Save"));
+  await screen.findByText(
+    /We couldn't confirm whether your changes were saved/u,
+  );
+  expect(name).toBeDisabled();
+  click(getAction("button", "Retry"));
+  await screen.findByRole("heading", { name: "Connection added" });
+  expect(screen.getByText("Office retry")).toBeInTheDocument();
+  expect(requests).toHaveLength(2);
+  expect(requests[1]).toStrictEqual(requests[0]);
+});
