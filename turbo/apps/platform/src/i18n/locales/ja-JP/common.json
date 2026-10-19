@@ -4858,7 +4858,7 @@
         "accountFallback": "アカウント {{number}}",
         "activeAccount": "使用中",
         "autoCredits": "Okouクレジットを使用",
-        "autoDescription": "Claude または ChatGPT アカウントを接続すると、より多くのモデルを使えます。",
+        "autoDescription": "ChatGPT または Claude アカウントを接続すると、より多くのモデルを使えます。",
         "autoTitle": "より多くのモデルを使う",
         "claudeGroup": "Claudeのプラン",
         "claudePlans": "Pro、Max",

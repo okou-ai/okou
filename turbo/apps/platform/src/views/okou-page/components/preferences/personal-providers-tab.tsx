@@ -41,6 +41,7 @@ import {
   setSettingsCodexResetDialog$,
   settingsCodexResetDialog$,
 } from "../../../../signals/okou-page/settings/personal-model-providers.ts";
+import { SUBSCRIPTION_PROVIDERS } from "../../../../signals/okou-page/subscription-linking.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import { detach, Reason } from "../../../../signals/utils.ts";
 import { ConnectorEntryStatus } from "../settings/connector-entry-card.tsx";
@@ -82,10 +83,6 @@ function PersonalModelsHeading() {
   );
 }
 
-/** Display order of the personal subscription account groups. */
-const PERSONAL_ACCOUNT_PROVIDER_TYPES: readonly PersonalSubscriptionProviderType[] =
-  ["claude-code-oauth-token", "codex-oauth-token"];
-
 type PersonalProviderAccountGroup = {
   readonly type: PersonalSubscriptionProviderType;
   readonly title: string;
@@ -110,7 +107,7 @@ function OAuthAccountGroupsSection() {
     providersLoadable.state === "hasData" ? providersLoadable.data : [];
   const actionPending = actionLoadable.state === "loading";
   const accountGroups: readonly PersonalProviderAccountGroup[] =
-    PERSONAL_ACCOUNT_PROVIDER_TYPES.map((type) => {
+    SUBSCRIPTION_PROVIDERS.map((type) => {
       return {
         type,
         title:
@@ -241,21 +238,25 @@ function ConnectPersonalAccountAction({
 }) {
   const { t } = useTranslation();
 
+  // A narrow card keeps the name and its status on one line each and shows
+  // only the plus; the label stays the button's accessible name.
   return (
     <Button
       type="button"
       variant="neutral"
       size="sm"
-      className="h-9 gap-2 rounded-lg"
+      className="h-9 w-9 gap-2 rounded-lg px-0 @[400px]:w-auto @[400px]:px-3"
       disabled={isLoading || actionPending || group.accounts.length >= 10}
       onClick={() => {
         onAdd(group.type);
       }}
     >
       <Plus size={14} />
-      {t(($) => {
-        return $.settings.models.personal.connectAccount;
-      })}
+      <span className="sr-only @[400px]:not-sr-only">
+        {t(($) => {
+          return $.settings.models.personal.connectAccount;
+        })}
+      </span>
     </Button>
   );
 }
@@ -343,7 +344,7 @@ function PersonalProviderAccountTable({
   const empty = !isLoading && group.accounts.length === 0;
 
   return (
-    <section aria-labelledby={headingId}>
+    <section aria-labelledby={headingId} className="@container">
       <div className="overflow-hidden rounded-xl border border-surface-border bg-card">
         <div
           className={cn(

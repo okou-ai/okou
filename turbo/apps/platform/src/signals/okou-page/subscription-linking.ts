@@ -94,13 +94,9 @@ export const connectSubscriptionLinkingProvider$ = command(
   },
 );
 
-/** Me and the model panel's Manage plans open Models, which lists both. */
+/** The model panel's Manage plans opens Models, which lists both. */
 export const openSubscriptionLinkingSettings$ = command(
-  async (
-    { set },
-    source: "me_page" | "composer_model_panel",
-    signal: AbortSignal,
-  ) => {
+  async ({ set }, source: "composer_model_panel", signal: AbortSignal) => {
     set(setSidebarExpanded$, false);
     captureSubscriptionLinkingEvent("entry_clicked", source);
     await set(openSettingsDialogAt$, "model", signal);

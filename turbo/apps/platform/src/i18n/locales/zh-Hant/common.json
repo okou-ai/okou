@@ -4858,7 +4858,7 @@
         "accountFallback": "帳號 {{number}}",
         "activeAccount": "使用中",
         "autoCredits": "消耗 Okou 點數",
-        "autoDescription": "連接你的 Claude 或 ChatGPT 帳號，即可使用更多模型。",
+        "autoDescription": "連接你的 ChatGPT 或 Claude 帳號，即可使用更多模型。",
         "autoTitle": "使用更多模型",
         "claudeGroup": "你的 Claude 方案",
         "claudePlans": "Pro 或 Max",
