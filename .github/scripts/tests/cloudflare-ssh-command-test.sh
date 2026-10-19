@@ -443,6 +443,10 @@ for index in {1..150}; do
 done
 printf '::error title=Cloudflare tunnel failed::--secret proxy-secret --id proxy-id\n' \
   >> "$scp_master_log"
+printf '%s\n' \
+  "debug1: Sending command: /bin/sh -c 'sudo R2_ACCOUNT_ID=fixture-r2-account R2_ACCESS_KEY_ID=fixture-r2-access R2_SECRET_ACCESS_KEY=fixture-r2-secret runner build --token fixture-command-token'" \
+  "R2_ACCOUNT_ID='fixture-r2-account' R2_ACCESS_KEY_ID=\"fixture-r2-access\" R2_SECRET_ACCESS_KEY=fixture-r2-secret" \
+  >> "$scp_master_log"
 FAKE_MASTER_DIAGNOSTICS_FILE="$scp_master_log" \
   run_wrapper "$scp_failure" actual-failure scp \
     /tmp/source metal@dev-1.aws.vm3.ai:/tmp/target
@@ -459,6 +463,13 @@ assert_not_contains "$scp_failure/stderr" "master-secret"
 assert_not_contains "$scp_failure/stderr" "proxy-secret"
 assert_not_contains "$scp_failure/stderr" "proxy-id"
 assert_not_contains "$scp_failure/stderr" "::error"
+assert_contains "$scp_failure/stderr" "debug1: Sending command: [remote command omitted]"
+for variable in R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY; do
+  assert_contains "$scp_failure/stderr" "${variable}=[redacted]"
+done
+for credential in fixture-r2-account fixture-r2-access fixture-r2-secret fixture-command-token; do
+  assert_not_contains "$scp_failure/stderr" "$credential"
+done
 if [ -s "$scp_failure/stdout" ]; then
   fail "failed transfer diagnostics must stay out of caller stdout"
 fi

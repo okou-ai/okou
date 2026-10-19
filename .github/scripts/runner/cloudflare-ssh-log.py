@@ -45,8 +45,12 @@ HEADER = re.compile(
     r"\s*:\s*[^\r\n]*"
 )
 ASSIGNMENT = re.compile(
-    r"((?:CF_ACCESS_CLIENT_(?:ID|SECRET)|TUNNEL_SERVICE_TOKEN_(?:ID|SECRET))=)\S+"
+    r"\b((?:CF_ACCESS_CLIENT_(?:ID|SECRET)|TUNNEL_SERVICE_TOKEN_(?:ID|SECRET)|"
+    r"R2_(?:ACCOUNT_ID|ACCESS_KEY_ID|SECRET_ACCESS_KEY))=)"
+    r"(?:\"[^\"]*\"|'[^']*'|\S+)",
+    re.IGNORECASE,
 )
+REMOTE_COMMAND = re.compile(r"(?m)(\bdebug[123]: Sending command:)[^\r\n]*")
 ARGUMENT = re.compile(r"(--(?:secret|id)(?:=|\s+))\S+")
 QUERY_SECRET = re.compile(
     r"(?i)([?&](?:access_token|token|client_secret|secret|password|authorization)=)"
@@ -108,6 +112,9 @@ def sanitize(line):
 
 def redact(text):
     text = ANSI.sub("", text)
+    # Native SSH command logs contain arbitrary caller credentials, including
+    # Ansible's sudo environment. Keep transport evidence, not command payloads.
+    text = REMOTE_COMMAND.sub(r"\1 [remote command omitted]", text)
     text = ASSIGNMENT.sub(r"\1[redacted]", text)
     text = ARGUMENT.sub(r"\1[redacted]", text)
     text = HEADER.sub(lambda m: m.group().split(":", 1)[0] + ": [redacted]", text)

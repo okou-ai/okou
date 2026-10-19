@@ -346,6 +346,7 @@ jobs:
             .github/scripts/tests/fetch-okou-desktop-artifact-test.sh \
             crates/nbd-cow/tests/infrastructure/nbd-cow-upload-test.sh \
             .github/scripts/tests/neon-credential-mask-test.sh \
+            .github/scripts/tests/release-r2-credential-mask-test.sh \
             .github/scripts/tests/neon-connection-string-ssl-test.sh \
             .github/scripts/tests/okou-desktop-artifact-test.sh \
             .github/scripts/tests/provision-runner-kvm-test.sh \

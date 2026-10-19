@@ -144,6 +144,8 @@ diagnostics cannot be rendered. It removes native request/header dumps, omits
 malformed structured records, allowlists native event fields and numeric/IP TCP
 metadata, and redacts authentication headers, cookies, token query parameters
 and legacy secret forms.
+Native SSH `Sending command` payloads are omitted, and R2 credential assignments
+are redacted even when GitHub has not registered those values for masking.
 Native `originURL` contributes only a validated hostname, without userinfo,
 path or query. The pinned access client does not log successful service-token
 handshake response metadata or normal stream EOF/byte outcomes through another
