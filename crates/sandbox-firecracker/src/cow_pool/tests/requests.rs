@@ -99,7 +99,13 @@ async fn assert_burst_waits_for_requests(delay: WorkerDelay) {
     for acquire in acquires {
         let slot = acquire.await.unwrap().unwrap();
         slot_ids.push(slot.id().to_owned());
-        drop(slot);
+        let workspace = slot.workspace().to_owned();
+        assert!(
+            destroy_prepared_slot_async(slot)
+                .await
+                .backing_files_safe_to_delete()
+        );
+        assert!(!workspace.exists());
     }
     slot_ids.sort();
     assert_eq!(
