@@ -151,9 +151,47 @@ function installDriveMocks(
       }),
     ],
   ]);
+  const driveMetadata = (): Pick<
+    ArtifactDetail,
+    "googleDriveConnectionId" | "googleDriveSync"
+  > => {
+    return {
+      googleDriveConnectionId: SELECTED_DRIVE_CONNECTION_ID,
+      googleDriveSync: artifactSynced
+        ? {
+            status: "synced",
+            accountReady: true,
+            id: "drive-file-1",
+            name: filename,
+            ...(mimeType ? { mimeType } : {}),
+            originalUploaded,
+            webViewLink: "https://drive.google.test/file/drive-file-1",
+          }
+        : selectedAccountReady
+          ? { status: "not_synced", accountReady: true }
+          : {
+              status: "disconnected",
+              recovery:
+                artifactConnectionState === "not-connected"
+                  ? { action: "connect" }
+                  : artifactConnectionState === "reconnect-required"
+                    ? {
+                        action: "reconnect",
+                        connectionId: SELECTED_DRIVE_CONNECTION_ID,
+                      }
+                    : { action: "authorize" },
+            },
+    };
+  };
   mockArtifactConversation(targetContext, {
     catalog: [summary],
-    details,
+    getDetail: (artifactId) => {
+      const detail = details.get(artifactId);
+      return detail ? { ...detail, ...driveMetadata() } : null;
+    },
+    onDetailQuery: (chatThreadId) => {
+      expect(chatThreadId).toBe(NAVIGATION_ARTIFACT_THREAD_ID);
+    },
     chatEvents: [
       {
         id: "drive-preview-message",
@@ -182,33 +220,7 @@ function installDriveMocks(
           fileId: DRIVE_FILE_ID,
           filename,
           url: fileUrl,
-          googleDriveSync: artifactSynced
-            ? {
-                status: "synced",
-                accountReady: true,
-                id: "drive-file-1",
-                name: filename,
-                ...(mimeType ? { mimeType } : {}),
-                originalUploaded,
-                webViewLink: "https://drive.google.test/file/drive-file-1",
-              }
-            : selectedAccountReady
-              ? {
-                  status: "not_synced",
-                  accountReady: true,
-                }
-              : {
-                  status: "disconnected",
-                  recovery:
-                    artifactConnectionState === "not-connected"
-                      ? { action: "connect" }
-                      : artifactConnectionState === "reconnect-required"
-                        ? {
-                            action: "reconnect",
-                            connectionId: SELECTED_DRIVE_CONNECTION_ID,
-                          }
-                        : { action: "authorize" },
-                },
+          ...driveMetadata(),
         }),
       ];
     },
@@ -449,7 +461,7 @@ async function openDriveArtifactMenu(
 }
 
 async function expectSyncCompletedPreview(
-  originalAction = "Upload to Google Drive",
+  originalAction = "Synced to Google Drive",
   downloadButton = () => {
     return buttonNamed("Download artifact", artifactPreview());
   },
@@ -462,9 +474,9 @@ async function expectSyncCompletedPreview(
   });
   click(downloadButton());
   await waitFor(() => {
-    expect(roleItemNamed("menuitem", originalAction)).not.toHaveAttribute(
-      "aria-disabled",
-      "true",
+    const item = roleItemNamed("menuitem", originalAction);
+    expect(item.getAttribute("aria-disabled") === "true").toBe(
+      originalAction === "Synced to Google Drive",
     );
   });
   expect(roleItemNamed("menuitem", "Download")).not.toHaveAttribute(
@@ -473,10 +485,12 @@ async function expectSyncCompletedPreview(
   );
   expect(
     queryAllByRoleFast("menuitem").filter((item) => {
-      return (
-        item.textContent?.trim() === "Synced to Google Drive" ||
-        item.textContent?.trim() === "Syncing artifact..."
-      );
+      return item.textContent?.trim() === "Upload to Google Drive";
+    }),
+  ).toHaveLength(originalAction === "Synced to Google Drive" ? 0 : 1);
+  expect(
+    queryAllByRoleFast("menuitem").filter((item) => {
+      return item.textContent?.trim() === "Syncing artifact...";
     }),
   ).toHaveLength(0);
 }
@@ -509,6 +523,7 @@ describe("with a Drive artifact menu", () => {
   async function prepareScenario() {
     mockWideScreen();
     const drive = installDriveMocks(context, "connected");
+    const browser = context.mocks.browser.blobDownload();
 
     await setupPage({
       context,
@@ -517,14 +532,14 @@ describe("with a Drive artifact menu", () => {
     });
 
     await openDriveArtifactMenu();
-    return { drive };
+    return { drive, browser };
   }
   let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
   beforeEach(async () => {
     preparedScenario = await prepareScenario();
   });
   it("authorize the agent and sync an artifact to connected Google Drive", async () => {
-    const { drive } = preparedScenario;
+    const { drive, browser } = preparedScenario;
     click(roleItemNamed("menuitem", "Connect Google Drive"));
 
     await waitFor(() => {
@@ -544,9 +559,15 @@ describe("with a Drive artifact menu", () => {
       ]);
       expect(drive.oauthRequests).toHaveLength(0);
     });
-    await expect(
-      screen.findByText("Synced to Google Drive"),
-    ).resolves.toBeInTheDocument();
+    await expectSyncCompletedPreview();
+    click(roleItemNamed("menuitem", "Download"));
+    await waitFor(() => {
+      expect(browser.downloads.at(-1)).toMatchObject({
+        filename: "drive-report.pdf",
+      });
+    });
+    expect(browser.downloads.at(-1)?.blob).toBeInstanceOf(Blob);
+    expect(artifactPreview()).toBeInTheDocument();
   });
 });
 
@@ -783,7 +804,7 @@ test("Sync with the artifact's ready Drive account when the default needs attent
   });
   expect(drive.oauthRequests).toHaveLength(0);
   expect(drive.authorizationUpdates).toHaveLength(0);
-  await expectSyncCompletedPreview("Upload to Google Drive");
+  await expectSyncCompletedPreview();
 });
 
 test("Keep a reopened artifact usable after cancelling the remaining Drive setup", async () => {
@@ -969,7 +990,7 @@ describe("google editor conversion", () => {
 
     await openDriveArtifactMenu("Upload to Google Slides", "deck.pptx");
     click(roleItemNamed("menuitem", "Upload to Google Slides"));
-    await expectSyncCompletedPreview();
+    await expectSyncCompletedPreview("Upload to Google Drive");
     expect(roleItemNamed("menuitem", "Open in Google Slides")).toHaveAttribute(
       "href",
       "https://drive.google.test/file/drive-file-1",
@@ -1072,11 +1093,12 @@ describe("google editor conversion", () => {
         expect(popup.open.calls).toHaveLength(1);
         expect(drive.oauthRequests).toStrictEqual(expectedOauthRequests);
         (mode === "google" ? conversion : original).resolve();
-        await expectSyncCompletedPreview();
+        await expectSyncCompletedPreview(
+          mode === "google"
+            ? "Upload to Google Drive"
+            : "Synced to Google Drive",
+        );
         expect(artifactPreview()).toBeInTheDocument();
-        expect(
-          roleItemNamed("menuitem", "Upload to Google Drive"),
-        ).not.toHaveAttribute("aria-disabled", "true");
         expect(
           roleItemNamed("menuitem", "Open in Google Docs"),
         ).toHaveAttribute(
@@ -1250,7 +1272,7 @@ describe("google editor conversion", () => {
           },
         ]);
       });
-      await expectSyncCompletedPreview("Upload to Google Drive");
+      await expectSyncCompletedPreview();
       expect(
         roleItemNamed(
           "menuitem",
@@ -1341,13 +1363,18 @@ describe("google editor conversion", () => {
       await expect(
         screen.findByText("Synced to Google Drive"),
       ).resolves.toBeInTheDocument();
+      const completedLabel =
+        mode === "google" ? `Open in Google ${app}` : "Synced to Google Drive";
       await waitFor(() => {
-        expect(
-          roleItemNamed(
-            "menuitem",
-            mode === "google" ? `Open in Google ${app}` : activeLabel,
-          ),
-        ).not.toHaveAttribute("aria-disabled", "true");
+        const completed = roleItemNamed("menuitem", completedLabel);
+        expect(completed.getAttribute("href")).toBe(
+          mode === "google"
+            ? "https://drive.google.test/file/drive-file-1"
+            : null,
+        );
+        expect(completed.getAttribute("aria-disabled") === "true").toBe(
+          mode === "original",
+        );
         expect(roleItemNamed("menuitem", idleLabel)).not.toHaveAttribute(
           "aria-disabled",
           "true",
@@ -1355,10 +1382,7 @@ describe("google editor conversion", () => {
       });
       expect(
         queryAllByRoleFast("menuitem").filter((item) => {
-          return (
-            item.textContent?.trim() === "Syncing artifact..." ||
-            item.textContent?.trim() === "Synced to Google Drive"
-          );
+          return item.textContent?.trim() === "Syncing artifact...";
         }),
       ).toHaveLength(0);
       expect(

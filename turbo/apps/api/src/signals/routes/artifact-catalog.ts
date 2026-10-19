@@ -9,6 +9,8 @@ import {
   getArtifactCatalogEntry$,
   listArtifactCatalog$,
 } from "../services/artifact-catalog.service";
+import { ownedGoogleDriveThreadContext$ } from "../services/artifact-google-drive-authorization.service";
+import { googleDriveArtifactDetailStatus$ } from "../services/google-drive-artifact-sync.service";
 import type { RouteEntry } from "../route-entry";
 
 const listArtifactCatalogInner$ = command(
@@ -44,6 +46,7 @@ const getArtifactCatalogEntryInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
     const params = get(pathParamsOf(artifactCatalogContract.get));
+    const query = get(queryOf(artifactCatalogContract.get));
     const artifact = await set(
       getArtifactCatalogEntry$,
       {
@@ -58,7 +61,33 @@ const getArtifactCatalogEntryInner$ = command(
       return notFound("Artifact not found");
     }
 
-    return { status: 200 as const, body: artifact };
+    if (!query.chatThreadId) {
+      return { status: 200 as const, body: artifact };
+    }
+    const context = {
+      threadId: query.chatThreadId,
+      orgId: auth.orgId,
+      userId: auth.userId,
+    };
+    const ownedContext = await set(
+      ownedGoogleDriveThreadContext$,
+      context,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!ownedContext) {
+      return notFound("Chat thread not found");
+    }
+    const drive =
+      artifact.kind === "shared-thread"
+        ? {}
+        : await set(
+            googleDriveArtifactDetailStatus$,
+            { ...context, artifactId: params.artifactId },
+            signal,
+          );
+    signal.throwIfAborted();
+    return { status: 200 as const, body: { ...artifact, ...drive } };
   },
 );
 

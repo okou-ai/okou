@@ -569,6 +569,7 @@
       },
       "kindIcon": "Artéfact {{kind}}",
       "loading": "Chargement des artéfacts",
+      "loadMore": "Charger plus",
       "retry": "Réessayer"
     },
     "fileBadges": {

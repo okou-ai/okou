@@ -553,6 +553,7 @@
       },
       "kindIcon": "{{kind}}成果",
       "loading": "正在加载成果",
+      "loadMore": "加载更多",
       "retry": "重试"
     },
     "fileBadges": {

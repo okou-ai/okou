@@ -5,8 +5,8 @@ import { vi } from "vitest";
 import { setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  artifactRun,
   artifactSummary,
+  fileArtifactDetail,
   buttonNamed,
   mockArtifactConversation,
   NAVIGATION_ARTIFACT_THREAD_ID,
@@ -14,6 +14,7 @@ import {
 
 export const context = testContext();
 const REPORT_URL = "https://files.example.test/report.pdf";
+export const RESOURCE_ARTIFACT_ID = "e0000000-0000-4000-a000-000000000999";
 
 export function installResourceGeometry(initialGutter: number) {
   let gutter = initialGutter;
@@ -45,6 +46,9 @@ export async function setupResources(
     readonly enabled?: boolean;
     readonly preferred?: boolean;
     readonly desktop?: boolean;
+    readonly sourceUrl?: boolean;
+    readonly aliasUrl?: string;
+    readonly mock?: () => void;
   } = {},
 ) {
   const resize = installResourceGeometry(options.gutter ?? 480);
@@ -54,18 +58,24 @@ export async function setupResources(
       chatResourcesEnabledByDefault: options.preferred,
     });
   }
+  const report = {
+    ...artifactSummary(RESOURCE_ARTIFACT_ID, "file", "report.pdf"),
+    ...(options.sourceUrl === false ? {} : { sourceUrl: REPORT_URL }),
+    ...(options.aliasUrl ? { aliasUrl: options.aliasUrl } : {}),
+  };
   mockArtifactConversation(context, {
-    catalog: [],
-    artifactRuns: () => {
-      return [
-        artifactRun({
+    catalog: [report],
+    details: new Map([
+      [
+        report.id,
+        fileArtifactDetail(report, {
           fileId: "b0000000-0000-4000-a000-000000000999",
           filename: "report.pdf",
           contentType: "application/pdf",
           url: REPORT_URL,
         }),
-      ];
-    },
+      ],
+    ]),
     chatEvents: [
       {
         id: "resources-user",
@@ -78,7 +88,8 @@ export async function setupResources(
         id: "resources-old",
         role: "assistant",
         content:
-          "[Old title](https://example.test/guide?q=one#section) and [Report](https://files.example.test/report.pdf)",
+          "[Old title](https://example.test/guide?q=one#section) and [Report](https://files.example.test/report.pdf)" +
+          (options.aliasUrl ? ` [Hosted alias](${options.aliasUrl})` : ""),
         runId: "resources-run",
         createdAt: "2026-09-01T10:00:01Z",
       },
@@ -92,6 +103,7 @@ export async function setupResources(
       },
     ],
   });
+  options.mock?.();
   await setupPage({
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
@@ -141,17 +153,19 @@ export async function setupOverflowResources(
   });
   mockArtifactConversation(context, {
     catalog,
-    artifactRuns: () => {
-      return catalog.map((artifact, index) => {
-        return artifactRun({
-          artifactId: artifact.id,
-          fileId: `b0000000-0000-4000-a000-${String(index + 1).padStart(12, "0")}`,
-          filename: artifact.title,
-          contentType: "application/pdf",
-          url: `https://files.example.test/report-${index + 1}.pdf`,
-        });
-      });
-    },
+    details: new Map(
+      catalog.map((artifact, index) => {
+        return [
+          artifact.id,
+          fileArtifactDetail(artifact, {
+            fileId: `b0000000-0000-4000-a000-${String(index + 1).padStart(12, "0")}`,
+            filename: artifact.title,
+            contentType: "application/pdf",
+            url: `https://files.example.test/report-${index + 1}.pdf`,
+          }),
+        ];
+      }),
+    ),
     chatEvents: [
       {
         id: "resources-overflow",
@@ -172,7 +186,7 @@ export async function setupOverflowResources(
   if (options.paginated) {
     context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
       return respond(200, {
-        artifacts: query.cursor ? catalog.slice(1) : catalog.slice(0, 1),
+        artifacts: query.cursor ? catalog.slice(60) : catalog.slice(0, 60),
         nextCursor: query.cursor ? null : "resources-next-page",
       });
     });

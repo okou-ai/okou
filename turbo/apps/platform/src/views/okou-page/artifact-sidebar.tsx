@@ -113,6 +113,7 @@ type ArtifactSidebarContentProps = {
   onBack?: () => void;
   onClose: () => void;
   onSyncSuccess?: () => void;
+  syncTarget?: ArtifactDownloadSyncTarget;
   text$?: TextPreviewComputed;
   threadId?: string;
 };
@@ -193,7 +194,7 @@ function artifactSidebarSyncTargetForItem({
   return item
     ? artifactSidebarSyncTarget({
         agentId,
-        item,
+        file: item.file,
         onSyncSuccess,
       })
     : undefined;
@@ -211,6 +212,7 @@ export function ArtifactSidebarContent({
   onBack,
   onClose,
   onSyncSuccess,
+  syncTarget: providedSyncTarget,
   text$,
   threadId,
 }: ArtifactSidebarContentProps) {
@@ -224,12 +226,14 @@ export function ArtifactSidebarContent({
     ...resolvedDisplay,
     artifactKind: artifactKind ?? resolvedDisplay.artifactKind,
   };
-  const syncTarget = artifactSidebarSyncTargetForItem({
-    agentId,
-    item,
-    onSyncSuccess,
-    threadId,
-  });
+  const syncTarget =
+    providedSyncTarget ??
+    artifactSidebarSyncTargetForItem({
+      agentId,
+      item,
+      onSyncSuccess,
+      threadId,
+    });
 
   return (
     <ArtifactSidebarResolvedContent
@@ -369,41 +373,45 @@ function findArtifactItemForUrl(
   return undefined;
 }
 
-function artifactSidebarSyncTarget(params: {
+export function artifactSidebarSyncTarget(params: {
   agentId: string | null | undefined;
-  item: ArtifactSidebarItem;
+  file: Pick<
+    ChatThreadArtifactFile,
+    "artifactId" | "filename" | "googleDriveConnectionId" | "googleDriveSync"
+  >;
   onSyncSuccess?: () => void;
 }): ArtifactDownloadSyncTarget | undefined {
-  const artifactId = params.item.file.artifactId;
+  const { file } = params;
+  const artifactId = file.artifactId;
   if (!artifactId) {
     return undefined;
   }
   return {
     accountReady:
-      params.item.file.googleDriveSync?.status !== "disconnected" &&
-      params.item.file.googleDriveSync?.accountReady === true,
+      file.googleDriveSync?.status !== "disconnected" &&
+      file.googleDriveSync?.accountReady === true,
     agentId: params.agentId,
-    disconnected: params.item.file.googleDriveSync?.status === "disconnected",
+    disconnected: file.googleDriveSync?.status === "disconnected",
     recovery:
-      params.item.file.googleDriveSync?.status === "disconnected"
-        ? params.item.file.googleDriveSync.recovery
+      file.googleDriveSync?.status === "disconnected"
+        ? file.googleDriveSync.recovery
         : undefined,
     artifactId,
-    connectionId: params.item.file.googleDriveConnectionId,
-    filename: params.item.file.filename,
+    connectionId: file.googleDriveConnectionId,
+    filename: file.filename,
     onSyncSuccess: params.onSyncSuccess,
-    synced: params.item.file.googleDriveSync?.status === "synced",
+    synced: file.googleDriveSync?.status === "synced",
     originalUploaded:
-      params.item.file.googleDriveSync?.status === "synced"
-        ? params.item.file.googleDriveSync.originalUploaded
+      file.googleDriveSync?.status === "synced"
+        ? file.googleDriveSync.originalUploaded
         : undefined,
     mimeType:
-      params.item.file.googleDriveSync?.status === "synced"
-        ? params.item.file.googleDriveSync.mimeType
+      file.googleDriveSync?.status === "synced"
+        ? file.googleDriveSync.mimeType
         : undefined,
     webViewLink:
-      params.item.file.googleDriveSync?.status === "synced"
-        ? params.item.file.googleDriveSync.webViewLink
+      file.googleDriveSync?.status === "synced"
+        ? file.googleDriveSync.webViewLink
         : undefined,
   };
 }

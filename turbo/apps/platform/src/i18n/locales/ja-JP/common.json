@@ -553,6 +553,7 @@
       },
       "kindIcon": "{{kind}} アーティファクト",
       "loading": "アーティファクトをロードしています",
+      "loadMore": "さらに読み込む",
       "retry": "再試行"
     },
     "fileBadges": {

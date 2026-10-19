@@ -200,7 +200,27 @@ export interface CustomConnectorOAuthConfigRow {
   readonly updatedAt: Date;
 }
 
-interface CustomConnectorSharedRow {
+type CustomConnectorOAuthReadConfig = Pick<
+  CustomConnectorOAuthConfigRow,
+  | "providerAdapter"
+  | "clientId"
+  | "authorizationUrl"
+  | "tokenUrl"
+  | "tokenEndpointAuthMethod"
+  | "pkceMethod"
+  | "scopes"
+  | "authorizationParams"
+>;
+
+type CustomConnectorOAuthAdapter = Pick<
+  CustomConnectorOAuthConfigRow,
+  "providerAdapter"
+>;
+
+interface CustomConnectorSharedRow<
+  OAuthConfig extends CustomConnectorOAuthAdapter =
+    CustomConnectorOAuthConfigRow,
+> {
   readonly id: string;
   readonly orgId: string;
   readonly slug: string;
@@ -209,7 +229,7 @@ interface CustomConnectorSharedRow {
   readonly headerInjections: readonly CustomConnectorHeaderInjection[];
   readonly queryInjections: readonly CustomConnectorQueryInjection[];
   readonly authMode: CustomConnectorAuthMode;
-  readonly oauthConfig: CustomConnectorOAuthConfigRow | null;
+  readonly oauthConfig: OAuthConfig | null;
   readonly enabled: boolean;
   readonly skillMarkdown: string | null;
   readonly skillStorageVersionId: string | null;
@@ -219,20 +239,42 @@ interface CustomConnectorSharedRow {
   readonly updatedAt: Date;
 }
 
-export interface CustomConnectorHttpRow extends CustomConnectorSharedRow {
+export interface CustomConnectorHttpRow<
+  OAuthConfig extends CustomConnectorOAuthAdapter =
+    CustomConnectorOAuthConfigRow,
+> extends CustomConnectorSharedRow<OAuthConfig> {
   readonly kind: "http";
   readonly prefixTemplates: readonly string[];
   readonly permissionBundleRef: CustomConnectorPermissionBundleRef | null;
 }
 
-export interface CustomConnectorMcpRow extends CustomConnectorSharedRow {
+export interface CustomConnectorMcpRow<
+  OAuthConfig extends CustomConnectorOAuthAdapter =
+    CustomConnectorOAuthConfigRow,
+> extends CustomConnectorSharedRow<OAuthConfig> {
   readonly kind: "mcp";
   readonly endpoint: string;
   readonly transport: CustomConnectorMcpTransport;
   readonly permissionBundleRef: null;
 }
 
-export type CustomConnectorRow = CustomConnectorHttpRow | CustomConnectorMcpRow;
+export type CustomConnectorRow<
+  OAuthConfig extends CustomConnectorOAuthAdapter =
+    CustomConnectorOAuthConfigRow,
+> = CustomConnectorHttpRow<OAuthConfig> | CustomConnectorMcpRow<OAuthConfig>;
+
+type CustomConnectorDefinitionMetadata =
+  | "enabled"
+  | "skillMarkdown"
+  | "skillStorageVersionId"
+  | "createdBy"
+  | "createdAt"
+  | "updatedAt";
+
+export type CustomConnectorConnectionDefinitionRow = Omit<
+  CustomConnectorDefinitionRow,
+  CustomConnectorDefinitionMetadata
+>;
 
 interface DefinitionInputBase {
   readonly displayName: string;
@@ -402,20 +444,20 @@ function queryInjectionArray(
   });
 }
 
-type PersistedHttpDefinitionRow = CustomConnectorDefinitionRow & {
+type PersistedHttpDefinitionRow = CustomConnectorConnectionDefinitionRow & {
   readonly mcpEndpoint: null;
   readonly mcpTransport: null;
 };
 
-type PersistedMcpDefinitionRow = CustomConnectorDefinitionRow & {
+type PersistedMcpDefinitionRow = CustomConnectorConnectionDefinitionRow & {
   readonly mcpEndpoint: string;
   readonly mcpTransport: "streamable-http";
   readonly permissionBundleRef: null;
 };
 
 function hasHttpDiscriminator(
-  row: CustomConnectorDefinitionRow,
-): row is CustomConnectorDefinitionRow & {
+  row: CustomConnectorConnectionDefinitionRow,
+): row is CustomConnectorConnectionDefinitionRow & {
   readonly mcpEndpoint: null;
   readonly mcpTransport: null;
 } {
@@ -423,7 +465,7 @@ function hasHttpDiscriminator(
 }
 
 function isValidPersistedHttpDefinition(
-  row: CustomConnectorDefinitionRow & {
+  row: CustomConnectorConnectionDefinitionRow & {
     readonly mcpEndpoint: null;
     readonly mcpTransport: null;
   },
@@ -446,7 +488,7 @@ function isValidPersistedHttpDefinition(
 }
 
 function isValidPersistedMcpDefinition(
-  row: CustomConnectorDefinitionRow,
+  row: CustomConnectorConnectionDefinitionRow,
   prefixTemplates: readonly string[],
   fields: readonly CustomConnectorField[],
   headerInjections: readonly CustomConnectorHeaderInjection[],
@@ -467,10 +509,30 @@ function isValidPersistedMcpDefinition(
   );
 }
 
-export function normaliseCustomConnectorRow(
+export function normaliseCustomConnectorRow<
+  OAuthConfig extends CustomConnectorOAuthAdapter =
+    CustomConnectorOAuthConfigRow,
+>(
   row: CustomConnectorDefinitionRow,
-  oauthConfig: CustomConnectorOAuthConfigRow | null = null,
-): CustomConnectorRow {
+  oauthConfig: OAuthConfig | null = null,
+): CustomConnectorRow<OAuthConfig> {
+  return {
+    ...normaliseCustomConnectorConnectionDefinition(row, oauthConfig),
+    enabled: row.enabled,
+    skillMarkdown: row.skillMarkdown,
+    skillStorageVersionId: row.skillStorageVersionId,
+    createdBy: row.createdBy,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+export function normaliseCustomConnectorConnectionDefinition<
+  OAuthConfig extends CustomConnectorOAuthAdapter,
+>(
+  row: CustomConnectorConnectionDefinitionRow,
+  oauthConfig: OAuthConfig | null,
+) {
   const prefixTemplates = stringArray(row.prefixTemplates);
   const storedFields = fieldArray(row.fields);
   const storedHeaderInjections = headerInjectionArray(row.headerInjections);
@@ -498,13 +560,7 @@ export function normaliseCustomConnectorRow(
     queryInjections,
     authMode: row.authMode,
     oauthConfig,
-    enabled: row.enabled,
-    skillMarkdown: row.skillMarkdown,
-    skillStorageVersionId: row.skillStorageVersionId,
     storageVersion: row.storageVersion,
-    createdBy: row.createdBy,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
   };
 
   if (isHttp) {
@@ -521,7 +577,7 @@ export function normaliseCustomConnectorRow(
     }
     return {
       ...shared,
-      kind: "http",
+      kind: "http" as const,
       prefixTemplates,
       permissionBundleRef: row.permissionBundleRef,
     };
@@ -540,7 +596,7 @@ export function normaliseCustomConnectorRow(
   }
   return {
     ...shared,
-    kind: "mcp",
+    kind: "mcp" as const,
     endpoint: row.mcpEndpoint,
     transport: row.mcpTransport,
     permissionBundleRef: null,
@@ -668,7 +724,7 @@ function resolveUpdatedStorageVersion(args: {
 }
 
 function serialiseOAuthConfig(
-  config: CustomConnectorOAuthConfigRow,
+  config: CustomConnectorOAuthReadConfig,
 ): CustomConnectorOAuthConfig {
   return {
     providerAdapter: config.providerAdapter,
@@ -738,8 +794,15 @@ export function customConnectorMissingRequiredFieldKeys(args: {
     });
 }
 
-function effectivePermissionBundleRef(
-  row: CustomConnectorHttpRow,
+export function effectivePermissionBundleRef(
+  row: Pick<
+    CustomConnectorHttpRow<CustomConnectorOAuthAdapter>,
+    | "slug"
+    | "authMode"
+    | "oauthConfig"
+    | "prefixTemplates"
+    | "permissionBundleRef"
+  >,
 ): CustomConnectorPermissionBundleRef | null {
   return effectiveCustomConnectorPermissionBundleRef({
     slug: row.slug,
@@ -750,8 +813,26 @@ function effectivePermissionBundleRef(
   });
 }
 
+export function customConnectorIsConnected(args: {
+  readonly row: Pick<
+    CustomConnectorRow,
+    "authMode" | "fields" | "headerInjections" | "queryInjections"
+  >;
+  readonly connectedAccountId: string | null;
+  readonly missingRequiredFields: readonly string[];
+}): boolean {
+  const validManualAuth =
+    args.row.authMode !== "manual" ||
+    customConnectorManualAuthReferencesMemberField(args.row);
+  return (
+    args.connectedAccountId !== null &&
+    validManualAuth &&
+    args.missingRequiredFields.length === 0
+  );
+}
+
 export function serialiseCustomConnector(args: {
-  readonly row: CustomConnectorRow;
+  readonly row: CustomConnectorRow<CustomConnectorOAuthReadConfig>;
   readonly valueMarkers: readonly CustomConnectorCredentialValueMarker[];
   readonly connectedAccountId: string | null;
   readonly connectedAccountUpdatedAt?: Date | null;
@@ -771,13 +852,11 @@ export function serialiseCustomConnector(args: {
     fields: args.row.fields,
     markers: connectorMarkers,
   });
-  const validManualAuth =
-    args.row.authMode !== "manual" ||
-    customConnectorManualAuthReferencesMemberField(args.row);
-  const connected =
-    args.connectedAccountId !== null &&
-    validManualAuth &&
-    missingRequiredFields.length === 0;
+  const connected = customConnectorIsConnected({
+    row: args.row,
+    connectedAccountId: args.connectedAccountId,
+    missingRequiredFields,
+  });
   const responseMissingRequiredFields = [
     ...missingRequiredFields,
     ...(args.row.authMode === "oauth" && args.connectedAccountId === null

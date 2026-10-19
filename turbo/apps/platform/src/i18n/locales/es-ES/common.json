@@ -569,6 +569,7 @@
       },
       "kindIcon": "{{kind}} artefacto",
       "loading": "Cargando artefactos",
+      "loadMore": "Cargar más",
       "retry": "Reintentar"
     },
     "fileBadges": {

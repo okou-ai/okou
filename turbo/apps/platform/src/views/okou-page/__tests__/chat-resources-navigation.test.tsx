@@ -1,8 +1,6 @@
-import {
-  chatThreadArtifactsContract,
-  chatThreadEventsContract,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { chatRelationsContract } from "@okouai/api-contracts/contracts/chat-relations";
+import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -15,7 +13,7 @@ import {
 import { chatEventRowsResponse } from "../../../signals/__tests__/test-helpers.ts";
 import { pathname } from "../../../signals/location.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
-import { artifactRun } from "./chat-navigation-artifact-test-helpers.ts";
+import { artifactSummary } from "./chat-navigation-artifact-test-helpers.ts";
 
 import {
   continuityEventRow,
@@ -160,25 +158,21 @@ test.each(["messages", "artifacts"])(
       },
     );
     context.mocks.api(
-      chatThreadArtifactsContract.list,
-      async ({ params, respond }) => {
-        if (params.threadId === second.id && pendingSource === "artifacts") {
+      artifactCatalogContract.list,
+      async ({ query, respond }) => {
+        if (query.chatThreadId === second.id && pendingSource === "artifacts") {
           if (!resourcesRequested.settled()) {
             resourcesRequested.resolve();
           }
           await resourcesResponse.promise;
         }
         const filename =
-          params.threadId === first.id ? "first.pdf" : "second.pdf";
+          query.chatThreadId === first.id ? "first.pdf" : "second.pdf";
         return respond(200, {
-          runs: [
-            artifactRun({
-              fileId: params.threadId,
-              filename,
-              contentType: "application/pdf",
-              url: `https://files.example.test/${filename}`,
-            }),
+          artifacts: [
+            artifactSummary(query.chatThreadId ?? first.id, "file", filename),
           ],
+          nextCursor: null,
         });
       },
     );

@@ -1,7 +1,6 @@
 import { command } from "ccstate";
 import { linkLayoutFromSegment } from "@okouai/api-contracts/contracts/link-layout";
 import { hostedLinkOrigin } from "../../lib/link-layout";
-import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
   and,
   asc,
@@ -14,11 +13,9 @@ import {
   isNotNull,
   ne,
   notExists,
-  like,
   lt,
   lte,
-  notLike,
-  or,
+  min,
   sql,
   type SQL,
 } from "drizzle-orm";
@@ -47,7 +44,6 @@ import {
   runUploadedFiles,
   type CanonicalAssetClassification,
 } from "@okouai/db/schema/run-uploaded-file";
-import { sharedThreads } from "@okouai/db/schema/shared-thread";
 import { z } from "zod";
 
 import { canonicalOkouArtifactCatalogUrl } from "../../lib/file-url";
@@ -61,7 +57,6 @@ import { logger } from "../../lib/log";
 import {
   isSharedThreadArtifactLogicalKey,
   sharedThreadArtifactAuthorUserId,
-  SHARED_THREAD_ARTIFACT_LOGICAL_KEY_PREFIX,
 } from "../../lib/shared-thread-artifact";
 import { db$, writeDb$ } from "../external/db";
 import { safeUrlParse, settle } from "../utils";
@@ -69,7 +64,6 @@ import { inferMimetype } from "./chat-event-shared.service";
 import { runOwnedChatEventForRunCondition } from "./chat-event-type.service";
 
 const ARTIFACT_CATALOG_DEFAULT_LIMIT = 60;
-const ARTIFACT_CATALOG_LIST_REPAIR_LIMIT = 20;
 const ARTIFACT_CATALOG_WORKER_BATCH_SIZE = 100;
 const ARTIFACT_CATALOG_WORKER_BUDGET_MS = 20_000;
 const L = logger("ArtifactCatalog");
@@ -189,33 +183,19 @@ function catalogArtifactKind(
     : kind;
 }
 
-function artifactCatalogKindFilter(kind: ArtifactCatalogKind): SQL | undefined {
-  const generatedBy = sql`${runUploadedFiles.metadata} ->> 'generatedBy'`;
-  if (kind === "shared-thread") {
-    return and(
-      eq(artifacts.kind, "file"),
-      like(
-        artifacts.logicalKey,
-        `${SHARED_THREAD_ARTIFACT_LOGICAL_KEY_PREFIX}%`,
-      ),
-    );
-  }
-  if (kind === "avatar") {
-    return eq(generatedBy, AVATAR_VIDEO_MARKER);
-  }
-  if (kind === "file" || kind === "video") {
-    return and(
-      eq(artifacts.kind, kind),
-      kind === "file"
-        ? notLike(
-            artifacts.logicalKey,
-            `${SHARED_THREAD_ARTIFACT_LOGICAL_KEY_PREFIX}%`,
-          )
-        : undefined,
-      sql`${generatedBy} IS DISTINCT FROM ${AVATAR_VIDEO_MARKER}`,
-    );
-  }
-  return eq(artifacts.kind, kind);
+function artifactCatalogKindFilter(kind: ArtifactCatalogKind): SQL {
+  // Summary metadata is optional independently of creating-thread ownership.
+  // An absent display projection retains the base kind (or the shared snapshot
+  // kind encoded in its logical key), exactly as toArtifactSummary does.
+  return eq(
+    sql`coalesce(${artifacts.displayKind}, case
+      when ${artifacts.kind} = 'file'
+        and ${artifacts.logicalKey} like 'shared-thread:%'
+      then 'shared-thread'
+      else ${artifacts.kind}
+    end)`,
+    kind,
+  );
 }
 
 function hostedArtifactKind(
@@ -229,6 +209,11 @@ function hostedArtifactKind(
     return "presentation";
   }
   return null;
+}
+
+function videoSourceUrl(row: CatalogFileRow, title: string): string | null {
+  const contentType = row.contentType ?? inferMimetype(title);
+  return row.url && contentType.startsWith("video/") ? row.url : null;
 }
 
 function fileThumbnail(row: CatalogFileRow): ArtifactThumbnail | null {
@@ -248,36 +233,67 @@ function fileThumbnail(row: CatalogFileRow): ArtifactThumbnail | null {
  * user, so an artifact produced from a Slack or Feishu message is filed under
  * the Okou account behind that thread rather than the external sender.
  */
-const resolveAuthorUserId$ = command(
+const resolveArtifactOwnership$ = command(
   async (
     { get },
     row: CatalogFileRow,
     signal: AbortSignal,
-  ): Promise<string> => {
+  ): Promise<{ authorUserId: string; chatThreadId: string | null }> => {
     const db = get(db$);
 
+    // A source thread can disappear while its integration file survives. Its
+    // external sender must not replace the catalog's already-established owner
+    // on a delayed preview/sync and cause deletion/reinsertion under a new key.
+    if (row.orgId) {
+      const [existing] = await db
+        .select({
+          authorUserId: artifacts.authorUserId,
+          chatThreadId: artifacts.chatThreadId,
+        })
+        .from(artifacts)
+        .where(
+          and(
+            eq(artifacts.orgId, row.orgId),
+            eq(artifacts.projectionFileId, row.id),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (existing) {
+        return existing;
+      }
+    }
+
+    let authorThreadId = row.chatThreadId;
     let threadId = row.chatThreadId;
     if (!threadId && row.runId) {
-      const [event] = await db
+      const eventThreads = await db
         .select({ chatThreadId: chatEvents.chatThreadId })
         .from(chatEvents)
         .where(runOwnedChatEventForRunCondition({ runId: row.runId }))
-        .orderBy(asc(chatEvents.seqId))
-        .limit(1);
+        .groupBy(chatEvents.chatThreadId)
+        .orderBy(asc(min(chatEvents.seqId)))
+        .limit(2);
       signal.throwIfAborted();
-      threadId = event?.chatThreadId ?? null;
+      // Preserve the previous author resolver's earliest-event semantics, but
+      // do not invent an association when the run has ambiguous thread origins.
+      authorThreadId = eventThreads[0]?.chatThreadId ?? null;
+      threadId = eventThreads.length === 1 ? authorThreadId : null;
     }
-    if (!threadId) {
-      return row.userId;
+    if (!authorThreadId) {
+      return { authorUserId: row.userId, chatThreadId: null };
     }
 
     const [thread] = await db
       .select({ userId: chatThreads.userId })
       .from(chatThreads)
-      .where(eq(chatThreads.id, threadId))
+      .where(eq(chatThreads.id, authorThreadId))
       .limit(1);
     signal.throwIfAborted();
-    return thread?.userId ?? row.userId;
+    return {
+      authorUserId: thread?.userId ?? row.userId,
+      chatThreadId: thread ? threadId : null,
+    };
   },
 );
 
@@ -450,6 +466,11 @@ function artifactCatalogFileHandoffSql(
 
 interface UpsertArtifactArgs {
   readonly kind: ArtifactKind;
+  readonly displayKind: ArtifactCatalogKind;
+  readonly sourceUrl: string | null;
+  readonly aliasUrl: string | null;
+  readonly videoSourceUrl: string | null;
+  readonly chatThreadId: string | null;
   readonly entityId: string;
   readonly logicalKey: string;
   readonly projectionFileId: string;
@@ -464,12 +485,18 @@ interface UpsertArtifactArgs {
 /**
  * Idempotent registry write. `created_at` is never updated, so re-running the
  * sync (redeploy, preview render, backfill replay) keeps the artifact in its
- * original list position.
+ * original list position. Thread ownership is also insert-only: a replacement
+ * projection cannot move the artifact, including after deletion clears its FK.
  */
 function artifactUpsertPlan(args: UpsertArtifactArgs) {
   return {
     values: {
       kind: args.kind,
+      displayKind: args.displayKind,
+      sourceUrl: args.sourceUrl,
+      aliasUrl: args.aliasUrl,
+      videoSourceUrl: args.videoSourceUrl,
+      chatThreadId: args.chatThreadId,
       entityId: args.entityId,
       logicalKey: args.logicalKey,
       projectionFileId: args.projectionFileId,
@@ -484,6 +511,10 @@ function artifactUpsertPlan(args: UpsertArtifactArgs) {
       target: [artifacts.orgId, artifacts.authorUserId, artifacts.logicalKey],
       set: {
         kind: args.kind,
+        displayKind: args.displayKind,
+        sourceUrl: args.sourceUrl,
+        aliasUrl: args.aliasUrl,
+        videoSourceUrl: args.videoSourceUrl,
         entityId: args.entityId,
         projectionFileId: args.projectionFileId,
         projectionCreatedAt: args.projectionCreatedAt,
@@ -567,6 +598,7 @@ const syncHostedArtifact$ = command(
     { set },
     args: {
       readonly kind: "hosted-site" | "presentation";
+      readonly chatThreadId: string | null;
       readonly row: CatalogFileRow;
       readonly orgId: string;
       readonly authorUserId: string;
@@ -652,11 +684,17 @@ const syncHostedArtifact$ = command(
 
       const values = {
         kind: args.kind,
+        displayKind: args.kind,
+        sourceUrl: args.row.url,
+        aliasUrl: metadataString(args.row.metadata, "aliasUrl"),
+        videoSourceUrl: videoSourceUrl(
+          args.row,
+          site.requestedSlug ?? site.slug,
+        ),
         entityId,
         projectionFileId: args.row.id,
         projectionCreatedAt: args.row.createdAt,
         orgId: args.orgId,
-        authorUserId: args.authorUserId,
         title: site.requestedSlug ?? site.slug,
         thumbnail: args.row.previewImageUrl
           ? { url: args.row.previewImageUrl }
@@ -666,6 +704,8 @@ const syncHostedArtifact$ = command(
       if (!existingArtifact) {
         const plan = artifactUpsertPlan({
           ...values,
+          authorUserId: args.authorUserId,
+          chatThreadId: args.chatThreadId,
           logicalKey,
           createdAt: site.createdAt,
         });
@@ -803,6 +843,7 @@ const syncFileArtifact$ = command(
       readonly orgId: string;
       readonly authorUserId: string;
       readonly logicalKey: string;
+      readonly chatThreadId: string | null;
       readonly kind: "file" | "image" | "video";
       readonly entityId: string;
     },
@@ -829,12 +870,17 @@ const syncFileArtifact$ = command(
         .where(
           and(
             eq(artifacts.projectionFileId, row.id),
-            sql`(${artifacts.orgId}, ${artifacts.authorUserId}, ${artifacts.logicalKey}, ${artifacts.kind}, ${artifacts.entityId}) IS DISTINCT FROM (${orgId}, ${authorUserId}, ${logicalKey}, ${kind}, ${entityId})`,
+            sql`(${artifacts.orgId}, ${artifacts.authorUserId}, ${artifacts.logicalKey}) IS DISTINCT FROM (${orgId}, ${authorUserId}, ${logicalKey})`,
           ),
         );
 
       const plan = artifactUpsertPlan({
         kind,
+        displayKind: catalogArtifactKind(kind, row.metadata, logicalKey),
+        sourceUrl: row.url,
+        aliasUrl: metadataString(row.metadata, "aliasUrl"),
+        videoSourceUrl: videoSourceUrl(row, row.filename ?? row.externalId),
+        chatThreadId: args.chatThreadId,
         entityId,
         logicalKey,
         projectionFileId: row.id,
@@ -915,7 +961,11 @@ export const syncArtifactCatalogForFile$ = command(
       : row.url;
     const logicalKey = `file:${logicalFileUrl}`;
 
-    const authorUserId = await set(resolveAuthorUserId$, row, signal);
+    const { authorUserId, chatThreadId } = await set(
+      resolveArtifactOwnership$,
+      row,
+      signal,
+    );
     const hostedKind = hostedArtifactKind(row);
     if (hostedKind) {
       await set(
@@ -931,6 +981,7 @@ export const syncArtifactCatalogForFile$ = command(
         syncHostedArtifact$,
         {
           kind: hostedKind,
+          chatThreadId,
           row,
           orgId: row.orgId,
           authorUserId,
@@ -982,7 +1033,15 @@ export const syncArtifactCatalogForFile$ = command(
 
     const synced = await set(
       syncFileArtifact$,
-      { row, orgId: row.orgId, authorUserId, logicalKey, kind, entityId },
+      {
+        row,
+        orgId: row.orgId,
+        authorUserId,
+        chatThreadId,
+        logicalKey,
+        kind,
+        entityId,
+      },
       signal,
     );
     signal.throwIfAborted();
@@ -1008,37 +1067,6 @@ interface ListArtifactCatalogResult {
   readonly artifacts: readonly ArtifactSummary[];
   readonly nextCursor: string | null;
 }
-
-const reconcilePendingArtifactCatalog$ = command(
-  async (
-    { get, set },
-    args: Pick<ListArtifactCatalogArgs, "orgId" | "userId">,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const db = get(db$);
-
-    const pendingRows = await db
-      .select({ fileId: artifactCatalogPendingFiles.fileId })
-      .from(artifactCatalogPendingFiles)
-      .where(
-        and(
-          eq(artifactCatalogPendingFiles.orgId, args.orgId),
-          eq(artifactCatalogPendingFiles.authorUserId, args.userId),
-        ),
-      )
-      .orderBy(
-        asc(artifactCatalogPendingFiles.queuedAt),
-        asc(artifactCatalogPendingFiles.fileId),
-      )
-      .limit(ARTIFACT_CATALOG_LIST_REPAIR_LIMIT);
-    signal.throwIfAborted();
-
-    for (const pending of pendingRows) {
-      await set(syncArtifactCatalogForFile$, pending.fileId, signal);
-      signal.throwIfAborted();
-    }
-  },
-);
 
 /** Bounded, explicit recovery for pending files, independent of catalog reads. */
 export const reconcileArtifactCatalogFiles$ = command(
@@ -1103,83 +1131,28 @@ function toArtifactSummary(row: {
   readonly id: string;
   readonly kind: ArtifactKind;
   readonly logicalKey: string;
-  readonly projectionMetadata: Record<string, unknown> | null;
-  readonly sourceContentType: string | null;
+  readonly displayKind: ArtifactCatalogKind | null;
   readonly sourceUrl: string | null;
+  readonly aliasUrl: string | null;
+  readonly videoSourceUrl: string | null;
   readonly title: string;
   readonly thumbnail: ArtifactThumbnail | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }): ArtifactSummary {
-  const kind = catalogArtifactKind(
-    row.kind,
-    row.projectionMetadata,
-    row.logicalKey,
-  );
+  const kind =
+    row.displayKind ?? catalogArtifactKind(row.kind, null, row.logicalKey);
   return {
     id: row.id,
     kind,
     title: row.title,
     thumbnail: row.thumbnail,
-    ...(row.sourceUrl &&
-    (row.sourceContentType ?? inferMimetype(row.title)).startsWith("video/")
-      ? { videoSourceUrl: row.sourceUrl }
-      : {}),
+    ...(row.sourceUrl ? { sourceUrl: row.sourceUrl } : {}),
+    ...(row.aliasUrl ? { aliasUrl: row.aliasUrl } : {}),
+    ...(row.videoSourceUrl ? { videoSourceUrl: row.videoSourceUrl } : {}),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
-}
-
-/**
- * The registry has no thread column, so a thread filter resolves through each
- * artifact kind's source association. File-backed artifacts use the projection
- * file directly or an owning chat event, while shared threads retain their nullable source
- * thread ID after snapshot creation.
- */
-function fileChatThreadFilter(chatThreadId: string): SQL {
-  const queryBuilder = new QueryBuilder();
-  const fileIds = queryBuilder
-    .select({ id: runUploadedFiles.id })
-    .from(runUploadedFiles)
-    .where(
-      or(
-        eq(runUploadedFiles.chatThreadId, chatThreadId),
-        exists(
-          queryBuilder
-            .select({ id: chatEvents.id })
-            .from(chatEvents)
-            .where(
-              runOwnedChatEventForRunCondition({
-                runId: runUploadedFiles.runId,
-                chatThreadId,
-              }),
-            ),
-        ),
-      ),
-    );
-  return inArray(artifacts.projectionFileId, fileIds);
-}
-
-function sharedThreadChatThreadFilter(chatThreadId: string): SQL {
-  const queryBuilder = new QueryBuilder();
-  const sharedThreadIds = queryBuilder
-    .select({ id: sharedThreads.id })
-    .from(sharedThreads)
-    .where(eq(sharedThreads.sourceChatThreadId, chatThreadId));
-  const filter = and(
-    eq(artifacts.kind, "file"),
-    like(artifacts.logicalKey, `${SHARED_THREAD_ARTIFACT_LOGICAL_KEY_PREFIX}%`),
-    inArray(artifacts.entityId, sharedThreadIds),
-  );
-  if (!filter) {
-    throw new Error("Shared-thread catalog filter is unavailable");
-  }
-  return filter;
-}
-
-function chatThreadFilter(chatThreadId: string): SQL {
-  const fileFilter = fileChatThreadFilter(chatThreadId);
-  return sql`(${fileFilter} OR ${sharedThreadChatThreadFilter(chatThreadId)})`;
 }
 
 function artifactCatalogOwnerFilter(userId: string): SQL {
@@ -1191,13 +1164,11 @@ function artifactCatalogOwnerFilter(userId: string): SQL {
 
 export const listArtifactCatalog$ = command(
   async (
-    { get, set },
+    { get },
     args: ListArtifactCatalogArgs,
     signal: AbortSignal,
   ): Promise<ListArtifactCatalogResult> => {
     const db = get(db$);
-    await set(reconcilePendingArtifactCatalog$, args, signal);
-    signal.throwIfAborted();
     const limit = args.limit ?? ARTIFACT_CATALOG_DEFAULT_LIMIT;
     const cursor = args.cursor ? decodeArtifactCursor(args.cursor) : null;
     const keywordPattern = args.keyword
@@ -1211,25 +1182,24 @@ export const listArtifactCatalog$ = command(
         id: artifacts.id,
         kind: artifacts.kind,
         logicalKey: artifacts.logicalKey,
-        projectionMetadata: runUploadedFiles.metadata,
-        sourceContentType: runUploadedFiles.contentType,
-        sourceUrl: runUploadedFiles.url,
+        displayKind: artifacts.displayKind,
+        aliasUrl: artifacts.aliasUrl,
+        sourceUrl: artifacts.sourceUrl,
+        videoSourceUrl: artifacts.videoSourceUrl,
         title: artifacts.title,
         thumbnail: artifacts.thumbnail,
         createdAt: artifacts.createdAt,
         updatedAt: artifacts.updatedAt,
       })
       .from(artifacts)
-      .leftJoin(
-        runUploadedFiles,
-        eq(runUploadedFiles.id, artifacts.projectionFileId),
-      )
       .where(
         and(
           eq(artifacts.orgId, args.orgId),
           artifactCatalogOwnerFilter(args.userId),
           args.kind ? artifactCatalogKindFilter(args.kind) : undefined,
-          args.chatThreadId ? chatThreadFilter(args.chatThreadId) : undefined,
+          args.chatThreadId
+            ? eq(artifacts.chatThreadId, args.chatThreadId)
+            : undefined,
           keywordPattern ? ilike(artifacts.title, keywordPattern) : undefined,
           cursor
             ? lt(
@@ -1479,8 +1449,10 @@ export const getArtifactCatalogEntry$ = command(
         entityId: artifacts.entityId,
         projectionFileId: artifacts.projectionFileId,
         projectionMetadata: runUploadedFiles.metadata,
-        sourceContentType: runUploadedFiles.contentType,
-        sourceUrl: runUploadedFiles.url,
+        displayKind: artifacts.displayKind,
+        aliasUrl: artifacts.aliasUrl,
+        sourceUrl: artifacts.sourceUrl,
+        videoSourceUrl: artifacts.videoSourceUrl,
         title: artifacts.title,
         thumbnail: artifacts.thumbnail,
         createdAt: artifacts.createdAt,

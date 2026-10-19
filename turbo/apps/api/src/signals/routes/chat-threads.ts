@@ -22,7 +22,7 @@ import { env } from "../../lib/env";
 import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
 import {
   applyGoogleDriveArtifactSyncStatuses,
-  googleDriveArtifactStatusLookup,
+  googleDriveArtifactStatusLookup$,
 } from "../services/google-drive-artifact-sync.service";
 import {
   chatIndicators,
@@ -321,11 +321,12 @@ const listChatThreadArtifactsInner$ = command(
         }),
       ),
       set(
-        googleDriveArtifactStatusLookup({
+        googleDriveArtifactStatusLookup$,
+        {
           threadId: params.threadId,
           orgId: auth.orgId,
           userId: auth.userId,
-        }),
+        },
         signal,
       ),
     ]);

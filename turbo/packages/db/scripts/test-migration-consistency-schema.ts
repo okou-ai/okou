@@ -60,6 +60,7 @@ import { validatePermanentRunnerStateStorage } from "./test-runner-state-storage
 import { validatePermanentSshStorage } from "./test-ssh-storage-permanent";
 import { validatePermanentNativeVncStorage } from "./test-vnc-native-storage-permanent";
 import { validateBillingRunLifecycle } from "./test-billing-run-lifecycle-permanent";
+import { validatePermanentArtifactThreadCatalog } from "./test-artifact-thread-catalog-permanent";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_DIR = path.join(dirname, "..");
@@ -2818,6 +2819,7 @@ async function main(): Promise<void> {
     await validatePermanentTriggerAndFunctionInventory(dbUrl1);
     await validateCanonicalBillingSources(dbUrl1);
     await validateBillingRunLifecycle(dbUrl1);
+    await validatePermanentArtifactThreadCatalog(dbUrl1);
     await validatePiMemoryStage1Cost(dbUrl1);
     await validatePermanentUsagePackPendingSnapshotState(dbUrl1);
     await validatePermanentAgentRunMetadataState(dbUrl1);
@@ -2872,6 +2874,7 @@ async function main(): Promise<void> {
     await validatePermanentChatThreadStorage(dbUrl2);
     await validatePermanentStorageLineage(dbUrl2);
     await validateBillingRunLifecycle(dbUrl2);
+    await validatePermanentArtifactThreadCatalog(dbUrl2);
     await validatePermanentMemberMetadata(dbUrl2);
     await validatePermanentPiMemoryJobs(dbUrl2);
     await validatePermanentComputerUseHostStorage(dbUrl2);

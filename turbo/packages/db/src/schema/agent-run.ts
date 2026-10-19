@@ -124,6 +124,11 @@ export const agentRuns = pgTable("agent_runs", migrationColumns, (table) => {
       table.createdAt.desc(),
     ),
     index("idx_agent_runs_agent").on(table.agentId),
+    index("idx_agent_runs_threadless_created_id")
+      .on(table.createdAt, table.id)
+      .where(
+        sql`${table.triggerSource} IS NOT NULL AND ${table.chatThreadId} IS NULL`,
+      ),
     index("idx_agent_runs_chat_thread_id")
       .on(table.chatThreadId)
       .where(sql`${table.chatThreadId} IS NOT NULL`),

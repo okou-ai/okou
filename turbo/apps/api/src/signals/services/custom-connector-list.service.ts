@@ -26,7 +26,18 @@ export function customConnectorList(args: {
       db
         .select({
           connector: customConnectorDefinitionSelection(),
-          oauthConfig: orgCustomConnectorOauthConfigs,
+          oauthConfig: {
+            providerAdapter: orgCustomConnectorOauthConfigs.providerAdapter,
+            clientId: orgCustomConnectorOauthConfigs.clientId,
+            authorizationUrl: orgCustomConnectorOauthConfigs.authorizationUrl,
+            tokenUrl: orgCustomConnectorOauthConfigs.tokenUrl,
+            tokenEndpointAuthMethod:
+              orgCustomConnectorOauthConfigs.tokenEndpointAuthMethod,
+            pkceMethod: orgCustomConnectorOauthConfigs.pkceMethod,
+            scopes: orgCustomConnectorOauthConfigs.scopes,
+            authorizationParams:
+              orgCustomConnectorOauthConfigs.authorizationParams,
+          },
         })
         .from(orgCustomConnectors)
         .leftJoin(

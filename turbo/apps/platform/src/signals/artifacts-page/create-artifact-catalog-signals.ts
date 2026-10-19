@@ -94,6 +94,7 @@ export interface ArtifactCatalogSignals {
   readonly loadMore$: Command<Promise<void>, [AbortSignal]>;
   readonly loadThroughArtifact$: Command<Promise<void>, [string, AbortSignal]>;
   readonly selectArtifact$: Command<void, [string | null]>;
+  readonly reloadSelectedArtifactDetail$: Command<void, []>;
   readonly ensureSelectedArtifactPreview$: Command<
     Promise<AttachmentPreviewSignals | null>,
     [string, AbortSignal]
@@ -212,13 +213,21 @@ function createCatalogPagingSignals(paging: CatalogPagingState): {
 function createCatalogSelectionSignals(
   catalog$: Computed<Promise<ArtifactCatalogPage>>,
   reloadVersion$: State<number>,
+  chatThreadId: string | undefined,
 ): Pick<
   ArtifactCatalogSignals,
   | "selectArtifact$"
+  | "reloadSelectedArtifactDetail$"
   | "ensureSelectedArtifactPreview$"
   | "selectedArtifactDetail$"
   | "selectedArtifactPreview$"
 > {
+  const internalDetailVersion$ = state(0);
+  const reloadSelectedArtifactDetail$ = command(({ set }) => {
+    set(internalDetailVersion$, (version) => {
+      return version + 1;
+    });
+  });
   const internalSelectedArtifactId$ = state<string | null>(null);
   const internalSelectedArtifactPreview$ =
     state<AttachmentPreviewSignals | null>(null);
@@ -235,6 +244,7 @@ function createCatalogSelectionSignals(
   const selectedArtifactDetail$ = computed(
     async (get): Promise<ArtifactDetail | null> => {
       get(reloadVersion$);
+      get(internalDetailVersion$);
       const artifactId = get(internalSelectedArtifactId$);
       if (!artifactId) {
         return null;
@@ -243,6 +253,7 @@ function createCatalogSelectionSignals(
       const result = await accept(
         client.get({
           params: { artifactId },
+          query: chatThreadId ? { chatThreadId } : {},
         }),
         [200, 404],
       );
@@ -295,6 +306,7 @@ function createCatalogSelectionSignals(
     selectArtifact$,
     ensureSelectedArtifactPreview$,
     selectedArtifactDetail$,
+    reloadSelectedArtifactDetail$,
     selectedArtifactPreview$: computed((get) => {
       return get(internalSelectedArtifactPreview$);
     }),
@@ -351,7 +363,11 @@ export function createArtifactCatalogSignals(
     pages$: internalPages$,
     fetchedCursors$: internalFetchedCursors$,
   });
-  const selection = createCatalogSelectionSignals(catalog$, internalReload$);
+  const selection = createCatalogSelectionSignals(
+    catalog$,
+    internalReload$,
+    options.chatThreadId,
+  );
 
   /**
    * A reader-started re-read. It resolves when the first page settles rather

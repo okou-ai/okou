@@ -3374,12 +3374,13 @@ export function registerFeishuIntegrationTests(
             [200],
           );
         });
-        expect(connectedOverview.body.customConnectors).toContainEqual(
-          expect.objectContaining({
-            id: managedConnector.id,
-            integrationManaged: true,
-          }),
-        );
+        expect(connectedOverview.body.customConnectors).toContainEqual({
+          id: managedConnector.id,
+          slug: managedConnector.slug,
+          displayName: managedConnector.displayName,
+          permissionBundleRef: "builtin:feishu@1",
+          integrationManaged: true,
+        });
         expect(connectedOverview.body.accountSummaries).toStrictEqual([]);
         const welcome = fixtureState.outboundMessages.find((message) => {
           return (
