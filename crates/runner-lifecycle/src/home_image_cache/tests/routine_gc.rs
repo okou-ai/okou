@@ -10,6 +10,69 @@ use std::time::Duration;
 const CADENCE_CHILD_ROOT: &str = "OKOU_HOME_GC_CADENCE_CHILD_ROOT";
 
 #[tokio::test]
+async fn manual_and_pressure_collection_do_not_complete_or_postpone_routine_maintenance() {
+    for completed in [false, true] {
+        let f = Fixture::new().await;
+        let committed = f.commit("home", b"home", "2026-10-09T09:00:00Z").await;
+        f.cache.set_fs_stats_for_test(super::super::FsStats {
+            total_bytes: 100 * super::super::GIB,
+            available_bytes: 75 * super::super::GIB,
+            ..super::super::FsStats::default()
+        });
+        if completed {
+            assert!(
+                f.cache
+                    .try_routine_gc(Duration::ZERO)
+                    .await
+                    .unwrap()
+                    .is_some()
+            );
+        }
+        let collector = runner_host::lock::acquire(f.cache.routine_gc_lock_path())
+            .await
+            .unwrap();
+        collector
+            .set_times(
+                std::fs::FileTimes::new()
+                    .set_modified(std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1)),
+            )
+            .unwrap();
+        let before = collector.metadata().unwrap();
+        assert_eq!(before.len(), u64::from(completed));
+        drop(collector);
+
+        assert_eq!(f.cache.gc(true).await.unwrap(), 0);
+        assert!(f.image("home", &committed).exists());
+        let after_manual = std::fs::metadata(f.cache.routine_gc_lock_path()).unwrap();
+        assert_eq!(after_manual.len(), before.len());
+        assert_eq!(after_manual.modified().unwrap(), before.modified().unwrap());
+
+        f.cache.set_fs_stats_for_test(super::super::FsStats {
+            total_bytes: 100 * super::super::GIB,
+            available_bytes: 1,
+            ..super::super::FsStats::default()
+        });
+        f.cache.probe_home_cache_pressure().await.unwrap();
+        f.cache.drain_pressure_reclamation().await;
+        assert!(!f.image("home", &committed).exists());
+        let after_pressure = std::fs::metadata(f.cache.routine_gc_lock_path()).unwrap();
+        assert_eq!(after_pressure.len(), before.len());
+        assert_eq!(
+            after_pressure.modified().unwrap(),
+            before.modified().unwrap()
+        );
+        assert!(
+            f.cache
+                .try_routine_gc(Duration::from_secs(3600))
+                .await
+                .unwrap()
+                .is_some(),
+            "other collectors must not postpone due routine maintenance"
+        );
+    }
+}
+
+#[tokio::test]
 #[ignore = "invoked by routine_completion_cadence_is_shared_with_another_process"]
 async fn routine_completion_cadence_child() {
     let root = std::env::var_os(CADENCE_CHILD_ROOT).expect("guarded cadence child root");
@@ -78,7 +141,7 @@ async fn routine_completion_marker_rejects_a_symlink_without_touching_its_target
     let target = f.dir.path().join("sentinel");
     std::fs::write(&target, b"sentinel").unwrap();
     std::fs::create_dir_all(&f.cache.inner.lock_dir).unwrap();
-    std::os::unix::fs::symlink(&target, f.cache.routine_gc_marker_path()).unwrap();
+    std::os::unix::fs::symlink(&target, f.cache.routine_gc_lock_path()).unwrap();
     assert!(f.cache.try_routine_gc(Duration::ZERO).await.is_err());
     assert_eq!(std::fs::read(target).unwrap(), b"sentinel");
 }

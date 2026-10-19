@@ -46,7 +46,7 @@ async fn draining_stops_queued_routine_inventory_without_a_completion_marker() {
     );
     assert!(f.image("home", &committed).exists());
     assert_eq!(
-        std::fs::metadata(f.cache.routine_gc_marker_path())
+        std::fs::metadata(f.cache.routine_gc_lock_path())
             .unwrap()
             .len(),
         0,
@@ -127,7 +127,7 @@ async fn draining_stops_partial_routine_inventory_between_entries() {
     assert_eq!(orphans.iter().filter(|path| path.exists()).count(), 1);
     assert!(images.iter().all(|path| path.exists()));
     assert_eq!(
-        std::fs::metadata(f.cache.routine_gc_marker_path())
+        std::fs::metadata(f.cache.routine_gc_lock_path())
             .unwrap()
             .len(),
         0

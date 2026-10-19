@@ -5,7 +5,6 @@ BIN_DIR=$1
 GROUP=$2
 INVOCATION_ID=$3
 AGENT_READY_BENCHMARK_SAMPLES=$4
-MAX_HOME_PROMOTION_RETRIES=3
 AGENT_READY_BENCHMARK_RAW=""
 AGENT_READY_BENCHMARK_SUBMISSIONS=0
 AGENT_READY_LAST_RUN_ID=""
@@ -235,14 +234,8 @@ if ! submit_agent_ready_benchmark_run \
   fail "home-cache Agent-ready benchmark warmup failed: $AGENT_READY_SUBMIT_ERROR"
 fi
 HOME_BENCHMARK_RUN_ID=$AGENT_READY_SUBMIT_RUN_ID
-HOME_BENCHMARK_SUCCESSFUL_SAMPLES=0
-HOME_BENCHMARK_PROMOTION_ATTEMPTS=0
-HOME_BENCHMARK_MAX_PROMOTION_ATTEMPTS=$((
-  AGENT_READY_BENCHMARK_SAMPLES + MAX_HOME_PROMOTION_RETRIES
-))
 
-while [ "$HOME_BENCHMARK_SUCCESSFUL_SAMPLES" -lt "$AGENT_READY_BENCHMARK_SAMPLES" ]; do
-  HOME_BENCHMARK_PROMOTION_ATTEMPTS=$((HOME_BENCHMARK_PROMOTION_ATTEMPTS + 1))
+for _ in $(seq 1 "$AGENT_READY_BENCHMARK_SAMPLES"); do
   if ! submit_agent_ready_benchmark_run \
     "$HOME_BENCHMARK_EVICTOR_THREAD_ID" agent-ready-home-evictor; then
     fail "home-cache Agent-ready benchmark eviction failed: $AGENT_READY_SUBMIT_ERROR"
@@ -251,22 +244,6 @@ while [ "$HOME_BENCHMARK_SUCCESSFUL_SAMPLES" -lt "$AGENT_READY_BENCHMARK_SAMPLES
   if ! promotion_log=$(read_home_promotion_log "$HOME_BENCHMARK_RUN_ID"); then
     print_home_promotion_diagnostics "$HOME_BENCHMARK_RUN_ID"
     fail "home-cache promotion outcome was not found for run $HOME_BENCHMARK_RUN_ID"
-  fi
-
-  if grep -F 'home image cache promotion skipped: capacity lock busy' \
-    <<<"$promotion_log" >/dev/null; then
-    if [ "$HOME_BENCHMARK_PROMOTION_ATTEMPTS" \
-      -ge "$HOME_BENCHMARK_MAX_PROMOTION_ATTEMPTS" ]; then
-      print_home_promotion_diagnostics "$HOME_BENCHMARK_RUN_ID"
-      fail "home-cache promotion capacity lock remained busy after ${HOME_BENCHMARK_PROMOTION_ATTEMPTS} attempts"
-    fi
-    echo "RETRY: home-cache promotion capacity lock was busy for run ${HOME_BENCHMARK_RUN_ID}"
-    if ! submit_agent_ready_benchmark_run \
-      "$HOME_BENCHMARK_THREAD_ID" agent-ready-home; then
-      fail "home-cache Agent-ready benchmark re-prime failed: $AGENT_READY_SUBMIT_ERROR"
-    fi
-    HOME_BENCHMARK_RUN_ID=$AGENT_READY_SUBMIT_RUN_ID
-    continue
   fi
 
   if ! grep -F 'home image cache promoted' <<<"$promotion_log" >/dev/null; then
@@ -280,7 +257,6 @@ while [ "$HOME_BENCHMARK_SUCCESSFUL_SAMPLES" -lt "$AGENT_READY_BENCHMARK_SAMPLES
     fail "home-cache sample failed after confirmed promotion: $AGENT_READY_SAMPLE_ERROR"
   fi
   HOME_BENCHMARK_RUN_ID=$AGENT_READY_LAST_RUN_ID
-  HOME_BENCHMARK_SUCCESSFUL_SAMPLES=$((HOME_BENCHMARK_SUCCESSFUL_SAMPLES + 1))
 done
 
 EXACT_REUSE_THREAD_ID=$(cat /proc/sys/kernel/random/uuid)

@@ -3,8 +3,8 @@
 //! Entry locks own checkout, publication, and orphan reclamation. Promotion
 //! retains accepted physical work and phase-aware retry under the original entry
 //! custody and bounded IO admission. Collectors own the routine singleton and
-//! only try entry locks. The canonical maintenance file stores completion cadence;
-//! it does not provide publication or collection exclusion.
+//! only try entry locks. The collector lock file also stores successful routine
+//! maintenance cadence; publishers only need their own entry locks.
 //!
 //! A checkout removes the commit before moving its selected immutable image.
 //! Publication syncs a new generation and directories before a single atomic

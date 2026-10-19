@@ -69,7 +69,7 @@ fn routine_gc_is_due(
     completion_marker: &File,
     minimum_interval: Duration,
 ) -> std::io::Result<bool> {
-    // The canonical file records successful maintenance across current processes.
+    // Only successful routine maintenance writes the held collector file.
     let marker = completion_marker.metadata()?;
     Ok(marker.len() == 0
         || SystemTime::now()
@@ -173,18 +173,6 @@ impl HomeImageCache {
         self.gc_locked(dry_run, additional_peak_bytes).await
     }
 
-    async fn routine_gc_completion_marker(&self) -> LifecycleResult<File> {
-        // Keep the canonical path for current processes' size/mtime cadence.
-        // The caller owns the routine singleton; this file needs no flock.
-        let path = self.routine_gc_marker_path();
-        tokio::task::spawn_blocking(move || runner_host::lock::open_lock_file(&path))
-            .await
-            .map_err(|error| {
-                crate::error::LifecycleError::Internal(format!("open home GC marker: {error}"))
-            })?
-            .map_err(Into::into)
-    }
-
     pub async fn try_routine_gc(&self, minimum_interval: Duration) -> LifecycleResult<Option<u64>> {
         if !self.background_gc.is_active() {
             return Ok(None);
@@ -194,8 +182,7 @@ impl HomeImageCache {
                 runner_host::lock::TryLock::Acquired(lock) => lock,
                 runner_host::lock::TryLock::Busy => return Ok(None),
             };
-        let mut completion_marker = self.routine_gc_completion_marker().await?;
-        if !routine_gc_is_due(&completion_marker, minimum_interval)? {
+        if !routine_gc_is_due(&routine_lock, minimum_interval)? {
             return Ok(None);
         }
 
@@ -266,7 +253,6 @@ impl HomeImageCache {
                 if outcome.status != HomeCacheReclaimStatus::BudgetExhausted {
                     break;
                 }
-                drop(completion_marker);
                 drop(routine_lock);
                 #[cfg(any(test, feature = "test-support"))]
                 if let Some(gate) = &self.pressure_turn_test_gate {
@@ -283,8 +269,7 @@ impl HomeImageCache {
                         runner_host::lock::TryLock::Acquired(lock) => lock,
                         runner_host::lock::TryLock::Busy => return Ok(None),
                     };
-                completion_marker = self.routine_gc_completion_marker().await?;
-                if !routine_gc_is_due(&completion_marker, minimum_interval)? {
+                if !routine_gc_is_due(&routine_lock, minimum_interval)? {
                     return Ok(None);
                 }
             }
@@ -292,7 +277,7 @@ impl HomeImageCache {
         if !self.background_gc.is_active() {
             return Ok(None);
         }
-        completion_marker.write_all(b"\0")?;
+        routine_lock.write_all(b"\0")?;
         info!(
             entry_count,
             inventory_us = inventory_duration.as_micros() as u64,

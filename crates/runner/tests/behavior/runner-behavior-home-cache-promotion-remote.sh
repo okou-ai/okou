@@ -29,7 +29,7 @@ UPDATED_ROOTFS_HASH=""
 UPDATED_SNAPSHOT_HASH=""
 UPDATED_IMAGE_DIR=""
 HOME_CACHE_PIN_FDS=()
-HOME_CACHE_GC_FDS=()
+HOME_CACHE_GC_FD=""
 
 fail() { echo "FAIL: $1"; exit 1; }
 hold_fixture_cache_locks() {
@@ -58,23 +58,17 @@ release_fixture_cache_locks() {
   done
   HOME_CACHE_PIN_FDS=()
 }
-hold_restore_gc_locks() {
-  local lock_name lock_fd
-  # Routine inventory can run without capacity. Keep both GC owners excluded
-  # before releasing entry pins, so checkout can acquire its own entry lock.
-  for lock_name in routine-gc capacity; do
-    exec {lock_fd}<>"/var/lib/vm0-runner/locks/home-image-cache-${lock_name}.lock"
-    HOME_CACHE_GC_FDS+=("$lock_fd")
-    flock -w 10 "$lock_fd" || fail "home cache ${lock_name} lock unavailable for restore"
-  done
+hold_restore_gc_lock() {
+  # Exclude collectors before releasing entry pins so checkout can own its entry.
+  exec {HOME_CACHE_GC_FD}<>"/var/lib/vm0-runner/locks/home-image-cache-routine-gc.lock"
+  flock -w 10 "$HOME_CACHE_GC_FD" || fail "home cache routine GC lock unavailable for restore"
 }
-release_restore_gc_locks() {
-  local lock_fd
-  for lock_fd in "${HOME_CACHE_GC_FDS[@]}"; do
-    flock -u "$lock_fd"
-    exec {lock_fd}>&-
-  done
-  HOME_CACHE_GC_FDS=()
+release_restore_gc_lock() {
+  if [ -n "$HOME_CACHE_GC_FD" ]; then
+    flock -u "$HOME_CACHE_GC_FD"
+    exec {HOME_CACHE_GC_FD}>&-
+    HOME_CACHE_GC_FD=""
+  fi
 }
 cache_diagnostics() {
   sudo env RUST_LOG=off "$BIN_DIR/runner" home-image-cache list --json \
@@ -110,7 +104,7 @@ stop_active_attempt() {
 
 cleanup() {
   echo "--- Cleanup ---"
-  release_restore_gc_locks
+  release_restore_gc_lock
   stop_active_attempt
   release_fixture_cache_locks
   if [ -n "$UPDATED_IMAGE_DIR" ]; then
@@ -388,14 +382,6 @@ sudo touch /home/user/workspace/nested/ephemeral'; then
   PROMOTION_LOGS=$(sudo journalctl --no-pager \
     "_SYSTEMD_INVOCATION_ID=$PROMOTION_INVOCATION_ID" 2>&1) \
     || fail "failed to read writer-free home cache promotion logs"
-  if grep -F 'home image cache promotion skipped: capacity lock busy' \
-    <<<"$PROMOTION_LOGS" >/dev/null; then
-    if [ "$ATTEMPT" -eq "$MAX_ATTEMPTS" ]; then
-      fail "Home cache promotion capacity lock remained busy after ${MAX_ATTEMPTS} attempts"
-    fi
-    echo "RETRY: home cache promotion capacity lock was busy on attempt ${ATTEMPT}"
-    continue
-  fi
   if ! grep -F 'home image cache promoted' <<<"$PROMOTION_LOGS" >/dev/null; then
     printf '%s\n' "$PROMOTION_LOGS"
     fail "Writer-free turn did not publish a reusable cache entry"
@@ -426,7 +412,7 @@ sudo touch /home/user/workspace/nested/ephemeral'; then
   done
   [ -n "$RESTORE_INVOCATION_ID" ] || fail "restore runner invocation ID unavailable"
 
-  hold_restore_gc_locks
+  hold_restore_gc_lock
   release_fixture_cache_locks
   cache_diagnostics after-rootfs-update
 
@@ -444,12 +430,12 @@ test "$(cat /home/user/live-writer)" = completed-writer
 test "$(cat /home/user/home-cache-marker)" = ordinary-home-state
 test "$(cat /home/user/.npm/home-cache-marker)" = npm-home-state
 test ! -e /home/user/workspace/nested/ephemeral'; then
-    release_restore_gc_locks
+    release_restore_gc_lock
     echo "PASS: home cache restored across rootfs update after terminal cleanup and freeze-based promotion"
     PROMOTION_VERIFIED=true
     break
   fi
-  release_restore_gc_locks
+  release_restore_gc_lock
 
   RESTORE_LOGS=$(sudo journalctl --no-pager \
     "_SYSTEMD_INVOCATION_ID=$RESTORE_INVOCATION_ID" 2>&1) \

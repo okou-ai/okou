@@ -178,7 +178,7 @@ this byte-based GC policy.
 Individual eligibility uses the exact configured profile shape, not an unrelated
 percentage-of-host single-image cap. Fresh accounting includes image generations,
 metadata, candidate/orphan staging and cross-device sparse-copy peak headroom.
-Locked or unavailable observations are not zero. Entry/capacity/reference/age
+Locked or unavailable observations are not zero. Entry/reference/age
 locks and routine single-flight GC remain authoritative. Unlink in the Guest is
 not proof that host allocation was reclaimed. Retention controls must not resize
 configured disks or widen thread isolation. These defaults are safety policy,

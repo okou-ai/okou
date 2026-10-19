@@ -44,7 +44,12 @@ async fn foreground_target_and_cheap_background_watermarks_remain_independent() 
     f.cache.drain_pressure_reclamation().await;
     assert_eq!(f.cache.gc_root_scan_count(), 1);
     assert!(!f.image("home", &committed).exists());
-    assert!(!f.cache.routine_gc_marker_path().exists());
+    assert_eq!(
+        std::fs::metadata(f.cache.routine_gc_lock_path())
+            .unwrap()
+            .len(),
+        0
+    );
 }
 
 #[tokio::test]
@@ -175,8 +180,13 @@ async fn pressure_continuation_bounds_turns_and_keeps_one_complete_lru_inventory
     assert!(turns >= 3);
     f.cache.drain_pressure_reclamation().await;
     assert!(f.cache.held_home_states().await.is_empty());
-    // A pressure-only turn never completes the independent maintenance marker.
-    assert!(!f.cache.routine_gc_marker_path().exists());
+    // A pressure-only turn never marks routine maintenance complete.
+    assert_eq!(
+        std::fs::metadata(f.cache.routine_gc_lock_path())
+            .unwrap()
+            .len(),
+        0
+    );
 }
 
 #[tokio::test]
@@ -209,7 +219,7 @@ async fn routine_pressure_turn_releases_collector_and_retains_inventory_between_
         .unwrap();
     drop(lock);
     assert_eq!(
-        std::fs::metadata(f.cache.routine_gc_marker_path())
+        std::fs::metadata(f.cache.routine_gc_lock_path())
             .unwrap()
             .len(),
         0
@@ -229,7 +239,7 @@ async fn routine_pressure_turn_releases_collector_and_retains_inventory_between_
     assert_eq!(f.cache.gc_root_scan_count(), 1);
     assert!(f.image("intervening", &published).exists());
     assert_eq!(
-        std::fs::metadata(f.cache.routine_gc_marker_path())
+        std::fs::metadata(f.cache.routine_gc_lock_path())
             .unwrap()
             .len(),
         1

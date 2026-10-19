@@ -40,7 +40,7 @@ async fn background_gc_lifecycle(pressure: bool, resume: bool) {
     );
     let entry = cache.entry_paths(&key).entry_dir().to_owned();
     let marker =
-        runner_host::paths::home_image_cache_capacity_lock_path(&config.paths.home.locks_dir());
+        runner_host::paths::home_image_cache_routine_gc_lock_path(&config.paths.home.locks_dir());
     cache.set_fs_stats_for_test(FsStats {
         total_bytes: 100 * 1024 * 1024 * 1024,
         available_bytes: 55 * 1024 * 1024 * 1024,
@@ -126,8 +126,10 @@ async fn background_gc_lifecycle(pressure: bool, resume: bool) {
     )
     .await;
     assert_eq!(entry.exists(), !resume);
-    if pressure || !resume {
-        assert!(!marker.exists());
+    if !resume {
+        assert!(!marker.exists(), "draining must not start a collector");
+    } else if pressure {
+        assert_eq!(std::fs::metadata(marker).unwrap().len(), 0);
     }
 }
 

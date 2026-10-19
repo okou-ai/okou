@@ -193,10 +193,10 @@ establish full session/history restoration or calibrate production host limits.
 Runners serialize routine, manual, demand and publication-triggered collection
 with `home-image-cache-routine-gc.lock`. Collector and victim entry acquisition
 are nonblocking; contention defers collection. Routine maintenance reads the
-nonempty completion-file mtime under the collector owner. The completion marker
-remains at `home-image-cache-capacity.lock`, opened with ordinary private-file
-trust checks, without a capacity flock. A yielded routine turn reopens the marker
-and rechecks cadence after reacquiring the collector owner. Interrupted
+nonempty collector-file mtime through its held lock descriptor. Only a completed,
+active routine pass writes the marker. Manual and pressure collection acquire the
+same file without changing routine completion cadence. A yielded routine turn
+rechecks cadence through its newly acquired collector descriptor. Interrupted
 maintenance never advances the marker.
 
 Publishers can overlap collection while exclusive entry flocks protect each
@@ -258,8 +258,8 @@ completes. Waiting can therefore affect same-key checkout, resource-limited blan
 refill and joined shutdown; its contention deadline does not bound filesystem I/O.
 
 Checkout protects and examines the requested entry before considering disk
-pressure, with the existing short entry wait or immediate fallback. It never
-acquires capacity or runs a whole-cache GC during cache selection. A valid Move
+pressure, with the existing short entry wait or immediate fallback. Cache
+selection never runs a whole-cache GC. A valid Move
 seed can be consumed by same-filesystem rename even below the reserve. Provider
 Fresh/Copy preparation may offer low-space demand to the cache's independently
 owned reclaimer when both use the same receiving device. Healthy preparation

@@ -235,8 +235,6 @@ async fn draining_routine_gc_retires_while_the_reactor_waits_for_the_idle_pool()
     let entered = Arc::new(tokio::sync::Notify::new());
     let release = Arc::new(tokio::sync::Semaphore::new(0));
     let paths = RunnerPaths::new(env._temp_dir.path().join("cache-runner"));
-    let capacity_path =
-        runner_host::paths::home_image_cache_capacity_lock_path(&paths.base_dir().join("locks"));
     let routine_path =
         runner_host::paths::home_image_cache_routine_gc_lock_path(&paths.base_dir().join("locks"));
     Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(
@@ -271,7 +269,7 @@ async fn draining_routine_gc_retires_while_the_reactor_waits_for_the_idle_pool()
     .await
     .expect("routine GC must progress independently")
     .unwrap();
-    assert_eq!(std::fs::metadata(capacity_path).unwrap().len(), 0);
+    assert_eq!(routine_holder.metadata().unwrap().len(), 0);
     drop(routine_holder);
     drop(pool_holder);
     tokio::time::timeout(Duration::from_secs(5), reactor)
@@ -287,8 +285,6 @@ async fn teardown_joins_routine_gc_before_releasing_its_owner_lock() {
     let entered = Arc::new(tokio::sync::Notify::new());
     let release = Arc::new(tokio::sync::Semaphore::new(0));
     let paths = RunnerPaths::new(env._temp_dir.path().join("cache-runner"));
-    let capacity_path =
-        runner_host::paths::home_image_cache_capacity_lock_path(&paths.base_dir().join("locks"));
     let routine_path =
         runner_host::paths::home_image_cache_routine_gc_lock_path(&paths.base_dir().join("locks"));
     Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(
@@ -334,8 +330,8 @@ async fn teardown_joins_routine_gc_before_releasing_its_owner_lock() {
         .await
         .expect("GC completion must unblock teardown")
         .unwrap();
-    let _routine_holder = runner_host::lock::acquire(routine_path).await.unwrap();
-    assert_eq!(std::fs::metadata(capacity_path).unwrap().len(), 0);
+    let routine_holder = runner_host::lock::acquire(routine_path).await.unwrap();
+    assert_eq!(routine_holder.metadata().unwrap().len(), 0);
     assert_stopped_status(&env).await;
 }
 
@@ -345,8 +341,6 @@ async fn dropping_reactor_retains_routine_gc_owner_until_completion() {
     let entered = Arc::new(tokio::sync::Notify::new());
     let release = Arc::new(tokio::sync::Semaphore::new(0));
     let paths = RunnerPaths::new(env._temp_dir.path().join("cache-runner"));
-    let capacity_path =
-        runner_host::paths::home_image_cache_capacity_lock_path(&paths.base_dir().join("locks"));
     let routine_path =
         runner_host::paths::home_image_cache_routine_gc_lock_path(&paths.base_dir().join("locks"));
     Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(
@@ -367,7 +361,7 @@ async fn dropping_reactor_retains_routine_gc_owner_until_completion() {
             result.expect("routine GC must reach the routine-lock-held gate");
         }
     }
-    assert_eq!(std::fs::metadata(&capacity_path).unwrap().len(), 0);
+    assert_eq!(std::fs::metadata(&routine_path).unwrap().len(), 0);
 
     drop(reactor);
     assert!(matches!(
@@ -380,12 +374,12 @@ async fn dropping_reactor_retains_routine_gc_owner_until_completion() {
 
     // Completion must commit the real filesystem marker even after the
     // reactor and its observation owner are gone.
-    let _routine_holder = tokio::time::timeout(
+    let routine_holder = tokio::time::timeout(
         Duration::from_secs(5),
         runner_host::lock::acquire(routine_path),
     )
     .await
     .expect("detached GC must finish and release its owner lock")
     .unwrap();
-    assert!(std::fs::metadata(capacity_path).unwrap().len() > 0);
+    assert!(routine_holder.metadata().unwrap().len() > 0);
 }
