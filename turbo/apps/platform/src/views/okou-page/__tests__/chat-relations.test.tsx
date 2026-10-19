@@ -148,8 +148,7 @@ async function setupRelations(
     path: `/chats/${THREAD}`,
     locale: options.locale,
     featureSwitches: {
-      [FeatureSwitchKey.ChatResourcePanel]: true,
-      [FeatureSwitchKey.ChatRelations]: options.enabled ?? true,
+      [FeatureSwitchKey.ChatResourcePanel]: options.enabled ?? true,
     },
   });
 }
@@ -303,7 +302,6 @@ test("Keep the next chat's popup open while its relationships load", async () =>
     path: `/chats/${first.id}`,
     featureSwitches: {
       [FeatureSwitchKey.ChatResourcePanel]: true,
-      [FeatureSwitchKey.ChatRelations]: true,
     },
   });
   const previous = await screen.findByRole("region", { name: "Resources" });
@@ -526,15 +524,17 @@ test("Format the related chat count using the German locale", async () => {
   expect(document.documentElement).toHaveAttribute("lang", "de-DE");
 });
 
-test("Keep the relationship panel hidden while the feature is disabled", async () => {
+test("Keep resources and relationships hidden while chat resources are disabled", async () => {
   await setupRelations({ enabled: false });
   await screen.findByText("Plan the launch");
-  const panel = await screen.findByRole("region", { name: "Resources" });
   expect(
-    within(panel).queryByRole("region", { name: "Messages" }),
+    screen.queryByRole("region", { name: "Resources" }),
   ).not.toBeInTheDocument();
   expect(
-    within(panel).queryByRole("region", { name: "From" }),
+    screen.queryByRole("region", { name: "Messages" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("region", { name: "From" }),
   ).not.toBeInTheDocument();
 });
 

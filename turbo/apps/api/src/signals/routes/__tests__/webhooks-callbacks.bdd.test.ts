@@ -2398,25 +2398,6 @@ describe("WHCB-05: sandbox agent webhook boundaries", () => {
     expectApiError(malformedUsageEvent.body);
     expect(malformedUsageEvent.body.error.code).toBe("BAD_REQUEST");
 
-    const malformedTelemetryBucket = await api.requestAgentTelemetryUnchecked(
-      {
-        runId,
-        sandboxOperations: [
-          {
-            ts: nowDate().toISOString(),
-            action_type: "session_history_download",
-            duration_ms: 3,
-            success: true,
-            session_history_raw_size_bucket: "exact_123_bytes",
-          },
-        ],
-      },
-      headers,
-      [400],
-    );
-    expectApiError(malformedTelemetryBucket.body);
-    expect(malformedTelemetryBucket.body.error.code).toBe("BAD_REQUEST");
-
     for (const invalidRunnerDimension of [
       { runnerHostname: "x".repeat(256) },
       { runnerVersion: "x".repeat(129) },
@@ -2432,45 +2413,6 @@ describe("WHCB-05: sandbox agent webhook boundaries", () => {
       expectApiError(malformedRunnerDimension.body);
       expect(malformedRunnerDimension.body.error.code).toBe("BAD_REQUEST");
     }
-
-    const malformedTelemetryProbe = await api.requestAgentTelemetryUnchecked(
-      {
-        runId,
-        sandboxOperations: [
-          {
-            ts: nowDate().toISOString(),
-            action_type: "session_history_download",
-            duration_ms: 3,
-            success: true,
-            session_history_ref_seen_recently: "yes",
-          },
-        ],
-      },
-      headers,
-      [400],
-    );
-    expectApiError(malformedTelemetryProbe.body);
-    expect(malformedTelemetryProbe.body.error.code).toBe("BAD_REQUEST");
-
-    const malformedTelemetryResponseState =
-      await api.requestAgentTelemetryUnchecked(
-        {
-          runId,
-          sandboxOperations: [
-            {
-              ts: nowDate().toISOString(),
-              action_type: "session_history_download",
-              duration_ms: 3,
-              success: true,
-              session_history_content_encoding_state: "brotli",
-            },
-          ],
-        },
-        headers,
-        [400],
-      );
-    expectApiError(malformedTelemetryResponseState.body);
-    expect(malformedTelemetryResponseState.body.error.code).toBe("BAD_REQUEST");
   });
 });
 

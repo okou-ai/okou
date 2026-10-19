@@ -77,14 +77,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.ChatRelations]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Chat relationships",
-    description:
-      "Show chat origins, created chats, and cross-chat communication.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.ChatResourcePanel]: {
     maintainer: "bingjie@okou.ai",
     displayName: "Chat resources",
@@ -142,6 +134,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Document templates in the picker, using pinned public GitHub sources. Enable after preview assets are published.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.CustomTemplates]: {
     maintainer: "bingjie@okou.ai",

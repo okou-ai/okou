@@ -159,7 +159,7 @@ function createRelationContentSignal(
   lists: readonly ChatRelationList<unknown>[],
 ) {
   return computed(async (get) => {
-    if (!get(featureSwitch$)[FeatureSwitchKey.ChatRelations]) {
+    if (!get(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel]) {
       return false;
     }
     const origin = get(origin$);

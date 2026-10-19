@@ -93,8 +93,13 @@ async function fixture() {
     starts: [] as string[],
     verificationCodes: [] as (string | null)[],
     typingStatuses: [] as number[],
+    sends: [] as unknown[],
   };
   server.use(
+    http.post(`${origin}/ilink/bot/sendmessage`, async ({ request }) => {
+      provider.sends.push(await request.json());
+      return HttpResponse.json({ ret: 0 });
+    }),
     http.post(`${origin}/ilink/bot/get_bot_qrcode`, async ({ request }) => {
       await expect(request.json()).resolves.toStrictEqual({
         local_token_list: [],
@@ -151,6 +156,7 @@ async function fixture() {
       actor.orgId,
       "org:admin",
     );
+    await flushWaitUntilForTest();
     await accept(client().disconnect({ headers }), [204]);
     await deleteFeatureSwitchesForUser(context, actor);
   });
@@ -212,6 +218,7 @@ async function connectOwner(owner: Awaited<ReturnType<typeof fixture>>) {
     client().poll({ headers, body: { id: attempt.body.id } }),
     [200],
   );
+  await flushWaitUntilForTest();
   return z.uuid().parse(owner.provider.starts.at(-1));
 }
 function ownerMessage(userId: string): WechatMessage {
@@ -240,13 +247,6 @@ async function responseFixture() {
   await runs.ensurePersonalSubscriptionModel(actor);
   await runs.updateUserModelPreference(actor, "claude-fable-5-1");
   await bdd.readOnboardingStatus(actor);
-  const attempt = await accept(client().connect({ headers }), [200]);
-  confirm();
-  await accept(
-    client().poll({ headers, body: { id: attempt.body.id } }),
-    [200],
-  );
-  const connectionId = z.uuid().parse(provider.starts[0]);
   const sentTexts: string[] = [];
   server.use(
     http.post(`${origin}/ilink/bot/sendmessage`, async ({ request }) => {
@@ -267,6 +267,14 @@ async function responseFixture() {
       return HttpResponse.json({ ret: 0 });
     }),
   );
+  const attempt = await accept(client().connect({ headers }), [200]);
+  confirm();
+  await accept(
+    client().poll({ headers, body: { id: attempt.body.id } }),
+    [200],
+  );
+  const connectionId = z.uuid().parse(provider.starts[0]);
+  await flushWaitUntilForTest();
   return {
     ...connected,
     connectionId,
@@ -1272,13 +1280,6 @@ test("receives an owner DM once, resumes its native session and delivers the can
   await runs.ensurePersonalSubscriptionModel(actor);
   await runs.updateUserModelPreference(actor, "claude-fable-5-1");
   await bdd.readOnboardingStatus(actor);
-  const attempt = await accept(client().connect({ headers }), [200]);
-  confirm();
-  await accept(
-    client().poll({ headers, body: { id: attempt.body.id } }),
-    [200],
-  );
-  const connectionId = z.uuid().parse(provider.starts[0]);
   const sends: unknown[] = [];
   const delivered = createDeferredPromise<void>(context.signal);
   let extraItems: NonNullable<WechatMessage["item_list"]> = [];
@@ -1330,6 +1331,14 @@ test("receives an owner DM once, resumes its native session and delivers the can
       return HttpResponse.json({ ret: 0 });
     }),
   );
+  const attempt = await accept(client().connect({ headers }), [200]);
+  confirm();
+  await accept(
+    client().poll({ headers, body: { id: attempt.body.id } }),
+    [200],
+  );
+  const connectionId = z.uuid().parse(provider.starts[0]);
+  await flushWaitUntilForTest();
   async function receive() {
     return await pollGateway(connectionId);
   }
@@ -1348,12 +1357,10 @@ test("receives an owner DM once, resumes its native session and delivers the can
       .toBeDefined();
     return await runs.claimRunnerJob(z.uuid().parse(runId));
   }
-  await receive();
   expect(sends).toHaveLength(1);
   expect(sends[0]).toMatchObject({
     msg: {
       to_user_id: `scanner-${actor.userId}`,
-      context_token: "private-reply-context",
       item_list: [
         {
           type: 1,
@@ -1362,6 +1369,14 @@ test("receives an owner DM once, resumes its native session and delivers the can
       ],
     },
   });
+
+  expect(
+    z
+      .object({ msg: z.object({ context_token: z.string().optional() }) })
+      .parse(sends[0]).msg.context_token,
+  ).toBeUndefined();
+  await receive();
+  expect(sends).toHaveLength(1);
 
   const first = await claim();
   await flushWaitUntilForTest();
@@ -2238,7 +2253,9 @@ describe("WeChat system notices", () => {
           {
             type: 1,
             text_item: {
-              text: expect.stringContaining("https://app.okou.test/works"),
+              text: expect.stringContaining(
+                "https://app.okou.test/settings/wechat?token=",
+              ),
             },
           },
         ],
@@ -2294,7 +2311,12 @@ describe("WeChat system notices", () => {
           [200],
         )
       ).body.messages,
-    ).toStrictEqual([]);
+    ).toMatchObject([
+      {
+        direction: "outbound",
+        content: expect.stringContaining("You're connected"),
+      },
+    ]);
   });
 
   it("ignores unverified messages and never retries an ambiguous reconnect send", async () => {
@@ -2367,7 +2389,6 @@ describe("WeChat system notices", () => {
 
   it("does not create a chat when disconnect completes during the welcome request", async () => {
     const owner = await fixture();
-    const connectionId = await connectOwner(owner);
     const entered = createDeferredPromise<void>(context.signal);
     const release = createDeferredPromise<void>(context.signal);
     server.use(
@@ -2383,11 +2404,16 @@ describe("WeChat system notices", () => {
         return HttpResponse.json({ ret: 0 });
       }),
     );
-    const pending = pollGateway(connectionId);
+    const attempt = await accept(client().connect({ headers }), [200]);
+    owner.confirm();
+    await accept(
+      client().poll({ headers, body: { id: attempt.body.id } }),
+      [200],
+    );
     await entered.promise;
     await accept(client().disconnect({ headers }), [204]);
     release.resolve();
-    await pending;
+    await flushWaitUntilForTest();
     expect(
       (await accept(client().status({ headers }), [200])).body.status,
     ).toBe("disconnected");
@@ -2512,7 +2538,6 @@ describe("WeChat system notices", () => {
     await runs.ensurePersonalSubscriptionModel(owner.actor);
     await runs.updateUserModelPreference(owner.actor, "claude-fable-5-1");
     await bdd.readOnboardingStatus(owner.actor);
-    const connectionId = await connectOwner(owner);
     const message = ownerMessage(owner.actor.userId);
     let attempts = 0;
     const messages = setupApp({
@@ -2533,6 +2558,8 @@ describe("WeChat system notices", () => {
           : HttpResponse.json({ ret: 0 });
       }),
     );
+    const connectionId = await connectOwner(owner);
+    expect(attempts).toBe(1);
     await pollGateway(connectionId);
     await pollGateway(connectionId);
     expect(attempts).toBe(1);
@@ -2762,4 +2789,338 @@ test("weChat history keeps time bounds across pages and validates their order", 
     }),
     [400],
   );
+});
+
+async function disconnectedLink() {
+  const owner = await fixture();
+  const connectionId = await connectOwner(owner);
+  expect(owner.provider.sends).toHaveLength(1);
+  expect(owner.provider.sends[0]).toMatchObject({
+    msg: { to_user_id: `scanner-${owner.actor.userId}` },
+  });
+  await accept(client().disconnect({ headers }), [204]);
+  server.use(
+    http.post(`${origin}/ilink/bot/getupdates`, () => {
+      return HttpResponse.json({
+        msgs: [ownerMessage(owner.actor.userId)],
+        get_updates_buf: "disconnected-cursor",
+      });
+    }),
+  );
+  await pollGateway(connectionId);
+  const notice = z
+    .object({
+      msg: z.object({
+        item_list: z.array(
+          z.object({ text_item: z.object({ text: z.string() }) }),
+        ),
+      }),
+    })
+    .parse(owner.provider.sends.at(-1));
+  const text = z.string().parse(notice.msg.item_list[0]?.text_item.text);
+  const url = new URL(z.string().parse(text.split("\n").at(-1)));
+  expect(url.pathname).toBe("/settings/wechat");
+  expect(url.toString()).not.toMatch(
+    /test-private-bot-token|private-reply-context|scanner-/,
+  );
+  return {
+    ...owner,
+    connectionId,
+    token: z.string().parse(url.searchParams.get("token")),
+  };
+}
+
+describe("WeChat reconnect links", () => {
+  it("requires confirmation, restores without a new QR, and consumes concurrent and old links", async () => {
+    const owner = await disconnectedLink();
+    let qrRequests = 0;
+    server.use(
+      http.post(`${origin}/ilink/bot/get_bot_qrcode`, () => {
+        qrRequests++;
+        return HttpResponse.json({
+          qrcode: randomUUID(),
+          qrcode_img_content: "https://weixin.qq.com/unexpected",
+        });
+      }),
+    );
+    const query = { token: owner.token };
+    expect(
+      (await accept(client().reconnectStatus({ headers, query }), [200])).body
+        .available,
+    ).toBeTruthy();
+    expect(
+      (await accept(client().status({ headers }), [200])).body.status,
+    ).toBe("disconnected");
+    const results = await Promise.all([
+      client().reconnect({ headers, body: query }),
+      client().reconnect({ headers, body: query }),
+    ]);
+    expect(
+      results
+        .map((result) => {
+          return result.status;
+        })
+        .sort(),
+    ).toStrictEqual([204, 409]);
+    await flushWaitUntilForTest();
+    expect(qrRequests).toBe(0);
+    expect(owner.provider.starts.at(-1)).toBe(owner.connectionId);
+    expect(
+      (await accept(client().status({ headers }), [200])).body.status,
+    ).toBe("active");
+    expect(owner.provider.sends).toHaveLength(3);
+    const welcome = z
+      .object({
+        msg: z.object({
+          context_token: z.string().optional(),
+          item_list: z.array(
+            z.object({ text_item: z.object({ text: z.string() }) }),
+          ),
+        }),
+      })
+      .parse(owner.provider.sends.at(-1));
+    expect(welcome.msg.context_token).toBeUndefined();
+    expect(welcome.msg.item_list[0]?.text_item.text).toContain(
+      "You're connected",
+    );
+    await accept(client().disconnect({ headers }), [204]);
+    expect(
+      (await accept(client().reconnectStatus({ headers, query }), [200])).body
+        .available,
+    ).toBeFalsy();
+    await accept(client().reconnect({ headers, body: query }), [409]);
+  });
+
+  it("rejects a different owner or workspace without exposing the binding", async () => {
+    const owner = await disconnectedLink();
+    const other = await fixture();
+    const query = { token: owner.token };
+    expect(
+      (await accept(client().reconnectStatus({ headers, query }), [200])).body
+        .available,
+    ).toBeFalsy();
+    await accept(client().reconnect({ headers, body: query }), [409]);
+    createRouteMocks(context).clerk.session(
+      owner.actor.userId,
+      other.actor.orgId,
+      "org:admin",
+    );
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      {
+        data: [
+          {
+            publicUserData: { userId: owner.actor.userId },
+            organization: { id: other.actor.orgId },
+            role: "org:admin",
+          },
+        ],
+        totalCount: 1,
+      },
+    );
+    const otherWorkspace = { ...owner.actor, orgId: other.actor.orgId };
+    await updateFeatureSwitchesForUser(context, otherWorkspace, {
+      [FeatureSwitchKey.WechatIntegration]: true,
+    });
+    expect(
+      (await accept(client().reconnectStatus({ headers, query }), [200])).body
+        .available,
+    ).toBeFalsy();
+    await accept(client().reconnect({ headers, body: query }), [409]);
+    await deleteFeatureSwitchesForUser(context, otherWorkspace);
+  });
+
+  it("rejects forged and expired links and accepts a newly issued link", async () => {
+    const owner = await disconnectedLink();
+    const query = { token: `${owner.token}tampered` };
+    expect(
+      (await accept(client().reconnectStatus({ headers, query }), [200])).body
+        .available,
+    ).toBeFalsy();
+    await accept(client().reconnect({ headers, body: query }), [409]);
+    mockNow(now() + 10 * 60_000);
+    query.token = owner.token;
+    expect(
+      (await accept(client().reconnectStatus({ headers, query }), [200])).body
+        .available,
+    ).toBeFalsy();
+    await accept(client().reconnect({ headers, body: query }), [409]);
+    server.use(
+      http.post(`${origin}/ilink/bot/getupdates`, () => {
+        return HttpResponse.json({
+          msgs: [
+            { ...ownerMessage(owner.actor.userId), message_id: "new-link" },
+          ],
+        });
+      }),
+    );
+    await pollGateway(owner.connectionId);
+    const notice = z
+      .object({
+        msg: z.object({
+          item_list: z.array(
+            z.object({ text_item: z.object({ text: z.string() }) }),
+          ),
+        }),
+      })
+      .parse(owner.provider.sends.at(-1));
+    const text = z.string().parse(notice.msg.item_list[0]?.text_item.text);
+    query.token = z
+      .string()
+      .parse(
+        new URL(z.string().parse(text.split("\n").at(-1))).searchParams.get(
+          "token",
+        ),
+      );
+    await accept(client().reconnect({ headers, body: query }), [204]);
+    await flushWaitUntilForTest();
+  });
+
+  it("rejects revoked access and expired transports", async () => {
+    const owner = await disconnectedLink();
+    const query = { token: owner.token };
+    await updateFeatureSwitchesForUser(context, owner.actor, {
+      [FeatureSwitchKey.WechatIntegration]: false,
+    });
+    await accept(client().reconnectStatus({ headers, query }), [403]);
+    await accept(client().reconnect({ headers, body: query }), [403]);
+    await updateFeatureSwitchesForUser(context, owner.actor, {
+      [FeatureSwitchKey.WechatIntegration]: true,
+    });
+    server.use(
+      http.post(`${origin}/ilink/bot/getupdates`, () => {
+        return HttpResponse.json({ ret: -14 });
+      }),
+    );
+    expect((await pollGateway(owner.connectionId)).body.active).toBeFalsy();
+    expect(
+      (await accept(client().reconnectStatus({ headers, query }), [200])).body
+        .available,
+    ).toBeFalsy();
+    await accept(client().reconnect({ headers, body: query }), [409]);
+  });
+
+  it("discards a disconnected poll response completed after restoration", async () => {
+    const owner = await disconnectedLink();
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    server.use(
+      http.post(`${origin}/ilink/bot/getupdates`, async () => {
+        entered.resolve();
+        await release.promise;
+        return HttpResponse.json({
+          msgs: [
+            {
+              ...ownerMessage(owner.actor.userId),
+              message_id: "late-disconnected-message",
+            },
+          ],
+          get_updates_buf: "late",
+        });
+      }),
+    );
+    const pending = pollGateway(owner.connectionId);
+    await entered.promise;
+    await accept(
+      client().reconnect({ headers, body: { token: owner.token } }),
+      [204],
+    );
+    await flushWaitUntilForTest();
+    release.resolve();
+    await pending;
+    expect(owner.provider.sends).toHaveLength(3);
+    const messages = setupApp({
+      context,
+      routes: integrationsWechatMessagesRoutes,
+    })(integrationsWechatMessagesContract);
+    const history = await accept(
+      messages.history({
+        headers,
+        query: { channelId: owner.connectionId, limit: 50 },
+      }),
+      [200],
+    );
+    expect(history.body.messages).toMatchObject([
+      {
+        direction: "outbound",
+        content: expect.stringContaining("You're connected"),
+      },
+    ]);
+  });
+});
+
+test("a restored transport ignores provider backlog and accepts only newly created messages", async () => {
+  const owner = await disconnectedLink();
+  const bdd = createBddApi(context);
+  const runs = createRunsApi(context);
+  runs.configureRunnerGroup();
+  bdd.acceptAgentStorageWrites();
+  runs.acceptStorageDownloads();
+  runs.acceptTelemetryIngest();
+  context.mocks.ably.publish.mockResolvedValue(undefined);
+  await runs.grantProEntitlement(owner.actor);
+  await runs.ensurePersonalSubscriptionModel(owner.actor);
+  await runs.updateUserModelPreference(owner.actor, "claude-fable-5-1");
+  await bdd.readOnboardingStatus(owner.actor);
+  const oldMessage = {
+    ...ownerMessage(owner.actor.userId),
+    create_time_ms: now() - 60_000,
+  };
+  await accept(
+    client().reconnect({ headers, body: { token: owner.token } }),
+    [204],
+  );
+  await flushWaitUntilForTest();
+  let msgs: WechatMessage[] = [
+    oldMessage,
+    { ...ownerMessage(owner.actor.userId), message_id: "unverifiable-age" },
+  ];
+  server.use(
+    http.post(`${origin}/ilink/bot/getupdates`, () => {
+      return HttpResponse.json({
+        msgs,
+        get_updates_buf: "post-reconnect-cursor",
+      });
+    }),
+  );
+  await pollGateway(owner.connectionId);
+  const messages = setupApp({
+    context,
+    routes: integrationsWechatMessagesRoutes,
+  })(integrationsWechatMessagesContract);
+  const history = await accept(
+    messages.history({
+      headers,
+      query: { channelId: owner.connectionId, limit: 50 },
+    }),
+    [200],
+  );
+  expect(history.body.messages).toMatchObject([
+    {
+      direction: "outbound",
+      content: expect.stringContaining("You're connected"),
+    },
+  ]);
+  msgs = [
+    {
+      ...ownerMessage(owner.actor.userId),
+      message_id: "fresh-message",
+      create_time_ms: now(),
+    },
+  ];
+  await pollGateway(owner.connectionId);
+  const fresh = await accept(
+    messages.history({
+      headers,
+      query: { channelId: owner.connectionId, limit: 50 },
+    }),
+    [200],
+  );
+  expect(fresh.body.messages).toMatchObject([
+    { direction: "inbound", providerMessageId: "fresh-message" },
+    {
+      direction: "outbound",
+      content: expect.stringContaining("You're connected"),
+    },
+  ]);
+  expect(owner.provider.sends).toHaveLength(3);
 });

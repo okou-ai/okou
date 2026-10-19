@@ -211,6 +211,7 @@ export const wechatMessageSchema = z.object({
   group_id: z.string().optional(),
   message_type: z.number(),
   message_state: z.number().optional(),
+  create_time_ms: z.number().int().nonnegative().optional(),
   context_token: z.string().optional(),
   item_list: z.array(wechatItemSchema).optional(),
 });
@@ -324,7 +325,7 @@ export async function sendWechatText(
     baseUrl: string;
     token: string;
     senderId: string;
-    contextToken: string;
+    contextToken?: string;
     clientId: string;
     text: string;
   },

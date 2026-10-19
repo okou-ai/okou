@@ -248,3 +248,75 @@ async fn held_batch_does_not_clean_a_same_key_replacement() {
     replacement.confirm_exit();
     fixture.recover().await;
 }
+
+#[tokio::test]
+async fn restored_insertion_is_saved_only_by_a_new_guarded_batch() {
+    let mut fixture = BatchFixture::new().await;
+    let source = fixture.gate_observation(0);
+    let mut original = fixture.park("thread:aba-new-batch", true).await;
+    let mut old = fixture.start(IdleRetirementBatchScope::All).await;
+    source.wait_entered().await;
+    let revision = {
+        let mut pool = fixture.pool.lock().await;
+        let before = pool.status_snapshot().revision;
+        let reserved = pool
+            .reserve_reusable(&original.key, "vm0/default", &None)
+            .unwrap();
+        assert_eq!(reserved.sandbox_id(), original.id);
+        assert!(matches!(
+            pool.restore_reserved(reserved),
+            RestoreReservedIdleResult::Restored
+        ));
+        let after = pool.status_snapshot().revision;
+        assert!(after > before);
+        after
+    };
+    assert!(old.join().now_or_never().is_none());
+    source.release.notify_one();
+    let rejected = join(&mut old).await;
+    assert_eq!(
+        (rejected.selected, rejected.completed, rejected.uncertain),
+        (1, 0, 0)
+    );
+    let [refusal] = rejected.not_started.as_slice() else {
+        panic!("one original refusal required");
+    };
+    assert_eq!(refusal.sandbox_id, original.id);
+    assert_eq!(refusal.error, MemoryOperationError::ResourceChanged);
+    assert!(rejected.status_error.is_none());
+    assert!(!rejected.is_complete());
+    assert_eq!(
+        fixture.pool.lock().await.status_snapshot().revision,
+        revision
+    );
+    assert_eq!(fixture.budget.allocated(), (2, 2048, 1));
+    assert_eq!(original.overrides.kill_call_count(), 0);
+    original.assert_active_bytes().await;
+    let published: serde_json::Value = serde_json::from_slice(
+        &tokio::fs::read(fixture.dir.path().join("status.json"))
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        published["idle_sandboxes"],
+        serde_json::json!([
+        {"reuse_key":original.key,"sandbox_id":original.id}])
+    );
+    original.confirm_exit();
+    let recovered = join(&mut fixture.start(IdleRetirementBatchScope::All).await).await;
+    assert_eq!(
+        (recovered.selected, recovered.completed, recovered.uncertain),
+        (1, 1, 0)
+    );
+    assert!(recovered.is_complete());
+    assert!(!rejected.is_complete());
+    original.assert_cached_bytes().await;
+    fixture.tracker.close_and_wait().await;
+    let operations = fixture.operations.close_and_wait().await.unwrap();
+    assert_eq!(
+        (operations.registered_operations, operations.tracked_tasks),
+        (0, 0)
+    );
+    assert_eq!(fixture.budget.allocated(), (0, 0, 0));
+}

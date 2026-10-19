@@ -349,9 +349,14 @@ export const receiveWechatMessage$ = command(
   ) => {
     const { connection, message } = args;
     // Only the verified scanner's direct messages can become an Okou input.
+    // A provider can redeliver an old long-poll batch after reconnection. Only
+    // messages demonstrably created after consent belong to this new binding.
     if (
       connection.status !== "active" ||
-      !isWechatOwnerMessage(connection, message)
+      !isWechatOwnerMessage(connection, message) ||
+      (connection.resumedAt !== null &&
+        (message.create_time_ms === undefined ||
+          message.create_time_ms <= connection.resumedAt.getTime()))
     ) {
       return;
     }

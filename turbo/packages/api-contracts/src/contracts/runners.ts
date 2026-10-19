@@ -66,11 +66,6 @@ export const AGENT_EXECUTION_TIMEOUT_SECONDS = 2 * 60 * 60;
 export const SESSION_HISTORY_ENCODING_IDENTITY = "identity";
 export const SESSION_HISTORY_ENCODING_GZIP = "gzip";
 export const SESSION_HISTORY_ENCODING_ZSTD = "zstd";
-export const SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT =
-  "configured_public_endpoint";
-export const SESSION_HISTORY_DOWNLOAD_SOURCE_DEFAULT_R2_ENDPOINT =
-  "default_r2_endpoint";
-export const SESSION_HISTORY_GZIP_MIN_BYTES = 64 * 1024;
 export const CONNECTOR_RUNTIME_SYNC_TARGETS_MAX = 256;
 export const CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE = "RUN_TERMINAL";
 export const RUNNER_CANCELLATION_RECOVERY_GRACE_MS = 90_000;
@@ -91,25 +86,6 @@ export const releaseVersionSchema = z
   .regex(/^\d+\.\d+\.\d+$/, "Release versions are MAJOR.MINOR.PATCH");
 export const PI_MEMORY_PHASE2_MAINTENANCE_MAX_SELECTED_CANDIDATES = 256;
 export const PI_MEMORY_PHASE2_MAINTENANCE_MAX_SELECTED_UTF8_BYTES = 21_036_800;
-export const sessionHistoryEncodingSchema = z.enum([
-  SESSION_HISTORY_ENCODING_IDENTITY,
-  SESSION_HISTORY_ENCODING_GZIP,
-  SESSION_HISTORY_ENCODING_ZSTD,
-]);
-export const sessionHistoryDownloadSourceSchema = z.enum([
-  SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT,
-  SESSION_HISTORY_DOWNLOAD_SOURCE_DEFAULT_R2_ENDPOINT,
-]);
-export const sessionHistorySizeBucketSchema = z.enum([
-  "lt_64_kib",
-  "64_256_kib",
-  "256_kib_1_mib",
-  "1_4_mib",
-  "4_16_mib",
-  "16_64_mib",
-  "64_128_mib",
-]);
-
 export function elapsedSinceApiStartMs(
   apiStartTimeMs: number | undefined,
   nowMs: number,
@@ -1611,9 +1587,3 @@ export type StoredStorageMountEntry = z.infer<
 >;
 export type StorageManifest = z.infer<typeof storageManifestSchema>;
 export type CanonicalStorageManifest = StorageManifest;
-export type SessionHistoryDownloadSource = z.infer<
-  typeof sessionHistoryDownloadSourceSchema
->;
-export type SessionHistorySizeBucket = z.infer<
-  typeof sessionHistorySizeBucketSchema
->;

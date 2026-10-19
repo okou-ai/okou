@@ -1549,13 +1549,17 @@
       "viewAgentProfile": "View agent profile"
     },
     "agentSuggestions": {
-      "continueChat": "Continue chat",
       "dismiss": "Dismiss",
       "label": "Suggestions",
-      "newChat": "New chat",
       "next": "Next suggestion",
       "position": "{{current}} of {{total}}",
-      "previous": "Previous suggestion"
+      "previous": "Previous suggestion",
+      "recoveryHint": "Check the chat before sending again. You can restore the suggestion to your draft.",
+      "restoreDraft": "Restore draft",
+      "runFailed": "Could not start the suggestion",
+      "runInChat": "Run in this chat",
+      "runNewChat": "Run in a new chat",
+      "starting": "Starting…"
     },
     "attachments": {
       "attach": "Attach",
@@ -3967,7 +3971,6 @@
     "retry": "Retry",
     "samplePages": "Sample pages: {{total}}",
     "title": "Document",
-    "use": "Use template",
     "useNamed": "Use {{title}}"
   },
   "global": {
@@ -6668,6 +6671,8 @@
       "title": "Telegram"
     },
     "wechat": {
+      "accountLabel": "Account",
+      "agentLabel": "Agent",
       "code": "Verification code",
       "connect": "Connect",
       "connected": "Connected",
@@ -6677,11 +6682,15 @@
       "expired": "This QR code expired. Create a new one.",
       "failed": "Could not connect to WeChat. Please try again.",
       "instructions": "Scan this QR code with WeChat, then confirm on your phone.",
+      "linkUnavailable": "This link is unavailable. Use the original account and workspace, and send another message in WeChat for a fresh link. You can also connect by scanning a new QR code.",
       "name": "WeChat",
+      "newQr": "Connect with a new QR code",
       "reconnect": "Reconnect",
       "reconnect_required": "Scan again to reconnect.",
       "restart_required": "This WeChat account is already bound. Create a new QR code to reconnect.",
+      "restoreDescription": "Restore this WeChat connection to the account and workspace below.",
       "retry": "Create a new QR code",
+      "returnToWechat": "Return to WeChat and send a message to start chatting.",
       "scanned": "Scanned. Confirm on your phone.",
       "scope": "Only your direct messages to this agent are connected. Text messages are supported.",
       "title": "Connect WeChat",
@@ -6689,7 +6698,8 @@
       "verification_blocked": "Too many verification attempts. Create a new QR code.",
       "verification_required": "Enter the verification code shown in WeChat.",
       "verify": "Verify",
-      "waiting": "Waiting for you to scan…"
+      "waiting": "Waiting for you to scan…",
+      "workspaceLabel": "Workspace"
     }
   }
 }

@@ -1549,13 +1549,17 @@
       "viewAgentProfile": "Agentenprofil anzeigen"
     },
     "agentSuggestions": {
-      "continueChat": "Chat fortsetzen",
       "dismiss": "Verwerfen",
       "label": "Vorschläge",
-      "newChat": "Neuer Chat",
       "next": "Nächster Vorschlag",
       "position": "{{current}} von {{total}}",
-      "previous": "Vorheriger Vorschlag"
+      "previous": "Vorheriger Vorschlag",
+      "recoveryHint": "Prüfe den Chat, bevor du erneut sendest. Du kannst den Vorschlag im Entwurf wiederherstellen.",
+      "restoreDraft": "Entwurf wiederherstellen",
+      "runFailed": "Vorschlag konnte nicht gestartet werden",
+      "runInChat": "In diesem Chat ausführen",
+      "runNewChat": "In einem neuen Chat ausführen",
+      "starting": "Wird gestartet…"
     },
     "attachments": {
       "attach": "Anhängen",
@@ -3975,7 +3979,6 @@
     "retry": "Erneut versuchen",
     "samplePages": "Beispielseiten: {{total}}",
     "title": "Dokument",
-    "use": "Vorlage verwenden",
     "useNamed": "{{title}} verwenden"
   },
   "global": {
@@ -6676,6 +6679,8 @@
       "title": "Telegram"
     },
     "wechat": {
+      "accountLabel": "Konto",
+      "agentLabel": "Agent",
       "code": "Bestätigungscode",
       "connect": "Verbinden",
       "connected": "Verbunden",
@@ -6685,11 +6690,15 @@
       "expired": "Dieser QR-Code ist abgelaufen. Erstelle einen neuen.",
       "failed": "Die Verbindung zu WeChat ist fehlgeschlagen. Versuche es erneut.",
       "instructions": "Scanne diesen QR-Code mit WeChat und bestätige auf deinem Smartphone.",
+      "linkUnavailable": "Dieser Link ist nicht verfügbar. Verwende das ursprüngliche Konto und den Arbeitsbereich und sende eine weitere WeChat-Nachricht, um einen neuen Link zu erhalten. Du kannst auch einen neuen QR-Code scannen.",
       "name": "WeChat",
+      "newQr": "Mit neuem QR-Code verbinden",
       "reconnect": "Erneut verbinden",
       "reconnect_required": "Scanne erneut, um die Verbindung wiederherzustellen.",
       "restart_required": "Dieses WeChat-Konto ist bereits verbunden. Erstelle zum erneuten Verbinden einen neuen QR-Code.",
+      "restoreDescription": "WeChat wieder mit dem folgenden Konto und Arbeitsbereich verbinden.",
       "retry": "Neuen QR-Code erstellen",
+      "returnToWechat": "Kehre zu WeChat zurück und sende eine Nachricht, um den Chat zu starten.",
       "scanned": "Gescannt. Bestätige auf deinem Smartphone.",
       "scope": "Nur deine Direktnachrichten an diesen Agenten werden verbunden. Textnachrichten werden unterstützt.",
       "title": "WeChat verbinden",
@@ -6697,7 +6706,8 @@
       "verification_blocked": "Zu viele Versuche. Erstelle einen neuen QR-Code.",
       "verification_required": "Gib den in WeChat angezeigten Bestätigungscode ein.",
       "verify": "Bestätigen",
-      "waiting": "Warte auf den Scan…"
+      "waiting": "Warte auf den Scan…",
+      "workspaceLabel": "Arbeitsbereich"
     }
   }
 }

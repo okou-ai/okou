@@ -1,4 +1,4 @@
-import { settle } from "../utils";
+import { settle, tapError } from "../utils";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { randomUUID } from "node:crypto";
 import { command } from "ccstate";
@@ -11,7 +11,8 @@ import {
 } from "@okouai/db/schema/wechat";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
-import { bodyResultOf } from "../context/request";
+import { bodyResultOf, queryOf } from "../context/request";
+import { waitUntil } from "../context/wait-until";
 import { writeDb$ } from "../external/db";
 import {
   createWechatQr,
@@ -34,6 +35,11 @@ import { nowDate } from "../../lib/time";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { z } from "zod";
 import { notFound } from "../../lib/error";
+import { logger } from "../../lib/log";
+import { sendWechatWelcome$ } from "../services/wechat-notice.service";
+import { verifyWechatConnectToken } from "../services/wechat-connect-token";
+
+const log = logger("api:wechat:connect");
 
 const checkAccess$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
@@ -225,7 +231,7 @@ const poll$ = command(async ({ get, set }, signal: AbortSignal) => {
    INSERT INTO ${wechatConnections} (org_id,user_id,sender_id,bot_id,base_url,token_ciphertext,generation)
    SELECT ${auth.orgId},${auth.userId},${result.ilink_user_id},${result.ilink_bot_id},${baseUrl},${ciphertext},${generation}::uuid FROM eligible
    WHERE (SELECT count(*) FROM released)>=0
-   ON CONFLICT (org_id,user_id) DO UPDATE SET sender_id=EXCLUDED.sender_id,bot_id=EXCLUDED.bot_id,base_url=EXCLUDED.base_url,token_ciphertext=EXCLUDED.token_ciphertext,generation=EXCLUDED.generation,status='active',updates_cursor='',pending_batch_ciphertext=NULL,updated_at=now()
+   ON CONFLICT (org_id,user_id) DO UPDATE SET sender_id=EXCLUDED.sender_id,bot_id=EXCLUDED.bot_id,base_url=EXCLUDED.base_url,token_ciphertext=EXCLUDED.token_ciphertext,generation=EXCLUDED.generation,status='active',updates_cursor='',pending_batch_ciphertext=NULL,resumed_at=NULL,updated_at=now()
    WHERE wechat_connections.sender_id=EXCLUDED.sender_id
    RETURNING id
   ) SELECT id FROM bound`),
@@ -247,7 +253,113 @@ const poll$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
   }
   await startWechatPoller(row.id, signal);
+  // The binding succeeds independently of this one best-effort delivery.
+  waitUntil(
+    tapError(
+      set(sendWechatWelcome$, row.id, generation, AbortSignal.timeout(60_000)),
+      (error) => {
+        log.warn("WeChat welcome failed", { error });
+      },
+    ),
+  );
   return { status: 200 as const, body: { status: "connected" as const } };
+});
+const reconnectStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
+  if (!(await set(checkAccess$, signal))) {
+    return createErrorResponse(
+      "FORBIDDEN",
+      "WeChat integration is not enabled.",
+    );
+  }
+  const token = verifyWechatConnectToken(
+    get(queryOf(contract.reconnectStatus)).token,
+  );
+  const auth = get(organizationAuthContext$);
+  if (!token || !wechatConfigured()) {
+    return { status: 200 as const, body: { available: false } };
+  }
+  const [row] = await set(writeDb$)
+    .select({ id: wechatConnections.id })
+    .from(wechatConnections)
+    .where(
+      and(
+        eq(wechatConnections.id, token.connectionId),
+        eq(wechatConnections.generation, token.generation),
+        eq(wechatConnections.status, "disconnected"),
+        eq(wechatConnections.userId, auth.userId),
+        eq(wechatConnections.orgId, auth.orgId),
+      ),
+    )
+    .limit(1);
+  signal.throwIfAborted();
+  return { status: 200 as const, body: { available: Boolean(row) } };
+});
+const reconnect$ = command(async ({ get, set }, signal: AbortSignal) => {
+  if (!(await set(checkAccess$, signal))) {
+    return createErrorResponse(
+      "FORBIDDEN",
+      "WeChat integration is not enabled.",
+    );
+  }
+  if (!wechatConfigured()) {
+    return createErrorResponse(
+      "PROVIDER_UNAVAILABLE",
+      "WeChat connection is not configured.",
+    );
+  }
+  const body = await get(bodyResultOf(contract.reconnect));
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  const token = verifyWechatConnectToken(body.data.token);
+  if (!token) {
+    return createErrorResponse(
+      "CONFLICT",
+      "This reconnect link is unavailable. Send another WeChat message for a new link or scan a new QR code.",
+    );
+  }
+  const auth = get(organizationAuthContext$);
+  const generation = randomUUID();
+  // Rotating the generation consumes every link for this disconnected binding.
+  // Clear any pending disconnected batch and cancel in-progress QR attempts.
+  const [row] = parseRawRows(
+    z.object({ id: z.uuid() }),
+    await set(writeDb$).execute(sql`
+    WITH restored AS (
+      UPDATE ${wechatConnections} SET status='active', generation=${generation}::uuid,
+        pending_batch_ciphertext=NULL, resumed_at=now(), updated_at=now()
+      WHERE id=${token.connectionId}::uuid AND generation=${token.generation}::uuid
+        AND status='disconnected' AND user_id=${auth.userId} AND org_id=${auth.orgId}
+      RETURNING id
+    ), cleared AS (
+      DELETE FROM wechat_messages WHERE connection_id IN (SELECT id FROM restored)
+    ), contexts AS (
+      DELETE FROM chat_wechat_context WHERE connection_id IN (SELECT id FROM restored)
+    ), routes AS (
+      DELETE FROM wechat_chat_thread_routes WHERE connection_id IN (SELECT id FROM restored)
+    ), cancelled AS (
+      DELETE FROM ${wechatConnectAttempts} WHERE user_id=${auth.userId} AND org_id=${auth.orgId}
+        AND EXISTS(SELECT 1 FROM restored)
+    ) SELECT id FROM restored`),
+  );
+  signal.throwIfAborted();
+  if (!row) {
+    return createErrorResponse(
+      "CONFLICT",
+      "This reconnect link is unavailable for the current account and workspace. Send another WeChat message for a new link or scan a new QR code.",
+    );
+  }
+  await startWechatPoller(row.id, signal);
+  waitUntil(
+    tapError(
+      set(sendWechatWelcome$, row.id, generation, AbortSignal.timeout(60_000)),
+      (error) => {
+        log.warn("WeChat welcome failed", { error });
+      },
+    ),
+  );
+  return { status: 204 as const, body: undefined };
 });
 const cancel$ = command(async ({ get, set }, signal: AbortSignal) => {
   const body = await get(bodyResultOf(contract.cancel));
@@ -296,5 +408,10 @@ export const integrationsWechatRoutes: readonly RouteEntry[] = [
   { route: contract.connect, handler: authRoute(auth, connect$) },
   { route: contract.poll, handler: authRoute(auth, poll$) },
   { route: contract.cancel, handler: authRoute(auth, cancel$) },
+  {
+    route: contract.reconnectStatus,
+    handler: authRoute(auth, reconnectStatus$),
+  },
+  { route: contract.reconnect, handler: authRoute(auth, reconnect$) },
   { route: contract.disconnect, handler: authRoute(auth, disconnect$) },
 ];

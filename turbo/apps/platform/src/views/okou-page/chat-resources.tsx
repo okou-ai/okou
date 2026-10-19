@@ -216,7 +216,7 @@ function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
   const { t } = useTranslation();
   const content = useLastLoadable(thread.resources.content$);
   const relationsEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatRelations];
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel];
   const relationContent = useLastResolved(thread.relations.hasContent$);
   const hasRelations = relationContent === true && relationsEnabled;
   const openAll = useOpenThreadArtifacts(thread);

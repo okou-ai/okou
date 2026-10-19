@@ -1548,13 +1548,17 @@
       "viewAgentProfile": "檢視智能體資料"
     },
     "agentSuggestions": {
-      "continueChat": "繼續聊天",
       "dismiss": "忽略",
       "label": "建議",
-      "newChat": "新建聊天",
       "next": "下一則建議",
       "position": "{{current}} / {{total}}",
-      "previous": "上一則建議"
+      "previous": "上一則建議",
+      "recoveryHint": "重新傳送前請先檢查聊天。你可以將建議還原到草稿。",
+      "restoreDraft": "還原至草稿",
+      "runFailed": "無法啟動建議",
+      "runInChat": "在原聊天執行",
+      "runNewChat": "在新聊天執行",
+      "starting": "正在啟動…"
     },
     "attachments": {
       "attach": "新增附件",
@@ -3957,7 +3961,6 @@
     "retry": "重試",
     "samplePages": "樣張頁數：{{total}}",
     "title": "文件",
-    "use": "使用範本",
     "useNamed": "使用 {{title}}"
   },
   "global": {
@@ -6649,6 +6652,8 @@
       "title": "Telegram"
     },
     "wechat": {
+      "accountLabel": "帳號",
+      "agentLabel": "Agent",
       "code": "驗證碼",
       "connect": "連接",
       "connected": "已連接",
@@ -6658,11 +6663,15 @@
       "expired": "QR code 已過期，請重新產生。",
       "failed": "連接微信失敗，請重試。",
       "instructions": "使用微信掃描 QR code，然後在手機上確認。",
+      "linkUnavailable": "此連結無法使用。請使用原帳號和工作區，並在微信中再傳送一則訊息以取得新連結。也可以重新掃碼連接。",
       "name": "微信",
+      "newQr": "使用新 QR 碼連接",
       "reconnect": "重新連接",
       "reconnect_required": "請重新掃碼連接。",
       "restart_required": "此微信已綁定，請重新產生 QR code 以連接。",
+      "restoreDescription": "將微信重新連接至以下帳號和工作區。",
       "retry": "重新產生 QR code",
+      "returnToWechat": "返回微信，傳送訊息即可開始對話。",
       "scanned": "已掃碼，請在手機上確認。",
       "scope": "只連接你與此智能體的單聊，目前支援文字訊息。",
       "title": "連接微信",
@@ -6670,7 +6679,8 @@
       "verification_blocked": "驗證碼嘗試次數過多，請重新產生 QR code。",
       "verification_required": "輸入微信中顯示的驗證碼。",
       "verify": "驗證",
-      "waiting": "等待掃碼…"
+      "waiting": "等待掃碼…",
+      "workspaceLabel": "工作區"
     }
   }
 }

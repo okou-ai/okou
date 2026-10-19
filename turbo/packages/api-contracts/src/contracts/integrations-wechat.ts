@@ -71,6 +71,22 @@ export const integrationsWechatContract = c.router({
     responses: { 204: c.noBody(), ...errors },
     summary: "Cancel a WeChat connection attempt",
   },
+  reconnectStatus: {
+    method: "GET",
+    path: "/api/integrations/wechat/reconnect",
+    headers: authHeadersSchema,
+    query: z.object({ token: z.string().min(1).max(1024) }),
+    responses: { 200: z.object({ available: z.boolean() }), ...errors },
+    summary: "Check an owner's WeChat reconnect link",
+  },
+  reconnect: {
+    method: "POST",
+    path: "/api/integrations/wechat/reconnect",
+    headers: authHeadersSchema,
+    body: z.object({ token: z.string().min(1).max(1024) }),
+    responses: { 204: c.noBody(), ...errors },
+    summary: "Restore the owner's disconnected WeChat binding",
+  },
   disconnect: {
     method: "DELETE",
     path: "/api/integrations/wechat",

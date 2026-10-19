@@ -1548,13 +1548,17 @@
       "viewAgentProfile": "エージェントのプロフィールを表示する"
     },
     "agentSuggestions": {
-      "continueChat": "チャットを続ける",
       "dismiss": "非表示にする",
       "label": "提案",
-      "newChat": "新しいチャット",
       "next": "次の提案",
       "position": "{{current}} / {{total}}",
-      "previous": "前の提案"
+      "previous": "前の提案",
+      "recoveryHint": "再送信する前にチャットを確認してください。提案を下書きに戻せます。",
+      "restoreDraft": "下書きに戻す",
+      "runFailed": "提案を開始できませんでした",
+      "runInChat": "このチャットで実行",
+      "runNewChat": "新しいチャットで実行",
+      "starting": "開始中…"
     },
     "attachments": {
       "attach": "添付する",
@@ -3957,7 +3961,6 @@
     "retry": "再試行",
     "samplePages": "サンプルページ数：{{total}}",
     "title": "ドキュメント",
-    "use": "テンプレートを使用",
     "useNamed": "{{title}} を使用"
   },
   "global": {
@@ -6649,6 +6652,8 @@
       "title": "Telegram"
     },
     "wechat": {
+      "accountLabel": "アカウント",
+      "agentLabel": "エージェント",
       "code": "確認コード",
       "connect": "接続",
       "connected": "接続済み",
@@ -6658,11 +6663,15 @@
       "expired": "このQRコードは期限切れです。新しく作成してください。",
       "failed": "WeChatに接続できませんでした。もう一度お試しください。",
       "instructions": "WeChatでこのQRコードをスキャンし、スマートフォンで確認してください。",
+      "linkUnavailable": "このリンクは利用できません。元のアカウントとワークスペースを使用し、WeChat で再度メッセージを送信して新しいリンクを取得してください。新しい QR コードでも接続できます。",
       "name": "WeChat",
+      "newQr": "新しい QR コードで接続",
       "reconnect": "再接続",
       "reconnect_required": "もう一度スキャンして再接続してください。",
       "restart_required": "このWeChatアカウントはすでに連携されています。再接続するには新しいQRコードを作成してください。",
+      "restoreDescription": "以下のアカウントとワークスペースに WeChat を再接続します。",
       "retry": "新しいQRコードを作成",
+      "returnToWechat": "WeChat に戻り、メッセージを送信して会話を始めましょう。",
       "scanned": "スキャンしました。スマートフォンで確認してください。",
       "scope": "このエージェントへのダイレクトメッセージのみが連携されます。テキストメッセージに対応しています。",
       "title": "WeChatに接続",
@@ -6670,7 +6679,8 @@
       "verification_blocked": "試行回数が多すぎます。新しいQRコードを作成してください。",
       "verification_required": "WeChatに表示された確認コードを入力してください。",
       "verify": "確認",
-      "waiting": "スキャンを待っています…"
+      "waiting": "スキャンを待っています…",
+      "workspaceLabel": "ワークスペース"
     }
   }
 }

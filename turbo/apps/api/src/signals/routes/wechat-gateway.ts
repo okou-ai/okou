@@ -31,7 +31,10 @@ import {
   isWechatOwnerMessage,
   wechatEventId,
 } from "../services/wechat-message-identity";
-import { sendWechatNotice$ } from "../services/wechat-notice.service";
+import {
+  sendWechatReconnectNotice$,
+  sendWechatInputFailureNotice$,
+} from "../services/wechat-notice.service";
 import type { RouteEntry } from "../route-entry";
 
 const log = logger("api:wechat:gateway");
@@ -84,7 +87,7 @@ const receiveBatchInput$ = command(
       return;
     }
     const notice = await settle(
-      set(sendWechatNotice$, { connection, message }, signal),
+      set(sendWechatReconnectNotice$, { connection, message }, signal),
       signal,
     );
     if (!notice.ok) {
@@ -124,7 +127,11 @@ const receiveBatchInput$ = command(
         ? "default_agent_unavailable"
         : "processing_failed";
     const notified = await settle(
-      set(sendWechatNotice$, { connection, message, failure }, signal),
+      set(
+        sendWechatInputFailureNotice$,
+        { connection, message, failure },
+        signal,
+      ),
       signal,
     );
     if (!notified.ok) {

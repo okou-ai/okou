@@ -37,12 +37,9 @@ import {
   OFFICIAL_RUNNER_TOKEN_PREFIX,
   RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX,
   RUNNER_POLL_EXCLUDED_RUN_IDS_MAX,
-  SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT,
-  SESSION_HISTORY_DOWNLOAD_SOURCE_DEFAULT_R2_ENDPOINT,
   SESSION_HISTORY_ENCODING_GZIP,
   SESSION_HISTORY_ENCODING_IDENTITY,
   SESSION_HISTORY_ENCODING_ZSTD,
-  SESSION_HISTORY_GZIP_MIN_BYTES,
 } from "../contracts/runners";
 import {
   STORAGE_MANIFEST_MAX_FILES,
@@ -461,35 +458,6 @@ export const rustConstantBindings = [
     rustDoc: [
       "Wire and blob metadata value for zstd-compressed resume session history.",
       "Rust and TypeScript components use this shared contract value when negotiating session history uploads and claim responses.",
-    ],
-  },
-  {
-    rustModulePath: ["runners"],
-    rustConstName: "SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT",
-    value: rustString(
-      SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT,
-    ),
-    rustDoc: [
-      "Telemetry value for session history downloads signed with a configured S3 endpoint.",
-      "Rust and TypeScript components use this shared contract value when attributing runner download latency.",
-    ],
-  },
-  {
-    rustModulePath: ["runners"],
-    rustConstName: "SESSION_HISTORY_DOWNLOAD_SOURCE_DEFAULT_R2_ENDPOINT",
-    value: rustString(SESSION_HISTORY_DOWNLOAD_SOURCE_DEFAULT_R2_ENDPOINT),
-    rustDoc: [
-      "Telemetry value for session history downloads signed with the default R2 endpoint.",
-      "Rust and TypeScript components use this shared contract value when attributing runner download latency.",
-    ],
-  },
-  {
-    rustModulePath: ["runners"],
-    rustConstName: "SESSION_HISTORY_GZIP_MIN_BYTES",
-    value: rustU64(SESSION_HISTORY_GZIP_MIN_BYTES),
-    rustDoc: [
-      "Minimum raw resume session history size before the guest attempts gzip upload negotiation.",
-      "Smaller histories stay identity-encoded to avoid gzip work when it cannot materially reduce transport size.",
     ],
   },
   {

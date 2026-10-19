@@ -2339,6 +2339,13 @@
       "when": 1792312718251,
       "tag": "1411_runner_discovery_protection_origin",
       "breakpoints": true
+    },
+    {
+      "idx": 1412,
+      "version": "7",
+      "when": 1792378877107,
+      "tag": "1412_wechat_resume_boundary",
+      "breakpoints": true
     }
   ]
 }
