@@ -51,6 +51,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Website URL editing",
     description: "Customize a published website address from its Share menu.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ComposerSlashHint]: {
     maintainer: "bingjie@okou.ai",
