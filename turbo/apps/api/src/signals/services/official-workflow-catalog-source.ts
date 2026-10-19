@@ -27,9 +27,6 @@ Prepare the briefing as concise Markdown and return it in the Chat. Choose short
 
 `;
 
-// The `--idempotency-key morning-brief` retry covers Runner rootfs CLIs that
-// still require the flag. Remove it, together with the contract's ignored
-// Morning Brief key, after Runners with those CLIs have drained.
 const MORNING_BRIEF_DELIVERY_INSTRUCTION = `## Decide whether to email the briefing
 
 You own the email decision. Send only when the verified briefing contains useful information worth notifying the user about, such as an upcoming commitment, a decision or request needing attention, a blocker, a conflict, or a clear next action. A completed run, an empty briefing, routine noise, or unavailable sources alone are not reasons to send. When there is nothing useful to notify, skip email and leave the briefing and coverage information in the Chat.
@@ -38,7 +35,7 @@ Use only \`okou notify mail --kind morning-brief\` to send to the user's account
 
 ## Send once per automation event
 
-Okou sends at most one Morning Brief email per automation event and derives its idempotency key from this run's event. Do not pass \`--idempotency-key\`, and do not construct a key from the prompt, the clock, a date, or a Run ID. If the command is rejected only because \`--idempotency-key\` is required, rerun it unchanged except for \`--idempotency-key morning-brief\`; Okou ignores that value for Morning Brief.
+Okou sends at most one Morning Brief email per automation event and derives its idempotency key from this run's event. Do not pass \`--idempotency-key\`, and do not construct a key from the prompt, the clock, a date, or a Run ID.
 
 Save the final briefing to a UTF-8 Markdown file, within the CLI's 8000-character body limit. Choose a concise subject within its 180-character limit, then call:
 
