@@ -5,6 +5,8 @@
 mod batch_aba;
 mod batch_repark;
 mod batch_replacement;
+mod claim_loss;
+mod claim_peer;
 mod cleanup_progress;
 mod continuation;
 mod continuation_api;
@@ -94,6 +96,7 @@ enum Corpus {
     BatchAba,
     BatchRepark,
     BatchReplacement,
+    ClaimLoss,
 }
 
 enum PreparationProbe<'a> {
@@ -674,6 +677,33 @@ async fn native_same_key_replacement_fences_captured_batch_and_preserves_incomin
     measured_selected_corpus(&[NativeScope::Replacement], Corpus::BatchReplacement).await
 }
 
+#[test]
+fn native_claim_rejection_report_requires_actual_request_and_original_custody() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/claim_loss_report_test.py"
+        ))
+        .output()
+        .expect("native claim report requires Python3");
+    assert!(
+        output.status.success(),
+        "claim rejection report failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD inputs and submitted-source provider404/rollback P1 proof"]
+async fn native_provider_claim_rejection_preserves_guarded_rollback_and_required_saving()
+-> TestResult<()> {
+    measured_selected_corpus(
+        &[NativeScope::Batch(IdleRetirementBatchScope::All)],
+        Corpus::ClaimLoss,
+    )
+    .await
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires owned KVM/NBD inputs and submitted-source status-failure P1 proof"]
 async fn native_status_failure_preserves_saving_and_retries_current_inventory() -> TestResult<()> {
@@ -1009,6 +1039,8 @@ async fn exercise_selected_factories(
                                 "BatchRepark".into()
                             } else if corpus == Corpus::BatchReplacement {
                                 "BatchReplacement".into()
+                            } else if corpus == Corpus::ClaimLoss {
+                                "ClaimLoss".into()
                             } else if let Corpus::ReturnedGuest(stage) = corpus {
                                 format!("ReturnedGuest-{}", stage.label())
                             } else if corpus == Corpus::Continuation {
@@ -1355,6 +1387,7 @@ async fn exercise_retirement(
             | Corpus::BatchAba
             | Corpus::BatchRepark
             | Corpus::BatchReplacement
+            | Corpus::ClaimLoss
     ) || matches!(corpus, Corpus::LogicalProgress | Corpus::IncomingProgress)
         || matches!(
             scope,
@@ -1379,6 +1412,11 @@ async fn exercise_retirement(
         .with_storage_fingerprints(storage_fingerprints);
     let candidate = if let Some(identity) = session_identity {
         candidate.with_restored_session_identity(identity)
+    } else {
+        candidate
+    };
+    let candidate = if corpus == Corpus::ClaimLoss {
+        candidate.with_last_completed_at(chrono::Utc::now().to_rfc3339())
     } else {
         candidate
     };
@@ -1689,6 +1727,15 @@ async fn exercise_retirement(
                 Ok(None)
             }
             NativeScope::Batch(scope) => {
+                if corpus == Corpus::ClaimLoss {
+                    claim_loss::exercise(transitions::Context {
+                        factory: factory.clone(), pool: pool.clone(), status: status.clone(),
+                        operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
+                        rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
+                    }, inputs, proof.ok_or_else(|| io::Error::other("claim proof missing"))?,
+                    paths.base_dir(), backing.clone(), run_id).await?;
+                    return Ok(None);
+                }
                 if matches!(corpus, Corpus::BatchAba | Corpus::BatchRepark) {
                     batch_aba::exercise(
                         transitions::Context {

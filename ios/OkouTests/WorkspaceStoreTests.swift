@@ -8,6 +8,76 @@ import XCTest
 
 @MainActor
 final class WorkspaceStoreTests: XCTestCase {
+  func testBackgroundWarmingIncludesRecentAndActiveUnopenedChats() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let ids = (1...102).map { String(format: "72000000-0000-4000-8000-%012d", $0) }
+    let activeID = ids[0]
+    let batchStarted = expectation(description: "Unopened chats are warmed in one batch")
+    let observed = Mutex<[String]>([])
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/chat-threads/snapshot": return threadSnapshot(title: "Recent chat", threadIDs: ids)
+      case "/api/chat-threads/events":
+        return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
+      case "/api/indicators":
+        return ChatHTTPResponse(body: "{\"threads\":{\"\(activeID)\":\"active\"}}")
+      case "/api/chat/events/catch-up":
+        let body = try XCTUnwrap(
+          JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [[Any]])
+        let requested = try body.map { try XCTUnwrap($0.first as? String) }
+        observed.withLock { $0 = requested }
+        batchStarted.fulfill()
+        let events = requested.map { "\"\($0)\":[]" }.joined(separator: ",")
+        return ChatHTTPResponse(body: "{\"events\":{\(events)},\"notFoundThreads\":[]}")
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let store = WorkspaceStore(
+      client: fixture.client, webURL: fixture.baseURL,
+      cache: ChatCache(
+        scope: ChatCacheScope(
+          apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "workspace"),
+        directory: directory))
+    defer { store.close() }
+    await store.refresh()
+    XCTAssertNil(store.selectedConversation)
+    await fulfillment(of: [batchStarted], timeout: 3)
+    XCTAssertEqual(Set(observed.withLock { $0 }), Set([activeID] + Array(ids.suffix(100))))
+    XCTAssertNil(store.selectedConversation)
+    XCTAssertNil(store.list.error)
+  }
+
+  func testBackgroundUpgradeResponseBlocksFurtherWorkspaceReads() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let requests = Mutex<[String]>([])
+    let fixture = ChatHTTPFixture { request in
+      requests.withLock { $0.append(request.url?.path ?? "") }
+      switch request.url?.path {
+      case "/api/chat-threads/snapshot": return threadSnapshot(title: "Chat")
+      case "/api/chat-threads/events":
+        return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
+      case "/api/indicators": return ChatHTTPResponse(body: "{\"threads\":{}}")
+      case "/api/chat/events/catch-up":
+        return ChatHTTPResponse(status: 426, body: "{\"error\":{\"message\":\"Update required\"}}")
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let store = WorkspaceStore(
+      client: fixture.client, webURL: fixture.baseURL,
+      cache: ChatCache(
+        scope: ChatCacheScope(
+          apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "workspace"),
+        directory: directory))
+    defer { store.close() }
+    await store.refresh()
+    try await eventually { store.needsUpgrade }
+    let before = requests.withLock { $0 }
+    await store.refresh()
+    XCTAssertEqual(requests.withLock { $0 }, before)
+  }
+
   func testCancelledStartupDoesNotCreateRealtimeOrReadNavigation() async {
     let requests = Mutex<[String]>([])
     let fixture = ChatHTTPFixture { request in

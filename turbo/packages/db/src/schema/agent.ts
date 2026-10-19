@@ -12,7 +12,7 @@ import {
 export type AgentVisibility = "public" | "private";
 
 /**
- * Canonical product Agent identity and presentation state.
+ * Canonical product Agent identity, presentation and current instructions.
  *
  * Production readers and writers use this table and its canonical references.
  */
@@ -29,6 +29,8 @@ export const agents = pgTable(
       .default("public"),
     displayName: varchar("display_name", { length: 256 }),
     description: text("description"),
+    // NULL remains unverified until the instruction Storage backfill completes.
+    instructions: text("instructions"),
     sound: varchar("sound", { length: 64 }),
     avatarUrl: varchar("avatar_url", { length: 1024 }),
     createdAt: timestamp("created_at").defaultNow().notNull(),

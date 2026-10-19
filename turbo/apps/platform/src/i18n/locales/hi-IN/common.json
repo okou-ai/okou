@@ -699,9 +699,10 @@
       "illustrationPreview": "{{title}} चित्रण पूर्वावलोकन",
       "importDeck": "अपना डेक इंपोर्ट करें",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
+      "importDocument": "अपना दस्तावेज़ आयात करें",
+      "importDocumentHint": "(.docx, .doc)",
       "importedSlides_one": "{{count}} स्लाइड",
       "importedSlides_other": "{{count}} स्लाइड",
-      "importFile": "टेम्पलेट आयात करें",
       "importImage": "अपनी इमेज इंपोर्ट करें",
       "importImageHint": "स्टाइल के रूप में सहेजें",
       "multiAccent": "बहु-उच्चारण",
@@ -5664,7 +5665,7 @@
       "preview": "{{title}} का पूर्वावलोकन करें",
       "rename": "टेम्पलेट का नाम बदलें"
     },
-    "clearSearch": "खोज साफ़ करें",
+    "builtIn": "बिल्ट-इन",
     "custom": "कस्टम",
     "delete": {
       "cancel": "रद्द करें",
@@ -5678,14 +5679,6 @@
       "back": "कस्टम टेम्पलेट",
       "page": "पृष्ठ {{number}}"
     },
-    "empty": {
-      "description": "किसी दस्तावेज़, प्रेज़ेंटेशन या इमेज का डिज़ाइन दोबारा इस्तेमाल करने के लिए उसे आयात करें।",
-      "document": "अभी कोई दस्तावेज़ नहीं है",
-      "illustration": "अभी कोई इमेज नहीं है",
-      "presentation": "अभी कोई प्रेज़ेंटेशन नहीं है",
-      "title": "अपना बनाएं"
-    },
-    "importHint": "दस्तावेज़, प्रेज़ेंटेशन या इमेज आयात करें।",
     "loadFailed": "टेम्पलेट लोड नहीं हो सके।",
     "rename": {
       "action": "नाम बदलें",

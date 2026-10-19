@@ -698,9 +698,10 @@
       "illustrationPreview": "{{title}} 일러스트레이션 미리보기",
       "importDeck": "내 덱 가져오기",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
+      "importDocument": "내 문서 가져오기",
+      "importDocumentHint": "(.docx, .doc)",
       "importedSlides_one": "{{count}}장",
       "importedSlides_other": "{{count}}장",
-      "importFile": "템플릿 가져오기",
       "importImage": "내 이미지 가져오기",
       "importImageHint": "스타일로 저장",
       "multiAccent": "다중 악센트",
@@ -5640,7 +5641,7 @@
       "preview": "{{title}} 미리보기",
       "rename": "템플릿 이름 바꾸기"
     },
-    "clearSearch": "검색 지우기",
+    "builtIn": "기본 제공",
     "custom": "커스텀",
     "delete": {
       "cancel": "취소",
@@ -5654,14 +5655,6 @@
       "back": "커스텀 템플릿",
       "page": "{{number}}페이지"
     },
-    "empty": {
-      "description": "문서, 프레젠테이션 또는 이미지를 가져와 디자인을 재사용하세요.",
-      "document": "아직 문서가 없어요",
-      "illustration": "아직 이미지가 없어요",
-      "presentation": "아직 프레젠테이션이 없어요",
-      "title": "나만의 템플릿 만들기"
-    },
-    "importHint": "문서, 프레젠테이션 또는 이미지를 가져오세요.",
     "loadFailed": "템플릿을 불러오지 못했습니다.",
     "rename": {
       "action": "이름 변경",

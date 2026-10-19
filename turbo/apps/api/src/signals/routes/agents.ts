@@ -269,6 +269,9 @@ function agentCreateSelection(values: typeof agents.$inferSelect) {
     description: sql`convert_from(${sql.param(description)}, 'UTF8')`
       .mapWith(nullableDriverValueDecoder(agents.description))
       .as("description"),
+    instructions: sql`${sql.param(values.instructions, agents.instructions)}`
+      .mapWith(nullableDriverValueDecoder(agents.instructions))
+      .as("instructions"),
     sound: sql`convert_from(${sql.param(sound)}, 'UTF8')`
       .mapWith(nullableDriverValueDecoder(agents.sound))
       .as("sound"),
@@ -349,6 +352,7 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       orgId: auth.orgId,
       owner: auth.userId,
       name: agentId,
+      instructions: "",
       ...metadata,
       createdAt,
       updatedAt: createdAt,

@@ -93,11 +93,15 @@ async function openShelf(
   label: string,
   enabled = true,
   draft = "Keep my launch brief",
+  builtinDocumentTemplates = task === "Document",
 ) {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: enabled },
+    featureSwitches: {
+      [FeatureSwitchKey.CustomTemplates]: enabled,
+      [FeatureSwitchKey.BuiltinDocumentTemplates]: builtinDocumentTemplates,
+    },
   });
   const editor = await findComposerEditor();
   if (draft) {
@@ -203,7 +207,12 @@ test.each([
     tasks: ["Remove Image"],
     instructions: ["Create an image."],
   },
-  { kind: "document", entry: "Presentation", tasks: [], instructions: [] },
+  {
+    kind: "document",
+    entry: "Presentation",
+    tasks: ["Remove Document"],
+    instructions: ["Create a document."],
+  },
 ] as const)(
   "Selecting a custom $kind template updates the slash task",
   async ({ kind, entry, tasks, instructions }) => {
@@ -229,11 +238,17 @@ test.each([
     const menu = await screen.findByTestId("slash-workflow-menu");
     click(button(entry, menu));
     const customTab = await waitFor(() => {
-      return tabByText("Custom");
+      return tabByText(
+        kind === "presentation"
+          ? "Presentation"
+          : kind === "document"
+            ? "Document"
+            : "Image",
+      );
     });
     const dialog = customTab.closest('[role="dialog"]');
     if (!(dialog instanceof HTMLElement)) {
-      throw new Error("Expected the Custom tab in a template dialog");
+      throw new Error("Expected the content type tab in a template dialog");
     }
     click(customTab);
     await within(dialog).findByText(own.title);
@@ -245,7 +260,9 @@ test.each([
       expect(
         queryAllByRoleFast("button").flatMap((item) => {
           const label = item.getAttribute("aria-label");
-          return label === "Remove Presentation" || label === "Remove Image"
+          return label === "Remove Presentation" ||
+            label === "Remove Image" ||
+            label === "Remove Document"
             ? [label]
             : [];
         }),
@@ -388,3 +405,208 @@ test.each(SHELVES)(
     ).not.toBeInTheDocument();
   },
 );
+
+test("Document defaults to Custom when documents exist and separates built-in purposes", async () => {
+  const { own, shared } = mockShelfCatalog("document");
+  const { editor, shelf } = await openShelf("Document", "Document templates");
+  await within(shelf).findByText(own.title);
+  const categories = within(shelf).getByRole("group", {
+    name: "Document category",
+  });
+  expect(button("Custom", categories)).toHaveAttribute("aria-pressed", "true");
+  expect(within(shelf).getByText(shared.title)).toBeInTheDocument();
+  expect(
+    within(shelf).queryByText("My presentation template"),
+  ).not.toBeInTheDocument();
+  expect(
+    within(shelf).queryByText("My illustration template"),
+  ).not.toBeInTheDocument();
+  expect(within(shelf).getAllByLabelText(/^Use template /u)).toHaveLength(2);
+  expect(
+    within(shelf).getByLabelText("Import your own document"),
+  ).toHaveAttribute("accept", ".docx,.doc");
+  expect(
+    button(`Use template ${own.title}`, shelf).querySelector("img"),
+  ).toHaveAttribute("src", own.previewAssets[0]!.url);
+
+  click(button(`Use template ${own.title}`, shelf));
+  click(button("Reports", categories));
+  expect(
+    within(shelf).queryByLabelText("Import your own document"),
+  ).not.toBeInTheDocument();
+  expect(within(shelf).queryByText(own.title)).not.toBeInTheDocument();
+  expect(within(shelf).getAllByLabelText(/^Use template /u)).toHaveLength(5);
+  expect(editor).toHaveTextContent("Keep my launch brief");
+  expect(editor).toHaveTextContent(own.title);
+
+  click(button("More templates", shelf));
+  const dialog = await screen.findByRole("dialog");
+  expect(button("Reports", dialog)).toHaveAttribute("aria-pressed", "true");
+  await userEvent.setup({ delay: null }).keyboard("{Escape}");
+  click(button("Custom", categories));
+  expect(
+    within(shelf).getByLabelText("Import your own document"),
+  ).toBeInTheDocument();
+  expect(within(shelf).getByText(own.title)).toBeInTheDocument();
+});
+
+test("Document with no custom documents starts on Creative brief and keeps import inside Custom", async () => {
+  mockTemplateChat();
+  context.mocks.api(userTemplatesContract.list, ({ respond }) => {
+    return respond(200, [template("presentation"), template("illustration")]);
+  });
+  const { shelf } = await openShelf("Document", "Document templates");
+  await waitFor(() => {
+    expect(button("Creative brief", shelf)).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+  expect(
+    within(shelf).queryByLabelText("Import your own document"),
+  ).not.toBeInTheDocument();
+  click(button("Custom", shelf));
+  expect(
+    within(shelf).getByLabelText("Import your own document"),
+  ).toBeInTheDocument();
+  expect(within(shelf).queryAllByLabelText(/^Use template /u)).toHaveLength(0);
+  click(button("Creative brief", shelf));
+  expect(
+    within(shelf).queryByLabelText("Import your own document"),
+  ).not.toBeInTheDocument();
+});
+
+test("A late document catalog and later refresh preserve an explicit category choice", async () => {
+  mockTemplateChat();
+  const release = context.mocks.deferred<void>();
+  let title = "Initial document";
+  context.mocks.api(userTemplatesContract.list, async ({ respond }) => {
+    await release.promise;
+    return respond(200, [{ ...template("document"), title }]);
+  });
+  const { shelf } = await openShelf("Document", "Document templates");
+  expect(shelf).toHaveAttribute("aria-busy", "true");
+  click(button("Reports", shelf));
+  release.resolve();
+  // Seeing the document in the picker proves that the pending response has
+  // reached the UI before checking that it did not overwrite Reports.
+  click(button("More templates", shelf));
+  const dialog = await screen.findByRole("dialog");
+  await within(dialog).findByText("Initial document");
+  await userEvent.setup({ delay: null }).keyboard("{Escape}");
+  expect(button("Reports", shelf)).toHaveAttribute("aria-pressed", "true");
+  expect(
+    within(shelf).queryByLabelText("Import your own document"),
+  ).not.toBeInTheDocument();
+  click(button("Custom", shelf));
+  await within(shelf).findByText("Initial document");
+  title = "Newly published document";
+  context.mocks.ably.trigger("presentationTemplatesChanged");
+  await within(shelf).findByText(title);
+  expect(button("Custom", shelf)).toHaveAttribute("aria-pressed", "true");
+  expect(within(shelf).queryByText("Initial document")).not.toBeInTheDocument();
+});
+
+test("Custom alone enables the Document task and sends the selected custom reference", async () => {
+  const { capture, own } = mockShelfCatalog("document");
+  const { editor, shelf } = await openShelf(
+    "Document",
+    "Document templates",
+    true,
+    "Keep my launch brief",
+    false,
+  );
+  await within(shelf).findByText(own.title);
+  expect(button("Custom", shelf)).toHaveAttribute("aria-pressed", "true");
+  expect(within(shelf).queryByText("Creative brief")).not.toBeInTheDocument();
+  click(button(`Use template ${own.title}`, shelf));
+  expect(editor).toHaveTextContent("Keep my launch brief");
+  expect(editor).toHaveTextContent(own.title);
+  click(button("Send"));
+  await waitFor(() => {
+    expect(capture.selectedTemplates).toStrictEqual([
+      { type: "custom", selection: { userTemplateId: own.id } },
+    ]);
+  });
+});
+
+test.each(["shelf", "picker"] as const)(
+  "The Document %s imports a reusable document without requesting document generation",
+  async (entry) => {
+    const capture = mockTemplateChat();
+    context.mocks.api(userTemplatesContract.list, ({ respond }) => {
+      return respond(200, []);
+    });
+    context.mocks.upload.success({
+      id: "81000000-0000-4000-a000-000000000025",
+      filename: "brand.docx",
+      contentType:
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      size: 5,
+      url: "https://cdn.example.test/brand.docx",
+    });
+    const { shelf } = await openShelf(
+      "Document",
+      "Document templates",
+      true,
+      "",
+      false,
+    );
+    let importSurface = shelf;
+    if (entry === "picker") {
+      click(button("More templates", shelf));
+      importSurface = await screen.findByRole("dialog");
+    }
+    await userEvent.setup({ delay: null }).upload(
+      within(importSurface).getByLabelText("Import your own document"),
+      new File(["brand"], "brand.docx", {
+        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      }),
+    );
+    await waitFor(() => {
+      expect(capture.sentMessages).toHaveLength(1);
+    });
+    expect(capture.runPrompts).toStrictEqual([
+      "Analyse this file and save it as a reusable template.",
+    ]);
+    expect(capture.sentMessages[0]?.parts).toContainEqual(
+      expect.objectContaining({ type: "file", filenameSnapshot: "brand.docx" }),
+    );
+    expect(capture.sentMessages[0]?.parts).toContainEqual(
+      expect.objectContaining({
+        type: "additional_info",
+        text: expect.stringContaining("okou user-template publish"),
+      }),
+    );
+    expect(capture.sentMessages[0]?.parts).not.toContainEqual(
+      expect.objectContaining({
+        type: "additional_info",
+        text: expect.stringContaining("Create a document."),
+      }),
+    );
+    expect(capture.selectedTemplates).toStrictEqual([]);
+  },
+);
+
+test("A failed custom catalog still shows built-in document templates and the import chip", async () => {
+  mockTemplateChat();
+  context.mocks.api(userTemplatesContract.list, ({ respond }) => {
+    return respond(500, {
+      error: { code: "INTERNAL_SERVER_ERROR", message: "Catalog unavailable" },
+    });
+  });
+  const { shelf } = await openShelf("Document", "Document templates");
+  await waitFor(() => {
+    expect(button("Creative brief", shelf)).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+  expect(
+    within(shelf).getAllByLabelText(/^Use template /u).length,
+  ).toBeGreaterThan(0);
+  click(button("Custom", shelf));
+  expect(
+    within(shelf).getByLabelText("Import your own document"),
+  ).toBeInTheDocument();
+});

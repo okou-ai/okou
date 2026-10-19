@@ -111,15 +111,20 @@ async fn actual_guarded_checkpoint_keeps_complete_read_and_io_failure_contracts(
             (
                 result.accepted,
                 result.completed,
+                result.cancelled,
                 result.failed,
                 result.uncertain
             ),
-            (1, usize::from(!fail), usize::from(fail), 0)
+            (1, usize::from(!fail), 0, usize::from(fail), 0)
         );
-        assert_eq!(result.last_error.is_some(), fail);
-        if !fail {
-            assert_eq!(result.read_bytes, bytes.len() as u64);
-        }
+        assert_eq!(
+            result.last_error.as_deref(),
+            fail.then_some("checkpoint IO failed")
+        );
+        assert_eq!(
+            result.read_bytes,
+            if fail { MIB } else { bytes.len() as u64 }
+        );
         assert_eq!(
             *observed.lock().unwrap(),
             if fail {
@@ -128,9 +133,14 @@ async fn actual_guarded_checkpoint_keeps_complete_read_and_io_failure_contracts(
                 vec![MIB, bytes.len() as u64]
             }
         );
+        let settled = fixture.operations.snapshot().unwrap();
         assert_eq!(
-            fixture.operations.snapshot().unwrap().registered_operations,
-            0
+            (
+                settled.registered_operations,
+                settled.ordinary_growth_bytes,
+                settled.tracked_tasks
+            ),
+            (0, 0, 0)
         );
         assert_eq!(std::fs::read(path).unwrap(), bytes);
         fixture.stop().await;

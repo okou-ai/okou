@@ -36,6 +36,7 @@ final class ConversationStore {
   private(set) var needsUpgrade = false
   let webURL: URL
   let messageMarkdown: MessageMarkdownCache
+  let measurements = ConversationMeasurementCache()
 
   private let sync: ChatSync
   private let commands: ChatCommands
@@ -206,6 +207,7 @@ final class ConversationStore {
     sendTask?.cancel()
     stopTask?.cancel()
     expansionTask?.cancel()
+    measurements.clear()
   }
 
   func rememberReadingPosition(_ position: ConversationReadingPosition?) {

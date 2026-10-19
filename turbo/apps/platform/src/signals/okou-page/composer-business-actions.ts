@@ -44,7 +44,8 @@ export function createComposerTemplateSelection(
           attachment = {
             type: "custom",
             title: template.title,
-            category: "custom",
+            category:
+              template.kind === "presentation" ? "slides" : template.kind,
             ...(template.coverUrl === null || template.kind === "document"
               ? {}
               : { previewImageUrl: template.coverUrl }),

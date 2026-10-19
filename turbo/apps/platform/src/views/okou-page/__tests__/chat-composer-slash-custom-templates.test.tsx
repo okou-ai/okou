@@ -194,7 +194,7 @@ test("The Document row opens custom documents when built-in documents are disabl
   click(button("Document", menu));
   const dialog = await screen.findByRole("dialog");
   await within(dialog).findByText(template("document").title);
-  expect(tabByText("Custom")).toHaveAttribute("aria-selected", "true");
+  expect(tabByText("Document")).toHaveAttribute("aria-selected", "true");
   expect(
     within(dialog).queryByText(template("presentation").title),
   ).not.toBeInTheDocument();
