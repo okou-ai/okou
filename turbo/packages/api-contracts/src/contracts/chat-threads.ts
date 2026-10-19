@@ -356,6 +356,7 @@ const chatThreadSnapshotProjectionSchema = z.object({
   // Optional for existing snapshots and browser caches without manual ordering.
   pinOrder: z.string().nullable().optional(),
   archived: z.boolean(),
+  hidden: z.boolean().optional(),
   muted: z.boolean().optional(),
   renamedAt: z.string().nullable(),
   selectedModel: z.string().nullable().default(null),
@@ -397,6 +398,8 @@ const chatThreadEventSchema = z.object({
   pinOrder: z.string().nullable().optional(),
   /** On sort_touched, a metadata-only mute change, not an activity touch. */
   muted: z.boolean().optional(),
+  /** System visibility metadata; omitted events leave it unchanged. */
+  hidden: z.boolean().optional(),
   selectedModel: z.string().nullable().default(null),
   /** Full map is present on created events. */
   modelSettings: modelSettingsSchema.optional(),
@@ -1051,6 +1054,7 @@ const chatThreadMetadataSchema = z.object({
   serviceTier: chatThreadServiceTierSchema.nullable(),
   pinnedAt: z.string().nullable(),
   archived: z.boolean(),
+  hidden: z.boolean().optional(),
   muted: z.boolean(),
   computerUseHostId: z.string().uuid().nullable(),
   cloudBrowserEnabled: z.boolean(),

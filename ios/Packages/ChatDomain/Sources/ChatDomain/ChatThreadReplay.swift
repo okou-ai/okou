@@ -12,7 +12,7 @@ public enum ChatThreadReplay {
     for event in events {
       apply(event, to: &threads, pendingUpdates: &pendingUpdates)
     }
-    return threads.values.sorted(by: replayOrder)
+    return threads.values.filter { !$0.isHidden }.sorted(by: replayOrder)
   }
 
   /// Matches the web sidebar's separate `comparePinnedThreads` pass. Unpinned
@@ -51,7 +51,8 @@ public enum ChatThreadReplay {
         modelSettings: event.modelSettings ?? [:],
         serviceTier: event.serviceTier,
         computerUseHostId: event.computerUseHostId,
-        cloudBrowserEnabled: event.cloudBrowserEnabled ?? false)
+        cloudBrowserEnabled: event.cloudBrowserEnabled ?? false,
+        isHidden: event.hidden ?? false)
 
       let deferred = pendingUpdates.removeValue(forKey: event.chatThreadId) ?? []
       for update in deferred where update.createdAt >= event.createdAt {
@@ -69,6 +70,12 @@ public enum ChatThreadReplay {
       if isDeferrable(event.kind) {
         pendingUpdates[event.chatThreadId, default: []].append(event)
       }
+      return
+    }
+
+    if event.kind == .sortTouched, let hidden = event.hidden {
+      thread.isHidden = hidden
+      threads[event.chatThreadId] = thread
       return
     }
 

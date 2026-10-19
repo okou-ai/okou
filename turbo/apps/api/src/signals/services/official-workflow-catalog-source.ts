@@ -89,6 +89,7 @@ function morningBriefDefinition(
   return {
     name,
     lifecycle: "active",
+    hiddenThread: true,
     workflow: {
       displayName: "Morning Brief",
       description:
@@ -124,6 +125,7 @@ export const OFFICIAL_WORKFLOW_SOURCE_CATALOG: OfficialWorkflowSourceCatalog =
       {
         name: PROACTIVE_SUGGESTIONS_DEFINITION_NAME,
         lifecycle: "active",
+        hiddenThread: true,
         workflow: {
           displayName: "Proactive Suggestions",
           description:

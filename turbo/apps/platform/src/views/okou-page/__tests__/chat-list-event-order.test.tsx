@@ -226,3 +226,39 @@ test("Unpinning restores activity order and repinning uses the new pin time", as
     ]);
   });
 });
+
+test("Workflow visibility hides cached chats and restores the same conversation", async () => {
+  const caseId = 42;
+  const visible = chatListThread(56, "Visible workflow");
+  const hidden = chatListThread(57, "Background workflow", { hidden: true });
+  const remote = context.mocks.deferred<void>();
+  installChatListAgent(context);
+  installChatListStream(context, {
+    caseId,
+    snapshot: [visible, hidden],
+    events: [
+      chatListEvent(caseId, 2, "sort_touched", visible.id, { hidden: true }),
+      chatListEvent(caseId, 3, "sort_touched", hidden.id, { hidden: false }),
+    ],
+    remoteGate: remote.promise,
+  });
+  const page = await startPage({
+    context,
+    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
+    auth: chatListAuth(caseId),
+    cachedChatThreadEvents: cachedChatListEvents(caseId, [visible, hidden]),
+  });
+  await page.content;
+  await waitFor(() => {
+    expect(sidebarThreadTitles()).toStrictEqual(["Visible workflow"]);
+  });
+  remote.resolve();
+  await page.ready;
+  await waitFor(() => {
+    expect(sidebarThreadTitles()).toStrictEqual(["Background workflow"]);
+  });
+  expect(sidebarThreadLinks()[0]).toHaveAttribute(
+    "href",
+    `/chats/${hidden.id}`,
+  );
+});

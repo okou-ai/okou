@@ -39,6 +39,7 @@ public struct ChatThreadChange: Sendable {
   public let title: String?
   public let selectedModel: String?
   public let pinOrder: String?
+  public let hidden: Bool?
   public let modelSettings: [String: ThreadModelSetting]?
   public let modelSettingsPatch: ThreadModelSettingsPatch?
   public let serviceTier: String?
@@ -54,6 +55,7 @@ public struct ChatThreadChange: Sendable {
     title: String? = nil,
     selectedModel: String? = nil,
     pinOrder: String? = nil,
+    hidden: Bool? = nil,
     modelSettings: [String: ThreadModelSetting]? = nil,
     modelSettingsPatch: ThreadModelSettingsPatch? = nil,
     serviceTier: String? = nil,
@@ -68,6 +70,7 @@ public struct ChatThreadChange: Sendable {
     self.title = title
     self.selectedModel = selectedModel
     self.pinOrder = pinOrder
+    self.hidden = hidden
     self.modelSettings = modelSettings
     self.modelSettingsPatch = modelSettingsPatch
     self.serviceTier = serviceTier
