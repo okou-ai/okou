@@ -12,7 +12,8 @@ import { sendAgentPhoneMessage } from "../external/agentphone-client";
 import { db$, writeDb$ } from "../external/db";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import { now, nowDate } from "../../lib/time";
-import { settleIncludingAbort } from "../utils";
+import { settleIncludingAbort, tapError } from "../utils";
+import { sendPendingAgentPhoneContactCard$ } from "./agentphone-contact-card.service";
 import {
   agentphoneChatCallbackPayloadSchema,
   type AgentPhoneDeliveryTarget,
@@ -443,12 +444,29 @@ export const dispatchAgentPhoneChatDeliveryOnce$ = command(
       status,
       signal,
     );
-    return set(finalizeAgentPhoneChatDelivery$, {
+    await set(finalizeAgentPhoneChatDelivery$, {
       callbackId,
       runId: callback.runId,
       startedAt,
       delivery,
     });
+    signal.throwIfAborted();
+    if (
+      status === "completed" &&
+      delivery.ok &&
+      delivery.value === "delivered"
+    ) {
+      await tapError(
+        set(
+          sendPendingAgentPhoneContactCard$,
+          agentphoneChatCallbackPayloadSchema.parse(callback.payload),
+          signal,
+        ),
+        (error) => {
+          L.warn("AgentPhone contact card follow-up failed", { error });
+        },
+      );
+    }
   },
 );
 

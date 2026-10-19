@@ -91,6 +91,39 @@ async function entitledLinkedActor(): Promise<LinkedAgentPhoneActor> {
   return { actor, ap, phone, runnerGroup, sends, storage };
 }
 
+async function contactCardConversation() {
+  const linked = await entitledLinkedActor();
+  const conversationId = uniqueConversationId();
+  server.use(
+    http.get(
+      `https://api.agentphone.test/v1/conversations/${conversationId}`,
+      () => {
+        return HttpResponse.json({
+          capabilities: { canSendMessages: true, media: true },
+        });
+      },
+    ),
+  );
+  return {
+    ...linked,
+    conversationId,
+    async answer(body: string) {
+      const messageId = await linked.ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: linked.phone,
+        body,
+        conversationId,
+      });
+      const run = await claimDispatchedRun(linked.runnerGroup);
+      await completeSandboxRun(run.sandboxToken, run.runId, 0, {
+        resultText: `Answer: ${body}`,
+      });
+      await flushWaitUntilForTest();
+      return { ...run, messageId };
+    },
+  };
+}
+
 const modelSessionScenarios = [
   { channel: "sms", withConversation: false },
   { channel: "imessage", withConversation: true },
@@ -292,7 +325,6 @@ function expectConnectedWelcome(
     }),
   ).toStrictEqual([
     expect.stringContaining("Your phone number is now connected to Okou."),
-    expect.stringContaining("Save Okou to your contacts"),
     expect.stringContaining("connect the tools you already use"),
     expect.stringContaining("What would you like to start with?"),
   ]);
@@ -300,12 +332,7 @@ function expectConnectedWelcome(
     sends.map((send) => {
       return send.mediaUrls;
     }),
-  ).toStrictEqual([
-    [],
-    [expect.stringMatching(/^https:\/\/static\.vm0\.io\/.+\/okou\.vcf$/u)],
-    [],
-    [],
-  ]);
+  ).toStrictEqual([[], [], []]);
 }
 
 function lastSend(sends: AgentPhoneSendCapture): AgentPhoneProviderSend {
@@ -452,6 +479,362 @@ const EXPECTED_PLAIN_RUN_OUTPUT = [
 ].join("\n");
 
 describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
+  it("sends one contact card after a successful text conversation and ignores repeated callbacks", async () => {
+    const chat = await contactCardConversation();
+    const before = chat.sends.messages.length;
+    expect(
+      chat.sends.messages.every((message) => {
+        return message.mediaUrls.length === 0;
+      }),
+    ).toBeTruthy();
+
+    const first = await chat.answer("hello");
+    expect(chat.sends.messages.slice(before)).toMatchObject([
+      { body: "Answer: hello", mediaUrls: [] },
+      {
+        body: "Save Okou to your contacts so you can find this chat anytime.",
+        mediaUrls: [expect.stringMatching(/\/okou\.vcf$/u)],
+        toNumber: chat.phone,
+      },
+    ]);
+    await createWebhookCallbackApi(context).requestAgentComplete(
+      { runId: first.runId, exitCode: 0 },
+      { authorization: `Bearer ${first.sandboxToken}` },
+      [200],
+    );
+    await chat.ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: chat.phone,
+      body: "hello",
+      messageId: first.messageId,
+      conversationId: chat.conversationId,
+    });
+    await flushWaitUntilForTest();
+    expect(chat.sends.messages).toHaveLength(before + 2);
+    await chat.answer("another question");
+    expect(chat.sends.messages).toHaveLength(before + 3);
+    expect(lastSend(chat.sends).body).toBe("Answer: another question");
+  });
+
+  it.each([
+    { canSendMessages: true, media: false },
+    { canSendMessages: false, media: true },
+    null,
+  ])(
+    "waits for media permission without interrupting the answer: %j",
+    async (capabilities) => {
+      const chat = await contactCardConversation();
+      server.use(
+        http.get(
+          `https://api.agentphone.test/v1/conversations/${chat.conversationId}`,
+          () => {
+            return HttpResponse.json({ capabilities });
+          },
+          { once: true },
+        ),
+      );
+      const before = chat.sends.messages.length;
+      await chat.answer("first question");
+      expect(chat.sends.messages.slice(before)).toMatchObject([
+        { body: "Answer: first question", mediaUrls: [] },
+      ]);
+      await chat.answer("next question");
+      expect(chat.sends.messages.slice(before)).toHaveLength(3);
+      expect(lastSend(chat.sends).mediaUrls).toStrictEqual([
+        expect.stringMatching(/\/okou\.vcf$/u),
+      ]);
+    },
+  );
+
+  it("defers a restricted contact card until a new text interaction without replaying the answer", async () => {
+    const chat = await contactCardConversation();
+    const attempts: unknown[] = [];
+    server.use(
+      http.post(
+        "https://api.agentphone.test/v1/messages",
+        async ({ request }) => {
+          const message: unknown = await request.clone().json();
+          if (
+            typeof message !== "object" ||
+            message === null ||
+            !("media_urls" in message)
+          ) {
+            return;
+          }
+          attempts.push(message);
+          if (attempts.length === 1) {
+            return HttpResponse.json(
+              {
+                error: {
+                  code: "CONVERSATION_CONTENT_RESTRICTED",
+                  message: "Send plain text first",
+                },
+              },
+              { status: 422 },
+            );
+          }
+        },
+      ),
+    );
+    const before = chat.sends.messages.length;
+    const first = await chat.answer("hello");
+    expect(chat.sends.messages.slice(before)).toMatchObject([
+      { body: "Answer: hello" },
+    ]);
+    expect(attempts).toHaveLength(1);
+    await createWebhookCallbackApi(context).requestAgentComplete(
+      { runId: first.runId, exitCode: 0 },
+      { authorization: `Bearer ${first.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(attempts).toHaveLength(1);
+    await chat.answer("please continue");
+    expect(attempts).toHaveLength(2);
+    expect(chat.sends.messages.slice(before)).toMatchObject([
+      { body: "Answer: hello" },
+      { body: "Answer: please continue" },
+      { mediaUrls: [expect.stringMatching(/\/okou\.vcf$/u)] },
+    ]);
+  });
+
+  it("does not retry unrelated contact-card validation failures on later messages", async () => {
+    const chat = await contactCardConversation();
+    const rejected: unknown[] = [];
+    server.use(
+      http.post(
+        "https://api.agentphone.test/v1/messages",
+        async ({ request }) => {
+          const message: unknown = await request.clone().json();
+          if (
+            typeof message === "object" &&
+            message !== null &&
+            "media_urls" in message
+          ) {
+            rejected.push(message);
+            return HttpResponse.json(
+              { error: { code: "VALIDATION_ERROR" } },
+              { status: 422 },
+            );
+          }
+        },
+      ),
+    );
+    const before = chat.sends.messages.length;
+    await chat.answer("first question");
+    await chat.answer("second question");
+    expect(rejected).toHaveLength(1);
+    expect(chat.sends.messages.slice(before)).toMatchObject([
+      { body: "Answer: first question" },
+      { body: "Answer: second question" },
+    ]);
+  });
+
+  it.each([
+    "accepted",
+    "absent",
+    "different-attachment",
+    "missing-conversation",
+  ] as const)(
+    "reconciles an uncertain card against provider history without resending: %s",
+    async (outcome) => {
+      const chat = await contactCardConversation();
+      const attempts: Record<string, unknown>[] = [];
+      const historyReads: string[] = [];
+      server.use(
+        http.post(
+          "https://api.agentphone.test/v1/messages",
+          async ({ request }) => {
+            const message: unknown = await request.clone().json();
+            if (
+              typeof message === "object" &&
+              message !== null &&
+              "media_urls" in message
+            ) {
+              attempts.push(message as Record<string, unknown>);
+              return HttpResponse.error();
+            }
+          },
+        ),
+        http.get(
+          `https://api.agentphone.test/v1/conversations/${chat.conversationId}/messages`,
+          ({ request }) => {
+            historyReads.push(request.url);
+            if (outcome === "missing-conversation") {
+              return new HttpResponse(null, { status: 404 });
+            }
+            const after = new URL(request.url).searchParams.get("after");
+            const message = attempts[0];
+            if (!after || !message) {
+              throw new Error(
+                "Expected a recorded contact-card attempt before reconciliation",
+              );
+            }
+            return HttpResponse.json({
+              data:
+                outcome === "absent"
+                  ? []
+                  : [
+                      {
+                        id: "provider-accepted-contact-card",
+                        body: message.body,
+                        fromNumber: AGENTPHONE_BDD_PHONE_NUMBER,
+                        toNumber: chat.phone,
+                        direction: "outbound",
+                        status: "sent",
+                        mediaUrls:
+                          outcome === "different-attachment"
+                            ? ["https://example.com/other.vcf"]
+                            : message.media_urls,
+                        receivedAt: new Date(
+                          Date.parse(after) + 1,
+                        ).toISOString(),
+                      },
+                    ],
+              hasMore: outcome === "absent",
+            });
+          },
+        ),
+      );
+      const before = chat.sends.messages.length;
+      await chat.answer("first question");
+      await chat.answer("second question");
+      expect(historyReads).toHaveLength(1);
+      await chat.answer("third question");
+      expect(historyReads).toHaveLength(outcome === "accepted" ? 1 : 2);
+      expect(attempts).toHaveLength(1);
+      expect(chat.sends.messages.slice(before)).toMatchObject([
+        { body: "Answer: first question" },
+        { body: "Answer: second question" },
+        { body: "Answer: third question" },
+      ]);
+    },
+  );
+
+  it("keeps answers working when the optional media capability lookup fails", async () => {
+    const chat = await contactCardConversation();
+    server.use(
+      http.get(
+        `https://api.agentphone.test/v1/conversations/${chat.conversationId}`,
+        () => {
+          return HttpResponse.json({ error: "unavailable" }, { status: 503 });
+        },
+        { once: true },
+      ),
+    );
+    const before = chat.sends.messages.length;
+    await chat.answer("first question");
+    expect(chat.sends.messages.slice(before)).toMatchObject([
+      { body: "Answer: first question" },
+    ]);
+    await chat.answer("second question");
+    expect(lastSend(chat.sends).mediaUrls).toHaveLength(1);
+  });
+
+  it.each(["12345678", "/unrecognized_command"])(
+    "waits for an ordinary text interaction after %s",
+    async (body) => {
+      const chat = await contactCardConversation();
+      const before = chat.sends.messages.length;
+      await chat.answer(body);
+      expect(chat.sends.messages.slice(before)).toMatchObject([
+        { body: `Answer: ${body}`, mediaUrls: [] },
+      ]);
+      await chat.answer("hello");
+      expect(lastSend(chat.sends).mediaUrls).toHaveLength(1);
+    },
+  );
+
+  it.each([
+    "failed-run",
+    "failed-reply",
+    "media-only",
+    "group",
+    "help",
+  ] as const)(
+    "keeps the contact card pending after a %s interaction",
+    async (kind) => {
+      const chat = await contactCardConversation();
+      const before = chat.sends.messages.length;
+      const mediaUrl = "https://media.agentphone.test/contact-card-photo.png";
+      if (kind === "media-only") {
+        server.use(
+          http.get(mediaUrl, () => {
+            return new HttpResponse(null, { status: 503 });
+          }),
+        );
+      }
+      await chat.ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: chat.phone,
+        body:
+          kind === "help"
+            ? "/help"
+            : kind === "media-only"
+              ? ""
+              : "@Okou hello",
+        conversationId:
+          kind === "group" ? uniqueConversationId() : chat.conversationId,
+        isGroup: kind === "group",
+        ...(kind === "media-only" ? { mediaUrl } : {}),
+      });
+      if (kind !== "help") {
+        const run = await claimDispatchedRun(chat.runnerGroup);
+        if (kind === "failed-reply") {
+          server.use(
+            http.post(
+              "https://api.agentphone.test/v1/messages",
+              () => {
+                return HttpResponse.json(
+                  { error: "provider unavailable" },
+                  { status: 503 },
+                );
+              },
+              { once: true },
+            ),
+          );
+        }
+        await completeSandboxRun(
+          run.sandboxToken,
+          run.runId,
+          kind === "failed-run" ? 1 : 0,
+        );
+        await flushWaitUntilForTest();
+      }
+      expect(
+        chat.sends.messages.slice(before).every((message) => {
+          return message.mediaUrls.length === 0;
+        }),
+      ).toBeTruthy();
+      await chat.answer("a normal private question");
+      expect(lastSend(chat.sends)).toMatchObject({
+        toNumber: chat.phone,
+        mediaUrls: [expect.stringMatching(/\/okou\.vcf$/u)],
+      });
+    },
+  );
+
+  it("sends one contact card when completion callbacks arrive concurrently", async () => {
+    const chat = await contactCardConversation();
+    await chat.ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: chat.phone,
+      body: "hello",
+      conversationId: chat.conversationId,
+    });
+    const run = await claimDispatchedRun(chat.runnerGroup);
+    const before = chat.sends.messages.length;
+    await Promise.all([
+      completeSandboxRun(run.sandboxToken, run.runId, 0),
+      completeSandboxRun(run.sandboxToken, run.runId, 0),
+    ]);
+    await flushWaitUntilForTest();
+    expect(chat.sends.messages.slice(before)).toMatchObject([
+      { body: "Task completed successfully.", mediaUrls: [] },
+      { mediaUrls: [expect.stringMatching(/\/okou\.vcf$/u)] },
+    ]);
+  });
+
   it("links a direct-message sender with a one-time connection code", async () => {
     const bdd = createBddApi(context);
     const integrations = createBddIntegrationApi(context);
@@ -482,15 +865,14 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       isGroup: false,
     });
 
-    // The welcome is split into several messages with the Okou contact card
-    // after the first one; only the first threads onto the code message.
+    // The welcome stays text-only; only the first threads onto the code message.
     const welcome = sends.messages.slice(beforeCode);
     expectConnectedWelcome(welcome);
     expect(
       welcome.map((send) => {
         return send.replyToMessageId;
       }),
-    ).toStrictEqual([inboundMessageId, undefined, undefined, undefined]);
+    ).toStrictEqual([inboundMessageId, undefined, undefined]);
     for (const send of welcome) {
       expect(send.toNumber).toBe(phone);
       expect(send.conversationId).toBeUndefined();
@@ -2264,7 +2646,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await runs.ensurePersonalSubscriptionModel(actor);
     const phone = uniquePhoneHandle();
     await ap.linkViaWebhookConnectPrompt(actor, phone, sends);
-    const welcome = sends.messages.slice(-4);
+    const welcome = sends.messages.slice(-3);
     expectConnectedWelcome(welcome);
     for (const send of welcome) {
       expect(send.body).not.toContain("I'm Okou");
