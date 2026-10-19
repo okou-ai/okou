@@ -940,7 +940,79 @@ export async function getUsagePackManagement(
   db: Pick<Db, "select">,
   orgId: string,
 ): Promise<UsagePackManagementResponse | null> {
-  const context = await loadUsagePackChangeContextForOrg(db, orgId);
+  const context = await (async (): Promise<UsagePackChangeContext | null> => {
+    const [subscription] = await db
+      .select()
+      .from(usagePackSubscriptions)
+      .where(
+        and(
+          eq(usagePackSubscriptions.orgId, orgId),
+          isNotNull(usagePackSubscriptions.stripeSubscriptionId),
+          notInArray(usagePackSubscriptions.subscriptionStatus, [
+            ...TERMINAL_SUBSCRIPTION_STATUSES,
+          ]),
+        ),
+      )
+      .orderBy(desc(usagePackSubscriptions.updatedAt))
+      .limit(1);
+    if (!subscription) {
+      return null;
+    }
+    const usagePackSubscriptionId = subscription.id;
+    return await (async (): Promise<UsagePackChangeContext | null> => {
+      const allocationColumns = getTableColumns(usagePackAllocations);
+      const changeColumns = getTableColumns(usagePackAllocationChanges);
+      const allocationSchema = contextProjectionSchema(allocationColumns);
+      const changeSchema = contextProjectionSchema(changeColumns);
+      const allocations = db
+        .select({
+          payload: contextJsonProjection(allocationColumns)
+            .mapWith(zodDriverValueDecoder(allocationSchema))
+            .as("payload"),
+        })
+        .from(usagePackAllocations)
+        .where(
+          eq(
+            usagePackAllocations.usagePackSubscriptionId,
+            usagePackSubscriptionId,
+          ),
+        );
+      const changes = db
+        .select({
+          payload: contextJsonProjection(changeColumns)
+            .mapWith(zodDriverValueDecoder(changeSchema))
+            .as("payload"),
+        })
+        .from(usagePackAllocationChanges)
+        .where(
+          and(
+            eq(
+              usagePackAllocationChanges.usagePackSubscriptionId,
+              usagePackSubscriptionId,
+            ),
+            inArray(usagePackAllocationChanges.status, [
+              ...OPEN_CHANGE_STATUSES,
+            ]),
+          ),
+        );
+      // Allocation replacement and its change-status transition commit together.
+      // One statement prevents mixing child rows from either side of that commit.
+      const [context] = await db
+        .select({
+          subscription: usagePackSubscriptions,
+          allocations: contextJsonRows(allocations).mapWith(
+            zodDriverValueDecoder(allocationSchema.array()),
+          ),
+          changes: contextJsonRows(changes).mapWith(
+            zodDriverValueDecoder(changeSchema.array()),
+          ),
+        })
+        .from(usagePackSubscriptions)
+        .where(eq(usagePackSubscriptions.id, usagePackSubscriptionId))
+        .limit(1);
+      return context ?? null;
+    })();
+  })();
   return usagePackManagementResponse(context);
 }
 
