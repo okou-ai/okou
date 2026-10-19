@@ -104,10 +104,10 @@ function clients() {
 
 describe("Custom connector authentication modes", () => {
   it.each(modes)(
-    "creates and reads a %s connector through the public API",
+    "creates and reads a %s connector without changing endpoint queries",
     async (mode) => {
       const api = clients();
-      const endpoint = `https://${randomUUID()}.mcp.example.test/server`;
+      const endpoint = `https://${randomUUID()}.mcp.example.test/server?hl=en&tag=one&tag=two&empty=&encoded=a%20b&literal=a+b&slash=%2f`;
       const created = await accept(
         api.collection.create({ headers, body: definition(mode, endpoint) }),
         [201],
@@ -131,6 +131,81 @@ describe("Custom connector authentication modes", () => {
       expect(listed.body.connectors).toStrictEqual([read.body]);
     },
   );
+
+  it("preserves host-only endpoints and query-only edits", async () => {
+    const api = clients();
+    const endpoint = "https://mcp-query.example.test?hl=en";
+    const created = await accept(
+      api.collection.create({ headers, body: definition("none", endpoint) }),
+      [201],
+    );
+    expect(created.body).toMatchObject({ endpoint });
+    expect(created.body.slug).toMatch(/^_mcp-query-example-test-[a-f0-9]{6}$/u);
+
+    const updatedEndpoint =
+      "https://mcp-query.example.test?hl=de&tag=two&tag=one&empty&encoded=%2F&literal=a+b";
+    const updated = await accept(
+      api.connector.update({
+        headers,
+        params: { id: created.body.id },
+        body: definition("none", updatedEndpoint),
+      }),
+      [200],
+    );
+    expect(updated.body).toMatchObject({
+      id: created.body.id,
+      slug: created.body.slug,
+      endpoint: updatedEndpoint,
+    });
+    const read = await accept(
+      api.connector.get({ headers, params: { id: created.body.id } }),
+      [200],
+    );
+    expect(read.body).toMatchObject({ endpoint: updatedEndpoint });
+  });
+
+  it.each([
+    "http://mcp.example.test/server?hl=en",
+    "https://mcp.example.test:443:444/server?hl=en",
+    "https://mcp.example.test:65536/server?hl=en",
+    "https://127.0.0.1/server?hl=en",
+    "https://[::1]/server?hl=en",
+    "https://mcp.example.test/server?hl=en#fragment",
+    "https://mcp.example.test/server?hl=en#",
+    "https://user:password@mcp.example.test/server?hl=en",
+    "https://mcp.example.test/%2e%2e/admin?hl=en",
+    "https://{{host}}.example.test/server?hl=en",
+  ])("rejects unsafe MCP endpoint %s", async (endpoint) => {
+    const api = clients();
+    const rejected = await accept(
+      api.collection.create({ headers, body: definition("none", endpoint) }),
+      [400],
+    );
+    expect(rejected.body).toMatchObject({ error: { code: "BAD_REQUEST" } });
+    expect(JSON.stringify(rejected.body)).not.toContain(endpoint);
+    const listed = await accept(api.collection.list({ headers }), [200]);
+    expect(listed.body.connectors).toStrictEqual([]);
+  });
+
+  it("keeps HTTP firewall prefixes query-free", async () => {
+    const api = clients();
+    const rejected = await accept(
+      api.collection.create({
+        headers,
+        body: {
+          kind: "http",
+          displayName: "HTTP query prefix",
+          prefixTemplates: ["https://api.example.test/v1/?hl=en"],
+          authMode: "none",
+          fields: [],
+          headerInjections: [],
+          queryInjections: [],
+        },
+      }),
+      [400],
+    );
+    expect(rejected.body).toMatchObject({ error: { code: "BAD_REQUEST" } });
+  });
 
   it.each(modes)(
     "changes OAuth to %s and back through public definition updates",

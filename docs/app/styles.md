@@ -1079,8 +1079,8 @@ Tailwind wraps `hover:` and `group-hover:` in `@media (hover: hover)`, so a
 `group-hover:` utility is not equivalent to an ungated `.parent:hover .child`
 rule: the ungated form also fires on coarse pointers, where a tap leaves a
 sticky hover. Reproduce that contract with an arbitrary variant over the
-element's own semantic attribute, as in
-`[:is([data-sidebar-chat-thread-id]:hover,[data-sidebar-chat-thread-id]:focus-visible)_&]:…`,
+containing semantic element, as in
+`[:is(a:hover,a:focus-visible,button:hover,button:focus-visible)_&]:…` for `HoverScrollTitle`,
 which generates the same unconditional descendant selector at the same
 specificity, and folds a two-state rule into one utility. This matches the
 unconditional `[&:hover]` form the choice and surface variants use; reach for
@@ -1093,13 +1093,13 @@ Spell such a variant out at every call site. Tailwind's scanner is text-based,
 so a variant assembled from a constant produces a candidate that never appears
 in the source and therefore generates no CSS at all.
 
-The sidebar thread title keeps its `@property --okou-nav-title-shift`
+The shared hover-scroll title keeps its `@property --okou-nav-title-shift`
 registration in the App stylesheet. A registration is an at-rule rather than a
 class selector, and it is what lets a transition interpolate the length and
 `inherits: true` carry the animated value to the text span; the mask, the travel
 and the delayed hover transition are Tailwind utilities on the component.
-`data-slot="sidebar-thread-title"` identifies the clipping box for page tests
-and carries no styles.
+`data-slot="sidebar-thread-title"` identifies the sidebar clipping box for page
+tests and carries no styles; resource titles use `data-slot="hover-scroll-title"`.
 
 ### Illustration strokes
 

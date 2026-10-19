@@ -1,5 +1,5 @@
 {
-  "id": "061c9261-7ea1-4128-89d4-eda26946853c",
+  "id": "9f282c14-1e46-462e-95e2-ba4014221e5c",
   "prevId": "ca838b6c-7fb8-47b9-ae10-d11f37e2b36f",
   "version": "7",
   "dialect": "postgresql",
@@ -1141,12 +1141,6 @@
         },
         "description": {
           "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "instructions": {
-          "name": "instructions",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -34859,13 +34853,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'active'"
-        },
-        "workflow_receiver": {
-          "name": "workflow_receiver",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         },
         "updates_cursor": {
           "name": "updates_cursor",

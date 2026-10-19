@@ -8,15 +8,14 @@ import {
   type FirewallPolicies,
   type FirewallPolicy,
   type NetworkPolicy,
-  canonicalizeFirewallBaseUrl,
   extractSecretNamesFromApis,
-  validateBaseUrlHostPolicy,
 } from "@okouai/connectors/firewall-types";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { safeSync } from "../utils";
 import type { ConnectorRuntimeLookup } from "./connector-catalog-runtime.service";
 import type { CustomConnectorCredentialAccess } from "./custom-connector-credential-access.service";
 import { orderByCustomConnectorId } from "./custom-connector-order";
+import { parseCustomMcpEndpoint } from "./custom-mcp-endpoint";
 import {
   type CustomConnectorPermissionBundle,
   loadCustomConnectorPermissionBundle,
@@ -128,29 +127,13 @@ function buildCustomConnectorRuntimeApis(args: {
 }): ExpandedFirewallConfig["apis"] {
   const connector = args.row.connector;
   if (connector.kind === "mcp") {
-    const endpointResult = safeSync(() => {
-      const canonicalEndpoint = canonicalizeFirewallBaseUrl(
-        connector.endpoint,
-        "MCP custom connector",
-      );
-      const endpoint = new URL(canonicalEndpoint);
-      if (endpoint.protocol !== "https:") {
-        throw new Error("MCP endpoint must use https://");
-      }
-      validateBaseUrlHostPolicy({
-        base: canonicalEndpoint,
-        serviceName: "MCP custom connector",
-        hostPolicy: { kind: "publicDestination" },
-      });
-      return canonicalEndpoint;
-    });
+    const endpointResult = parseCustomMcpEndpoint(connector.endpoint);
     if ("error" in endpointResult) {
       return [];
     }
-    const endpoint = endpointResult.ok;
     return [
       {
-        base: endpoint,
+        base: endpointResult.ok.firewallBase,
         hostPolicy: { kind: "publicDestination" },
         auth: { headers: args.headers, query: args.query },
       },

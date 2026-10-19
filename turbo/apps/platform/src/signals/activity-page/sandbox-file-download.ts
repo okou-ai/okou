@@ -159,16 +159,10 @@ function createStreamCommand(graph: DownloadGraph) {
       source.complete = size === 0n;
       set(graph.url$, url);
       let offset = 0n;
-      for (;;) {
+      while (offset < size) {
         const message = await bridge.next();
         signal.throwIfAborted();
         set(graph.check$, job, signal);
-        if (message.type === "complete") {
-          if (!source.complete || offset !== size) {
-            throw new FileDownloadError("unavailable");
-          }
-          return;
-        }
         const length = downloadChunkLength(size, offset);
         if (
           message.type !== "pull" ||
@@ -210,6 +204,16 @@ function createStreamCommand(graph: DownloadGraph) {
         bridge.chunk(offset.toString(), bytes, final);
         source.complete = final;
         offset = next;
+      }
+      const completion = await bridge.next();
+      signal.throwIfAborted();
+      set(graph.check$, job, signal);
+      if (
+        completion.type !== "complete" ||
+        !source.complete ||
+        offset !== size
+      ) {
+        throw new FileDownloadError("unavailable");
       }
     },
   );

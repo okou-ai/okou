@@ -27,6 +27,8 @@ import { connectorAccountsContract } from "@okouai/api-contracts/contracts/conne
 import { connectorCheckContract } from "@okouai/api-contracts/contracts/connector-check";
 import { builtinConnectorAutomaticContract } from "@okouai/api-contracts/contracts/connectors";
 import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
+import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
+import { mcpConnectorsRoutes } from "../mcp-connectors";
 import {
   getModelProviderFirewall,
   type ModelProviderType,
@@ -7144,7 +7146,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const mcpDefinition = manualMcpRuntimeConnectorBody({
           displayName: "BDD MCP Runtime",
-          endpoint: "https://mcp-runtime.example.test/api/mcp",
+          endpoint:
+            "https://mcp-runtime.example.test/api/mcp?hl=en&tag=one&tag=two&empty=&encoded=a%20b",
           skillMarkdown: "Use the admitted MCP server.",
         });
         const mcp = await connectors.createCustomConnector(
@@ -7179,6 +7182,27 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.heartbeatRunner(runnerGroup);
         const claim = await api.claimRunnerJob(run.runId);
         const mcpInternalName = `custom_connector_${mcp.id.replaceAll("-", "")}`;
+        const mcpClient = setupApp({ context, routes: mcpConnectorsRoutes })(
+          mcpConnectorsContract,
+        );
+        const mcpToken = claim.platformEnvironment.OKOU_TOKEN;
+        if (!mcpToken) {
+          throw new Error("Expected the Run's MCP client token");
+        }
+        const mcpHeaders = {
+          authorization: `Bearer ${mcpToken}`,
+        };
+        const listedMcp = await accept(
+          mcpClient.list({ headers: mcpHeaders }),
+          [200],
+        );
+        expect(listedMcp.body.connectors).toContainEqual(
+          expect.objectContaining({
+            endpoint: mcpDefinition.endpoint,
+            target: { kind: "custom", customConnectorId: mcp.id },
+            connectionId: expect.any(String),
+          }),
+        );
         const admittedIds = [http.id, mcp.id].sort();
         expect(
           claim.connectorRuntimeTargets
@@ -7292,7 +7316,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const movedDefinition = manualMcpRuntimeConnectorBody({
           displayName: "BDD MCP Runtime Moved",
-          endpoint: "https://mcp-runtime.example.test/v2/mcp/",
+          endpoint: "https://mcp-runtime.example.test/v2/mcp/?hl=de&tag=two",
           skillMarkdown: "Use the moved MCP server.",
         });
         await connectors.updateCustomConnector(actor, mcp.id, movedDefinition);
@@ -7310,6 +7334,17 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           ask: [],
           unknownPolicy: "allow",
         });
+        const movedMcp = await accept(
+          mcpClient.list({ headers: mcpHeaders }),
+          [200],
+        );
+        expect(movedMcp.body.connectors).toContainEqual(
+          expect.objectContaining({
+            endpoint: movedDefinition.endpoint,
+            target: { kind: "custom", customConnectorId: mcp.id },
+            connectionId: mcpTarget.sourceId,
+          }),
+        );
 
         const [mismatchedRoutingResult] = await api.syncConnectorRuntime(
           run.runId,

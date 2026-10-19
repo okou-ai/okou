@@ -336,6 +336,7 @@ jobs:
             .github/scripts/tests/cloudflare-ssh-preconnect-test.sh \
             .github/scripts/tests/cloudflare-ssh-proxy-test.sh \
             .github/scripts/tests/cloudflare-ssh-native-diagnostics-test.sh \
+            .github/scripts/tests/cloudflare-ssh-tcp-test.sh \
             .github/scripts/tests/deploy-desktop-workflow-test.sh \
             .github/scripts/tests/ios-testflight-workflow-test.sh \
             .github/scripts/tests/deploy-okou-app-worker-workflow-test.sh \
