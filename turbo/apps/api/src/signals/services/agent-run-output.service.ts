@@ -34,8 +34,6 @@ import type { Tx } from "../../lib/db-types";
 import type { SandboxAuth } from "../../types/auth";
 import type { Db } from "../external/db";
 
-import { projectRunStorage } from "./storage-legacy-projection.service";
-
 export type AgentRunOutputBody = z.infer<typeof runCompletionMetadataSchema> & {
   readonly runId: string;
 };
@@ -223,14 +221,23 @@ async function loadExistingRunOutput(
 function storageOutputs(
   mounts: readonly PersistedStorageMount[],
 ): NonNullable<RunResult["storageOutputs"]> {
-  return [...(projectRunStorage(mounts).artifactSnapshots ?? [])].map(
-    (output) => {
-      if (output.version === undefined) {
-        throw new Error("Published Run output is missing its version");
-      }
-      return { ...output, version: output.version };
-    },
-  );
+  const outputs: NonNullable<RunResult["storageOutputs"]> = [];
+  for (const mount of mounts) {
+    if (mount.version === undefined) {
+      throw new Error(`Invalid Run Storage "${mount.name}": missing version`);
+    }
+    if (mount.writeback) {
+      outputs.push({
+        name: mount.name,
+        version: mount.version,
+        mountPath: mount.mountPath,
+        ...(mount.missingRootPolicy === undefined
+          ? {}
+          : { missingRootPolicy: mount.missingRootPolicy }),
+      });
+    }
+  }
+  return outputs;
 }
 
 function buildRunResult(
@@ -238,18 +245,23 @@ function buildRunResult(
   body: AgentRunOutputBody,
   mounts: readonly PersistedStorageMount[],
 ): RunResult {
-  const projection = projectRunStorage(mounts);
   const framework = run.launchSnapshot?.framework;
+  const outputs = storageOutputs(mounts);
   return {
     ...(framework !== undefined && framework === body.cliAgentType
       ? { framework, frameworkSessionId: body.cliAgentSessionId }
       : {}),
-    storageOutputs: storageOutputs(mounts),
-    ...(projection.artifactVersions
-      ? { artifact: projection.artifactVersions }
-      : {}),
-    ...(projection.volumeVersionsSnapshot
-      ? { volumes: projection.volumeVersionsSnapshot.versions }
+    storageOutputs: outputs,
+    // Outgoing API log readers still consume this map. Remove after this
+    // Storage-output reader preparation is deployed and drained (#41332).
+    ...(outputs.length > 0
+      ? {
+          artifact: Object.fromEntries(
+            outputs.map((output) => {
+              return [output.name, output.version];
+            }),
+          ),
+        }
       : {}),
   };
 }

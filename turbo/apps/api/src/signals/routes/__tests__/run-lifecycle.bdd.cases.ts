@@ -12558,11 +12558,17 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
           const completed = await api.readRun(actor, created.runId);
           expect(completed.status).toBe("completed");
-          expect(completed.result?.artifact).toStrictEqual({
-            memory: memoryArtifact.versionId,
-          });
-          expect(completed.result?.volumes).toStrictEqual({
-            [cacheVolume]: cachePrepared.versionId,
+          expect(completed.result?.storageOutputs).toStrictEqual(
+            artifactSnapshots,
+          );
+          const log = await createRunReadsApi(context).requestReadLogById(
+            actor,
+            created.runId,
+            [200],
+          );
+          expect(log.body.artifact).toStrictEqual({
+            name: memoryArtifact.name,
+            version: memoryArtifact.versionId,
           });
 
           // A late duplicate report cannot flip the settled run.
