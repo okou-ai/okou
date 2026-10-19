@@ -46,7 +46,7 @@ async fn draining_stops_queued_routine_inventory_without_a_completion_marker() {
     );
     assert!(f.image("home", &committed).exists());
     assert_eq!(
-        std::fs::metadata(f.cache.capacity_lock_path())
+        std::fs::metadata(f.cache.routine_gc_marker_path())
             .unwrap()
             .len(),
         0,
@@ -126,10 +126,12 @@ async fn draining_stops_partial_routine_inventory_between_entries() {
     assert!(gc.await.unwrap().unwrap().is_none());
     assert_eq!(orphans.iter().filter(|path| path.exists()).count(), 1);
     assert!(images.iter().all(|path| path.exists()));
-    let capacity = runner_host::lock::try_acquire(f.cache.capacity_lock_path())
-        .await
-        .unwrap();
-    assert_eq!(capacity.metadata().unwrap().len(), 0);
+    assert_eq!(
+        std::fs::metadata(f.cache.routine_gc_marker_path())
+            .unwrap()
+            .len(),
+        0
+    );
 }
 
 #[tokio::test]
@@ -155,7 +157,7 @@ async fn draining_stops_a_pressure_turn_without_abandoning_its_held_lock() {
     tokio::pin!(joined);
     assert!(futures_util::poll!(&mut joined).is_pending());
     assert!(matches!(
-        runner_host::lock::try_acquire_or_busy(f.cache.capacity_lock_path())
+        runner_host::lock::try_acquire_or_busy(f.cache.routine_gc_lock_path())
             .await
             .unwrap(),
         runner_host::lock::TryLock::Busy
@@ -164,7 +166,7 @@ async fn draining_stops_a_pressure_turn_without_abandoning_its_held_lock() {
     worker.await.unwrap().unwrap();
     joined.await;
     assert!(f.image("home", &committed).exists());
-    let _capacity = runner_host::lock::try_acquire(f.cache.capacity_lock_path())
+    let _collector = runner_host::lock::try_acquire(f.cache.routine_gc_lock_path())
         .await
         .unwrap();
 }

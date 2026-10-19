@@ -126,8 +126,8 @@ async fn background_gc_lifecycle(pressure: bool, resume: bool) {
     )
     .await;
     assert_eq!(entry.exists(), !resume);
-    if !resume {
-        assert_eq!(std::fs::metadata(marker).unwrap().len(), 0);
+    if pressure || !resume {
+        assert!(!marker.exists());
     }
 }
 

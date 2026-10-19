@@ -54,11 +54,6 @@ struct PublicationRequest {
     history_proof: Option<HomeCacheHistoryProofBinding>,
 }
 
-struct PublicationAdmission<'a> {
-    _io: tokio::sync::SemaphorePermit<'a>,
-    _capacity: Flock<std::fs::File>,
-}
-
 impl PublicationRequest {
     fn input(&self) -> HomeImagePromotionInput<'_> {
         HomeImagePromotionInput {
@@ -151,7 +146,7 @@ impl HomeImageCache {
         &'a self,
         deadline: Instant,
         io_slots: u32,
-    ) -> LifecycleResult<Option<PublicationAdmission<'a>>> {
+    ) -> LifecycleResult<Option<tokio::sync::SemaphorePermit<'a>>> {
         if Instant::now() >= deadline {
             return Ok(None);
         }
@@ -166,14 +161,7 @@ impl HomeImageCache {
                 .map_err(|error| {
                     LifecycleError::Internal(format!("home publication admission closed: {error}"))
                 })?;
-            let capacity = match self.acquire_promotion_capacity_lock().await? {
-                runner_host::lock::TryLock::Acquired(lock) => lock,
-                runner_host::lock::TryLock::Busy => return Ok(None),
-            };
-            Ok::<_, LifecycleError>(Some(PublicationAdmission {
-                _io: io,
-                _capacity: capacity,
-            }))
+            Ok::<_, LifecycleError>(Some(io))
         };
         match tokio::time::timeout_at(deadline, admission).await {
             Ok(result) => result,
@@ -273,35 +261,24 @@ impl HomeImageCache {
             let admission = match self.publication_admission(deadline, io_slots).await {
                 Ok(Some(admission)) => admission,
                 Ok(None) => {
-                    let reason = if Instant::now() >= deadline {
-                        "publication_admission_timeout"
-                    } else {
-                        "capacity_lock_busy"
-                    };
-                    if reason == "capacity_lock_busy" {
-                        info!(run_id = %input.run_id, cache_key = input.cache_key,
-                            contention_timeout_ms = duration_ms(HOME_IMAGE_PROMOTION_CAPACITY_LOCK_TIMEOUT),
-                            "home image cache promotion skipped: capacity lock busy");
-                    } else {
-                        info!(run_id = %input.run_id, cache_key = input.cache_key,
-                            admission_timeout_ms = duration_ms(HOME_IMAGE_PUBLICATION_ADMISSION_TIMEOUT),
-                            "home image cache promotion skipped: publication admission timeout");
-                    }
+                    info!(run_id = %input.run_id, cache_key = input.cache_key,
+                        admission_timeout_ms = duration_ms(HOME_IMAGE_PUBLICATION_ADMISSION_TIMEOUT),
+                        "home image cache promotion skipped: publication admission timeout");
                     self.observe_publication(
                         &input,
                         HomeObservationOutcome::Skipped,
-                        reason,
+                        "publication_admission_timeout",
                         None,
                         None,
                     );
                     return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
                 }
                 Err(error) => {
-                    warn!(run_id = %input.run_id, %error, "home image cache promotion skipped: capacity lock unavailable");
+                    warn!(run_id = %input.run_id, %error, "home image cache promotion skipped: publication admission unavailable");
                     self.observe_publication(
                         &input,
                         HomeObservationOutcome::Skipped,
-                        "capacity_lock_unavailable",
+                        "publication_admission_unavailable",
                         None,
                         None,
                     );
@@ -309,16 +286,16 @@ impl HomeImageCache {
                 }
             };
             #[cfg(test)]
-            if let Some((entered, release)) = &self.publication_capacity_held_test_gate {
+            if let Some((entered, release)) = &self.publication_io_held_test_gate {
                 entered.notify_one();
                 release
                     .acquire()
                     .await
-                    .expect("publication capacity-held gate closed")
+                    .expect("publication IO-held gate closed")
                     .forget();
             }
-            // All cache-tree growth and physical tails are within this barrier.
-            // Both transfers share IO admission; GC waits release it and the barrier.
+            // Accepted physical work retains IO admission. GC waits release it;
+            // entry custody and pinned source bytes survive those waits.
             let copy_peak = if progress.image.is_none() && copy_required {
                 source.validate_path(input.active_image)?;
                 let file = source.clone_file_for_observation()?;

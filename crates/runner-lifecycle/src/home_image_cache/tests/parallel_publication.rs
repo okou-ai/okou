@@ -6,7 +6,6 @@ use std::os::unix::fs::MetadataExt;
 use std::sync::Arc;
 use std::time::Duration;
 
-mod compatibility;
 mod pressure_admission;
 
 async fn context(f: &Fixture, key: &str) -> HomeImagePromotionContext {
@@ -57,7 +56,7 @@ async fn blocked_physical_sync_allows_an_independent_key_to_commit() {
     published_bytes(&f, "independent", &second_bytes).await;
     assert!(!f.cache.entry_paths(&f.key("blocked")).metadata().exists());
     assert!(matches!(
-        runner_host::lock::try_acquire_or_busy(f.cache.capacity_lock_path())
+        runner_host::lock::try_acquire_or_busy(f.cache.entry_lock_path(&f.key("blocked")))
             .await
             .unwrap(),
         runner_host::lock::TryLock::Busy

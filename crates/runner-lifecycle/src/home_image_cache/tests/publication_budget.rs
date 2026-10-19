@@ -112,9 +112,6 @@ async fn commit_dense(f: &Fixture, key: &str, byte: u8, time: &str) -> metadata:
     let _entry = runner_host::lock::acquire(f.cache.entry_lock_path(&f.key(key)))
         .await
         .unwrap();
-    let _capacity = runner_host::lock::acquire(f.cache.capacity_lock_path())
-        .await
-        .unwrap();
     f.cache
         .write_metadata(
             &f.key(key),

@@ -46,11 +46,9 @@ mod handoff;
 mod publication;
 
 const HOME_IMAGE_PREPARE_LOCK_TIMEOUT: Duration = Duration::from_millis(50);
-// Stopped publishers retain their entry and applicable resource lease while
-// waiting. Give contention a short window without changing checkout's lock budget.
-const HOME_IMAGE_PROMOTION_CAPACITY_LOCK_TIMEOUT: Duration = Duration::from_millis(250);
-// Bound queued ownership separately from external flock contention. This is an
-// initial retention policy, not a deadline for started transfer or durable I/O.
+// Bound queued publication IO admission while retaining entry and resource
+// custody. This is an initial retention policy, not a deadline for started
+// transfer or durable I/O.
 const HOME_IMAGE_PUBLICATION_ADMISSION_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub struct HomeImageLease {
@@ -1220,33 +1218,6 @@ impl HomeImageCache {
                 Err(e.into())
             }
         }
-    }
-
-    async fn acquire_promotion_capacity_lock(
-        &self,
-    ) -> runner_host::error::HostResult<runner_host::lock::TryLock> {
-        let path = self.capacity_lock_path();
-        #[cfg(test)]
-        if let Some((entered, release)) = &self.promotion_capacity_lock_test_gate {
-            return runner_host::lock::acquire_shared_with_contention_timeout_for_test(
-                path,
-                HOME_IMAGE_PROMOTION_CAPACITY_LOCK_TIMEOUT,
-                async {
-                    entered.notify_one();
-                    release
-                        .acquire()
-                        .await
-                        .expect("publication capacity gate closed")
-                        .forget();
-                },
-            )
-            .await;
-        }
-        runner_host::lock::acquire_shared_with_contention_timeout(
-            path,
-            HOME_IMAGE_PROMOTION_CAPACITY_LOCK_TIMEOUT,
-        )
-        .await
     }
 }
 

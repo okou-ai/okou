@@ -188,7 +188,7 @@ impl HomeImageCache {
         Ok(metadata)
     }
 
-    /// Caller holds entry and capacity locks and has already synced the pinned
+    /// Caller holds the entry lock and has already synced the pinned
     /// generation image. A late error may mean the commit became visible: never
     /// delete that candidate in response to an ambiguous rename/directory-sync.
     #[cfg(test)]

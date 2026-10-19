@@ -335,8 +335,7 @@ async fn teardown_joins_routine_gc_before_releasing_its_owner_lock() {
         .expect("GC completion must unblock teardown")
         .unwrap();
     let _routine_holder = runner_host::lock::acquire(routine_path).await.unwrap();
-    let capacity_holder = runner_host::lock::acquire(capacity_path).await.unwrap();
-    assert_eq!(capacity_holder.metadata().unwrap().len(), 0);
+    assert_eq!(std::fs::metadata(capacity_path).unwrap().len(), 0);
     assert_stopped_status(&env).await;
 }
 
@@ -388,6 +387,5 @@ async fn dropping_reactor_retains_routine_gc_owner_until_completion() {
     .await
     .expect("detached GC must finish and release its owner lock")
     .unwrap();
-    let capacity_holder = runner_host::lock::acquire(capacity_path).await.unwrap();
-    assert!(capacity_holder.metadata().unwrap().len() > 0);
+    assert!(std::fs::metadata(capacity_path).unwrap().len() > 0);
 }

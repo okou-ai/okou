@@ -296,7 +296,7 @@ panic abandons publication and retains admission through destruction.
 Publication stages an immutable generation-owned stopped image. Synchronize the
 image, metadata staging and affected directories before the one atomic metadata
 commit exposes its image/fingerprint/taint/proof tuple. The cache checks proof
-digest/generation and retains entry/capacity lock ordering. Failed/uncertain
+digest/generation and retains entry ownership through bounded local IO admission. Failed/uncertain
 commits can leave owned orphan allocation, not authority for mixed-generation
 bytes. Normal startup/reuse and active completion do not take idle reclamation
 admission. This bounds concurrent resumed guests, not team Run concurrency;
