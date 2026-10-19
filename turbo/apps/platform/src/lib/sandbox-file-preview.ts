@@ -7,7 +7,6 @@ import {
 } from "@okouai/api-contracts/contracts/sandbox-channel-fs";
 import {
   createDeferredPromise,
-  jsonParseOr,
   settle,
   withCleanup,
 } from "../signals/utils.ts";
@@ -248,7 +247,7 @@ async function validateImage(
 
 export type SandboxPreviewContent =
   | {
-      readonly kind: "text" | "markdown" | "csv";
+      readonly kind: "text" | "markdown" | "csv" | "json";
       readonly text: string;
       readonly truncated: boolean;
       readonly empty: boolean;
@@ -368,41 +367,14 @@ async function previewText(
   ) {
     throw new FilePreviewError(decodeFailure);
   }
-  let display = text;
-  if (kind === "json" && !truncated) {
-    // Formatting untrusted deep JSON can overflow the serializer's stack or
-    // expand past the visible prefix. In either case its escaped source is
-    // still a complete, bounded preview; never throw from the React renderer.
-    const formatted = await settle(() => {
-      const parsed = jsonParseOr<unknown>(text, null);
-      if (parsed === null) {
-        return text;
-      }
-      // Parsing can round numbers, replace overflow with null, or drop duplicate
-      // keys. Pretty-print only when serialization changes whitespace alone.
-      const compact = text.replace(/"(?:\\.|[^"\\])*"|\s+/g, (token) => {
-        return token.startsWith('"') ? token : "";
-      });
-      return JSON.stringify(parsed) === compact
-        ? JSON.stringify(parsed, null, 2)
-        : text;
-    }, signal);
-    signal.throwIfAborted();
-    if (
-      formatted.ok &&
-      formatted.value.length <= SANDBOX_FS_LIMITS.maxPrefixBytes
-    ) {
-      display = formatted.value;
-    }
-  }
   return {
     kind:
-      kind === "markdown"
-        ? "markdown"
+      kind === "json" || kind === "markdown"
+        ? kind
         : kind === "csv" && !truncated
           ? "csv"
           : "text",
-    text: display,
+    text,
     truncated,
     empty: bytes.length === 0,
   };

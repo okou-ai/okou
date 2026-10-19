@@ -605,6 +605,23 @@
       "uploadSheets": "Carica su Google Sheets",
       "uploadSlides": "Carica su Google Slides"
     },
+    "jsonPreview": {
+      "allShown": "Tutti gli elementi visualizzati",
+      "arrayCount": "Elementi: {{formattedCount}}",
+      "collapse": "Comprimi {{label}}",
+      "collapseAll": "Comprimi tutto",
+      "complexity": "Questo JSON è troppo complesso per l’albero. Viene mostrato il sorgente.",
+      "copyNode": "Copia {{label}}",
+      "copySource": "Copia sorgente dell’anteprima",
+      "expand": "Espandi {{label}}",
+      "incomplete": "È stata caricata solo una parte del file. Viene mostrato il sorgente; scarica il file per vedere il contenuto completo.",
+      "invalid": "Questo JSON non è valido. Viene mostrato il sorgente.",
+      "limited": "Alcuni nodi sono nascosti. Passa al sorgente per vedere tutto il testo caricato.",
+      "more": "Mostra altro",
+      "objectCount": "Chiavi: {{formattedCount}}",
+      "source": "Sorgente",
+      "tree": "Albero"
+    },
     "kinds": {
       "audio": "Audio",
       "avatar": "Avatar",

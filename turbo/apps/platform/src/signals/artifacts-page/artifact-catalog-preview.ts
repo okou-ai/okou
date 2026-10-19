@@ -3,7 +3,11 @@ import { computed } from "ccstate";
 import type { ArtifactCatalogSignals } from "./create-artifact-catalog-signals.ts";
 import type { MermaidDiagramPreviewCommand } from "../mermaid-diagram.ts";
 import { createMarkdownPreviewTree } from "../markdown-preview-tree.ts";
-import { fetchPreviewText, isTextPreviewKind } from "../text-preview.ts";
+import {
+  fetchPreviewText,
+  isTextPreviewKind,
+  type TextPreviewContent,
+} from "../text-preview.ts";
 
 import { publicAttachmentUrl } from "../../views/okou-page/attachment-url.ts";
 import {
@@ -30,7 +34,7 @@ export function createCatalogArtifactPreviewSignals(
     const preview = get(artifactCatalog.selectedArtifactPreview$);
     return preview ? await get(preview.shareUrl$) : null;
   });
-  const text$ = computed(async (get): Promise<string> => {
+  const text$ = computed(async (get): Promise<TextPreviewContent> => {
     const detail = await get(artifactCatalog.selectedArtifactDetail$);
     if (!detail) {
       throw new Error("Selected artifact is unavailable");

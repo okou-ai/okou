@@ -18,7 +18,7 @@ export function createMarkdownPreviewTree(
   openDiagram$: MermaidDiagramPreviewCommand,
 ): MarkdownPreviewTreeComputed {
   return computed(async (get): Promise<Root> => {
-    const source = await get(text$);
+    const { text: source } = await get(text$);
     const plainTree = createPlainMarkdownTree(source, { mathEnabled: false });
     if (plainTree !== null) {
       return plainTree;

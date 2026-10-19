@@ -4,6 +4,7 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  JsonTreePreview = "jsonTreePreview",
   HostedSiteUrlEditing = "hostedSiteUrlEditing",
   DesktopShell = "desktopShell",
   RemoteControlCliManagement = "remoteControlCliManagement",
