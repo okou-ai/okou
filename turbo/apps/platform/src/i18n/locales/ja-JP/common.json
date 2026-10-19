@@ -5123,6 +5123,15 @@
         "retryMessage": "Morning Brief の設定を読み込むか更新できませんでした。再試行してください。",
         "title": "モーニングブリーフ"
       },
+      "proactiveSuggestions": {
+        "description": "Okou が接続済みの情報源を毎時間確認し、役立つ次のアクションをホームに提案します。",
+        "missingDefaultAgent": "先回りの提案を受け取るには、利用可能なデフォルトの Agent を選択してください。",
+        "preparationFailed": "提案の設定を完了できませんでした。再試行してください。",
+        "preparing": "毎時間の提案を準備しています。いつでもオフにできます。",
+        "retry": "再試行",
+        "retryMessage": "提案の設定を読み込みまたは更新できませんでした。再試行してください。",
+        "title": "先回りの提案"
+      },
       "send": {
         "cmdEnter": "⌘ 入力してください",
         "cmdEnterDescription": "⌘/Ctrl+Enter を押して送信し、Enter を押して改行します",

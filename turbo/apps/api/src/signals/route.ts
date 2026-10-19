@@ -151,6 +151,7 @@ import { meModelProvidersResetSubscriptionRoutes } from "./routes/me-model-provi
 import { meModelProvidersUpsertRoutes } from "./routes/me-model-providers-upsert";
 import { modelCatalogRoutes } from "./routes/model-catalog";
 import { morningBriefPreferenceRoutes } from "./routes/morning-brief-preference";
+import { proactiveSuggestionsRoutes } from "./routes/proactive-suggestions";
 import { onboardingCompleteRoutes } from "./routes/onboarding-complete";
 import { onboardingRecommendationRoutes } from "./routes/onboarding-recommendations";
 import { onboardingSourcesRoutes } from "./routes/onboarding-sources";
@@ -407,6 +408,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...paidToolsRoutes,
   ...userModelPreferenceRoutes,
   ...morningBriefPreferenceRoutes,
+  ...proactiveSuggestionsRoutes,
   ...emailSubscriptionRoutes,
   ...notificationsRoutes,
   ...debugMorningBriefRoutes,

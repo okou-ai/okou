@@ -5210,6 +5210,15 @@
         "retryMessage": "Non è stato possibile caricare o aggiornare le impostazioni di Morning Brief. Riprova per continuare.",
         "title": "Riepilogo mattutino"
       },
+      "proactiveSuggestions": {
+        "description": "Okou controlla ogni ora le fonti collegate e propone azioni utili nella pagina iniziale.",
+        "missingDefaultAgent": "Scegli un Agent predefinito disponibile per ricevere suggerimenti proattivi.",
+        "preparationFailed": "Impossibile completare la configurazione. Riprova.",
+        "preparing": "Preparazione dei suggerimenti orari. Puoi disattivarli in qualsiasi momento.",
+        "retry": "Riprova",
+        "retryMessage": "Impossibile caricare o aggiornare le impostazioni. Riprova.",
+        "title": "Suggerimenti proattivi"
+      },
       "send": {
         "cmdEnter": "⌘ Invio",
         "cmdEnterDescription": "Premi ⌘/Ctrl+Invio per inviare, Invio per una nuova riga",

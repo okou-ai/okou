@@ -40,6 +40,35 @@ const run = (...args: string[]) => {
   return createSuggestionCommand().parseAsync(["node", "okou", ...args]);
 };
 
+it("derives the same action identity across checks and a different identity for a new event", async () => {
+  await run(
+    "identity",
+    "--key",
+    "github:okou-ai/okou:pr:123:review:head-1",
+    "--json",
+  );
+  const first = log.mock.calls.at(-1)?.[0];
+  expect(first).toEqual(
+    expect.stringMatching(
+      /^\{"id":"[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"\}$/u,
+    ),
+  );
+  await run(
+    "identity",
+    "--key",
+    "github:okou-ai/okou:pr:123:review:head-1",
+    "--json",
+  );
+  expect(log.mock.calls.at(-1)?.[0]).toBe(first);
+  await run(
+    "identity",
+    "--key",
+    "github:okou-ai/okou:pr:123:review:head-2",
+    "--json",
+  );
+  expect(log.mock.calls.at(-1)?.[0]).not.toBe(first);
+});
+
 it("publishes a canonical draft from a real file with a stable creation identity", async () => {
   const directory = await mkdtemp(join(tmpdir(), "suggestion-test-"));
   try {

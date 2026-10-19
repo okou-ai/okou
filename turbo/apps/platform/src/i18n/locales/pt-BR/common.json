@@ -5210,6 +5210,15 @@
         "retryMessage": "Não foi possível carregar ou atualizar as configurações do Morning Brief. Tente novamente para continuar.",
         "title": "Resumo matinal"
       },
+      "proactiveSuggestions": {
+        "description": "O Okou verifica suas fontes conectadas a cada hora e sugere próximos passos úteis na página inicial.",
+        "missingDefaultAgent": "Escolha um Agent padrão disponível para receber sugestões proativas.",
+        "preparationFailed": "Não foi possível concluir a configuração. Tente novamente.",
+        "preparing": "Preparando sugestões por hora. Você pode desativá-las a qualquer momento.",
+        "retry": "Tentar novamente",
+        "retryMessage": "Não foi possível carregar ou atualizar as configurações. Tente novamente.",
+        "title": "Sugestões proativas"
+      },
       "send": {
         "cmdEnter": "⌘ Enter",
         "cmdEnterDescription": "Pressione ⌘/Ctrl+Enter para enviar e Enter para criar uma nova linha",
