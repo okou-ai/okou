@@ -181,6 +181,29 @@ interface TelegramMessageScope {
   readonly userLinkId: string | null;
 }
 
+interface OfficialTelegramMessageData {
+  readonly message: TelegramMessage;
+  readonly apiStartTime: number;
+}
+
+interface TelegramMessageData {
+  readonly scope: TelegramMessageScope;
+  readonly chatId: string;
+  readonly message: TelegramMessage;
+}
+
+interface UnaddressedTelegramMessageData {
+  readonly userLink:
+    | {
+        readonly id: string;
+        readonly orgId: string;
+      }
+    | null
+    | undefined;
+  readonly chatId: string;
+  readonly message: TelegramMessage;
+}
+
 interface TelegramFileContext {
   readonly file_id: string;
   readonly file_type:
@@ -417,31 +440,25 @@ function telegramFileDbValues(file: TelegramFileContext | undefined): {
   };
 }
 
-async function storeTelegramMessage(args: {
-  readonly db: Db;
-  readonly scope: TelegramMessageScope;
-  readonly chatId: string;
-  readonly message: TelegramMessage;
-}): Promise<void> {
-  const file = extractTelegramFileForContext(args.message);
-  await args.db
-    .insert(telegramMessages)
-    .values({
-      officialOrgId: args.scope.orgId,
-      officialUserLinkId: args.scope.userLinkId,
-      chatId: args.chatId,
-      messageId: String(args.message.message_id),
-      fromUserId: String(args.message.from?.id ?? 0),
-      fromUsername: args.message.from?.username ?? null,
-      fromDisplayName: formatTelegramUserDisplayName(args.message.from ?? {}),
-      text: args.message.text ?? args.message.caption ?? null,
-      ...telegramFileDbValues(file),
-      entities: extractEntities(args.message)
-        ? [...extractEntities(args.message)!]
-        : null,
-      isBot: args.message.from?.is_bot ?? false,
-    })
-    .onConflictDoNothing();
+function telegramStoredMessageValues(
+  args: TelegramMessageData,
+  file: ReturnType<typeof extractTelegramFileForContext>,
+) {
+  return {
+    officialOrgId: args.scope.orgId,
+    officialUserLinkId: args.scope.userLinkId,
+    chatId: args.chatId,
+    messageId: String(args.message.message_id),
+    fromUserId: String(args.message.from?.id ?? 0),
+    fromUsername: args.message.from?.username ?? null,
+    fromDisplayName: formatTelegramUserDisplayName(args.message.from ?? {}),
+    text: args.message.text ?? args.message.caption ?? null,
+    ...telegramFileDbValues(file),
+    entities: extractEntities(args.message)
+      ? [...extractEntities(args.message)!]
+      : null,
+    isBot: args.message.from?.is_bot ?? false,
+  };
 }
 
 function formatTelegramFileForContext(
@@ -1578,35 +1595,43 @@ const handleOfficialCommand$ = command(
   },
 );
 
-async function storeUnaddressedOfficialMessage(
-  args: {
-    readonly db: Db;
-    readonly userLink:
-      | {
-          readonly id: string;
-          readonly orgId: string;
-        }
-      | null
-      | undefined;
-    readonly chatId: string;
-    readonly message: TelegramMessage;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  if (!args.userLink) {
-    return;
-  }
-  await storeTelegramMessage({
-    db: args.db,
-    scope: {
-      kind: "official",
-      orgId: args.userLink.orgId,
-      userLinkId: args.userLink.id,
-    },
-    chatId: args.chatId,
-    message: args.message,
-  });
-  signal.throwIfAborted();
+function telegramConnectPromptData(
+  config: NonNullable<ReturnType<typeof getRunnableOfficialTelegramBotConfig>>,
+  chatId: string,
+  args: OfficialTelegramMessageData,
+  displayName: string | null,
+) {
+  return {
+    botToken: config.botToken,
+    botId: OFFICIAL_TELEGRAM_BOT_ID,
+    botUsername: config.botUsername,
+    chatId,
+    chatType: args.message.chat.type,
+    fromUserId: String(args.message.from?.id ?? 0),
+    telegramUsername: args.message.from?.username ?? null,
+    telegramDisplayName: displayName,
+    agentName: BRAND_PRESENTATION.assistantName,
+    replyToMessageId:
+      args.message.chat.type === "private"
+        ? undefined
+        : args.message.message_id,
+  };
+}
+
+function telegramMissingAgentNoticeData(
+  config: NonNullable<ReturnType<typeof getRunnableOfficialTelegramBotConfig>>,
+  chatId: string,
+  args: OfficialTelegramMessageData,
+) {
+  return {
+    botToken: config.botToken,
+    chatId,
+    text: `The workspace default agent is not configured. Please choose an agent in ${BRAND_PRESENTATION.brandName} first.`,
+    replyToMessageId:
+      args.message.chat.type === "private"
+        ? undefined
+        : args.message.message_id,
+  };
 }
 
 function getRunnableOfficialTelegramBotConfig() {
@@ -1620,10 +1645,7 @@ function getRunnableOfficialTelegramBotConfig() {
 const processOfficialWebhookMessage$ = command(
   async (
     { set },
-    args: {
-      readonly message: TelegramMessage;
-      readonly apiStartTime: number;
-    },
+    args: OfficialTelegramMessageData,
     signal: AbortSignal,
   ): Promise<void> => {
     const config = getRunnableOfficialTelegramBotConfig();
@@ -1670,9 +1692,37 @@ const processOfficialWebhookMessage$ = command(
       hasBotMention(args.message, config.botUsername) ||
       isTelegramReplyToBotId(args.message, config.botId);
     if (!isAddressed) {
+      const unaddressedDb = db;
+      async function storeUnaddressedOfficialMessage(
+        args: UnaddressedTelegramMessageData,
+        signal: AbortSignal,
+      ): Promise<void> {
+        if (!args.userLink) {
+          return;
+        }
+        const messageDb = unaddressedDb;
+        async function storeTelegramMessage(
+          args: TelegramMessageData,
+        ): Promise<void> {
+          const file = extractTelegramFileForContext(args.message);
+          await messageDb
+            .insert(telegramMessages)
+            .values(telegramStoredMessageValues(args, file))
+            .onConflictDoNothing();
+        }
+        await storeTelegramMessage({
+          scope: {
+            kind: "official",
+            orgId: args.userLink.orgId,
+            userLinkId: args.userLink.id,
+          },
+          chatId: args.chatId,
+          message: args.message,
+        });
+        signal.throwIfAborted();
+      }
       await storeUnaddressedOfficialMessage(
         {
-          db,
           userLink,
           chatId,
           message: args.message,
@@ -1683,21 +1733,9 @@ const processOfficialWebhookMessage$ = command(
     }
 
     if (!userLink) {
-      await sendConnectPrompt({
-        botToken: config.botToken,
-        botId: OFFICIAL_TELEGRAM_BOT_ID,
-        botUsername: config.botUsername,
-        chatId,
-        chatType: args.message.chat.type,
-        fromUserId: String(args.message.from?.id ?? 0),
-        telegramUsername: args.message.from?.username ?? null,
-        telegramDisplayName: displayName,
-        agentName: BRAND_PRESENTATION.assistantName,
-        replyToMessageId:
-          args.message.chat.type === "private"
-            ? undefined
-            : args.message.message_id,
-      });
+      await sendConnectPrompt(
+        telegramConnectPromptData(config, chatId, args, displayName),
+      );
       signal.throwIfAborted();
       return;
     }
@@ -1712,15 +1750,9 @@ const processOfficialWebhookMessage$ = command(
     })();
     signal.throwIfAborted();
     if (!composeId) {
-      await postTelegramMessage({
-        botToken: config.botToken,
-        chatId,
-        text: `The workspace default agent is not configured. Please choose an agent in ${BRAND_PRESENTATION.brandName} first.`,
-        replyToMessageId:
-          args.message.chat.type === "private"
-            ? undefined
-            : args.message.message_id,
-      });
+      await postTelegramMessage(
+        telegramMissingAgentNoticeData(config, chatId, args),
+      );
       signal.throwIfAborted();
       return;
     }
