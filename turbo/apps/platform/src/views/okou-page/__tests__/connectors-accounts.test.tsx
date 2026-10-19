@@ -110,28 +110,41 @@ test("Keep the exact account and current reconnect UI when future setup metadata
     attentionCount: 1,
     defaultConnection: account,
   };
-  mockConnectorOverviewAccountSummaries(context, () => {
+  const overviewResponse = context.mocks.deferred<void>();
+  const accountsResponse = context.mocks.deferred<void>();
+  mockConnectorOverviewAccountSummaries(context, async () => {
+    await overviewResponse.promise;
     return [summary];
   });
   context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
     return respond(200, { summaries: [summary] });
   });
-  context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
-    return respond(200, { connections: [account], nextCursor: null });
-  });
+  context.mocks.api(
+    connectorAccountsContract.connections,
+    async ({ respond }) => {
+      await accountsResponse.promise;
+      return respond(200, { connections: [account], nextCursor: null });
+    },
+  );
 
   await setupAccountsPage();
   const card = await waitFor(() => {
     return getConnectorCard("GitHub");
   });
-  expect(card).toHaveTextContent("1/1 need attention");
+  expect(card).toHaveTextContent("Loading accounts…");
+  overviewResponse.resolve();
+  await expect(
+    within(card).findByText("1/1 need attention"),
+  ).resolves.toBeInTheDocument();
   click(getConnectorAction("button", "Manage GitHub accounts", card));
   const manager = await screen.findByRole("dialog", {
     name: "Manage GitHub accounts",
   });
-  expect(
-    within(manager).getByText("Prepared work account"),
-  ).toBeInTheDocument();
+  expect(manager).toHaveTextContent("Loading accounts…");
+  accountsResponse.resolve();
+  await expect(
+    within(manager).findByText("Prepared work account"),
+  ).resolves.toBeInTheDocument();
   expect(getConnectorAction("button", "Reconnect", manager)).toBeEnabled();
 });
 
