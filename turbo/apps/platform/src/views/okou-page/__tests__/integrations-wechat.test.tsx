@@ -3,8 +3,10 @@ import userEvent from "@testing-library/user-event";
 import { screen, waitFor } from "@testing-library/react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { integrationsWechatContract as contract } from "@okouai/api-contracts/contracts/integrations-wechat";
+import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
 import { setupPage, click, fill } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
   getIntegrationCard,
   getAction,
@@ -202,50 +204,85 @@ test("a failed QR request can be retried from the dialog", async () => {
   expect(queryAction("button", "Create a new QR code")).not.toBeInTheDocument();
 });
 
-test("a reconnect link shows the signed-in identity and restores only after confirmation", async () => {
-  let restored = false;
-  let reconnects = 0;
-  let qrRequests = 0;
-  context.mocks.api(contract.status, ({ respond }) => {
-    return respond(200, {
-      configured: true,
-      status: restored ? "active" : "disconnected",
+test.each([
+  { email: "owner@example.com", account: "owner@example.com" },
+  { email: undefined, account: "user_wechat_confirm" },
+])(
+  "a reconnect link identifies $account before confirmation",
+  async ({ email, account }) => {
+    let restored = false;
+    const completion = createDeferredPromise<void>(context.signal);
+    context.mocks.api(contract.status, ({ respond }) => {
+      return respond(200, {
+        configured: true,
+        status: restored ? "active" : "disconnected",
+      });
     });
-  });
-  context.mocks.api(contract.reconnectStatus, ({ query, respond }) => {
-    expect(query.token).toBe("signed-link");
-    return respond(200, { available: true });
-  });
-  context.mocks.api(contract.reconnect, ({ body, respond }) => {
-    expect(body.token).toBe("signed-link");
-    reconnects++;
-    restored = true;
-    return respond(204);
-  });
-  context.mocks.api(contract.connect, ({ respond }) => {
-    qrRequests++;
-    return respond(200, attempt);
-  });
-  await setupPage({
-    context,
-    path: "/settings/wechat?token=signed-link",
-    featureSwitches: { [FeatureSwitchKey.WechatIntegration]: true },
-  });
-  await expect(
-    screen.findByText(
-      "Restore this WeChat connection to the account and workspace below.",
-    ),
-  ).resolves.toBeInTheDocument();
-  expect(reconnects).toBe(0);
-  expect(qrRequests).toBe(0);
-  click(getAction("button", "Reconnect"));
-  await expect(
-    screen.findByText("Return to WeChat and send a message to start chatting."),
-  ).resolves.toBeInTheDocument();
-  expect(reconnects).toBe(1);
-  expect(qrRequests).toBe(0);
-  expect(window.location.search).toBe("");
-});
+    context.mocks.api(contract.reconnectStatus, ({ query, respond }) => {
+      expect(query.token).toBe("signed-link");
+      return respond(200, { available: true });
+    });
+    context.mocks.api(contract.reconnect, async ({ body, respond }) => {
+      expect(body.token).toBe("signed-link");
+      await completion.promise;
+      restored = true;
+      return respond(204);
+    });
+    context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
+      return respond(200, {
+        agentId: params.id,
+        isDefaultAgent: true,
+        ownerId: "user_wechat_confirm",
+        displayName: "Workspace Assistant",
+        description: null,
+        sound: null,
+        avatarUrl: null,
+        visibility: "private",
+      });
+    });
+    await setupPage({
+      context,
+      path: "/settings/wechat?token=signed-link",
+      featureSwitches: { [FeatureSwitchKey.WechatIntegration]: true },
+      auth: {
+        user: { id: "user_wechat_confirm", fullName: "WeChat Owner", email },
+        organization: {
+          activeOrg: { id: "org_wechat_confirm", name: "WeChat Workspace" },
+          memberships: [{ id: "org_wechat_confirm" }],
+        },
+      },
+    });
+    await expect(
+      screen.findByText(
+        "Restore this WeChat connection to the account and workspace below.",
+      ),
+    ).resolves.toBeInTheDocument();
+    expect(screen.getByText(account, { selector: "dd" })).toBeInTheDocument();
+    expect(
+      screen.getByText("WeChat Workspace", { selector: "dd" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Workspace Assistant", { selector: "dd" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("wechat-connect-qr")).not.toBeInTheDocument();
+    const confirm = getAction("button", "Reconnect");
+    expect(confirm).toBeEnabled();
+    confirm.focus();
+    await userEvent.setup({ delay: null }).keyboard("{Enter}");
+    await waitFor(() => {
+      expect(getAction("button", "Connecting...")).toBeDisabled();
+    });
+    completion.resolve();
+    await expect(
+      screen.findByText(
+        "Return to WeChat and send a message to start chatting.",
+      ),
+    ).resolves.toBeInTheDocument();
+    expect(queryAction("button", "Reconnect")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("wechat-connect-qr")).not.toBeInTheDocument();
+    expect(window.location.search).toBe("");
+  },
+);
 
 test("an unavailable reconnect link offers the same QR connection flow on the settings page", async () => {
   let connected = false;
