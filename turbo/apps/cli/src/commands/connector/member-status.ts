@@ -6,7 +6,10 @@ import {
   isIntegrationManagedCustomConnector,
   type CustomConnectorResponse,
 } from "@okouai/api-contracts/contracts/custom-connectors";
-import type { ConnectorCatalogStatus } from "../../lib/api/domains/connectors";
+import {
+  listConnectorAccountSummaries,
+  type ConnectorCatalogStatus,
+} from "../../lib/api/domains/connectors";
 import { connectorAccountCliInventoryLabel } from "./account-label";
 
 export type MemberConnector = ConnectorCatalogStatus | CustomConnectorResponse;
@@ -24,6 +27,17 @@ export interface MemberConnectorFacts {
   readonly accountSummary: ConnectorAccountSummary | null;
   readonly connectionId: string | null;
   readonly memberStatus: MemberConnectionStatus;
+}
+
+/** Managed-only and empty inventories do not consume ordinary account facts. */
+export async function customMemberAccountSummaries(
+  connectors: readonly CustomConnectorResponse[],
+): Promise<ReadonlyMap<string, ConnectorAccountSummary>> {
+  return connectors.some((connector) => {
+    return !isIntegrationManagedCustomConnector(connector);
+  })
+    ? listConnectorAccountSummaries()
+    : new Map();
 }
 
 function declaredMissingFields(connector: CustomConnectorResponse) {

@@ -9,7 +9,6 @@ import {
 import {
   getCustomConnector,
   listCustomConnectors,
-  listConnectorAccountSummaries,
 } from "../../../lib/api/domains/connectors";
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
 import { resolveConnectorAgentId } from "../agent-context";
@@ -22,6 +21,7 @@ import {
   memberConnectorAccountText,
   memberConnectorFacts,
   memberConnectorStatusText,
+  customMemberAccountSummaries,
 } from "../member-status";
 import {
   showCustomConnectorCommand,
@@ -91,11 +91,11 @@ Omit --agent inside a run to inspect the current Agent's access.`,
   .action(
     withErrorHandler(async (options: { agent?: string; json?: boolean }) => {
       const agentId = resolveConnectorAgentId(options.agent);
-      const [connectors, agentCtx, summaries] = await Promise.all([
+      const [connectors, agentCtx] = await Promise.all([
         listCustomConnectors(),
         resolveCustomAgentContext(agentId),
-        listConnectorAccountSummaries(),
       ]);
+      const summaries = await customMemberAccountSummaries(connectors);
       if (options.json) {
         console.log(
           JSON.stringify(
@@ -198,11 +198,13 @@ Omit --agent inside a run to inspect the current Agent's access.`,
       ) => {
         const agentId = resolveConnectorAgentId(options.agent);
         const connectorId = await resolveCustomConnectorId(connectorSelector);
-        const [connector, agentCtx, summaries] = await Promise.all([
+        const [connector, agentCtx] = await Promise.all([
           getCustomConnector(connectorId),
           resolveCustomAgentContext(agentId),
-          listConnectorAccountSummaries(),
         ]);
+        const summaries = await customMemberAccountSummaries(
+          connector ? [connector] : [],
+        );
         if (options.json) {
           console.log(
             JSON.stringify(

@@ -2,13 +2,15 @@ import { Command } from "commander";
 import {
   getCustomConnector,
   deleteCustomConnector,
-  listConnectorAccountSummaries,
 } from "../../../lib/api/domains/connectors";
 import { decodeSandboxTokenPayload } from "../../../lib/api/sandbox-token";
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
 import { resolveCustomConnectorId } from "../custom-connector-selector";
 import { customConnectorMetadata } from "../management";
-import { memberConnectorFacts } from "../member-status";
+import {
+  customMemberAccountSummaries,
+  memberConnectorFacts,
+} from "../member-status";
 
 export const showCustomConnectorCommand = new Command("show")
   .description(
@@ -25,7 +27,7 @@ export const showCustomConnectorCommand = new Command("show")
         await resolveCustomConnectorId(selector),
       );
       if (!connector) throw new Error("Custom connector is unavailable.");
-      const summaries = await listConnectorAccountSummaries();
+      const summaries = await customMemberAccountSummaries([connector]);
       if (!options.json) console.log("Custom connector metadata:");
       console.log(
         JSON.stringify(

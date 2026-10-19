@@ -402,6 +402,69 @@ describe("current-member connector status", () => {
     },
   );
 
+  it.each(
+    readers.filter((reader) => {
+      return reader.name.startsWith("custom");
+    }),
+  )(
+    "$name keeps managed integration status independent of ordinary account summaries",
+    async ({ command, args, inventory, name }) => {
+      installMemberFixture(false);
+      const managed = customConnector({
+        authMode: "oauth",
+        connected: true,
+        connectedAccountId: undefined,
+        fields: [],
+        headerInjections: [],
+        configuredFieldKeys: [],
+        missingRequiredFields: [],
+        oauthConfig: {
+          providerAdapter: "feishu",
+          clientId: "managed-client",
+          authorizationUrl: "https://auth.example.test/authorize",
+          tokenUrl: "https://auth.example.test/token",
+          tokenEndpointAuthMethod: "client_secret_post",
+          pkceMethod: "S256",
+          scopes: [],
+          authorizationParams: {},
+        },
+      });
+      server.use(
+        stubCustomConnectors([managed]),
+        http.get(
+          `http://localhost:3000/api/custom-connectors/${managed.id}`,
+          () => {
+            return HttpResponse.json(managed);
+          },
+        ),
+        http.get("http://localhost:3000/api/connector-accounts", () => {
+          return HttpResponse.json(
+            {
+              error: {
+                code: "UNAVAILABLE",
+                message: "Ordinary summaries unavailable",
+              },
+            },
+            { status: 503 },
+          );
+        }),
+      );
+      await command.parseAsync(["node", "okou", ...args, "--json"]);
+      const output = JSON.parse(log.mock.calls.flat().join("\n"));
+      const facts = inventory
+        ? output.connectors[0]
+        : name === "custom show"
+          ? output
+          : output.connector;
+      expect(facts).toMatchObject({
+        integrationManaged: true,
+        accountSummary: null,
+        memberStatus: "connected",
+      });
+      expect(error).not.toHaveBeenCalled();
+    },
+  );
+
   it("rejects malformed summaries instead of fabricating zero accounts", async () => {
     installMemberFixture();
     server.use(
@@ -416,5 +479,92 @@ describe("current-member connector status", () => {
     ).rejects.toThrow("command exited");
     expect(error).toHaveBeenCalled();
     expect(log).not.toHaveBeenCalled();
+  });
+
+  it("preserves a missing custom definition's unavailable JSON when ordinary summaries fail", async () => {
+    installMemberFixture();
+    server.use(
+      http.get(
+        `http://localhost:3000/api/custom-connectors/${custom.id}`,
+        () => {
+          return HttpResponse.json(
+            { error: { code: "NOT_FOUND", message: "Definition unavailable" } },
+            { status: 404 },
+          );
+        },
+      ),
+      http.get("http://localhost:3000/api/connector-accounts", () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "UNAVAILABLE",
+              message: "Ordinary summaries unavailable",
+            },
+          },
+          { status: 503 },
+        );
+      }),
+    );
+    await customConnectorCommand.parseAsync([
+      "node",
+      "okou",
+      "status",
+      custom.id,
+      "--json",
+    ]);
+    expect(JSON.parse(log.mock.calls.flat().join("\n"))).toMatchObject({
+      state: "unavailable",
+      connector: null,
+      target: customTarget,
+    });
+    expect(process.exitCode).toBe(1);
+    expect(error).not.toHaveBeenCalled();
+  });
+
+  it("keeps a refreshable builtin usable when its saved token timestamp has expired", async () => {
+    const tokenExpiresAt = "2025-01-01T00:00:00.000Z";
+    const summaries = installMemberFixture(false).map((summary) => {
+      return {
+        ...summary,
+        defaultConnection: summary.defaultConnection
+          ? { ...summary.defaultConnection, tokenExpiresAt }
+          : null,
+      };
+    });
+    server.use(
+      stubConnectorAccountSummaries(summaries),
+      stubConnectorCatalogStatus([
+        catalogStatusItem({
+          connectorSlug: "github",
+          connected: true,
+          connectionStatus: "connected",
+          authMethodSupportsRefresh: true,
+          tokenExpiresAt,
+          connection: {
+            id: BUILTIN_ID,
+            authMethod: "oauth",
+            externalUsername: "member",
+            externalEmail: null,
+            reconnectReason: null,
+          },
+        }),
+      ]),
+    );
+    await searchCommand.parseAsync(["node", "okou", "github", "--json"]);
+    expect(JSON.parse(log.mock.calls.flat().join("\n"))).toMatchObject({
+      connectors: [
+        {
+          memberStatus: "connected",
+          connectionId: BUILTIN_ID,
+          accountSummary: {
+            defaultConnection: {
+              connectionStatus: "connected",
+              tokenExpiresAt,
+            },
+          },
+        },
+      ],
+      actions: [],
+    });
   });
 });
