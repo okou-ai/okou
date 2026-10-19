@@ -158,7 +158,33 @@ export function logsList(
         .where(whereClause)
         .orderBy(desc(agentRuns.createdAt), desc(agentRuns.id))
         .limit(limit + 1),
-      getLogsTotalCount(db, params),
+      (async (): Promise<number> => {
+        const conditions: SQL[] = [
+          eq(agentRuns.userId, params.userId),
+          eq(agentRuns.orgId, params.orgId),
+        ];
+
+        conditions.push(...buildAgentFilterConditions(params));
+
+        if (params.since !== undefined) {
+          conditions.push(gte(agentRuns.createdAt, new Date(params.since)));
+        }
+        if (params.status) {
+          conditions.push(eq(agentRuns.status, params.status));
+        }
+        if (params.triggerSource) {
+          conditions.push(eq(agentRuns.triggerSource, params.triggerSource));
+        }
+
+        const [result] = await db
+          .select({ count: count() })
+          .from(agentRuns)
+
+          .leftJoin(agents, eq(agentRuns.agentId, agents.id))
+          .where(and(...conditions));
+
+        return result?.count ?? 0;
+      })(),
       getAvailableFilters(db, params.userId, params.orgId),
     ]);
 
@@ -196,37 +222,6 @@ export function logsList(
       filters,
     };
   });
-}
-
-async function getLogsTotalCount(
-  db: ServiceDb,
-  params: LogsListParams,
-): Promise<number> {
-  const conditions: SQL[] = [
-    eq(agentRuns.userId, params.userId),
-    eq(agentRuns.orgId, params.orgId),
-  ];
-
-  conditions.push(...buildAgentFilterConditions(params));
-
-  if (params.since !== undefined) {
-    conditions.push(gte(agentRuns.createdAt, new Date(params.since)));
-  }
-  if (params.status) {
-    conditions.push(eq(agentRuns.status, params.status));
-  }
-  if (params.triggerSource) {
-    conditions.push(eq(agentRuns.triggerSource, params.triggerSource));
-  }
-
-  const [result] = await db
-    .select({ count: count() })
-    .from(agentRuns)
-
-    .leftJoin(agents, eq(agentRuns.agentId, agents.id))
-    .where(and(...conditions));
-
-  return result?.count ?? 0;
 }
 
 async function getAvailableFilters(
