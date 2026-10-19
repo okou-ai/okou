@@ -168,7 +168,7 @@ function createResourceChats(
   communications: ChatRelationList<ChatCommunication>,
 ) {
   const data$ = computed(async (get) => {
-    if (!get(featureSwitch$)[FeatureSwitchKey.ChatRelations]) {
+    if (!get(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel]) {
       return { items: [], hasMore: false, failed: false, pageKey: "" };
     }
     const [created, exchanged] = await Promise.allSettled([

@@ -4028,7 +4028,6 @@
     "retry": "Reintentar",
     "samplePages": "Páginas de ejemplo: {{total}}",
     "title": "Documento",
-    "use": "Usar plantilla",
     "useNamed": "Usar {{title}}"
   },
   "global": {
@@ -5258,7 +5257,6 @@
       "description": "Tus agentes pueden solicitar compras y consultar transacciones de Link. Tú apruebas cada compra.",
       "disconnect": "Desconectar",
       "loadError": "No se pudo cargar tu cartera.",
-      "permissionsUnknown": "Vuelve a conectar Link para revisar y confirmar sus permisos actuales.",
       "retry": "Reintentar",
       "scope": "Permite que Okou compre por ti y consulte tu actividad en Link.",
       "title": "Cartera",
@@ -5288,8 +5286,7 @@
         "statusLabel": "Estado",
         "title": "Transacciones de Link",
         "unknownStatus": "Estado no disponible"
-      },
-      "workspaceScopeChanged": "Tu cartera de Link ahora puede usarse con todos tus agentes de este espacio de trabajo. Vuelve a conectarla para aprobar este cambio."
+      }
     },
     "workspace": {
       "danger": {

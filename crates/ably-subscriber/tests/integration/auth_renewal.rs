@@ -11,6 +11,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tokio_tungstenite::tungstenite;
+use tracing::Level;
+use tracing_subscriber::prelude::*;
+use tracing_test_support::CapturedEvents;
 
 use crate::support::*;
 
@@ -451,8 +454,11 @@ async fn timed_out_token_exchange_retries_on_same_connection() {
     timed_out_acquisition_retries(HeldPhase::Exchange).await;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "current_thread")]
 async fn renewal_timeout_preserves_fatal_failure_limit() {
+    let captured = CapturedEvents::default();
+    let subscriber = tracing_subscriber::registry().with(captured.clone());
+    let _guard = tracing::subscriber::set_default(subscriber);
     let mut timing = TimingConfig::default();
     timing.connect_timeout = Duration::from_secs(1);
     timing.max_token_renewal_failures = 1;
@@ -485,6 +491,18 @@ async fn renewal_timeout_preserves_fatal_failure_limit() {
     join_server_task(harness.http_task, "token endpoint after timeout")
         .await
         .unwrap();
+
+    let renewal_timeout_levels: Vec<_> = captured
+        .entries()
+        .into_iter()
+        .filter(|event| {
+            event.fields.get("message").is_some_and(|message| {
+                message.starts_with("Token renewal ") && message.ends_with(" (1/1)")
+            })
+        })
+        .map(|event| event.level)
+        .collect();
+    assert_eq!(renewal_timeout_levels, vec![Level::ERROR]);
 }
 
 #[tokio::test]

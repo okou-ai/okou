@@ -784,7 +784,6 @@ export async function updateUserCustomConnectors(
     !options.deferRuntimeWakeupUntilOuterCommit
   ) {
     const wakeupArgs = {
-      db,
       scope: {
         orgId: args.orgId,
         userId: args.userId,
@@ -802,7 +801,7 @@ export async function updateUserCustomConnectors(
             return;
           }
 
-          const rows = await wakeupArgs.db
+          const rows = await db
             .select({ runId: agentRuns.id, runnerGroup: agentRuns.runnerGroup })
             .from(agentRuns)
 

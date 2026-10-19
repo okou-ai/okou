@@ -3951,7 +3951,6 @@
     "retry": "重試",
     "samplePages": "樣張頁數：{{total}}",
     "title": "文件",
-    "use": "使用範本",
     "useNamed": "使用 {{title}}"
   },
   "global": {
@@ -5171,7 +5170,6 @@
       "description": "讓代理程式提出購買請求並查看 Link 交易。每筆購買均由你核准。",
       "disconnect": "中斷連線",
       "loadError": "無法載入錢包。",
-      "permissionsUnknown": "請重新連線 Link，查看並確認目前的授權權限。",
       "retry": "重試",
       "scope": "讓 Okou 代你購買並查看 Link 交易。",
       "title": "錢包",
@@ -5201,8 +5199,7 @@
         "statusLabel": "狀態",
         "title": "Link 交易紀錄",
         "unknownStatus": "狀態無法取得"
-      },
-      "workspaceScopeChanged": "你的 Link 錢包現在可供此工作區內你的所有 Agent 使用。請重新連線以確認此變更。"
+      }
     },
     "workspace": {
       "danger": {

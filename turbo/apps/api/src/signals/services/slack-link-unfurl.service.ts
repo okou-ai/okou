@@ -229,12 +229,18 @@ const publicSlackMetadata$ = command(
     url: URL,
     signal: AbortSignal,
   ): Promise<SlackPageMetadata | null> => {
-    // Restrict network destinations, but let any path supply its public OG.
-    if (
-      url.origin !== new URL(env("APP_URL")).origin &&
-      !hostedArtifactAlias(url)
-    ) {
+    // Only supported origins may supply anonymous page metadata.
+    const isAppUrl = url.origin === new URL(env("APP_URL")).origin;
+    if (!isAppUrl && !hostedArtifactAlias(url)) {
       return null;
+    }
+    // Preserve artifact publication checks and metadata. A private artifact's
+    // App shell can still contain branding, which is not permission to unfurl.
+    const isArtifactUrl = isAppUrl
+      ? parseArtifactReference(url.pathname) !== null
+      : url.pathname === "/" || url.pathname === "/index.html";
+    if (isArtifactUrl) {
+      return await set(legacySlackMetadata$, url, signal);
     }
     const page = await fetchSlackPageMetadata(url, signal);
     if (!page) {

@@ -2,6 +2,7 @@
 
 //! Opt-in packaged-guest terminal saving fixture; see README.md in this directory.
 
+mod batch_aba;
 mod cleanup_progress;
 mod continuation;
 mod continuation_api;
@@ -88,6 +89,7 @@ enum Corpus {
     ObserverLoss(bool),
     StatusFailure,
     LaterParking(bool),
+    BatchAba,
 }
 
 enum PreparationProbe<'a> {
@@ -593,6 +595,32 @@ async fn native_fixed_batch_preserves_later_exact_and_blank_inventory() -> TestR
     .await
 }
 
+#[test]
+fn native_batch_aba_report_requires_old_refusal_and_new_guarded_recovery() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/batch_aba_report_test.py"
+        ))
+        .output()
+        .expect("native batch ABA report requires Python3");
+    assert!(
+        output.status.success(),
+        "batch ABA report failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD inputs and submitted-source insertion-ABA P1 proof"]
+async fn native_fixed_batch_refuses_restored_insertion_and_recovers_original() -> TestResult<()> {
+    measured_selected_corpus(
+        &[NativeScope::Batch(IdleRetirementBatchScope::All)],
+        Corpus::BatchAba,
+    )
+    .await
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires owned KVM/NBD inputs and submitted-source status-failure P1 proof"]
 async fn native_status_failure_preserves_saving_and_retries_current_inventory() -> TestResult<()> {
@@ -922,6 +950,8 @@ async fn exercise_selected_factories(
                                 "StatusFailure".into()
                             } else if let Corpus::LaterParking(blank) = corpus {
                                 format!("Later{}", if blank { "Blank" } else { "Exact" })
+                            } else if corpus == Corpus::BatchAba {
+                                "BatchAba".into()
                             } else if let Corpus::ReturnedGuest(stage) = corpus {
                                 format!("ReturnedGuest-{}", stage.label())
                             } else if corpus == Corpus::Continuation {
@@ -1070,6 +1100,7 @@ async fn exercise_retirement(
             | Corpus::IncomingProgress
             | Corpus::CreateCancellation
             | Corpus::ReturnedGuest(_)
+            | Corpus::BatchAba
     ) || matches!(
         scope,
         NativeScope::Recovery
@@ -1262,6 +1293,7 @@ async fn exercise_retirement(
             | Corpus::ObserverLoss(_)
             | Corpus::StatusFailure
             | Corpus::LaterParking(_)
+            | Corpus::BatchAba
     ) || matches!(corpus, Corpus::LogicalProgress | Corpus::IncomingProgress)
         || matches!(
             scope,
@@ -1587,6 +1619,19 @@ async fn exercise_retirement(
                 Ok(None)
             }
             NativeScope::Batch(scope) => {
+                if corpus == Corpus::BatchAba {
+                    batch_aba::exercise(
+                        transitions::Context {
+                            factory: factory.clone(), pool: pool.clone(), status: status.clone(),
+                            operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
+                            rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
+                        }, inputs,
+                        recovery_source.as_ref().ok_or_else(|| io::Error::other("batch ABA source missing"))?,
+                        proof.ok_or_else(|| io::Error::other("batch ABA proof missing"))?,
+                        paths.base_dir(), backing.clone(),
+                    ).await?;
+                    return Ok(None);
+                }
                 if corpus == Corpus::StatusFailure {
                     status_failure::exercise(
                         transitions::Context {

@@ -32,7 +32,7 @@ import { ChatResourcePagination } from "./chat-resource-pagination.tsx";
 import { ExternalSourceMessageAnnotation } from "./external-source-message-annotation.tsx";
 
 export function ChatOrigin({ thread }: { readonly thread: ChatPanelSignals }) {
-  const enabled = useGet(featureSwitch$)[FeatureSwitchKey.ChatRelations];
+  const enabled = useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel];
   return enabled ? <Origin signals={thread.relations} /> : null;
 }
 
@@ -419,7 +419,7 @@ export function ChatRelationships({
 }: {
   readonly thread: ChatPanelSignals;
 }) {
-  return useGet(featureSwitch$)[FeatureSwitchKey.ChatRelations] ? (
+  return useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel] ? (
     <RelationshipsInner thread={thread} />
   ) : null;
 }

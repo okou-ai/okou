@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.8.17](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.16...runner-provider-v0.8.17) (2026-10-19)
+
+## [0.8.16](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.15...runner-provider-v0.8.16) (2026-10-19)
+
+
+### Refactoring
+
+* **runner-provider:** remove unused finite retry mode ([#41182](https://github.com/okou-ai/okou/issues/41182)) ([c6b6f6d](https://github.com/okou-ai/okou/commit/c6b6f6dd33f2fc959d5b9b6fb5a21258242d3049))
+
 ## [0.8.15](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.14...runner-provider-v0.8.15) (2026-10-19)
 
 

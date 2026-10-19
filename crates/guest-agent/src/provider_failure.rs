@@ -70,7 +70,7 @@ fn text_failure_reason(message: &str) -> Option<FailureReason> {
     {
         return Some(FailureReason::ProviderOverloaded);
     }
-    if semantic_message.starts_with(
+    if semantic_message == "provider finish_reason: content_filter" || semantic_message.starts_with(
         "invalid prompt: your prompt was flagged as potentially violating our usage policy. please try again with a different prompt: ",
     ) || semantic_message.starts_with(
         "this content was flagged for possible biological risk. if this seems wrong, try rephrasing your request. we are continuously refining our work in detecting biological risk, and you can read more about our approach in our blog post: ",

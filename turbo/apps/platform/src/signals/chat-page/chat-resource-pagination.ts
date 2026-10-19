@@ -1,13 +1,15 @@
 import { command, computed, state, type Command } from "ccstate";
-import { onDomEventFn, onRef } from "../utils.ts";
+import { onDomEventFn, onRef, resetSignal } from "../utils.ts";
 
 /** The visible end of an expanded resource list owns its next-page request. */
 export function createResourcePagination(
   more$: Command<Promise<void>, [AbortSignal]>,
 ) {
   const request$ = state<Promise<void>>(Promise.resolve());
+  const resetLoad$ = resetSignal();
   const load$ = command(({ set }, signal: AbortSignal) => {
-    const request = set(more$, signal);
+    // Retrying a failed page belongs to the same list lifetime as its observer.
+    const request = set(more$, set(resetLoad$, signal));
     set(request$, request);
     return request;
   });
@@ -33,7 +35,8 @@ export function createResourcePagination(
       signal.addEventListener(
         "abort",
         () => {
-          return observer.disconnect();
+          observer.disconnect();
+          set(resetLoad$);
         },
         {
           once: true,

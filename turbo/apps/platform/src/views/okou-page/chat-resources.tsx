@@ -81,7 +81,7 @@ function ChatResourcesButtonInner({
   const content = useLastLoadable(resources.content$);
   const data = useLastResolved(resources.content$);
   const relationsEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatRelations];
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel];
   const origin = useGet(thread.relations.origin$);
   const chats = useLastLoadable(thread.relations.chats.data$);
   const hasRelations =

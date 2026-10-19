@@ -77,12 +77,7 @@ const runStatusSchema = z.enum(ALL_RUN_STATUSES);
  */
 const unifiedRunRequestSchema = z
   .object({
-    // High-level shortcut for continuing an existing session.
-    sessionId: z.string().optional(),
-
-    // Base parameters (can be used directly or overridden after shortcut expansion)
     agentId: z.string().optional(),
-    conversationId: z.string().optional(),
     vars: z.record(z.string(), z.string()).optional(),
     secrets: z.record(z.string(), z.string()).optional(),
     volumeVersions: z.record(z.string(), z.string()).optional(),
@@ -140,8 +135,6 @@ const createRunResponseSchema = z.object({
   runId: z.string(),
   status: runStatusSchema,
   sandboxId: z.string().optional(),
-  // Historical response field; Thread owns native continuation for new Runs.
-  sessionId: z.string().uuid().optional(),
   output: z.string().optional(),
   error: z.string().optional(),
   executionTimeMs: z.number().optional(),
@@ -162,8 +155,6 @@ const getRunResponseSchema = z.object({
     .object({
       output: z.string().optional(),
       executionTimeMs: z.number().optional(),
-      agentSessionId: z.string().optional(),
-      conversationId: z.string().optional(),
     })
     .passthrough()
     .optional(),
@@ -209,9 +200,6 @@ export const runStorageOutputSchema = z.object({
 const runResultSchema = z.object({
   // Only writeback outputs are persisted. Read-only versions belong to launch mounts.
   storageOutputs: z.array(runStorageOutputSchema).optional(),
-  /** Historical output identifiers; new Runs own their native identity directly. */
-  agentSessionId: z.string().optional(),
-  conversationId: z.string().optional(),
   framework: z.enum(["pi", "claude-code", "codex"]).optional(),
   frameworkSessionId: z.string().optional(),
   artifact: z.record(z.string(), z.string()).optional(), // optional when run has no artifact

@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.768.0](https://github.com/okou-ai/okou/compare/core-v8.767.1...core-v8.768.0) (2026-10-19)
+
+
+### Features
+
+* **core:** enable remote connection diagnostics for staff ([#41203](https://github.com/okou-ai/okou/issues/41203)) ([1e46381](https://github.com/okou-ai/okou/commit/1e46381d05aa4ea4bb1fcac664bbd1accd16cdfe))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.573.2
+
 ## [8.767.1](https://github.com/okou-ai/okou/compare/core-v8.767.0...core-v8.767.1) (2026-10-19)
 
 

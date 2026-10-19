@@ -3951,7 +3951,6 @@
     "retry": "再試行",
     "samplePages": "サンプルページ数：{{total}}",
     "title": "ドキュメント",
-    "use": "テンプレートを使用",
     "useNamed": "{{title}} を使用"
   },
   "global": {
@@ -5171,7 +5170,6 @@
       "description": "エージェントが購入をリクエストし、Link の取引を確認できます。購入ごとにあなたの承認が必要です。",
       "disconnect": "接続を解除",
       "loadError": "ウォレットを読み込めませんでした。",
-      "permissionsUnknown": "Link に再接続して、現在の権限を確認し承認してください。",
       "retry": "再試行",
       "scope": "Okou が購入を代行し、Link の取引を確認します。",
       "title": "ウォレット",
@@ -5201,8 +5199,7 @@
         "statusLabel": "ステータス",
         "title": "Link の取引履歴",
         "unknownStatus": "ステータスを取得できません"
-      },
-      "workspaceScopeChanged": "Link ウォレットが、このワークスペース内のすべてのエージェントで使えるようになります。再接続して、この変更を承認してください。"
+      }
     },
     "workspace": {
       "danger": {

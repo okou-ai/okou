@@ -4028,7 +4028,6 @@
     "retry": "Riprova",
     "samplePages": "Pagine di esempio: {{total}}",
     "title": "Documento",
-    "use": "Usa modello",
     "useNamed": "Usa {{title}}"
   },
   "global": {
@@ -5258,7 +5257,6 @@
       "description": "I tuoi agenti possono richiedere acquisti e consultare le transazioni Link. Tu approvi ogni acquisto.",
       "disconnect": "Scollega",
       "loadError": "Impossibile caricare il tuo portafoglio.",
-      "permissionsUnknown": "Ricollega Link per esaminare e confermare le autorizzazioni attuali.",
       "retry": "Riprova",
       "scope": "Consenti a Okou di fare acquisti e consultare la tua attività Link.",
       "title": "Portafoglio",
@@ -5288,8 +5286,7 @@
         "statusLabel": "Stato",
         "title": "Transazioni Link",
         "unknownStatus": "Stato non disponibile"
-      },
-      "workspaceScopeChanged": "Ora il tuo portafoglio Link può essere usato da tutti i tuoi agenti in questo spazio di lavoro. Ricollegalo per approvare la modifica."
+      }
     },
     "workspace": {
       "danger": {

@@ -3969,7 +3969,6 @@
     "retry": "Erneut versuchen",
     "samplePages": "Beispielseiten: {{total}}",
     "title": "Dokument",
-    "use": "Vorlage verwenden",
     "useNamed": "{{title}} verwenden"
   },
   "global": {
@@ -5191,7 +5190,6 @@
       "description": "Deine Agenten können Käufe anfragen und Link-Transaktionen einsehen. Du genehmigst jeden Kauf.",
       "disconnect": "Trennen",
       "loadError": "Dein Wallet konnte nicht geladen werden.",
-      "permissionsUnknown": "Verbinde Link erneut, um die aktuellen Berechtigungen zu prüfen und zu bestätigen.",
       "retry": "Erneut versuchen",
       "scope": "Lass Okou für dich einkaufen und deine Link-Transaktionen einsehen.",
       "title": "Wallet",
@@ -5221,8 +5219,7 @@
         "statusLabel": "Status",
         "title": "Link-Transaktionen",
         "unknownStatus": "Status nicht verfügbar"
-      },
-      "workspaceScopeChanged": "Dein Link-Wallet kann jetzt von all deinen Agenten in diesem Workspace genutzt werden. Verbinde es erneut, um diese Änderung zu bestätigen."
+      }
     },
     "workspace": {
       "danger": {

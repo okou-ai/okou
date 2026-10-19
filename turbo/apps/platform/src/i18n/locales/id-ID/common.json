@@ -3951,7 +3951,6 @@
     "retry": "Coba lagi",
     "samplePages": "Halaman contoh: {{total}}",
     "title": "Dokumen",
-    "use": "Gunakan templat",
     "useNamed": "Gunakan {{title}}"
   },
   "global": {
@@ -5171,7 +5170,6 @@
       "description": "Agen Anda dapat meminta pembelian dan melihat transaksi Link. Anda menyetujui setiap pembelian.",
       "disconnect": "Putuskan",
       "loadError": "Dompet Anda tidak dapat dimuat.",
-      "permissionsUnknown": "Hubungkan kembali Link untuk meninjau dan mengonfirmasi izin saat ini.",
       "retry": "Coba lagi",
       "scope": "Izinkan Okou berbelanja dan melihat aktivitas Link Anda.",
       "title": "Dompet",
@@ -5201,8 +5199,7 @@
         "statusLabel": "Status",
         "title": "Transaksi Link",
         "unknownStatus": "Status tidak tersedia"
-      },
-      "workspaceScopeChanged": "Dompet Link Anda kini dapat digunakan oleh semua agen Anda di ruang kerja ini. Hubungkan kembali untuk menyetujui perubahan ini."
+      }
     },
     "workspace": {
       "danger": {

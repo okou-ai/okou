@@ -29,7 +29,8 @@ import { writeDb$ } from "../external/db";
 import { waitUntil } from "../context/wait-until";
 import { reconcileWechatThreadTyping$ } from "./wechat-thread-typing.service";
 import type { WechatMessage } from "../external/wechat-client";
-import { nowDate } from "../../lib/time";
+import { monotonicNow, nowDate } from "../../lib/time";
+import { recordWechatMessageReceived } from "./wechat-delivery-timing.service";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
 import {
@@ -349,6 +350,8 @@ export const receiveWechatMessage$ = command(
       connection.generation,
       message.message_id,
     );
+    const receivedAt = nowDate().toISOString();
+    const receivedStartedAt = monotonicNow();
     const { context, attachments, mediaCiphertext } =
       await wechatMessageMaterial(connection, message, message.context_token);
     signal.throwIfAborted();
@@ -410,6 +413,7 @@ export const receiveWechatMessage$ = command(
     );
     signal.throwIfAborted();
     if (inserted.length > 0) {
+      recordWechatMessageReceived(id, threadId, receivedAt, receivedStartedAt);
       waitUntil(
         set(
           reconcileWechatThreadTyping$,

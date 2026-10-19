@@ -47,12 +47,9 @@ import {
   RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX,
   RUNNER_HOSTNAME_MAX_LENGTH,
   RUNNER_POLL_EXCLUDED_RUN_IDS_MAX,
-  SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT,
-  SESSION_HISTORY_DOWNLOAD_SOURCE_DEFAULT_R2_ENDPOINT,
   SESSION_HISTORY_ENCODING_GZIP,
   SESSION_HISTORY_ENCODING_IDENTITY,
   SESSION_HISTORY_ENCODING_ZSTD,
-  SESSION_HISTORY_GZIP_MIN_BYTES,
 } from "../../contracts/runners";
 import {
   STORAGE_MANIFEST_MAX_FILES,
@@ -164,18 +161,6 @@ const sessionHistoryEncodingIdentityDoc = [
 const sessionHistoryEncodingZstdDoc = [
   "Wire and blob metadata value for zstd-compressed resume session history.",
   "Rust and TypeScript components use this shared contract value when negotiating session history uploads and claim responses.",
-] as const;
-const sessionHistoryDownloadSourceConfiguredPublicEndpointDoc = [
-  "Telemetry value for session history downloads signed with a configured S3 endpoint.",
-  "Rust and TypeScript components use this shared contract value when attributing runner download latency.",
-] as const;
-const sessionHistoryDownloadSourceDefaultR2EndpointDoc = [
-  "Telemetry value for session history downloads signed with the default R2 endpoint.",
-  "Rust and TypeScript components use this shared contract value when attributing runner download latency.",
-] as const;
-const sessionHistoryGzipMinBytesDoc = [
-  "Minimum raw resume session history size before the guest attempts gzip upload negotiation.",
-  "Smaller histories stay identity-encoded to avoid gzip work when it cannot materially reduce transport size.",
 ] as const;
 const clientVersionHeaderDoc = [
   "HTTP header carrying the sending platform client component version.",
@@ -601,26 +586,6 @@ const expectedBindings = [
     rustDoc: sessionHistoryEncodingZstdDoc,
   },
   {
-    rustModulePath: ["runners"],
-    rustConstName: "SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT",
-    value: rustString(
-      SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT,
-    ),
-    rustDoc: sessionHistoryDownloadSourceConfiguredPublicEndpointDoc,
-  },
-  {
-    rustModulePath: ["runners"],
-    rustConstName: "SESSION_HISTORY_DOWNLOAD_SOURCE_DEFAULT_R2_ENDPOINT",
-    value: rustString(SESSION_HISTORY_DOWNLOAD_SOURCE_DEFAULT_R2_ENDPOINT),
-    rustDoc: sessionHistoryDownloadSourceDefaultR2EndpointDoc,
-  },
-  {
-    rustModulePath: ["runners"],
-    rustConstName: "SESSION_HISTORY_GZIP_MIN_BYTES",
-    value: rustU64(SESSION_HISTORY_GZIP_MIN_BYTES),
-    rustDoc: sessionHistoryGzipMinBytesDoc,
-  },
-  {
     rustModulePath: ["runners", "paths"],
     rustConstName: "CANONICAL_GUEST_HOME_DIR",
     value: rustString(CANONICAL_GUEST_HOME_DIR),
@@ -874,21 +839,6 @@ describe("Rust constant bindings", () => {
     );
     expect(firstRender).toContain(
       `pub const SESSION_HISTORY_ENCODING_ZSTD: &str = "${SESSION_HISTORY_ENCODING_ZSTD}";`,
-    );
-    expect(firstRender).toContain(
-      "pub const SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT: &str =",
-    );
-    expect(firstRender).toContain(
-      `"${SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT}";`,
-    );
-    expect(firstRender).toContain(
-      "pub const SESSION_HISTORY_DOWNLOAD_SOURCE_DEFAULT_R2_ENDPOINT: &str =",
-    );
-    expect(firstRender).toContain(
-      `"${SESSION_HISTORY_DOWNLOAD_SOURCE_DEFAULT_R2_ENDPOINT}";`,
-    );
-    expect(firstRender).toContain(
-      `pub const SESSION_HISTORY_GZIP_MIN_BYTES: u64 = ${SESSION_HISTORY_GZIP_MIN_BYTES};`,
     );
     expect(firstRender).toContain(
       `pub const STORAGE_MANIFEST_MAX_FILES: u64 = ${STORAGE_MANIFEST_MAX_FILES};`,

@@ -1,5 +1,40 @@
 # Guarded idle terminal fixture
 
+## Fixed-batch insertion ABA and new-batch recovery
+
+`native_fixed_batch_refuses_restored_insertion_and_recovers_original` runs fresh
+and matching-snapshot cases. A production fixed batch waits at the existing
+pre-read observation scheduling gate with two unused queued cleanup claims.
+Reserving and restoring the same parked Guest preserves its physical identity,
+full lease and home while changing its pool insertion identity. Independent
+memory observation and HTTP 204 acknowledged heartbeats progress through held
+pool/status boundaries. Fresh real reads resume before the old batch must
+report exactly one original `ResourceChanged` refusal, zero physical completion
+and current status retaining the restored original.
+
+A separately captured guarded batch must then retire that insertion. Its
+accepted durable tail IO retains the exact original full lease/cleanup growth
+while independent observation and acknowledged heartbeat progress. Success
+requires complete saving, positive original backing exit, joined dependencies,
+zero ownership/accounting/allocation and the common full original home restore.
+Refusal releases owned gates and joins accepted work, retaining uncertainty.
+
+Select this exact ignored entry through the supplied-artifact bounded P1
+invocation below. Include exact raw `native_batch_aba_policy_json`,
+`native_terminal_artifacts` and the matching `snapshot-preparation.json`.
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/batch_aba_report.py <p1-directory>
+```
+
+Default Cargo runs real-file/CLI refusal checks and an ordinary owner regression
+with complete original home bytes. Actual KVM/NBD execution remains opt-in and
+requires verified committed source, frozen Host and matching inputs. This is a
+logical reserve/restore insertion ABA of an already physically parked Guest;
+it does not prove physical resume/repark, claim loss, another Guest replacement,
+blocked proc IO, numerical pressure, complete residency, calibrated envelopes,
+physical relief, OOM or production protection. Other C/D/P4 gates remain open.
+
 ## Later parking after a fixed batch capture
 
 `native_fixed_batch_preserves_later_exact_and_blank_inventory` runs four cases:

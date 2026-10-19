@@ -5,7 +5,6 @@ import {
   runnerClaimCapabilitiesSchema,
   runnerPreferenceSchema,
 } from "../runners";
-import { webhookTelemetryContract } from "../webhooks";
 
 function canonicalHeartbeat() {
   return {
@@ -126,7 +125,7 @@ describe("canonical home affinity contracts", () => {
     ).toBe(false);
   });
 
-  it("accepts canonical preference and history sources and rejects unknown values", () => {
+  it("accepts canonical runner preferences and rejects unknown tiers", () => {
     expect(
       runnerPreferenceSchema.parse({
         kind: "preference",
@@ -149,36 +148,5 @@ describe("canonical home affinity contracts", () => {
         expiresAt: "2099-01-01T00:00:00Z",
       }).success,
     ).toBe(false);
-    expect(
-      webhookTelemetryContract.send.body.safeParse({
-        runId: canonicalHeartbeat().runnerId,
-        sandboxOperations: [
-          {
-            ts: "2026-10-09T00:00:00Z",
-            action_type: "session_history_transfer",
-            success: true,
-            duration_ms: 1,
-            session_history_transfer_source: "unknown_source",
-          },
-        ],
-      }).success,
-    ).toBe(false);
-    for (const source of ["home_cache", "downloaded", "inline"]) {
-      const parsed = webhookTelemetryContract.send.body.parse({
-        runId: canonicalHeartbeat().runnerId,
-        sandboxOperations: [
-          {
-            ts: "2026-10-09T00:00:00Z",
-            action_type: "session_history_transfer",
-            success: true,
-            duration_ms: 1,
-            session_history_transfer_source: source,
-          },
-        ],
-      });
-      expect(parsed.sandboxOperations?.[0]).toMatchObject({
-        session_history_transfer_source: source,
-      });
-    }
   });
 });

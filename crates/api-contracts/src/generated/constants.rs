@@ -150,15 +150,6 @@ pub mod runners {
     /// Rust runners use this shared contract value to bound local cooldown state and poll request size.
     pub const RUNNER_POLL_EXCLUDED_RUN_IDS_MAX: u64 = 128;
 
-    /// Telemetry value for session history downloads signed with a configured S3 endpoint.
-    /// Rust and TypeScript components use this shared contract value when attributing runner download latency.
-    pub const SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT: &str =
-        "configured_public_endpoint";
-
-    /// Telemetry value for session history downloads signed with the default R2 endpoint.
-    /// Rust and TypeScript components use this shared contract value when attributing runner download latency.
-    pub const SESSION_HISTORY_DOWNLOAD_SOURCE_DEFAULT_R2_ENDPOINT: &str = "default_r2_endpoint";
-
     /// Wire and blob metadata value for gzip-compressed resume session history.
     /// Rust and TypeScript components use this shared contract value when negotiating session history uploads and claim responses.
     pub const SESSION_HISTORY_ENCODING_GZIP: &str = "gzip";
@@ -170,10 +161,6 @@ pub mod runners {
     /// Wire and blob metadata value for zstd-compressed resume session history.
     /// Rust and TypeScript components use this shared contract value when negotiating session history uploads and claim responses.
     pub const SESSION_HISTORY_ENCODING_ZSTD: &str = "zstd";
-
-    /// Minimum raw resume session history size before the guest attempts gzip upload negotiation.
-    /// Smaller histories stay identity-encoded to avoid gzip work when it cannot materially reduce transport size.
-    pub const SESSION_HISTORY_GZIP_MIN_BYTES: u64 = 65536;
 
     /// Runner and guest filesystem path constants shared across Rust and TypeScript.
     pub mod paths {

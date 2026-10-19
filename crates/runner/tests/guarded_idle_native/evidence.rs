@@ -296,6 +296,10 @@ impl Case {
         self.write_event("NATIVE_LATER_PARKING_WITNESS ", phase, evidence)
     }
 
+    pub fn batch_aba_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_BATCH_ABA_WITNESS ", phase, evidence)
+    }
+
     pub fn require_original_lease_released(&self) -> io::Result<()> {
         let state = self
             .state
