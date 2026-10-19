@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "ably-subscriber"
-version = "1.1.5"
+version = "1.1.6"
 dependencies = [
  "base64 0.23.1",
  "futures-util",
@@ -2046,7 +2046,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.107.11"
+version = "0.107.12"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -2084,7 +2084,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent-tests"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -4116,7 +4116,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.234.11"
+version = "0.234.12"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4187,7 +4187,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.14.10"
+version = "0.14.11"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4321,7 +4321,7 @@ dependencies = [
 
 [[package]]
 name = "runner-provider"
-version = "0.8.16"
+version = "0.8.17"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4357,7 +4357,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.27.1"
+version = "0.27.2"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4501,7 +4501,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.17.10"
+version = "0.17.11"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4825,7 +4825,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.53.2"
+version = "0.53.3"
 dependencies = [
  "api-contracts",
  "async-trait",

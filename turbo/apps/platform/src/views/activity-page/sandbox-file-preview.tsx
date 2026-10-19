@@ -4,14 +4,16 @@ import {
   Button,
   Dialog,
   DialogBody,
+  DialogClose,
   DialogContent,
   DialogTitle,
+  IconButton,
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@okouai/ui";
-import { Download } from "lucide-react";
+import { Download, X } from "lucide-react";
 import type { SandboxFilesSignals } from "../../signals/activity-page/sandbox-files.ts";
 import type { FilePreviewFailure } from "../../lib/sandbox-file-preview.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -139,15 +141,28 @@ export function SandboxFilePreviewDialog({
         height={1000}
         surface="canvas"
         contentClassName="flex flex-col gap-0 overflow-hidden bg-background p-0"
-        closeLabel={t(($) => {
-          return $.artifacts.actions.close;
-        })}
+        showCloseButton={false}
       >
-        <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border/70 pl-4 pr-14">
+        <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border/70 px-4">
           <DialogTitle className="min-w-0 flex-1 truncate text-sm font-medium">
             {request?.name}
           </DialogTitle>
-          <PreviewDownloadButton signals={signals} />
+          <div className="flex shrink-0 items-center gap-1">
+            <PreviewDownloadButton signals={signals} />
+            <DialogClose
+              render={
+                <IconButton
+                  type="button"
+                  className="opacity-70 hover:opacity-100"
+                  aria-label={t(($) => {
+                    return $.artifacts.actions.close;
+                  })}
+                />
+              }
+            >
+              <X size={20} className="text-foreground" />
+            </DialogClose>
+          </div>
         </div>
         {result.status === "ready" && result.truncated && (
           <p

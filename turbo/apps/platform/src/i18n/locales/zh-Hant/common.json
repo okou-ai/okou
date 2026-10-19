@@ -3957,7 +3957,6 @@
     "retry": "重試",
     "samplePages": "樣張頁數：{{total}}",
     "title": "文件",
-    "use": "使用範本",
     "useNamed": "使用 {{title}}"
   },
   "global": {
