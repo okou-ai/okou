@@ -90,6 +90,15 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.RemoteControlGuidedSetup]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Remote control guided setup",
+    description:
+      "Set up and manage remote connections and private networks step by step.",
+    enabled: false,
+    // The same verified product account used by PresentationConvert. No org rollout.
+    enabledUserHashes: ["032a75d8"],
+  },
   [FeatureSwitchKey.ChatResourcePanel]: {
     maintainer: "bingjie@okou.ai",
     displayName: "Chat resources",

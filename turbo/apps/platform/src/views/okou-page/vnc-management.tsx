@@ -372,7 +372,7 @@ function VncHostRouteDetails({
   );
 }
 
-function VncHostCard({
+export function VncHostCard({
   connection,
 }: {
   readonly connection: VncConnectionResponse;

@@ -1,3 +1,8 @@
+import { remoteControlGuidedEnabled$ } from "../../signals/remote-control-setup.ts";
+import {
+  GuidedRemoteControlPanel,
+  GuidedPrivateNetworkPanel,
+} from "./remote-guided-directory.tsx";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Check, ChevronDown, Filter } from "lucide-react";
@@ -104,7 +109,7 @@ function ConnectionTypeFilter({
   );
 }
 
-export function RemoteControlPanel({
+function LegacyRemoteControlPanel({
   vncEnabled,
 }: {
   readonly vncEnabled: boolean;
@@ -183,7 +188,7 @@ export function RemoteControlPanel({
   );
 }
 
-export function PrivateNetworkPanel() {
+function LegacyPrivateNetworkPanel() {
   const { t } = useTranslation();
   const mount = useSet(mountPrivateNetworkPanel$);
   return (
@@ -208,4 +213,21 @@ export function PrivateNetworkPanel() {
       <TailscaleManagement />
     </div>
   );
+}
+
+export function RemoteControlPanel({
+  vncEnabled,
+}: {
+  readonly vncEnabled: boolean;
+}) {
+  const guided = useGet(remoteControlGuidedEnabled$);
+  return guided ? (
+    <GuidedRemoteControlPanel vncEnabled={vncEnabled} />
+  ) : (
+    <LegacyRemoteControlPanel vncEnabled={vncEnabled} />
+  );
+}
+export function PrivateNetworkPanel() {
+  const guided = useGet(remoteControlGuidedEnabled$);
+  return guided ? <GuidedPrivateNetworkPanel /> : <LegacyPrivateNetworkPanel />;
 }

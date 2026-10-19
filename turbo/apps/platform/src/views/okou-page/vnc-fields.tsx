@@ -1,3 +1,9 @@
+import {
+  remoteControlGuidedEnabled$,
+  remoteSetup$,
+  chooseRemoteVncProfile$,
+} from "../../signals/remote-control-setup.ts";
+import { RemoteUsernameHelp } from "./remote-editor-frame.tsx";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
@@ -137,11 +143,12 @@ export function VncDisplayNameField({
   readonly connection: VncConnectionResponse | null;
 }) {
   const { t } = useTranslation();
+  const guided = useGet(remoteControlGuidedEnabled$);
   return (
     <label className="grid gap-2 text-sm">
       <span>
         {t(($) => {
-          return $.vnc.displayName;
+          return guided ? $.remoteControlSetup.name : $.vnc.displayName;
         })}
       </span>
       <Input
@@ -153,6 +160,13 @@ export function VncDisplayNameField({
           return $.vnc.displayNameHint;
         })}
       />
+      {guided && (
+        <span className="text-sm text-muted-foreground">
+          {t(($) => {
+            return $.remoteControlSetup.nameHelp;
+          })}
+        </span>
+      )}
     </label>
   );
 }
@@ -483,6 +497,19 @@ function useVncSecurityProfileItems() {
   ];
 }
 
+function profileGroup(profile: string) {
+  if (profile.startsWith("apple_")) {
+    return "apple";
+  }
+  if (isRsaAesProfile(profile)) {
+    return "rsa";
+  }
+  if (profile.startsWith("qemu_")) {
+    return "company";
+  }
+  return "certificate";
+}
+
 export function VncSecurityProfileField({
   profile,
   disabled,
@@ -491,10 +518,78 @@ export function VncSecurityProfileField({
   readonly disabled: boolean;
 }) {
   const { t } = useTranslation();
-  const chooseProfile = useSet(chooseVncProfile$);
-  const profileItems = useVncSecurityProfileItems();
+  const chooseProfile = useSet(chooseRemoteVncProfile$);
+  const allItems = useVncSecurityProfileItems();
+  const guided = useGet(remoteControlGuidedEnabled$);
+  const group = profileGroup(profile);
+  const profileItems = guided
+    ? allItems.filter((item) => {
+        return profileGroup(item.value) === group;
+      })
+    : allItems;
+  const groups = [
+    {
+      value: "apple",
+      label: t(($) => {
+        return $.remoteControlSetup.appleGroup;
+      }),
+    },
+    {
+      value: "certificate",
+      label: t(($) => {
+        return $.remoteControlSetup.certificateGroup;
+      }),
+    },
+    {
+      value: "rsa",
+      label: t(($) => {
+        return $.remoteControlSetup.rsaGroup;
+      }),
+    },
+    {
+      value: "company",
+      label: t(($) => {
+        return $.remoteControlSetup.companyGroup;
+      }),
+    },
+  ];
   return (
     <>
+      {guided && (
+        <div className="grid gap-2">
+          <label htmlFor="vnc-service-group">
+            {t(($) => {
+              return $.remoteControlSetup.vncGroup;
+            })}
+          </label>
+          <Select
+            items={groups}
+            value={group}
+            disabled={disabled}
+            onValueChange={(value) => {
+              const first = allItems.find((item) => {
+                return profileGroup(item.value) === value;
+              });
+              if (first) {
+                chooseProfile(first.value);
+              }
+            }}
+          >
+            <SelectTrigger id="vnc-service-group">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {groups.map((item) => {
+                return (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
       <label htmlFor="vnc-profile" className="text-sm">
         {t(($) => {
           return $.vnc.security.profileLabel;
@@ -677,6 +772,20 @@ export function VncTransportFields({
 }) {
   const profile = useGet(vncProfile$);
   const transport = useGet(vncTransport$);
+  const setup = useGet(remoteSetup$);
+  const { t } = useTranslation();
+  if (setup?.protocol === "vnc" && requiresVncProtectiveRoute(profile)) {
+    return (
+      <div className="grid gap-4">
+        <p className="text-sm">
+          {t(($) => {
+            return $.vnc.transport.ssh;
+          })}
+        </p>
+        <VncSshConnectionFields disabled={disabled} />
+      </div>
+    );
+  }
   return (
     <div className="grid min-w-0 gap-4">
       <VncNetworkFields
@@ -1272,11 +1381,14 @@ function VncAuthenticationInputs({
         method !== "rsa_aes_password" &&
         !certificate && (
           <div className="grid gap-2 text-sm">
-            <label htmlFor="vnc-username">
-              {t(($) => {
-                return $.vnc.credential.username;
-              })}
-            </label>
+            <div className="flex items-center justify-between gap-2">
+              <label htmlFor="vnc-username">
+                {t(($) => {
+                  return $.vnc.credential.username;
+                })}
+              </label>
+              <RemoteUsernameHelp />
+            </div>
             <Input
               id="vnc-username"
               name="username"

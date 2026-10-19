@@ -1,3 +1,7 @@
+import {
+  RemoteEditorFrame,
+  REMOTE_PAGE_ACTION,
+} from "./remote-editor-frame.tsx";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { privateNetworkHostCount } from "../../lib/private-network-references.ts";
 import { PrivateNetworkHostReferences } from "./private-network-host-references.tsx";
@@ -7,12 +11,7 @@ import { Plus } from "lucide-react";
 import {
   Button,
   Checkbox,
-  Dialog,
   DialogBody,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
   LoadErrorRow,
   Select,
   SelectContent,
@@ -486,14 +485,20 @@ function TailscaleSubmitLabel({
     : title;
 }
 
-export function TailscaleDialog() {
+export function TailscaleDialog({
+  inline = false,
+  saveAction = saveTailscale$,
+}: {
+  readonly inline?: boolean;
+  readonly saveAction?: typeof saveTailscale$;
+} = {}) {
   const { t } = useTranslation();
   const state = useLoadable(tailscaleDialog$);
   const dialog = state.state === "hasData" ? state.data : null;
   const uncertain = useGet(tailscaleSaveUncertain$);
   const close = useSet(closeTailscaleDialog$);
   const mount = useSet(mountTailscaleForm$);
-  const [saving, save] = useLoadableSet(saveTailscale$);
+  const [saving, save] = useLoadableSet(saveAction);
   const signal = useGet(pageSignal$);
   const { title, description } = useOperationCopy(dialog?.kind);
   const blocked = useOperationBlocked(dialog?.kind, dialog?.config ?? null);
@@ -503,73 +508,67 @@ export function TailscaleDialog() {
   const busy = saving.state === "loading";
   const edit = dialog.kind === "create" || dialog.kind === "edit";
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open && !busy) {
-          close();
-        }
-      }}
+    <RemoteEditorFrame
+      key={`${dialog.identity}:${dialog.kind}:${dialog.config?.id ?? "new"}`}
+      inline={inline}
+      title={title}
+      description={description}
+      busy={busy}
+      onClose={close}
     >
-      <DialogContent
-        contentClassName="flex flex-col"
-        key={`${dialog.identity}:${dialog.kind}:${dialog.config?.id ?? "new"}`}
+      <form
+        ref={mount}
+        autoComplete="off"
+        className="flex min-h-0 min-w-0 flex-col gap-4"
+        aria-busy={busy}
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!busy && (uncertain || !blocked)) {
+            detach(save(event.currentTarget, signal), Reason.DomCallback);
+          }
+        }}
       >
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          {description && <DialogDescription>{description}</DialogDescription>}
-        </DialogHeader>
-        <form
-          ref={mount}
-          autoComplete="off"
-          className="flex min-h-0 min-w-0 flex-col gap-4"
-          aria-busy={busy}
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!busy && (uncertain || !blocked)) {
-              detach(save(event.currentTarget, signal), Reason.DomCallback);
-            }
-          }}
-        >
-          <DialogBody className="grid gap-4">
-            <TailscaleFormFields dialog={dialog} disabled={busy || uncertain} />
-            <TailscaleReview dialog={dialog} isSaving={busy} />
-          </DialogBody>
-          <div className="flex shrink-0 justify-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={busy}
-              onClick={close}
-            >
-              {t(($) => {
-                return $.cloudflareAccess.cancel;
-              })}
-            </Button>
-            <Button
-              type="submit"
-              disabled={busy || (!uncertain && blocked)}
-              variant={dialog.kind === "delete" ? "destructive" : "default"}
-            >
-              <TailscaleSubmitLabel
-                busy={busy}
-                uncertain={uncertain}
-                edit={edit}
-                title={title}
-              />
-            </Button>
-          </div>
-        </form>
-      </DialogContent>
-    </Dialog>
+        <DialogBody className="grid gap-4">
+          <TailscaleFormFields dialog={dialog} disabled={busy || uncertain} />
+          <TailscaleReview dialog={dialog} isSaving={busy} />
+        </DialogBody>
+        <div className="flex shrink-0 justify-end gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={busy}
+            onClick={close}
+          >
+            {t(($) => {
+              return $.cloudflareAccess.cancel;
+            })}
+          </Button>
+          <Button
+            type="submit"
+            className={inline ? REMOTE_PAGE_ACTION : undefined}
+            disabled={busy || (!uncertain && blocked)}
+            variant={dialog.kind === "delete" ? "destructive" : "default"}
+          >
+            <TailscaleSubmitLabel
+              busy={busy}
+              uncertain={uncertain}
+              edit={edit}
+              title={title}
+            />
+          </Button>
+        </div>
+      </form>
+    </RemoteEditorFrame>
   );
 }
 
-function TailscaleSection({
+export function TailscaleSection({
+  compact = false,
   scope,
   configs,
   admin,
 }: {
+  readonly compact?: boolean;
   readonly scope: "personal" | "organization";
   readonly configs: readonly TailscaleConfig[];
   readonly admin: boolean;
@@ -591,15 +590,17 @@ function TailscaleSection({
             })
       }
     >
-      <h3 className="text-base font-semibold">
-        {scope === "personal"
-          ? t(($) => {
-              return $.cloudflareAccess.personal;
-            })
-          : t(($) => {
-              return $.cloudflareAccess.organization;
-            })}
-      </h3>
+      {!compact && (
+        <h3 className="text-base font-semibold">
+          {scope === "personal"
+            ? t(($) => {
+                return $.cloudflareAccess.personal;
+              })
+            : t(($) => {
+                return $.cloudflareAccess.organization;
+              })}
+        </h3>
+      )}
       {configs.length === 0 && (
         <p className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
           {t(($) => {

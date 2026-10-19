@@ -1,3 +1,7 @@
+import {
+  resetRemoteSetup$,
+  setRemoteNetworkPicker$,
+} from "../remote-control-setup.ts";
 import { command } from "ccstate";
 import { createElement } from "react";
 import { i18n } from "../../i18n/index.ts";
@@ -14,6 +18,8 @@ import { setRemoteControlView$ } from "../okou-page/settings/remote-control-dire
 export const setupConnectorsPage$ = command(
   async ({ set }, signal: AbortSignal) => {
     set(resetConnectorAccountDialogs$);
+    set(resetRemoteSetup$);
+    set(setRemoteNetworkPicker$, false);
     set(refreshSsh$);
     set(closeVncDialog$);
     set(invalidateVnc$);

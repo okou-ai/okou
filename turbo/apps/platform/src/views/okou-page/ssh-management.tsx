@@ -1,3 +1,9 @@
+import { remoteControlGuidedEnabled$ } from "../../signals/remote-control-setup.ts";
+import {
+  RemoteEditorFrame,
+  RemoteUsernameHelp,
+  REMOTE_PAGE_ACTION,
+} from "./remote-editor-frame.tsx";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -6,12 +12,7 @@ import { cn } from "@okouai/ui/lib/utils";
 import { ExternalLink, Plus } from "lucide-react";
 import {
   Button,
-  Dialog,
-  DialogContent,
   DialogBody,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
   Input,
   Textarea,
   Checkbox,
@@ -151,12 +152,111 @@ function SshConnectionType({ disabled }: { readonly disabled: boolean }) {
   );
 }
 
+function SshConnectionName({
+  connection,
+}: {
+  readonly connection: SshConnectionResponse | null;
+}) {
+  const { t } = useTranslation();
+  const guided = useGet(remoteControlGuidedEnabled$);
+  return (
+    <label className="grid gap-2">
+      {t(($) => {
+        return guided ? $.remoteControlSetup.name : $.ssh.displayName;
+      })}
+      <Input
+        name="displayName"
+        placeholder={t(($) => {
+          return $.ssh.placeholders.displayName;
+        })}
+        required
+        pattern=".*\S.*"
+        maxLength={SSH_DISPLAY_NAME_MAX_LENGTH}
+        defaultValue={connection?.displayName}
+      />
+      {guided && (
+        <span className="text-sm text-muted-foreground">
+          {t(($) => {
+            return $.remoteControlSetup.nameHelp;
+          })}
+        </span>
+      )}
+    </label>
+  );
+}
+
+function GuidedSshEndpointFields({
+  initialHost,
+  initialPort,
+  disabled,
+}: {
+  readonly initialHost?: string;
+  readonly initialPort?: string;
+  readonly disabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const editor = useGet(sshConnectionModeEditor$);
+  const fixedPort =
+    editor.mode === "cloudflare_access" || editor.mode === "tailscale_ssh";
+  return (
+    <div className="grid gap-4">
+      <label className="grid gap-2">
+        {t(($) => {
+          return $.remoteControlSetup.address;
+        })}
+        <Input
+          name="host"
+          defaultValue={initialHost}
+          required
+          pattern=".*\S.*"
+          maxLength={SSH_HOST_MAX_LENGTH}
+        />
+      </label>
+      {editor.mode === "direct" && (
+        <p className="text-sm text-muted-foreground">
+          {t(($) => {
+            return $.remoteControlSetup.directHelp;
+          })}
+        </p>
+      )}
+      <details className="border-t border-divider pt-3">
+        <summary className="cursor-pointer rounded-md p-2 text-sm hover:bg-gray-50">
+          {t(($) => {
+            return $.remoteControlSetup.more;
+          })}
+        </summary>
+        <div className="mt-4 grid gap-4">
+          <SshConnectionType disabled={disabled} />
+          <label className="grid gap-2">
+            {t(($) => {
+              return $.ssh.port;
+            })}
+            <Input
+              name="port"
+              type="number"
+              min={1}
+              max={65_535}
+              required
+              disabled={fixedPort}
+              defaultValue={initialPort ?? "22"}
+            />
+          </label>
+        </div>
+      </details>
+    </div>
+  );
+}
+
 function EndpointFields({
   connection,
   disabled,
+  initialHost,
+  initialPort,
 }: {
   readonly connection: SshConnectionResponse | null;
   readonly disabled: boolean;
+  readonly initialHost?: string;
+  readonly initialPort?: string;
 }) {
   const { t } = useTranslation();
   const editor = useGet(sshConnectionModeEditor$);
@@ -168,21 +268,7 @@ function EndpointFields({
           return $.ssh.hostSection;
         })}
       </legend>
-      <label className="grid gap-2">
-        {t(($) => {
-          return $.ssh.displayName;
-        })}
-        <Input
-          name="displayName"
-          placeholder={t(($) => {
-            return $.ssh.placeholders.displayName;
-          })}
-          required
-          pattern=".*\S.*"
-          maxLength={SSH_DISPLAY_NAME_MAX_LENGTH}
-          defaultValue={connection?.displayName}
-        />
-      </label>
+      <SshConnectionName connection={connection} />
       <SshConnectionType disabled={disabled} />
       <div
         className={
@@ -207,7 +293,7 @@ function EndpointFields({
             required
             pattern=".*\S.*"
             maxLength={SSH_HOST_MAX_LENGTH}
-            defaultValue={connection?.host}
+            defaultValue={connection?.host ?? initialHost}
           />
         </label>
         <label
@@ -234,7 +320,7 @@ function EndpointFields({
               (!("transport" in connection) ||
                 connection.transport.type === "tailscale")
                 ? connection.port
-                : 22
+                : (initialPort ?? 22)
             }
           />
         </label>
@@ -377,11 +463,17 @@ function CredentialFields({
           defaultValue={credential?.name}
         />
       </label>
-      <label className="grid gap-2">
-        {t(($) => {
-          return $.ssh.username;
-        })}
+      <div className="grid gap-2">
+        <div className="flex items-center justify-between gap-2">
+          <label htmlFor="ssh-login-username">
+            {t(($) => {
+              return $.ssh.username;
+            })}
+          </label>
+          <RemoteUsernameHelp />
+        </div>
         <Input
+          id="ssh-login-username"
           name="username"
           placeholder={t(($) => {
             return $.ssh.placeholders.username;
@@ -391,7 +483,7 @@ function CredentialFields({
           maxLength={SSH_USERNAME_MAX_LENGTH}
           defaultValue={credential?.username}
         />
-      </label>
+      </div>
       {credential && (
         <label className="flex items-center gap-2 text-sm">
           <Checkbox
@@ -827,6 +919,10 @@ interface SshFormProps {
   readonly dialog: SshDialogState;
   readonly isSaving: boolean;
   readonly save: (form: HTMLFormElement, signal: AbortSignal) => Promise<void>;
+  readonly inline?: boolean;
+  readonly onCancel?: () => void;
+  readonly initialHost?: string;
+  readonly initialPort?: string;
 }
 
 function SshSaveNotice({ isSaving }: { readonly isSaving: boolean }) {
@@ -855,11 +951,15 @@ function SshFormActions({
   blocked,
   destructive,
   title,
+  inline,
+  onCancel,
 }: {
   readonly isSaving: boolean;
   readonly blocked: boolean;
   readonly destructive: boolean;
   readonly title: string;
+  readonly inline?: boolean;
+  readonly onCancel?: () => void;
 }) {
   const { t } = useTranslation();
   const close = useSet(closeSshDialog$);
@@ -870,7 +970,7 @@ function SshFormActions({
         type="button"
         variant="outline"
         disabled={isSaving}
-        onClick={close}
+        onClick={onCancel ?? close}
       >
         {t(($) => {
           return $.ssh.cancel;
@@ -878,6 +978,7 @@ function SshFormActions({
       </Button>
       <Button
         type="submit"
+        className={inline && !destructive ? REMOTE_PAGE_ACTION : undefined}
         disabled={isSaving || (!uncertain && blocked)}
         variant={destructive ? "destructive" : "default"}
       >
@@ -983,11 +1084,17 @@ function TailscaleSshLogin({
       disabled={disabled || !active}
       className={active ? "grid gap-2" : "hidden"}
     >
-      <label className="grid gap-2">
-        {t(($) => {
-          return $.ssh.tailscale.username;
-        })}
+      <div className="grid gap-2">
+        <div className="flex items-center justify-between gap-2">
+          <label htmlFor="tailscale-ssh-login-username">
+            {t(($) => {
+              return $.ssh.tailscale.username;
+            })}
+          </label>
+          <RemoteUsernameHelp />
+        </div>
         <Input
+          id="tailscale-ssh-login-username"
           name="tailscaleSshUsername"
           disabled={disabled || !active}
           required
@@ -996,7 +1103,7 @@ function TailscaleSshLogin({
           defaultValue={connection?.username}
           placeholder="ubuntu"
         />
-      </label>
+      </div>
       <p className="text-sm text-muted-foreground">
         {t(($) => {
           return $.ssh.tailscale.sshHelp;
@@ -1017,8 +1124,43 @@ function TailscaleSshLogin({
   );
 }
 
-function SshHostForm({ dialog, isSaving, save }: SshFormProps) {
+function SshRebindNotice({
+  connection,
+}: {
+  readonly connection: SshConnectionResponse | null;
+}) {
   const { t } = useTranslation();
+  return (
+    <>
+      {connection &&
+        "transport" in connection &&
+        "needsRebind" in connection.transport && (
+          <p
+            role="alert"
+            className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+          >
+            {t(($) => {
+              return connection &&
+                "transport" in connection &&
+                (connection.transport.type === "tailscale" ||
+                  connection.transport.type === "tailscale_ssh")
+                ? $.tailscale.rebindHelp
+                : $.ssh.cloudflare.rebindHelp;
+            })}
+          </p>
+        )}
+    </>
+  );
+}
+function SshHostForm({
+  dialog,
+  isSaving,
+  save,
+  inline = false,
+  onCancel,
+  initialHost,
+  initialPort,
+}: SshFormProps) {
   const uncertain = useGet(sshSaveUncertain$);
   const fieldsDisabled = isSaving || uncertain;
   const connectionEditor = useGet(sshConnectionModeEditor$);
@@ -1053,28 +1195,19 @@ function SshHostForm({ dialog, isSaving, save }: SshFormProps) {
           >
             {hostEditor ? (
               <>
-                {dialog.connection &&
-                  "transport" in dialog.connection &&
-                  "needsRebind" in dialog.connection.transport && (
-                    <p
-                      role="alert"
-                      className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
-                    >
-                      {t(($) => {
-                        return dialog.connection &&
-                          "transport" in dialog.connection &&
-                          (dialog.connection.transport.type === "tailscale" ||
-                            dialog.connection.transport.type ===
-                              "tailscale_ssh")
-                          ? $.tailscale.rebindHelp
-                          : $.ssh.cloudflare.rebindHelp;
-                      })}
-                    </p>
-                  )}
-                <EndpointFields
-                  connection={dialog.connection}
-                  disabled={fieldsDisabled}
-                />
+                <SshRebindNotice connection={dialog.connection} />
+                {inline && dialog.kind === "create" ? (
+                  <GuidedSshEndpointFields
+                    initialHost={initialHost}
+                    initialPort={initialPort}
+                    disabled={fieldsDisabled}
+                  />
+                ) : (
+                  <EndpointFields
+                    connection={dialog.connection}
+                    disabled={fieldsDisabled}
+                  />
+                )}
                 {connectionEditor.mode === "cloudflare_access" && (
                   <AccessSelection disabled={fieldsDisabled} />
                 )}
@@ -1103,6 +1236,9 @@ function SshHostForm({ dialog, isSaving, save }: SshFormProps) {
                     }
                   />
                 </fieldset>
+                {inline && dialog.kind === "create" && (
+                  <SshConnectionName connection={null} />
+                )}
               </>
             ) : (
               <CredentialFields
@@ -1123,17 +1259,31 @@ function SshHostForm({ dialog, isSaving, save }: SshFormProps) {
         blocked={blocked}
         destructive={destructive}
         title={title}
+        inline={inline}
+        onCancel={onCancel}
       />
     </form>
   );
 }
 
-export function SshDialog() {
+export function SshDialog({
+  inline = false,
+  saveAction = saveSsh$,
+  onCancel,
+  initialHost,
+  initialPort,
+}: {
+  readonly inline?: boolean;
+  readonly saveAction?: typeof saveSsh$;
+  readonly onCancel?: () => void;
+  readonly initialHost?: string;
+  readonly initialPort?: string;
+} = {}) {
   const data = useLoadable(sshDialog$);
   const editor = useGet(sshConnectionModeEditor$);
   const tailscaleEnabled = useGet(tailscaleEnabled$);
   const close = useSet(closeSshDialog$);
-  const [saving, save] = useLoadableSet(saveSsh$);
+  const [saving, save] = useLoadableSet(saveAction);
   const dialog = data.state === "hasData" ? data.data : null;
   const { title, description } = useDialogCopy(dialog);
   const isSaving = saving.state === "loading";
@@ -1146,25 +1296,24 @@ export function SshDialog() {
     return null;
   }
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open && !isSaving) {
-          close();
-        }
-      }}
+    <RemoteEditorFrame
+      key={`${dialog.identity}:${dialog.kind}:${dialog.connection?.id ?? dialog.credential?.id ?? "new"}`}
+      inline={inline}
+      title={title}
+      description={description}
+      busy={isSaving}
+      onClose={onCancel ?? close}
     >
-      <DialogContent
-        contentClassName="flex flex-col"
-        key={`${dialog.identity}:${dialog.kind}:${dialog.connection?.id ?? dialog.credential?.id ?? "new"}`}
-      >
-        <DialogHeader className="shrink-0">
-          <DialogTitle>{title}</DialogTitle>
-          {description && <DialogDescription>{description}</DialogDescription>}
-        </DialogHeader>
-        <SshHostForm dialog={dialog} isSaving={isSaving} save={save} />
-      </DialogContent>
-    </Dialog>
+      <SshHostForm
+        dialog={dialog}
+        isSaving={isSaving}
+        save={save}
+        inline={inline}
+        onCancel={onCancel}
+        initialHost={initialHost}
+        initialPort={initialPort}
+      />
+    </RemoteEditorFrame>
   );
 }
 
@@ -1230,7 +1379,7 @@ function TailscaleHostLabel({
   );
 }
 
-function HostCard({
+export function SshHostCard({
   connection,
 }: {
   readonly connection: SshConnectionResponse;
@@ -1418,7 +1567,7 @@ export function SshHosts() {
         </p>
       )}
       {hosts.data.map((connection) => {
-        return <HostCard key={connection.id} connection={connection} />;
+        return <SshHostCard key={connection.id} connection={connection} />;
       })}
     </div>
   );

@@ -51,6 +51,38 @@ describe("isFeatureEnabled", () => {
     }
   });
 
+  it("targets remote setup only to Bingjie's verified product identity", () => {
+    const key = FeatureSwitchKey.RemoteControlGuidedSetup;
+    const userId = "user_3EWY21Oe3f15kfs3yYmbGgDb3NV";
+    for (const orgId of [
+      undefined,
+      "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+      "external-org",
+    ]) {
+      expect(isFeatureEnabled(key, { userId, orgId })).toBe(true);
+      expect(getAllFeatureStates({ userId, orgId })[key]).toBe(true);
+      expect(
+        getAllFeatureStates({ userId, orgId, overrides: { [key]: false } })[
+          key
+        ],
+      ).toBe(false);
+    }
+    for (const context of [
+      {},
+      { email: "bingjie@okou.ai" },
+      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+      {
+        userId: "staff-colleague",
+        email: "ethan@okou.ai",
+        orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+      },
+      { userId: "external-user", orgId: "external-org" },
+    ]) {
+      expect(isFeatureEnabled(key, context)).toBe(false);
+      expect(getAllFeatureStates(context)[key]).toBe(false);
+    }
+  });
+
   it("keeps Codex execution test-only and off for everyone without an override", () => {
     const key = FeatureSwitchKey.CodexExecution;
     expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("internal");

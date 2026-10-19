@@ -1,3 +1,5 @@
+import { remoteControlGuidedEnabled$ } from "../../signals/remote-control-setup.ts";
+import { RemoteTailscaleCredentialHelp } from "./remote-network-help.tsx";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Input, Checkbox } from "@okouai/ui";
@@ -58,6 +60,7 @@ export function TailscaleFields({
 }) {
   const { t } = useTranslation();
   const replace = useGet(tailscaleReplaceCredentials$);
+  const guided = useGet(remoteControlGuidedEnabled$);
   const setReplace = useSet(replaceTailscaleCredentials$);
   return (
     <div className="grid min-w-0 gap-4">
@@ -76,7 +79,19 @@ export function TailscaleFields({
           defaultValue={config?.name}
         />
       </label>
-      {config === null && <TailscaleSetupGuide />}
+      {config === null &&
+        (guided ? (
+          <details>
+            <summary className="cursor-pointer rounded-md p-2 text-sm hover:bg-gray-50">
+              {t(($) => {
+                return $.remoteControlSetup.details;
+              })}
+            </summary>
+            <RemoteTailscaleCredentialHelp />
+          </details>
+        ) : (
+          <TailscaleSetupGuide />
+        ))}
       <label className="grid gap-2">
         {t(($) => {
           return $.tailscale.tags;
@@ -85,7 +100,9 @@ export function TailscaleFields({
           name="tailscaleTags"
           required
           maxLength={1200}
-          defaultValue={config?.tags.join(", ")}
+          defaultValue={
+            config?.tags.join(", ") ?? (guided ? "tag:okou" : undefined)
+          }
           aria-describedby="tailscale-tags-help"
         />
       </label>
