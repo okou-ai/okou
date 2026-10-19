@@ -62,6 +62,7 @@ import { ConnectorDetailPanel } from "./connector-directory-detail.tsx";
 import { SshConnectorCard } from "./components/settings/ssh-connector-card.tsx";
 import {
   buildConnectorDirectoryModel,
+  currentDirectoryAccountSummaries,
   type ConnectorDirectoryModel,
 } from "./connector-directory-model.ts";
 
@@ -1199,8 +1200,10 @@ export function ConnectorDirectoryDialog({
   const accountsLoadable = useLoadable(connectorAccountSummaryByTarget$);
   const retryAccounts = useSet(reloadConnectorAccountSummaries$);
   const retryCustom = useSet(retryCustomConnectors$);
-  const accountSummaries =
-    accountsLoadable.state === "hasData" ? accountsLoadable.data : undefined;
+  const accountSummaries = currentDirectoryAccountSummaries(
+    connectors,
+    accountsLoadable.state === "hasData" ? accountsLoadable.data : undefined,
+  );
   const accountStatus =
     accountsLoadable.state === "hasData" ? null : (
       <DirectorySourceStatus

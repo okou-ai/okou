@@ -8,6 +8,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import { mockNow } from "../../../__tests__/time.ts";
 import {
   ACME_CONNECTOR_ID,
   FEISHU_CONNECTOR_ID,
@@ -139,6 +140,87 @@ test("Healthy saved accounts stay connected while zero-account connectors remain
     findFastControl("button", "Connect Acme Search", dialog),
   ).resolves.toHaveTextContent("2 accounts");
   expect(within(dialog).queryByText("Needs attention")).toBeNull();
+});
+
+async function openExpiringBuiltinDirectory(refreshable: boolean) {
+  const clock = { nowMs: new Date("2026-10-19T08:00:00.000Z").getTime() };
+  mockNow(() => {
+    return clock.nowMs;
+  }, context.signal);
+  const target = { kind: "builtin", connectorSlug: "github" } as const;
+  const tokenExpiresAt = new Date(clock.nowMs + 60_000).toISOString();
+  const catalog = builtinConnector({ slug: "github", label: "GitHub" });
+  const account = {
+    ...connectorAccount({
+      id: catalog.connection!.id!,
+      target,
+      displayName: "Work",
+      isDefault: true,
+    }),
+    tokenExpiresAt,
+  };
+  const accounts = [
+    account,
+    connectorAccount({
+      id: crypto.randomUUID(),
+      target,
+      displayName: "Personal",
+      isDefault: false,
+    }),
+  ];
+  installComposerConnectorFixture({
+    catalog: [
+      { ...catalog, authMethodSupportsRefresh: refreshable, tokenExpiresAt },
+    ],
+    accounts,
+    accountSummaries: [accountSummary(target, accounts)],
+  });
+  const directory = await openDirectory();
+  const search = within(directory).getByPlaceholderText("Find connectors...");
+  await fill(search, "github");
+  return { directory, search, clock };
+}
+
+test("An open directory recognizes expiry of a saved non-refreshable builtin default", async () => {
+  const { directory, search, clock } =
+    await openExpiringBuiltinDirectory(false);
+  await expect(
+    findFastControl("button", "Open GitHub details", directory),
+  ).resolves.toHaveTextContent("Work");
+  clock.nowMs += 120_000;
+  await fill(search, "git");
+  await within(directory).findByText("Needs attention");
+  const expired = await findFastControl(
+    "button",
+    "Open GitHub details",
+    directory,
+  );
+  expect(expired).toHaveTextContent("Connection expired");
+  expect(expired).toHaveTextContent("1/2 need attention");
+  await fill(search, "github");
+  const current = await findFastControl(
+    "button",
+    "Open GitHub details",
+    directory,
+  );
+  expect(current).toHaveTextContent("1/2 need attention");
+  click(current);
+  await expect(
+    findFastControl("button", "Reconnect", directory),
+  ).resolves.toBeEnabled();
+});
+
+test("An open directory keeps a saved refreshable builtin default usable after token expiry", async () => {
+  const { directory, search, clock } = await openExpiringBuiltinDirectory(true);
+  await expect(
+    findFastControl("button", "Open GitHub details", directory),
+  ).resolves.toHaveTextContent("Work");
+  clock.nowMs += 120_000;
+  await fill(search, "git");
+  await expect(
+    findFastControl("button", "Open GitHub details", directory),
+  ).resolves.toHaveTextContent("Work");
+  expect(within(directory).queryByText("Needs attention")).toBeNull();
 });
 
 test("A saved custom account with incomplete setup is visible without claiming it is ready", async () => {

@@ -49,6 +49,43 @@ export interface ConnectorDirectoryModel {
   readonly categoryLabelOf: (category: string) => string | undefined;
 }
 
+export function currentDirectoryAccountSummaries(
+  connectors: readonly PlatformConnectorCatalogStatusItem[],
+  summaries: ReadonlyMap<string, ConnectorAccountSummary> | undefined,
+): ReadonlyMap<string, ConnectorAccountSummary> | undefined {
+  if (!summaries) {
+    return undefined;
+  }
+  const current = new Map(summaries);
+  for (const connector of connectors) {
+    const key = `builtin:${connector.slug}`;
+    const summary = summaries.get(key);
+    if (!summary?.defaultConnection) {
+      continue;
+    }
+    const account = summary.defaultConnection;
+    if (
+      account.connectionStatus !== "connected" ||
+      account.authMethod !== connector.connection?.authMethod
+    ) {
+      continue;
+    }
+    const status = builtinConnectorCurrentConnectionStatus({
+      ...connector,
+      connectionStatus: account.connectionStatus,
+      tokenExpiresAt: account.tokenExpiresAt,
+    });
+    if (status === "reconnect-required") {
+      current.set(key, {
+        ...summary,
+        attentionCount: summary.attentionCount + 1,
+        defaultConnection: { ...account, connectionStatus: status },
+      });
+    }
+  }
+  return current;
+}
+
 function needsAttention(
   connector: PlatformConnectorCatalogStatusItem,
   summary: ConnectorAccountSummary | undefined,
