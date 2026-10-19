@@ -781,6 +781,34 @@ async def test_abandoned_websocket_inspection_preserves_cumulative_observations(
     assert {"parse_error", "interrupted", "ambiguous_response"} <= set(result["reasons"])
 
 
+@pytest.mark.parametrize("repetitions", [250_000, 350_000], ids=["accepted", "over-budget"])
+async def test_costly_websocket_client_intent_commits_after_complete_inspection(
+    tmp_path, control, real_flow, mitm_ctx, fake_firewall_headers, repetitions
+):
+    path = write_registration(tmp_path)
+    with mitm_ctx(registry_path=str(path)), fake_firewall_headers():
+        flow = make_openai_responses_websocket_request_flow(real_flow)
+        await mitm_addon.request(flow)
+        flow.response = tutils.tresp(
+            status_code=101, headers=make_openai_responses_websocket_response_headers()
+        )
+        mitm_addon.responseheaders(flow)
+        assert mitm_addon.response(flow) is None
+        set_websocket_message(flow, from_client=True, content=costly_message("client", repetitions))
+        completion = mitm_addon.websocket_message(flow)
+        assert completion is not None
+        pulse = asyncio.get_running_loop().create_future()
+        asyncio.get_running_loop().call_soon(lambda: pulse.set_result(read_usage(control)))
+        await completion
+        assert (await pulse)["outstandingResponses"] == 0
+        observed = read_usage(control)
+        assert observed["outstandingResponses"] == int(repetitions == 250_000)
+        assert ("ambiguous_response" in observed["reasons"]) is (repetitions == 350_000)
+        assert observed["totals"]["total"] == 0
+        mitm_addon.websocket_end(flow)
+    assert read_usage(control)["outstandingResponses"] == 0
+
+
 async def test_global_response_capacity_does_not_erase_another_run(
     tmp_path,
     control,
