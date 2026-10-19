@@ -568,7 +568,9 @@ function createCustomConnectorSignals(
     if (!connector) {
       return;
     }
-    if (await get(connected$)) {
+    const connected = await get(connected$);
+    signal.throwIfAborted();
+    if (connected) {
       const alreadyAuthorized = await get(authorized$);
       signal.throwIfAborted();
       const authorized =

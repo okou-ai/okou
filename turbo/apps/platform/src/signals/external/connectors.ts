@@ -240,12 +240,8 @@ export const loadConnectorCatalogItem$ = command(
       signal,
       { showErrorToast: false },
     );
-    return result.status === 200
-      ? withMemberAccountStatus(
-          result.body.connector,
-          await get(connectorAccountSummaryByTarget$),
-        )
-      : null;
+    // Callback pages need public metadata even when the user is signed out.
+    return result.status === 200 ? result.body.connector : null;
   },
 );
 
