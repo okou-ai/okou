@@ -9,6 +9,14 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.751.3](https://github.com/okou-ai/okou/compare/api-v1.751.2...api-v1.751.3) (2026-10-19)
+
+
+### Refactoring
+
+* **api:** inline connector catalog discovery read ([#41180](https://github.com/okou-ai/okou/issues/41180)) ([8dcd72f](https://github.com/okou-ai/okou/commit/8dcd72f1ed01679256b7a7129588bf5b3f74183d))
+* **api:** localize feishu first-message receipt ownership ([#41189](https://github.com/okou-ai/okou/issues/41189)) ([7bd2e6c](https://github.com/okou-ai/okou/commit/7bd2e6c1314e41a0694c95d36be6be0caaedbce0))
+
 ## [1.751.2](https://github.com/okou-ai/okou/compare/api-v1.751.1...api-v1.751.2) (2026-10-19)
 
 
