@@ -2932,6 +2932,11 @@
       "transcriptionFailed": "Transkripsi suara gagal. Coba lagi."
     },
     "walletAction": {
+      "approvalApproved": "Disetujui; menunggu untuk melanjutkan",
+      "approvalContinued": "Permintaan pembelian dilanjutkan",
+      "approvalRecorded": "Status diperbarui",
+      "approvalStopped": "Penantian otomatis berakhir; Anda dapat melanjutkan secara manual",
+      "approvalWaiting": "Menunggu persetujuan pembelian",
       "approveButton": "Tinjau",
       "approveTitle": "Tinjau pembelian",
       "authorized": "Diizinkan",

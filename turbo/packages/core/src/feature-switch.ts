@@ -300,6 +300,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Enable hosted Link wallet consent, per-purchase approval, and one-time payment credential retrieval.",
     enabled: true,
   },
+  [FeatureSwitchKey.LinkWalletApprovalContinuation]: {
+    maintainer: "yuma@okou.ai",
+    description:
+      "Continue the originating web chat after a Link purchase approval using bounded Cloudflare Workflows polling.",
+    enabled: false,
+  },
   [FeatureSwitchKey.WalletSettings]: {
     maintainer: "yuma@okou.ai",
     description:

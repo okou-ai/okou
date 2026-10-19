@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import {
   walletCallbackContract,
   walletContract,
@@ -19,6 +19,10 @@ import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import { walletRoutes } from "../wallet";
+import { linkApprovalWorkflowRoutes } from "../link-approval-workflow";
+import { cronProcessBackgroundJobsRoutes } from "../cron-process-background-jobs";
+import { cronProcessBackgroundJobsContract } from "@okouai/api-contracts/contracts/cron";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
@@ -97,7 +101,11 @@ async function carrier(
   if (!token) {
     throw new Error("Missing claimed run token");
   }
+  let completed = false;
   onTestFinished(async () => {
+    if (completed) {
+      return;
+    }
     await api.requestCancelRun(actor, run.runId, [200]);
     await createWebhookCallbackApi(context).requestAgentComplete(
       { runId: run.runId, exitCode: 1, error: "Wallet test carrier canceled" },
@@ -107,6 +115,21 @@ async function carrier(
     await flushWaitUntilForTest();
   });
   return {
+    run,
+    api,
+    runnerGroup,
+    complete: async () => {
+      await createWebhookCallbackApi(context).requestAgentComplete(
+        {
+          runId: run.runId,
+          exitCode: 0,
+        },
+        { authorization: `Bearer ${claim.sandboxToken}` },
+        [200],
+      );
+      completed = true;
+      await flushWaitUntilForTest();
+    },
     actor: { ...actor, orgId: actor.orgId },
     agentId: agent.agentId,
     prompt: claim.appendSystemPrompt ?? "",
@@ -2976,4 +2999,505 @@ test("requests payment, profile and transaction consent from both CLI and settin
       },
     });
   }
+});
+
+const APPROVAL_WORKER_SECRET = randomBytes(32).toString("hex");
+
+async function trackedPurchase(startFails = false, expiresIn = 3600) {
+  await setupApp({ context, routes: walletRoutes, isolatePg: true });
+  const fixture = await carrier();
+  mockEnv("LINK_APPROVAL_WORKER_URL", "https://approval.example.test");
+  mockEnv("LINK_APPROVAL_WORKER_SECRET", APPROVAL_WORKER_SECRET);
+  mockEnv(
+    "LINK_APPROVAL_CONTROL_SECRET",
+    "link-approval-control-test-secret-0002",
+  );
+  await updateFeatureSwitchesForUser(context, fixture.actor, {
+    [FeatureSwitchKey.LinkWalletApprovalContinuation]: true,
+  });
+  const starts: unknown[] = [];
+  server.use(
+    tokenHandler({ expiresIn }),
+    http.post("https://approval.example.test/start", async ({ request }) => {
+      expect(request.headers.get("authorization")).toBe(
+        "Bearer link-approval-control-test-secret-0002",
+      );
+      starts.push(await request.json());
+      return startFails && starts.length === 1
+        ? HttpResponse.json(
+            { error: "Temporary Worker outage" },
+            { status: 503 },
+          )
+        : HttpResponse.json({ ok: true });
+    }),
+  );
+  await connect(fixture);
+  const input = purchase();
+  const provider = spendProvider(input);
+  const created = await accept(
+    client().createSpend({ headers: fixture.headers, body: input }),
+    [200],
+  );
+  await flushWaitUntilForTest();
+  expect(created.body.autoContinue).toBeTruthy();
+  expect(starts).toStrictEqual([
+    { spendId: created.body.id, deadline: created.body.expiresAt },
+  ]);
+  return { ...fixture, input, provider, spend: created.body, starts };
+}
+
+async function pollPurchase(
+  spendId: string,
+  options: { timestamp?: string; signature?: string } = {},
+) {
+  const body = JSON.stringify({ spendId });
+  const timestamp = options.timestamp ?? String(Math.floor(now() / 1000));
+  const signature =
+    options.signature ??
+    createHmac("sha256", APPROVAL_WORKER_SECRET)
+      .update(`${timestamp}.${body}`)
+      .digest("hex");
+  return await setupRawAppRequest({
+    context,
+    routes: linkApprovalWorkflowRoutes,
+  })("/api/internal/link-approval/poll", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-link-approval-timestamp": timestamp,
+      "x-link-approval-signature": signature,
+    },
+    body,
+  });
+}
+
+async function approvalCard(
+  fixture: Awaited<ReturnType<typeof trackedPurchase>>,
+  threadId = fixture.run.threadId,
+) {
+  return await accept(
+    userClient().spendStatus({
+      headers: sessionHeaders,
+      body: {
+        agentId: fixture.agentId,
+        threadId,
+        approvalUrl: fixture.spend.approvalUrl ?? "https://app.link.com/",
+      },
+    }),
+    [200],
+  );
+}
+
+test("an approval Workflow continues the original web chat once and retains interactive wallet access", async () => {
+  const fixture = await trackedPurchase();
+  expect((await approvalCard(fixture)).body.status).toBe("pending");
+  expect((await approvalCard(fixture, randomUUID())).body.status).toBe(
+    "unavailable",
+  );
+  expect((await pollPurchase(fixture.spend.id)).body).toStrictEqual({
+    state: "waiting",
+  });
+  fixture.provider.approve();
+  // The original run must be allowed to finish presenting the approval URL.
+  expect((await pollPurchase(fixture.spend.id)).body).toStrictEqual({
+    state: "waiting",
+  });
+  expect((await approvalCard(fixture)).body.status).toBe("approved");
+  await fixture.complete();
+  const responses = await Promise.all([
+    pollPurchase(fixture.spend.id),
+    pollPurchase(fixture.spend.id),
+  ]);
+  for (const response of responses) {
+    expect(response.status).toBe(200);
+    expect(response.body).toStrictEqual({ state: "done" });
+  }
+  await flushWaitUntilForTest();
+  expect((await approvalCard(fixture)).body.status).toBe("continued");
+  const { events } = await createChatFilesBddApi(context).listThreadEvents(
+    fixture.actor,
+    fixture.run.threadId,
+  );
+  const input = events.filter((event) => {
+    return event.id === fixture.spend.id;
+  });
+  expect(input).toHaveLength(1);
+  expect(JSON.stringify(input)).toContain(
+    "Link 付款审批已通过：Example Books，金额上限 35.00 USD。请继续完成这笔购买。",
+  );
+  expect(JSON.stringify(input)).not.toMatch(
+    /wallet-access-fixture|wallet-refresh-fixture|card_number/,
+  );
+  const resumed = events.find((event) => {
+    return event.revokesEventId === fixture.spend.id;
+  });
+  expect(resumed?.runId).toBeTruthy();
+  if (!resumed?.runId) {
+    throw new Error("Missing approval continuation run");
+  }
+  const claim = await fixture.api.claimRunnerJob(resumed.runId);
+  const headers = {
+    authorization: `Bearer ${claim.platformEnvironment.OKOU_TOKEN}`,
+  };
+  await accept(
+    client().getSpend({ headers, params: { id: fixture.spend.id } }),
+    [200],
+  );
+  expect((await pollPurchase(fixture.spend.id)).body).toStrictEqual({
+    state: "done",
+  });
+});
+
+test("manual approved-status inspection consumes the purchase continuation before a Workflow can enqueue it", async () => {
+  const fixture = await trackedPurchase();
+  fixture.provider.approve();
+  await accept(
+    client().getSpend({
+      headers: fixture.headers,
+      params: { id: fixture.spend.id },
+    }),
+    [200],
+  );
+  await fixture.complete();
+  expect((await pollPurchase(fixture.spend.id)).body).toStrictEqual({
+    state: "done",
+  });
+  await flushWaitUntilForTest();
+  const { events } = await createChatFilesBddApi(context).listThreadEvents(
+    fixture.actor,
+    fixture.run.threadId,
+  );
+  expect(
+    events.some((event) => {
+      return (
+        event.revokesEventId === fixture.spend.id &&
+        event.eventType === "control.revoke"
+      );
+    }),
+  ).toBeTruthy();
+  expect(JSON.stringify(events)).not.toContain("Link 付款审批已通过");
+});
+
+test("pending manual inspection does not stop the watch and a cancelled purchase never continues", async () => {
+  const fixture = await trackedPurchase();
+  await accept(
+    client().getSpend({
+      headers: fixture.headers,
+      params: { id: fixture.spend.id },
+    }),
+    [200],
+  );
+  expect((await pollPurchase(fixture.spend.id)).body).toStrictEqual({
+    state: "waiting",
+  });
+  await accept(
+    client().cancelSpend({
+      headers: fixture.headers,
+      params: { id: fixture.spend.id },
+    }),
+    [200],
+  );
+  await fixture.complete();
+  expect((await pollPurchase(fixture.spend.id)).body).toStrictEqual({
+    state: "done",
+  });
+});
+
+test("cancelling a watched purchase from another chat fails before contacting Link", async () => {
+  const fixture = await trackedPurchase();
+  await fixture.complete();
+  const other = await fixture.api.createThreadRun(fixture.actor, {
+    agentId: fixture.agentId,
+    prompt: "Inspect an existing purchase from another chat",
+  });
+  await fixture.api.heartbeatRunner(fixture.runnerGroup);
+  const claim = await fixture.api.claimRunnerJob(other.runId);
+  onTestFinished(async () => {
+    await fixture.api.requestCancelRun(fixture.actor, other.runId, [200]);
+    await createWebhookCallbackApi(context).requestAgentComplete(
+      {
+        runId: other.runId,
+        exitCode: 1,
+        error: "Wallet test carrier canceled",
+      },
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+  });
+  const headers = {
+    authorization: `Bearer ${claim.platformEnvironment.OKOU_TOKEN}`,
+  };
+  let cancellations = 0;
+  server.use(
+    http.post(
+      `https://api.link.com/spend_requests/${fixture.provider.id}/cancel`,
+      () => {
+        cancellations++;
+        return HttpResponse.json({}, { status: 503 });
+      },
+    ),
+  );
+  await accept(
+    client().getSpend({ headers, params: { id: fixture.spend.id } }),
+    [200],
+  );
+  const result = await accept(
+    client().cancelSpend({ headers, params: { id: fixture.spend.id } }),
+    [409],
+  );
+  expect(result.body.error.code).toBe("WALLET_ORIGINAL_THREAD_REQUIRED");
+  expect(cancellations).toBe(0);
+  expect((await pollPurchase(fixture.spend.id)).body).toStrictEqual({
+    state: "waiting",
+  });
+});
+
+test("a final approval observation uses the original deadline and timeout never invents a denial", async () => {
+  const fixture = await trackedPurchase();
+  mockNow(new Date(fixture.spend.expiresAt).getTime());
+  expect((await pollPurchase(fixture.spend.id)).body).toStrictEqual({
+    state: "done",
+  });
+  const current = await accept(
+    client().getSpend({
+      headers: fixture.headers,
+      params: { id: fixture.spend.id },
+    }),
+    [200],
+  );
+  expect(current.body.status).toBe("pending_approval");
+  expect(current.body.autoContinue).toBeFalsy();
+  expect((await approvalCard(fixture)).body.status).toBe("stopped");
+  fixture.provider.approve();
+  await fixture.complete();
+  mockNow(new Date(fixture.spend.expiresAt).getTime() + 120_001);
+  expect((await pollPurchase(fixture.spend.id)).body).toStrictEqual({
+    state: "done",
+  });
+  const { events } = await createChatFilesBddApi(context).listThreadEvents(
+    fixture.actor,
+    fixture.run.threadId,
+  );
+  expect(
+    events.some((event) => {
+      return event.id === fixture.spend.id;
+    }),
+  ).toBeFalsy();
+});
+
+test("an approved purchase waiting for its active chat notifies the card when automatic waiting expires", async () => {
+  const fixture = await trackedPurchase();
+  fixture.provider.approve();
+  expect((await pollPurchase(fixture.spend.id)).body).toStrictEqual({
+    state: "waiting",
+  });
+  expect((await approvalCard(fixture)).body.status).toBe("approved");
+  await flushWaitUntilForTest();
+  context.mocks.ably.publish.mockClear();
+
+  mockNow(new Date(fixture.spend.expiresAt).getTime());
+  expect((await pollPurchase(fixture.spend.id)).body).toStrictEqual({
+    state: "waiting",
+  });
+  await flushWaitUntilForTest();
+  expect(context.mocks.ably.publish).toHaveBeenCalledWith("wallet:changed", {
+    orgId: fixture.actor.orgId,
+  });
+  expect((await approvalCard(fixture)).body.status).toBe("stopped");
+});
+
+test("approval callbacks authenticate exact bodies and stop after the feature is disabled", async () => {
+  const fixture = await trackedPurchase();
+  expect(
+    (await pollPurchase(fixture.spend.id, { signature: "0".repeat(64) }))
+      .status,
+  ).toBe(401);
+  expect(
+    (
+      await pollPurchase(fixture.spend.id, {
+        timestamp: String(Math.floor(now() / 1000) - 301),
+      })
+    ).status,
+  ).toBe(401);
+  await updateFeatureSwitchesForUser(context, fixture.actor, {
+    [FeatureSwitchKey.LinkWalletApprovalContinuation]: false,
+  });
+  const pending = await accept(
+    client().getSpend({
+      headers: fixture.headers,
+      params: { id: fixture.spend.id },
+    }),
+    [200],
+  );
+  expect(pending.body.autoContinue).toBeFalsy();
+  const repeated = await accept(
+    client().createSpend({ headers: fixture.headers, body: fixture.input }),
+    [200],
+  );
+  expect(repeated.body.autoContinue).toBeFalsy();
+  await flushWaitUntilForTest();
+  expect(fixture.starts).toHaveLength(1);
+  fixture.provider.approve();
+  await fixture.complete();
+  expect((await pollPurchase(fixture.spend.id)).body).toStrictEqual({
+    state: "done",
+  });
+});
+
+test("cron repairs a failed durable approval Workflow start without querying Link", async () => {
+  const fixture = await trackedPurchase(true);
+  let reads = 0;
+  server.use(
+    http.get(
+      `https://api.link.com/spend_requests/${fixture.provider.id}`,
+      () => {
+        reads++;
+        return HttpResponse.json(
+          { error: { message: "Unexpected provider poll" } },
+          { status: 500 },
+        );
+      },
+    ),
+  );
+  await accept(
+    setupApp({ context, routes: cronProcessBackgroundJobsRoutes })(
+      cronProcessBackgroundJobsContract,
+    ).process({
+      headers: { authorization: "Bearer test-cron-secret" },
+    }),
+    [200],
+  );
+  expect(fixture.starts).toStrictEqual([
+    { spendId: fixture.spend.id, deadline: fixture.spend.expiresAt },
+    { spendId: fixture.spend.id, deadline: fixture.spend.expiresAt },
+  ]);
+  expect(reads).toBe(0);
+});
+
+test("approval polling distinguishes resumable Link actions from actions requiring a new approval", async () => {
+  const fixture = await trackedPurchase();
+  fixture.provider.payload({
+    status: "requires_action",
+    status_details: {
+      requires_action: {
+        next_action: {
+          type: "payment_method_update",
+          resolution: "auto_resume",
+          action_url: "https://app.link.com/payment-methods",
+        },
+      },
+    },
+  });
+  expect((await pollPurchase(fixture.spend.id)).body).toStrictEqual({
+    state: "waiting",
+  });
+  expect((await approvalCard(fixture)).body.status).toBe("pending");
+  fixture.provider.payload({
+    status: "requires_action",
+    status_details: {
+      requires_action: {
+        next_action: {
+          type: "payment_method_update",
+          resolution: "create_new_spend_request",
+          action_url: "https://app.link.com/payment-methods",
+        },
+      },
+    },
+  });
+  expect((await pollPurchase(fixture.spend.id)).body).toStrictEqual({
+    state: "done",
+  });
+  expect((await approvalCard(fixture)).body.status).toBe("stopped");
+});
+
+test("approval polling waits while a manual query rotates the same wallet grant", async () => {
+  const fixture = await trackedPurchase(false, 120);
+  mockNow(now() + 65_000);
+  const entered = createDeferredPromise<void>(context.signal);
+  const release = createDeferredPromise<void>(context.signal);
+  server.use(
+    http.post("https://login.link.com/auth/token", async () => {
+      entered.resolve();
+      await release.promise;
+      return HttpResponse.json({
+        access_token: "wallet-rotated-access-fixture",
+        refresh_token: "wallet-rotated-refresh-fixture",
+        token_type: "Bearer",
+        expires_in: 3600,
+        scope: "payment_methods.agentic userinfo:read",
+        authorization_details: [
+          { type: "source", actions: ["read_link_transactions"] },
+        ],
+      });
+    }),
+  );
+  const manual = client().getSpend({
+    headers: fixture.headers,
+    params: { id: fixture.spend.id },
+  });
+  await entered.promise;
+  const duringRefresh = await pollPurchase(fixture.spend.id);
+  release.resolve();
+  expect((await manual).status).toBe(200);
+  expect(duringRefresh.body).toStrictEqual({ state: "waiting" });
+  expect((await pollPurchase(fixture.spend.id)).body).toStrictEqual({
+    state: "waiting",
+  });
+});
+
+test("a provider outage remains retryable and cannot manufacture approval or denial", async () => {
+  const fixture = await trackedPurchase();
+  server.use(
+    http.get(
+      `https://api.link.com/spend_requests/${fixture.provider.id}`,
+      () => {
+        return HttpResponse.json(
+          { error: { message: "Temporarily unavailable" } },
+          { status: 503 },
+        );
+      },
+    ),
+  );
+  const response = await pollPurchase(fixture.spend.id);
+  expect(response.status).toBe(500);
+  expect(response.body).not.toStrictEqual({ state: "done" });
+  expect((await approvalCard(fixture)).body.status).toBe("pending");
+
+  await flushWaitUntilForTest();
+  context.mocks.ably.publish.mockClear();
+  mockNow(new Date(fixture.spend.expiresAt).getTime());
+  expect((await pollPurchase(fixture.spend.id)).status).toBe(500);
+  await flushWaitUntilForTest();
+  expect(context.mocks.ably.publish).toHaveBeenCalledWith("wallet:changed", {
+    orgId: fixture.actor.orgId,
+  });
+  expect((await approvalCard(fixture)).body.status).toBe("stopped");
+});
+
+test("a disconnected grant stops the approval watch and cannot start a purchase run", async () => {
+  const fixture = await trackedPurchase();
+  server.use(
+    http.post("https://login.link.com/auth/revoke", () => {
+      return HttpResponse.json({});
+    }),
+  );
+  await accept(
+    client().disconnect({ headers: fixture.headers, body: {} }),
+    [200],
+  );
+  fixture.provider.approve();
+  await fixture.complete();
+  expect((await pollPurchase(fixture.spend.id)).body).toStrictEqual({
+    state: "done",
+  });
+  const { events } = await createChatFilesBddApi(context).listThreadEvents(
+    fixture.actor,
+    fixture.run.threadId,
+  );
+  expect(
+    events.some((event) => {
+      return event.id === fixture.spend.id;
+    }),
+  ).toBeFalsy();
 });

@@ -1,0 +1,58 @@
+name: Deploy Link Approval Workflow
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target GitHub and Cloudflare environment"
+        type: choice
+        options: [test, production]
+        default: test
+        required: true
+      enable_approval:
+        description: "Enable only after the migration and API are deployed and older API instances have drained"
+        type: boolean
+        default: false
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  npm_config_audit: "false"
+
+concurrency:
+  group: deploy-link-approval-${{ inputs.environment }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: ${{ inputs.environment }}
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261009
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/toolchain-init
+      - name: Build without deployment
+        working-directory: turbo
+        run: pnpm --filter @okouai/link-approval-worker run build
+      - name: Deploy with private bindings
+        env:
+          APPROVAL_ENVIRONMENT: ${{ inputs.environment }}
+          APPROVAL_ENABLED: ${{ inputs.enable_approval }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_WORKER_DEPLOY_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CF_ACCOUNT_ID }}
+          LINK_APPROVAL_WORKER_SECRET: ${{ secrets.LINK_APPROVAL_WORKER_SECRET }}
+          LINK_APPROVAL_CONTROL_SECRET: ${{ secrets.LINK_APPROVAL_CONTROL_SECRET }}
+          LINK_APPROVAL_API_ORIGIN: ${{ vars.LINK_APPROVAL_API_ORIGIN }}
+        run: bash .github/scripts/deploy-link-approval.sh "$APPROVAL_ENVIRONMENT" "$APPROVAL_ENABLED"
