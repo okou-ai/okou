@@ -8,6 +8,9 @@ type CaptureMessageContext = Parameters<
   typeof import("@sentry/browser").captureMessage
 >[1];
 type SentryUser = Parameters<typeof import("@sentry/react").setUser>[0];
+type SentryBreadcrumb = Parameters<
+  typeof import("@sentry/browser").addBreadcrumb
+>[0];
 
 type SentryRuntime = "page" | "shared-worker";
 
@@ -31,6 +34,7 @@ interface SentryMessageReport {
 }
 
 export interface SentryMock {
+  readonly breadcrumbs: SentryBreadcrumb[];
   readonly initializations: SentryInitialization[];
   readonly reports: (SentryExceptionReport | SentryMessageReport)[];
   readonly users: SentryUser[];
@@ -46,6 +50,7 @@ const behaviorStore = createStore();
 export function mockSentry(signal: AbortSignal): SentryMock {
   const behavior: SentryBehavior = {
     captureRuntime: "page",
+    breadcrumbs: [],
     initializations: [],
     reports: [],
     users: [],
@@ -61,6 +66,16 @@ export function mockSentry(signal: AbortSignal): SentryMock {
     { once: true },
   );
   return behavior;
+}
+
+export function recordSentryBreadcrumb(breadcrumb: SentryBreadcrumb): void {
+  const breadcrumbs = behaviorStore.get(activeBehavior$)?.breadcrumbs;
+  if (breadcrumbs) {
+    breadcrumbs.push(breadcrumb);
+    if (breadcrumbs.length > 100) {
+      breadcrumbs.shift();
+    }
+  }
 }
 
 export function recordSentryInitialization(
