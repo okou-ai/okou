@@ -135,7 +135,9 @@ def tcp_snapshot(inodes):
                 if remaining <= 0 or received >= MAX_DUMP_BYTES:
                     raise OSError(errno.EOVERFLOW, "inet-diag observation limit")
                 diag.settimeout(remaining)
-                block, _, flags, sender = diag.recvmsg(65536)
+                block, _, flags, sender = diag.recvmsg(
+                    min(65536, MAX_DUMP_BYTES - received)
+                )
                 received += len(block)
                 if sender[0] != 0:
                     raise OSError(errno.EPROTO, "non-kernel inet-diag response")
