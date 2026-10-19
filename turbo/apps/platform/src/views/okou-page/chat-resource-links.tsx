@@ -23,7 +23,7 @@ export function CopyResourceLink({ url }: { readonly url: string }) {
       aria-label={t(($) => {
         return $.chat.resources.copyLink;
       })}
-      className="shrink-0 hover:bg-gray-50 focus-visible:bg-gray-50 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/resource-row:opacity-100 group-focus-within/resource-row:opacity-100 [&_svg]:size-3.5"
+      className="shrink-0 hover:bg-gray-50 focus-visible:bg-gray-50 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/resource-row:opacity-100 group-has-[:focus-visible]/resource-row:opacity-100 [&_svg]:size-3.5"
       onClick={() => {
         return detach(copy(url, signal), Reason.DomCallback);
       }}
