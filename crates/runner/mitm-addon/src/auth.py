@@ -106,6 +106,7 @@ _HTTP_STATUS_RESET_CONTENT = 205
 _HTTP_STATUS_NOT_MODIFIED = 304
 _HTTP_STATUS_CLIENT_ERROR_MIN = 400
 _HTTP_STATUS_SERVER_ERROR_MIN = 500
+_HTTP_STATUS_BAD_GATEWAY = 502
 AUTH_BASE_FORWARDING_SATURATED_ERROR = "auth_base_forwarding_saturated"
 FIREWALL_AUTH_FETCH_SATURATED_ERROR = "firewall_auth_fetch_saturated"
 AWS_SIGV4_REQUEST_BODY_ADMISSION_SATURATED_ERROR = "aws_sigv4_request_body_admission_saturated"
@@ -415,6 +416,7 @@ def _set_matched_firewall_failure_response(
     permission: str,
     connectors: list[str] | None = None,
     failure_reason: str | None = None,
+    diagnostic_error_code: str | None = None,
 ) -> None:
     """Set the common matched-firewall auth/forward failure response."""
     # `firewall_action` records the firewall permission decision
@@ -423,7 +425,9 @@ def _set_matched_firewall_failure_response(
     # an auth or forwarding error when the firewall granted the request but
     # the addon could not fulfill it. See #10493.
     firewall_base = flow.metadata[metadata_keys.FIREWALL_BASE]
-    _mark_matched_firewall_failure(flow, action=action, error_code=error_code)
+    _mark_matched_firewall_failure(
+        flow, action=action, error_code=diagnostic_error_code or error_code
+    )
     body: dict[str, object] = {
         "error": error_code,
         "message": message,
@@ -1398,9 +1402,16 @@ def _set_firewall_auth_resolution_failure(
         return FirewallAuthHandlingResult.LOCAL_RESPONSE
 
     if isinstance(exc, FirewallAuthApiError):
+        codex_reconnect_required = (
+            exc.status == _HTTP_STATUS_BAD_GATEWAY
+            and exc.code == "TOKEN_REFRESH_FAILED"
+            and exc.failure_reason == "reconnect_required"
+            and exc.connectors == ["codex-oauth-token"]
+            and flow_metadata.firewall_name(flow.metadata) == "model-provider:codex-oauth-token"
+        )
         log_proxy_entry(
             context.proxy_log_path,
-            "error",
+            "info" if codex_reconnect_required else "error",
             f"Firewall auth API failed for {context.firewall_base}: {exc.code}",
             type="firewall",
             firewall_base=context.firewall_base,
@@ -1419,6 +1430,11 @@ def _set_firewall_auth_resolution_failure(
             permission=context.allow.name,
             connectors=exc.connectors,
             failure_reason=exc.failure_reason,
+            # Codex drops the structured response during workspace discovery.
+            # Preserve the API-confirmed reconnect outcome in host diagnostics.
+            diagnostic_error_code=(
+                "codex_oauth_reconnect_required" if codex_reconnect_required else None
+            ),
         )
         return FirewallAuthHandlingResult.LOCAL_RESPONSE
 
