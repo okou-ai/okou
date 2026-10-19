@@ -123,6 +123,23 @@ final class ChatWorkProjectionTests: XCTestCase {
     XCTAssertEqual(history.workSections.count, 1)
   }
 
+  func testRecallingAQueuedInputDoesNotSplitTheSurvivingRunWork() throws {
+    let queued = ChatEvent(
+      id: "queued", createdAt: date(12), eventType: .inputPrompt,
+      payload: .init(
+        userMessage: .init(version: 1, parts: [.init(type: "text", text: "Pending question")])))
+    let recall = ChatEvent(
+      id: "recall", revokesEventId: "queued", createdAt: date(13), eventType: .controlRevoke)
+    let history = try project([
+      input("ask", at: 0), output("work", at: 10), queued, recall, output("answer", at: 20),
+      event("done", .runCompleted, at: 30),
+    ])
+    XCTAssertEqual(history.messages.map(\.id), ["ask", "work", "answer"])
+    XCTAssertEqual(history.workSections.count, 1)
+    XCTAssertEqual(history.workSections.first?.hiddenMessageIDs, ["work"])
+    XCTAssertEqual(history.workSections.first?.endTime, date(30))
+  }
+
   private func project(_ rows: [ChatEvent]) throws -> ChatHistory {
     try ChatEventProjection.history(rows: rows, recovering: false)
   }

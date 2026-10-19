@@ -17,7 +17,10 @@ enum ChatWorkProjection {
     }
     func eventTime(_ row: ChatEvent) -> Date { inputTimes[row.id] ?? row.createdAt }
     var phases: [Phase] = []
-    for row in rows where !revoked.contains(row.id) {
+    for row in rows
+    where !revoked.contains(row.id) && row.eventType != .controlRevoke
+      && row.eventType != .inputBudget
+    {
       let runID = row.runId
       if let runID, phases.last?.runID == runID, !isInput(row.eventType) {
         phases[phases.count - 1].events.append(row)
