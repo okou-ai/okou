@@ -8,7 +8,7 @@ async-trait.workspace = true
 libc = { workspace = true, features = ["std"] }
 serde = { workspace = true, features = ["derive", "std"] }
 thiserror = { workspace = true, features = ["std"] }
-tokio = { workspace = true, features = ["io-util", "rt", "sync"] }
+tokio = { workspace = true, features = ["io-util", "rt", "sync", "time"] }
 tokio-util = { workspace = true, features = ["rt"] }
 uuid = { workspace = true, features = ["serde", "std", "v4"] }
 
