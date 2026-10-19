@@ -38,7 +38,7 @@ function sdkClientForDataset(
 }
 
 describe("shared SDK ingestion", () => {
-  it("preserves independent disk samples through the metrics HTTP transport", async () => {
+  it("preserves supplied legacy dimensions and independent pair-free disk samples through the metrics HTTP transport", async () => {
     // Telemetry-client suite exception: the ingestion payload is the subject,
     // and no production read endpoint exposes these measurements. Construct
     // the run through public endpoints and keep route tests on HTTP outcomes.
@@ -54,6 +54,9 @@ describe("shared SDK ingestion", () => {
         cpu: 1,
         mem_used: 10,
         mem_total: 100,
+      };
+      const legacyMetric = {
+        ...metric,
         disk_used: 20,
         disk_total: 100,
       };
@@ -66,12 +69,12 @@ describe("shared SDK ingestion", () => {
         available_inodes: 5,
       };
       const home = {
-        used_bytes: 200,
+        used_bytes: 0,
         total_bytes: 200,
-        available_bytes: 0,
-        used_inodes: 20,
+        available_bytes: 190,
+        used_inodes: 0,
         total_inodes: 20,
-        available_inodes: 0,
+        available_inodes: 19,
       };
       const receivedMetrics: unknown[] = [];
       server.use(
@@ -101,10 +104,18 @@ describe("shared SDK ingestion", () => {
           body: {
             runId,
             metrics: [
-              metric,
+              legacyMetric,
+              { ...legacyMetric, rootfs, home },
+              { ...legacyMetric, rootfs },
+              { ...legacyMetric, home },
               { ...metric, rootfs, home },
               { ...metric, rootfs },
               { ...metric, home },
+              metric,
+              { ...metric, rootfs, home: { ...home, used_bytes: -1 } },
+              { ...metric, rootfs: { ...rootfs, used_bytes: -1 }, home },
+              { ...metric, disk_used: 0, rootfs },
+              { ...metric, disk_total: 0, home },
             ],
           },
         }),
@@ -118,8 +129,11 @@ describe("shared SDK ingestion", () => {
         cpu: metric.cpu,
         mem_used: metric.mem_used,
         mem_total: metric.mem_total,
-        disk_used: metric.disk_used,
-        disk_total: metric.disk_total,
+      };
+      const expectedLegacy = {
+        ...expected,
+        disk_used: legacyMetric.disk_used,
+        disk_total: legacyMetric.disk_total,
       };
       const rootfsDimensions = {
         rootfs_used_bytes: 20,
@@ -130,18 +144,26 @@ describe("shared SDK ingestion", () => {
         rootfs_available_inodes: 5,
       };
       const homeDimensions = {
-        home_used_bytes: 200,
+        home_used_bytes: 0,
         home_total_bytes: 200,
-        home_available_bytes: 0,
-        home_used_inodes: 20,
+        home_available_bytes: 190,
+        home_used_inodes: 0,
         home_total_inodes: 20,
-        home_available_inodes: 0,
+        home_available_inodes: 19,
       };
       expect(receivedMetrics).toStrictEqual([
-        expected,
+        expectedLegacy,
+        { ...expectedLegacy, ...rootfsDimensions, ...homeDimensions },
+        { ...expectedLegacy, ...rootfsDimensions },
+        { ...expectedLegacy, ...homeDimensions },
         { ...expected, ...rootfsDimensions, ...homeDimensions },
         { ...expected, ...rootfsDimensions },
         { ...expected, ...homeDimensions },
+        expected,
+        { ...expected, ...rootfsDimensions },
+        { ...expected, ...homeDimensions },
+        { ...expected, disk_used: 0, ...rootfsDimensions },
+        { ...expected, disk_total: 0, ...homeDimensions },
       ]);
     });
   });
