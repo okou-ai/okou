@@ -714,6 +714,13 @@ the complete SQL here.
 
 ### Bound a backfill by UUID
 
+UUID-batch statements must expose a `batch` CTE with a positive integer `LIMIT`.
+The runner caps that limit at 100 rows,
+while preserving a smaller SQL limit. It uses PostgreSQL's parsed literal
+location, so other limits, comments and string values stay unchanged. Stored SQL
+and journal hashes remain immutable. The original timeout, cursor, transaction
+and idempotency requirements still apply.
+
 Mark a statement with `-- okou:batch-by-uuid` to have the migration runner send
 one SQL query per batch. In a transactional migration, each query runs inside
 the existing migration transaction and gets its statement timeout independently.

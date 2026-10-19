@@ -501,7 +501,10 @@ ${batchBody}`,
       6,
       "0006_stuck_batch_cursor",
       `${UUID_BATCH_MIGRATION_MARKER}
-SELECT COALESCE($1::uuid, '00000000-0000-0000-0000-000000000001'::uuid) AS next_cursor;`,
+WITH batch AS MATERIALIZED (
+  SELECT COALESCE($1::uuid, '00000000-0000-0000-0000-000000000001'::uuid) AS id LIMIT 1
+)
+SELECT (SELECT id FROM batch) AS next_cursor;`,
     );
     await assert.rejects(
       applyPendingMigrations(sql),
@@ -515,7 +518,9 @@ SELECT COALESCE($1::uuid, '00000000-0000-0000-0000-000000000001'::uuid) AS next_
     );
     await fs.writeFile(
       path.join(fixtureDirectory, "src/migrations/0006_stuck_batch_cursor.sql"),
-      `${UUID_BATCH_MIGRATION_MARKER}\nSELECT NULLIF($1::uuid, $1::uuid) AS next_cursor;`,
+      `${UUID_BATCH_MIGRATION_MARKER}
+WITH batch AS MATERIALIZED (SELECT NULLIF($1::uuid, $1::uuid) AS id LIMIT 1)
+SELECT (SELECT id FROM batch) AS next_cursor;`,
     );
     await applyPendingMigrations(sql);
 
@@ -694,6 +699,68 @@ INSERT INTO deferred_child VALUES (1);`,
         await sql`SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations`
       )[0]?.count,
       10,
+    );
+    await fs.writeFile(
+      path.join(fixtureDirectory, "src/migrations/0010_commit_failure.sql"),
+      "SELECT 1;",
+    );
+    await applyPendingMigrations(sql);
+    await sql.unsafe(`
+      CREATE TABLE bounded_probe (
+        id uuid PRIMARY KEY, processed boolean NOT NULL DEFAULT false,
+        value integer NOT NULL DEFAULT 0, reject boolean NOT NULL,
+        note text
+      );
+      INSERT INTO bounded_probe (id, reject)
+      SELECT ('00000000-0000-0000-0000-' || lpad(i::text, 12, '0'))::uuid, i = 101
+      FROM generate_series(1, 250) i;
+    `);
+    await appendMigrationFixture(
+      11,
+      "0011_bounded_uuid_batches",
+      `${NON_TRANSACTIONAL_MIGRATION_MARKER}
+${UUID_BATCH_MIGRATION_MARKER}
+-- UTF-8 prefix π: comments and the literal 'LIMIT 1000' are not batch bounds.
+WITH batch AS MATERIALIZED (
+  SELECT id FROM bounded_probe
+  WHERE ($1::uuid IS NULL OR id > $1::uuid) AND NOT processed
+  ORDER BY id LIMIT 1000
+), updated AS (
+  UPDATE bounded_probe p SET processed = true,
+    value = value + 1 / CASE WHEN reject THEN 0 ELSE 1 END,
+    note = 'LIMIT 1000'
+  FROM batch b WHERE p.id = b.id AND NOT p.processed RETURNING p.id
+)
+SELECT (SELECT id FROM batch ORDER BY id DESC LIMIT 1) AS next_cursor;`,
+    );
+    await expectCliFailure(
+      {
+        file: "0011_bounded_uuid_batches.sql",
+        phase: "execute",
+        statement: 1,
+        batch: 2,
+        sqlstate: "22012",
+      },
+      /division by zero/,
+    );
+    assert.equal(
+      (
+        await sql`SELECT count(*)::int AS count FROM bounded_probe WHERE processed`
+      )[0]?.count,
+      100,
+    );
+    await sql`UPDATE bounded_probe SET reject = false`;
+    await applyPendingMigrations(sql);
+    assert.equal(
+      (
+        await sql`SELECT count(*)::int AS count FROM bounded_probe WHERE processed AND value = 1 AND note = 'LIMIT 1000'`
+      )[0]?.count,
+      250,
+    );
+    await applyPendingMigrations(sql);
+    assert.equal(
+      (await sql`SELECT sum(value)::int AS total FROM bounded_probe`)[0]?.total,
+      250,
     );
   } finally {
     process.chdir(originalDirectory);

@@ -1134,6 +1134,9 @@ importers:
       eslint:
         specifier: ^9.34.0
         version: 9.39.4(jiti@2.7.0)
+      libpg-query:
+        specifier: 17.7.4
+        version: 17.7.4
       oxlint:
         specifier: ^1.75.0
         version: 1.75.0(oxlint-tsgolint@7.0.2001)

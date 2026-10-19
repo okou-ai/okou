@@ -5,6 +5,7 @@ import type postgres from "postgres";
 import { z } from "zod";
 import { DRIZZLE_MIGRATE_OUT } from "../drizzle.config";
 import { summarizeMigrationPlan } from "./migration-plan";
+import { boundedMigrationBatch } from "./migration-batch";
 
 type DbMigration = {
   readonly id: number;
@@ -163,13 +164,14 @@ export async function applyPendingMigrations(
             startedAt: performance.now(),
           };
           if (statement.includes(UUID_BATCH_MIGRATION_MARKER)) {
+            const batchStatement = await boundedMigrationBatch(statement);
             let batch = 0;
             let cursor: string | null = null;
             while (true) {
               progress.batch = ++batch;
               progress.startedAt = performance.now();
               diagnosticBatch = diagnosticBatchFor(
-                statement,
+                batchStatement,
                 cursor,
                 options.diagnoseBatchTimeouts,
               );
@@ -177,7 +179,7 @@ export async function applyPendingMigrations(
               // at NULL, so the statement must make already-committed work a
               // no-op, including after a lost response or journal failure.
               const [{ next_cursor: nextCursor }] = batchCursorSchema.parse(
-                await sql.unsafe(statement, [cursor]),
+                await sql.unsafe(batchStatement, [cursor]),
               );
               diagnosticBatch = null;
               console.error(
@@ -237,13 +239,14 @@ export async function applyPendingMigrations(
               startedAt: performance.now(),
             };
             if (statement.includes(UUID_BATCH_MIGRATION_MARKER)) {
+              const batchStatement = await boundedMigrationBatch(statement);
               let batch = 0;
               let cursor: string | null = null;
               while (true) {
                 progress.batch = ++batch;
                 progress.startedAt = performance.now();
                 const [{ next_cursor: nextCursor }] = batchCursorSchema.parse(
-                  await transaction.unsafe(statement, [cursor]),
+                  await transaction.unsafe(batchStatement, [cursor]),
                 );
                 if (nextCursor === null) {
                   break;
