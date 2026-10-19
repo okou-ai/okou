@@ -7,6 +7,7 @@ public enum APIClientError: LocalizedError, Sendable {
   case invalidResponse
   case incompatibleData
   case invalidURL
+  case uploadFailed(status: Int)
 
   public var statusCode: Int? {
     if case .http(let status, _, _) = self { return status }
@@ -30,6 +31,7 @@ public enum APIClientError: LocalizedError, Sendable {
     case .incompatibleData:
       "This app could not read the server response. Please try again or use Okou on the web."
     case .invalidURL: "The app's API address is invalid. Check its configuration."
+    case .uploadFailed: "File upload failed. Try again."
     }
   }
 }
@@ -160,6 +162,30 @@ public struct APIClient: Sendable {
     return APIResponse(data: data, response: response)
   }
 
+  /// Signed storage requests carry only upload headers, never API credentials or client identity.
+  func uploadAttachmentBytes(
+    _ data: Data, to url: URL, headers: [String: String],
+    progress: @escaping @Sendable (Double) -> Void
+  ) async throws {
+    guard
+      url.scheme == "https"
+        || (url.scheme == "http" && ["localhost", "127.0.0.1", "::1"].contains(url.host ?? ""))
+    else { throw APIClientError.invalidURL }
+    try Task.checkCancellation()
+    var request = URLRequest(url: url)
+    request.httpMethod = "PUT"
+    request.cachePolicy = .reloadIgnoringLocalCacheData
+    for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
+    let (_, response) = try await session.upload(
+      for: request, from: data, delegate: AttachmentUploadProgress(progress: progress))
+    try Task.checkCancellation()
+    guard let response = response as? HTTPURLResponse else { throw APIClientError.invalidResponse }
+    guard (200..<300).contains(response.statusCode) else {
+      throw APIClientError.uploadFailed(status: response.statusCode)
+    }
+    progress(1)
+  }
+
   public static func decoder() -> JSONDecoder {
     let decoder = JSONDecoder()
     let fractional = ISO8601DateFormatter()
@@ -193,5 +219,19 @@ public struct APIClient: Sendable {
       let message: String
       let code: String?
     }
+  }
+}
+
+private final class AttachmentUploadProgress: NSObject, URLSessionTaskDelegate, Sendable {
+  let progress: @Sendable (Double) -> Void
+
+  init(progress: @escaping @Sendable (Double) -> Void) { self.progress = progress }
+
+  func urlSession(
+    _ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64,
+    totalBytesSent: Int64, totalBytesExpectedToSend: Int64
+  ) {
+    guard totalBytesExpectedToSend > 0 else { return }
+    progress(min(1, Double(totalBytesSent) / Double(totalBytesExpectedToSend)))
   }
 }

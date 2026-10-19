@@ -135,8 +135,10 @@ private struct WorkspaceRootView: View {
           mainHeader
           Group {
             if let conversation = store.selectedConversation {
-              ChatDetailView(conversation: conversation)
-                .id(conversation.thread.id)
+              ChatDetailView(
+                conversation: conversation, supportsAttachments: store.list.canAttachFiles
+              )
+              .id(conversation.thread.id)
             } else {
               newChatHome
                 .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -145,6 +147,8 @@ private struct WorkspaceRootView: View {
                     showsProgress: store.isCreating, canStop: false,
                     needsUpgrade: store.needsUpgrade,
                     error: store.error ?? store.list.error, attachmentURL: store.webURL,
+                    attachments: store.newAttachmentDraft,
+                    supportsAttachments: store.list.canAttachFiles,
                     submit: { await store.sendNewChat() }, refresh: nil)
                 }
             }

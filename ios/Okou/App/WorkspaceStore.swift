@@ -21,6 +21,8 @@ final class WorkspaceStore {
   }
   var selectedAgentID: String?
   var newChatDraft = ""
+  @ObservationIgnored lazy var newAttachmentDraft = AttachmentDraftStore(
+    commands: commands, didFail: { [weak self] in self?.handle($0) })
   private(set) var connectionStatus = RealtimeConnectionStatus.connecting
 
   @ObservationIgnored lazy var list = ThreadListStore(
@@ -33,7 +35,7 @@ final class WorkspaceStore {
   private var realtime: RealtimeService?
   private var invalidations: Set<ChatInvalidation> = []
   private var refreshTask: Task<Void, Never>?
-  private var creationTask: Task<Void, Never>?
+  private var creationTask: Task<ChatThread?, Never>?
   private var pruneTask: Task<Void, Never>?
   private var pruneAgain = false
   private var warmingTask: Task<Void, Never>?
@@ -127,6 +129,7 @@ final class WorkspaceStore {
     realtime?.stop()
     realtime = nil
     messageMarkdown.clear()
+    newAttachmentDraft.close()
   }
 
   func setForeground(_ active: Bool) { isForeground = active }
@@ -224,14 +227,16 @@ final class WorkspaceStore {
     selectedAgentID =
       agentID ?? selectedAgentID ?? list.agents.first(where: \.isDefaultAgent)?.agentId
     newChatDraft = ""
+    newAttachmentDraft.reset()
     error = nil
   }
 
-  func createChat(agentID: String? = nil) async {
-    guard !isCreating, !needsUpgrade, !closed, !Task.isCancelled else { return }
+  @discardableResult
+  func createChat(agentID: String? = nil) async -> ChatThread? {
+    guard !isCreating, !needsUpgrade, !closed, !Task.isCancelled else { return nil }
     isCreating = true
-    let task = Task { [weak self] in
-      guard let self else { return }
+    let task = Task<ChatThread?, Never> { [weak self] in
+      guard let self else { return nil }
       defer {
         isCreating = false
         creationTask = nil
@@ -239,30 +244,36 @@ final class WorkspaceStore {
       do {
         let thread = try await commands.createThread(agentID: agentID)
         try Task.checkCancellation()
-        guard !closed else { return }
+        guard !closed else { return nil }
         list.insertCreated(thread)
         selectedThreadID = thread.id
         selectedAgentID = list.threads.first(where: { $0.id == thread.id })?.agentID
         error = nil
+        return thread
       } catch is CancellationError {
       } catch {
-        guard !closed else { return }
+        guard !closed else { return nil }
         self.error = error.localizedDescription
         handle(error)
       }
+      return nil
     }
     creationTask = task
-    await task.value
+    return await task.value
   }
 
   func sendNewChat() async {
     let text = newChatDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty, selectedThreadID == nil, !isCreating, !needsUpgrade, !closed else {
+    guard !text.isEmpty || newAttachmentDraft.hasAttachments, newAttachmentDraft.isReady,
+      selectedThreadID == nil, !isCreating, !needsUpgrade, !closed
+    else {
       return
     }
-    await createChat(agentID: selectedAgentID)
-    guard !closed, let conversation = selectedConversation else { return }
+    guard let created = await createChat(agentID: selectedAgentID), !closed,
+      let conversation = conversation(for: created.id)
+    else { return }
     conversation.draft = text
+    newAttachmentDraft.moveReadyFiles(to: conversation.attachmentDraft)
     newChatDraft = ""
     await conversation.send()
   }

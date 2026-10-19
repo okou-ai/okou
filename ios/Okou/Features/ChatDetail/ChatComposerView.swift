@@ -1,4 +1,6 @@
+import PhotosUI
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ChatComposerView: View {
   @Binding var draft: String
@@ -8,17 +10,44 @@ struct ChatComposerView: View {
   let needsUpgrade: Bool
   let error: String?
   let attachmentURL: URL
+  let attachments: AttachmentDraftStore
+  let supportsAttachments: Bool
   let submit: @MainActor () async -> Void
   let refresh: (@MainActor () async -> Void)?
 
   @FocusState private var isFocused: Bool
+  @State private var showsPhotos = false
+  @State private var showsFiles = false
+  @State private var selectedPhotos: [PhotosPickerItem] = []
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private var hasText: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-  private var showsStop: Bool { canStop && !hasText }
+  private var hasContent: Bool { hasText || attachments.hasAttachments }
+  private var showsStop: Bool { canStop && !hasContent }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
+      if !attachments.items.isEmpty {
+        ChatAttachmentChips(draft: attachments, isDisabled: isBusy || needsUpgrade)
+      }
+      if attachments.importingCount > 0 {
+        HStack(spacing: 8) {
+          ProgressView().controlSize(.small)
+          Text("Preparing attachments…").font(.caption).foregroundStyle(.secondary)
+        }
+      }
+      if let importError = attachments.error {
+        HStack {
+          Text(importError).font(.caption).foregroundStyle(.red)
+          Spacer()
+          Button {
+            attachments.error = nil
+          } label: {
+            Image(systemName: "xmark")
+          }
+          .accessibilityLabel("Dismiss attachment error")
+        }
+      }
       if let error {
         VStack(alignment: .leading, spacing: 6) {
           Text(error).foregroundStyle(.red)
@@ -47,13 +76,19 @@ struct ChatComposerView: View {
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: isFocused ? 28 : 30))
         .overlay(alignment: isFocused ? .bottomLeading : .leading) {
           Menu {
-            Link("Attach files on the web", destination: attachmentURL)
+            if supportsAttachments {
+              Button("Photo Library", systemImage: "photo.on.rectangle") { showsPhotos = true }
+              Button("Choose Files", systemImage: "folder") { showsFiles = true }
+            } else {
+              Link("Attach files on the web", destination: attachmentURL)
+            }
           } label: {
             Image(systemName: "plus")
               .font(.system(size: 22, weight: .regular))
               .frame(width: 44, height: 44)
           }
           .accessibilityLabel("Attachments")
+          .disabled(isBusy || needsUpgrade)
           .padding(.leading, 8)
           .padding(.bottom, isFocused ? 8 : 0)
         }
@@ -77,7 +112,7 @@ struct ChatComposerView: View {
           .buttonBorderShape(.circle)
           .controlSize(.large)
           .tint(Color.primary)
-          .disabled((!hasText && !showsStop) || isBusy || needsUpgrade)
+          .disabled((!hasContent && !showsStop) || !attachments.isReady || isBusy || needsUpgrade)
           .accessibilityLabel(showsStop ? "Stop" : "Send message")
           .accessibilityIdentifier(showsStop ? "stop-message" : "send-message")
           .padding(.trailing, 7)
@@ -89,5 +124,22 @@ struct ChatComposerView: View {
     .padding(.top, 8)
     .padding(.bottom, 8)
     .background(Color(uiColor: .systemBackground))
+    .photosPicker(
+      isPresented: $showsPhotos, selection: $selectedPhotos,
+      matching: .any(of: [.images, .videos]), preferredItemEncoding: .current
+    )
+    .onChange(of: selectedPhotos) { _, photos in
+      guard !photos.isEmpty else { return }
+      attachments.importPhotos(photos)
+      selectedPhotos = []
+    }
+    .fileImporter(
+      isPresented: $showsFiles, allowedContentTypes: [.item], allowsMultipleSelection: true
+    ) {
+      switch $0 {
+      case .success(let urls): attachments.importFiles(urls)
+      case .failure(let error): attachments.report(error)
+      }
+    }
   }
 }
