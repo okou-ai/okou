@@ -403,6 +403,9 @@ jobs:
       - name: Test owned Runner memory calibration collector
         run: python3 .github/scripts/tests/runner-memory-calibrate-test.py
 
+      - name: Test owned charged-memory window evidence
+        run: python3 -m unittest discover -s crates/runner/tests/guarded_idle_native -p 'charged_windows_test.py'
+
       - name: Run actionlint
         run: ./actionlint
 
