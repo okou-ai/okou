@@ -124,11 +124,20 @@ describe("run connector account inspection", () => {
   }
 
   it.each([
-    { selector: "omitted", args: [] },
-    { selector: "matching", args: ["--agent", AGENT_ID] },
+    { selector: "omitted", args: [], setup: {} },
+    { selector: "matching", args: ["--agent", AGENT_ID], setup: {} },
+    {
+      selector: "prepared metadata",
+      args: [],
+      setup: {
+        setupStatus: "incomplete",
+        missingRequiredFields: ["token"],
+        configuredFieldKeys: [],
+      },
+    },
   ])(
     "shows the exact run account in list, status, and JSON with $selector --agent",
-    async ({ args }) => {
+    async ({ args, setup }) => {
       const inspectedBodies: unknown[] = [];
       writeContext([
         {
@@ -153,10 +162,10 @@ describe("run connector account inspection", () => {
                 if (selection.target.kind !== "builtin") {
                   throw new Error("Expected a built-in selection");
                 }
-                return accountMetadata(
-                  selection.connectionId,
-                  selection.target,
-                );
+                return {
+                  ...accountMetadata(selection.connectionId, selection.target),
+                  ...setup,
+                };
               }),
             });
           },
@@ -201,6 +210,7 @@ describe("run connector account inspection", () => {
               state: "available",
               connectionId: PINNED_CONNECTION_ID,
               label: "Thread-selected work account",
+              metadata: expect.objectContaining(setup),
             }),
           }),
         }),

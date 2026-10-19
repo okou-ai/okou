@@ -176,6 +176,7 @@ export async function deleteConnectorAccount(
   return deleted;
 }
 
+// Receipt IDs stay optional for current/rollback APIs until #41309's API/client/Runner gates.
 const memberConnectionSchema = z.object({
   id: z.uuid(),
   slug: z.string(),
@@ -184,6 +185,7 @@ const memberConnectionSchema = z.object({
   authMode: z.enum(["manual", "none", "oauth", "automatic"]),
   connected: z.boolean(),
   connectedAccountId: z.uuid().optional(),
+  connectionId: z.uuid().optional(),
 });
 
 export async function connectCustomConnectorMember(
@@ -230,9 +232,14 @@ const authorizationSchema = z.object({
   oauthAttemptId: z.uuid(),
   connectionId: z.uuid().optional(),
 });
+// Receipt IDs stay optional for current/rollback APIs until #41309's API/client/Runner gates.
 const automaticSchema = z.discriminatedUnion("result", [
   authorizationSchema.extend({ result: z.literal("authorization") }),
-  z.object({ result: z.literal("connected"), connectedAccountId: z.uuid() }),
+  z.object({
+    result: z.literal("connected"),
+    connectedAccountId: z.uuid(),
+    connectionId: z.uuid().optional(),
+  }),
 ]);
 
 function verifyAuthorizationAccount<T extends z.output<typeof automaticSchema>>(

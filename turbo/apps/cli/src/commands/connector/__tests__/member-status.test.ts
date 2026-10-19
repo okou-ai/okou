@@ -175,6 +175,38 @@ describe("current-member connector status", () => {
     },
   );
 
+  it("preserves future setup facts without changing current builtin or custom decisions", async () => {
+    const setup = {
+      setupStatus: "invalid" as const,
+      missingRequiredFields: [],
+      configuredFieldKeys: ["token"],
+    };
+    const summaries = installMemberFixture(false).map((summary) => {
+      return {
+        ...summary,
+        defaultConnection: summary.defaultConnection
+          ? { ...summary.defaultConnection, ...setup }
+          : null,
+      };
+    });
+    server.use(stubConnectorAccountSummaries(summaries));
+    await listCommand.parseAsync(["node", "okou", "--json"]);
+    expect(JSON.parse(log.mock.calls.flat().join("\n"))).toMatchObject({
+      connectors: [
+        {
+          memberStatus: "connected",
+          connectionId: BUILTIN_ID,
+          accountSummary: { defaultConnection: { ...setup, id: BUILTIN_ID } },
+        },
+        {
+          memberStatus: "connected",
+          connectionId: CUSTOM_ID,
+          accountSummary: { defaultConnection: { ...setup, id: CUSTOM_ID } },
+        },
+      ],
+    });
+  });
+
   it.each(
     readers.filter((reader) => {
       return reader.name !== "custom show";

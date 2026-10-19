@@ -106,6 +106,7 @@ export const builtinConnectorOauthStartContract = c.router({
 });
 
 export const builtinConnectorAutomaticContract = c.router({
+  // Optional receipt IDs cover current/rollback APIs until #41309's retirement gates.
   start: {
     method: "POST",
     path: "/api/connectors/:connectorSlug/automatic/start",
@@ -122,11 +123,13 @@ export const builtinConnectorAutomaticContract = c.router({
         z.object({
           result: z.literal("connected"),
           connectedAccountId: z.uuid(),
+          connectionId: z.uuid().optional(),
         }),
         z.object({
           result: z.literal("authorization"),
           authorizationUrl: z.url(),
           oauthAttemptId: z.uuid(),
+          connectionId: z.uuid().optional(),
         }),
       ]),
       400: apiErrorSchema,
@@ -184,6 +187,7 @@ export const builtinConnectorOpenIdStartContract = c.router({
 });
 
 export const builtinConnectorManualGrantContract = c.router({
+  // Optional receipt IDs cover current/rollback APIs until #41309's retirement gates.
   connect: {
     method: "POST",
     path: "/api/connectors/:connectorSlug/manual-grant",
@@ -197,7 +201,9 @@ export const builtinConnectorManualGrantContract = c.router({
       values: z.record(z.string(), z.string()),
     }),
     responses: {
-      200: builtinConnectorResponseSchema,
+      200: builtinConnectorResponseSchema.extend({
+        connectionId: z.uuid().optional(),
+      }),
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
@@ -210,6 +216,7 @@ export const builtinConnectorManualGrantContract = c.router({
 });
 
 export const builtinConnectorNoAuthGrantContract = c.router({
+  // Optional receipt IDs cover current/rollback APIs until #41309's retirement gates.
   connect: {
     method: "POST",
     path: "/api/connectors/:connectorSlug/no-auth",
@@ -222,7 +229,9 @@ export const builtinConnectorNoAuthGrantContract = c.router({
       account: connectorAccountMutationIntentSchema,
     }),
     responses: {
-      200: builtinConnectorResponseSchema,
+      200: builtinConnectorResponseSchema.extend({
+        connectionId: z.uuid().optional(),
+      }),
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,

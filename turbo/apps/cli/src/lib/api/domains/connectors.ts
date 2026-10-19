@@ -365,7 +365,7 @@ export async function connectBuiltinConnectorManualGrant(
   authMethod: ConnectorAuthMethodId,
   account: BuiltinConnectorManualGrantAccountMutation,
   values: Record<string, string>,
-): Promise<BuiltinConnector> {
+) {
   const config = await getConnectorManagementConfig();
   const client = initClient(builtinConnectorManualGrantContract, config);
 
@@ -380,7 +380,7 @@ export async function connectBuiltinConnectorManualGrant(
 
   if (result.status === 200) {
     return parseConnectorManagementResponse(
-      builtinConnectorResponseSchema,
+      builtinConnectorManualGrantContract.connect.responses[200],
       result.body,
     );
   }

@@ -12,6 +12,7 @@ import {
   customConnectorsContract,
   customConnectorListResponseSchema,
   customConnectorResponseSchema,
+  setCustomConnectorValuesResponseSchema,
   type CreateCustomConnectorBody,
   type CustomConnectorResponse,
   type CustomConnectorValueInput,
@@ -412,7 +413,7 @@ const setCustomConnectorValuesForTarget$ = command(
       [200],
     );
     signal.throwIfAborted();
-    const connector = customConnectorResponseSchema.parse(result.body);
+    const connector = setCustomConnectorValuesResponseSchema.parse(result.body);
     set(bumpReload$);
     if (!connector.connected) {
       return {

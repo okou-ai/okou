@@ -242,6 +242,9 @@ export function mockConnectorOverviewAccountSummaries(
                 externalUsername: account.externalUsername,
                 externalEmail: account.externalEmail,
                 connectionStatus: account.connectionStatus,
+                setupStatus: account.setupStatus,
+                missingRequiredFields: account.missingRequiredFields,
+                configuredFieldKeys: account.configuredFieldKeys,
               }
             : null,
         };

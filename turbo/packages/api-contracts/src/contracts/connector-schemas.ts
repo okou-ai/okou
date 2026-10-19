@@ -162,6 +162,7 @@ export type BuiltinConnectorOauthDeviceAuthSessionPollRequest = z.infer<
   typeof builtinConnectorOauthDeviceAuthSessionPollRequestSchema
 >;
 
+// Optional completion IDs cover current/rollback APIs; remove after #41309's API/client/Runner gates.
 export const builtinConnectorOauthDeviceAuthSessionPollResponseSchema =
   z.discriminatedUnion("status", [
     z.object({
@@ -171,6 +172,7 @@ export const builtinConnectorOauthDeviceAuthSessionPollResponseSchema =
     z.object({
       status: z.literal("complete"),
       connector: builtinConnectorResponseSchema,
+      connectionId: z.uuid().optional(),
     }),
     z.object({
       status: z.literal("denied"),
@@ -216,10 +218,12 @@ export type BuiltinConnectorExternalCodeSessionCompleteRequest = z.infer<
   typeof builtinConnectorExternalCodeSessionCompleteRequestSchema
 >;
 
+// Optional completion IDs cover current/rollback APIs; remove after #41309's API/client/Runner gates.
 export const builtinConnectorExternalCodeSessionCompleteResponseSchema =
   z.object({
     status: z.literal("complete"),
     connector: builtinConnectorResponseSchema,
+    connectionId: z.uuid().optional(),
   });
 
 export type BuiltinConnectorExternalCodeSessionCompleteResponse = z.infer<

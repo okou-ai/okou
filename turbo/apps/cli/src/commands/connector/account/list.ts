@@ -131,6 +131,9 @@ function jsonOutput(
         isDefault: account.isDefault,
         authMethod: account.authMethod,
         connectionStatus: account.connectionStatus,
+        setupStatus: account.setupStatus,
+        missingRequiredFields: account.missingRequiredFields,
+        configuredFieldKeys: account.configuredFieldKeys,
         reconnectReason: account.reconnectReason,
       };
     }),

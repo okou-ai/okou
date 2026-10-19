@@ -35,8 +35,17 @@ export const connectorAccountTargetSchema = z.discriminatedUnion("kind", [
     .strict(),
 ]);
 
+// Readers temporarily accept absent setup facts from current/rollback APIs.
+// #41309 removes optional reads after API retirement and client/Runner gates.
+export const connectorAccountSetupSchema = z.object({
+  setupStatus: z.enum(["complete", "incomplete", "invalid"]),
+  missingRequiredFields: z.array(z.string()),
+  configuredFieldKeys: z.array(z.string()),
+});
+
 export const connectorAccountConnectionSchema = z
   .object({
+    ...connectorAccountSetupSchema.partial().shape,
     id: z.uuid(),
     target: connectorAccountTargetSchema,
     authMethod: connectorAuthMethodIdSchema,
@@ -67,6 +76,7 @@ export const CONNECTOR_ACCOUNT_LIST_MAX_LIMIT = 100;
 
 const connectorAccountInspectionAvailableSchema = z
   .object({
+    ...connectorAccountSetupSchema.partial().shape,
     kind: z.literal("available"),
     connectionId: z.uuid(),
     target: connectorAccountTargetSchema,

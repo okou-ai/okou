@@ -549,6 +549,7 @@ export {
   connectorAccountExternalIdentity,
   connectorAccountDisplayNameSchema,
   connectorAccountTargetSchema,
+  connectorAccountSetupSchema,
   connectorAccountConnectionSchema,
   connectorAccountSelectionSchema,
   connectorAccountInspectionResultSchema,
