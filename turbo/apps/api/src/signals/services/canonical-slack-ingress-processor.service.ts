@@ -155,25 +155,21 @@ function claimableIngress(currentTime: Date) {
   );
 }
 
-async function claimIngress(db: Db, ingressId: string, currentTime: Date) {
-  const [claimed] = await db
-    .update(slackChatIngress)
-    .set({
-      status: "processing",
+function ingressClaimWritePlan(ingressId: string, currentTime: Date) {
+  return {
+    values: {
+      status: "processing" as const,
       processingAttemptCount: sql`${slackChatIngress.processingAttemptCount} + 1`,
       retryAt: null,
       lastErrorClass: null,
       lastError: null,
       updatedAt: currentTime,
-    })
-    .where(
-      and(eq(slackChatIngress.id, ingressId), claimableIngress(currentTime)),
-    )
-    .returning({
-      id: slackChatIngress.id,
-      attemptCount: slackChatIngress.processingAttemptCount,
-    });
-  return claimed;
+    },
+    condition: and(
+      eq(slackChatIngress.id, ingressId),
+      claimableIngress(currentTime),
+    ),
+  };
 }
 
 async function loadClaimedIngress(db: Db, ingressId: string) {
@@ -886,7 +882,20 @@ export const processCanonicalSlackIngress$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const db = set(writeDb$);
-    const claimed = await claimIngress(db, args.ingressId, nowDate());
+    const claimIngressId = args.ingressId;
+    const claimTime = nowDate();
+    const claimed = await (async () => {
+      const plan = ingressClaimWritePlan(claimIngressId, claimTime);
+      const [claimed] = await db
+        .update(slackChatIngress)
+        .set(plan.values)
+        .where(plan.condition)
+        .returning({
+          id: slackChatIngress.id,
+          attemptCount: slackChatIngress.processingAttemptCount,
+        });
+      return claimed;
+    })();
     signal.throwIfAborted();
     if (!claimed) {
       return false;
