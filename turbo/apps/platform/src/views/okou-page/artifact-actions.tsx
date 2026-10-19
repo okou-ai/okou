@@ -9,6 +9,12 @@ import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { isShareableArtifactReference } from "../../signals/artifact-sharing.ts";
 import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
 import { ArtifactShareMenu } from "./artifact-share-menu.tsx";
+import { HostedSiteShareMenu } from "./hosted-site-share-menu.tsx";
+import {
+  currentHostedSiteUrl,
+  hostedSiteUrlChanges$,
+} from "../../signals/hosted-site-url-changes.ts";
+import { isHostedSiteUrl } from "../../signals/chat-page/parse-body-blocks.ts";
 import type { MouseEvent, ReactElement, ReactNode } from "react";
 import {
   ChevronLeft,
@@ -185,6 +191,7 @@ export function ArtifactShareButton({
   url: string;
 }) {
   const { t } = useTranslation();
+  const switches = useGet(featureSwitch$);
   const label =
     ariaLabel ??
     t(($) => {
@@ -206,6 +213,20 @@ export function ArtifactShareButton({
     // Private artifacts have no public address. Keep the action hidden while
     // resolving, and until explicit publication provides a share URL.
     return null;
+  }
+  if (
+    switches[FeatureSwitchKey.HostedSiteUrlEditing] &&
+    isHostedSiteUrl(shareUrl)
+  ) {
+    return (
+      <HostedSiteShareMenu
+        url={url}
+        surface={surface}
+        ariaLabel={label}
+        className={className}
+        iconSize={iconSize}
+      />
+    );
   }
   return (
     <ArtifactActionTooltip label={label}>
@@ -771,9 +792,10 @@ export function ArtifactDownloadMenu({
   iconSize = 16,
   showGoogleDriveAction = true,
   syncTarget,
-  url,
+  url: sourceUrl,
 }: ArtifactDownloadMenuProps) {
   const { t } = useTranslation();
+  const url = currentHostedSiteUrl(sourceUrl, useGet(hostedSiteUrlChanges$));
   const label =
     ariaLabel ??
     t(($) => {

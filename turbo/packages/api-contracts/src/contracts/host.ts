@@ -5,6 +5,36 @@ import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
+export const hostedSiteUrlSlugSchema = z
+  .string()
+  .min(3)
+  .max(63)
+  .regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/)
+  .refine((value) => {
+    return !/^(?:dpl|pv|ps|sh)-/u.test(value);
+  }, "This website prefix is reserved");
+
+export const hostedSiteUrlSchema = z.object({
+  siteId: z.string().uuid(),
+  publicSlug: z.string(),
+  url: z.string().url(),
+  isActive: z.boolean(),
+});
+
+export const hostedSiteDeliveryPointerSchema = z.object({
+  version: z.literal(1),
+  publicBrand: z.enum(["vm0", "okou"]).optional(),
+  publicSlug: z.string(),
+  siteId: z.string().uuid(),
+  deploymentId: z.string().uuid(),
+  deploymentVersion: z.number().int().positive().optional(),
+  artifactUrl: z.string().optional(),
+  prefix: z.string().startsWith("sites/"),
+  manifestKey: z.string().startsWith("sites/"),
+  spaFallback: z.boolean(),
+  updatedAt: z.string(),
+});
+
 const ORG_SLUG_HASH_LENGTH = 8;
 const RANDOM_SLUG_SUFFIX_LENGTH = 8;
 const PUBLIC_SLUG_SEPARATOR_LENGTH = 2;
@@ -274,6 +304,66 @@ const creationRoute = {
 } as const;
 
 export const hostContract = c.router({
+  resolveAlias: {
+    method: "GET",
+    path: "/api/host/aliases/:publicSlug",
+    pathParams: z.object({ publicSlug: hostedSitePublicSlugSchema }),
+    query: z.object({ publicBrand: z.enum(["vm0", "okou"]) }),
+    responses: {
+      200: z.object({ pointer: hostedSiteDeliveryPointerSchema.nullable() }),
+      400: apiErrorSchema,
+    },
+    summary: "Resolve a published website address",
+  },
+  siteUrl: {
+    method: "GET",
+    path: "/api/host/sites/:publicSlug/url",
+    pathParams: z.object({ publicSlug: hostedSitePublicSlugSchema }),
+    query: z.object({ hostname: z.string().max(253) }),
+    headers: authHeadersSchema,
+    responses: {
+      200: hostedSiteUrlSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary: "Read the current address of an owned published website",
+  },
+  siteUrlAvailability: {
+    method: "GET",
+    path: "/api/host/sites/:siteId/url-availability",
+    pathParams: z.object({ siteId: z.string().uuid() }),
+    query: z.object({ publicSlug: hostedSiteUrlSlugSchema }),
+    headers: authHeadersSchema,
+    responses: {
+      200: z.object({ available: z.boolean() }),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary: "Check an owned website's proposed address",
+  },
+  updateSiteUrl: {
+    method: "PATCH",
+    path: "/api/host/sites/:siteId/url",
+    pathParams: z.object({ siteId: z.string().uuid() }),
+    body: z.object({
+      publicSlug: hostedSiteUrlSlugSchema,
+      expectedPublicSlug: hostedSitePublicSlugSchema,
+    }),
+    headers: authHeadersSchema,
+    responses: {
+      200: hostedSiteUrlSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      409: apiErrorSchema,
+    },
+    summary: "Change an owned published website's address",
+  },
   deliveryAuthorization: {
     method: "GET",
     path: "/api/host/delivery/:siteId/:deploymentId",

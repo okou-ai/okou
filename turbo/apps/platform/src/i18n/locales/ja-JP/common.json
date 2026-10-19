@@ -652,6 +652,23 @@
       "singularTitle": "アーティファクト",
       "unavailable": "このアーティファクトはもう入手できません。"
     },
+    "siteUrl": {
+      "available": "使用できます",
+      "cancel": "キャンセル",
+      "checkFailed": "確認できませんでした。編集して再試行してください。",
+      "checking": "確認中…",
+      "customize": "URL をカスタマイズ",
+      "hint": "短く覚えやすい名前を選択",
+      "invalid": "3〜63 文字の英小文字・数字・ハイフンを使用（予約済みの接頭辞は不可）",
+      "label": "ウェブサイトの URL",
+      "loadFailed": "ウェブサイト設定を読み込めませんでした",
+      "oldUrlWarning": "以前の URL は使えなくなります。共有済みのリンクを更新してください。",
+      "published": "公開済み",
+      "save": "保存",
+      "saveFailed": "保存できませんでした。使用済みまたは変更済みの可能性があります。再読み込みして再試行してください。",
+      "taken": "このアドレスは使用されています",
+      "updated": "ウェブサイトの URL を更新しました"
+    },
     "templates": {
       "activeHtmlPreview": "{{title}} アクティブな HTML プレビュー",
       "all": "すべて",

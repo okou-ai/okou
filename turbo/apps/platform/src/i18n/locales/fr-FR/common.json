@@ -671,6 +671,23 @@
       "singularTitle": "Artéfact",
       "unavailable": "Cet artéfact n'est plus disponible."
     },
+    "siteUrl": {
+      "available": "Disponible",
+      "cancel": "Annuler",
+      "checkFailed": "Impossible de vérifier cette adresse. Modifiez-la pour réessayer.",
+      "checking": "Vérification…",
+      "customize": "Personnaliser l’URL",
+      "hint": "Choisissez un nom court et mémorable",
+      "invalid": "3 à 63 lettres minuscules, chiffres ou tirets, sans préfixe réservé",
+      "label": "URL du site",
+      "loadFailed": "Impossible de charger les paramètres du site",
+      "oldUrlWarning": "L’ancienne URL ne fonctionnera plus. Mettez à jour les liens partagés.",
+      "published": "Publié",
+      "save": "Enregistrer",
+      "saveFailed": "Enregistrement impossible. L’adresse est peut-être prise ou modifiée. Actualisez et réessayez.",
+      "taken": "Cette adresse est déjà prise",
+      "updated": "URL du site mise à jour"
+    },
     "templates": {
       "activeHtmlPreview": "Aperçu HTML actif de {{title}}",
       "all": "Tout",

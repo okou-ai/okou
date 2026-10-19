@@ -769,7 +769,6 @@ async function serveLegacyHostedSite(
     pointerLayouts = target.layouts.filter((_, index) => {
       return !completed[index];
     });
-    if (pointerLayouts.length === 0) return privateResponse(notFoundResponse());
   }
   const pointers = (
     await Promise.all(
@@ -795,20 +794,43 @@ async function serveLegacyHostedSite(
   ).filter((pointer): pointer is ResolvedPointer => {
     return pointer !== null;
   });
-  if (pointers.length !== 1) {
-    return notFoundResponse();
+  let resolved =
+    pointers.length === 1
+      ? pointers[0]
+      : pointers.length === 0
+        ? await resolveCurrentSiteAlias(request, env, target)
+        : null;
+  if (!resolved) {
+    return env.HOSTED_SITE_API_ORIGIN
+      ? privateResponse(notFoundResponse())
+      : notFoundResponse();
   }
-  const { pointer, layout } = pointers[0]!;
   if (env.HOSTED_SITE_API_ORIGIN) {
     const allowed = await authorizeHostedSiteDelivery(
       request,
       env.HOSTED_SITE_API_ORIGIN,
       target.publicSlug,
-      pointer,
-      layout,
+      resolved.pointer,
+      resolved.layout,
     );
-    if (!allowed) return privateResponse(notFoundResponse());
+    if (!allowed) {
+      // A reclaimed name can still have an older R2 pointer. SQL identifies
+      // its current deployment; immutable deployment addresses never rebind.
+      resolved = await resolveCurrentSiteAlias(request, env, target);
+      if (
+        !resolved ||
+        !(await authorizeHostedSiteDelivery(
+          request,
+          env.HOSTED_SITE_API_ORIGIN,
+          target.publicSlug,
+          resolved.pointer,
+          resolved.layout,
+        ))
+      )
+        return privateResponse(notFoundResponse());
+    }
   }
+  const { pointer, layout } = resolved;
   const manifest = await readJson<HostedSiteManifest>(
     env.HOSTED_SITES_BUCKET,
     pointer.manifestKey,
@@ -840,6 +862,45 @@ async function serveLegacyHostedSite(
     kind: "host",
     id: manifest.deploymentId,
   });
+}
+
+/** Renames change SQL routing without rewriting immutable publication bytes. */
+async function resolveCurrentSiteAlias(
+  request: Request,
+  env: Env,
+  target: HostedSiteRequestTarget,
+): Promise<ResolvedPointer | null> {
+  if (
+    !env.HOSTED_SITE_API_ORIGIN ||
+    IMMUTABLE_DEPLOYMENT_HOST_PATTERN.test(target.publicSlug)
+  )
+    return null;
+  const resolved = await Promise.all(
+    target.layouts.map(async (layout) => {
+      const url = new URL(
+        `/api/host/aliases/${encodeURIComponent(target.publicSlug)}`,
+        env.HOSTED_SITE_API_ORIGIN,
+      );
+      url.searchParams.set("publicBrand", LAYOUT_SEGMENT[layout]);
+      const response = await fetch(url, {
+        cache: "no-store",
+        redirect: "manual",
+        signal: AbortSignal.any([request.signal, AbortSignal.timeout(3_000)]),
+      });
+      if (response.status !== 200)
+        throw new Error("Hosted website address resolution is unavailable");
+      const { pointer } = hostContract.resolveAlias.responses[200].parse(
+        await response.json(),
+      );
+      return pointer && storedInLayout(pointer, layout)
+        ? { layout, pointer }
+        : null;
+    }),
+  );
+  const matches = resolved.filter((value): value is ResolvedPointer => {
+    return value !== null;
+  });
+  return matches.length === 1 ? matches[0]! : null;
 }
 
 async function authorizeHostedSiteDelivery(

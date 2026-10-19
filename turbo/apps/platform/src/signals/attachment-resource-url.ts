@@ -11,6 +11,10 @@ import type { ArtifactShareTarget } from "@okouai/api-contracts/contracts/artifa
 import { accept } from "../lib/accept.ts";
 import { resolveApiBase } from "./api-base.ts";
 import { apiClient$ } from "./api-client.ts";
+import {
+  currentHostedSiteUrl,
+  hostedSiteUrlChanges$,
+} from "./hosted-site-url-changes.ts";
 
 const AUTHENTICATED_FILE_PATH = "/api/web/download-file";
 
@@ -152,11 +156,16 @@ export function createAttachmentPreviewSignals(
       })
     : createAttachmentPresignedToken$(url);
   const resourceUrl$ = computed(async (get) => {
-    return (await get(presignedToken$))?.token ?? url;
+    return currentHostedSiteUrl(
+      (await get(presignedToken$))?.token ?? url,
+      get(hostedSiteUrlChanges$),
+    );
   });
   const shareUrl$ = computed(async (get) => {
     const token = await get(presignedToken$);
-    return token === null ? url : token.publicUrl;
+    return token === null
+      ? currentHostedSiteUrl(url, get(hostedSiteUrlChanges$))
+      : token.publicUrl;
   });
   const artifactShareIdentity$ = computed(async (get) => {
     return (await get(presignedToken$))?.artifactShareIdentity ?? null;

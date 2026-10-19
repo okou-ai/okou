@@ -652,6 +652,23 @@
       "singularTitle": "成果",
       "unavailable": "這個成果已不再可用。"
     },
+    "siteUrl": {
+      "available": "可以使用",
+      "cancel": "取消",
+      "checkFailed": "無法檢查此網址，請修改後重試",
+      "checking": "正在檢查…",
+      "customize": "自訂網址",
+      "hint": "選擇一個簡短易記的名稱",
+      "invalid": "使用 3–63 位小寫字母、數字或連字號，不可使用保留前綴",
+      "label": "網站網址",
+      "loadFailed": "無法載入網站設定",
+      "oldUrlWarning": "舊網址將失效，請更新已分享的連結。",
+      "published": "已發佈",
+      "save": "儲存",
+      "saveFailed": "儲存失敗，網址可能已被使用或變更。請重新整理後重試。",
+      "taken": "此網址已被使用",
+      "updated": "網站網址已更新"
+    },
     "templates": {
       "activeHtmlPreview": "{{title}} 當前 HTML 預覽",
       "all": "全部",

@@ -152,7 +152,7 @@ function PermissionChoices({
   );
 }
 
-function ShareLinkRow({
+export function ShareLinkRow({
   copying,
   link,
   onCopy,

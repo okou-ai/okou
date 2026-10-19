@@ -18,6 +18,7 @@
   ],
   "vars": {
     "ARTIFACT_OG_API_ORIGIN": "https://api.okou.ai",
+    "HOSTED_SITE_API_ORIGIN": "https://api.okou.ai",
     "HOST_DOMAIN": "sites.vm0.io",
     "OKOU_HOST_DOMAIN": "okou.app",
     "PUBLIC_ARTIFACT_HOST": "a.okou.io",
@@ -46,6 +47,8 @@
         },
       ],
       "vars": {
+        // Preview sites use isolated API databases. For a dedicated test,
+        // pass --var HOSTED_SITE_API_ORIGIN:<matching-api-origin> explicitly.
         "HOST_DOMAIN": "sites.vm7.io",
         "OKOU_HOST_DOMAIN": "sites.vm7.io",
         "PUBLIC_ARTIFACT_HOST": "files.sites.vm7.io",
