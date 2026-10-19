@@ -393,7 +393,6 @@ test("accepts hosted PKCE consent after 20 minutes, binds the callback to the se
   ]);
   expect(context.mocks.ably.publish).toHaveBeenCalledWith("wallet:changed", {
     orgId: fixture.actor.orgId,
-    agentId: fixture.agentId,
   });
   const authorized = await accept(
     userClient().connectStatus(statusRequest),
