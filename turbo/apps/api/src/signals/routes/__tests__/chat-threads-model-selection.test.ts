@@ -650,6 +650,7 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
       title: "Launch plan",
       pinnedAt: null,
       archived: false,
+      hidden: false,
       muted: false,
       selectedModel: "claude-sonnet-5-5",
       modelSettings: {},
