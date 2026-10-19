@@ -6,6 +6,35 @@ use std::path::{Path, PathBuf};
 
 const STAGED_INSTRUCTIONS_DIR_NAME: &str = "storage-instructions";
 
+/// Materialize claim-time instructions after ordinary Storage reconciliation.
+/// The caller owns the private source file; only known framework files are replaced.
+pub fn apply_agent_instructions(home: &Path, framework: &str, source: &Path) -> bool {
+    let (relative_home, filename) = match framework {
+        "claude-code" => (".claude", InstructionFilename::Claude),
+        "codex" => (".codex", InstructionFilename::Agents),
+        "pi" => (".pi/agent", InstructionFilename::Agents),
+        _ => return false,
+    };
+    // The source was written through the Runner's private-file transport.
+    if !matches!(
+        lstat_instruction_path_state(source),
+        InstructionPathState::RegularFile
+    ) {
+        return false;
+    }
+    if !existing_instruction_dir_is_safe(home) {
+        return false;
+    }
+    let mut target = home.to_path_buf();
+    for component in Path::new(relative_home).components() {
+        target.push(component);
+        if !ensure_final_instruction_dir(&target) {
+            return false;
+        }
+    }
+    copy_instruction_file(source, &target, filename, "Applied Agent instructions")
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct InstructionNormalization {
     source_path: String,

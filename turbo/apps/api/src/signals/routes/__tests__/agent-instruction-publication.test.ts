@@ -108,6 +108,20 @@ function isArchive(command: PutObjectCommand): boolean {
 }
 
 describe("Agent instruction preparation and publication", () => {
+  it("rejects NUL text before publication and preserves the current instructions", async () => {
+    const fixture = await instructionFixture();
+    await fixture.update("Current instructions");
+    await accept(
+      fixture.api.instructions.update({
+        headers,
+        params: fixture.params,
+        body: { content: "invalid\0instructions" },
+      }),
+      [400],
+    );
+    await expect(fixture.content()).resolves.toBe("Current instructions");
+  });
+
   it("keeps empty instructions readable and reuses registered content without remote writes", async () => {
     const fixture = await instructionFixture();
     await expect(fixture.content()).resolves.toBe("");

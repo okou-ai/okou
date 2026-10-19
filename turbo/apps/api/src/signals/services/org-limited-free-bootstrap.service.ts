@@ -208,7 +208,7 @@ async function publishBootstrap(
     }
     const result = existingAgentId
       ? { bootstrapped: false, agentId: existingAgentId }
-      : await finalizeBootstrap(tx, args);
+      : await finalizeBootstrap(tx, { ...args, instructions: null });
     signal.throwIfAborted();
     return { result, cleanupJobIds };
   }
@@ -247,7 +247,10 @@ async function publishBootstrap(
       args.volume.version.versionId,
     );
   }
-  const result = await finalizeBootstrap(tx, args);
+  const result = await finalizeBootstrap(tx, {
+    ...args,
+    instructions: SEED_INSTRUCTIONS,
+  });
   signal.throwIfAborted();
   return { result, cleanupJobIds };
 }
@@ -417,6 +420,7 @@ async function finalizeBootstrap(
     readonly orgId: string;
     readonly ownerUserId: string;
     readonly agentId: string;
+    readonly instructions: string | null;
   },
 ): Promise<EnsureOrgLimitedFreeBootstrapResult> {
   const existingAgentId = await existingDefaultAgentId(tx, args.orgId);
@@ -435,6 +439,7 @@ async function finalizeBootstrap(
       visibility: "public",
       displayName: DEFAULT_AGENT_DISPLAY_NAME,
       description: null,
+      instructions: args.instructions,
       sound: DEFAULT_AGENT_SOUND,
       avatarUrl: DEFAULT_AGENT_AVATAR_URL,
       createdAt,

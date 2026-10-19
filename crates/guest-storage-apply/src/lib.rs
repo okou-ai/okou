@@ -65,6 +65,7 @@ mod files;
 mod http_failure;
 pub mod input_telemetry;
 mod instructions;
+pub use instructions::apply_agent_instructions;
 mod manifest;
 mod path;
 mod plan;
