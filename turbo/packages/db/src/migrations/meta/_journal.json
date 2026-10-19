@@ -2413,8 +2413,15 @@
     {
       "idx": 1422,
       "version": "7",
-      "when": 1792408572035,
-      "tag": "1422_agentphone_contact_card_delivery",
+      "when": 1792408450137,
+      "tag": "1422_retire_provider_scoped_canonical_delivery_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 1423,
+      "version": "7",
+      "when": 1792410026374,
+      "tag": "1423_agentphone_contact_card_delivery",
       "breakpoints": true
     }
   ]

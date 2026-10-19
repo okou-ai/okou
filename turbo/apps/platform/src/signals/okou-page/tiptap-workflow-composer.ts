@@ -255,6 +255,7 @@ export interface WorkflowComposerSignals {
     [HTMLElement | null]
   >;
   readonly setSlashHintMenuRef$: WorkflowComposerSignals["setSuggestionMenuRef$"];
+  readonly setMentionHintMenuRef$: WorkflowComposerSignals["setSuggestionMenuRef$"];
   /** Drops the typed `/token` for a row that does not insert one itself. */
   readonly clearSlashRange$: Command<void, []>;
   readonly insertWorkflow$: Command<void, [ComposerSlashWorkflow]>;
@@ -2135,7 +2136,10 @@ function createSuggestionMenuBoundary() {
   };
 }
 
-function createSlashHintPlugin(key: PluginKey<boolean>): Plugin<boolean> {
+function createSuggestionHintPlugin(
+  key: PluginKey<boolean>,
+  kind: "slash" | "mention",
+): Plugin<boolean> {
   return new Plugin<boolean>({
     key,
     state: {
@@ -2160,24 +2164,31 @@ function createSlashHintPlugin(key: PluginKey<boolean>): Plugin<boolean> {
         }
         const text = nodeText($head.parent);
         const caretIndex = nodeText($head.parent, $head.parentOffset).length;
-        if (
-          findActiveSlashWorkflowRange(text, caretIndex)?.query !== "" ||
-          /^\S/u.test(text.slice(caretIndex))
-        ) {
+        const range =
+          kind === "slash"
+            ? findActiveSlashWorkflowRange(text, caretIndex)
+            : findActiveChatThreadSuggestionRange(text, caretIndex);
+        if (range?.query !== "" || /^\S/u.test(text.slice(caretIndex))) {
           return DecorationSet.empty;
         }
+        const hint =
+          kind === "slash"
+            ? i18n.t(($) => {
+                return $.chat.composer.slashPanel.hint;
+              })
+            : i18n.t(($) => {
+                return $.chat.composer.mentionHint;
+              });
         const attributes = {
           class:
             "after:pointer-events-none after:select-none " +
             "after:text-muted-foreground/80 after:content-[attr(data-placeholder)]",
-          "data-placeholder": ` ${i18n.t(($) => {
-            return $.chat.composer.slashPanel.hint;
-          })}`,
+          "data-placeholder": ` ${hint}`,
         };
         return DecorationSet.create(doc, [
           // Generated content has no extra caret stop and stays out of copied,
-          // drafted and sent text. A slash before existing text needs its own
-          // decoration so the hint follows the slash, not the whole paragraph.
+          // drafted and sent text. A trigger before existing text needs its own
+          // decoration so the hint follows the trigger, not the whole paragraph.
           $head.parentOffset === $head.parent.content.size
             ? Decoration.node($head.before(), $head.after(), attributes)
             : Decoration.inline($head.pos - 1, $head.pos, attributes),
@@ -2197,16 +2208,17 @@ function createSlashHintPlugin(key: PluginKey<boolean>): Plugin<boolean> {
   });
 }
 
-function createSuggestionMenuRefs(
+function createSuggestionHintMenuRef(
   editor: Editor,
   menuRef$: WorkflowComposerSignals["setSuggestionMenuRef$"],
+  kind: "slash" | "mention",
 ) {
-  const setSlashHintMenuRef$ = onRef(
+  return onRef(
     command(({ set }, element: HTMLElement, signal: AbortSignal) => {
       const releaseMenu = set(menuRef$, element);
-      const key = new PluginKey<boolean>("composerSlashHint");
-      const plugin = createSlashHintPlugin(key);
-      // The slash menu owns the hint's lifetime, including Escape and outside
+      const key = new PluginKey<boolean>("composerSuggestionHint");
+      const plugin = createSuggestionHintPlugin(key, kind);
+      // The suggestion menu owns the hint's lifetime, including Escape and outside
       // dismissal. Editor transactions own position.
       editor.registerPlugin(plugin);
       signal.addEventListener("abort", () => {
@@ -2215,7 +2227,25 @@ function createSuggestionMenuRefs(
       });
     }),
   );
-  return { setSuggestionMenuRef$: menuRef$, setSlashHintMenuRef$ };
+}
+
+function createSuggestionMenuRefs(
+  editor: Editor,
+  menuRef$: WorkflowComposerSignals["setSuggestionMenuRef$"],
+) {
+  return {
+    setSuggestionMenuRef$: menuRef$,
+    setSlashHintMenuRef$: createSuggestionHintMenuRef(
+      editor,
+      menuRef$,
+      "slash",
+    ),
+    setMentionHintMenuRef$: createSuggestionHintMenuRef(
+      editor,
+      menuRef$,
+      "mention",
+    ),
+  };
 }
 
 interface MountEditorOptions {

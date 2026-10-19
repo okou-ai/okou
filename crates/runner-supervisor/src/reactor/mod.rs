@@ -22,7 +22,7 @@
 //! - home-cache watcher work is pinned across reactor turns so async
 //!   metadata classification cannot lose already-drained kernel events;
 //! - routine home-cache GC is independently scheduled and single-flight, and
-//!   its host-global cadence is coordinated through the capacity lock;
+//!   its host-global completion marker is coordinated through the collector lock;
 //! - the first routine heartbeat tick is deferred;
 //! - teardown drains heartbeat work and drops discovery before provider
 //!   shutdown.

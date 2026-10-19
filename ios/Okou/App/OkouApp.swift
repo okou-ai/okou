@@ -43,10 +43,9 @@ private struct AppRootView: View {
   @Environment(\.scenePhase) private var scenePhase
 
   var body: some View {
-    Group {
-      if authentication.isLoading || authentication.isSwitchingWorkspace {
-        ProgressView("Loading Okou…")
-      } else if let scopeID = authentication.scopeID,
+    AppStartupContainer(isLoading: authentication.isLoading || authentication.isSwitchingWorkspace)
+    {
+      if let scopeID = authentication.scopeID,
         let workspaceID = authentication.activeWorkspaceID,
         let userID = authentication.userID
       {

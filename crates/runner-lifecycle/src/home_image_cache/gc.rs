@@ -65,9 +65,12 @@ pub(super) struct GcInventoryTestGate {
     release: std::sync::Arc<tokio::sync::Semaphore>,
 }
 
-fn routine_gc_is_due(capacity_lock: &File, minimum_interval: Duration) -> std::io::Result<bool> {
-    // Preserve the capacity-file completion marker used by older runners.
-    let marker = capacity_lock.metadata()?;
+fn routine_gc_is_due(
+    completion_marker: &File,
+    minimum_interval: Duration,
+) -> std::io::Result<bool> {
+    // Only successful routine maintenance writes the held collector file.
+    let marker = completion_marker.metadata()?;
     Ok(marker.len() == 0
         || SystemTime::now()
             .duration_since(marker.modified()?)
@@ -167,11 +170,6 @@ impl HomeImageCache {
                 runner_host::lock::TryLock::Acquired(lock) => lock,
                 runner_host::lock::TryLock::Busy => return Ok(0),
             };
-        let _capacity =
-            match runner_host::lock::try_acquire_shared_or_busy(self.capacity_lock_path()).await? {
-                runner_host::lock::TryLock::Acquired(lock) => lock,
-                runner_host::lock::TryLock::Busy => return Ok(0),
-            };
         self.gc_locked(dry_run, additional_peak_bytes).await
     }
 
@@ -184,17 +182,9 @@ impl HomeImageCache {
                 runner_host::lock::TryLock::Acquired(lock) => lock,
                 runner_host::lock::TryLock::Busy => return Ok(None),
             };
-        let capacity_lock =
-            match runner_host::lock::try_acquire_shared_or_busy(self.capacity_lock_path()).await? {
-                runner_host::lock::TryLock::Acquired(lock) => lock,
-                runner_host::lock::TryLock::Busy => return Ok(None),
-            };
-        let capacity_started = Instant::now();
-        if !routine_gc_is_due(&capacity_lock, minimum_interval)? {
+        if !routine_gc_is_due(&routine_lock, minimum_interval)? {
             return Ok(None);
         }
-        let mut initial_capacity_duration = capacity_started.elapsed();
-        drop(capacity_lock);
 
         #[cfg(any(test, feature = "test-support"))]
         if let Some((entered, release)) = &self.routine_gc_test_gate {
@@ -205,47 +195,20 @@ impl HomeImageCache {
                 .expect("routine GC gate closed")
                 .forget();
         }
-        // New publishers share this barrier and can progress during inventory.
-        // Legacy exclusive budget windows exclude every accepted mutation.
-        let inventory_capacity =
-            match runner_host::lock::try_acquire_shared_or_busy(self.capacity_lock_path()).await? {
-                runner_host::lock::TryLock::Acquired(lock) => lock,
-                runner_host::lock::TryLock::Busy => return Ok(None),
-            };
         let inventory_started = Instant::now();
         let inventory = self
             .gc_inventory(false, || self.background_gc.is_active())
             .await?;
-        drop(inventory_capacity);
         if !self.background_gc.is_active() {
             return Ok(None);
         }
         let inventory_duration = inventory_started.elapsed();
-        initial_capacity_duration += inventory_duration;
         let entry_count = inventory.candidates.len();
         let mut freed_bytes = inventory.pre_cleanup_freed_bytes;
         let mut continuation = GcContinuation::new(inventory.candidates, 0);
 
-        // No entry lock survives inventory. Never wait for capacity here, and
-        // never evict from an unlocked observation that promotion can replace.
-        let mut capacity_lock =
-            match runner_host::lock::try_acquire_shared_or_busy(self.capacity_lock_path()).await? {
-                runner_host::lock::TryLock::Acquired(lock) => lock,
-                runner_host::lock::TryLock::Busy => {
-                    info!(
-                        entry_count,
-                        inventory_us = inventory_duration.as_micros() as u64,
-                        capacity_lock_held_us = initial_capacity_duration.as_micros() as u64,
-                        "home image cache routine GC deferred: capacity lock busy after inventory"
-                    );
-                    return Ok(None);
-                }
-            };
-        let mut capacity_started = Instant::now();
-        let mut capacity_duration = initial_capacity_duration;
-        if !routine_gc_is_due(&capacity_lock, minimum_interval)? {
-            return Ok(None);
-        }
+        // No entry lock survives inventory. Revalidate every candidate under
+        // its entry owner before evicting an observation publication can replace.
         let stats = self.fs_stats().await?;
         let pressure = self.pressure_thresholds(stats);
         let budget_gc = entry_count > MAX_HELD_HOME_STATES
@@ -290,8 +253,6 @@ impl HomeImageCache {
                 if outcome.status != HomeCacheReclaimStatus::BudgetExhausted {
                     break;
                 }
-                capacity_duration += capacity_started.elapsed();
-                drop(capacity_lock);
                 drop(routine_lock);
                 #[cfg(any(test, feature = "test-support"))]
                 if let Some(gate) = &self.pressure_turn_test_gate {
@@ -308,15 +269,7 @@ impl HomeImageCache {
                         runner_host::lock::TryLock::Acquired(lock) => lock,
                         runner_host::lock::TryLock::Busy => return Ok(None),
                     };
-                capacity_lock =
-                    match runner_host::lock::try_acquire_shared_or_busy(self.capacity_lock_path())
-                        .await?
-                    {
-                        runner_host::lock::TryLock::Acquired(lock) => lock,
-                        runner_host::lock::TryLock::Busy => return Ok(None),
-                    };
-                capacity_started = Instant::now();
-                if !routine_gc_is_due(&capacity_lock, minimum_interval)? {
+                if !routine_gc_is_due(&routine_lock, minimum_interval)? {
                     return Ok(None);
                 }
             }
@@ -324,13 +277,10 @@ impl HomeImageCache {
         if !self.background_gc.is_active() {
             return Ok(None);
         }
-        capacity_lock.write_all(b"\0")?;
-        capacity_duration += capacity_started.elapsed();
-        drop(capacity_lock);
+        routine_lock.write_all(b"\0")?;
         info!(
             entry_count,
             inventory_us = inventory_duration.as_micros() as u64,
-            capacity_lock_held_us = capacity_duration.as_micros() as u64,
             budget_gc,
             freed_bytes,
             "home image cache routine GC completed"
@@ -407,8 +357,8 @@ impl HomeImageCache {
             if outcome.status != HomeCacheReclaimStatus::BudgetExhausted {
                 return Ok(removed);
             }
-            // Manual/publication collectors retain the singleton and shared
-            // compatibility barrier. Never cancel accepted physical deletion.
+            // Manual/publication collectors retain the singleton. Never cancel
+            // accepted physical deletion.
             tokio::task::yield_now().await;
         }
     }

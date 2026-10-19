@@ -10,10 +10,13 @@ async fn publication_refusal_retains_ordinary_batch_saving_custody_after_exact_e
     let mut home = fixture
         .park("thread:required-batch-publication", true)
         .await;
-    let lock_path = runner_host::paths::home_image_cache_capacity_lock_path(
-        &home.cache.paths().base_dir().join("locks"),
-    );
-    let capacity = runner_host::lock::acquire(lock_path).await.unwrap();
+    // An infeasible filesystem reserve refuses publication without changing source bytes.
+    home.cache
+        .set_fs_stats_for_test(runner_lifecycle::home_image_cache::FsStats {
+            total_bytes: 1,
+            available_bytes: 0,
+            ..Default::default()
+        });
     home.confirm_exit();
     let report = join(&mut fixture.start(IdleRetirementBatchScope::All).await).await;
     assert_eq!((report.completed, report.uncertain), (0, 1));
@@ -26,7 +29,6 @@ async fn publication_refusal_retains_ordinary_batch_saving_custody_after_exact_e
         fixture.operations.close_and_wait().await.unwrap().uncertain,
         1
     );
-    drop(capacity);
     let retained = fixture.tracker.take_retained_activation_owners().unwrap();
     assert_eq!(retained.len(), 1);
     assert_eq!(retained[0].sandbox_id(), home.id);
@@ -95,12 +97,13 @@ async fn publication_refusal_retains_replaced_home_and_both_full_leases() {
     let (candidate, mut new) = fixture.candidate(&old.key, true).await;
     let mut incoming = runner_lifecycle::idle_pool::IdlePoolIncoming::park(candidate);
     incoming.capture_backing().unwrap();
-    let capacity =
-        runner_host::lock::acquire(runner_host::paths::home_image_cache_capacity_lock_path(
-            &old.cache.paths().base_dir().join("locks"),
-        ))
-        .await
-        .unwrap();
+    // An infeasible filesystem reserve refuses publication without changing source bytes.
+    old.cache
+        .set_fs_stats_for_test(runner_lifecycle::home_image_cache::FsStats {
+            total_bytes: 1,
+            available_bytes: 0,
+            ..Default::default()
+        });
     old.confirm_exit();
     let mut started = fixture.insert(&mut incoming).await.unwrap();
     assert_eq!(started.snapshot.idle_sandboxes[0].sandbox_id, new.id);
@@ -125,7 +128,6 @@ async fn publication_refusal_retains_replaced_home_and_both_full_leases() {
         fixture.operations.close_and_wait().await.unwrap().uncertain,
         1
     );
-    drop(capacity);
     let retained = fixture.tracker.take_retained_activation_owners().unwrap();
     assert_eq!(retained.len(), 1);
     assert_eq!(retained[0].sandbox_id(), old.id);
@@ -141,12 +143,13 @@ async fn logical_transfer_keeps_required_publication_custody_even_when_its_obser
         let mut home = fixture
             .park("thread:required-logical-publication", true)
             .await;
-        let capacity =
-            runner_host::lock::acquire(runner_host::paths::home_image_cache_capacity_lock_path(
-                &home.cache.paths().base_dir().join("locks"),
-            ))
-            .await
-            .unwrap();
+        // An infeasible filesystem reserve refuses publication without changing source bytes.
+        home.cache
+            .set_fs_stats_for_test(runner_lifecycle::home_image_cache::FsStats {
+                total_bytes: 1,
+                available_bytes: 0,
+                ..Default::default()
+            });
         let kill = MockLifecycleGate::new();
         home.overrides.set_kill_lifecycle_gate(kill.clone());
         let mut result = tokio::time::timeout(WAIT, fixture.logical(8, 8192))
@@ -187,7 +190,6 @@ async fn logical_transfer_keeps_required_publication_custody_even_when_its_obser
         assert_eq!(owners[0].sandbox_id(), home.id);
         assert!(owners[0].take_completed_lease().is_err());
         assert_eq!(fixture.budget.allocated(), (8, 8192, 1));
-        drop(capacity);
         drop(replacement);
         assert_eq!(fixture.budget.allocated(), (0, 0, 0));
         // Explicit invocation-owned reconciliation, never physical credit.

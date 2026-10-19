@@ -70,4 +70,5 @@ export enum FeatureSwitchKey {
   AgentSuggestion = "agentSuggestion",
   SubscriptionLinkingEntry = "subscriptionLinkingEntry",
   SlashActions = "slashActions",
+  ComposerMentionHint = "composerMentionHint",
 }

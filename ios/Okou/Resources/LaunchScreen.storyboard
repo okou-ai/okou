@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="24506" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" launchScreen="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES" initialViewController="startup-controller">
+    <device id="retina6_12" orientation="portrait" appearance="light"/>
+    <dependencies>
+        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="24504"/>
+        <capability name="Named colors" minToolsVersion="9.0"/>
+        <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
+    </dependencies>
+    <scenes>
+        <scene sceneID="startup-scene">
+            <objects>
+                <viewController id="startup-controller" sceneMemberID="viewController">
+                    <view key="view" contentMode="scaleToFill" id="startup-view">
+                        <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
+                        <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+                        <subviews>
+                            <imageView userInteractionEnabled="NO" contentMode="scaleAspectFit" image="StartupLaunchWordmark" translatesAutoresizingMaskIntoConstraints="NO" id="startup-wordmark">
+                                <rect key="frame" x="97.3" y="396.4" width="198.4" height="59.2"/>
+                                <constraints>
+                                    <constraint firstAttribute="width" constant="198.4" id="wordmark-width"/>
+                                    <constraint firstAttribute="height" constant="59.2" id="wordmark-height"/>
+                                </constraints>
+                            </imageView>
+                        </subviews>
+                        <viewLayoutGuide key="safeArea" id="startup-safe-area"/>
+                        <color key="backgroundColor" name="StartupBackground"/>
+                        <constraints>
+                            <constraint firstItem="startup-wordmark" firstAttribute="centerX" secondItem="startup-view" secondAttribute="centerX" id="wordmark-center-x"/>
+                            <constraint firstItem="startup-wordmark" firstAttribute="centerY" secondItem="startup-view" secondAttribute="centerY" id="wordmark-center-y"/>
+                        </constraints>
+                    </view>
+                </viewController>
+                <placeholder placeholderIdentifier="IBFirstResponder" id="startup-responder" sceneMemberID="firstResponder"/>
+            </objects>
+        </scene>
+    </scenes>
+    <resources>
+        <image name="StartupLaunchWordmark" width="248" height="74"/>
+        <namedColor name="StartupBackground">
+            <color red="0.992" green="0.992" blue="0.996" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+        </namedColor>
+    </resources>
+</document>

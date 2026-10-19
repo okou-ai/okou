@@ -1820,6 +1820,7 @@
         "slideCountAuto": "Otomatis",
         "slideCountRange": "{{range}} slide"
       },
+      "mentionHint": "Cari agen atau obrolan…",
       "message": "Pesan",
       "modelForThisChat": "Model untuk chat ini",
       "placeholder": "Minta saya mengotomatiskan alur kerja, mengelola tugas...",

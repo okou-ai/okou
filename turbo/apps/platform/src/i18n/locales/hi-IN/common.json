@@ -1823,6 +1823,7 @@
         "slideCountAuto": "स्वचालित",
         "slideCountRange": "{{range}} स्लाइड"
       },
+      "mentionHint": "एजेंट या चैट खोजें…",
       "message": "संदेश",
       "modelForThisChat": "इस चैट के लिए मॉडल",
       "placeholder": "मुझसे वर्कफ़्लो ऑटोमेट करने और टास्क मैनेज करने के लिए कहें...",
