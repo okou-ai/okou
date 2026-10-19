@@ -610,7 +610,7 @@ traffic or modify status, headers, or wire body bytes. The final network-log row
 still reaches the existing writer. Old runners retain their previous capture
 policy until updated; the log schema and its consumers do not change.
 
-### Request capture member traversal
+### Request capture compression work
 
 Opt-in request body capture inspects at most 64 complete gzip or zlib-wrapped
 `deflate` members, independently of its 64 KiB decoded capture-output limit.
@@ -629,8 +629,20 @@ authorization, signing, billing inspection, response capture, or JSON-usage
 decoding. The log schema and terminal flow cleanup are unchanged. Old runners
 retain their previous embedded-addon policy until updated.
 
-The member budget bounds repeated decoder construction; it is not a general CPU
-deadline for every compression pattern within a single member.
+Zstd request capture admits at most 128 KiB of retained compressed input before
+constructing its initial cross-frame reader or complete-frame validator. Empty
+frames produce no decoded bytes, so the decoded-output limit alone cannot bound
+that initial traversal. Larger inputs omit capture with the same `binary`
+failure representation, even when a decoded prefix could otherwise be retained.
+The allowance includes headroom for incompressible 64 KiB capture content and
+frame overhead. Within it, the existing hard decoded-output limit, strict
+64-frame budget, malformed/truncated classifications, and bounded-prefix policy
+remain effective. Response capture and JSON-usage decoding keep their existing
+policies.
+
+These budgets bound repeated decoder construction and zstd compressed input;
+they are not general CPU deadlines for every compression pattern within a frame
+or member.
 
 ### JSONL append recovery
 
