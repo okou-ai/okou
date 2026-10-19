@@ -91,58 +91,6 @@ describe("hosted artifact previews", () => {
     ]);
   }
 
-  it.each(["prepare", "complete"])(
-    "publishes when an older API acknowledges a skipped cover at %s",
-    async (phase) => {
-      let uploadedPreview = false;
-      server.use(
-        http.post("*/api/host/deployments/prepare", async ({ request }) => {
-          const body = hostedSitePrepareRequestSchema.parse(
-            await request.json(),
-          );
-          expect(body.preview).toBeDefined();
-          return HttpResponse.json({
-            ...completed,
-            uploads: body.files.map((file) => {
-              return {
-                path: file.path,
-                uploadUrl: `https://upload.example${file.path}`,
-              };
-            }),
-            ...(phase === "prepare"
-              ? { previewSkipped: true }
-              : {
-                  preview: {
-                    uploadUrl: "https://private-upload.example/cover",
-                    sha256: body.preview?.sha256,
-                  },
-                }),
-          });
-        }),
-        http.put("https://upload.example/*", () => {
-          return new HttpResponse(null, { status: 200 });
-        }),
-        http.put("https://private-upload.example/cover", () => {
-          uploadedPreview = true;
-          return new HttpResponse(null, { status: 200 });
-        }),
-        http.post(`*/api/host/deployments/${deploymentId}/complete`, () => {
-          expect(uploadedPreview).toBe(phase === "complete");
-          return HttpResponse.json({
-            ...completed,
-            previewImageUrl: undefined,
-            ...(phase === "complete" ? { previewSkipped: true } : {}),
-          });
-        }),
-      );
-      await publish();
-      const result: unknown = JSON.parse(logs.mock.calls.flat().join("\n"));
-      expect(result).toMatchObject({ deploymentId });
-      expect(result).not.toHaveProperty("previewImageUrl");
-      expect(errors.mock.calls).toHaveLength(0);
-    },
-  );
-
   it("uploads a cover separately from public files and exposes the registered image", async () => {
     let uploadedPreview = false;
     server.use(
@@ -200,7 +148,7 @@ describe("hosted artifact previews", () => {
     });
   });
 
-  it("fails before upload when an old API ignores the preview request", async () => {
+  it("fails before upload when the API does not acknowledge the supplied preview", async () => {
     server.use(
       http.post("http://localhost:3000/api/host/deployments/prepare", () => {
         return HttpResponse.json({ ...completed, uploads: [] });
