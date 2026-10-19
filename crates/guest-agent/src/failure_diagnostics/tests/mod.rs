@@ -43,6 +43,7 @@ fn new_provider_classification_does_not_match_unowned_output() {
         AgentFramework::ClaudeCode,
     ] {
         for message in [
+            "Provider finish_reason: content_filter",
             "Codex error: An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID req_synthetic in your message.",
             "Codex error: Unable to verify model access right now. Please retry.",
             "Our servers are currently overloaded. Please try again later.",
