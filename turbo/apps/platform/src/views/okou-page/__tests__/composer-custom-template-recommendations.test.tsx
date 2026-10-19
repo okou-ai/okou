@@ -435,7 +435,7 @@ test("Document defaults to Custom when documents exist and separates built-in pu
     within(shelf).queryByLabelText("Import your own document"),
   ).not.toBeInTheDocument();
   expect(within(shelf).queryByText(own.title)).not.toBeInTheDocument();
-  expect(within(shelf).getAllByLabelText(/^Use template /u)).toHaveLength(5);
+  expect(within(shelf).getAllByLabelText(/^Use template /u)).toHaveLength(6);
   expect(editor).toHaveTextContent("Keep my launch brief");
   expect(editor).toHaveTextContent(own.title);
 
