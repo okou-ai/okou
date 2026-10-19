@@ -11,7 +11,7 @@ readonly BUNDLED_ONLY_CLI_RUNNER_COMMIT=dfff1605013103371cd90962ee5b54c80fc93140
 # writers must never recreate the retired shape after the migration.
 readonly LINK_WALLET_GRANT_WRITER_COMMIT=37e6bb51029f05ff1d7a7a6c28b03f139dfd067c
 # Pair-free Guest telemetry can outlive Runner rollback. The receiving API must
-# retain #41242's structured-only reader throughout the Runner-first transition.
+# retain #41242's structured-only reader during independent Runner/API rollback.
 readonly STRUCTURED_DISK_TELEMETRY_READER_COMMIT=e01702c7d762b5d2a76d557db77ccaf19c4f95c8
 # #36897 made chat_thread_drafts the only draft store and writes user_id on
 # every draft row. Migration contract_chat_thread_drafts makes user_id and
