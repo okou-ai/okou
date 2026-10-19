@@ -23,7 +23,7 @@
     <key>LSRequiresIPhoneOS</key><true/>
     <key>UIApplicationSceneManifest</key>
     <dict><key>UIApplicationSupportsMultipleScenes</key><false/></dict>
-    <key>UILaunchScreen</key><dict/>
+    <key>UILaunchStoryboardName</key><string>LaunchScreen</string>
     <key>UISupportedInterfaceOrientations</key>
     <array><string>UIInterfaceOrientationPortrait</string></array>
 </dict>
