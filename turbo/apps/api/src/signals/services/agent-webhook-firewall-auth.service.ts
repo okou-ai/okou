@@ -1,3 +1,4 @@
+import { officialWorkflowCreditAccess$ } from "./official-workflow-policy.service";
 import {
   featureSwitchContextFromRows,
   userFeatureSwitchRowCondition,
@@ -573,6 +574,15 @@ export const resolveBillableFirewallCacheExpiry$ = command(
     signal.throwIfAborted();
     if (!availability || availability.status !== "active") {
       return insufficientCredits();
+    }
+    if (
+      (await set(officialWorkflowCreditAccess$, params.auth, signal)) === "free"
+    ) {
+      return {
+        expiresAt:
+          Math.floor(nowDate().getTime() / 1000) +
+          NORMAL_BILLABLE_FIREWALL_LEASE_SECONDS,
+      };
     }
     const spendableCredits =
       availability.usagePackCredits +

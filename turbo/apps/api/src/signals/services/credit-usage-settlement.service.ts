@@ -106,6 +106,21 @@ interface SettlementBatchArgs extends UsageSettlementArgs {
   readonly at: Date;
 }
 
+/** Social jobs create their event identity at commit; their prepared price
+ * and captured policy are applied to the actual claimed event. */
+function batchFinancialPlan(
+  args: SettlementBatchArgs,
+  events: (typeof usageEvent.$inferSelect)[],
+) {
+  return (
+    args.financial ??
+    usageFinancialPlan(
+      preparedSettlementPrices(args, args.batch, events),
+      args.at,
+    )
+  );
+}
+
 /**
  * All financial rows commit together; only plain values leave this command.
  * The pending claim prevents duplicate charging. Prices stay prepared,
@@ -155,76 +170,78 @@ const commitUsageBatch$ = command(
       if (hasNoStandaloneUsage(events, args.social)) {
         return emptySettlementReceipt(work);
       }
-      let financial = args.financial;
-      if (!financial) {
-        // Background Social jobs publish and claim their usage atomically.
-        // Their newly created event identity receives the prepared price.
-        const priced = preparedSettlementPrices(args, batch, events);
-        financial = usageFinancialPlan(priced, at);
-      }
-      const { priced, charges } = financial;
-      const cash = usageCashQueries(orgId, charges.byUser, at);
-      const [wallet] = await tx.select().from(cash.wallet);
-      requireUsageCashWallet(wallet);
-      const grants = await tx.select().from(cash.grants);
-      const deduction = planMemberGrantDeductions(charges.byUser, grants);
-      if (deduction.sharedCredits > 0) {
-        // Cash writers acquire the wallet before grant/expiry-lot locks.
-        await tx
-          .select({ orgId: orgMetadata.orgId })
-          .from(orgMetadata)
-          .where(eq(orgMetadata.orgId, orgId))
-          .for("update");
-        const outcome = orgCreditExpirationOutcome(
-          parseRows(
-            orgCreditExpirationOutcomeRow,
-            await tx.execute(orgCreditExpirationSql(orgId, at)),
-          ),
-        );
-        // A later statement snapshot distinguishes remaining expired lots
-        // from a concurrent clear or extension that completed expiration.
-        const [remaining] =
-          outcome.cleared === outcome.expected
-            ? []
-            : await tx
-                .select()
-                .from(pendingOrgCreditExpirationQuery(orgId, at));
-        requireCompleteOrgCreditExpiration(orgId, outcome, remaining);
-      }
-      requirePackDebt(
-        parseRows(debtRow, await tx.execute(packDebtSql({ orgId }, at))),
-      );
-      const lots =
-        deduction.sharedCredits > 0
-          ? await tx.select().from(usageCashExpiryLotsQuery(orgId, at))
-          : [];
-      const expiry = planExpiryLotDeductions(lots, deduction.sharedCredits, at);
-      await tx.execute(settledEventsSql(charges, at));
-      const grantSql = memberGrantDeductionsSql(deduction.updates);
-      const granted = (await tx.execute(grantSql)).rowCount;
-      requireConditionalDeductions("grant", deduction.updates, granted);
-      const amount = deduction.sharedCredits;
-      const lotSql = expiryLotDeductionsSql(expiry.updates);
-      const lotted = (await tx.execute(lotSql)).rowCount;
-      requireConditionalDeductions("expiry lot", expiry.updates, lotted);
-      Object.assign(work, usageCashWork(deduction, expiry));
+      const { priced, charges, freeOnly } = batchFinancialPlan(args, events);
+      let amount = 0;
       let afterCredits = 0;
-      if (amount > 0) {
-        const debit = orgDebitPlan(orgId, amount, expiry.expired, at);
-        const [debited] = await tx
-          .insert(orgMetadataCanonicalWrites)
-          .values(debit.values)
-          .onConflictDoUpdate(debit.conflict)
-          .returning();
-        const metadata = requiredSettlementDebit(debited);
-        const defaultPlan = settlementDefaultPlan(metadata);
-        if (defaultPlan) {
+      if (freeOnly) {
+        await tx.execute(settledEventsSql(charges, at));
+      } else {
+        const cash = usageCashQueries(orgId, charges.byUser, at);
+        const [wallet] = await tx.select().from(cash.wallet);
+        requireUsageCashWallet(wallet);
+        const grants = await tx.select().from(cash.grants);
+        const deduction = planMemberGrantDeductions(charges.byUser, grants);
+        if (deduction.sharedCredits > 0) {
+          // Cash writers acquire the wallet before grant/expiry-lot locks.
           await tx
-            .insert(orgPlanEntitlements)
-            .values(defaultPlan)
-            .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
+            .select({ orgId: orgMetadata.orgId })
+            .from(orgMetadata)
+            .where(eq(orgMetadata.orgId, orgId))
+            .for("update");
+          const outcome = orgCreditExpirationOutcome(
+            parseRows(
+              orgCreditExpirationOutcomeRow,
+              await tx.execute(orgCreditExpirationSql(orgId, at)),
+            ),
+          );
+          // A later statement snapshot distinguishes remaining expired lots
+          // from a concurrent clear or extension that completed expiration.
+          const [remaining] =
+            outcome.cleared === outcome.expected
+              ? []
+              : await tx
+                  .select()
+                  .from(pendingOrgCreditExpirationQuery(orgId, at));
+          requireCompleteOrgCreditExpiration(orgId, outcome, remaining);
         }
-        afterCredits = metadata.credits;
+        requirePackDebt(
+          parseRows(debtRow, await tx.execute(packDebtSql({ orgId }, at))),
+        );
+        const lots =
+          deduction.sharedCredits > 0
+            ? await tx.select().from(usageCashExpiryLotsQuery(orgId, at))
+            : [];
+        const expiry = planExpiryLotDeductions(
+          lots,
+          deduction.sharedCredits,
+          at,
+        );
+        await tx.execute(settledEventsSql(charges, at));
+        const grantSql = memberGrantDeductionsSql(deduction.updates);
+        const granted = (await tx.execute(grantSql)).rowCount;
+        requireConditionalDeductions("grant", deduction.updates, granted);
+        amount = deduction.sharedCredits;
+        const lotSql = expiryLotDeductionsSql(expiry.updates);
+        const lotted = (await tx.execute(lotSql)).rowCount;
+        requireConditionalDeductions("expiry lot", expiry.updates, lotted);
+        Object.assign(work, usageCashWork(deduction, expiry));
+        if (amount > 0) {
+          const debit = orgDebitPlan(orgId, amount, expiry.expired, at);
+          const [debited] = await tx
+            .insert(orgMetadataCanonicalWrites)
+            .values(debit.values)
+            .onConflictDoUpdate(debit.conflict)
+            .returning();
+          const metadata = requiredSettlementDebit(debited);
+          const defaultPlan = settlementDefaultPlan(metadata);
+          if (defaultPlan) {
+            await tx
+              .insert(orgPlanEntitlements)
+              .values(defaultPlan)
+              .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
+          }
+          afterCredits = metadata.credits;
+        }
       }
       if (args.social && job) {
         const [receipt] = managed

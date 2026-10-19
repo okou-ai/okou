@@ -72,6 +72,7 @@ export function preparedSettlementPrices(
   batch: {
     readonly prices: readonly (typeof usagePricing.$inferSelect)[];
     readonly priced: PricedUsageEvent[];
+    readonly freeOfficialRunOwners: ReadonlyMap<string, string>;
     readonly social?: PreparedSocialSettlement;
   },
   events: readonly UsageEventRecord[],
@@ -85,7 +86,20 @@ export function preparedSettlementPrices(
     throw new Error("Social settlement has no prepared price");
   }
   return events.map((record) => {
-    return { record, grossCredits: social.grossCredits, billingError: null };
+    const actor = social.plan.usage?.actor;
+    const free =
+      actor?.runId &&
+      batch.freeOfficialRunOwners.get(actor.runId) === actor.userId;
+    return {
+      record: {
+        ...record,
+        creditChargePolicy: free
+          ? ("official_workflow_free" as const)
+          : ("standard" as const),
+      },
+      grossCredits: social.grossCredits,
+      billingError: null,
+    };
   });
 }
 export function reportCommittedSettlementPricing(
@@ -100,6 +114,7 @@ export function reportCommittedSettlementPricing(
 
 export interface PreparedUsageBatch {
   readonly social?: PreparedSocialSettlement;
+  readonly freeOfficialRunOwners: ReadonlyMap<string, string>;
   readonly events: PendingUsageSnapshot[];
   readonly prices: (typeof usagePricing.$inferSelect)[];
   readonly records: (typeof usageEvent.$inferSelect)[];

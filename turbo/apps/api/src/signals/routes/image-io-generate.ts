@@ -1,4 +1,4 @@
-import type { badRequestMessage } from "../../lib/error";
+import { resourceUnavailable, type badRequestMessage } from "../../lib/error";
 import { randomUUID } from "node:crypto";
 
 import { command } from "ccstate";
@@ -423,9 +423,12 @@ const postImageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   const hasCredits = await set(
     checkImageCredits$,
-    { orgId: auth.orgId, userId: auth.userId },
+    { orgId: auth.orgId, userId: auth.userId, runId },
     signal,
   );
+  if (hasCredits === "closed") {
+    return resourceUnavailable("Official Workflow run is no longer active");
+  }
   if (!hasCredits) {
     return insufficientCredits();
   }

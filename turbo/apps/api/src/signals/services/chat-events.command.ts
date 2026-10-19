@@ -113,6 +113,10 @@ import {
   chatThreadEventInsertSql,
   chatThreadServiceTierFromCodex,
 } from "./chat-thread-event.service";
+import {
+  isOfficialWorkflowThread$,
+  OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE,
+} from "./official-workflow-policy.service";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 import {
   notifyRunningChatRunOfPendingInput$,
@@ -1608,6 +1612,16 @@ const prepareNormalSend$ = command(
     if ("status" in authorized) {
       return authorized;
     }
+    if (
+      existingThreadId &&
+      (await set(
+        isOfficialWorkflowThread$,
+        { threadId: existingThreadId, orgId: args.orgId, userId: args.userId },
+        signal,
+      ))
+    ) {
+      return forbidden(OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE);
+    }
     const source = await set(
       resolveNormalSendAgentRunSource$,
       {
@@ -2317,12 +2331,14 @@ async function publishChatEventCreated(args: {
 }
 const assertOwnedThread$ = command(
   async (
-    { get },
+    { get, set },
     threadId: string,
     userId: string,
     orgId: string,
     signal: AbortSignal,
-  ): Promise<ReturnType<typeof notFound> | undefined> => {
+  ): Promise<
+    ReturnType<typeof notFound> | ReturnType<typeof forbidden> | undefined
+  > => {
     const db = get(db$);
     const [thread] = await db
       .select({ id: chatThreads.id })
@@ -2336,7 +2352,15 @@ const assertOwnedThread$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
-    return thread ? undefined : notFound("Chat thread not found");
+    if (!thread) {
+      return notFound("Chat thread not found");
+    }
+    if (
+      await set(isOfficialWorkflowThread$, { threadId, orgId, userId }, signal)
+    ) {
+      return forbidden(OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE);
+    }
+    return undefined;
   },
 );
 const handleRecallSend$ = command(
@@ -2432,6 +2456,7 @@ const handleInterruptSend$ = command(
       cancelRun$,
       {
         runId: args.body.interruptsRunId,
+        userRequested: true,
         userId: args.userId,
         orgId: args.orgId,
         runnerCancellationMode: "cooperative",

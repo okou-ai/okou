@@ -7,7 +7,12 @@ export function usageFinancialPlan(
   at: Date,
 ) {
   const charges = planUsageCharges(priced);
-  return { at, priced, charges };
+  const freeOnly =
+    priced.length > 0 &&
+    priced.every((event) => {
+      return event.record.creditChargePolicy === "official_workflow_free";
+    });
+  return { at, priced, charges, freeOnly };
 }
 
 export type PreparedUsageFinancialPlan = ReturnType<typeof usageFinancialPlan>;

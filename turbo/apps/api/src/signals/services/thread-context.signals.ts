@@ -145,7 +145,15 @@ export function createThreadContext(
         }
       : event;
   });
-  const model = createThreadModelSignals(bootstrap, modelInput$);
+  const creditsWaived$ = createOfficialWorkflowCreditWaiver(
+    pickedEvent$,
+    automationTarget$,
+  );
+  const model = createThreadModelSignals(
+    bootstrap,
+    modelInput$,
+    creditsWaived$,
+  );
   const discordContext$ = createDiscordThreadContext(
     pickedEvent$,
     orgId,
@@ -168,6 +176,7 @@ export function createThreadContext(
     pickedEvent$,
     continuationRead$,
     model.subscriptionSelection$,
+    automationTarget$,
   );
   const connectorSourceId$ = createConnectorSourceId(
     pickedEvent$,
@@ -213,6 +222,27 @@ export function createThreadContext(
     selectedConnectorSources$:
       connectedAccounts.selectedStoredConnectorSources$,
   };
+}
+
+/** Routing candidate only; exact accepted artifacts and installation ownership
+ * are still validated before a Run can be committed. */
+function createOfficialWorkflowCreditWaiver(
+  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
+  automationTarget$: ThreadContext["automationTarget$"],
+) {
+  return computed(async (get) => {
+    const [event, target] = await Promise.all([
+      get(pickedEvent$),
+      get(automationTarget$),
+    ]);
+    return (
+      event?.eventType === "input.automation" &&
+      event.contextType === "automation" &&
+      target !== null &&
+      target.workflow.officialDefinitionName !== null &&
+      target.automation.officialBlueprintKey !== null
+    );
+  });
 }
 
 function createAutomationTarget(
@@ -307,6 +337,7 @@ function createThreadContinuation(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   continuationRead$: ReturnType<typeof createChatThreadContinuationRead>,
   selection$: ThreadModels["subscriptionSelection$"],
+  automationTarget$: ThreadContext["automationTarget$"],
 ) {
   return computed(async (get): Promise<ChatThreadContinuation | null> => {
     const [event, selection] = await Promise.all([
@@ -326,8 +357,17 @@ function createThreadContinuation(
       get(continuationRead$),
       get(bootstrap.agent$),
     ]);
+    const snapshot = capturedChatThreadContinuationSnapshot(
+      event.thread,
+      read,
+      agent,
+    );
+    const target =
+      event.contextType === "automation" ? await get(automationTarget$) : null;
     return resolveChatThreadContinuation(
-      capturedChatThreadContinuationSnapshot(event.thread, read, agent),
+      target?.workflow.officialDefinitionName
+        ? { ...snapshot, previousRun: null, hasPriorConversationRound: false }
+        : snapshot,
       {
         route: {
           selectedModel: selection.selectedModelOverride,

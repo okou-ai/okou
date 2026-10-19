@@ -1,3 +1,4 @@
+import { creditPolicyRunId } from "./official-workflow-policy.service";
 import {
   PEOPLE_SEARCH_MAX_COMPANY_CHARS,
   PEOPLE_SEARCH_MAX_LIMIT,
@@ -711,6 +712,7 @@ export const peopleSearch$ = command(
     const creditError = await set(
       checkManagedCredits$,
       {
+        runId: creditPolicyRunId(args.auth),
         orgId: args.auth.orgId,
         userId: args.auth.userId,
         resource: {

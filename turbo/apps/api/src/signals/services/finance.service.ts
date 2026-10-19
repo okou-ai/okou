@@ -1,3 +1,4 @@
+import { creditPolicyRunId } from "./official-workflow-policy.service";
 import type {
   FinanceChartRequest,
   FinanceOperation,
@@ -232,6 +233,7 @@ export const finance$ = command(
     const creditError = await set(
       checkManagedCredits$,
       {
+        runId: creditPolicyRunId(args.auth),
         orgId: args.auth.orgId,
         userId: args.auth.userId,
         resource: {

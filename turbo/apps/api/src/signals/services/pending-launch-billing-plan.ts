@@ -19,6 +19,10 @@ export function pendingLaunchBillingAttributionSql(
         userId: sql.param(values.userId, table.userId),
         runStartedAt: values.runStartedAt,
         source: sql.param(values.source, table.source),
+        creditChargePolicy: sql.param(
+          values.creditChargePolicy,
+          table.creditChargePolicy,
+        ),
         threadId: sql.param(values.threadId, table.threadId),
         threadContext: sql.param(values.threadContext, table.threadContext),
         runTerminalStatus: sql.param(

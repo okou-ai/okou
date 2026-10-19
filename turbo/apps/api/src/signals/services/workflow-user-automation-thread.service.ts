@@ -105,7 +105,7 @@ const officialWorkflowThreadPresentation$ = command(
     }
     return {
       title,
-      hidden: catalog.hiddenThreadDefinitionNames.includes(definition.name),
+      hidden: true,
     };
   },
 );

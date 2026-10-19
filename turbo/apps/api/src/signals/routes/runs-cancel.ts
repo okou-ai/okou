@@ -34,6 +34,7 @@ const cancelInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     cancelRun$,
     {
       runId: params.id,
+      userRequested: true,
       userId: auth.userId,
       orgId: auth.orgId,
       runnerCancellationMode: "cooperative",

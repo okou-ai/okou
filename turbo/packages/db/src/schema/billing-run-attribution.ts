@@ -28,6 +28,11 @@ export const billingRunAttribution = pgTable(
     userId: text("user_id").notNull(),
     runStartedAt: timestamp("run_started_at").notNull(),
     source: text("source").notNull(),
+    // Captured at admission, independent of mutable Workflow and content rows.
+    creditChargePolicy: text("credit_charge_policy")
+      .$type<"standard" | "official_workflow_free">()
+      .notNull()
+      .default("standard"),
     // Grouping identity only. Deliberately not an FK and never a title, prompt
     // or other thread content: billing readers resolve the live chat_threads row
     // for anything displayable, so erasing a thread removes it from the bill
@@ -56,6 +61,10 @@ export const billingRunAttribution = pgTable(
         table.orgId,
         table.userId,
         table.runId,
+      ),
+      check(
+        "billing_run_attribution_credit_policy_check",
+        sql`${table.creditChargePolicy} IN ('standard', 'official_workflow_free')`,
       ),
       check(
         "billing_run_attribution_source_check",

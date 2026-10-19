@@ -1,3 +1,4 @@
+import { officialWorkflowCreditAccess$ } from "./official-workflow-policy.service";
 import { recordProviderUsageBatch$ } from "./provider-usage-publication.service";
 import { Buffer } from "node:buffer";
 
@@ -1259,11 +1260,12 @@ export const checkImageCredits$ = command(
   async (
     { set },
     args: {
+      readonly runId?: string;
       readonly orgId: string;
       readonly userId: string;
     },
     signal: AbortSignal,
-  ): Promise<boolean> => {
+  ): Promise<boolean | "closed"> => {
     return await set(checkBillableOperationCredits$, args, signal);
   },
 );
@@ -2105,20 +2107,22 @@ function generatedImageMetadata(
   };
 }
 
+interface RecordGeneratedImageArgs {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly runId: string | undefined;
+  readonly billingRunId: string | null;
+  readonly billingContext: string;
+  readonly privateArtifacts: boolean;
+  readonly pricing: ImagePricing;
+  readonly generation: ParsedImageGeneration;
+  readonly generationId: string;
+}
+
 export const recordGeneratedImage$ = command(
   async (
     { set },
-    params: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly runId: string | undefined;
-      readonly billingRunId: string | null;
-      readonly billingContext: string;
-      readonly privateArtifacts: boolean;
-      readonly pricing: ImagePricing;
-      readonly generation: ParsedImageGeneration;
-      readonly generationId: string;
-    },
+    params: RecordGeneratedImageArgs,
     signal: AbortSignal,
   ): Promise<RecordedImage> => {
     const artifact = await set(
@@ -2202,6 +2206,15 @@ export const recordGeneratedImage$ = command(
     );
     signal.throwIfAborted();
 
+    const creditAccess = await set(
+      officialWorkflowCreditAccess$,
+      {
+        orgId: params.orgId,
+        userId: params.userId,
+        runId: params.billingRunId ?? params.runId,
+      },
+      signal,
+    );
     return {
       id: fileId,
       filename,
@@ -2213,11 +2226,14 @@ export const recordGeneratedImage$ = command(
       // through Cloudflare Image Resizing negotiates AVIF/WebP per request, so
       // pages embedding this image download a fraction of the PNG bytes.
       embedUrl: artifact.isPrivate ? undefined : r2ImageTransformUrl(url, {}),
-      creditsCharged: estimateImageCredits(
-        params.generation.model,
-        params.generation.billing,
-        params.pricing,
-      ),
+      creditsCharged:
+        creditAccess === "standard"
+          ? estimateImageCredits(
+              params.generation.model,
+              params.generation.billing,
+              params.pricing,
+            )
+          : 0,
       model: params.generation.model,
       provider: params.generation.provider,
       imageSize: params.generation.imageSize,
