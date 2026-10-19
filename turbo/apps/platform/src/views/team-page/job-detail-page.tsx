@@ -22,7 +22,10 @@ import {
   Wand,
 } from "lucide-react";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import type { ConnectorOverview } from "@okouai/api-contracts/contracts/connector-overview";
+import type {
+  ConnectorOverview,
+  ConnectorAccountBriefSummary,
+} from "@okouai/api-contracts/contracts/connector-overview";
 import {
   surfaceVariants,
   Button,
@@ -42,6 +45,7 @@ import {
   SelectTrigger,
   SelectValue,
   buttonVariants,
+  LoadErrorRow,
 } from "@okouai/ui";
 import { InstructionsTab } from "../okou-page/instructions-tab.tsx";
 import { SettingsTab } from "../okou-page/settings-tab.tsx";
@@ -98,7 +102,10 @@ import {
   currentAgentUserPermissionGrants$,
 } from "../../signals/permission-allow/permission-allow-signals.ts";
 import { matchesConnectorSearch } from "../../signals/okou-page/settings/connectors.ts";
-import { connectorOverview$ } from "../../signals/okou-page/connector-overview.ts";
+import {
+  connectorOverview$,
+  invalidateConnectorOverview$,
+} from "../../signals/okou-page/connector-overview.ts";
 import {
   copyWorkflow$,
   currentAgentVisibleWorkflows$,
@@ -433,6 +440,22 @@ function PermissionGrantsError() {
   );
 }
 
+function ConnectorOverviewError() {
+  const { t } = useTranslation();
+  const retry = useSet(invalidateConnectorOverview$);
+  return (
+    <LoadErrorRow
+      message={t(($) => {
+        return $.connectors.accounts.accountsUnavailable;
+      })}
+      retryLabel={t(($) => {
+        return $.connectors.actions.tryAgain;
+      })}
+      onRetry={retry}
+    />
+  );
+}
+
 function NoConnectedConnectors() {
   const { t } = useTranslation("agents");
   return (
@@ -474,6 +497,7 @@ function NoConnectedConnectors() {
 interface ConnectedPermissionConnector extends PermissionConnectorCardItem {
   readonly slug: ConnectorSlug;
   readonly hasPermissions: boolean;
+  readonly summary: ConnectorAccountBriefSummary | undefined;
 }
 
 function ConnectedConnectorPermissions({
@@ -583,6 +607,7 @@ function ConnectedConnectorPermissions({
                   key={c.slug}
                   variant="permission"
                   connector={c}
+                  summary={c.summary}
                   enabled={authorizedSet.has(c.slug)}
                   onToggle={onDomEventFn(async (checked) => {
                     await onToggle(c.slug, checked);
@@ -665,15 +690,10 @@ function AgentPermissionsDrawer({
 function connectedPermissionConnectors(
   overview: ConnectorOverview,
 ): readonly ConnectedPermissionConnector[] {
-  const externalUsernames = new Map(
+  const summaries = new Map(
     overview.accountSummaries.flatMap((summary) => {
       return summary.target.kind === "builtin"
-        ? [
-            [
-              summary.target.connectorSlug,
-              summary.defaultConnection?.externalUsername ?? null,
-            ] as const,
-          ]
+        ? [[summary.target.connectorSlug, summary] as const]
         : [];
     }),
   );
@@ -683,7 +703,10 @@ function connectedPermissionConnectors(
       label: connector.label,
       icon: connector.icon,
       hasPermissions: connector.hasPermissions,
-      externalUsername: externalUsernames.get(connector.slug) ?? null,
+      externalUsername:
+        summaries.get(connector.slug)?.defaultConnection?.externalUsername ??
+        null,
+      summary: summaries.get(connector.slug),
     };
   });
 }
@@ -779,9 +802,11 @@ function JobPermissionsTab({
   };
 
   const status =
-    overviewLoadable.state !== "hasData" ||
-    connectorsLoading ||
-    userGrantsLoadable.state === "loading" ? (
+    overviewLoadable.state === "hasError" ? (
+      <ConnectorOverviewError />
+    ) : overviewLoadable.state !== "hasData" ||
+      connectorsLoading ||
+      userGrantsLoadable.state === "loading" ? (
       <PermissionListSkeleton />
     ) : userGrantsLoadable.state === "hasError" ? (
       <PermissionGrantsError />
@@ -798,7 +823,12 @@ function JobPermissionsTab({
         </p>
       )}
       {connectedConnectors.length === 0 ? (
-        <NoConnectedConnectors />
+        overviewLoadable.state === "hasData" &&
+        overviewLoadable.data.customConnectors.length > 0 ? (
+          <JobCustomConnectorsSection />
+        ) : (
+          <NoConnectedConnectors />
+        )
       ) : (
         <>
           <ConnectedConnectorPermissions

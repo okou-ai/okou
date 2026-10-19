@@ -1,6 +1,10 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import type { PublicConnectorCatalogStatusItem } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
+  connectorOverviewContract,
+  type ConnectorAccountBriefSummary,
+} from "@okouai/api-contracts/contracts/connector-overview";
+import {
   customConnectorsContract,
   customConnectorByIdContract,
   type CustomConnectorResponse,
@@ -34,6 +38,7 @@ const context = testContext();
 interface ConnectorSurfaceOptions {
   readonly catalog?: readonly PublicConnectorCatalogStatusItem[];
   readonly customConnectors?: readonly CustomConnectorResponse[];
+  readonly accountSummaries?: readonly ConnectorAccountBriefSummary[];
   readonly initialBuiltInByAgent?: Readonly<Record<string, readonly string[]>>;
   readonly initialCustomByAgent?: Readonly<
     Record<string, readonly AgentCustomConnectorGrant[]>
@@ -110,7 +115,10 @@ function mockConnectorSurface(
     ),
   );
 
-  mockConnectorOverview(testContextValue, options.catalog ?? []);
+  mockConnectorOverview(testContextValue, options.catalog ?? [], {
+    customConnectors: options.customConnectors,
+    accountSummaries: options.accountSummaries,
+  });
   testContextValue.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, {
       connectors: [...(options.customConnectors ?? [])],
@@ -444,3 +452,234 @@ test("An unconfigured custom connector is not offered to an agent", async () => 
   expect(account).toBeVisible();
   expect(screen.queryByText("Acme Search")).not.toBeInTheDocument();
 });
+
+function savedCustomSummary(
+  connector: CustomConnectorResponse,
+  expired: boolean,
+): ConnectorAccountBriefSummary {
+  return {
+    target: { kind: "custom", customConnectorId: connector.id },
+    accountCount: 2,
+    attentionCount: expired ? 1 : 0,
+    defaultConnection: {
+      id: "30000000-0000-4000-8000-000000000001",
+      authMethod: "manual",
+      displayName: "Default work account",
+      externalId: null,
+      externalUsername: null,
+      externalEmail: null,
+      connectionStatus: expired ? "reconnect-required" : "connected",
+    },
+  };
+}
+
+test.each([true, false])(
+  "An agent can see and repair a saved custom connector without gaining access (expired: %s)",
+  async (expired) => {
+    const connector = acmeConnectorFixture({
+      slug: "_acme-search",
+      connected: false,
+      connectedAccountId: undefined,
+      fields: [
+        { key: "apiKey", label: "API key", kind: "secret", required: true },
+      ],
+      missingRequiredFields: ["apiKey"],
+      configuredFieldKeys: [],
+      permissionBundleRef: "builtin:acme-search@1",
+    });
+    const saves: unknown[] = [];
+    mockConnectorSurface(context, {
+      customConnectors: [connector],
+      accountSummaries: [savedCustomSummary(connector, expired)],
+      onCustomSave: (args) => {
+        saves.push(args);
+      },
+    });
+    await setupTeamPage({
+      context,
+      path: `/agents/${RESEARCH_AGENT_ID}`,
+    });
+
+    await screen.findByText("Acme Search");
+    await screen.findByText(expired ? "1/2 need attention" : "2 accounts");
+    expect(
+      screen.getByText(expired ? "1/2 need attention" : /Reconnect required/),
+    ).toBeVisible();
+    expect(screen.queryByText(/No connected services yet/i)).toBeNull();
+    const access = connectorAccessSwitch("Grant Acme Search access");
+    expect(access).toHaveAttribute("aria-disabled", "true");
+    click(access);
+    expect(saves).toStrictEqual([]);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const reconnect = linkContaining("Reconnect");
+    expect(reconnect).toHaveAttribute(
+      "href",
+      `/connectors/_acme-search/connect?agentId=${RESEARCH_AGENT_ID}`,
+    );
+    expect(
+      screen.queryByLabelText("Manage Acme Search permissions"),
+    ).not.toBeInTheDocument();
+  },
+);
+
+test("An expired custom account keeps its existing agent grant revocable", async () => {
+  const connector = acmeConnectorFixture({
+    connected: false,
+    connectedAccountId: undefined,
+  });
+  const saves: unknown[] = [];
+  mockConnectorSurface(context, {
+    customConnectors: [connector],
+    accountSummaries: [savedCustomSummary(connector, true)],
+    initialCustomByAgent: {
+      [RESEARCH_AGENT_ID]: [
+        { customConnectorId: connector.id, permissionNames: [] },
+      ],
+    },
+    onCustomSave: (args) => {
+      saves.push(args);
+    },
+  });
+  await setupTeamPage({ context, path: `/agents/${RESEARCH_AGENT_ID}` });
+  await screen.findByText("Acme Search");
+  const revoke = connectorAccessSwitch("Revoke Acme Search access");
+  expect(revoke).not.toHaveAttribute("aria-disabled", "true");
+  click(revoke);
+  await screen.findByText("Custom connectors saved");
+  expect(saves).toStrictEqual([
+    {
+      agentId: RESEARCH_AGENT_ID,
+      grants: [{ customConnectorId: connector.id, permissionNames: [] }],
+      operation: "remove",
+    },
+  ]);
+  expect(connectorAccessSwitch("Grant Acme Search access")).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+});
+
+test("An unavailable agent overview can be retried without claiming there are no accounts", async () => {
+  const connector = acmeConnectorFixture();
+  mockConnectorSurface(context, { customConnectors: [connector] });
+  context.mocks.api(connectorOverviewContract.overview, ({ respond }) => {
+    return respond(500, {
+      error: { code: "INTERNAL_ERROR", message: "Overview unavailable" },
+    });
+  });
+  await setupTeamPage({ context, path: `/agents/${RESEARCH_AGENT_ID}` });
+  await screen.findByText(/Accounts are unavailable/);
+  expect(screen.queryByText(/No connected services yet/i)).toBeNull();
+  expect(screen.queryByLabelText("Grant Acme Search access")).toBeNull();
+
+  mockConnectorOverview(context, [], { customConnectors: [connector] });
+  click(exactButton("Try again"));
+  await screen.findByText("Acme Search");
+  expect(connectorAccessSwitch("Grant Acme Search access")).not.toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+});
+
+test("An unavailable custom definition list keeps a retry action", async () => {
+  const connector = acmeConnectorFixture();
+  mockConnectorSurface(context, { customConnectors: [connector] });
+  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
+    return respond(500, {
+      error: { code: "INTERNAL_ERROR", message: "Definitions unavailable" },
+    });
+  });
+  await setupTeamPage({ context, path: `/agents/${RESEARCH_AGENT_ID}` });
+  await screen.findByText(/Accounts are unavailable/);
+  expect(screen.queryByText(/No connected services yet/i)).toBeNull();
+  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
+    return respond(200, { connectors: [connector] });
+  });
+  click(exactButton("Try again"));
+  await screen.findByText("Acme Search");
+});
+
+test("An agent waits for custom definitions without presenting a false empty state", async () => {
+  const gate = context.mocks.deferred<void>();
+  const connector = acmeConnectorFixture();
+  mockConnectorSurface(context, { customConnectors: [connector] });
+  context.mocks.api(customConnectorsContract.list, async ({ respond }) => {
+    await gate.promise;
+    return respond(200, { connectors: [connector] });
+  });
+  await setupTeamPage({ context, path: `/agents/${RESEARCH_AGENT_ID}` });
+  await screen.findByText("Loading connectors…");
+  expect(screen.queryByText(/No connected services yet/i)).toBeNull();
+  expect(screen.queryByLabelText("Grant Acme Search access")).toBeNull();
+  gate.resolve();
+  await screen.findByText("Acme Search");
+});
+
+test("Agent rows show the same saved-account attention for builtin and custom connectors", async () => {
+  const connector = acmeConnectorFixture({
+    connected: false,
+    connectedAccountId: undefined,
+  });
+  const customSummary = savedCustomSummary(connector, true);
+  mockConnectorSurface(context, {
+    catalog: [
+      {
+        ...catalogConnectorFixture("github", "GitHub"),
+        connected: false,
+        connectionStatus: "reconnect-required",
+      },
+    ],
+    customConnectors: [connector],
+    accountSummaries: [
+      customSummary,
+      {
+        ...customSummary,
+        target: { kind: "builtin", connectorSlug: "github" },
+        defaultConnection: {
+          ...customSummary.defaultConnection!,
+          id: "30000000-0000-4000-8000-000000000002",
+          authMethod: "oauth",
+        },
+      },
+    ],
+  });
+  await setupTeamPage({ context, path: `/agents/${RESEARCH_AGENT_ID}` });
+  await screen.findByText("GitHub");
+  await screen.findByText("Acme Search");
+  expect(screen.getAllByText("1/2 need attention")).toHaveLength(2);
+  expect(screen.queryByText(/No connected services yet/i)).toBeNull();
+});
+
+test.each(["Feishu", "Lark"])(
+  "Managed %s keeps its existing access lifecycle without ordinary account summaries",
+  async (name) => {
+    const connector = acmeConnectorFixture({
+      displayName: name,
+      authMode: "oauth",
+      connectedAccountId: undefined,
+      connectedAccountUpdatedAt: undefined,
+      oauthConfig: {
+        providerAdapter: "feishu",
+        clientId: "managed-client",
+        authorizationUrl: "https://auth.example.test/authorize",
+        tokenUrl: "https://auth.example.test/token",
+        tokenEndpointAuthMethod: "client_secret_post",
+        pkceMethod: "S256",
+        scopes: [],
+        authorizationParams: {},
+      },
+    });
+    mockConnectorSurface(context, {
+      customConnectors: [connector],
+      accountSummaries: [],
+    });
+    await setupTeamPage({ context, path: `/agents/${RESEARCH_AGENT_ID}` });
+    await screen.findByText(name);
+    expect(connectorAccessSwitch(`Grant ${name} access`)).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(screen.queryByText("No accounts")).toBeNull();
+    expect(screen.queryByText(/No connected services yet/i)).toBeNull();
+  },
+);

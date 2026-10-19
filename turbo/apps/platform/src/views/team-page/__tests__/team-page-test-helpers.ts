@@ -8,13 +8,18 @@ import {
   customConnectorMcpResponseSchema,
   type CustomConnectorHttpResponse,
   type CustomConnectorMcpResponse,
+  type CustomConnectorResponse,
+  isIntegrationManagedCustomConnector,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import type {
   PublicConnectorCatalogPermissionDetail,
   PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
+import {
+  connectorOverviewContract,
+  type ConnectorAccountBriefSummary,
+} from "@okouai/api-contracts/contracts/connector-overview";
 import type { UserPermissionGrantResponse } from "@okouai/api-contracts/contracts/user-permission-grants";
 import type { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
@@ -104,41 +109,110 @@ export function catalogConnectorFixture(
 export function mockConnectorOverview(
   testContextValue: TestContext,
   connectors: readonly PublicConnectorCatalogStatusItem[],
+  options: {
+    readonly customConnectors?: readonly CustomConnectorResponse[];
+    readonly accountSummaries?: readonly ConnectorAccountBriefSummary[];
+  } = {},
 ): void {
   const connected = connectors.filter((connector) => {
-    return connector.connected;
+    return connector.connection !== null;
   });
+  const summaries: readonly ConnectorAccountBriefSummary[] =
+    options.accountSummaries ?? [
+      ...connected.map((connector) => {
+        return {
+          target: { kind: "builtin" as const, connectorSlug: connector.slug },
+          accountCount: 1,
+          attentionCount:
+            connector.connectionStatus === "reconnect-required" ? 1 : 0,
+          defaultConnection: connector.connection
+            ? {
+                id: connector.connection.id ?? crypto.randomUUID(),
+                authMethod: connector.connection.authMethod,
+                displayName: null,
+                externalId: null,
+                externalUsername: connector.connection.externalUsername,
+                externalEmail: connector.connection.externalEmail,
+                connectionStatus:
+                  connector.connectionStatus === "reconnect-required"
+                    ? ("reconnect-required" as const)
+                    : ("connected" as const),
+              }
+            : null,
+        };
+      }),
+      ...(options.customConnectors ?? []).flatMap((connector) => {
+        return connector.connectedAccountId &&
+          !isIntegrationManagedCustomConnector(connector)
+          ? [
+              {
+                target: {
+                  kind: "custom" as const,
+                  customConnectorId: connector.id,
+                },
+                accountCount: 1,
+                attentionCount: 0,
+                defaultConnection: {
+                  id: connector.connectedAccountId,
+                  authMethod:
+                    connector.authMode === "manual" ? "manual" : "oauth",
+                  displayName: "Work",
+                  externalId: null,
+                  externalUsername: null,
+                  externalEmail: null,
+                  connectionStatus: "connected" as const,
+                },
+              },
+            ]
+          : [];
+      }),
+    ];
   testContextValue.mocks.api(
     connectorOverviewContract.overview,
     ({ respond }) => {
       return respond(200, {
-        builtinConnectors: connected.map((connector) => {
-          return {
-            slug: connector.slug,
-            label: connector.label,
-            icon: connector.icon,
-            hasPermissions: connector.permissionSummary.hasPermissions,
-          };
-        }),
-        customConnectors: [],
-        accountSummaries: connected.map((connector) => {
-          return {
-            target: { kind: "builtin" as const, connectorSlug: connector.slug },
-            accountCount: 1,
-            attentionCount: 0,
-            defaultConnection: connector.connection
-              ? {
-                  id: connector.connection.id ?? crypto.randomUUID(),
-                  authMethod: connector.connection.authMethod,
-                  displayName: null,
-                  externalId: null,
-                  externalUsername: connector.connection.externalUsername,
-                  externalEmail: connector.connection.externalEmail,
-                  connectionStatus: "connected" as const,
-                }
-              : null,
-          };
-        }),
+        builtinConnectors: connectors
+          .filter((connector) => {
+            return summaries.some((summary) => {
+              return (
+                summary.target.kind === "builtin" &&
+                summary.target.connectorSlug === connector.slug &&
+                summary.accountCount > 0
+              );
+            });
+          })
+          .map((connector) => {
+            return {
+              slug: connector.slug,
+              label: connector.label,
+              icon: connector.icon,
+              hasPermissions: connector.permissionSummary.hasPermissions,
+            };
+          }),
+        customConnectors: (options.customConnectors ?? [])
+          .filter((connector) => {
+            return (
+              connector.connected ||
+              summaries.some((summary) => {
+                return (
+                  summary.target.kind === "custom" &&
+                  summary.target.customConnectorId === connector.id &&
+                  summary.accountCount > 0
+                );
+              })
+            );
+          })
+          .map((connector) => {
+            return {
+              id: connector.id,
+              slug: connector.slug,
+              displayName: connector.displayName,
+              permissionBundleRef: connector.permissionBundleRef ?? null,
+              integrationManaged:
+                isIntegrationManagedCustomConnector(connector),
+            };
+          }),
+        accountSummaries: [...summaries],
         computerUseHosts: [],
         cloudBrowserEnabledByDefault: true,
       });
