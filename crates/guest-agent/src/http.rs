@@ -654,8 +654,36 @@ impl HttpClient {
         body: Bytes,
         max_attempts: u32,
     ) -> Result<Option<Value>, AgentError> {
+        self.post_json_bytes_with_timeout(url, body, max_attempts, None)
+            .await
+    }
+
+    /// Send one best-effort ordinary telemetry request under its dedicated
+    /// ingest-derived budget, including connection and response-body reads.
+    pub(crate) async fn post_telemetry(
+        &self,
+        body: &impl Serialize,
+    ) -> Result<Option<Value>, AgentError> {
+        self.post_json_bytes_with_timeout(
+            self.telemetry_url()?,
+            Bytes::from(serde_json::to_vec(body)?),
+            1,
+            Some(Duration::from_millis(
+                api_contracts::generated::constants::runners::AGENT_TELEMETRY_HTTP_TIMEOUT_MS,
+            )),
+        )
+        .await
+    }
+
+    async fn post_json_bytes_with_timeout(
+        &self,
+        url: &str,
+        body: Bytes,
+        max_attempts: u32,
+        request_timeout: Option<Duration>,
+    ) -> Result<Option<Value>, AgentError> {
         let resp = self
-            .post_json_response(url, body, max_attempts, None, None)
+            .post_json_response(url, body, max_attempts, None, request_timeout)
             .await?;
 
         let body = collect_api_success_body(resp).await?;

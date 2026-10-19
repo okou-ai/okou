@@ -17,6 +17,13 @@ import {
 import {
   ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES,
   AGENT_EXECUTION_TIMEOUT_SECONDS,
+  AGENT_TELEMETRY_HTTP_TIMEOUT_MS,
+  AGENT_TELEMETRY_INCIDENT_ATTEMPTS,
+  AGENT_TELEMETRY_INCIDENT_TIMEOUT_MS,
+  AGENT_FINAL_TELEMETRY_FLUSH_TIMEOUT_MS,
+  RUNNER_FINALIZING_HANDOFF_ACCEPTANCE_GRACE_MS,
+  RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
+  RUNNER_JOB_TERMINAL_GRACE_MS,
   BUILTIN_FIREWALL_CATALOG_CACHE_SCHEMA_VERSION,
   BUILTIN_FIREWALL_CATALOG_MAX_BYTES,
   CANONICAL_CLAUDE_CONFIG_DIR,
@@ -328,6 +335,62 @@ export const rustConstantBindings = [
     rustDoc: [
       "Maximum execution budget for one agent run, in seconds.",
       "The runner enforces this deadline and the API includes it in the agent-facing system prompt.",
+    ],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "AGENT_TELEMETRY_HTTP_TIMEOUT_MS",
+    value: rustU64(AGENT_TELEMETRY_HTTP_TIMEOUT_MS),
+    rustDoc: [
+      "Ordinary telemetry HTTP budget including downstream ingest and API/transport headroom.",
+    ],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "AGENT_TELEMETRY_INCIDENT_ATTEMPTS",
+    value: rustU64(AGENT_TELEMETRY_INCIDENT_ATTEMPTS),
+    rustDoc: [
+      "Maximum best-effort attempts for each changed emergency incident set.",
+    ],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "AGENT_TELEMETRY_INCIDENT_TIMEOUT_MS",
+    value: rustU64(AGENT_TELEMETRY_INCIDENT_TIMEOUT_MS),
+    rustDoc: [
+      "Per-attempt emergency incident budget backed by local evidence and independent host recovery.",
+    ],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "AGENT_FINAL_TELEMETRY_FLUSH_TIMEOUT_MS",
+    value: rustU64(AGENT_FINAL_TELEMETRY_FLUSH_TIMEOUT_MS),
+    rustDoc: [
+      "Aggregate final telemetry budget: in-flight and final HTTP/incident delivery plus local settling.",
+    ],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS",
+    value: rustU64(RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS),
+    rustDoc: [
+      "Active completed predecessor preference: final telemetry plus guest terminal cleanup and host observation grace.",
+    ],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "RUNNER_JOB_TERMINAL_GRACE_MS",
+    value: rustU64(RUNNER_JOB_TERMINAL_GRACE_MS),
+    rustDoc: [
+      "Terminal observation grace, compile-time checked against Guest cleanup plus executor host slack.",
+    ],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "RUNNER_FINALIZING_HANDOFF_ACCEPTANCE_GRACE_MS",
+    value: rustU64(RUNNER_FINALIZING_HANDOFF_ACCEPTANCE_GRACE_MS),
+    rustDoc: [
+      "Handoff acceptance grace after both predecessor finalization and successor waiting begin.",
     ],
   },
   {

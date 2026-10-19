@@ -42,6 +42,7 @@ import type {
 import {
   CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
   DEFAULT_PROFILE,
+  RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
   type ConnectorRuntimeSyncResult,
   type ExecutionContext,
   type Job as RunnerJob,
@@ -3531,7 +3532,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await flushWaitUntilForTest();
       });
 
-      it("keeps a live exact producer preferred beyond the predecessor completion window", async () => {
+      it("shares a fixed telemetry-close deadline between Ably and repeated producer polls", async () => {
         const sourceCompletedAt = now();
         mockNow(sourceCompletedAt);
         onTestFinished(() => {
@@ -3567,7 +3568,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           kind: "preference" as const,
           runnerIdentity: sourceRunnerIdentity,
           tier: "finalizingPredecessor" as const,
-          expiresAt: new Date(successorCreatedAt + 2000).toISOString(),
+          expiresAt: new Date(
+            successorCreatedAt + RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
+          ).toISOString(),
         };
         expect(context.mocks.ably.publish).toHaveBeenCalledWith(
           "job",
@@ -3609,7 +3612,62 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(blankPoll.body.job?.runId).toBe(successor.runId);
         expect(runnerPreference(blankPoll.body.job)).toStrictEqual(preference);
 
-        mockNow(successorCreatedAt + 2001);
+        // A normal slow final telemetry request outlives generic reuse routing.
+        // Polling from either host must keep the exact same discovery deadline.
+        mockNow(successorCreatedAt + 4600);
+        for (const runnerId of [sourceRunnerIdentity.runnerId, blankRunnerId]) {
+          const latePoll = await api.requestPollRunner(
+            true,
+            {
+              runnerId,
+              group: runnerGroup,
+              supportedProfiles: ["vm0/default"],
+            },
+            [200],
+          );
+          if (latePoll.status !== 200) {
+            throw new Error("Expected telemetry-close poll to succeed");
+          }
+          expect(latePoll.body.job?.runId).toBe(successor.runId);
+          expect(runnerPreference(latePoll.body.job)).toStrictEqual(preference);
+        }
+
+        // Refresh inventory so expiry cannot be explained by the 30-second
+        // holder freshness guard. A heartbeat must not renew discovery either.
+        mockNow(
+          successorCreatedAt + RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS - 1,
+        );
+        await api.requestHeartbeatRunner(true, [200], {
+          runnerId: sourceRunnerIdentity.runnerId,
+          group: runnerGroup,
+          snapshotGeneration: sourceRunnerIdentity.heartbeatGeneration,
+          snapshotSequence: 2,
+          admittableProfiles: [],
+          activeReuseProducers: [
+            {
+              runId: first.runId,
+              reuseKey: `thread:${first.threadId}`,
+              profile: "vm0/default",
+            },
+          ],
+        });
+        const lastPoll = await api.requestPollRunner(
+          true,
+          {
+            runnerId: sourceRunnerIdentity.runnerId,
+            group: runnerGroup,
+            supportedProfiles: ["vm0/default"],
+          },
+          [200],
+        );
+        if (lastPoll.status !== 200) {
+          throw new Error("Expected last protected poll to succeed");
+        }
+        expect(runnerPreference(lastPoll.body.job)).toStrictEqual(preference);
+
+        mockNow(
+          successorCreatedAt + RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
+        );
         const fallbackPoll = await api.requestPollRunner(
           true,
           {
@@ -3715,7 +3773,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           kind: "preference",
           runnerIdentity: sourceRunnerIdentity,
           tier: "finalizingPredecessor",
-          expiresAt: new Date(successorCreatedAt + 2000).toISOString(),
+          expiresAt: new Date(
+            successorCreatedAt + RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
+          ).toISOString(),
         });
 
         await api.requestHeartbeatRunner(true, [200], {
