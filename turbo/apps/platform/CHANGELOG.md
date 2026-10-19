@@ -12,6 +12,21 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1038.1](https://github.com/okou-ai/okou/compare/app-v0.1038.0...app-v0.1038.1) (2026-10-19)
+
+
+### Bug Fixes
+
+* **activity:** align file browser action buttons ([#41196](https://github.com/okou-ai/okou/issues/41196)) ([0adaead](https://github.com/okou-ai/okou/commit/0adaead4a47745a6ae59dd35edbfd6cee6ad989b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.573.2
+    * @okouai/core bumped to 8.768.0
+
 ## [0.1038.0](https://github.com/okou-ai/okou/compare/app-v0.1037.0...app-v0.1038.0) (2026-10-19)
 
 

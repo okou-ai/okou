@@ -9,6 +9,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.751.4](https://github.com/okou-ai/okou/compare/api-v1.751.3...api-v1.751.4) (2026-10-19)
+
+
+### Bug Fixes
+
+* **api:** preserve artifact previews before generic og lookup ([#40873](https://github.com/okou-ai/okou/issues/40873)) ([dce7cd9](https://github.com/okou-ai/okou/commit/dce7cd99621887541f3a71e26f403dd9ef23147e))
+
+
+### Performance Improvements
+
+* **wechat:** reuse send access and measure reply delivery ([#40713](https://github.com/okou-ai/okou/issues/40713)) ([191f4e4](https://github.com/okou-ai/okou/commit/191f4e4fc3b45f0127c9e028398fac24a79a8411))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.573.2
+    * @okouai/core bumped to 8.768.0
+    * @okouai/db bumped to 1.345.8
+    * @okouai/pi-agent-runtime bumped to 1.50.21
+
 ## [1.751.3](https://github.com/okou-ai/okou/compare/api-v1.751.2...api-v1.751.3) (2026-10-19)
 
 
