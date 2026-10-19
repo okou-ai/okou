@@ -588,6 +588,22 @@ const sendDiscordFile$ = command(
   },
 );
 
+function deliveryIdentityCondition(args: DiscordDeliveryIdentity) {
+  return and(
+    eq(runUploadedFiles.id, args.assetId),
+    eq(runUploadedFiles.userId, args.userId),
+    eq(runUploadedFiles.orgId, args.orgId),
+    args.runId === null
+      ? isNull(runUploadedFiles.runId)
+      : eq(runUploadedFiles.runId, args.runId),
+    eq(runUploadedFiles.assetVersion, CANONICAL_ASSET_VERSION),
+    eq(runUploadedFiles.classification, "published-output"),
+    eq(runUploadedFiles.idempotencyKey, args.operationId),
+    eq(canonicalAssetDeliveries.provider, "discord"),
+    eq(canonicalAssetDeliveries.operationId, args.operationId),
+  );
+}
+
 /**
  * Fire and forget: each upload operation sends at most once. A repeated
  * completion reports the recorded outcome and never sends again.
@@ -599,7 +615,66 @@ export const completeCanonicalDiscordDelivery$ = command(
     signal: AbortSignal,
   ): Promise<DiscordDeliveryResult> => {
     const db = set(writeDb$);
-    const row = await loadDelivery(db, args, signal);
+    async function loadDelivery(
+      args: DiscordDeliveryIdentity,
+      signal: AbortSignal,
+    ): Promise<DiscordDeliveryRow | undefined> {
+      const [row] = await db
+        .select({
+          id: canonicalAssetDeliveries.id,
+          assetId: runUploadedFiles.id,
+          operationId: canonicalAssetDeliveries.operationId,
+          filename: runUploadedFiles.filename,
+          contentType: runUploadedFiles.contentType,
+          sizeBytes: runUploadedFiles.sizeBytes,
+          checksumSha256: runUploadedFiles.checksumSha256,
+          storageKey: runUploadedFiles.storageKey,
+          metadata: runUploadedFiles.metadata,
+          materializationStatus: runUploadedFiles.materializationStatus,
+          assetUrl: runUploadedFiles.url,
+          status: canonicalAssetDeliveries.status,
+          destination: canonicalAssetDeliveries.destination,
+          providerState: canonicalAssetDeliveries.providerState,
+          externalId: canonicalAssetDeliveries.externalId,
+          deliveryUrl: canonicalAssetDeliveries.url,
+          lastError: canonicalAssetDeliveries.lastError,
+        })
+        .from(canonicalAssetDeliveries)
+        .innerJoin(
+          runUploadedFiles,
+          eq(runUploadedFiles.id, canonicalAssetDeliveries.assetId),
+        )
+        .where(deliveryIdentityCondition(args))
+        .limit(1);
+      signal.throwIfAborted();
+      if (!row) {
+        return undefined;
+      }
+      if (
+        row.destination.provider !== "discord" ||
+        row.providerState?.provider !== "discord" ||
+        !row.filename ||
+        !row.contentType ||
+        row.sizeBytes === null ||
+        !row.checksumSha256 ||
+        !row.storageKey ||
+        !row.materializationStatus
+      ) {
+        throw new Error("Canonical Discord delivery metadata is incomplete");
+      }
+      return {
+        ...row,
+        destination: row.destination,
+        providerState: row.providerState,
+        filename: row.filename,
+        contentType: row.contentType,
+        sizeBytes: row.sizeBytes,
+        checksumSha256: row.checksumSha256,
+        storageKey: row.storageKey,
+        materializationStatus: row.materializationStatus,
+      };
+    }
+    const row = await loadDelivery(args, signal);
     if (!row) {
       return unavailableDelivery();
     }
