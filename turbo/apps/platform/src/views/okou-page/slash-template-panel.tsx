@@ -835,6 +835,12 @@ export function SlashTemplatePanel({
   // A workflow row indexes past the categories, so it previews nothing and the
   // preview closes.
   const detailCategory = categories[markedIndex] ?? null;
+  // The list owns the menu height and the covers fill it, so a query that
+  // leaves one type and no workflow would be shorter than one row of covers.
+  // The floor follows whether any type can be previewed, not the marked row:
+  // the menu grows upward from the composer, so a height that changed with the
+  // pointer would move the row under it.
+  const previewFloor = isDesktop && categories.length > 0;
   const makeSection = (
     <SlashPanelCategoryList
       key="make"
@@ -870,7 +876,11 @@ export function SlashTemplatePanel({
   return (
     <div
       className={cn(
-        "group/slash-panel flex min-h-0 w-full flex-row overflow-hidden",
+        "group/slash-panel flex w-full flex-row overflow-hidden",
+        // One full row of covers with their titles, and the top of the next so
+        // the pane reads as scrollable. Capped like the menu, so a short
+        // viewport still scrolls the list instead of clipping its last rows.
+        previewFloor ? "min-h-[min(11rem,var(--available-height))]" : "min-h-0",
         // Revealing the rest of the workflows keeps the menu's height, so the
         // menu never grows away from the composer and moves the row that was
         // clicked; the revealed rows scroll inside instead.
