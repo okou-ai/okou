@@ -241,7 +241,7 @@ test("Insert an attached workflow with slash suggestions", async () => {
   });
   const substring = slashButton("/sales-research");
   expect(
-    substring.compareDocumentPosition(prefix) &
+    prefix.compareDocumentPosition(substring) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   const emphasizedMatch = slashButton("/sales-research").querySelector(
@@ -249,7 +249,7 @@ test("Insert an attached workflow with slash suggestions", async () => {
   );
   expect(emphasizedMatch).toHaveTextContent("research");
 
-  await user.keyboard("{ArrowUp}{Enter}");
+  await user.keyboard("{ArrowDown}{Enter}");
 
   await waitFor(() => {
     expect(editor).toHaveTextContent("/sales-research");
@@ -297,7 +297,7 @@ test("Find and insert a workflow with an abbreviated name", async () => {
   });
 });
 
-test("Keep exact workflow names closest to the composer ahead of prefixes, substrings, and abbreviations", async () => {
+test("Keep exact workflow names at the top ahead of prefixes, substrings, and abbreviations", async () => {
   mockAgent();
   mockThread();
   installWorkflows(() => {
@@ -318,10 +318,10 @@ test("Keep exact workflow names closest to the composer ahead of prefixes, subst
 
   await waitFor(() => {
     expect(slashWorkflowNames()).toStrictEqual([
-      "/pr-audit-report",
-      "/team-pr-auto",
-      "/pr-auto-deploy",
       "/pr-auto",
+      "/pr-auto-deploy",
+      "/team-pr-auto",
+      "/pr-audit-report",
     ]);
   });
 
