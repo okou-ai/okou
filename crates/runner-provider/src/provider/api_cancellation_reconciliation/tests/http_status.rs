@@ -62,7 +62,7 @@ fn assert_status_context(event: &CapturedEvent, run_id: RunId, status: u16) {
     }
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn temporary_http_statuses_warn_once_per_sustained_episode_and_reset_on_recovery() {
     for (status, response) in [
         (502, "502 Bad Gateway"),
@@ -76,11 +76,12 @@ async fn temporary_http_statuses_warn_once_per_sustained_episode_and_reset_on_re
         let controller = server.controller();
         let registry = RunCancellationRegistry::new();
         let run_id = RunId::new_v4();
-        let registration = observe(&controller, &registry, run_id).await;
+        let first_dispatch = Instant::now();
+        let registration = bounded(observe(&controller, &registry, run_id)).await;
         let first = server.next().await;
-        tokio::time::pause();
-        let first_dispatch = first.at;
-        respond_status(first, response).await;
+        // Bounded I/O keeps time frozen from dispatch through peer receipt.
+        assert_eq!(first.at, first_dispatch);
+        bounded(respond_status(first, response)).await;
 
         let first_failure = wait_for_events(&captured, FAILURE, 1).await;
         assert_eq!(first_failure.len(), 1);
@@ -95,7 +96,7 @@ async fn temporary_http_statuses_warn_once_per_sustained_episode_and_reset_on_re
         tokio::time::sleep(INTERVAL).await;
         let retry = server.next().await;
         assert!(retry.at - first_dispatch >= INTERVAL);
-        respond_status(retry, response).await;
+        bounded(respond_status(retry, response)).await;
         let degraded = wait_for_events(&captured, DEGRADED, 1).await;
         assert_eq!(degraded.len(), 1);
         assert_eq!(degraded[0].level, Level::WARN);
@@ -110,10 +111,10 @@ async fn temporary_http_statuses_warn_once_per_sustained_episode_and_reset_on_re
         assert_status_context(&degraded[0], run_id, status);
 
         tokio::time::sleep(INTERVAL).await;
-        respond_status(server.next().await, response).await;
+        bounded(respond_status(server.next().await, response)).await;
         assert_eq!(events(&captured, DEGRADED).len(), 1);
         tokio::time::sleep(INTERVAL).await;
-        server.next().await.mode(run_id, None).await;
+        bounded(server.next().await.mode(run_id, None)).await;
         let recovered = wait_for_events(&captured, RECOVERED, 1).await;
         assert_eq!(recovered[0].level, Level::INFO);
         assert_eq!(recovered[0].fields["recovered_after_failures"], "3");
@@ -121,14 +122,14 @@ async fn temporary_http_statuses_warn_once_per_sustained_episode_and_reset_on_re
         assert!(!registration.is_cancelled());
 
         tokio::time::sleep(INTERVAL).await;
-        respond_status(server.next().await, response).await;
+        bounded(respond_status(server.next().await, response)).await;
         let failures = wait_for_events(&captured, FAILURE, 2).await;
         assert_eq!(failures.len(), 2);
         assert_eq!(failures[1].level, Level::INFO);
         assert_eq!(failures[1].fields["consecutive_failures"], "1");
         assert_eq!(failures[1].fields["degraded"], "false");
         tokio::time::sleep(INTERVAL).await;
-        server.next().await.mode(run_id, Some("hard")).await;
+        bounded(server.next().await.mode(run_id, Some("hard"))).await;
         bounded(registration.handle().signals().hard().cancelled()).await;
         let recovered = events(&captured, RECOVERED);
         assert_eq!(recovered.len(), 2);
@@ -137,8 +138,59 @@ async fn temporary_http_statuses_warn_once_per_sustained_episode_and_reset_on_re
         assert_eq!(events(&captured, DEGRADED).len(), 1);
         assert!(registration.unregister().await);
         controller.shutdown().await;
-        tokio::time::resume();
     }
+}
+
+#[tokio::test(start_paused = true)]
+async fn delayed_first_receipt_keeps_dispatch_cadence_and_delivers_cancellation() {
+    let captured = CapturedEvents::default();
+    let _subscriber =
+        tracing::subscriber::set_default(tracing_subscriber::registry().with(captured.clone()));
+    let (accepted, first_accepted) = oneshot::channel();
+    let (release, released) = oneshot::channel();
+    let mut server = Server::with_first_request_gate(Some(FirstRequestGate {
+        accepted,
+        release: released,
+    }))
+    .await;
+    let controller = server.controller();
+    let registry = RunCancellationRegistry::new();
+    let run_id = RunId::new_v4();
+
+    let first_dispatch = Instant::now();
+    let registration = bounded(observe(&controller, &registry, run_id)).await;
+    // No clock advance separates the real dispatch and accepted socket.
+    assert_eq!(bounded(first_accepted).await.unwrap(), first_dispatch);
+    let receipt_delay = Duration::from_secs(1);
+    tokio::time::advance(receipt_delay).await;
+    release.send(()).unwrap();
+    let first = server.next().await;
+    let first_receipt = first.at;
+    assert_eq!(first_receipt - first_dispatch, receipt_delay);
+    bounded(respond_status(first, "502 Bad Gateway")).await;
+    let failure = wait_for_events(&captured, FAILURE, 1).await;
+    assert_status_context(&failure[0], run_id, 502);
+    assert!(!registration.is_cancelled());
+
+    // End the timer phase before bounded I/O freezes the retry observation.
+    tokio::time::sleep_until(first_dispatch + INTERVAL).await;
+    let retry = server.next().await;
+    let dispatch_interval = retry.at - first_dispatch;
+    let receipt_interval = retry.at - first_receipt;
+    assert!(
+        dispatch_interval >= INTERVAL,
+        "dispatch interval: {dispatch_interval:?}; receipt interval: {receipt_interval:?}"
+    );
+    // A shorter peer gap is valid when the first receipt was delayed.
+    assert!(
+        receipt_interval < INTERVAL,
+        "dispatch interval: {dispatch_interval:?}; receipt interval: {receipt_interval:?}"
+    );
+    bounded(retry.mode(run_id, Some("hard"))).await;
+    bounded(registration.handle().signals().hard().cancelled()).await;
+    assert!(events(&captured, DEGRADED).is_empty());
+    assert!(registration.unregister().await);
+    controller.shutdown().await;
 }
 
 #[tokio::test]
