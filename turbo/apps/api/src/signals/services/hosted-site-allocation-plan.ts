@@ -311,7 +311,9 @@ function* hostedSiteAllocationPlan(
     const previousOwner = (yield {
       kind: "site",
       condition: hostedSiteAddressCondition(publicSlug),
-      lock: false,
+      // This lookup may discover a concurrent creation missed above. Reusing
+      // that site must serialize deployment-version allocation on its row.
+      lock: true,
     }).site;
     // A renamed website keeps its publication history and old R2 pointers.
     // Reusing those names for another site would fail publication or hijack links.
