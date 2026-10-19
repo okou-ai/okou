@@ -384,8 +384,11 @@ are not resident-cache, released-byte or production memory-saving proof.
   at most 1,024 groups with eight profiles each before the unchanged wire caps.
   Group completion maxima survive omitted profiles; if a root scan omits groups,
   it revisits the final selected groups to recover profiles seen before eviction.
-  Coalescing preserves the
-  original absolute commit-wait deadline. None of these hints grants disk authority.
+  Coalescing preserves the original observation time. Inventory rounds probe
+  entries without waiting for external lock holders; the observer retains
+  unresolved keys with independent backoff and a bounded aggregate retry budget.
+  Only unresolved work arms a retry wakeup, and cancelling an observation wait
+  cannot renew its stored deadline. None of these hints grants disk authority.
 - Active-run and budget locks protect short synchronous state updates.
 - Active/idle transfers and cancellation retain their existing ownership gates:
   contested gates are not awaited while holding the idle pool.
