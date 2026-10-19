@@ -27,6 +27,7 @@ struct ChatAttachmentChips: View {
                   Text(item.file.filename).font(.caption).lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .frame(minHeight: 44)
                 .contentShape(Rectangle())
               }
               .buttonStyle(.plain)
@@ -54,7 +55,14 @@ struct ChatAttachmentChips: View {
               .foregroundStyle(.secondary)
             case .failed(let message):
               Text(message).foregroundStyle(.red).lineLimit(2)
-              Button("Retry upload") { draft.retry(item.id) }.disabled(isDisabled)
+              Button {
+                draft.retry(item.id)
+              } label: {
+                Text("Retry upload").font(.caption.weight(.medium))
+                  .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                  .contentShape(Rectangle())
+              }
+              .disabled(isDisabled)
             }
           }
           .font(.caption2)

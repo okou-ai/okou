@@ -44,6 +44,7 @@ struct ChatComposerView: View {
             attachments.error = nil
           } label: {
             Image(systemName: "xmark")
+              .frame(width: 44, height: 44)
           }
           .accessibilityLabel("Dismiss attachment error")
         }
