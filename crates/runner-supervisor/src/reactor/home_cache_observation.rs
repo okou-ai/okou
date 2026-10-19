@@ -13,7 +13,7 @@ use runner_lifecycle::home_image_cache::snapshot::HomeCacheStateSnapshot;
 use runner_storage::{SandboxOpRecord, SandboxOpReporter};
 use tracing::warn;
 
-use super::home_cache_refresh::{HomeCacheRefresh, refresh_bootstrap_change};
+use super::home_cache_refresh::HomeCacheRefresh;
 use super::{RunnerError, RunnerResult};
 use crate::heartbeat::{HeartbeatProfile, refresh_initial_home_cache_snapshot};
 use crate::home_image_cache::{HomeCacheChange, HomeCacheWatcher, HomeImageCache};
@@ -113,18 +113,14 @@ impl HomeCacheObservation {
                 None => change = Some(locked_change),
             }
         }
+        let mut refresh =
+            HomeCacheRefresh::new(home_cache.cloned(), snapshot.clone(), profiles.clone());
         if let Some(change) = &change {
-            refresh_bootstrap_change(
-                home_cache.cloned(),
-                snapshot.clone(),
-                profiles.clone(),
-                change.clone(),
-            )
-            .await;
+            refresh.bootstrap(change.clone()).await;
         }
         let observation = Self {
             next_change: home_cache_watcher.map(home_cache_change_future),
-            refresh: HomeCacheRefresh::new(home_cache.cloned(), snapshot.clone(), profiles.clone()),
+            refresh,
         };
         let initialized = match change {
             Some(change) => InitialHomeCacheObservation::Change(change),

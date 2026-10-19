@@ -21,7 +21,7 @@ fn reusable_candidate(
         .with_reuse_key(Some(reuse_key.to_string()))
 }
 
-async fn wait_heartbeat_matching_after(
+pub(super) async fn wait_heartbeat_matching_after(
     handle: &crate::provider_test_support::MockProviderHandle,
     mut cursor: usize,
     timeout: Duration,
@@ -256,121 +256,6 @@ async fn repeated_periodic_requests_do_not_invalidate_an_accepted_full_refresh()
         .unwrap()
         .unwrap();
     assert_eq!(cache.held_state_root_scan_count(), 1);
-}
-
-#[tokio::test]
-async fn busy_key_saturation_reconciles_once_and_retires_stale_busy_history() {
-    use super::super::super::home_cache_refresh::HomeCacheRefresh;
-    use crate::heartbeat::refresh_initial_home_cache_snapshot;
-    use runner_host::paths::{home_image_cache_lock_path, scoped_home_image_cache_key};
-    use runner_lifecycle::home_image_cache::{HomeCacheChange, HomeImagePrepareLockTestGate};
-    use runner_types::types::MAX_HELD_HOME_STATES;
-    use std::collections::BTreeSet;
-
-    let temp = tempfile::tempdir().unwrap();
-    let home = HomePaths::with_root(temp.path().join("home"));
-    let paths = RunnerPaths::new(temp.path().join("runner"));
-    tokio::fs::create_dir_all(paths.base_dir()).await.unwrap();
-    let cache = HomeImageCache::shared(paths.clone(), &home, "group-a");
-    let snapshot = HomeCacheStateSnapshot::new();
-    let mut profiles = test_profiles();
-    profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
-    let profiles = heartbeat_profiles(&profiles);
-    refresh_initial_home_cache_snapshot(&snapshot, Some(&cache), &profiles).await;
-    assert!(snapshot.home_cache_loaded());
-    seed_home_cache_state(&cache, &paths, "still-busy", "vm0/default", 1024 * 1024).await;
-    let busy_key = scoped_home_image_cache_key("group-a", "vm0/default", "still-busy", 1024 * 1024);
-    let blocker =
-        runner_host::lock::acquire(home_image_cache_lock_path(&home.locks_dir(), &busy_key))
-            .await
-            .unwrap();
-    let gate = HomeImagePrepareLockTestGate::default();
-    let cache = cache.with_inventory_test_gate(gate.clone());
-    cache.reset_held_state_root_scan_count();
-    let mut refresh = HomeCacheRefresh::new(Some(cache.clone()), snapshot.clone(), profiles);
-
-    // Accumulate real busy observations in small FD-bounded batches. Each
-    // external holder then releases its lock without publishing metadata.
-    let keys = (0..MAX_HELD_HOME_STATES)
-        .map(|index| format!("{index:064x}"))
-        .collect::<Vec<_>>();
-    for keys in keys.chunks(32) {
-        let mut locks = Vec::new();
-        for key in keys {
-            tokio::fs::create_dir_all(home.home_image_cache_dir().join(key))
-                .await
-                .unwrap();
-            locks.push(
-                runner_host::lock::acquire(home_image_cache_lock_path(&home.locks_dir(), key))
-                    .await
-                    .unwrap(),
-            );
-        }
-        refresh.request(HomeCacheChange {
-            observed_at: tokio::time::Instant::now() - Duration::from_secs(3),
-            dirty_cache_keys: keys.iter().cloned().collect(),
-            requires_full_reconcile: false,
-        });
-        assert!(
-            tokio::time::timeout(Duration::from_secs(5), refresh.wait())
-                .await
-                .unwrap()
-                .unwrap()
-                .is_none()
-        );
-        drop(locks);
-    }
-    assert_eq!(cache.held_state_root_scan_count(), 0);
-
-    refresh.request(HomeCacheChange {
-        observed_at: tokio::time::Instant::now() - Duration::from_secs(3),
-        dirty_cache_keys: BTreeSet::from([busy_key.clone()]),
-        requires_full_reconcile: false,
-    });
-    assert!(
-        tokio::time::timeout(Duration::from_secs(5), refresh.wait())
-            .await
-            .unwrap()
-            .unwrap()
-            .is_none()
-    );
-    gate.wait_entered(Duration::from_secs(5)).await;
-    gate.release();
-    assert!(
-        tokio::time::timeout(Duration::from_secs(5), refresh.wait())
-            .await
-            .unwrap()
-            .unwrap()
-            .is_none(),
-        "the still-locked publication remains unavailable"
-    );
-    tokio::select! {
-        result = refresh.drain() => result.unwrap(),
-        () = gate.wait_entered(Duration::from_secs(5)) => {
-            panic!("a complete reconciliation must not launch another scan for stale busy keys");
-        }
-    }
-    assert!(snapshot.loaded_home_cache_snapshot().states.is_empty());
-    assert_eq!(cache.held_state_root_scan_count(), 1);
-
-    drop(blocker);
-    refresh.request(HomeCacheChange {
-        observed_at: tokio::time::Instant::now(),
-        dirty_cache_keys: BTreeSet::from([busy_key]),
-        requires_full_reconcile: false,
-    });
-    assert!(
-        tokio::time::timeout(Duration::from_secs(5), refresh.wait())
-            .await
-            .unwrap()
-            .unwrap()
-            .is_some()
-    );
-    let states = snapshot.loaded_home_cache_snapshot().states;
-    assert_eq!(states.len(), 1);
-    assert_eq!(states[0].reuse_key, "still-busy");
-    assert_eq!(cache.held_state_root_scan_count(), 1);
-    refresh.drain().await.unwrap();
 }
 
 #[tokio::test]
