@@ -1,6 +1,4 @@
 import { getCustomConnectorSkillStorageName } from "@okouai/core/storage-names";
-import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
-import { connectorOverviewRoutes } from "../connector-overview";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { captureConnectorExternalState } from "./helpers/public-connector-actor";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";

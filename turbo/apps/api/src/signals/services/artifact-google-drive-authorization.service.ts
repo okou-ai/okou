@@ -1,12 +1,38 @@
 import { artifacts } from "@okouai/db/schema/artifact";
 import { agents } from "@okouai/db/schema/agent";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { connectors } from "@okouai/db/schema/connector";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { and, eq, isNull, isNotNull, or } from "drizzle-orm";
-import { command } from "ccstate";
-import { writeDb$ } from "../external/db";
+import { command, computed } from "ccstate";
+import { db$, writeDb$ } from "../external/db";
+
+/** Validate the current view before using its account or agent context. */
+export function ownedGoogleDriveThreadContext(args: {
+  readonly threadId: string;
+  readonly orgId: string;
+  readonly userId: string;
+}) {
+  return computed(async (get) => {
+    const [thread] = await get(db$)
+      .select({ id: chatThreads.id })
+      .from(chatThreads)
+      .innerJoin(
+        agents,
+        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, args.orgId)),
+      )
+      .where(
+        and(
+          eq(chatThreads.id, args.threadId),
+          eq(chatThreads.userId, args.userId),
+        ),
+      )
+      .limit(1);
+    return thread !== undefined;
+  });
+}
 
 /** Authorize the stored resource, never the chat that happened to produce it. */
 export const ownedGoogleDriveArtifact$ = command(
@@ -16,6 +42,7 @@ export const ownedGoogleDriveArtifact$ = command(
       readonly artifactId: string;
       readonly orgId: string;
       readonly userId: string;
+      readonly catalogOnly?: boolean;
     },
     signal: AbortSignal,
   ) => {
@@ -40,7 +67,9 @@ export const ownedGoogleDriveArtifact$ = command(
               eq(artifacts.orgId, args.orgId),
               eq(artifacts.authorUserId, args.userId),
             ),
-            eq(runUploadedFiles.id, args.artifactId),
+            args.catalogOnly
+              ? undefined
+              : eq(runUploadedFiles.id, args.artifactId),
           ),
           eq(runUploadedFiles.orgId, args.orgId),
           eq(runUploadedFiles.userId, args.userId),

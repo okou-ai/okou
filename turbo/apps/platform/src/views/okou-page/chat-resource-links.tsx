@@ -3,7 +3,11 @@ import { useTranslation } from "react-i18next";
 import { Copy } from "lucide-react";
 import { Button } from "@okouai/ui";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
-import { copyChatResourceLink$ } from "../../signals/chat-page/chat-resources.ts";
+import type { ArtifactCatalogSignals } from "../../signals/artifacts-page/create-artifact-catalog-signals.ts";
+import {
+  copyChatResourceLink$,
+  copyChatResourceArtifact$,
+} from "../../signals/chat-page/chat-resources.ts";
 import {
   ChatResourceSectionHeading,
   ChatResourceSectionToggle,
@@ -11,9 +15,17 @@ import {
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
-export function CopyResourceLink({ url }: { readonly url: string }) {
+export function CopyResourceLink(
+  source:
+    | { readonly url: string }
+    | {
+        readonly artifactId: string;
+        readonly catalog: ArtifactCatalogSignals;
+      },
+) {
   const { t } = useTranslation();
   const copy = useSet(copyChatResourceLink$);
+  const copyArtifact = useSet(copyChatResourceArtifact$);
   const signal = useGet(pageSignal$);
   return (
     <Button
@@ -25,7 +37,12 @@ export function CopyResourceLink({ url }: { readonly url: string }) {
       })}
       className="shrink-0 hover:bg-gray-50 focus-visible:bg-gray-50 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/resource-row:opacity-100 group-focus-within/resource-row:opacity-100 [&_svg]:size-3.5"
       onClick={() => {
-        return detach(copy(url, signal), Reason.DomCallback);
+        return detach(
+          "artifactId" in source
+            ? copyArtifact(source.catalog, source.artifactId, signal)
+            : copy(source.url, signal),
+          Reason.DomCallback,
+        );
       }}
     >
       <Copy size={14} />

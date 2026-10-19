@@ -35,6 +35,10 @@ import { userPreferences } from "../services/user-data.service";
 import { settle } from "../utils";
 
 const accountSummaries$ = connectorAccountSummaries(organizationAuthContext$);
+const customConnectors$ = customConnectorOverview(
+  organizationAuthContext$,
+  accountSummaries$,
+);
 
 const overview$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
@@ -43,7 +47,7 @@ const overview$ = command(async ({ get, set }, signal: AbortSignal) => {
   const [summaries, customConnectors, preferences, hosts, overrides] =
     await Promise.all([
       get(accountSummaries$),
-      get(customConnectorOverview(owner)),
+      get(customConnectors$),
       get(userPreferences(owner)),
       set(listComputerUseHosts$, owner, signal),
       get(userFeatureSwitchOverrides(auth.orgId, auth.userId)),

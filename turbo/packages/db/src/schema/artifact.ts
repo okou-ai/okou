@@ -9,7 +9,10 @@ import {
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import type { ArtifactCatalogKind } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { builtInGenerationJobs } from "./built-in-generation-job";
+import { chatThreads } from "./chat-thread";
 import { hostedSites } from "./hosted-site";
 import { runUploadedFiles } from "./run-uploaded-file";
 import type { ArtifactThumbnail } from "@okouai/db/jsonb-contracts/artifact";
@@ -55,6 +58,20 @@ export const artifacts = pgTable(
     kind: varchar("kind", { length: 32 }).$type<ArtifactKind>().notNull(),
     entityId: uuid("entity_id").notNull(),
     logicalKey: text("logical_key").notNull(),
+    // Creating thread is stable across projection replacement, not a lifetime owner.
+    chatThreadId: uuid("chat_thread_id").references(
+      () => {
+        return chatThreads.id;
+      },
+      { onDelete: "set null" },
+    ),
+    // Nullable while outgoing API versions can still write the old projection.
+    displayKind: varchar("display_kind", {
+      length: 32,
+    }).$type<ArtifactCatalogKind>(),
+    sourceUrl: text("source_url"),
+    aliasUrl: text("alias_url"),
+    videoSourceUrl: text("video_source_url"),
     projectionFileId: uuid("projection_file_id"),
     projectionCreatedAt: timestamp("projection_created_at").notNull(),
     title: text("title").notNull(),
@@ -73,6 +90,18 @@ export const artifacts = pgTable(
         table.authorUserId,
         table.logicalKey,
       ),
+      index("artifacts_projection_file_org_idx")
+        .on(table.projectionFileId, table.orgId)
+        .where(sql`${table.projectionFileId} IS NOT NULL`),
+      index("artifacts_thread_author_created_idx")
+        .on(
+          table.chatThreadId,
+          table.orgId,
+          table.authorUserId,
+          table.createdAt.desc(),
+          table.id.desc(),
+        )
+        .where(sql`${table.chatThreadId} IS NOT NULL`),
       index("artifacts_author_created_idx").on(
         table.orgId,
         table.authorUserId,

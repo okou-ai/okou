@@ -2367,6 +2367,27 @@
       "when": 1792392279071,
       "tag": "1415_prepare_billing_run_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 1416,
+      "version": "7",
+      "when": 1792394519635,
+      "tag": "1416_threadless_run_cleanup_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 1417,
+      "version": "7",
+      "when": 1792395534194,
+      "tag": "1417_artifact_thread_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 1418,
+      "version": "7",
+      "when": 1792396497833,
+      "tag": "1418_artifact_projection_owner_lookup",
+      "breakpoints": true
     }
   ]
 }

@@ -7,6 +7,7 @@ import { connectorOverviewContract } from "@okouai/api-contracts/contracts/conne
 import { connectorAgentAccessContract } from "@okouai/api-contracts/contracts/connector-agent-access";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { chatRelationsContract } from "@okouai/api-contracts/contracts/chat-relations";
+import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import {
   agentsByIdContract,
   agentsMainContract,
@@ -335,7 +336,12 @@ export const apiAgentsHandlers = [
     });
   }),
 
-  // GET /api/chat-threads/:threadId/artifacts
+  // Canonical directory list, including thread-scoped resource panels.
+  mockApi(artifactCatalogContract.list, ({ respond }) => {
+    return respond(200, { artifacts: [], nextCursor: null });
+  }),
+
+  // Legacy transcript attachment metadata, not the thread resource list.
   mockApi(chatThreadArtifactsContract.list, ({ respond }) => {
     return respond(200, { runs: [] });
   }),

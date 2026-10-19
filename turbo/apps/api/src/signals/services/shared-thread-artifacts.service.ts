@@ -283,7 +283,8 @@ const changeSharedThreadArtifactPhase$ = command(
     );
     signal.throwIfAborted();
     // Catalog projection is recoverable, not the public grant. Only insert
-    // while the owned thread still exists; deletion removes both SQL records.
+    // while the snapshot still exists. Deleting its source chat only clears
+    // the catalog association; the snapshot and global catalog entry survive.
     const database = set(writeDb$);
     await database
       .insert(artifacts)
@@ -302,6 +303,19 @@ const changeSharedThreadArtifactPhase$ = command(
             logicalKey: sql`${sharedThreadArtifactLogicalKey(row.id)}`
               .mapWith(artifacts.logicalKey)
               .as("logical_key"),
+            chatThreadId: sharedThreads.sourceChatThreadId,
+            displayKind: sql`'shared-thread'`
+              .mapWith(nullableDriverValueDecoder(artifacts.displayKind))
+              .as("display_kind"),
+            sourceUrl: sql`NULL::text`
+              .mapWith(nullableDriverValueDecoder(artifacts.sourceUrl))
+              .as("source_url"),
+            aliasUrl: sql`NULL::text`
+              .mapWith(nullableDriverValueDecoder(artifacts.aliasUrl))
+              .as("alias_url"),
+            videoSourceUrl: sql`NULL::text`
+              .mapWith(nullableDriverValueDecoder(artifacts.videoSourceUrl))
+              .as("video_source_url"),
             projectionFileId: sql`NULL::uuid`
               .mapWith(nullableDriverValueDecoder(artifacts.projectionFileId))
               .as("projection_file_id"),

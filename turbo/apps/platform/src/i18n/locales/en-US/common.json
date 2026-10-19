@@ -553,6 +553,7 @@
         "websiteAria": "Show website artifacts"
       },
       "kindIcon": "{{kind}} artifact",
+      "loadMore": "Load more",
       "loading": "Loading artifacts",
       "retry": "Try again"
     },

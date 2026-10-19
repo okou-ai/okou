@@ -76,6 +76,8 @@ interface OauthRequest {
 }
 
 interface DriveMockControl {
+  readonly legacyArtifactRequests: number;
+  readonly detailRequests: readonly string[];
   readonly authorizationUpdates: readonly UserBuiltinConnectorUpdate[];
   readonly completeAuthorization: () => void;
   readonly requireNewConnection: () => void;
@@ -124,6 +126,8 @@ function installDriveMocks(
   const fileUrl = options.filename
     ? publicArtifactUrl(filename)
     : DRIVE_FILE_URL;
+  let legacyArtifactRequests = 0;
+  const detailRequests: string[] = [];
   const authorizationUpdates: UserBuiltinConnectorUpdate[] = [];
   const oauthRequests: OauthRequest[] = [];
   const syncRequests: {
@@ -150,9 +154,51 @@ function installDriveMocks(
       }),
     ],
   ]);
+  const driveMetadata = (): Pick<
+    ArtifactDetail,
+    "googleDriveConnectionId" | "googleDriveSync"
+  > => {
+    return {
+      googleDriveConnectionId: SELECTED_DRIVE_CONNECTION_ID,
+      googleDriveSync: artifactSynced
+        ? {
+            status: "synced",
+            accountReady: true,
+            id: "drive-file-1",
+            name: filename,
+            ...(mimeType ? { mimeType } : {}),
+            originalUploaded,
+            webViewLink: "https://drive.google.test/file/drive-file-1",
+          }
+        : selectedAccountReady
+          ? { status: "not_synced", accountReady: true }
+          : {
+              status: "disconnected",
+              recovery:
+                artifactConnectionState === "not-connected"
+                  ? { action: "connect" }
+                  : artifactConnectionState === "reconnect-required"
+                    ? {
+                        action: "reconnect",
+                        connectionId: SELECTED_DRIVE_CONNECTION_ID,
+                      }
+                    : { action: "authorize" },
+            },
+    };
+  };
   mockArtifactConversation(targetContext, {
     catalog: [summary],
-    details,
+    getDetail: (artifactId) => {
+      detailRequests.push(artifactId);
+      const detail = details.get(artifactId);
+      return detail ? { ...detail, ...driveMetadata() } : null;
+    },
+    onDetailQuery: (chatThreadId) => {
+      expect(chatThreadId).toBe(NAVIGATION_ARTIFACT_THREAD_ID);
+    },
+    onLegacyArtifacts: () => {
+      legacyArtifactRequests += 1;
+    },
     chatEvents: [
       {
         id: "drive-preview-message",
@@ -181,33 +227,7 @@ function installDriveMocks(
           fileId: DRIVE_FILE_ID,
           filename,
           url: fileUrl,
-          googleDriveSync: artifactSynced
-            ? {
-                status: "synced",
-                accountReady: true,
-                id: "drive-file-1",
-                name: filename,
-                ...(mimeType ? { mimeType } : {}),
-                originalUploaded,
-                webViewLink: "https://drive.google.test/file/drive-file-1",
-              }
-            : selectedAccountReady
-              ? {
-                  status: "not_synced",
-                  accountReady: true,
-                }
-              : {
-                  status: "disconnected",
-                  recovery:
-                    artifactConnectionState === "not-connected"
-                      ? { action: "connect" }
-                      : artifactConnectionState === "reconnect-required"
-                        ? {
-                            action: "reconnect",
-                            connectionId: SELECTED_DRIVE_CONNECTION_ID,
-                          }
-                        : { action: "authorize" },
-                },
+          ...driveMetadata(),
         }),
       ];
     },
@@ -361,6 +381,10 @@ function installDriveMocks(
   );
 
   return {
+    get legacyArtifactRequests() {
+      return legacyArtifactRequests;
+    },
+    detailRequests,
     authorizationUpdates,
     completeAuthorization: () => {
       completedAttempts.set(oauthAttemptId, oauthConnectionId);
@@ -541,6 +565,13 @@ describe("with a Drive artifact menu", () => {
     await expect(
       screen.findByText("Synced to Google Drive"),
     ).resolves.toBeInTheDocument();
+    await waitFor(() => {
+      expect(drive.detailRequests).toStrictEqual([
+        DRIVE_ARTIFACT_ID,
+        DRIVE_ARTIFACT_ID,
+      ]);
+    });
+    expect(drive.legacyArtifactRequests).toBe(0);
   });
 });
 
@@ -675,6 +706,7 @@ test("Connect Google Drive and sync an artifact", async () => {
     ]);
   });
   await expectSyncCompletedPreview();
+  expect(drive.legacyArtifactRequests).toBe(0);
 });
 
 test("Reconnect the Google Drive account selected for the artifact", async () => {
@@ -724,6 +756,7 @@ test("Reconnect the Google Drive account selected for the artifact", async () =>
     ]);
   });
   await expectSyncCompletedPreview();
+  expect(drive.legacyArtifactRequests).toBe(0);
 });
 
 test("Sync with the artifact's ready Drive account when the default needs attention", async () => {
@@ -755,6 +788,7 @@ test("Sync with the artifact's ready Drive account when the default needs attent
   expect(drive.oauthRequests).toHaveLength(0);
   expect(drive.authorizationUpdates).toHaveLength(0);
   await expectSyncCompletedPreview("Upload to Google Drive");
+  expect(drive.legacyArtifactRequests).toBe(0);
 });
 
 test("Keep a reopened artifact usable after cancelling the remaining Drive setup", async () => {
@@ -1018,6 +1052,7 @@ describe("google editor conversion", () => {
       }
       expect(popup.open.calls).toHaveLength(1);
       expect(drive.oauthRequests).toStrictEqual(expectedOauthRequests);
+      expect(drive.legacyArtifactRequests).toBe(0);
     },
   );
 
@@ -1103,6 +1138,7 @@ describe("google editor conversion", () => {
         "true",
       );
       expect(drive.syncRequests).toHaveLength(1);
+      expect(drive.legacyArtifactRequests).toBe(0);
     },
   );
 
@@ -1133,6 +1169,7 @@ describe("google editor conversion", () => {
         expect(drive.syncRequests).toHaveLength(1);
       });
       expect(drive.syncRequests[0]).toHaveProperty("mode", "original");
+      expect(drive.legacyArtifactRequests).toBe(0);
     },
   );
 
@@ -1183,6 +1220,7 @@ describe("google editor conversion", () => {
           `Open in Google ${slides ? "Slides" : "Docs"}`,
         ),
       ).toHaveAttribute("href", "https://drive.google.test/file/drive-file-1");
+      expect(drive.legacyArtifactRequests).toBe(0);
     },
   );
 
@@ -1291,6 +1329,7 @@ describe("google editor conversion", () => {
         "aria-disabled",
         "true",
       );
+      expect(drive.legacyArtifactRequests).toBe(0);
     },
   );
 
@@ -1400,11 +1439,12 @@ describe("google editor conversion", () => {
     expect(
       roleItemNamed("menuitem", "Upload to Google Drive"),
     ).not.toHaveAttribute("aria-disabled", "true");
+    expect(drive.legacyArtifactRequests).toBe(0);
   });
 
   it("does not mark an unconverted response as a successful native document", async () => {
     mockWideScreen();
-    installDriveMocks(context, "connected", {
+    const drive = installDriveMocks(context, "connected", {
       filename: "report.txt",
       contentType: "text/plain",
       selectedAccountReady: true,
@@ -1425,5 +1465,6 @@ describe("google editor conversion", () => {
         ),
       ).toBeInTheDocument();
     });
+    expect(drive.legacyArtifactRequests).toBe(0);
   });
 });

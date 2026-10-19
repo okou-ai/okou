@@ -156,6 +156,9 @@ interface MockArtifactConversationOptions {
   readonly catalog: readonly ArtifactSummary[];
   readonly chatEvents?: MockChatEventInput[];
   readonly details?: ReadonlyMap<string, ArtifactDetail | null>;
+  readonly getDetail?: (artifactId: string) => ArtifactDetail | null;
+  readonly onDetailQuery?: (chatThreadId: string | undefined) => void;
+  readonly onLegacyArtifacts?: () => void;
   readonly activeRunIds?: readonly string[];
   readonly onCatalogList?: (query: ArtifactCatalogListQuery) => void;
 }
@@ -178,18 +181,25 @@ export function mockArtifactConversation(
       nextCursor: null,
     });
   });
-  context.mocks.api(artifactCatalogContract.get, ({ params, respond }) => {
-    const detail = options.details?.get(params.artifactId) ?? null;
-    return detail === null
-      ? respond(404, {
-          error: {
-            code: "ARTIFACT_NOT_FOUND",
-            message: "Artifact not found",
-          },
-        })
-      : respond(200, detail);
-  });
+  context.mocks.api(
+    artifactCatalogContract.get,
+    ({ params, query, respond }) => {
+      options.onDetailQuery?.(query.chatThreadId);
+      const detail = options.getDetail
+        ? options.getDetail(params.artifactId)
+        : (options.details?.get(params.artifactId) ?? null);
+      return detail === null
+        ? respond(404, {
+            error: {
+              code: "ARTIFACT_NOT_FOUND",
+              message: "Artifact not found",
+            },
+          })
+        : respond(200, detail);
+    },
+  );
   context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
+    options.onLegacyArtifacts?.();
     return respond(200, {
       runs: [...(options.artifactRuns?.() ?? [])],
     });

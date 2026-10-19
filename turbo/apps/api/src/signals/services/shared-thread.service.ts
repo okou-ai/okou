@@ -411,6 +411,21 @@ const insertSharedThreadIdentity$ = command(
               logicalKey: sql`${sharedThreadArtifactLogicalKey(id)}`
                 .mapWith(artifacts.logicalKey)
                 .as("logical_key"),
+              chatThreadId: sql`${args.threadId}::uuid`
+                .mapWith(nullableDriverValueDecoder(artifacts.chatThreadId))
+                .as("chat_thread_id"),
+              displayKind: sql`'shared-thread'`
+                .mapWith(nullableDriverValueDecoder(artifacts.displayKind))
+                .as("display_kind"),
+              sourceUrl: sql`NULL::text`
+                .mapWith(nullableDriverValueDecoder(artifacts.sourceUrl))
+                .as("source_url"),
+              aliasUrl: sql`NULL::text`
+                .mapWith(nullableDriverValueDecoder(artifacts.aliasUrl))
+                .as("alias_url"),
+              videoSourceUrl: sql`NULL::text`
+                .mapWith(nullableDriverValueDecoder(artifacts.videoSourceUrl))
+                .as("video_source_url"),
               projectionFileId: sql`NULL::uuid`
                 .mapWith(nullableDriverValueDecoder(artifacts.projectionFileId))
                 .as("projection_file_id"),

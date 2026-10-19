@@ -1,4 +1,4 @@
-import { chatThreadArtifactsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -9,7 +9,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import {
-  artifactRun,
+  artifactSummary,
   buttonNamed,
   mockArtifactConversation,
   NAVIGATION_ARTIFACT_THREAD_ID,
@@ -19,6 +19,7 @@ import { createDeferredPromise } from "../../../signals/utils.ts";
 
 import {
   context,
+  RESOURCE_ARTIFACT_ID,
   installResourceGeometry,
   resourceButton,
   resourcePanel,
@@ -54,17 +55,11 @@ test("Hide the resource trigger until content has loaded", async () => {
   context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
   mockArtifactConversation(context, { catalog: [], chatEvents: [] });
   const response = createDeferredPromise<void>(context.signal);
-  context.mocks.api(chatThreadArtifactsContract.list, async ({ respond }) => {
+  context.mocks.api(artifactCatalogContract.list, async ({ respond }) => {
     await response.promise;
     return respond(200, {
-      runs: [
-        artifactRun({
-          fileId: "b0000000-0000-4000-a000-000000000999",
-          filename: "report.pdf",
-          contentType: "application/pdf",
-          url: "https://files.example.test/report.pdf",
-        }),
-      ],
+      artifacts: [artifactSummary(RESOURCE_ARTIFACT_ID, "file", "report.pdf")],
+      nextCursor: null,
     });
   });
   await setupPage({
@@ -90,20 +85,16 @@ test("Retry a resource loading error without showing an empty state", async () =
   context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
   mockArtifactConversation(context, { catalog: [], chatEvents: [] });
   let failed = true;
-  context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
+  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return failed
       ? respond(500, {
           error: { message: "Attachments are unavailable" },
         })
       : respond(200, {
-          runs: [
-            artifactRun({
-              fileId: "b0000000-0000-4000-a000-000000000999",
-              filename: "recovered.pdf",
-              contentType: "application/pdf",
-              url: "https://files.example.test/recovered.pdf",
-            }),
+          artifacts: [
+            artifactSummary(RESOURCE_ARTIFACT_ID, "file", "recovered.pdf"),
           ],
+          nextCursor: null,
         });
   });
   await setupPage({
