@@ -146,7 +146,10 @@ import { mcpOAuthClientMetadataRoutes } from "./routes/mcp-oauth-client-metadata
 import { mcpServerRoutes } from "./routes/mcp-server";
 import { meModelProviderAccountRoutes } from "./routes/me-model-provider-accounts";
 import { meModelProvidersDeleteRoutes } from "./routes/me-model-providers-delete";
-import { meModelProvidersListRoutes } from "./routes/me-model-providers-list";
+import {
+  meModelProvidersListRoutes,
+  meThirdPartySubscriptionsListRoutes,
+} from "./routes/me-model-providers-list";
 import { meModelProvidersResetSubscriptionRoutes } from "./routes/me-model-providers-reset-subscription";
 import { meModelProvidersUpsertRoutes } from "./routes/me-model-providers-upsert";
 import { modelCatalogRoutes } from "./routes/model-catalog";
@@ -379,6 +382,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...meModelProvidersDeleteRoutes,
   ...meModelProviderAccountRoutes,
   ...meModelProvidersListRoutes,
+  ...meThirdPartySubscriptionsListRoutes,
   ...meModelProvidersResetSubscriptionRoutes,
   ...meModelProvidersUpsertRoutes,
   ...voiceIoQuotaRoutes,

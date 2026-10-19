@@ -989,6 +989,10 @@ export {
   type PersonalModelProviderAccountsByIdContract,
 } from "./personal-model-providers";
 export {
+  thirdPartySubscriptionsMainContract,
+  type ThirdPartySubscriptionsMainContract,
+} from "./third-party-subscriptions";
+export {
   userPreferencesContract,
   type UserPreferencesContract,
 } from "./user-preferences";

@@ -27,7 +27,7 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { EllipsisVertical, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { subscriptionUsageWindows } from "../../../../lib/subscription-usage-windows.ts";
-import { reloadPersonalModelProviders$ } from "../../../../signals/external/personal-model-providers.ts";
+import { reloadThirdPartySubscriptions$ } from "../../../../signals/external/third-party-subscriptions.ts";
 import { openClaudeCodeDeviceAuthDialogPersonal$ } from "../../../../signals/okou-page/settings/claude-code-device-auth.ts";
 import { openCodexDeviceAuthDialogPersonal$ } from "../../../../signals/okou-page/settings/codex-device-auth.ts";
 import {
@@ -188,7 +188,7 @@ function AutoPersonalAccountsReadState({
   readonly failed: boolean;
 }) {
   const { t } = useTranslation();
-  const reload = useSet(reloadPersonalModelProviders$);
+  const reload = useSet(reloadThirdPartySubscriptions$);
   const providers = useLoadable(personalConfiguredProviders$);
   return (
     <section className="flex flex-col gap-6">
