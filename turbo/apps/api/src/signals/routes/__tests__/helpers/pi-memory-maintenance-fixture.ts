@@ -28,7 +28,10 @@ import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 import { updateFeatureSwitchesForUser } from "./feature-switches";
 import { memoryArchive } from "./public-runner-memory";
 
-export function createPiMemoryMaintenanceFixture(context: TestContext) {
+export function createPiMemoryMaintenanceFixture(
+  context: TestContext,
+  onboarding: "paid" | "limited-free" = "paid",
+) {
   const chat = createChatEventsFixture(context);
   const runs = createRunsApi(context);
   const webhooks = createWebhookCallbackApi(context);
@@ -68,14 +71,15 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
       throw new Error("Expected the Pi actor's organization");
     }
     const actor = { ...identity, orgId: identity.orgId };
-    // Paid bootstrap already observed this organization's default agent.
-    const onboarding = orgId
-      ? await chat.bdd.readOnboardingStatus(actor)
-      : await runs.grantProEntitlement(actor);
-    if (!onboarding.defaultAgentId) {
-      throw new Error("Expected paid onboarding to create a default agent");
+    const paidBootstrap = !orgId && onboarding === "paid";
+    const registered = paidBootstrap
+      ? await runs.grantProEntitlement(actor)
+      : await chat.bdd.readOnboardingStatus(actor);
+    if (!registered.defaultAgentId) {
+      throw new Error("Expected onboarding to create a default agent");
     }
-    if (orgId) {
+    // The paid helper already completed this organization's onboarding.
+    if (!paidBootstrap) {
       const completed = await chat.bdd.completeOnboarding(actor);
       expect(completed.status).toBe(200);
     }
@@ -85,7 +89,7 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
     } else {
       await runs.ensurePersonalSubscriptionModel(actor);
     }
-    return { actor, agentId: onboarding.defaultAgentId, runnerGroup };
+    return { actor, agentId: registered.defaultAgentId, runnerGroup };
   }
 
   async function prepareSources(
