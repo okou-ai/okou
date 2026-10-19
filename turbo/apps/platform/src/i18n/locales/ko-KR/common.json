@@ -5177,7 +5177,6 @@
       "description": "에이전트가 구매를 요청하고 Link 거래를 확인할 수 있습니다. 모든 구매는 직접 승인합니다.",
       "disconnect": "연결 해제",
       "loadError": "지갑을 불러오지 못했습니다.",
-      "permissionsUnknown": "Link에 다시 연결하여 현재 권한을 검토하고 확인하세요.",
       "retry": "다시 시도",
       "scope": "Okou가 대신 구매하고 Link 거래를 확인하도록 허용하세요.",
       "title": "지갑",
@@ -5207,8 +5206,7 @@
         "statusLabel": "상태",
         "title": "Link 거래 내역",
         "unknownStatus": "상태 확인 불가"
-      },
-      "workspaceScopeChanged": "이제 이 워크스페이스의 모든 내 에이전트가 Link 지갑을 사용할 수 있습니다. 다시 연결하여 이 변경을 승인하세요."
+      }
     },
     "workspace": {
       "danger": {
