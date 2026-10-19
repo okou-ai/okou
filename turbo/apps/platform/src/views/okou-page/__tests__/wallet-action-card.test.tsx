@@ -101,60 +101,54 @@ function mockAuthorization(
     complete: (notify = true) => {
       status = { status: "authorized", authorizationId: AUTHORIZATION_ID };
       if (notify) {
-        context.mocks.ably.trigger("wallet:changed", { agentId: AGENT_ID });
+        context.mocks.ably.trigger("wallet:changed", { orgId: "org_default" });
       }
     },
     fail: (next: "failed" | "unavailable") => {
       status = { status: next };
       context.mocks.ably.trigger("wallet:changed", {
-        agentId: AGENT_ID,
+        orgId: "org_default",
         authorized: true,
       });
     },
   };
 }
 
-test.each(["agent", "workspace"] as const)(
-  "a %s notification completes wallet consent and continues the owning chat once",
-  async (scope) => {
-    const authorization = mockAuthorization();
-    const prompts: string[] = [];
-    context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-      expect(body.agentId).toBe("c0000000-0000-4000-a000-000000000071");
-      expect(body.threadId).toBe(context.resourceId);
-      expect(body.clientEventId).toBe(AUTHORIZATION_ID);
-      expect(body.userMessage).toStrictEqual({
-        version: 1,
-        parts: [{ type: "text", text: CONTINUATION_PROMPT }],
-      });
-      prompts.push(body.prompt ?? "");
-      return respond(201, {
-        threadId: context.resourceId,
-      });
+test("a workspace notification completes wallet consent and continues the owning chat once", async () => {
+  const authorization = mockAuthorization();
+  const prompts: string[] = [];
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    expect(body.agentId).toBe("c0000000-0000-4000-a000-000000000071");
+    expect(body.threadId).toBe(context.resourceId);
+    expect(body.clientEventId).toBe(AUTHORIZATION_ID);
+    expect(body.userMessage).toStrictEqual({
+      version: 1,
+      parts: [{ type: "text", text: CONTINUATION_PROMPT }],
     });
-    await openChat(TRACKED_CONNECT_URL);
-    await authorization.read;
-    const link = await findControl("link", "Authorize Link wallet");
-    expect(link).toHaveAttribute("href", TRACKED_CONNECT_URL);
-    expect(prompts).toStrictEqual([]);
-    click(link);
-    await screen.findByText("Waiting for authorization");
-    await authorization.subscribedRead;
-    context.mocks.ably.trigger("wallet:changed", {
-      agentId: crypto.randomUUID(),
+    prompts.push(body.prompt ?? "");
+    return respond(201, {
+      threadId: context.resourceId,
     });
-    context.mocks.ably.trigger("wallet:changed", { agentId: "invalid" });
-    authorization.complete(false);
-    const payload =
-      scope === "workspace" ? { orgId: "org_default" } : { agentId: AGENT_ID };
-    context.mocks.ably.trigger("wallet:changed", payload);
-    context.mocks.ably.trigger("wallet:changed", payload);
-    const completed = await findControl("button", "Authorized");
-    expect(completed).toBeDisabled();
-    expect(prompts).toStrictEqual([CONTINUATION_PROMPT]);
-    expect(context.mocks.ably.hasSubscription("wallet:changed")).toBeFalsy();
-  },
-);
+  });
+  await openChat(TRACKED_CONNECT_URL);
+  await authorization.read;
+  const link = await findControl("link", "Authorize Link wallet");
+  expect(link).toHaveAttribute("href", TRACKED_CONNECT_URL);
+  expect(prompts).toStrictEqual([]);
+  click(link);
+  await screen.findByText("Waiting for authorization");
+  await authorization.subscribedRead;
+  context.mocks.ably.trigger("wallet:changed", { orgId: "org_other" });
+  context.mocks.ably.trigger("wallet:changed", { orgId: "" });
+  authorization.complete(false);
+  const payload = { orgId: "org_default" };
+  context.mocks.ably.trigger("wallet:changed", payload);
+  context.mocks.ably.trigger("wallet:changed", payload);
+  const completed = await findControl("button", "Authorized");
+  expect(completed).toBeDisabled();
+  expect(prompts).toStrictEqual([CONTINUATION_PROMPT]);
+  expect(context.mocks.ably.hasSubscription("wallet:changed")).toBeFalsy();
+});
 
 function captureContinuation() {
   const prompts: string[] = [];
