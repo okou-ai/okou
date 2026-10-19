@@ -1,4 +1,10 @@
-import { act, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { beforeEach, expect, test } from "vitest";
 import {
   walletUserContract,
@@ -114,7 +120,15 @@ test("shows Link CARD methods with the default first and one management action i
   expect(within(rows[0]!).getByText("Everyday")).toBeInTheDocument();
   expect(within(rows[0]!).getByText("Default")).toBeInTheDocument();
   expect(within(rows[0]!).getByText("Expires 02/2028")).toBeInTheDocument();
+  expect(within(rows[0]!).getByRole("presentation")).toHaveAttribute(
+    "src",
+    expect.stringMatching(/\/card-brands\/visa-[a-f0-9]+\.svg$/u),
+  );
   expect(within(rows[1]!).getByText("Business")).toBeInTheDocument();
+  expect(within(rows[1]!).getByRole("presentation")).toHaveAttribute(
+    "src",
+    expect.stringMatching(/\/card-brands\/mastercard-[a-f0-9]+\.svg$/u),
+  );
   expect(within(rows[1]!).queryByText("Default")).not.toBeInTheDocument();
   expect(
     within(region).queryByText("Checking account"),
@@ -150,7 +164,42 @@ test("uses the provider name when card details are absent and does not invent a 
   await within(region).findByText("Saved card");
   expect(within(region).queryByText("Default")).not.toBeInTheDocument();
   expect(within(region).queryByText(/Expires/)).not.toBeInTheDocument();
+  expect(within(region).queryByRole("presentation")).not.toBeInTheDocument();
   expect(within(region).getAllByRole("listitem")).toHaveLength(1);
+  expect(manageCards(region)).toBeInTheDocument();
+});
+
+test("keeps cards usable when the brand is unknown or its artwork fails to load", async () => {
+  context.mocks.api(walletUserContract.paymentMethods, ({ respond }) => {
+    return respond(200, {
+      data: [
+        { ...everyday, card: { ...everyday.card!, brand: "VISA" } },
+        {
+          ...business,
+          card: { ...business.card!, brand: "unknown" },
+        },
+      ],
+    });
+  });
+  await openWallet();
+  const region = await screen.findByRole("region", {
+    name: "Your cards in Link",
+  });
+  await within(region).findByText("Everyday");
+  const rows = within(region).getAllByRole("listitem");
+  const icon = within(rows[0]!).getByRole("presentation");
+  expect(icon).toHaveAttribute(
+    "src",
+    expect.stringMatching(/\/card-brands\/visa-[a-f0-9]+\.svg$/u),
+  );
+  fireEvent.error(icon);
+  expect(icon).not.toBeVisible();
+  expect(within(rows[0]!).getByText("Everyday")).toBeInTheDocument();
+  expect(within(rows[0]!).getByText("Default")).toBeInTheDocument();
+  expect(within(rows[0]!).getByText("Expires 02/2028")).toBeInTheDocument();
+  expect(within(rows[1]!).queryByRole("presentation")).not.toBeInTheDocument();
+  expect(within(rows[1]!).getByText("Business")).toBeInTheDocument();
+  expect(within(rows[1]!).getByText("Expires 08/2029")).toBeInTheDocument();
   expect(manageCards(region)).toBeInTheDocument();
 });
 
