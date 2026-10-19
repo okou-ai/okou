@@ -80,8 +80,6 @@ const SCHEMA = {
     .email()
     .optional(),
   CRON_SECRET: z.string().min(1),
-  // Activate only after the entire API fleet understands expiry receipts.
-  WORKFLOW_SCHEDULE_EXPIRY_ENABLED: z.enum(["true", "false"]).default("false"),
   R2_ACCESS_KEY_ID: z.string().min(1),
   R2_ACCOUNT_ID: z.string().min(1),
   R2_SECRET_ACCESS_KEY: z.string().min(1),
