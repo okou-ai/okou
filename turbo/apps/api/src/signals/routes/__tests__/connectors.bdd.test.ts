@@ -7038,7 +7038,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     for (const endpoint of [
       "http://mcp.example.test/server",
       "https://user@mcp.example.test/server",
-      "https://mcp.example.test/server?token=value",
       "https://mcp.example.test/server#fragment",
       "https://{{variables.host}}/server",
       "https://127.0.0.1/server",
@@ -7113,6 +7112,25 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     expect(root).toMatchObject({ kind: "mcp", endpoint: rootEndpoint });
     expect(root.slug).toMatch(/^_root-mcp-example-test-[a-f0-9]{6}$/u);
 
+    const queryEndpoint = "https://mcp.example.test/server?token=value";
+    const query = await connectorsApi.createCustomConnector(
+      admin,
+      manualMcpConnectorBody({
+        displayName: "Query MCP",
+        endpoint: queryEndpoint,
+      }),
+    );
+    expect(query).toMatchObject({
+      kind: "mcp",
+      endpoint: queryEndpoint,
+      authMode: "manual",
+      connected: false,
+      missingRequiredFields: ["secret"],
+    });
+    await expect(
+      connectorsApi.readCustomConnector(admin, query.id),
+    ).resolves.toMatchObject({ endpoint: queryEndpoint });
+
     const http = await connectorsApi.createCustomConnector(
       admin,
       manualHttpCustomConnectorCreateBody({
@@ -7137,6 +7155,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     await connectorsApi.deleteCustomConnector(admin, first.id);
     await connectorsApi.deleteCustomConnector(admin, second.id);
     await connectorsApi.deleteCustomConnector(admin, root.id);
+    await connectorsApi.deleteCustomConnector(admin, query.id);
     await connectorsApi.deleteCustomConnector(admin, http.id);
   });
 

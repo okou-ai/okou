@@ -4,7 +4,7 @@ import {
   validateBaseUrlHostPolicy,
 } from "@okouai/connectors/firewall-types";
 
-import { safeSync } from "../utils";
+import { safeSync, safeUrlParse } from "../utils";
 
 /** Keep the MCP request URL separate from its host/path firewall scope. */
 export function parseCustomMcpEndpoint(raw: string) {
@@ -15,6 +15,10 @@ export function parseCustomMcpEndpoint(raw: string) {
     }
     if (endpoint.includes("#")) {
       throw new Error("MCP endpoint must not contain a fragment");
+    }
+    const url = safeUrlParse(endpoint);
+    if (!url || url.protocol !== "https:") {
+      throw new Error("MCP endpoint must be a valid HTTPS URL");
     }
     validateAuthBaseUrl(endpoint, "MCP custom connector");
 

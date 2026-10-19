@@ -166,6 +166,8 @@ describe("Custom connector authentication modes", () => {
 
   it.each([
     "http://mcp.example.test/server?hl=en",
+    "https://mcp.example.test:443:444/server?hl=en",
+    "https://mcp.example.test:65536/server?hl=en",
     "https://127.0.0.1/server?hl=en",
     "https://[::1]/server?hl=en",
     "https://mcp.example.test/server?hl=en#fragment",
