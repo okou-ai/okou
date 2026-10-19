@@ -73,11 +73,15 @@ class BatchReparkReportTests(batch_test.BatchAbaReportTests):
 
     def physical_refused(self, changes):
         original = copy.deepcopy(self.physical)
-        for index, change in enumerate(changes):
-            with self.subTest(change=index):
-                self.physical = copy.deepcopy(original)
-                change()
-                with self.assertRaises(ValueError): self.validate()
+        try:
+            for index, change in enumerate(changes):
+                with self.subTest(change=index):
+                    self.physical = copy.deepcopy(original)
+                    change()
+                    with self.assertRaises(ValueError): self.validate()
+        finally:
+            self.physical = original
+        self.validate()
 
     def test_both_actual_cycles_and_strict_original_identity_are_required(self):
         self.physical_refused((lambda:self.physical.pop(),lambda:self.physical.append(copy.deepcopy(self.physical[0])),
