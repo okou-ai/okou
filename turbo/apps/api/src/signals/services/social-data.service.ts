@@ -24,6 +24,7 @@ import type { AuthContext } from "../../types/auth";
 import { writeDb$, type Db } from "../external/db";
 import { settle, settleIncludingAbort } from "../utils";
 import { completeProcessedOrgUsage$ } from "./credit-usage.service";
+import { creditPolicyRunId } from "./official-workflow-policy.service";
 import { checkManagedCreditsSnapshotInDb } from "./managed-usage.service";
 import {
   inspectSocialDataProviderPlan,
@@ -271,6 +272,7 @@ async function checkBudget(
   return await checkManagedCreditsSnapshotInDb(
     tx,
     {
+      runId: creditPolicyRunId(args.auth),
       orgId: args.auth.orgId,
       userId: args.auth.userId,
       resource: {

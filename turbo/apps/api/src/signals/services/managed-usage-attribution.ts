@@ -24,6 +24,7 @@ export interface BillingRun {
   readonly threadId: string | null;
   readonly status: string;
   readonly billingCompletedAt: string | null;
+  readonly creditChargePolicy?: "standard" | "official_workflow_free";
 }
 
 export interface BillingAttribution {
@@ -126,6 +127,7 @@ export function billingRunAttributionWrite(run: BillingRun) {
       userId: run.userId,
       runStartedAt: startedAt,
       source,
+      creditChargePolicy: run.creditChargePolicy ?? "standard",
       threadId: run.threadId,
       threadContext: run.threadId === null ? "threadless" : "thread",
       ...billingRunLifecycleValues(run.status, run.billingCompletedAt),

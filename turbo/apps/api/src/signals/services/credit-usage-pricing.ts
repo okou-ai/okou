@@ -29,6 +29,7 @@ export interface ProcessOrgUsageEventsResult {
 export interface UsageEventRecord {
   readonly id: string;
   readonly runId: string | null;
+  readonly creditChargePolicy?: "standard" | "official_workflow_free";
   readonly billingAnchorAt: Date | null;
   readonly idempotencyKey: string;
   readonly userId: string;

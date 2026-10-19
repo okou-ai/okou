@@ -1,3 +1,4 @@
+import { isOfficialWorkflowThread$ } from "../services/official-workflow-policy.service";
 import { command } from "ccstate";
 import { chatThreadByIdContract } from "@okouai/api-contracts/contracts/chat-threads";
 
@@ -25,6 +26,15 @@ const deleteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const params = get(pathParamsOf(chatThreadByIdContract.delete));
   const query = get(queryOf(chatThreadByIdContract.delete));
 
+  if (
+    await set(
+      isOfficialWorkflowThread$,
+      { threadId: params.id, userId: auth.userId, orgId: auth.orgId },
+      signal,
+    )
+  ) {
+    return chatThreadNotFound();
+  }
   const result = await set(
     deleteChatThread$,
     {

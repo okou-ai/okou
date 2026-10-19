@@ -1,3 +1,4 @@
+import { creditPolicyRunId } from "./official-workflow-policy.service";
 import { v5 as uuidv5 } from "uuid";
 
 import {
@@ -1044,6 +1045,7 @@ export const createSocialKitDownload$ = command(
     const creditError = await set(
       checkManagedCredits$,
       {
+        runId: creditPolicyRunId(args.auth),
         orgId: args.auth.orgId,
         userId: args.auth.userId,
         resource: {

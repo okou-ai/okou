@@ -49,6 +49,7 @@ export type AgentRunOutputErrorResponse =
 
 interface RunOutputContext {
   readonly chatThreadId: string | null;
+  readonly officialWorkflowProvenance: (typeof agentRuns.$inferSelect)["officialWorkflowProvenance"];
   readonly launchSnapshot: typeof agentRuns.$inferSelect.launchSnapshot;
   readonly status: RunStatus;
   readonly storageMounts: typeof agentRuns.$inferSelect.storageMounts;
@@ -109,6 +110,7 @@ const outputRunColumns = {
   userId: agentRuns.userId,
   orgId: agentRuns.orgId,
   chatThreadId: agentRuns.chatThreadId,
+  officialWorkflowProvenance: agentRuns.officialWorkflowProvenance,
   launchSnapshot: agentRuns.launchSnapshot,
   status: agentRuns.status,
   storageMounts: agentRuns.storageMounts,
@@ -551,7 +553,10 @@ function capturedNativeOutputError(
         body.cliAgentSessionId,
       ).success ||
       (run.launchSnapshot.framework === "pi" &&
-        body.cliAgentSessionId !== (run.chatThreadId ?? run.id)) ||
+        body.cliAgentSessionId !== (run.chatThreadId ?? run.id) &&
+        !(
+          run.officialWorkflowProvenance && body.cliAgentSessionId === run.id
+        )) ||
       body.cliAgentType !== run.launchSnapshot.framework)
   ) {
     return "Native Run output does not match its captured Framework identity";

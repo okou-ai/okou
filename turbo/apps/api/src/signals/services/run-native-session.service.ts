@@ -40,6 +40,7 @@ export const captureRunNativeSession$ = command(
         agentId: agentRuns.agentId,
         chatThreadId: agentRuns.chatThreadId,
         launchSnapshot: agentRuns.launchSnapshot,
+        officialWorkflowProvenance: agentRuns.officialWorkflowProvenance,
         createdAt: agentRuns.createdAt,
       })
       .from(agentRuns)
@@ -76,7 +77,8 @@ export const captureRunNativeSession$ = command(
     if (
       run.launchSnapshot?.schemaVersion === 5 &&
       framework === "pi" &&
-      sessionId !== (run.chatThreadId ?? run.id)
+      sessionId !== (run.chatThreadId ?? run.id) &&
+      !(run.officialWorkflowProvenance && sessionId === run.id)
     ) {
       throw new Error("Pi reported an identity outside its captured launch");
     }

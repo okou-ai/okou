@@ -1,3 +1,4 @@
+import { creditPolicyRunId } from "./official-workflow-policy.service";
 import {
   WEB_SEARCH_MAX_DATE_CHARS,
   WEB_SEARCH_MAX_SNIPPET_CHARS,
@@ -420,6 +421,7 @@ export const webSearch$ = command(
     const creditError = await set(
       checkManagedCredits$,
       {
+        runId: creditPolicyRunId(args.auth),
         orgId: args.auth.orgId,
         userId: args.auth.userId,
         resource: {

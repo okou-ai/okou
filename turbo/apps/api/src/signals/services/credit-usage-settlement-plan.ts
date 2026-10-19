@@ -41,7 +41,10 @@ export function settlementObservation(pricingRows: number) {
 export function planUsageCharges(events: readonly PricedUsageEvent[]) {
   const byUser = new Map<string, number>();
   const outcomes = events.map((event) => {
-    const creditsCharged = event.grossCredits;
+    const creditsCharged =
+      event.record.creditChargePolicy === "official_workflow_free"
+        ? 0
+        : event.grossCredits;
     byUser.set(
       event.record.userId,
       (byUser.get(event.record.userId) ?? 0) + creditsCharged,

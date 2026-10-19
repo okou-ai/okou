@@ -1,3 +1,4 @@
+import { creditPolicyRunId } from "./official-workflow-policy.service";
 import {
   WEATHER_ATTRIBUTION,
   type WeatherCurrentRequest,
@@ -191,6 +192,7 @@ const weatherRequest$ = command(
     const creditError = await set(
       checkManagedCredits$,
       {
+        runId: creditPolicyRunId(args.auth),
         orgId: args.auth.orgId,
         userId: args.auth.userId,
         resource: {
