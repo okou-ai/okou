@@ -25,6 +25,7 @@ mapfile -t generator_files < <(
 expected_generator_files=(
   .github/actions/neon-branch/action.yml
   .github/actions/production-migration-smoke/action.yml
+  .github/workflows/audit-link-wallet-retirement.yml
   .github/workflows/release-please.yml
   .github/workflows/turbo.yml
 )
@@ -48,8 +49,8 @@ mapfile -t invocations < <(
     "${generator_files[@]}"
 )
 
-if [[ ${#invocations[@]} -ne 4 ]]; then
-  fail "expected four reviewed neonctl connection-string invocations"
+if [[ ${#invocations[@]} -ne 5 ]]; then
+  fail "expected five reviewed neonctl connection-string invocations"
 fi
 
 mapfile -t script_invocations < <(
@@ -167,6 +168,7 @@ while IFS='|' read -r file boundary variable resolution_pattern consumer_pattern
 done <<'BOUNDARIES'
 .github/actions/neon-branch/action.yml|Neon branch action|DATABASE_URL|DATABASE_URL=$(neonctl connection-string "$BRANCH_NAME" --project-id "$NEON_PROJECT_ID" --database-name "$INPUT_DATABASE_NAME" --role-name "$INPUT_ROLE_NAME" --ssl verify-full)|echo "database-url=$DATABASE_URL" >> "$GITHUB_OUTPUT"
 .github/actions/production-migration-smoke/action.yml|Production migration smoke action|DATABASE_URL|DATABASE_URL=$(neonctl connection-string "$BRANCH_ID"|echo "database-url=$DATABASE_URL" >> "$GITHUB_OUTPUT"
+.github/workflows/audit-link-wallet-retirement.yml|Wallet retirement inventory|DATABASE_URL|DATABASE_URL=$(neonctl connection-string production|DATABASE_URL="$DATABASE_URL" "$RUNNER_TEMP/wallet-audit-venv/bin/python" ops/link-wallet-retirement-40206/audit.py
 .github/workflows/turbo.yml|Turbo preview database|DATABASE_URL|DATABASE_URL=$(.github/scripts/neon-preview-branch.sh branch|DATABASE_URL="$DATABASE_URL" pnpm -F @okouai/db db:reset
 .github/workflows/release-please.yml|Production release database|DATABASE_URL|DATABASE_URL=$(neonctl connection-string production|echo "database-url=$DATABASE_URL" >> "$GITHUB_OUTPUT"
 BOUNDARIES
@@ -181,4 +183,4 @@ assert_ordered \
   'Production release database shell' \
   "${release_shell_patterns[@]}"
 
-echo "Neon credential masking checks passed (5 invocations, 4 resolved values)"
+echo "Neon credential masking checks passed (6 invocations, 5 resolved values)"
