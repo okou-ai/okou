@@ -10,7 +10,7 @@ import type {
   ModelProviderResponse,
   ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
-import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/contracts/third-party-subscriptions";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -120,8 +120,8 @@ function installPersonalProviders(
   readonly replace: (providers: readonly ModelProviderResponse[]) => void;
 } {
   let providers = [...initialProviders];
-  context.mocks.api(personalModelProvidersMainContract.list, ({ respond }) => {
-    return respond(200, { modelProviders: providers });
+  context.mocks.api(thirdPartySubscriptionsMainContract.list, ({ respond }) => {
+    return respond(200, { subscriptions: providers });
   });
   return {
     current: () => {

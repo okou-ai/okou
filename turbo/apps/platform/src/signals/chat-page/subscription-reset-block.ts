@@ -8,10 +8,8 @@ import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/mode
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import {
-  personalModelProviderAccountRevision$,
-  resetPersonalCodexAccountSubscriptionUsage$,
-} from "../external/personal-model-providers.ts";
+import { resetPersonalCodexAccountSubscriptionUsage$ } from "../external/personal-model-providers.ts";
+import { personalModelProviderAccountRevision$ } from "../external/third-party-subscriptions.ts";
 import { settle, withCleanup } from "../utils.ts";
 import type { ChatActionParseResult } from "./chat-action-context.ts";
 import { createCardSignalsRegistry } from "./card-signal-map.ts";

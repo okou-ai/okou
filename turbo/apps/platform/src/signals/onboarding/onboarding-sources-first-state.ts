@@ -79,7 +79,7 @@ export interface SourcesFirstDraft {
   readonly experienced: boolean | null;
   /**
    * The plan the answer names. Whether it is connected is the account's
-   * answer, read from `/api/me/model-providers`, never held here.
+   * answer, read from `/api/me/3rd-party-subscriptions`, never held here.
    */
   readonly provider: SubscriptionProvider | null;
   /** Edited copy of the matched starting prompt, kept across step changes. */

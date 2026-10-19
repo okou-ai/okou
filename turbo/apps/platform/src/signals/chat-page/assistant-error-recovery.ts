@@ -10,7 +10,7 @@ import {
   type ModelProviderResponse,
   type PersonalSubscriptionProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
-import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/contracts/third-party-subscriptions";
 import {
   knownRunFailureReasonSchema,
   type KnownRunFailureReason,
@@ -21,7 +21,7 @@ import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { modelCatalog$ } from "../external/model-catalog.ts";
-import { personalModelProviderAccountRevision$ } from "../external/personal-model-providers.ts";
+import { personalModelProviderAccountRevision$ } from "../external/third-party-subscriptions.ts";
 import { availableRunModels$ } from "../external/run-models.ts";
 import { resetPersonalCodexAccountSubscriptionUsage$ } from "../okou-page/settings/personal-model-providers.ts";
 import { textToMessageDocument } from "../okou-page/user-message-document-codec.ts";
@@ -648,10 +648,10 @@ function createFailureAccountsComputed(
     get(latestFailureEventId$);
     get(personalModelProviderAccountRevision$);
     const result = await accept(
-      get(apiClient$)(personalModelProvidersMainContract).list(),
+      get(apiClient$)(thirdPartySubscriptionsMainContract).list(),
       [200],
     );
-    return result.body.modelProviders;
+    return result.body.subscriptions;
   });
 }
 

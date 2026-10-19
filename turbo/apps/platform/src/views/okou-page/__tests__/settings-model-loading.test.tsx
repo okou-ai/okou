@@ -2,7 +2,7 @@ import {
   billingStatusContract,
   type BillingStatusResponse,
 } from "@okouai/api-contracts/contracts/billing";
-import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/contracts/third-party-subscriptions";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -87,12 +87,12 @@ async function setupLoadedModelsSettings() {
     return respond(200, billingResponse(responses.credits));
   });
   context.mocks.api(
-    personalModelProvidersMainContract.list,
+    thirdPartySubscriptionsMainContract.list,
     async ({ respond }) => {
       if (responses.holdSubscriptions) {
         await release.promise;
       }
-      return respond(200, { modelProviders: [] });
+      return respond(200, { subscriptions: [] });
     },
   );
   await setupPage({

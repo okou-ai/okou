@@ -4,7 +4,7 @@ import type {
   ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { subscriptionUsageWindows } from "../../lib/subscription-usage-windows.ts";
-import { refreshPersonalModelProvidersIfStale$ } from "../external/personal-model-providers.ts";
+import { refreshThirdPartySubscriptionsIfStale$ } from "../external/third-party-subscriptions.ts";
 import {
   accountMenuCodexResetDialog$,
   personalConfiguredProviders$,
@@ -71,7 +71,7 @@ export const reloadAccountMenuSubscriptionUsageRows$ = command(
     set(internalAccountMenuSubscriptionUsageRowsRequestId$, requestId);
 
     const promise = (async () => {
-      set(refreshPersonalModelProvidersIfStale$);
+      set(refreshThirdPartySubscriptionsIfStale$);
       const providers = await get(personalConfiguredProviders$);
       signal.throwIfAborted();
       if (
